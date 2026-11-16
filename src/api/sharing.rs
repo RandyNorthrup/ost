@@ -304,7 +304,33 @@ pub fn link_kind(scope: i64, edit: bool) -> i64 {
 /// and share id. Scope 4 is Teams' "People currently in this chat" (a
 /// specific-people link the chat service opens to the chat's members).
 pub async fn create_link(item: &ItemRef, scope: i64, edit: bool, expiration: &str, password: &str) -> Result<(String, String)> {
-    let reply = post(&item.method("ShareLink"), &share_link_body(scope, edit, expiration, password)).await?;
+    create_link_for(item, &share_link_body(scope, edit, expiration, password)).await
+}
+
+/// A people picker entry for someone in a chat, as OneDrive's Link
+/// settings puts the chat's members in a "People currently in this chat"
+/// link (Teams' compose card, 2026-11-16).
+pub fn picker_entry(email: &str, name: &str, oid: &str) -> Value {
+    json!({"Key": format!("i:0#.f|membership|{}", email.to_ascii_lowercase()), "DisplayText": if name.is_empty() { email } else { name }, "IsResolved": true,
+        "Description": email, "EntityType": "User",
+        "EntityData": {"IsAltSecIdPresent": false, "Title": null, "Email": email, "MobilePhone": null, "ObjectId": oid, "UserIdentityType": 0, "IsExternal": false, "Department": null},
+        "MultipleMatches": [], "ProviderName": "Tenant", "ProviderDisplayName": "Tenant"})
+}
+
+/// ShareLink's body for a link the compose card's Link settings makes: in
+/// a chat, "People currently in this chat" names its members (all of
+/// them, you too) in `peoplePickerInput`.
+pub fn compose_link_body(scope: i64, edit: bool, expiration: &str, password: &str, people: &[Value]) -> Value {
+    let mut b = share_link_body(scope, edit, expiration, password);
+    if scope == 4 && !people.is_empty() {
+        b["request"]["peoplePickerInput"] = json!(Value::Array(people.to_vec()).to_string());
+    }
+    b
+}
+
+/// Make (or reuse) a link with a ShareLink body; its address and share id.
+pub async fn create_link_for(item: &ItemRef, body: &Value) -> Result<(String, String)> {
+    let reply = post(&item.method("ShareLink"), body).await?;
     let info = &reply["d"]["ShareLink"]["sharingLinkInfo"];
     let url = s(&info["Url"]);
     if url.is_empty() {

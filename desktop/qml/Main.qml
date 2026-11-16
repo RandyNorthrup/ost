@@ -1411,7 +1411,7 @@ Window {
     Timer {
         id: shotTimer
         interval: 15000
-        running: window.shotPath.length > 0 && Qt.application.arguments.indexOf("--draft-format-test") < 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--table-test") < 0 && Qt.application.arguments.indexOf("--hovercard-test") < 0 && Qt.application.arguments.indexOf("--chat-shot") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--pause-test")) && Qt.application.arguments.indexOf("--settings-test") < 0 && Qt.application.arguments.indexOf("--settings-pages-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--meet-now-test") < 0 && Qt.application.arguments.indexOf("--mute-test") < 0 && Qt.application.arguments.indexOf("--video-call-test") < 0 && Qt.application.arguments.indexOf("--meeting-chat-test") < 0 && Qt.application.arguments.indexOf("--breakpoints-test") < 0 && Qt.application.arguments.indexOf("--fun-picker-test") < 0 && Qt.application.arguments.indexOf("--attach-test") < 0 && Qt.application.arguments.indexOf("--filecard-test") < 0 && Qt.application.arguments.indexOf("--videoclip-test") < 0 && Qt.application.arguments.indexOf("--recorder-test") < 0 && Qt.application.arguments.indexOf("--recorder-edit-test") < 0 && Qt.application.arguments.indexOf("--teleprompter-test") < 0 && Qt.application.arguments.indexOf("--video-effects-test") < 0 && Qt.application.arguments.indexOf("--video-filters-test") < 0 && Qt.application.arguments.indexOf("--green-screen-test") < 0 && Qt.application.arguments.indexOf("--leave-confirm-test") < 0 && Qt.application.arguments.indexOf("--shortcut-profile-test") < 0 && Qt.application.arguments.indexOf("--new-chat-window-test") < 0 && Qt.application.arguments.indexOf("--chatlist-keys-test") < 0 && Qt.application.arguments.indexOf("--translation-test") < 0 && Qt.application.arguments.indexOf("--regional-test") < 0 && Qt.application.arguments.indexOf("--editor-test") < 0 && Qt.application.arguments.indexOf("--appearance-test") < 0 && Qt.application.arguments.indexOf("--collab-test") < 0 && Qt.application.arguments.indexOf("--notif-test") < 0 && Qt.application.arguments.indexOf("--accounts-test") < 0 && Qt.application.arguments.indexOf("--privacy-test") < 0 && Qt.application.arguments.indexOf("--calls-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--cards-test")) && !Qt.application.arguments.some(a => a.startsWith("--recognition-test=")) && Qt.application.arguments.indexOf("--recognition-states") < 0 && Qt.application.arguments.indexOf("--about-test") < 0 && Qt.application.arguments.indexOf("--room-audio-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--link-preview-test")) && Qt.application.arguments.indexOf("--fileviewer-test") < 0 && Qt.application.arguments.indexOf("--poll-test") < 0 && Qt.application.arguments.indexOf("--media-order-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--custom-emoji")) && Qt.application.arguments.indexOf("--onedrive-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--onedrive-rows-test")) && !Qt.application.arguments.some(a => a.startsWith("--version-history-test")) && !Qt.application.arguments.some(a => a.startsWith("--details-test")) && Qt.application.arguments.indexOf("--preview-test") < 0 && Qt.application.arguments.indexOf("--sortview-test") < 0 && Qt.application.arguments.indexOf("--zip-test") < 0 && Qt.application.arguments.indexOf("--files-links-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--picker-test")) && Qt.application.arguments.indexOf("--folder-bar-test") < 0 && Qt.application.arguments.indexOf("--quick-access-test") < 0 && Qt.application.arguments.indexOf("--picker-views-test") < 0 && Qt.application.arguments.indexOf("--comments-test") < 0 && Qt.application.arguments.indexOf("--bell-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--folder-extras-test")) && Qt.application.arguments.indexOf("--planner-test") < 0 && Qt.application.arguments.indexOf("--apps-test") < 0 && Qt.application.arguments.indexOf("--channel-files-test") < 0 && Qt.application.arguments.indexOf("--store-test") < 0 && Qt.application.arguments.indexOf("--webapp-test") < 0 && Qt.application.arguments.indexOf("--loop-test") < 0 && Qt.application.arguments.indexOf("--tab-menu-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--tab-drag-test=")) && Qt.application.arguments.indexOf("--delete-undo-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat=")) && window.appDetailsTest.length === 0 && Qt.application.arguments.indexOf("--chatlist-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--share-test")) && !Qt.application.arguments.some(a => a.startsWith("--file-actions-test")) && Qt.application.arguments.indexOf("--open-file-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--sharefile-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-grid-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-communities-test")) && Qt.application.arguments.indexOf("--meeting-details-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--attendance-test=")) && !Qt.application.arguments.some(a => a.startsWith("--remove-history-"))
+        running: window.shotPath.length > 0 && Qt.application.arguments.indexOf("--draft-format-test") < 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--table-test") < 0 && Qt.application.arguments.indexOf("--hovercard-test") < 0 && Qt.application.arguments.indexOf("--chat-shot") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--pause-test")) && Qt.application.arguments.indexOf("--settings-test") < 0 && Qt.application.arguments.indexOf("--settings-pages-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--meet-now-test") < 0 && Qt.application.arguments.indexOf("--mute-test") < 0 && Qt.application.arguments.indexOf("--video-call-test") < 0 && Qt.application.arguments.indexOf("--meeting-chat-test") < 0 && Qt.application.arguments.indexOf("--breakpoints-test") < 0 && Qt.application.arguments.indexOf("--fun-picker-test") < 0 && Qt.application.arguments.indexOf("--attach-test") < 0 && Qt.application.arguments.indexOf("--copilot-test") < 0 && Qt.application.arguments.indexOf("--attach-link-test") < 0 && Qt.application.arguments.indexOf("--thread-attach-test") < 0 && Qt.application.arguments.indexOf("--picker-bar-test") < 0 && Qt.application.arguments.indexOf("--filecard-test") < 0 && Qt.application.arguments.indexOf("--videoclip-test") < 0 && Qt.application.arguments.indexOf("--recorder-test") < 0 && Qt.application.arguments.indexOf("--recorder-edit-test") < 0 && Qt.application.arguments.indexOf("--teleprompter-test") < 0 && Qt.application.arguments.indexOf("--video-effects-test") < 0 && Qt.application.arguments.indexOf("--video-filters-test") < 0 && Qt.application.arguments.indexOf("--green-screen-test") < 0 && Qt.application.arguments.indexOf("--leave-confirm-test") < 0 && Qt.application.arguments.indexOf("--shortcut-profile-test") < 0 && Qt.application.arguments.indexOf("--new-chat-window-test") < 0 && Qt.application.arguments.indexOf("--chatlist-keys-test") < 0 && Qt.application.arguments.indexOf("--translation-test") < 0 && Qt.application.arguments.indexOf("--regional-test") < 0 && Qt.application.arguments.indexOf("--editor-test") < 0 && Qt.application.arguments.indexOf("--appearance-test") < 0 && Qt.application.arguments.indexOf("--collab-test") < 0 && Qt.application.arguments.indexOf("--notif-test") < 0 && Qt.application.arguments.indexOf("--accounts-test") < 0 && Qt.application.arguments.indexOf("--privacy-test") < 0 && Qt.application.arguments.indexOf("--calls-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--cards-test")) && !Qt.application.arguments.some(a => a.startsWith("--recognition-test=")) && Qt.application.arguments.indexOf("--recognition-states") < 0 && Qt.application.arguments.indexOf("--about-test") < 0 && Qt.application.arguments.indexOf("--room-audio-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--link-preview-test")) && Qt.application.arguments.indexOf("--fileviewer-test") < 0 && Qt.application.arguments.indexOf("--poll-test") < 0 && Qt.application.arguments.indexOf("--media-order-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--custom-emoji")) && Qt.application.arguments.indexOf("--onedrive-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--onedrive-rows-test")) && !Qt.application.arguments.some(a => a.startsWith("--version-history-test")) && !Qt.application.arguments.some(a => a.startsWith("--details-test")) && Qt.application.arguments.indexOf("--preview-test") < 0 && Qt.application.arguments.indexOf("--sortview-test") < 0 && Qt.application.arguments.indexOf("--zip-test") < 0 && Qt.application.arguments.indexOf("--files-links-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--picker-test")) && Qt.application.arguments.indexOf("--folder-bar-test") < 0 && Qt.application.arguments.indexOf("--quick-access-test") < 0 && Qt.application.arguments.indexOf("--picker-views-test") < 0 && Qt.application.arguments.indexOf("--comments-test") < 0 && Qt.application.arguments.indexOf("--bell-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--folder-extras-test")) && Qt.application.arguments.indexOf("--planner-test") < 0 && Qt.application.arguments.indexOf("--apps-test") < 0 && Qt.application.arguments.indexOf("--channel-files-test") < 0 && Qt.application.arguments.indexOf("--store-test") < 0 && Qt.application.arguments.indexOf("--webapp-test") < 0 && Qt.application.arguments.indexOf("--loop-test") < 0 && Qt.application.arguments.indexOf("--tab-menu-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--tab-drag-test=")) && Qt.application.arguments.indexOf("--delete-undo-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat=")) && window.appDetailsTest.length === 0 && Qt.application.arguments.indexOf("--chatlist-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--share-test")) && !Qt.application.arguments.some(a => a.startsWith("--file-actions-test")) && Qt.application.arguments.indexOf("--open-file-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--sharefile-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-grid-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-communities-test")) && Qt.application.arguments.indexOf("--meeting-details-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--attendance-test=")) && !Qt.application.arguments.some(a => a.startsWith("--remove-history-"))
         onTriggered: {
             if (!backend.hasCredentials) {
                 if (!backend.signInPage) {
@@ -3320,6 +3320,155 @@ Window {
             }
             else if (step === 26) { cap("timeline"); }
             else if (step === 27) Qt.quit()
+            step++
+        }
+    }
+
+    // --copilot-test: Write with Copilot in OST group test (or, with
+    // --copilot-channel, OST Test Team > OST test channel 2): the button,
+    // the popover with an empty box, a harmless test draft, Rewrite (its
+    // loading and answer), Proofread, Adjust ▸ Concise and the menu, Custom
+    // ("add a cheerful good morning"), Previous, then Replace; the box is
+    // cleared at the end and nothing is sent. Logs COPILOT lines; pictures
+    // copilot-*.png.
+    Timer {
+        running: Qt.application.arguments.indexOf("--copilot-test") >= 0 && backend.signedIn && chatList.chats.some(c => c.name === "OST group test")
+        interval: 1500; repeat: true
+        property int step: 0
+        property int waited: 0
+        onTriggered: {
+            const cap = tag => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-copilot-" + tag + ".png")))
+            const log = (...a) => console.warn("COPILOT", ...a.map(x => typeof x === "string" ? x : JSON.stringify(x)))
+            const chan = Qt.application.arguments.indexOf("--copilot-channel") >= 0
+            const box = conversation.composeForTest()
+            const pop = box ? box.copilotForTest() : null
+            const settle = () => { const st = pop.stateForTest(); if (st.busy && waited++ < 40) return false; waited = 0; return true }
+            switch (step) {
+            case 0:
+                if (chan) {
+                    const team = (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).find(t => t.name === "OST Test Team")
+                    const ch = team ? team.channels.find(c => c.name === "OST test channel 2") : null
+                    if (!ch) return
+                    backend.selectChat(ch.id, ch.name)
+                } else { const c = chatList.chats.find(c => c.name === "OST group test"); backend.selectChat(c.id, c.name) }
+                break
+            case 2: log("state", backend.composeCopilotJson, "button", box.toolModel.map(t => t.id)); box.clearForTest(); box.openCopilot(null); break
+            case 3: log("empty", pop.stateForTest()); cap("empty"); pop.close(); break
+            case 4: conversation.setComposeText("hey team can we meet tmrw at 10 to go over the test plan thx"); break
+            case 5: box.openCopilot(null); break
+            case 6: log("ready", pop.stateForTest()); cap("ready"); pop.actForTest("rewrite"); break
+            case 7: cap("loading"); log("loading", pop.stateForTest()); break
+            case 8: if (!settle()) return; log("rewrite", pop.stateForTest().answers); cap("rewrite"); pop.actForTest("proofread"); break
+            case 9: if (!settle()) return; log("proofread", pop.stateForTest().answers.slice(-1)); cap("proofread"); pop.actForTest("concise"); break
+            case 10: if (!settle()) return; log("concise", pop.stateForTest().answers.slice(-1)); pop.actForTest("menu"); break
+            case 11: cap("menu"); pop.actForTest("custom", "add a cheerful good morning"); break
+            case 12: if (!settle()) return; log("custom", pop.stateForTest()); cap("custom"); pop.actForTest("prev"); break
+            case 13: log("prev", pop.stateForTest().index); cap("prev"); pop.actForTest("replace"); break
+            case 14: log("replaced", box.plainText(), "open", pop.opened); cap("replaced"); break
+            case 15: box.clearForTest(); conversation.setComposeText(""); break
+            case 16: Qt.quit(); return
+            }
+            step++
+        }
+    }
+
+    // --attach-link-test: in OST group test, a suggested file (the Attach
+    // popover's first) into the compose box, its card's Link settings
+    // ("People currently in this chat", applied: the link is made), then,
+    // with --attach-link-send, sent as "OST TEST 173 link settings from
+    // OST". Logs ATTACHLINK lines; pictures attach-link-*.png.
+    Timer {
+        running: Qt.application.arguments.indexOf("--attach-link-test") >= 0 && backend.signedIn && chatList.chats.some(c => c.name === "OST group test")
+        interval: 2000; repeat: true
+        property int step: 0
+        property int waited: 0
+        onTriggered: {
+            const cap = tag => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-attach-link-" + tag + ".png")))
+            const log = (...a) => console.warn("ATTACHLINK", ...a.map(x => typeof x === "string" ? x : JSON.stringify(x)))
+            const m = conversation.attachMenuForTest(), ca = conversation.cloudAttachForTest()
+            switch (step) {
+            case 0: { const c = chatList.chats.find(c => c.name === "OST group test"); backend.selectChat(c.id, c.name); break }
+            case 2: conversation.attachFile(); break
+            case 4: { const st = m.stateForTest(); if (st.loading && waited++ < 10) return; waited = 0; log("menu", st); cap("menu"); break }
+            case 5: { const h = m.hits[0]; log("pick", h || null); if (!h) { Qt.quit(); return } m.close(); m.picked(h); break }
+            case 6: { const st = ca.stateForTest(); if (st.some(c => c.loading) && waited++ < 20) return; waited = 0; log("card", st); cap("card"); break }
+            case 7: ca.openLink(ca.pending[0].key); break
+            case 9: { const d = ca.linkDialogForTest(); log("dialog", d.view, d.chatMode); cap("dialog"); d.pendScope = 4; d.pendEdit = true; break }
+            case 10: { const d = ca.linkDialogForTest(); cap("dialog-chat"); d.linkChosen(4, true, "", ""); d.close(); break }
+            case 11: { const st = ca.stateForTest(); if (st.some(c => c.linking) && waited++ < 20) return; waited = 0; log("linked", st); cap("linked"); break }
+            case 12: if (Qt.application.arguments.indexOf("--attach-link-send") < 0) { ca.clear(); Qt.quit(); return } conversation.setComposeText("OST TEST 173 link settings from OST"); break
+            case 13: conversation.sendForTest(); break
+            case 17: log("sent; status", backend.statusText); cap("sent"); Qt.quit(); return
+            }
+            step++
+        }
+    }
+
+    // --thread-attach-test: OST Test Team > General's newest post in its
+    // thread view: Attach there opens Teams' Attach popover (with Browse
+    // Teams and Channels) and the cloud file picker. Nothing is sent. Logs
+    // THREADATTACH lines; pictures thread-attach-*.png.
+    Timer {
+        running: Qt.application.arguments.indexOf("--thread-attach-test") >= 0 && backend.signedIn && !!backend.teamsJson
+        interval: 2000; repeat: true
+        property int step: 0
+        property var view: null
+        onTriggered: {
+            const cap = tag => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-thread-attach-" + tag + ".png")))
+            const log = (...a) => console.warn("THREADATTACH", ...a.map(x => typeof x === "string" ? x : JSON.stringify(x)))
+            switch (step) {
+            case 0: {
+                const team = JSON.parse(backend.teamsJson).find(t => t.name === "OST Test Team")
+                const ch = team ? team.channels.find(c => c.name === "General") : null
+                if (!ch) return
+                backend.selectChat(ch.id, ch.name); break
+            }
+            case 3: {
+                const post = (conversation.messages || []).filter(p => !p.deleted && p.kind !== "call").slice(-1)[0]
+                log("post", post ? post.id : null)
+                if (!post) { Qt.quit(); return }
+                conversation.openPostView(post.id); break
+            }
+            case 5: { view = conversation.postViewForTest(); log("view", !!view); if (!view) { Qt.quit(); return } view.composeForTest().attachRequested(view.composeForTest().attachButton()); break }
+            case 7: { const m = view.cloudAttachForTest().menu; log("menu", m.stateForTest()); cap("menu"); break }
+            case 8: { const ca = view.cloudAttachForTest(); ca.closeMenu(); ca.picker.entry = "home"; ca.picker.open(); break }
+            case 10: { const p = view.cloudAttachForTest().picker; log("picker", p.stateForTest()); cap("picker"); p.close(); break }
+            case 11: Qt.quit(); return
+            }
+            step++
+        }
+    }
+
+    // --picker-bar-test: the cloud file picker's My files with its command
+    // bar, the Upload and view menus, Compact List and Tiles, and Create a
+    // folder (opened, a colour picked, closed: nothing is made). Logs
+    // PICKERBAR lines; pictures picker-bar-*.png.
+    Timer {
+        running: Qt.application.arguments.indexOf("--picker-bar-test") >= 0 && backend.signedIn && chatList.chats.some(c => c.name === "OST group test")
+        interval: 2500; repeat: true
+        property int step: 0
+        onTriggered: {
+            const cap = tag => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-picker-bar-" + tag + ".png")))
+            const log = (...a) => console.warn("PICKERBAR", ...a.map(x => typeof x === "string" ? x : JSON.stringify(x)))
+            const p = conversation.cloudPickerForTest()
+            switch (step) {
+            case 0: { const c = chatList.chats.find(c => c.name === "OST group test"); backend.selectChat(c.id, c.name); break }
+            case 2: p.entry = "myfiles"; p.open(); break
+            case 4: log("list", p.stateForTest()); cap("list"); break
+            case 5: p.openForTest("view:compact"); break
+            case 6: cap("compact"); break
+            case 7: p.openForTest("view:tiles"); break
+            case 8: cap("tiles"); break
+            case 9: p.openForTest("view:list"); p.openForTest("people"); break
+            case 11: log("people", p.stateForTest()); cap("people"); break
+            case 12: p.openForTest("myfiles"); break
+            case 14: p.openForTest("newfolder"); break
+            case 15: cap("newfolder"); break
+            case 16: p.newFolderColor = 5; break
+            case 17: cap("newfolder-blue"); break
+            case 18: p.closeDialogsForTest(); p.close(); break
+            case 19: Qt.quit(); return
+            }
             step++
         }
     }

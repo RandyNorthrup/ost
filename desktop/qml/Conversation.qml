@@ -3219,8 +3219,7 @@ Rectangle {
     function smartSuggestionClicked(r, chip) {
         if (r.kind === "file_sharing") {
             // Teams: the attach menu, above the chip at its end.
-            attachMenu.alignEnd = true
-            root.openAttach(chip)
+            root.openAttach(chip, true)
         } else if (r.kind === "meeting") {
             const members = backend.chatMembersJson ? JSON.parse(backend.chatMembersJson) : []
             root.scheduleMeetingWith(members.filter(p => !p.me && p.mail).map(p => p.mail).join(", "), r.start_time || "", r.end_time || "")
@@ -3234,7 +3233,7 @@ Rectangle {
     function smartRepliesForTest() { return { set: root.smartReplies, chips: root.smartReplyItems.text.map(c => c.title), special: root.smartReplyItems.special.map(c => c.kind + ":" + (c.title || c.value)), feedback: root.smartReplyItems.feedback, shown: smartReplyRow.visible } }
     function smartReplyFeedbackForTest() { return srFeedbackForm }
     function setSmartRepliesForTest(set) { root.smartReplies = set }
-    function closeAttachForTest() { attachMenu.close() }
+    function closeAttachForTest() { cloudAttach.closeMenu() }
     /// Click the first suggestion chip of this kind; its label, or "".
     function clickSuggestionForTest(kind) {
         for (let i = 0; i < smartReplyRow.children.length; i++) {
@@ -4106,61 +4105,33 @@ Rectangle {
     function wrapSelection(tag) { compose.wrapSelection(tag) }
     // Files picked to send with the next message (local paths).
     property var pendingFiles: []
-    // Files picked from OneDrive or SharePoint ({key, name, kind, loading,
-    // file, thumbnail}); each is read for its card first.
-    property var pendingCloud: []
-    readonly property bool hasFiles: pendingFiles.length > 0 || pendingCloud.some(c => !!c.file)
+    // Files picked from OneDrive or SharePoint, with Teams' Attach popover,
+    // cloud file picker and their cards' Link settings (CloudAttach).
+    readonly property alias pendingCloud: cloudAttach.pending
+    readonly property bool hasFiles: pendingFiles.length > 0 || cloudAttach.hasFiles
     /// What the backend sends: local paths, then "cloud:" and each read
     /// cloud file.
     function fileLines() {
-        return pendingFiles.concat(pendingCloud.filter(c => !!c.file).map(c => "cloud:" + JSON.stringify(c.file))).join("\n")
+        return pendingFiles.concat(cloudAttach.lines()).join("\n")
     }
-    function clearFiles() { pendingFiles = []; pendingCloud = [] }
-    readonly property string attachTag: "conv-attach-" + Math.floor(Math.random() * 1e9) + ":"
+    function clearFiles() { pendingFiles = []; cloudAttach.clear() }
     /// Files from the Attach popover or the cloud file picker into the
     /// compose box (Teams reads each for its card).
-    function attachCloud(list) {
-        for (const f of list) {
-            const key = f.web_url
-            if (!key || pendingCloud.some(c => c.key === key)) continue
-            pendingCloud = pendingCloud.concat([{ key: key, name: f.name, kind: f.kind || "", loading: true }])
-            backend.driveAction(attachTag + encodeURIComponent(key) + ":attach_prepare",
-                JSON.stringify({ name: f.name, web_url: f.web_url, drive_id: f.drive_id || "", id: f.id || "", kind: f.kind || "" }), "{}")
-        }
-    }
-    Connections {
-        target: backend
-        function onDriveActionDone(op, result, error) {
-            if (!op.startsWith(root.attachTag) || !op.endsWith(":attach_prepare")) return
-            const key = decodeURIComponent(op.slice(root.attachTag.length, op.length - ":attach_prepare".length))
-            if (error) {
-                root.pendingCloud = root.pendingCloud.filter(c => c.key !== key)
-                compose.showBanner("Couldn't attach the file. Please try again.", false, 3000)
-                return
-            }
-            const v = JSON.parse(result)
-            root.pendingCloud = root.pendingCloud.map(c => c.key === key ? Object.assign({}, c, { loading: false, file: v.file, thumbnail: v.thumbnail }) : c)
-        }
-    }
+    function attachCloud(list) { cloudAttach.attach(list) }
     /// Teams' Attach popover over the Attach button.
-    function openAttach(anchor) {
-        attachMenu.anchorItem = anchor || compose
-        attachMenu.channel = root.isChannel
-        attachMenu.chatId = root.threadChannel || root.chatId
-        attachMenu.context = root.messages.filter(m => m.kind !== "call" && !m.deleted).slice(-3).reverse()
+    function openAttach(anchor, alignEnd) {
+        cloudAttach.context = root.messages.filter(m => m.kind !== "call" && !m.deleted).slice(-3).reverse()
             .map(m => ({ id: m.id, text: m.text || "", sender: String(m.sender_mri || "").replace(/^8:orgid:/, ""), time: m.time }))
-        attachMenu.open()
+        cloudAttach.openMenu(anchor || compose, alignEnd)
     }
-    AttachMenu {
-        id: attachMenu
-        onAttachCloud: { cloudPicker.entry = "home"; cloudPicker.open() }
-        onBrowseChannels: { cloudPicker.entry = { team: root.teamName, team_id: root.teamId, channel_id: root.threadChannel || root.chatId }; cloudPicker.open() }
-        onUpload: filePicker.open()
-        onPicked: f => root.attachCloud([f])
-    }
-    CloudPicker {
-        id: cloudPicker
-        onAttached: files => root.attachCloud(files)
+    CloudAttach {
+        id: cloudAttach
+        chatId: root.threadChannel || root.chatId
+        channel: root.isChannel
+        teamName: root.teamName
+        teamId: root.teamId
+        onUploadRequested: filePicker.open()
+        onFailed: text => compose.showBanner(text, false, 3000)
     }
     // Bot cards' actions (api::bot_invoke, docs/spec/messages-and-composer.md
     // "Bot card actions"): an invoke Action.Submit or an Action.Execute goes
@@ -4358,9 +4329,10 @@ Rectangle {
     function copyLinkStateForTest() { return cardActions.copyLinkStateForTest() }
     function closeCopyLinkForTest() { cardActions.closeCopyLinkForTest() }
     function closeCardShareForTest() { cardShare.close() }
-    function attachMenuForTest() { return attachMenu }
-    function cloudPickerForTest() { return cloudPicker }
-    function cloudForTest() { return pendingCloud.map(c => ({ name: c.name, loading: !!c.loading, link: c.file ? c.file.link_description : "", thumb: !!c.thumbnail })) }
+    function attachMenuForTest() { return cloudAttach.menu }
+    function cloudPickerForTest() { return cloudAttach.picker }
+    function cloudForTest() { return cloudAttach.stateForTest() }
+    function cloudAttachForTest() { return cloudAttach }
     function addFiles(urls) {
         const paths = urls.map(u => decodeURIComponent(u.toString().replace(/^file:\/\//, "")))
         pendingFiles = pendingFiles.concat(paths.filter(p => pendingFiles.indexOf(p) < 0))
@@ -4626,7 +4598,8 @@ Rectangle {
         onFileRemoved: path => root.pendingFiles = root.pendingFiles.filter(p => p !== path)
         onEmojiRequested: a => root.openEmojiFor(compose)
         cloudFiles: root.pendingCloud
-        onCloudRemoved: key => root.pendingCloud = root.pendingCloud.filter(c => c.key !== key)
+        onCloudRemoved: key => cloudAttach.remove(key)
+        onCloudLinkRequested: key => cloudAttach.openLink(key)
         onAttachRequested: a => root.openAttach(a)
         // Record video clip: in a chat's or channel's own compose box.
         canRecordClip: root.canRecordClips
@@ -4698,7 +4671,9 @@ Rectangle {
     }
     // Teams' post view (an ended meeting's "See details"): the post's
     // thread over the channel, with Go to channel and Open in new window.
+    function postViewForTest() { return postViewLoader.item }
     Loader {
+        id: postViewLoader
         anchors.fill: parent
         z: 50
         active: root.postViewRoot !== "" && root.isChannel && !root.pane

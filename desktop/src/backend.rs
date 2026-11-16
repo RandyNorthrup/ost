@@ -186,6 +186,10 @@ pub mod qobject {
         #[qproperty(QString, settings_error)]
         /// Where you work today ("Office", "Remote", or "").
         #[qproperty(QString, my_work_location)]
+        /// Teams' Write with Copilot in compose: {"allowed": a Microsoft 365
+        /// Copilot licence and Teams' compose Copilot settings,
+        /// "proofread": Proofread offered}.
+        #[qproperty(QString, compose_copilot_json)]
         /// The channel threads open in windows of their own:
         /// {"<channel>;messageid=<post>": [messages, oldest first]}.
         #[qproperty(QString, thread_windows_json)]
@@ -732,6 +736,11 @@ pub mod qobject {
         /// Manage spellcheck languages: the new list (JSON, preferred first).
         #[qinvokable]
         fn editor_set_languages(self: Pin<&mut Backend>, languages_json: &QString);
+        /// Write with Copilot: ask Copilot to rewrite a draft ({user_text,
+        /// tone, length, thread_id, context_type}); compose_copilot_update
+        /// follows with `request`.
+        #[qinvokable]
+        fn compose_copilot_rewrite(self: Pin<&mut Backend>, request: &QString, rewrite_json: &QString);
         /// Teams' regional formats in effect (read once: changes apply
         /// after a restart) as Qt format strings: {culture, shortDate,
         /// shortDateNoYear, longDate, longDateNoYear, shortTime, longTime,
@@ -1328,6 +1337,10 @@ pub mod qobject {
         /// Your proofing settings arrived or changed.
         #[qsignal]
         fn editor_settings_changed(self: Pin<&mut Backend>);
+        /// A Write with Copilot answer: the HTML so far (or whole, once
+        /// `done`), its text, or an error.
+        #[qsignal]
+        fn compose_copilot_update(self: Pin<&mut Backend>, request: QString, html: QString, text: QString, done: bool, error: QString);
 
         /// A video_clip_upload finished: the recording's path and {id,
         /// url, error}.
@@ -2366,6 +2379,7 @@ pub struct BackendRust {
     next_schedule_ms: Option<i64>,
     settings_error: QString,
     my_work_location: QString,
+    compose_copilot_json: QString,
     thread_windows_json: QString,
     channel_action_result: QString,
     channel_posts_at_top: bool,
@@ -3750,6 +3764,66 @@ fn editor() -> &'static api::editor::Editor {
             }
         })
     })
+}
+
+/// Upload a local folder and what is in it into a OneDrive folder (the
+/// picker's Upload ▸ Folder); the files uploaded.
+fn upload_tree<'a>(client: &'a TeamsClient, drive_id: &'a str, parent_id: &'a str, dir: &'a std::path::Path) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<usize>> + Send + 'a>> {
+    Box::pin(async move {
+        let name = dir.file_name().and_then(|n| n.to_str()).unwrap_or("Folder").to_string();
+        let folder = api::drive::new_folder(client, drive_id, parent_id, &name).await?;
+        let drive = if folder.drive_id.is_empty() { drive_id.to_string() } else { folder.drive_id.clone() };
+        let mut n = 0;
+        let mut entries: Vec<_> = std::fs::read_dir(dir)?.filter_map(|e| e.ok()).map(|e| e.path()).collect();
+        entries.sort();
+        for p in entries {
+            if p.is_dir() {
+                n += upload_tree(client, &drive, &folder.id, &p).await?;
+            } else {
+                api::drive::upload(client, &drive, &folder.id, &p).await?;
+                n += 1;
+            }
+        }
+        Ok(n)
+    })
+}
+
+/// Teams' Write with Copilot session (its own AugLoop socket, opened on
+/// the first rewrite).
+fn compose_copilot() -> &'static api::compose_copilot::Copilot {
+    static C: OnceLock<api::compose_copilot::Copilot> = OnceLock::new();
+    C.get_or_init(|| {
+        let flights = api::ecs::setting("augloop", "runtimeFlights").map(|r| {
+            let x = api::ecs::setting("augloop", "experimentationRuntimeFlights").unwrap_or_default();
+            api::compose_copilot::flights(&serde_json::json!({"runtimeFlights": r, "experimentationRuntimeFlights": x}))
+        });
+        let flights = flights.unwrap_or_else(|| api::compose_copilot::flights(&serde_json::json!({})));
+        api::compose_copilot::Copilot::start(runtime().handle(), &app_locale().to_lowercase(), flights, |e| {
+            let Some(qt) = QT_THREAD.get() else { return };
+            let (request, html, done, error) = match e {
+                api::compose_copilot::Event::Partial { request, html } => (request, html, false, String::new()),
+                api::compose_copilot::Event::Done { request, html } => (request, html, true, String::new()),
+                api::compose_copilot::Event::Failed { request, error } => (request, String::new(), true, error),
+            };
+            let text = api::compose_copilot::streaming_text(&html);
+            let _ = qt.queue(move |mut this| {
+                this.as_mut().compose_copilot_update(QString::from(request.as_str()), QString::from(html.as_str()), QString::from(text.as_str()), done, QString::from(error.as_str()))
+            });
+        })
+    })
+}
+
+/// The signed-in user's tenant (for Copilot's request context).
+static TENANT_ID: OnceLock<String> = OnceLock::new();
+
+/// Whether Teams offers Write with Copilot: Teams' rule (module 319919,
+/// ComposeChat / ComposeChannels*) is the compose Copilot setting with
+/// AugLoop on, for a user whose licence details say Copilot.
+pub fn compose_copilot_state(license: Option<&serde_json::Value>) -> serde_json::Value {
+    let on = |ns: &str, key: &str, dflt: bool| api::ecs::setting(ns, key).and_then(|v| v.as_bool()).unwrap_or(dflt);
+    let licensed = license.and_then(|l| l["isCopilot"].as_bool()).unwrap_or(false);
+    let allowed = licensed && on("compose", "enableComposeCopilot", false) && on("augloop", "enableAugLoopService", false);
+    serde_json::json!({"allowed": allowed, "proofread": allowed && on("compose", "enableComposeRewriteProofread", false)})
 }
 
 /// Editor's options by language, as its service lists them.
@@ -9746,6 +9820,19 @@ impl qobject::Backend {
                                 ),
                                 Err(e) => tracing::warn!("ECS settings: {}", short_error(&e)),
                             }
+                            // Write with Copilot needs the licence and the
+                            // settings.
+                            if let Ok(client) = TeamsClient::new().await {
+                                if let Some(t) = client.tenant_id() {
+                                    let _ = TENANT_ID.set(t.to_string());
+                                }
+                                let license = api::ecs::license(&client).await;
+                                let state = compose_copilot_state(license.as_ref()).to_string();
+                                tracing::info!("compose Copilot: {state}");
+                                if let Some(qt) = QT_THREAD.get() {
+                                    let _ = qt.queue(move |mut this| this.as_mut().set_compose_copilot_json(QString::from(state.as_str())));
+                                }
+                            }
                             // The apps that unfurl links (app link cards).
                             let r = async {
                                 let client = TeamsClient::new().await?;
@@ -11417,6 +11504,15 @@ impl qobject::Backend {
 
     pub fn editor_close(self: Pin<&mut Self>, doc: &QString) {
         editor().close(&doc.to_string());
+    }
+
+    pub fn compose_copilot_rewrite(self: Pin<&mut Self>, request: &QString, rewrite_json: &QString) {
+        let request = request.to_string();
+        let mut r: api::compose_copilot::Rewrite = serde_json::from_str(&rewrite_json.to_string()).unwrap_or_default();
+        if r.tenant_id.is_empty() {
+            r.tenant_id = TENANT_ID.get().cloned().unwrap_or_default();
+        }
+        compose_copilot().rewrite(&request, r);
     }
 
     pub fn editor_add_word(self: Pin<&mut Self>, word: &QString) {
@@ -15927,9 +16023,13 @@ impl qobject::Backend {
                             // Pictures and videos (not SharePoint's own
                             // "__siteIcon__" pictures).
                             "media" => json!({ "items": deco(api::drive::media(&client).await?.into_iter().filter(|i| !i.name.starts_with("__")).collect()) }),
-                            "people" => json!({ "people": api::drive::by_people(&client).await?.into_iter()
-                                .map(|(name, items)| json!({ "name": name, "items": deco(items) }))
-                                .collect::<Vec<_>>() }),
+                            "people" => {
+                                let order = api::cloud_attach::collaborators(&client).await.unwrap_or_default();
+                                let me = client.display_name().unwrap_or_default();
+                                json!({ "people": api::cloud_attach::order_people(api::drive::by_people(&client).await?, &order, &me).into_iter()
+                                    .map(|(name, items)| json!({ "name": name, "items": deco(items) }))
+                                    .collect::<Vec<_>>() })
+                            }
                             // A channel's folder ("Browse Teams and Channels").
                             "channel" => {
                                 json!({ "folder": api::drive::channel_folder(&client, &s("team_id"), &s("channel_id")).await? })
@@ -15951,6 +16051,22 @@ impl qobject::Backend {
                         api::drive::set_favorite_by_url(&s("site"), &s("url"), on).await?;
                         json!({ "url": s("url"), "name": s("name"), "on": on })
                     }
+                    // The compose card's Link settings, applied: the chosen
+                    // link made now (in a chat, "People currently in this
+                    // chat" names its members), as OneDrive's Link settings
+                    // does for Teams.
+                    "attach_link" => {
+                        let r = api::sharing::ItemRef { site: s("site"), list: s("list"), item: s("item") };
+                        let scope = args["scope"].as_i64().unwrap_or(4);
+                        let people: Vec<serde_json::Value> = if scope == 4 {
+                            api::cloud_attach::chat_people(&client, &s("chat_id")).await.iter().map(|(e, n, o)| api::sharing::picker_entry(e, n, o)).collect()
+                        } else {
+                            Vec::new()
+                        };
+                        let body = api::sharing::compose_link_body(scope, args["edit"].as_bool().unwrap_or(true), &s("expiration"), &s("password"), &people);
+                        let (url, share_id) = api::sharing::create_link_for(&r, &body).await?;
+                        json!({ "url": url, "share_id": share_id, "scope": api::cloud_attach::permission_scope(scope) })
+                    }
                     "attach_prepare" => {
                         let f = api::cloud_attach::prepare(&client, &item).await?;
                         let pic = api::drive::DriveItem { id: f.item_id.clone(), drive_id: f.drive_id.clone(), ..Default::default() };
@@ -15960,6 +16076,34 @@ impl qobject::Backend {
                     "picker_search" => json!({ "query": s("query"), "all": args["all"].as_bool().unwrap_or(false), "dates": s("dates"),
                         "items": api::drive::search_folders(&client, &s("query"), args["all"].as_bool().unwrap_or(false), api::drive::date_filter_days(&s("dates"))).await? }),
                     "picker_new_folder" => json!(api::drive::new_folder(&client, &s("drive_id"), &s("item_id"), &s("name")).await?),
+                    // The cloud file picker's command bar: Create a folder
+                    // (with its colour) and Upload (files, or a folder and
+                    // what is in it) into the folder shown.
+                    "picker_create_folder" => {
+                        let (d, i) = (s("drive_id"), s("item_id"));
+                        let here = if i.is_empty() { api::drive::root(&client, &d).await? } else { api::drive::item(&client, &d, &i).await? };
+                        let color = args["color"].as_u64().unwrap_or(0) as usize;
+                        if color == 0 {
+                            json!(api::drive::new_folder(&client, &d, &i, &s("name")).await?)
+                        } else {
+                            api::cloud_attach::create_folder(&here.web_url, &s("name"), color).await?;
+                            json!({ "name": s("name") })
+                        }
+                    }
+                    "picker_upload" => {
+                        let (d, i) = (s("drive_id"), s("item_id"));
+                        let mut n = 0;
+                        for p in args["paths"].as_array().into_iter().flatten().filter_map(|p| p.as_str()) {
+                            let p = std::path::PathBuf::from(p.strip_prefix("file://").unwrap_or(p));
+                            if p.is_dir() {
+                                n += upload_tree(&client, &d, &i, &p).await?;
+                            } else {
+                                api::drive::upload(&client, &d, &i, &p).await?;
+                                n += 1;
+                            }
+                        }
+                        json!({ "uploaded": n })
+                    }
                     "folders" => {
                         let (d, i) = (s("drive_id"), s("item_id"));
                         let (here, items, rows) = tokio::join!(

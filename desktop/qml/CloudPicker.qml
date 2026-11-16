@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls.Basic
+import QtQuick.Dialogs
 
 // Teams' Attach cloud files: OneDrive's file picker (FilePicker.aspx,
 // "files" mode, several at once, Attach and Cancel), measured on winpc
@@ -29,8 +30,23 @@ import QtQuick.Controls.Basic
 // - The footer (80): "{n} selected ✕" (radius 18, 0.67 #605E5C) at 24, 24;
 //   Attach (80 x 32, brand, radius 2; #F5F5F5 / #BDBDBD while nothing is
 //   picked) and Cancel.
-// Not built yet: the command bar (New folder, Upload, the view switch),
-// Media's layout and zoom controls, and a person's own page.
+// - A folder's command bar (measured 2026-11-16; 285.6 x 44 at the top
+//   right, y 20): New folder (108.2; a 16 px brand glyph at 8, the label 14
+//   #424242 at 32), Upload (100.8, an 8 px #8A8A8A chevron: Files, Folder),
+//   a 0.67 x 20 #D2D0CE line, and the view switch (48: List, Compact List,
+//   Tiles). New folder opens OneDrive's "Create a folder" (Name, the 16
+//   folder colours, Create / Cancel; a colour goes through
+//   foldercoloring/createfolder).
+// - Compact List: 32 px rows, 20 px icons, Name 300, Modified 150,
+//   Modified By 150, File Size 150, Sharing 170. Tiles: 159.5 x 135 cells
+//   12 apart, the folder drawing 72 wide with its count, the name and date
+//   (12 px) under it.
+// - Shared folders carry OneDrive's people mark (#8F3900): 12 px at 15, 12
+//   on a 32 px folder, 7 px at 10, 6.7 on a 20 px one, 16 px on a tile.
+// Not built yet: Media's layout menu (River, Waterfall, Square, Inline
+// dates, Show file names), its compact toggle, zoom and date headings, and
+// a person's own page; People lists who shared files with you in OneDrive's
+// collaborator order (Teams also lists files you shared with them).
 Popup {
     id: dlg
     parent: Overlay.overlay
@@ -61,6 +77,12 @@ Popup {
     property var selected: []
     property bool navOpen: false
     property var quickAccess: []
+    /// The folders' view: "list", "compact" or "tiles".
+    property string view: "list"
+    /// The folder shown ({drive_id, item_id}), for New folder and Upload.
+    readonly property var here: trail.length ? trail[trail.length - 1] : null
+    readonly property bool folderView: trail.length > 0 && place !== "more"
+    function reload() { if (here) ask("folders", { drive_id: here.drive_id, item_id: here.item_id }) }
     readonly property var placeTitles: ({ home: "Home", shared: "Shared with you", favorites: "Favorites", people: "People", meetings: "Meetings", media: "Media", more: "Shared libraries" })
     readonly property var emptyStates: ({ shared: ["Shared files will show up here", "empty-shared-v3.png"],
                                           favorites: ["Items you favorite will show up here", "empty-favorites-v3.png"],
@@ -152,6 +174,11 @@ Popup {
             if (kind === "libraries") { dlg.rows = (v || []).map(l => ({ name: l.name, library: l, is_folder: true })); return }
             dlg.people = v && v.people ? v.people : []
             dlg.rows = v && v.items ? v.items : []
+            if (dlg.openWhenListed) {
+                const f = dlg.rows.find(r => r.is_folder && r.name === dlg.openWhenListed)
+                dlg.openWhenListed = ""
+                if (f) dlg.openFolder(f)
+            }
         }
     }
 
@@ -271,7 +298,8 @@ Popup {
         // other places' files.
         Rectangle {
             id: table
-            visible: dlg.place !== "home" && dlg.place !== "people" && dlg.place !== "media" && dlg.rows.length > 0
+            visible: dlg.place !== "home" && dlg.place !== "people" && dlg.place !== "media" && dlg.rows.length > 0 && !(dlg.folderView && dlg.view === "tiles")
+            readonly property bool compact: dlg.folderView && dlg.view === "compact"
             x: 16; y: 80; width: content.width - 40; height: dlg.height - 80 - y
             radius: 12; color: theme.surface
             border.color: theme.pick("#F0F0F0", "#333333", "#FFFFFF"); border.width: 0.67
@@ -285,7 +313,8 @@ Popup {
                 PickCircle { x: 23; anchors.verticalCenter: parent.verticalCenter; shown: tableHead.hovered; on: dlg.allPicked(); TapHandler { onTapped: dlg.pickAll() } }
                 FluentIcon { x: 64; anchors.verticalCenter: parent.verticalCenter; size: 16; name: "document-16"; color: dlg.faint }
                 Repeater {
-                    model: [["Name", 104], ["Modified", 374], ["Modified By", 544], ["Activity", 694]]
+                    model: table.compact ? [["Name", 92.3], ["Modified", 392.3], ["Modified By", 542.3], ["File Size", 692.3], ["Sharing", 842.3]]
+                                         : [["Name", 104], ["Modified", 374], ["Modified By", 544], ["Activity", 694]]
                     Text {
                         required property var modelData
                         x: modelData[1]; anchors.verticalCenter: parent.verticalCenter
@@ -303,39 +332,68 @@ Popup {
                     required property var modelData
                     readonly property bool sel: dlg.isSelected(modelData)
                     readonly property color cell: sel ? dlg.ink : dlg.faint
-                    width: ListView.view.width; height: 59
+                    readonly property bool compact: table.compact
+                    width: ListView.view.width; height: compact ? 32 : 59
                     color: sel ? theme.pick("#CFE4FA", "#0C3B5E", "#000000") : frHover.hovered ? theme.pick("#F5F5F5", "#2E2E2E", "#1AEBFF") : "transparent"
                     Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: fr.sel ? "transparent" : theme.pick("#F5F5F5", "#2E2E2E", "#000000") }
-                    PickCircle { visible: !fr.modelData.is_folder; x: 23; y: 20.5; on: fr.sel; shown: frHover.hovered || fr.sel }
+                    PickCircle { visible: !fr.modelData.is_folder; x: 23; y: fr.compact ? 7 : 20.5; on: fr.sel; shown: frHover.hovered || fr.sel }
                     SiteTile { visible: !!fr.modelData.library; x: 58; y: 13.5; size: 32; acronym: fr.modelData.library ? dlg.acronymOf(fr.modelData.library.site || fr.modelData.name) : "" }
                     FluentIcon {
+                        id: frIcon
                         visible: !fr.modelData.library
-                        x: 58; y: 13.5; size: 32
-                        name: fr.modelData.is_folder ? (fr.modelData.special === "shortcuts" ? "ft-companyfolder-32" : "ft-folder-32") : dlg.typeIcon(fr.modelData.kind)
+                        x: fr.compact ? 64.3 : 58; y: fr.compact ? 6 : 13.5; size: fr.compact ? 20 : 32
+                        name: (fr.modelData.is_folder ? (fr.modelData.special === "shortcuts" ? "ft-companyfolder-32" : "ft-folder-32") : dlg.typeIcon(fr.modelData.kind)).replace("-32", fr.compact ? "-20" : "-32")
+                        swaps: fr.modelData.is_folder && fr.modelData.special !== "shortcuts" ? theme.folderSwaps(fr.modelData.folder_color) : ({})
+                    }
+                    // OneDrive's people mark on a shared folder.
+                    FluentIcon {
+                        visible: !!fr.modelData.is_folder && fr.modelData.sharing === "Shared" && fr.modelData.special !== "shortcuts"
+                        x: frIcon.x + (fr.compact ? 10 : 15); y: frIcon.y + (fr.compact ? 6.7 : 12)
+                        size: fr.compact ? 7 : 12; name: fr.compact ? "person-16" : "people-12"; color: "#8F3900"
                     }
                     Text {
+                        visible: !fr.compact
                         x: 104; y: fr.meta ? 11.5 : 19.2; width: 260; elide: Text.ElideRight
                         text: fr.modelData.name
                         font.family: theme.font; font.pixelSize: 14; color: theme.onFill(fr, dlg.ink)
                     }
                     readonly property string meta: modelData.library ? "" : modelData.is_folder ? dlg.itemCount(modelData.child_count) : dlg.sizeText(modelData.size)
+                    // Compact List: one line, then Modified, Modified By, File
+                    // Size and Sharing.
+                    Text {
+                        visible: fr.compact
+                        x: 92.3; anchors.verticalCenter: parent.verticalCenter; width: 290; elide: Text.ElideRight
+                        text: fr.modelData.name
+                        font.family: theme.font; font.pixelSize: 14; color: theme.onFill(fr, dlg.ink)
+                    }
+                    Repeater {
+                        model: fr.compact ? [[392.3, fr.modelData.modified_text || ""], [542.3, fr.modelData.modified_by || ""],
+                                             [692.3, fr.modelData.is_folder ? dlg.itemCount(fr.modelData.child_count) : dlg.sizeText(fr.modelData.size)],
+                                             [842.3, fr.modelData.sharing || ""]] : []
+                        Text {
+                            required property var modelData
+                            x: modelData[0]; anchors.verticalCenter: parent.verticalCenter; width: 140; elide: Text.ElideRight
+                            text: modelData[1]
+                            font.family: theme.font; font.pixelSize: 14; color: theme.onFill(fr, fr.cell)
+                        }
+                    }
                     Row {
-                        visible: !!fr.meta
+                        visible: !!fr.meta && !fr.compact
                         x: 104; y: 30.9; spacing: 0
                         Text { text: fr.meta; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(fr, fr.cell) }
                         Text { visible: fr.modelData.sharing === "Shared"; text: " • "; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(fr, fr.cell) }
                         FluentIcon { visible: fr.modelData.sharing === "Shared"; y: 3.6; size: 12; name: "people-12"; color: theme.onFill(fr, fr.cell) }
                     }
-                    Text { x: 374; anchors.verticalCenter: parent.verticalCenter; width: 150; elide: Text.ElideRight; text: fr.modelData.modified_text || ""; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(fr, fr.cell) }
-                    Text { x: 544; anchors.verticalCenter: parent.verticalCenter; width: 130; elide: Text.ElideRight; text: fr.modelData.modified_by || ""; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(fr, fr.cell) }
+                    Text { visible: !fr.compact; x: 374; anchors.verticalCenter: parent.verticalCenter; width: 150; elide: Text.ElideRight; text: fr.modelData.modified_text || ""; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(fr, fr.cell) }
+                    Text { visible: !fr.compact; x: 544; anchors.verticalCenter: parent.verticalCenter; width: 130; elide: Text.ElideRight; text: fr.modelData.modified_by || ""; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(fr, fr.cell) }
                     FluentIcon {
-                        visible: !!fr.modelData.activity
+                        visible: !!fr.modelData.activity && !fr.compact
                         x: 694; anchors.verticalCenter: parent.verticalCenter; size: 14
                         name: fr.modelData.activity ? dlg.activityIcon(fr.modelData.activity.kind) : ""
                         color: theme.onFill(fr, theme.pick("#0078D4", "#479EF5", "#FFFFFF"))
                     }
                     Text {
-                        visible: !!fr.modelData.activity
+                        visible: !!fr.modelData.activity && !fr.compact
                         x: 712; anchors.verticalCenter: parent.verticalCenter; width: fr.width - x - 12
                         elide: Text.ElideRight
                         text: fr.modelData.activity ? fr.modelData.activity.text + " " + fr.modelData.activity.time : ""
@@ -350,6 +408,84 @@ Popup {
             }
         }
 
+        // Tiles.
+        GridView {
+            id: tiles
+            visible: dlg.folderView && dlg.view === "tiles" && dlg.rows.length > 0 && dlg.place !== "people" && dlg.place !== "media"
+            x: 16; y: 88; width: content.width - 32; height: dlg.height - 80 - y
+            clip: true; boundsBehavior: Flickable.StopAtBounds
+            cellWidth: 171.5; cellHeight: 147
+            model: visible ? dlg.rows : []
+            delegate: Item {
+                id: tl
+                required property var modelData
+                readonly property bool sel: dlg.isSelected(modelData)
+                width: 159.5; height: 135
+                Rectangle { anchors.fill: parent; radius: 4; color: tl.sel ? theme.pick("#CFE4FA", "#0C3B5E", "#000000") : tlHover.hovered ? theme.pick("#F5F5F5", "#2E2E2E", "#1AEBFF") : "transparent" }
+                Item {
+                    visible: !!tl.modelData.is_folder
+                    x: 43.7; y: 21.5; width: 72; height: 52
+                    FluentIcon { x: 0; y: -10; size: 72; name: "ft-folder-32"; swaps: theme.folderSwaps(tl.modelData.folder_color) }
+                    Text { x: 4; y: 34; text: tl.modelData.child_count || 0; font.family: theme.font; font.pixelSize: 12; color: "#8F3900" }
+                    FluentIcon { visible: tl.modelData.sharing === "Shared"; x: 52; y: 33.2; size: 16; name: "people-16"; color: "#8F3900" }
+                }
+                Image {
+                    visible: !tl.modelData.is_folder
+                    x: 39.75; y: 8; width: 80; height: 72
+                    fillMode: Image.PreserveAspectFit
+                    source: dlg.thumbs[tl.modelData.id] || ""
+                    Component.onCompleted: if (!tl.modelData.is_folder) dlg.wantThumb(tl.modelData)
+                    FluentIcon { visible: parent.status !== Image.Ready; anchors.centerIn: parent; size: 32; name: dlg.typeIcon(tl.modelData.kind) }
+                }
+                Text {
+                    x: 6; y: 90; width: parent.width - 12; horizontalAlignment: Text.AlignHCenter; elide: Text.ElideRight
+                    text: tl.modelData.name
+                    font.family: theme.font; font.pixelSize: 12; color: theme.onFill(tl, dlg.ink)
+                }
+                Text {
+                    x: 6; y: 107; width: parent.width - 12; horizontalAlignment: Text.AlignHCenter; elide: Text.ElideRight
+                    text: tl.modelData.modified_text || ""
+                    font.family: theme.font; font.pixelSize: 12; color: theme.onFill(tl, dlg.faint)
+                }
+                HoverHandler { id: tlHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: dlg.toggle(tl.modelData) }
+                Accessible.role: tl.modelData.is_folder ? Accessible.Button : Accessible.CheckBox
+                Accessible.name: modelData.name
+                Accessible.checked: sel
+            }
+        }
+
+        // The folder's command bar.
+        Row {
+            id: commandBar
+            visible: dlg.folderView
+            x: content.width - 285.6 + 10; y: 20; height: 44
+            CmdItem { icon: "folder-add-20"; label: "New folder"; w: 108.2; onClicked: dlg.openNewFolder() }
+            CmdItem { id: uploadItem; icon: "arrow-upload-16"; label: "Upload"; w: 100.8; chevron: true; onClicked: uploadMenu.open() }
+            Item {
+                width: 4.7; height: 44
+                Rectangle { x: 2; y: 10; width: 0.67; height: 20; color: theme.pick("#D2D0CE", "#605E5C", "#FFFFFF") }
+            }
+            CmdItem { id: viewItem; icon: dlg.view === "tiles" ? "grid-16" : dlg.view === "compact" ? "text-align-left-16" : "list-16"; label: ""; tip: "View options"; w: 48; chevron: true; onClicked: viewMenu.open() }
+        }
+        MenuPopup {
+            id: uploadMenu
+            parent: uploadItem
+            fabric: true; fabricWidth: 180
+            x: 0; y: uploadItem.height
+            items: [{ label: "Files", icon: "document-arrow-up-20" }, { label: "Folder", icon: "folder-arrow-up-20" }]
+            onPicked: i => { if (i === 0) uploadFiles.open(); else uploadFolder.open() }
+        }
+        MenuPopup {
+            id: viewMenu
+            parent: viewItem
+            fabric: true; fabricWidth: 180
+            x: viewItem.width - 180; y: viewItem.height
+            items: [{ label: "List", icon: "list-16", checked: dlg.view === "list" }, { label: "Compact List", icon: "text-align-left-16", checked: dlg.view === "compact" },
+                    { label: "Tiles", icon: "grid-16", checked: dlg.view === "tiles" }]
+            onPicked: i => dlg.view = ["list", "compact", "tiles"][i]
+        }
+
         // People: each person and their files.
         Column {
             visible: dlg.place === "people"
@@ -360,7 +496,7 @@ Popup {
                     id: pr
                     required property var modelData
                     width: parent.width; height: 65
-                    Avatar { x: 4; anchors.verticalCenter: parent.verticalCenter; size: 32; name: pr.modelData.name }
+                    Avatar { x: 4; anchors.verticalCenter: parent.verticalCenter; size: 40; name: pr.modelData.name }
                     Text {
                         x: 76; anchors.verticalCenter: parent.verticalCenter; width: 170; elide: Text.ElideRight
                         text: pr.modelData.name
@@ -375,19 +511,22 @@ Popup {
                                 id: chip
                                 required property var modelData
                                 readonly property bool sel: dlg.isSelected(modelData)
-                                width: 198; height: 41.3; radius: 6
+                                width: chipName.x + chipName.width + 8 + chipPill.width + 8; height: 41.3; radius: 6
                                 color: sel ? theme.pick("#CFE4FA", "#0C3B5E", "#000000") : theme.surface
                                 FluentSurface { z: -1; anchors.fill: parent; depth: 2; radius: 6 }
-                                FluentIcon { x: 12.7; anchors.verticalCenter: parent.verticalCenter; size: 16; name: dlg.typeIcon(chip.modelData.kind).replace("-32", "-20") }
+                                FluentIcon { x: 8.7; anchors.verticalCenter: parent.verticalCenter; size: 16; name: dlg.typeIcon(chip.modelData.kind).replace("-32", "-20") }
                                 Text {
-                                    x: 32.7; anchors.verticalCenter: parent.verticalCenter; width: 82; elide: Text.ElideRight
+                                    id: chipName
+                                    x: 32.7; anchors.verticalCenter: parent.verticalCenter; width: Math.min(implicitWidth, 120); elide: Text.ElideRight
                                     text: chip.modelData.name.replace(/\.[^.]+$/, "")
                                     font.family: theme.font; font.pixelSize: 12; color: theme.onFill(chip, theme.text)
                                 }
                                 Rectangle {
-                                    x: 118.4; anchors.verticalCenter: parent.verticalCenter; width: 71; height: 24; radius: 20
+                                    id: chipPill
+                                    x: chipName.x + chipName.width + 0.7; anchors.verticalCenter: parent.verticalCenter; width: chipTime.implicitWidth + 24; height: 24; radius: 20
                                     color: theme.pick("#F5F5F5", "#2E2E2E", "#000000")
                                     Text {
+                                        id: chipTime
                                         anchors.centerIn: parent
                                         text: chip.modelData.modified_text || ""
                                         font.family: theme.font; font.pixelSize: 10; color: dlg.label
@@ -591,6 +730,165 @@ Popup {
         }
     }
 
+    // New folder: OneDrive's "Create a folder" (measured 2026-11-16: the
+    // title 20/28 600, Name 14/600 over a 390.7 x 32 box "Enter your folder
+    // name", Folder color 14/600 over 24 px swatches 51 apart in two rows of
+    // eight, the picked one ringed white and #0078D4; Create (brand; off
+    // until a name) and Cancel).
+    function openNewFolder() { newFolderName.text = ""; newFolderColor = 0; newFolderDialog.open(); newFolderName.forceActiveFocus() }
+    property int newFolderColor: 0
+    property string openWhenListed: ""
+    function createFolder() {
+        const n = newFolderName.text.trim()
+        if (!n || !here) return
+        newFolderDialog.close()
+        loading = true
+        backend.driveAction(tag + "picker_create_folder", "{}", JSON.stringify({ drive_id: here.drive_id, item_id: here.item_id, name: n, color: newFolderColor }))
+    }
+    Connections {
+        target: backend
+        function onDriveActionDone(op, result, error) {
+            if (op !== dlg.tag + "picker_create_folder" && op !== dlg.tag + "picker_upload") return
+            dlg.loading = false
+            if (error) console.warn("picker:", op, error)
+            // Teams opens the folder it made.
+            else if (op === dlg.tag + "picker_create_folder") dlg.openWhenListed = JSON.parse(result).name || ""
+            dlg.reload()
+        }
+    }
+    Popup {
+        id: newFolderDialog
+        parent: Overlay.overlay
+        modal: true
+        anchors.centerIn: Overlay.overlay
+        width: 390.7 + 2 * 24; padding: 24
+        background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
+        Overlay.modal: Rectangle { color: "transparent" }
+        Column {
+            width: 390.7
+            spacing: 0
+            Item {
+                width: parent.width; height: 28
+                Text { text: "Create a folder"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text; lineHeight: 28; lineHeightMode: Text.FixedHeight }
+                Rectangle {
+                    id: nfClose
+                    x: 374.7; y: -12; width: 32; height: 30; radius: 4
+                    color: nfCloseHover.hovered ? theme.menuHover : "transparent"
+                    FluentIcon { anchors.centerIn: parent; size: 20; name: "dismiss-20"; color: theme.onFill(nfClose, theme.pick("#424242", "#D6D6D6", "#FFFFFF")) }
+                    HoverHandler { id: nfCloseHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: newFolderDialog.close() }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: "Close"
+                }
+            }
+            Item { width: 1; height: 8 }
+            Text { text: "Name"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text; lineHeight: 20; lineHeightMode: Text.FixedHeight }
+            Item { width: 1; height: 10 }
+            Rectangle {
+                width: 390.7; height: 32; radius: 4; color: theme.surface
+                border.width: 0.67; border.color: theme.pick("#B3B3B3", "#757575", "#FFFFFF")
+                Rectangle { anchors.bottom: parent.bottom; x: 0.67; width: parent.width - 1.33; height: newFolderName.activeFocus ? 2 : 0.67; color: newFolderName.activeFocus ? theme.pick("#0F6CBD", "#479EF5", "#FFFFFF") : theme.pick("#4D4D4D", "#ADADAD", "#FFFFFF") }
+                TextInput {
+                    id: newFolderName
+                    x: 8.7; width: parent.width - 17.4; anchors.verticalCenter: parent.verticalCenter
+                    font.family: theme.font; font.pixelSize: 14; color: theme.text; clip: true; selectByMouse: true
+                    Keys.onReturnPressed: dlg.createFolder()
+                    Text { visible: !newFolderName.text; text: "Enter your folder name"; font: newFolderName.font; color: theme.textSecondary }
+                    Accessible.role: Accessible.EditableText
+                    Accessible.name: "Name"
+                }
+            }
+            Item { width: 1; height: 28 }
+            Text { text: "Folder color"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text; lineHeight: 20; lineHeightMode: Text.FixedHeight }
+            Item { width: 1; height: 6 }
+            Grid {
+                columns: 8; columnSpacing: 27; rowSpacing: 18
+                x: 4; topPadding: 6
+                Repeater {
+                    model: theme.folderColors.slice().sort((a, b) => Number(a.code) - Number(b.code))
+                    Item {
+                        id: sw
+                        required property var modelData
+                        readonly property bool on: dlg.newFolderColor === Number(modelData.code)
+                        width: 24; height: 24
+                        Rectangle { visible: sw.on; anchors.centerIn: parent; width: 32; height: 32; radius: 16; color: "transparent"; border.width: 2; border.color: theme.pick("#0078D4", "#479EF5", "#FFFFFF") }
+                        Rectangle { anchors.centerIn: parent; width: 24; height: 24; radius: 12; color: sw.modelData.hex }
+                        HoverHandler { cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: dlg.newFolderColor = Number(sw.modelData.code) }
+                        Accessible.role: Accessible.RadioButton
+                        Accessible.name: modelData.name
+                        Accessible.checked: on
+                    }
+                }
+            }
+            Item { width: 1; height: 26 }
+            Row {
+                anchors.right: parent.right
+                spacing: 12
+                Rectangle {
+                    id: nfCreate
+                    readonly property bool on: !!newFolderName.text.trim()
+                    width: 121; height: 32; radius: 2
+                    color: on ? (nfCreateHover.hovered ? theme.brandHover : theme.brand) : theme.pick("#F5F5F5", "#2E2E2E", "#000000")
+                    Text { anchors.centerIn: parent; text: "Create"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(nfCreate, parent.on ? "white" : theme.pick("#BDBDBD", "#5C5C5C", "#3FF23F")) }
+                    HoverHandler { id: nfCreateHover; enabled: parent.on; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { enabled: parent.on; onTapped: dlg.createFolder() }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: "Create"
+                }
+                Rectangle {
+                    id: nfCancel
+                    width: 83.3; height: 32; radius: 2
+                    color: nfCancelHover.hovered ? theme.menuHover : theme.surface
+                    border.width: 0.67; border.color: theme.pick("#8A8886", "#666666", "#FFFFFF")
+                    Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(nfCancel, theme.text) }
+                    HoverHandler { id: nfCancelHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: newFolderDialog.close() }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: "Cancel"
+                }
+            }
+        }
+    }
+    FileDialog {
+        id: uploadFiles
+        title: "Upload"
+        fileMode: FileDialog.OpenFiles
+        onAccepted: dlg.upload(selectedFiles.map(u => decodeURIComponent(u.toString().replace(/^file:\/\//, ""))))
+    }
+    FolderDialog {
+        id: uploadFolder
+        title: "Upload"
+        onAccepted: dlg.upload([decodeURIComponent(selectedFolder.toString().replace(/^file:\/\//, ""))])
+    }
+    function upload(paths) {
+        if (!here || !paths.length) return
+        loading = true
+        backend.driveAction(tag + "picker_upload", "{}", JSON.stringify({ drive_id: here.drive_id, item_id: here.item_id, paths: paths }))
+    }
+    component CmdItem: Item {
+        id: ci
+        property string icon
+        property string label
+        property string tip: label
+        property real w: 100
+        property bool chevron: false
+        signal clicked()
+        width: w; height: 44
+        Rectangle { anchors.fill: parent; color: ciHover.hovered ? theme.pick("#F3F2F1", "#2E2E2E", "#1AEBFF") : "transparent" }
+        FluentIcon { x: 8; y: 14; size: 16; name: ci.icon; color: theme.pick("#5B5FC7", "#7F85F5", "#FFFFFF") }
+        Text {
+            visible: !!ci.label
+            x: 32; y: 15; text: ci.label
+            font.family: theme.font; font.pixelSize: 14; color: theme.pick("#424242", "#D6D6D6", "#FFFFFF")
+        }
+        FluentIcon { visible: ci.chevron; x: ci.label ? ci.width - 16 : 32; y: 18; size: 8; name: "chevron-down-12"; color: theme.pick("#8A8A8A", "#ADADAD", "#FFFFFF") }
+        HoverHandler { id: ciHover; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: ci.clicked() }
+        ToolTip.visible: !ci.label && ciHover.hovered; ToolTip.delay: 500; ToolTip.text: ci.tip
+        Accessible.role: Accessible.Button
+        Accessible.name: ci.tip || ci.label
+    }
     component RailItem: Item {
         id: ri
         property string key: ""
@@ -681,6 +979,7 @@ Popup {
                  selected: selected.map(s => s.name), loading: loading, nav: navOpen, quick: quickAccess.map(q => q.label) }
     }
     function pickForTest(name) { const r = rows.find(x => x.name === name); if (r) toggle(r); return !!r }
-    function openForTest(key) { if (key === "nav") navOpen = !navOpen; else openPlace(key) }
+    function openForTest(key) { if (key === "nav") navOpen = !navOpen; else if (key.startsWith("view:")) view = key.slice(5); else if (key === "newfolder") openNewFolder(); else openPlace(key) }
+    function closeDialogsForTest() { newFolderDialog.close(); uploadMenu.close(); viewMenu.close() }
     function attachForTest() { attach() }
 }

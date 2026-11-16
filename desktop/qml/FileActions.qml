@@ -200,27 +200,8 @@ Item {
     TextEdit { id: copier; visible: false }
     function copy(text) { copier.text = text; copier.selectAll(); copier.copy() }
 
-    // OneDrive's sixteen folder colours, in the picker's order, with their
-    // codes and the shades its folder drawing uses (main, background,
-    // accent, gradient start, gradient stop, count).
-    readonly property var folderColors: [
-        { code: "0", name: "Yellow", hex: "#FFCE3C", shades: ["#FFCE3C", "#F5B800", "#B64D07", "#FFE561", "#FFB515", "#8F3900"] },
-        { code: "8", name: "Grey", hex: "#B0B7BA", shades: ["#B0B7BA", "#96A3A7", "#575757", "#BDBFBF", "#A0ADB2", "#361500"] },
-        { code: "1", name: "Dark red", hex: "#E73E29", shades: ["#E73E29", "#D62E1F", "#590700", "#FF5028", "#C92828", "#000000"] },
-        { code: "9", name: "Light red", hex: "#FFBCB2", shades: ["#FFBCB2", "#F58076", "#BD2113", "#FFC7BA", "#FF9191", "#910C00"] },
-        { code: "2", name: "Dark orange", hex: "#EE7110", shades: ["#EE7110", "#E56000", "#6B2500", "#FF8E1D", "#DB5101", "#361500"] },
-        { code: "10", name: "Light orange", hex: "#FFBF84", shades: ["#FFBF84", "#FF8E3D", "#A14200", "#FFC48A", "#FF8C4A", "#782E00"] },
-        { code: "3", name: "Dark green", hex: "#3F9F4A", shades: ["#3F9F4A", "#33852C", "#053B00", "#5EB75A", "#1D8539", "#001404"] },
-        { code: "11", name: "Light green", hex: "#8ED290", shades: ["#8ED290", "#5BC26B", "#0B6E1A", "#B6E6AC", "#62BD71", "#00520A"] },
-        { code: "4", name: "Dark teal", hex: "#27938E", shades: ["#27938E", "#037D81", "#003133", "#3DB7AB", "#106E70", "#000000"] },
-        { code: "12", name: "Light teal", hex: "#7AD1CD", shades: ["#7AD1CD", "#5DC6C9", "#07676B", "#94EBE2", "#5DB4B6", "#0E4E4E"] },
-        { code: "5", name: "Dark blue", hex: "#1E84D0", shades: ["#1E84D0", "#036DC9", "#032F54", "#2F9ADE", "#0E6EC2", "#000000"] },
-        { code: "13", name: "Light blue", hex: "#86C8F7", shades: ["#86C8F7", "#73B3EB", "#1F64A1", "#9FDAFF", "#6EB6F0", "#004881"] },
-        { code: "6", name: "Dark purple", hex: "#9A61C7", shades: ["#9A61C7", "#7E54B8", "#370086", "#BC7ADD", "#7342AD", "#000000"] },
-        { code: "14", name: "Light purple", hex: "#D4AFF6", shades: ["#D4AFF6", "#BA90F5", "#7A2AD2", "#E2BFFA", "#BD94EF", "#5915A1"] },
-        { code: "7", name: "Dark pink", hex: "#CC53B4", shades: ["#CC53B4", "#BC4293", "#5C003D", "#E36DE3", "#BA3E91", "#000000"] },
-        { code: "15", name: "Light pink", hex: "#F7AAE7", shades: ["#F7AAE7", "#ED87CB", "#B8148C", "#FFBEFF", "#F097D2", "#8F0069"] }
-    ]
+    // OneDrive's sixteen folder colours (Theme.folderColors).
+    readonly property var folderColors: theme.folderColors
     function colorFor(code) { return folderColors.find(c => c.code === String(code || "0")) || folderColors[0] }
 
     MenuPopup {

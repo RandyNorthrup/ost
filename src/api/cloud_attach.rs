@@ -43,6 +43,46 @@ pub struct CloudFile {
     pub scope: String,
     /// The invite's role: "write" for an edit link, else "read".
     pub role: String,
+    /// A link chosen in the card's Link settings (made when it was
+    /// applied): its address and id. Empty: Teams' default link, shared on
+    /// send.
+    #[serde(default)]
+    pub share_url: String,
+    #[serde(default)]
+    pub share_id: String,
+}
+
+/// The record's `permissionScope` for a Link settings choice (0 anyone,
+/// 1 your organisation, 2 people you choose, 3 existing access, 4 people in
+/// this chat). "specificPeople" for this chat is Teams' own (OST TEST 172);
+/// the others follow SharePoint's scope names.
+pub fn permission_scope(scope: i64) -> &'static str {
+    match scope {
+        0 => "Anyone",
+        1 => "Organization",
+        3 => "existingAccess",
+        _ => "specificPeople",
+    }
+}
+
+/// The people in a chat (you too) as Link settings' picker names them:
+/// (address, name, directory id).
+pub async fn chat_people(client: &TeamsClient, chat_id: &str) -> Vec<(String, String, String)> {
+    let mut oids = super::files::member_oids(client, chat_id).await.unwrap_or_default();
+    if let Some(me) = client.object_id() {
+        oids.insert(0, me);
+    }
+    let mut out = Vec::new();
+    for oid in oids.iter().take(50) {
+        if let Ok(r) = client.graph_get(&format!("/users/{oid}?$select=mail,userPrincipalName,displayName")).await {
+            let u: Value = r.json().await.unwrap_or_default();
+            let mail = [&u["mail"], &u["userPrincipalName"]].into_iter().map(s).find(|m| !m.is_empty()).unwrap_or_default();
+            if !mail.is_empty() {
+                out.push((mail, s(&u["displayName"]), oid.clone()));
+            }
+        }
+    }
+    out
 }
 
 fn s(v: &Value) -> String {
@@ -90,6 +130,7 @@ pub fn parse(item: &DriveItem, shares: &Value, commands: &Value) -> CloudFile {
         link_description: s(&commands["invite"]["defaultLinkDescription"]),
         scope: s(&link["scope"]),
         role: if edit { "write" } else { "read" }.to_string(),
+        ..Default::default()
     }
 }
 
@@ -98,7 +139,13 @@ pub fn parse(item: &DriveItem, shares: &Value, commands: &Value) -> CloudFile {
 pub async fn prepare(client: &TeamsClient, item: &DriveItem) -> Result<CloudFile> {
     let found;
     let item = if item.drive_id.is_empty() {
-        found = super::drive::item_by_url(client, &item.web_url).await.unwrap_or_else(|_| item.clone());
+        let mut f = super::drive::item_by_url(client, &item.web_url).await.unwrap_or_else(|_| item.clone());
+        // Graph answers an Office file with its Doc.aspx page; the record
+        // carries the file's own address, as Teams' does (OST TEST 172).
+        if !item.web_url.contains("/_layouts/") {
+            f.web_url = item.web_url.clone();
+        }
+        found = f;
         &found
     } else {
         item
@@ -197,6 +244,11 @@ pub fn record(f: &CloudFile, share: (&str, &str), channel: bool) -> Value {
 /// does and return the record; in a channel, the record alone.
 pub async fn send_record(client: &TeamsClient, chat_id: &str, f: &CloudFile) -> Result<Value> {
     let channel = chat_id.contains("@thread.tacv2");
+    // A link chosen in Link settings goes as it is: no invite (Teams,
+    // OST TEST 172).
+    if !f.share_url.is_empty() {
+        return Ok(record(f, (&f.share_url, &f.share_id), channel));
+    }
     if channel {
         return Ok(record(f, ("", ""), true));
     }
@@ -221,6 +273,91 @@ pub async fn send_record(client: &TeamsClient, chat_id: &str, f: &CloudFile) -> 
     Ok(record(f, (&share.0, &share.1), false))
 }
 
+/// The cloud file picker's "Create a folder" colours, in OneDrive's order
+/// (their ColorHex is the index): Yellow is OneDrive's own folder.
+pub const FOLDER_COLORS: [(&str, &str); 16] = [
+    ("Yellow", "#FFCE3C"), ("Dark red", "#E73E29"), ("Dark orange", "#EE7110"), ("Dark green", "#3F9F4A"),
+    ("Dark teal", "#27938E"), ("Dark blue", "#1E84D0"), ("Dark purple", "#9A61C7"), ("Dark pink", "#CC53B4"),
+    ("Grey", "#B0B7BA"), ("Light red", "#FFBCB2"), ("Light orange", "#FFBF84"), ("Light green", "#8ED290"),
+    ("Light teal", "#7AD1CD"), ("Light blue", "#86C8F7"), ("Light purple", "#D4AFF6"), ("Light pink", "#F7AAE7"),
+];
+
+/// A folder's site and server-relative path from its address
+/// ("https://x-my.sharepoint.com/personal/a/Documents/F" is
+/// "https://x-my.sharepoint.com/personal/a" and "/personal/a/Documents/F").
+pub fn site_and_path(web_url: &str) -> (String, String) {
+    let host = host(web_url);
+    let raw = web_url[host.len().min(web_url.len())..].to_string();
+    let path = percent_decode(&raw);
+    let segs: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+    let site = match segs.as_slice() {
+        [kind, name, ..] if ["personal", "sites", "teams"].contains(kind) => format!("{host}/{kind}/{name}"),
+        _ => host.clone(),
+    };
+    (site, path)
+}
+
+fn percent_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' && i + 2 < b.len() {
+            if let Ok(v) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
+                out.push(v);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// OneDrive's Create a folder with its colour (the picker's dialog, OST TEST
+/// 174): `POST {site}/_api/foldercoloring/createfolder(DecodedUrl=@a1,
+/// overwrite=@a2)` with the colour's index as ColorHex.
+pub fn create_folder_request(parent_url: &str, name: &str, color: usize) -> (String, Value) {
+    let (site, path) = site_and_path(parent_url);
+    let full = format!("{}/{}", path.trim_end_matches('/'), name.trim());
+    let quoted = format!("'{}'", full.replace('\'', "''"));
+    let enc: String = url::form_urlencoded::byte_serialize(quoted.as_bytes()).collect::<String>().replace('+', "%20");
+    (
+        format!("{site}/_api/foldercoloring/createfolder(DecodedUrl=@a1,overwrite=@a2)?@a1={enc}&@a2=false&$Expand=ListItemAllFields/PermMask"),
+        json!({ "coloringInformation": { "__metadata": { "type": "SP.FolderColoringInformation" }, "ColorHex": color.min(15).to_string() } }),
+    )
+}
+
+pub async fn create_folder(parent_url: &str, name: &str, color: usize) -> Result<()> {
+    let (url, body) = create_folder_request(parent_url, name, color);
+    let verbose = [("accept", "application/json;odata=verbose"), ("content-type", "application/json;odata=verbose")];
+    sharing::post_with(&url, &body, &verbose).await.context("Creating the folder")?;
+    Ok(())
+}
+
+/// OneDrive's collaborators, in its order (`sp.PeopleCollection.
+/// GetCollaboratorsAsStream`, substrate's people suggestions): the
+/// picker's People view is sorted by them.
+pub async fn collaborators(client: &TeamsClient) -> Result<Vec<String>> {
+    let personal = super::quick_access::personal_site(client).await?;
+    let reply = sharing::get_with(&format!("{personal}/_api/sp.PeopleCollection.GetCollaboratorsAsStream?top=100"), &[("accept", "application/json")]).await?;
+    Ok(parse_collaborators(&reply))
+}
+
+pub fn parse_collaborators(reply: &Value) -> Vec<String> {
+    reply["Groups"].as_array().into_iter().flatten().flat_map(|g| g["Suggestions"].as_array().cloned().unwrap_or_default())
+        .map(|p| s(&p["DisplayName"])).filter(|n| !n.is_empty()).collect()
+}
+
+/// People's rows: who shared files with you, in OneDrive's collaborator
+/// order (people it doesn't know last), without you.
+pub fn order_people(mut people: Vec<(String, Vec<DriveItem>)>, order: &[String], me: &str) -> Vec<(String, Vec<DriveItem>)> {
+    people.retain(|(n, items)| !n.eq_ignore_ascii_case(me) && !items.is_empty());
+    people.sort_by_key(|(n, _)| order.iter().position(|o| o.eq_ignore_ascii_case(n)).unwrap_or(usize::MAX));
+    people
+}
+
 /// A file on the picker's Home (OneDrive's recent files) or in the Attach
 /// popover's suggestions.
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
@@ -239,6 +376,31 @@ pub struct RecentFile {
     pub activity: String,
     pub activity_user: String,
     pub activity_time: String,
+    /// The Attach popover's line: "Opened 4 days ago" (Teams'
+    /// files_lastAccessedTimeLabel with date-fns' strict distance).
+    pub opened_ago: String,
+}
+
+/// date-fns' `formatDistanceStrict` in English, as Teams' file suggestions
+/// word how long ago you opened a file ("4 days", "1 hour").
+pub fn distance_strict(then: chrono::DateTime<chrono::Utc>, now: chrono::DateTime<chrono::Utc>) -> String {
+    let ms = (now - then).num_milliseconds().unsigned_abs() as f64;
+    let mins = ms / 60_000.0;
+    let (n, unit) = if ms < 60_000.0 {
+        ((ms / 1000.0).round(), "second")
+    } else if mins < 60.0 {
+        (mins.round(), "minute")
+    } else if mins < 1440.0 {
+        ((mins / 60.0).round(), "hour")
+    } else if mins < 43_200.0 {
+        ((mins / 1440.0).round(), "day")
+    } else if mins < 525_600.0 {
+        ((mins / 43_200.0).round(), "month")
+    } else {
+        ((mins / 525_600.0).round(), "year")
+    };
+    let n = n as i64;
+    format!("{n} {unit}{}", if n == 1 { "" } else { "s" })
 }
 
 fn local(t: &str) -> Option<chrono::DateTime<chrono::Local>> {
@@ -276,6 +438,7 @@ pub fn parse_recent(reply: &Value, now: chrono::DateTime<chrono::Local>) -> Vec<
                 activity: s(&a["message_format"]),
                 activity_user: a["users"].get(0).map(|u| s(&u["display_name"])).unwrap_or_default(),
                 activity_time: local(&s(&a["timestamp"])).map(|t| super::list_rows::activity_time(t, now)).unwrap_or_default(),
+                opened_ago: String::new(),
                 name,
             }))
         })
@@ -330,7 +493,13 @@ pub fn parse_suggestions(reply: &Value) -> Vec<RecentFile> {
     hits.into_iter()
         .map(|h| if h["Source"].is_object() { &h["Source"] } else if h["Resource"].is_object() { &h["Resource"] } else { h })
         .filter_map(|h| {
-            let url = first(h, &["AccessUrl", "FileUrl", "DocumentLink", "WebUrl", "Url", "Path"]);
+            // The file's own address (a recommendation's Url; WebUrl is its
+            // Doc.aspx page).
+            let url = first(h, &["AccessUrl", "FileUrl", "Url", "DocumentLink", "WebUrl", "Path"]);
+            let accessed = first(&h["UserRelationship"], &["LastAccessDateTime"]);
+            let opened_ago = chrono::DateTime::parse_from_rfc3339(&accessed)
+                .map(|t| format!("Opened {} ago", distance_strict(t.with_timezone(&chrono::Utc), chrono::Utc::now())))
+                .unwrap_or_default();
             let name = first(h, &["FileName", "Name", "Title", "Text", "DisplayName"]);
             if url.is_empty() || name.is_empty() {
                 return None;
@@ -342,6 +511,7 @@ pub fn parse_suggestions(reply: &Value) -> Vec<RecentFile> {
                 owner: first(h, &["Author", "FileOwner", "CreatedBy"]),
                 web_url: url,
                 name,
+                opened_ago,
                 ..Default::default()
             })
         })
@@ -418,6 +588,40 @@ mod tests {
     }
 
     #[test]
+    fn suggestions_word_when_you_opened_them() {
+        // ost-test1's recommendation (2026-11-16): opened Nov 12, shown as
+        // "Opened 4 days ago".
+        let r = parse_suggestions(&json!({"EntitySets":[{"ResultSets":[{"Results":[{"Source":{"FileExtension":"docx","FileName":"ost-open-test.docx","SiteTitle":"OST Test 1",
+            "Url":"https://x/Documents/ost-open-test.docx","WebUrl":"https://x/_layouts/15/Doc.aspx?sourcedoc=%7BA867%7D","UserRelationship":{"LastAccessDateTime":"2026-11-12T17:50:21Z"}}}]}]}]}));
+        assert_eq!((r[0].web_url.as_str(), r[0].kind.as_str()), ("https://x/Documents/ost-open-test.docx", "docx"));
+        assert!(r[0].opened_ago.starts_with("Opened ") && r[0].opened_ago.ends_with(" ago"));
+        let t = |s: &str| chrono::DateTime::parse_from_rfc3339(s).unwrap().with_timezone(&chrono::Utc);
+        let now = t("2026-11-16T15:20:00Z");
+        assert_eq!(distance_strict(t("2026-11-12T17:50:21Z"), now), "4 days");
+        assert_eq!(distance_strict(t("2026-11-16T15:19:30Z"), now), "30 seconds");
+        assert_eq!(distance_strict(t("2026-11-16T14:20:00Z"), now), "1 hour");
+        assert_eq!(distance_strict(t("2026-11-16T15:05:00Z"), now), "15 minutes");
+        assert_eq!(distance_strict(t("2026-09-16T15:20:00Z"), now), "2 months");
+    }
+
+    #[test]
+    fn folders_are_made_as_onedrive_makes_them() {
+        let (url, body) = create_folder_request("https://scnetsolutions-my.sharepoint.com/personal/ost-test1_scnetsolutions_com/Documents", "OST TEST 174 folder color", 5);
+        assert_eq!(url, "https://scnetsolutions-my.sharepoint.com/personal/ost-test1_scnetsolutions_com/_api/foldercoloring/createfolder(DecodedUrl=@a1,overwrite=@a2)?@a1=%27%2Fpersonal%2Fost-test1_scnetsolutions_com%2FDocuments%2FOST%20TEST%20174%20folder%20color%27&@a2=false&$Expand=ListItemAllFields/PermMask");
+        assert_eq!(body, json!({"coloringInformation":{"__metadata":{"type":"SP.FolderColoringInformation"},"ColorHex":"5"}}));
+        assert_eq!(site_and_path("https://x.sharepoint.com/sites/OSTTestTeam/Shared%20Documents/General"),
+            ("https://x.sharepoint.com/sites/OSTTestTeam".to_string(), "/sites/OSTTestTeam/Shared Documents/General".to_string()));
+    }
+
+    #[test]
+    fn people_follow_onedrives_collaborators() {
+        let order = parse_collaborators(&json!({"Groups":[{"Suggestions":[{"DisplayName":"OST Test 2"},{"DisplayName":"Randy Northrup"}],"Type":"People"}]}));
+        let f = |n: &str| DriveItem { name: n.into(), ..Default::default() };
+        let p = order_people(vec![("Randy Northrup".into(), vec![f("a")]), ("OST Test 1".into(), vec![f("b")]), ("OST Test 2".into(), vec![f("c")]), ("Someone".into(), vec![])], &order, "OST Test 1");
+        assert_eq!(p.iter().map(|x| x.0.as_str()).collect::<Vec<_>>(), vec!["OST Test 2", "Randy Northrup"]);
+    }
+
+    #[test]
     fn meetings_read_onedrives_cache() {
         // ost-test1's answer (2026-11-13): no meetings' files.
         assert!(parse_meeting_files(&json!({"value":["[]",""]})).is_empty());
@@ -476,6 +680,19 @@ mod tests {
         let r = record(&picked(), (share, "67083923-f796-4541-805a-e20842b2727f"), false);
         let teams = json!({"itemid":"1dd3508e-41d2-4fb6-8358-d55e775d08eb","fileName":"ost-share-test.txt","fileType":"txt","fileInfo":{"itemId":"01BV7C2BEOKDJR3USBWZHYGWGVLZ3V2CHL","fileUrl":FILE,"siteUrl":SITE,"serverRelativeUrl":"","shareUrl":share,"shareId":"67083923-f796-4541-805a-e20842b2727f"},"fileChicletState":{"serviceName":"p2p","state":"reference"},"@type":"http://schema.skype.com/File","version":2,"id":"1dd3508e-41d2-4fb6-8358-d55e775d08eb","baseUrl":SITE,"objectUrl":FILE,"openUrl":null,"type":"txt","title":"ost-share-test.txt","state":"reference","altText":null,"chicletBreadcrumbs":{"sourceChannelName":"ost-test1_scnetsolutions_com","sourceTeamName":"personal"},"providerData":"","botFileProperties":{},"isUploadError":false,"progressComplete":null,"permissionScope":"Anyone","filePreview":{"previewUrl":"","previewHeight":null,"previewWidth":null},"sharepointIds":{"driveId":"b!MwwW-kqjBUeHth9igC2X38_TsCGeK_ZFoS7894LJkjPzGAoOGxCQQKU-HiTE2Y79","listId":"0e0a18f3-101b-4090-a53e-1e24c4d98efd","listItemUniqueId":"1dd3508e-41d2-4fb6-8358-d55e775d08eb","siteId":"fa160c33-a34a-4705-87b6-1f62802d97df","siteUrl":SITE,"webId":"21b0d3cf-2b9e-45f6-a12e-fcf782c99233"},"publication":{"level":null,"versionId":null},"site":{"dataLocationCode":null,"template":{"id":null}}});
         assert_eq!(r, teams);
+    }
+
+    #[test]
+    fn chosen_links_go_as_they_are() {
+        // "OST TEST 172": People currently in this chat, applied in the
+        // card's Link settings.
+        let f = CloudFile { share_url: "https://x/:w:/p/ost-test1/IQD0".into(), share_id: "00fa6784-76be-4a28-bcfc-d84d0eb245e0".into(), scope: permission_scope(4).into(), ..picked() };
+        let r = record(&f, (&f.share_url, &f.share_id), false);
+        assert_eq!((r["fileInfo"]["shareUrl"].as_str(), r["permissionScope"].as_str()), (Some("https://x/:w:/p/ost-test1/IQD0"), Some("specificPeople")));
+        let b = super::sharing::compose_link_body(4, true, "", "", &[super::sharing::picker_entry("ost-test2@scnetsolutions.com", "OST Test 2", "9edcc62f-2f4b-4f55-bbf9-02c7cbaadbb5")]);
+        assert_eq!(b["request"]["settings"], json!({"linkKind":6,"expiration":null,"role":2,"restrictShareMembership":true,"updatePassword":false,"password":"","scope":2,"nav":""}));
+        let people: Value = serde_json::from_str(b["request"]["peoplePickerInput"].as_str().unwrap()).unwrap();
+        assert_eq!((people[0]["Key"].as_str(), people[0]["EntityData"]["ObjectId"].as_str()), (Some("i:0#.f|membership|ost-test2@scnetsolutions.com"), Some("9edcc62f-2f4b-4f55-bbf9-02c7cbaadbb5")));
     }
 
     #[test]

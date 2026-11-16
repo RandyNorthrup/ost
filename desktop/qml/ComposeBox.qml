@@ -305,6 +305,8 @@ Item {
     signal attachRequested(Item anchor)
     /// A cloud file's card closed (Remove attachment).
     signal cloudRemoved(string key)
+    /// The card's link description: Teams' Link settings for that file.
+    signal cloudLinkRequested(string key)
     /// "+" ▸ Record video clip (offered where `canRecordClip`).
     signal recordClipRequested()
     property bool canRecordClip: false
@@ -1059,12 +1061,21 @@ Item {
                                 lineHeight: 16; lineHeightMode: Text.FixedHeight
                                 font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text
                             }
+                            // The link's description: a button that opens
+                            // Link settings (Teams' file-permission-trigger;
+                            // #4F52B2 and underlined on hover).
                             Text {
-                                x: 60; y: 25; width: 154.4
+                                id: ccLink
+                                x: 60; y: 25; width: Math.min(implicitWidth, 206.4)
                                 elide: Text.ElideRight
-                                text: cc.modelData.file ? cc.modelData.file.link_description : ""
+                                text: cc.modelData.linking ? "Updating link settings..." : cc.modelData.file ? cc.modelData.file.link_description : ""
                                 lineHeight: 20; lineHeightMode: Text.FixedHeight
-                                font.family: theme.font; font.pixelSize: 12; color: theme.pick("#424242", "#D6D6D6", "#FFFFFF")
+                                font.family: theme.font; font.pixelSize: 12; font.underline: ccLinkHover.hovered
+                                color: ccLinkHover.hovered ? theme.pick("#4F52B2", "#7F85F5", "#FFFF00") : theme.pick("#424242", "#D6D6D6", "#FFFFFF")
+                                HoverHandler { id: ccLinkHover; enabled: !!cc.modelData.file && !cc.modelData.linking; cursorShape: Qt.PointingHandCursor }
+                                TapHandler { enabled: !!cc.modelData.file && !cc.modelData.linking; onTapped: root.cloudLinkRequested(cc.modelData.key) }
+                                Accessible.role: Accessible.Button
+                                Accessible.name: text
                             }
                             Rectangle {
                                 id: hcFill7
@@ -1311,8 +1322,37 @@ Item {
         { id: "expand-compose", icon: "format-20", label: root.formatting ? "Hide Formatting options" : "Show Formatting options", pressed: root.formatting },
         { id: "UnifiedFunPicker", icon: "emoji-20", label: "Emoji, GIFs and Stickers", hidden: root.textOnly },
         { id: "FilePicker", icon: "attach-20", label: "Attach files (Alt+Shift+O)", hidden: root.editing || root.textOnly },
+        { id: "open-compose-copilot", icon: "pen-sparkle-20", label: "Write with Copilot (Alt+A)", hidden: root.editing || root.textOnly || !root.copilotAllowed, pressed: copilotPopover.opened },
         { id: "message-extension-flyout-command", icon: "add-20", label: "Actions and apps", hidden: root.editing || root.textOnly }
     ].filter(t => !t.hidden)
+    // Write with Copilot (Teams' compose Copilot): for a Microsoft 365
+    // Copilot licence where Teams' settings turn it on, between Attach
+    // files and Loop components, in chats, channel posts and replies.
+    readonly property var copilotState: backend.composeCopilotJson ? JSON.parse(backend.composeCopilotJson) : ({})
+    readonly property bool copilotAllowed: !!copilotState.allowed
+    function openCopilot(anchor) {
+        if (!root.copilotAllowed) return
+        if (copilotPopover.opened) { copilotPopover.close(); return }
+        copilotPopover.toolbar = anchor || null
+        copilotPopover.openFor()
+    }
+    function copilotForTest() { return copilotPopover }
+    CopilotPopover {
+        id: copilotPopover
+        compose: root
+        box: box
+        postMode: root.post
+        proofread: root.copilotState.proofread !== false
+        threadId: root.chatId
+        contextType: String(root.chatId || backend.currentChatId).indexOf("@thread.tacv2") >= 0 ? "Channel" : "Chat"
+        onReplaced: html => { root.setHtml(html); root.focusEditor() }
+    }
+    Shortcut {
+        sequence: "Alt+A"
+        // In a call Alt+A is mute (Main), as in Teams.
+        enabled: root.copilotAllowed && input.activeFocus && backend.callState !== "connected"
+        onActivated: root.openCopilot(null)
+    }
     readonly property var endModel: root.editing
         ? [{ id: "discard-draft", icon: "dismiss-20", label: "Cancel" }, { id: "send", icon: "checkmark-20", label: "Done" }]
         : [{ id: "send", icon: "send-20", label: "Send", ready: !root.empty }]
@@ -1332,6 +1372,7 @@ Item {
         if (id === "expand-compose") { formatting = !formatting; input.forceActiveFocus() }
         else if (id === "UnifiedFunPicker") root.emojiRequested(item)
         else if (id === "FilePicker") root.attachRequested(item)
+        else if (id === "open-compose-copilot") root.openCopilot(item)
         else if (id === "message-extension-flyout-command") { plusFlyout.anchorItem = item; plusFlyout.open() }
         else if (id === "discard-draft") root.requestCancel()
         else if (id === "send") root.trySubmit()
@@ -1381,7 +1422,7 @@ Item {
         const text = root.plainText().replace(/[\u00a0\ufffc\ufdd0\ufdd1]/g, " ")
         const html = root.formattedText()
         // FileEvaluator and VideoMessageEvaluator: uploads still going.
-        if (root.cloudFiles.some(c => c.loading) || (root.clip && (root.clip.uploading || !root.clip.id))) return "Uploading... Please wait."
+        if (root.cloudFiles.some(c => c.loading || c.linking) || (root.clip && (root.clip.uploading || !root.clip.id))) return "Uploading... Please wait."
         // EmptyContentEvaluator: nothing but spaces (files and cards count).
         if (!text.trim() && root.mediaInUse().length === 0 && root.files.length === 0 && root.cloudFiles.length === 0 && !root.clip && !root.appCard)
             return "Please type a message to continue."
@@ -1403,8 +1444,9 @@ Item {
     readonly property var postTools: [
         { id: "UnifiedFunPicker", icon: "emoji-20", label: "Emoji, GIFs and Stickers" },
         { id: "FilePicker", icon: "attach-20", label: "Attach files" },
+        { id: "open-compose-copilot", icon: "pen-sparkle-20", label: "Write with Copilot (Alt+A)", hidden: !root.copilotAllowed, pressed: copilotPopover.opened },
         { id: "message-extension-flyout-command", icon: "add-20", label: "Actions and apps" }
-    ]
+    ].filter(t => !t.hidden)
     /// Back to an empty post composer.
     function resetPost() { subject = ""; headline = ""; bannerTheme = "0"; announcement = false; bannerImage = ""; bannerImageW = 0; bannerImageH = 0 }
     /// The next post's fields for backend.setNextPost.

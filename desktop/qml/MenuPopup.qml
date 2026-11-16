@@ -55,6 +55,9 @@ Popup {
     /// for it (Teams' Pause notifications: "10 minutes" at 6,
     /// "Notifications settings" at 30).
     property bool perItemIcons: false
+    /// Item rows this tall (Teams' Write with Copilot Adjust menu: 38);
+    /// 0 keeps the default.
+    property real rowHeight: 0
     function rowLabelX(i) { return checkColumn ? (i.icon ? 54 : 30) : perItemIcons ? (i.icon ? 30 : 6) : labelX }
     padding: viewStyle ? 16.67 : fabric ? 0 : 4
     /// Rows at least this wide (Teams' More menu and its submenus: 230).
@@ -177,7 +180,7 @@ Popup {
                 width: root.width - 2 * root.padding
                 // A divider takes 1 px plus 4 above and below (the column's
                 // 2 px gaps count towards those).
-                height: modelData.separator ? root.separatorHeight : modelData.toggle || root.fabric ? 36 : 32
+                height: modelData.separator ? root.separatorHeight : root.rowHeight > 0 && !modelData.heading ? root.rowHeight : modelData.toggle || root.fabric ? 36 : 32
                 Rectangle {
                     visible: !!row.modelData.separator
                     anchors.verticalCenter: parent.verticalCenter

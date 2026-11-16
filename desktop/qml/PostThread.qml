@@ -576,19 +576,41 @@ Item {
         }
         files: win.pendingFiles
         onFileRemoved: path => win.pendingFiles = win.pendingFiles.filter(p => p !== path)
+        // Teams' Attach popover, as in the channel (its suggestions, Attach
+        // cloud files, Browse Teams and Channels, Upload from this device).
+        chatId: win.channelId
+        cloudFiles: cloudAttach.pending
+        onCloudRemoved: key => cloudAttach.remove(key)
+        onCloudLinkRequested: key => cloudAttach.openLink(key)
         onQuoteDismissed: quote = null
         onEmojiRequested: a => thost.openEmojiFor(compose)
-        onAttachRequested: filePicker.open()
+        onAttachRequested: a => win.openAttach(a)
         onSubmit: win.send()
-        onCancelled: { quote = null; win.pendingFiles = [] }
+        onCancelled: { quote = null; win.pendingFiles = []; cloudAttach.clear() }
         Component.onCompleted: if (!win.inPane) focusEditor()
     }
     signal agentStoreRequested(string channelId)
     property var pendingFiles: []
+    CloudAttach {
+        id: cloudAttach
+        chatId: win.channelId
+        channel: true
+        teamName: win.teamName
+        teamId: win.teamId
+        onUploadRequested: filePicker.open()
+        onFailed: text => compose.showBanner(text, false, 3000)
+    }
+    function openAttach(anchor) {
+        cloudAttach.context = win.thread.filter(m => m.kind !== "call" && !m.deleted).slice(-3).reverse()
+            .map(m => ({ id: m.id, text: m.text || "", sender: String(m.sender_mri || "").replace(/^8:orgid:/, ""), time: m.time }))
+        cloudAttach.openMenu(anchor || compose)
+    }
+    function cloudAttachForTest() { return cloudAttach }
     function send() {
-        if (win.pendingFiles.length) {
-            backend.sendThreadFiles(channelId, rootId, win.pendingFiles.join("\n"), compose.plainText())
+        if (win.pendingFiles.length || cloudAttach.hasFiles) {
+            backend.sendThreadFiles(channelId, rootId, win.pendingFiles.concat(cloudAttach.lines()).join("\n"), compose.plainText())
             win.pendingFiles = []
+            cloudAttach.clear()
         } else {
             backend.sendThreadReply(channelId, rootId, compose.formattedText(), JSON.stringify(compose.mediaInUse()), compose.quote ? JSON.stringify(compose.quote) : "", false)
         }

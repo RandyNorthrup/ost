@@ -24,8 +24,13 @@ import QtQuick.Controls.Basic
 //   cloud, 14 px), Browse Teams and Channels in a channel (people-team,
 //   16), Upload from this device (arrow-upload, 16); the last ends 9.4
 //   above the bottom.
-// The suggestions' rows weren't measured (ost-test1 has none); OST draws
-// each as the picker's Home does: its type icon, name and location.
+// - Recent-file suggestions (measured 2026-11-16, when ost-test1 had
+//   one): "Recent cloud files" (14/20 600 at 8.2, 44.7), then 52 px rows
+//   from 12.2, 74.7 (282.2 wide, radius 4, #F5F5F5 on hover with the name
+//   in the brand colour): the 20 px type icon at 4.5, 15, the name (14/17)
+//   at 34.5, 7.6 and "Opened {time} ago" (12/18 #616161) at 34.5, 23.6;
+//   the time is date-fns' strict distance ("4 days"). Search results use
+//   the same rows without the heading (their rows weren't seen yet).
 Popup {
     id: pop
     property Item anchorItem: null
@@ -124,28 +129,37 @@ Popup {
     }
 
     // Recent-file suggestions or search results.
+    Text {
+        visible: pop.hits.length > 0 && !pop.query
+        x: 8.2; y: 44.7; height: 25; verticalAlignment: Text.AlignVCenter
+        text: "Recent cloud files"
+        font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text
+        Accessible.role: Accessible.Heading
+        Accessible.name: text
+    }
     ListView {
         id: list
         visible: pop.hits.length > 0
-        x: 0; y: 44; width: pop.width; height: (pop.noResults ? pop.height : pop.lineY) - y
+        x: 12.2; y: pop.query ? 49.7 : 74.7; width: 282.2; height: (pop.noResults ? pop.height : pop.lineY) - y - 8
         clip: true
         model: pop.hits
         boundsBehavior: Flickable.StopAtBounds
         delegate: Rectangle {
             id: hit
             required property var modelData
-            width: list.width; height: 56
-            color: hitHover.hovered ? theme.menuHover : "transparent"
-            FluentIcon { x: 16; y: 12; size: 32; name: pop.typeIcon(hit.modelData.kind) }
+            width: list.width; height: 52; radius: 4
+            color: hitHover.hovered ? theme.pick("#F5F5F5", "#2E2E2E", "#1AEBFF") : "transparent"
+            FluentIcon { x: 4.5; y: 15; size: 20; name: pop.typeIcon(hit.modelData.kind).replace("-32", "-20") }
             Text {
-                x: 60; y: 9.8; width: parent.width - x - 16
+                x: 34.5; y: 7.6; width: parent.width - x - 8; height: 17
                 text: hit.modelData.name; elide: Text.ElideRight
-                font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hit, theme.text)
+                font.family: theme.font; font.pixelSize: 14
+                color: theme.onFill(hit, hitHover.hovered ? theme.pick("#5B5FC7", "#7F85F5", "#000000") : theme.text)
             }
             Text {
-                x: 60; y: 29.5; width: parent.width - x - 16
-                text: hit.modelData.location || ""; elide: Text.ElideRight
-                font.family: theme.font; font.pixelSize: 12; color: theme.onFill(hit, theme.textSecondary)
+                x: 34.5; y: 23.6; width: parent.width - x - 8; height: 18
+                text: hit.modelData.opened_ago || hit.modelData.location || ""; elide: Text.ElideRight
+                font.family: theme.font; font.pixelSize: 12; color: theme.onFill(hit, theme.pick("#616161", "#ADADAD", "#000000"))
             }
             HoverHandler { id: hitHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: { pop.close(); pop.picked(hit.modelData) } }
@@ -265,7 +279,7 @@ Popup {
 
     /// Tests: the popover's state.
     function stateForTest() {
-        return { query: query, loading: loading, hits: hits.length, noResults: noResults, items: items.map(i => i.label), x: x, y: y, lineY: lineY }
+        return { query: query, loading: loading, hits: hits.length, rows: hits.map(h => h.name + " | " + (h.opened_ago || "")), noResults: noResults, items: items.map(i => i.label), x: x, y: y, lineY: lineY }
     }
     function searchForTest(q) { field.text = q }
 }
