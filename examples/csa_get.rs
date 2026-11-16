@@ -12,6 +12,7 @@ async fn main() -> anyhow::Result<()> {
         .get(&url)
         .bearer_auth(&token)
         .header("x-ms-client-type", "windows")
+        .header("x-ms-client-version", "1415/26092208401")
         .send()
         .await?;
     println!("{}", resp.status());

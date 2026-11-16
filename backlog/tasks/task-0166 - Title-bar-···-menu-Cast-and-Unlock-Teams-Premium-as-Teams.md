@@ -3,11 +3,11 @@ id: TASK-0166
 title: >-
   Title bar ··· menu as Teams: every item (Premium, Cast, Downloads, Zoom, Get
   the mobile app)
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-16T00:26:00Z'
-updated_date: '2026-11-16T02:19:00Z'
+updated_date: '2026-11-16T02:20:00Z'
 labels:
   - desktop
   - shell
@@ -48,3 +48,30 @@ Teams' title bar Settings and more menu (measured 2026-11-15): 229 wide with 32-
   - Teams' Request a license sent a request at once (Centro app); it was rejected in the admin center. OST opens that app in the browser.
   - Re-check after 2026-11-16, once the cancellation finishes, for the state after Premium ends.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Settings and more (the title bar ···) now matches Teams: every item, Zoom, Teams Premium's trial, Cast, Downloads and Get the mobile app.
+
+Changes:
+- Menu: Teams' items, order, dividers and geometry (238.47 wide, 32-tall rows, the Zoom row, the New pill).
+- Zoom: 60–400% in 5% steps, Ctrl+- / Ctrl+= / Ctrl+0, with the whole window scaling; kept across restarts.
+- Teams Premium:
+  - Unlock Teams Premium, its offer dialog, and Start trial with the wait and "now active" pages.
+  - The trial's "N days left" button and home, Your benefits with Premium, Cancel trial and its confirmation.
+  - "Get Premium" and You've got Teams Premium! after cancelling.
+  - All on the auth service's lfts/TeamsPremium (api::premium).
+- Cast: Teams' dark Cast window, searching for 20 s, then nothing found.
+- Downloads: the WebView2 downloads hub Teams shows, over OST's own download history (api::downloads).
+- Get the mobile app: Teams' QR code and store badges.
+
+Tests:
+- 554 library tests pass.
+- Harnesses --menu-test, --zoom-test and --premium-test, with pictures compared to Teams on winpc and a 150% zoom screen capture.
+
+Notes:
+- A Premium trial was started and then cancelled on ost-test1 to measure it.
+- Teams' Request a license sent a request at once; it was rejected in the admin center.
+- Re-check the state after the cancellation finishes (from 2026-11-16).
+<!-- SECTION:FINAL_SUMMARY:END -->

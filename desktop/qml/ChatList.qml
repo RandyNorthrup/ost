@@ -160,9 +160,10 @@ Rectangle {
 
     function isMeeting(c) { return !!c.meeting || (c.id || "").indexOf("19:meeting_") === 0 }
     function chatShown(c) {
-        // Teams doesn't list chats nothing has been said in, or ones you
-        // hid, unless open.
-        if ((c.empty || c.hidden) && c.id !== root.currentId) return false
+        // Teams leaves out lobby and breakout room chats, chats you left,
+        // empty one-on-ones and chats you hid, unless open (api::chat's
+        // unlisted); chats nothing has been said in are listed.
+        if ((c.unlisted || c.hidden) && c.id !== root.currentId) return false
         if (category === "channels" || category === "communities") return false
         if (category === "chats" && isMeeting(c)) return false
         if (category === "meetings" && !isMeeting(c)) return false

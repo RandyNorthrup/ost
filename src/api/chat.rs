@@ -24,6 +24,27 @@ struct Conversation {
     last_message: Option<NativeMessage>,
     /// Your own properties for the chat (`alerts`, `consumptionhorizon`…).
     properties: Option<std::collections::HashMap<String, serde_json::Value>>,
+    /// Your membership (`interest`, `memberExpirationTime`, `role`…).
+    #[serde(rename = "memberProperties")]
+    member_properties: Option<serde_json::Value>,
+}
+
+/// Whether Teams' chat list leaves a chat out (checked against Teams'
+/// list on winpc, 2026-11-15). Teams lists chats nothing has been said in
+/// yet (group chats and meeting chats alike), but not:
+/// - an empty one-on-one chat;
+/// - a meeting's lobby chat (`threadSubType` LobbyChat);
+/// - a breakout room's chat (a meeting thread with no `meetingChatPolicy`);
+/// - a chat you aren't an interested member of (you left it, or were only
+///   in its lobby: no `interest` "Interested").
+fn unlisted(thread: &std::collections::HashMap<String, serde_json::Value>, member: Option<&serde_json::Value>, empty: bool, one_on_one: bool) -> bool {
+    let s = |k: &str| thread.get(k).and_then(|v| v.as_str()).unwrap_or_default();
+    let meeting = s("threadType") == "meeting";
+    let interested = member.and_then(|m| m.get("interest")).and_then(|i| i.as_str()) == Some("Interested");
+    (empty && one_on_one)
+        || s("threadSubType") == "LobbyChat"
+        || (meeting && !thread.contains_key("meetingChatPolicy"))
+        || (member.is_some() && !interested)
 }
 
 /// Whether you muted the chat: its `alerts` property is "false".
@@ -839,9 +860,15 @@ pub struct ChatInfo {
     pub live_call: Option<LiveCall>,
     /// You muted it.
     pub muted: bool,
-    /// Nothing has been said in it yet (`isemptyconversation`); Teams
-    /// doesn't list such chats.
+    /// Nothing has been said in it yet (`isemptyconversation`).
     pub empty: bool,
+    /// Teams' chat list leaves it out (an empty one-on-one, a lobby or
+    /// breakout room chat, one you left; see `unlisted`).
+    pub unlisted: bool,
+    /// When it last saw activity, for Teams' Most recent order: its last
+    /// message, or when you joined it (an empty chat), whichever is later
+    /// (Unix milliseconds).
+    pub activity_ms: i64,
     /// You hid it and nothing newer has been said (Teams' Hide sets
     /// `historyHiddenTime`; a newer message shows the chat again).
     pub hidden: bool,
@@ -857,7 +884,8 @@ pub fn notes_name(my_name: &str) -> String {
 /// The chats as Teams lists them: your notes-to-self chat (48:notes) first
 /// as "{you} (You)", then the rest. System streams (48:drafts, 48:threads,
 /// call logs, notifications, mentions…) aren't chats, channels belong under
-/// their team, and empty or hidden chats aren't listed.
+/// their team, and chats Teams leaves out (`unlisted`) or you hid aren't
+/// listed. Chats nothing has been said in are listed, as Teams does.
 pub fn listed_chats(chats: Vec<ChatInfo>, my_name: &str) -> Vec<ChatInfo> {
     let mut notes = None;
     let mut rest = Vec::new();
@@ -868,7 +896,7 @@ pub fn listed_chats(chats: Vec<ChatInfo>, my_name: &str) -> Vec<ChatInfo> {
         } else if !c.id.starts_with("48:")
             && !c.id.ends_with("@thread.tacv2")
             && !c.id.ends_with("@thread.skype")
-            && !c.empty
+            && !c.unlisted
             && !c.hidden
         {
             rest.push(c);
@@ -1044,9 +1072,37 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
                 .and_then(|p| p.extra.get("isCreator"))
                 .and_then(|c| c.as_bool())
                 .unwrap_or(false),
+            activity_ms: {
+                let message = conv
+                    .last_message
+                    .as_ref()
+                    .and_then(|m| m.original_arrival_time.as_deref())
+                    .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
+                    .map(|t| t.timestamp_millis())
+                    .unwrap_or(0);
+                let joined = conv
+                    .thread_properties
+                    .as_ref()
+                    .and_then(|p| p.extra.get("lastjoinat"))
+                    .and_then(|j| j.as_str().and_then(|s| s.parse().ok()).or_else(|| j.as_i64()))
+                    .unwrap_or(0);
+                message.max(joined)
+            },
+            unlisted: conv.thread_properties.as_ref().is_some_and(|p| {
+                let empty = conv
+                    .properties
+                    .as_ref()
+                    .and_then(|p| p.get("isemptyconversation"))
+                    .and_then(|e| e.as_str())
+                    .is_some_and(|e| e.eq_ignore_ascii_case("true"));
+                unlisted(&p.extra, conv.member_properties.as_ref(), empty, !is_group)
+            }),
         });
     }
 
+    // Teams' Most recent order (checked on winpc 2026-11-15: an empty Meet
+    // now chat joined after a one-on-one's last message lists above it).
+    chats.sort_by(|a, b| b.activity_ms.cmp(&a.activity_ms));
     Ok(chats)
 }
 
@@ -1403,8 +1459,10 @@ mod list_preview_tests {
     #[test]
     fn chats_are_listed_as_teams_lists_them() {
         let chat = |id: &str, name: &str| ChatInfo { id: id.into(), name: name.into(), ..Default::default() };
-        let mut empty = chat("19:e@thread.v2", "19:e@thread.v2");
+        let mut empty = chat("19:e@thread.v2", "OST empty chat test");
         empty.empty = true;
+        let mut lobby = chat("19:meeting_l@thread.v2", "Lobby");
+        lobby.unlisted = true;
         let mut hidden = chat("19:h@thread.v2", "Hidden");
         hidden.hidden = true;
         let listed = listed_chats(
@@ -1414,6 +1472,7 @@ mod list_preview_tests {
                 chat("48:threads", "48:threads"),
                 chat("19:c@thread.tacv2", "OST test channel"),
                 empty,
+                lobby,
                 hidden,
                 chat("48:notes", "OST Test 1"),
                 chat("48:calllogs", "48:calllogs"),
@@ -1421,7 +1480,27 @@ mod list_preview_tests {
             "OST Test 1",
         );
         let names: Vec<&str> = listed.iter().map(|c| c.name.as_str()).collect();
-        assert_eq!(names, ["OST Test 1 (You)", "OST group test"]);
+        assert_eq!(names, ["OST Test 1 (You)", "OST group test", "OST empty chat test"]);
         assert_eq!(listed[0].id, "48:notes");
+    }
+
+    #[test]
+    fn teams_leaves_out_lobby_breakout_and_left_chats() {
+        use super::unlisted;
+        let props = |v: serde_json::Value| v.as_object().unwrap().clone().into_iter().collect::<std::collections::HashMap<_, _>>();
+        let interested = serde_json::json!({"interest": "Interested", "role": "Admin"});
+        let left = serde_json::json!({"memberExpirationTime": 1794433626919_i64, "role": "Admin"});
+        let group = props(serde_json::json!({"threadType": "chat", "productThreadType": "Chat"}));
+        let meet_now = props(serde_json::json!({"threadType": "meeting", "meetingChatPolicy": "ChatEnabled"}));
+        let breakout = props(serde_json::json!({"threadType": "meeting", "ongoingCallChatEnforcement": "true"}));
+        let lobby = props(serde_json::json!({"threadType": "meeting", "threadSubType": "LobbyChat", "meetingChatPolicy": "ChatEnabledAnonymousDisabled"}));
+        // An empty group chat and an empty Meet now chat are listed.
+        assert!(!unlisted(&group, Some(&interested), true, false));
+        assert!(!unlisted(&meet_now, Some(&interested), true, false));
+        // An empty one-on-one, a breakout room, a lobby and a left chat aren't.
+        assert!(unlisted(&group, Some(&interested), true, true));
+        assert!(unlisted(&breakout, Some(&interested), false, false));
+        assert!(unlisted(&lobby, Some(&interested), false, false));
+        assert!(unlisted(&meet_now, Some(&left), false, false));
     }
 }

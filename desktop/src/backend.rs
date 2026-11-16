@@ -3419,6 +3419,7 @@ async fn load_overview() -> anyhow::Result<(String, Vec<serde_json::Value>)> {
                 "liveCall": c.live_call,
                 "muted": c.muted,
                 "empty": c.empty,
+                "unlisted": c.unlisted,
                 "hidden": c.hidden,
                 "isCreator": c.is_creator,
                 "meeting": c.id.starts_with("19:meeting_"),
