@@ -127,6 +127,9 @@ QtObject {
     readonly property color mentionMe: pick("#DA3B01", "#F48E64", "#FFFF00")      // your name where you're @mentioned
     readonly property color channelPage: pick("#FAFAFA", "#141414", "#000000")    // behind channel post cards
     readonly property color cardEdge: pick("#E3E3E3", "#383838", "#FFFFFF")       // channel post card outline
+    // Received inline code's box (Teams' NeutralBackground1 / NeutralStroke1).
+    readonly property color inlineCodeFill: pick("#FFFFFF", "#292929", "#000000")
+    readonly property color inlineCodeStroke: pick("#D1D1D1", "#666666", "#FFFFFF")
     // Teams' announcement colour schemes "0".."11" (443282 module 8196):
     // the palette's Background2 / Foreground2 (light: tint, shade; dark the
     // other way round), the first six light on dark text, the rest dark.

@@ -2035,9 +2035,9 @@ Rectangle {
                     + "p, div, li, body { line-height: " + (bigEmoticons ? 50 : 20) + "px; -qt-line-height-type: fixed; } "
                     // Measured (winpc, "OST TEST 70"): headings 18 light / 14 bold
                     // / 12 bold on 25.7 / 20 / 17.1 lines, 3 above and below;
-                    // inline code Cascadia Mono on white (Teams also draws a
-                    // hairline box, which Qt's rich text can't).
-                    + "code { font-family: '" + theme.mono + "'; background-color: " + theme.surface + "; } "
+                    // inline code Cascadia Mono in a box (CodeBoxes draws it,
+                    // behind the text).
+                    + "code { font-family: '" + theme.mono + "'; } "
                     + "p.h1 { font-size: 18px; font-weight: 300; line-height: 26px; -qt-line-height-type: fixed; margin-top: 3px; margin-bottom: 3px; } "
                     + "p.h2 { font-size: 14px; font-weight: 700; line-height: 20px; -qt-line-height-type: fixed; margin-top: 3px; margin-bottom: 3px; } "
                     + "p.h3 { font-size: 12px; font-weight: 700; line-height: 17px; -qt-line-height-type: fixed; margin-top: 3px; margin-bottom: 3px; }</style>"
@@ -2288,6 +2288,11 @@ Rectangle {
                                     textFormat: TextEdit.RichText; wrapMode: TextEdit.Wrap
                                     font.family: theme.font; font.pixelSize: theme.base; color: theme.text
                                     onLinkActivated: link => root.openLink(link)
+                                    Loader {
+                                        z: -1
+                                        active: part.isQuote && /<code/.test(part.modelData.flowQuote)
+                                        sourceComponent: CodeBoxes { edit: quoteText }
+                                    }
                                 }
                             }
                             // Teams' code block (code-block-editor-deserialized):
@@ -2377,6 +2382,11 @@ Rectangle {
                                 color: theme.onFill(bubble, theme.text)
                                 onLinkActivated: link => root.openLink(link)
                                 HoverHandler { cursorShape: flowText.hoveredLink ? Qt.PointingHandCursor : Qt.IBeamCursor }
+                                Loader {
+                                    z: -1
+                                    active: part.isText && /<code/.test(part.modelData.flowText)
+                                    sourceComponent: CodeBoxes { edit: flowText }
+                                }
                             }
                         // Rounded 4 px with a hairline border, as Teams draws them.
                         Item {
@@ -2493,6 +2503,12 @@ Rectangle {
                     onLinkActivated: link => root.openLink(link)
                     HoverHandler { cursorShape: body.hoveredLink ? Qt.PointingHandCursor : Qt.IBeamCursor }
                     Accessible.name: msg.modelData.text
+                    // Inline code's box, behind the text.
+                    Loader {
+                        z: -1
+                        active: bubble.showBody && !msg.modelData.deleted && /<code/.test(msg.modelData.html || "")
+                        sourceComponent: CodeBoxes { edit: body }
+                    }
                 }
                 // Undo, 12 px after the tombstone text (14 px semibold brand), for
                 // your own message deleted in this session; never for Urgent

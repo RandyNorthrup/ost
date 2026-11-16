@@ -127,6 +127,7 @@ fn main() {
         "qml/TabWindow.qml",
         "qml/MessageHost.qml",
         "qml/MessageText.qml",
+        "qml/CodeBoxes.qml",
         "qml/ThreadWindow.qml",
         "qml/TabConversationPane.qml",
         "qml/ChannelMenu.qml",

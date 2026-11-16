@@ -884,16 +884,20 @@ Groups are separated by dividers; empty groups are skipped.
 - **Headings and inline code as received** ("OST TEST 70"):
   - h1 is 18/300 on a 25.7 line, h2 14/700 on 20, h3 12/700 on 17.1, each with margin 3/0;
   - `code` is Cascadia Mono 14, white, 0.67 #D1D1D1, radius 4, padding 4, margin 0/2.
+    - The font is Teams' `--fontFamilyMonospace` ('Cascadia Mono', Consolas, ui-monospace, Menlo, Monaco, monospace). winpc has no Cascadia Mono, so Teams there draws Consolas.
+    - The box (measured on winpc 2026-11-15, DPR 1.5) is 4.67 out from the glyphs' content area (16 tall: the font's ascent and descent in whole device pixels), so 25.33 tall and 1.33 above the 20 px line. Its glyphs start 6.67 after the text before it (2 at a paragraph's start). Dark: #292929 with #666666 (NeutralBackground1 / NeutralStroke1); High contrast: black with white.
+    - Code that wraps gets a box per line, open where the line breaks (box-decoration-break: slice): no border, padding or margin there, and the break's spaces left out.
 - **OST.** `RichText` (src/richtext.cpp) edits the compose box's QTextDocument and exports clean HTML, which `teams_html_with_media` turns into Teams' HTML.
   - Quotes and code blocks are marked paragraphs. QML draws the quote box and code card behind them, because QQuickTextEdit crashes on frames added while it shows the document.
   - "OST TEST 69", sent from OST with every format, matched Teams' wire format, and Teams web drew it exactly as its own messages.
+  - Received inline code: `CodeBoxes` (qml/CodeBoxes.qml) draws Teams' box behind a message's TextEdit. RichText's `codeBoxes` gives each run the room the box's sides take as letter spacing (after the character before it, or as the first line's indent, and after its last character), then reads the run's place on each laid-out line. Borders are whole device pixels, at least one, as Chromium draws them. A run that starts a wrapped line (or follows a `<br>`) has no room before it there: the room after the character before it hangs at the end of the line above.
 - **Tables** (measured on winpc 2026-11-12, "OST TEST 111"; OST sent "OST TEST 112"):
   - **Insert table** (More options) opens a grid under its row, 15.33 in: 201.33 wide, white, radius 4, shadow 16, padding 16. "Insert {columns}x{rows} table" (14 px #242424) at 31.67, 16.67, then 7 x 5 cells of 24 px from 16.67, 36.67 (it doesn't grow). Cells up to the pointer are #5B5FC7 with a white 0.67 line, the rest white with #424242. Teams also has an "Allow edits" checkbox under the grid (a Loop table; not in OST until Loop components, AC4).
   - The table takes the box's full width with columns sized by their text: collapsed 0.67 #616161 borders, cells padded 0 5, rows 20.67. The cursor goes into the first cell, and the hint under the box reads "Enter starts a new line." Enter makes a new line in the cell; Tab goes to the next cell (from the last it adds a row), Shift+Tab back.
   - **Insert column or row ▸**: Insert column to the right, Insert column to the left, Insert row above, Insert row below. **Delete column, row, or table ▸**: Delete column, Delete row, Delete table. Both are Fluent menus (32 px rows 2 apart, padding 4, no icons; 174 and 106 wide), centred on their row, 9 above it.
   - Sent as `<p>&nbsp;</p><table><tbody><tr><td><p>…</p></td>…</tr></tbody></table><p>&nbsp;</p>` with no attributes (the service adds CRLF between the tags).
   - Received: auto width, collapsed 0.67 #D1D1D1 borders, cells padded 0 5, 14/20, centred vertically. OST draws borders at least one device pixel wide, as a browser does.
-- **Not done yet.** The code card's "Make this collaborative" and the table grid's "Allow edits" (both need Loop), and the inline-code hairline box when receiving (Qt rich text can't draw one).
+- **Not done yet.** The code card's "Make this collaborative" and the table grid's "Allow edits" (both need Loop).
 
 - **Schedule message** (measured on winpc 2026-11-10, "OST TEST 90"–"92"):
   - Where it's offered: "+" ▸ Schedule message (SendClock icon), first in the list, in chats and channels. It isn't offered in your own chat.

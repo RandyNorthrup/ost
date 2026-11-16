@@ -9,19 +9,23 @@
 #include <QtCore/QHash>
 #include <QtCore/QPointer>
 #include <QtCore/QSet>
+#include <QtGui/QAbstractTextDocumentLayout>
 #include <QtGui/QColor>
+#include <QtGui/QFontMetricsF>
 #include <QtGui/QSyntaxHighlighter>
 #include <QtGui/QTextBlock>
 #include <QtGui/QTextCursor>
 #include <QtGui/QTextDocument>
 #include <QtGui/QTextDocumentFragment>
 #include <QtGui/QTextFrame>
+#include <QtGui/QTextLayout>
 #include <QtGui/QTextList>
 #include <QtGui/QTextTable>
 #include <QtGui/QGuiApplication>
 #include <QtGui/QScreen>
 #include <QtQuick/QQuickItem>
 #include <QtQuick/QQuickTextDocument>
+#include <QtQuick/QQuickWindow>
 
 #include <cstdlib>
 #include <cstring>
@@ -37,6 +41,7 @@ enum : int {
     BlockLang = QTextFormat::UserProperty + 8,  // block: its code language
     HeadingWeight = QTextFormat::UserProperty + 9, // char: a heading's weight
     CodeAuto = QTextFormat::UserProperty + 10,  // block: its language auto-detected
+    CodeRoom = QTextFormat::UserProperty + 11,  // char/block: room made beside received inline code
 };
 
 // Quotes and code blocks are marked paragraphs (QQuickTextEdit can't take
@@ -1091,6 +1096,155 @@ extern "C" char *ost_rich_regions(void *helper)
                      .arg(q ? "quote" : "code").arg(start).arg(end).arg(lang).arg(lines).arg(autoLang ? "true" : "false");
     }
     return dup(QStringLiteral("[") + parts.join(QLatin1Char(',')) + QStringLiteral("]"));
+}
+
+// Received messages' inline code. Teams draws `code` as an inline box
+// (padding 4, a hairline border, margin 0 2); Qt's rich text can't, so QML
+// draws the box behind the text, and here the text gets the room the box's
+// sides take, and the box's place is found in the laid-out lines.
+namespace {
+
+// The TextEdit the helper sits in (directly, or inside a Loader).
+QQuickItem *receivedEdit(void *helper)
+{
+    for (QQuickItem *i = static_cast<QQuickItem *>(helper); i; i = i->parentItem())
+        if (i->property("textDocument").value<QQuickTextDocument *>())
+            return i;
+    return nullptr;
+}
+
+struct CodeRun {
+    int start, end; // document positions, end exclusive
+    QFont font;
+};
+
+bool sameRoom(const QTextFormat &f, qreal room)
+{
+    return f.hasProperty(CodeRoom) && qAbs(f.doubleProperty(CodeRoom) - room) < 0.001;
+}
+
+} // namespace
+
+// The device pixel ratio the helper is drawn at.
+extern "C" double ost_rich_dpr(void *helper)
+{
+    auto *item = static_cast<QQuickItem *>(helper);
+    if (item && item->window())
+        return item->window()->effectiveDevicePixelRatio();
+    return qApp ? qApp->devicePixelRatio() : 1.0;
+}
+
+// The runs set in `family` (the stylesheet's `code` font) get `room` px
+// beside them: after the character before each run (or as the first line's
+// indent when the run starts its paragraph) and after the run's last
+// character, as letter spacing, so no text is added. Then each run's piece
+// on each line, as JSON {settled, runs: [{x0, x1, base, ascent, descent,
+// open_start, open_end}]} in the TextEdit's coordinates: x0/x1 where the run's glyphs
+// start and where the room after it ends, the line's baseline, the code
+// font's ascent and descent, and whether the run carries on from the line
+// before or onto the next (a wrapped run). Free it with ost_rich_free.
+extern "C" char *ost_rich_code_runs(void *helper, const char *family_utf8, double room)
+{
+    QQuickItem *edit = receivedEdit(helper);
+    auto *qdoc = edit ? edit->property("textDocument").value<QQuickTextDocument *>() : nullptr;
+    QTextDocument *doc = qdoc ? qdoc->textDocument() : nullptr;
+    if (!doc)
+        return dup(QStringLiteral("{\"settled\":true,\"runs\":[]}"));
+    const QString family = QString::fromUtf8(family_utf8);
+    QList<QPair<QTextBlock, QList<CodeRun>>> blocks;
+    for (QTextBlock b = doc->begin(); b.isValid(); b = b.next()) {
+        QList<CodeRun> runs;
+        for (auto it = b.begin(); !it.atEnd(); ++it) {
+            const QTextFragment fr = it.fragment();
+            if (!fr.isValid() || !fr.charFormat().property(QTextFormat::FontFamilies).toStringList().contains(family))
+                continue;
+            const int s = fr.position(), e = s + fr.length();
+            if (!runs.isEmpty() && runs.last().end == s)
+                runs.last().end = e;
+            else
+                runs.append({s, e, fr.charFormat().font().resolve(doc->defaultFont())});
+        }
+        if (!runs.isEmpty())
+            blocks.append({b, runs});
+    }
+    // The room, once per text (the document is new whenever the text is).
+    QTextCursor c(doc);
+    QTextCharFormat spaced;
+    spaced.setFontLetterSpacingType(QFont::AbsoluteSpacing);
+    spaced.setFontLetterSpacing(room);
+    spaced.setProperty(CodeRoom, room);
+    // Changed now, or not laid out (for this width) yet: the places may
+    // move once the TextEdit has laid the text out again, so QML asks again.
+    const qreal width = edit->width() - edit->property("leftPadding").toReal() - edit->property("rightPadding").toReal();
+    bool settled = qAbs(doc->textWidth() - width) < 0.5;
+    const auto spaceAfter = [&](int pos) {
+        c.setPosition(pos);
+        c.setPosition(pos + 1, QTextCursor::KeepAnchor);
+        if (!sameRoom(c.charFormat(), room)) {
+            c.mergeCharFormat(spaced);
+            settled = false;
+        }
+    };
+    for (const auto &[b, runs] : blocks) {
+        for (const CodeRun &r : runs) {
+            if (r.start > b.position()) {
+                spaceAfter(r.start - 1);
+            } else if (!sameRoom(b.blockFormat(), room)) {
+                QTextBlockFormat bf = b.blockFormat();
+                bf.setTextIndent(room);
+                bf.setProperty(CodeRoom, room);
+                c.setPosition(b.position());
+                c.setBlockFormat(bf);
+                settled = false;
+            }
+            spaceAfter(r.end - 1);
+        }
+    }
+    QAbstractTextDocumentLayout *layout = doc->documentLayout();
+    QStringList parts;
+    for (const auto &[b, runs] : blocks) {
+        // (Laying the block out if it isn't yet.)
+        const QRectF bounds = layout->blockBoundingRect(b);
+        const QPointF origin = bounds.topLeft();
+        const QTextLayout *tl = b.layout();
+        if (bounds.isNull() || !tl || tl->lineCount() == 0) {
+            settled = false;
+            continue;
+        }
+        const int at = b.position();
+        const QString text = b.text();
+        for (const CodeRun &r : runs) {
+            const QFontMetricsF fm(r.font);
+            for (int i = 0; i < tl->lineCount(); ++i) {
+                const QTextLine line = tl->lineAt(i);
+                const int ls = at + line.textStart(), le = ls + line.textLength();
+                int s = qMax(r.start, ls), e = qMin(r.end, le);
+                if (s >= e)
+                    continue;
+                const bool openStart = s > r.start, openEnd = e < r.end;
+                // A wrapped run's box ends at its last glyph on the line
+                // (the spaces it breaks at hang), as a browser draws it.
+                while (openEnd && e > s && text.at(e - 1 - at).isSpace())
+                    --e;
+                while (openStart && s < e && text.at(s - at).isSpace())
+                    ++s;
+                if (s >= e)
+                    continue;
+                const qreal base = origin.y() + line.y() + line.ascent()
+                    + (line.leadingIncluded() ? qMax<qreal>(0, line.leading()) : 0);
+                parts << QStringLiteral("{\"x0\":%1,\"x1\":%2,\"base\":%3,\"ascent\":%4,\"descent\":%5,\"open_start\":%6,\"open_end\":%7}")
+                             .arg(origin.x() + line.cursorToX(s - at), 0, 'f', 3)
+                             .arg(origin.x() + line.cursorToX(e - at), 0, 'f', 3)
+                             .arg(base, 0, 'f', 3)
+                             .arg(fm.ascent(), 0, 'f', 3)
+                             .arg(fm.descent(), 0, 'f', 3)
+                             .arg(QLatin1String(openStart ? "true" : "false"))
+                             .arg(QLatin1String(openEnd ? "true" : "false"));
+            }
+        }
+    }
+    return dup(QStringLiteral("{\"settled\":%1,\"runs\":[").arg(QLatin1String(settled ? "true" : "false"))
+               + parts.join(QLatin1Char(',')) + QStringLiteral("]}"));
 }
 
 extern "C" void ost_rich_free(char *s)

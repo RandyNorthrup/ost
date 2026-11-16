@@ -7215,7 +7215,8 @@ Window {
     }
 
     // --chat-shot with --open-chat=<id> --shots=<dir>: open the chat,
-    // capture it once it has loaded (chat.png) and quit.
+    // capture it once it has loaded (chat.png) and quit. --jump=<text>
+    // brings the newest loaded message containing <text> into view first.
     Timer {
         running: Qt.application.arguments.indexOf("--chat-shot") >= 0 && backend.signedIn
         interval: 3000; repeat: true
@@ -7223,7 +7224,13 @@ Window {
         onTriggered: {
             const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
             const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const jump = (Qt.application.arguments.find(a => a.startsWith("--jump=")) || "").slice(7)
             if (backend.currentChatId !== id) { backend.selectChat(id, "OST chat"); return }
+            if (step === 1 && jump) {
+                const m = (backend.messagesJson ? JSON.parse(backend.messagesJson) : []).filter(m => JSON.stringify(m).indexOf(jump) >= 0).pop()
+                console.warn("chat-shot jump:", jump, m ? m.id : "not loaded")
+                if (m) conversation.jumpToMessage(m.id)
+            }
             if (step === 2) window.contentItem.grabToImage(r => r.saveToFile(dir + "chat.png"))
             else if (step === 3) Qt.quit()
             step++
