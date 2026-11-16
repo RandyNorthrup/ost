@@ -7598,11 +7598,18 @@ Window {
             else if (step === 16) shot("picker-all")
             else if (step === 17) {
                 tabPicker.gridAll = false
-                const web = (s && s.installed || []).find(a => a.id === "com.microsoft.teamspace.tab.web")
-                if (!web) { console.warn("ADDTAB no Website in the grid"); Qt.quit(); return }
+                // --add-tab-app=<name>: that app's own configuration page
+                // instead (in OST's TeamsJS host), logged and captured
+                // after 20 s; nothing is saved.
+                const want = arg("--add-tab-app")
+                const web = (s && s.installed || []).find(a => want ? a.name === want : a.id === "com.microsoft.teamspace.tab.web")
+                if (!web) { console.warn("ADDTAB no", want || "Website", "in the grid"); Qt.quit(); return }
                 tabPicker.pickTabApp(web)
             }
             else if (step === 18) shot("config")
+            else if (step === 26 && arg("--add-tab-app")) { console.warn("ADDTAB app config", tabConfig.stateForTest()); shot("config-app"); step++; return }
+            else if (step === 27 && arg("--add-tab-app")) { tabConfig.close(); Qt.quit(); return }
+            else if (step > 18 && step < 26 && arg("--add-tab-app")) { step++; return }
             else if (step === 19) tabConfig.fillForTest(name, "http://example")
             else if (step === 20) { console.warn("ADDTAB invalid", tabConfig.stateForTest()); shot("config-invalid") }
             else if (step === 21) { tabConfig.fillForTest(name, url || "https://example.com") }
@@ -7644,8 +7651,8 @@ Window {
             else if (step === 2) conversation.overflowMenuForTest()
             else if (step === 3) shot("overflow")
             else if (step === 4) { conversation.closeOverflowForTest(); conversation.tab = which }
-            else if (step === 8) { console.warn("MEETINGTAB breakout", backend.meetingBreakoutJson); shot("open-10s") }
-            else if (step === 14) shot("open-25s")
+            else if (step === 8) { const h = conversation.meetingAppTabForTest(); console.warn("MEETINGTAB breakout", backend.meetingBreakoutJson, "host", h ? h.hostStateForTest() : ""); shot("open-10s") }
+            else if (step === 14) { const h = conversation.meetingAppTabForTest(); console.warn("MEETINGTAB host", h ? h.hostStateForTest() : ""); shot("open-25s") }
             else if (step === 15) Qt.quit()
             step++
         }
@@ -7669,7 +7676,7 @@ Window {
             if (backend.currentChatId !== id) { backend.selectChat(id, (chatList.chats.find(c => c.id === id) || { name: "OST chat tab test" }).name); return }
             const notes = conversation.notesTabForTest(), recap = conversation.recapTabForTest(), story = conversation.storylineTabForTest()
             const web = which === "Storyline" ? story : null
-            const page = () => web && web.view ? { url: String(web.view.url).slice(0, 160), title: web.view.title, progress: web.view.loadProgress }
+            const page = () => web && web.view ? { url: String(web.view.url).slice(0, 160), title: web.view.title, progress: web.view.loadProgress, host: web.hostStateForTest() }
                 : notes ? { state: notes.state_, file: notes.pageUrl.split("?")[0] } : null
             if (step === 1) { console.warn("CHATTAB tabs", JSON.stringify(conversation.tabNames)); shot("header") }
             else if (step === 2) conversation.tab = which
@@ -7688,6 +7695,50 @@ Window {
             else if (step === 17 && recap && recap.meeting) recap.moreForTest()
             else if (step === 18 && recap && recap.meeting) shot("more")
             else if (step === 19) Qt.quit()
+            step++
+        }
+    }
+
+    // --app-host-test[=<tab name>] with --open-chat=<channel id>
+    // --shots=<dir>: a channel's app tab (default Notes) in OST's TeamsJS
+    // host (docs/spec/app-host.md): the host's events (APPHOST lines) and
+    // pictures after 15, 35 and 55 s, then the tab's Reload, Expand, Open
+    // in new window and App permissions (app-host-*.png); quits, unless
+    // --app-host-stay (to inspect the views over DevTools).
+    Timer {
+        running: Qt.application.arguments.some(a => a === "--app-host-test" || a.startsWith("--app-host-test=")) && backend.signedIn
+        interval: 2500; repeat: true
+        property int step: 0
+        property var popped: null
+        onTriggered: {
+            const arg = k => (Qt.application.arguments.find(a => a.startsWith(k + "=")) || "").slice(k.length + 1)
+            const id = arg("--open-chat"), which = arg("--app-host-test") || "Notes"
+            const dir = (arg("--shots") || ".") + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "app-host-" + n + ".png"))
+            if (backend.currentChatId !== id) {
+                const ch = (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).flatMap(t => t.channels).find(c => c.id === id)
+                backend.selectChat(id, ch ? ch.name : "OST app host test"); return
+            }
+            const host = conversation.hostedTabForTest()
+            const state = () => host ? host.hostStateForTest() : "no host"
+            if (step === 1) { console.warn("APPHOST tabs", JSON.stringify(conversation.channelTabs.map(t => ({ name: t.name, kind: t.kind, hosted: !!t.content_template })))); conversation.tab = which }
+            else if (step === 6) { console.warn("APPHOST 15s", state()); shot("15s") }
+            else if (step === 14) { console.warn("APPHOST 35s", state()); shot("35s") }
+            else if (step === 22) { console.warn("APPHOST 55s", state()); console.warn("APPHOST menu", JSON.stringify(conversation.tabMenuForTest(which))); shot("55s") }
+            else if (step === 23) conversation.tabActionForTest(which, "reloadTab")
+            else if (step === 31) { console.warn("APPHOST reloaded", state()); shot("reloaded") }
+            else if (step === 32) conversation.tabActionForTest(which, "expandTab")
+            else if (step === 36) { console.warn("APPHOST expanded", conversation.tabExpanded, state()); shot("expanded") }
+            else if (step === 37) { conversation.tabExpanded = false; const t = conversation.channelTabs.find(t => t.name === which); if (t) popped = conversation.popOutTab(t) }
+            else if (step === 49 && popped) {
+                const h = popped.hostedForTest()
+                console.warn("APPHOST window", popped.width + "x" + popped.height, popped.title, h ? h.hostStateForTest() : "no host")
+                popped.contentItem.grabToImage(r => r.saveToFile(dir + "app-host-window.png"))
+            }
+            else if (step === 50 && popped) { popped.close(); popped = null }
+            else if (step === 51) conversation.tabActionForTest(which, "devicePermissions")
+            else if (step === 53) shot("permissions")
+            else if (step === 54 && Qt.application.arguments.indexOf("--app-host-stay") < 0) Qt.quit()
             step++
         }
     }

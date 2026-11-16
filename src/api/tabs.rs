@@ -57,6 +57,9 @@ pub struct Tab {
     /// Where the tab's content lives, placeholders filled (for native
     /// views to identify it; never loaded as a page).
     pub content_url: String,
+    /// The tab's content address as stored, placeholders kept (Teams'
+    /// app host fills them from the app's context).
+    pub content_template: String,
     /// What Open in browser opens (https only; empty when none).
     pub website_url: String,
     pub order: f64,
@@ -114,6 +117,12 @@ pub(crate) fn fill(url: &str, ctx: &TabContext, entity_id: &str) -> String {
     }
     out.push_str(rest);
     out
+}
+
+/// A stored address with its placeholders, kept only if it's an https
+/// link (else empty).
+pub fn https_template(url: &str) -> String {
+    if url.starts_with("https://") && !url.contains(['<', '>', '"', '\'', ' ']) { url.to_string() } else { String::new() }
 }
 
 /// A URL kept only if it's an https link (else empty).
@@ -682,6 +691,7 @@ fn tabs_from(
         kind: Kind::Posts,
         entity_id: String::new(),
         content_url: String::new(),
+        content_template: String::new(),
         website_url: String::new(),
         order: 1.0,
         draggable: false,
@@ -705,6 +715,7 @@ fn tabs_from(
                 str_at(t, "/name")
             },
             content_url: fill(&str_at(t, "/configuration/contentUrl"), ctx, &entity_id),
+            content_template: https_template(&str_at(t, "/configuration/contentUrl")),
             website_url: https_only(&fill(
                 &str_at(t, "/configuration/websiteUrl"),
                 ctx,
@@ -1147,6 +1158,7 @@ mod tests {
             kind: Kind::Extension,
             entity_id: String::new(),
             content_url: String::new(),
+            content_template: String::new(),
             website_url: String::new(),
             order: 10000.0,
             draggable: true,
@@ -1199,6 +1211,7 @@ mod tests {
             kind: Kind::ChannelPage,
             entity_id: String::new(),
             content_url: String::new(),
+            content_template: String::new(),
             website_url: String::new(),
             order: 10.0,
             draggable: true,

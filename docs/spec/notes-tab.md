@@ -34,7 +34,35 @@ Sources:
   straight away. Listing the group's pages returned HTTP 500 (a Graph
   error on that endpoint). Use `/sections/{id}/pages` instead.
 
-## Native implementation requirements
+## What Teams embeds (measured 2026-11-16, Teams on the web)
+- Teams doesn't draw Notes: it embeds OneNote's pages in its app host
+  (docs/spec/app-host.md), filling the tab under the channel header.
+- First opening (entityId `NOTES`): OneNote's ChannelNotes page
+  (www.onenote.com/teams/ChannelNotes) shows "Getting the Notes tab ready.
+  This can take a few seconds..." (the OneNote tile with an hourglass and
+  a spinner), finds the team notebook (`GetNotebookFromWebUrl` with
+  `<site>/SiteAssets/<Team> Notebook`), creates the channel's section
+  (`POST …/notebooks/{id}/sections {"name": "<channel>"}`) and its first
+  page, then sets the tab up (`settings.setSettings`); Teams saves it in
+  the channel thread's `tab::{id}` property and loads the new address.
+  The old notice text "Please wait...the Notes tab will be ready soon."
+  is gone.
+- Afterwards (entityId `NOTES_<guid>`): the officeunihost page
+  (www.microsoft365.com/launch/onenote/officeunihost/teams?…&sectionId=…)
+  frames OneNote for the web: the notebook name ("OST Test Team
+  Notebook ▾"), File / Home / Insert / Draw / View / Help, the ribbon,
+  the page list (+ Add page, "Untitled Page") and the page (title, date
+  and time line, body), all OneNote's and editable there.
+- So Teams' Notes is not a native view, and the "through the OneNote
+  API" plan is replaced: OST embeds the same pages in the same host (scope
+  decision 2026-11-07, embed what Teams embeds).
+- Tab menu (Teams on the web): Expand tab, Reload tab, Open in new window
+  (the websiteUrl, onenote.com), Copy link to tab, Rename, App
+  permissions (OneNote declares `media`), About this tab, Move left/right,
+  Remove. Teams desktop offers Open tab in new window and Open in browser
+  (channel-tabs.md); OST follows desktop.
+
+## Earlier plan (native, superseded)
 - **Provision**: if the team notebook has no section named after the
   channel, create it with `POST /groups/{g}/onenote/notebooks/{nb}/sections`
   (`displayName` = the channel name). If the team has no notebook,
@@ -52,3 +80,12 @@ Sources:
   → Get the exact editing capabilities and limits from the files and apps
   inventory (OneNote API docs).
 - **Tab menu**: as channel-tabs.md, for type OneNoteTab.
+
+## OST status
+- [x] Notes embedded as Teams does, in OST's TeamsJS host: the provisioned
+  page with OneNote's editor (seen and edited live in OST Test Team ›
+  General), first-opening provisioning through OneNote's own page with
+  the tab saved as Teams saves it.
+- [x] Reload tab, Expand tab, Open tab in new window (the page hosted in
+  the window), Open in browser, App permissions (device permissions for
+  the page's camera/microphone requests).

@@ -27,6 +27,9 @@ pub struct TokenSet {
     pub access_token: String,
     #[serde(default)]
     pub refresh_token: Option<String>,
+    /// The OpenID token (when `openid` was asked for).
+    #[serde(default)]
+    pub id_token: Option<String>,
     /// Lifetime in seconds. Azure AD sends a number; some proxies send a string.
     #[serde(default, deserialize_with = "seconds")]
     pub expires_in: Option<u64>,

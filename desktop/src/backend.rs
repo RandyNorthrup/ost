@@ -1292,6 +1292,11 @@ pub mod qobject {
         #[qsignal]
         fn smart_replies_ready(self: Pin<&mut Backend>, chat_id: QString, json: QString);
 
+        /// A TeamsJS host's native call answered (tokens may be in `json`:
+        /// pass it on, never log it).
+        #[qsignal]
+        fn app_host_reply(self: Pin<&mut Backend>, id: QString, json: QString);
+
         /// A video_clip_load finished: {id, quality, path (file URL),
         /// qualities: [{id, height}], error}.
         #[qsignal]
@@ -1650,6 +1655,17 @@ pub mod qobject {
         /// About this tab: load the app's About (Teams' app definition).
         #[qinvokable]
         fn app_about_load(self: Pin<&mut Backend>, app_id: &QString);
+        /// The TeamsJS host page (docs/spec/app-host.md), loaded with
+        /// Teams' origin; its script runs in an isolated world.
+        #[qinvokable]
+        fn app_host_page(self: &Backend, title: &QString) -> QString;
+        #[qinvokable]
+        fn app_host_script(self: &Backend) -> QString;
+        /// A native call from the TeamsJS host of `app_id` (a tab of
+        /// `thread`, in the team `team_thread`): `kind` context, naa, sso
+        /// or saveTab; answered by app_host_reply with the same `id`.
+        #[qinvokable]
+        fn app_host_request(self: Pin<&mut Backend>, app_id: &QString, thread: &QString, team_thread: &QString, tab_id: &QString, kind: &QString, id: &QString, payload: &QString);
         /// Load an app's details for Teams' About dialog.
         #[qinvokable]
         fn app_details_load(self: Pin<&mut Backend>, app_id: &QString);
@@ -13383,6 +13399,86 @@ impl qobject::Backend {
         }
     }
 
+    pub fn app_host_page(&self, title: &QString) -> QString {
+        let esc = |t: &str| t.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
+        QString::from(
+            format!(
+                "<!doctype html><html lang=\"en-us\"><head><meta charset=\"utf-8\"><title>{}</title>\
+                 <style>html,body{{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:transparent}} iframe{{display:block}}</style>\
+                 </head><body></body></html>",
+                esc(&title.to_string())
+            )
+            .as_str(),
+        )
+    }
+
+    pub fn app_host_script(&self) -> QString {
+        QString::from(include_str!("app_host.js"))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn app_host_request(self: Pin<&mut Self>, app_id: &QString, thread: &QString, team_thread: &QString, tab_id: &QString, kind: &QString, id: &QString, payload: &QString) {
+        let (app, thread, team, tab, kind, id, payload) =
+            (app_id.to_string(), thread.to_string(), team_thread.to_string(), tab_id.to_string(), kind.to_string(), id.to_string(), payload.to_string());
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let p: serde_json::Value = serde_json::from_str(&payload).unwrap_or_default();
+            let s = |k: &str| p.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string();
+            let answer = match kind.as_str() {
+                "context" => match TeamsClient::new().await {
+                    Ok(c) => match api::app_host::context(&c, &app, &thread, &team).await {
+                        Ok(v) => json!({ "context": v }).to_string(),
+                        Err(e) => json!({ "error": short_error(&e) }).to_string(),
+                    },
+                    Err(e) => json!({ "error": short_error(&e) }).to_string(),
+                },
+                // Teams' NAA broker: trusted when the asking frame is one
+                // of the app's valid domains, or one the app added.
+                "naa" => {
+                    let origin = s("origin");
+                    let facts = match TeamsClient::new().await {
+                        Ok(c) => api::app_host::facts(&c, &app).await.unwrap_or_default(),
+                        Err(_) => Default::default(),
+                    };
+                    // Origins an app adds count for Microsoft's own apps
+                    // only (Teams' isRestrictedToMicrosoftOwnedApps).
+                    let requested = facts.microsoft_owned && p.get("requestedTrust").and_then(|v| v.as_bool()).unwrap_or(false);
+                    let trusted = requested || api::app_host::origin_valid_for_app(&origin, &facts.valid_domains);
+                    teams_cli::auth::broker::execute(&s("request"), &origin, trusted).await
+                }
+                "sso" => {
+                    let r = async {
+                        let c = TeamsClient::new().await?;
+                        let f = api::app_host::facts(&c, &app).await?;
+                        let resource = api::app_host::sso_resource(&f, &s("teamSiteDomain"), p.get("resources"))?;
+                        teams_cli::auth::oauth::access_token_for(&format!("{}/.default", resource.trim_end_matches('/'))).await
+                    }
+                    .await;
+                    match r {
+                        Ok(t) => json!({ "token": t }).to_string(),
+                        Err(e) => {
+                            tracing::warn!("getAuthToken for {app} failed: {}", short_error(&e));
+                            json!({ "error": "FailedToGetToken" }).to_string()
+                        }
+                    }
+                }
+                "saveTab" => {
+                    let settings = p.get("settings").cloned().unwrap_or_default();
+                    let r = async { api::tab_add::set_settings(&TeamsClient::new().await?, &thread, &tab, &settings).await }.await;
+                    match r {
+                        Ok(()) => json!({ "ok": true }).to_string(),
+                        Err(e) => {
+                            tracing::warn!("saving tab {tab} settings failed: {}", short_error(&e));
+                            json!({ "ok": false, "error": short_error(&e) }).to_string()
+                        }
+                    }
+                }
+                _ => json!({ "error": "unknown" }).to_string(),
+            };
+            let _ = qt.queue(move |mut this| this.as_mut().app_host_reply(QString::from(id.as_str()), QString::from(answer.as_str())));
+        });
+    }
+
     pub fn app_about_load(self: Pin<&mut Self>, app_id: &QString) {
         let app = app_id.to_string();
         let qt = self.qt_thread();
@@ -13963,6 +14059,7 @@ impl qobject::Backend {
             kind: api::tabs::Kind::Extension,
             entity_id: s("entity_id"),
             content_url: String::new(),
+            content_template: String::new(),
             website_url: String::new(),
             order: 0.0,
             draggable: true,

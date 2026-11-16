@@ -260,6 +260,13 @@ pub async fn begin_sign_in() -> Result<PendingSignIn> {
 /// Teams on the web answers an app's GetToken. The hub's refresh token is
 /// left as it is.
 pub async fn brokered_token(app_client_id: &str, app_origin: &str, scope: &str, claims: Option<&str>) -> Result<(String, Option<u64>)> {
+    let tokens = brokered_tokens(app_client_id, app_origin, scope, claims).await?;
+    Ok((tokens.access_token, tokens.expires_in))
+}
+
+/// [`brokered_token`] with the whole answer (the app's OpenID token too, for
+/// the account Teams returns with it).
+pub async fn brokered_tokens(app_client_id: &str, app_origin: &str, scope: &str, claims: Option<&str>) -> Result<TokenSet> {
     let config = Config::load()?;
     anyhow::ensure!(
         config.auth_flow.as_deref() == Some(super::TEAMS_WEB_FLOW),
@@ -272,7 +279,7 @@ pub async fn brokered_token(app_client_id: &str, app_origin: &str, scope: &str, 
     let tokens = client
         .broker_refresh(app_client_id, &rt, &full_scope, super::spa::CLIENT_ID, super::spa::REDIRECT_URI, &super::spa::app_redirect_uri(app_origin), claims)
         .await?;
-    Ok((tokens.access_token, tokens.expires_in))
+    Ok(tokens)
 }
 
 /// Whether the stored sign-in is Teams on the web's browser sign-in (its
@@ -367,6 +374,7 @@ pub fn has_credentials() -> bool {
 
 /// Forget all stored credentials.
 pub fn sign_out() -> Result<()> {
+    super::broker::clear();
     let mut config = Config::load()?;
     config.clear_tokens();
     config.save()
@@ -374,6 +382,7 @@ pub fn sign_out() -> Result<()> {
 
 /// Clear stored credentials
 pub async fn logout() -> Result<()> {
+    super::broker::clear();
     let mut config = Config::load()?;
     config.clear_tokens();
     config.save()?;

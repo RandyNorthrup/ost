@@ -34,6 +34,10 @@ Popup {
     property bool saving: false
     property string failure: ""
     property bool barShown: true
+    /// What another app's configuration page reported (TeamsJS
+    /// setValidityState / setSettings).
+    property bool appValid: false
+    property var appSettings: null
     signal back()
     signal about(var app)
     signal saved(string tabId)
@@ -55,14 +59,16 @@ Popup {
     /// The Website app is configured here; any other app's configuration
     /// is its own page, which Teams embeds in this dialog (24.7, 75.9,
     /// 550.7 x 452.8) and which turns Save on through TeamsJS
-    /// (pages.config.setValidityState); OST has no TeamsJS host yet, so
-    /// its Save stays off.
+    /// (pages.config.setValidityState). OST hosts that page in its TeamsJS
+    /// host (frameContext settings; docs/spec/app-host.md) and keeps what
+    /// it reports; saving another app's tab (settings.save and the tab's
+    /// property) isn't built yet, so Save stays off for it.
     readonly property bool website: !!app && app.id === "com.microsoft.teamspace.tab.web"
     readonly property bool valid: website && !nameError && !urlError && urlField.text.length > 0
 
     function start(a, id, team, isChannel) {
         app = a; conversationId = id; teamId = team || ""; channel = isChannel
-        saving = false; failure = ""; barShown = true
+        saving = false; failure = ""; barShown = true; appValid = false; appSettings = null
         nameField.text = a && a.name ? a.name : "Website"
         urlField.text = ""
         post.checked = true
@@ -159,7 +165,11 @@ Popup {
     Loader {
         active: root.opened && !root.website && !!root.app && !!root.app.config_url
         x: 24.7; y: 75.9; width: 550.7; height: 452.8
-        sourceComponent: WebApp { showHeader: false; appName: root.app ? root.app.name : ""; home: root.app ? root.app.config_url : "" }
+        sourceComponent: WebApp {
+            showHeader: false; appName: root.app ? root.app.name : ""; appId: root.app ? root.app.id : ""; home: root.app ? root.app.config_url : ""
+            teamsHost: true; frameContext: "settings"; hostThread: root.conversationId
+            onHostEvent: (name, json) => { if (name === "validity") root.appValid = JSON.parse(json).valid; else if (name === "settings") root.appSettings = JSON.parse(json) }
+        }
     }
     Column {
         visible: root.website
@@ -254,5 +264,5 @@ Popup {
 
     function setPost(on) { post.checked = on }
     function fillForTest(name, url) { nameField.text = name; urlField.text = url }
-    function stateForTest() { return JSON.stringify({ name: nameField.text, url: urlField.text, nameError: nameError, urlError: urlError, valid: valid, saving: saving, failure: failure }) }
+    function stateForTest() { return JSON.stringify({ name: nameField.text, url: urlField.text, nameError: nameError, urlError: urlError, valid: valid, saving: saving, failure: failure, appValid: appValid, appSettings: appSettings }) }
 }

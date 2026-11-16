@@ -215,6 +215,77 @@ pub async fn rename_property(client: &TeamsClient, thread_id: &str, tab_id: &str
     put_property(client, thread_id, tab_id, Some(&t.to_string())).await
 }
 
+/// A tab's thread property once its app has set its settings (TeamsJS
+/// `settings.setSettings` / pages.config.setConfig from the tab's content
+/// page, e.g. the channel Notes page once it has made the channel's
+/// section). Teams rewrote OST test channel 2's Notes tab this way on
+/// 2026-11-16: `{"id","name","definitionId","directive","tabType":"tab:",
+/// "order","replyChainId","settings":{"url","websiteUrl","entityId",
+/// "subtype","removeUrl"}}`, in that order, `isUnconfigured` gone.
+pub fn configured_property(old: &serde_json::Value, settings: &serde_json::Value) -> String {
+    #[derive(serde::Serialize)]
+    struct Settings<'a> {
+        url: &'a str,
+        #[serde(rename = "websiteUrl")]
+        website_url: &'a str,
+        #[serde(rename = "entityId")]
+        entity_id: &'a str,
+        subtype: &'a str,
+        #[serde(rename = "removeUrl")]
+        remove_url: &'a str,
+    }
+    #[derive(serde::Serialize)]
+    struct Prop<'a> {
+        id: &'a str,
+        name: &'a str,
+        #[serde(rename = "definitionId")]
+        definition_id: &'a str,
+        directive: &'a str,
+        #[serde(rename = "tabType")]
+        tab_type: &'a str,
+        order: serde_json::Value,
+        #[serde(rename = "replyChainId")]
+        reply_chain_id: serde_json::Value,
+        settings: Settings<'a>,
+    }
+    let o = |p: &str| old.pointer(p).and_then(|v| v.as_str()).unwrap_or_default();
+    let n = |k: &str| settings.get(k).and_then(|v| v.as_str()).unwrap_or_default();
+    let order = old.get("order").and_then(|v| v.as_f64()).unwrap_or(10000.0);
+    let order = if order.fract() == 0.0 { serde_json::json!(order as i64) } else { serde_json::json!(order) };
+    let reply = old.get("replyChainId").cloned().filter(|v| !v.is_null()).unwrap_or(serde_json::json!(0));
+    serde_json::to_string(&Prop {
+        id: o("/id"),
+        name: o("/name"),
+        definition_id: o("/definitionId"),
+        directive: o("/directive"),
+        tab_type: "tab:",
+        order,
+        reply_chain_id: reply,
+        settings: Settings {
+            url: n("contentUrl"),
+            website_url: n("websiteUrl"),
+            entity_id: n("entityId"),
+            subtype: Some(o("/settings/subtype")).filter(|s| !s.is_empty()).unwrap_or("extension"),
+            remove_url: n("removeUrl"),
+        },
+    })
+    .unwrap_or_default()
+}
+
+/// Save a tab's new settings from its app, as Teams does: the thread
+/// property rewritten (see [`configured_property`]). Only https content
+/// addresses are taken.
+pub async fn set_settings(client: &TeamsClient, thread_id: &str, tab_id: &str, settings: &serde_json::Value) -> Result<()> {
+    let url = settings.get("contentUrl").and_then(|v| v.as_str()).unwrap_or_default();
+    anyhow::ensure!(url.starts_with("https://"), "The tab's address must be https");
+    let props = thread_properties(client, thread_id).await?;
+    let old = property_tabs(&props)
+        .into_iter()
+        .find(|t| str_at(t, "/id") == tab_id)
+        .context("No such tab")?;
+    put_property(client, thread_id, tab_id, Some(&configured_property(&old, settings))).await
+}
+
 /// A chat's own tabs (its `tab::` thread properties), with their menus:
 /// the channel menus without Move left / Move right (Teams' chat tabs
 /// can't be moved; a chat's website tab showed Copy link to tab, Rename,
@@ -255,6 +326,7 @@ pub fn tab_from_property(t: &serde_json::Value, ctx: &tabs::TabContext) -> Tab {
     Tab {
         name: str_at(t, "/name"),
         content_url: tabs::fill(&content, ctx, &entity_id),
+        content_template: tabs::https_template(&content),
         website_url: tabs::https_only(&tabs::fill(&str_at(t, "/settings/websiteUrl"), ctx, &entity_id)),
         order: order_of(t),
         draggable: false,
@@ -583,6 +655,20 @@ pub async fn tab_store_search(client: &TeamsClient, kind: IcKind, query: &str) -
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn configured_notes_tab_is_teams_property() {
+        // OST layout test's Notes before its first opening, as stored.
+        let old = serde_json::json!({"name":"Notes","id":"tab::bd0832e4-b2df-4f65-9da5-93178e668f4d","definitionId":"0d820ecd-def2-4297-adad-78056cde7c78",
+            "type":"tab:","settings":{"url":"https://www.onenote.com/teams/ChannelNotes?ui={locale}","websiteUrl":"https://www.onenote.com","entityId":"NOTES","subtype":"extension"},
+            "directive":"extension-tab","order":10000.0,"isUnconfigured":"True"});
+        let set = serde_json::json!({"entityId":"NOTES_d9d63f71","contentUrl":"https://www.microsoft365.com/launch/onenote/officeunihost/teams?locale={locale}",
+            "suggestedDisplayName":"Notes","websiteUrl":"https://onenote.com/","removeUrl":""});
+        assert_eq!(
+            configured_property(&old, &set),
+            r#"{"id":"tab::bd0832e4-b2df-4f65-9da5-93178e668f4d","name":"Notes","definitionId":"0d820ecd-def2-4297-adad-78056cde7c78","directive":"extension-tab","tabType":"tab:","order":10000,"replyChainId":0,"settings":{"url":"https://www.microsoft365.com/launch/onenote/officeunihost/teams?locale={locale}","websiteUrl":"https://onenote.com/","entityId":"NOTES_d9d63f71","subtype":"extension","removeUrl":""}}"#
+        );
+    }
 
     #[test]
     fn new_tabs_go_after_the_wall() {

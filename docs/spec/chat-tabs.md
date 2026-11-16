@@ -171,4 +171,10 @@ chat: one Meet now call, no recording, no transcript):
   More options' items (shown off).
 - [x] Storyline: Teams' page for the right person in place, in OST's web
   profile.
-- [ ] Storyline running: needs the TeamsJS host (TASK-0053).
+- [x] Storyline running in OST's TeamsJS host (docs/spec/app-host.md):
+  Engage's page initializes, gets its NAA token (client f4060917, scope
+  `https://engage.cloud.microsoft/teams-branded-exp/access_as_user`) and
+  shows the person's storyline (seen for OST Test 2, 2026-11-16).
+  Its context is Teams': entityId `storyline`, the chat's id, meetingId
+  base64 of `0#<chat>#0`, teamSiteDomain the tenant's SharePoint host,
+  manifestVersion 1.25; it also asks shortcutRelay.getHostShortcuts.

@@ -60,7 +60,7 @@ Window {
         else if (key === "aboutTab") aboutDialog.start(win.tab)
         else if (key === "devicePermissions") appPermissions.show(win.tab.app_id)
     }
-    function reload() { if (pageLoader.item) pageLoader.item.reload() }
+    function reload() { if (pageLoader.item) pageLoader.item.reload(); if (hostLoader.item) hostLoader.item.reload() }
     function actionsForTest() { return headerActions.model.map(a => a.key) }
     function startConversationForTest() { if (convPane.item) convPane.item.startForTest() }
 
@@ -133,8 +133,25 @@ Window {
         anchors { top: header.bottom; bottom: parent.bottom; left: parent.left; right: convPane.left }
         sourceComponent: WebApp { showHeader: false; pageOnly: true; location: win.channelName + (win.teamName ? " · " + win.teamName : ""); appName: win.tab.name || ""; appId: win.tab.app_id || ""; home: win.tab.content_url }
     }
+    // An app tab: its page in OST's TeamsJS host, as in the channel.
+    property string teamThread: ""
+    readonly property bool hosted: !win.isPage && (win.tab.kind === "Extension" || win.tab.kind === "OneNote") && !!win.tab.content_template
+    function hostedForTest() { return hostLoader.item }
+    Loader {
+        id: hostLoader
+        active: win.hosted
+        anchors { top: header.bottom; bottom: parent.bottom; left: parent.left; right: convPane.left }
+        sourceComponent: WebApp {
+            showHeader: false; teamsHost: true
+            appName: win.tab.name || ""; appId: win.tab.app_id || ""
+            hostContext: ({ entityId: win.tab.entity_id || "", subEntityId: "", isMultiWindow: true })
+            hostThread: win.channelId; hostTeamThread: win.teamThread; hostTabId: win.tab.id || ""
+            location: win.channelName + (win.teamName ? " · " + win.teamName : "")
+            home: win.tab.content_template
+        }
+    }
     Column {
-        visible: !win.isPage
+        visible: !win.isPage && !win.hosted
         x: (convPane.x - width) / 2; anchors.verticalCenter: parent.verticalCenter
         spacing: 8
         FluentIcon { anchors.horizontalCenter: parent.horizontalCenter; name: "info-16"; size: 32; color: theme.textSecondary }

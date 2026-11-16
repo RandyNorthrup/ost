@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Window
 import QtQuick.Controls.Basic
 import QtWebEngine
+import QtWebChannel
 import com.ost.desktop
 
 // A web app Teams embeds (Whiteboard, Clipchamp, Help), shown in place as
@@ -41,8 +42,97 @@ Item {
     }
     onAppIdChanged: if (appId.length > 0) backend.appAboutLoad(appId)
     function moreMenuForTest() { teamsMore.openMenu() }
-    /// Reload the page (Teams' Reload tab).
-    function reload() { web.reload() }
+    /// Reload the page (Teams' Reload tab): a hosted app is framed again.
+    function reload() { if (root.teamsHost) root.startHost(); else web.reload() }
+
+    // ---- Teams' app host (TeamsJS), docs/spec/app-host.md --------------
+    // Teams frames an embedded app's page in its own page and answers its
+    // TeamsJS calls (initialize, getContext, nestedAppAuth…) by
+    // postMessage, from Teams' origin. With teamsHost OST does the same: it
+    // loads a host page with Teams' origin (https://teams.cloud.microsoft),
+    // frames `home` in it as Teams' hwc-iframe, and answers from a script
+    // in an isolated world (app_host.js), which calls OST through this
+    // web channel for tokens and for saving the tab.
+    /// Host `home` as a TeamsJS app.
+    property bool teamsHost: false
+    /// The tab's (or dialog's) part of the app's context: entityId,
+    /// subEntityId…; OST adds the user's, the channel's and the team's.
+    property var hostContext: ({})
+    /// TeamsJS frameContext: content (a tab), settings (its configuration
+    /// page), remove, task (a dialog), sidePanel, meetingStage.
+    property string frameContext: "content"
+    /// Whether frames nested in the app may use NAA (Teams' runtime
+    /// isDeeplyNestedAuthSupported: on for Notes and Storyline, off for
+    /// meeting Q&A and Whiteboard).
+    property bool deepNaa: true
+    /// Where the tab lives: its channel (or chat) thread, its team's thread
+    /// and its id (the app saving its settings rewrites it there).
+    property string hostThread: ""
+    property string hostTeamThread: ""
+    property string hostTabId: ""
+    /// What the hosted app did (TeamsJS initialize, appLoaded, success,
+    /// failure, settings, validity, openLink…), as (name, JSON).
+    signal hostEvent(string name, string json)
+    readonly property string hostId: "h" + Math.floor(Math.random() * 1e9).toString(36) + Date.now().toString(36)
+    readonly property string appSessionId: newGuid()
+    property var hostEvents: []
+    /// TeamsJS's theme names.
+    readonly property string hostTheme: theme.highContrast ? "contrast" : theme.dark ? "dark" : "default"
+    property bool hostLoading: false
+    property string channelJs: ""
+    function newGuid() {
+        return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => {
+            const r = Math.random() * 16 | 0
+            return (c === "x" ? r : (r & 3 | 8)).toString(16)
+        })
+    }
+    function startHost() {
+        if (!root.home.toString()) return
+        backend.appHostRequest(root.appId, root.hostThread, root.hostTeamThread, root.hostTabId, "context", root.hostId + ":ctx", "{}")
+    }
+    function loadHostPage(ctx) {
+        const c = Object.assign({}, ctx, root.hostContext, {
+            appSessionId: root.appSessionId, appLaunchId: newGuid(), theme: hostBridge.theme,
+            appId: root.appId, hostClientType: "desktop" })
+        hostBridge.config = JSON.stringify({ hostId: root.hostId, url: root.home.toString(), appId: root.appId, title: root.appName,
+                                             frameContext: root.frameContext, hostClientType: "desktop", deepNaa: root.deepNaa, context: c })
+        root.hostLoading = true
+        web.loadHtml(backend.appHostPage(root.appName), "https://teams.cloud.microsoft/")
+    }
+    function hostStateForTest() { return JSON.stringify({ events: root.hostEvents, url: web.url.toString() }) }
+    /// Point the hosted frame at another entity and address, as Teams
+    /// moves its cached frame (beforeUnload, then load).
+    function relaunchHost(entityId, template) { hostBridge.relaunchRequested(entityId, template) }
+    QtObject {
+        id: hostBridge
+        WebChannel.id: "ost"
+        property string config: ""
+        readonly property string theme: root.hostTheme
+        signal reply(string id, string json)
+        signal relaunchRequested(string entityId, string template)
+        function request(kind, id, json) {
+            if (id.indexOf(root.hostId + ":") !== 0) return
+            backend.appHostRequest(root.appId, root.hostThread, root.hostTeamThread, root.hostTabId, kind, id, json)
+        }
+        function event(name, json) {
+            root.hostEvents = root.hostEvents.concat([name])
+            console.info("APPHOST " + root.appName + " " + name)
+            root.hostEvent(name, json)
+        }
+        function log(text) { console.info("APPHOST " + root.appName + " " + text) }
+    }
+    WebChannel { id: hostChannel; registeredObjects: [hostBridge] }
+    Connections {
+        target: backend
+        enabled: root.teamsHost
+        function onAppHostReply(id, json) {
+            if (id === root.hostId + ":ctx") {
+                let ctx = {}
+                try { ctx = JSON.parse(json).context || {} } catch (e) {}
+                root.loadHostPage(ctx)
+            } else if (id.indexOf(root.hostId + ":") === 0) hostBridge.reply(id, json)
+        }
+    }
 
     Rectangle {
         id: header
@@ -200,11 +290,21 @@ Item {
     property string location: ""
     Component.onCompleted: {
         web.profile = webAppsProfile.instance()
-        web.url = root.home
+        if (root.teamsHost) {
+            // Qt's web channel client, from Qt's own resources.
+            const x = new XMLHttpRequest()
+            x.onreadystatechange = () => {
+                if (x.readyState !== XMLHttpRequest.DONE) return
+                root.channelJs = x.responseText
+                root.startHost()
+            }
+            x.open("GET", "qrc:///qtwebchannel/qwebchannel.js")
+            x.send()
+        } else web.url = root.home
         ready = true
     }
     // Another page for the same view (a different channel's Page).
-    onHomeChanged: if (ready) web.url = root.home
+    onHomeChanged: if (ready) { if (root.teamsHost) { if (root.channelJs) root.startHost() } else web.url = root.home }
 
     // A channel's Page, as Teams heads it: the Loop page's icon and name
     // (which opens it in Loop), then Shared locations, Copy component and
@@ -268,12 +368,24 @@ Item {
         settings.javascriptCanOpenWindows: true
         settings.localContentCanAccessRemoteUrls: false
         settings.localContentCanAccessFileUrls: false
+        // The host's channel lives in the isolated world its script runs
+        // in; app frames never see it.
+        webChannel: root.teamsHost ? hostChannel : null
+        webChannelWorld: WebEngineScript.ApplicationWorld
         onLoadingChanged: req => {
             if (root.pageOnly && req.status === WebEngineView.LoadSucceededStatus) web.runJavaScript(root.pageOnlyScript)
+            if (root.teamsHost && root.hostLoading && req.status === WebEngineView.LoadSucceededStatus) {
+                root.hostLoading = false
+                web.runJavaScript(root.channelJs + "\n" + backend.appHostScript(), WebEngineScript.ApplicationWorld)
+            }
         }
-        // https only.
+        // https only (and the host page OST itself loads); frames inside a
+        // hosted app may also be about:, blob: or data: documents.
         onNavigationRequested: req => {
-            if (req.url.toString().indexOf("https://") !== 0 && req.url.toString() !== "about:blank") req.reject()
+            const u = req.url.toString()
+            if (root.teamsHost && root.hostLoading && req.isMainFrame) return
+            if (root.teamsHost && !req.isMainFrame && /^(about:|blob:|data:)/.test(u)) return
+            if (u.indexOf("https://") !== 0 && u !== "about:blank") req.reject()
         }
         // Sign-in and other pop-ups get a window of their own.
         onNewWindowRequested: req => {

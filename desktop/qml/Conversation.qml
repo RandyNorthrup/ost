@@ -3372,7 +3372,7 @@ Rectangle {
     // Open tab in new window: the tab in a window of its own.
     Component { id: tabWindowComponent; TabWindow {} }
     function popOutTab(t) {
-        const w = tabWindowComponent.createObject(null, { tab: t, teamId: root.teamId, channelId: root.chatId, teamName: root.teamName, channelName: root.chatName })
+        const w = tabWindowComponent.createObject(null, { tab: t, teamId: root.teamId, channelId: root.chatId, teamName: root.teamName, channelName: root.chatName, teamThread: root.teamThread })
         w.closing.connect(() => w.destroy())
         w.show()
         return w
@@ -3381,6 +3381,7 @@ Rectangle {
     function reloadTabView(t) {
         if (t.kind === "StaticExtension") channelFiles.reset()
         else if (t.kind === "ChannelPage" && webTabLoader.item) webTabLoader.item.reload()
+        else if (hostedTabLoader.item && hostedTabLoader.shown && hostedTabLoader.shown.id === t.id) hostedTabLoader.item.reload()
     }
 
     function channelFilesForTest() { return channelFiles }
@@ -3486,6 +3487,32 @@ Rectangle {
         anchors { top: header.bottom; bottom: parent.bottom; left: parent.left; right: parent.right }
         sourceComponent: WebApp { showHeader: false; pageOnly: true; location: root.chatName + (root.teamName ? " · " + root.teamName : ""); appName: root.webTab ? root.webTab.name : ""; appId: root.webTab ? (root.webTab.app_id || "") : ""; home: root.webTab ? root.webTab.content_url : "" }
     }
+    // A channel's app tab (Notes, other apps' tabs): the app's own page,
+    // framed and answered as Teams hosts it (OST's TeamsJS host,
+    // docs/spec/app-host.md), filling the tab under the channel's header.
+    readonly property var hostedTab: isChannel ? (channelTabs.find(t => t.name === tab && (t.kind === "Extension" || t.kind === "OneNote") && !!t.content_template) || null) : null
+    function hostedTabForTest() { return hostedTabLoader.item }
+    Loader {
+        id: hostedTabLoader
+        // One host per tab: a new one when the channel or the tab changes.
+        readonly property string key: root.hostedTab ? root.chatId + "|" + root.hostedTab.id : ""
+        property var shown: null
+        onKeyChanged: { active = false; shown = root.hostedTab; active = !!key }
+        active: false
+        visible: active
+        anchors { top: header.bottom; bottom: parent.bottom; left: parent.left; right: parent.right }
+        sourceComponent: WebApp {
+            showHeader: false; teamsHost: true
+            appName: hostedTabLoader.shown.name; appId: hostedTabLoader.shown.app_id
+            hostContext: ({ entityId: hostedTabLoader.shown.entity_id, subEntityId: "" })
+            hostThread: root.chatId; hostTeamThread: root.teamThread; hostTabId: hostedTabLoader.shown.id
+            location: root.chatName + (root.teamName ? " · " + root.teamName : "")
+            home: hostedTabLoader.shown.content_template
+            // The app set its tab up (Notes, once its section is made):
+            // read the channel's tabs again, as Teams' list updates.
+            onHostEvent: (name, json) => { if (name === "tabSaved") backend.channelTabsLoad(root.teamId, root.chatId, root.chatName) }
+        }
+    }
     // A meeting chat's Attendance tab.
     function attendanceViewForTest() { return attendanceTabLoader.item || (channelAttendanceLoader.item ? channelAttendanceLoader.item.children[0] : null) }
     Loader {
@@ -3509,6 +3536,7 @@ Rectangle {
     // Q&A (Viva Engage's meeting Q&A) and Meeting Whiteboard: the pages
     // Teams embeds there, filling the tab (hwc-iframe), signed in with
     // OST's web profile.
+    function meetingAppTabForTest() { return qnaTabLoader.item || whiteboardTabLoader.item }
     Loader {
         id: qnaTabLoader
         property string url: ""
@@ -3516,7 +3544,8 @@ Rectangle {
         visible: active
         anchors { top: header.bottom; bottom: parent.bottom; left: parent.left; right: parent.right }
         onActiveChanged: if (active && !url) url = root.qnaUrl()
-        sourceComponent: WebApp { showHeader: false; appName: "Q&A"; location: root.chatName; home: qnaTabLoader.url }
+        sourceComponent: WebApp { showHeader: false; appName: "Q&A"; appId: "5db56dd0-534d-467b-aeda-d622bee2574a"; location: root.chatName; home: qnaTabLoader.url
+            teamsHost: true; deepNaa: false; hostThread: root.chatId; hostContext: ({ entityId: "", subEntityId: "" }) }
     }
     Loader {
         id: whiteboardTabLoader
@@ -3525,7 +3554,8 @@ Rectangle {
         visible: active
         anchors { top: header.bottom; bottom: parent.bottom; left: parent.left; right: parent.right }
         onActiveChanged: if (active && !url) url = root.whiteboardUrl()
-        sourceComponent: WebApp { showHeader: false; appName: "Whiteboard"; location: root.chatName; home: whiteboardTabLoader.url }
+        sourceComponent: WebApp { showHeader: false; appName: "Whiteboard"; appId: "95de633a-083e-42f5-b444-a4295d8e9314"; location: root.chatName; home: whiteboardTabLoader.url
+            teamsHost: true; deepNaa: false; frameContext: "meetingStage"; hostThread: root.chatId; hostContext: ({ entityId: "", subEntityId: "" }) }
     }
     // The built-in chat tabs (docs/spec/chat-tabs.md). Notes: the chat's
     // Loop page under Teams' own header; Recap: drawn by Teams; Storyline:
@@ -3569,7 +3599,8 @@ Rectangle {
         visible: active
         anchors { top: header.bottom; bottom: parent.bottom; left: parent.left; right: parent.right }
         onActiveChanged: if (active && (!url || forOid !== root.storylineOid)) { forOid = root.storylineOid; url = root.storylineUrl() }
-        sourceComponent: WebApp { showHeader: false; appName: "Storyline"; appId: "683f3525-d193-4a67-8d91-22093beab1ca"; location: root.chatName; home: storylineTabLoader.url }
+        sourceComponent: WebApp { showHeader: false; appName: "Storyline"; appId: "683f3525-d193-4a67-8d91-22093beab1ca"; location: root.chatName; home: storylineTabLoader.url
+            teamsHost: true; hostThread: root.chatId; hostContext: ({ entityId: "storyline", subEntityId: "" }) }
     }
 
     // A channel tab's menu, exactly as Teams builds it (the backend gives

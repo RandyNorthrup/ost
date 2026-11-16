@@ -196,12 +196,24 @@ properties (`tab::{guid}`), set through the chat service:
   Rename for chats (the property with the new name).
 - [x] Meeting chats: Attendance, Breakout Rooms, Q&A, Meeting Whiteboard
   as Teams lists them; Breakout Rooms native (empty state, Create rooms).
-- [ ] Q&A and Meeting Whiteboard load Teams' pages in place, but both need
-  a TeamsJS host: Whiteboard stops at "Something went wrong" (its TeamsJS
-  "Initialization Failed. No Parent window found."), Q&A's sign-in fails
-  (AADSTS700054, it signs in through the host) — TASK-0053.
+- [x] Meeting Whiteboard runs in OST's TeamsJS host (frameContext
+  meetingStage, no deeply nested NAA): it initializes, gets its tokens
+  (client 95de633a for whiteboard.microsoft.com, Graph, api.office.net)
+  and opens a board (seen 2026-11-16 in a "Meeting with OST Test 1" chat).
+- [ ] Meeting Whiteboard's custom messages: Teams answers `readyForUrl`
+  and passes `updateBoardContentFromTeams`; `changeWhiteboardUrl` (the
+  meeting's board, which Teams keeps so everyone opens the same one) and
+  `loadingCallback` aren't handled yet, so OST opens a new board each
+  time instead of the meeting's.
+- [ ] Q&A is hosted the same way (its context measured: entityId "",
+  the meeting chat, meetingId base64 of `0#<chat>#0`, NAA client
+  00bf137d for `https://web.yammer.com/teamsmeeting/user_impersonation`),
+  but not tried live: only scheduled meetings have it, and the test
+  meeting chats are Meet now.
 - [ ] New page, Existing page, New list, Existing list (shown, off).
-- [ ] Other apps' configuration pages need a TeamsJS host (TASK-0053): the
-  page is embedded, Save stays off.
+- [ ] Other apps' configuration pages load in OST's TeamsJS host
+  (frameContext settings), which keeps the validity and settings they
+  report; Save (Teams' settings.save round trip and the new tab's
+  property) isn't built, so it stays off.
 - [ ] Breakout Rooms with rooms (the room list's layout), Assign
   participants, Room settings and Import from CSV in the tab.
