@@ -25,22 +25,20 @@ fn enc(s: &str) -> String {
         .replace('+', "%20")
 }
 
-/// Teams' Create a team (from scratch) body: the name, description and
-/// privacy; the first channel's name unless it is General (Teams leaves
-/// `topicThreadTopic` out then).
+/// Teams' Create a team (from scratch) body, as Teams desktop sent it
+/// (winpc, 2026-11-16): the name, description, privacy and the first
+/// channel's name (required in the form), with empty naming-policy
+/// prefix and suffix.
 pub fn scratch_body(name: &str, description: &str, public: bool, first_channel: &str) -> serde_json::Value {
-    let mut b = serde_json::json!({
+    serde_json::json!({
         "displayName": name.trim(),
         "description": description,
-        "accessType": if public { "Public" } else { "Private" },
+        "displayNamePrefix": "",
+        "displayNameSuffix": "",
+        "visibility": if public { "Public" } else { "Private" },
+        "firstChannelName": first_channel.trim(),
         "isTenantWide": false,
-        "sensitivityLabelId": null,
-        "validationRequired": false,
-    });
-    if first_channel.trim().to_lowercase() != "general" {
-        b["topicThreadTopic"] = serde_json::json!(first_channel);
-    }
-    b
+    })
 }
 
 /// What a create gives back: the new team's group and thread ids (either
@@ -75,9 +73,11 @@ async fn send(req: reqwest::RequestBuilder, what: &str) -> Result<serde_json::Va
 }
 
 /// Create a team from scratch.
+/// `POST {teamsAndChannelsProvisioningService}/team/v2?async=false` (the
+/// templates service, as Teams desktop creates a team from scratch).
 pub async fn create_from_scratch(client: &TeamsClient, body: &serde_json::Value) -> Result<Created> {
-    let (base, token) = middle_tier(client).await?;
-    let v = send(client.http().post(format!("{base}/beta/teams/create")).bearer_auth(&token).json(body), "Create team").await?;
+    let (base, token) = provisioning(client).await?;
+    let v = send(client.http().post(format!("{base}/team/v2?async=false")).bearer_auth(&token).json(body), "Create team").await?;
     Ok(created_from(&v))
 }
 
@@ -466,13 +466,13 @@ mod tests {
 
     #[test]
     fn scratch_body_is_teams() {
-        let b = scratch_body(" OST draft ", "", false, "General");
+        // As Teams sent it (winpc, 2026-11-16).
+        let b = scratch_body(" OST TEST 0195 teams team ", "", false, "OST TEST channel");
         assert_eq!(
-            b.to_string(),
-            r#"{"accessType":"Private","description":"","displayName":"OST draft","isTenantWide":false,"sensitivityLabelId":null,"validationRequired":false}"#
+            b,
+            serde_json::json!({"displayName":"OST TEST 0195 teams team","description":"","displayNamePrefix":"","displayNameSuffix":"","visibility":"Private","firstChannelName":"OST TEST channel","isTenantWide":false})
         );
-        let b = scratch_body("T", "d", true, "Planning");
-        assert_eq!((b["accessType"].as_str(), b["topicThreadTopic"].as_str()), (Some("Public"), Some("Planning")));
+        assert_eq!(scratch_body("T", "d", true, "General")["visibility"], "Public");
     }
 
     #[test]

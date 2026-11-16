@@ -13,6 +13,7 @@ Window {
     signal search(string query)
     signal chosen(string oid, string name, string text)
     signal group(string oids, string topic, string text)
+    signal scheduleMeetingWith(string attendees)
     title: "New Message"
     width: 588; height: 493
     color: theme.surface
@@ -28,6 +29,7 @@ Window {
         id: form
         anchors { top: titleRow.bottom; left: parent.left; right: parent.right; bottom: parent.bottom }
         people: win.people
+        suggested: backend.newChatPeopleJson ? JSON.parse(backend.newChatPeopleJson) : ({ query: "", items: [] })
         chats: backend.chatsJson ? JSON.parse(backend.chatsJson) : []
         myMri: backend.userMri
         myName: backend.userName
@@ -36,6 +38,7 @@ Window {
         onSearch: q => win.search(q)
         onChosen: (oid, name, text) => win.chosen(oid, name, text)
         onGroup: (oids, topic, text) => win.group(oids, topic, text)
+        onScheduleMeetingWith: attendees => win.scheduleMeetingWith(attendees)
         onCancelled: win.close()
     }
     function formForTest() { return form }

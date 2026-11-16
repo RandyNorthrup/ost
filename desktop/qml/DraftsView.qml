@@ -12,6 +12,20 @@ Rectangle {
     readonly property var shown: drafts.filter(d => !chip
         || (chip === "channels" ? d.id.endsWith("@thread.tacv2") : !d.id.endsWith("@thread.tacv2")))
     color: theme.surface
+    // Up / Down / Home / End through the drafts (ListKeys). Opening a draft
+    // leaves this view for its chat, so Enter or Space opens it whatever
+    // the setting says.
+    ListKeys {
+        id: keys
+        owner: root
+        view: list
+        items: root.shown
+        enterToOpen: true
+        onOpen: d => root.openDraft(d.id, d.name)
+    }
+    Keys.onPressed: e => keys.handle(e, "")
+    function keysForTest() { return keys }
+    onVisibleChanged: if (visible) forceActiveFocus()
 
     Rectangle {
         id: pane
@@ -71,6 +85,12 @@ Rectangle {
                     x: 16; width: parent.width - 32; height: parent.height; radius: theme.radius
                     color: itemHover.hovered ? theme.hc(theme.pane, theme.hcHighlight) : "transparent"
                 }
+                Rectangle {
+                    visible: keys.ringOn(item.modelData)
+                    z: 2
+                    x: 16; width: parent.width - 32; height: parent.height; radius: theme.radius
+                    color: "transparent"; border.width: 2; border.color: theme.text
+                }
                 Avatar {
                     x: 32; y: 16
                     size: 32; name: item.modelData.name || "?"
@@ -91,7 +111,7 @@ Rectangle {
                     color: theme.onFill(hcFill1, theme.text)
                 }
                 HoverHandler { id: itemHover; cursorShape: Qt.PointingHandCursor }
-                TapHandler { onTapped: root.openDraft(item.modelData.id, item.modelData.name) }
+                TapHandler { onTapped: { keys.clicked(item.modelData); root.openDraft(item.modelData.id, item.modelData.name) } }
                 Accessible.role: Accessible.Button
                 Accessible.name: "Draft to " + item.modelData.name
             }

@@ -21,6 +21,9 @@ Item {
     signal manageTeam(string teamId)
     signal manageTags(string teamId)
     signal channelCreated(string channelId, string name)
+    /// Offer Start reordering (single pointer controls on).
+    property bool canReorder: false
+    signal startReordering(string threadId)
     readonly property alias menu: menu
     readonly property var general: (team.channels || []).find(c => c.general) || ({ id: team.thread_id, name: "General" })
     readonly property bool anyShown: (team.channels || []).some(c => c.shown !== false)
@@ -36,7 +39,11 @@ Item {
     MenuPopup {
         id: menu
         margins: 8
-        items: (root.anyShown ? [{ key: "hide-all", label: "Hide all channels", icon: "eye-off-20" }, { separator: true }] : []).concat(root.team.archived ? [] : [{ key: "add-member", label: "Add member", icon: "person-add-20" }]).concat([
+        items: (root.anyShown ? [{ key: "hide-all", label: "Hide all channels", icon: "eye-off-20" }, { separator: true }] : [])
+            // Single pointer controls on (Settings ▸ Accessibility): Teams'
+            // Start reordering, after the divider (winpc 2026-11-16).
+            .concat(root.canReorder ? [{ key: "reorder", label: "Start reordering", icon: "arrow-sort-20", endIcon: "accessibility-20" }] : [])
+            .concat(root.team.archived ? [] : [{ key: "add-member", label: "Add member", icon: "person-add-20" }]).concat([
             { key: "add-channel", label: "Add channel", icon: "channel-add-20" },
             { key: "manage", label: "Manage team", icon: "settings-20" },
             { key: "tags", label: "Manage tags", icon: "tag-20" },
@@ -49,6 +56,7 @@ Item {
         onPicked: i => {
             const k = items[i].key
             if (k === "hide-all") hideAll.open()
+            else if (k === "reorder") root.startReordering(root.team.thread_id)
             else if (k === "add-member") addMembers.start(root.team.id, root.team.thread_id, root.team.name)
             else if (k === "add-channel") createChannel.start(root.team.id, root.team.name)
             else if (k === "manage") root.manageTeam(root.team.id)
@@ -92,6 +100,9 @@ Item {
                 else if (code) backend.toast("Leaving the team failed", "error")
             } else if ((r.op === "team-archive" || r.op === "team-restore" || r.op === "team-delete") && !r.ok) {
                 backend.toast("Something went wrong on our end. Please try again.", "error")
+            } else if (r.op === "team-delete" && r.ok) {
+                // Teams takes the team out of the list at once.
+                backend.reloadTeams()
             }
         }
     }

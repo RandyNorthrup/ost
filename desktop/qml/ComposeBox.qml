@@ -313,6 +313,11 @@ Item {
     /// A recorded clip in the box (Teams puts it before the text):
     /// {path, thumb, width, height, duration, id, url, uploading, error}.
     property var clip: null
+    /// The new chat form's box: there is no chat yet, so a clip is stored
+    /// once the chat is made (as the message goes), and "+" is Teams' short
+    /// list (Set delivery options, Schedule meeting, Record video clip; no
+    /// app search).
+    property bool newConversation: false
     signal clipRemoved()
     signal clipRetry()
     signal typed()
@@ -1422,7 +1427,7 @@ Item {
         const text = root.plainText().replace(/[\u00a0\ufffc\ufdd0\ufdd1]/g, " ")
         const html = root.formattedText()
         // FileEvaluator and VideoMessageEvaluator: uploads still going.
-        if (root.cloudFiles.some(c => c.loading || c.linking) || (root.clip && (root.clip.uploading || !root.clip.id))) return "Uploading... Please wait."
+        if (root.cloudFiles.some(c => c.loading || c.linking) || (root.clip && (root.clip.uploading || (!root.clip.id && !root.newConversation)))) return "Uploading... Please wait."
         // EmptyContentEvaluator: nothing but spaces (files and cards count).
         if (!text.trim() && root.mediaInUse().length === 0 && root.files.length === 0 && root.cloudFiles.length === 0 && !root.clip && !root.appCard)
             return "Please type a message to continue."
@@ -1497,17 +1502,23 @@ Item {
     // "+" Actions and apps (measured): 341.3 wide, a search box, then Teams'
     // own items as 36 px rows (20 px icon 8 in, the label at 40). Installed
     // apps' actions are not built yet.
+    // In the new chat form (measured on winpc 2026-11-16) it is a short
+    // menu with no search: 234.3 x 133.3 for its three rows, right on top
+    // of the button and ending 2.7 before its right edge; rows 218 wide
+    // from (7.7, 12.7).
     Popup {
         id: plusFlyout
         property Item anchorItem: null
+        readonly property bool plain: root.newConversation
         parent: Overlay.overlay
-        width: 341.3; padding: 0
-        height: 62.7 + itemsCol.height + 14.7
-        x: anchorItem ? Math.min(Overlay.overlay.width - width - 8, anchorItem.mapToItem(Overlay.overlay, 0, 0).x + anchorItem.width - width) : 0
-        y: anchorItem ? anchorItem.mapToItem(Overlay.overlay, 0, 0).y - height - 8 : 0
+        width: plain ? 234.3 : 341.3; padding: 0
+        height: plain ? 12.7 + itemsCol.height + 12.6 : 62.7 + itemsCol.height + 14.7
+        x: !anchorItem ? 0 : plain ? anchorItem.mapToItem(Overlay.overlay, 0, 0).x + anchorItem.width - 2.7 - width
+            : Math.min(Overlay.overlay.width - width - 8, anchorItem.mapToItem(Overlay.overlay, 0, 0).x + anchorItem.width - width)
+        y: anchorItem ? anchorItem.mapToItem(Overlay.overlay, 0, 0).y - height - (plain ? 0 : 8) : 0
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
-        onOpened: { search.text = ""; search.forceActiveFocus() }
+        onOpened: { search.text = ""; if (!plain) search.forceActiveFocus() }
         readonly property var items: [
             { key: "schedule", label: "Schedule message", icon: "send-clock-20", hidden: !root.scheduleAllowed },
             { key: "delivery", label: "Set delivery options", icon: "important-20", hidden: !root.deliveryOptions },
@@ -1515,6 +1526,7 @@ Item {
             { key: "clip", label: "Record video clip", icon: "video-clip-20", hidden: !root.canRecordClip }
         ].filter(i => !i.hidden && i.label.toLowerCase().indexOf(search.text.trim().toLowerCase()) >= 0)
         Rectangle {
+            visible: !plusFlyout.plain
             x: 14.7; y: 17.3; width: 310; height: 30.7; radius: 4
             color: theme.surface
             border.color: search.activeFocus ? theme.brand : theme.stroke; border.width: 0.67
@@ -1531,13 +1543,13 @@ Item {
         }
         Column {
             id: itemsCol
-            x: 14.7; y: 62.7
+            x: plusFlyout.plain ? 7.7 : 14.7; y: plusFlyout.plain ? 12.7 : 62.7
             Repeater {
                 model: plusFlyout.items
                 Rectangle {
                     id: hcFill9
                     required property var modelData
-                    width: 310; height: 36; radius: 4
+                    width: plusFlyout.plain ? 218 : 310; height: 36; radius: 4
                     color: rowHover.hovered ? theme.menuHover : "transparent"
                     FluentIcon { x: 8; y: 8; name: parent.modelData.icon; size: 20; color: theme.onFill(hcFill9, theme.textStrong) }
                     Text { x: 40; anchors.verticalCenter: parent.verticalCenter; text: parent.modelData.label; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill9, theme.text) }
@@ -1912,7 +1924,18 @@ Item {
     function pickMentionForTest(n) { mentionPicker.current = n || 0; mentionPicker.pick() }
 
     function deliveryForTest() { deliveryPopup.anchorItem = sideTools; deliveryPopup.open() }
-    function plusForTest() { plusFlyout.anchorItem = sideTools; plusFlyout.open() }
+    function plusForTest() {
+        const find = it => {
+            for (const c of it.children) {
+                if (c.visible && c.modelData && c.modelData.id === "message-extension-flyout-command") return c
+                const f = find(c)
+                if (f) return f
+            }
+            return null
+        }
+        plusFlyout.anchorItem = find(root) || sideTools; plusFlyout.open()
+    }
+    function closePlusForTest() { plusFlyout.close() }
 
     // Teams' "Discard draft" (messagedraft-discard-dialog): 600 x 156,
     // radius 8; the title 20/28 semibold at 24.7, Close, the text at 62,

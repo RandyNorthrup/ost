@@ -36,6 +36,8 @@ Popup {
     property string channelId: ""
     property string channelName: ""
     readonly property bool channelMode: channelId.length > 0
+    /// Opened right after Create team (Teams offers Skip instead of Cancel).
+    property bool afterCreate: false
     signal finished()
     // Picked: {key, mri, object_id, name, detail, mail, group, owner, people, guest, email}.
     property var staged: []
@@ -99,7 +101,7 @@ Popup {
             list.forEach(p => {
                 if (!p.mri || seen[p.mri] || members.indexOf(p.mri.toLowerCase()) >= 0) return
                 seen[p.mri] = true
-                users.push({ mri: p.mri, owner: s.owner })
+                users.push({ mri: p.mri, owner: s.owner, guest: !!p.is_guest })
             })
         })
         const guests = staged.filter(s => s.guest).map(s => ({ email: s.email, name: s.name }))
@@ -304,7 +306,7 @@ Popup {
         Row {
             x: 351.3; y: dlg.channelMode ? 369.4 : 403
             spacing: 8
-            DialogButton { text: dlg.outcome ? "Close" : dlg.channelMode ? "Skip" : "Cancel"; onClicked: dlg.close() }
+            DialogButton { text: dlg.outcome ? "Close" : dlg.channelMode || dlg.afterCreate ? "Skip" : "Cancel"; onClicked: dlg.close() }
             DialogButton {
                 visible: !dlg.outcome
                 text: dlg.adding ? "Adding..." : "Add"; primary: true

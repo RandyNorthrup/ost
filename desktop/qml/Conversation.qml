@@ -130,6 +130,9 @@ Rectangle {
     readonly property bool peerNoteShown: peerNoteText !== "" && compose.visible && !dismissedPeerNotes[chatId + "|" + peerNoteText]
     property bool composeNoteMuted: false
     property bool composeDisabled: false
+    /// What the disabled box says (Teams, a chat you left: "You can't send
+    /// messages because you are not a member of the chat.").
+    property string composeDisabledText: ""
     /// Only Format and Send in the compose (Teams' lobby chat).
     property bool composeTextOnly: false
     /// No compose at all (people waiting read the lobby chat only).
@@ -527,8 +530,30 @@ Rectangle {
             const r = JSON.parse(json)
             if (r.error) { console.warn("CLIP upload failed", r.error); compose.clip = Object.assign({}, compose.clip, { uploading: false, error: r.error }); return }
             compose.clip = Object.assign({}, compose.clip, { uploading: false, id: r.id, url: r.url })
+            if (root.sendAfterClip) { root.sendAfterClip = false; root.sendCompose() }
         }
     }
+    /// A new conversation's message waits for its clip to be stored.
+    property bool sendAfterClip: false
+    /// The new chat form's message, once its chat is open here: what was
+    /// written ({text, html, media}), its delivery option, files from this
+    /// device, cloud files and a recorded clip go as from this chat's own
+    /// compose box (Teams makes the chat as the first message goes).
+    function adoptAndSend(p) {
+        compose.setDraftState({ text: p.text || "", html: p.html || "", media: p.media || [] })
+        compose.importance = p.importance || ""
+        root.pendingFiles = p.files || []
+        cloudAttach.pending = p.cloud || []
+        if (p.clip) {
+            compose.clip = Object.assign({}, p.clip, { uploading: true, id: "", url: "", rendering: !!p.clip.spec && !p.clip.path })
+            root.sendAfterClip = true
+            if (compose.clip.rendering) backend.renderClip(JSON.stringify(compose.clip.spec))
+            else backend.videoClipUpload(root.chatId, compose.clip.path, compose.clip.thumb)
+            return
+        }
+        root.sendCompose()
+    }
+    function sendAfterClipForTest() { return root.sendAfterClip }
     function clipRecorderForTest() { return clipRecorder }
     /// The header's More chat options: Open in new window (Ctrl+O), Share
     /// screen (Ctrl+Shift+E: a call to the chat, sharing once it connects)
@@ -4436,7 +4461,11 @@ Rectangle {
             backend.sendWithClip(JSON.stringify({ id: c.id, url: c.url, duration: c.duration, width: c.width, height: c.height }), input.getFormattedText(0, input.length), JSON.stringify(compose.mediaInUse()))
             compose.clip = null
         } else if (root.hasFiles) {
-            backend.sendFiles(root.fileLines(), root.plainText())
+            // Formatted text (or a mention) goes with the files as Teams
+            // HTML, as without files.
+            const fhtml = compose.formattedText()
+            if (root.plainText().trim() && /<(b|i|u|s|ul|ol|h[123]|hr|blockquote|pre|code|span|a|table)[ >]|margin-left/.test(fhtml)) backend.sendFilesHtml(root.fileLines(), fhtml)
+            else backend.sendFiles(root.fileLines(), root.plainText())
             root.clearFiles()
         } else if (compose.mediaInUse().length > 0) {
             // Picked emoticons, GIFs and stickers go in Teams' own form.
@@ -4633,7 +4662,7 @@ Rectangle {
         // Teams offers it in chats and channels, not in your own chat or a
         // thread's reply box.
         scheduleAllowed: !root.isSelf && !root.threadRoot && !root.pane
-        placeholder: root.composeDisabled ? "" : root.threadRoot ? "Reply in thread" : root.threadsLayout ? "Message in " + root.chatName : "Type a message"
+        placeholder: root.composeDisabled ? root.composeDisabledText : root.threadRoot ? "Reply in thread" : root.threadsLayout ? "Message in " + root.chatName : "Type a message"
         noteText: root.composeNote
         textOnly: root.composeTextOnly
         noteMuted: root.composeNoteMuted

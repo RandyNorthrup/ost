@@ -341,7 +341,58 @@ opened, then another chat was clicked.
   - With nothing typed it lists your recent one-on-one people, then you
     ("Randy Northrup (You)"). Picking one keeps it open with the rest.
   - The second line is the entry's `description` (here "OST-TEST1",
-    "RANDY"). → TODO: which directory field that is.
+    "RANDY"); see "Suggestions, measured on winpc" below for the rule.
+- **Suggestions, measured on winpc (Teams desktop, ost-test1,
+  2026-11-16).** Before anything is typed the list is the worker's
+  zero-state suggestions (`zeroStateSuggestions(startIndex 1, endIndex
+  20)` → `substrateSuggestionsManager.getTopNSuggestions`): Substrate's
+  top-N people, fetched with `POST substrate.office.com/search/api/v1/
+  suggestions?scenario=peoplecache` (an empty query, People only, up to
+  `maxTopNFetchSize` 500, kept in IndexedDB for `topNSuggestionsCacheExpiry`)
+  and shown in rank order, ranks 1–20. So: **people only** (no bots, no
+  chats, no Workflows), you once as "<name> (You)" where your rank puts
+  you. Live: OST Test 2 · OST-TEST2, Randy Northrup · RANDY, OST Test 1
+  (You) · OST-TEST1, then the guests OST Guest 08, 07, 06, 05, 01, 04,
+  03, 02, 09 (Teams' ranking, not by name). Opening the form only calls
+  `search/api/v2/init?scenario=peoplepicker.newChat` (warm-up).
+  - Checked from OST with ost-test1's token: the `peoplecache` request
+    with **no picker filter** (no Filter, Provenances or
+    ServeNoEmailContacts) answers OST Test 2, Randy Northrup, OST Test Team
+    (a group), a PersonalContact with no name or Teams id (your own
+    address), then OST Guest 08, 07, 06, 05, 01, 04, 03, 02, 09 (guests
+    are PeopleType "Other", with their MRI). Teams drops the group and
+    turns the personal contact into you, which gives exactly its list.
+    The picker's filtered body (the newChat one) leaves the guests and you
+    out.
+  - Second line (async-entry 262888 `A`): a description the service gave;
+    else the sign-in name before "@" in capitals, as "(ALIAS) job title"
+    when there is a job title; a guest (or a non-member) shows its email
+    (else its UPN). Live: "OST-TEST2", "RANDY", guests
+    "ostguest08@osttestlab2611.onmicrosoft.com".
+  - Rows (option, `people-picker-entry-<upn>`): 50 tall, 52 for a guest,
+    2 apart; padding 6 / 8; picture 32 at (12, 9) (10 for a guest); name
+    14/20 NeutralForeground2 (#424242) at (60, 6.5) (8 for a guest);
+    second line 12/16 #616161 at (60, 27.5) (30). A guest's name has the
+    **Guest** tag 4 after it: 24 tall, radius 4, #EBEBEB, padding 0 6, the
+    filled `Guest` icon (16) and "Guest" 12 semibold #616161; aria "OST
+    Guest 08 Guest, ostguest08@…".
+  - Typing searches `peoplepicker.newChat` and mixes people with group
+    chats, channels, teams and groups (e.g. "ost": OST Test 2, OST Test 1
+    (You), three guests, OST group test, OST large chat test, OST empty
+    chat test, four channels, OST Test Team, the team's group, OST Test
+    Community, the other guests).
+- **Compose in a new conversation (winpc).** The same box as a chat's
+  (Format, Emoji, Attach, Write with Copilot, Loop, "+", Send). Attach
+  opens the same popover (Search cloud files, Recent cloud files, Attach
+  cloud files, Upload from this device). "+" is a short menu with no app
+  search: **Set delivery options**, **Schedule meeting**, **Record video
+  clip** (36 px rows from (7.7, 12.7), 218 wide, icon 20 at 8, label 14 at
+  40), on a 234.3 × 133.3 surface (radius 4, shadow 16) right on top of
+  the button, its right edge 2.7 inside the button's.
+- **The note** (winpc, 1280 × 680): Teams' chat-pencil illustration (256)
+  over the heading, which is 23.3 under it, the line 23.2 under the
+  heading; the block is centred between the To row and the compose box.
+  (Teams web at 561 tall showed no picture: OST shows it where it fits.)
 - **Middle**, with nobody picked (or a new conversation):
   **"You're starting a new conversation"** (16 px bold, a heading) and
   43 below its centre **"Type your first message below."** (14 px), both
@@ -622,6 +673,43 @@ client only filters and hoists:
   `FOLDER_CAN_NOT_BE_DROPPED_TO_ITEM`).
 - Keyboard alternative: **Start reordering** in a menu shows move
   buttons on the row (single-point reordering, live on).
+- **Measured on winpc (2026-11-16)** with a test section "OST TEST
+  section" (two chats) and the two teams:
+  - Drag: the dragged row becomes a fixed overlay at the pointer (z 999):
+    white at opacity 0.75, 0.67 px black edge, radius 4, shadow 16, the
+    row's own content (chevron for a team, picture 20, name, ···), cursor
+    `grabbing`. Its own place stays, at opacity 0.5; the other rows don't
+    move. The drop place is a 2 px NeutralForeground1 (#242424) line, an
+    `::after` of the row it would follow (top 30 of a 32 px row, inset
+    2.875 each side), or the top of the first row. Escape cancels (nothing
+    is saved). Dragging a team folds the teams up (channels hidden).
+    Channels can be dragged too, but only into sections: within a team
+    there is no drop line (no reorder).
+  - Saved: a section's chats with `POST {csa}/api/v1/teams/users/me/
+    conversationFolders?…` `{folderHierarchyVersion,
+    supportsAdditionalSystemGeneratedFolders: true, supportsSliceItems:
+    true, actions: [{action: "ReorderItems", folderId, newItemsOrder:
+    [ids]}]}`; sections with `{actions: [{newFoldersOrder, action:
+    "ReorderFolders"}]}`; teams with `PUT {chatsvc}/v1/users/ME/
+    properties?name=teamsOrder` `{"teamsOrder": "[{\"teamId\":…,
+    \"order\":0},…]"}` (a JSON string, every team). Teams reads it back
+    as the teamsOrder user preference.
+  - Teams quirk: a drag that put a section's two chats back in their
+    first order sent the order it had before the drag (the server kept
+    the moved order while Teams showed the other). OST sends the order it
+    shows.
+- **Start reordering** (Settings ▸ Accessibility ▸ "Turn on single
+  pointer controls" on): in the item menu of a chat in Favorites or your
+  own section (after Open in new window, before the divider), in the
+  team menu (after Hide all channels and its divider) and in the section
+  menu. Icon ArrowSort 20 and, at the item's end, the Accessibility figure
+  (20, 8 from the edge). It shows **Move Up** / **Move Down** (subtle
+  24 × 23.3 buttons, ArrowUp / ArrowDown 20 NeutralForeground2, at 232
+  and 256 in the 288 px row, `reorderUpButton` / `reorderDownButton`) on
+  that row; Move Up takes the focus. Each press saves at once (as a drop
+  does). A click anywhere else ends it (Escape doesn't). A team's Start
+  reordering folds the teams; a section's folds every section (the
+  section header gets the buttons).
 
 ### 5.4 Chat ··· menu (module 917728 `go`)
 
@@ -1123,8 +1211,10 @@ checkboxes are 16 px in 32 boxes (8 down), labels 14/20 at 71 (6 down), rows
 - Set workflows: the Workflows dialog with `subContext=chatworkflows&
   chatName&chatId`.
 - Remove chat history: "Remove chat history?" / "This will remove the chat
-  from your list and search. It affects you only." Cancel / Remove;
-  `DELETE {chatsvc}/v1/threads/{chat}` (not tried: no disposable chat).
+  from your list and search. It affects you only." Cancel / Remove. Live
+  (2026-11-16, see "Live checks" below) it is `PUT {chatsvc}/v1/users/ME/
+  conversations/{chat}/properties?name=clearHistoryTime`, not a thread
+  delete.
 - Report a concern (meeting chats): the meeting's "Report a security
   concern" dialog (its card: the meeting's subject, start "Nov 6, 3:00
   PM", organizer's name), the chat's members but you to name; Report sends
@@ -1141,6 +1231,58 @@ checkboxes are 16 px in 32 boxes (8 down), labels 14/20 at 71 (6 down), rows
   Move to section, Remove from section, Copy link. Share screen calls the
   chat and opens the share picker once the call connects (not tried: it
   would ring a real member).
+
+#### 5.6.11a Live checks with test teams and chats (TASK-0195, winpc 2026-11-16)
+
+Only test objects named "OST TEST…" were used, with OST Test 2 and the
+OST Guest accounts; all were removed afterwards.
+- **Group chat menu** (3+ members): Open in new window | Mark as unread,
+  Manage notifications ▸, Move to section ▸, Manage apps, Set workflows,
+  Copy link | Leave, Hide. No "Remove chat history" item there: it is a
+  checkbox in Leave. A 1:1 (OST Test 2) still has Mute and Remove chat
+  history (… Copy link | Remove chat history, Hide).
+- **Leave this chat?** (600 × 221.7): "This chat will stay in your list but
+  you can hide it anytime or remove chat history now.", a "Remove chat
+  history" checkbox with "This will remove the chat from your list and
+  search. It affects you only.", Cancel / Leave. Leave sends `DELETE
+  {chatsvc}/v1/threads/{chat}/members/{your MRI}`; the chat **stays in the
+  list**, shows "OST Test 1 left the chat." and its box reads "You can't
+  send messages because you are not a member of the chat." (disabled; no
+  rename pencil or Meet now; roster 2). With the checkbox ticked Teams also
+  sent `PUT …/conversations/{chat}/properties?name=clearHistoryTime`
+  `{"clearHistoryTime": <the last message's time>}` and the chat left the
+  list (the member delete went too: the chat's roster had no OST Test 1
+  afterwards, though the capture only caught the property).
+- **Create a team** (New items ▸ New team): "Create a team", "You're
+  creating a team from scratch. More create team options", Team name *,
+  Description, Team type (Private by default), First channel name * (with
+  ···), **Add Channel Agent** (a new checkbox), What's a team?, Cancel /
+  Create. Create sends `POST {teamsAndChannelsProvisioningService}/team/
+  v2?async=false` `{displayName, description, displayNamePrefix: "",
+  displayNameSuffix: "", visibility, firstChannelName, isTenantWide:
+  false}`; the first channel takes that name (the team's thread). Then
+  **"Add members to {team}"** opens (Start typing a name, distribution list,
+  or security group…; "Type a name or email"; Skip / Add; picked people
+  are rows with a Member ▾ role and ×). Add sends `PUT {mt}/beta/teams/
+  {thread}/bulkUpdateRoledMembers?allowAsyncAddition=true` `{users: [{mri,
+  role: 0}], groupId}`; then the first channel opens.
+- **Delete team**: "Delete the {team} team", the warning, "I understand that
+  everything will be deleted" (Delete team waits for it), Cancel / Delete
+  team; `DELETE {mt}/beta/teams/{thread}/delete`. Teams takes the team out
+  of its list at once; the teams list still returns it for a while, so OST
+  drops it locally and leaves it out of later reloads in that session.
+- **Delete a custom emoji** (right-click it in the picker): a menu with
+  "Delete emoji for org." (delete icon) over "Created by {name} on {date}",
+  then "Are you sure you want to delete it?" (600 × 124.7, radius 8,
+  padding 24.67, title 20/28 semibold) with Cancel / Delete.
+- **Remove section**: "Remove {section}?", "The items in this section will
+  still be available in your list.", Cancel / Remove; its chats go back to
+  Chats.
+- **Communities search card** (Search ▸ +3 ▸ Communities, "OST Test
+  Community"): a 60 px `search-card` (white, radius 8, shadow 2, padding
+  12) with one 36 px row: the 32 px square picture (radius 4; Fluent's
+  colourful initials by name: "OC" #712D09 on #EFC4AD) and the name 14/20
+  at 62, the matched words bold; no second line.
 
 #### 5.6.12 Quick views ▸ Followed threads and Saved; team order (measured 2026-11-09)
 
@@ -1162,9 +1304,11 @@ checkboxes are 16 px in 32 boxes (8 down), labels 14/20 at 71 (6 down), rows
 - Saved from `48:saved/messages` (savedMessage records; a later unSaved
   record removes one): the chat or channel, then "picture Name: text";
   Unsave this message (filled bookmark) and More options at 292 / 324.
-- Team order: the teamsOrder preference (`GET {csa}/api/v1/teams/users/me/
-  discover/preferences`), the rest in the service's order (Teams' stable
-  sortBy), not by name.
+- Team order: the teamsOrder property (`GET {chatsvc}/v1/users/ME/
+  properties`, which Teams' drag and drop writes; §5.3), else the
+  teamsOrder preference (`GET {csa}/api/v1/teams/users/me/discover/
+  preferences`), the rest in the service's order (Teams' stable sortBy),
+  not by name.
 
 ### 5.7 Communities, Copilot and quick views
 
@@ -1190,6 +1334,18 @@ checkboxes are 16 px in 32 boxes (8 down), labels 14/20 at 71 (6 down), rows
 | Open selected item in new window | Ctrl+Enter |
 | Next / previous section | Alt+PageDown / Alt+PageUp (flag off) |
 | Next / previous unread | Ctrl+Alt+Down / Ctrl+Alt+Up (flag off) |
+
+**Lists and "Use Enter or Spacebar to show content"** (Settings ▸
+General; the synced `messagingSettings.disableAutomaticConvSwitchOnKeyboardNav`).
+Teams reads it in the chat list (simple-collab-app), the Activity feed
+(activity-app, `useActivityFeedQuery`), the quick views' slice lists
+(messaging-slice-list, apps-headline-slices: @Mentions, Followed threads,
+Saved, Drafts), the session list pane and Teams and channels. Up / Down
+move the focus ring (2 px NeutralForeground1 on the row); with the setting
+off the focused row also opens at once (measured in Activity on winpc
+2026-11-16: Ctrl+1 put the focus, ring and aria-selected on the first
+item; Down moved both to the second), with it on only Enter or Space
+opens.
 
 ## 7. Conversation header
 
@@ -1660,9 +1816,12 @@ the channel again, or **Go to channel**, returns to its posts).
 - [ ] Bold only when unread and not an expanded branch; brand badge dot for unread unmuted chats; number badges on sections/teams; meeting/huddle and followed charms.
 - [x] "New" badge on new teams and never-opened channels (CSA team list: no read horizon).
 - [ ] Hidden chats rules (hide until a newer message; declined meeting chats); temp hoist of a selected hidden item.
-- [ ] Chat ··· menu order and per-type rules. Done: Mark as read/unread, Move to section ▸, Remove from section, Mute, Copy link, Leave (≥ 3 members, not a meeting chat you created), Hide/Unhide (`unpinnedTime` + `historyHiddenTime`; null to unhide). TASK-0075: Open in new window, Notify when available, Manage apps, Set workflows, Remove chat history.
+- [ ] Chat ··· menu order and per-type rules. Done: Mark as read/unread, Move to section ▸, Remove from section, Mute, Copy link, Leave (≥ 3 members, not a meeting chat you created), Hide/Unhide (`unpinnedTime` + `historyHiddenTime`; null to unhide). TASK-0075: Open in new window, Notify when available, Manage apps, Set workflows, Remove chat history. TASK-0195: Leave is Teams' dialog with the Remove chat history checkbox, the chat stays listed with the disabled box, and a group chat's menu has no Remove chat history. Left: a group chat shows Mute where Teams now has Manage notifications ▸ (§5.6.11a).
 - [ ] Channel ··· menu and team ··· menu order and rules.
-- [ ] Drag and drop of sections, items and teams; Start reordering.
+- [x] Drag and drop of chats and channels within Favorites and your own (Custom order) sections and of teams, saved as Teams saves it (ReorderItems; the teamsOrder user property); Start reordering for those (Settings ▸ Accessibility ▸ Turn on single pointer controls, kept on the device) (TASK-0150). Not yet: reordering sections, and dragging an item into another section.
+- [x] New chat suggestions from Teams' top-N people, with Teams' second lines and Guest tag; the new conversation's compose box attaches, runs "+" (Teams' short list) and sends formatted text with files and the delivery option (TASK-0204). Not yet: typed search's chats, channels and teams.
+- [x] Up / Down (Home / End) and "Use Enter or Spacebar to show content" in Activity, @mentions, Followed threads, Saved and Drafts (Drafts always Enter, as it leaves the view) (TASK-0176).
+- [ ] Left after TASK-0150/0195/0204: dragging a section itself (ReorderFolders) and dragging a chat into another section; the folded teams during a team drag aren't kept; typed (non-empty) new-chat queries still list only people, not Teams' chat and group matches; Create team lacks Teams' new "Add Channel Agent" checkbox; a person staged in Add members can show a blank picture until it loads.
 - [ ] Shortcuts in §6.
 - [ ] Header layout: 61 px, title 18 px bold, toolbar order action items › divider › context buttons › ···.
 - [ ] Header breakpoints on the header's own width (ResizeObserver): <640 tabs under title + dropdown (done for chats and channels, with Teams' menu order, TASK-0177), Meeting details into ···; <720 Participants into ···; ≥834 Meet now text; context buttons 3/2/0 at ≥640/480–639/<480, overflow into a "Sidepane Features" group at the top of ···.

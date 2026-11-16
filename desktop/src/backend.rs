@@ -419,6 +419,10 @@ pub mod qobject {
         #[qproperty(QString, calendar_json)]
         /// People search results for the new-chat picker, as JSON.
         #[qproperty(QString, people_json)]
+        /// The new chat form's suggestions, as Teams' people picker lists
+        /// them: {query, items: [{id, name, sub, guest, upn}]} (Teams' top-N
+        /// people before anything is typed, else its search).
+        #[qproperty(QString, new_chat_people_json)]
         /// The open chat's members (Teams' roster): [{mri, name, mail, me}].
         #[qproperty(QString, chat_members_json)]
         /// The call's chat members, with presence (People pane: "People
@@ -1164,6 +1168,10 @@ pub mod qobject {
         /// message picker).
         #[qinvokable]
         fn search_people_with_me(self: Pin<&mut Backend>, query: &QString);
+        /// The new chat form's suggestions for `query` ("" before anything
+        /// is typed) into new_chat_people_json.
+        #[qinvokable]
+        fn new_chat_people(self: Pin<&mut Backend>, query: &QString);
 
         /// Open (or start) the 1:1 chat with a person by object id.
         #[qinvokable]
@@ -1349,6 +1357,9 @@ pub mod qobject {
         /// url, error}.
         #[qsignal]
         fn video_clip_uploaded(self: Pin<&mut Backend>, path: QString, json: QString);
+        /// create_group_chat made the chat and opened it.
+        #[qsignal]
+        fn group_chat_created(self: Pin<&mut Backend>, id: QString);
 
         /// A card_invoke finished: its op, the outcome (JSON) and an error.
         #[qsignal]
@@ -1717,9 +1728,15 @@ pub mod qobject {
         /// "expand"/"collapse" (folder id), "expandAll"/"collapseAll",
         /// "create" (name, optional item and from), "rename" (folder id,
         /// name), "delete" (folder id), "move" (item, to, optional from) or
-        /// "remove" (item, from). `args` is a JSON object.
+        /// "remove" (item, from) or "reorder" (folder id, order: the
+        /// section's conversation ids in their new order). `args` is a JSON
+        /// object.
         #[qinvokable]
         fn folder_action(self: Pin<&mut Backend>, action: &QString, args: &QString);
+        /// Put the teams in this order (a JSON array of team thread ids), as
+        /// Teams' drag and drop and Start reordering save it.
+        #[qinvokable]
+        fn reorder_teams(self: Pin<&mut Backend>, thread_ids: &QString);
         /// Look up an app's privacy and terms links (shared app cards).
         #[qinvokable]
         fn app_links_load(self: Pin<&mut Backend>, app_id: &QString);
@@ -2269,6 +2286,10 @@ pub mod qobject {
         /// chat, with optional text, the way Teams does.
         #[qinvokable]
         fn send_files(self: Pin<&mut Backend>, paths: &QString, text: &QString);
+        /// As send_files, with the compose box's formatted text (its HTML)
+        /// and the next message's delivery option.
+        #[qinvokable]
+        fn send_files_html(self: Pin<&mut Backend>, paths: &QString, editor_html: &QString);
 
         /// Save an attachment into the Downloads folder.
         #[qinvokable]
@@ -2549,6 +2570,8 @@ pub struct BackendRust {
     calls_json: QString,
     calendar_json: QString,
     people_json: QString,
+    new_chat_people_json: QString,
+    new_chat_people_generation: u64,
     chat_members_json: QString,
     call_chat_members_json: QString,
     chat_meeting_json: QString,
@@ -2607,6 +2630,10 @@ pub struct BackendRust {
     /// Channels' layouts from the chat service (the teams list leaves some
     /// out), by channel id.
     channel_layouts: std::collections::HashMap<String, String>,
+    /// Teams you deleted this session (thread ids). Teams takes a deleted
+    /// team out of its list at once; the teams list still returns it for a
+    /// while, so reloads leave these out.
+    deleted_teams: HashSet<String>,
     /// Pictures by photo_for id: a file URL, or None for "has none".
     photos: HashMap<String, Option<String>>,
     /// Picture downloads in flight.
@@ -9398,6 +9425,42 @@ impl qobject::Backend {
         });
     }
 
+    pub fn new_chat_people(mut self: Pin<&mut Self>, query: &QString) {
+        let q = query.to_string().trim().to_string();
+        let generation = self.rust().new_chat_people_generation + 1;
+        self.as_mut().rust_mut().new_chat_people_generation = generation;
+        let (my_mail, my_name) = (self.rust().user_mail.to_string(), self.rust().user_name.to_string());
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let me = TeamsClient::new().await.ok().and_then(|c| c.object_id()).unwrap_or_default();
+                let items = if q.is_empty() {
+                    api::search::zero_state_people(&me, &my_mail, &my_name).await?
+                } else {
+                    api::search::people_only(api::search::recipients(&q, &me).await?, 20)
+                };
+                anyhow::Ok(items)
+            }
+            .await;
+            let _ = qt.queue(move |mut this| {
+                if this.rust().new_chat_people_generation != generation {
+                    return;
+                }
+                match result {
+                    Ok(items) => {
+                        let items: Vec<serde_json::Value> = items
+                            .into_iter()
+                            .map(|p| json!({ "id": p["oid"], "name": p["name"], "sub": p["sub"], "guest": p["guest"], "upn": p["upn"] }))
+                            .collect();
+                        let v = json!({ "query": q, "items": items });
+                        this.as_mut().set_new_chat_people_json(QString::from(v.to_string().as_str()));
+                    }
+                    Err(e) => tracing::warn!("new chat suggestions failed: {}", short_error(&e)),
+                }
+            });
+        });
+    }
+
     pub fn open_chat_with(self: Pin<&mut Self>, oid: &QString, name: &QString) {
         let Some(me) = teams_cli::config::Config::load()
             .ok()
@@ -10595,7 +10658,7 @@ impl qobject::Backend {
         if !is_chat_id(&chat) {
             return;
         }
-        self.send_files_in(chat.clone(), chat, paths, text);
+        self.send_files_in(chat.clone(), chat, paths, text, None);
     }
 
     pub fn close_channel_window(mut self: Pin<&mut Self>, channel_id: &QString) {
@@ -11993,6 +12056,10 @@ impl qobject::Backend {
                         // Layouts the chat service told us the list lacks.
                         let fixes = this.rust().channel_layouts.clone();
                         let mut v: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
+                        let gone = this.rust().deleted_teams.clone();
+                        if let Some(a) = v.as_array_mut() {
+                            a.retain(|t| !gone.contains(t["thread_id"].as_str().unwrap_or_default()));
+                        }
                         for t in v.as_array_mut().into_iter().flatten() {
                             for c in t["channels"].as_array_mut().into_iter().flatten() {
                                 if let Some(l) = c["id"].as_str().and_then(|id| fixes.get(id)) {
@@ -13284,6 +13351,7 @@ impl qobject::Backend {
                             &QString::from(id.as_str()),
                             &QString::from(name.as_str()),
                         );
+                        this.as_mut().group_chat_created(QString::from(id.as_str()));
                         this.as_mut().reload_chats();
                     }
                     Err(e) => this
@@ -13815,9 +13883,13 @@ impl qobject::Backend {
             }
             .await;
             let _ = qt.queue(move |mut this| match result {
+                // Teams keeps a chat you left in your list ("This chat will
+                // stay in your list"), read-only; its roster no longer has you.
                 Ok(()) => {
-                    this.as_mut().rust_mut().chats.retain(|c| c["id"].as_str() != Some(id.as_str()));
-                    this.as_mut().publish_chats();
+                    this.as_mut().reload_chats();
+                    if this.rust().current_chat_id.to_string() == id {
+                        this.as_mut().load_chat_members();
+                    }
                 }
                 Err(e) => {
                     tracing::warn!("leave chat failed: {}", short_error(&e));
@@ -13891,6 +13963,21 @@ impl qobject::Backend {
             self.as_mut().rust_mut().folders = next;
             self.as_mut().set_folders_json(QString::from(text.as_str()));
         }
+        // A new order shows at once too.
+        let order: Vec<String> = args
+            .get("order")
+            .and_then(|o| o.as_array())
+            .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+            .unwrap_or_default();
+        if action == "reorder" {
+            let mut next = current.clone();
+            if let Some(f) = next.folders.iter_mut().find(|f| f.id == arg(&args, "id")) {
+                f.items = order.clone();
+            }
+            let text = serde_json::to_string(&next).unwrap_or_default();
+            self.as_mut().rust_mut().folders = next;
+            self.as_mut().set_folders_json(QString::from(text.as_str()));
+        }
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let a = |k: &str| arg(&args, k);
@@ -13928,6 +14015,7 @@ impl qobject::Backend {
                         folders::move_item(&client, version, &a("item"), &a("to"), (!from.is_empty()).then_some(from.as_str())).await
                     }
                     "remove" => folders::remove_item(&client, version, &a("item"), &a("from")).await,
+                    "reorder" => folders::reorder_items(&client, version, &a("id"), &order).await,
                     _ => anyhow::bail!("Unknown section action"),
                 }
             }
@@ -13939,6 +14027,26 @@ impl qobject::Backend {
                 // The server's state wins (and the next change needs its version).
                 this.as_mut().folders_load();
             });
+        });
+    }
+
+    pub fn reorder_teams(mut self: Pin<&mut Self>, thread_ids: &QString) {
+        let order: Vec<String> = serde_json::from_str(&thread_ids.to_string()).unwrap_or_default();
+        if order.is_empty() {
+            return;
+        }
+        // Shown at once (Teams' optimistic update), the rest after them.
+        let mut teams: Vec<serde_json::Value> = serde_json::from_str(&self.rust().teams_json.to_string()).unwrap_or_default();
+        let rank = |t: &serde_json::Value| order.iter().position(|o| Some(o.as_str()) == t["thread_id"].as_str()).unwrap_or(usize::MAX);
+        teams.sort_by_key(rank);
+        let all: Vec<String> = teams.iter().filter_map(|t| t["thread_id"].as_str().map(str::to_string)).collect();
+        self.as_mut().set_teams_json(QString::from(serde_json::Value::Array(teams).to_string().as_str()));
+        runtime().spawn(async move {
+            let result = async { api::teams::set_teams_order(&TeamsClient::new().await?, &all).await }.await;
+            match result {
+                Ok(()) => tracing::info!("team order saved"),
+                Err(e) => tracing::warn!("team order failed: {}", short_error(&e)),
+            }
         });
     }
 
@@ -14764,11 +14872,14 @@ impl qobject::Backend {
                     "add-members" => {
                         let a: serde_json::Value = serde_json::from_str(&arg).context("Members")?;
                         let group_id = team.clone();
-                        let users: Vec<(String, bool)> = a["users"]
+                        let users: Vec<(String, u8)> = a["users"]
                             .as_array()
                             .into_iter()
                             .flatten()
-                            .filter_map(|u| Some((u["mri"].as_str()?.to_string(), u["owner"].as_bool().unwrap_or(false))))
+                            .filter_map(|u| {
+                                let role = api::channels::member_role(u["owner"].as_bool().unwrap_or(false), u["guest"].as_bool().unwrap_or(false));
+                                Some((u["mri"].as_str()?.to_string(), role))
+                            })
                             .collect();
                         let requested = users.len() + a["guests"].as_array().map(|g| g.len()).unwrap_or(0);
                         let mut outcome = match api::channels::add_team_members(&client, &team_thread, &group_id, &users).await {
@@ -14947,6 +15058,14 @@ impl qobject::Backend {
                     .set_channel_action_result(QString::from(outcome.to_string().as_str()));
                 if result.is_ok() && op == "team-picture" {
                     this.as_mut().forget_photos(&format!("team:{team}"));
+                }
+                if result.is_ok() && op == "team-delete" {
+                    this.as_mut().rust_mut().deleted_teams.insert(team_thread.clone());
+                    let mut teams: serde_json::Value = serde_json::from_str(&this.rust().teams_json.to_string()).unwrap_or_default();
+                    if let Some(a) = teams.as_array_mut() {
+                        a.retain(|t| t["thread_id"].as_str() != Some(team_thread.as_str()));
+                    }
+                    this.as_mut().set_teams_json(QString::from(teams.to_string().as_str()));
                 }
                 if result.is_ok() && (op == "posts-at-top" || op == "posts-at-bottom") {
                     this.as_mut().set_channel_posts_at_top(op == "posts-at-top");
@@ -17505,7 +17624,13 @@ impl qobject::Backend {
 
     pub fn send_files(self: Pin<&mut Self>, paths: &QString, text: &QString) {
         let chat_id = self.rust().current_chat_id.to_string();
-        self.send_files_in(chat_id.clone(), chat_id, paths, text);
+        self.send_files_in(chat_id.clone(), chat_id, paths, text, None);
+    }
+
+    pub fn send_files_html(self: Pin<&mut Self>, paths: &QString, editor_html: &QString) {
+        let chat_id = self.rust().current_chat_id.to_string();
+        let html = editor_html.to_string();
+        self.send_files_in(chat_id.clone(), chat_id, paths, &QString::default(), Some(html));
     }
 
     /// Files into a thread window's thread: uploaded to the channel's
@@ -17516,13 +17641,21 @@ impl qobject::Backend {
             return;
         }
         let thread = format!("{channel};messageid={root}");
-        self.send_files_in(channel, thread, paths, text);
+        self.send_files_in(channel, thread, paths, text, None);
     }
 
     /// Upload `paths` for `chat_id`'s files and send them, with `text`, to
     /// `conversation`.
-    fn send_files_in(mut self: Pin<&mut Self>, chat_id: String, conversation: String, paths: &QString, text: &QString) {
+    fn send_files_in(mut self: Pin<&mut Self>, chat_id: String, conversation: String, paths: &QString, text: &QString, editor_html: Option<String>) {
         let text = text.to_string();
+        // Formatted text (the compose box's HTML) goes as Teams HTML, with
+        // its mentions and the delivery option set for this message.
+        let importance = std::mem::take(&mut self.as_mut().rust_mut().next_importance);
+        let rich = editor_html.filter(|h| !h.trim().is_empty()).map(|h| {
+            let (html, mentions) = api::messages::teams_html_with_media(&h, &[]);
+            let mentions = if mentions.is_empty() { String::new() } else { serde_json::to_string(&mentions).unwrap_or_default() };
+            (html, mentions)
+        });
         // Each line is a local path (file:// tolerated) or, for a file
         // picked from OneDrive or SharePoint, "cloud:" and its CloudFile.
         enum Part {
@@ -17569,7 +17702,11 @@ impl qobject::Backend {
                         Part::Cloud(f) => api::cloud_attach::send_record(&client, &conversation, f).await?,
                     });
                 }
-                api::files::send_with_files(&client, &conversation, &text, files).await
+                match &rich {
+                    Some((html, mentions)) => api::files::send_html_with_files_as(&client, &conversation, html, files, &importance, mentions).await,
+                    None if !importance.is_empty() => api::files::send_with_files_marked(&client, &conversation, &text, files, &importance).await,
+                    None => api::files::send_with_files(&client, &conversation, &text, files).await,
+                }
             }
             .await;
             let sent_to = chat_id.clone();

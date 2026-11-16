@@ -351,6 +351,25 @@ pub fn teams_order_from(v: &serde_json::Value) -> std::collections::HashMap<Stri
         .collect()
 }
 
+/// Save your team order as Teams does when you drag a team or use Start
+/// reordering (measured on winpc 2026-11-16): `PUT {chatsvc}/v1/users/ME/
+/// properties?name=teamsOrder` with `{"teamsOrder": "[{teamId, order}]"}`
+/// (a JSON string), every team by thread id from 0.
+pub async fn set_teams_order(client: &TeamsClient, thread_ids: &[String]) -> Result<()> {
+    let url = format!("{}/v1/users/ME/properties?name=teamsOrder", client.chat_service_url());
+    client.chat_request(reqwest::Method::PUT, &url, &teams_order_body(thread_ids)).await?;
+    Ok(())
+}
+
+pub fn teams_order_body(thread_ids: &[String]) -> serde_json::Value {
+    let list: Vec<serde_json::Value> = thread_ids
+        .iter()
+        .enumerate()
+        .map(|(i, t)| serde_json::json!({ "teamId": t, "order": i }))
+        .collect();
+    serde_json::json!({ "teamsOrder": serde_json::Value::Array(list).to_string() })
+}
+
 /// Sort teams by the order you set; teams without one keep their place
 /// after them.
 pub fn apply_teams_order(teams: &mut [ListTeam], order: &std::collections::HashMap<String, i64>) {
@@ -358,6 +377,16 @@ pub fn apply_teams_order(teams: &mut [ListTeam], order: &std::collections::HashM
 }
 
 async fn teams_order(client: &TeamsClient, token: &str, region: &str) -> Result<std::collections::HashMap<String, i64>> {
+    // Teams keeps it among your user properties (where it writes it, and
+    // reads it back as a user preference); the discover preferences are
+    // the older copy.
+    let url = format!("{}/v1/users/ME/properties", client.chat_service_url());
+    if let Ok(r) = client.chat_get(&url).await {
+        let props: serde_json::Value = r.json().await.unwrap_or_default();
+        if props.get("teamsOrder").is_some() {
+            return Ok(teams_order_from(&serde_json::json!({ "teamsOrder": props["teamsOrder"] })));
+        }
+    }
     let v: serde_json::Value = client
         .http()
         .get(format!("https://teams.microsoft.com/api/csa/{region}/api/v1/teams/users/me/discover/preferences"))
@@ -824,6 +853,13 @@ mod list_tests {
         apply_teams_order(&mut t, &order);
         assert_eq!(t.iter().map(|t| t.thread_id.as_str()).collect::<Vec<_>>(), vec!["t3", "t1", "t2"]);
         assert!(teams_order_from(&serde_json::json!({})).is_empty());
+        // What Teams writes when you move a team (and reads back).
+        let body = teams_order_body(&["t2".into(), "t1".into()]);
+        let list: serde_json::Value = serde_json::from_str(body["teamsOrder"].as_str().unwrap()).unwrap();
+        assert_eq!(list, serde_json::json!([{"teamId": "t2", "order": 0}, {"teamId": "t1", "order": 1}]));
+        let back = teams_order_from(&body);
+        assert_eq!(back.get("t2"), Some(&0));
+        assert_eq!(back.get("t1"), Some(&1));
     }
 
     #[test]

@@ -21,6 +21,18 @@ Rectangle {
             : !(m.thread_id || "").endsWith("@thread.tacv2")))
     readonly property real paneWidth: 380
     color: theme.surface
+    // Up / Down / Home / End through the mentions, as Teams' (ListKeys).
+    property alias enterToOpen: keys.enterToOpen
+    ListKeys {
+        id: keys
+        owner: root
+        view: list
+        items: root.shown
+        onOpen: item => root.openMention(item)
+    }
+    Keys.onPressed: e => keys.handle(e, root.selectedId)
+    function keysForTest() { return keys }
+    onVisibleChanged: if (visible) forceActiveFocus()
 
     function stamp(t) {
         const d = new Date(t), now = new Date()
@@ -98,6 +110,12 @@ Rectangle {
                     color: row.sel ? theme.selected : rh.hovered ? theme.pane : "transparent"
                 }
                 Rectangle {
+                    visible: keys.ringOn(row.modelData)
+                    z: 2
+                    x: 8; width: parent.width - 16; height: parent.height - 4; radius: theme.radius
+                    color: "transparent"; border.width: 2; border.color: theme.text
+                }
+                Rectangle {
                     visible: row.modelData.unread
                     x: 12; y: 30; width: 5; height: 5; radius: 2.5
                     color: theme.textStrong
@@ -129,7 +147,7 @@ Rectangle {
                     color: theme.onFill(hcFill1, theme.text)
                 }
                 HoverHandler { id: rh; cursorShape: Qt.PointingHandCursor }
-                TapHandler { onTapped: root.openMention(row.modelData) }
+                TapHandler { onTapped: { keys.clicked(row.modelData); root.openMention(row.modelData) } }
                 Accessible.role: Accessible.Button
                 Accessible.name: (row.modelData.unread ? "Unread, " : "") + (row.modelData.actor_name || "Someone") + " mentioned you: " + row.modelData.preview
             }

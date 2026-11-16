@@ -561,8 +561,13 @@ pub fn parse_recipients(reply: &serde_json::Value, my_oid: &str) -> Vec<serde_js
         let group = g["Type"].as_str().unwrap_or_default();
         for r in g["Suggestions"].as_array().into_iter().flatten() {
             let item = match group {
-                "People" if r["PeopleType"] == "Person" => {
-                    let oid = s(&r["ExternalDirectoryObjectId"]).to_ascii_lowercase();
+                "People" if r["PeopleType"] == "Person" || r["PeopleSubtype"] == "Guest" || s(&r["MRI"]).starts_with("8:orgid:") => {
+                    // A directory person (guests included); one known only
+                    // as a contact by its Teams id.
+                    let mut oid = s(&r["ExternalDirectoryObjectId"]).to_ascii_lowercase();
+                    if oid.is_empty() {
+                        oid = s(&r["MRI"]).trim_start_matches("8:orgid:").to_ascii_lowercase();
+                    }
                     let upn = s(&r["UserPrincipalName"]);
                     let alias = upn.split('@').next().unwrap_or_default().to_uppercase();
                     let job = s(&r["JobTitle"]);
@@ -578,7 +583,7 @@ pub fn parse_recipients(reply: &serde_json::Value, my_oid: &str) -> Vec<serde_js
                     if !my_oid.is_empty() && oid == my_oid.to_ascii_lowercase() {
                         name.push_str(" (You)");
                     }
-                    serde_json::json!({ "kind": "person", "oid": oid, "name": name, "sub": sub, "upn": upn })
+                    serde_json::json!({ "kind": "person", "oid": oid, "name": name, "sub": sub, "upn": upn, "guest": guest })
                 }
                 "Chat" => serde_json::json!({ "kind": "chat", "id": s(&r["ThreadId"]), "name": s(&r["Name"]), "sub": "", "thread_type": s(&r["ThreadType"]) }),
                 "Channel" => serde_json::json!({ "kind": "chat", "id": s(&r["ThreadId"]), "name": s(&r["Name"]), "sub": s(&r["TeamName"]), "thread_type": "channel", "group": s(&r["GroupId"]) }),
@@ -596,6 +601,105 @@ pub fn parse_recipients(reply: &serde_json::Value, my_oid: &str) -> Vec<serde_js
     }
     out.extend(by_ref.into_iter().map(|(_, v)| v));
     out
+}
+
+/// The new chat form's suggestions before anything is typed: Teams' top-N
+/// people (its worker's zero-state suggestions, `getTopNSuggestions` over
+/// the "peoplecache" scenario: Substrate's people for an empty query, in
+/// rank order, ranks 1 to 20). People only, with Teams' second lines
+/// ([`parse_recipients`]); you as "<name> (You)".
+pub async fn zero_state_people(my_oid: &str, my_mail: &str, my_name: &str) -> Result<Vec<serde_json::Value>> {
+    let token = crate::auth::oauth::access_token_for("https://substrate.office.com/.default").await?;
+    let reply: serde_json::Value = reqwest::Client::new()
+        .post("https://substrate.office.com/search/api/v1/suggestions?scenario=peoplecache")
+        .bearer_auth(token)
+        .json(&zero_state_body())
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let reply = with_me(reply, my_oid, my_mail, my_name);
+    let seen: Vec<String> = reply["Groups"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .flat_map(|g| g["Suggestions"].as_array().cloned().unwrap_or_default())
+        .map(|s| format!("{}/{}/{}/{}/{}", s["DisplayName"].as_str().unwrap_or("?"), s["PeopleType"].as_str().unwrap_or("?"), s["PeopleSubtype"].as_str().unwrap_or("?"), !s["ExternalDirectoryObjectId"].as_str().unwrap_or_default().is_empty(), s["MRI"].as_str().unwrap_or("-").chars().take(20).collect::<String>()))
+        .collect();
+    tracing::debug!(people = ?seen, "zero-state suggestions");
+    if std::env::var_os("OST_PICKER_DEBUG").is_some() {
+        for s in reply["Groups"].as_array().into_iter().flatten().flat_map(|g| g["Suggestions"].as_array().cloned().unwrap_or_default()) {
+            if s["PeopleSubtype"] == "PersonalContact" {
+                eprintln!("PICKER contact {s} me={my_mail}");
+            }
+        }
+        eprintln!("PICKER zero-state {} {:?}", reply["Groups"].as_array().map(|g| g.len()).unwrap_or(0), seen);
+    }
+    Ok(people_only(parse_recipients(&reply, my_oid), ZERO_STATE_COUNT))
+}
+
+/// The top-N list has you as a personal contact (no Teams id, your
+/// address): Teams turns it into you, "<name> (You)", in that place.
+pub fn with_me(mut reply: serde_json::Value, my_oid: &str, my_mail: &str, my_name: &str) -> serde_json::Value {
+    if my_oid.is_empty() || my_mail.is_empty() {
+        return reply;
+    }
+    for g in reply["Groups"].as_array_mut().into_iter().flatten() {
+        for r in g["Suggestions"].as_array_mut().into_iter().flatten() {
+            // Your address, or (as ost-test1's list has it) a personal
+            // contact with no name and no address: the mailbox's own card.
+            let emails: Vec<&str> = r["EmailAddresses"].as_array().into_iter().flatten().filter_map(|e| e.as_str()).collect();
+            let unnamed = r["DisplayName"].as_str().unwrap_or_default().is_empty();
+            let mine = r["ExternalDirectoryObjectId"].as_str().unwrap_or_default().is_empty()
+                && r["MRI"].as_str().unwrap_or_default().is_empty()
+                && r["PeopleSubtype"] == "PersonalContact"
+                && (emails.iter().any(|e| e.eq_ignore_ascii_case(my_mail)) || (emails.is_empty() && unnamed));
+            if mine {
+                r["ExternalDirectoryObjectId"] = serde_json::json!(my_oid);
+                r["PeopleType"] = serde_json::json!("Person");
+                r["PeopleSubtype"] = serde_json::json!("OrganizationUser");
+                if r["DisplayName"].as_str().unwrap_or_default().is_empty() {
+                    r["DisplayName"] = serde_json::json!(my_name);
+                }
+                if r["UserPrincipalName"].as_str().unwrap_or_default().is_empty() {
+                    r["UserPrincipalName"] = serde_json::json!(my_mail);
+                }
+            }
+        }
+    }
+    reply
+}
+
+/// Teams' zeroStateSuggestionsTopNCacheEndRank (live 20).
+pub const ZERO_STATE_COUNT: usize = 20;
+
+/// Teams' maxTopNFetchSize (live 500): the top-N store's size.
+pub const TOP_N_FETCH: usize = 500;
+
+pub fn zero_state_body() -> serde_json::Value {
+    let mut body = recipients_body("");
+    let mut people = body["EntityRequests"][0].clone();
+    // The top-N store holds everyone the service ranks (no picker filter).
+    if let Some(m) = people.as_object_mut() {
+        m.remove("Filter");
+        m.remove("Provenances");
+        m.remove("ServeNoEmailContacts");
+    }
+    body["EntityRequests"] = serde_json::json!([people]);
+    body["EntityRequests"][0]["Size"] = serde_json::json!(TOP_N_FETCH);
+    body["Scenario"]["Name"] = serde_json::json!("peoplecache");
+    body
+}
+
+/// People among picker suggestions (no groups, chats, channels or teams),
+/// the first `max`.
+pub fn people_only(items: Vec<serde_json::Value>, max: usize) -> Vec<serde_json::Value> {
+    items
+        .into_iter()
+        .filter(|v| v["kind"] == "person" && !v["oid"].as_str().unwrap_or_default().is_empty())
+        .take(max)
+        .collect()
 }
 
 /// Search `tab` as Teams' results page does.
@@ -722,6 +826,39 @@ mod tests {
         ]);
         assert_eq!(r[0]["oid"], "9edcc62f");
         assert_eq!(r[4]["id"], "19:c@thread.tacv2");
+        // The new chat form keeps the people only.
+        let people = people_only(r, 20);
+        assert_eq!(people.len(), 2);
+        assert_eq!(people[1]["name"], "OST Test 1 (You)");
+    }
+
+    #[test]
+    fn guests_show_their_email_and_are_marked() {
+        // As Teams' new chat form shows them (winpc, 2026-11-16).
+        let reply = serde_json::json!({ "Groups": [{ "Type": "People", "Suggestions": [
+            { "DisplayName": "OST Guest 08", "PeopleType": "Person", "PeopleSubtype": "Guest", "UserPrincipalName": "ostguest08_x.com#EXT#@y.onmicrosoft.com", "EmailAddresses": ["ostguest08@x.com"], "ExternalDirectoryObjectId": "e7dbe546", "ReferenceId": "r1" },
+            { "DisplayName": "Randy Northrup", "PeopleType": "Person", "PeopleSubtype": "OrganizationUser", "UserPrincipalName": "Randy@x.com", "ExternalDirectoryObjectId": "5050c9d6", "ReferenceId": "r2" }
+        ] }] });
+        let r = parse_recipients(&reply, "");
+        assert_eq!(r[0]["sub"], "ostguest08@x.com");
+        assert_eq!(r[0]["guest"], true);
+        assert_eq!(r[1]["sub"], "RANDY");
+        assert_eq!(r[1]["guest"], false);
+        // You, as the top-N list has you (a personal contact).
+        let top = serde_json::json!({ "Groups": [{ "Type": "People", "Suggestions": [
+            { "DisplayName": "OST Test 2", "PeopleType": "Person", "PeopleSubtype": "OrganizationUser", "UserPrincipalName": "ost-test2@x.com", "ExternalDirectoryObjectId": "9edcc62f", "ReferenceId": "a" },
+            { "DisplayName": "OST Test Team", "PeopleType": "Group", "PeopleSubtype": "UnifiedGroup", "ReferenceId": "b" },
+            { "PeopleType": "Person", "PeopleSubtype": "PersonalContact", "EmailAddresses": ["OST-test1@x.com"], "ReferenceId": "c" },
+            { "DisplayName": "OST Guest 08", "PeopleType": "Other", "PeopleSubtype": "Guest", "MRI": "8:orgid:e7dbe546", "EmailAddresses": ["g8@y.com"], "ReferenceId": "d" }
+        ] }] });
+        let names: Vec<String> = people_only(parse_recipients(&with_me(top, "4287e791", "ost-test1@x.com", "OST Test 1"), "4287e791"), 20)
+            .iter().map(|p| format!("{} | {}", p["name"].as_str().unwrap(), p["sub"].as_str().unwrap())).collect();
+        assert_eq!(names, ["OST Test 2 | OST-TEST2", "OST Test 1 (You) | OST-TEST1", "OST Guest 08 | g8@y.com"]);
+        let z = zero_state_body();
+        assert_eq!(z["Scenario"]["Name"], "peoplecache");
+        assert_eq!(z["EntityRequests"].as_array().unwrap().len(), 1);
+        assert_eq!(z["EntityRequests"][0]["EntityType"], "People");
+        assert_eq!(z["EntityRequests"][0]["Query"]["QueryString"], "");
     }
 
     #[test]

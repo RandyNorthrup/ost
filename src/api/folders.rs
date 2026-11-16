@@ -289,6 +289,23 @@ pub async fn move_item(
     .await
 }
 
+/// Put a section's conversations in this order (Teams' drag and drop or
+/// Start reordering in Favorites or one of your sections, measured on
+/// winpc 2026-11-16: POST `{folderHierarchyVersion, actions: [{action:
+/// "ReorderItems", folderId, newItemsOrder}]}`).
+pub async fn reorder_items(client: &TeamsClient, version: i64, folder_id: &str, order: &[String]) -> Result<()> {
+    send(client, reqwest::Method::POST, "", reorder_items_body(version, folder_id, order)).await
+}
+
+pub fn reorder_items_body(version: i64, folder_id: &str, order: &[String]) -> serde_json::Value {
+    serde_json::json!({
+        "folderHierarchyVersion": version,
+        "supportsAdditionalSystemGeneratedFolders": true,
+        "supportsSliceItems": true,
+        "actions": [{"action": "ReorderItems", "folderId": folder_id, "newItemsOrder": order}],
+    })
+}
+
 /// Take a conversation out of a section.
 pub async fn remove_item(client: &TeamsClient, version: i64, item: &str, from: &str) -> Result<()> {
     send(
@@ -357,5 +374,15 @@ mod tests {
         assert!(!f.folders[4].expanded);
         assert_eq!(f.folders[2].title_for_server(), "Projects");
         assert_eq!(f.folders[3].title_for_server(), "RecentChats");
+    }
+
+    #[test]
+    fn reorder_is_teams_reorder_items_action() {
+        // As Teams sent it for "OST TEST section" (winpc, 2026-11-16).
+        let b = reorder_items_body(1794849130186, "300e6272", &["19:b@thread.v2".into(), "19:a@thread.v2".into()]);
+        assert_eq!(b["folderHierarchyVersion"], 1794849130186i64);
+        assert_eq!(b["actions"][0]["action"], "ReorderItems");
+        assert_eq!(b["actions"][0]["folderId"], "300e6272");
+        assert_eq!(b["actions"][0]["newItemsOrder"], serde_json::json!(["19:b@thread.v2", "19:a@thread.v2"]));
     }
 }

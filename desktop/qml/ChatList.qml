@@ -78,6 +78,155 @@ Rectangle {
     onChatSelected: (id, name) => { focusId = id; if (!activeFocus) forceActiveFocus() }
     onActiveFocusChanged: if (!activeFocus) keyboardNav = false
     signal newChat()
+
+    // ---- Reordering (spec §5.3, measured on winpc 2026-11-16) ----
+    // Chats and channels in Favorites and your own sections (Custom order),
+    // and teams in Teams and channels, move by drag and drop: the row
+    // follows the pointer (white at 0.75, a 0.67 px black edge, radius 4,
+    // shadow 16, the grabbing cursor), its own place shows at half opacity,
+    // and a 2 px NeutralForeground1 line (inset 2.875) marks where it will
+    // go: the bottom of the row it would follow, or the top of the first.
+    // Teams fold up while a team moves. Esc cancels. Dropped, the order is
+    // saved where Teams keeps it: a section's ReorderItems, the teamsOrder
+    // user property. Channels move only into sections, not within a team.
+    // Settings ▸ Accessibility ▸ "Turn on single pointer controls" adds
+    // Start reordering to the item menus: Move Up and Move Down on the row
+    // (24 x 23.3, 56 and 32 from its end; Move Up takes the focus), each
+    // press saving the order, until you click elsewhere.
+    property bool singlePointReordering: false
+    function sectionReorderable(f) {
+        return !!f && !!f.id && (f.kind === "Favorites" || isUsers(f)) && (f.sort || "UserDefinedCustomOrder") === "UserDefinedCustomOrder" && !filtered
+    }
+    readonly property bool teamsReorderable: !filtered && root.teams.length > 1
+    /// Draggable rows by "group|key" (group: a section id, or "teams").
+    property var dragRows: ({})
+    function registerDrag(group, key, item) { if (group && key) dragRows[group + "|" + key] = item }
+    function unregisterDrag(group, key, item) { if (dragRows[group + "|" + key] === item) delete dragRows[group + "|" + key] }
+    function groupOrder(group) {
+        if (group === "teams") return root.teams.map(t => t.thread_id)
+        const f = folders.find(f => f.id === group)
+        return f ? f.items.slice() : []
+    }
+    // The group's rows on show, in order: [{key, y, h}] in the list's
+    // coordinates.
+    function shownRows(group, except) {
+        const out = []
+        for (const k of groupOrder(group)) {
+            if (k === except) continue
+            const it = dragRows[group + "|" + k]
+            if (!it || !it.visible) continue
+            const p = it.mapToItem(listCol, 0, 0)
+            out.push({ key: k, y: p.y, h: it.dragHeight })
+        }
+        return out
+    }
+    /// The drag: {group, key, name, kind, photoId, group chat, h, grabY}.
+    property var drag: null
+    property bool dragCancelled: false
+    property real dragX: 0
+    property real dragY: 0
+    /// Where it would go: {order, lineY} (null: back where it was).
+    property var dropAt: null
+    function dragStart(group, key, info, item, press) {
+        stopReorder()
+        dragCancelled = false
+        dropAt = null
+        drag = Object.assign({ group: group, key: key, h: item.dragHeight, grabY: press.y }, info)
+    }
+    function dragMove(scene) {
+        if (!drag) return
+        const p = root.mapFromItem(null, scene.x, scene.y)
+        dragX = p.x; dragY = p.y
+        // Near the list's ends it scrolls.
+        const ly = list.mapFromItem(null, scene.x, scene.y).y
+        if (ly < 24) list.contentY = Math.max(0, list.contentY - 12)
+        else if (ly > list.height - 24) list.contentY = Math.min(Math.max(0, list.contentHeight - list.height), list.contentY + 12)
+        if (dragCancelled) return
+        const y = listCol.mapFromItem(null, scene.x, scene.y).y
+        const rows = shownRows(drag.group, drag.key)
+        if (rows.length === 0) { dropAt = null; return }
+        const idx = rows.filter(r => r.y + r.h / 2 < y).length
+        const order = groupOrder(drag.group).filter(k => k !== drag.key)
+        const at = idx < rows.length ? order.indexOf(rows[idx].key) : order.indexOf(rows[rows.length - 1].key) + 1
+        order.splice(at, 0, drag.key)
+        const same = JSON.stringify(order) === JSON.stringify(groupOrder(drag.group))
+        dropAt = same ? null : { order: order, lineY: idx === 0 ? rows[0].y : rows[idx - 1].y + rows[idx - 1].h - 2 }
+    }
+    function dragEnd() {
+        if (drag && !dragCancelled && dropAt) commitOrder(drag.group, dropAt.order)
+        drag = null; dropAt = null; dragCancelled = false
+    }
+    function commitOrder(group, order) {
+        console.warn("REORDER", group, JSON.stringify(order))
+        if (group === "teams") backend.reorderTeams(JSON.stringify(order))
+        else backend.folderAction("reorder", JSON.stringify({ id: group, order: order }))
+    }
+    Shortcut {
+        sequence: "Esc"
+        enabled: !!root.drag && !root.dragCancelled
+        onActivated: { root.dragCancelled = true; root.dropAt = null }
+    }
+    // Start reordering.
+    property string reorderGroup: ""
+    property string reorderKey: ""
+    function startReorder(group, key) { reorderGroup = group; reorderKey = key }
+    function stopReorder() { reorderGroup = ""; reorderKey = "" }
+    function reorderStep(d) {
+        const o = groupOrder(reorderGroup)
+        const i = o.indexOf(reorderKey), j = i + d
+        if (i < 0 || j < 0 || j >= o.length) return
+        o.splice(i, 1); o.splice(j, 0, reorderKey)
+        commitOrder(reorderGroup, o)
+    }
+    function reordering(group, key) { return reorderGroup === group && reorderKey === key && !!key }
+    // Teams fold up while one moves (dragged, or Start reordering).
+    readonly property bool teamsFolded: (!!drag && drag.group === "teams") || reorderGroup === "teams"
+    // A click elsewhere in the list ends Start reordering (the window's
+    // other clicks move the focus off its buttons, which ends it too).
+    TapHandler {
+        enabled: root.reorderKey !== ""
+        acceptedButtons: Qt.AllButtons
+        grabPermissions: PointerHandler.ApprovesTakeOverByAnything
+        gesturePolicy: TapHandler.DragThreshold
+        onTapped: reorderFocusCheck.restart()
+    }
+    property bool reorderButtonFocused: false
+    Timer { id: reorderFocusCheck; interval: 400; onTriggered: if (!root.reorderButtonFocused && root.reorderKey) root.stopReorder() }
+    // The row following the pointer.
+    Item {
+        id: dragOverlay
+        visible: !!root.drag && !root.dragCancelled
+        z: 50
+        x: 16; y: root.drag ? root.dragY - root.drag.grabY : 0
+        width: list.width - 32; height: root.drag ? root.drag.h : 32
+        FluentSurface { anchors.fill: parent; depth: 16; radius: 4; color: theme.surface; opacity: 0.75 }
+        Rectangle { anchors.fill: parent; radius: 4; color: "transparent"; border.width: 0.67; border.color: theme.pick("#000000", "#FFFFFF", "#FFFFFF") }
+        FluentIcon {
+            visible: !!root.drag && root.drag.kind === "team"
+            x: 2.7; y: (parent.height - 12) / 2; name: "chevron-right-12"; size: 12; color: theme.textSecondary
+        }
+        Avatar {
+            visible: !!root.drag && root.drag.kind !== "channel"
+            x: 16.7; y: (parent.height - 20) / 2; size: 20
+            square: !!root.drag && root.drag.kind === "team"
+            name: root.drag ? root.drag.name : ""
+            initialsText: root.drag && root.drag.kind === "team" ? root.drag.name.split(/\s+/).filter(w => w).slice(0, 2).map(w => w[0]).join("").toUpperCase() : ""
+            photoId: root.drag ? root.drag.photoId || "" : ""
+            group: !!root.drag && !!root.drag.groupChat
+        }
+        Text {
+            x: root.drag && root.drag.kind === "channel" ? 16.7 : 48.7
+            y: (parent.height - height) / 2
+            width: parent.width - x - 48
+            text: root.drag ? root.drag.name : ""
+            elide: Text.ElideRight
+            font.family: theme.font; font.pixelSize: theme.base
+            color: theme.textStrong
+        }
+        FluentIcon { x: parent.width - 32; y: (parent.height - 20) / 2; name: "more-horizontal-20"; size: 20; color: theme.textStrong }
+    }
+    function scrollIntoViewForTest(item) { const y = item.mapToItem(listCol, 0, 0).y; list.contentY = Math.max(0, Math.min(y - 120, list.contentHeight - list.height)) }
+    function dragStateForTest() { return { drag: root.drag, dropAt: root.dropAt, cancelled: root.dragCancelled } }
     signal openDrafts()
     /// Mark all as read for Teams' app type: "unified", "chat", "channel",
     /// "split_channel" or "engage_community".
@@ -228,7 +377,7 @@ Rectangle {
     // Teams with the channels that pass the filters (team rows stay while
     // any channel does).
     readonly property var shownTeams: (category && category !== "channels") ? []
-        : teams.map(t => ({ id: t.id, name: t.name, new: t.new, expanded: t.expanded !== false,
+        : teams.map(t => ({ id: t.id, thread_id: t.thread_id, name: t.name, new: t.new, expanded: t.expanded !== false,
                             channels: (t.channels || []).filter(ch => channelShown(t, ch)) }))
                .filter(t => t.channels.length > 0 && (!unreadOn || t.channels.some(c => c.unread)))
     function folderInPane(f) {
@@ -590,6 +739,15 @@ Rectangle {
                 }
             }
         }
+        // Where the dragged row would go (Teams' 2 px line).
+        Rectangle {
+            id: dropLine
+            visible: !!root.dropAt
+            z: 5
+            x: 16 + 2.875; width: list.width - 32 - 5.75; height: 2
+            y: root.dropAt ? root.dropAt.lineY : 0
+            color: theme.text
+        }
     }
 
     Component { id: chatRowComp; ChatRow { chat: parent && parent.row ? parent.row.chat : ({}); section: parent ? parent.section : null } }
@@ -700,8 +858,37 @@ Rectangle {
         property var section: null
         readonly property bool menuOpen: rowMenu.opened
         function closeMenu() { rowMenu.close() }
-        Component.onCompleted: if (chat && chat.id) root.rowsForTest[chat.id] = row
-        Component.onDestruction: if (chat && root.rowsForTest[chat.id] === row) delete root.rowsForTest[chat.id]
+        Component.onCompleted: { if (chat && chat.id) root.rowsForTest[chat.id] = row; reg() }
+        Component.onDestruction: { if (chat && root.rowsForTest[chat.id] === row) delete root.rowsForTest[chat.id]; if (regGroup) root.unregisterDrag(regGroup, regKey, row) }
+        // Reordering: in Favorites or one of your sections (Custom order).
+        readonly property string dragGroup: row.section && root.sectionReorderable(row.section) ? row.section.id : ""
+        readonly property real dragHeight: height
+        property string regGroup: ""
+        property string regKey: ""
+        function reg() {
+            if (regGroup) root.unregisterDrag(regGroup, regKey, row)
+            regGroup = dragGroup; regKey = chat && chat.id ? chat.id : ""
+            if (regGroup) root.registerDrag(regGroup, regKey, row)
+        }
+        onDragGroupChanged: reg()
+        readonly property bool dragged: !!root.drag && root.drag.group === dragGroup && root.drag.key === chat.id && !root.dragCancelled
+        opacity: dragged ? 0.5 : 1
+        readonly property bool reorderingThis: root.reordering(dragGroup, chat.id)
+        DragHandler {
+            target: null
+            enabled: row.dragGroup !== "" && !root.reorderKey
+            dragThreshold: 4
+            grabPermissions: PointerHandler.CanTakeOverFromItems | PointerHandler.CanTakeOverFromHandlersOfDifferentType
+            cursorShape: Qt.ClosedHandCursor
+            onActiveChanged: {
+                if (active) root.dragStart(row.dragGroup, row.chat.id, { name: row.chat.name || "", kind: "chat",
+                    photoId: row.chat.peerMri || (row.chat.isGroup === true && !root.isMeeting(row.chat) ? "chat:" + row.chat.id : ""),
+                    groupChat: row.chat.isGroup === true && !row.chat.peerMri }, row, centroid.pressPosition)
+                else root.dragEnd()
+            }
+            onCentroidChanged: if (active) root.dragMove(centroid.scenePosition)
+        }
+        ReorderButtons { visible: row.reorderingThis; anchors.verticalCenter: parent.verticalCenter }
         readonly property bool selected: !root.draftsOpen && !root.mentionsOpen && !root.quickOpen && chat.id === root.currentId
         readonly property bool unread: chat.unread === true && !selected
         readonly property bool twoLine: root.previews
@@ -735,7 +922,7 @@ Rectangle {
         // The last activity (Show time stamps), where ··· goes on hover.
         Text {
             id: rowStamp
-            visible: root.timestamps && !row.showMore && text.length > 0
+            visible: root.timestamps && !row.showMore && !row.reorderingThis && text.length > 0
             anchors.right: parent.right; anchors.rightMargin: 28
             y: row.twoLine ? 10 : 8
             text: root.stamp(row.chat.time)
@@ -768,7 +955,7 @@ Rectangle {
         // NeutralForeground3 at 244, 9 in the 288-wide row).
         FluentIcon {
             id: liveIcon
-            visible: !!row.chat.liveCall && !row.showMore
+            visible: !!row.chat.liveCall && !row.showMore && !row.reorderingThis
             x: parent.width - 60; y: row.twoLine ? 29 : 9
             name: "live-roster-14"; size: 14
             color: theme.onFill(hcFill2, theme.textSecondary)
@@ -777,13 +964,13 @@ Rectangle {
         // name but not the dot (they don't count toward badges).
         Rectangle {
             id: unreadDot
-            visible: row.unread && !row.chat.muted && !row.showMore
+            visible: row.unread && !row.chat.muted && !row.showMore && !row.reorderingThis
             width: 8; height: 8; radius: 4
             x: parent.width - 16 - 8 - 12
             y: row.twoLine ? 30 : (parent.height - height) / 2
             color: theme.brand
         }
-        readonly property bool showMore: hover.hovered || rowMenu.opened
+        readonly property bool showMore: (hover.hovered || rowMenu.opened) && !row.reorderingThis
         Rectangle {
             id: moreButton
             visible: row.showMore
@@ -825,6 +1012,9 @@ Rectangle {
             const tagged = oneOnOne && root.notifyTagged[row.chat.peerMri.toLowerCase()]
             rowMenu.items = [
                 { key: "window", label: "Open in new window", icon: "open-window-20" },
+                // Teams: with single pointer controls on, in a section you
+                // can reorder.
+                root.singlePointReordering && row.dragGroup ? { key: "reorder", label: "Start reordering", icon: "arrow-sort-20", endIcon: "accessibility-20" } : null,
                 { separator: true },
                 { key: row.unread ? "read" : "unread", label: row.unread ? "Mark as read" : "Mark as unread", icon: row.unread ? "glasses-20" : "glasses-off-20" },
                 { key: "move", label: "Move to section", icon: "star-20", submenu: sub },
@@ -835,7 +1025,7 @@ Rectangle {
                 row.chat.isSelf ? null : { key: "workflows", label: "Set workflows", icon: "workflows-20" },
                 { key: "link", label: "Copy link", icon: "link-20" },
                 { separator: true },
-                !row.chat.isSelf && !root.isMeeting(row.chat) ? { key: "removeHistory", label: "Remove chat history", icon: "delete-20" } : null,
+                !row.chat.isSelf && !root.isMeeting(row.chat) && !row.canLeave ? { key: "removeHistory", label: "Remove chat history", icon: "delete-20" } : null,
                 row.canLeave ? { key: "leave", label: "Leave", icon: "door-arrow-left-20" } : null,
                 { key: row.chat.hidden ? "unhide" : "hide", label: row.chat.hidden ? "Unhide" : "Hide", icon: row.chat.hidden ? "eye-20" : "eye-off-20" },
                 root.isMeeting(row.chat) ? { separator: true } : null,
@@ -861,6 +1051,7 @@ Rectangle {
                 else if (k === "workflows") root.chatWorkflows(row.chat.id, row.chat.name)
                 else if (k === "removeHistory") removeHistoryAsk.open()
                 else if (k === "report") root.reportMeetingChat(row.chat.id)
+                else if (k === "reorder") root.startReorder(row.dragGroup, row.chat.id)
                 else if (k === "notifyOn") backend.channelAction("notify-on", "", "", JSON.stringify({ mri: row.chat.peerMri }))
                 else if (k === "notifyOff") { const t = root.notifyTagged[row.chat.peerMri.toLowerCase()]; backend.channelAction("notify-off", "", "", JSON.stringify({ id: t.id, mri: row.chat.peerMri, email: t.email })) }
             }
@@ -871,6 +1062,8 @@ Rectangle {
             }
         }
         function closeMenuForTest() { rowMenu.close() }
+        function menuItemsForTest() { return rowMenu.items }
+        function leaveForTest() { return leaveAsk }
         function removeHistoryForTest() { return removeHistoryAsk }
         // Teams' "Remove chat history?" (600 wide).
         ConfirmDialog {
@@ -881,12 +1074,9 @@ Rectangle {
             confirmText: "Remove"
             onConfirmed: backend.removeChatHistory(row.chat.id)
         }
-        ConfirmDialog {
+        LeaveChatDialog {
             id: leaveAsk
-            title: "Leave this chat?"
-            body: "Are you sure you want to leave " + (row.chat.name || "") + "?"
-            confirmText: "Leave"
-            onConfirmed: backend.leaveChat(row.chat.id)
+            onConfirmed: removeHistory => { backend.leaveChat(row.chat.id); if (removeHistory) backend.removeChatHistory(row.chat.id) }
         }
         Accessible.role: Accessible.Button
         Accessible.name: (row.chat.name || "") + (row.unread ? ", unread" : "") + (row.chat.muted ? ", muted" : "") + (row.chat.liveCall ? ", call in progress" : "")
@@ -930,8 +1120,10 @@ Rectangle {
         onOpenInNewWindow: root.openChannelWindow(channel.id)
         onManageChannel: root.manageChannel(channel.id, channel.name)
         onWorkflows: root.channelWorkflows(channel.id)
+        onStartReordering: (group, id) => root.startReorder(group, id)
     }
-    function openChannelMenu(channel, team, anchor, px, py) {
+    function openChannelMenu(channel, team, anchor, px, py, group) {
+        channelMenu.reorderGroup = root.singlePointReordering && group ? group : ""
         channelMenu.channel = channel
         channelMenu.teamId = team ? team.id : ""
         channelMenu.teamName = team ? team.name : ""
@@ -950,6 +1142,8 @@ Rectangle {
         onManageTags: id => root.manageTags(id)
         // Teams opens the new channel.
         onChannelCreated: (id, name) => root.chatSelected(id, name)
+        canReorder: root.singlePointReordering && root.teamsReorderable
+        onStartReordering: id => root.startReorder("teams", id)
     }
     function openTeamMenu(team, anchor, px, py) {
         // The full team (with its hidden and deleted channels).
@@ -967,8 +1161,8 @@ Rectangle {
         property int indent: 64
         readonly property bool selected: channel.id === root.currentId
         readonly property bool unread: channel.unread === true && !selected
-        Component.onCompleted: if (channel && channel.id && !root.rowsForTest[channel.id]) root.rowsForTest[channel.id] = chRow
-        Component.onDestruction: if (channel && root.rowsForTest[channel.id] === chRow) delete root.rowsForTest[channel.id]
+        Component.onCompleted: { if (channel && channel.id && !root.rowsForTest[channel.id]) root.rowsForTest[channel.id] = chRow; reg() }
+        Component.onDestruction: { if (channel && root.rowsForTest[channel.id] === chRow) delete root.rowsForTest[channel.id]; if (regGroup) root.unregisterDrag(regGroup, regKey, chRow) }
         width: list.width; height: 28
         Rectangle {
             x: 16; width: parent.width - 32; height: 28; radius: theme.radius
@@ -998,27 +1192,85 @@ Rectangle {
         }
         HoverHandler { id: chHover }
         TapHandler { onTapped: { root.keyboardNav = false; root.chatSelected(chRow.channel.id, chRow.channel.name) } }
+        // Reordering: in Favorites or one of your sections (a channel
+        // doesn't move within its team, as in Teams).
+        readonly property string dragGroup: chRow.section && root.sectionReorderable(chRow.section) ? chRow.section.id : ""
+        readonly property real dragHeight: height
+        property string regGroup: ""
+        property string regKey: ""
+        function reg() {
+            if (regGroup) root.unregisterDrag(regGroup, regKey, chRow)
+            regGroup = dragGroup; regKey = channel && channel.id ? channel.id : ""
+            if (regGroup) root.registerDrag(regGroup, regKey, chRow)
+        }
+        onDragGroupChanged: reg()
+        opacity: !!root.drag && root.drag.group === dragGroup && root.drag.key === channel.id && !root.dragCancelled ? 0.5 : 1
+        readonly property bool reorderingThis: root.reordering(dragGroup, channel.id)
+        DragHandler {
+            target: null
+            enabled: chRow.dragGroup !== "" && !root.reorderKey
+            dragThreshold: 4
+            grabPermissions: PointerHandler.CanTakeOverFromItems | PointerHandler.CanTakeOverFromHandlersOfDifferentType
+            cursorShape: Qt.ClosedHandCursor
+            onActiveChanged: active ? root.dragStart(chRow.dragGroup, chRow.channel.id, { name: chRow.channel.name + " (" + chRow.team.name + ")", kind: "channel" }, chRow, centroid.pressPosition) : root.dragEnd()
+            onCentroidChanged: if (active) root.dragMove(centroid.scenePosition)
+        }
+        ReorderButtons { visible: chRow.reorderingThis; anchors.verticalCenter: parent.verticalCenter }
         // Its menu: ··· on hover (and while open), or a right-click (Teams'
         // channel row menu, as in the channel's header).
         readonly property bool menuOpen: channelMenu.menu.opened && channelMenu.channel.id === chRow.channel.id
         Rectangle {
             id: chMore
-            visible: chHover.hovered || chRow.menuOpen
+            visible: (chHover.hovered || chRow.menuOpen) && !chRow.reorderingThis
             x: parent.width - 16 - 8 - 24; anchors.verticalCenter: parent.verticalCenter
             width: 24; height: 24; radius: theme.radius
             color: chMoreHover.hovered ? theme.hover : "transparent"
             FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: theme.onFill(chMore, chRow.menuOpen ? theme.brand : theme.textStrong) }
             HoverHandler { id: chMoreHover; cursorShape: Qt.PointingHandCursor }
-            TapHandler { onTapped: root.openChannelMenu(chRow.channel, chRow.team, chMore, 0, chMore.height + 4) }
+            TapHandler { onTapped: root.openChannelMenu(chRow.channel, chRow.team, chMore, 0, chMore.height + 4, chRow.dragGroup) }
             Accessible.role: Accessible.Button
             Accessible.name: "More options for " + chRow.channel.name
         }
         TapHandler {
             acceptedButtons: Qt.RightButton
-            onTapped: point => root.openChannelMenu(chRow.channel, chRow.team, chRow, point.position.x, point.position.y)
+            onTapped: point => root.openChannelMenu(chRow.channel, chRow.team, chRow, point.position.x, point.position.y, chRow.dragGroup)
         }
         Accessible.role: Accessible.Button
         Accessible.name: "Channel " + chRow.channel.name + " in " + chRow.team.name + (chRow.unread ? ", unread" : "")
+    }
+
+    // Start reordering's Move Up and Move Down (Teams' subtle 24 x 23.3
+    // buttons, 56 and 32 from the row's end; arrow icons NeutralForeground2).
+    component ReorderButtons: Row {
+        id: rb
+        z: 3
+        x: parent.width - 16 - 56
+        readonly property bool anyFocus: upButton.activeFocus || downButton.activeFocus
+        onAnyFocusChanged: {
+            root.reorderButtonFocused = anyFocus
+            // Focus gone elsewhere (a click in the window): done. (A move
+            // rebuilds the row, whose new buttons take the focus at once.)
+            if (!anyFocus) reorderFocusCheck.restart()
+        }
+        onVisibleChanged: if (visible) Qt.callLater(() => upButton.forceActiveFocus())
+        Component.onCompleted: if (visible) Qt.callLater(() => upButton.forceActiveFocus())
+        ReorderButton { id: upButton; up: true }
+        ReorderButton { id: downButton; up: false }
+    }
+    component ReorderButton: Rectangle {
+        id: rbButton
+        property bool up: true
+        width: 24; height: 23.3; radius: 4
+        color: rbHover.hovered ? theme.hover : "transparent"
+        border.width: activeFocus ? 2 : 0; border.color: theme.text
+        activeFocusOnTab: true
+        FluentIcon { anchors.centerIn: parent; name: rbButton.up ? "arrow-up-20" : "arrow-down-20"; size: 20; color: theme.onFill(rbButton, theme.textStrong) }
+        HoverHandler { id: rbHover; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: { rbButton.forceActiveFocus(); root.reorderStep(rbButton.up ? -1 : 1) } }
+        Keys.onReturnPressed: root.reorderStep(rbButton.up ? -1 : 1)
+        Keys.onSpacePressed: root.reorderStep(rbButton.up ? -1 : 1)
+        Accessible.role: Accessible.Button
+        Accessible.name: rbButton.up ? "Move Up" : "Move Down"
     }
 
     // Teams' "New" badge: brand pill, 10/14 semibold.
@@ -1033,12 +1285,32 @@ Rectangle {
     component TeamRows: Column {
         id: teamRows
         property var team
-        property bool open: teamRows.team.expanded !== false
+        property bool userOpen: teamRows.team.expanded !== false
+        // Teams fold up while one is being moved.
+        readonly property bool open: userOpen && !root.teamsFolded
         // Bold only while collapsed (Teams: not an expanded branch).
         readonly property bool unread: !open && teamRows.team.channels.some(c => c.unread)
         width: list.width
         Item {
+            id: teamHeader
             width: list.width; height: 32
+            // Reordering in Teams and channels.
+            readonly property real dragHeight: height
+            readonly property string key: teamRows.team.thread_id || ""
+            Component.onCompleted: if (key) root.registerDrag("teams", key, teamHeader)
+            Component.onDestruction: if (key) root.unregisterDrag("teams", key, teamHeader)
+            opacity: !!root.drag && root.drag.group === "teams" && root.drag.key === key && !root.dragCancelled ? 0.5 : 1
+            readonly property bool reorderingThis: root.reordering("teams", key)
+            DragHandler {
+                target: null
+                enabled: root.teamsReorderable && !root.reorderKey && teamHeader.key !== ""
+                dragThreshold: 4
+                grabPermissions: PointerHandler.CanTakeOverFromItems | PointerHandler.CanTakeOverFromHandlersOfDifferentType
+                cursorShape: Qt.ClosedHandCursor
+                onActiveChanged: active ? root.dragStart("teams", teamHeader.key, { name: teamRows.team.name, kind: "team", photoId: "team:" + teamRows.team.id }, teamHeader, centroid.pressPosition) : root.dragEnd()
+                onCentroidChanged: if (active) root.dragMove(centroid.scenePosition)
+            }
+            ReorderButtons { visible: teamHeader.reorderingThis; anchors.verticalCenter: parent.verticalCenter }
             Rectangle {
                 x: 16; width: parent.width - 32; height: 32; radius: theme.radius
                 color: teamHover.hovered ? theme.rowHover : "transparent"
@@ -1067,13 +1339,13 @@ Rectangle {
             }
             NewBadge { id: teamNew; visible: !!teamRows.team.new; x: teamName.x + teamName.width + 8; anchors.verticalCenter: parent.verticalCenter }
             HoverHandler { id: teamHover }
-            TapHandler { onTapped: teamRows.open = !teamRows.open }
+            TapHandler { onTapped: teamRows.userOpen = !teamRows.userOpen }
             // Its menu: "More team options" (24 x 23.3, 8 from the row's
             // end) on hover, or a right-click (Teams' team menu).
             readonly property bool menuOpen: teamMenu.menu.opened && teamMenu.team.id === teamRows.team.id
             Rectangle {
                 id: teamMore
-                visible: teamHover.hovered || parent.menuOpen
+                visible: (teamHover.hovered || parent.menuOpen) && !teamHeader.reorderingThis
                 x: parent.width - 16 - 8 - 24; anchors.verticalCenter: parent.verticalCenter
                 width: 24; height: 23.3; radius: theme.radius
                 color: teamMoreHover.hovered ? theme.hover : "transparent"

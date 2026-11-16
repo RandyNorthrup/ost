@@ -24,6 +24,19 @@ Rectangle {
     signal chatWith(var item)
     color: theme.pane
     width: 379
+    // Up / Down / Home / End through the feed, as Teams' (ListKeys).
+    property alias enterToOpen: keys.enterToOpen
+    ListKeys {
+        id: keys
+        owner: root
+        view: list
+        items: root.shown
+        onOpen: item => root.openItem(item)
+    }
+    Keys.onPressed: e => keys.handle(e, root.selectedId)
+    function keysForTest() { return keys }
+    // Teams puts the keyboard in the feed as Activity opens.
+    onVisibleChanged: if (visible) forceActiveFocus()
 
     Rectangle { anchors.right: parent.right; width: 1; height: parent.height; color: theme.edge }
 
@@ -140,6 +153,13 @@ Rectangle {
                 x: 4; width: 358; height: parent.height; radius: theme.radius
                 color: it.selected ? theme.selected : (hov.hovered ? theme.rowHover : "transparent")
             }
+            // The keyboard's focus ring (Teams: 2 px NeutralForeground1).
+            Rectangle {
+                visible: keys.ringOn(it.modelData)
+                z: 2
+                x: 4; width: 358; height: parent.height; radius: theme.radius
+                color: "transparent"; border.width: 2; border.color: theme.text
+            }
             // Unread: a small dot left of the picture.
             Rectangle {
                 visible: it.modelData.unread
@@ -248,7 +268,7 @@ Rectangle {
                 }
             }
             HoverHandler { id: hov }
-            TapHandler { onTapped: root.openItem(it.modelData) }
+            TapHandler { onTapped: { keys.clicked(it.modelData); root.openItem(it.modelData) } }
             Accessible.role: Accessible.ListItem
             Accessible.name: it.modelData.title
         }

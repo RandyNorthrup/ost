@@ -424,12 +424,32 @@ pub async fn send_with_files(
     send_html_with_files(client, chat_id, &content, files).await
 }
 
+/// As [`send_with_files`], with a delivery option ("high", "urgent").
+pub async fn send_with_files_marked(client: &TeamsClient, chat_id: &str, text: &str, files: Vec<serde_json::Value>, importance: &str) -> Result<()> {
+    let content = if text.trim().is_empty() { String::new() } else { format!("<p>{}</p>", super::chat::html_escape(text)) };
+    send_html_with_files_as(client, chat_id, &content, files, importance, "").await
+}
+
 /// Post a message (Teams' HTML, already made) with files.
 pub async fn send_html_with_files(
     client: &TeamsClient,
     chat_id: &str,
     content: &str,
     files: Vec<serde_json::Value>,
+) -> Result<()> {
+    send_html_with_files_as(client, chat_id, content, files, "", "[]").await
+}
+
+/// As [`send_html_with_files`], with the message's delivery option
+/// ("high", "urgent" or "") and its mentions (Teams' JSON list), as a
+/// chat's own compose box sends formatted text with files.
+pub async fn send_html_with_files_as(
+    client: &TeamsClient,
+    chat_id: &str,
+    content: &str,
+    files: Vec<serde_json::Value>,
+    importance: &str,
+    mentions: &str,
 ) -> Result<()> {
     let url = format!(
         "{}/v1/users/ME/conversations/{}/messages",
@@ -442,12 +462,12 @@ pub async fn send_html_with_files(
         "contenttype": "text",
         "clientmessageid": format!("{}", rand_id()),
         "properties": {
-            "importance": "",
+            "importance": importance,
             "subject": "",
             "title": "",
             "cards": "[]",
             "links": "[]",
-            "mentions": "[]",
+            "mentions": if mentions.is_empty() { "[]" } else { mentions },
             "files": serde_json::Value::Array(files).to_string(),
             "formatVariant": "TEAMS"
         }

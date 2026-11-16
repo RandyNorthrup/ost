@@ -1416,6 +1416,8 @@ pub struct AddCandidate {
     /// group's e-mail address.
     pub detail: String,
     pub group: bool,
+    /// A guest (searchV2's userType "Guest"): Teams adds guests with role 2.
+    pub is_guest: bool,
 }
 
 /// A searchV2 result as Add members shows it.
@@ -1446,6 +1448,7 @@ pub fn add_candidate_from(v: &serde_json::Value) -> Option<AddCandidate> {
         mail,
         detail,
         group,
+        is_guest: !group && (v["userType"].as_str().is_some_and(|t| t.eq_ignore_ascii_case("guest")) || s("userPrincipalName").contains("#EXT#")),
     })
 }
 
@@ -1498,6 +1501,7 @@ pub async fn group_people(client: &TeamsClient, group_id: &str) -> Result<Vec<Ad
                 mail: u["mail"].as_str().unwrap_or(upn).to_string(),
                 detail: upn.split('@').next().unwrap_or_default().to_uppercase(),
                 group: false,
+                is_guest: upn.contains("#EXT#"),
             })
         })
         .collect())
@@ -1521,11 +1525,21 @@ pub async fn team_member_mris(client: &TeamsClient, team_thread: &str) -> Result
 
 /// Teams' body for adding people with their roles (the middle tier's
 /// numbering: 0 member, 1 owner): `{"users": [{mri, role}], "groupId"}`.
-pub fn add_members_body(group_id: &str, users: &[(String, bool)]) -> serde_json::Value {
+/// Teams' team roles in bulkUpdateRoledMembers: 0 member, 1 owner, 2 guest
+/// (winpc 2026-11-16: a guest went with role 2 and came back "Guest").
+pub fn member_role(owner: bool, guest: bool) -> u8 {
+    if guest {
+        2
+    } else {
+        u8::from(owner)
+    }
+}
+
+pub fn add_members_body(group_id: &str, users: &[(String, u8)]) -> serde_json::Value {
     serde_json::json!({
         "users": users
             .iter()
-            .map(|(mri, owner)| serde_json::json!({ "mri": mri, "role": u8::from(*owner) }))
+            .map(|(mri, role)| serde_json::json!({ "mri": mri, "role": role }))
             .collect::<Vec<_>>(),
         "groupId": group_id,
     })
@@ -1539,7 +1553,7 @@ pub struct AddOutcome {
 }
 
 /// Add people to a team (`PUT {mt}/beta/teams/{teamThread}/bulkUpdateRoledMembers?allowAsyncAddition=true`).
-pub async fn add_team_members(client: &TeamsClient, team_thread: &str, group_id: &str, users: &[(String, bool)]) -> Result<AddOutcome> {
+pub async fn add_team_members(client: &TeamsClient, team_thread: &str, group_id: &str, users: &[(String, u8)]) -> Result<AddOutcome> {
     if users.is_empty() {
         return Ok(AddOutcome::default());
     }
@@ -1900,10 +1914,16 @@ mod tests {
         assert_eq!((p.mri.as_str(), p.detail.as_str(), p.group), ("8:orgid:5050c9d6-b8a7-41f2-830a-0c51777b7dc3", "RANDY", false));
         // The roles in the middle tier's numbering.
         assert_eq!(
-            add_members_body("g", &[("8:orgid:a".into(), false), ("8:orgid:b".into(), true)]).to_string(),
+            add_members_body("g", &[("8:orgid:a".into(), member_role(false, false)), ("8:orgid:b".into(), member_role(true, false))]).to_string(),
             r#"{"groupId":"g","users":[{"mri":"8:orgid:a","role":0},{"mri":"8:orgid:b","role":1}]}"#
         );
         assert_eq!(guest_body(" a@example.com ", "A")["emailAddress"], "a@example.com");
+        // A guest goes with role 2, as Teams added OST Guest 02 (2026-11-16).
+        assert!(!p.is_guest);
+        let g2: serde_json::Value = serde_json::json!({"displayName": "OST Guest 02", "objectId": "21ffda01", "mri": "8:orgid:21ffda01", "userType": "Guest", "userPrincipalName": "ostguest02_x#EXT#@y.onmicrosoft.com"});
+        let g2 = add_candidate_from(&g2).unwrap();
+        assert!(g2.is_guest);
+        assert_eq!(add_members_body("g", &[(g2.mri.clone(), member_role(false, g2.is_guest))])["users"][0]["role"], 2);
     }
 
     #[test]

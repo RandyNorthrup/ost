@@ -93,6 +93,7 @@ Popup {
                 else if (i.keys) row += 24 + keyMetrics.advanceWidth(i.keys)
                 if (!i.split && (i.chevron || i.submenu || i.flyout)) row += root.chevronSize + root.chevronMargin
                 if (i.endCheck !== undefined) row += 16 + 6
+                if (i.endIcon) row += 4 + 20 + 8 - 6
                 w = Math.max(w, row)
             }
             return Math.ceil(w)
@@ -254,6 +255,13 @@ Popup {
                         visible: !root.viewStyle && (!row.modelData.icon || root.checkColumn) && !row.modelData.toggle && row.modelData.checked === true
                         x: 8; anchors.verticalCenter: parent.verticalCenter; size: 16
                         name: "checkmark-12"; color: theme.onFill(hcFill1, row.ink)
+                    }
+                    // An icon at the row's end (Teams' Start reordering
+                    // carries the accessibility figure, 8 from the edge).
+                    FluentIcon {
+                        visible: !!row.modelData.endIcon
+                        anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter; size: 20
+                        name: row.modelData.endIcon || ""; color: theme.onFill(hcFill1, row.ink)
                     }
                     FluentIcon {
                         visible: row.modelData.endCheck === true

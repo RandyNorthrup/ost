@@ -1976,6 +1976,17 @@ Rectangle {
                 subtitle: "Show the 'You're muted' notification when audio is detected while your microphone is off."
                 trailing: Component { SettingsParts.Toggle { on: backend.setting("showMutedNotice") !== "false"; accessibleName: "Muted notification"; onToggled: v => { backend.setSetting("showMutedNotice", v ? "true" : "false"); on = v; callWindow.showMutedNotice = v } } }
             }
+            // Teams' "Turn on single pointer controls" (measured on winpc
+            // 2026-11-16, after Muted notification; clientPreferences
+            // SimpleCollabPreferences.enableSinglePointReordering, on this
+            // device): the chat list's item and section menus then offer
+            // Start reordering (ChatList.reorderMode).
+            SettingsParts.Card {
+                visible: root.page === "accessibility"
+                icon: "hand-point-20"; title: "Turn on single pointer controls"
+                subtitle: "Available: Start reordering, an alternate to drag and drop in the chats and channels list."
+                trailing: Component { SettingsParts.Toggle { on: backend.setting("singlePointReordering") === "true"; accessibleName: "Turn on single pointer controls"; onToggled: v => { backend.setSetting("singlePointReordering", v ? "true" : "false"); on = v; window.singlePointReordering = v } } }
+            }
 
             // ---- Devices: Audio (Teams' Settings ▸ Devices, measured on
             // winpc 2026-11-14) ----

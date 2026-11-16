@@ -113,6 +113,14 @@ Window {
     // chat in the main window, or in Teams' "New Message" window; once
     // sent, the chat opens in its own chat window.
     readonly property bool newChatInWindow: ((syncedProps.userPersonalSettings || {}).messagingSettings || {}).alwaysPopOutNewChat === true
+    /// Settings ▸ General ▸ "Use Enter or Spacebar to show content" (Teams'
+    /// synced messagingSettings.disableAutomaticConvSwitchOnKeyboardNav):
+    /// in the chat list, Activity, @mentions and the quick views Up / Down
+    /// only move, and Enter or Space opens.
+    /// Settings ▸ Accessibility ▸ "Turn on single pointer controls" (kept
+    /// on this device, as Teams' clientPreferences): Start reordering.
+    property bool singlePointReordering: backend.setting("singlePointReordering") === "true"
+    readonly property bool enterToShow:((syncedProps.userPersonalSettings || {}).messagingSettings || {}).disableAutomaticConvSwitchOnKeyboardNav === true
     /// Teams' "Viewing chats, teams, and channels": Separate gives Teams its
     /// own app on the rail (simpleCollabUserSettings' adaptive rail without
     /// the unified app); collabPane says which list Chat shows then.
@@ -131,9 +139,12 @@ Window {
         if (window.newChatWin) { window.newChatWin.raise(); window.newChatWin.requestActivate(); return }
         const c = Qt.createComponent("NewChatWindow.qml")
         const w = c.createObject(null, { people: Qt.binding(() => backend.peopleJson ? JSON.parse(backend.peopleJson) : []) })
-        w.search.connect(q => backend.searchPeople(q))
-        w.chosen.connect((oid, name, text) => { window.popOutChatName = name; w.close(); backend.openChatWith(oid, name); if (text) backend.sendMessage(text) })
-        w.group.connect((oids, topic, text) => { window.popOutChatName = topic || "Group chat"; w.close(); backend.createGroupChat(oids, topic, text) })
+        w.search.connect(q => backend.newChatPeople(q))
+        // The message goes from the chat's compose box (the main window's
+        // conversation, which opens the chat too), then the chat window opens.
+        w.chosen.connect((oid, name, message) => { window.popOutChatName = name; w.close(); backend.openChatWith(oid, name); if (message) conversation.adoptAndSend(JSON.parse(message)) })
+        w.group.connect((oids, topic, message) => { window.popOutChatName = topic || "Group chat"; window.newGroupMessage = message; w.close(); backend.createGroupChat(oids, topic, "") })
+        w.scheduleMeetingWith.connect(attendees => { w.close(); rail.current = "calendar"; calendarView.newMeetingWith(attendees, "", "") })
         w.closing.connect(() => { window.newChatWin = null; w.destroy() })
         window.newChatWin = w
         w.show()
@@ -3292,7 +3303,8 @@ Window {
         onTriggered: {
             const cap = tag => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-" + tag + ".png")))
             const org = () => backend.customEmojiJson ? JSON.parse(backend.customEmojiJson) : []
-            const mine = () => org().find(e => e.shortcut === "ost-test")
+            const want = (Qt.application.arguments.find(a => a.startsWith("--custom-emoji-name=")) || "--custom-emoji-name=ost-test").slice(20)
+            const mine = () => org().find(e => e.shortcut === want)
             const add = conversation.customEmojiAddForTest(), p = conversation.funPickerForTest()
             if (step === 0) { const c = chatList.chats.find(c => c.name === "OST group test"); backend.selectChat(c.id, c.name); backend.loadCustomEmoji() }
             else if (step === 2 && deleting) {
@@ -3304,12 +3316,14 @@ Window {
             else if (deleting) {}
             else if (step === 2) { console.warn("CUSTOM before", org().length); add.startWith("file://" + png) }
             else if (step === 4) { console.warn("CUSTOM name", add.nameForTest); cap("dialog") }
-            else if (step === 5) console.warn("CUSTOM add pressed", add.addForTest())
+            else if (step >= 5 && step <= 8 && !mine() && !add.busyForTest) { if (add.nameForTest !== want) add.setNameForTest(want); console.warn("CUSTOM add pressed", add.addForTest()) }
             else if (step === 9) { console.warn("CUSTOM result", backend.customEmojiResult, JSON.stringify(org())); cap("added") }
             else if (step === 10) { conversation.openEmojiForTest(); p.tab = "emoji" }
             else if (step === 11) p.tab = "emoji"
             else if (step === 12) { const e = mine(); if (e) backend.emoticonUrl(e.id, 20) }
             else if (step === 13) cap("picker")
+            // --custom-emoji-nosend: stop at the picker (nothing posted).
+            else if (step === 14 && Qt.application.arguments.indexOf("--custom-emoji-nosend") >= 0) { p.close(); Qt.quit() }
             else if (step === 14) { const e = mine(); p.close(); conversation.insertTextForTest("OST test 58: our custom emoji "); if (e) p.pickedEmoji(e.id) }
             else if (step === 15) { console.warn("CUSTOM compose", JSON.stringify(conversation.composeMediaForTest())); conversation.sendForTest() }
             else if (step === 20) {
@@ -4348,7 +4362,9 @@ Window {
             else if (st === 2) {
                 const p = newChat.mapToItem(null, 0, 0)
                 console.warn("NEWCHAT empty at", r2(p.x), r2(p.y), r2(newChat.width), r2(newChat.height), "suggesting", newChat.suggesting,
-                    "suggestions", JSON.stringify(newChat.suggestions.map(x => x.name)), "history", newChat.history, "compose y", r2(newChat.composeBox().y), r2(newChat.composeBox().height))
+                    "history", newChat.history, "compose y", r2(newChat.composeBox().y), r2(newChat.composeBox().height))
+                // Teams' rows: name | second line [| Guest].
+                console.warn("NEWCHAT suggestions", JSON.stringify(newChat.suggestions.map(x => x.name + " | " + (x.sub || "") + (x.guest ? " | Guest" : ""))))
                 shot("empty")
             }
             else if (st === 3) {
@@ -4369,6 +4385,283 @@ Window {
             else if (st === 9) { console.warn("NEWCHAT two", JSON.stringify(newChat.picked.map(x => x.name)), "history", newChat.history); shot("two") }
             else if (st === 10) { window.composing = false; console.warn("NEWCHAT closed", window.composing) }
             else if (st === 11) Qt.quit()
+        }
+    }
+    // --team-live=<action> with --shots=<dir>: live team actions, only on
+    // teams named "OST TEST…" and only adding OST Test 2 or "OST Guest…":
+    // create:<name> (Create team from scratch, public), join:<name> (Join a
+    // team: search it, Join), add:<team>:<person> (Add member), delete:<team>
+    // (Delete, the checkbox ticked). TEAMLIVE lines; teamlive-*.png.
+    Timer {
+        readonly property string spec: (Qt.application.arguments.find(a => a.startsWith("--team-live=")) || "").slice(12)
+        running: spec.length > 0 && backend.signedIn && backend.teamsJson.length > 2
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const st = step++
+            const dir = ((Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=/tmp/act").slice(8)) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "teamlive-" + n + ".png"))
+            const log = (...a) => console.warn("TEAMLIVE", ...a.map(x => typeof x === "string" ? x : JSON.stringify(x)))
+            const parts = spec.split(":"), action = parts[0], name = parts[1] || "", who = parts[2] || ""
+            const team = () => JSON.parse(backend.teamsJson || "[]").find(t => t.name === name)
+            if (!name.startsWith("OST TEST") || (action === "add" && who !== "OST Test 2" && !who.startsWith("OST Guest"))) { log("refused", spec); Qt.quit(); return }
+            if (action === "create") {
+                if (st === 0) { rail.current = "chat"; createTeamDialog.startScratch(false) }
+                else if (st === 1) { createTeamDialog.setNameForTest(name); createTeamDialog.isPublic = true; createTeamDialog.setFirstChannelForTest("OST TEST channel") }
+                else if (st === 2) { shot("create-form"); log("body", JSON.stringify(createTeamDialog.bodyForTest())); createTeamDialog.create() }
+                else if (st === 8) { const t = team(); log("created", t ? t.thread_id : "not listed yet", "open", backend.currentChatName, backend.currentChatId); shot("created") }
+                else if (st === 12) { const t = team(); log("listed", !!t, t ? JSON.stringify(t.channels.map(c => c.name)) : "", "add members open", window.newTeamMembersForTest().opened, "open", backend.currentChatName); shot("created-later"); window.newTeamMembersForTest().close() }
+                else if (st === 13) Qt.quit()
+            } else if (action === "join") {
+                if (st === 0) { rail.current = "chat"; window.openTeamPage("join") }
+                else if (st === 2) joinTeamPage.searchForTest(name)
+                else if (st === 5) { log("found", JSON.stringify(joinTeamPage.results.map(t => [t.name, t.private]))); shot("join-search"); const t = joinTeamPage.results.find(t => t.name === name); if (t) joinTeamPage.join(t) }
+                else if (st === 9) { log("state", JSON.stringify(joinTeamPage.joinState), "listed", !!team(), "open", backend.currentChatName); shot("joined") }
+                else if (st === 12) { log("listed later", !!team()); Qt.quit() }
+            } else if (action === "add") {
+                const am = chatList.teamMenuForTest().addMembersForTest()
+                if (st === 0) { const t = team(); if (!t) { log("no team"); Qt.quit(); return } chatList.teamMenuForTest().team = t; am.start(t.id, t.thread_id, t.name) }
+                else if (st === 2) am.searchForTest(who)
+                else if (st === 5) { const r = am.results; log("results", JSON.stringify(r.map(x => x.name))); const p = r.find(x => x.name === who); if (p) am.pick(p); shot("add-picked") }
+                else if (st === 6) { am.add() }
+                else if (st === 10) { log("outcome", JSON.stringify(am.outcome)); shot("add-done") }
+                else if (st === 11) { am.close(); Qt.quit() }
+            } else if (action === "delete") {
+                if (st === 0) { const t = team(); if (!t) { log("no team"); Qt.quit(); return } chatList.openTeamMenu(t, chatList, 120, 300) }
+                else if (st === 1) { shot("delete-menu"); chatList.teamMenuForTest().menu.close(); chatList.teamMenuForTest().teamActionForTest().start("delete", name) }
+                else if (st === 2) { chatList.teamMenuForTest().teamActionForTest().checked = true; shot("delete-dialog") }
+                else if (st === 3) { const d = chatList.teamMenuForTest().teamActionForTest(); d.confirmed(true); d.close() }
+                else if (st === 9) { log("still listed", !!team()); shot("deleted"); Qt.quit() }
+            }
+        }
+    }
+    // --leave-test=<chat name> with --shots=<dir>: only for a test chat
+    // whose name starts "OST TEST". Its list menu (with Leave), Teams'
+    // "Leave this chat?", then Leave; logs whether the list still has it
+    // (LEAVE lines; leave-*.png). With --leave-remove-others it first
+    // removes everyone else (so nobody is left in the test chat).
+    Timer {
+        readonly property string target: (Qt.application.arguments.find(a => a.startsWith("--leave-test=")) || "").slice(13)
+        running: target.length > 0 && backend.signedIn && chatList.chats.length > 0
+        interval: 3000; repeat: true
+        property int step: 0
+        property var chat: null
+        onTriggered: {
+            const st = step++
+            const dir = ((Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=/tmp/act").slice(8)) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "leave-" + n + ".png"))
+            const log = (...a) => console.warn("LEAVE", ...a.map(x => typeof x === "string" ? x : JSON.stringify(x)))
+            const others = () => (backend.chatMembersJson ? JSON.parse(backend.chatMembersJson) : []).filter(m => !m.me)
+            if (st === 0) {
+                chat = chatList.chats.find(c => c.name === target)
+                if (!chat || !target.startsWith("OST TEST")) { log("no test chat", target); Qt.quit(); return }
+                rail.current = "chat"; backend.selectChat(chat.id, chat.name)
+            }
+            else if (st === 2) {
+                log("members", JSON.stringify((backend.chatMembersJson ? JSON.parse(backend.chatMembersJson) : []).map(m => m.name)))
+                if (Qt.application.arguments.indexOf("--leave-remove-others") >= 0) for (const m of others()) { log("remove", m.name); backend.removeChatMember(m.mri) }
+            }
+            else if (st === 5) { log("left with", JSON.stringify(others().map(m => m.name))); chatList.openRowMenuForTest(chat.id); const r = chatList.rowsForTest[chat.id]; log("menu", r ? JSON.stringify(r.menuItemsForTest().map(i => i.label || "-")) : "no row") }
+            else if (st === 6) shot("menu")
+            else if (st === 7) { chatList.closeRowMenuForTest(); const r = chatList.rowsForTest[chat.id]; if (r) r.leaveForTest().open() }
+            else if (st === 8) shot("dialog")
+            else if (st === 9) { const r = chatList.rowsForTest[chat.id]; if (r) { r.leaveForTest().close(); backend.leaveChat(chat.id) } }
+            else if (st === 12) { log("still listed", chatList.chats.some(c => c.id === chat.id), "open", backend.currentChatName); shot("after") }
+            else if (st === 13) Qt.quit()
+        }
+    }
+    // --list-keys-test with --shots=<dir>: Teams' list keys in Activity,
+    // @mentions and Followed threads: Down opens the next row as you arrive
+    // (the focus ring on it); then with "Use Enter or Spacebar to show
+    // content" on (synced, put back after) Down only moves and Enter opens.
+    // LISTKEYS lines; listkeys-*.png.
+    Timer {
+        running: Qt.application.arguments.indexOf("--list-keys-test") >= 0 && backend.signedIn && backend.settingsJson.length > 0 && backend.activityJson.length > 2
+        interval: 2500; repeat: true
+        property int step: 0
+        property bool before: false
+        onTriggered: {
+            const st = step++
+            const dir = ((Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=/tmp/act").slice(8)) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "listkeys-" + n + ".png"))
+            const log = (...a) => console.warn("LISTKEYS", ...a.map(x => typeof x === "string" ? x : JSON.stringify(x)))
+            const press = (view, key) => { view.forceActiveFocus(); view.keysForTest().handle({ key: key, modifiers: 0, accepted: false }, view.selectedId !== undefined ? view.selectedId : view.selectedKey) }
+            const views = [["activity", activityView, () => { rail.current = "activity" }],
+                           ["mentions", mentionsView, () => { rail.current = "chat"; chatList.openMentions() }],
+                           ["followed", quickView, () => { rail.current = "chat"; chatList.openQuick("followed") }]]
+            // Rounds of 4 steps: the three lists as they are, the setting
+            // on, the three lists again, the setting back.
+            const round = Math.floor(st / 4), phase = st % 4
+            if (st === 0) before = window.enterToShow
+            if (round === 3) { if (phase === 0) settingsView.setPropForTest("userPersonalSettings", "messagingSettings.disableAutomaticConvSwitchOnKeyboardNav", !before); return }
+            if (round === 7) {
+                if (phase === 0) { settingsView.setPropForTest("userPersonalSettings", "messagingSettings.disableAutomaticConvSwitchOnKeyboardNav", before); log("put back", before) }
+                else if (phase === 2) { log("back", window.enterToShow); Qt.quit() }
+                return
+            }
+            const [name, view, open] = views[round < 3 ? round : round - 4]
+            const sel = () => view.selectedId !== undefined ? view.selectedId : view.selectedKey
+            const tag = name + (window.enterToShow ? "-enter" : "-auto")
+            if (phase === 0) { open(); log(tag, "open", "enterToShow", window.enterToShow, "rows", view.keysForTest().items.length) }
+            else if (phase === 1) { press(view, Qt.Key_Down); press(view, Qt.Key_Down); log(tag, "down x2: focus", view.keysForTest().focusKey, "selected", sel(), "ring", view.keysForTest().keyboardNav, "chat", backend.currentChatName) }
+            else if (phase === 2) { shot(tag); press(view, Qt.Key_Return); log(tag, "enter: selected", sel(), "same as focus", sel() === view.keysForTest().focusKey, "chat", backend.currentChatName) }
+        }
+    }
+    // --reorder-test=<section name|teams> with --shots=<dir>: Teams'
+    // reordering in that section (or Teams and channels). Settings ▸
+    // Accessibility with "Turn on single pointer controls" turned on; the
+    // second row's menu (Start reordering); Move Up, then Move Down (back
+    // as it was); then a drag of the first row below the second (the
+    // overlay and drop line captured mid-drag), and a drag back. Each step
+    // logs REORDER lines with the order shown and, after the server
+    // answers, the order it keeps. The setting is put back at the end.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--reorder-test=")) && backend.signedIn && chatList.folders.length > 0 && chatList.folders[0].id !== ""
+        interval: 2500; repeat: true
+        property int step: 0
+        property string group: ""
+        property bool before: false
+        property var start: []
+        onTriggered: {
+            const st = step++
+            const arg = k => { const a = Qt.application.arguments.find(a => a.startsWith(k + "=")); return a ? a.slice(k.length + 1) : "" }
+            const dir = (arg("--shots") || "/tmp/act") + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "reorder-" + n + ".png"))
+            const log = (...a) => console.warn("REORDER", ...a.map(x => typeof x === "string" ? x : JSON.stringify(x)))
+            const names = () => {
+                if (group === "teams") return chatList.teams.map(t => t.name)
+                const f = chatList.folders.find(f => f.id === group)
+                return f ? f.items.map(id => (chatList.chats.find(c => c.id === id) || { name: id }).name) : []
+            }
+            const rowOf = k => chatList.dragRows[group + "|" + k]
+            const scene = (it, dy) => it.mapToItem(null, it.width / 2, dy)
+            if (st === 0) {
+                const want = arg("--reorder-test")
+                const f = chatList.folders.find(f => f.title === want)
+                group = want === "teams" ? "teams" : f ? f.id : ""
+                if (!group) { log("no such section", want); Qt.quit(); return }
+                rail.current = "settings"; settingsView.pageForTest("accessibility")
+                before = window.singlePointReordering
+                backend.setSetting("singlePointReordering", "true"); window.singlePointReordering = true
+            }
+            else if (st === 1) shot("setting")
+            else if (st === 2) {
+                rail.current = "chat"
+                start = chatList.groupOrder(group)
+                log("start", group, names(), JSON.stringify(start))
+                if (start.length < 2) { log("needs two rows"); Qt.quit(); return }
+                const it = rowOf(start[1])
+                if (it) chatList.scrollIntoViewForTest(it)
+            }
+            else if (st === 3) {
+                // The second row's menu, with Start reordering.
+                if (group === "teams") { const t = chatList.teams.find(t => t.thread_id === start[1]); chatList.openTeamMenu(t, rowOf(start[1]), 60, 30); log("menu", JSON.stringify(chatList.teamMenuForTest().menu.items.map(i => i.label || "-"))) }
+                else { chatList.openRowMenuForTest(start[1]); const r = chatList.rowsForTest[start[1]]; log("menu", r ? JSON.stringify(r.menuItemsForTest().map(i => i.label || "-")) : "no row") }
+            }
+            else if (st === 4) shot("menu")
+            else if (st === 5) {
+                if (group === "teams") chatList.teamMenuForTest().menu.close(); else chatList.closeRowMenuForTest()
+                chatList.startReorder(group, start[1])
+            }
+            else if (st === 6) { log("reordering", chatList.reorderKey, "focused", chatList.reorderButtonFocused); shot("mode") }
+            else if (st === 7) { chatList.reorderStep(-1); log("moved up", names()) }
+            else if (st === 9) {
+                log("kept", names(), "still reordering", chatList.reorderKey === start[1]); shot("moved-up")
+                // --reorder-only-up: leave it moved (to compare with Teams;
+                // the same run again moves it back when there are two).
+                if (Qt.application.arguments.indexOf("--reorder-only-up") >= 0) {
+                    chatList.stopReorder()
+                    backend.setSetting("singlePointReordering", before ? "true" : "false"); window.singlePointReordering = before
+                    step = 30
+                }
+            }
+            else if (st === 32) Qt.quit()
+            else if (st === 10) chatList.reorderStep(1)
+            else if (st === 12) { log("back", names(), JSON.stringify(chatList.groupOrder(group)) === JSON.stringify(start)); chatList.stopReorder() }
+            else if (st === 13) {
+                // Drag the first row below the second.
+                const a = rowOf(start[0])
+                if (!a) { log("rows not shown"); return }
+                chatList.dragStart(group, start[0], { name: names()[0], kind: group === "teams" ? "team" : "chat", photoId: group === "teams" ? "team:" + (chatList.teams.find(t => t.thread_id === start[0]) || {}).id : "" }, a, Qt.point(a.width / 2, a.dragHeight / 2))
+                chatList.dragMove(scene(a, a.dragHeight / 2))
+            }
+            else if (st === 14) { const b = rowOf(start[1]); chatList.dragMove(scene(b, b.dragHeight * 0.8)); log("dragging", JSON.stringify(chatList.dropAt)) }
+            else if (st === 15) shot("drag")
+            else if (st === 16) { chatList.dragEnd(); log("dropped", names()) }
+            else if (st === 18) {
+                log("kept", names())
+                const now = chatList.groupOrder(group)
+                const a = rowOf(now[1])
+                if (a) { chatList.dragStart(group, now[1], { name: "", kind: "chat" }, a, Qt.point(a.width / 2, a.dragHeight / 2)); chatList.dragMove(scene(a, a.dragHeight / 2)) }
+            }
+            else if (st === 19) { const now = chatList.groupOrder(group); const b = rowOf(now[0]); if (b) chatList.dragMove(scene(b, 2)); log("dragging back", JSON.stringify(chatList.dropAt)); chatList.dragEnd() }
+            else if (st === 21) {
+                log("back", names(), JSON.stringify(chatList.groupOrder(group)) === JSON.stringify(start))
+                backend.setSetting("singlePointReordering", before ? "true" : "false"); window.singlePointReordering = before
+                shot("end")
+            }
+            else if (st === 22) Qt.quit()
+        }
+    }
+    // --new-chat-compose-test with --shots=<dir> --new-chat-to=<name>[,<name>…]
+    // [--new-chat-name=<group name>] [--new-chat-text=<text>]
+    // [--new-chat-file=<path>] [--new-chat-urgent] [--new-chat-send]:
+    // the new chat form's compose box as a conversation's: the people
+    // picked from Teams' suggestions (or its search), bold + italic text,
+    // a file from this device, "+" (Teams' short list) and Set delivery
+    // options ▸ Important (or Urgent), then, only with --new-chat-send,
+    // Send: the chat is made and the message goes from its compose box.
+    // NEWCHATSEND lines; newchat-compose-*.png.
+    Timer {
+        running: Qt.application.arguments.indexOf("--new-chat-compose-test") >= 0 && backend.signedIn
+        interval: 2500; repeat: true
+        property int step: 0
+        property var want: []
+        onTriggered: {
+            const st = step++
+            const arg = k => { const a = Qt.application.arguments.find(a => a.startsWith(k + "=")); return a ? a.slice(k.length + 1) : "" }
+            const dir = (arg("--shots") || "/tmp/act") + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "newchat-compose-" + n + ".png"))
+            const box = newChat.composeBox()
+            if (st === 0) { want = arg("--new-chat-to").split(",").filter(s => s); rail.current = "chat"; window.composing = true }
+            else if (st === 2 || st === 4 || st === 6) {
+                // Pick each from the suggestions; search for the rest.
+                for (const n of want.slice()) {
+                    const s = newChat.suggestions.find(x => x.name === n)
+                    if (s) { newChat.pick(s); want = want.filter(w => w !== n) }
+                }
+                if (want.length) { newChat.search(want[0]); newChat.setFieldForTest(want[0]) }
+                console.warn("NEWCHATSEND picked", JSON.stringify(newChat.picked), "left", JSON.stringify(want))
+            }
+            else if (st === 7) {
+                if (want.length) { console.warn("NEWCHATSEND couldn't find", JSON.stringify(want)); Qt.quit(); return }
+                newChat.setFieldForTest("")
+                const name = arg("--new-chat-name")
+                if (name) { newChat.naming = true; newChat.nameText = name }
+                const text = arg("--new-chat-text") || "OST new chat compose test"
+                box.setHtml("<b>" + text + "</b> <i>formatted from the new chat form</i>")
+                const f = arg("--new-chat-file")
+                if (f) newChat.attachForTest([f])
+                newChat.plusForTest()
+            }
+            else if (st === 8) shot("plus")
+            else if (st === 9) {
+                box.closePlusForTest()
+                box.importance = Qt.application.arguments.indexOf("--new-chat-urgent") >= 0 ? "urgent" : "high"
+                console.warn("NEWCHATSEND message", newChat.message())
+            }
+            else if (st === 10) shot("ready")
+            else if (st === 11) {
+                if (Qt.application.arguments.indexOf("--new-chat-send") < 0) { window.composing = false; console.warn("NEWCHATSEND not sent"); Qt.quit(); return }
+                box.trySubmit()
+                console.warn("NEWCHATSEND sent", "composing", window.composing)
+            }
+            else if (st === 16) {
+                const last = conversation.messages.slice(-2).map(m => ({ id: m.id, text: (m.text || "").slice(0, 80), html: (m.html || "").slice(0, 200), files: (m.files || []).map(f => f.name), importance: m.importance || "" }))
+                console.warn("NEWCHATSEND chat", backend.currentChatId, backend.currentChatName, JSON.stringify(last))
+                shot("sent")
+            }
+            else if (st === 17) Qt.quit()
         }
     }
     // --tab-dropdown-test with --open-chat=<id> --size=<narrow> --shots=<dir>:
@@ -8837,21 +9130,37 @@ Window {
         z: 3
         anchors { top: appBanner.bottom; bottom: statusBar.top; left: chatList.right; right: parent.right }
         people: backend.peopleJson ? JSON.parse(backend.peopleJson) : []
+        suggested: backend.newChatPeopleJson ? JSON.parse(backend.newChatPeopleJson) : ({ query: "", items: [] })
         chats: chatList.chats
         myMri: backend.userMri
         myName: backend.userName
-        onSearch: q => backend.searchPeople(q)
+        onSearch: q => backend.newChatPeople(q)
         // One person you have a chat with: Teams shows that chat under the
         // To row; its own compose box sends there.
         onPreviewChat: (id, name) => { if (id && backend.currentChatId !== id) backend.selectChat(id, name) }
         onEmojiRequested: box => conversation.openEmojiFor(box)
-        onChosen: (oid, name, text) => {
+        // The message goes from the chat's own compose box once it is open
+        // (a new group chat: once it is made).
+        onChosen: (oid, name, message) => {
             window.composing = false
             backend.openChatWith(oid, name)
-            if (text) backend.sendMessage(text)
+            if (message) conversation.adoptAndSend(JSON.parse(message))
         }
-        onGroup: (oids, topic, text) => { window.composing = false; backend.createGroupChat(oids, topic, text) }
+        onGroup: (oids, topic, message) => { window.composing = false; window.newGroupMessage = message; backend.createGroupChat(oids, topic, "") }
+        onScheduleMeetingWith: attendees => { window.composing = false; rail.current = "calendar"; calendarView.newMeetingWith(attendees, "", "") }
         onCancelled: window.composing = false
+    }
+    /// A new group chat's first message, sent once the chat is made.
+    property string newGroupMessage: ""
+    Connections {
+        target: backend
+        function onGroupChatCreated(id) {
+            if (!window.newGroupMessage) return
+            const m = JSON.parse(window.newGroupMessage)
+            window.newGroupMessage = ""
+            if (conversation.chatId === id) conversation.adoptAndSend(m)
+            else console.warn("NEWCHAT group message not sent: chat", id, "isn't open")
+        }
     }
 
     CallsView {
@@ -9170,34 +9479,45 @@ Window {
         if (which === "create") createTeamPage.load()
         else joinTeamPage.load()
     }
-    // A new or joined team: back to the chat with its General open once the
-    // team list has it.
-    property string pendingTeamThread: ""
-    function teamReady(groupId, threadId) {
+    // A new or joined team: back to the chat with its first channel open
+    // once the team list has it (found by thread, else group id, else
+    // name: the create answer may carry neither id).
+    property var pendingTeam: null
+    function teamReady(groupId, threadId, created, name) {
         window.teamPage = ""
         chatList.yourTeamsOpen = false
-        window.pendingTeamThread = threadId || ""
+        window.pendingTeam = { thread: threadId || "", group: groupId || "", name: name || "", created: !!created, tries: 0 }
         backend.reloadTeams()
     }
+    // Teams, once a team is made (winpc 2026-11-16): "Add members to
+    // {team}" with Skip / Add, then its first channel opens.
     Connections {
         target: backend
         function onTeamsJsonChanged() {
-            if (!window.pendingTeamThread) return
-            const t = JSON.parse(backend.teamsJson || "[]").find(t => t.thread_id === window.pendingTeamThread)
-            if (t) { window.pendingTeamThread = ""; backend.selectChat(t.thread_id, "General") }
+            const p = window.pendingTeam
+            if (!p) return
+            const t = JSON.parse(backend.teamsJson || "[]").find(t => (p.thread && t.thread_id === p.thread) || (p.group && t.id === p.group) || (!p.thread && !p.group && p.name && t.name === p.name))
+            if (!t) { if (++p.tries < 6) pendingTeamRetry.restart(); return }
+            window.pendingTeam = null
+            const first = (t.channels || []).find(c => c.id === t.thread_id) || (t.channels || [])[0]
+            backend.selectChat(t.thread_id, first ? first.name : "General")
+            if (p.created) { newTeamMembers.afterCreate = true; newTeamMembers.start(t.id, t.thread_id, t.name) }
         }
     }
+    Timer { id: pendingTeamRetry; interval: 3000; onTriggered: if (window.pendingTeam) backend.reloadTeams() }
+    AddMembersDialog { id: newTeamMembers; onClosed: afterCreate = false }
+    function newTeamMembersForTest() { return newTeamMembers }
     CreateTeamDialog {
         id: createTeamDialog
         onMoreOptions: window.openTeamPage("create")
-        onCreated: (g, t) => window.teamReady(g, t)
+        onCreated: (g, t) => window.teamReady(g, t, true, createTeamDialog.lastName)
     }
     CreateTeamPage {
         id: createTeamPage
         visible: window.teamPage === "create" && rail.current === "chat"
         anchors { top: appBanner.bottom; bottom: statusBar.top; left: rail.right; right: parent.right }
         onBack: window.teamPage = ""
-        onTeamCreated: (g, t) => window.teamReady(g, t)
+        onTeamCreated: (g, t) => window.teamReady(g, t, true)
     }
     JoinTeamPage {
         id: joinTeamPage
@@ -9254,7 +9574,8 @@ Window {
     ChatList {
         id: chatList
         pane: window.splitView ? window.collabPane : "combined"
-        enterToOpen: ((window.syncedProps.userPersonalSettings || {}).messagingSettings || {}).disableAutomaticConvSwitchOnKeyboardNav === true
+        enterToOpen: window.enterToShow
+        singlePointReordering: window.singlePointReordering
         onOpenChannelWindow: id => window.openChannelWindow(id)
         onChannelWorkflows: id => window.openWorkflows(id)
         onManageChannel: (id, name) => window.openManageChannel(id)
@@ -9292,6 +9613,7 @@ Window {
         anchors { top: appBanner.bottom; bottom: statusBar.top; left: chatList.right; right: parent.right }
         items: backend.activityJson ? JSON.parse(backend.activityJson) : []
         myName: backend.userName
+        enterToOpen: window.enterToShow
         // A mention opens its chat beside the list.
         onOpenMention: item => {
             selectedId = item.id
@@ -9308,6 +9630,7 @@ Window {
         id: quickView
         kind: chatList.quickOpen || "followed"
         visible: rail.current === "chat" && !!chatList.quickOpen
+        enterToOpen: window.enterToShow
         anchors { top: appBanner.bottom; bottom: statusBar.top; left: chatList.right; right: parent.right }
         onOpenItem: item => {
             const c = chatList.chats.find(c => c.id === item.thread_id)
@@ -9344,6 +9667,7 @@ Window {
         visible: rail.current === "activity"
         anchors { top: appBanner.bottom; bottom: parent.bottom; left: rail.right }
         items: backend.activityJson ? JSON.parse(backend.activityJson) : []
+        enterToOpen: window.enterToShow
         onMarkAllRead: {
             for (const it of items) if (it.unread) backend.markActivityItemRead(it.id)
             backend.markActivityRead()
@@ -9470,6 +9794,11 @@ Window {
             left: conversation.tabExpanded || conversation.channelAttendance ? rail.right : rail.current === "activity" ? activityView.right : chatList.right
             leftMargin: rail.current === "chat" && (chatList.mentionsOpen || !!chatList.quickOpen) ? mentionsView.paneWidth : 0 }
         chatName: backend.currentChatName
+        // A group chat you left (Teams keeps it listed): its roster without
+        // you, the box disabled with Teams' words.
+        readonly property bool notMember: { const m = backend.chatMembersJson ? JSON.parse(backend.chatMembersJson) : []; return m.length > 0 && !m.some(x => x.me) && backend.currentChatId.endsWith("@thread.v2") }
+        composeDisabled: notMember
+        composeDisabledText: notMember ? "You can't send messages because you are not a member of the chat." : ""
         isChannel: backend.currentChatId.endsWith("@thread.tacv2")
         isSelf: backend.currentChatId === "48:notes"
         isGroup: backend.currentChatId.endsWith("@thread.v2") || backend.currentChatId.indexOf("meeting_") >= 0

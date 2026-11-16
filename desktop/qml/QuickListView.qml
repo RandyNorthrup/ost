@@ -37,11 +37,23 @@ Rectangle {
     readonly property var shown: items.filter(i => !chip
         || (chip === "unread" ? i.unread : chip === "channels" ? i.channel : !i.channel))
     color: theme.surface
+    // Up / Down / Home / End through the rows, as Teams' (ListKeys).
+    property alias enterToOpen: keys.enterToOpen
+    ListKeys {
+        id: keys
+        owner: root
+        view: list
+        items: root.shown
+        keyOf: i => root.key(i)
+        onOpen: item => { root.selectedKey = root.key(item); root.openItem(item) }
+    }
+    Keys.onPressed: e => keys.handle(e, root.selectedKey)
+    function keysForTest() { return keys }
 
     // (kind, not followed: kind's change handler runs before followed
     // is updated.)
     function load() { backend.channelAction(kind === "followed" ? "quick-followed" : "quick-saved", "", "", "") }
-    onVisibleChanged: if (visible) { selectedKey = ""; load() }
+    onVisibleChanged: if (visible) { selectedKey = ""; load(); forceActiveFocus() }
     onKindChanged: { items = []; loaded = false; chip = ""; selectedKey = ""; if (visible) load() }
     Connections {
         target: backend
@@ -126,6 +138,12 @@ Rectangle {
                     x: 8; width: parent.width - 16; height: parent.height - 4; radius: theme.radius
                     color: row.sel ? theme.selected : rh.hovered ? theme.pane : "transparent"
                 }
+                Rectangle {
+                    visible: keys.ringOn(row.modelData)
+                    z: 2
+                    x: 8; width: parent.width - 16; height: parent.height - 4; radius: theme.radius
+                    color: "transparent"; border.width: 2; border.color: theme.text
+                }
                 Avatar {
                     x: 32; y: 12; size: 36; square: !!row.modelData.channel; squareRadius: 4
                     name: row.ch ? row.ch.team.name : (row.modelData.topic || "?")
@@ -200,7 +218,7 @@ Rectangle {
                     }
                 }
                 HoverHandler { id: rh; cursorShape: Qt.PointingHandCursor }
-                TapHandler { onTapped: { root.selectedKey = root.key(row.modelData); root.openItem(row.modelData) } }
+                TapHandler { onTapped: { keys.clicked(row.modelData); root.selectedKey = root.key(row.modelData); root.openItem(row.modelData) } }
                 Accessible.role: Accessible.Button
                 Accessible.name: root.titleOf(row.modelData) + ", " + (row.modelData.sender || "") + ": " + (row.modelData.preview || "")
             }

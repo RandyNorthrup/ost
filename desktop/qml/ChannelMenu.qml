@@ -36,6 +36,9 @@ Item {
     readonly property string holder: { const f = folderList.find(f => (f.kind === "Favorites" || f.kind === "UserCreated" || f.kind === "UserDefined") && f.items.indexOf(root.channel.id) >= 0); return f ? f.id : "" }
     signal goToChannel()
     signal openInNewWindow()
+    /// The section the row is in, when it offers Start reordering ("").
+    property string reorderGroup: ""
+    signal startReordering(string group, string channelId)
     signal manageChannel()
     signal workflows()
     readonly property alias menu: menu
@@ -92,8 +95,11 @@ Item {
                 ? { key: "top", label: "See new posts at top", icon: "channel-posts-top-20" }
                 : { key: "bottom", label: "See new posts at bottom", icon: "channel-posts-top-20" },
                { separator: true }] : []).concat([
-               { key: "window", label: "Open in new window", icon: "open-window-20" },
-               { separator: true }])).concat([
+               { key: "window", label: "Open in new window", icon: "open-window-20" }]).concat(
+               // In a section you can reorder, with single pointer controls
+               // on: Teams' Start reordering.
+               root.reorderGroup ? [{ key: "reorder", label: "Start reordering", icon: "arrow-sort-20", endIcon: "accessibility-20" }] : [],
+               [{ separator: true }])).concat([
             { key: "notify", label: "Manage notifications", icon: "alert-20", flyout: true },
             { key: "move", label: "Move to section", icon: "star-20", submenu: root.moveTargets() },
             root.rowMode ? null : root.channel.shown === false
@@ -120,6 +126,7 @@ Item {
             else if (k === "go") root.goToChannel()
             else if (k === "details") root.openDetails()
             else if (k === "window") root.openInNewWindow()
+            else if (k === "reorder") root.startReordering(root.reorderGroup, root.channel.id)
             else if (k === "hide" || k === "show") root.act(k)
             else if (k === "edit") editDialog.start(root.channel)
             else if (k === "manage") root.manageChannel()

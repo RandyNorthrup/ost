@@ -925,30 +925,33 @@ Rectangle {
     }
     // A channel row (Channels tab: 64 tall).
     // A Viva Engage community (Teams' Communities tab; the service's
-    // CommunitySearchTeams). The test tenant has none, so this follows the
-    // channel card: the community's picture, its name (the match bold) and
-    // its description; it opens in Viva Engage on the web.
+    // CommunitySearchTeams). Measured on winpc 2026-11-16 ("OST Test
+    // Community"): a 60 px card (search-card, radius 8, shadow 2, padding
+    // 12) with one 36 px row: the community's picture (32, square, radius
+    // 4; without one Fluent's colourful initials by name, as "OC" on
+    // #EFC4AD) at 18, 14 and its name 14/20 at 62, centred, the matched
+    // words bold. No second line. It opens in Viva Engage on the web.
     Component {
         id: communityCard
         Item {
             readonly property var c: row.c
-            height: 64 + 16
+            height: 60 + 16
             Card {
-                height: 64
+                height: 60
                 Avatar {
-                    x: 16; y: 16; size: 32; square: true; squareRadius: 4
+                    x: 18; y: 14; size: 32; square: true; squareRadius: 4
+                    colorful: true
                     name: parent.parent.c.name
                     visible: !parent.parent.c.avatar
                 }
                 Image {
                     visible: !!parent.parent.c.avatar
-                    x: 16; y: 16; width: 32; height: 32
+                    x: 18; y: 14; width: 32; height: 32
                     source: { backend.emoticonsVersion; const a = parent.parent.c.avatar; return a ? backend.cardImage(a.replace("{width}", "64").replace("{height}", "64")) : "" }
                     fillMode: Image.PreserveAspectCrop
                     RoundedCorners { anchors.fill: parent; radius: 4; background: theme.surface }
                 }
-                Text { x: 60; y: 11.3; width: parent.width - 76; elide: Text.ElideRight; textFormat: Text.StyledText; text: root.bold(parent.parent.c.name); font.family: theme.font; font.pixelSize: 14; color: theme.text }
-                Text { x: 60; y: 32; width: parent.width - 76; elide: Text.ElideRight; text: parent.parent.c.description || (parent.parent.c.privacy === "PRIVATE" ? "Private community" : "Public community"); font.family: theme.font; font.pixelSize: 12; color: theme.text }
+                Text { x: 62; y: 20; width: parent.width - 80; elide: Text.ElideRight; textFormat: Text.StyledText; text: root.bold(parent.parent.c.name); lineHeight: 20; lineHeightMode: Text.FixedHeight; font.family: theme.font; font.pixelSize: 14; color: theme.text }
                 TapHandler { onTapped: Qt.openUrlExternally("https://web.yammer.com/main/groups/" + encodeURIComponent(parent.parent.c.id)) }
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
             }

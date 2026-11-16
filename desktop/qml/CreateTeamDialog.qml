@@ -53,6 +53,8 @@ Popup {
     property bool pickMembers: false
     signal moreOptions()
     signal created(string groupId, string threadId)
+    /// The name of the team last asked for (to find it once listed).
+    property string lastName: ""
 
     readonly property bool nameOk: nameField.text.trim().length > 0 && nameField.text.trim().length <= 256
     readonly property bool canCreate: nameOk && !creating && (kind !== "scratch" || firstField.text.trim().length > 0)
@@ -91,6 +93,7 @@ Popup {
         }
         else if (kind === "clone") { a.groupId = source.id; a.pick = { tabs: pickTabs, settings: pickSettings, members: pickMembers } }
         creating = true
+        lastName = a.name
         backend.channelAction("create-team", "", "", JSON.stringify(a))
     }
     Connections {

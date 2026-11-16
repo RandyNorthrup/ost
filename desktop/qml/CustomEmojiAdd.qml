@@ -21,6 +21,8 @@ Item {
     function startWith(path) { prepare(path) }
     function addForTest() { if (addButton.can) addButton.add(); return addButton.can }
     readonly property string nameForTest: nameField.text
+    function setNameForTest(n) { nameField.text = n }
+    readonly property bool busyForTest: adding
 
     property string picture: ""
     property string sourceName: ""

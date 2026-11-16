@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls.Basic
+import QtQuick.Dialogs
 
 // Teams' new chat form (measured on Teams web, 2026-11-16; the spec is
 // docs/spec/chat-list-and-header.md §2.4):
@@ -19,10 +20,17 @@ import QtQuick.Controls.Basic
 //   compose box under the To row (the form only keeps its rows: the chat is
 //   opened behind it, `previewChat`).
 // Sending with one person and no group name opens (or starts) your 1:1 chat
-// with them; with more people, or a name, it starts a group chat.
+// with them; with more people, or a name, it starts a group chat. The
+// message goes from that chat's own compose box as written (formatting,
+// emoji and GIFs, files, cloud files, a clip, its delivery option; see
+// `message()`), as Teams makes the chat as the first message goes.
 Rectangle {
     id: root
+    /// The directory search (fallback while Teams' picker answers nothing).
     property var people: []
+    /// Teams' people picker for this form (backend.newChatPeopleJson):
+    /// {query, items: [{id, name, sub, guest, upn}]}.
+    property var suggested: ({ query: "", items: [] })
     /// The chat list (suggestions, and the chat you already have with a
     /// person).
     property var chats: []
@@ -36,10 +44,13 @@ Rectangle {
     property bool naming: false
     property alias nameText: nameField.text
     signal search(string query)
-    /// One person, no name: open your 1:1 chat (and send `text`, if any).
-    signal chosen(string oid, string name, string text)
-    /// Several people, or a name: start a group chat.
-    signal group(string oids, string topic, string text)
+    /// One person, no name: open your 1:1 chat and send `message` (JSON,
+    /// `message()`; "" when nothing was written).
+    signal chosen(string oid, string name, string message)
+    /// Several people, or a name: start a group chat and send `message`.
+    signal group(string oids, string topic, string message)
+    /// "+" ▸ Schedule meeting: a meeting with the people picked (emails).
+    signal scheduleMeetingWith(string attendees)
     signal cancelled()
     /// Show this chat behind the form ("" when the form shows its own note).
     signal previewChat(string chatId, string name)
@@ -58,42 +69,79 @@ Rectangle {
     color: history ? "transparent" : theme.surface
 
     onVisibleChanged: if (visible) {
-        picked = []; naming = false; field.text = ""; nameField.text = ""; compose.clear()
+        picked = []; naming = false; field.text = ""; nameField.text = ""; compose.clear(); clearAttachments()
         highlight = -1; suggestOpen = true; field.forceActiveFocus()
+        root.search("")
     }
 
     function pick(p) {
-        if (!picked.some(x => x.id === p.id)) picked = picked.concat([{ id: p.id, name: p.name.replace(/ \(You\)$/, "") }])
+        if (!picked.some(x => x.id === p.id)) picked = picked.concat([{ id: p.id, name: p.name.replace(/ \(You\)$/, ""), mail: p.guest ? (p.sub || "") : (p.upn || p.mail || "") }])
         field.text = ""
         root.search("")
         highlight = -1
         field.forceActiveFocus()
     }
     function unpick(id) { picked = picked.filter(x => x.id !== id) }
+    /// What the compose box holds, for the chat's own box to send
+    /// (Conversation.adoptAndSend): {text, html, media, importance, files,
+    /// cloud, clip}; "" when there is nothing to send.
+    function message() {
+        const d = compose.draftState()
+        const text = compose.plainText()
+        const m = {
+            text: text, html: text.trim() ? compose.formattedText() : "", media: compose.mediaInUse(),
+            importance: compose.importance, files: root.pendingFiles, cloud: cloudAttach.pending, clip: compose.clip
+        }
+        const empty = !text.trim() && m.media.length === 0 && m.files.length === 0 && m.cloud.length === 0 && !m.clip
+        return empty ? "" : JSON.stringify(m)
+    }
     function submit() {
-        const text = compose.plainText().trim()
         if (picked.length === 0) return
-        if (picked.length === 1 && !nameField.text.trim()) root.chosen(picked[0].id, picked[0].name, text)
-        else root.group(picked.map(p => p.id).join(","), nameField.text.trim(), text)
-        compose.clear()
+        const m = root.message()
+        if (picked.length === 1 && !nameField.text.trim()) root.chosen(picked[0].id, picked[0].name, m)
+        else root.group(picked.map(p => p.id).join(","), nameField.text.trim(), m)
+        compose.clear(); compose.importance = ""; compose.clip = null; root.clearAttachments()
     }
 
-    // ---- Suggestions ----
-    // Before typing: the people of your recent one-on-one chats (in the
-    // list's order), then you; then the search's results.
-    readonly property var zeroState: {
-        const out = []
-        for (const c of root.chats) {
-            if (c.isGroup || c.isSelf || c.meeting || c.unlisted || !(c.peerMri || "").startsWith("8:orgid:")) continue
-            const oid = c.peerMri.slice(8)
-            if (out.some(p => p.id === oid) || "8:orgid:" + oid === root.myMri) continue
-            out.push({ id: oid, name: c.name || "", mail: "" })
-            if (out.length >= 9) break
-        }
-        if (root.myMri.startsWith("8:orgid:")) out.push({ id: root.myMri.slice(8), name: root.myName + " (You)", mail: "" })
-        return out
+    // ---- Attach and "+" (the conversation's own, before there is a chat) ----
+    property var pendingFiles: []
+    function clearAttachments() { pendingFiles = []; cloudAttach.clear() }
+    function addFiles(urls) {
+        const paths = urls.map(u => String(u).replace(/^file:\/\//, ""))
+        pendingFiles = pendingFiles.concat(paths.filter(p => pendingFiles.indexOf(p) < 0))
     }
-    readonly property var suggestions: (field.text.length > 0 ? root.people : root.zeroState).filter(p => !root.picked.some(x => x.id === p.id))
+    CloudAttach {
+        id: cloudAttach
+        onUploadRequested: filePicker.open()
+        onFailed: text => compose.showBanner(text, false, 3000)
+    }
+    FileDialog {
+        id: filePicker
+        title: "Upload from this device"
+        fileMode: FileDialog.OpenFiles
+        onAccepted: root.addFiles(selectedFiles)
+    }
+    // Teams' recorder; the clip is stored once the chat is made.
+    VideoClipRecorder {
+        id: clipRecorder
+        onFinished: clip => compose.clip = Object.assign({}, clip, { uploading: false, id: "", url: "" })
+    }
+    function attachForTest(paths) { root.pendingFiles = paths }
+    function cloudForTest() { return cloudAttach }
+    function plusForTest() { compose.plusForTest() }
+    function setFieldForTest(t) { field.text = t; root.suggestOpen = true; field.forceActiveFocus(); root.search(t) }
+
+    // ---- Suggestions ----
+    // Teams' people picker: before typing its top-N people (the people you
+    // work with most, you among them as "(You)", then the rest of its
+    // ranking: guests too); then its search. People only. (Teams keeps the
+    // top-N list from earlier; OST shows it once the service answers.)
+    property var zeroItems: []
+    onSuggestedChanged: if (suggested && suggested.query === "" && suggested.items.length > 0) zeroItems = suggested.items
+    readonly property var typedItems: suggested && suggested.query !== "" && suggested.query === field.text.trim() ? suggested.items : null
+    readonly property var suggestions: (field.text.length > 0
+        ? (typedItems !== null ? typedItems : root.people.map(p => ({ id: p.id, name: p.name, sub: p.mail || "" })))
+        : zeroItems).filter(p => !root.picked.some(x => x.id === p.id))
     /// The row Up / Down reached (-1: none; Return then takes the first).
     property int highlight: -1
     /// Esc closes the suggestions first; typing or a click shows them again.
@@ -244,12 +292,25 @@ Rectangle {
         return line
     }
 
-    // The note, with nobody picked or for a new conversation.
+    // The note, with nobody picked or for a new conversation (measured on
+    // winpc 2026-11-16): Teams' chat-pencil illustration (256), the heading
+    // 23.3 under it and the line 23.2 under that, centred between the To
+    // row and the compose box; the picture only where it fits.
     Column {
+        id: note
         visible: !root.history
         anchors.horizontalCenter: parent.horizontalCenter
-        y: rows.height + (compose.y - rows.height - height) / 2
-        spacing: 22
+        readonly property real room: compose.y - rows.height
+        readonly property bool art: room >= 344.5 + 32
+        y: rows.height + (room - height) / 2
+        spacing: 23.3
+        Image {
+            visible: note.art
+            anchors.horizontalCenter: parent.horizontalCenter
+            width: 256; height: 256
+            source: "../assets/illustrations/chat-pencil-l-standard.svg"
+            sourceSize: Qt.size(512, 512)
+        }
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
             text: "You're starting a new conversation"
@@ -280,9 +341,26 @@ Rectangle {
         previewsAllowed: false
         scheduleAllowed: false
         placeholder: "Type a message"
+        newConversation: true
+        files: root.pendingFiles
+        cloudFiles: cloudAttach.pending
+        onFileRemoved: path => root.pendingFiles = root.pendingFiles.filter(p => p !== path)
+        onCloudRemoved: key => cloudAttach.remove(key)
+        onCloudLinkRequested: key => cloudAttach.openLink(key)
+        onAttachRequested: a => cloudAttach.openMenu(a || compose)
+        canRecordClip: true
+        onRecordClipRequested: clipRecorder.openFor("")
+        onClipRemoved: {
+            if (compose.clip) {
+                if (compose.clip.path) backend.removeRecorderFile(compose.clip.path)
+                if (compose.clip.spec) for (const sg of compose.clip.spec.segments) backend.removeRecorderFile(sg.path)
+            }
+            compose.clip = null
+        }
+        onScheduleMeetingRequested: root.scheduleMeetingWith(root.picked.map(p => p.mail).filter(m => m).join(", "))
         onSubmit: root.submit()
         onEmojiRequested: a => root.emojiRequested(compose)
-        onCancelled: compose.clear()
+        onCancelled: { compose.clear(); root.clearAttachments() }
     }
 
     // The suggestions (Teams' people-picker-list): 2 below the To row, as
@@ -311,35 +389,66 @@ Rectangle {
             spacing: 2
             Repeater {
                 model: root.suggesting ? root.suggestions : []
+                // Teams' people-picker-entry (measured on winpc 2026-11-16):
+                // 50 tall (52 for a guest), padding 6 / 8; the 32 px picture
+                // 12 in; the name 14/20 NeutralForeground2 at 60, 6.5 down
+                // (8 for a guest); the second line 12/16 NeutralForeground3
+                // 21 under it: the sign-in name before "@" in capitals,
+                // "(ALIAS) job title" with a job title, a guest's email.
+                // A guest's name has Teams' "Guest" tag 4 after it: 24 tall,
+                // radius 4, NeutralBackground5-ish #EBEBEB, padding 0 6, the
+                // guest icon (16, filled) and "Guest" 12 semibold #616161.
                 Rectangle {
                     id: person
                     required property var modelData
                     required property int index
-                    readonly property string second: [person.modelData.job_title, person.modelData.mail].filter(t => t).join(" · ")
-                    width: suggestCol.width; height: 50; radius: 4
+                    readonly property bool guest: person.modelData.guest === true
+                    readonly property string second: person.modelData.sub || ""
+                    width: suggestCol.width; height: guest ? 52 : 50; radius: 4
                     color: hover.hovered || root.highlight === index ? theme.hc(theme.menuHover, theme.hcHighlight) : "transparent"
-                    Avatar { x: 12; anchors.verticalCenter: parent.verticalCenter; size: 32; name: person.modelData.name; photoId: person.modelData.id || "" }
-                    Column {
-                        x: 60; anchors.verticalCenter: parent.verticalCenter
-                        Text { text: person.modelData.name; font.family: theme.font; font.pixelSize: theme.base; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.onFill(person, theme.text) }
+                    Avatar { x: 12; anchors.verticalCenter: parent.verticalCenter; size: 32; name: person.modelData.name.replace(/ \(You\)$/, ""); photoId: person.modelData.id || "" }
+                    Text {
+                        id: personName
+                        x: 60; y: person.guest ? 8 : 6.5
+                        text: person.modelData.name
+                        font.family: theme.font; font.pixelSize: theme.base; lineHeight: 20; lineHeightMode: Text.FixedHeight
+                        color: theme.onFill(person, theme.textStrong)
+                    }
+                    Rectangle {
+                        id: guestTag
+                        visible: person.guest
+                        x: personName.x + personName.implicitWidth + 4; y: 6
+                        width: 12 + 16 + 2 + guestText.implicitWidth; height: 24; radius: 4
+                        color: theme.pick("#EBEBEB", "#3D3D3D", "transparent")
+                        border.width: theme.highContrast ? 1 : 0; border.color: theme.text
+                        FluentIcon { x: 6; anchors.verticalCenter: parent.verticalCenter; name: "guest-16-filled"; size: 16; color: theme.onFill(guestTag, theme.textSecondary) }
                         Text {
-                            visible: person.second.length > 0
-                            text: person.second
-                            font.family: theme.font; font.pixelSize: theme.small; lineHeight: 16; lineHeightMode: Text.FixedHeight
-                            color: theme.onFill(person, theme.textSecondary)
+                            id: guestText
+                            x: 24; anchors.verticalCenter: parent.verticalCenter
+                            text: "Guest"
+                            font.family: theme.font; font.pixelSize: theme.small; font.weight: Font.DemiBold
+                            color: theme.onFill(guestTag, theme.textSecondary)
                         }
+                    }
+                    Text {
+                        visible: person.second.length > 0
+                        x: 60; y: personName.y + 21; width: person.width - 60 - 8
+                        elide: Text.ElideRight
+                        text: person.second
+                        font.family: theme.font; font.pixelSize: theme.small; lineHeight: 16; lineHeightMode: Text.FixedHeight
+                        color: theme.onFill(person, theme.textSecondary)
                     }
                     HoverHandler { id: hover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.pick(person.modelData) }
                     Accessible.role: Accessible.ListItem
-                    Accessible.name: person.modelData.name + (person.second ? ", " + person.second : "")
+                    Accessible.name: person.modelData.name + (person.guest ? " Guest" : "") + (person.second ? ", " + person.second : "")
                 }
             }
         }
         }
     }
     Text {
-        visible: field.activeFocus && field.text.length >= 2 && root.people.length === 0 && !debounce.running
+        visible: field.activeFocus && field.text.length >= 2 && root.typedItems !== null && root.typedItems.length === 0 && !debounce.running
         x: 52.67 + 16; y: rows.height + 18
         text: "No people found"
         font.family: theme.font; font.pixelSize: theme.base

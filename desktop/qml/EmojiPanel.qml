@@ -253,13 +253,15 @@ Item {
         id: deleteDialog
         parent: Overlay.overlay
         modal: true; focus: true
-        width: 440; padding: 24
+        // Teams (winpc 2026-11-16): 600 x 124.7, radius 8, padding 24.67; the
+        // title 20/28 semibold, the buttons 16 under it.
+        width: 600; padding: 24.67
         anchors.centerIn: parent
-        background: FluentSurface { depth: 64; radius: 4; color: theme.surface }
+        background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
         Overlay.modal: Rectangle { color: theme.hc("#66000000", "#000000") }
         contentItem: Column {
-            spacing: 24
-            Text { width: 392; wrapMode: Text.Wrap; text: "Are you sure you want to delete it?"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text; Accessible.role: Accessible.Heading }
+            spacing: 16
+            Text { width: 550.66; wrapMode: Text.Wrap; text: "Are you sure you want to delete it?"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; lineHeight: 28; lineHeightMode: Text.FixedHeight; color: theme.text; Accessible.role: Accessible.Heading }
             Row {
                 anchors.right: parent.right; spacing: 8
                 Rectangle {
