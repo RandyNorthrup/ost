@@ -91,7 +91,7 @@ pub struct TabContext {
 
 /// Fill a URL's `{name}` placeholders as Teams does (URL-encoded); unknown
 /// ones become empty.
-fn fill(url: &str, ctx: &TabContext, entity_id: &str) -> String {
+pub(crate) fn fill(url: &str, ctx: &TabContext, entity_id: &str) -> String {
     let enc = |v: &str| url::form_urlencoded::byte_serialize(v.as_bytes()).collect::<String>();
     let mut out = String::new();
     let mut rest = url;
@@ -130,7 +130,7 @@ pub(crate) fn https_only(url: &str) -> String {
 }
 
 /// A tab's kind, from its app (Teams' app id → tab kind table).
-fn kind_of(app_id: &str, id: &str) -> Kind {
+pub(crate) fn kind_of(app_id: &str, id: &str) -> Kind {
     match app_id {
         FILES_APP if id == FILES_APP => Kind::StaticExtension,
         PAGES_APP => Kind::ChannelPage,
@@ -172,7 +172,10 @@ pub fn menus(
     let rename = can_update && matches!(kind, Website | Extension | ChannelPage);
     let remove = can_update && matches!(kind, Website | Extension | OneNote | ChannelPage);
     let about = matches!(kind, Extension | Website | OneNote);
-    let website = matches!(kind, Extension | Website | OneNote);
+    // Open in browser needs a website URL and `!n4`: a website tab, which
+    // Teams opens in the browser anyway (enableDeprecateWebsiteTab), has
+    // none (seen on winpc 2026-11-16: Copy link, Rename, About, Move, Remove).
+    let website = matches!(kind, Extension | OneNote);
     let perms = device_permissions && matches!(kind, Extension | StaticExtension);
     let mut all: Vec<(MenuItem, bool)> = Vec::new();
     let mut push = |m: MenuItem, submenu_only: bool, keep: bool| {
@@ -220,8 +223,8 @@ pub fn menus(
 }
 
 /// Teams' tab order constants (worker module 61009).
-const WALL: f64 = 100_000.0;
-const GAP: f64 = 10_000.0;
+pub(crate) const WALL: f64 = 100_000.0;
+pub(crate) const GAP: f64 = 10_000.0;
 const MIN_GAP: f64 = 50.0;
 
 fn mid(mut a: f64, b: f64) -> f64 {
@@ -266,19 +269,31 @@ fn djb2(s: &str) -> u32 {
 /// Copy link to tab, as Teams builds it (module 137308): the link, and the
 /// HTML that carries the tab's name.
 pub fn copy_link(tab: &Tab, channel_id: &str, group_id: &str, tenant_id: &str) -> (String, String) {
+    let _ = group_id;
+    copy_link_in(tab, channel_id, false, tenant_id)
+}
+
+/// Copy link to tab in a channel or (`chat`) a chat: Teams' chat links are
+/// `/l/chat/{conversation}/{tab}` with the context
+/// `{"chatId":…,"contextType":"chat"}` (module 407834).
+pub fn copy_link_in(tab: &Tab, channel_id: &str, chat: bool, tenant_id: &str) -> (String, String) {
     let enc = encode_uri_component;
+    let kind = if chat { "chat" } else { "channel" };
     let path = if tab.entity_id.is_empty() {
-        format!("channel/{}/{}", enc(channel_id), enc(&tab.id))
+        format!("{kind}/{}/{}", enc(channel_id), enc(&tab.id))
     } else {
         let key = format!("{}:{}", tab.app_id, tab.entity_id.replace('+', " "));
         format!("entity/{}/_djb2_msteams_prefix_{}", tab.app_id, djb2(&key))
     };
     // JSON.stringify({subEntityId: undefined, channelId}) drops the
     // undefined key.
-    let context = format!("{{\"channelId\":{}}}", serde_json::Value::from(channel_id));
+    let context = if chat {
+        format!("{{\"chatId\":{},\"contextType\":\"chat\"}}", serde_json::Value::from(channel_id))
+    } else {
+        format!("{{\"channelId\":{}}}", serde_json::Value::from(channel_id))
+    };
     // Teams' links carry the context and tenant only (read from its
     // clipboard on winpc, 2026-11-09, for the Notes and Page tabs).
-    let _ = group_id;
     let mut query = vec![format!("context={}", enc(&context))];
     if !tenant_id.is_empty() {
         query.push(format!("tenantId={tenant_id}"));
@@ -301,7 +316,7 @@ pub fn copy_link(tab: &Tab, channel_id: &str, group_id: &str, tenant_id: &str) -
 }
 
 /// JavaScript's encodeURIComponent (leaves `A-Z a-z 0-9 - _ . ! ~ * ' ( )`).
-fn encode_uri_component(s: &str) -> String {
+pub(crate) fn encode_uri_component(s: &str) -> String {
     let mut out = String::new();
     for b in s.bytes() {
         if b.is_ascii_alphanumeric() || b"-_.!~*'()".contains(&b) {
@@ -324,7 +339,7 @@ fn check_channel(channel_id: &str) -> Result<()> {
 }
 
 /// A pinned tab id (`tab::<guid>`), checked.
-fn check_tab(id: &str) -> Result<()> {
+pub(crate) fn check_tab(id: &str) -> Result<()> {
     let guid = id.strip_prefix("tab::").unwrap_or("");
     if uuid::Uuid::parse_str(guid).is_ok() {
         Ok(())
@@ -376,7 +391,7 @@ fn str_at(t: &serde_json::Value, p: &str) -> String {
 
 /// What a tab needs from its app's definition: whether it declares device
 /// permissions, and its icon (largeImageUrl, https only). Cached.
-async fn app_facts(client: &TeamsClient, app_id: &str) -> (bool, String) {
+pub(crate) async fn app_facts(client: &TeamsClient, app_id: &str) -> (bool, String) {
     static CACHE: Mutex<Option<HashMap<String, (bool, String)>>> = Mutex::new(None);
     if let Some(v) = CACHE
         .lock()
@@ -838,20 +853,13 @@ pub async fn rename(client: &TeamsClient, channel_id: &str, tab: &str, name: &st
     patch_pinned(client, channel_id, &[t]).await
 }
 
-/// Remove a tab, as Teams does (DeletePinnedTab).
+/// Remove a tab, as Teams does: its channel thread property set to null
+/// (captured on winpc 2026-11-16, removing a website tab from OST Test
+/// Team › General: `PUT {chatsvc}/v1/threads/{channel}/properties?name=tab::{id}`
+/// with `{"tab::{id}": null}`).
 pub async fn remove(client: &TeamsClient, channel_id: &str, tab: &str) -> Result<()> {
     check_channel(channel_id)?;
-    check_tab(tab)?;
-    let (base, token) = middle_tier(client).await?;
-    let id: String = url::form_urlencoded::byte_serialize(tab.as_bytes()).collect();
-    client
-        .http()
-        .delete(format!("{base}/beta/channels/{channel_id}/tabs/{id}"))
-        .bearer_auth(&token)
-        .send()
-        .await?
-        .error_for_status()?;
-    Ok(())
+    super::tab_add::remove_property(client, channel_id, tab).await
 }
 
 /// The post that starts a tab's conversation, as Teams sends it ("Start
@@ -866,12 +874,39 @@ pub fn conversation_post(
     client_message_id: &str,
     now: &str,
 ) -> serde_json::Value {
+    tab_link_post(
+        channel_id,
+        &tab.id,
+        &tab.name,
+        "Added a new tab at the top of this channel. Here's a link.",
+        me,
+        display_name,
+        client_message_id,
+        now,
+    )
+}
+
+/// A post that carries a tab as a deeplink file, with `text` (Start
+/// conversation's text, or Add a tab's "I added a tab at the top of this
+/// chat/channel. Check it out!").
+#[allow(clippy::too_many_arguments)]
+pub fn tab_link_post(
+    conversation_id: &str,
+    tab_id: &str,
+    tab_name: &str,
+    text: &str,
+    me: &str,
+    display_name: &str,
+    client_message_id: &str,
+    now: &str,
+) -> serde_json::Value {
+    let channel_id = conversation_id;
     // In Teams' key order (the property is a string, compared as sent).
     let q = |v: &str| serde_json::Value::String(v.to_string()).to_string();
     let files = format!(
         r#"[{{"itemid":{id},"fileName":{name},"fileType":"deeplink","fileInfo":{{"serverRelativeUrl":""}},"fileChicletState":{{}},"@type":"http://schema.skype.com/File","version":2,"id":{id},"type":"deeplink","title":{name},"botFileProperties":{{}},"filePreview":{{}}}}]"#,
-        id = q(&tab.id),
-        name = q(&tab.name)
+        id = q(tab_id),
+        name = q(tab_name)
     );
     serde_json::json!({
         "id": "-1",
@@ -882,7 +917,7 @@ pub fn conversation_post(
         "fromUserId": me,
         "composetime": now,
         "originalarrivaltime": now,
-        "content": "Added a new tab at the top of this channel. Here's a link.",
+        "content": text,
         "messagetype": "Text",
         "contenttype": "Text",
         "imdisplayname": display_name,

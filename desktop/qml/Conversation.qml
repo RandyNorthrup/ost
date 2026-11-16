@@ -101,7 +101,8 @@ Rectangle {
     }
     /// Channel tabs a message may link (a tab conversation's first post
     /// links its tab): [{id, name, icon}].
-    property var linkedTabs: []
+    /// (By default the conversation's own tabs: "I added a tab" posts.)
+    property var linkedTabs: channelTabs
     signal openLinkedTab(string tabId)
     signal closePane()
     /// The call chat pane's tabs ([{key, label, badge, count, tip}]) and the
@@ -153,10 +154,13 @@ Rectangle {
     function toggleDetails() { participants.visible = !participants.visible }
     // A channel's tabs, as Teams lists them: Posts, Shared (its Files
     // tab), then the channel's own tabs in order (Page, Notes, apps).
+    // A chat's own tabs (its `tab::` thread properties, after Teams' built-in
+    // ones) come the same way, keyed by the chat.
     readonly property var channelTabs: {
-        if (!isChannel || !backend.channelTabsJson) return []
+        if (!backend.channelTabsJson) return []
         const r = JSON.parse(backend.channelTabsJson)
         if (r.channel !== chatId || !r.tabs) return []
+        if (!isChannel) return r.tabs
         // In the channel's own order (Graph's sortOrderIndex); a dropped
         // tab shows in its new place until the list reloads.
         const tabs = r.tabs.filter(t => t.app !== "Files" && t.name !== "Files")
@@ -260,13 +264,46 @@ Rectangle {
     }
     Shortcut { sequence: "Escape"; enabled: root.tabDragFrom >= 0; onActivated: root.tabDragCancel() }
     readonly property var tabNames: isChannel ? (channelTabs.length ? channelTabs.map((t, i) => i === 0 && threadsLayout ? "Conversation" : t.name) : [threadsLayout ? "Conversation" : "Posts", "Shared"])
-        // Teams (worker Ct): Storyline only in 1:1 chats.
-        // Meeting chats: Chat, Shared, Recap (Teams lists Attendance, Breakout
-        // Rooms, Q&A and Meeting Whiteboard after them, under "+4").
-        // Attendance joins them once its card is opened (Teams moves it out
-        // of "+4" then).
-        : isSelf ? ["Chat", "Shared", "Storyline"] : isMeetingChat ? ["Chat", "Shared", "Recap"].concat(attendanceTab ? ["Attendance"] : []) : isGroup ? ["Chat", "Shared", "Notes", "Recap"] : ["Chat", "Shared", "Notes", "Recap", "Storyline"]
+        // Teams (worker Ct): Storyline only in 1:1 chats. Then the chat's
+        // own tabs (its thread properties), in their order.
+        : (isSelf ? ["Chat", "Shared", "Storyline"] : isMeetingChat ? meetingTabNames : isGroup ? ["Chat", "Shared", "Notes", "Recap"] : ["Chat", "Shared", "Notes", "Recap", "Storyline"])
+            .concat(channelTabs.map(t => t.name))
     readonly property bool isMeetingChat: chatId.indexOf("19:meeting_") === 0
+    // A meeting chat's tabs (chat-app `Zv`, measured on winpc 2026-11-16):
+    // Chat, Shared, Recap, then Attendance (organizers, once the meeting
+    // has a report), Breakout Rooms (the organizer, chattabs.breakoutrooms:
+    // not for a cancelled meeting, a room's own chat or a town hall), Q&A
+    // (a scheduled meeting: Teams' isScheduledMeeting, it has an iCalUid; Meet now has none) and Meeting
+    // Whiteboard; whatever doesn't fit goes under "+N".
+    readonly property bool hasAttendanceReport: canSeeAttendance && (attendanceTab || messages.some(m => m.kind === "call" && m.call_state === "ended"))
+    readonly property bool showBreakoutRooms: !!meeting && !!myOid && meeting.organizer_id === myOid && !meeting.cancelled
+        && meeting.scenario !== "breakoutRoom" && meeting.meeting_type !== "Broadcast"
+    readonly property bool showQna: !!meeting && !!meeting.ical_uid
+    readonly property var meetingTabNames: ["Chat", "Shared", "Recap"]
+        .concat(hasAttendanceReport ? ["Attendance"] : [])
+        .concat(showBreakoutRooms ? ["Breakout Rooms"] : [])
+        .concat(showQna ? ["Q&A"] : [])
+        .concat(["Meeting Whiteboard"])
+    // Q&A and Meeting Whiteboard are pages Teams embeds (hwc-iframe):
+    // the meeting as base64 "0#{thread}#0".
+    readonly property string meetingIdB64: isMeetingChat ? Qt.btoa("0#" + chatId + "#0") : ""
+    function newGuid() {
+        return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === "x" ? r : (r & 3 | 8)).toString(16) })
+    }
+    function qnaUrl() {
+        const tid = meeting && meeting.tenant_id ? meeting.tenant_id : backend.tenantId()
+        return "https://web.yammer.com/teamsmeeting/teams-meeting/" + Qt.btoa(JSON.stringify({ _type: "TeamsMeeting", id: meetingIdB64 }))
+            + "?client=teams&qnaAppType=native&meetingTenantId=" + encodeURIComponent(tid || "")
+            + "&entryPoint=chatTab&appSessionId=" + newGuid()
+    }
+    function whiteboardUrl() {
+        const tid = meeting && meeting.tenant_id ? meeting.tenant_id : backend.tenantId()
+        return "https://app.whiteboard.microsoft.com/meeting?embed=1&meetingTitle=" + encodeURIComponent(chatName).replace(/%20/g, "+")
+            + "&tabStartTime=" + Date.now() + "&correlationId=" + newGuid() + "&culture=en-us&enableReactApp=1"
+            + "&isInitiator=" + (meeting && meeting.organizer_id === myOid ? 1 : 0) + "&isEduUser=0&meetingId=" + encodeURIComponent(meetingIdB64)
+            + "&teamsEnvV2=prod&client=TeamsModern&userRole=Member&isEU=false&userId=" + encodeURIComponent(myOid)
+            + "&userTenantId=" + encodeURIComponent(backend.tenantId() || tid || "") + "&isNAAEnabled=true"
+    }
     // Teams' conversation margins by pane width (measured on winpc at
     // 452-892 px): each row starts 14 in under 480 px, else 32; its icon
     // or avatar sits at the row start (+6 for event icons), its content 40
@@ -362,6 +399,15 @@ Rectangle {
     // Load a channel's tabs once it's known which team it's in.
     readonly property string tabsKey: isChannel && teamId && chatId ? teamId + "|" + chatId : ""
     onTabsKeyChanged: if (tabsKey) backend.channelTabsLoad(teamId, chatId, chatName)
+    // A chat's own tabs (Add a tab's): its thread properties.
+    readonly property string chatTabsKey: !isChannel && !isSelf && !pane && !popout && chatId.indexOf("19:") === 0 ? chatId : ""
+    onChatTabsKeyChanged: if (chatTabsKey) backend.chatTabsLoad(chatId)
+    /// Teams' "+" (Add a tab): chats, meeting chats and channels.
+    readonly property bool canAddTab: !pane && !popout && !isSelf && chatId.indexOf("19:") === 0
+    /// The channel's team thread (its General channel), for the picker.
+    property string teamThread: ""
+    // The tab picker and the Website configuration (Main.qml's).
+    signal openTabPicker(string conversationId, string kind, string teamThread)
     // The channel tab showing its page in place, as Teams embeds it: the
     // Page (the channel's Loop page), signed in with OST's web profile
     // (scope decision 2026-11-07: what Teams embeds may be embedded).
@@ -369,6 +415,20 @@ Rectangle {
     // (TASK-0053).
     readonly property var webTab: channelTabs.find(t => t.name === tab && t.content_url && t.kind === "ChannelPage") || null
     function openTab(i) { if (i < tabNames.length) tab = i === 0 ? "" : tabNames[i] }
+    // A tab picked from "+N": a website tab opens in the browser, as
+    // Teams opens it; any other becomes the open tab.
+    function openTabAt(i) {
+        const t = channelTabs.find(x => x.name === tabNames[i])
+        if (t && t.opens_in_browser) { if (t.website_url) Qt.openUrlExternally(t.website_url); return }
+        manageApps = false
+        tab = i === 0 ? "" : tabNames[i]
+    }
+    // "+": a channel's menu, or a chat's Add a tab picker.
+    function addTab() {
+        if (isChannel) { addTabMenu.open(); return }
+        openTabPicker(chatId, isMeetingChat ? "meeting" : "chat", "")
+    }
+    function addTabMenuForTest() { addTabMenu.open(); return addTabMenu }
     readonly property bool composeFocused: input.activeFocus
     readonly property bool detailsOpen: participants.visible
     function attachFile() { if (compose.visible) root.openAttach(compose.attachButton()) }
@@ -560,6 +620,7 @@ Rectangle {
         postViewRoot = ""
         channelAttendance = null
         attendanceTab = false; attendanceCall = ""
+        qnaTabLoader.url = ""; whiteboardTabLoader.url = ""
         landing = true
         manageApps = false
         tabExpanded = false
@@ -938,7 +999,8 @@ Rectangle {
             const names = root.tabNames
             const selIdx = Math.max(0, names.indexOf(root.tab))
             const w = names.map((n, i) => (i === selIdx ? tabFontSel : tabFont).advanceWidth(n) + 12 + 20 * (i === selIdx && !!root.channelTabs.find(t => t.name === n && t.menu.length > 0)))
-            const avail = (root.isChannel ? header.width - 160 : root.pane ? header.width - 48 : header.toolbarLeft) - tabs.x - 2 - 10
+            // The "+" (Add a tab, 32 wide) follows the tabs and "+N".
+            const avail = (root.isChannel ? header.width - 160 : root.pane ? header.width - 48 : header.toolbarLeft) - tabs.x - 2 - 10 - (root.canAddTab ? 32 : 0)
             if (w.reduce((a, b) => a + b, 0) <= avail) return names.map((n, i) => i)
             const plus = tabFont.advanceWidth("+" + names.length) + 4
             let budget = avail - plus - w[selIdx]
@@ -1074,11 +1136,57 @@ Rectangle {
                 TapHandler { onTapped: tabOverflowMenu.open() }
                 Accessible.role: Accessible.Button
                 Accessible.name: tabsFit.hidden.length + " more tabs."
+                // A tab with a menu has it beside its row (Teams'
+                // tab-item-with-submenu: the name, then a chevron).
+                function ownTab(i) { return root.channelTabs.find(t => t.name === root.tabNames[i]) || null }
                 MenuPopup {
                     id: tabOverflowMenu
                     x: 5; y: parent.height + 5
-                    items: tabsFit.hidden.map(i => ({ label: root.tabNames[i] }))
-                    onPicked: k => { const i = tabsFit.hidden[k]; root.tab = i === 0 ? "" : root.tabNames[i] }
+                    items: tabsFit.hidden.map(i => {
+                        const t = tabOverflow.ownTab(i)
+                        const m = t && t.context_menu.length ? t.context_menu.map(e => e.key === "divider" ? { separator: true } : { label: e.label, icon: tabMenu.icons[e.key] || "", enabled: e.enabled }) : null
+                        return m ? { label: root.tabNames[i], submenu: m } : { label: root.tabNames[i] }
+                    })
+                    onPicked: k => root.openTabAt(tabsFit.hidden[k])
+                    onSubPicked: (k, s) => { const t = tabOverflow.ownTab(tabsFit.hidden[k]); if (t) root.tabAction(t.context_menu[s].key, t) }
+                }
+            }
+            // "+" (add-tab-button, Teams' Add a tab, measured on winpc
+            // 2026-11-16): 32 x 60.3 after the tabs and "+N", padding 5,
+            // the 20 px AddSquare in #424242; hovered (or its menu open)
+            // the filled glyph in brand. A chat (or meeting chat) opens the
+            // Add a tab picker; a channel a menu first.
+            Item {
+                id: addTabButton
+                visible: root.canAddTab
+                y: -2; width: 32; height: 60.3
+                readonly property bool lit: addTabHover.hovered || addTabMenu.opened
+                FluentIcon {
+                    anchors.centerIn: parent
+                    name: addTabButton.lit ? "add-square-20-filled" : "add-square-20"; size: 20
+                    color: addTabButton.lit && !root.liveBand ? theme.brand : root.hdrStrong
+                }
+                HoverHandler { id: addTabHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: root.addTab() }
+                ToolTip.visible: addTabHover.hovered && !addTabMenu.opened
+                ToolTip.delay: 500
+                ToolTip.text: "Add a tab"
+                Accessible.role: Accessible.PageTab
+                Accessible.name: "Add a tab"
+                // A channel's Add a tab menu (add-tab-menu-item-*): New page,
+                // Existing page, New list, Existing list, Apps; 1 below the
+                // button, 128.7 wide.
+                MenuPopup {
+                    id: addTabMenu
+                    x: 0; y: parent.height + 1
+                    items: [
+                        { label: "New page", icon: "loop-page-20", enabled: false },
+                        { label: "Existing page", icon: "link-20", enabled: false },
+                        { label: "New list", icon: "lists-new-20", enabled: false },
+                        { label: "Existing list", icon: "table-link-20", enabled: false },
+                        { label: "Apps", icon: "apps-20" }
+                    ]
+                    onPicked: i => { if (i === 4) root.openTabPicker(root.chatId, "channel", root.teamThread) }
                 }
             }
         }
@@ -2599,9 +2707,17 @@ Rectangle {
                                     sourceSize: Qt.size(76, 76)
                                     RoundedCorners { anchors.fill: parent; radius: 4; background: theme.surface }
                                 }
+                                // A website tab's card ends with the Open glyph (it
+                                // opens in the browser; seen on winpc 2026-11-16).
+                                FluentIcon {
+                                    id: tabCardOpen
+                                    visible: !!fc.linked && !!fc.linked.opens_in_browser
+                                    anchors.right: parent.right; anchors.rightMargin: 14; anchors.verticalCenter: parent.verticalCenter
+                                    name: "open-20"; size: 20; color: theme.textStrong
+                                }
                                 Text {
                                     x: 60.7; anchors.verticalCenter: parent.verticalCenter
-                                    width: parent.width - 60.7 - 8
+                                    width: parent.width - 60.7 - (tabCardOpen.visible ? 44 : 8)
                                     elide: Text.ElideRight
                                     text: fc.modelData.name
                                     font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
@@ -2609,7 +2725,7 @@ Rectangle {
                                     color: theme.text
                                 }
                                 HoverHandler { id: tabLinkHover; enabled: fc.tabLink; cursorShape: Qt.PointingHandCursor }
-                                TapHandler { enabled: fc.tabLink; onTapped: root.openLinkedTab(fc.modelData.item_id) }
+                                TapHandler { enabled: fc.tabLink; onTapped: { const i = fc.linked && !root.pane ? root.tabNames.indexOf(fc.linked.name) : -1; if (i > 0) root.openTabAt(i); else root.openLinkedTab(fc.modelData.item_id) } }
                                 ToolTip.visible: fc.tabLink && tabLinkHover.hovered
                                 ToolTip.delay: 500
                                 ToolTip.text: fc.modelData.name
@@ -3165,6 +3281,35 @@ Rectangle {
             initialCall: root.attendanceCall
         }
     }
+    // A meeting chat's Breakout Rooms tab (native, as Teams draws it).
+    Loader {
+        id: breakoutTabLoader
+        active: root.isMeetingChat && root.tab === "Breakout Rooms" && !!root.meeting
+        visible: active
+        anchors { top: header.bottom; bottom: parent.bottom; left: parent.left; right: parent.right }
+        sourceComponent: BreakoutTab { thread: root.chatId; organizer: root.meeting ? root.meeting.organizer_id : "" }
+    }
+    // Q&A (Viva Engage's meeting Q&A) and Meeting Whiteboard: the pages
+    // Teams embeds there, filling the tab (hwc-iframe), signed in with
+    // OST's web profile.
+    Loader {
+        id: qnaTabLoader
+        property string url: ""
+        active: root.isMeetingChat && root.tab === "Q&A"
+        visible: active
+        anchors { top: header.bottom; bottom: parent.bottom; left: parent.left; right: parent.right }
+        onActiveChanged: if (active && !url) url = root.qnaUrl()
+        sourceComponent: WebApp { showHeader: false; appName: "Q&A"; location: root.chatName; home: qnaTabLoader.url }
+    }
+    Loader {
+        id: whiteboardTabLoader
+        property string url: ""
+        active: root.isMeetingChat && root.tab === "Meeting Whiteboard"
+        visible: active
+        anchors { top: header.bottom; bottom: parent.bottom; left: parent.left; right: parent.right }
+        onActiveChanged: if (active && !url) url = root.whiteboardUrl()
+        sourceComponent: WebApp { showHeader: false; appName: "Whiteboard"; location: root.chatName; home: whiteboardTabLoader.url }
+    }
     // Tabs OST can't offer say so.
     Column {
         visible: !root.webTab && ["Notes", "Recap", "Storyline"].indexOf(root.tab) >= 0
@@ -3408,7 +3553,14 @@ Rectangle {
         tabDragCancel(); return 0
     }
     function tabMenuForTest(name) { const t = root.channelTabs.find(x => x.name === name); return t ? t.menu.map(e => e.enabled ? e.key : e.key + "(off)") : [] }
-    function tabMenuShowForTest(name) { const i = root.tabNames.indexOf(name); const t = root.channelTabs[i]; if (t) tabMenu.show(t, t.menu, tabs.children[i], 0, 56) }
+    function tabMenuShowForTest(name) {
+        const i = root.tabNames.indexOf(name), t = root.channelTabs.find(x => x.name === name)
+        // The open tab's chevron menu; a tab that can't be opened (a website
+        // tab) has its right-click menu.
+        if (t) tabMenu.show(t, t.menu.length && !t.opens_in_browser ? t.menu : t.context_menu, tabRepeater.itemAt(i) || header, 0, 56)
+    }
+    function overflowMenuForTest() { tabOverflowMenu.open() }
+    function closeOverflowForTest() { tabOverflowMenu.close() }
     function tabMenuCloseForTest() { tabMenu.close() }
     function tabActionForTest(name, key) { const t = root.channelTabs.find(x => x.name === name); if (t) root.tabAction(key, t); return t ? JSON.stringify({ website: t.website_url || "" }) : "" }
     function tabAboutForTest(name) { const t = root.channelTabs.find(x => x.name === name); if (t) aboutDialog.start(t); return !!t }
@@ -4085,7 +4237,7 @@ Rectangle {
         // Link previews: Optional connected experiences on, your messaging
         // policy allowing them, and not in your notes to self.
         previewsAllowed: root.previewsShown && root.chatId !== "48:notes"
-        visible: root.chatName.length > 0 && (!root.isChannel || root.posting || root.threadsLayout) && root.tab !== "Attendance" && !root.readOnly
+        visible: root.chatName.length > 0 && (!root.isChannel || root.posting || root.threadsLayout) && ["Attendance", "Breakout Rooms", "Q&A", "Meeting Whiteboard"].indexOf(root.tab) < 0 && !root.channelTabs.some(t => t.name === root.tab && !root.isChannel) && !root.readOnly
         // New posts at the top: in the list's top card, scrolling with it.
         readonly property bool atTop: post && channelPosts.newestAtTop
         anchors { left: parent.left; right: parent.right }

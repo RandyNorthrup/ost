@@ -496,6 +496,9 @@ pub struct StoreApp {
     pub agent: bool,
     /// You have it (Teams' check on the icon).
     pub installed: bool,
+    /// Its configurable tab's configuration page (what Teams' Add a tab
+    /// dialog embeds), placeholders as written; empty when it has none.
+    pub config_url: String,
 }
 
 /// One of the in-context Store's collections.
@@ -535,7 +538,7 @@ fn is_agent(caps: &[String]) -> bool {
         .any(|c| COPILOT_CAPS.iter().any(|k| k.eq_ignore_ascii_case(c)))
 }
 
-fn store_app(def: &serde_json::Value, r: Option<&Ranked>) -> StoreApp {
+pub(crate) fn store_app(def: &serde_json::Value, r: Option<&Ranked>) -> StoreApp {
     let s = |k: &str| {
         def.get(k)
             .and_then(|x| x.as_str())
@@ -555,6 +558,16 @@ fn store_app(def: &serde_json::Value, r: Option<&Ranked>) -> StoreApp {
         count_text: app_details::compact(r.map(|r| r.count).unwrap_or(0)),
         agent: r.is_some_and(|r| is_agent(&r.caps)),
         installed: false,
+        config_url: ["configurableTabs", "galleryTabs"]
+            .iter()
+            .find_map(|k| {
+                def.get(*k)?
+                    .as_array()?
+                    .iter()
+                    .find_map(|t| t.get("configurationUrl")?.as_str())
+                    .map(str::to_string)
+            })
+            .unwrap_or_default(),
     }
 }
 
@@ -596,6 +609,91 @@ pub fn collection_ids(
     }
 }
 
+/// What an in-context Store offers: Teams' `appCapability` with the
+/// conversation's install scope (and, for tabs, the tab context Teams
+/// matches an app's tab `context` against).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IcKind {
+    /// "Add agent to the chat": bots for group chats.
+    BotGroupChat,
+    /// "Add agent to the channel": bots for teams.
+    BotTeam,
+    /// Add a tab in a chat (`privateChatTab`).
+    TabChat,
+    /// Add a tab in a meeting's chat (`meetingChatTab`).
+    TabMeeting,
+    /// Add a tab in a channel (`channelTab`).
+    TabChannel,
+}
+
+impl IcKind {
+    /// The `inContextStoreCollectionIdsOverwrite` keys Teams tries, in order
+    /// (`{capability}{scope}`, then the capability alone).
+    fn overwrite_keys(self) -> [&'static str; 2] {
+        match self {
+            IcKind::BotGroupChat => ["botgroupchat", "bot"],
+            IcKind::BotTeam => ["botteam", "bot"],
+            IcKind::TabChat | IcKind::TabMeeting => ["tabgroupchat", "tab"],
+            IcKind::TabChannel => ["tabteam", "tab"],
+        }
+    }
+    /// The install scope ("groupchat" or "team").
+    pub fn scope(self) -> &'static str {
+        match self {
+            IcKind::BotTeam | IcKind::TabChannel => "team",
+            _ => "groupchat",
+        }
+    }
+    pub fn is_tab(self) -> bool {
+        matches!(self, IcKind::TabChat | IcKind::TabMeeting | IcKind::TabChannel)
+    }
+    /// The tab context an app's tab must list (when it lists any).
+    pub fn tab_context(self) -> &'static str {
+        match self {
+            IcKind::TabChannel => "channeltab",
+            IcKind::TabMeeting => "meetingchattab",
+            _ => "privatechattab",
+        }
+    }
+    /// Whether an app definition offers this capability here: a bot in the
+    /// scope, or a tab (configurable or static) in the scope and context
+    /// (Teams' `V`/`ie` filter, module 143369).
+    pub fn supports(self, def: &serde_json::Value) -> bool {
+        if self.is_tab() {
+            tab_supports(def, self.scope(), self.tab_context())
+        } else {
+            bot_supports(def, self.scope())
+        }
+    }
+}
+
+/// Whether an app has a tab for this scope and context: a configurable
+/// (gallery) tab or a static tab whose scopes include the scope and whose
+/// context, when it has one, includes the context (Teams' `ie`).
+pub fn tab_supports(def: &serde_json::Value, scope: &str, context: &str) -> bool {
+    let fits = |t: &serde_json::Value| {
+        let in_scope = t
+            .get("scopes")
+            .and_then(|s| s.as_array())
+            .into_iter()
+            .flatten()
+            .any(|s| s.as_str().is_some_and(|s| s.eq_ignore_ascii_case(scope)));
+        let ctx: Vec<&str> = t
+            .get("context")
+            .and_then(|c| c.as_array())
+            .into_iter()
+            .flatten()
+            .filter_map(|c| c.as_str())
+            .collect();
+        in_scope && (ctx.is_empty() || ctx.iter().any(|c| c.eq_ignore_ascii_case(context)))
+    };
+    ["galleryTabs", "configurableTabs", "staticTabs"].iter().any(|k| {
+        def.get(*k)
+            .and_then(|l| l.as_array())
+            .is_some_and(|l| l.iter().any(fits))
+    })
+}
+
 /// Teams' "Add agent to the chat/channel" Store: `team` for a channel.
 /// `apps` are the conversation's apps and states: its installed bots make
 /// the top grid, and none of its apps is offered again.
@@ -604,10 +702,44 @@ pub async fn in_context(
     team: bool,
     apps: &[(String, String)],
 ) -> Result<InContext> {
-    let kind = if team { "BotTeam" } else { "BotGroupChat" };
-    let scope = if team { "team" } else { "groupchat" };
-    // Teams looks up `{capability}{scope}` ("botteam", "botgroupchat"),
-    // then the capability alone ("bot"), ignoring case.
+    let kind = if team { IcKind::BotTeam } else { IcKind::BotGroupChat };
+    // Apps already added (the grid's) aren't offered again.
+    let excluded: HashSet<String> = apps
+        .iter()
+        .filter(|(_, state)| state == "Installed")
+        .map(|(i, _)| i.to_lowercase())
+        .collect();
+    let (collections, defs, by_id) = ic_collections(client, kind, &excluded).await?;
+    // The grid: bots added to this conversation ("Installed"; Teams'
+    // pre-consented and permanent apps don't show).
+    let mut installed: Vec<StoreApp> = apps
+        .iter()
+        .filter(|(_, state)| state == "Installed")
+        .filter_map(|(id, _)| {
+            let d = defs.get(&id.to_lowercase())?;
+            kind.supports(d).then(|| store_app(d, by_id.get(&id.to_lowercase())))
+        })
+        .collect();
+    // By name, as Teams lists them (Forms, Power BI, Updates).
+    installed.sort_by_key(|a| a.name.to_lowercase());
+    Ok(InContext {
+        installed,
+        collections,
+    })
+}
+
+/// The in-context Store's collections for `kind` (Teams'
+/// `inContextStoreCollectionIdsOverwrite`, each collection's apps that
+/// offer the capability here, without `excluded`, and only collections
+/// with enough apps), with the catalog by lowercase id and the ranked
+/// apps (ratings, agent marks) by lowercase id.
+pub async fn ic_collections(
+    client: &TeamsClient,
+    kind: IcKind,
+    excluded: &HashSet<String>,
+) -> Result<(Vec<IcCollection>, HashMap<String, serde_json::Value>, HashMap<String, Ranked>)> {
+    // Teams looks up `{capability}{scope}` ("botteam", "tabgroupchat"),
+    // then the capability alone ("bot", "tab"), ignoring case.
     let overwrite = setting("inContextStoreCollectionIdsOverwrite");
     let lists: HashMap<String, &serde_json::Value> = overwrite
         .as_object()
@@ -616,9 +748,10 @@ pub async fn in_context(
         .filter(|(_, v)| v.as_array().is_some_and(|a| !a.is_empty()))
         .map(|(k, v)| (k.to_lowercase(), v))
         .collect();
+    let [first, second] = kind.overwrite_keys();
     let ids: Vec<String> = lists
-        .get(&kind.to_lowercase())
-        .or_else(|| lists.get("bot"))
+        .get(first)
+        .or_else(|| lists.get(second))
         .and_then(|l| l.as_array())
         .into_iter()
         .flatten()
@@ -642,21 +775,16 @@ pub async fn in_context(
     let ranked = ranked(client, &cats).await?;
     let rank = items_rank(client, &rank_input(&doc)).await;
     let catalog = app_details::catalog(client).await?;
-    let defs: HashMap<String, &serde_json::Value> = catalog
+    let defs: HashMap<String, serde_json::Value> = catalog
         .iter()
-        .filter_map(|d| Some((d.get("id")?.as_str()?.to_lowercase(), d)))
+        .filter_map(|d| Some((d.get("id")?.as_str()?.to_lowercase(), d.clone())))
         .collect();
-    let by_id: HashMap<String, &Ranked> = ranked
+    let by_id: HashMap<String, Ranked> = ranked
         .values()
         .flatten()
-        .map(|r| (r.id.to_lowercase(), r))
+        .map(|r| (r.id.to_lowercase(), r.clone()))
         .collect();
-    // Apps already added (the grid's) aren't offered again.
-    let mut excluded: HashSet<String> = apps
-        .iter()
-        .filter(|(_, state)| state == "Installed")
-        .map(|(i, _)| i.to_lowercase())
-        .collect();
+    let mut excluded = excluded.clone();
     for h in setting("inContextStoreHiddenApps")
         .as_array()
         .into_iter()
@@ -680,7 +808,7 @@ pub async fn in_context(
             .filter(|id| seen.insert(id.to_lowercase()) && !excluded.contains(&id.to_lowercase()))
             .filter_map(|id| {
                 let d = defs.get(&id.to_lowercase())?;
-                bot_supports(d, scope).then(|| store_app(d, by_id.get(&id.to_lowercase()).copied()))
+                kind.supports(d).then(|| store_app(d, by_id.get(&id.to_lowercase())))
             })
             .collect();
         let min = if c.id == "copilotplugins" {
@@ -696,22 +824,7 @@ pub async fn in_context(
             });
         }
     }
-    // The grid: bots added to this conversation ("Installed"; Teams'
-    // pre-consented and permanent apps don't show).
-    let mut installed: Vec<StoreApp> = apps
-        .iter()
-        .filter(|(_, state)| state == "Installed")
-        .filter_map(|(id, _)| {
-            let d = defs.get(&id.to_lowercase())?;
-            bot_supports(d, scope).then(|| store_app(d, by_id.get(&id.to_lowercase()).copied()))
-        })
-        .collect();
-    // By name, as Teams lists them (Forms, Power BI, Updates).
-    installed.sort_by_key(|a| a.name.to_lowercase());
-    Ok(InContext {
-        installed,
-        collections,
-    })
+    Ok((collections, defs, by_id))
 }
 
 /// One collection on the Store's home feed.
@@ -976,6 +1089,23 @@ pub async fn search_agents(
     team: bool,
     apps: &[(String, String)],
 ) -> Result<Vec<StoreApp>> {
+    let excluded: HashSet<String> = apps
+        .iter()
+        .filter(|(_, state)| state == "Installed")
+        .map(|(i, _)| i.to_lowercase())
+        .collect();
+    let kind = if team { IcKind::BotTeam } else { IcKind::BotGroupChat };
+    search_in_context(client, query, kind, &excluded).await
+}
+
+/// The in-context Store's search (Teams' Store search, then only the apps
+/// that offer `kind`'s capability here, without `excluded`).
+pub async fn search_in_context(
+    client: &TeamsClient,
+    query: &str,
+    kind: IcKind,
+    excluded: &HashSet<String>,
+) -> Result<Vec<StoreApp>> {
     let base = client
         .middle_tier_url()
         .context("No Teams middle-tier endpoint")?;
@@ -1001,14 +1131,8 @@ pub async fn search_agents(
         .context("Store search")?
         .json()
         .await?;
-    let scope = if team { "team" } else { "groupchat" };
     let catalog = app_details::catalog(client).await?;
     let ranked = popular(client).await.unwrap_or_default();
-    let excluded: HashSet<String> = apps
-        .iter()
-        .filter(|(_, state)| state == "Installed")
-        .map(|(i, _)| i.to_lowercase())
-        .collect();
     Ok(search_ids(&v)
         .into_iter()
         .filter(|id| !excluded.contains(&id.to_lowercase()))
@@ -1018,7 +1142,7 @@ pub async fn search_agents(
                     .and_then(|i| i.as_str())
                     .is_some_and(|i| i.eq_ignore_ascii_case(&id))
             })?;
-            bot_supports(d, scope)
+            kind.supports(d)
                 .then(|| store_app(d, ranked.iter().find(|r| r.id.eq_ignore_ascii_case(&id))))
         })
         .collect())

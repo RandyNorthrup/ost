@@ -7357,6 +7357,95 @@ Window {
         }
     }
 
+    // --add-tab-test with --open-chat=<chat or channel id> --shots=<dir>:
+    // Teams' Add a tab: the header, "+" (a channel's menu first, then Apps),
+    // the picker (logs its grid and collections; See all), Website's
+    // configuration (an invalid URL, then --add-tab-url=<url>, if given,
+    // saved with --add-tab-name=<name>, posting unless --add-tab-nopost),
+    // the header with the new tab and its menu; with --add-tab-remove the
+    // tab is removed again. Captures add-tab-<step>.png and quits.
+    Timer {
+        running: Qt.application.arguments.indexOf("--add-tab-test") >= 0 && backend.signedIn
+        interval: 2500; repeat: true
+        property int step: 0
+        property string added: ""
+        onTriggered: {
+            const arg = k => (Qt.application.arguments.find(a => a.startsWith(k + "=")) || "").slice(k.length + 1)
+            const has = k => Qt.application.arguments.indexOf(k) >= 0
+            const id = arg("--open-chat")
+            const dir = (arg("--shots") || ".") + "/"
+            const url = arg("--add-tab-url"), name = arg("--add-tab-name") || "Website"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "add-tab-" + n + ".png"))
+            if (backend.currentChatId !== id) {
+                const ch = (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).reduce((a, t) => a.concat(t.channels || []), []).find(c => c.id === id)
+                backend.selectChat(id, ch ? ch.name : "OST tab test"); return
+            }
+            const s = tabPicker.store
+            if (step === 0) { console.warn("ADDTAB tabs", JSON.stringify(conversation.tabNames), "meeting", backend.chatMeetingJson); shot("header") }
+            else if (step === 1) { if (conversation.isChannel) { conversation.addTabMenuForTest(); } else conversation.addTab() }
+            else if (step === 2) { shot(conversation.isChannel ? "menu" : "picker-loading"); if (conversation.isChannel) { conversation.addTabMenuForTest().close(); tabPicker.showTabs(id, "channel", conversation.teamThread) } }
+            else if (step > 2 && step < 14) {
+                if ((!s || s.loading) && step < 13) { step++; return }
+                console.warn("ADDTAB picker", JSON.stringify(s ? { grid: (s.installed || []).map(a => a.name), collections: (s.collections || []).map(x => x.title + " (" + x.apps.length + "): " + x.apps.slice(0, 3).map(a => a.name).join(", ")), error: s.error || "" } : null))
+                shot("picker"); step = 14; return
+            }
+            else if (step === 15) tabPicker.gridAll = true
+            else if (step === 16) shot("picker-all")
+            else if (step === 17) {
+                tabPicker.gridAll = false
+                const web = (s && s.installed || []).find(a => a.id === "com.microsoft.teamspace.tab.web")
+                if (!web) { console.warn("ADDTAB no Website in the grid"); Qt.quit(); return }
+                tabPicker.pickTabApp(web)
+            }
+            else if (step === 18) shot("config")
+            else if (step === 19) tabConfig.fillForTest(name, "http://example")
+            else if (step === 20) { console.warn("ADDTAB invalid", tabConfig.stateForTest()); shot("config-invalid") }
+            else if (step === 21) { tabConfig.fillForTest(name, url || "https://example.com") }
+            else if (step === 22) { console.warn("ADDTAB valid", tabConfig.stateForTest()); shot("config-valid"); if (!url) { tabConfig.close(); Qt.quit(); return } }
+            else if (step === 23) { if (has("--add-tab-nopost")) tabConfig.setPost(false); tabConfig.save() }
+            else if (step === 27) {
+                console.warn("ADDTAB result", backend.channelTabResult)
+                const r = JSON.parse(backend.channelTabResult || "{}")
+                added = r.ok ? r.tab : ""
+                console.warn("ADDTAB tabs after", JSON.stringify(conversation.tabNames), JSON.stringify(conversation.channelTabs.map(t => ({ id: t.id, name: t.name, kind: t.kind, menu: t.context_menu.map(m => m.key) }))))
+                shot("added")
+            }
+            else if (step === 28) { const t = conversation.channelTabs.find(t => t.id === added); if (t) conversation.tabMenuShowForTest(t.name) }
+            else if (step === 29) shot("added-menu")
+            else if (step === 30) { conversation.tabMenuCloseForTest(); if (!has("--add-tab-remove") || !added) { Qt.quit(); return } const t = conversation.channelTabs.find(t => t.id === added); if (t) conversation.tabDialogForTest("remove", t.name) }
+            else if (step === 31) shot("remove-dialog")
+            else if (step === 32) { const t = conversation.channelTabs.find(t => t.id === added); if (t) conversation.tabChangeForTest("remove", t.name, "") }
+            else if (step === 35) { conversation.tabDialogCloseForTest(); console.warn("ADDTAB removed", backend.channelTabResult, JSON.stringify(conversation.tabNames)); shot("removed") }
+            else if (step === 36) Qt.quit()
+            step++
+        }
+    }
+
+    // --meeting-tab-test=<tab name> with --open-chat=<meeting chat id>
+    // --shots=<dir>: a meeting chat's tabs and "+N" (logged, captured),
+    // then that tab opened (Breakout Rooms, Q&A, Meeting Whiteboard),
+    // captured after 10 and 25 s (meeting-tab-*.png); quits.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--meeting-tab-test=")) && backend.signedIn
+        interval: 2500; repeat: true
+        property int step: 0
+        onTriggered: {
+            const arg = k => (Qt.application.arguments.find(a => a.startsWith(k + "=")) || "").slice(k.length + 1)
+            const id = arg("--open-chat"), which = arg("--meeting-tab-test").replace(/_/g, " ").replace("QnA", "Q&A")
+            const dir = (arg("--shots") || ".") + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "meeting-tab-" + n + ".png"))
+            if (backend.currentChatId !== id) { backend.selectChat(id, "OST meeting tab test"); return }
+            if (step === 1) { console.warn("MEETINGTAB tabs", JSON.stringify(conversation.tabNames), "meeting", backend.chatMeetingJson); shot("header") }
+            else if (step === 2) conversation.overflowMenuForTest()
+            else if (step === 3) shot("overflow")
+            else if (step === 4) { conversation.closeOverflowForTest(); conversation.tab = which }
+            else if (step === 8) { console.warn("MEETINGTAB breakout", backend.meetingBreakoutJson); shot("open-10s") }
+            else if (step === 14) shot("open-25s")
+            else if (step === 15) Qt.quit()
+            step++
+        }
+    }
+
     // --agent-store-test with --open-chat=<id> --shots=<dir>: the @ picker
     // (its Add agent row), then Teams' agent Store: overview, scrolled,
     // See all, a search for "poll"; logs what loaded, then quits.
@@ -8607,7 +8696,32 @@ Window {
         id: agentStore
         onOpenApp: id => { agentStore.close(); appDetails.show(id, { id: agentStore.conversationId, channel: agentStore.channel }) }
         onGetMoreApps: rail.current = "add"
+        onManageApps: window.manageConversationApps(agentStore.channel)
     }
+    // Manage your apps from an in-context Store: the chat's apps, or the
+    // channel's team's.
+    function manageConversationApps(channel) {
+        if (channel && conversation.teamId) window.openManageTeam(conversation.teamId, "apps")
+        else conversation.manageApps = true
+    }
+    // Teams' Add a tab (the header's "+"): the picker, then the app's tab
+    // configuration (Back returns to the picker).
+    AgentStore {
+        id: tabPicker
+        onOpenApp: id => { tabPicker.close(); appDetails.show(id, { id: tabPicker.conversationId, channel: tabPicker.channel }) }
+        onGetMoreApps: rail.current = "add"
+        onManageApps: window.manageConversationApps(tabPicker.channel)
+        onPickTabApp: app => {
+            tabPicker.close()
+            tabConfig.start(app, tabPicker.conversationId, tabPicker.channel ? conversation.teamId : "", tabPicker.channel)
+        }
+    }
+    TabConfigDialog {
+        id: tabConfig
+        onBack: tabPicker.reopen()
+        onAbout: app => tabConfigAbout.start({ app_id: app.id, name: app.name })
+    }
+    TabAboutDialog { id: tabConfigAbout }
     // Teams' "About this bot" after adding a bot that only notifies; other
     // bots start an @mention in the compose box, as Teams does.
     AboutBotDialog { id: aboutBot }
@@ -8631,6 +8745,12 @@ Window {
         onOpenMeetingDetails: (url, ical, start) => { rail.current = "calendar"; calendarView.showMeeting(url, ical, start) }
         onOpenAppById: id => window.openAppById(id, "")
         onOpenAgentStore: (id, isChannel) => agentStore.show(id, isChannel)
+        onOpenTabPicker: (id, kind, team) => tabPicker.showTabs(id, kind, team)
+        teamThread: {
+            const teams = backend.teamsJson ? JSON.parse(backend.teamsJson) : []
+            const t = teams.find(t => t.channels.some(c => c.id === backend.currentChatId))
+            return t ? (t.thread_id || "") : ""
+        }
         // A channel's Meet now: Teams' pre-join, titled for the channel.
         onChannelMeetNow: preJoin.openMeetNow(conversation.chatId, "Meeting in \"" + conversation.chatName + "\"")
         onOpenChannelWindow: id => window.openChannelWindow(id)

@@ -50,6 +50,7 @@ pub mod store_content;
 pub mod channels;
 pub mod editor;
 pub mod regional;
+pub mod tab_add;
 pub mod tabs;
 pub mod translation;
 pub mod updates;

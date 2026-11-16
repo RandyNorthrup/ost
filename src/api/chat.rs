@@ -79,6 +79,15 @@ pub struct ThreadMeeting {
     pub co_organizer_ids: Vec<String>,
     /// `meetingType`: Scheduled, Recurring, Broadcast, …
     pub meeting_type: String,
+    /// `tenantId`: the meeting's tenant (Q&A and Whiteboard tabs).
+    pub tenant_id: String,
+    /// `networkId`: the Viva Engage network of the meeting's Q&A.
+    pub network_id: String,
+    /// `scenario` ("breakoutRoom" for a room's own chat).
+    pub scenario: String,
+    /// The `meeting` property's keys (what Teams' meetingInformation can
+    /// read), for diagnostics.
+    pub keys: Vec<String>,
 }
 
 /// The meeting in a thread's properties, if it has one with a join link.
@@ -111,6 +120,10 @@ pub fn thread_meeting(properties: &serde_json::Value) -> Option<ThreadMeeting> {
             .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
             .unwrap_or_default(),
         meeting_type: s("meetingType"),
+        tenant_id: s("tenantId"),
+        network_id: s("networkId"),
+        scenario: s("scenario"),
+        keys: m.as_object().map(|o| o.keys().cloned().collect()).unwrap_or_default(),
     };
     (!meeting.join_url.is_empty()).then_some(meeting)
 }

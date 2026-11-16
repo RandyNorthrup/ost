@@ -436,6 +436,10 @@ pub mod qobject {
         /// role}]}], settings: {allow_select, room_duration, allow_return,
         /// auto_move}, loaded} ("" before any).
         #[qproperty(QString, call_breakout_rooms_json)]
+        /// A meeting chat's Breakout Rooms tab (before the meeting): the
+        /// same as call_breakout_rooms_json, with its `thread`, `busy`
+        /// and `error`.
+        #[qproperty(QString, meeting_breakout_json)]
         /// The meeting's rooms from the call (its organizer's view):
         /// [{name, thread, join_url, open, invitees, auto_move,
         /// allow_return}] ("" before any).
@@ -906,6 +910,18 @@ pub mod qobject {
         /// call_breakout_rooms_json; breakout_action_done says how it went.
         #[qinvokable]
         fn breakout_action(self: Pin<&mut Backend>, action: &QString, args_json: &QString);
+        /// A meeting chat's Breakout Rooms tab (before the meeting): the
+        /// same actions on meeting `thread` (organized by `organizer`, an
+        /// object id), sent as Teams' tab sends them (no newVersion). The
+        /// rooms come back in meeting_breakout_json.
+        #[qinvokable]
+        fn meeting_breakout_action(
+            self: Pin<&mut Backend>,
+            thread: &QString,
+            organizer: &QString,
+            action: &QString,
+            args_json: &QString,
+        );
         /// OneDrive's share dialog (docs/spec/onedrive-share.md) for a file
         /// ({site, list, item}): "info"; "people" {query}; "send" {people,
         /// edit, message}; "link" {scope, edit, expiration, password} (its
@@ -1696,6 +1712,34 @@ pub mod qobject {
             tab_id: &QString,
             arg: &QString,
         );
+        /// A chat's own tabs (its `tab::` thread properties) into
+        /// channel_tabs_json, keyed by the chat.
+        #[qinvokable]
+        fn chat_tabs_load(self: Pin<&mut Backend>, chat_id: &QString);
+        /// Teams' Add a tab picker for a conversation into agent_store_json
+        /// (with `mode: "tab"`): `kind` "chat", "meeting" or "channel";
+        /// `team_thread` is a channel's team (its General thread).
+        #[qinvokable]
+        fn tab_store_load(self: Pin<&mut Backend>, conversation_id: &QString, team_thread: &QString, kind: &QString);
+        /// Search the Add a tab picker (agent_search_json, `mode: "tab"`).
+        #[qinvokable]
+        fn tab_store_search(self: Pin<&mut Backend>, conversation_id: &QString, kind: &QString, query: &QString);
+        /// Teams' Website configuration's error for a URL (empty when it's
+        /// fine or empty).
+        #[qinvokable]
+        fn website_url_error(self: &Backend, url: &QString) -> QString;
+        /// Save a website tab as Teams' Website configuration does (a
+        /// channel when `team_id` is set); the outcome goes to
+        /// channelTabResult as op "add", and the tabs reload.
+        #[qinvokable]
+        fn add_website_tab(
+            self: Pin<&mut Backend>,
+            team_id: &QString,
+            conversation_id: &QString,
+            name: &QString,
+            url: &QString,
+            post: bool,
+        );
 
         /// A channel's Shared tab: list folder `item_id` of `drive_id`, or,
         /// with both empty, the channel's own folder (found from the team
@@ -2403,6 +2447,7 @@ pub struct BackendRust {
     call_lobby_thread: QString,
     call_breakout_json: QString,
     call_breakout_rooms_json: QString,
+    meeting_breakout_json: QString,
     call_breakout_all_json: QString,
     call_breakout_room_json: QString,
     call_held_meeting_json: QString,
@@ -2754,7 +2799,6 @@ fn live_roster_json(w: &teams_cli::calling::live_roster::LiveRoster) -> String {
 /// rooms and settings back (the state call_breakout_rooms_json shows).
 async fn breakout_run(action: &str, args: &serde_json::Value, link: &outgoing::MeetingLink) -> anyhow::Result<serde_json::Value> {
     use api::breakout_rooms as br;
-    let client = TeamsClient::new().await?;
     let main = br::Coords::new(
         link.tenant_id.as_deref().unwrap_or_default(),
         link.organizer_id.as_deref().unwrap_or_default(),
@@ -2762,7 +2806,22 @@ async fn breakout_run(action: &str, args: &serde_json::Value, link: &outgoing::M
         &link.message_id,
     )?;
     let me = call_slot().lock().await.outgoing.as_ref().map(|c| c.participant_id().to_string()).unwrap_or_default();
-    let version = br::new_version(&me);
+    breakout_run_at(action, args, &main, &br::new_version(&me)).await
+}
+
+/// A breakout rooms action on the meeting at `main`: `version` is the
+/// change's `newVersion` (empty before the meeting: Teams' Breakout Rooms
+/// tab sends none, services-breakout-rooms `g`).
+async fn breakout_run_at(
+    action: &str,
+    args: &serde_json::Value,
+    main: &api::breakout_rooms::Coords,
+    version: &str,
+) -> anyhow::Result<serde_json::Value> {
+    use api::breakout_rooms as br;
+    let client = TeamsClient::new().await?;
+    let main = main.clone();
+    let version = version.to_string();
     let total = args["total"].as_u64().unwrap_or(0) as usize;
     let str_of = |v: &serde_json::Value| v.as_str().unwrap_or_default().to_string();
     let rooms_now = || async { br::list(&client, &main).await };
@@ -2870,7 +2929,7 @@ async fn breakout_run(action: &str, args: &serde_json::Value, link: &outgoing::M
             }
             let existing = rooms_now().await?;
             if !existing.is_empty() {
-                br::delete_all(&client, &main, &existing, &br::new_version(&me)).await?;
+                br::delete_all(&client, &main, &existing, &(if version.is_empty() { String::new() } else { br::new_version(version.split('_').next().unwrap_or_default()) })).await?;
             }
             br::create(&client, &main, &rooms, None, &version).await?;
             tracing::info!(rooms = rooms.len(), ?warnings, "breakout rooms imported");
@@ -6598,6 +6657,48 @@ impl qobject::Backend {
                 }
             };
             let _ = qt.queue(move |mut this| this.as_mut().share_done(QString::from(op.as_str()), QString::from(value.as_str()), QString::from(error.as_str())));
+        });
+    }
+
+    pub fn meeting_breakout_action(
+        mut self: Pin<&mut Self>,
+        thread: &QString,
+        organizer: &QString,
+        action: &QString,
+        args_json: &QString,
+    ) {
+        let (thread, organizer, action) = (thread.to_string(), organizer.to_string(), action.to_string());
+        let args: serde_json::Value = serde_json::from_str(&args_json.to_string()).unwrap_or(json!({}));
+        let mut busy: serde_json::Value = serde_json::from_str(&self.rust().meeting_breakout_json.to_string()).unwrap_or(json!({}));
+        if busy.get("thread").and_then(|t| t.as_str()) != Some(thread.as_str()) {
+            busy = json!({ "thread": thread });
+        }
+        busy["busy"] = json!(true);
+        self.as_mut().set_meeting_breakout_json(QString::from(busy.to_string().as_str()));
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                let tenant = client.tenant_id().unwrap_or_default();
+                // A chat meeting's own coordinates: message "0".
+                let main = api::breakout_rooms::Coords::new(&tenant, &organizer, &thread, "0")?;
+                breakout_run_at(&action, &args, &main, "").await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| {
+                let mut state = match result {
+                    Ok(s) => s,
+                    Err(e) => {
+                        tracing::warn!("breakout tab {action}: {}", short_error(&e));
+                        let mut prev: serde_json::Value = serde_json::from_str(&this.rust().meeting_breakout_json.to_string()).unwrap_or(json!({}));
+                        prev["error"] = json!(short_error(&e));
+                        prev
+                    }
+                };
+                state["thread"] = json!(thread);
+                state["busy"] = json!(false);
+                this.as_mut().set_meeting_breakout_json(QString::from(state.to_string().as_str()));
+            });
         });
     }
 
@@ -13327,8 +13428,9 @@ impl qobject::Backend {
             .ok()
             .and_then(|c| c.tenant_id())
             .unwrap_or_default();
+        // A chat's tab (no team) links as a chat's.
         let (link, html) =
-            api::tabs::copy_link(&t, &channel_id.to_string(), &team_id.to_string(), &tenant);
+            api::tabs::copy_link_in(&t, &channel_id.to_string(), team_id.to_string().is_empty(), &tenant);
         let (Ok(link), Ok(html)) = (std::ffi::CString::new(link), std::ffi::CString::new(html))
         else {
             return;
@@ -14067,6 +14169,14 @@ impl qobject::Backend {
         runtime().spawn(async move {
             let result = async {
                 let client = TeamsClient::new().await?;
+                // A chat's tabs (no team) are its thread properties.
+                if team.is_empty() {
+                    return match op.as_str() {
+                        "rename" => api::tab_add::rename_property(&client, &channel, &tab, &arg).await.map(|_| String::new()),
+                        "remove" => api::tab_add::remove_property(&client, &channel, &tab).await.map(|_| String::new()),
+                        _ => Err(anyhow::anyhow!("Unknown tab change")),
+                    };
+                }
                 match op.as_str() {
                     "rename" => api::tabs::rename(&client, &channel, &tab, &arg).await.map(|_| String::new()),
                     "remove" => api::tabs::remove(&client, &channel, &tab).await.map(|_| String::new()),
@@ -14095,12 +14205,132 @@ impl qobject::Backend {
                 let outcome = json!({ "op": op, "tab": tab, "ok": result.is_ok(), "root": root }).to_string();
                 this.as_mut()
                     .set_channel_tab_result(QString::from(outcome.as_str()));
-                let name = QString::from(this.rust().channel_tabs_name.as_str());
-                this.as_mut().channel_tabs_load(
-                    &QString::from(team.as_str()),
-                    &QString::from(channel.as_str()),
-                    &name,
-                );
+                this.as_mut().reload_tabs(&team, &channel);
+            });
+        });
+    }
+
+    /// Load a conversation's tabs again (a channel's when `team` is set).
+    fn reload_tabs(mut self: Pin<&mut Self>, team: &str, conversation: &str) {
+        if team.is_empty() {
+            self.as_mut().chat_tabs_load(&QString::from(conversation));
+        } else {
+            let name = QString::from(self.rust().channel_tabs_name.as_str());
+            self.as_mut().channel_tabs_load(&QString::from(team), &QString::from(conversation), &name);
+        }
+    }
+
+    pub fn chat_tabs_load(self: Pin<&mut Self>, chat_id: &QString) {
+        let chat = chat_id.to_string();
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async { api::tab_add::chat_tabs(&TeamsClient::new().await?, &chat).await }.await;
+            let _ = qt.queue(move |mut this| {
+                let text = match result {
+                    Ok(tabs) => json!({ "channel": chat, "tabs": tabs }).to_string(),
+                    Err(e) => json!({ "channel": chat, "tabs": [], "error": short_error(&e) }).to_string(),
+                };
+                this.as_mut().set_channel_tabs_json(QString::from(text.as_str()));
+            });
+        });
+    }
+
+    fn tab_kind(kind: &str) -> api::store_content::IcKind {
+        match kind {
+            "channel" => api::store_content::IcKind::TabChannel,
+            "meeting" => api::store_content::IcKind::TabMeeting,
+            _ => api::store_content::IcKind::TabChat,
+        }
+    }
+
+    pub fn tab_store_load(mut self: Pin<&mut Self>, conversation_id: &QString, team_thread: &QString, kind: &QString) {
+        let (conv, team, kind_s) = (conversation_id.to_string(), team_thread.to_string(), kind.to_string());
+        self.as_mut().set_agent_store_json(QString::from(
+            json!({ "conversation": conv, "mode": "tab", "loading": true }).to_string().as_str(),
+        ));
+        let qt = self.qt_thread();
+        let conv2 = conv.clone();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                let team = (!team.is_empty()).then_some(team.as_str());
+                api::tab_add::tab_store(&client, Self::tab_kind(&kind_s), &conv2, team).await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| {
+                let v = match result {
+                    Ok(ic) => json!({ "conversation": conv, "mode": "tab", "installed": ic.installed, "collections": ic.collections }),
+                    Err(e) => {
+                        tracing::warn!("tab store: {}", short_error(&e));
+                        json!({ "conversation": conv, "mode": "tab", "error": short_error(&e) })
+                    }
+                };
+                this.as_mut().set_agent_store_json(QString::from(v.to_string().as_str()));
+            });
+        });
+    }
+
+    pub fn tab_store_search(mut self: Pin<&mut Self>, _conversation_id: &QString, kind: &QString, query: &QString) {
+        let (kind_s, q) = (kind.to_string(), query.to_string());
+        self.as_mut().set_agent_search_json(QString::from(json!({ "query": q, "mode": "tab", "loading": true }).to_string().as_str()));
+        if q.trim().is_empty() {
+            return;
+        }
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::tab_add::tab_store_search(&client, Self::tab_kind(&kind_s), q.trim()).await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| {
+                let current: serde_json::Value = serde_json::from_str(&this.rust().agent_search_json.to_string()).unwrap_or_default();
+                if current.get("query").and_then(|x| x.as_str()) != Some(q.as_str()) {
+                    return;
+                }
+                let v = match result {
+                    Ok(r) => json!({ "query": q, "mode": "tab", "results": r }),
+                    Err(e) => json!({ "query": q, "mode": "tab", "results": [], "error": short_error(&e) }),
+                };
+                this.as_mut().set_agent_search_json(QString::from(v.to_string().as_str()));
+            });
+        });
+    }
+
+    pub fn website_url_error(&self, url: &QString) -> QString {
+        QString::from(api::tab_add::website_url_error(&url.to_string()).unwrap_or_default())
+    }
+
+    pub fn add_website_tab(
+        self: Pin<&mut Self>,
+        team_id: &QString,
+        conversation_id: &QString,
+        name: &QString,
+        url: &QString,
+        post: bool,
+    ) {
+        let (team, conv, name, url) = (team_id.to_string(), conversation_id.to_string(), name.to_string(), url.to_string());
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                api::tab_add::add_website(&client, &conv, !team.is_empty(), &name, &url, post).await
+            }
+            .await;
+            let _ = qt.queue(move |mut this| {
+                if let Err(e) = &result {
+                    tracing::warn!("add tab failed: {e:#}");
+                }
+                let outcome = json!({
+                    "op": "add",
+                    "conversation": conv,
+                    "tab": result.as_ref().map(|t| t.clone()).unwrap_or_default(),
+                    "name": name.trim(),
+                    "ok": result.is_ok(),
+                })
+                .to_string();
+                this.as_mut().set_channel_tab_result(QString::from(outcome.as_str()));
+                this.as_mut().reload_tabs(&team, &conv);
             });
         });
     }

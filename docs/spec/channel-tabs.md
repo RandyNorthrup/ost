@@ -250,7 +250,15 @@ Shared header (`dn`):
 - Body: "The {{displayName}} tab will be permanently removed.". For a Page, "The page will be removed, not deleted. You can still access it from Microsoft Loop."
 - One primary **Remove** button. It is disabled after the first click, and the label becomes "Removing". There is no Cancel button; the header X closes the dialog.
 - On failure the dialog shows "We couldn't remove your tab. Please try later."
-- Removing: GraphQL `removePlatformTab(threadId, tabId, tabType, storageOptions, options: {appInstallScope})`, then the client-side `updateTabDeletionResult`. The service behind it is the middle tier's `DeletePinnedTab`, `DELETE {mt}/beta/{scope}/{scopeId}/tabs/{tabId}`.
+- Removing: GraphQL `removePlatformTab(threadId, tabId, tabType, storageOptions, options: {appInstallScope})`, then the client-side `updateTabDeletionResult`.
+  - Captured on winpc 2026-11-16 (a website tab in General): the worker
+    sends `PUT {chatsvc}/v1/threads/{channel}/properties?name=tab::{id}`
+    with `{"tab::{id}": null}`, the same as in a chat (add-a-tab.md). OST
+    removes tabs that way.
+  - The middle tier's `DeletePinnedTab` (`DELETE {mt}/beta/{scope}/{scopeId}/tabs/{tabId}`) also works; OST used it before.
+- A website tab's menu has no "Open in browser" (its `!r.n4` test fails for
+  a deprecated website tab): Copy link to tab, Rename, About this tab, Move
+  left / right, Remove (right-click, winpc 2026-11-16).
 - A tab whose app has a `removeUrl` (remove listeners) shows "remove_tab_with_listeners_dialog_title", with the app's own remove page inside the dialog.
 
 ## Measured on the live client (CSS px at 150%, winpc)

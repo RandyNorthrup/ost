@@ -284,6 +284,8 @@ account.
 | `--hold-test` | In a call: Hold (Teams' music on hold) and Resume, dial-pad tones, and capturing when the other side holds; stays until they hang up. |
 | `--webapp-test` | Open Whiteboard (`--webapp-help`: Help) from View more apps and capture it once loaded. |
 | `--store-test` | Open the Store, capture Home, search "planner", open Whiteboard's details. |
+| `--add-tab-test` | With `--open-chat=<chat or channel id> --shots=<dir>`: Teams' Add a tab ("+"; a channel's menu, then Apps): the picker (ADDTAB picker line: grid and collections; See all), Website's configuration with an invalid URL. With `--add-tab-url=<https url>` (and `--add-tab-name=<name>`) it saves the tab for real, posting "I added a tab…" unless `--add-tab-nopost`, logs ADDTAB result and the tabs, and captures the new tab's menu; `--add-tab-remove` removes it again. Pictures `add-tab-*.png`. |
+| `--meeting-tab-test=<tab>` | (`_` for spaces, `QnA` for Q&A.) With `--open-chat=<meeting chat id> --shots=<dir>`: the meeting chat's tabs (MEETINGTAB line), its "+N" menu, then that tab (Breakout Rooms, Q&A, Meeting Whiteboard, Attendance) after 10 and 25 s. Pictures `meeting-tab-*.png`. |
 | `--channel-files-test` | OST Test Team's General channel, Shared tab: make a folder, capture it, delete it. |
 | `--apps-test` | People: add a contact, favorite it, delete it; OneNote: open the first notebook, add a page, read it, delete it. |
 | `--planner-test` | Add and complete a private task; create a plan in OST Test Team, add a task, then delete the test plans. |
