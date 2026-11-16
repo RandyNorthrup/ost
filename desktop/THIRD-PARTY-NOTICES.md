@@ -560,6 +560,78 @@ contributors, used under the GNU Lesser General Public License v3
 | zvariant_derive | 5.15.1 | MIT | https://github.com/z-galaxy/zbus/ |
 | zvariant_utils | 4.2.0 | MIT | https://github.com/z-galaxy/zbus/ |
 
+## JavaScript in the Loop page host
+
+`desktop/vendor/fluid-loader/fluid-loader.js` bundles the open-source
+Fluid Framework packages Teams uses to host Loop pages (the container
+loader, the dependency synthesizer and ODSP's share-link URL resolver,
+Fluid Framework 2.118.1, Copyright (c) Microsoft Corporation and
+contributors, MIT; see `desktop/vendor/fluid-loader/LICENSE`) and their
+dependencies. Their licence comments are kept at the end of the bundle.
+Loop's page container and the ODSP driver it runs with are not bundled:
+they are loaded from Microsoft's CDN (res.cdn.office.net) at run time, as
+Teams loads them.
+
+`desktop/src/loop_theme_light.json` is Teams' light theme as Teams hands
+it to Loop (Fluent UI's Teams theme tokens, MIT, and Teams' `--ms-theme*`
+names and heading text styles), captured from Teams on the web so Loop
+pages look the same. The Teams part is not covered by an open-source
+licence; review before redistributing.
+
+| Package | Version | Licence | Source |
+|---|---|---|---|
+| @fluid-internal/client-utils | 2.118.1 | MIT | https://github.com/microsoft/FluidFramework |
+| @fluidframework/container-definitions | 2.118.1 | MIT | https://github.com/microsoft/FluidFramework |
+| @fluidframework/container-loader | 2.118.1 | MIT | https://github.com/microsoft/FluidFramework |
+| @fluidframework/core-interfaces | 2.118.1 | MIT | https://github.com/microsoft/FluidFramework |
+| @fluidframework/core-utils | 2.118.1 | MIT | https://github.com/microsoft/FluidFramework |
+| @fluidframework/driver-definitions | 2.118.1 | MIT | https://github.com/microsoft/FluidFramework |
+| @fluidframework/driver-utils | 2.118.1 | MIT | https://github.com/microsoft/FluidFramework |
+| @fluidframework/odsp-doclib-utils | 2.118.1 | MIT | https://github.com/microsoft/FluidFramework |
+| @fluidframework/odsp-driver | 2.118.1 | MIT | https://github.com/microsoft/FluidFramework |
+| @fluidframework/odsp-driver-definitions | 2.118.1 | MIT | https://github.com/microsoft/FluidFramework |
+| @fluidframework/synthesize | 2.118.1 | MIT | https://github.com/microsoft/FluidFramework |
+| @fluidframework/telemetry-utils | 2.118.1 | MIT | https://github.com/microsoft/FluidFramework |
+| available-typed-arrays | 1.0.7 | MIT | https://github.com/inspect-js/available-typed-arrays |
+| base64-js | 1.5.1 | MIT | git://github.com/beatgammit/base64-js |
+| buffer | 6.0.3 | MIT | git://github.com/feross/buffer |
+| call-bind | 1.0.9 | MIT | https://github.com/ljharb/call-bind |
+| call-bind-apply-helpers | 1.0.2 | MIT | https://github.com/ljharb/call-bind-apply-helpers |
+| call-bound | 1.0.4 | MIT | https://github.com/ljharb/call-bound |
+| debug | 4.4.3 | MIT | git://github.com/debug-js/debug |
+| define-data-property | 1.1.4 | MIT | https://github.com/ljharb/define-data-property |
+| double-ended-queue | 2.1.0-0 | MIT | git://github.com/petkaantonov/deque |
+| dunder-proto | 1.0.1 | MIT | https://github.com/es-shims/dunder-proto |
+| es-define-property | 1.0.1 | MIT | https://github.com/ljharb/es-define-property |
+| es-errors | 1.3.0 | MIT | https://github.com/ljharb/es-errors |
+| es-object-atoms | 1.1.2 | MIT | https://github.com/ljharb/es-object-atoms |
+| events | 3.3.0 | MIT | git://github.com/Gozala/events |
+| for-each | 0.3.5 | MIT | https://github.com/Raynos/for-each |
+| function-bind | 1.1.2 | MIT | https://github.com/Raynos/function-bind |
+| get-intrinsic | 1.3.0 | MIT | https://github.com/ljharb/get-intrinsic |
+| get-proto | 1.0.1 | MIT | https://github.com/ljharb/get-proto |
+| gopd | 1.2.0 | MIT | https://github.com/ljharb/gopd |
+| has-property-descriptors | 1.0.2 | MIT | https://github.com/inspect-js/has-property-descriptors |
+| has-symbols | 1.1.0 | MIT | git://github.com/inspect-js/has-symbols |
+| has-tostringtag | 1.0.2 | MIT | https://github.com/inspect-js/has-tostringtag |
+| hasown | 2.0.4 | MIT | https://github.com/inspect-js/hasOwn |
+| ieee754 | 1.2.1 | BSD-3-Clause | git://github.com/feross/ieee754 |
+| inherits | 2.0.4 | ISC | git://github.com/isaacs/inherits |
+| is-callable | 1.2.7 | MIT | git://github.com/inspect-js/is-callable |
+| is-typed-array | 1.1.15 | MIT | git://github.com/inspect-js/is-typed-array |
+| isarray | 2.0.5 | MIT | git://github.com/juliangruber/isarray |
+| lz4js | 0.2.0 | ISC | ssh://git@github.com/Benzinga/lz4js |
+| math-intrinsics | 1.1.0 | MIT | https://github.com/es-shims/math-intrinsics |
+| ms | 2.1.3 | MIT | vercel/ms |
+| possible-typed-array-names | 1.1.0 | MIT | https://github.com/ljharb/possible-typed-array-names |
+| safe-buffer | 5.2.1 | MIT | git://github.com/feross/safe-buffer |
+| set-function-length | 1.2.2 | MIT | https://github.com/ljharb/set-function-length |
+| sha.js | 2.4.12 | (MIT AND BSD-3-Clause) | git://github.com/crypto-browserify/sha.js |
+| to-buffer | 1.2.2 | MIT | https://github.com/browserify/to-buffer |
+| typed-array-buffer | 1.0.3 | MIT | https://github.com/inspect-js/typed-array-buffer |
+| uuid | 11.1.1 | MIT | https://github.com/uuidjs/uuid |
+| which-typed-array | 1.1.24 | MIT | git://github.com/inspect-js/which-typed-array |
+
 ## Bundled assets
 
 

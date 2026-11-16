@@ -632,6 +632,42 @@ pub fn page_property(id: &str, order: f64, component_url: Option<&str>, creator:
     serde_json::to_string(&t).unwrap_or_default()
 }
 
+/// A channel's New page, as Teams adds it before the page exists: an
+/// "Untitled page" Page tab ([`page_property`] without a link, the creator
+/// named), no post. Loop's page container then makes the page
+/// ([`crate::api::loop_page`]) and [`set_page_component_url`] points the
+/// tab at it. Returns the tab's id.
+pub async fn add_new_page_tab(client: &TeamsClient, channel_id: &str) -> Result<String> {
+    let (orders, names) = existing_tabs(client, channel_id).await?;
+    let id = format!("tab::{}", uuid::Uuid::new_v4());
+    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    let me = client.object_id().map(|o| format!("8:orgid:{o}")).context("Not signed in")?;
+    let property = page_property(&id, add_order(&orders), None, &me, &stored_name("Untitled page", &names), &now);
+    put_property(client, channel_id, &id, Some(&property)).await?;
+    Ok(id)
+}
+
+/// A New page's tab once its page is made, as Teams rewrites it (seen in
+/// OST test channel, 2026-11-16): the keys kept in their order, the
+/// creator dropped and `componentUrl` (the page's link) added at the end of
+/// the settings; the name and `isTabNameSynced: false` stay.
+pub fn page_component_property(raw: &str, component_url: &str) -> Result<String> {
+    let mut t: ordered::Json = serde_json::from_str(raw).context("Tab property")?;
+    let settings = t.get_mut("settings").context("Tab property")?;
+    settings.set("creatorUserMri", None);
+    settings.set("componentUrl", Some(component_url.into()));
+    Ok(serde_json::to_string(&t)?)
+}
+
+/// Point a New page's tab at the page Loop made ([`page_component_property`]).
+pub async fn set_page_component_url(client: &TeamsClient, channel_id: &str, tab_id: &str, component_url: &str) -> Result<()> {
+    let u = url::Url::parse(component_url).context("Page link")?;
+    anyhow::ensure!(u.scheme() == "https" && u.host_str().is_some_and(|h| h.ends_with(".sharepoint.com")), "Page link");
+    let props = thread_properties(client, channel_id).await?;
+    let raw = raw_property(&props, tab_id).context("No such tab")?;
+    put_property(client, channel_id, tab_id, Some(&page_component_property(&raw, component_url)?)).await
+}
+
 /// A Loop page a pasted link points to (Teams' Add an existing page).
 #[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct LinkedPage {
@@ -1167,6 +1203,28 @@ mod tests {
             r#"{"id":"tab::3695a39f-1e11-43d8-bd64-b34e28a2c8df","order":140000,"definitionId":"5ae80e49-7ada-461a-a6bd-c5df2e0cdb06","directive":"channel-page-tab","type":"tab:","settings":{"componentUrl":"https://scnetsolutions.sharepoint.com/:fl:/s/OSTTestTeam/IQBu0v?nav=cz0l","isLieChannelPageTab":false,"isTabNameSynced":true,"dateAdded":"2026-11-16T15:26:44.086Z"},"name":"Loop%20paragraph"}"#
         );
         assert!(share_id("https://x.sharepoint.com/:fl:/r/a?b=1").starts_with("u!aHR0cHM6Ly94"));
+    }
+
+    #[test]
+    fn new_page_tab_gets_its_link_as_teams_writes_it() {
+        // OST test channel's New page in Teams on the web, before and after
+        // Loop made the page (2026-11-16; the link shortened).
+        let before = page_property(
+            "tab::0b173dfb-e612-4fc7-b9cf-d48602e3b856",
+            110_000.0,
+            None,
+            "8:orgid:4287e791-1b98-4963-8b94-281c50472683",
+            "Untitled%20page",
+            "2026-11-16T18:19:58.790Z",
+        );
+        let link = "https://scnetsolutions.sharepoint.com/:fl:/r/sites/OSTTestTeam/Shared%20Documents/OST%20test%20channel/Loop%20paragraph.loop?d=w58019e7b&csf=1&web=1&nav=cz0l";
+        assert_eq!(
+            page_component_property(&before, link).unwrap(),
+            format!(
+                r#"{{"id":"tab::0b173dfb-e612-4fc7-b9cf-d48602e3b856","order":110000,"definitionId":"5ae80e49-7ada-461a-a6bd-c5df2e0cdb06","directive":"channel-page-tab","type":"tab:","settings":{{"isLieChannelPageTab":false,"isTabNameSynced":false,"dateAdded":"2026-11-16T18:19:58.790Z","componentUrl":"{link}"}},"name":"Untitled%20page"}}"#
+            )
+        );
+        assert!(page_component_property("not json", link).is_err());
     }
 
     #[test]

@@ -61,13 +61,19 @@ async fn acquire_graph_token(client: &AadClient, rt: &str) -> Result<(String, Op
 /// Mint a short-lived access token for another audience from the stored
 /// refresh token, without storing it (for services used now and then).
 pub async fn access_token_for(scope: &str) -> Result<String> {
+    Ok(access_token_expiring(scope).await?.0)
+}
+
+/// [`access_token_for`] with the token's lifetime in seconds (when Azure AD
+/// gave one), for callers that keep it until it nears expiry.
+pub async fn access_token_expiring(scope: &str) -> Result<(String, Option<u64>)> {
     let config = Config::load()?;
     let rt = config
         .get_refresh_token()
         .context("Not signed in (no refresh token)")?;
     let client = stored_client(&config);
     let full_scope = format!("{scope} offline_access");
-    Ok(acquire_token(&client, &rt, &full_scope, scope).await?.0)
+    acquire_token(&client, &rt, &full_scope, scope).await
 }
 
 /// Store the primary (Skype-audience) AAD tokens.
@@ -375,6 +381,7 @@ pub fn has_credentials() -> bool {
 /// Forget all stored credentials.
 pub fn sign_out() -> Result<()> {
     super::broker::clear();
+    crate::api::loop_page::clear();
     let mut config = Config::load()?;
     config.clear_tokens();
     config.save()
@@ -383,6 +390,7 @@ pub fn sign_out() -> Result<()> {
 /// Clear stored credentials
 pub async fn logout() -> Result<()> {
     super::broker::clear();
+    crate::api::loop_page::clear();
     let mut config = Config::load()?;
     config.clear_tokens();
     config.save()?;

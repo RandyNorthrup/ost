@@ -213,6 +213,8 @@ fn main() {
         "qml/FaceCaptureDialog.qml",
         "qml/VoiceCaptureDialog.qml",
         "qml/ChatNotesTab.qml",
+        "qml/LoopPage.qml",
+        "qml/ChannelPageTab.qml",
         "qml/RecapTab.qml",
     ];
     let mut resources: Vec<String> = Vec::new();

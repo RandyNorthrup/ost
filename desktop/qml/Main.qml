@@ -8387,6 +8387,112 @@ Window {
         }
     }
 
+    // --loop-delete-file=<drive id>|<item id>: delete a test Loop page's
+    // file (to its site's recycle bin), log LOOPTEST deleted, quit.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--loop-delete-file=")) && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const v = (Qt.application.arguments.find(a => a.startsWith("--loop-delete-file=")) || "").slice("--loop-delete-file=".length).split("|")
+            if (step === 0 && v.length === 2) backend.driveDelete(v[0], v[1])
+            else if (step === 3) { console.warn("LOOPTEST deleted", v[1] || ""); Qt.quit() }
+            step++
+        }
+    }
+
+    // --loop-test=<notes|page|newpage> with --open-chat=<chat or channel
+    // id> --shots=<dir>: a Loop page in OST's Loop page host
+    // (docs/spec/loop-host.md). notes: the chat's Notes tab; page: the
+    // channel's Page tab named --loop-tab=<name>; newpage: the channel's
+    // "+" › New page (the tab, then Loop makes the page). LOOPTEST lines:
+    // the host's state and events every 5 s until the page is drawn (or
+    // 90 s), its text; pictures loop-<which>-{open,ready}.png. With
+    // --loop-type=<text> it types the text at the end of the page as real
+    // keys, reads the page back, then deletes it again with Backspace
+    // (loop-<which>-{typed,removed}.png). --loop-remove: a new page's tab
+    // is removed and its file deleted (to the recycle bin) afterwards.
+    // Quits unless --loop-stay.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--loop-test=")) && backend.signedIn
+        interval: 2500; repeat: true
+        property int step: 0
+        property int readyAt: -1
+        property string typed: ""
+        property string added: ""
+        property var created: null
+        onTriggered: {
+            const arg = k => (Qt.application.arguments.find(a => a.startsWith(k + "=")) || "").slice(k.length + 1)
+            const has = k => Qt.application.arguments.indexOf(k) >= 0
+            const id = arg("--open-chat"), which = arg("--loop-test"), text = arg("--loop-type")
+            const dir = (arg("--shots") || ".") + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "loop-" + which + "-" + n + ".png"))
+            if (backend.currentChatId !== id) {
+                const ch = (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).reduce((a, t) => a.concat(t.channels || []), []).find(c => c.id === id)
+                const chat = chatList.chats.find(c => c.id === id)
+                // A channel opens once its team is known (else it would
+                // open as a chat).
+                if (which !== "notes" && !ch) return
+                backend.selectChat(id, ch ? ch.name : chat ? chat.name : "OST Loop test"); return
+            }
+            if (which !== "notes" && !conversation.isChannel) return
+            const view = which === "notes" ? conversation.notesTabForTest() : conversation.pageTabForTest()
+            const loop = view && view.loopForTest ? view.loopForTest() : null
+            const state = () => loop ? JSON.parse(loop.stateForTest()) : { state: "none" }
+            if (step === 1) {
+                console.warn("LOOPTEST tabs", JSON.stringify(conversation.tabNames))
+                if (which === "notes") conversation.tab = "Notes"
+                else if (which === "page") conversation.tab = arg("--loop-tab")
+                else { conversation.addTabChoice("newPage") }
+            } else if (step === 3) { console.warn("LOOPTEST open", conversation.tab, JSON.stringify(state())); shot("open") }
+            else if (step > 3 && readyAt < 0) {
+                const s = state()
+                if (step % 2 === 0) console.warn("LOOPTEST state", conversation.tab, JSON.stringify(s))
+                if (which === "newpage" && !added) {
+                    const r = JSON.parse(backend.channelTabResult || "{}")
+                    if (r.op === "add" && r.ok) { added = r.tab; console.warn("LOOPTEST tab added", r.tab) }
+                }
+                if (s.state === "ready" || s.state === "error" || step > 40) {
+                    readyAt = step
+                    shot("ready")
+                    if (loop) loop.textForTest(t => console.warn("LOOPTEST text", JSON.stringify(String(t).slice(0, 300))))
+                }
+            } else if (readyAt >= 0 && step === readyAt + 4) {
+                if (which === "newpage") console.warn("LOOPTEST tabs after", JSON.stringify(conversation.channelTabs.filter(t => t.kind === "ChannelPage").map(t => ({ id: t.id, name: t.name, link: t.content_url.split("?")[0] }))))
+                if (text && loop && state().state === "ready") { typed = text; loop.typeForTest(text) }
+            } else if (readyAt >= 0 && step === readyAt + 7 && typed) {
+                loop.textForTest(t => console.warn("LOOPTEST typed", String(t).indexOf(typed) >= 0 ? "found" : "missing", JSON.stringify(String(t).slice(0, 300))))
+                shot("typed")
+            } else if (readyAt >= 0 && step === readyAt + 8 && typed) {
+                // The page again from the service: the typing was saved.
+                loop.reload()
+            } else if (readyAt >= 0 && step === readyAt + 14 && typed) {
+                loop.textForTest(t => console.warn("LOOPTEST reloaded", String(t).indexOf(typed) >= 0 ? "found" : "missing", JSON.stringify(String(t).slice(0, 300))))
+                shot("reloaded")
+            } else if (readyAt >= 0 && step === readyAt + 15 && typed) {
+                loop.typeForTest("\b".repeat(typed.length))
+            } else if (readyAt >= 0 && step === readyAt + 18 && typed) {
+                loop.textForTest(t => console.warn("LOOPTEST removed", String(t).indexOf(typed) >= 0 ? "still there" : "gone", JSON.stringify(String(t).slice(0, 300))))
+                shot("removed")
+                loop.reload()
+            } else if (readyAt >= 0 && step === readyAt + 24 && typed) {
+                loop.textForTest(t => console.warn("LOOPTEST removed after reload", String(t).indexOf(typed) >= 0 ? "still there" : "gone", JSON.stringify(String(t).slice(0, 300))))
+            } else if (readyAt >= 0 && step === readyAt + 25) {
+                console.warn("LOOPTEST final", JSON.stringify(state()))
+                if (which === "newpage" && has("--loop-remove") && added) {
+                    const t = conversation.channelTabs.find(t => t.id === added)
+                    if (t) conversation.tabChangeForTest("remove", t.name, "")
+                    const ev = view && view.createdForTest ? view.createdForTest() : null
+                    if (ev && ev.driveId && ev.itemId) { console.warn("LOOPTEST deleting the new page's file"); backend.driveDelete(ev.driveId, ev.itemId) }
+                }
+            } else if (readyAt >= 0 && step === readyAt + 29) {
+                console.warn("LOOPTEST done", backend.channelTabResult)
+                if (!has("--loop-stay")) Qt.quit()
+            }
+            step++
+        }
+    }
+
     // --app-host-test[=<tab name>] with --open-chat=<channel id>
     // --shots=<dir>: a channel's app tab (default Notes) in OST's TeamsJS
     // host (docs/spec/app-host.md): the host's events (APPHOST lines) and

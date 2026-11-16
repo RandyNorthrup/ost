@@ -131,7 +131,8 @@ Window {
         id: pageLoader
         active: win.isPage && !!win.tab.content_url
         anchors { top: header.bottom; bottom: parent.bottom; left: parent.left; right: convPane.left }
-        sourceComponent: WebApp { showHeader: false; pageOnly: true; location: win.channelName + (win.teamName ? " · " + win.teamName : ""); appName: win.tab.name || ""; appId: win.tab.app_id || ""; home: win.tab.content_url }
+        // The page in Loop's own page container, as the channel shows it.
+        sourceComponent: LoopPage { kind: "channelPages"; componentUrl: win.tab.content_url }
     }
     // An app tab: its page in OST's TeamsJS host, as in the channel.
     property string teamThread: ""

@@ -1317,6 +1317,11 @@ pub mod qobject {
         #[qsignal]
         fn app_host_reply(self: Pin<&mut Backend>, id: QString, json: QString);
 
+        /// The Loop page host's native call answered (a token may be in
+        /// `json`: pass it on, never log it).
+        #[qsignal]
+        fn loop_host_reply(self: Pin<&mut Backend>, id: QString, json: QString);
+
         /// A video_clip_load finished: {id, quality, path (file URL),
         /// qualities: [{id, height}], error}.
         #[qsignal]
@@ -1831,6 +1836,24 @@ pub mod qobject {
         /// A channel's New list (`existing` false) or Existing list tab.
         #[qinvokable]
         fn add_list_tab(self: Pin<&mut Backend>, team_id: &QString, channel_id: &QString, existing: bool);
+        /// A channel's New page: the "Untitled page" tab, which Loop's page
+        /// container then makes the page for (docs/spec/loop-host.md).
+        #[qinvokable]
+        fn add_new_page_tab(self: Pin<&mut Backend>, team_id: &QString, channel_id: &QString);
+        /// The Loop page host's page (loaded with Teams' origin) and its
+        /// scripts: the main world's (the Fluid loader and OST's host) and
+        /// the isolated world's bridge.
+        #[qinvokable]
+        fn loop_host_page(self: &Backend) -> QString;
+        #[qinvokable]
+        fn loop_host_script(self: &Backend) -> QString;
+        #[qinvokable]
+        fn loop_bridge_script(self: &Backend) -> QString;
+        /// A native call from the Loop page host: `kind` config, token,
+        /// pageName or saveComponentUrl; answered by loop_host_reply with
+        /// the same `id`.
+        #[qinvokable]
+        fn loop_host_request(self: Pin<&mut Backend>, kind: &QString, id: &QString, payload: &QString);
         /// Look a pasted Loop link up for Add an existing page (to
         /// pageLinkJson).
         #[qinvokable]
@@ -15253,6 +15276,103 @@ impl qobject::Backend {
         runtime().spawn(async move {
             let result = async { api::tab_add::add_list_tab(&TeamsClient::new().await?, &conv, existing).await }.await;
             let _ = qt.queue(move |mut this| this.as_mut().tab_added(&team, &conv, result));
+        });
+    }
+
+    pub fn add_new_page_tab(self: Pin<&mut Self>, team_id: &QString, channel_id: &QString) {
+        let (team, conv) = (team_id.to_string(), channel_id.to_string());
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async { api::tab_add::add_new_page_tab(&TeamsClient::new().await?, &conv).await }.await;
+            let _ = qt.queue(move |mut this| this.as_mut().tab_added(&team, &conv, result));
+        });
+    }
+
+    pub fn loop_host_page(&self) -> QString {
+        QString::from(
+            "<!doctype html><html lang=\"en-us\"><head><meta charset=\"utf-8\"><title>Loop</title>\
+             <style>html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:transparent} iframe{display:block}</style>\
+             </head><body></body></html>",
+        )
+    }
+
+    pub fn loop_host_script(&self) -> QString {
+        // Teams' light theme as its StylingProvider hands it to Loop
+        // (docs/spec/loop-host.md), then the loader and OST's host.
+        QString::from(concat!(
+            "window.__ostLoopTeamsTheme = ",
+            include_str!("loop_theme_light.json"),
+            ";\n",
+            include_str!("../vendor/fluid-loader/fluid-loader.js"),
+            "\n",
+            include_str!("loop_host.js")
+        ))
+    }
+
+    pub fn loop_bridge_script(&self) -> QString {
+        QString::from(include_str!("loop_bridge.js"))
+    }
+
+    pub fn loop_host_request(self: Pin<&mut Self>, kind: &QString, id: &QString, payload: &QString) {
+        let (kind, id, payload) = (kind.to_string(), id.to_string(), payload.to_string());
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let p: serde_json::Value = serde_json::from_str(&payload).unwrap_or_default();
+            let s = |k: &str| p.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string();
+            let answer = match kind.as_str() {
+                // The host's settings for this page; a new page also gets
+                // where it is made.
+                "config" => {
+                    let r = async {
+                        let client = TeamsClient::new().await?;
+                        let page_kind = api::loop_page::Kind::parse(&s("kind"));
+                        let mut cfg = api::loop_page::host_config(&client, page_kind);
+                        if s("mode") == "create" {
+                            let t = api::loop_page::channel_page_target(&client, &s("channel")).await?;
+                            cfg["create"] = json!({ "siteUrl": t.site_url, "driveId": t.drive_id, "filePath": t.file_path,
+                                                    "fileName": "Loop paragraph.loop", "blueprintId": "paragraph" });
+                        }
+                        anyhow::Ok(cfg)
+                    }
+                    .await;
+                    match r {
+                        Ok(v) => v.to_string(),
+                        Err(e) => {
+                            tracing::warn!("Loop host settings failed: {}", short_error(&e));
+                            json!({ "error": short_error(&e) }).to_string()
+                        }
+                    }
+                }
+                "token" => {
+                    let scopes: Vec<String> = p
+                        .get("scopes")
+                        .and_then(|v| v.as_array())
+                        .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
+                        .unwrap_or_default();
+                    let force = p.get("forceRefresh").and_then(|v| v.as_bool()).unwrap_or(false);
+                    match api::loop_page::token(&scopes, force).await {
+                        Ok((t, cached)) => json!({ "token": t, "fromCache": cached }).to_string(),
+                        Err(e) => {
+                            // The scopes asked (names only), never a token.
+                            tracing::warn!("Loop host token for {:?} failed: {}", scopes, short_error(&e));
+                            json!({ "error": short_error(&e) }).to_string()
+                        }
+                    }
+                }
+                "pageName" => {
+                    let r = async { api::loop_page::page_name(&TeamsClient::new().await?, &s("url")).await }.await;
+                    json!({ "name": r.unwrap_or_default() }).to_string()
+                }
+                "saveComponentUrl" => {
+                    let r = async { api::tab_add::set_page_component_url(&TeamsClient::new().await?, &s("channel"), &s("tab"), &s("url")).await }.await;
+                    if let Err(e) = &r {
+                        tracing::warn!("saving the page's link to {} failed: {}", s("tab"), short_error(e));
+                    }
+                    json!({ "ok": r.is_ok(), "error": r.err().map(|e| short_error(&e)).unwrap_or_default() }).to_string()
+                }
+                _ => json!({ "error": "unknown" }).to_string(),
+            };
+            let _ = qt.queue(move |mut this| this.as_mut().loop_host_reply(QString::from(id.as_str()), QString::from(answer.as_str())));
         });
     }
 

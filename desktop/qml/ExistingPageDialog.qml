@@ -33,6 +33,8 @@ Popup {
     closePolicy: Popup.CloseOnEscape
     background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
     Overlay.modal: Rectangle { color: theme.hc("#66000000", "#000000") }
+    /// New Page: a channel's New page instead (Teams makes one).
+    signal newPage()
     function start(team, channel) {
         teamId = team; channelId = channel; busy = false; failure = ""; page = null
         field.text = ""
@@ -151,8 +153,7 @@ Popup {
     }
     Item {
         x: 25; y: root.confirming ? 225 : 137 + (root.failure ? 20 : 0); width: 550; height: 32
-        // New Page needs Loop's page host, which OST doesn't have yet.
-        Button96 { label: "New Page"; enabled: false }
+        Button96 { label: "New Page"; onClicked: { root.close(); root.newPage() } }
         Row {
             anchors.right: parent.right; spacing: 8
             Button96 { label: "Cancel"; onClicked: root.close() }

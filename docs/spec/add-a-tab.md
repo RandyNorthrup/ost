@@ -291,9 +291,12 @@ createPlatformTab):
 - [x] Existing page: Teams' dialog, the link looked up (card with the
   page's name and last editor), Confirm adds the Page tab as Teams
   (createLink, property); checked with the channel's "Loop paragraph".
-- [ ] New page: needs Loop's page container in OST (chat-tabs.md, the
-  same host as a chat's Notes), which makes the page; shown, off (also
-  the dialog's New Page button).
+- [x] New page: the "Untitled page" tab as Teams adds it, opened; Loop's
+  page container in OST's Loop page host (loop-host.md) makes "Loop
+  paragraph" in the channel's folder, and the tab gets its link as Teams
+  rewrites it (creator dropped, componentUrl last). Page tabs show in the
+  same host (Teams' header, Loop's page).
+- [x] The Add an existing page dialog's New Page button: the same New page.
 - [ ] The channel-group access check and its warnings in Add an existing
   page (paste_loop_modal_permission_*), and Teams' success notification.
 - [ ] Breakout Rooms with rooms (the room list's layout), Assign

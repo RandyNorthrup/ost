@@ -422,12 +422,13 @@ Rectangle {
     property string teamThread: ""
     // The tab picker and the Website configuration (Main.qml's).
     signal openTabPicker(string conversationId, string kind, string teamThread)
-    // The channel tab showing its page in place, as Teams embeds it: the
-    // Page (the channel's Loop page), signed in with OST's web profile
-    // (scope decision 2026-11-07: what Teams embeds may be embedded).
-    // Notes (OneNote's officeunihost page) needs a TeamsJS host first
-    // (TASK-0053).
-    readonly property var webTab: channelTabs.find(t => t.name === tab && t.content_url && t.kind === "ChannelPage") || null
+    // A channel's Page tab: the channel's Loop page in Loop's own page
+    // container, as Teams hosts it (ChannelPageTab, docs/spec/loop-host.md).
+    readonly property var webTab: channelTabs.find(t => t.name === tab && t.kind === "ChannelPage") || null
+    // New pages this OST added (their pages are made when they open), and
+    // whether the tab being added is one.
+    property var newPageTabs: []
+    property bool pendingNewPage: false
     function openTab(i) { if (i < tabNames.length) tab = i === 0 ? "" : tabNames[i] }
     // A tab picked from "+N": a website tab opens in the browser, as
     // Teams opens it; any other becomes the open tab.
@@ -450,6 +451,9 @@ Rectangle {
         if (key === "apps") root.openTabPicker(root.chatId, "channel", root.teamThread)
         else if (key === "newList" || key === "existingList") backend.addListTab(root.teamId, root.chatId, key === "existingList")
         else if (key === "existingPage") existingPageDialog.start(root.teamId, root.chatId)
+        // New page: Teams adds an "Untitled page" tab at once and opens it;
+        // Loop's page container makes the page.
+        else if (key === "newPage") { root.pendingNewPage = true; backend.addNewPageTab(root.teamId, root.chatId) }
     }
     // A tab just added opens, as Teams opens it (not a website tab, which
     // opens in the browser).
@@ -1258,7 +1262,7 @@ Rectangle {
                     id: addTabMenu
                     x: 0; y: parent.height + 1
                     items: [
-                        { label: "New page", icon: "loop-page-20", enabled: false },
+                        { label: "New page", icon: "loop-page-20" },
                         { label: "Existing page", icon: "link-20" },
                         { label: "New list", icon: "lists-new-20" },
                         { label: "Existing list", icon: "table-link-20" },
@@ -1313,7 +1317,7 @@ Rectangle {
                 const out = []
                 const choices = root.canAddTab && root.isChannel
                 if (choices) {
-                    out.push({ kind: "add", key: "newPage", item: { label: "New page", icon: "loop-page-20", enabled: false } },
+                    out.push({ kind: "add", key: "newPage", item: { label: "New page", icon: "loop-page-20" } },
                              { kind: "add", key: "existingPage", item: { label: "Existing page", icon: "link-20" } },
                              { kind: "add", key: "newList", item: { label: "New list", icon: "lists-new-20" } },
                              { kind: "add", key: "existingList", item: { label: "Existing list", icon: "table-link-20" } },
@@ -3595,14 +3599,24 @@ Rectangle {
             }
         }
     }
-    // A channel tab that is a web page (Page): shown in place, signed in
-    // with OST's web profile, as Teams shows it.
+    // A channel's Page: Teams' header and the page in Loop's own page
+    // container (one per tab; a New page OST just added makes its page).
+    function pageTabForTest() { return webTabLoader.item }
     Loader {
         id: webTabLoader
-        active: !!root.webTab
+        readonly property string key: root.webTab ? root.chatId + "|" + root.webTab.id : ""
+        property var shown: null
+        onKeyChanged: { active = false; shown = root.webTab; active = !!key }
+        active: false
         visible: active
         anchors { top: header.bottom; bottom: parent.bottom; left: parent.left; right: parent.right }
-        sourceComponent: WebApp { showHeader: false; pageOnly: true; location: root.chatName + (root.teamName ? " · " + root.teamName : ""); appName: root.webTab ? root.webTab.name : ""; appId: root.webTab ? (root.webTab.app_id || "") : ""; home: root.webTab ? root.webTab.content_url : "" }
+        sourceComponent: ChannelPageTab {
+            tab: webTabLoader.shown
+            channel: root.chatId
+            location: root.chatName + (root.teamName ? " · " + root.teamName : "")
+            create: !!webTabLoader.shown && !webTabLoader.shown.content_url && root.newPageTabs.indexOf(webTabLoader.shown.id) >= 0
+            onPageCreated: root.reloadTabs()
+        }
     }
     // A channel's app tab (Notes, other apps' tabs): the app's own page,
     // framed and answered as Teams hosts it (OST's TeamsJS host,
@@ -3922,7 +3936,7 @@ Rectangle {
     // About this tab (Teams' About dialog).
     TabAboutDialog { id: aboutDialog }
     // A channel's Existing page (Teams' Add an existing page).
-    ExistingPageDialog { id: existingPageDialog }
+    ExistingPageDialog { id: existingPageDialog; onNewPage: root.addTabChoice("newPage") }
     function existingPageDialogForTest() { return existingPageDialog }
     // A tab change's outcome: close its dialog, or show Teams' failure text.
     Connections {
@@ -3933,6 +3947,8 @@ Rectangle {
                 if (r.ok) { if (root.tab === renameDialog.tab.name) root.tab = renameField.text.trim(); renameDialog.close() }
                 else { renameDialog.saving = false; renameDialog.failure = "Unable to save " + renameDialog.tab.name + " tab configuration." }
             } else if (r.op === "add" && r.ok && r.conversation === root.chatId && r.tab && root.visible) {
+                // A New page's tab: its page is made when it opens.
+                if (root.pendingNewPage) { root.newPageTabs = root.newPageTabs.concat([r.tab]); root.pendingNewPage = false }
                 root.pendingOpenTab = r.tab
             } else if (r.op === "remove" && removeDialog.tab && r.tab === removeDialog.tab.id) {
                 if (r.ok) { if (root.tab === removeDialog.tab.name) root.tab = ""; removeDialog.close() }

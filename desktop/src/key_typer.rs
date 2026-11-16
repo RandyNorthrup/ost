@@ -22,7 +22,7 @@ pub mod qobject {
 
     unsafe extern "RustQt" {
         /// Type `text` into whatever has focus in this item's window
-        /// ("\n" is Return, "\u{1}" Ctrl+End).
+        /// ("\n" is Return, "\u{8}" Backspace, "\u{1}" Ctrl+End).
         #[qinvokable]
         #[cxx_name = "typeText"]
         fn type_text(self: Pin<&mut KeyTyper>, text: &QString);

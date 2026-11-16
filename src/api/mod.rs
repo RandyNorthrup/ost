@@ -29,6 +29,7 @@ pub mod smart_replies;
 pub mod video_clips;
 pub mod copy_jobs;
 pub mod list_rows;
+pub mod loop_page;
 pub mod versions;
 pub mod item_details;
 pub mod zip_download;

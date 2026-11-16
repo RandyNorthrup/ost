@@ -29,6 +29,9 @@ extern "C" void ost_type_keys(void *item, const char *utf8)
             key = Qt::Key_End;
             mods = Qt::ControlModifier;
             text.clear();
+        } else if (c == u'\b') {
+            key = Qt::Key_Backspace;
+            text = QStringLiteral("\b");
         } else if (c == u'\n') {
             key = Qt::Key_Return;
             text = QStringLiteral("\r");

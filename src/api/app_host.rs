@@ -284,6 +284,10 @@ fn iana_zone() -> String {
 
 /// The tenant's SharePoint host (`<tenant>.sharepoint.com`), from Graph's
 /// root site (cached).
+pub async fn sharepoint_host(client: &TeamsClient) -> String {
+    tenant_site_domain(client).await
+}
+
 async fn tenant_site_domain(client: &TeamsClient) -> String {
     static HOST: Mutex<Option<String>> = Mutex::new(None);
     if let Some(h) = HOST.lock().ok().and_then(|h| h.clone()) {

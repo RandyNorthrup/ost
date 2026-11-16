@@ -198,11 +198,11 @@ chat: one Meet now call, no recording, no transcript):
   (`POST …/files`), Teams' header and lock, the loading, deleted (Create
   new) and error (Retry) pages; the "Notes have been created in this
   chat." row with its link.
-- [ ] Notes' page: needs OST to host Loop's page container the way Teams
-  does (above: Fluid's container loader, the dependency synthesizer with
-  Loop's host services, the ODSP driver with OST's tokens). Measured, not
-  built; until then OST says "OST can't show these notes yet." with Open
-  in browser.
+- [x] Notes' page: Loop's own page container in OST's Loop page host, as
+  Teams hosts it (loop-host.md: the srcdoc frame, the CDN driver and
+  container code, Fluid's container loader, Teams' host services, Teams'
+  tokens), under Teams' header; Teams' loading page until it is drawn and
+  its error page (Retry) if it fails.
 - [x] Recap: the empty chat page; the meeting recap's layout, Shared files
   (Attendance opens the Attendance tab), the three pills and their empty
   pages.

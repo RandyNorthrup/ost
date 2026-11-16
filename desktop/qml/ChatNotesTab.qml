@@ -8,18 +8,14 @@ import QtQuick.Controls.Basic
 //   in and 14 down; the 20 px lock (NeutralForeground2), tooltip "Only
 //   accessible to members of this chat" below it, 16 from the right; a
 //   #E0E0E0 hairline under it;
-// - the page: the chat's Loop file (loop_loopThread.loop). Teams runs
-//   Loop's page container (res.cdn.office.net/fluid, with its ODSP
-//   driver) in a frame of its own and hosts it as a Fluid container with
-//   Teams' own SharePoint tokens. The file sits in a SharePoint Embedded
-//   container only Teams' apps may open (the Loop web app gets 403
-//   accessDenied), so it needs that host, which OST doesn't have yet: OST
-//   says so plainly, with Open in browser (the chat in Teams on the web);
-// - while the file is being made: Teams' state page, the workspace
-//   picture (192) over "Give us a moment while we get things ready for
-//   you..." (16/22 bold, centred); errors: the warning picture, "Your notes
-//   are temporarily not available." with Retry, or "Your notes have been
-//   deleted." with Create new.
+// - the page: the chat's Loop file (loop_loopThread.loop), shown with
+//   Loop's own page container as Teams hosts it (LoopPage,
+//   docs/spec/loop-host.md), filling the tab under the header;
+// - while the file is being made or the page loads: Teams' state page, the
+//   workspace picture (192) over "Give us a moment while we get things
+//   ready for you..." (16/22 bold, centred); errors: the warning picture,
+//   "Your notes are temporarily not available." with Retry, or "Your notes
+//   have been deleted." with Create new.
 Rectangle {
     id: root
     property string chat: ""
@@ -32,7 +28,11 @@ Rectangle {
     }
     /// The harness shows each page (--chat-tab-test).
     property string stateForTest: ""
-    readonly property string state_: stateForTest || (notes ? notes.state : "preparing")
+    // The file's state, then the page's: ready once Loop's page is drawn.
+    readonly property string fileState: notes ? notes.state : "preparing"
+    readonly property string state_: stateForTest || (fileState !== "ready" ? fileState
+                                     : !loop.item || loop.item.state_ === "loading" ? "preparing"
+                                     : loop.item.state_ === "error" ? "failed" : "ready")
     readonly property bool busy: !notes || !!notes.busy
     function load(create, recreate) { if (chat) backend.chatNotesLoad(chat, create, recreate) }
     // Opening the tab makes the notes when the chat has none (Teams).
@@ -42,7 +42,7 @@ Rectangle {
     // reads the thread again every few seconds.
     Timer {
         interval: 3000; repeat: true
-        running: root.visible && root.state_ === "preparing" && !root.busy
+        running: root.visible && root.fileState === "preparing" && !root.busy
         onTriggered: root.load(false, false)
     }
     readonly property string pageUrl: notes && notes.url ? notes.url : ""
@@ -76,14 +76,22 @@ Rectangle {
         id: body
         anchors { top: header.bottom; left: parent.left; right: parent.right; bottom: parent.bottom }
     }
+    // Loop's page, once the chat has its notes file.
+    Loader {
+        id: loop
+        anchors.fill: body
+        active: root.fileState === "ready" && root.pageUrl.length > 0 && !root.stateForTest
+        sourceComponent: LoopPage { kind: "fluidThread"; componentUrl: root.pageUrl }
+    }
+    function loopForTest() { return loop.item }
 
     // Teams' state pages (Ir): the picture, the message and its button.
     Column {
+        visible: root.state_ !== "ready"
         anchors.centerIn: body
         width: Math.min(parent.width - 40, 600)
         spacing: 0
-        readonly property bool ready: root.state_ === "ready"
-        readonly property bool error: root.state_ !== "preparing" && !ready
+        readonly property bool error: root.state_ !== "preparing" && root.state_ !== "ready"
         Image {
             anchors.horizontalCenter: parent.horizontalCenter
             width: 192; height: 192; sourceSize: Qt.size(384, 384)
@@ -94,31 +102,20 @@ Rectangle {
             horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
             text: root.state_ === "preparing" ? "Give us a moment while we get things ready for you..."
                 : root.state_ === "deleted" ? "Your notes have been deleted."
-                : root.state_ === "ready" ? "OST can't show these notes yet."
                 : "Your notes are temporarily not available."
             lineHeight: 22; lineHeightMode: Text.FixedHeight
             font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold; color: theme.text
             Accessible.role: Accessible.Heading; Accessible.name: text
         }
-        // The notes are ready, but their page needs Loop's page host.
-        Text {
-            visible: parent.ready
-            width: parent.width
-            topPadding: 8
-            horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
-            text: "They're ready for everyone in this chat. Open them in Teams on the web."
-            lineHeight: 20; lineHeightMode: Text.FixedHeight
-            font.family: theme.font; font.pixelSize: 14; color: theme.text
-        }
         Item { width: 1; height: 12; visible: action.visible }
         Rectangle {
             id: action
-            visible: parent.error || parent.ready
+            visible: parent.error
             anchors.horizontalCenter: parent.horizontalCenter
             width: actionText.implicitWidth + 24; height: 32; radius: 4
             color: !enabled ? theme.bgDisabled : actionHover.hovered ? theme.brandHover : theme.brandFill
             enabled: !root.busy
-            readonly property string label: root.state_ === "ready" ? "Open in browser" : root.state_ === "deleted" ? "Create new" : "Retry"
+            readonly property string label: root.state_ === "deleted" ? "Create new" : "Retry"
             Text {
                 id: actionText
                 anchors.centerIn: parent
@@ -129,7 +126,8 @@ Rectangle {
             HoverHandler { id: actionHover; cursorShape: Qt.PointingHandCursor }
             TapHandler {
                 onTapped: {
-                    if (root.state_ === "ready") Qt.openUrlExternally("https://teams.microsoft.com/l/chat/" + encodeURIComponent(root.chat) + "/conversations")
+                    // Retry: the page again when the file is there, else the file.
+                    if (root.fileState === "ready" && loop.item) loop.item.reload()
                     else root.load(true, root.state_ === "deleted")
                 }
             }
