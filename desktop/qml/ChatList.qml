@@ -596,7 +596,9 @@ Rectangle {
             visible: !row.chat.muted
             x: 32; y: row.twoLine ? 8 : 6
             size: row.twoLine ? 36 : 20; name: row.chat.name || ""
-            photoId: row.chat.peerMri || ""
+            // A group chat: Teams' merged picture of its members (the
+            // group glyph until it arrives; meeting chats keep theirs).
+            photoId: row.chat.peerMri || (row.chat.isGroup === true && !root.isMeeting(row.chat) ? "chat:" + row.chat.id : "")
             group: row.chat.isGroup === true && !row.chat.peerMri
             meeting: root.isMeeting(row.chat)
             presence: row.chat.presence || ""

@@ -36,6 +36,13 @@ Rectangle {
         enabled: root.canAsk && root.photo.length === 0
         function onPhotoReady(id) { if (id === root.photoId) root.photo = backend.photoFor(root.photoId, root.name) }
     }
+    // A group chat's picture changes with its members: take the new one
+    // when OST forgets the old (members added or removed).
+    Connections {
+        target: backend
+        enabled: root.canAsk && root.photo.length > 0 && root.photoId.indexOf("chat:") === 0
+        function onPhotoReady(id) { if (id === root.photoId) root.photo = backend.photoFor(root.photoId, root.name) }
+    }
     /// Presence availability (Available, Busy, DoNotDisturb, Away,
     /// BeRightBack, Offline…); empty hides the badge.
     property string presence: ""

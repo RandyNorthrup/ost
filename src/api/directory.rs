@@ -163,6 +163,30 @@ pub enum PhotoOwner {
     /// Someone known only by name (a meeting guest): Teams' initials
     /// picture for that name (`defaultProfilePictureV2`).
     Named,
+    /// A group chat without its own picture, by thread id: Teams' picture
+    /// of its members in a split circle (`mergedProfilePicturev2`).
+    Chat,
+}
+
+/// The members a group chat's picture shows (Teams' chat list, measured on
+/// winpc 2026-11-15): the other people (not you, not bots), by display
+/// name, the first three.
+pub fn group_picture_members(mut people: Vec<(String, String)>, me: &str) -> Vec<(String, String)> {
+    people.retain(|(mri, name)| mri.starts_with("8:") && !mri.eq_ignore_ascii_case(me) && !name.is_empty());
+    people.sort_by(|a, b| a.1.to_lowercase().cmp(&b.1.to_lowercase()).then_with(|| a.0.cmp(&b.0)));
+    people.truncate(3);
+    people
+}
+
+/// The middle tier's `usersInfo` for those members, as Teams sends it.
+pub fn merged_picture_users(members: &[(String, String)]) -> String {
+    serde_json::Value::Array(
+        members
+            .iter()
+            .map(|(mri, name)| serde_json::json!({ "userId": mri, "displayName": name, "avatarETag": "SignIn_1793893262864" }))
+            .collect(),
+    )
+    .to_string()
 }
 
 /// A middle-tier token (audience api.spaces.skype.com), reused until close
@@ -195,7 +219,22 @@ pub async fn photo(
         .middle_tier_url()
         .context("No Teams middle-tier endpoint")?;
     let name: String = url::form_urlencoded::byte_serialize(display_name.as_bytes()).collect();
-    let url = if owner == PhotoOwner::Named {
+    let url = if owner == PhotoOwner::Chat {
+        // A group chat: its members (the chat service) and their names
+        // (one short-profile request), then the merged picture (64 px, as
+        // Teams asks for it).
+        anyhow::ensure!(id.starts_with("19:") && !id.contains(['/', '?', '#']), "Not a chat id");
+        let me = format!("8:orgid:{}", client.object_id().context("No signed-in user")?);
+        let ids = super::chat::thread_member_ids(client, id).await?;
+        let names: Vec<(String, String)> = short_profiles(client, &ids).await.unwrap_or_default();
+        let members = group_picture_members(names, &me);
+        anyhow::ensure!(!members.is_empty(), "No members to draw");
+        let users: String = url::form_urlencoded::byte_serialize(merged_picture_users(&members).as_bytes()).collect();
+        format!(
+            "{base}/beta/users/{}/mergedProfilePicturev2?usersInfo={users}&size=HR64x64",
+            me.trim_start_matches("8:orgid:")
+        )
+    } else if owner == PhotoOwner::Named {
         if display_name.trim().is_empty() {
             anyhow::bail!("No name to draw");
         }
@@ -232,6 +271,27 @@ pub async fn photo(
     }
     let bytes = resp.bytes().await.context("Picture download")?;
     Ok((!bytes.is_empty()).then(|| bytes.to_vec()))
+}
+
+#[cfg(test)]
+mod group_picture_tests {
+    use super::*;
+
+    #[test]
+    fn group_pictures_show_the_first_three_others_by_name() {
+        let me = "8:orgid:4287e791-1b98-4963-8b94-281c50472683";
+        let people = vec![
+            (me.to_string(), "OST Test 1".to_string()),
+            ("8:orgid:9edcc62f".to_string(), "OST Test 2".to_string()),
+            ("8:orgid:f20421b0".to_string(), "OST Guest 01".to_string()),
+            ("28:fd931076".to_string(), "Polls".to_string()),
+            ("8:orgid:21ffda01".to_string(), "OST Guest 02".to_string()),
+            ("8:orgid:aaaa".to_string(), "Zed".to_string()),
+        ];
+        let got = group_picture_members(people, me);
+        assert_eq!(got.iter().map(|p| p.1.as_str()).collect::<Vec<_>>(), ["OST Guest 01", "OST Guest 02", "OST Test 2"]);
+        assert!(merged_picture_users(&got[..1]).contains(r#""displayName":"OST Guest 01""#));
+    }
 }
 
 /// People's short profiles by MRI, as Teams resolves people it only knows

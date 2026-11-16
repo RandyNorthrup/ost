@@ -5350,6 +5350,12 @@ fn photo_target(id: &str, my_oid: Option<&str>) -> Option<(api::directory::Photo
     if id.starts_with("8:teamsvisitor:") {
         return Some((PhotoOwner::Named, String::new()));
     }
+    // A group chat without its own picture: Teams' merged picture of its
+    // members.
+    if let Some(thread) = id.strip_prefix("chat:") {
+        let valid = thread.starts_with("19:") && thread.len() < 200 && !thread.contains(['/', '?', '#', ' ']);
+        return valid.then(|| (PhotoOwner::Chat, thread.to_string()));
+    }
     let (owner, oid) = if id == "me" {
         (PhotoOwner::User, my_oid?.to_string())
     } else if let Some(g) = id.strip_prefix("team:") {
@@ -10514,6 +10520,8 @@ impl qobject::Backend {
                 Ok(()) => {
                     this.as_mut().set_status_text(QString::from(""));
                     this.as_mut().load_chat_members();
+                    // Its picture shows its members.
+                    this.as_mut().forget_photos(&format!("chat:{chat_id}"));
                 }
                 Err(e) => this.as_mut().set_status_text(QString::from(
                     format!("Couldn't add people: {}", short_error(&e)).as_str(),
@@ -10545,7 +10553,10 @@ impl qobject::Backend {
             }
             .await;
             let _ = qt.queue(move |mut this| match result {
-                Ok(()) => this.as_mut().load_chat_members(),
+                Ok(()) => {
+                    this.as_mut().load_chat_members();
+                    this.as_mut().forget_photos(&format!("chat:{chat_id}"));
+                }
                 Err(e) => this.as_mut().set_status_text(QString::from(
                     format!("Couldn't remove them: {}", short_error(&e)).as_str(),
                 )),
@@ -11814,12 +11825,18 @@ impl qobject::Backend {
             && let Some(dir) = photo_dir()
             && let Ok(entries) = std::fs::read_dir(&dir)
         {
+            let oid_key = if owner == api::directory::PhotoOwner::Chat {
+                format!("{:08x}", oid.bytes().fold(0x811c9dc5u32, |h, b| (h ^ b as u32).wrapping_mul(0x01000193)))
+            } else {
+                oid.clone()
+            };
             let lead = format!(
-                "{}-{oid}-",
+                "{}-{oid_key}-",
                 match owner {
                     api::directory::PhotoOwner::Team => "team",
                     api::directory::PhotoOwner::Named => "named",
                     api::directory::PhotoOwner::User => "user",
+                    api::directory::PhotoOwner::Chat => "chat",
                 }
             );
             for e in entries.flatten() {
@@ -11881,12 +11898,19 @@ impl qobject::Backend {
         let name_hash = name.bytes().fold(0x811c9dc5u32, |h, b| {
             (h ^ b as u32).wrapping_mul(0x01000193)
         });
+        // Thread ids aren't file names: chats are keyed by their hash.
+        let oid_key = if owner == api::directory::PhotoOwner::Chat {
+            format!("{:08x}", oid.bytes().fold(0x811c9dc5u32, |h, b| (h ^ b as u32).wrapping_mul(0x01000193)))
+        } else {
+            oid.clone()
+        };
         let key = format!(
-            "{}-{oid}-{name_hash:08x}",
+            "{}-{oid_key}-{name_hash:08x}",
             match owner {
                 api::directory::PhotoOwner::Team => "team",
                 api::directory::PhotoOwner::Named => "named",
                 api::directory::PhotoOwner::User => "user",
+                api::directory::PhotoOwner::Chat => "chat",
             }
         );
         let (cached, fresh) = photo_from_disk(&key);

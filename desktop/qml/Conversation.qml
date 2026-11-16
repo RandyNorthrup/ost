@@ -794,7 +794,8 @@ Rectangle {
             visible: !root.isChannel
             x: 20; anchors.verticalCenter: parent.verticalCenter; size: 32
             name: root.chatName; presence: root.chatPresence
-            photoId: root.chatPhotoId
+            // A group chat: Teams' merged picture of its members (32 px).
+            photoId: root.chatPhotoId || (root.isGroup && !root.isMeetingChat && root.chatId.indexOf("19:") === 0 ? "chat:" + root.chatId : "")
             opensProfile: !root.isGroup
             group: root.isGroup && !root.chatPhotoId
             // Teams: the calendar glyph filling a 32 px #C5CBFA circle.

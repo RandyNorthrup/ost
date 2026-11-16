@@ -444,8 +444,21 @@ client only filters and hoists:
   else stay in Chats. The **Meeting chats** pill filters to them.
 - Sorting inside a section: the section's `sortType` (Chats: Most
   recent; user sections: Custom or Most recent). Recency uses the last
-  message arrival time; selecting an item snapshots and re-sorts
+  message arrival time, or for a chat nothing has been said in, when you
+  joined it (`lastjoinat`); selecting an item snapshots and re-sorts
   (`enableSnapshotAndSortOnConversationSelect`).
+- **Which chats are listed** (checked against Teams on winpc, 2026-11-15):
+  chats nothing has been said in are listed (new group chats, Meet now
+  chats). Left out: an empty one-on-one; a meeting's lobby chat
+  (`threadSubType` LobbyChat); a breakout room's chat (a meeting thread
+  with no `meetingChatPolicy`); a chat whose `memberProperties.interest`
+  isn't "Interested" (left, or only visited through a lobby); a hidden chat
+  until something newer is said.
+- **A group chat's picture** (no picture of its own): Teams' merged picture
+  of its members, `GET {mt}/beta/users/{me}/mergedProfilePicturev2?usersInfo=[{userId, displayName, avatarETag}…]&size=HR64x64`
+  (the other people by display name, up to three): a circle split with the
+  first on the left half and the next two in the right quarters. The same
+  picture is the row avatar (20/36) and the header avatar (32).
 
 ### 5.3 Drag and drop, reordering
 
