@@ -1,10 +1,11 @@
 ---
 id: TASK-0130
 title: 'Cloud file picker and attachment card: the rest of Teams'' details'
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-13T21:53:00Z'
-updated_date: '2026-11-16T04:52:00Z'
+updated_date: '2026-11-16T16:42:00Z'
 labels:
   - desktop
   - files
@@ -21,14 +22,17 @@ What TASK-0085's Attach left of Teams' cloud file picker and compose card (docs/
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The picker's command bar, People, Media and folder icons match Teams'
-- [ ] #2 The attachment card's link description opens Teams' Link settings and the choice applies to what is sent
-- [ ] #3 Suggested files in the Attach popover look as Teams draws them (measured with an account that has suggestions)
-- [ ] #4 A post's thread view offers the same Attach popover
+- [ ] #1 The attachment card's link description opens Teams' Link settings and the choice applies to what is sent
+- [x] #2 Suggested files in the Attach popover look as Teams draws them (measured with an account that has suggestions)
+- [x] #3 A post's thread view offers the same Attach popover
+- [x] #4 The picker's command bar (New folder with Teams' colours, Upload, view switch) and folder icons match Teams'
+- [ ] #5 Media (layout menu, compact, zoom, date headings) and People (including files you shared) match Teams'
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Built so far: The cloud picker (rail, Home, folders, People, Media, footer), the attachment card, and suggested files in the Attach popover (unmeasured). Missing: the command bar, Teams' People source, Media dates and zoom, Link settings, Attach in a post's thread. (Audit 2026-11-16)
+Built so far (1050c4e, merged as 8229940): command bar (New folder with Teams' Create a folder dialog and 16 colours, Upload files or a folder, List / Compact / Tiles), shared and coloured folder icons, People in OneDrive's order; Link settings from the attachment card (People currently in this chat, as Teams' OST TEST 172; OST's 173 matched in Teams on winpc); Recent cloud files suggestions with Teams' rows; the Attach popover in a post's thread view.
+
+Left: Media's layout menu, compact toggle, zoom and date headings (measured in the spec, date-grouping rule unknown); People's files you shared (only in OneDrive's picker cache); the Created folder toast; Tiles thumbnails; Home's AllItems.aspx row and repeated Loop entries.
 <!-- SECTION:NOTES:END -->
