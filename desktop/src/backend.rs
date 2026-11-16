@@ -372,6 +372,11 @@ pub mod qobject {
         /// The tenant's buildings from Places: {loading, buildings: [{id,
         /// name, address}], error}.
         #[qproperty(QString, buildings_json)]
+        /// Teams Premium's trial: {policy, eligible, offered, entity,
+        /// starting, started, error}.
+        #[qproperty(QString, premium_json)]
+        /// Settings and more ▸ Downloads: [{path, name, at, exists}].
+        #[qproperty(QString, downloads_json)]
         /// About OST's update line: {state: checking|latest|available|error,
         /// checkedAt (ms), latest, url}.
         #[qproperty(QString, update_json)]
@@ -1990,6 +1995,17 @@ pub mod qobject {
         /// device location.
         #[qinvokable]
         fn load_buildings(self: Pin<&mut Backend>);
+        /// Read whether Teams Premium's trial can be started.
+        #[qinvokable]
+        fn load_premium(self: Pin<&mut Backend>);
+        /// Start Teams Premium's trial (Teams' Start trial).
+        #[qinvokable]
+        fn start_premium_trial(self: Pin<&mut Backend>);
+        /// Downloads: "load", "open" (path), "folder" (path: its folder;
+        /// empty: the Downloads folder), "delete" (path: the file) or
+        /// "clear" (the history).
+        #[qinvokable]
+        fn downloads_action(self: Pin<&mut Backend>, action: &QString, path: &QString);
         /// Recognition's voice "Opt out" with a profile made by hand: remove
         /// the voice profile.
         #[qinvokable]
@@ -2326,6 +2342,8 @@ pub struct BackendRust {
     url_previews_blocked: bool,
     work_location_policy_json: QString,
     buildings_json: QString,
+    premium_json: QString,
+    downloads_json: QString,
     update_json: QString,
     typing_avatar: QString,
     typing_avatar_id: QString,
@@ -15457,6 +15475,97 @@ impl qobject::Backend {
         });
     }
 
+    pub fn load_premium(self: Pin<&mut Self>) {
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let v = match api::premium::state(&reqwest::Client::new()).await {
+                Ok(s) => {
+                    let offered = s.offered();
+                    let mut v = json!(s);
+                    v["offered"] = json!(offered);
+                    v
+                }
+                Err(e) => {
+                    tracing::warn!("premium trial: {}", short_error(&e));
+                    json!({ "offered": false, "error": short_error(&e) })
+                }
+            };
+            let _ = qt.queue(move |mut this| this.as_mut().set_premium_json(QString::from(v.to_string().as_str())));
+        });
+    }
+
+    pub fn start_premium_trial(mut self: Pin<&mut Self>) {
+        let mut v: serde_json::Value = serde_json::from_str(&self.rust().premium_json.to_string()).unwrap_or_else(|_| json!({}));
+        v["starting"] = json!(true);
+        v["error"] = serde_json::Value::Null;
+        self.as_mut().set_premium_json(QString::from(v.to_string().as_str()));
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = api::premium::acquire(&reqwest::Client::new()).await;
+            let _ = qt.queue(move |mut this| {
+                let mut v: serde_json::Value = serde_json::from_str(&this.rust().premium_json.to_string()).unwrap_or_else(|_| json!({}));
+                v["starting"] = json!(false);
+                match result {
+                    Ok(r) => {
+                        v["started"] = json!(true);
+                        v["offered"] = json!(false);
+                        v["entity"] = r;
+                    }
+                    Err(e) => v["error"] = json!(short_error(&e)),
+                }
+                this.as_mut().set_premium_json(QString::from(v.to_string().as_str()));
+            });
+        });
+    }
+
+    pub fn downloads_action(mut self: Pin<&mut Self>, action: &QString, path: &QString) {
+        let (action, path) = (action.to_string(), path.to_string());
+        let open = |p: &std::path::Path| {
+            let _ = std::process::Command::new("xdg-open").arg(p).spawn();
+        };
+        // Open containing folder with the file selected (the desktop's file
+        // manager, org.freedesktop.FileManager1), else just the folder.
+        let reveal = |p: &std::path::Path| {
+            let uri = format!("['file://{}']", p.display().to_string().replace('\'', "%27"));
+            let shown = std::process::Command::new("gdbus")
+                .args(["call", "--session", "--dest", "org.freedesktop.FileManager1", "--object-path", "/org/freedesktop/FileManager1", "--method", "org.freedesktop.FileManager1.ShowItems", &uri, ""])
+                .output()
+                .is_ok_and(|o| o.status.success());
+            if !shown && let Some(d) = p.parent() {
+                let _ = std::process::Command::new("xdg-open").arg(d).spawn();
+            }
+        };
+        match action.as_str() {
+            "open" => {
+                if api::downloads::list().iter().any(|d| d.download.path == path && d.exists) {
+                    open(std::path::Path::new(&path));
+                }
+            }
+            "folder" => {
+                if path.is_empty() {
+                    if let Some(d) = download_dir() {
+                        open(&d);
+                    }
+                } else if api::downloads::list().iter().any(|d| d.download.path == path) {
+                    reveal(std::path::Path::new(&path));
+                }
+            }
+            "delete" => {
+                if let Err(e) = api::downloads::delete_file(&path) {
+                    tracing::warn!("delete download: {}", short_error(&e));
+                }
+            }
+            "clear" => {
+                if let Err(e) = api::downloads::clear() {
+                    tracing::warn!("clear downloads: {}", short_error(&e));
+                }
+            }
+            _ => {}
+        }
+        let v = json!(api::downloads::list());
+        self.as_mut().set_downloads_json(QString::from(v.to_string().as_str()));
+    }
+
     pub fn check_for_updates(mut self: Pin<&mut Self>) {
         let checked: i64 = load_settings().get("updateCheckedAt").and_then(|v| v.as_str()).and_then(|v| v.parse().ok()).unwrap_or(0);
         self.as_mut().set_update_json(QString::from(json!({ "state": "checking", "checkedAt": checked }).to_string().as_str()));
@@ -15514,6 +15623,7 @@ impl qobject::Backend {
                 let zip = api::biometric::Biometric::new(&client).await?.export(&kind).await?;
                 let path = dir.join(format!("{kind}_profile.zip"));
                 std::fs::write(&path, zip)?;
+                api::downloads::record(&path);
                 anyhow::Ok(path)
             }
             .await;

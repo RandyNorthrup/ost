@@ -1,0 +1,75 @@
+import QtQuick
+
+// Teams' Cast window (Settings and more ▸ Cast; measured on winpc
+// 2026-11-15): a 626 x 713 window, always dark, under Teams' child-window
+// title row ("Cast"). A #292929 band (y 32-92) with the brand Cast tile
+// (32 px, #4F52B2, radius 4, the white 20 px cast glyph) 20 in and "Cast"
+// (16.38/23.4 bold in Teams; 16 here, Qt sizes are whole pixels) at 64; on #1F1F1F, "Select a nearby Teams Room"
+// (16/22) centred at 104 and the search line (14/20) at 141: "Searching
+// for nearby Teams Rooms..." for 20 s, then "Didn't find any Teams Rooms
+// nearby that we can cast to."; Next (96 x 32, disabled until a room is
+// picked) 52 from the right, 20.33 from the bottom. Teams finds rooms by
+// their proximity beacons; with none in range (no Teams Rooms device here)
+// the search ends with nothing found, as Teams' does.
+Window {
+    id: win
+    property bool pinned: false
+    property bool searching: true
+    title: "Cast"
+    width: 626; height: 713
+    minimumWidth: 400; minimumHeight: 400
+    color: "#1F1F1F"
+    flags: Qt.Window | (pinned ? Qt.WindowStaysOnTopHint : 0)
+    function start() { searching = true; searchTimer.restart(); show(); raise(); requestActivate() }
+    Timer { id: searchTimer; interval: 20000; onTriggered: win.searching = false }
+    Rectangle { anchors.fill: parent; color: "#1F1F1F" }
+
+    ChildWindowTitleBar {
+        id: titleRow
+        title: "Cast"
+        pinned: win.pinned
+        onTogglePin: win.pinned = !win.pinned
+    }
+    Rectangle {
+        y: 32; width: parent.width; height: 60
+        color: "#292929"
+        Rectangle {
+            x: 20; y: 14; width: 32; height: 32; radius: 4
+            color: "#4F52B2"
+            FluentIcon { anchors.centerIn: parent; name: "cast-20"; size: 20; color: "#FFFFFF" }
+        }
+        Text {
+            x: 64; y: 18.31
+            text: "Cast"
+            font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold; lineHeight: 23.4; lineHeightMode: Text.FixedHeight
+            color: "#FFFFFF"
+            Accessible.role: Accessible.Heading
+            Accessible.name: text
+        }
+    }
+    Text {
+        anchors.horizontalCenter: parent.horizontalCenter; y: 104
+        text: "Select a nearby Teams Room"
+        font.family: theme.font; font.pixelSize: 16; lineHeight: 22; lineHeightMode: Text.FixedHeight
+        color: "#FFFFFF"
+    }
+    Text {
+        anchors.horizontalCenter: parent.horizontalCenter; y: 141
+        width: Math.min(implicitWidth, parent.width - 40)
+        horizontalAlignment: Text.AlignHCenter
+        wrapMode: Text.Wrap
+        text: win.searching ? "Searching for nearby Teams Rooms..." : "Didn't find any Teams Rooms nearby that we can cast to."
+        font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
+        color: "#FFFFFF"
+        Accessible.role: Accessible.StaticText
+        Accessible.name: text
+    }
+    Rectangle {
+        x: parent.width - 52 - width; y: parent.height - 20.33 - height
+        width: 96; height: 32; radius: 4
+        color: "#1F1F1F"
+        Text { anchors.centerIn: parent; text: "Next"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: "#5C5C5C" }
+        Accessible.role: Accessible.Button
+        Accessible.name: "Next"
+    }
+}

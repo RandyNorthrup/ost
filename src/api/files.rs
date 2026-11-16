@@ -532,6 +532,8 @@ pub fn save_unique(dir: &Path, name: &str, bytes: &[u8]) -> Result<PathBuf> {
         n += 1;
     }
     std::fs::write(&target, bytes)?;
+    // A download: Settings and more ▸ Downloads lists it.
+    super::downloads::record(&target);
     Ok(target)
 }
 

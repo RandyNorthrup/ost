@@ -233,16 +233,32 @@ Rectangle {
         Accessible.name: "Settings and more"
         onClicked: moreMenu.visible = !moreMenu.visible
     }
-    // "Settings and more", as Teams lists it (the parts OST offers).
-    Rectangle {
+    // "Settings and more", as Teams' (measured on winpc 2026-11-15): a
+    // 238.47-wide popover centred under the button, 8 below it (radius 4,
+    // padding 4, the depth-16 shadow); 32-tall rows 2 apart (radius 4, a
+    // 20 px icon 6 in, the label 14 #424242 at 30, shortcuts 12 #616161
+    // right-aligned 8 in); dividers across the whole popover with 4 above
+    // and below. The Zoom row: "Zoom" 8 in, then Zoom out, "(100)%", Zoom
+    // in and Reset (24 x 23.33 buttons, 8 apart) right-aligned. Get the
+    // mobile app ends with Teams' "New" pill. Unlock Teams Premium shows
+    // while you can start Teams' Premium trial.
+    property int zoomPercent: 100
+    property bool premiumOffered: false
+    signal zoomOut()
+    signal zoomIn()
+    signal zoomReset()
+    signal openPremium()
+    signal openCast()
+    signal openDownloads()
+    signal openMobileApp()
+    FluentSurface {
         id: moreMenu
         visible: false
         z: 100
-        width: 360; height: moreCol.implicitHeight + 8
-        x: moreButton.x + moreButton.width - width; y: parent.height + 4
-        radius: 8
-        color: theme.menu
-        border.color: theme.dividerSoft
+        depth: 16; radius: 4; color: theme.menu
+        width: 238.47; height: moreCol.implicitHeight + 9.33
+        x: moreButton.x + moreButton.width / 2 - width / 2
+        y: moreButton.y + moreButton.height + 8
         component MenuRow: Rectangle {
             id: mr
             property string icon
@@ -251,29 +267,85 @@ Rectangle {
             property bool checked: false
             /// Opens a submenu (Feedback ▸) instead of picking.
             property bool submenu: false
+            property real labelX: 30
+            property bool pill: false
             signal picked()
-            width: moreCol.width; height: 36; radius: theme.radius
+            width: moreCol.width; height: 32; radius: 4
             color: mrh.hovered || (submenu && feedbackMenu.visible) ? theme.rowHover : "transparent"
-            FluentIcon { x: 12; anchors.verticalCenter: parent.verticalCenter; name: mr.icon; size: 20; color: mr.checked ? theme.brand : theme.textStrong }
-            Text { x: 44; anchors.verticalCenter: parent.verticalCenter; text: mr.label; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
-            Text { anchors.right: parent.right; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter; text: mr.keys; font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
-            FluentIcon { visible: mr.submenu; anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter; name: "chevron-right-20"; size: 12; color: theme.textStrong }
+            FluentIcon { x: 6; anchors.verticalCenter: parent.verticalCenter; name: mr.icon; size: 20; color: mr.checked ? theme.brand : theme.textStrong }
+            Text { x: mr.labelX; anchors.verticalCenter: parent.verticalCenter; text: mr.label; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: mrh.hovered ? theme.text : theme.textStrong }
+            Text { visible: !!mr.keys; anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter; text: mr.keys; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textSecondary }
+            FluentIcon { visible: mr.submenu; anchors.right: parent.right; anchors.rightMargin: 6; anchors.verticalCenter: parent.verticalCenter; name: "chevron-right-20"; size: 20; color: theme.textStrong }
+            Rectangle {
+                visible: mr.pill
+                anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter
+                width: 36.66; height: 20; radius: 10
+                color: theme.brandFill
+                Text { anchors.centerIn: parent; text: "New"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.textOnBrand }
+            }
             HoverHandler { id: mrh; cursorShape: Qt.PointingHandCursor; onHoveredChanged: if (hovered) feedbackMenu.showFor(mr.submenu ? mr : null) }
             TapHandler { onTapped: { if (mr.submenu) { feedbackMenu.showFor(mr); return } moreMenu.visible = false; mr.picked() } }
             Accessible.role: Accessible.MenuItem
             Accessible.name: mr.label
+            Accessible.onPressAction: { if (mr.submenu) feedbackMenu.showFor(mr); else { moreMenu.visible = false; mr.picked() } }
+        }
+        component MenuDivider: Item {
+            width: moreCol.width; height: 8.67
+            Rectangle { x: -4.67; y: 4; width: moreMenu.width; height: Math.max(0.67, 1 / Screen.devicePixelRatio); antialiasing: true; color: theme.pick("#E0E0E0", "#3D3D3D") }
+        }
+        component ZoomButton: Rectangle {
+            id: zb
+            property string icon
+            property string label
+            signal picked()
+            width: 24; height: 23.33; radius: 4
+            color: zbh.hovered ? theme.rowHover : "transparent"
+            FluentIcon { anchors.centerIn: parent; name: zb.icon; size: 20; color: theme.textStrong }
+            HoverHandler { id: zbh; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: zb.picked() }
+            ToolTip.visible: zbh.hovered; ToolTip.delay: 500; ToolTip.text: zb.label
+            Accessible.role: Accessible.MenuItem
+            Accessible.name: zb.label
+            Accessible.onPressAction: zb.picked()
         }
         Column {
             id: moreCol
-            x: 4; y: 4; width: parent.width - 8
+            x: 4.67; y: 4.67; width: parent.width - 9.33
+            spacing: 2
+            MenuRow { visible: root.premiumOffered; icon: "premium-20"; label: "Unlock Teams Premium"; onPicked: root.openPremium() }
+            MenuDivider { visible: root.premiumOffered }
             MenuRow { icon: "pin-20"; label: root.pinned ? "Unpin window" : "Pin window on top"; keys: "Ctrl+Shift+T"; checked: root.pinned; onPicked: root.togglePin() }
             MenuRow { icon: "settings-20"; label: "Settings"; keys: "Ctrl+,"; onPicked: root.openSettings() }
+            MenuRow { icon: "cast-20"; label: "Cast"; onPicked: root.openCast() }
+            MenuRow { icon: "arrow-download-20"; label: "Downloads"; onPicked: root.openDownloads() }
+            MenuDivider {}
+            Item {
+                width: moreCol.width; height: 27.33
+                Text { x: 8; anchors.verticalCenter: parent.verticalCenter; text: "Zoom"; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.textStrong }
+                Row {
+                    anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter
+                    spacing: 8
+                    ZoomButton { icon: "subtract-20"; label: "Zoom out"; onPicked: root.zoomOut() }
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: "(" + root.zoomPercent + ")%"
+                        font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.textStrong
+                        Accessible.role: Accessible.StaticText
+                        Accessible.name: "Zoom " + root.zoomPercent + "%"
+                    }
+                    ZoomButton { icon: "add-20"; label: "Zoom in"; onPicked: root.zoomIn() }
+                    ZoomButton { icon: "page-fit-20"; label: "Reset zoom"; onPicked: root.zoomReset() }
+                }
+            }
+            MenuDivider {}
             MenuRow { icon: "question-circle-20"; label: "Help"; keys: "F1"; onPicked: root.openHelp() }
             MenuRow { id: feedbackRow; icon: "person-feedback-20"; label: "Feedback"; submenu: true }
             MenuRow { icon: "keyboard-20"; label: "Keyboard shortcuts"; keys: "Ctrl+."; onPicked: root.openShortcuts() }
+            MenuRow { icon: "phone-20"; label: "Get the mobile app"; labelX: 32; pill: true; onPicked: root.openMobileApp() }
         }
         onVisibleChanged: if (!visible) feedbackMenu.visible = false
     }
+    function moreMenuForTest(open) { moreMenu.visible = open !== false; return moreMenu }
     // Feedback ▸ (Teams' submenu, 245.4 wide, opening to the left with its
     // first row level with Feedback): Report a problem (Ctrl+Alt+Shift+R),
     // Give a compliment, Suggest a feature.

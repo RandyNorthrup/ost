@@ -106,7 +106,7 @@ Window {
     }
     readonly property bool slackShortcuts: shortcutProfile === "chats_alt" || shortcutProfile === "chats_meetings_alt"
     readonly property bool zoomShortcuts: shortcutProfile === "meetings_alt" || shortcutProfile === "chats_meetings_alt"
-    Connections { target: backend; function onSignedInChanged() { if (backend.signedIn) { backend.loadSettings(); backend.loadUrlPreviewPolicy(); backend.loadWorkLocationPolicy() } } }
+    Connections { target: backend; function onSignedInChanged() { if (backend.signedIn) { backend.loadSettings(); backend.loadUrlPreviewPolicy(); backend.loadWorkLocationPolicy(); backend.loadPremium() } } }
     // Settings ▸ General ▸ Starting chats (Teams' synced
     // userPersonalSettings.messagingSettings.alwaysPopOutNewChat): a new
     // chat in the main window, or in Teams' "New Message" window; once
@@ -259,6 +259,32 @@ Window {
     }
     // Pin window on top.
     property bool pinned: false
+    // Zoom (Teams' Settings and more ▸ Zoom, measured on winpc 2026-11-15):
+    // 60% to 400% in 5% steps, Ctrl+- / Ctrl+= and Ctrl+0 to reset to
+    // 100%. The whole window scales (popups too): its root item is drawn
+    // scaled and laid out at the window's size divided by the zoom. Kept
+    // across restarts (local setting "zoomPercent").
+    property int zoomPercent: { const v = parseInt(backend.setting("zoomPercent")); return v >= 60 && v <= 400 ? v : 100 }
+    readonly property real zoom: zoomPercent / 100
+    function setZoom(p) {
+        zoomPercent = Math.max(60, Math.min(400, Math.round(p / 5) * 5))
+        backend.setSetting("zoomPercent", String(zoomPercent))
+    }
+    function zoomIn() { setZoom(zoomPercent + 5) }
+    function zoomOut() { setZoom(zoomPercent - 5) }
+    function zoomReset() { setZoom(100) }
+    function applyZoom() {
+        contentItem.transformOrigin = Item.TopLeft
+        contentItem.scale = zoom
+        contentItem.width = width / zoom
+        contentItem.height = height / zoom
+    }
+    onZoomChanged: applyZoom()
+    onWidthChanged: Qt.callLater(applyZoom)
+    onHeightChanged: Qt.callLater(applyZoom)
+    Shortcut { sequences: ["Ctrl+=", "Ctrl++"]; context: Qt.WindowShortcut; onActivated: window.zoomIn() }
+    Shortcut { sequence: "Ctrl+-"; context: Qt.WindowShortcut; onActivated: window.zoomOut() }
+    Shortcut { sequence: "Ctrl+0"; context: Qt.WindowShortcut; onActivated: window.zoomReset() }
     // Settings > General > On close, keep the application running: closing
     // only hides the window; opening OST again brings it back.
     onClosing: close => {
@@ -312,7 +338,7 @@ Window {
         : chatList.chats.filter(c => c.unread && !c.muted).length + backend.activityUnread
     function refreshTaskbarBadge() { backend.setTaskbarBadge(taskbarCount, backend.signedIn ? trayKind : "") }
     onTaskbarCountChanged: refreshTaskbarBadge()
-    Component.onCompleted: { refreshTaskbarBadge(); backend.installLinkHandler() }
+    Component.onCompleted: { refreshTaskbarBadge(); backend.installLinkHandler(); Qt.callLater(applyZoom) }
 
     // Settings ▸ Files and links ▸ "Always ask where to save downloaded
     // file": a download asks for its place (the download folder and the
@@ -3707,6 +3733,54 @@ Window {
             else if (st === 8 && Qt.application.arguments.indexOf("--link-preview-remove") >= 0) { const m = mine(); if (m) backend.removeUrlPreview(JSON.stringify(m)) }
             else if (st === 11 && Qt.application.arguments.indexOf("--link-preview-remove") >= 0) { const m = mine(); console.warn("LINKPREVIEW after remove", m ? m.id : "gone"); window.contentItem.grabToImage(r => r.saveToFile("/tmp/act/link-removed.png")) }
             else if (st > 12 || (st > 4 && Qt.application.arguments.indexOf("--link-preview-send") < 0)) { c.clear(); Qt.quit() }
+        }
+    }
+    // --zoom-test: hold 150% for 12 s (for a screen capture), open the
+    // menu at that zoom, then reset to 100% and quit.
+    Timer {
+        running: Qt.application.arguments.indexOf("--zoom-test") >= 0 && backend.signedIn
+        interval: 1000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const st = step++
+            if (st === 0) window.setZoom(150)
+            else if (st === 2) titleBar.moreMenuForTest(true)
+            else if (st === 12) { console.warn("ZOOM", window.zoomPercent, window.contentItem.scale, window.contentItem.width, window.contentItem.height); titleBar.moreMenuForTest(false); window.zoomReset() }
+            else if (st > 13) Qt.quit()
+        }
+    }
+    // --menu-test: Settings and more as Teams': the menu (MENU lines with
+    // each row's place), Zoom in twice then reset, Get the mobile app,
+    // Unlock Teams Premium (when offered), Downloads and Cast (searching,
+    // then after 20 s nothing found). Pictures in /tmp/act.
+    Timer {
+        running: Qt.application.arguments.indexOf("--menu-test") >= 0 && backend.signedIn
+        interval: 1500; repeat: true
+        property int step: 0
+        onTriggered: {
+            const st = step++
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile("/tmp/act/menu-" + n + ".png"))
+            if (st === 1) {
+                const m = titleBar.moreMenuForTest(true)
+                const rows = []
+                const walk = it => { for (let i = 0; i < it.children.length; i++) { const c = it.children[i]; if (!c.visible) continue; if (c.label !== undefined && c.label) { const p = c.mapToItem(m, 0, 0); rows.push([c.label, Math.round(p.y * 100) / 100, Math.round(c.height * 100) / 100]) } walk(c) } }
+                walk(m)
+                const mp = m.mapToItem(null, 0, 0)
+                console.warn("MENU box", Math.round(mp.x * 100) / 100, Math.round(mp.y * 100) / 100, m.width, m.height, "premium", backend.premiumJson, "rows", JSON.stringify(rows))
+            }
+            else if (st === 2) shot("open")
+            else if (st === 3) { window.zoomIn(); window.zoomIn() }
+            else if (st === 4) { console.warn("MENU zoom", window.zoomPercent, window.contentItem.scale, window.contentItem.width); shot("zoom110") }
+            else if (st === 5) { window.zoomReset(); titleBar.moreMenuForTest(false); mobileAppDialog.open() }
+            else if (st === 6) shot("mobile")
+            else if (st === 7) { mobileAppDialog.close(); premiumDialog.open() }
+            else if (st === 8) shot("premium")
+            else if (st === 9) { premiumDialog.close(); downloadsFlyout.open() }
+            else if (st === 10) { console.warn("MENU downloads", backend.downloadsJson); shot("downloads") }
+            else if (st === 11) { downloadsFlyout.close(); castWindow.start() }
+            else if (st === 12) castWindow.contentItem.grabToImage(r => r.saveToFile("/tmp/act/menu-cast.png"))
+            else if (st === 27) { console.warn("MENU cast after 20 s, searching", castWindow.searching); castWindow.contentItem.grabToImage(r => r.saveToFile("/tmp/act/menu-cast-none.png")) }
+            else if (st > 28) Qt.quit()
         }
     }
     // --work-location-test: Settings ▸ Privacy's Manage my work location
@@ -7640,7 +7714,21 @@ Window {
         pinned: window.pinned
         onTogglePin: window.pinned = !window.pinned
         windowButtons: !backend.systemFrame
+        zoomPercent: window.zoomPercent
+        onZoomIn: window.zoomIn()
+        onZoomOut: window.zoomOut()
+        onZoomReset: window.zoomReset()
+        premiumOffered: { const p = backend.premiumJson ? JSON.parse(backend.premiumJson) : ({}); return !!p.offered || !!p.starting }
+        onOpenPremium: premiumDialog.open()
+        onOpenCast: castWindow.start()
+        onOpenDownloads: downloadsFlyout.open()
+        onOpenMobileApp: mobileAppDialog.open()
     }
+    // Settings and more's dialogs and windows.
+    PremiumDialog { id: premiumDialog }
+    MobileAppDialog { id: mobileAppDialog }
+    DownloadsFlyout { id: downloadsFlyout; x: window.contentItem.width - 13.33 - width; y: 60 }
+    CastWindow { id: castWindow; visible: false }
 
     // Teams' app banner under the title bar (measured on winpc 2026-11-09):
     // full width, 36 tall, #F5F5F5; info (20, filled, #616161) at 12; the
