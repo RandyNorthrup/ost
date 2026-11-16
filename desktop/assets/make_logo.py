@@ -9,18 +9,24 @@ depth is built from linear and radial gradients laid over the shapes, with
 no filters or clip paths, so Qt's SVG renderer draws it the same as resvg.
 
 Teams' own mark is a square "T" plate at the front left with two people
-behind it to the right. OST keeps the trade dress apart. Its wordmark plate
-is wide and centred, with three people standing symmetrically behind it
-(one in the middle, one at each side), and the "OST" letters are the
-largest element. Nothing is traced from or copied out of Teams' artwork.
+behind it to the right. OST keeps the trade dress apart. Its plate is a
+wide "OST" wordmark plate with no "T" shape, the letters are the largest
+element, and nothing is traced from or copied out of Teams' artwork. There
+are two layouts (see LAYOUTS):
+  a (default)  three people standing symmetrically behind a wide, centred
+               plate (one in the middle, one at each side);
+  b            the earlier composition: the plate at the front lower left
+               with two people behind it to the upper right.
 The wordmark is Selawik Bold (OFL, desktop/assets/fonts), outlined so the
 SVG renders anywhere.
 
 Writes desktop/assets/logo.svg, desktop/assets/logo.png (512),
 desktop/packaging/ost-desktop.png (256) and docs/logo_ost.png (512).
 Run from the repo root with the helper venv (fontTools; resvg on PATH):
-  ~/.local/share/ost-vnc-venv/bin/python -I desktop/assets/make_logo.py
-then python3 -I desktop/assets/tray/make.py for the tray icons.
+  ~/.local/share/ost-vnc-venv/bin/python -I desktop/assets/make_logo.py [--layout b]
+then python3 -I desktop/assets/tray/make.py for the tray icons. To try a
+layout without touching the app's assets, add --out DIR: that writes
+DIR/logo.svg and DIR/logo-{512,256,48,24}.png only.
 """
 import subprocess
 
@@ -37,13 +43,34 @@ OUT = "desktop/assets/logo.svg"
 BRAND = {"60": "#444791", "70": "#4F52B2", "80": "#5B5FC7", "90": "#6D71D8", "100": "#7F85F5",
          "110": "#9299F7", "120": "#AAB1FA", "140": "#C5CBFA", "icon": "#7B83EB", "deep": "#33357A"}
 
-# The plate and its wordmark: a wide plate, for three letters.
-PLATE = (78, 220, 356, 240, 54)   # x, y, w, h, radius
-CAP = 108                         # the letters' cap height
-# The three people behind it: (head cx, cy, r), (body x, y, w, h, radius).
-CENTRE = ((256, 112, 62), (150, 186, 212, 270, 96))
-SIDES = [((100, 150, 45), (30, 210, 140, 226, 66)),
-         ((412, 150, 45), (342, 210, 140, 226, 66))]
+# The layouts. Each has its plate (x, y, w, h, radius), the letters' cap
+# height, and its people from back to front. A person is an id, a fill
+# ("side" is the lighter tint for those further back), the head (cx, cy, r),
+# the body (x, y, w, h, radius), the strength of the light on it, and which
+# of the plate's shadows fall on it.
+LAYOUTS = {
+    # A (the default): three people standing symmetrically behind a wide,
+    # centred plate.
+    "a": {
+        "plate": (78, 220, 356, 240, 54), "cap": 108,
+        "about": "Three people behind the plate: one at each side, one in the middle",
+        "people": [
+            ("L", "side", (100, 150, 45), (30, 210, 140, 226, 66), 0.38, ["castTop", "castL"]),
+            ("R", "side", (412, 150, 45), (342, 210, 140, 226, 66), 0.38, ["castTop", "castR"]),
+            ("C", "centre", (256, 112, 62), (150, 186, 212, 270, 96), 0.34, ["castTop"]),
+        ],
+    },
+    # B: the earlier composition. The plate is at the front lower left, with
+    # two people behind it to the upper right.
+    "b": {
+        "plate": (40, 196, 330, 276, 44), "cap": 104,
+        "about": "Two people behind the plate, to its upper right",
+        "people": [
+            ("B", "side", (386, 132, 46), (318, 192, 150, 232, 62), 0.38, ["castR"]),
+            ("M", "centre", (262, 106, 60), (166, 180, 200, 256, 86), 0.34, ["castTop"]),
+        ],
+    },
+}
 
 
 def wordmark(text, cx, cy, cap):
@@ -99,14 +126,18 @@ def person(head, body, fill, light, shadows):
     return "\n  ".join(parts)
 
 
-def svg():
-    x, y, w, h, r = PLATE
+def svg(layout="a"):
+    lay = LAYOUTS[layout]
+    x, y, w, h, r = lay["plate"]
     b = BRAND
-    letters = wordmark("OST", x + w / 2, y + h / 2 + 2, CAP)
-    (cx, cy, cr), _ = CENTRE
-    (lx, ly, lr), _ = SIDES[0]
-    (rx_, ry, rr), _ = SIDES[1]
+    letters = wordmark("OST", x + w / 2, y + h / 2 + 2, lay["cap"])
     reach = 30  # how far the plate's shadow falls
+    # Each head's light sits up and to the left of its centre.
+    lights = "\n    ".join(
+        glow(f"light{pid}", hx - round(0.35 * hr), hy - round(0.48 * hr), hr * 1.6, alpha)
+        for pid, _, (hx, hy, hr), _, alpha, _ in sorted(lay["people"]))
+    people = "\n  ".join(person(head, body, fill, f"light{pid}", shadows)
+                         for pid, fill, head, body, _, shadows in lay["people"])
     return f'''<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
   <title>OST</title>
   <defs>
@@ -126,17 +157,13 @@ def svg():
     <linearGradient id="ink" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#E4E6FF"/>
     </linearGradient>
-    {glow("lightC", cx - 22, cy - 30, cr * 1.6, 0.34)}
-    {glow("lightL", lx - 16, ly - 22, lr * 1.6, 0.38)}
-    {glow("lightR", rx_ - 16, ry - 22, rr * 1.6, 0.38)}
+    {lights}
     {cast("castTop", 0, y, 0, y - reach, 0.42)}
     {cast("castL", x, 0, x - reach, 0, 0.3)}
     {cast("castR", x + w, 0, x + w + reach, 0, 0.3)}
   </defs>
-  <!-- Three people behind the plate: one at each side, one in the middle -->
-  {person(*SIDES[0], "side", "lightL", ["castTop", "castL"])}
-  {person(*SIDES[1], "side", "lightR", ["castTop", "castR"])}
-  {person(*CENTRE, "centre", "lightC", ["castTop"])}
+  <!-- {lay["about"]} -->
+  {people}
   <!-- The plate and its wordmark -->
   <rect x="{x}" y="{y}" width="{w}" height="{h}" rx="{r}" fill="url(#plate)"/>
   <rect x="{x}" y="{y}" width="{w}" height="{h}" rx="{r}" fill="url(#sheen)"/>
@@ -150,8 +177,23 @@ def render(src, out, size):
 
 
 if __name__ == "__main__":
-    open(OUT, "w").write(svg())
-    render(OUT, "desktop/assets/logo.png", 512)
-    render(OUT, "desktop/packaging/ost-desktop.png", 256)
-    render(OUT, "docs/logo_ost.png", 512)
+    import argparse
+    import os
+
+    ap = argparse.ArgumentParser(description="Make OST's logo.")
+    ap.add_argument("--layout", choices=sorted(LAYOUTS), default="a")
+    ap.add_argument("--out", help="write logo.svg and logo-{512,256,48,24}.png into this "
+                    "folder instead of the app's assets, to try a layout")
+    args = ap.parse_args()
+    if args.out:
+        os.makedirs(args.out, exist_ok=True)
+        src = os.path.join(args.out, "logo.svg")
+        open(src, "w").write(svg(args.layout))
+        for size in (512, 256, 48, 24):
+            render(src, os.path.join(args.out, f"logo-{size}.png"), size)
+    else:
+        open(OUT, "w").write(svg(args.layout))
+        render(OUT, "desktop/assets/logo.png", 512)
+        render(OUT, "desktop/packaging/ost-desktop.png", 256)
+        render(OUT, "docs/logo_ost.png", 512)
     print("ok")
