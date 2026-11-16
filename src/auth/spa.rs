@@ -107,6 +107,15 @@ impl BrowserSignIn {
     }
 }
 
+/// An embedded app's return address under Teams' broker, as Teams on the
+/// web sends it (captured 2026-11-16, e.g. `brk-multihub://engage.cloud.microsoft`
+/// for Viva Engage, `brk-multihub://outlook.office.com` for Outlook):
+/// `brk-multihub://<the host the app page is served from>`.
+pub fn app_redirect_uri(app_origin: &str) -> String {
+    let host = app_origin.trim_start_matches("https://").trim_start_matches("http://").trim_end_matches('/');
+    format!("brk-multihub://{host}")
+}
+
 /// Whether an error says the 24-hour browser sign-in must be renewed
 /// (AADSTS700084: the single-page app's refresh token has expired; or an
 /// interaction Azure AD now requires).
@@ -154,6 +163,12 @@ mod tests {
         let e = s.code_from(&err).unwrap_err().to_string();
         assert!(e.contains("login_required") && e.contains("AADSTS50058"));
         assert!(!BrowserSignIn::is_redirect("https://login.microsoftonline.com/common/login"));
+    }
+
+    #[test]
+    fn brokered_apps_return_to_brk_multihub_on_their_host() {
+        assert_eq!(app_redirect_uri("https://engage.cloud.microsoft"), "brk-multihub://engage.cloud.microsoft");
+        assert_eq!(app_redirect_uri("https://outlook.office.com/"), "brk-multihub://outlook.office.com");
     }
 
     #[test]

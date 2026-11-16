@@ -169,6 +169,48 @@ impl AadClient {
         }
     }
 
+    /// Teams' broker (nested app authentication): a token for an embedded
+    /// app (`app_client_id`), minted from the hub's refresh token. As MSAL's
+    /// NAA hub sends it: the app's client id in the query and body, the hub
+    /// as `brk_client_id`/`brk_redirect_uri`, the app's broker return
+    /// address `brk-<hub>://<hub host>`, from the hub's origin.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn broker_refresh(
+        &self,
+        app_client_id: &str,
+        hub_refresh_token: &str,
+        scope: &str,
+        hub_client_id: &str,
+        hub_redirect_uri: &str,
+        app_redirect_uri: &str,
+        claims: Option<&str>,
+    ) -> Result<TokenSet> {
+        let mut url = url::Url::parse(&self.token_url).context("token endpoint")?;
+        url.query_pairs_mut()
+            .append_pair("client_id", app_client_id)
+            .append_pair("brk_client_id", hub_client_id)
+            .append_pair("brk_redirect_uri", hub_redirect_uri);
+        let mut form: Vec<(&str, &str)> = vec![
+            ("grant_type", "refresh_token"),
+            ("client_id", app_client_id),
+            ("refresh_token", hub_refresh_token),
+            ("scope", scope),
+            ("redirect_uri", app_redirect_uri),
+            ("brk_client_id", hub_client_id),
+            ("brk_redirect_uri", hub_redirect_uri),
+            ("client_info", "1"),
+        ];
+        if let Some(c) = claims.filter(|c| !c.is_empty()) {
+            form.push(("claims", c));
+        }
+        let mut req = self.http.post(url);
+        if let Some(o) = &self.origin {
+            req = req.header(reqwest::header::ORIGIN, o.as_str());
+        }
+        let response = req.form(&form).send().await.context("Broker token request failed to send")?;
+        parse_json(response, "broker token").await
+    }
+
     /// Exchange a refresh token for tokens with the given scopes.
     pub async fn refresh(&self, refresh_token: &str, scope: &str) -> Result<TokenSet> {
         let response = self

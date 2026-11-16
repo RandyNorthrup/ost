@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-16T05:21:00Z'
-updated_date: '2026-11-16T06:32:00Z'
+updated_date: '2026-11-16T07:24:00Z'
 labels:
   - desktop
   - auth
@@ -65,4 +65,10 @@ OST signs in with Teams desktop's own client id through the device-code flow. Mi
   - The desktop app has no device-code sign-in any more (user's request).
 
 - 2026-11-16: silent renewal verified. Restarting the signed-in profile renewed through the hidden view (prompt=none, OST's web session) with no page or password and stored fresh tokens. Fixed first: at start-up the sign-in screen began a visible sign-in that replaced the renewal's request (state mismatch). The renewal now has its own pending request, and the backend starts a visible sign-in only when nothing is stored.
+
+- 2026-11-16: Teams' broker (NAA) built in the engine: auth::brokered_token(app client, app origin, scope, claims) and AadClient::broker_refresh.
+  - Captured from Teams on the web running in OST's own web profile: the token POST carries the app's client_id in the query and body, brk_client_id=5e3ce6c0… and brk_redirect_uri=https://teams.cloud.microsoft/v2/authv2, redirect_uri=brk-multihub://<the app page's host>, scope "<app scope> openid profile offline_access", client_info=1, and optional claims (xms_cc CP1).
+  - Verified: a token for Viva Engage (f4060917…, aud engage.cloud.microsoft/teams-branded-exp) minted from OST's sign-in.
+  - Channel Notes (243c63a3…) still needs its page's real host: the TeamsJS host will pass the asking frame's origin.
+- Left for AC2: answer TeamsJS nestedAppAuth GetToken in OST's app host (WebApp) with this broker.
 <!-- SECTION:NOTES:END -->

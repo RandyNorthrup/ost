@@ -254,6 +254,27 @@ pub async fn begin_sign_in() -> Result<PendingSignIn> {
     Ok(PendingSignIn { client, code })
 }
 
+/// Teams' broker for embedded apps (nested app authentication): a token
+/// for `app_client_id` with `scope` (space-separated), asked by a page
+/// served from `app_origin`, minted from the stored browser sign-in, as
+/// Teams on the web answers an app's GetToken. The hub's refresh token is
+/// left as it is.
+pub async fn brokered_token(app_client_id: &str, app_origin: &str, scope: &str, claims: Option<&str>) -> Result<(String, Option<u64>)> {
+    let config = Config::load()?;
+    anyhow::ensure!(
+        config.auth_flow.as_deref() == Some(super::TEAMS_WEB_FLOW),
+        "Embedded apps' tokens need the browser sign-in"
+    );
+    let rt = config.get_refresh_token().context("Not signed in (no refresh token)")?;
+    let tenant = config.tenant_id.clone().unwrap_or_else(|| "organizations".into());
+    let client = AadClient::new(reqwest::Client::new(), app_client_id, &tenant).with_origin(Some(super::spa::ORIGIN));
+    let full_scope = if scope.contains("openid") { scope.to_string() } else { format!("{scope} openid profile offline_access") };
+    let tokens = client
+        .broker_refresh(app_client_id, &rt, &full_scope, super::spa::CLIENT_ID, super::spa::REDIRECT_URI, &super::spa::app_redirect_uri(app_origin), claims)
+        .await?;
+    Ok((tokens.access_token, tokens.expires_in))
+}
+
 /// Whether the stored sign-in is Teams on the web's browser sign-in (its
 /// refresh token then lasts 24 hours and is renewed through the web view).
 pub fn browser_sign_in() -> bool {

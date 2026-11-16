@@ -5340,7 +5340,9 @@ Window {
             else if (step === 5) window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-webapp.png")))
             // A second view (another app) shares the profile.
             else if (step === 6) rail.openApp("clipchamp")
-            else if (step === 8) { console.warn("WEBAPP second view open"); Qt.quit() }
+            // --webapp-stay: keep the views open (to inspect them with
+            // QTWEBENGINE_REMOTE_DEBUGGING).
+            else if (step === 8) { console.warn("WEBAPP second view open"); if (Qt.application.arguments.indexOf("--webapp-stay") < 0) Qt.quit() }
             step++
         }
     }
