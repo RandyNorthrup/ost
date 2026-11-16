@@ -1346,7 +1346,7 @@ Window {
             visible: win.meeting && win.others.length === 0
             anchors.centerIn: parent
             spacing: 24
-            Avatar { size: 154; name: win.selfName || "You"; photoId: "me"; anchors.horizontalCenter: parent.horizontalCenter }
+            Avatar { ring: false; size: 154; name: win.selfName || "You"; photoId: "me"; anchors.horizontalCenter: parent.horizontalCenter }
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: win.state === "connected" ? "Waiting for others to join…" : win.state === "ended" ? "You left the meeting" : "Connecting…"
@@ -1647,7 +1647,7 @@ Window {
             visible: !win.meeting && !remoteVideo.visible && !shareVideo.visible
             anchors.centerIn: parent
             spacing: 24
-            Avatar { size: 144; name: win.peer; photoId: backend.callPeerId; anchors.horizontalCenter: parent.horizontalCenter }
+            Avatar { ring: false; size: 144; name: win.peer; photoId: backend.callPeerId; anchors.horizontalCenter: parent.horizontalCenter }
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: win.state === "calling" ? "Calling…"
@@ -1700,7 +1700,7 @@ Window {
                 GradientStop { position: 1.0; color: theme.hc("#EEF0F8", "#000000") }
             }
             border.color: theme.dividerSoft
-            Avatar { visible: !selfVideo.visible; anchors.centerIn: parent; size: 64; name: win.selfName || "You"; photoId: "me" }
+            Avatar { ring: false; visible: !selfVideo.visible; anchors.centerIn: parent; size: 64; name: win.selfName || "You"; photoId: "me" }
             ReactionShown { z: 3; mri: win.selfId }
             // Your camera, mirrored as Teams shows your own video.
             VideoFrame {

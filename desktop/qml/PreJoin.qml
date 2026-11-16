@@ -418,9 +418,16 @@ Window {
                 width: parent.width; height: win.audio === "computer" ? 189 : win.otherCardHeight; radius: 4
                 clip: true
                 color: theme.surface; border.color: theme.dividerSoft
+                // High contrast: the chosen option's band is #1AEBFF (Teams).
+                Rectangle {
+                    visible: theme.highContrast && win.audio === "computer"
+                    width: parent.width; height: 54; topLeftRadius: 4; topRightRadius: 4
+                    color: theme.hcHighlight
+                }
                 Radio {
                     x: 16; y: 18; on: win.audio === "computer"; label: "Computer audio"
-                    opacity: win.lobby ? 0.45 : 1
+                    highlighted: win.audio === "computer"; unusable: win.lobby
+                    opacity: win.lobby && !theme.highContrast ? 0.45 : 1
                     TapHandler { enabled: !win.lobby; onTapped: win.audio = "computer" }
                 }
                 Rectangle { y: 54; width: parent.width; height: 1; color: theme.dividerSoft }
@@ -576,11 +583,12 @@ Window {
         property string label
         property bool usable: true
         width: 449; height: win.otherCardHeight; radius: 4
-        color: theme.surface; border.color: theme.dividerSoft; border.width: 0.67
+        color: theme.highContrast && win.audio === oc.key ? theme.hcHighlight : theme.surface; border.color: theme.dividerSoft; border.width: 0.67
         Radio {
             x: 16; anchors.verticalCenter: parent.verticalCenter
             on: win.audio === oc.key; label: oc.label
-            opacity: oc.usable && !win.lobby ? 1 : 0.45
+            highlighted: win.audio === oc.key; unusable: !oc.usable || win.lobby
+            opacity: oc.usable && !win.lobby || theme.highContrast ? 1 : 0.45
         }
         HoverHandler { cursorShape: oc.usable ? Qt.PointingHandCursor : Qt.ArrowCursor }
         TapHandler { enabled: oc.usable && !win.lobby; onTapped: win.audio = oc.key }
@@ -722,16 +730,22 @@ Window {
     }
 
     component Radio: Row {
+        id: radio
         property bool on
         property string label
+        /// High contrast: on Teams' #1AEBFF selected card (black ring, dot
+        /// and label), or unavailable (#3FF23F).
+        property bool highlighted: false
+        property bool unusable: false
+        readonly property string ink: !theme.highContrast ? "" : highlighted ? "#000000" : unusable ? "#3FF23F" : "#FFFFFF"
         spacing: 12
         Rectangle {
             anchors.verticalCenter: parent.verticalCenter
             width: 20; height: 20; radius: 10
-            color: "transparent"; border.color: parent.on ? theme.brand : theme.textStrong; border.width: 1
-            Rectangle { visible: parent.parent.on; anchors.centerIn: parent; width: 12; height: 12; radius: 6; color: theme.brand }
+            color: "transparent"; border.color: radio.ink.length ? radio.ink : parent.on ? theme.brand : theme.textStrong; border.width: 1
+            Rectangle { visible: parent.parent.on; anchors.centerIn: parent; width: 12; height: 12; radius: 6; color: radio.ink.length ? radio.ink : theme.brand }
         }
-        Text { anchors.verticalCenter: parent.verticalCenter; text: parent.label; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
+        Text { anchors.verticalCenter: parent.verticalCenter; text: parent.label; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: radio.ink.length ? radio.ink : theme.text }
         Accessible.role: Accessible.RadioButton
         Accessible.name: label
         Accessible.checked: on

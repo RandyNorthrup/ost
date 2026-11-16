@@ -65,6 +65,7 @@ Item {
             }
         }
         Avatar {
+            ring: false
             anchors.centerIn: parent
             // Teams' tile avatar: about half the tile's height, at most
             // 200 (a whole-stage tile, measured on winpc 2026-11-10).

@@ -1,11 +1,11 @@
 ---
 id: TASK-0143
 title: High contrast theme as Teams
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-15T03:06:00Z'
-updated_date: '2026-11-16T04:16:00Z'
+updated_date: '2026-11-16T04:36:00Z'
 labels:
   - desktop
   - settings
@@ -22,7 +22,7 @@ Teams' Settings ▸ Appearance ▸ Theme offers "High contrast": Fluent's high-c
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 Theme offers High contrast after Classic, as in Teams
-- [ ] #2 Every OST view in High contrast shows Teams' high-contrast colours for backgrounds, text, strokes, hover/selection, links and disabled states
+- [x] #2 Every OST view in High contrast shows Teams' high-contrast colours for backgrounds, text, strokes, hover/selection, links and disabled states
 - [x] #3 Switching between all five themes applies at once and is kept
 <!-- AC:END -->
 
@@ -49,4 +49,33 @@ Teams' Settings ▸ Appearance ▸ Theme offers "High contrast": Fluent's high-c
 - OST: Theme.highContrast (with dark on) and pick(light, dark, hc). scratchpad hc_rewrite.py gave 496 picks and 230 literals High contrast values, wrapped 1086 text/icon colours in theme.onFill, and added 27 selected states and 29 input outlines. hc_manual.py and hc_post.py hold the hand edits.
 - Checked: shell, chat list, conversation, every Settings page, menus, calendar, OneDrive, Store, People, Downloads, mobile app dialog. A Light-mode shot is pixel-identical to the one before the change.
 - Left: calls and meetings in High contrast against Teams.
+
+- Calls and meetings: Teams' High contrast meeting window measured from a solo Meet now on winpc (camera off, DOM and element captures only).
+  - Black throughout, with a 0.67 px white underline under the toolbar and white icons.
+  - Leave has no red. Large stage avatars have no ring.
+  - In pre-join the chosen audio option is a #1AEBFF band with a black radio.
+- OST's stage tokens, pre-join radios and meeting tiles now follow that. Compared against Teams by joining "OST calendar test" alone, muted.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+OST has Teams' High contrast theme. Settings ▸ Appearance ▸ Theme offers it after Classic; it applies at once and is kept like the other themes.
+
+Changes:
+- Theme: highContrast (dark assets on), pick(light, dark, hc), hc(), onFill(), plus the transparentStroke, checkedFill and link tokens. Every token has its Teams Fluent high-contrast value.
+- Every QML colour now has a High contrast value. 496 picks and 230 literals were rewritten by role and state, and 1086 text and icon colours were wrapped so they turn black on a #1AEBFF or white fill. Selected states and filled inputs got Teams' outlines.
+- Hand-fixed:
+  - app-bar selection and badges;
+  - avatar rings, off on the call stage;
+  - bubble and surface outlines, links, checked switches and checkboxes;
+  - Teams' -contrast Settings pictures (20 SVGs);
+  - the meeting stage and pre-join.
+- Spec: docs/spec/settings.md, "Appearance ▸ Theme ▸ High contrast".
+
+Checked against Teams (winpc, High contrast):
+- shell, chat list, conversation, every Settings page, menus, calendar, OneDrive, Store, People, Downloads, mobile app dialog;
+- meeting pre-join and stage.
+
+Light mode is pixel-identical to before.
+<!-- SECTION:FINAL_SUMMARY:END -->

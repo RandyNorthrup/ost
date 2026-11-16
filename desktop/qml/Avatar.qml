@@ -93,7 +93,10 @@ Rectangle {
     // High contrast (Teams, measured on winpc 2026-11-15): a person's or
     // group's picture inside a 2 px white ring, initials white on black, a
     // meeting's glyph white on black in a 0.67 px white ring.
-    readonly property bool hc: theme.highContrast && !square
+    /// High contrast's white ring (Fluent's avatar); Teams' call stage
+    /// draws its large pictures without one.
+    property bool ring: true
+    readonly property bool hc: theme.highContrast && !square && ring
     readonly property real hcInset: hc && !meeting ? 2 : 0
     color: hc ? "#000000" : meeting ? "#C5CBFA" : pic.visible ? "transparent" : group ? "#949494" : colorful ? fluentColors[0] : swatches[hue]
     border.color: hc ? "#FFFFFF" : "transparent"

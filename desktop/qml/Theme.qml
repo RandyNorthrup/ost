@@ -205,16 +205,20 @@ QtObject {
     readonly property color unreadTint: pick("#FDF3F4", "#3E1F25", "#000000")
 
     // Calls use the dark stage in every theme, as in Teams.
-    readonly property color stage: "#1F1F1F"
-    readonly property color stageBar: "#292929"
-    readonly property color stageTile: "#2E2E2E"
+    // High contrast (Teams' meeting window, measured on winpc 2026-11-15):
+    // black throughout, the toolbar's 0.67 px white underline, white icons
+    // and labels, and Leave without its red (white on black, #1AEBFF hover).
+    readonly property color stage: highContrast ? "#000000" : "#1F1F1F"
+    readonly property color stageBar: highContrast ? "#000000" : "#292929"
+    readonly property color stageTile: highContrast ? "#000000" : "#2E2E2E"
     readonly property color stageText: "#FFFFFF"
-    readonly property color stageTextSecondary: "#ADADAD"
-    readonly property color stageControlHover: "#3D3D3D"
-    readonly property color accept: "#107C10"
-    readonly property color acceptHover: "#0E700E"
-    readonly property color leave: "#C4314B"
-    readonly property color leaveHover: "#B12C44"
+    readonly property color stageTextSecondary: highContrast ? "#FFFFFF" : "#ADADAD"
+    readonly property color stageControlHover: highContrast ? hcHighlight : "#3D3D3D"
+    readonly property color stageEdge: highContrast ? "#FFFFFF" : "transparent"
+    readonly property color accept: highContrast ? "#FFFFFF" : "#107C10"
+    readonly property color acceptHover: highContrast ? hcHighlight : "#0E700E"
+    readonly property color leave: highContrast ? "#000000" : "#C4314B"
+    readonly property color leaveHover: highContrast ? hcHighlight : "#B12C44"
 
     readonly property string font: "Selawik"
     // Teams' code font (code blocks, inline code).
