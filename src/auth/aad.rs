@@ -78,6 +78,9 @@ pub struct AadClient {
     client_id: String,
     token_url: String,
     device_url: String,
+    /// Sent as `Origin` with token requests: a single-page app's codes and
+    /// refresh tokens are only redeemed cross-origin (Teams on the web's).
+    origin: Option<String>,
 }
 
 impl AadClient {
@@ -88,7 +91,41 @@ impl AadClient {
             client_id: client_id.to_string(),
             token_url: format!("{base}/token"),
             device_url: format!("{base}/devicecode"),
+            origin: None,
         }
+    }
+
+    /// Send token requests from `origin`, as a single-page app does.
+    pub fn with_origin(mut self, origin: Option<&str>) -> Self {
+        self.origin = origin.map(str::to_string);
+        self
+    }
+
+    fn token_post(&self) -> reqwest::RequestBuilder {
+        let req = self.http.post(&self.token_url);
+        match &self.origin {
+            Some(o) => req.header(reqwest::header::ORIGIN, o.as_str()),
+            None => req,
+        }
+    }
+
+    /// Redeem an authorization code (with its PKCE verifier) for tokens.
+    pub async fn redeem_code(&self, code: &str, verifier: &str, redirect_uri: &str, scope: &str) -> Result<TokenSet> {
+        let response = self
+            .token_post()
+            .form(&[
+                ("grant_type", "authorization_code"),
+                ("client_id", self.client_id.as_str()),
+                ("code", code),
+                ("code_verifier", verifier),
+                ("redirect_uri", redirect_uri),
+                ("scope", scope),
+                ("client_info", "1"),
+            ])
+            .send()
+            .await
+            .context("Code redemption failed to send")?;
+        parse_json(response, "sign-in").await
     }
 
     /// Start a device-code sign-in for the given space-separated scopes.
@@ -135,8 +172,7 @@ impl AadClient {
     /// Exchange a refresh token for tokens with the given scopes.
     pub async fn refresh(&self, refresh_token: &str, scope: &str) -> Result<TokenSet> {
         let response = self
-            .http
-            .post(&self.token_url)
+            .token_post()
             .form(&[
                 ("grant_type", "refresh_token"),
                 ("client_id", self.client_id.as_str()),

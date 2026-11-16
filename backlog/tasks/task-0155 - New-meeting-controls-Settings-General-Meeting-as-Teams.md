@@ -1,11 +1,11 @@
 ---
 id: TASK-0155
 title: New meeting controls (Settings > General > Meeting) as Teams
-status: In Progress
+status: To Do
 assignee:
   - '@claude'
 created_date: '2026-11-15T08:36:00Z'
-updated_date: '2026-11-16T04:37:00Z'
+updated_date: '2026-11-16T05:21:00Z'
 labels:
   - calling
   - settings
@@ -24,3 +24,9 @@ Teams' Settings > General > Meeting has 'New meeting controls' (Meetings are eas
 - [ ] #1 Settings > General > Meeting shows 'New meeting controls' with Teams' text, saved where Teams saves it
 - [ ] #2 With it on, OST's meeting window uses Teams' new controls layout, matching Teams on winpc
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+- 2026-11-16: paused (back to To Do); Calls and meetings come after Chat and messages and the chat list. Teams on winpc has New meeting controls ON (Settings ▸ General ▸ Meeting), measured at the start of this task.
+<!-- SECTION:NOTES:END -->

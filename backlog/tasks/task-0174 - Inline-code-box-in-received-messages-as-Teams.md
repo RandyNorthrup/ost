@@ -1,9 +1,11 @@
 ---
 id: TASK-0174
 title: Inline code box in received messages as Teams
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-16T04:53:00Z'
+updated_date: '2026-11-16T05:21:00Z'
 labels:
   - desktop
 dependencies: []

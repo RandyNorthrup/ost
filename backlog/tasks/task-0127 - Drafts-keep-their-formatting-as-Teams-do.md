@@ -1,9 +1,11 @@
 ---
 id: TASK-0127
 title: Drafts keep their formatting as Teams' do
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-13T05:13:00Z'
+updated_date: '2026-11-16T05:21:00Z'
 labels:
   - chat
 dependencies: []

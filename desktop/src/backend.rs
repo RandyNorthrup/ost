@@ -90,8 +90,12 @@ pub mod qobject {
         #[qproperty(QString, current_chat_id)]
         #[qproperty(QString, current_chat_name)]
         #[qproperty(bool, has_credentials)]
-        #[qproperty(QString, sign_in_code)]
-        #[qproperty(QString, sign_in_url)]
+        /// Microsoft's sign-in page for the browser sign-in (Teams on the
+        /// web's), shown in the sign-in screen's web view.
+        #[qproperty(QString, sign_in_page)]
+        /// A silent renewal of the browser sign-in, loaded in a hidden web
+        /// view on the same web profile; empty when none is running.
+        #[qproperty(QString, renew_page)]
         /// "", "ringing", "connecting", "connected" or "ended".
         #[qproperty(QString, call_state)]
         #[qproperty(QString, call_peer)]
@@ -470,14 +474,25 @@ pub mod qobject {
         #[qinvokable]
         fn start(self: Pin<&mut Backend>);
 
-        /// Begin a device-code sign-in; the code and page appear in
-        /// `signInCode` / `signInUrl`, and the app loads once approved.
+        /// Begin a sign-in: Microsoft's sign-in page appears in
+        /// `signInPage`, and the app loads once it's done.
         #[qinvokable]
         fn begin_sign_in(self: Pin<&mut Backend>);
 
         /// Forget the stored credentials and return to the sign-in screen.
         #[qinvokable]
         fn sign_out(self: Pin<&mut Backend>);
+
+        /// A sign-in web view is about to load `url`. True when it's the
+        /// browser sign-in's return address: the view must stop there, and
+        /// the sign-in (or silent renewal) completes.
+        #[qinvokable]
+        fn sign_in_navigated(self: Pin<&mut Backend>, url: &QString) -> bool;
+
+        /// Renew the browser sign-in silently (Teams on the web's 24-hour
+        /// sign-in) through `renewPage`; refreshes the app when done.
+        #[qinvokable]
+        fn renew_sign_in(self: Pin<&mut Backend>);
 
         /// Open a chat and load its messages.
         #[qinvokable]
@@ -2165,8 +2180,10 @@ pub struct BackendRust {
     current_chat_id: QString,
     current_chat_name: QString,
     has_credentials: bool,
-    sign_in_code: QString,
-    sign_in_url: QString,
+    sign_in_page: QString,
+    renew_page: QString,
+    /// The browser sign-in (visible or silent) waiting for its return address.
+    browser_sign_in: Option<teams_cli::auth::spa::BrowserSignIn>,
     call_state: QString,
     call_peer: QString,
     call_peer_id: QString,
@@ -5472,52 +5489,98 @@ impl qobject::Backend {
         self.as_mut().publish_drafts();
         let stored = teams_cli::auth::has_credentials();
         self.as_mut().set_has_credentials(stored);
-        if stored {
+        if stored && teams_cli::auth::browser_sign_in() {
+            // A browser sign-in's refresh token lasts 24 hours: renew it
+            // silently first (the renewal refreshes the app).
+            self.renew_sign_in();
+        } else if stored {
             self.refresh();
         }
     }
 
     pub fn begin_sign_in(mut self: Pin<&mut Self>) {
-        self.as_mut().set_busy(true);
+        // As Teams: Microsoft's sign-in page (Teams on the web's sign-in, in
+        // OST's web view), whose tokens can broker embedded apps' (TASK-0196).
+        // An existing device-code session keeps refreshing with its own
+        // client until the account signs in this way.
+        let pending = teams_cli::auth::spa::BrowserSignIn::new(None, false);
+        let url = pending.url.clone();
+        self.as_mut().rust_mut().browser_sign_in = Some(pending);
         self.as_mut().set_status_text(QString::default());
+        self.as_mut().set_sign_in_page(QString::from(url.as_str()));
+    }
+
+    pub fn sign_in_navigated(mut self: Pin<&mut Self>, url: &QString) -> bool {
+        let url = url.to_string();
+        if !teams_cli::auth::spa::BrowserSignIn::is_redirect(&url) {
+            return false;
+        }
+        let silent = !self.rust().renew_page.is_empty();
+        let Some(pending) = self.as_mut().rust_mut().browser_sign_in.take() else {
+            return true;
+        };
+        // Close the sign-in views after this navigation has been refused:
+        // changing a WebEngineView's url from inside its navigation request
+        // crashes Chromium.
+        let qt = self.qt_thread();
+        let _ = qt.queue(|mut this| {
+            this.as_mut().set_sign_in_page(QString::default());
+            this.as_mut().set_renew_page(QString::default());
+        });
+        let code = match pending.code_from(&url) {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::warn!("browser sign-in: {}", short_error(&e));
+                // A silent renewal that needs the user (no Microsoft session):
+                // back to the sign-in screen, as Teams on the web.
+                if silent {
+                    self.as_mut().set_has_credentials(false);
+                    self.as_mut().set_signed_in(false);
+                } else {
+                    self.as_mut().set_status_text(QString::from(short_error(&e).as_str()));
+                }
+                return true;
+            }
+        };
+        self.as_mut().set_busy(true);
         let qt = self.qt_thread();
         runtime().spawn(async move {
-            let pending = match teams_cli::auth::begin_sign_in().await {
-                Ok(p) => p,
-                Err(e) => {
-                    let msg = short_error(&e);
-                    let _ = qt.queue(move |mut this| {
-                        this.as_mut().set_busy(false);
-                        this.as_mut().set_status_text(QString::from(msg.as_str()));
-                    });
-                    return;
-                }
-            };
-            let code = pending.user_code().to_string();
-            let url = pending.verification_uri().to_string();
-            let _ = qt.queue(move |mut this| {
-                this.as_mut().set_sign_in_code(QString::from(code.as_str()));
-                this.as_mut().set_sign_in_url(QString::from(url.as_str()));
-            });
-            let result = teams_cli::auth::finish_sign_in(pending).await;
+            let result = teams_cli::auth::finish_browser_sign_in(&pending, &code).await;
             let _ = qt.queue(move |mut this| {
                 this.as_mut().set_busy(false);
-                this.as_mut().set_sign_in_code(QString::default());
-                this.as_mut().set_sign_in_url(QString::default());
                 match result {
                     Ok(missing) => {
                         if !missing.is_empty() {
                             tracing::warn!("signed in without: {}", missing.join(", "));
                         }
+                        tracing::info!("browser sign-in {}", if silent { "renewed" } else { "complete" });
                         this.as_mut().set_has_credentials(true);
                         this.as_mut().refresh();
                     }
-                    Err(e) => this
-                        .as_mut()
-                        .set_status_text(QString::from(short_error(&e).as_str())),
+                    Err(e) => {
+                        tracing::warn!("browser sign-in failed: {}", short_error(&e));
+                        if silent {
+                            this.as_mut().set_has_credentials(false);
+                            this.as_mut().set_signed_in(false);
+                        } else {
+                            this.as_mut().set_status_text(QString::from(short_error(&e).as_str()));
+                        }
+                    }
                 }
             });
         });
+        true
+    }
+
+    pub fn renew_sign_in(mut self: Pin<&mut Self>) {
+        if !teams_cli::auth::browser_sign_in() || !self.rust().renew_page.is_empty() {
+            return;
+        }
+        let hint = teams_cli::config::Config::load().ok().and_then(|c| c.user_principal_name());
+        let pending = teams_cli::auth::spa::BrowserSignIn::new(hint.as_deref(), true);
+        let url = pending.url.clone();
+        self.as_mut().rust_mut().browser_sign_in = Some(pending);
+        self.as_mut().set_renew_page(QString::from(url.as_str()));
     }
 
     pub fn sign_out(mut self: Pin<&mut Self>) {

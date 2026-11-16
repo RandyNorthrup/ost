@@ -15,7 +15,8 @@ Item {
     property string effectId: ""
     /// The app's page (from its app definition).
     property string appUrl: ""
-    readonly property bool running: effectId.length > 0 && appUrl.length > 0
+    // Only once signed in: the app needs Teams' session.
+    readonly property bool running: effectId.length > 0 && appUrl.length > 0 && backend.signedIn
     property bool ready: false
     width: 16; height: 16
     opacity: 0.01

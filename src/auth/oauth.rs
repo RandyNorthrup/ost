@@ -1,4 +1,5 @@
-//! OAuth2 device code flow for Azure AD, plus Skype token exchange
+//! Sign-in (device code, or Teams on the web's browser sign-in) and the
+//! Skype token exchange.
 
 use anyhow::{Context, Result};
 
@@ -20,6 +21,12 @@ fn build_client(auth_config: &AuthConfig) -> AadClient {
         auth_config.client_id,
         auth_config.tenant,
     )
+    .with_origin(auth_config.origin)
+}
+
+/// The client the stored refresh token belongs to.
+fn stored_client(config: &Config) -> AadClient {
+    build_client(&AuthConfig::for_flow(config.auth_flow.as_deref()))
 }
 
 /// Mint a token for another audience from the refresh token.
@@ -58,7 +65,7 @@ pub async fn access_token_for(scope: &str) -> Result<String> {
     let rt = config
         .get_refresh_token()
         .context("Not signed in (no refresh token)")?;
-    let client = build_client(&AuthConfig::default());
+    let client = stored_client(&config);
     let full_scope = format!("{scope} offline_access");
     Ok(acquire_token(&client, &rt, &full_scope, scope).await?.0)
 }
@@ -80,8 +87,7 @@ pub async fn refresh() -> Result<bool> {
         None => return Ok(false),
     };
 
-    let auth_config = AuthConfig::default();
-    let client = build_client(&auth_config);
+    let client = stored_client(&config);
 
     tracing::info!("Refreshing AAD token...");
 
@@ -248,6 +254,12 @@ pub async fn begin_sign_in() -> Result<PendingSignIn> {
     Ok(PendingSignIn { client, code })
 }
 
+/// Whether the stored sign-in is Teams on the web's browser sign-in (its
+/// refresh token then lasts 24 hours and is renewed through the web view).
+pub fn browser_sign_in() -> bool {
+    Config::load().ok().and_then(|c| c.auth_flow).as_deref() == Some(super::TEAMS_WEB_FLOW)
+}
+
 /// Wait for the user to approve the sign-in, then store every token OST
 /// needs. Returns the names of the secondary tokens that could not be
 /// acquired (empty on full success); fails if sign-in itself failed.
@@ -257,10 +269,26 @@ pub async fn finish_sign_in(pending: PendingSignIn) -> Result<Vec<&'static str>>
         .poll_device_token(&code)
         .await
         .context("Failed to exchange device code for token")?;
+    store_sign_in(&client, &tokens, None).await
+}
 
+/// Redeem a browser sign-in's code (Teams on the web's sign-in, see
+/// [`super::spa`]) and store every token OST needs, as [`finish_sign_in`].
+pub async fn finish_browser_sign_in(pending: &super::spa::BrowserSignIn, code: &str) -> Result<Vec<&'static str>> {
+    let client = build_client(&AuthConfig::teams_web());
+    let tokens = client
+        .redeem_code(code, pending.verifier(), super::spa::REDIRECT_URI, super::spa::SIGN_IN_SCOPE)
+        .await
+        .context("Failed to redeem the sign-in")?;
+    store_sign_in(&client, &tokens, Some(super::TEAMS_WEB_FLOW)).await
+}
+
+/// Store a sign-in's tokens and mint the other audiences from it.
+async fn store_sign_in(client: &AadClient, tokens: &TokenSet, flow: Option<&str>) -> Result<Vec<&'static str>> {
     // Single load-mutate-save, so a partial failure never leaves half a login.
     let mut config = Config::load()?;
-    store_primary(&mut config, &tokens);
+    config.auth_flow = flow.map(str::to_string);
+    store_primary(&mut config, tokens);
     let mut missing = Vec::new();
 
     match exchange_skype_token(&tokens.access_token, false).await {
@@ -280,21 +308,21 @@ pub async fn finish_sign_in(pending: PendingSignIn) -> Result<Vec<&'static str>>
     }
 
     if let Some(rt) = config.get_refresh_token() {
-        match acquire_graph_token(&client, &rt).await {
+        match acquire_graph_token(client, &rt).await {
             Ok((tok, exp)) => config.set_graph_token(tok, exp),
             Err(e) => {
                 tracing::warn!("Graph token acquisition failed: {:#}", e);
                 missing.push("Graph");
             }
         }
-        match acquire_ic3_token(&client, &rt).await {
+        match acquire_ic3_token(client, &rt).await {
             Ok((tok, exp)) => config.set_ic3_token(tok, exp),
             Err(e) => {
                 tracing::warn!("IC3 token acquisition failed: {:#}", e);
                 missing.push("IC3");
             }
         }
-        match acquire_recorder_token(&client, &rt).await {
+        match acquire_recorder_token(client, &rt).await {
             Ok((tok, exp)) => config.set_recorder_token(tok, exp),
             Err(e) => {
                 tracing::warn!("Recorder token acquisition failed: {:#}", e);
