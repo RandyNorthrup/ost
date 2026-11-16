@@ -31,11 +31,16 @@ Popup {
     signal finished(string callId, var error, var result)
     signal messageForParent(var message)
     property bool done: false
+    /// Teams' header with the app's name over the dialog's title (Share to
+    /// Outlook, measured on Teams on the web 2026-11-16: "Outlook" and
+    /// "Share conversation over email" beside the 32 px icon at (32, 27),
+    /// Close 64 from the right, the page 67 down).
+    property bool subtitleHeader: false
     // Named sizes: only "large" is measured (Workflows, 900 x 560).
     function px(v, large) { return typeof v === "number" && v > 0 ? v : (Number(v) > 0 ? Number(v) : large) }
     readonly property real wantWidth: px(taskInfo.width, 900)
     readonly property real wantHeight: px(taskInfo.height, 560)
-    readonly property real header: 90.3
+    readonly property real header: subtitleHeader ? 67 : 90.3
     anchors.centerIn: Overlay.overlay
     modal: true; focus: true; padding: 0
     width: Math.min(wantWidth, (Overlay.overlay ? Overlay.overlay.width : wantWidth) - 32)
@@ -55,13 +60,14 @@ Popup {
 
     contentItem: Item {
         Rectangle {
-            x: 32; y: 38.7; width: 32; height: 32; radius: 32 * 0.2856; clip: true
+            x: 32; y: dlg.subtitleHeader ? 27 : 38.7; width: 32; height: 32; radius: 32 * 0.2856; clip: true
             color: theme.pick("#FAFAFA", "#1F1F1F", "#000000")
             Image { anchors.fill: parent; source: dlg.appIcon; sourceSize: Qt.size(64, 64); fillMode: Image.PreserveAspectFit; asynchronous: true; smooth: true }
             Accessible.role: Accessible.Graphic; Accessible.name: dlg.appName
         }
         Text {
             id: title
+            visible: !dlg.subtitleHeader
             x: 76; y: 40.4; width: parent.width - 76 - 76
             text: dlg.taskInfo.title || dlg.appName
             elide: Text.ElideRight
@@ -70,9 +76,22 @@ Popup {
             color: theme.text
             Accessible.role: Accessible.Heading; Accessible.name: text
         }
+        Column {
+            visible: dlg.subtitleHeader
+            x: 76; y: 27; width: parent.width - 76 - 76
+            Text {
+                width: parent.width; text: dlg.appName; elide: Text.ElideRight
+                font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text
+                Accessible.role: Accessible.Heading; Accessible.name: text
+            }
+            Text {
+                width: parent.width; text: dlg.taskInfo.title || ""; elide: Text.ElideRight
+                font.family: theme.font; font.pixelSize: 14; color: theme.text
+            }
+        }
         Rectangle {
             id: closeBtn
-            x: parent.width - 64; y: 27; width: 32; height: 55.3; radius: 4
+            x: parent.width - 64; y: 27; width: 32; height: dlg.subtitleHeader ? 32 : 55.3; radius: 4
             color: closeHover.hovered ? theme.rowHover : "transparent"
             FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(closeBtn, theme.textStrong) }
             HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }

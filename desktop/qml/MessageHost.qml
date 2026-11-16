@@ -19,6 +19,10 @@ Item {
     property string teamId: ""
     property string teamName: ""
     property string chatName: ""
+    /// The conversation's id (Share to Outlook), and whether it is your
+    /// notes-to-self chat.
+    property string chatId: backend.currentChatId
+    property bool isSelfChat: chatId.indexOf("48:notes") === 0
     /// The compose box the fun picker inserts into by default.
     property var defaultBox: null
     /// Test hook: keep the ··· menu's hover bar of this message up.
@@ -144,7 +148,7 @@ Item {
             if (context === "post") out.push({ key: "unread", label: "Mark as unread", icon: "mail-unread-20", keys: "U" })
             out.push(translate)
             out.push({ separator: true })
-            out.push({ key: "more", label: "More actions", chevron: true, enabled: false })
+            out.push({ key: "more", label: "More actions", chevron: true })
             return out
         }
         // Core items, in Teams' registry order.
@@ -166,6 +170,9 @@ Item {
         // Secondary items.
         out.push({ separator: true })
         out.push({ key: "unread", label: "Mark as unread", icon: "mail-unread-20", keys: "U" })
+        // Share to Outlook (measured on Teams on the web: after Mark as
+        // unread; not in your notes-to-self chat, where Teams cancels it).
+        if (!root.isSelfChat) out.push({ key: "share-outlook", label: "Share to Outlook", icon: "mail-20" })
         // Chats: the Translation submenu.
         out.push({ key: "translation", label: "Translation", icon: "translate-20", chevron: true })
         // Report this message: someone else's, with its own divider.
@@ -173,10 +180,9 @@ Item {
             out.push({ separator: true })
             out.push({ key: "report", label: "Report this message", icon: "report-message-20" })
         }
-        // More actions: the rest of the secondary items and apps' actions;
-        // disabled while that list is empty.
+        // More actions ▸: Immersive Reader (then apps' actions, not built).
         out.push({ separator: true })
-        out.push({ key: "more", label: "More actions", chevron: true, enabled: false })
+        out.push({ key: "more", label: "More actions", chevron: true })
         return out
     }
     function readersFor(id) {
@@ -234,6 +240,12 @@ Item {
                     : { key: "translate", label: "Translate", icon: "translate-20" }]
                 translationMenu.parent = messageMenu.parent; translationMenu.x = messageMenu.x + messageMenu.width; translationMenu.y = messageMenu.y; translationMenu.open()
             }
+            else if (it.key === "share-outlook") shareToOutlook.start(m)
+            else if (it.key === "more") {
+                moreActionsMenu.message = m
+                moreActionsMenu.items = [{ key: "immersive-reader", label: "Immersive Reader", icon: "immersive-reader-20" }]
+                moreActionsMenu.parent = messageMenu.parent; moreActionsMenu.x = messageMenu.x - moreActionsMenu.implicitWidth; moreActionsMenu.y = messageMenu.y + messageMenu.height - 40; moreActionsMenu.open()
+            }
             else if (it.key === "read") { readersMenu.items = root.readersFor(m.id).readers.map(x => ({ key: x.mri, label: x.name })); readersMenu.parent = messageMenu.parent; readersMenu.x = messageMenu.x + messageMenu.width; readersMenu.y = messageMenu.y; readersMenu.open() }
         }
     }
@@ -242,6 +254,30 @@ Item {
         id: forwardDialog
         onForwardTo: (targets, note) => backend.forwardMessage(message.id, JSON.stringify(targets), note)
     }
+    // More actions ▸: Immersive Reader (Teams' L2 items; apps' message
+    // actions aren't listed yet).
+    MenuPopup {
+        id: moreActionsMenu
+        property var message: null
+        margins: 8
+        onPicked: i => { if (items[i].key === "immersive-reader") root.openImmersiveReader(message) }
+    }
+    // Immersive Reader: Teams' chunks for a message (message-actions.md
+    // §10): "<sender> <date> <time> <br/>", the subject when there is one,
+    // then the message's HTML.
+    function openImmersiveReader(m) {
+        const d = new Date(m.time || m.timestamp || Date.now())
+        const chunks = [{ content: (m.sender || "") + " " + d.toLocaleDateString(Qt.locale("en_US"), "M/d/yyyy") + " " + d.toLocaleTimeString(Qt.locale("en_US"), "h:mm:ss AP") + " <br/>", mimeType: "text/html" }]
+        if (m.subject) chunks.push({ content: "<br/>" + m.subject + "<br/>", mimeType: "text/html" })
+        chunks.push({ content: m.html || m.content || m.text || "", mimeType: "text/html" })
+        immersiveReader.launch(chunks)
+    }
+    ImmersiveReader { id: immersiveReader }
+    readonly property alias immersiveReaderForTest: immersiveReader
+    readonly property alias shareToOutlookForTest: shareToOutlook
+    // Share to Outlook: Teams' Outlook dialog (task module) on a draft the
+    // middle tier makes of the conversation; closing it discards the draft.
+    ShareToOutlookDialog { id: shareToOutlook; threadId: root.chatId }
     // Translation ▸: Translate, or See original message.
     MenuPopup {
         id: translationMenu

@@ -40,8 +40,13 @@ Rectangle {
         { key: "onenote", icon: "notebook-20", label: "OneNote", keys: "" },
         { key: "whiteboard", icon: "board-20", label: "Whiteboard", keys: "" },
         { key: "clipchamp", icon: "video", label: "Clipchamp", keys: "" },
-        { key: "help", icon: "question-circle-20", label: "Help", keys: "" }
+        { key: "shifts", icon: "calendar-clock-20", label: "Shifts", keys: "" },
+        { key: "help", icon: "question-circle-20", label: "Help", keys: "" },
+        // A Word, Excel or PowerPoint file open in Office for the web takes
+        // the slot as its app (Teams' "Teams" choice).
+        { key: "office", icon: "document-20", label: officeLabel || "Office", keys: "" }
     ]
+    property string officeLabel: ""
     // Teams desktop's rail, with its labels and shortcuts (Copilot left out).
     readonly property var apps: (split ? [
         { key: "activity", icon: "alert", label: "Activity", keys: "Ctrl+1" },
@@ -146,9 +151,9 @@ Rectangle {
         }
     }
 
-    // View more apps: Teams' flyout with a search box and the apps. Planner
-    // opens in OST; Whiteboard, Clipchamp and Help are web apps (Teams
-    // embeds them), so they open in the browser.
+    // View more apps: Teams' flyout with a search box and the apps. Planner,
+    // OneNote and People are native; Whiteboard, Shifts and Clipchamp open
+    // in OST's TeamsJS host as Teams hosts them; Help is embedded.
     Popup {
         id: moreApps
         parent: root.Window.contentItem
@@ -156,11 +161,11 @@ Rectangle {
         width: 300; padding: 8
         onOpened: { appSearch.text = ""; appSearch.forceActiveFocus() }
         background: Rectangle { radius: 8; color: theme.menu; border.color: theme.dividerSoft }
-        // Teams' list and order for this account. Shifts, Clipchamp,
-        // Whiteboard and Events are web apps Teams embeds (and Shifts
-        // needs a scope OST's sign-in doesn't have), so they open on the web.
+        // Teams' list and order for this account. Shifts, Clipchamp and
+        // Whiteboard are apps Teams hosts (OST's TeamsJS host); Events is
+        // Teams' own module, not built in OST yet, so it opens on the web.
         readonly property var all: [
-            { url: "https://teams.microsoft.com/l/app/42f6c1da-a241-483a-a3cc-4f5be9185951", label: "Shifts", icon: "calendar-clock-20", color: "#5B5FC7" },
+            { key: "shifts", label: "Shifts", icon: "calendar-clock-20", color: "#5B5FC7" },
             { key: "planner", label: "Planner", icon: "clipboard-task-list-ltr-24-filled", color: theme.brand },
             { key: "onenote", label: "OneNote", icon: "notebook-20", color: "#7719AA" },
             { key: "help", label: "Help", icon: "question-circle-20", color: theme.textStrong },

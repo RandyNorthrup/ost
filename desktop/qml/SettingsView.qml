@@ -2723,17 +2723,23 @@ Rectangle {
                 id: openIn
                 icon: "document-20"; title: "Always open Word, PowerPoint, and Excel files in:"
                 bodyGap: 26
-                // Teams offers "Desktop app" when Office is installed and
-                // keeps that choice on the device; Browser is its synced
-                // "web". OST offers the desktop's own app for Word files.
-                // Teams' third choice, opening in Teams, is Office for the
-                // web inside its window, which OST doesn't embed (and Teams
-                // is retiring it for the desktop app).
+                // Teams' choices (docs/spec/file-actions.md): Teams (Office
+                // for the web inside its window, synced "teamsV2"), Desktop
+                // app when Office is installed (kept on the device; OST
+                // offers the desktop's own app for Word files) and Browser
+                // (synced "web"). OST opens Teams' choice in its app host
+                // (api::office_open) and keeps the device's choice in
+                // "fileOpenIn"; without one, the synced value decides.
                 readonly property string app: root.page === "files" ? backend.officeAppName() : ""
-                property string choice: root.page === "files" ? (backend.setting("fileOpenIn") || (app ? "desktop" : "web")) : ""
-                function pick(v) { backend.setSetting("fileOpenIn", v); choice = v; if (v === "web") root.setProp("userPersonalSettings", "filesSettings.fileOpenPreference", "web") }
+                readonly property string synced: root.prop("userPersonalSettings", ["filesSettings", "fileOpenPreference"], "teamsV2")
+                property string choice: root.page === "files" ? (backend.setting("fileOpenIn") || (synced === "web" ? "web" : "teams")) : ""
+                function pick(v) {
+                    backend.setSetting("fileOpenIn", v); choice = v
+                    if (v === "web" || v === "teams") root.setProp("userPersonalSettings", "filesSettings.fileOpenPreference", v === "web" ? "web" : "teamsV2")
+                }
+                SettingsParts.RadioRow { label: "Teams"; checked: openIn.choice === "teams"; onPicked: openIn.pick("teams") }
                 SettingsParts.RadioRow { visible: !!openIn.app; label: "Desktop app"; checked: openIn.choice === "desktop" && !!openIn.app; onPicked: openIn.pick("desktop") }
-                SettingsParts.RadioRow { label: "Browser"; checked: openIn.choice !== "desktop" || !openIn.app; onPicked: openIn.pick("web") }
+                SettingsParts.RadioRow { label: "Browser"; checked: openIn.choice === "web" || (openIn.choice === "desktop" && !openIn.app); onPicked: openIn.pick("web") }
             }
             // Teams' "Links open preference": web links open in the default
             // browser or Microsoft Edge (when installed; Teams' default).

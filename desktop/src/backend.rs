@@ -1316,6 +1316,10 @@ pub mod qobject {
         /// pass it on, never log it).
         #[qsignal]
         fn app_host_reply(self: Pin<&mut Backend>, id: QString, json: QString);
+        /// Open a Word, Excel or PowerPoint file in OST (Office for the
+        /// web in Teams' app host), as Teams' "Teams" choice does.
+        #[qsignal]
+        fn open_in_teams_requested(self: Pin<&mut Backend>, url: QString, name: QString, item_json: QString);
 
         /// The Loop page host's native call answered (a token may be in
         /// `json`: pass it on, never log it).
@@ -2279,10 +2283,11 @@ pub mod qobject {
         #[qinvokable]
         fn office_app_name(self: Pin<&mut Backend>) -> QString;
         /// Open a file as Teams' "Always open Word, PowerPoint, and Excel
-        /// files in" says: Word, PowerPoint and Excel files in the
-        /// desktop app (a downloaded copy) when that is chosen on this
-        /// device (setting "fileOpenIn" = "desktop"), else everything in
-        /// the browser. `item_json` is its DriveItem when known (else the
+        /// files in" says (setting "fileOpenIn"): Word, PowerPoint and
+        /// Excel files in OST (Office for the web, "teams", the default;
+        /// open_in_teams_requested), in the desktop app (a downloaded copy,
+        /// "desktop") or in the browser ("web"); other files in the
+        /// browser. `item_json` is its DriveItem when known (else the
         /// file is found by its address).
         #[qinvokable]
         fn open_file(self: Pin<&mut Backend>, url: &QString, name: &QString, item_json: &QString);
@@ -13658,11 +13663,64 @@ impl qobject::Backend {
             let answer = match kind.as_str() {
                 "context" => match TeamsClient::new().await {
                     Ok(c) => match api::app_host::context(&c, &app, &thread, &team).await {
-                        Ok(v) => json!({ "context": v, "deepNaa": api::app_host::deep_naa(&app) }).to_string(),
+                        Ok(mut v) => {
+                            // Copilot's context also names your OneDrive site.
+                            if p.get("mySite").and_then(|b| b.as_bool()).unwrap_or(false)
+                                && let Some((domain, path)) = api::app_host::my_site(&c).await
+                            {
+                                v["mySiteDomain"] = json!(domain);
+                                v["mySitePath"] = json!(path);
+                            }
+                            json!({ "context": v, "deepNaa": api::app_host::deep_naa(&app) }).to_string()
+                        }
                         Err(e) => json!({ "error": short_error(&e) }).to_string(),
                     },
                     Err(e) => json!({ "error": short_error(&e) }).to_string(),
                 },
+                // A personal app from the app bar: its personal tab (Teams'
+                // address with placeholders, entity id) and whether Teams
+                // hides its header.
+                "personalTab" => {
+                    let r = async {
+                        let c = TeamsClient::new().await?;
+                        let f = api::app_host::facts(&c, &app).await?;
+                        let tab = api::app_host::personal_tab(&f, &s("entity")).cloned().context("The app has no personal tab")?;
+                        anyhow::Ok(json!({ "tab": tab, "fullScreen": f.full_screen }))
+                    }
+                    .await;
+                    match r {
+                        Ok(v) => v.to_string(),
+                        Err(e) => {
+                            tracing::warn!("personal tab of {app}: {}", short_error(&e));
+                            json!({ "error": short_error(&e) }).to_string()
+                        }
+                    }
+                }
+                // teams.fullTrust.joinedTeams.getUserJoinedTeams (Shifts).
+                "joinedTeams" => {
+                    let r = async { api::teams::list_teams_csa(&TeamsClient::new().await?).await }.await;
+                    api::app_host::joined_teams_from(&r.unwrap_or_default()).to_string()
+                }
+                // The token Teams posts with a server-rendered app's first
+                // page (Copilot): brokered for the app's own Azure AD app
+                // and resource, as for the page's NAA GetToken. Never logged.
+                "ssrToken" => {
+                    let r = async {
+                        let c = TeamsClient::new().await?;
+                        let f = api::app_host::facts(&c, &app).await?;
+                        anyhow::ensure!(!f.web_app_id.is_empty() && f.web_app_resource.starts_with("https://"), "No web application for the app");
+                        let scope = format!("{}/.default", f.web_app_resource.trim_end_matches('/'));
+                        teams_cli::auth::oauth::brokered_token(&f.web_app_id, &s("origin"), &scope, None).await
+                    }
+                    .await;
+                    match r {
+                        Ok((t, _)) => json!({ "token": t }).to_string(),
+                        Err(e) => {
+                            tracing::warn!("server-rendering token for {app} failed: {}", short_error(&e));
+                            json!({ "error": short_error(&e) }).to_string()
+                        }
+                    }
+                }
                 // Teams' NAA broker: trusted when the asking frame is one
                 // of the app's valid domains, or one the app added.
                 "naa" => {
@@ -13690,6 +13748,53 @@ impl qobject::Backend {
                         Err(e) => {
                             tracing::warn!("getAuthToken for {app} failed: {}", short_error(&e));
                             json!({ "error": "FailedToGetToken" }).to_string()
+                        }
+                    }
+                }
+                // Share to Outlook: the draft Teams' middle tier makes of
+                // the conversation, and the compose page Teams frames.
+                "stoCreate" => {
+                    let r = async { api::app_host::share_to_outlook_email(&TeamsClient::new().await?, &thread, &s("messageId"), &s("bodyType")).await }.await;
+                    match r {
+                        Ok(id) => json!({ "emailId": id, "url": api::app_host::share_to_outlook_compose_url(&id, "en-us") }).to_string(),
+                        Err(e) => {
+                            tracing::warn!("share to Outlook draft failed: {}", short_error(&e));
+                            json!({ "error": short_error(&e) }).to_string()
+                        }
+                    }
+                }
+                // Closed without sending: Teams discards the draft.
+                "stoDiscard" => {
+                    let r = async { api::app_host::share_to_outlook_discard(&TeamsClient::new().await?, &s("emailId")).await }.await;
+                    if let Err(e) = &r {
+                        tracing::warn!("discarding the share to Outlook draft failed: {}", short_error(e));
+                    }
+                    json!({ "ok": r.is_ok() }).to_string()
+                }
+                // Immersive Reader: Teams' own token for the reader service
+                // (immersiveReaderServiceUrlV2). Never logged.
+                "irToken" => match teams_cli::auth::oauth::access_token_for("https://immersivereader.cloud.microsoft/.default").await {
+                    Ok(t) => json!({ "token": t }).to_string(),
+                    Err(e) => {
+                        tracing::warn!("Immersive Reader token failed: {}", short_error(&e));
+                        // Teams falls back to "anonymous".
+                        json!({ "token": "anonymous" }).to_string()
+                    }
+                },
+                // A Word, Excel or PowerPoint file in Office for the web,
+                // as Teams' "Teams" choice opens it: the Office app and the
+                // file's subEntityId.
+                "officeOpen" => {
+                    let r = async {
+                        let c = TeamsClient::new().await?;
+                        api::office_open::open_info(&c, &s("url"), &s("driveId"), &s("itemId"), &s("caller")).await
+                    }
+                    .await;
+                    match r {
+                        Ok(v) => v.to_string(),
+                        Err(e) => {
+                            tracing::warn!("opening the file in OST failed: {}", short_error(&e));
+                            json!({ "error": short_error(&e) }).to_string()
                         }
                     }
                 }
@@ -17583,7 +17688,15 @@ impl qobject::Backend {
         let (url, name) = (url.to_string(), name.to_string());
         let item: Option<api::drive::DriveItem> =
             serde_json::from_str(&item_json.to_string()).ok().filter(|i: &api::drive::DriveItem| !i.id.is_empty());
-        let desktop = load_settings().get("fileOpenIn").and_then(|v| v.as_str()) == Some("desktop");
+        // Unset: Teams' default choice, Teams.
+        let choice = load_settings().get("fileOpenIn").and_then(|v| v.as_str()).filter(|v| !v.is_empty()).unwrap_or("teams").to_string();
+        // Teams' "Teams" choice: Office for the web inside OST.
+        if choice == "teams" && api::office_open::app_for(&name).is_some() {
+            let (u, n, j) = (QString::from(url.as_str()), QString::from(name.as_str()), item_json.clone());
+            self.open_in_teams_requested(u, n, j);
+            return;
+        }
+        let desktop = choice == "desktop";
         if !(desktop && is_office_file(&name) && office_app().is_some()) {
             if url.starts_with("https://") {
                 open_web_address(&url);

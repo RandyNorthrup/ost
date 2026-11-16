@@ -23,6 +23,29 @@ Item {
     /// canvas), as Teams draws it, without the Loop app around it.
     property bool pageOnly: false
     readonly property alias view: web
+    // ---- Personal apps (docs/spec/app-host.md "Personal apps") ---------
+    // An app opened from the app bar (Whiteboard, Shifts, Clipchamp,
+    // Copilot, the Office apps): Teams frames the app's personal tab (its
+    // definition's staticTabs) in its host, with Teams' app header unless
+    // the app is full screen.
+    property bool personalApp: false
+    /// The personal tab to open (else the app's first).
+    property string personalEntity: ""
+    /// The tab Teams opens (from the definition): entity_id, content_url…
+    property var personalTab: null
+    property bool personalFullScreen: false
+    /// Server-rendered app (Copilot): Teams posts its first page a form
+    /// with the app's token (app_host.js).
+    property bool ssr: false
+    /// The frame's `allow` list when it differs from Teams' default.
+    property string frameAllow: ""
+    /// Capabilities Teams adds to its runtime answer for this app.
+    property var runtimeSupports: null
+    /// TeamsJS hostClientType ("desktop", as Teams desktop).
+    property string hostClientType: "desktop"
+    /// An Office file's page: "<serviceName>.<ctx>" of who opened it.
+    property string officeSource: ""
+    readonly property bool headerShown: showHeader && !personalFullScreen
 
     Rectangle { anchors.fill: parent; color: theme.surface }
 
@@ -134,20 +157,37 @@ Item {
     property string homeTemplate: ""
     readonly property string hostAddress: homeTemplate || home.toString()
     function startHost() {
-        if (!root.hostAddress) return
-        root.hostUrl = root.hostAddress
+        // A personal app: its personal tab from the app's definition first.
+        if (root.personalApp && !root.personalTab) {
+            backend.appHostRequest(root.appId, "", "", "", "personalTab", root.hostId + ":tab", JSON.stringify({ entity: root.personalEntity }))
+            return
+        }
+        const address = root.personalTab && !root.homeTemplate ? root.personalTab.content_url : root.hostAddress
+        if (!address) return
+        root.hostUrl = address
         if (root.meetingBoard)
             backend.appHostRequest(root.appId, root.hostThread, root.hostTeamThread, root.hostTabId, "board", root.hostId + ":board",
                                    JSON.stringify({ organizer: root.meetingBoard.organizer || "", title: root.meetingBoard.title || "" }))
         else
-            backend.appHostRequest(root.appId, root.hostThread, root.hostTeamThread, root.hostTabId, "context", root.hostId + ":ctx", "{}")
+            backend.appHostRequest(root.appId, root.hostThread, root.hostTeamThread, root.hostTabId, "context", root.hostId + ":ctx", JSON.stringify({ mySite: root.ssr }))
     }
     function loadHostPage(ctx) {
-        const c = Object.assign({}, ctx, root.hostContext, {
+        // A personal app's context: its tab's entity, full screen or not;
+        // the server-rendering host feature for Copilot (measured).
+        const personal = root.personalTab ? { entityId: root.personalTab.entity_id, subEntityId: "", isFullScreen: root.personalFullScreen } : {}
+        const c = Object.assign({}, ctx, personal, root.hostContext, {
             appSessionId: root.appSessionId, appLaunchId: newGuid(), theme: hostBridge.theme,
-            appId: root.appId, hostClientType: "desktop" })
-        hostBridge.config = JSON.stringify({ hostId: root.hostId, url: root.hostUrl || root.hostAddress, appId: root.appId, title: root.appName,
-                                             frameContext: root.frameContext, hostClientType: "desktop", deepNaa: root.deepNaa, context: c,
+            appId: root.appId, hostClientType: root.hostClientType })
+        if (root.ssr) c.hostFeatures = Object.assign({}, c.hostFeatures || {}, { serverSideRendering: true })
+        // An Office file's page: Teams names who opened it (measured
+        // `source=TEAMS-WEB.teamsSdk_<app>_ns.rwc.content` on the web; Teams
+        // desktop's platform is TEAMS-ELECTRON) and the app session.
+        let url = root.hostUrl || root.hostAddress
+        if (root.officeSource && url.indexOf("source=") < 0)
+            url += (url.indexOf("?") < 0 ? "?" : "&") + "source=" + encodeURIComponent("TEAMS-ELECTRON." + root.officeSource + ".content") + "&appSessionId=" + c.appSessionId
+        hostBridge.config = JSON.stringify({ hostId: root.hostId, url: url, appId: root.appId, title: root.appName,
+                                             frameContext: root.frameContext, hostClientType: root.hostClientType, deepNaa: root.deepNaa, context: c,
+                                             ssr: root.ssr, allow: root.frameAllow, supports: root.runtimeSupports,
                                              meetingBoard: root.meetingBoard ? { organizer: root.meetingBoard.organizer || "" } : null })
         root.hostLoading = true
         web.loadHtml(backend.appHostPage(root.appName), "https://teams.cloud.microsoft/")
@@ -188,7 +228,20 @@ Item {
         target: backend
         enabled: root.teamsHost
         function onAppHostReply(id, json) {
-            if (id === root.hostId + ":ctx") {
+            if (id === root.hostId + ":tab") {
+                let r = {}
+                try { r = JSON.parse(json) } catch (e) {}
+                if (!r.tab) {
+                    console.warn("APPHOST " + root.appName + " personal tab: " + (r.error || "none"))
+                    root.hostEvents = root.hostEvents.concat(["failure"])
+                    return
+                }
+                // (The address without its values: placeholders only.)
+                console.info("APPHOST " + root.appName + " personal tab " + r.tab.entity_id + " " + String(r.tab.content_url).split("?")[0] + (r.fullScreen ? " full screen" : ""))
+                root.personalFullScreen = !!r.fullScreen
+                root.personalTab = r.tab
+                root.startHost()
+            } else if (id === root.hostId + ":ctx") {
                 let ctx = {}
                 try {
                     const r = JSON.parse(json)
@@ -211,9 +264,9 @@ Item {
 
     Rectangle {
         id: header
-        visible: root.showHeader
+        visible: root.headerShown
         width: parent.width
-        height: !root.showHeader ? 0 : root.appId.length > 0 ? 61 : 52
+        height: !root.headerShown ? 0 : root.appId.length > 0 ? 61 : 52
         color: theme.surface
         // OST's header for apps it hosts without a Teams id.
         Row {
@@ -291,7 +344,7 @@ Item {
                     items: [{ label: "Reload app", icon: "arrow-clockwise-20" }, { separator: true },
                             { label: "About", icon: "info-20" }, { label: "Share app", icon: "share-20" }]
                     onPicked: i => {
-                        if (i === 0) web.reload()
+                        if (i === 0) root.reload()
                         else if (i === 2) aboutDialog.show(root.appId)
                         else if (i === 3) shareForm.start(root.appId)
                     }

@@ -32,6 +32,22 @@ pub struct AppFacts {
     pub full_trust: bool,
     /// The manifest's version (getContext's manifestVersion).
     pub manifest_version: String,
+    /// The app's personal tabs (staticTabs), in the definition's order.
+    pub static_tabs: Vec<StaticTab>,
+    /// The app hides Teams' app header (manifest `isFullScreen`: Shifts,
+    /// Clipchamp, Copilot, the Office apps).
+    pub full_screen: bool,
+}
+
+/// One of an app's personal tabs (manifest staticTabs), as Teams opens it
+/// from the app bar (docs/spec/app-host.md "Personal apps").
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct StaticTab {
+    pub entity_id: String,
+    pub name: String,
+    pub content_url: String,
+    pub website_url: String,
+    pub scopes: Vec<String>,
 }
 
 /// The app's facts from its middle-tier definition (cached per app).
@@ -79,7 +95,23 @@ pub fn facts_from(d: &serde_json::Value) -> AppFacts {
     }
     let s = |p: &str| d.pointer(p).and_then(|v| v.as_str()).unwrap_or_default().to_string();
     let b = |k: &str| d.get(k).and_then(|v| v.as_bool()).unwrap_or(false);
+    let str_of = |t: &serde_json::Value, k: &str| t.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string();
+    let static_tabs = d
+        .get("staticTabs")
+        .and_then(|v| v.as_array())
+        .into_iter()
+        .flatten()
+        .map(|t| StaticTab {
+            entity_id: str_of(t, "entityId"),
+            name: str_of(t, "name"),
+            content_url: str_of(t, "contentUrl"),
+            website_url: str_of(t, "websiteUrl"),
+            scopes: t.get("scopes").and_then(|v| v.as_array()).into_iter().flatten().filter_map(|v| v.as_str().map(str::to_string)).collect(),
+        })
+        .collect();
     AppFacts {
+        static_tabs,
+        full_screen: b("isFullScreen"),
         valid_domains: domains,
         web_app_id: s("/webApplicationInfo/id"),
         web_app_resource: s("/webApplicationInfo/resource"),
@@ -87,6 +119,91 @@ pub fn facts_from(d: &serde_json::Value) -> AppFacts {
         full_trust: b("isFullTrust"),
         manifest_version: s("/manifestVersion"),
     }
+}
+
+/// The personal tab Teams opens for an app from the app bar: the asked
+/// entity, else the first personal-scope tab with a page (conversation
+/// and about tabs have no content address).
+pub fn personal_tab<'a>(f: &'a AppFacts, entity: &str) -> Option<&'a StaticTab> {
+    let usable = |t: &&StaticTab| {
+        t.content_url.starts_with("https://") && (t.scopes.is_empty() || t.scopes.iter().any(|s| s.eq_ignore_ascii_case("personal")))
+    };
+    f.static_tabs
+        .iter()
+        .filter(usable)
+        .find(|t| !entity.is_empty() && t.entity_id == entity)
+        .or_else(|| f.static_tabs.iter().find(usable))
+}
+
+/// Teams' answer to `getUserJoinedTeams` (teams.fullTrust.joinedTeams,
+/// measured for Shifts): `{userJoinedTeams: [{teamId, teamName, groupId,
+/// isTeamLocked, isTeamArchived, teamDescription, thumbnailUri,
+/// userTeamRole, teamType}]}`, userTeamRole 0 owner, 1 member, 2 guest.
+pub fn joined_teams_from(teams: &[super::teams::ListTeam]) -> serde_json::Value {
+    let list: Vec<serde_json::Value> = teams
+        .iter()
+        .map(|t| {
+            serde_json::json!({
+                "teamId": t.thread_id,
+                "teamName": t.name,
+                "groupId": t.id,
+                "isTeamLocked": false,
+                "isTeamArchived": t.archived,
+                "teamDescription": t.description,
+                "thumbnailUri": "",
+                "userTeamRole": match t.role.as_str() { "admin" => 0, "guest" => 2, _ => 1 },
+                "teamType": t.team_type,
+            })
+        })
+        .collect();
+    serde_json::json!({ "userJoinedTeams": list })
+}
+
+/// Share to Outlook (measured 2026-11-16, Teams on the web): Teams asks the
+/// middle tier to make a draft of the conversation in your mailbox, `GET
+/// {mt}/beta/shareToOutlook/GetEmailIdForConversation?threadId=…
+/// &messageId=…&locale=en-us[&bodyType=…]`, and frames Outlook's compose
+/// for that draft.
+pub async fn share_to_outlook_email(client: &TeamsClient, thread: &str, message_id: &str, body_type: &str) -> Result<String> {
+    // Teams sends the thread id as it is (19:…@thread.v2).
+    anyhow::ensure!(
+        thread.starts_with("19:") && thread.chars().all(|c| c.is_ascii_alphanumeric() || ":@._-".contains(c)),
+        "Not a conversation id"
+    );
+    let (base, token) = super::tabs::middle_tier(client).await?;
+    let e = super::tabs::encode_uri_component;
+    let mut url = format!("{base}/beta/shareToOutlook/GetEmailIdForConversation?threadId={thread}&messageId={}&locale=en-us", e(message_id));
+    if !body_type.is_empty() {
+        url.push_str(&format!("&bodyType={}", e(body_type)));
+    }
+    let v: serde_json::Value = client.http().get(url).bearer_auth(&token).send().await?.error_for_status()?.json().await?;
+    let id = v.get("id").or_else(|| v.get("emailId")).and_then(|i| i.as_str()).or_else(|| v.as_str()).unwrap_or_default();
+    anyhow::ensure!(!id.is_empty(), "No email draft for the conversation");
+    Ok(id.to_string())
+}
+
+/// The compose page Teams frames for a Share to Outlook draft (Teams'
+/// shareToOutlookOPXBaseUrl and shareToOutlookOPXConfig, culture added).
+pub fn share_to_outlook_compose_url(email_id: &str, culture: &str) -> String {
+    format!(
+        "https://outlook.office.com/mail/opxdeeplink/compose/{}?isAnonymous=true&opxAuth=true&hostApp=teams&useOwaTheme=true&culture={}",
+        super::tabs::encode_uri_component(email_id),
+        super::tabs::encode_uri_component(culture)
+    )
+}
+
+/// Closing Share to Outlook without sending: Teams discards the draft,
+/// `DELETE {mt}/v1/shareToOutlook/email?emailId=…`.
+pub async fn share_to_outlook_discard(client: &TeamsClient, email_id: &str) -> Result<()> {
+    let (base, token) = super::tabs::middle_tier(client).await?;
+    client
+        .http()
+        .delete(format!("{base}/v1/shareToOutlook/email?emailId={}", super::tabs::encode_uri_component(email_id)))
+        .bearer_auth(&token)
+        .send()
+        .await?
+        .error_for_status()?;
+    Ok(())
 }
 
 /// Whether a frame served from `origin` belongs to the app (Teams'
@@ -245,6 +362,19 @@ pub fn context_from(
         if let (Some(o), serde_json::Value::Object(e)) = (c.as_object_mut(), extra) {
             o.extend(e);
         }
+    } else if channel_id.is_empty() && !tenant_site_domain.is_empty() {
+        // A personal app (Whiteboard, Shifts, Copilot…): no conversation,
+        // the tenant's SharePoint host (measured).
+        let extra = serde_json::json!({
+            "channelId": "",
+            "teamSiteId": "",
+            "teamSiteUrl": "",
+            "teamSiteDomain": tenant_site_domain,
+            "teamSitePath": "",
+        });
+        if let (Some(o), serde_json::Value::Object(e)) = (c.as_object_mut(), extra) {
+            o.extend(e);
+        }
     }
     if !channel_id.is_empty() {
         let extra = serde_json::json!({
@@ -286,6 +416,21 @@ fn iana_zone() -> String {
 /// root site (cached).
 pub async fn sharepoint_host(client: &TeamsClient) -> String {
     tenant_site_domain(client).await
+}
+
+/// Your OneDrive site as Teams' context names it for Copilot
+/// (`mySiteDomain` `<tenant>-my.sharepoint.com`, `mySitePath`
+/// `/personal/<you>`), from Graph's drive address.
+pub async fn my_site(client: &TeamsClient) -> Option<(String, String)> {
+    let v: serde_json::Value = client.graph_get("/me/drive?$select=webUrl").await.ok()?.json().await.ok()?;
+    my_site_from(v.get("webUrl")?.as_str()?)
+}
+
+fn my_site_from(web_url: &str) -> Option<(String, String)> {
+    let u = url::Url::parse(web_url).ok()?;
+    let mut parts = u.path().split('/').filter(|p| !p.is_empty());
+    let (a, b) = (parts.next()?, parts.next()?);
+    Some((u.host_str()?.to_string(), format!("/{a}/{b}")))
 }
 
 async fn tenant_site_domain(client: &TeamsClient) -> String {
@@ -332,7 +477,8 @@ pub async fn context(client: &TeamsClient, app_id: &str, thread: &str, team_thre
         }
     }
     let chat = if !is_channel && !thread.is_empty() { thread } else { "" };
-    let site = if chat.is_empty() { String::new() } else { tenant_site_domain(client).await };
+    // Chats and personal apps carry the tenant's SharePoint host.
+    let site = if is_channel { String::new() } else { tenant_site_domain(client).await };
     Ok(context_from(
         app_id,
         &manifest,
@@ -495,6 +641,48 @@ mod tests {
         assert_eq!(chat["teamSiteDomain"], "x.sharepoint.com");
         assert_eq!(chat["manifestVersion"], "1.25");
         assert_eq!(chat["tid"], "t");
+    }
+
+    #[test]
+    fn personal_apps_open_as_teams() {
+        let d = serde_json::json!({
+            "isFullScreen": true,
+            "staticTabs": [
+                {"entityId": "conversations", "scopes": ["personal"]},
+                {"entityId": "shifts", "name": "Shifts", "contentUrl": "https://flw.teams.microsoft.com/shifts-web-app?ui-culture={locale}&tid={tid}", "scopes": ["personal"]},
+                {"entityId": "about", "contentUrl": "https://example.com/about", "scopes": ["team"]}
+            ]
+        });
+        let f = facts_from(&d);
+        assert!(f.full_screen);
+        assert_eq!(personal_tab(&f, "").unwrap().entity_id, "shifts");
+        assert_eq!(personal_tab(&f, "about").unwrap().entity_id, "shifts");
+        assert!(personal_tab(&facts_from(&serde_json::json!({})), "").is_none());
+        let user = HostUser { tid: "t".into(), oid: "o".into(), upn: "u@x".into(), mri: "8:orgid:o".into() };
+        let c = context_from("95de633a-083e-42f5-b444-a4295d8e9314", "1.25", &user, "", "x.sharepoint.com", "", &serde_json::Value::Null, "", &serde_json::Value::Null, &[]);
+        assert_eq!(c["teamSiteDomain"], "x.sharepoint.com");
+        assert_eq!(c["chatId"], "");
+        assert_eq!(c["channelId"], "");
+        assert_eq!(my_site_from("https://x-my.sharepoint.com/personal/u_x_com/Documents"), Some(("x-my.sharepoint.com".into(), "/personal/u_x_com".into())));
+    }
+
+    #[test]
+    fn joined_teams_and_share_to_outlook_as_teams() {
+        let t = super::super::teams::ListTeam {
+            id: "g".into(),
+            thread_id: "19:t@thread.tacv2".into(),
+            name: "OST Test Team".into(),
+            role: "admin".into(),
+            ..Default::default()
+        };
+        let v = joined_teams_from(&[t]);
+        assert_eq!(v["userJoinedTeams"][0]["teamId"], "19:t@thread.tacv2");
+        assert_eq!(v["userJoinedTeams"][0]["groupId"], "g");
+        assert_eq!(v["userJoinedTeams"][0]["userTeamRole"], 0);
+        assert_eq!(
+            share_to_outlook_compose_url("AAMk=", "en-us"),
+            "https://outlook.office.com/mail/opxdeeplink/compose/AAMk%3D?isAnonymous=true&opxAuth=true&hostApp=teams&useOwaTheme=true&culture=en-us"
+        );
     }
 
     #[test]

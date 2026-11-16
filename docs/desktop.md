@@ -65,11 +65,17 @@ Microsoft branding.
   Stop sharing. Closing the shared window stops it too.
 - **View more apps** lists Teams' apps for the account, in Teams'
   order: Shifts, Planner, OneNote, Help, Clipchamp, Whiteboard, Events,
-  People. Planner, OneNote and People are native; Whiteboard, Clipchamp
-  and Help are embedded, as Teams embeds them (QtWebEngine, with OST's
-  own persistent web profile: sign in once). Shifts (it needs a scope
-  OST's sign-in doesn't have) and Events open Teams on the web. An app opened
-  there takes the rail's one extra slot, as in Teams.
+  People. Planner, OneNote and People are native; Whiteboard, Shifts and
+  Clipchamp are the apps' own pages in OST's TeamsJS host, signed in as
+  Teams hosts them (docs/spec/app-host.md "Personal apps"); Help is
+  embedded. Events (a module Teams draws itself) still opens Teams on the
+  web. An app opened there takes the rail's one extra slot, as in Teams.
+- **Copilot, Share to Outlook, Immersive Reader, Office files**: the chat
+  list's Copilot row opens Copilot as Teams hosts it; a message's ··· ▸
+  Share to Outlook opens Teams' Outlook dialog on a draft of the
+  conversation, and ··· ▸ More actions ▸ Immersive Reader Teams' reader;
+  Word, Excel and PowerPoint files open in Office for the web inside OST
+  with Settings ▸ Files and links ▸ Teams (the default).
 - **Store**: your organization's Teams app catalog, as Teams' Store
   Home shows it: the "Do more in Teams" banner with Search agents and
   apps, Added by your org, Apps from Microsoft and All apps as cards,
@@ -303,6 +309,7 @@ account.
 | `--hold-test` | In a call: Hold (Teams' music on hold) and Resume, dial-pad tones, and capturing when the other side holds; stays until they hang up. |
 | `--app-host-test[=<tab>]` | With `--open-chat=<channel id> --shots=<dir>`: that channel's app tab (default Notes) in OST's TeamsJS host (docs/spec/app-host.md). APPHOST lines: the channel's tabs, the host's events (framed, initialize, appLoaded, success, tabSaved…) after 15, 35 and 55 s, the tab's menu; then Reload tab, Expand tab, Open tab in new window (its own APPHOST window line) and App permissions. Pictures `app-host-{15s,35s,55s,reloaded,expanded,window,permissions}.png`. Quits unless `--app-host-stay` (to inspect the views over `QTWEBENGINE_REMOTE_DEBUGGING`). Opening a channel's Notes for the first time makes its section, as Teams does. |
 | `--webapp-test` | Open Whiteboard (`--webapp-help`: Help) from View more apps and capture it once loaded. |
+| `--embedded-apps-test[=<list>]` | Teams' embedded first-party apps as OST hosts them (docs/spec/app-host.md), one after another, about 40 s each; `<list>` from `whiteboard,shifts,clipchamp,copilot,settings,office,sto,ir` (default all). `whiteboard`, `shifts`, `clipchamp`: the app bar's personal apps in OST's TeamsJS host; `copilot`: the chat list's Copilot row; `settings`: Settings ▸ Files and links; `office`: `ost-open-test.docx` from My files with the "Teams" choice (the device setting is put back); `sto`: Share to Outlook on your newest message in `--embed-chat=<chat id>` (default OST group test), closed without sending, which discards the draft; `ir`: Immersive Reader on that message, then closed. EMBED lines: each app's host events (initialize, appLoaded, success, failure…), the dialog's events, the reader's state. Pictures `embed-<item>.png`. Quits unless `--embed-stay`. |
 | `--store-test` | Open the Store, capture Home, search "planner", open Whiteboard's details. |
 | `--add-tab-test` | With `--open-chat=<chat or channel id> --shots=<dir>`: Teams' Add a tab ("+"; a channel's menu, then Apps): the picker (ADDTAB picker line: grid and collections; See all), Website's configuration with an invalid URL. With `--add-tab-url=<https url>` (and `--add-tab-name=<name>`) it saves the tab for real, posting "I added a tab…" unless `--add-tab-nopost`, logs ADDTAB result and the tabs, and captures the new tab's menu; `--add-tab-remove` removes it again. Pictures `add-tab-*.png` `--add-tab-app=<name>` opens that app's own configuration page instead (in OST's TeamsJS host) and after 20 s logs ADDTAB app config (Teams' validity and settings it reported) with `add-tab-config-app.png`; nothing is saved unless `--add-tab-save`: it then waits up to 3 minutes for the page to report a valid setup (pick its item yourself, e.g. over `QTWEBENGINE_REMOTE_DEBUGGING`), saves as Teams (settings.save, then the tab), and logs and captures as for a website (`--add-tab-nopost`, `--add-tab-remove` apply). |
 | `--add-tab-choice=<newList\|existingList\|existingPage>` | With `--open-chat=<channel id> --shots=<dir>`: a channel's "+" choice as Teams. New list / Existing list add the Lists tab and open SharePoint's page in OST's TeamsJS host; Existing page needs `--add-tab-link=<Loop link>` (looked up, its card, then Confirm). ADDTAB choice lines: the tabs, the result, the tabs after, the page's host events after 20 s. `--add-tab-remove` removes the new tab; `--add-tab-stay` keeps OST open. Pictures `add-tab-choice-{menu,page-dialog,page-card,added,page-20s}.png`. |

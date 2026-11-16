@@ -748,7 +748,7 @@ Rectangle {
         id: msgHost
         messages: root.messages
         isGroup: root.isGroup; isChannel: root.isChannel
-        teamId: root.teamId; teamName: root.teamName; chatName: root.chatName
+        teamId: root.teamId; teamName: root.teamName; chatName: root.chatName; isSelfChat: root.isSelf
         defaultBox: compose
         onQuoteRequested: m => root.replyWithQuote(m)
         onReactRequested: (id, key, on) => root.react(id, key, on)
@@ -3625,6 +3625,7 @@ Rectangle {
     readonly property var hostedTab: channelTabs.find(t => t.name === tab && (t.kind === "Extension" || t.kind === "OneNote") && !!t.content_template) || null
     function reloadTabs() { if (isChannel) backend.channelTabsLoad(teamId, chatId, chatName); else backend.chatTabsLoad(chatId) }
     function hostedTabForTest() { return hostedTabLoader.item }
+    function messageHostForTest() { return msgHost }
     Loader {
         id: hostedTabLoader
         // One host per tab: a new one when the channel or the tab changes.

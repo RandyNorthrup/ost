@@ -40,6 +40,7 @@ mod me;
 pub mod meeting_options;
 pub mod messages;
 pub mod msgactions;
+pub mod office_open;
 pub mod onenote;
 pub mod outbox;
 pub mod planner;

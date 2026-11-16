@@ -1422,7 +1422,7 @@ Window {
     Timer {
         id: shotTimer
         interval: 15000
-        running: window.shotPath.length > 0 && Qt.application.arguments.indexOf("--draft-format-test") < 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--table-test") < 0 && Qt.application.arguments.indexOf("--hovercard-test") < 0 && Qt.application.arguments.indexOf("--chat-shot") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--pause-test")) && Qt.application.arguments.indexOf("--settings-test") < 0 && Qt.application.arguments.indexOf("--settings-pages-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--meet-now-test") < 0 && Qt.application.arguments.indexOf("--mute-test") < 0 && Qt.application.arguments.indexOf("--video-call-test") < 0 && Qt.application.arguments.indexOf("--meeting-chat-test") < 0 && Qt.application.arguments.indexOf("--breakpoints-test") < 0 && Qt.application.arguments.indexOf("--fun-picker-test") < 0 && Qt.application.arguments.indexOf("--attach-test") < 0 && Qt.application.arguments.indexOf("--copilot-test") < 0 && Qt.application.arguments.indexOf("--attach-link-test") < 0 && Qt.application.arguments.indexOf("--thread-attach-test") < 0 && Qt.application.arguments.indexOf("--picker-bar-test") < 0 && Qt.application.arguments.indexOf("--filecard-test") < 0 && Qt.application.arguments.indexOf("--videoclip-test") < 0 && Qt.application.arguments.indexOf("--recorder-test") < 0 && Qt.application.arguments.indexOf("--recorder-edit-test") < 0 && Qt.application.arguments.indexOf("--teleprompter-test") < 0 && Qt.application.arguments.indexOf("--video-effects-test") < 0 && Qt.application.arguments.indexOf("--video-filters-test") < 0 && Qt.application.arguments.indexOf("--green-screen-test") < 0 && Qt.application.arguments.indexOf("--leave-confirm-test") < 0 && Qt.application.arguments.indexOf("--shortcut-profile-test") < 0 && Qt.application.arguments.indexOf("--new-chat-window-test") < 0 && Qt.application.arguments.indexOf("--chatlist-keys-test") < 0 && Qt.application.arguments.indexOf("--translation-test") < 0 && Qt.application.arguments.indexOf("--regional-test") < 0 && Qt.application.arguments.indexOf("--editor-test") < 0 && Qt.application.arguments.indexOf("--appearance-test") < 0 && Qt.application.arguments.indexOf("--collab-test") < 0 && Qt.application.arguments.indexOf("--notif-test") < 0 && Qt.application.arguments.indexOf("--accounts-test") < 0 && Qt.application.arguments.indexOf("--privacy-test") < 0 && Qt.application.arguments.indexOf("--calls-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--cards-test")) && !Qt.application.arguments.some(a => a.startsWith("--recognition-test=")) && Qt.application.arguments.indexOf("--recognition-states") < 0 && Qt.application.arguments.indexOf("--about-test") < 0 && Qt.application.arguments.indexOf("--room-audio-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--link-preview-test")) && Qt.application.arguments.indexOf("--fileviewer-test") < 0 && Qt.application.arguments.indexOf("--poll-test") < 0 && Qt.application.arguments.indexOf("--media-order-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--custom-emoji")) && Qt.application.arguments.indexOf("--onedrive-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--onedrive-rows-test")) && !Qt.application.arguments.some(a => a.startsWith("--version-history-test")) && !Qt.application.arguments.some(a => a.startsWith("--details-test")) && Qt.application.arguments.indexOf("--preview-test") < 0 && Qt.application.arguments.indexOf("--sortview-test") < 0 && Qt.application.arguments.indexOf("--zip-test") < 0 && Qt.application.arguments.indexOf("--files-links-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--picker-test")) && Qt.application.arguments.indexOf("--folder-bar-test") < 0 && Qt.application.arguments.indexOf("--quick-access-test") < 0 && Qt.application.arguments.indexOf("--picker-views-test") < 0 && Qt.application.arguments.indexOf("--comments-test") < 0 && Qt.application.arguments.indexOf("--bell-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--folder-extras-test")) && Qt.application.arguments.indexOf("--planner-test") < 0 && Qt.application.arguments.indexOf("--apps-test") < 0 && Qt.application.arguments.indexOf("--channel-files-test") < 0 && Qt.application.arguments.indexOf("--store-test") < 0 && Qt.application.arguments.indexOf("--webapp-test") < 0 && Qt.application.arguments.indexOf("--loop-test") < 0 && Qt.application.arguments.indexOf("--tab-menu-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--tab-drag-test=")) && Qt.application.arguments.indexOf("--delete-undo-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat=")) && window.appDetailsTest.length === 0 && Qt.application.arguments.indexOf("--chatlist-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--share-test")) && !Qt.application.arguments.some(a => a.startsWith("--file-actions-test")) && Qt.application.arguments.indexOf("--open-file-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--sharefile-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-grid-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-communities-test")) && Qt.application.arguments.indexOf("--meeting-details-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--attendance-test=")) && !Qt.application.arguments.some(a => a.startsWith("--remove-history-"))
+        running: window.shotPath.length > 0 && Qt.application.arguments.indexOf("--draft-format-test") < 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--table-test") < 0 && Qt.application.arguments.indexOf("--hovercard-test") < 0 && Qt.application.arguments.indexOf("--chat-shot") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--pause-test")) && Qt.application.arguments.indexOf("--settings-test") < 0 && Qt.application.arguments.indexOf("--settings-pages-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--meet-now-test") < 0 && Qt.application.arguments.indexOf("--mute-test") < 0 && Qt.application.arguments.indexOf("--video-call-test") < 0 && Qt.application.arguments.indexOf("--meeting-chat-test") < 0 && Qt.application.arguments.indexOf("--breakpoints-test") < 0 && Qt.application.arguments.indexOf("--fun-picker-test") < 0 && Qt.application.arguments.indexOf("--attach-test") < 0 && Qt.application.arguments.indexOf("--copilot-test") < 0 && Qt.application.arguments.indexOf("--attach-link-test") < 0 && Qt.application.arguments.indexOf("--thread-attach-test") < 0 && Qt.application.arguments.indexOf("--picker-bar-test") < 0 && Qt.application.arguments.indexOf("--filecard-test") < 0 && Qt.application.arguments.indexOf("--videoclip-test") < 0 && Qt.application.arguments.indexOf("--recorder-test") < 0 && Qt.application.arguments.indexOf("--recorder-edit-test") < 0 && Qt.application.arguments.indexOf("--teleprompter-test") < 0 && Qt.application.arguments.indexOf("--video-effects-test") < 0 && Qt.application.arguments.indexOf("--video-filters-test") < 0 && Qt.application.arguments.indexOf("--green-screen-test") < 0 && Qt.application.arguments.indexOf("--leave-confirm-test") < 0 && Qt.application.arguments.indexOf("--shortcut-profile-test") < 0 && Qt.application.arguments.indexOf("--new-chat-window-test") < 0 && Qt.application.arguments.indexOf("--chatlist-keys-test") < 0 && Qt.application.arguments.indexOf("--translation-test") < 0 && Qt.application.arguments.indexOf("--regional-test") < 0 && Qt.application.arguments.indexOf("--editor-test") < 0 && Qt.application.arguments.indexOf("--appearance-test") < 0 && Qt.application.arguments.indexOf("--collab-test") < 0 && Qt.application.arguments.indexOf("--notif-test") < 0 && Qt.application.arguments.indexOf("--accounts-test") < 0 && Qt.application.arguments.indexOf("--privacy-test") < 0 && Qt.application.arguments.indexOf("--calls-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--cards-test")) && !Qt.application.arguments.some(a => a.startsWith("--recognition-test=")) && Qt.application.arguments.indexOf("--recognition-states") < 0 && Qt.application.arguments.indexOf("--about-test") < 0 && Qt.application.arguments.indexOf("--room-audio-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--link-preview-test")) && Qt.application.arguments.indexOf("--fileviewer-test") < 0 && Qt.application.arguments.indexOf("--poll-test") < 0 && Qt.application.arguments.indexOf("--media-order-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--custom-emoji")) && Qt.application.arguments.indexOf("--onedrive-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--onedrive-rows-test")) && !Qt.application.arguments.some(a => a.startsWith("--version-history-test")) && !Qt.application.arguments.some(a => a.startsWith("--details-test")) && Qt.application.arguments.indexOf("--preview-test") < 0 && Qt.application.arguments.indexOf("--sortview-test") < 0 && Qt.application.arguments.indexOf("--zip-test") < 0 && Qt.application.arguments.indexOf("--files-links-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--picker-test")) && Qt.application.arguments.indexOf("--folder-bar-test") < 0 && Qt.application.arguments.indexOf("--quick-access-test") < 0 && Qt.application.arguments.indexOf("--picker-views-test") < 0 && Qt.application.arguments.indexOf("--comments-test") < 0 && Qt.application.arguments.indexOf("--bell-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--folder-extras-test")) && Qt.application.arguments.indexOf("--planner-test") < 0 && Qt.application.arguments.indexOf("--apps-test") < 0 && Qt.application.arguments.indexOf("--channel-files-test") < 0 && Qt.application.arguments.indexOf("--store-test") < 0 && Qt.application.arguments.indexOf("--webapp-test") < 0 && Qt.application.arguments.indexOf("--loop-test") < 0 && Qt.application.arguments.indexOf("--tab-menu-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--tab-drag-test=")) && Qt.application.arguments.indexOf("--delete-undo-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat=")) && window.appDetailsTest.length === 0 && Qt.application.arguments.indexOf("--chatlist-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--share-test")) && !Qt.application.arguments.some(a => a.startsWith("--file-actions-test")) && Qt.application.arguments.indexOf("--open-file-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--sharefile-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-grid-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-communities-test")) && Qt.application.arguments.indexOf("--meeting-details-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--attendance-test=")) && !Qt.application.arguments.some(a => a.startsWith("--remove-history-")) && !Qt.application.arguments.some(a => a.startsWith("--embedded-apps-test"))
         onTriggered: {
             if (!backend.hasCredentials) {
                 if (!backend.signInPage) {
@@ -6275,6 +6275,81 @@ Window {
         }
     }
 
+    // --embedded-apps-test[=<list>]: Teams' embedded first-party apps as OST
+    // hosts them (TASK-0038, docs/spec/app-host.md), one after another, about
+    // 40 s each: whiteboard, shifts, clipchamp (the app bar's personal apps),
+    // copilot (the chat list's row), office (ost-open-test.docx from My
+    // files with the "Teams" choice, the device setting put back after),
+    // settings (Files and links), sto (Share to Outlook on your newest
+    // message in --embed-chat, default OST group test; closed without
+    // sending, which discards the draft) and ir (Immersive Reader on the
+    // newest message). EMBED lines: each app's host events (TeamsJS
+    // initialize, appLoaded, success, failure…) or the dialog's state;
+    // pictures embed-<item>.png. Quits unless --embed-stay.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--embedded-apps-test")) && backend.signedIn && chatList.chats.length > 1
+        interval: 5000; repeat: true
+        property var items: ((Qt.application.arguments.find(a => a.startsWith("--embedded-apps-test=")) || "").slice(21) || "whiteboard,shifts,clipchamp,copilot,settings,office,sto,ir").split(",")
+        property int idx: 0
+        property int tick: 0
+        property string before: ""
+        readonly property string chatId: (Qt.application.arguments.find(a => a.startsWith("--embed-chat=")) || "").slice(13) || "19:ef213c7c46cf4036b11608300e96fee4@thread.v2"
+        onTriggered: {
+            const cap = tag => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-embed-" + tag + ".png")))
+            const item = items[idx]
+            const next = () => { idx++; tick = -1; if (idx >= items.length && Qt.application.arguments.indexOf("--embed-stay") < 0) Qt.quit() }
+            if (idx >= items.length) return
+            const hosted = ["whiteboard", "clipchamp", "shifts"].indexOf(item)
+            const newest = () => { const ms = conversation.messageHostForTest().messages || []; for (let i = ms.length - 1; i >= 0; i--) if (ms[i].id && !ms[i].deleted && ms[i].mine) return ms[i]; return null }
+            if (hosted >= 0) {
+                if (tick === 0) rail.openApp(item)
+                else if (tick === 8) {
+                    const v = hostedApps.itemAt(hosted).item
+                    console.warn("EMBED", item, JSON.stringify({ events: v ? v.hostEvents : null, header: v ? v.headerShown : null, tab: v && v.personalTab ? v.personalTab.entity_id : "" }))
+                    cap(item); next()
+                }
+            } else if (item === "copilot") {
+                if (tick === 0) { rail.current = "chat"; chatList.openCopilot() }
+                else if (tick === 9) { const v = copilotView.item; console.warn("EMBED copilot", JSON.stringify({ events: v ? v.hostEvents : null })); cap(item); next() }
+            } else if (item === "settings") {
+                if (tick === 0) { rail.current = "settings"; settingsView.pageForTest("files") }
+                else if (tick === 1) { cap(item); next() }
+            } else if (item === "office") {
+                const f = (oneDrive.driveData.items || []).find(i => i.name === "ost-open-test.docx")
+                if (tick === 0) { before = backend.setting("fileOpenIn"); backend.setSetting("fileOpenIn", "teams"); rail.current = "onedrive"; oneDrive.open("myfiles") }
+                else if (tick === 2) { console.warn("EMBED office file", !!f); if (f) backend.openFile(f.web_url, f.name, JSON.stringify(f)) }
+                else if (tick === 10) {
+                    const v = officeView.item
+                    console.warn("EMBED office", JSON.stringify({ rail: rail.current, app: window.officeFile ? window.officeFile.appName : "", events: v ? v.hostEvents : null, frame: v ? JSON.parse(v.hostStateForTest()).params : null }))
+                    cap(item); backend.setSetting("fileOpenIn", before); next()
+                }
+            } else if (item === "sto" || item === "ir") {
+                if (tick === 0) { rail.current = "chat"; chatList.copilotOpen = false; const c = chatList.chats.find(c => c.id === chatId); if (c) backend.selectChat(c.id, c.name) }
+                else if (tick === 3) {
+                    const m = newest(); const h = conversation.messageHostForTest()
+                    console.warn("EMBED", item, "message", !!m)
+                    if (m && item === "sto") h.shareToOutlookForTest.start(m)
+                    else if (m) h.openImmersiveReader(m)
+                } else if (tick === 9) {
+                    const h = conversation.messageHostForTest()
+                    if (item === "sto") {
+                        const d = h.shareToOutlookForTest.dialog
+                        console.warn("EMBED sto", JSON.stringify({ events: h.shareToOutlookForTest.events, dialog: d ? JSON.parse(d.stateForTest()).events : null }))
+                    } else console.warn("EMBED ir", h.immersiveReaderForTest.stateForTest())
+                    cap(item)
+                } else if (tick === 10) {
+                    const h = conversation.messageHostForTest()
+                    if (item === "sto") h.shareToOutlookForTest.close(); else h.immersiveReaderForTest.close()
+                } else if (tick === 12) {
+                    const h = conversation.messageHostForTest()
+                    console.warn("EMBED", item, "closed", item === "sto" ? JSON.stringify(h.shareToOutlookForTest.events) : h.immersiveReaderForTest.opened)
+                    next()
+                }
+            } else next()
+            tick++
+        }
+    }
+
     // --planner-test: open Planner from View more apps; add a private task,
     // complete it; create a plan in OST Test Team, add a task, delete the
     // plan; capturing along the way.
@@ -9362,7 +9437,7 @@ Window {
 
     // Apps not built yet: an honest placeholder instead of the chat.
     Rectangle {
-        visible: ["chat", "calls", "calendar", "activity", "settings", "onedrive", "planner", "people", "onenote", "add", "whiteboard", "clipchamp", "help", "communities", "search"].indexOf(rail.current) < 0
+        visible: ["chat", "calls", "calendar", "activity", "settings", "onedrive", "planner", "people", "onenote", "add", "whiteboard", "clipchamp", "shifts", "office", "help", "communities", "search"].indexOf(rail.current) < 0
         anchors { top: appBanner.bottom; bottom: parent.bottom; left: rail.right; right: parent.right }
         color: theme.surface
         Text {
@@ -9374,10 +9449,16 @@ Window {
     }
     // Teams' embedded web apps, created when first opened and kept (so
     // a whiteboard stays where you left it).
+    // Whiteboard, Shifts and Clipchamp are the apps' personal pages in
+    // Teams' app host (TeamsJS), as Teams opens them from the app bar
+    // (docs/spec/app-host.md "Personal apps"): Whiteboard under Teams' app
+    // header, Shifts and Clipchamp full screen.
     Repeater {
+        id: hostedApps
         model: [
-            { key: "whiteboard", name: "Whiteboard", icon: "board-20", color: "#0F6CBD", url: "https://whiteboard.cloud.microsoft/" },
-            { key: "clipchamp", name: "Clipchamp", icon: "video", color: "#8764B8", url: "https://app.clipchamp.com/" },
+            { key: "whiteboard", name: "Whiteboard", icon: "board-20", color: "#0F6CBD", appId: "95de633a-083e-42f5-b444-a4295d8e9314" },
+            { key: "clipchamp", name: "Clipchamp", icon: "video", color: "#8764B8", appId: "com.microsoftstream.embed.skypeteamstab" },
+            { key: "shifts", name: "Shifts", icon: "calendar-clock-20", color: "#5B5FC7", appId: "42f6c1da-a241-483a-a3cc-4f5be9185951" },
             // Communities (Viva Engage), as Teams embeds it.
             { key: "communities", name: "Communities", icon: "people-community-20", color: "#0F6CBD", url: "https://engage.cloud.microsoft/main/discover" }
         ]
@@ -9388,7 +9469,62 @@ Window {
             onVisibleChanged: if (visible) opened = true
             active: opened
             anchors { top: appBanner.bottom; bottom: statusBar.top; left: rail.right; right: parent.right }
-            sourceComponent: WebApp { appName: modelData.name; appIcon: modelData.icon; appColor: modelData.color; home: modelData.url }
+            sourceComponent: modelData.appId ? personalAppComp : webAppComp
+            Component { id: webAppComp; WebApp { appName: modelData.name; appIcon: modelData.icon; appColor: modelData.color; home: modelData.url } }
+            Component { id: personalAppComp; WebApp { appName: modelData.name; appId: modelData.appId; teamsHost: true; personalApp: true } }
+        }
+    }
+    // A Word, Excel or PowerPoint file in Office for the web, as Teams'
+    // "Teams" choice opens it: the Office app's page in Teams' host, full
+    // screen beside the app bar, the file in its context's subEntityId
+    // (api::office_open). Each file opens afresh.
+    property var officeFile: null
+    property string officeFrom: ""
+    function openInTeams(url, name, itemJson) {
+        let item = {}
+        try { item = JSON.parse(itemJson || "{}") } catch (e) {}
+        backend.appHostRequest("", "", "", "", "officeOpen", "office:" + Date.now(), JSON.stringify({ url: url, driveId: item.drive_id || "", itemId: item.id || "" }))
+    }
+    Connections {
+        target: backend
+        function onOpenInTeamsRequested(url, name, itemJson) { window.openInTeams(url, name, itemJson) }
+        function onAppHostReply(id, json) {
+            if (id.indexOf("office:") !== 0) return
+            const r = JSON.parse(json)
+            if (r.error) { window.showToast({ text: r.error, intent: "error" }); return }
+            if (rail.current !== "office") window.officeFrom = rail.current
+            window.officeFile = r
+            rail.officeLabel = r.appName
+            rail.openApp("office")
+        }
+    }
+    Loader {
+        id: officeView
+        visible: rail.current === "office"
+        active: false
+        anchors { top: appBanner.bottom; bottom: statusBar.top; left: rail.right; right: parent.right }
+        sourceComponent: officeComp
+        Component {
+            id: officeComp
+            WebApp {
+                // The page's Close (navigateBack): back where the file was
+                // opened, and the app leaves the app bar (Teams).
+                onHostEvent: (name, json) => {
+                    if (name !== "navigateBack") return
+                    rail.opened = rail.opened.filter(k => k !== "office")
+                    rail.current = window.officeFrom || "chat"
+                    Qt.callLater(() => { window.officeFile = null })
+                }
+                appName: window.officeFile.appName; appId: window.officeFile.appId
+                teamsHost: true; personalApp: true; personalFullScreen: true
+                hostContext: ({ entityId: window.officeFile.entityId, subEntityId: window.officeFile.subEntityId, isFullScreen: true })
+                officeSource: window.officeFile.serviceName + "." + window.officeFile.ctx
+            }
+        }
+        // A new file: a new host.
+        Connections {
+            target: window
+            function onOfficeFileChanged() { officeView.active = false; officeView.active = !!window.officeFile }
         }
     }
     // Teams' search results page (Enter in the title bar's search).
@@ -9741,8 +9877,9 @@ Window {
         teams: backend.teamsJson ? JSON.parse(backend.teamsJson) : []
         // The new chat form selects nothing but its own row.
         currentId: window.composing ? "" : backend.currentChatId
-        onChatSelected: (id, name) => { window.composing = false; draftsOpen = false; mentionsOpen = false; quickOpen = ""; window.manage = null; window.manageTeamId = ""; yourTeamsOpen = false; backend.selectChat(id, name) }
-        onNewChat: { draftsOpen = false; mentionsOpen = false; yourTeamsOpen = false; window.startNewChat() }
+        onChatSelected: (id, name) => { window.composing = false; copilotOpen = false; draftsOpen = false; mentionsOpen = false; quickOpen = ""; window.manage = null; window.manageTeamId = ""; yourTeamsOpen = false; backend.selectChat(id, name) }
+        onNewChat: { copilotOpen = false; draftsOpen = false; mentionsOpen = false; yourTeamsOpen = false; window.startNewChat() }
+        onOpenCopilot: { window.composing = false; draftsOpen = false; mentionsOpen = false; yourTeamsOpen = false; quickOpen = ""; window.manage = null; window.manageTeamId = ""; copilotOpen = true }
         onOpenYourTeams: window.openYourTeams("teams")
         onOpenChatWindow: (id, name, photo, presence) => window.openChatWindow(id, name, photo, presence)
         onManageChatApps: (id, name) => { window.composing = false; draftsOpen = false; mentionsOpen = false; window.manage = null; window.manageTeamId = ""; yourTeamsOpen = false; if (backend.currentChatId !== id) backend.selectChat(id, name); conversation.manageApps = true }
@@ -9753,12 +9890,36 @@ Window {
         composing: window.composing
         onOpenComposing: window.composing = true
         draftIds: (backend.draftsJson ? JSON.parse(backend.draftsJson) : []).map(d => d.id)
-        onOpenDrafts: { window.composing = false; mentionsOpen = false; yourTeamsOpen = false; quickOpen = ""; draftsOpen = true }
+        onOpenDrafts: { window.composing = false; copilotOpen = false; mentionsOpen = false; yourTeamsOpen = false; quickOpen = ""; draftsOpen = true }
         hasMentions: mentionsView.mentions.length > 0
-        onOpenMentions: { window.composing = false; draftsOpen = false; yourTeamsOpen = false; quickOpen = ""; mentionsOpen = true; mentionsView.selectedId = "" }
-        onOpenQuick: kind => { window.composing = false; draftsOpen = false; mentionsOpen = false; yourTeamsOpen = false; window.manage = null; window.manageTeamId = ""; quickOpen = kind; quickView.selectedKey = "" }
+        onOpenMentions: { window.composing = false; copilotOpen = false; draftsOpen = false; yourTeamsOpen = false; quickOpen = ""; mentionsOpen = true; mentionsView.selectedId = "" }
+        onOpenQuick: kind => { window.composing = false; copilotOpen = false; draftsOpen = false; mentionsOpen = false; yourTeamsOpen = false; window.manage = null; window.manageTeamId = ""; quickOpen = kind; quickView.selectedKey = "" }
         onOpenCommunities: rail.openApp("communities")
     }
+    // Copilot from the chat list's top row, as Teams hosts it (docs/spec/
+    // app-host.md "Copilot"): the Microsoft 365 Copilot app (b5abf2ae…)'s
+    // personal page in Teams' app host beside the list, full screen and
+    // server-rendered (Teams posts its first page the app's token), with
+    // Teams' launch payload for the list's entry point.
+    Loader {
+        id: copilotView
+        property bool opened: false
+        visible: rail.current === "chat" && chatList.copilotOpen
+        onVisibleChanged: if (visible) opened = true
+        active: opened
+        anchors { top: appBanner.bottom; bottom: statusBar.top; left: chatList.right; right: parent.right }
+        sourceComponent: WebApp {
+            appName: "Copilot"; appId: "b5abf2ae-c16b-4310-8f8a-d3bcdb52f162"
+            teamsHost: true; personalApp: true; ssr: true
+            runtimeSupports: ({ appPerformanceMetrics: {}, copilot: { eligibility: {} } })
+            frameAllow: "clipboard-write *; media-playback-while-not-visible 'none'; local-network-access *; display-capture *;"
+            hostContext: ({ subEntityId: JSON.stringify({ hostSettings: { enableDeeplinks: "true", focusOnLoad: "Compose" },
+                launchOptionPayload: Qt.btoa(JSON.stringify({ id: "", scenario: "Default", chatType: "", properties: {}, version: 1, referral: { cmmid: "cmmnxawun8n" },
+                    callerInfo: { scope: "None", entryPoint: "SimpleCollabList" }, serverVariants: [] })) }) })
+        }
+    }
+    // Another chat opened from anywhere closes Copilot's page.
+    Connections { target: backend; function onCurrentChatIdChanged() { chatList.copilotOpen = false } }
     MentionsView {
         id: mentionsView
         visible: rail.current === "chat" && chatList.mentionsOpen
@@ -9940,7 +10101,7 @@ Window {
         onChannelWorkflows: id => window.openWorkflows(id)
         onManageChannel: id => window.openManageChannel(id)
         myName: backend.userName
-        visible: (rail.current === "chat" && !chatList.draftsOpen && (!chatList.mentionsOpen || mentionsView.selectedId.length > 0) && (!chatList.quickOpen || quickView.selectedKey.length > 0) && !manageChannel.visible && !manageTeam.visible && !yourTeams.visible && !window.teamPage)
+        visible: (rail.current === "chat" && !chatList.draftsOpen && !chatList.copilotOpen && (!chatList.mentionsOpen || mentionsView.selectedId.length > 0) && (!chatList.quickOpen || quickView.selectedKey.length > 0) && !manageChannel.visible && !manageTeam.visible && !yourTeams.visible && !window.teamPage)
             || (rail.current === "activity" && activityView.selectedId.length > 0)
         chatId: backend.currentChatId
         anchors { top: appBanner.bottom; bottom: statusBar.top; right: findPane.left

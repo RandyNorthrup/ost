@@ -237,6 +237,9 @@ Rectangle {
     /// section, selected, and nothing else is.
     property bool composing: false
     signal openComposing()
+    /// Copilot (the row at the list's top) is open, and opening it.
+    property bool copilotOpen: false
+    signal openCopilot()
     /// Communities ▸ Join communities.
     signal openCommunities()
     /// The chat menu's Open in new window, Manage apps and Set workflows.
@@ -678,6 +681,17 @@ Rectangle {
         Column {
             id: listCol
             width: list.width
+            // Copilot: a single row above Quick views (Teams'
+            // list-item-metaos-copilot, measured 32 tall at the list's top),
+            // which opens Copilot beside the list as Teams hosts it.
+            ListRow {
+                visible: !root.filtered && root.pane !== "teams"
+                height: visible ? 32 : 0
+                label: "Copilot"; icon: "mo-copilot"
+                selected: root.copilotOpen
+                onClicked: root.openCopilot()
+            }
+            Item { width: 1; height: !root.filtered && root.pane !== "teams" ? 4 : 0 }
             Repeater {
                 model: root.sections
                 Column {

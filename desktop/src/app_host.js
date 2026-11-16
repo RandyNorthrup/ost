@@ -49,7 +49,19 @@
     // them do NAA only).
     const NESTED_FUNCS = new Set(["nestedAppAuth.execute"]);
     // Teams' {placeholder} names that differ from the context's keys.
-    const ALIASES = { upn: "userPrincipalName", tenantId: "tid", trackingId: "appSessionId" };
+    const ALIASES = { upn: "userPrincipalName", tenantId: "tid", trackingId: "appSessionId",
+        // TeamsJS 2's dotted names (Copilot's address uses them: {user.id},
+        // {user.tenant.id}, {app.host.name}…; Teams leaves the ones it has no
+        // value for, such as {page.renderingSurface}).
+        "user.id": "userObjectId", "user.tenant.id": "tid", "user.tenant.teamsSku": "tenantSKU", "user.loginHint": "loginHint",
+        "user.userPrincipalName": "userPrincipalName", "user.licenseType": "userLicenseType", "app.locale": "locale", "app.theme": "theme",
+        "app.sessionId": "appSessionId", "app.host.name": "hostName", "app.host.clientType": "hostClientType", "app.host.sessionId": "sessionId",
+        "app.host.ringId": "ringId", "page.id": "entityId", "page.subPageId": "subEntityId", "page.frameContext": "frameContext",
+        "team.internalId": "teamId", "team.displayName": "teamName", "team.groupId": "groupId", "team.type": "teamType",
+        "channel.id": "channelId", "channel.displayName": "channelName", "channel.relativeUrl": "channelRelativeUrl",
+        "channel.membershipType": "channelType", "chat.id": "chatId", "meeting.id": "meetingId",
+        "sharePointSite.teamSiteUrl": "teamSiteUrl", "sharePointSite.teamSiteDomain": "teamSiteDomain", "sharePointSite.teamSitePath": "teamSitePath",
+        "sharePointSite.mySiteDomain": "mySiteDomain", "sharePointSite.mySitePath": "mySitePath" };
     const now = () => performance.timeOrigin + performance.now();
     const origin = u => { try { return new URL(u).origin.toLowerCase() } catch (e) { return "" } };
 
@@ -74,7 +86,7 @@
         const fill = url => {
             const s = String(url || "");
             const q = s.indexOf("?");
-            return s.replace(/(?:\{|%7B)(\w+)(?:\}|%7D)/gi, (m, k, at) => {
+            return s.replace(/(?:\{|%7B)([\w.]+)(?:\}|%7D)/gi, (m, k, at) => {
                 const key = ALIASES[k] || k;
                 if (!(key in ctx)) return m;
                 const v = ctx[key];
@@ -156,8 +168,11 @@
                 handlers = new Set();
                 // Teams offers deeply nested NAA to some apps only (Notes,
                 // Storyline: yes; meeting Q&A and Whiteboard: no).
+                // Some apps get more capabilities (Copilot: copilot.eligibility
+                // and appPerformanceMetrics, measured).
                 respond(source, from, d, [cfg.frameContext, cfg.hostClientType, "2.0.0", JSON.stringify(Object.assign({}, RUNTIME,
-                    { canParentManageNAATrustedOrigins: cfg.deepNaa !== false, isDeeplyNestedAuthSupported: cfg.deepNaa !== false }))]);
+                    { canParentManageNAATrustedOrigins: cfg.deepNaa !== false, isDeeplyNestedAuthSupported: cfg.deepNaa !== false,
+                      supports: Object.assign({}, RUNTIME.supports, cfg.supports || {}) }))]);
                 ost.event("initialize", JSON.stringify({ version: String(args[0] || "") }));
                 return;
             case "getContext":
@@ -237,12 +252,25 @@
                 return;
             case "conversations.closeConversation":
                 return;
+            case "navigateBack":
+                // The page's own back or Close (an Office file's Close):
+                // Teams answers, then unloads the page and goes back.
+                respond(source, from, d, [true]);
+                if (handlers.has("beforeUnload")) send("beforeUnload");
+                ost.event("navigateBack", "{}");
+                return;
             case "getChatMembers": {
                 // In a chat: its members' sign-in names (measured
                 // `[{members: [{upn}, …]}]`).
                 if (!ctx.chatId) return;
                 const r = JSON.parse(await native("chatMembers", {}));
                 respond(source, from, d, [{ members: (r.upns || []).map(u => ({ upn: u })) }]);
+                return;
+            }
+            case "getUserJoinedTeams": {
+                // teams.fullTrust.joinedTeams (Shifts): your teams.
+                const r = JSON.parse(await native("joinedTeams", {}));
+                respond(source, from, d, [r]);
                 return;
             }
             case "copilot.eligibility.getEligibilityInfo":
@@ -335,13 +363,42 @@
         frame.name = "embedded-page-container";
         frame.title = cfg.title || "";
         frame.setAttribute("sandbox", "allow-storage-access-by-user-activation allow-scripts allow-same-origin allow-top-navigation-to-custom-protocols allow-forms allow-popups allow-popups-to-escape-sandbox allow-pointer-lock allow-modals allow-downloads");
-        frame.setAttribute("allow", "clipboard-write *; media-playback-while-not-visible 'none'; local-network-access *; camera *; microphone *; encrypted-media *; speaker-selection *;");
+        frame.setAttribute("allow", cfg.allow || "clipboard-write *; media-playback-while-not-visible 'none'; local-network-access *; camera *; microphone *; encrypted-media *; speaker-selection *;");
         frame.setAttribute("allowfullscreen", "true");
         frame.setAttribute("data-appid", cfg.appId);
         frame.setAttribute("data-sessionid", ctx.appSessionId || "");
         frame.style.cssText = "border: 0px; width: 100%; height: 100%; visibility: visible;";
-        frame.src = fill(cfg.url);
+        if (!cfg.ssr) {
+            frame.src = fill(cfg.url);
+            document.body.appendChild(frame);
+            ost.event("framed", JSON.stringify({ origin: origin(frame.src) }));
+            return;
+        }
+        // A server-rendered app (Copilot, measured 2026-11-16): Teams names
+        // the frame, then posts a form into it with the app's token, its
+        // host context and a correlation id (Teams' submitSSRForm).
+        const uuid = () => "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === "x" ? r : (r & 3 | 8)).toString(16) });
+        frame.name = "embedded-page-container_" + uuid();
         document.body.appendChild(frame);
-        ost.event("framed", JSON.stringify({ origin: origin(frame.src) }));
+        const action = fill(cfg.url);
+        native("ssrToken", { origin: origin(action) }).then(json => {
+            let r = {};
+            try { r = JSON.parse(json) } catch (e) {}
+            if (!r.token) { ost.event("failure", JSON.stringify({ reason: "ssrToken" })); return; }
+            const form = document.createElement("form");
+            form.setAttribute("method", "post");
+            form.setAttribute("target", frame.name);
+            form.setAttribute("style", "display: none");
+            const field = (name, value) => { if (!value) return; const i = document.createElement("input"); i.type = "hidden"; i.name = name; i.value = value; form.appendChild(i); };
+            field("cv-id", uuid());
+            field("Authorization", r.token);
+            field("hostContext", JSON.stringify({ clientPlatform: cfg.hostClientType, hostName: ctx.hostName || "TeamsModern", locale: ctx.locale, theme: ctx.theme,
+                appSessionId: ctx.appSessionId, userClickTime: ctx.userClickTime, hostSessionId: ctx.sessionId, subPageId: ctx.subEntityId }));
+            document.body.appendChild(form);
+            form.action = action;
+            form.submit();
+            form.remove();
+            ost.event("framed", JSON.stringify({ origin: origin(action), ssr: true }));
+        });
     });
 })();

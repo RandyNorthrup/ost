@@ -376,7 +376,7 @@ content-type: application/json
     Live `shareToOutlookConfig` = `{enabled:true, appId:"40517485-…", loadingTimeoutSeconds:20, owaParams:""}`. An empty `owaParams` is omitted, so the live URL ends in `&loadingTimeoutSeconds=20`.
 - The task module is cancelled in the notes-to-self chat.
 - On close, focus goes to the first tabbable element of the message.
-- What the Outlook web app shows inside the dialog comes from that web app, not from the client (unconfirmed).
+- What the Outlook web app shows inside the dialog comes from that web app, not from the client. Measured on Teams on the web (2026-11-16, app-host.md "Share to Outlook"): Teams now asks the middle tier for a draft (`GetEmailIdForConversation`) and frames Outlook's compose for it (`outlook.office.com/mail/opxdeeplink/compose/{emailId}`), discarding the draft on close; OST does the same.
 
 ---
 
@@ -526,6 +526,9 @@ PUT {chatsvc}/v1/users/ME/conversations/{convId}/messages/{messageId}/properties
   2. `"<br/>{subject}<br/>"` (only when there is a subject)
   3. The message HTML. Adaptive-card and MediaCard content is flattened to text and spliced in place of the card placeholder.
 - On exit, focus returns to the message container.
+- On Teams on the web (2026-11-16) the item sits in ··· ▸ More actions ▸ in chats; the SDK's
+  frame, messages and the chunks Teams sends are in app-host.md "Immersive Reader". OST
+  launches the same reader the same way (`ImmersiveReader.qml`).
 
 ---
 

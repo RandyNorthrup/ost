@@ -42,7 +42,14 @@ OST: `desktop/src/app_host.js`, `WebApp.qml` (`teamsHost`),
   `{tid}`, `{upn}` / `{userPrincipalName}`, `{groupId}`, `{theme}`,
   `{entityId}`, `{subEntityId}`, `{sessionId}`, `{ringId}`,
   `{teamSiteUrl}`, `{channelType}`, `{appSessionId}`, `{hostClientType}`,
-  `{channelName}`, `{teamType}`.
+  `{channelName}`, `{teamType}`; also TeamsJS 2's dotted names (Copilot's
+  address: `{user.id}`, `{user.tenant.id}`, `{app.host.name}`,
+  `{app.host.clientType}`, `{app.theme}`, `{app.host.ringId}`,
+  `{app.host.sessionId}`; Teams leaves one it has no value for, such as
+  `{page.renderingSurface}`). Unfilled, Copilot's server sends the page to
+  `/hosted/semanticoverview/Users('OID:{user.id}@{user.tenant.id}')`,
+  which fails ("Don't know how to locate "default" implementation of
+  interface 274d7ae9-…", checked in OST 2026-11-16).
 
 ## Which host origins apps accept
 - TeamsJS in the app takes messages only from its parent (or opener) and
@@ -341,6 +348,173 @@ Choosing OneNote in OST group test's Add a tab:
   event. Turn it on from meeting options. Learn more" (Q&A isn't turned
   on in that meeting's options).
 
+## Personal apps from the app bar (measured 2026-11-16, TASK-0038)
+Teams on the web as ost-test1 in OST's web profile (spatest), opened from
+View more apps. Each app's personal tab (its definition's `staticTabs`) is
+framed in the same host as tabs: `cacheable-iframe:<app id>`, hwc-iframe,
+the usual sandbox with `allow-downloads`, `allow` `clipboard-write *;
+media-playback-while-not-visible 'none'; local-network-access *;`
+(Copilot adds `display-capture *;`), filling the area right of the app
+bar (68, 84 in a 1212 x 700 window under the 36 px notification banner).
+The context is the personal one: `entityId` the tab's, `subEntityId ""`,
+`chatId ""`, `channelId ""`, `meetingId ""`, `teamSiteDomain` the
+tenant's SharePoint host, `teamSiteUrl/Path/Id ""`, frameContext
+`content`; `isFullScreen` from the app (manifest `isFullScreen`).
+
+| app | id | frame (Teams on the web) | header | entityId | NAA client · scopes | other TeamsJS |
+|---|---|---|---|---|---|---|
+| Whiteboard | 95de633a-083e-42f5-b444-a4295d8e9314 | `https://whiteboard.cloud.microsoft/?embed=1&isOpenInPersonalApp=1` | Teams' app header (61 tall: tile, name, ···), frame 1144 x 555 at (68, 145) | the app id | 95de633a: whiteboard.microsoft.com, Graph, api.office.net, the user's OneDrive, clients.config.office.net | registerHandler sharepointSiteUrlAndDriveId / themeChange, getUser, many getContext, `loadingCallback [true]` |
+| Shifts | 42f6c1da-a241-483a-a3cc-4f5be9185951 | `https://flw.teams.cloud.microsoft/shifts-web-app?ui-culture={locale}&tid={tid}&userObjectId={userObjectId}&sessionId={sessionId}&theme={theme}&ringId={ringId}&subEntityId={subEntityId}` (filled) | none (full screen), 1144 x 616 at (68, 84) | `shifts` | aa580612-c342-4ace-9055-8edee43ccb89: api.manage.staffhub.office.com, Graph | `getUserJoinedTeams [null]` → `[{userJoinedTeams: [{teamId, teamName, groupId, isTeamLocked, isTeamArchived, teamDescription, thumbnailUri, userTeamRole, teamType}]}]` |
+| Clipchamp | com.microsoftstream.embed.skypeteamstab | `https://www.microsoft365.com/embed/launch/stream?auth=2&embedhost=StreamTeamsApp-PersonalTab` | none (full screen) | `embedwatchlist` | 4765445b-32c6-49b0-83e6-1d93765276ca: its own api, Graph, substrate, SharePoint, 4345a7b9, 394866fc | registerHandler themeChange / focusEnter / backButton |
+| Copilot | b5abf2ae-c16b-4310-8f8a-d3bcdb52f162 | below | none (full screen) | `entity1-d870f6cd-…` | c0ab8ce9-e9a0-42e7-b064-33d422df41f1 (deeply nested NAA on) | below |
+
+The runtime answered `canParentManageNAATrustedOrigins` /
+`isDeeplyNestedAuthSupported` false for Whiteboard, Shifts and Clipchamp
+and true for Copilot and the Office apps (Teams' ECS allow list).
+
+**Events** isn't a hosted page: Teams draws it itself (Discover and Manage
+tabs, `one-events-discover-tab` / `one-events-manage-tab`; "Introducing an
+app for all things events!" with View meetings / View audio recaps; "No
+events have been scheduled yet" and Create event; Manage: Connect apps,
+"Get started with a template"; Pin app, Filters, Create event) from the
+virtual events service, `GET https://teams.microsoft.com/api/virtualevents/
+prod/beta/eventOverviews?pageSize=…&sortBy=…&sortOrder=…&startTo|startFrom|
+endFrom|endTo=…&returnRequesterProperties=…&eventStatus=…&includeRequesterStatus=…`
+with Teams' own token for resource 7fc21101-d09b-4343-8eb3-21187e0431a4
+(Manage counts Drafts / Published / Past with `manageFilterType`,
+`eventTypes` Townhall, Webinar). OST hasn't built this module (TASK-0038
+left).
+
+## Copilot (the chat list's row, measured 2026-11-16)
+- The row: `list-item-metaos-copilot` (`OneGQL_BizChatMetaOSConversation|
+  b5abf2ae…`), 248 x 32 at the list's top above Quick views; clicking it
+  records `PUT {mt}/beta/me/engagementSurfaces/actions {"items":
+  [{"action": "NavigateToBizChatSimpleCollab"}]}` and opens the Copilot
+  app's page beside the list (864 x 616 at 348, 84; no header).
+- **Server-side rendering**: the frame is named
+  `embedded-page-container_<uuid>` and has no src; Teams posts a hidden
+  form into it (`method=post`, `target` the frame's name; Teams'
+  submitSSRForm) to the tab's address,
+  `https://m365copilotapp.svc.cloud.microsoft/chat?OID={user}@{tenant}&hostApp=hub&isanonymous=true&culture={locale}&mysite={mySiteDomain}&hostName=TeamsModern&hostClientType={hostClientType}&sessionId=…&renderingSurface=%7Bpage.renderingSurface%7D&theme={theme}&hostRing={ringId}&parentSessionId={sessionId}`,
+  with fields `cv-id` (a correlation id), `Authorization` (the raw access
+  token, no "Bearer": brokered for client c0ab8ce9 and
+  `https://m365copilotapp.svc.cloud.microsoft/.default`, redirect
+  `brk-multihub://m365copilotapp.svc.cloud.microsoft`) and `hostContext`
+  `{clientPlatform, hostName, locale, theme, appSessionId, userClickTime,
+  hostSessionId, subPageId}` (`trustedSharePointOrigins` when known).
+- Context: `hostFeatures.serverSideRendering true`, `isFullScreen true`,
+  `manifestVersion 1.23`, `mySiteDomain` / `mySitePath` (your OneDrive),
+  `subEntityId` `{"hostSettings":{"enableDeeplinks":"true","focusOnLoad":
+  "Compose"},"launchOptionPayload":"<base64 of {"id":"","scenario":
+  "Default","chatType":"","properties":{},"version":1,"referral":
+  {"cmmid":"cmmnxawun8n"},"callerInfo":{"scope":"None","entryPoint":
+  "SimpleCollabList"},"serverVariants":[]}>"}`.
+- TeamsJS: initialize (its valid origins), getContext, registerHandler
+  beforeUnload / load / contextualChatChanged / updatePromptInputData /
+  updateDataContext / copilotSearchSidePaneVisibilityChanged /
+  updateCapabilities / reloadConversation / edgeStopAction /
+  onAppFirstForeground / onAppForeground / themeChange / search.executeSearch
+  / navigate.module / focusEnter / shortcutRelay.hostShortcutChanged,
+  `ChatReady [{renderMode: "SSR"}]`, success, NAA (Graph, m365.cloud.microsoft,
+  ic3, substrate sydney and search, loki, titles.prod.mos, arc.msn.com,
+  bb893c22), `shortcutRelay.getHostShortcuts`, `executeDeepLink
+  ["https://teams.microsoft.com/l/copilot/notify?bold=false"]` (answered
+  `[true]`).
+
+## Share to Outlook (measured 2026-11-16)
+- A chat message's ··· ▸ Share to Outlook (`message-share-to-outlook`):
+  Teams opens its task module for the Outlook app (40517485-2262-4135-b174-
+  401da4aa6f0f, appName "Outlook", icon `statics.teams.cdn.office.net/
+  evergreen-assets/apps/outlook_largeimage.png`, title "Share conversation
+  over email", width 800, height large) in a loading state, then asks the
+  middle tier for a draft of the conversation in your mailbox: `GET
+  {mt}/beta/shareToOutlook/GetEmailIdForConversation?threadId={chat, as
+  is}&messageId={id}&locale=en-us[&bodyType=SingleMessage]` (GraphQL
+  generateEmailIdForConversation) → the draft's Exchange id.
+- The page: `https://outlook.office.com/mail/opxdeeplink/compose/{emailId}?isAnonymous=true&opxAuth=true&hostApp=teams&useOwaTheme=true&culture=en-us`
+  (ECS shareToOutlookOPXBaseUrl / shareToOutlookOPXConfig), framed in an
+  hwc-iframe titled "Share conversation" (`allow` `clipboard-write *;
+  local-network-access *; autoplay`), 800 x 462 at (206, 153) with the
+  dialog 800 x 529 at (206, 86) in a 1212 x 700 window. Header: the 32 px
+  icon at (32, 27), "Outlook" over "Share conversation over email", Close
+  64 from the right. Outlook's compose shows To / Cc, the subject "<chat>:
+  chat conversation from Microsoft Teams" and the conversation card.
+- TeamsJS from the page: initialize (frameContext `task`),
+  `authentication.getAuthToken [["https://outlook.office.com/"], null, null,
+  null]` twice (answered `[true, <token>]`), getContext, appLoaded,
+  success.
+- Closing without sending: Teams discards the draft, `DELETE
+  {mt}/v1/shareToOutlook/email?emailId={id}` (deleteShareToOutlookEmailDraft).
+- In the menu it followed Mark as unread (it moved above it once used:
+  Teams orders some items by use).
+
+## Immersive Reader (measured 2026-11-16)
+- A chat message's ··· ▸ More actions ▸ Immersive Reader
+  (`message-actions-immersive-reader`; More actions also lists apps'
+  actions: Create a Polly, Create Planner task, Create workflows).
+- Teams gets its own token for `https://immersivereader.cloud.microsoft/.default`
+  (client 5e3ce6c0, GraphQL immersiveReaderAuthToken) and runs Microsoft's
+  Immersive Reader SDK 0.8.0 in its own window: a `div` `position: fixed;
+  width: 100vw; height: 100vh; left: 0; top: 0; border-width: 0;
+  perspective: 1px; z-index: 1000; background: white; overflow: hidden`
+  holding an iframe titled "Immersive Reader Frame" (`allow="autoplay;
+  microphone"`, `aria-modal`, `allowfullscreen`, `position: static; width:
+  100%; height: 100%`) at
+  `https://learningtools.onenote.com/learningtoolsapp/cognitive/reader?exitCallback=ImmersiveReader-Exit&sdkPlatform=js&sdkVersion=0.8.0&cookiePolicy=disable&cognitiveAppId=Teams`.
+- The reader posts the string `ImmersiveReader-ReadyForContent` (and
+  `readyForStorageId`, unanswered); Teams posts
+  `JSON.stringify({messageType: "Content", messageValue: {cogSvcsAccessToken,
+  request: {chunks: [{content: "<sender> <M/d/yyyy> <h:mm:ss AM> <br/>",
+  mimeType: "text/html"}, {content: <the message's HTML, cards as text>,
+  mimeType: "text/html"}]}, launchToPostMessageSentDurationInMs,
+  sendPreferences: false, internalSdkUseAADBearerTokenForGcmCall: true}})`.
+  The reader answers `ImmersiveReader-SessionId:…`, `readyToPlay`,
+  `ImmersiveReader-LaunchResponse:{"success":true,…}`,
+  `ImmersiveReader-LaunchSuccessful`, and calls
+  immersivereader.edu.svc.cloud.microsoft itself. Its back arrow posts
+  `ImmersiveReader-Exit`; Teams removes the layer.
+
+## Office files in Teams (measured 2026-11-16)
+- With "Teams" chosen (Settings ▸ Files and links; OneDrive's Open ▾
+  says "Edit in Teams"), a Word file opened from the OneDrive app opened
+  in the Word app's page, which joined the app bar (its icon under
+  Copilot) and filled the area right of it, full screen: app
+  `d7958adf-f419-46fa-941b-1b946497ef84` (Word; Excel
+  `1c256a65-83a6-4b5c-9ccf-78f8afb6f1e8`, PowerPoint
+  `3e0a4fec-499b-4138-8e7c-71a9d88a62ed`, Teams' file-type map),
+  `https://m365.cloud.microsoft/launch/word/officeunihost/teams?auth=2&flight=officeunihost&source=TEAMS-WEB.teamsSdk_<the opening app>_ns.rwc.content&appSessionId=…`.
+- Context: `entityId "MyNotebook"`, `isFullScreen true`, `subEntityId`
+  `{"title", "fileId" (the item's unique id), "objectUrl" (its WebDAV
+  address), "siteUrl", "serviceName": "teamsSdk_<opening app>_ns",
+  "fileType", "shareId": "", "shareUrl": "", "subEntityId" (the folder's
+  view params), "context": "bim", "ctx": "rwc", "viewerAction": "edit",
+  "atpSharepointData": null, "baseUrl"}`.
+- TeamsJS: initialize, getContext, NAA GetInitContext / GetTokenPopup
+  (client fd5f78f6, the OneDrive site), getUser, registerHandler log.request
+  / load / beforeUnload / themeChange / focusEnter, appLoaded, success,
+  `manageNAATrustedOrigins ADD ["https://oauth.officeapps.live.com"]`; the
+  page frames Word for the web (`usc-word-edit.officeapps.live.com/we/
+  wordeditorframe.aspx?…&uih=teams&uiembed=1&…&to=https%3A%2F%2Fteams.cloud.microsoft&dnaa=1…`),
+  whose OAuth frame asks NAA for 243c63a3 through Teams.
+- The Office page's own Close (top right of Word's ribbon row) returns to
+  where the file was opened (the OneDrive app) and the app leaves the app
+  bar: Word posts its own `UI_Close`, the page sends TeamsJS `navigateBack
+  []`, Teams answers `[true]`, posts `beforeUnload` and, on
+  `readyToUnload`, goes back.
+- Settings: Teams on the web offers Teams and Browser (synced
+  `fileOpenPreference` teamsV2 / web); Teams desktop adds Desktop app with
+  Office installed (file-actions.md).
+
+## Meeting Notes (in the call window; code read 2026-11-16, not measured live)
+- The call's More ▸ Notes (`MeetingNotesButton`, `enableMeetingNotesLink`)
+  opens the meeting's notes in a side panel. Teams gets or makes them
+  through its CMD artifacts service (GraphQL `getOrCreateMeetingNotes`,
+  `GetOrCreateMeetingNotesInput`; base from ECS
+  `teamsCopilotAggregatorEndpoint`, resource
+  `cmdMeetingArtifactsServiceResource`), a Loop page shown with Loop's
+  page container. Not captured live (it needs a meeting in Teams on the
+  web) and not built in OST yet (TASK-0038 left).
+
 ## OST's host (why this design)
 Options weighed:
 - **Inject a native interface into a top-level page** (TeamsJS'
@@ -395,6 +569,37 @@ Options weighed:
   updateTask) but no tested app opened one; Adaptive Card dialogs and
   header-less dialogs aren't drawn.
 - Shortcuts: `shortcutRelay.getHostShortcuts` answered.
+- TASK-0038 (live 2026-11-16, ost-test1 spatest profile on linuxlt,
+  `--embedded-apps-test`):
+  - [x] Whiteboard (Teams' app header, your boards, signed in), Shifts
+    ("Welcome to Shifts", full screen) and Clipchamp (full screen) from
+    the app bar: each app's personal tab from its definition in the host
+    (initialize, appLoaded, success; Whiteboard's loadingCallback).
+  - [x] Office for the web: ost-open-test.docx opened with the "Teams"
+    choice in Word's page (`launch/word/officeunihost/teams` with Teams'
+    `source` and `appSessionId`), the document shown and editable,
+    signed in; Settings ▸ Files and links offers Teams and Browser (no
+    desktop Office app on linuxlt).
+  - [x] Share to Outlook on a message in OST group test: the middle tier's
+    draft, Outlook's compose in Teams' dialog with the conversation card,
+    closed without sending, draft discarded.
+  - [x] Immersive Reader on the same message: the reader launched
+    (LaunchResponse success) with the sender, date and message, and closed.
+  - [x] Copilot from the chat list's row: the server-rendered page
+    posted with the brokered token, "Hi, what can I help you with?" and
+    the compose box as in Teams (initialize, success; ChatReady and the
+    notify deep link answered as Teams does).
+  - [x] Word's Close (navigateBack) returns to the OneDrive app and the
+    app leaves the app bar.
+  - [x] A channel's Loop page tab (OST Test Team › General › Page, "Loop
+    paragraph") opens signed in in OST's Loop host (framed, code,
+    rendered, connected), with Teams' header and insert row
+    (`--loop-test=page --loop-tab=Page`).
+  - [ ] Events: Teams' own module, not built (opens on the web).
+  - [ ] Meeting Notes in the call window: not captured live, not built.
+  - [ ] Immersive Reader: Teams flattens cards into the message's chunk
+    ("Card title: … Card text content: …"); OST sends the message's HTML
+    only.
 
 Host features:
 - [x] The host: the frame as Teams', initialize / getContext /

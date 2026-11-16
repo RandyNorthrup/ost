@@ -367,8 +367,12 @@ how a click on an Office file opens: in the file list, in a chat's file card, or
   it: "Files now open in Desktop app" and "Word, PowerPoint and Excel files will now open in
   the desktop app for an improved experience". An admin policy (`forceOpenFilesInDesktopApp`)
   can force the desktop app.
-- **Teams** opens Office for the web inside Teams' window. OST doesn't embed web pages, so it
-  doesn't offer that choice.
+- **Teams** opens Office for the web inside Teams' window: the Word, Excel or PowerPoint app's
+  page in Teams' app host, full screen beside the app bar, the file named in its context
+  (measured 2026-11-16, app-host.md "Office files in Teams"). OST offers it first, as Teams
+  does, and makes it the default when this device has no choice yet; it opens the file the same
+  way (`api::office_open`, the "office" slot in the app bar) and sets the synced value to
+  `teamsV2`.
 - OST offers **Desktop app** when the desktop has an app for Word files: the `xdg-mime`
   default, else the first app in the MIME cache. OST keeps this choice on the device
   (setting `fileOpenIn`) and makes it the default when such an app exists, as Teams does.
