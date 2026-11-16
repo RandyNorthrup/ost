@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-16T05:21:00Z'
-updated_date: '2026-11-16T07:24:00Z'
+updated_date: '2026-11-16T07:51:00Z'
 labels:
   - desktop
   - auth
@@ -25,7 +25,7 @@ OST signs in with Teams desktop's own client id through the device-code flow. Mi
 <!-- AC:BEGIN -->
 - [x] #1 OST's sign-in opens Microsoft's sign-in page as Teams does and keeps the session; existing device-code sign-ins keep working until replaced
 - [ ] #2 Embedded apps get their tokens through Teams' broker (NAA) without a separate sign-in, as in Teams
-- [ ] #3 Signing out and switching accounts work as in Teams
+- [x] #3 Signing out and switching accounts work as in Teams
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -71,4 +71,17 @@ OST signs in with Teams desktop's own client id through the device-code flow. Mi
   - Verified: a token for Viva Engage (f4060917…, aud engage.cloud.microsoft/teams-branded-exp) minted from OST's sign-in.
   - Channel Notes (243c63a3…) still needs its page's real host: the TeamsJS host will pass the asking frame's origin.
 - Left for AC2: answer TeamsJS nestedAppAuth GetToken in OST's app host (WebApp) with this broker.
+
+- 2026-11-16: the app side, from MSAL's NAA bridge source and TeamsJS's nestedAppAuthUtils:
+  - Apps post {messageType:"NestedAppAuthRequest", requestId, method:GetInitContext|GetToken|GetTokenPopup, tokenParams:{clientId, scope, correlationId, claims, authority…}} to window.nestedAppAuthBridge.
+  - The host answers {messageType:"NestedAppAuthResponse", requestId, success, initContext | token{access_token, id_token, expires_in, scope, authority} + account | error{status, code, description}}.
+  - TeamsJS won't polyfill the bridge in a frameless window, so OST's frameless app view must inject window.nestedAppAuthBridge itself, answering with auth::brokered_token, the page's origin and a check on the allowed client ids.
+  - The first app that needs it is channel Notes (TASK-0053), whose page also needs the TeamsJS host (initialize, getContext…). The bridge goes in with that task.
+
+- 2026-11-16: sign-out and back in verified on the test profile.
+  - After signing out, OST opens Microsoft's "Pick an account" with OST Test 1 marked "Signed in", as Teams shows it. One click on the tile, with no password, signed back in (auth_flow teams-web).
+  - Switching to another account is the page's "Use another account" (that account's own sign-in). Adding a second account side by side is TASK-0078.
+- Left:
+  - Move the main ost-test1 profile to this sign-in: sign out, then one click. Wait until no agent uses that profile.
+  - The app-side bridge, with TASK-0053.
 <!-- SECTION:NOTES:END -->
