@@ -483,11 +483,11 @@ pub mod qobject {
         #[qinvokable]
         fn sign_out(self: Pin<&mut Backend>);
 
-        /// A sign-in web view is about to load `url`. True when it's the
-        /// browser sign-in's return address: the view must stop there, and
-        /// the sign-in (or silent renewal) completes.
+        /// A sign-in web view is about to load `url` (`silent`: the hidden
+        /// renewal's view). True when it's the browser sign-in's return
+        /// address: the view must stop there, and the sign-in completes.
         #[qinvokable]
-        fn sign_in_navigated(self: Pin<&mut Backend>, url: &QString) -> bool;
+        fn sign_in_navigated(self: Pin<&mut Backend>, url: &QString, silent: bool) -> bool;
 
         /// Renew the browser sign-in silently (Teams on the web's 24-hour
         /// sign-in) through `renewPage`; refreshes the app when done.
@@ -2182,8 +2182,10 @@ pub struct BackendRust {
     has_credentials: bool,
     sign_in_page: QString,
     renew_page: QString,
-    /// The browser sign-in (visible or silent) waiting for its return address.
+    /// The visible browser sign-in waiting for its return address.
     browser_sign_in: Option<teams_cli::auth::spa::BrowserSignIn>,
+    /// The silent renewal waiting for its return address.
+    renew_sign_in_pending: Option<teams_cli::auth::spa::BrowserSignIn>,
     call_state: QString,
     call_peer: QString,
     call_peer_id: QString,
@@ -5495,10 +5497,15 @@ impl qobject::Backend {
             self.renew_sign_in();
         } else if stored {
             self.refresh();
+        } else {
+            self.begin_sign_in();
         }
     }
 
     pub fn begin_sign_in(mut self: Pin<&mut Self>) {
+        if *self.has_credentials() {
+            return;
+        }
         // As Teams: Microsoft's sign-in page (Teams on the web's sign-in, in
         // OST's web view), whose tokens can broker embedded apps' (TASK-0196).
         // An existing device-code session keeps refreshing with its own
@@ -5510,22 +5517,29 @@ impl qobject::Backend {
         self.as_mut().set_sign_in_page(QString::from(url.as_str()));
     }
 
-    pub fn sign_in_navigated(mut self: Pin<&mut Self>, url: &QString) -> bool {
+    pub fn sign_in_navigated(mut self: Pin<&mut Self>, url: &QString, silent: bool) -> bool {
         let url = url.to_string();
         if !teams_cli::auth::spa::BrowserSignIn::is_redirect(&url) {
             return false;
         }
-        let silent = !self.rust().renew_page.is_empty();
-        let Some(pending) = self.as_mut().rust_mut().browser_sign_in.take() else {
+        let pending = if silent {
+            self.as_mut().rust_mut().renew_sign_in_pending.take()
+        } else {
+            self.as_mut().rust_mut().browser_sign_in.take()
+        };
+        let Some(pending) = pending else {
             return true;
         };
         // Close the sign-in views after this navigation has been refused:
         // changing a WebEngineView's url from inside its navigation request
         // crashes Chromium.
         let qt = self.qt_thread();
-        let _ = qt.queue(|mut this| {
-            this.as_mut().set_sign_in_page(QString::default());
-            this.as_mut().set_renew_page(QString::default());
+        let _ = qt.queue(move |mut this| {
+            if silent {
+                this.as_mut().set_renew_page(QString::default());
+            } else {
+                this.as_mut().set_sign_in_page(QString::default());
+            }
         });
         let code = match pending.code_from(&url) {
             Ok(c) => c,
@@ -5579,7 +5593,7 @@ impl qobject::Backend {
         let hint = teams_cli::config::Config::load().ok().and_then(|c| c.user_principal_name());
         let pending = teams_cli::auth::spa::BrowserSignIn::new(hint.as_deref(), true);
         let url = pending.url.clone();
-        self.as_mut().rust_mut().browser_sign_in = Some(pending);
+        self.as_mut().rust_mut().renew_sign_in_pending = Some(pending);
         self.as_mut().set_renew_page(QString::from(url.as_str()));
     }
 

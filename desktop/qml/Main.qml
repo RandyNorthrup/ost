@@ -7905,7 +7905,7 @@ Window {
         url: ready && backend.renewPage ? backend.renewPage : "about:blank"
         onNavigationRequested: req => {
             const u = req.url.toString()
-            if (backend.signInNavigated(u)) req.reject()
+            if (backend.signInNavigated(u, true)) req.reject()
             else if (u.indexOf("https://") !== 0 && u !== "about:blank") req.reject()
         }
         onPermissionRequested: p => p.deny()

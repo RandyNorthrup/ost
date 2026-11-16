@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-16T05:21:00Z'
-updated_date: '2026-11-16T06:17:00Z'
+updated_date: '2026-11-16T06:32:00Z'
 labels:
   - desktop
   - auth
@@ -63,4 +63,6 @@ OST signs in with Teams desktop's own client id through the device-code flow. Mi
   - Closing the sign-in view inside its navigation request crashed Chromium (SIGTRAP); it now closes on the next event-loop turn.
   - The video filter app no longer loads while signed out.
   - The desktop app has no device-code sign-in any more (user's request).
+
+- 2026-11-16: silent renewal verified. Restarting the signed-in profile renewed through the hidden view (prompt=none, OST's web session) with no page or password and stored fresh tokens. Fixed first: at start-up the sign-in screen began a visible sign-in that replaced the renewal's request (state mismatch). The renewal now has its own pending request, and the backend starts a visible sign-in only when nothing is stored.
 <!-- SECTION:NOTES:END -->

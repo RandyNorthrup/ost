@@ -14,9 +14,9 @@ Rectangle {
     property string error
     signal signIn()
     color: theme.pane
-    // Straight to Microsoft's page, as Teams.
-    onVisibleChanged: if (visible && !page && !busy) Qt.callLater(root.signIn)
-    Component.onCompleted: if (visible && !page && !busy) Qt.callLater(root.signIn)
+    // Straight to Microsoft's page, as Teams: after signing out (at start-up
+    // the backend begins it once it knows nobody is signed in).
+    onVisibleChanged: if (visible && !page && !busy && !backend.hasCredentials) Qt.callLater(root.signIn)
 
     WebEngineView {
         id: signInView
@@ -29,7 +29,7 @@ Rectangle {
         settings.javascriptCanOpenWindows: false
         onNavigationRequested: req => {
             const u = req.url.toString()
-            if (backend.signInNavigated(u)) req.reject()
+            if (backend.signInNavigated(u, false)) req.reject()
             else if (u.indexOf("https://") !== 0 && u !== "about:blank") req.reject()
         }
         onPermissionRequested: p => p.deny()
