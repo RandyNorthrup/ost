@@ -1530,20 +1530,32 @@ pub fn is_renegotiation_event(json: &str) -> bool {
 /// Someone started Meet now in a group chat we're in: the call manager's
 /// `HuddleMeetingStart` notification (evt 128), which Teams shows as a
 /// toast with Join and Message.
-#[derive(Debug, Clone, PartialEq)]
+/// `MeetingStart` is a scheduled meeting's (Teams' meeting-start toast and
+/// its live meeting join bar, which also need `subject`, `messageId`,
+/// `rsvp` and `meetingJoinUrl`: Teams' live-meeting-status-bar checks).
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct MeetingStart {
     pub thread_id: String,
     pub call_id: String,
     /// The initiator's MRI and display name.
     pub initiator: String,
     pub initiator_name: String,
+    /// A scheduled meeting (`MeetingStart`), not Meet now.
+    pub scheduled: bool,
+    pub subject: String,
+    pub message_id: String,
+    /// Your answer to the meeting, as the service has it.
+    pub rsvp: String,
+    pub join_url: String,
 }
 
-/// A `HuddleMeetingStart` notification, if `json` is one with what Teams
-/// needs to show it (a notification type and a call id).
+/// A `HuddleMeetingStart` or `MeetingStart` notification, if `json` is one
+/// with what Teams needs to show it (a notification type and a call id).
+/// `MeetingStartFromLobby` is left out, as Teams leaves it out.
 pub fn meeting_start(json: &str) -> Option<MeetingStart> {
     let v: serde_json::Value = serde_json::from_str(json).ok()?;
-    if v.get("notificationType")?.as_str()? != "HuddleMeetingStart" {
+    let kind = v.get("notificationType")?.as_str()?;
+    if kind != "HuddleMeetingStart" && kind != "MeetingStart" {
         return None;
     }
     let s = |k: &str| str_at(&v, k).unwrap_or_default();
@@ -1552,6 +1564,11 @@ pub fn meeting_start(json: &str) -> Option<MeetingStart> {
         call_id: s("/callId"),
         initiator: s("/groupCallInitiator"),
         initiator_name: s("/groupCallInitiatorDisplayName"),
+        scheduled: kind == "MeetingStart",
+        subject: s("/subject"),
+        message_id: s("/messageId"),
+        rsvp: s("/rsvp"),
+        join_url: s("/meetingJoinUrl"),
     };
     (!m.call_id.is_empty() && !m.thread_id.is_empty()).then_some(m)
 }
@@ -1716,9 +1733,18 @@ mod tests {
                 call_id: "1478".into(),
                 initiator: "8:orgid:5050".into(),
                 initiator_name: "Randy Northrup".into(),
+                message_id: "0".into(),
+                ..Default::default()
             })
         );
-        assert!(meeting_start(&n.replace("HuddleMeetingStart", "MeetingStart")).is_none());
+        let sched = n
+            .replace("HuddleMeetingStart", "MeetingStart")
+            .replace(r#""status""#, r#""subject":"Sync","rsvp":"Accepted","status""#);
+        let sched = meeting_start(&sched).unwrap();
+        assert!(sched.scheduled);
+        assert_eq!(sched.subject, "Sync");
+        assert_eq!(sched.rsvp, "Accepted");
+        assert!(meeting_start(&n.replace("HuddleMeetingStart", "MeetingStartFromLobby")).is_none());
         assert!(meeting_start(&n.replace("\"callId\":\"1478\"", "\"callId\":\"\"")).is_none());
         assert!(meeting_start(r#"{"callInvitation":{}}"#).is_none());
     }

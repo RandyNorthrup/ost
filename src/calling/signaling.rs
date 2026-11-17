@@ -1011,8 +1011,22 @@ async fn join_conversation_only(
     params: &ConversationCallParams<'_>,
     opts: &CreateOptions<'_>,
 ) -> Result<(String, Option<String>)> {
+    join_conversation_with(http, epconv_url, params, opts, None).await.map(|(c, l, _)| (c, l))
+}
+
+/// The conversation-only join, by thread or (Teams' Join with an ID,
+/// joinType MeetingData) by `meetingData {meetingCode, passcode,
+/// meetingUrl}` and no thread. Answers the controller, the leave link and
+/// the service's answer.
+async fn join_conversation_with(
+    http: &reqwest::Client,
+    epconv_url: &str,
+    params: &ConversationCallParams<'_>,
+    opts: &CreateOptions<'_>,
+    meeting_data: Option<&serde_json::Value>,
+) -> Result<(String, Option<String>, serde_json::Value)> {
     let tc = |path: &str| trouter_callback(params.trouter_surl, params.endpoint_id, path);
-    let payload = serde_json::json!({
+    let mut payload = serde_json::json!({
         "conversationRequest": {
             "subject": null,
             "roster": { "type": "Delta", "rosterUpdate": tc("conversation/rosterUpdate/") },
@@ -1053,6 +1067,11 @@ async fn join_conversation_only(
         },
         "debugContent": { "ecsEtag": "\"0\"", "causeId": &params.message_id[..8.min(params.message_id.len())] }
     });
+    if let Some(md) = meeting_data {
+        payload["groupChat"] = serde_json::Value::Null;
+        payload["meetingInfo"] = serde_json::Value::Null;
+        payload["meetingData"] = md.clone();
+    }
     let resp = http
         .post(epconv_url)
         .header("Authorization", format!("Bearer {}", params.ic3_token))
@@ -1089,7 +1108,71 @@ async fn join_conversation_only(
         .filter(|l| super::incoming::is_service_link(l))
         .map(str::to_string);
     tracing::info!("joined the meeting's conversation");
-    Ok((controller, leave))
+    Ok((controller, leave, v))
+}
+
+/// Teams' Join with an ID: the meeting's conversation joined by its
+/// meeting ID and passcode (`meetingData`, as Teams' calling stack sends it
+/// for joinType MeetingData; no thread, no meetingInfo), read for the
+/// meeting's thread, organizer and tenant, then left. Answers (thread id,
+/// organizer id, tenant id).
+pub async fn resolve_meeting_code(
+    http: &reqwest::Client,
+    epconv_url: &str,
+    params: &ConversationCallParams<'_>,
+    meeting_data: &serde_json::Value,
+) -> Result<(String, Option<String>, Option<String>, String)> {
+    let opts = CreateOptions {
+        group_chat: true,
+        meeting_message_id: None,
+        to: Vec::new(),
+        conversation_type: None,
+        invitation_type: None,
+        suppress_dialout: true,
+        subject: None,
+        meetup: false,
+        meeting_info: None,
+        scenario: None,
+        two_step: true,
+        preheat: false,
+    };
+    let (_controller, leave, v) = join_conversation_with(http, epconv_url, params, &opts, Some(meeting_data)).await?;
+    let text = v.to_string();
+    let keys: Vec<&String> = v.as_object().map(|o| o.keys().collect()).unwrap_or_default();
+    tracing::info!(?keys, "meeting code conversation");
+    let thread = find_thread(&text);
+    let organizer = find_uuid_after(&text, "\"organizerId\":\"");
+    let tenant = find_uuid_after(&text, "\"tenantId\":\"");
+    let subject = v.get("subject").and_then(|s| s.as_str()).unwrap_or_default().to_string();
+    if let Some(leave) = leave {
+        let _ = http
+            .delete(&leave)
+            .header("Authorization", format!("Bearer {}", params.ic3_token))
+            .header("x-microsoft-skype-client", SKYPE_CLIENT_HEADER)
+            .send()
+            .await;
+    }
+    let thread = thread.context("The meeting's conversation named no thread")?;
+    Ok((thread, organizer, tenant, subject))
+}
+
+/// The first meeting thread (`19:…@thread.v2` or `@thread.tacv2`) in a
+/// service answer.
+fn find_thread(text: &str) -> Option<String> {
+    let i = text.find("19:meeting_").or_else(|| text.find("\"19:").map(|i| i + 1))?;
+    let rest = &text[i..];
+    let end = rest
+        .find("@thread.v2")
+        .map(|e| e + "@thread.v2".len())
+        .or_else(|| rest.find("@thread.tacv2").map(|e| e + "@thread.tacv2".len()))?;
+    let t = &rest[..end];
+    t.bytes().all(|b| b.is_ascii_alphanumeric() || b"_-:@.=".contains(&b)).then(|| t.to_string())
+}
+
+fn find_uuid_after(text: &str, key: &str) -> Option<String> {
+    let i = text.find(key)? + key.len();
+    let v: String = text[i..].chars().take_while(|c| *c != '"').collect();
+    uuid::Uuid::parse_str(&v).is_ok().then_some(v)
 }
 
 async fn create_call(

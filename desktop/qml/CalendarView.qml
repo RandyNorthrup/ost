@@ -75,6 +75,7 @@ Item {
     function confirmDeleteForTest() { root.deleteEvent(details.ev.id); details.close() }
     function pageForTest(subject) { const e = eventBySubject(subject); if (e) openPage(e); return !!e }
     function respondForTest(response, series, note) { details.respond(response, series, note) }
+    function monthDebug() { return { events: root.events.length, shown: root.shown.length, start: root.iso(root.start), days: root.days, weeks: root.monthWeeks, laid: monthArea.weeksLaid.map(w => w.bars.length), cellH: monthArea.cellH, rows: monthArea.rowsPerCell } }
     property alias formForTest: form
     property alias detailsForTest: details
     property alias joinIdForTest: joinId
@@ -161,12 +162,35 @@ Item {
         const off = -d.getTimezoneOffset(), sign = off >= 0 ? "+" : "-", a = Math.abs(off)
         return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) + "T" + p(d.getHours()) + ":" + p(d.getMinutes()) + ":00" + sign + p(Math.floor(a / 60)) + ":" + p(a % 60)
     }
-    function emitRange() {
-        const end = new Date(start); end.setDate(end.getDate() + days)
+    // The range shown, from the view itself: a handler can run before the
+    // `days` binding catches up with a view change (Month asked for one
+    // day after Day). Coalesced, so a view and date change ask once.
+    function spanDays() {
+        if (view === "day") return 1
+        if (view === "week") return 7
+        if (view !== "month") return 5
+        const f = new Date(focusMonth.getFullYear(), focusMonth.getMonth(), 1)
+        return 7 * Math.ceil((f.getDay() + new Date(f.getFullYear(), f.getMonth() + 1, 0).getDate()) / 7)
+    }
+    function emitRange() { Qt.callLater(emitRangeNow) }
+    function emitRangeNow() {
+        const end = new Date(start); end.setDate(end.getDate() + spanDays())
         rangeChanged(iso(start), iso(end))
     }
     onStartChanged: emitRange()
-    onViewChanged: { start = startFor(view === "month" ? (sameDay(start, startFor(start)) ? dayAt(3) : start) : (monthView ? focusMonth : start)); emitRange() }
+    // Leaving Month: the week of today when it's in the month shown, else
+    // of the month's first day.
+    property string prevView: view
+    onViewChanged: {
+        const fromMonth = prevView === "month"
+        prevView = view
+        const n = new Date()
+        const anchor = view === "month" ? start
+            : fromMonth ? (n.getMonth() === focusMonth.getMonth() && n.getFullYear() === focusMonth.getFullYear() ? n : focusMonth)
+            : view === "day" && todayIndex >= 0 ? n : start
+        start = startFor(anchor)
+        emitRange()
+    }
     Component.onCompleted: emitRange()
     readonly property string rangeLabel: {
         if (monthView) return Qt.formatDate(focusMonth, "MMMM yyyy")
@@ -256,13 +280,22 @@ Item {
             else rest.push(i)
         }
         const need = i => { const m = (dayPieces[i] || []).reduce((a, p) => Math.max(a, p.lanes), 1); return m > 1 ? m * 120.8 + (m - 1) * 4 + 14.6 : 0 }
+        // A day with side-by-side events widens only while every other
+        // future day keeps at least one event's width (120.8 + 14.6);
+        // otherwise all share equally.
+        const minDay = 135.4
         let free = rest.slice()
-        for (let k = 0; k < rest.length; k++) {
-            const share = left / Math.max(1, free.length)
+        while (free.length) {
+            const share = left / free.length
             const big = free.filter(i => need(i) > share)
             if (!big.length) { for (const i of free) w[i] = share; break }
-            for (const i of big) { w[i] = need(i); left -= w[i] }
+            const others = free.length - big.length
+            const room = left - others * Math.min(minDay, share)
+            const want = big.reduce((a, i) => a + need(i), 0)
+            const scale = want > room ? Math.max(0, room) / want : 1
+            for (const i of big) { w[i] = Math.max(share, need(i) * scale); left -= w[i] }
             free = free.filter(i => big.indexOf(i) < 0)
+            if (left <= 0) { for (const i of free) w[i] = 0; break }
         }
         return w
     }
@@ -876,7 +909,7 @@ Item {
         /// Answer (Teams: RespondToCalendarEvent); a series answer goes to its series.
         function respond(response, wholeSeries, msg) {
             const id = wholeSeries && ev.series_master_id ? ev.series_master_id : ev.id
-            root.calendarAction("respond", JSON.stringify({ id: id, response: response, send: emailOrganizer, note: msg !== undefined ? msg : note.text }))
+            root.calendarAction("respond", JSON.stringify({ id: id, event: { id: ev.id, ical_uid: ev.ical_uid, event_type: ev.event_type, start_utc: ev.start_utc, series_master_id: ev.series_master_id }, series: !!wholeSeries, response: response, send: emailOrganizer, note: msg !== undefined ? msg : note.text }))
             close()
         }
         width: 392; padding: 0
@@ -1272,7 +1305,7 @@ Item {
                     if (r.range && r.range.endDate) range.endDate = root.isoLocal(root.midnight(r.range.endDate))
                     out.recurrence = { pattern: pattern, range: range }
                 }
-                if (out.editingId) root.calendarAction("update", JSON.stringify({ id: out.editingId, form: out }))
+                if (out.editingId) root.calendarAction("update", JSON.stringify({ id: out.editingId, form: out, joinUrl: form.event.join_url || "", eventType: form.event.event_type || "" }))
                 else root.calendarAction("schedule", JSON.stringify({ form: out }))
             }
             onCancelMeeting: note => {
@@ -1282,7 +1315,7 @@ Item {
             onRespond: (response, send, msg, series) => {
                 const e = form.event
                 const id = series && e.series_master_id ? e.series_master_id : e.id
-                root.calendarAction("respond", JSON.stringify({ id: id, response: response, send: send, note: msg }))
+                root.calendarAction("respond", JSON.stringify({ id: id, event: { id: e.id, ical_uid: e.ical_uid, event_type: e.event_type, start_utc: e.start_utc, series_master_id: e.series_master_id }, series: !!series, response: response, send: send, note: msg }))
                 formLayer.visible = false
             }
             onJoin: root.joinMeeting(form.event.join_url, form.event.subject || "Meeting")

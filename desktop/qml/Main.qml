@@ -1521,6 +1521,8 @@ Window {
         id: banners
         onOpenChat: (chatId, chatName) => backend.openFromNotification(chatId, chatName)
         onJoinMeeting: (chatId, chatName) => backend.joinFromNotification(chatId, chatName)
+        // A scheduled meeting's start notification: its pre-join.
+        onJoinMeetingUrl: (url, title) => preJoin.openFor(url, title, "", "")
         onOpenSettings: {
             rail.current = "settings"; settingsView.page = "notifications"
             window.show(); window.raise(); window.requestActivate()
@@ -3808,19 +3810,48 @@ Window {
             } else if (arg("cal-cancel") && step === 3) { calendarView.formForTest.openCancelForTest(); }
             else if (arg("cal-cancel") && step === 4) { cap("cancel"); calendarView.formForTest.confirmCancelForTest(arg("cal-cancel-note")) }
             else if (arg("cal-cancel") && step === 9) { console.warn("CALTEST cancelled", !ev(arg("cal-cancel")) || ev(arg("cal-cancel")).is_cancelled); Qt.quit() }
-            else if (!arg("cal-respond") && !arg("cal-schedule") && !arg("cal-cancel")) {
+            // --cal-joinid=<meeting ID>|<passcode>: Join with an ID, its
+            // pre-join captured, then cancelled (never joined).
+            else if (arg("cal-joinid") && step === 2) { const p = arg("cal-joinid").split("|"); calendarView.joinIdForTest.openFresh(); calendarView.joinIdForTest.close(); calendarView.joinWithId(p[0], p[1] || "") }
+            else if (arg("cal-joinid") && step === 9) { console.warn("CALTEST joinid prejoin", preJoin.visible, preJoin.subject, preJoin.joinUrl.slice(0, 60)); if (preJoin.visible) preJoin.contentItem.grabToImage(r => r.saveToFile(dir + "cal-joinid-prejoin.png")) }
+            else if (arg("cal-joinid") && step === 11) { if (preJoin.visible) preJoin.close() }
+            else if (arg("cal-joinid") && step === 14) Qt.quit()
+            // --cal-edit=<subject>|<new title>: your meeting's page, a new
+            // title, Send update (Teams' update request).
+            else if (arg("cal-edit") && step === 2) console.warn("CALTEST edit page", calendarView.pageForTest(arg("cal-edit").split("|")[0]))
+            else if (arg("cal-edit") && step === 4) calendarView.formForTest.typeTitleForTest(arg("cal-edit").split("|")[1])
+            else if (arg("cal-edit") && step === 5) { cap("edit"); calendarView.formForTest.submitForTest() }
+            else if (arg("cal-edit") && step === 11) { console.warn("CALTEST edited", !!ev(arg("cal-edit").split("|")[1])); Qt.quit() }
+            // --cal-channel-header=<team>/<channel>: that channel's header ▸
+            // Schedule a meeting; the form it opens (never sent).
+            else if (arg("cal-channel-header") && step === 2) {
+                const p = arg("cal-channel-header").split("/"), t = JSON.parse(backend.teamsJson || "[]").find(t => t.name === p[0]), c = t ? t.channels.find(c => c.name === p[1]) : null
+                console.warn("CALTEST channel", !!c); if (c) { rail.current = "chat"; backend.selectChat(c.id, c.name) }
+            } else if (arg("cal-channel-header") && step === 5) { console.warn("CALTEST header", conversation.isChannel, conversation.chatId); conversation.scheduleMeeting() }
+            else if (arg("cal-channel-header") && step === 7) { console.warn("CALTEST form channel", JSON.stringify(calendarView.formForTest.channel)); cap("channel-header-form") }
+            else if (arg("cal-channel-header") && step === 9) { calendarView.formOpen = false; Qt.quit() }
+            // --cal-live (with --cal-wait=<seconds>): stay for a meeting to
+            // start, capturing its start notification and the join bar.
+            else if (args.indexOf("--cal-live") >= 0) {
+                if (step % 5 === 0) console.warn("CALTEST live", backend.liveMeetingsJson)
+                if (step % 5 === 0 && backend.liveMeetingsJson.length > 2) cap("live-" + step)
+                if (step * 3 >= parseInt(arg("cal-wait", "300"))) Qt.quit()
+            }
+            else if (!arg("cal-respond") && !arg("cal-schedule") && !arg("cal-cancel") && !arg("cal-joinid") && !arg("cal-edit") && !arg("cal-channel-header") && args.indexOf("--cal-live") < 0) {
                 // Pictures: the views, the card and page of --cal-peek, the form and dialogs.
                 const peek = arg("cal-peek")
                 const seq = [
                     () => cap((calendarView.view) + "-view"),
                     () => { calendarView.view = "week" }, () => cap("week-view"),
                     () => { calendarView.view = "day" }, () => cap("day-view"),
-                    () => { calendarView.view = "month"; if (d) calendarView.start = calendarView.startFor(new Date(d + "T12:00:00")) }, () => cap("month-view"),
+                    () => { calendarView.view = "month"; if (d) calendarView.start = calendarView.startFor(new Date(d + "T12:00:00")) }, () => {}, () => {}, () => { console.warn("CALTEST month", JSON.stringify(calendarView.monthDebug())); cap("month-view") },
                     () => { calendarView.view = "workweek"; if (d) calendarView.start = calendarView.startFor(new Date(d + "T12:00:00")) },
                     () => console.warn("CALTEST peek", peek, calendarView.cardForTest(peek)), () => cap("peek"),
                     () => { calendarView.detailsForTest.close(); console.warn("CALTEST page", calendarView.pageForTest(peek)) }, () => cap("page"),
-                    () => { calendarView.formForTest.openRsvpNoteForTest() }, () => cap("rsvp-note"),
-                    () => { calendarView.formOpen = false; calendarView.newMeeting() }, () => cap("form"),
+                    // RSVP with note only on an invitation's page that opened.
+                    () => { const e = calendarView.eventBySubject(peek); if (calendarView.formOpen && e && !e.is_organizer) calendarView.formForTest.openRsvpNoteForTest(); else console.warn("CALTEST rsvp-note skipped: no invitation", peek) },
+                    () => { if (calendarView.formForTest.rsvpNoteOpen) cap("rsvp-note") },
+                    () => { calendarView.formForTest.closeRsvpNoteForTest(); calendarView.formOpen = false; calendarView.newMeeting() }, () => cap("form"),
                     () => { calendarView.formOpen = false; calendarView.meetNowForTest.openFresh() }, () => cap("meetnow"),
                     () => { calendarView.meetNowForTest.close(); calendarView.joinIdForTest.openFresh() }, () => cap("joinid"),
                     () => { calendarView.joinIdForTest.close(); Qt.quit() }
@@ -10064,40 +10095,83 @@ Window {
     property bool threadsBannerDismissed: backend.setting("threadedChannelLearnMoreBannerDismissed") !== ""
     readonly property bool threadsBanner: rail.current === "chat" && conversation.visible && conversation.threadsLayout
         && !threadsBannerDismissed && !!espActions && espActions.indexOf("ThreadedChannelInteraction") < 0
+    // Teams' live meeting join bar (LiveMeetingStatusBar, Settings ▸
+    // Notifications ▸ Show meeting join bar): scheduled meetings that
+    // started, while you aren't in them, until 5 minutes after their end.
+    // Strings from Teams desktop's bundle; its layout isn't measured yet.
+    property var liveMeetingsDismissed: []
+    property date liveNow: new Date()
+    Timer { interval: 30000; running: backend.liveMeetingsJson.length > 2; repeat: true; onTriggered: window.liveNow = new Date() }
+    readonly property var liveMeetings: (backend.liveMeetingsJson ? JSON.parse(backend.liveMeetingsJson) : []).filter(m =>
+        window.liveMeetingsDismissed.indexOf(m.callId) < 0
+        && !(backend.callState !== "" && backend.callThreadId === m.threadId)
+        && (!m.end || window.liveNow < new Date(new Date(m.end).getTime() + 5 * 60000)))
+    Connections {
+        target: backend
+        function onPrejoinRequested(url, title) { preJoin.openFor(url, title, "", "") }
+    }
     Rectangle {
         id: appBanner
         anchors { top: titleBar.bottom; left: parent.left; right: parent.right }
-        // The newest banner shows (Teams' shell keeps one at a time).
-        readonly property string kind: window.dndBanner && (!window.noteBanner || window.bannerOrder === "dnd") ? "dnd" : window.noteBanner ? "note" : window.threadsBanner ? "threads" : ""
+        // The newest banner shows (Teams' shell keeps one at a time); a
+        // meeting that started shows first.
+        readonly property string kind: window.liveMeetings.length ? "live" : window.dndBanner && (!window.noteBanner || window.bannerOrder === "dnd") ? "dnd" : window.noteBanner ? "note" : window.threadsBanner ? "threads" : ""
         readonly property bool shown: kind !== "" && backend.hasCredentials
         height: shown ? (kind === "threads" ? 64 : 36) : 0
         visible: shown
         color: theme.pick("#F5F5F5", "#292929", "#000000")
         z: 9
-        FluentIcon { x: 12; anchors.verticalCenter: parent.verticalCenter; name: "info-20-filled"; size: 20; color: theme.textSecondary }
+        FluentIcon { x: 12; anchors.verticalCenter: parent.verticalCenter; name: appBanner.kind === "live" ? "video-20" : "info-20-filled"; size: 20; color: appBanner.kind === "live" ? theme.brand : theme.textSecondary }
         Text {
             x: 40; anchors.verticalCenter: parent.verticalCenter
-            width: bannerAction.x - 12 - x; elide: Text.ElideRight
+            width: (liveViewAll.visible ? liveViewAll.x : bannerAction.x) - 12 - x; elide: Text.ElideRight
             textFormat: appBanner.kind === "threads" ? Text.RichText : Text.PlainText
-            text: appBanner.kind === "note" ? window.noteBannerText
+            text: appBanner.kind === "live" ? (window.liveMeetings.length > 1 ? "Meetings Started: " + window.liveMeetings[0].subject + " +" + (window.liveMeetings.length - 1) : "Meeting Started: " + window.liveMeetings[0].subject)
+                : appBanner.kind === "note" ? window.noteBannerText
                 : appBanner.kind === "threads" ? "A channel owner set this channel to a threads layout. <a href=\"https://go.microsoft.com/fwlink/?linkid=2311967\" style=\"text-decoration:none; color:" + theme.brandForeground1 + "\">Learn how threads work</a>"
                 : "Your status is set to do not disturb. You'll only get notifications for urgent messages and from your priority contacts."
             font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text
             onLinkActivated: url => Qt.openUrlExternally(url)
             HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
         }
+        // The join bar's "View meetings" (several live): each with Join.
+        Rectangle {
+            id: liveViewAll
+            visible: appBanner.kind === "live" && window.liveMeetings.length > 1
+            anchors.right: bannerAction.left; anchors.rightMargin: visible ? 8 : 0; anchors.verticalCenter: parent.verticalCenter
+            width: visible ? liveViewText.implicitWidth + 16 : 0; height: 23.3; radius: 4
+            color: liveViewHover.hovered ? theme.menuHover : theme.surface
+            border.color: theme.stroke; border.width: 0.67
+            Text { id: liveViewText; anchors.centerIn: parent; text: "View meetings"; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(liveViewAll, theme.text) }
+            HoverHandler { id: liveViewHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: liveMenu.open() }
+            Accessible.role: Accessible.Button
+            Accessible.name: "View meetings"
+            MenuPopup {
+                id: liveMenu
+                y: parent.height + 4; width: 280
+                items: window.liveMeetings.map(m => ({ label: m.subject, icon: "video-20" }))
+                perItemIcons: true
+                onPicked: i => { const m = window.liveMeetings[i]; if (m) preJoin.openFor(m.joinUrl, m.subject, m.start || "", m.end || "") }
+            }
+        }
         Rectangle {
             id: bannerAction
-            visible: appBanner.kind === "dnd"
+            visible: appBanner.kind === "dnd" || appBanner.kind === "live"
             anchors.right: bannerDismiss.left; anchors.rightMargin: visible ? 12 : 0; anchors.verticalCenter: parent.verticalCenter
             width: visible ? bannerActionText.implicitWidth + 16 : 0; height: 23.3; radius: 4
-            color: bannerActionHover.hovered ? theme.menuHover : theme.surface
-            border.color: theme.stroke; border.width: 0.67
-            Text { id: bannerActionText; anchors.centerIn: parent; text: "Change settings"; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(bannerAction, theme.text) }
+            color: appBanner.kind === "live" ? (bannerActionHover.hovered ? theme.brandHover : theme.brandFill) : bannerActionHover.hovered ? theme.menuHover : theme.surface
+            border.color: appBanner.kind === "live" ? "transparent" : theme.stroke; border.width: 0.67
+            Text { id: bannerActionText; anchors.centerIn: parent; text: appBanner.kind === "live" ? "Join" : "Change settings"; font.family: theme.font; font.pixelSize: 12; font.weight: appBanner.kind === "live" ? Font.DemiBold : Font.Normal; color: theme.onFill(bannerAction, appBanner.kind === "live" ? "white" : theme.text) }
             HoverHandler { id: bannerActionHover; cursorShape: Qt.PointingHandCursor }
-            TapHandler { onTapped: { settingsView.page = settingsView.pages.some(p => p.key === "privacy") ? "privacy" : "notifications"; rail.current = "settings" } }
+            TapHandler {
+                onTapped: {
+                    if (appBanner.kind === "live") { const m = window.liveMeetings[0]; preJoin.openFor(m.joinUrl, m.subject, m.start || "", m.end || ""); return }
+                    settingsView.page = settingsView.pages.some(p => p.key === "privacy") ? "privacy" : "notifications"; rail.current = "settings"
+                }
+            }
             Accessible.role: Accessible.Button
-            Accessible.name: "Change settings"
+            Accessible.name: appBanner.kind === "live" ? "Join" : "Change settings"
         }
         Rectangle {
             id: bannerDismiss
@@ -10110,6 +10184,7 @@ Window {
                 onTapped: {
                     if (appBanner.kind === "note") window.noteBanner = false
                     else if (appBanner.kind === "threads") { backend.setSetting("threadedChannelLearnMoreBannerDismissed", new Date().toISOString()); window.threadsBannerDismissed = true }
+                    else if (appBanner.kind === "live") window.liveMeetingsDismissed = window.liveMeetingsDismissed.concat(window.liveMeetings.map(m => m.callId))
                     else window.dndBanner = false
                 }
             }

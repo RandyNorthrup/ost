@@ -2450,6 +2450,55 @@ pub async fn preheat_meeting(
     start(&link.thread_id, Target::MeetingPreheat(link, call_tag), cancel).await
 }
 
+/// Join with an ID: the meeting a meeting ID and passcode stand for, as
+/// Teams' calling stack finds it (the conversation joined with
+/// `meetingData {meetingCode, passcode, meetingUrl}`, then left), as a
+/// join link OST's pre-join and join take.
+pub async fn resolve_meeting_id(meeting_id: &str, passcode: &str) -> Result<(MeetingLink, String)> {
+    let code: String = meeting_id.chars().filter(|c| !c.is_whitespace()).collect();
+    let pass: String = passcode.chars().filter(|c| !c.is_whitespace()).collect();
+    if code.is_empty() || !code.bytes().all(|b| b.is_ascii_digit()) {
+        bail!("Not a meeting ID");
+    }
+    let mut config = Config::load()?;
+    if config.get_ic3_token().is_none_or(|t| t.is_expired()) {
+        crate::auth::oauth::refresh().await.context("Token refresh failed")?;
+        config = Config::load()?;
+    }
+    let ic3_token = config.get_ic3_token().context("No calling (IC3) token")?.token;
+    let oid = config.object_id().context("Signed-in user has no object id")?;
+    let tenant_id = config.tenant_id().context("No tenant id")?;
+    let display_name = config.display_name().unwrap_or_default();
+    let region = config.get_region_gtms().context("No region endpoints")?;
+    let epconv_url = call_test::derive_epconv_url(&region).context("No conversation service URL")?;
+    let (surl, endpoint_id) = crate::trouter::current_endpoint().context("Push channel is not connected")?;
+    let surl = format!("{}/x{}/", surl.trim_end_matches('/'), new_call_tag());
+    let caller_mri = format!("8:orgid:{oid}");
+    let participant_id = uuid::Uuid::new_v4().to_string();
+    let chain_id = uuid::Uuid::new_v4().to_string();
+    let message_id = uuid::Uuid::new_v4().to_string();
+    let params = signaling::ConversationCallParams {
+        ic3_token: &ic3_token,
+        trouter_surl: &surl,
+        caller_mri: &caller_mri,
+        caller_display_name: &display_name,
+        endpoint_id: &endpoint_id,
+        participant_id: &participant_id,
+        thread_id: "",
+        chain_id: &chain_id,
+        message_id: &message_id,
+        caller_oid: &oid,
+        tenant_id: &tenant_id,
+    };
+    let data = serde_json::json!({
+        "meetingCode": code,
+        "passcode": if pass.is_empty() { serde_json::Value::Null } else { pass.clone().into() },
+        "meetingUrl": format!("https://teams.microsoft.com/meet/{code}?p={pass}"),
+    });
+    let (thread, organizer, tenant, subject) = signaling::resolve_meeting_code(&reqwest::Client::new(), &epconv_url, &params, &data).await?;
+    Ok((MeetingLink { thread_id: thread, message_id: "0".into(), organizer_id: organizer, tenant_id: tenant }, subject))
+}
+
 /// Start or join a group chat's call (`19:…@thread.v2`), as Teams does:
 /// Meet now (a huddle; members are nudged), Audio call (members are rung)
 /// or Join (the chat's ongoing call).

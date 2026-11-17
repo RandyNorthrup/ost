@@ -48,6 +48,7 @@ Window {
 
     signal openChat(string chatId, string chatName)
     signal joinMeeting(string chatId, string chatName)
+    signal joinMeetingUrl(string url, string title)
     signal openSettings()
     /// The incoming call's buttons (kind "call").
     signal acceptCall(bool video)
@@ -614,7 +615,8 @@ Window {
             function act(id) {
                 const t = toast
                 root.dismiss(t.id)
-                if (id === "join") root.joinMeeting(t.chatId, t.chatName || "")
+                if (id === "join" && t.joinUrl) root.joinMeetingUrl(t.joinUrl, t.chatName || "")
+                else if (id === "join") root.joinMeeting(t.chatId, t.chatName || "")
                 else root.openChat(t.chatId, t.chatName || "")
             }
             Header {

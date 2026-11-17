@@ -274,7 +274,12 @@ fn parse_events(v: &serde_json::Value) -> Vec<CalendarEvent> {
                 ical_uid: s(e, "/iCalUId"),
                 event_type: s(e, "/type"),
                 series_master_id: s(e, "/seriesMasterId"),
-                response: s(e, "/responseStatus/response"),
+                // Follow is Outlook's Tentative with attendance Follow: free, and
+                // the subject marked "Following: ".
+                response: match s(e, "/responseStatus/response") {
+                    r if r == "tentativelyAccepted" && s(e, "/subject").starts_with("Following: ") => "following".to_string(),
+                    r => r,
+                },
                 response_requested: e.get("responseRequested").and_then(|b| b.as_bool()).unwrap_or(true),
                 attendees: attendees_of(e),
                 is_cancelled: e.get("isCancelled").and_then(|b| b.as_bool()).unwrap_or(false),
@@ -331,29 +336,189 @@ pub async fn event_detail(client: &TeamsClient, id: &str) -> Result<serde_json::
     }))
 }
 
-/// Answer an invitation (the card's Accept / Tentative / Decline, the
-/// event page's RSVP with note): the answer, whether the organizer gets an
-/// e-mail ("Email organizer") and the note. Teams' calendar sends this
-/// to Outlook on the web (`owa/service.svc?action=RespondToCalendarEvent`:
-/// the occurrence or series id, `Response`, `SendResponse`, `Notes` as
-/// `<div>…</div>`); that service refuses Teams' own token (500,
-/// ExAssertException for app 1fec8e78), so OST asks Exchange the same
-/// through Graph (`/me/events/{id}/accept|tentativelyAccept|decline`,
-/// `{comment, sendResponse}`). For "All events in the series" the id is the
-/// series'. Follow has no Graph or Outlook call OST can make.
-pub async fn respond(client: &TeamsClient, event_id: &str, response: &str, send_response: bool, note: &str) -> Result<()> {
-    let action = match response {
-        "Accept" => "accept",
-        "Tentative" => "tentativelyAccept",
-        "Decline" => "decline",
-        "Follow" => bail!("Follow isn't available here"),
+/// Answer an invitation (the card's Accept / Tentative / Decline, Follow,
+/// the event page's RSVP with note) as Teams' calendar does: Outlook on the
+/// web's `RespondToCalendarEvent` (measured 2026-11-17) with the event's
+/// immutable id (the occurrence, or the series for "All events in the
+/// series"), `Response`, `SendResponse` ("Email organizer"), the note as
+/// `<div>…</div>`, and `Attendance` (Teams desktop's calendar bundle:
+/// AttendanceType None 0, InPerson 1, Online 2, Follow 3; Follow is
+/// `Tentative` with attendance Follow). The token is the hosted calendar's
+/// (client ceb96695…, through Teams' broker), so it needs the browser
+/// sign-in; on a device-code sign-in OST answers through Graph
+/// (`/me/events/{id}/accept|tentativelyAccept|decline`), which has no Follow.
+pub async fn respond(client: &TeamsClient, ev: &RsvpTarget, response: &str, send_response: bool, note: &str) -> Result<()> {
+    let (owa_response, attendance) = match response {
+        "Accept" | "Tentative" | "Decline" => (response, 0),
+        "Follow" => ("Tentative", 3),
         other => bail!("Not a response: {other}"),
     };
-    let body = serde_json::json!({ "comment": note.trim(), "sendResponse": send_response });
-    client
-        .graph_post(&format!("/me/events/{}/{action}", event_path_id(event_id)?), &body)
+    if crate::auth::oauth::browser_sign_in() {
+        let id = event_path_id(&ev.id)?;
+        let tz = mailbox_time_zone().await;
+        owa_action("RespondToCalendarEvent", &respond_body(&ews_id(id), owa_response, attendance, send_response, note, &tz)).await?;
+        return Ok(());
+    }
+    respond_mt(client, ev, response, send_response, note).await
+}
+
+/// What an answer is about: the event (its Graph id), and for Teams' own
+/// calendar service its iCalUId, type and start (UTC).
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(default)]
+pub struct RsvpTarget {
+    pub id: String,
+    pub ical_uid: String,
+    /// singleInstance, occurrence, exception or seriesMaster.
+    pub event_type: String,
+    pub start_utc: String,
+}
+
+/// Teams' own calendar's answer (its event page, calv2: `PUT
+/// {mt}/v2.0/me/calendars/events/{iCalUId}/respond?eventType=…&eventStartDateTime=…`,
+/// `{responseType: Accept|TentativelyAccept|Decline, sendResponse, comment,
+/// attendance: None|Follow}`, from Teams' calendar service bundle).
+async fn respond_mt(client: &TeamsClient, ev: &RsvpTarget, response: &str, send_response: bool, note: &str) -> Result<()> {
+    let (kind, attendance) = match response {
+        "Accept" => ("Accept", "None"),
+        "Tentative" => ("TentativelyAccept", "None"),
+        "Decline" => ("Decline", "None"),
+        "Follow" => ("TentativelyAccept", "Follow"),
+        other => bail!("Not a response: {other}"),
+    };
+    let uid = &ev.ical_uid;
+    if uid.is_empty() || !uid.bytes().all(|b| b.is_ascii_hexdigit()) {
+        bail!("Not an iCalUId");
+    }
+    let event_type = match ev.event_type.as_str() {
+        "occurrence" => "Occurrence",
+        "exception" => "Exception",
+        "seriesMaster" => "RecurringMaster",
+        _ => "Single",
+    };
+    let start = chrono::DateTime::parse_from_rfc3339(&ev.start_utc)
+        .map(|d| d.with_timezone(&chrono::Utc).format("%Y-%m-%dT%H:%M:%S.000Z").to_string())
+        .unwrap_or_default();
+    let (base, token) = crate::api::tabs::middle_tier(client).await?;
+    let q: String = url::form_urlencoded::Serializer::new(String::new())
+        .append_pair("eventType", event_type)
+        .append_pair("eventStartDateTime", &start)
+        .finish();
+    let r = client
+        .http()
+        .put(format!("{base}/v2.0/me/calendars/events/{uid}/respond?{q}"))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({ "responseType": kind, "sendResponse": send_response, "comment": note.trim(), "attendance": attendance }))
+        .send()
         .await?;
+    let status = r.status();
+    if !status.is_success() {
+        bail!("{status}: {}", r.text().await.unwrap_or_default().chars().take(300).collect::<String>());
+    }
     Ok(())
+}
+
+fn respond_body(ews_id: &str, response: &str, attendance: u8, send_response: bool, note: &str, tz: &str) -> serde_json::Value {
+    let mut b = serde_json::json!({
+        "__type": "RespondToCalendarEventJsonRequest:#Exchange",
+        "Header": {
+            "__type": "JsonRequestHeaders:#Exchange",
+            "RequestServerVersion": "V2018_01_08",
+            "TimeZoneContext": {
+                "__type": "TimeZoneContext:#Exchange",
+                "TimeZoneDefinition": { "__type": "TimeZoneDefinitionType:#Exchange", "Id": tz }
+            }
+        },
+        "Body": {
+            "__type": "RespondToCalendarEventRequest:#Exchange",
+            "EventId": { "__type": "ItemId:#Exchange", "Id": ews_id },
+            "Response": response,
+            "SendResponse": send_response,
+            "ProposedStartTime": "",
+            "ProposedEndTime": "",
+            "Attendance": attendance,
+            "Mode": 0
+        }
+    });
+    if !note.trim().is_empty() {
+        let esc = note.trim().replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('\n', "<br>");
+        b["Body"]["Notes"] = serde_json::json!({ "__type": "BodyContentType:#Exchange", "BodyType": "HTML", "Value": format!("<div>{esc}</div>") });
+    }
+    b
+}
+
+/// Graph's URL-safe immutable id as Exchange writes it (standard base64,
+/// padded).
+fn ews_id(rest_id: &str) -> String {
+    let mut s = rest_id.replace('-', "/").replace('_', "+");
+    while s.len() % 4 != 0 {
+        s.push('=');
+    }
+    s
+}
+
+/// The hosted Outlook calendar's app in Teams (its broker token request:
+/// `brk-multihub://outlook.office.com`, scope `https://outlook.office.com/.default`).
+const HOSTED_CALENDAR_APP: &str = "ceb96695-e468-48ba-ba21-35e2a242d396";
+
+/// A browser's User-Agent, as the hosted calendar's web view sends (Outlook
+/// on the web fails every action without one).
+const OWA_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36 Edg/134.0.0.0";
+
+/// One Outlook on the web service action as Teams' hosted calendar sends
+/// it: the request JSON URL-encoded in `x-owa-urlpostdata`, an empty body,
+/// and its headers (`action`, `x-owa-actionsource`, `x-req-source:
+/// Calendar`, `x-owa-hosted-ux: true`, a session and correlation id, the
+/// tenant, `prefer: IdType="ImmutableId"…`).
+pub async fn owa_action(action: &str, body: &serde_json::Value) -> Result<serde_json::Value> {
+    if !action.bytes().all(|b| b.is_ascii_alphanumeric()) {
+        bail!("Not an action: {action}");
+    }
+    let (token, _) = crate::auth::oauth::brokered_token(HOSTED_CALENDAR_APP, "https://outlook.office.com", "https://outlook.office.com/.default", None).await?;
+    let tenant = crate::config::Config::load().ok().and_then(|c| c.tenant_id).unwrap_or_default();
+    static SESSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    let session = SESSION.get_or_init(|| uuid::Uuid::new_v4().to_string());
+    let anchor = crate::config::Config::load().ok().and_then(|c| c.object_id()).map(|o| format!("OID:{o}@{tenant}")).unwrap_or_default();
+    // encodeURIComponent, as the page encodes it: a space is %20 (a "+"
+    // would reach the service as a plus: "Pacific+Standard+Time").
+    let data = url::form_urlencoded::byte_serialize(body.to_string().as_bytes()).collect::<String>().replace('+', "%20");
+    let resp = reqwest::Client::new()
+        .post(format!("https://outlook.office.com/owa/service.svc?action={action}&app=Calendar"))
+        .bearer_auth(token)
+        .header("x-anchormailbox", anchor)
+        .header("user-agent", OWA_USER_AGENT)
+        .header("action", action)
+        .header("x-owa-actionsource", action)
+        .header("x-req-source", "Calendar")
+        .header("x-owa-hosted-ux", "true")
+        .header("x-owa-host-app", "teams_desktop")
+        .header("origin", "https://outlook.office.com")
+        .header("x-owa-sessionid", session.as_str())
+        .header("x-owa-correlationid", uuid::Uuid::new_v4().to_string())
+        .header("x-tenantid", tenant)
+        .header("prefer", "IdType=\"ImmutableId\", exchange.behavior=\"IncludeThirdPartyOnlineMeetingProviders\"")
+        .header("content-type", "application/json; charset=utf-8")
+        .header("x-owa-urlpostdata", data)
+        .body("")
+        .send()
+        .await
+        .with_context(|| format!("{action} failed"))?;
+    let status = resp.status();
+    let err = resp.headers().get("x-owa-error").and_then(|v| v.to_str().ok()).unwrap_or_default().to_string();
+    let text = resp.text().await.unwrap_or_default();
+    let v: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
+    let class = v.pointer("/Body/ResponseClass").and_then(|c| c.as_str()).unwrap_or_default();
+    if !status.is_success() || class == "Error" {
+        let msg = v
+            .pointer("/Body/MessageText")
+            .or_else(|| v.pointer("/Body/FaultMessage"))
+            .or_else(|| v.pointer("/Body/ExceptionName"))
+            .and_then(|c| c.as_str())
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("{err} {}", text.chars().take(300).collect::<String>()));
+        bail!("{action}: {status} {msg}");
+    }
+    Ok(v)
 }
 
 /// Your mailbox's time zone (its Windows name, e.g. "Pacific Standard Time").
@@ -380,6 +545,28 @@ pub struct Me {
     pub mri: String,
 }
 
+/// You as the organizer, your mail and name from Graph when the sign-in
+/// didn't give them.
+pub async fn organizer(client: &TeamsClient, me: &Me) -> Me {
+    if !me.mail.is_empty() && !me.name.is_empty() {
+        return me.clone();
+    }
+    let mut out = me.clone();
+    if let Ok(r) = client.graph_get("/me?$select=mail,displayName,id").await {
+        let v: serde_json::Value = r.json().await.unwrap_or_default();
+        if out.mail.is_empty() {
+            out.mail = v["mail"].as_str().unwrap_or_default().to_string();
+        }
+        if out.name.is_empty() {
+            out.name = v["displayName"].as_str().unwrap_or_default().to_string();
+        }
+        if out.mri.is_empty() {
+            out.mri = v["id"].as_str().map(|id| format!("8:orgid:{id}")).unwrap_or_default();
+        }
+    }
+    out
+}
+
 /// Free/busy for people as Teams' form asks for it (`PUT
 /// {mt}/v2.0/me/calendars/schedules`, "AttendeeAvailabilityOnly"): each
 /// address's strongest status over `[start, end)` (RFC 3339), and your time
@@ -392,6 +579,7 @@ pub async fn availability(
     start: &str,
     end: &str,
 ) -> Result<(serde_json::Value, String)> {
+    let me = &organizer(client, me).await;
     let (base, token) = crate::api::tabs::middle_tier(client).await?;
     let mut attendees = vec![serde_json::json!({"type": "Organizer", "address": me.mail, "name": me.name, "mri": me.mri, "role": "Admin"})];
     for (mail, name) in people {
@@ -584,6 +772,19 @@ fn rand_u32() -> u32 {
 ///
 /// Answers the middle tier's event (objectId, join links).
 pub async fn schedule(client: &TeamsClient, form: &MeetingForm, me: &Me) -> Result<serde_json::Value> {
+    let me = &organizer(client, me).await;
+    // The form's eventTimeZone is the middle tier's name for your zone, as
+    // its free/busy answer gives it (the form asks when it opens).
+    let mut owned;
+    let form = if form.time_zone.is_empty() {
+        owned = form.clone();
+        if let Ok((_, tz)) = availability(client, me, &[], &form.start, &form.end).await {
+            owned.time_zone = tz;
+        }
+        &owned
+    } else {
+        form
+    };
     let (base, token) = crate::api::tabs::middle_tier(client).await?;
     let post = |url: String, body: serde_json::Value| {
         let token = token.clone();
@@ -641,36 +842,6 @@ pub async fn meet_now(client: &TeamsClient, subject: &str) -> Result<String> {
         .context("Meet now gave no join link")
 }
 
-/// Join with an ID: the meeting in your calendar (90 days either side)
-/// whose invitation carries this meeting ID and passcode. Teams itself
-/// hands the ID and passcode to the calling service (its conversation's
-/// `meetingData`); OST's call stack joins by link, so it finds the link.
-pub async fn meeting_by_id(client: &TeamsClient, meeting_id: &str, passcode: &str) -> Result<Option<(String, String, String, String)>> {
-    let digits: String = meeting_id.chars().filter(char::is_ascii_digit).collect();
-    if digits.len() < 9 {
-        bail!("Not a meeting ID");
-    }
-    let now = chrono::Utc::now();
-    let fmt = |d: chrono::DateTime<chrono::Utc>| d.format("%Y-%m-%dT%H:%M:%SZ").to_string();
-    let path = format!(
-        "/me/calendarView?startDateTime={}&endDateTime={}&$top=500&$select=subject,start,end,bodyPreview,onlineMeeting",
-        fmt(now - chrono::Duration::days(90)),
-        fmt(now + chrono::Duration::days(90))
-    );
-    let v: serde_json::Value = client.graph_get(&path).await?.json().await?;
-    for e in v.get("value").and_then(|x| x.as_array()).into_iter().flatten() {
-        let preview = e.get("bodyPreview").and_then(|x| x.as_str()).unwrap_or_default();
-        let flat: String = preview.chars().filter(|c| !c.is_whitespace()).collect();
-        let Some(join) = e.pointer("/onlineMeeting/joinUrl").and_then(|x| x.as_str()) else { continue };
-        if flat.contains(&format!("MeetingID:{digits}")) && (passcode.is_empty() || flat.contains(&format!("Passcode:{passcode}"))) {
-            let s = |p: &str| e.pointer(p).and_then(|x| x.as_str()).unwrap_or_default().to_string();
-            let utc = |t: String| if t.is_empty() || t.ends_with('Z') { t } else { format!("{}Z", t.split('.').next().unwrap_or(&t)) };
-            return Ok(Some((join.to_string(), s("/subject"), utc(s("/start/dateTime")), utc(s("/end/dateTime")))));
-        }
-    }
-    Ok(None)
-}
-
 /// A team's group mailbox (its calendar's `smtp:` address).
 async fn group_mail(client: &TeamsClient, team_id: &str) -> Result<String> {
     if team_id.is_empty() || !team_id.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-') {
@@ -684,41 +855,54 @@ async fn group_mail(client: &TeamsClient, team_id: &str) -> Result<String> {
         .context("The team has no mailbox")
 }
 
-/// Send an update for a meeting you organise (Teams' Send update) with
-/// the fields the form edits; Outlook sends the attendees the update.
-pub async fn update_meeting(client: &TeamsClient, id: &str, form: &MeetingForm) -> Result<()> {
-    let tz = mailbox_time_zone().await;
-    let local = |t: &str| -> Result<String> {
-        let d = chrono::DateTime::parse_from_rfc3339(t).with_context(|| format!("Not a time: {t}"))?;
-        Ok(d.naive_local().format("%Y-%m-%dT%H:%M:%S").to_string())
-    };
-    let mut body = serde_json::json!({
-        "subject": form.subject.trim(),
-        "start": { "dateTime": local(&form.start)?, "timeZone": tz },
-        "end": { "dateTime": local(&form.end)?, "timeZone": tz },
-        "isAllDay": form.all_day,
-        "location": { "displayName": form.location },
-        "body": { "contentType": "html", "content": form.body_html },
-        "attendees": form.attendees.iter().filter(|a| a.address.contains('@')).map(|a| serde_json::json!({
-            "emailAddress": { "address": a.address, "name": a.name },
-            "type": if a.kind == "Optional" { "optional" } else { "required" }
-        })).collect::<Vec<_>>(),
-    });
-    if !form.show_as.is_empty() {
-        body["showAs"] = serde_json::json!(graph_show_as(&form.show_as));
-    }
-    client.graph_patch(&format!("/me/events/{}", event_path_id(id)?), &body).await?;
-    Ok(())
+/// Graph's immutable id as the middle tier names the event (its REST id,
+/// as the scheduling form's objectId).
+async fn rest_id(client: &TeamsClient, immutable: &str) -> Result<String> {
+    let v: serde_json::Value = client
+        .graph_post(
+            "/me/translateExchangeIds",
+            &serde_json::json!({ "inputIds": [event_path_id(immutable)?], "sourceIdType": "restImmutableEntryId", "targetIdType": "restId" }),
+        )
+        .await?
+        .json()
+        .await?;
+    let id = v.pointer("/value/0/targetId").and_then(|t| t.as_str()).context("No id for the event")?;
+    Ok(id.replace('/', "-").replace('+', "_"))
 }
 
-fn graph_show_as(s: &str) -> &'static str {
-    match s {
-        "Free" => "free",
-        "Tentative" => "tentative",
-        "Oof" | "Away" => "oof",
-        "WorkingElsewhere" => "workingElsewhere",
-        _ => "busy",
+/// Send an update for a meeting you organise, as Teams' form does (its
+/// Send update: `PUT {mt}/v2.0/me/calendars/events/{objectId}?isOnlineMeeting=…`
+/// with `{updatedCalendarEvent}`, from Teams' calendar service bundle);
+/// the service sends the attendees the update.
+pub async fn update_meeting(client: &TeamsClient, id: &str, form: &MeetingForm, me: &Me, join_url: &str, event_type: &str) -> Result<()> {
+    let object_id = rest_id(client, id).await?;
+    let me = &organizer(client, me).await;
+    let mut ev = mt_event(form, me, None)?;
+    ev["objectId"] = serde_json::json!(object_id);
+    // The meeting's chat (Teams sends it in skypeTeamsData; without it the
+    // service answers "Conversation id cannot be null").
+    if let Some(link) = crate::calling::outgoing::MeetingLink::parse(join_url) {
+        ev["skypeTeamsData"] = serde_json::json!(serde_json::json!({"cid": link.thread_id, "rid": 0, "mid": 0, "uid": me.mri, "private": !link.thread_id.ends_with("@thread.tacv2"), "type": 0}).to_string());
     }
+    if let Some(t) = match event_type { "occurrence" => Some("Occurrence"), "exception" => Some("Exception"), "seriesMaster" => Some("RecurringMaster"), _ => None } {
+        ev["eventType"] = serde_json::json!(t);
+    }
+    if let Some(o) = ev.as_object_mut() {
+        o.remove("TransactionId");
+    }
+    let (base, token) = crate::api::tabs::middle_tier(client).await?;
+    let r = client
+        .http()
+        .put(format!("{base}/v2.0/me/calendars/events/{object_id}?isOnlineMeeting={}", form.online))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({ "updatedCalendarEvent": ev }))
+        .send()
+        .await?;
+    let status = r.status();
+    if !status.is_success() {
+        bail!("{status}: {}", r.text().await.unwrap_or_default().chars().take(300).collect::<String>());
+    }
+    Ok(())
 }
 
 /// Cancel a meeting you organise, with an optional note (Teams' "Cancel
@@ -762,9 +946,22 @@ pub async fn cancel_meeting(client: &TeamsClient, ev: &serde_json::Value, team_i
             .context("Cancel the channel meeting")?;
         return Ok(());
     }
-    client
-        .graph_post(&format!("/me/events/{}/cancel", event_path_id(&s("id"))?), &serde_json::json!({ "comment": note }))
+    // Teams' own cancel (`PUT {mt}/v2.0/me/calendars/events/{objectId}/cancel`,
+    // `{cancellationMessage}`).
+    let object_id = rest_id(client, &s("id")).await?;
+    let (base, token) = crate::api::tabs::middle_tier(client).await?;
+    let body = if note.trim().is_empty() { serde_json::json!({}) } else { serde_json::json!({ "cancellationMessage": note.trim() }) };
+    let r = client
+        .http()
+        .put(format!("{base}/v2.0/me/calendars/events/{object_id}/cancel"))
+        .bearer_auth(&token)
+        .json(&body)
+        .send()
         .await?;
+    let status = r.status();
+    if !status.is_success() {
+        bail!("{status}: {}", r.text().await.unwrap_or_default().chars().take(300).collect::<String>());
+    }
     Ok(())
 }
 
@@ -811,6 +1008,18 @@ mod tests {
         assert_eq!(e.end_utc, "2026-11-21T00:00:00");
         assert_eq!(e.channel_id, "19:782662e702f14fa7b33f95096b357dd8@thread.tacv2");
         assert_eq!(e.channel_message_id, "1794905737503");
+    }
+
+    #[test]
+    fn answers_are_built_as_teams_calendar_sends_them() {
+        let b = super::respond_body("AAk/x+y=", "Tentative", 3, true, "a < b", "Pacific Standard Time");
+        assert_eq!(b["Body"]["EventId"]["Id"], "AAk/x+y=");
+        assert_eq!(b["Body"]["Response"], "Tentative");
+        assert_eq!(b["Body"]["Attendance"], 3);
+        assert_eq!(b["Body"]["SendResponse"], true);
+        assert_eq!(b["Body"]["Notes"]["Value"], "<div>a &lt; b</div>");
+        assert!(super::respond_body("x", "Accept", 0, false, " ", "UTC")["Body"].get("Notes").is_none());
+        assert_eq!(super::ews_id("AAkAL-Q_xyz"), "AAkAL/Q+xyz=");
     }
 
     #[test]

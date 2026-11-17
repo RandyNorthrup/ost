@@ -462,6 +462,9 @@ pub mod qobject {
         #[qproperty(QString, calls_json)]
         /// Calendar events for the shown range, as JSON.
         #[qproperty(QString, calendar_json)]
+        /// Scheduled meetings that started (Teams' live meeting join bar):
+        /// [{threadId, callId, subject, joinUrl, start, end}].
+        #[qproperty(QString, live_meetings_json)]
         /// People search results for the new-chat picker, as JSON.
         #[qproperty(QString, people_json)]
         /// The new chat form's suggestions, as Teams' people picker lists
@@ -1532,6 +1535,10 @@ pub mod qobject {
         /// A calendar_action finished: its op, its result (JSON) and an error.
         #[qsignal]
         fn calendar_action_done(self: Pin<&mut Backend>, op: QString, result: QString, error: QString);
+
+        /// Open the pre-join for a meeting (a meeting-start notification's Join).
+        #[qsignal]
+        fn prejoin_requested(self: Pin<&mut Backend>, join_url: QString, title: QString);
 
         /// A drive_action finished: its op, its result (JSON) and an error.
         #[qsignal]
@@ -2808,6 +2815,7 @@ pub struct BackendRust {
     read_receipts: bool,
     calls_json: QString,
     calendar_json: QString,
+    live_meetings_json: QString,
     people_json: QString,
     new_chat_people_json: QString,
     new_chat_people_generation: u64,
@@ -4059,6 +4067,10 @@ struct NotifyPrefs {
     sound: bool,
     sound_when_busy: bool,
     meet_now: bool,
+    /// Meetings ▸ "Meeting start notifications" (toastSettings.MeetingWentLiveNotification).
+    meeting_start: bool,
+    /// Meetings ▸ "Show meeting join bar" (toastSettings.liveMeetingStatusBanner).
+    join_bar: bool,
     seconds: u32,
     flash: bool,
     /// Teams' sound for notifications (toastSettings.alertSoundType) and
@@ -4106,6 +4118,8 @@ fn notify_prefs(settings_json: &str, local: &serde_json::Map<String, serde_json:
         sound: ups["soundsSettings"]["alertSound"].as_str() != Some("Off"),
         sound_when_busy: on_off(t("PlayNotificationSoundsWhenBusyOrInMeetings"), true),
         meet_now: flag(t("HuddleStartedNotification"), false),
+        meeting_start: t("MeetingWentLiveNotification").as_bool().unwrap_or_else(|| on_off(t("MeetingWentLiveNotification"), true)),
+        join_bar: t("liveMeetingStatusBanner").as_bool().unwrap_or_else(|| on_off(t("liveMeetingStatusBanner"), true)),
         seconds: l("toastSeconds").and_then(|s| s.parse().ok()).unwrap_or(5),
         flash: l("flashTaskbar").as_deref() != Some("false"),
         sound_file: teams_sound_file(t("alertSoundType").as_str().unwrap_or("Default")).to_string(),
@@ -10736,6 +10750,33 @@ impl qobject::Backend {
     ) {
         static SHOWN: OnceLock<std::sync::Mutex<std::collections::HashSet<String>>> =
             OnceLock::new();
+        // A scheduled meeting's notification names only who started it (its
+        // MRI): Teams' "{{meetingCaller}} started the meeting" needs the name.
+        let mut start = start;
+        if start.initiator_name.is_empty() && !start.initiator.is_empty() {
+            let known: serde_json::Map<String, serde_json::Value> =
+                serde_json::from_str(&self.rust().people_names_json.to_string()).unwrap_or_default();
+            if let Some(n) = known.get(&start.initiator).and_then(|n| n.as_str()).filter(|n| !n.is_empty()) {
+                start.initiator_name = n.to_string();
+            } else {
+                let qt2 = qt.clone();
+                runtime().spawn(async move {
+                    let name = async {
+                        let client = TeamsClient::new().await?;
+                        api::directory::short_profiles(&client, std::slice::from_ref(&start.initiator)).await
+                    }
+                    .await
+                    .ok()
+                    .and_then(|found| found.into_iter().next().map(|(_, n)| n))
+                    .filter(|n| !n.is_empty())
+                    .unwrap_or_else(|| "Someone".to_string());
+                    start.initiator_name = name;
+                    let qt3 = qt2.clone();
+                    let _ = qt2.queue(move |mut this| this.as_mut().notify_meeting_start(start, qt3));
+                });
+                return;
+            }
+        }
         self.as_mut().reload_chats();
         let first = SHOWN
             .get_or_init(Default::default)
@@ -10750,9 +10791,52 @@ impl qobject::Backend {
         let in_it = !self.rust().call_state.is_empty()
             && self.rust().call_thread_id.to_string() == start.thread_id;
         // Settings ▸ Notifications ▸ Meet now start notifications (off by
-        // default, as in Teams), unless everything is muted.
+        // default, as in Teams), unless everything is muted. A scheduled
+        // meeting: Meeting start notifications (on by default).
         let prefs = notify_prefs(&self.rust().settings_json.to_string(), &load_settings());
-        let banners_on = prefs.meet_now && !prefs.mute_all;
+        let banners_on = (if start.scheduled { prefs.meeting_start } else { prefs.meet_now }) && !prefs.mute_all;
+        if start.scheduled {
+            // Teams' live-meeting checks: the meeting is in your calendar
+            // (by its thread), from 15 minutes before its start to 5 after
+            // its end, and you didn't decline it.
+            let calendar: Vec<serde_json::Value> = serde_json::from_str(&self.rust().calendar_json.to_string()).unwrap_or_default();
+            let now = chrono::Utc::now();
+            let thread_enc = start.thread_id.replace(':', "%3a").replace('@', "%40").to_lowercase();
+            let event = calendar.iter().find(|e| e["join_url"].as_str().is_some_and(|u| u.to_lowercase().contains(&thread_enc)));
+            let in_range = self.rust().calendar_range.as_ref().is_some_and(|(a, b)| {
+                let t = |x: &str| chrono::DateTime::parse_from_rfc3339(x).ok();
+                t(a).zip(t(b)).is_some_and(|(a, b)| a <= now && now < b)
+            });
+            let at = |e: &serde_json::Value, k: &str| e[k].as_str().and_then(|x| chrono::DateTime::parse_from_rfc3339(x).ok());
+            let ok = match event {
+                Some(e) => {
+                    let declined = e["response"].as_str() == Some("declined");
+                    let window = at(e, "start_utc").zip(at(e, "end_utc")).is_none_or(|(s, en)| {
+                        now >= s - chrono::Duration::minutes(15) && now <= en + chrono::Duration::minutes(5)
+                    });
+                    !declined && window
+                }
+                None => !in_range,
+            };
+            let declined = start.rsvp.to_ascii_lowercase().contains("decline");
+            tracing::info!(thread = %start.thread_id, ok, declined, rsvp = %start.rsvp, "scheduled meeting started");
+            if !ok || declined {
+                return;
+            }
+            // The live meeting join bar (Show meeting join bar).
+            if prefs.join_bar && !in_it && !mine {
+                let mut live: Vec<serde_json::Value> = serde_json::from_str(&self.rust().live_meetings_json.to_string()).unwrap_or_default();
+                live.retain(|m| m["threadId"].as_str() != Some(start.thread_id.as_str()));
+                live.push(serde_json::json!({
+                    "threadId": start.thread_id, "callId": start.call_id,
+                    "subject": if start.subject.is_empty() { event.and_then(|e| e["subject"].as_str()).unwrap_or("(No title)") } else { &start.subject },
+                    "joinUrl": if start.join_url.is_empty() { event.and_then(|e| e["join_url"].as_str()).unwrap_or_default() } else { &start.join_url },
+                    "start": event.and_then(|e| e["start_utc"].as_str()).unwrap_or_default(),
+                    "end": event.and_then(|e| e["end_utc"].as_str()).unwrap_or_default(),
+                }));
+                self.as_mut().set_live_meetings_json(QString::from(serde_json::Value::Array(live).to_string().as_str()));
+            }
+        }
         let muted = chat_muted(&self.rust().chats, &start.thread_id);
         if !first || mine || in_it || !banners_on || muted {
             return;
@@ -10782,26 +10866,35 @@ impl qobject::Backend {
         } else {
             start.initiator_name.clone()
         };
+        // A scheduled meeting is named by its subject; Teams' string is
+        // "{{meetingCaller}} started the meeting", its actions Join and Chat.
+        let chat_name = if start.scheduled && !start.subject.is_empty() { start.subject.clone() } else { chat_name };
         let (title, body) = if decision == Toast::Redacted {
             ("You have a new notification".to_string(), String::new())
+        } else if start.scheduled {
+            (chat_name.clone(), format!("{who} started the meeting"))
         } else {
             (chat_name.clone(), format!("{who} started a meeting"))
         };
+        let second = if start.scheduled { ("chat", "Chat") } else { ("message", "Message") };
         let chat_id = start.thread_id.clone();
+        let (scheduled, join_url) = (start.scheduled, start.join_url.clone());
         if banners_available() {
             // Teams' meeting-started banner (notifications-app `st`): on
-            // screen 20 seconds, with Join and Message.
+            // screen 20 seconds, with Join and Message (Chat for a
+            // scheduled meeting).
             let banner = serde_json::json!({
                 "id": format!("msn:{}", start.call_id),
                 "kind": "msn",
                 "title": title, "text": body,
                 "chatId": chat_id, "chatName": chat_name,
+                "joinUrl": start.join_url,
                 "senderMri": start.initiator, "senderName": who,
                 "seconds": 20,
                 // Teams' meeting-started sound (its MeetingStarted toast sound).
                 "silent": !prefs.sound || !prefs.call_sounds,
                 "sound": "teams_meet_up_reminder",
-                "actions": [{ "id": "join", "label": "Join" }, { "id": "message", "label": "Message" }],
+                "actions": [{ "id": "join", "label": "Join" }, { "id": second.0, "label": second.1 }],
             });
             self.as_mut().banner_requested(QString::from(banner.to_string().as_str()));
             return;
@@ -10813,14 +10906,14 @@ impl qobject::Backend {
                 .body(&body)
                 .icon("ost-desktop")
                 .action("join", "Join")
-                .action("message", "Message")
+                .action(second.0, second.1)
                 .action("default", "Open")
                 .hint(notify_rust::Hint::Category("call".into()))
                 .show();
             match shown {
                 Ok(handle) => handle.wait_for_action(|action| {
                     let join = action == "join";
-                    if join || action == "message" || action == "default" {
+                    if join || action == "message" || action == "chat" || action == "default" {
                         let _ = qt.queue(move |mut this| {
                             this.as_mut().select_chat(
                                 &QString::from(chat_id.as_str()),
@@ -10828,7 +10921,7 @@ impl qobject::Backend {
                             );
                             this.as_mut().activate_requested();
                             if join {
-                                this.as_mut().join_group_call();
+                                if scheduled && !join_url.is_empty() { this.as_mut().prejoin_requested(QString::from(join_url.as_str()), QString::from(chat_name.as_str())) } else { this.as_mut().join_group_call(); }
                             }
                         });
                     }
@@ -11014,7 +11107,7 @@ impl qobject::Backend {
             .await;
             match result {
                 Ok(events) => {
-                    tracing::info!(events = events.len(), "calendar loaded");
+                    tracing::info!(events = events.len(), %start, %end, "calendar loaded");
                     let text = serde_json::to_string(&events).unwrap_or_else(|_| "[]".into());
                     let range = (start.clone(), end.clone());
                     let _ = qt.queue(move |mut this| {
@@ -18459,12 +18552,43 @@ impl qobject::Backend {
                 match op.as_str() {
                     "detail" => api::calendar::event_detail(&client, &s("id")).await,
                     "meetNow" => Ok(json!({ "joinUrl": api::calendar::meet_now(&client, &s("subject")).await?, "subject": s("subject") })),
-                    "joinById" => match api::calendar::meeting_by_id(&client, &s("meetingId"), &s("passcode")).await? {
-                        Some((url, subject, start, end)) => Ok(json!({ "joinUrl": url, "subject": subject, "start": start, "end": end })),
-                        None => anyhow::bail!("We couldn't find a meeting with that ID and passcode."),
-                    },
+                    // As Teams: the calling service finds the meeting from
+                    // its ID and passcode (meetingData); then its join link.
+                    "joinById" => {
+                        let (link, subject) = teams_cli::calling::outgoing::resolve_meeting_id(&s("meetingId"), &s("passcode"))
+                            .await
+                            .map_err(|e| {
+                                tracing::warn!("join with an ID: {e:#}");
+                                anyhow::anyhow!("We couldn't find a meeting with that ID and passcode.")
+                            })?;
+                        let enc = |t: &str| t.replace(':', "%3a").replace('@', "%40");
+                        let ctx = match (&link.tenant_id, &link.organizer_id) {
+                            (Some(t), Some(o)) => format!("?context=%7b%22Tid%22%3a%22{t}%22%2c%22Oid%22%3a%22{o}%22%7d"),
+                            _ => String::new(),
+                        };
+                        Ok(json!({ "joinUrl": format!("https://teams.microsoft.com/l/meetup-join/{}/0{ctx}", enc(&link.thread_id)), "subject": if subject.is_empty() { "Meeting".to_string() } else { subject } }))
+                    }
                     "respond" => {
-                        api::calendar::respond(&client, &s("id"), &s("response"), args["send"].as_bool().unwrap_or(true), &s("note")).await?;
+                        // {event: {id, ical_uid, event_type, start_utc}, series}: a
+                        // series answer is about its series (id, iCalUId, start).
+                        let mut target: api::calendar::RsvpTarget = serde_json::from_value(args["event"].clone()).unwrap_or_default();
+                        if target.id.is_empty() {
+                            target.id = s("id");
+                        }
+                        if args["series"].as_bool() == Some(true) {
+                            if let Some(master) = args["event"]["series_master_id"].as_str().filter(|m| !m.is_empty()) {
+                                target.id = master.to_string();
+                                target.event_type = "seriesMaster".into();
+                                if let Ok(r) = client.graph_get(&format!("/me/events/{master}?$select=iCalUId,start")).await {
+                                    let v: serde_json::Value = r.json().await.unwrap_or_default();
+                                    target.ical_uid = v["iCalUId"].as_str().unwrap_or_default().to_string();
+                                    if let Some(t) = v.pointer("/start/dateTime").and_then(|t| t.as_str()) {
+                                        target.start_utc = format!("{}Z", t.split('.').next().unwrap_or(t));
+                                    }
+                                }
+                            }
+                        }
+                        api::calendar::respond(&client, &target, &s("response"), args["send"].as_bool().unwrap_or(true), &s("note")).await?;
                         Ok(json!({}))
                     }
                     "schedule" => {
@@ -18473,7 +18597,7 @@ impl qobject::Backend {
                     }
                     "update" => {
                         let form: api::calendar::MeetingForm = serde_json::from_value(args["form"].clone())?;
-                        api::calendar::update_meeting(&client, &s("id"), &form).await?;
+                        api::calendar::update_meeting(&client, &s("id"), &form, &me, &s("joinUrl"), &s("eventType")).await?;
                         Ok(json!({}))
                     }
                     "cancel" => {

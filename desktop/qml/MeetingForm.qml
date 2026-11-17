@@ -344,7 +344,8 @@ Item {
                 model: root.readOnly ? [
                     { r: "Accept", icon: "checkmark-20", c: theme.hc("#498205", "#3FF23F"), on: root.event.response === "accepted" },
                     { r: "Tentative", icon: "question-circle-20", c: theme.hc("#881798", "#FFFFFF"), on: root.event.response === "tentativelyAccepted" },
-                    { r: "Decline", icon: "dismiss-20", c: theme.hc("#A4262C", "#FFFFFF"), on: root.event.response === "declined" }
+                    { r: "Decline", icon: "dismiss-20", c: theme.hc("#A4262C", "#FFFFFF"), on: root.event.response === "declined" },
+                    { r: "Follow", icon: "star-20", c: theme.textStrong, on: root.event.response === "following" }
                 ] : []
                 BarButton2 {
                     id: rsvpBtn
@@ -1396,7 +1397,8 @@ Item {
         background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
         Overlay.modal: Rectangle { color: Qt.rgba(0, 0, 0, 0.4) }
         property string response: ""
-        function openFor() { response = ""; rsvpNote.text = ""; open() }
+        // Only for an invitation (an event with an id you don't organise).
+        function openFor() { if (!root.event || !root.event.id || root.event.is_organizer) return; response = ""; rsvpNote.text = ""; open() }
         contentItem: Column {
             spacing: 16
             Text {
@@ -1420,8 +1422,8 @@ Item {
                     id: respMenu
                     y: respBox.height + 2
                     width: 152
-                    items: ["Accept", "Decline", "Tentative"].map(l => ({ label: l, checked: rsvpDialog.response === l }))
-                    onPicked: i => rsvpDialog.response = ["Accept", "Decline", "Tentative"][i]
+                    items: ["Accept", "Decline", "Tentative", "Follow"].map(l => ({ label: l, checked: rsvpDialog.response === l }))
+                    onPicked: i => rsvpDialog.response = ["Accept", "Decline", "Tentative", "Follow"][i]
                 }
             }
             Row {
@@ -1452,6 +1454,8 @@ Item {
     function openCancelForTest() { cancelDialog.open() }
     function confirmCancelForTest(note) { cancelMeeting(note || ""); cancelDialog.close() }
     function openRsvpNoteForTest() { rsvpDialog.openFor() }
+    readonly property bool rsvpNoteOpen: rsvpDialog.visible
+    function closeRsvpNoteForTest() { rsvpDialog.close() }
     function confirmRsvpNoteForTest(response, note) { rsvpNote.text = note || ""; rsvpDialog.response = response; respond(response, true, note || "", false); rsvpDialog.close() }
 
     // ── parts ───────────────────────────────────────────────────────
