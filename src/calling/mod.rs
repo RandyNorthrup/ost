@@ -20,6 +20,7 @@ pub mod datachannel;
 pub mod datapacket;
 #[cfg(feature = "video-capture")]
 pub mod display;
+pub mod e2ee;
 pub mod echo_report;
 pub mod frames;
 pub mod ice;

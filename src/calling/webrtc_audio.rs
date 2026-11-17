@@ -3083,11 +3083,11 @@ fn dtls_handshake(
     };
 
     let ssl = stream.ssl();
-    let presented = ssl
+    let presented_digest = ssl
         .peer_certificate()
         .context("Peer sent no DTLS certificate")?
         .digest(MessageDigest::sha256())?;
-    let hex: Vec<String> = presented.iter().map(|b| format!("{b:02X}")).collect();
+    let hex: Vec<String> = presented_digest.iter().map(|b| format!("{b:02X}")).collect();
     let presented = format!("sha-256 {}", hex.join(":"));
     if !presented.eq_ignore_ascii_case(expected_fingerprint.trim()) {
         bail!("DTLS certificate does not match the SDP fingerprint");
@@ -3101,6 +3101,23 @@ fn dtls_handshake(
     }
     let mut km = [0u8; SRTP_KEYING_LEN];
     ssl.export_keying_material(&mut km, "EXTRACTOR-dtls_srtp", None)?;
+    // Teams' E2EE security-code hash (SHA-512(sorted fingerprints) then
+    // PBKDF2-HMAC-SHA512; see `super::e2ee`). Logged so it can be checked
+    // against Teams' own (a Frida capture of GetDtlsFingerprintHash) and,
+    // once the digit formatting is confirmed, shown as the numbers. The
+    // local cert's fingerprint and the peer's are both 32-byte SHA-256.
+    if let Some(local_cert) = ssl.certificate() {
+        if let Ok(local_digest) = local_cert.digest(MessageDigest::sha256()) {
+            let to32 = |d: &[u8]| -> Option<[u8; 32]> { d.try_into().ok() };
+            if let (Some(local_fp), Some(remote_fp)) = (to32(&local_digest), to32(&presented_digest)) {
+                let hash = super::e2ee::security_code_hash(&local_fp, &remote_fp);
+                tracing::info!(
+                    security_code_hash = %hash.iter().map(|b| format!("{b:02x}")).collect::<String>(),
+                    "e2ee security code hash"
+                );
+            }
+        }
+    }
     // Diagnostics (OST_TROUTER_DUMP_DIR): both certificates, for working
     // out how a peer derives its end-to-end encryption numbers.
     if std::env::var_os("OST_TROUTER_DUMP_DIR").is_some() {
