@@ -357,8 +357,10 @@ pub async fn respond(client: &TeamsClient, ev: &RsvpTarget, response: &str, send
         let id = event_path_id(&ev.id)?;
         let tz = mailbox_time_zone().await;
         owa_action("RespondToCalendarEvent", &respond_body(&ews_id(id), owa_response, attendance, send_response, note, &tz)).await?;
+        tracing::info!(response, attendance, "answered through Outlook (RespondToCalendarEvent)");
         return Ok(());
     }
+    tracing::info!(response, "answer through Teams' calendar service (device-code sign-in)");
     respond_mt(client, ev, response, send_response, note).await
 }
 

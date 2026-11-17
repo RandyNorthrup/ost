@@ -10777,6 +10777,62 @@ impl qobject::Backend {
                 return;
             }
         }
+        // Teams looks the scheduled meeting up in your calendar (its
+        // calendar-service check). One that isn't in the range loaded here
+        // (an invitation that came after it loaded, or another week shown)
+        // is looked up around now first; a failed lookup counts as found,
+        // as in Teams.
+        static LOOKED_UP: OnceLock<std::sync::Mutex<HashMap<String, Option<serde_json::Value>>>> = OnceLock::new();
+        let thread_enc = start.thread_id.replace(':', "%3a").replace('@', "%40").to_lowercase();
+        let in_calendar = |e: &serde_json::Value| e["join_url"].as_str().is_some_and(|u| u.to_lowercase().contains(&thread_enc));
+        let mut looked_up: Option<Option<serde_json::Value>> = None;
+        if start.scheduled {
+            let calendar: Vec<serde_json::Value> = serde_json::from_str(&self.rust().calendar_json.to_string()).unwrap_or_default();
+            if !calendar.iter().any(in_calendar) {
+                let known = LOOKED_UP.get_or_init(Default::default).lock().ok().and_then(|mut m| m.remove(&start.call_id));
+                match known {
+                    Some(found) => looked_up = Some(found),
+                    None => {
+                        let qt2 = qt.clone();
+                        let thread_enc = thread_enc.clone();
+                        runtime().spawn(async move {
+                            let now = chrono::Utc::now();
+                            let fmt = |t: chrono::DateTime<chrono::Utc>| t.format("%Y-%m-%dT%H:%M:%SZ").to_string();
+                            let found = async {
+                                let client = TeamsClient::new().await?;
+                                api::calendar::calendar_view(&client, &fmt(now - chrono::Duration::days(1)), &fmt(now + chrono::Duration::days(1))).await
+                            }
+                            .await;
+                            let entry = match found {
+                                Ok(events) => events
+                                    .iter()
+                                    .map(|e| serde_json::to_value(e).unwrap_or_default())
+                                    .find(|e| e["join_url"].as_str().is_some_and(|u| u.to_lowercase().contains(&thread_enc)))
+                                    .unwrap_or(serde_json::Value::Null),
+                                Err(e) => {
+                                    tracing::warn!("meeting start: calendar lookup failed, assuming it's there: {}", short_error(&e));
+                                    serde_json::json!({})
+                                }
+                            };
+                            let found = entry.get("id").is_some();
+                            tracing::info!(found = !entry.is_null(), "meeting start: looked the meeting up in the calendar");
+                            if let Ok(mut m) = LOOKED_UP.get_or_init(Default::default).lock() {
+                                m.insert(start.call_id.clone(), Some(entry));
+                            }
+                            let qt3 = qt2.clone();
+                            let _ = qt2.queue(move |mut this| {
+                                // The calendar shown hasn't got it yet: reload it.
+                                if found {
+                                    this.as_mut().refresh_calendar();
+                                }
+                                this.as_mut().notify_meeting_start(start, qt3)
+                            });
+                        });
+                        return;
+                    }
+                }
+            }
+        }
         self.as_mut().reload_chats();
         let first = SHOWN
             .get_or_init(Default::default)
@@ -10801,12 +10857,10 @@ impl qobject::Backend {
             // its end, and you didn't decline it.
             let calendar: Vec<serde_json::Value> = serde_json::from_str(&self.rust().calendar_json.to_string()).unwrap_or_default();
             let now = chrono::Utc::now();
-            let thread_enc = start.thread_id.replace(':', "%3a").replace('@', "%40").to_lowercase();
-            let event = calendar.iter().find(|e| e["join_url"].as_str().is_some_and(|u| u.to_lowercase().contains(&thread_enc)));
-            let in_range = self.rust().calendar_range.as_ref().is_some_and(|(a, b)| {
-                let t = |x: &str| chrono::DateTime::parse_from_rfc3339(x).ok();
-                t(a).zip(t(b)).is_some_and(|(a, b)| a <= now && now < b)
-            });
+            let fetched = looked_up.clone().flatten();
+            // Not found by the lookup (null): not in your calendar.
+            let lookup_missed = fetched.as_ref().is_some_and(|v| v.is_null());
+            let event = calendar.iter().find(|e| in_calendar(e)).or(fetched.as_ref().filter(|v| v.is_object()));
             let at = |e: &serde_json::Value, k: &str| e[k].as_str().and_then(|x| chrono::DateTime::parse_from_rfc3339(x).ok());
             let ok = match event {
                 Some(e) => {
@@ -10816,7 +10870,7 @@ impl qobject::Backend {
                     });
                     !declined && window
                 }
-                None => !in_range,
+                None => !lookup_missed,
             };
             let declined = start.rsvp.to_ascii_lowercase().contains("decline");
             tracing::info!(thread = %start.thread_id, ok, declined, rsvp = %start.rsvp, "scheduled meeting started");
@@ -10833,6 +10887,16 @@ impl qobject::Backend {
                     "joinUrl": if start.join_url.is_empty() { event.and_then(|e| e["join_url"].as_str()).unwrap_or_default() } else { &start.join_url },
                     "start": event.and_then(|e| e["start_utc"].as_str()).unwrap_or_default(),
                     "end": event.and_then(|e| e["end_utc"].as_str()).unwrap_or_default(),
+                    // For Teams' "Live meetings" dialog: the card's location,
+                    // "{organizer} invited you", your answer (its bar), how
+                    // long the call has run and who started it.
+                    "location": event.and_then(|e| e["location"].as_str()).unwrap_or_default(),
+                    "organizer": event.and_then(|e| e["organizer"].as_str()).unwrap_or_default(),
+                    "isOrganizer": event.and_then(|e| e["is_organizer"].as_bool()).unwrap_or(false),
+                    "response": event.and_then(|e| e["response"].as_str()).unwrap_or_default(),
+                    "showAs": event.and_then(|e| e["show_as"].as_str()).unwrap_or_default(),
+                    "startedAt": now.to_rfc3339(),
+                    "initiator": start.initiator, "initiatorName": start.initiator_name,
                 }));
                 self.as_mut().set_live_meetings_json(QString::from(serde_json::Value::Array(live).to_string().as_str()));
             }

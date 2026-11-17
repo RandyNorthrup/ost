@@ -3759,6 +3759,7 @@ Window {
         onRunningChanged: console.warn("CALTEST running", running)
         Component.onCompleted: console.warn("CALTEST ready", args.indexOf("--cal-test"), backend.signedIn, backend.calendarJson.length)
         property string done: ""
+        property bool liveDialogShot: false
         function cap(tag) { window.contentItem.grabToImage(r => r.saveToFile(dir + "cal-" + tag + ".png")); console.warn("CALTEST shot", tag) }
         function ev(subject) { return JSON.parse(backend.calendarJson).find(e => e.subject === subject) }
         property var conn: Connections {
@@ -3816,6 +3817,14 @@ Window {
             else if (arg("cal-joinid") && step === 9) { console.warn("CALTEST joinid prejoin", preJoin.visible, preJoin.subject, preJoin.joinUrl.slice(0, 60)); if (preJoin.visible) preJoin.contentItem.grabToImage(r => r.saveToFile(dir + "cal-joinid-prejoin.png")) }
             else if (arg("cal-joinid") && step === 11) { if (preJoin.visible) preJoin.close() }
             else if (arg("cal-joinid") && step === 14) Qt.quit()
+            // --cal-rsvp-note=<subject>|<Accept|Tentative|Decline|Follow>|<note>:
+            // the invitation's page ▸ RSVP with note ▸ Confirm.
+            else if (arg("cal-rsvp-note") && step === 2) console.warn("CALTEST rsvp page", calendarView.pageForTest(arg("cal-rsvp-note").split("|")[0]))
+            else if (arg("cal-rsvp-note") && step === 4) calendarView.formForTest.openRsvpNoteForTest()
+            else if (arg("cal-rsvp-note") && step === 5) { console.warn("CALTEST rsvp-note open", calendarView.formForTest.rsvpNoteOpen); cap("rsvp-note-open") }
+            else if (arg("cal-rsvp-note") && step === 6) { const p = arg("cal-rsvp-note").split("|"); calendarView.formForTest.confirmRsvpNoteForTest(p[1], p[2] || "") }
+            else if (arg("cal-rsvp-note") && step === 11) { const s = arg("cal-rsvp-note").split("|")[0], e = ev(s) || ev("Following: " + s); console.warn("CALTEST rsvp-note answered", e ? e.response : "gone", e ? e.show_as : "") }
+            else if (arg("cal-rsvp-note") && step === 12) Qt.quit()
             // --cal-edit=<subject>|<new title>: your meeting's page, a new
             // title, Send update (Teams' update request).
             else if (arg("cal-edit") && step === 2) console.warn("CALTEST edit page", calendarView.pageForTest(arg("cal-edit").split("|")[0]))
@@ -3835,9 +3844,14 @@ Window {
             else if (args.indexOf("--cal-live") >= 0) {
                 if (step % 5 === 0) console.warn("CALTEST live", backend.liveMeetingsJson)
                 if (step % 5 === 0 && backend.liveMeetingsJson.length > 2) cap("live-" + step)
+                // Several live: "View meetings" ▸ the Live meetings dialog, once.
+                if (window.liveMeetings.length > 1 && !calTest.liveDialogShot) {
+                    if (!liveMeetingsDialog.visible) liveMeetingsDialog.open()
+                    else { cap("live-dialog"); calTest.liveDialogShot = true; console.warn("CALTEST live dialog", window.liveMeetings.length) }
+                } else if (calTest.liveDialogShot && liveMeetingsDialog.visible && step % 5 === 2) liveMeetingsDialog.close()
                 if (step * 3 >= parseInt(arg("cal-wait", "300"))) Qt.quit()
             }
-            else if (!arg("cal-respond") && !arg("cal-schedule") && !arg("cal-cancel") && !arg("cal-joinid") && !arg("cal-edit") && !arg("cal-channel-header") && args.indexOf("--cal-live") < 0) {
+            else if (!arg("cal-respond") && !arg("cal-schedule") && !arg("cal-cancel") && !arg("cal-joinid") && !arg("cal-edit") && !arg("cal-channel-header") && !arg("cal-rsvp-note") && args.indexOf("--cal-live") < 0) {
                 // Pictures: the views, the card and page of --cal-peek, the form and dialogs.
                 const peek = arg("cal-peek")
                 const seq = [
@@ -10098,7 +10112,10 @@ Window {
     // Teams' live meeting join bar (LiveMeetingStatusBar, Settings ▸
     // Notifications ▸ Show meeting join bar): scheduled meetings that
     // started, while you aren't in them, until 5 minutes after their end.
-    // Strings from Teams desktop's bundle; its layout isn't measured yet.
+    // As measured in Teams desktop on winpc (2026-11-17): the brand-tinted
+    // bar (colorBrandBackground2, a colorBrandStroke2 bottom edge), Video
+    // filled and the text in colorBrandForeground1, and one action: Join for
+    // one meeting, "View meetings" (the "Live meetings" dialog) for several.
     property var liveMeetingsDismissed: []
     property date liveNow: new Date()
     Timer { interval: 30000; running: backend.liveMeetingsJson.length > 2; repeat: true; onTriggered: window.liveNow = new Date() }
@@ -10119,59 +10136,42 @@ Window {
         readonly property bool shown: kind !== "" && backend.hasCredentials
         height: shown ? (kind === "threads" ? 64 : 36) : 0
         visible: shown
-        color: theme.pick("#F5F5F5", "#292929", "#000000")
+        color: kind === "live" ? theme.pick("#E8EBFA", "#2F2F4A", "#000000") : theme.pick("#F5F5F5", "#292929", "#000000")
         z: 9
-        FluentIcon { x: 12; anchors.verticalCenter: parent.verticalCenter; name: appBanner.kind === "live" ? "video-20" : "info-20-filled"; size: 20; color: appBanner.kind === "live" ? theme.brand : theme.textSecondary }
+        Rectangle { visible: appBanner.kind === "live"; anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.pick("#C5CBFA", "#3D3E78", "#FFFFFF") }
+        FluentIcon { x: 12; anchors.verticalCenter: parent.verticalCenter; name: appBanner.kind === "live" ? "video-20-filled" : "info-20-filled"; size: 20; color: appBanner.kind === "live" ? theme.brandForeground1 : theme.textSecondary }
         Text {
             x: 40; anchors.verticalCenter: parent.verticalCenter
-            width: (liveViewAll.visible ? liveViewAll.x : bannerAction.x) - 12 - x; elide: Text.ElideRight
+            width: bannerAction.x - 12 - x; elide: Text.ElideRight
             textFormat: appBanner.kind === "threads" ? Text.RichText : Text.PlainText
             text: appBanner.kind === "live" ? (window.liveMeetings.length > 1 ? "Meetings Started: " + window.liveMeetings[0].subject + " +" + (window.liveMeetings.length - 1) : "Meeting Started: " + window.liveMeetings[0].subject)
                 : appBanner.kind === "note" ? window.noteBannerText
                 : appBanner.kind === "threads" ? "A channel owner set this channel to a threads layout. <a href=\"https://go.microsoft.com/fwlink/?linkid=2311967\" style=\"text-decoration:none; color:" + theme.brandForeground1 + "\">Learn how threads work</a>"
                 : "Your status is set to do not disturb. You'll only get notifications for urgent messages and from your priority contacts."
-            font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text
+            font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: appBanner.kind === "live" ? theme.brandForeground1 : theme.text
             onLinkActivated: url => Qt.openUrlExternally(url)
             HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
-        }
-        // The join bar's "View meetings" (several live): each with Join.
-        Rectangle {
-            id: liveViewAll
-            visible: appBanner.kind === "live" && window.liveMeetings.length > 1
-            anchors.right: bannerAction.left; anchors.rightMargin: visible ? 8 : 0; anchors.verticalCenter: parent.verticalCenter
-            width: visible ? liveViewText.implicitWidth + 16 : 0; height: 23.3; radius: 4
-            color: liveViewHover.hovered ? theme.menuHover : theme.surface
-            border.color: theme.stroke; border.width: 0.67
-            Text { id: liveViewText; anchors.centerIn: parent; text: "View meetings"; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(liveViewAll, theme.text) }
-            HoverHandler { id: liveViewHover; cursorShape: Qt.PointingHandCursor }
-            TapHandler { onTapped: liveMenu.open() }
-            Accessible.role: Accessible.Button
-            Accessible.name: "View meetings"
-            MenuPopup {
-                id: liveMenu
-                y: parent.height + 4; width: 280
-                items: window.liveMeetings.map(m => ({ label: m.subject, icon: "video-20" }))
-                perItemIcons: true
-                onPicked: i => { const m = window.liveMeetings[i]; if (m) preJoin.openFor(m.joinUrl, m.subject, m.start || "", m.end || "") }
-            }
         }
         Rectangle {
             id: bannerAction
             visible: appBanner.kind === "dnd" || appBanner.kind === "live"
             anchors.right: bannerDismiss.left; anchors.rightMargin: visible ? 12 : 0; anchors.verticalCenter: parent.verticalCenter
-            width: visible ? bannerActionText.implicitWidth + 16 : 0; height: 23.3; radius: 4
-            color: appBanner.kind === "live" ? (bannerActionHover.hovered ? theme.brandHover : theme.brandFill) : bannerActionHover.hovered ? theme.menuHover : theme.surface
-            border.color: appBanner.kind === "live" ? "transparent" : theme.stroke; border.width: 0.67
-            Text { id: bannerActionText; anchors.centerIn: parent; text: appBanner.kind === "live" ? "Join" : "Change settings"; font.family: theme.font; font.pixelSize: 12; font.weight: appBanner.kind === "live" ? Font.DemiBold : Font.Normal; color: theme.onFill(bannerAction, appBanner.kind === "live" ? "white" : theme.text) }
+            readonly property bool primary: appBanner.kind === "live" && window.liveMeetings.length === 1
+            readonly property string label: appBanner.kind !== "live" ? "Change settings" : primary ? "Join" : "View meetings"
+            width: visible ? (primary ? 64 : bannerActionText.implicitWidth + 16) : 0; height: 23.3; radius: 4
+            color: primary ? (bannerActionHover.hovered ? theme.brandHover : theme.brandFill) : bannerActionHover.hovered ? theme.menuHover : theme.surface
+            border.color: primary ? "transparent" : theme.stroke; border.width: 0.67
+            Text { id: bannerActionText; anchors.centerIn: parent; text: bannerAction.label; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(bannerAction, bannerAction.primary ? "white" : theme.text) }
             HoverHandler { id: bannerActionHover; cursorShape: Qt.PointingHandCursor }
             TapHandler {
                 onTapped: {
-                    if (appBanner.kind === "live") { const m = window.liveMeetings[0]; preJoin.openFor(m.joinUrl, m.subject, m.start || "", m.end || ""); return }
+                    if (bannerAction.primary) { const m = window.liveMeetings[0]; preJoin.openFor(m.joinUrl, m.subject, m.start || "", m.end || ""); return }
+                    if (appBanner.kind === "live") { liveMeetingsDialog.open(); return }
                     settingsView.page = settingsView.pages.some(p => p.key === "privacy") ? "privacy" : "notifications"; rail.current = "settings"
                 }
             }
             Accessible.role: Accessible.Button
-            Accessible.name: appBanner.kind === "live" ? "Join" : "Change settings"
+            Accessible.name: bannerAction.label
         }
         Rectangle {
             id: bannerDismiss
@@ -10191,6 +10191,14 @@ Window {
             Accessible.role: Accessible.Button
             Accessible.name: "Dismiss"
         }
+    }
+
+    LiveMeetingsDialog {
+        id: liveMeetingsDialog
+        meetings: window.liveMeetings
+        onJoinMeeting: m => preJoin.openFor(m.joinUrl, m.subject, m.start || "", m.end || "")
+        onOpenChat: m => { rail.current = "chat"; backend.openFromNotification(m.threadId, m.subject) }
+        onMeetingsChanged: if (visible && meetings.length < 2) close()
     }
 
     // The browser sign-in's silent renewal (Teams on the web's MSAL does the

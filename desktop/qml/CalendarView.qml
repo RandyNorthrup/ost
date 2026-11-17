@@ -266,37 +266,24 @@ Item {
     function busyDay(i) { return stripBars.some(b => b.c0 <= i && b.c1 >= i && (b.ev.show_as === "busy" || b.ev.show_as === "oof")) }
     function pastDay(i) { return midnight(dayAt(i)) < midnight(now) && todayIndex >= 0 }
     readonly property int todayIndex: { for (let i = 0; i < days; i++) if (sameDay(dayAt(i), now)) return i; return -1 }
-    /// Column widths: today 30 %, past days 11 %, the rest shared (each at
-    /// least what its overlapping events need), as Teams lays the week out.
+    /// Teams' calendar lays out wide above 1550 px (its hosted calendar's
+    /// width): full day names and the week focused on today.
+    readonly property bool wideLayout: root.width > 1550
+    /// Column widths, as Teams: equal, except in the wide layout for the week
+    /// holding today, where today takes 1.5 and tomorrow 1.3 of an equal
+    /// share and the other days split the rest, a past day getting two
+    /// thirds of a later one. Side-by-side events never widen a day.
     readonly property var colWidths: {
         const W = Math.max(0, gridArea.width - gutter), n = days
         if (monthView) return []
-        if (n === 1 || todayIndex < 0) return Array(n).fill(W / n)
-        const w = Array(n).fill(0), rest = []
-        let left = W
-        for (let i = 0; i < n; i++) {
-            if (i === todayIndex) { w[i] = W * 0.3; left -= w[i] }
-            else if (i < todayIndex) { w[i] = W * 0.11; left -= w[i] }
-            else rest.push(i)
-        }
-        const need = i => { const m = (dayPieces[i] || []).reduce((a, p) => Math.max(a, p.lanes), 1); return m > 1 ? m * 120.8 + (m - 1) * 4 + 14.6 : 0 }
-        // A day with side-by-side events widens only while every other
-        // future day keeps at least one event's width (120.8 + 14.6);
-        // otherwise all share equally.
-        const minDay = 135.4
-        let free = rest.slice()
-        while (free.length) {
-            const share = left / free.length
-            const big = free.filter(i => need(i) > share)
-            if (!big.length) { for (const i of free) w[i] = share; break }
-            const others = free.length - big.length
-            const room = left - others * Math.min(minDay, share)
-            const want = big.reduce((a, i) => a + need(i), 0)
-            const scale = want > room ? Math.max(0, room) / want : 1
-            for (const i of big) { w[i] = Math.max(share, need(i) * scale); left -= w[i] }
-            free = free.filter(i => big.indexOf(i) < 0)
-            if (left <= 0) { for (const i of free) w[i] = 0; break }
-        }
+        if (n === 1 || todayIndex < 0 || !wideLayout) return Array(n).fill(W / n)
+        const u = W / n, w = Array(n).fill(0), t = todayIndex, tm = t + 1 < n ? t + 1 : -1
+        w[t] = 1.5 * u
+        let left = W - w[t], weights = 0
+        if (tm >= 0) { w[tm] = 1.3 * u; left -= w[tm] }
+        const weight = i => i < t ? 2 : 3
+        for (let i = 0; i < n; i++) if (i !== t && i !== tm) weights += weight(i)
+        for (let i = 0; i < n; i++) if (i !== t && i !== tm) w[i] = weights > 0 ? Math.max(0, left) * weight(i) / weights : 0
         return w
     }
     function colX(i) { let x = gutter; for (let k = 0; k < i; k++) x += colWidths[k] || 0; return x }
@@ -307,6 +294,16 @@ Item {
     function fillOf(e) { return (e.show_as === "busy" || e.show_as === "oof" || e.show_as === "workingElsewhere") && !isTentative(e) ? theme.hc("#C7C9EE", "#000000") : theme.hc("#E1E1F6", "#000000") }
     function textOf(e) { return theme.hc(e.show_as === "busy" && !isTentative(e) ? "#323232" : "#414141", "#FFFFFF") }
     function joinable(e) { return !!e.join_url && now >= new Date(evStart(e) - 5 * 60000) && now < evEnd(e) }
+    /// Meetings whose call is going on (the join bar's list, and yours).
+    readonly property var liveThreads: (backend.liveMeetingsJson ? JSON.parse(backend.liveMeetingsJson) : []).map(m => (m.threadId || "").toLowerCase())
+        .concat(backend.callState !== "" && backend.callThreadId ? [backend.callThreadId.toLowerCase()] : [])
+    function isLive(e) {
+        if (!e.join_url || !liveThreads.length) return false
+        let u = e.join_url
+        try { u = decodeURIComponent(u) } catch (err) {}
+        u = u.toLowerCase()
+        return liveThreads.some(t => t && u.indexOf(t) >= 0)
+    }
 
     Rectangle { anchors.fill: parent; color: theme.surface }
 
@@ -539,7 +536,7 @@ Item {
                     color: root.busyDay(index) ? theme.hc("#EEEFF9", "#000000") : root.pastDay(index) ? theme.hc("#FAFAFA", "#000000") : theme.surface
                     Rectangle { visible: parent.today; width: parent.width; height: 3; color: theme.brand }
                     Text { x: 13; y: 8; text: parent.day.getDate(); font.family: theme.font; font.pixelSize: 20; color: parent.today ? theme.brand : theme.text }
-                    Text { x: 13; y: 33; text: Qt.formatDate(parent.day, "dddd"); font.family: theme.font; font.pixelSize: theme.small; color: parent.today ? theme.brand : theme.textSecondary }
+                    Text { x: 13; y: 33; text: Qt.formatDate(parent.day, root.wideLayout ? "dddd" : "ddd"); font.family: theme.font; font.pixelSize: theme.small; color: parent.today ? theme.brand : theme.textSecondary }
                     Rectangle { width: 1; height: parent.height; color: theme.hc("#D1D1D1", "#FFFFFF") }
                     Rectangle { y: 54; width: parent.width; height: 1; color: theme.hc("#E0E0E0", "#FFFFFF") }
                 }
@@ -662,19 +659,25 @@ Item {
                         anchors.right: parent.right; anchors.rightMargin: 4; anchors.bottom: parent.bottom; anchors.bottomMargin: 4
                         name: evTile.ev.event_type === "exception" ? "arrow-repeat-all-off-16" : "arrow-repeat-all-16"; size: 16; color: root.textOf(evTile.ev)
                     }
-                    // Join on the tile from five minutes before the start.
+                    // Join on the tile from five minutes before the start, as
+                    // Teams: brand while its call is going on, else outlined;
+                    // beside other events only the 20 x 20 Video glyph.
                     Rectangle {
                         id: joinTile
                         visible: root.joinable(evTile.ev)
-                        anchors.right: parent.right; anchors.rightMargin: 4; y: 4
-                        width: jt.implicitWidth + 16; height: 22; radius: 4
-                        color: jth.hovered ? theme.rowHover : theme.surface
-                        border.color: theme.hc("#D1D1D1", "#FFFFFF")
-                        Text { id: jt; anchors.centerIn: parent; text: "Join"; font.family: theme.font; font.pixelSize: 12; color: theme.text }
+                        readonly property bool live: root.isLive(evTile.ev)
+                        readonly property bool iconOnly: evTile.modelData.lanes > 1
+                        anchors.right: parent.right; anchors.rightMargin: 4.4; y: 5.8
+                        width: iconOnly ? 20 : jt.implicitWidth + 16; height: iconOnly ? 20 : 22; radius: 4
+                        color: live ? (jth.hovered ? theme.brandHover : theme.brandFill) : jth.hovered ? theme.rowHover : theme.surface
+                        border.width: live ? 0 : 0.67
+                        border.color: theme.hc("#BDBDBD", "#FFFFFF")
+                        FluentIcon { visible: joinTile.iconOnly; anchors.centerIn: parent; name: "video-16"; size: 16; color: theme.onFill(joinTile, joinTile.live ? "white" : theme.textSecondary) }
+                        Text { id: jt; visible: !joinTile.iconOnly; anchors.centerIn: parent; text: "Join"; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(joinTile, joinTile.live ? "white" : theme.textSecondary) }
                         HoverHandler { id: jth; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: root.joinMeeting(evTile.ev.join_url, evTile.ev.subject || "Meeting") }
                         Accessible.role: Accessible.Button
-                        Accessible.name: "Join"
+                        Accessible.name: "Join Teams meeting"
                     }
                     HoverHandler { cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: details.show(evTile.ev, evTile) }
