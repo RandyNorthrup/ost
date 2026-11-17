@@ -34,6 +34,29 @@ use super::audio;
 
 /// RTP payload type for PCMU.
 const PT_PCMU: u8 = 0;
+/// Teams' session-level SDP attribute for an end-to-end encrypted 1:1
+/// call: its offers and answers carry it while the user's End-to-end
+/// encrypted calls setting is on (captured from Teams desktop 2026-11-17).
+pub const E2EE_ATTRIBUTE: &str = "a=x-e2ee";
+/// Your End-to-end encrypted calls setting, as last read.
+static PREFER_E2EE: AtomicBool = AtomicBool::new(false);
+
+/// Set from your End-to-end encrypted calls setting (Teams' account config
+/// `preferE2EEncryption`): 1:1 offers and answers then ask for E2EE.
+pub fn set_prefer_e2ee(on: bool) {
+    PREFER_E2EE.store(on, Ordering::Relaxed);
+}
+
+/// Whether 1:1 offers ask for E2EE.
+pub fn prefers_e2ee() -> bool {
+    PREFER_E2EE.load(Ordering::Relaxed)
+}
+
+/// The session-level lines our 1:1 SDP adds for E2EE: for an offer when
+/// we prefer it; for an answer when the offer asked too.
+fn e2ee_line(offer: Option<&WebRtcOffer>) -> &'static str {
+    if prefers_e2ee() && offer.is_none_or(|o| o.e2ee) { "a=x-e2ee\r\n" } else { "" }
+}
 /// Our H.264 payload type when we offer video.
 const PT_H264_OFFER: u8 = 107;
 /// What a meeting asks of a stream we send: (its stream id, its layers
@@ -142,6 +165,9 @@ pub struct WebRtcOffer {
     pub share_slot: Option<super::meeting_media::Slot>,
     /// … and its stream id for our camera line.
     pub camera_stream: Option<i64>,
+    /// The peer asks for an end-to-end encrypted call (Teams' session-level
+    /// `a=x-e2ee`, sent while its End-to-end encrypted calls setting is on).
+    pub e2ee: bool,
 }
 
 /// The payload type of `telephone-event/8000` in an audio section.
@@ -750,6 +776,7 @@ impl WebRtcOffer {
             sections,
             audio_mid,
             setup: in_audio("a=setup:").unwrap_or_else(|| "actpass".into()),
+            e2ee: sdp.lines().any(|l| l.trim_end() == E2EE_ATTRIBUTE),
         })
     }
 
@@ -869,6 +896,7 @@ impl LocalAudio {
         s.push_str("v=0\r\n");
         s.push_str(&format!("o=- {session_id} 2 IN IP4 127.0.0.1\r\n"));
         s.push_str("s=-\r\nt=0 0\r\n");
+        s.push_str(e2ee_line(None));
         s.push_str("a=group:BUNDLE 0\r\n");
         s.push_str("a=msid-semantic: WMS ost\r\n");
         s.push_str(&self.audio_section(port, &addr, "0", "actpass", self.dtmf_pt, None));
@@ -886,6 +914,7 @@ impl LocalAudio {
         s.push_str("v=0\r\n");
         s.push_str(&format!("o=- {session_id} 2 IN IP4 127.0.0.1\r\n"));
         s.push_str("s=-\r\nt=0 0\r\n");
+        s.push_str(e2ee_line(None));
         s.push_str("a=group:BUNDLE 0 1 2\r\n");
         s.push_str("a=msid-semantic: WMS ost\r\n");
         s.push_str(&self.audio_section(port, &addr, "0", "actpass", self.dtmf_pt, None));
@@ -1229,6 +1258,7 @@ impl LocalAudio {
             .chain(video.map(|v| v.mid.as_str()))
             .chain(sharing.map(|v| v.mid.as_str()))
             .collect();
+        s.push_str(e2ee_line(Some(offer)));
         s.push_str(&format!("a=group:BUNDLE {}\r\n", bundle.join(" ")));
         s.push_str("a=msid-semantic: WMS ost\r\n");
         for (mid, kind, proto_fmts) in &offer.sections {
@@ -1376,6 +1406,9 @@ pub struct WebRtcAudioSession {
     /// A new session took over the call (the media moved): ending this one
     /// leaves the call's echo canceller and send estimate to it.
     superseded: AtomicBool,
+    /// Both sides asked for an end-to-end encrypted call (`a=x-e2ee` in the
+    /// offer and the answer) and its keys come from our DTLS handshake.
+    e2ee: AtomicBool,
     /// Our DTLS role, kept in re-answers: "active" (client) or "passive".
     dtls_role: &'static str,
     stats: Arc<Mutex<WebRtcStats>>,
@@ -1434,6 +1467,16 @@ impl WebRtcAudioSession {
 
     pub fn is_held(&self) -> bool {
         self.held.load(Ordering::Relaxed)
+    }
+
+    /// Mark the call end-to-end encrypted (both SDPs carried `a=x-e2ee`).
+    pub fn set_e2ee(&self, on: bool) {
+        self.e2ee.store(on, Ordering::Relaxed);
+    }
+
+    /// Whether the call is end-to-end encrypted, as Teams counts it.
+    pub fn is_e2ee(&self) -> bool {
+        self.e2ee.load(Ordering::Relaxed)
     }
 
     /// Remember the SDP we sent (offer or answer), to answer re-offers.
@@ -2389,6 +2432,7 @@ impl WebRtcAudioSession {
             current_sdp: std::sync::Mutex::new(String::new()),
             held_by_peer: AtomicBool::new(false),
             superseded: AtomicBool::new(false),
+            e2ee: AtomicBool::new(false),
             dtls_role: if dtls_client { "active" } else { "passive" },
             stats,
             #[cfg(feature = "audio")]
@@ -3057,6 +3101,18 @@ fn dtls_handshake(
     }
     let mut km = [0u8; SRTP_KEYING_LEN];
     ssl.export_keying_material(&mut km, "EXTRACTOR-dtls_srtp", None)?;
+    // Diagnostics (OST_TROUTER_DUMP_DIR): both certificates, for working
+    // out how a peer derives its end-to-end encryption numbers.
+    if std::env::var_os("OST_TROUTER_DUMP_DIR").is_some() {
+        let der = |c: Option<X509>| {
+            c.and_then(|c| c.to_der().ok()).map(|d| d.iter().map(|b| format!("{b:02x}")).collect::<String>()).unwrap_or_default()
+        };
+        let local = ssl.certificate().map(|c| c.to_owned());
+        super::incoming::debug_dump(
+            "dtls-certs",
+            &format!("client {client}\nlocal {}\npeer {}\n", der(local), der(ssl.peer_certificate())),
+        );
+    }
     Ok((split_srtp_keys(&km, client), stream))
 }
 

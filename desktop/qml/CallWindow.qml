@@ -425,6 +425,16 @@ Window {
     signal searchPeople(string query)
     signal transfer(string oid, string name)
     signal consult(string oid, string name)
+    /// Consult by call (Teams' Consult ▸ Start a call): the first call is
+    /// held and a second one placed; from it, Transfer (replacing it),
+    /// Merge Calls, or End consult (back to the held call).
+    signal consultByCall(string oid, string name)
+    signal consultTransfer()
+    signal consultMerge()
+    signal consultEnd()
+    /// The consult call as it stands: {state: calling | connected |
+    /// transferring | merging, mri, name}, or null.
+    property var consultCall: null
     /// Consulting someone before transferring (their chat is open).
     property var consulting: null
     readonly property bool live: state === "connected"
@@ -1218,7 +1228,7 @@ Window {
             width: win.compactBar ? 22 : 30; height: win.compactBar ? 22 : 32
             FluentIcon {
                 anchors.centerIn: parent
-                name: win.e2ee ? "shield-lock-20" : "call-shield"; size: win.compactBar ? 14 : 20
+                name: win.e2ee ? "shield-keyhole-20" : "call-shield"; size: win.compactBar ? 14 : 20
                 color: encHover.hovered || encryptionCard.visible ? theme.brandForeground1 : theme.textStrong
             }
             HoverHandler { id: encHover; cursorShape: Qt.PointingHandCursor }
@@ -3891,15 +3901,77 @@ Window {
                         Text { width: parent.width; elide: Text.ElideRight; visible: !!modelData.job_title || !!modelData.mail; text: modelData.job_title || modelData.mail; font.family: theme.font; font.pixelSize: theme.small; color: theme.onFill(hcFill10, theme.textSecondary) }
                     }
                     HoverHandler { id: ph; cursorShape: Qt.PointingHandCursor }
+                    // Consult: Start a call (the row) or Open chat.
+                    Text {
+                        id: openChat
+                        visible: picker.mode === "consult"
+                        anchors { right: parent.right; rightMargin: 10; verticalCenter: parent.verticalCenter }
+                        text: "Open chat"; font.family: theme.font; font.pixelSize: theme.small; color: theme.brandForeground1
+                        z: 2
+                        TapHandler { onTapped: { picker.close(); win.consulting = { id: modelData.id, name: modelData.name }; win.consult(modelData.id, modelData.name) } }
+                        Accessible.role: Accessible.Button
+                        Accessible.name: "Open chat with " + modelData.name
+                    }
                     TapHandler {
                         onTapped: {
                             picker.close()
                             if (picker.mode === "transfer") win.transfer(modelData.id, modelData.name)
-                            else { win.consulting = { id: modelData.id, name: modelData.name }; win.consult(modelData.id, modelData.name) }
+                            else win.consultByCall(modelData.id, modelData.name)
                         }
                     }
                     Accessible.role: Accessible.Button
-                    Accessible.name: (picker.mode === "transfer" ? "Transfer to " : "Consult with ") + modelData.name
+                    Accessible.name: (picker.mode === "transfer" ? "Transfer to " : "Start a call with ") + modelData.name
+                }
+            }
+        }
+    }
+    // Consulting by call: the held call's banner with the consult call's
+    // state and Teams' Transfer, Merge Calls and End consult.
+    Rectangle {
+        visible: !!win.consultCall && win.live
+        z: 5
+        anchors { top: bar.bottom; topMargin: 12; horizontalCenter: stage.horizontalCenter }
+        width: callConsultRow.implicitWidth + 24; height: 44; radius: 8
+        color: theme.menu; border.color: theme.dividerSoft
+        readonly property string who: win.consultCall ? win.consultCall.name : ""
+        readonly property string consultState: win.consultCall ? win.consultCall.state : ""
+        Row {
+            id: callConsultRow
+            anchors.centerIn: parent; spacing: 12
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: parent.parent.consultState === "calling" ? "Calling " + parent.parent.who + "…"
+                    : parent.parent.consultState === "transferring" ? "Transferring to " + parent.parent.who + "…"
+                    : parent.parent.consultState === "merging" ? "Merging calls…"
+                    : "Consulting " + parent.parent.who
+                font.family: theme.font; font.pixelSize: theme.base; color: theme.text
+            }
+            Repeater {
+                model: [
+                    { key: "transfer", label: "Transfer", primary: true, on: true },
+                    { key: "merge", label: "Merge Calls", primary: false, on: true },
+                    { key: "end", label: "End consult", primary: false, on: false }
+                ]
+                Rectangle {
+                    id: hcFillC
+                    required property var modelData
+                    readonly property bool usable: modelData.key === "end" || win.consultCall && win.consultCall.state === "connected"
+                    width: Math.max(84, cLabel.implicitWidth + 24); height: 28; radius: theme.radius
+                    anchors.verticalCenter: parent.verticalCenter
+                    color: modelData.primary ? (usable ? theme.brandFill : theme.bgDisabled) : theme.input
+                    border.color: modelData.primary ? "transparent" : theme.stroke
+                    Text {
+                        id: cLabel
+                        anchors.centerIn: parent; text: modelData.label
+                        color: !parent.usable ? theme.disabled : parent.modelData.primary ? theme.onFill(hcFillC, "white") : theme.text
+                        font.family: theme.font; font.pixelSize: theme.base; font.weight: parent.modelData.primary ? Font.DemiBold : Font.Normal
+                    }
+                    TapHandler {
+                        enabled: parent.usable
+                        onTapped: parent.modelData.key === "transfer" ? win.consultTransfer() : parent.modelData.key === "merge" ? win.consultMerge() : win.consultEnd()
+                    }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: modelData.label
                 }
             }
         }
@@ -3936,6 +4008,7 @@ Window {
     }
 
     function consultForTest(oid, name) { consulting = { id: oid, name: name }; consult(oid, name) }
+    function consultByCallForTest(oid, name) { consultByCall(oid, name) }
     function transferFromConsultForTest() { const c = consulting; consulting = null; transfer(c.id, c.name) }
     function dialPadForTest() { dialPad.open() }
     function leaveMenuForTest() { leaveMenu.open() }

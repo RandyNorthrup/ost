@@ -498,24 +498,22 @@ pub(crate) async fn request_resume(
     Ok(())
 }
 
-/// Hand the call to someone else (Teams' Transfer): the call controller
-/// rings `target` (an `8:orgid:` MRI) and connects them in our place.
-/// `transferor`: our participant details; `cb`: makes our callback URLs.
-pub(crate) async fn request_transfer(
-    http: &reqwest::Client,
-    skype_token: &str,
-    transfer_link: &str,
+/// Teams' transfer request (`callTransfer`, as its calling stack builds
+/// it: the target, our transferor details, the acceptance and completion
+/// callbacks). A consult-then-transfer names the consult call it replaces,
+/// `replacementDetails {replaces: <that call's links.replace>}`, so the
+/// target's consult call is swapped for the transferred one.
+pub fn transfer_body(
     target: &str,
     transferor: serde_json::Value,
     cb: impl Fn(&str) -> String,
-) -> Result<()> {
-    let oid = target
-        .strip_prefix("8:orgid:")
-        .context("Not a person to transfer to")?;
+    replaces: Option<&str>,
+) -> Result<serde_json::Value> {
+    let oid = target.strip_prefix("8:orgid:").context("Not a person to transfer to")?;
     if uuid::Uuid::parse_str(oid).is_err() {
         anyhow::bail!("Not a person to transfer to");
     }
-    let body = serde_json::json!({
+    let mut body = serde_json::json!({
         "callTransfer": {
             "target": { "id": target },
             "transferor": { "details": transferor, "authorizationToken": null },
@@ -525,15 +523,27 @@ pub(crate) async fn request_transfer(
             },
         }
     });
-    cc_request(
-        http,
-        skype_token,
-        reqwest::Method::POST,
-        transfer_link,
-        &body,
-        "Transfer",
-    )
-    .await?;
+    if let Some(r) = replaces {
+        body["callTransfer"]["replacementDetails"] = serde_json::json!({ "replaces": r });
+    }
+    Ok(body)
+}
+
+/// Hand the call to someone else (Teams' Transfer): the call controller
+/// rings `target` (an `8:orgid:` MRI) and connects them in our place; with
+/// `replaces`, it swaps them into the consult call we have with them.
+/// `transferor`: our participant details; `cb`: makes our callback URLs.
+pub(crate) async fn request_transfer(
+    http: &reqwest::Client,
+    skype_token: &str,
+    transfer_link: &str,
+    target: &str,
+    transferor: serde_json::Value,
+    cb: impl Fn(&str) -> String,
+    replaces: Option<&str>,
+) -> Result<()> {
+    let body = transfer_body(target, transferor, cb, replaces)?;
+    cc_request(http, skype_token, reqwest::Method::POST, transfer_link, &body, "Transfer").await?;
     Ok(())
 }
 
@@ -770,8 +780,10 @@ impl ActiveCall {
         Ok(())
     }
 
-    /// Transfer the call to `target` (an `8:orgid:` MRI).
-    pub async fn transfer(&self, auth: &CallAuth, target: &str) -> Result<()> {
+    /// Transfer the call to `target` (an `8:orgid:` MRI); `replaces`: our
+    /// consult call with them (its `links.replace`), for consult then
+    /// transfer.
+    pub async fn transfer(&self, auth: &CallAuth, target: &str, replaces: Option<&str>) -> Result<()> {
         let me = self.me.as_ref().context("Transfer needs a Teams call")?;
         let link = self
             .transfer_link
@@ -781,10 +793,7 @@ impl ActiveCall {
             "id": me.id, "endpointId": me.endpoint_id,
             "participantId": me.participant_id, "languageId": "en-US",
         });
-        request_transfer(&auth.http, &auth.skype_token, link, target, details, |p| {
-            me.callback(p)
-        })
-        .await
+        request_transfer(&auth.http, &auth.skype_token, link, target, details, |p| me.callback(p), replaces).await
     }
 
     /// Put the call on hold, or resume it (our media only).
@@ -795,6 +804,11 @@ impl ActiveCall {
         if let Some(a) = &self.audio {
             a.set_muted(held || self.is_muted());
         }
+    }
+
+    /// The call is end-to-end encrypted (both sides asked for it).
+    pub fn is_e2ee(&self) -> bool {
+        self.webrtc.as_ref().is_some_and(|w| w.is_e2ee())
     }
 
     /// The other side has the call on hold.
@@ -1289,6 +1303,9 @@ async fn answer_webrtc(
         Ok(Ok(session)) => {
             session.set_muted(!microphone_on);
             session.set_local_sdp(&sdp);
+            // Teams asked for E2EE and our answer said yes (Teams then shows
+            // the call end-to-end encrypted).
+            session.set_e2ee(sdp.lines().any(|l| l.trim_end() == webrtc_audio::E2EE_ATTRIBUTE));
             Some(session)
         }
         Ok(Err(e)) => {
@@ -1672,6 +1689,21 @@ impl CallAuth {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn transfers_are_teams_and_consult_names_the_call_it_replaces() {
+        let me = serde_json::json!({ "id": "8:orgid:a", "endpointId": "e", "participantId": "p", "languageId": "en-US" });
+        let t = "8:orgid:4287e791-1b98-4963-8b94-281c50472683";
+        let blind = transfer_body(t, me.clone(), |p| format!("cb/{p}"), None).unwrap();
+        assert_eq!(blind["callTransfer"]["target"]["id"], t);
+        assert_eq!(blind["callTransfer"]["transferor"]["details"], me);
+        assert!(blind["callTransfer"]["transferor"]["authorizationToken"].is_null());
+        assert_eq!(blind["callTransfer"]["links"]["transferCompletion"], "cb/call/transferCompletion/");
+        assert!(blind["callTransfer"].get("replacementDetails").is_none());
+        let consult = transfer_body(t, me, |p| format!("cb/{p}"), Some("https://cc/consult/replace")).unwrap();
+        assert_eq!(consult["callTransfer"]["replacementDetails"], serde_json::json!({ "replaces": "https://cc/consult/replace" }));
+        assert!(transfer_body("4:+14255550100", serde_json::json!({}), |p| p.to_string(), None).is_err());
+    }
 
     #[test]
     fn meet_now_start_notifications_are_read() {

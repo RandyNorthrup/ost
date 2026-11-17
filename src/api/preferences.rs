@@ -287,6 +287,17 @@ pub fn e2ee_calls_allowed(policies: &serde_json::Value) -> bool {
         != "Disabled"
 }
 
+/// Your "End-to-end encrypted calls" choice (off unless saved on).
+pub async fn e2ee_calls_enabled(client: &TeamsClient) -> Result<bool> {
+    let mt = client.middle_tier_url().context("No middle-tier address")?;
+    let token = super::directory::middle_tier_token().await?;
+    let resp = client.http().get(format!("{mt}/{E2EE_SETTING_PATH}")).bearer_auth(token).send().await.context("E2EE setting")?;
+    if !resp.status().is_success() {
+        anyhow::bail!("HTTP {} reading the E2EE setting", resp.status().as_u16());
+    }
+    Ok(resp.json::<serde_json::Value>().await.ok().and_then(|v| v.as_bool()).unwrap_or(false))
+}
+
 /// Your calling settings, as Settings ▸ Calls reads them (`GET {mt}/beta/
 /// usersettings/{mri}/voicesettings`): {callRedirectionSettings, …}.
 pub async fn voice_settings(client: &TeamsClient) -> Result<serde_json::Value> {

@@ -371,6 +371,11 @@ pub mod qobject {
         #[qproperty(bool, call_muted)]
         #[qproperty(bool, call_held)]
         #[qproperty(bool, call_held_by_peer)]
+        /// The call is end-to-end encrypted (Teams' E2EE 1:1 call).
+        #[qproperty(bool, call_e2ee)]
+        /// The consult call ({state, mri, name}: calling, connected,
+        /// transferring, merging), or "".
+        #[qproperty(QString, call_consult_json)]
         #[qproperty(bool, call_can_dtmf)]
         /// We can share our screen in this call, and whether we are.
         #[qproperty(bool, call_can_share)]
@@ -1395,6 +1400,20 @@ pub mod qobject {
         /// Transfer the call to a person (AAD object id).
         #[qinvokable]
         fn transfer_call(self: Pin<&mut Backend>, oid: &QString);
+        /// Consult by call (Teams' Consult ▸ Start a call): hold this call
+        /// and call that person.
+        #[qinvokable]
+        fn consult_call(self: Pin<&mut Backend>, oid: &QString, name: &QString);
+        /// Transfer the held call to the person consulted, replacing the
+        /// consult call.
+        #[qinvokable]
+        fn consult_transfer(self: Pin<&mut Backend>);
+        /// Merge the held call into the consult call (a group call).
+        #[qinvokable]
+        fn consult_merge(self: Pin<&mut Backend>);
+        /// End the consult call and go back to the held one.
+        #[qinvokable]
+        fn consult_end(self: Pin<&mut Backend>);
 
         /// Send a dial-pad key (0-9, *, #) as a tone in the call.
         #[qinvokable]
@@ -2749,6 +2768,8 @@ pub struct BackendRust {
     unmute_pending: bool,
     call_held: bool,
     call_held_by_peer: bool,
+    call_e2ee: bool,
+    call_consult_json: QString,
     call_can_dtmf: bool,
     call_can_share: bool,
     call_sharing: bool,
@@ -2899,6 +2920,13 @@ struct CallSlot {
     left_tags: Vec<String>,
     /// Withdraws the call being placed (still ringing the callee).
     cancel_placing: Option<tokio::sync::oneshot::Sender<()>>,
+    /// The second call of a consult (Teams' Consult then transfer, Merge
+    /// Calls) while the first waits on hold, its callback tag, where the
+    /// consult stands, and what withdraws it while it rings.
+    consult: Option<OutgoingCall>,
+    consult_tag: Option<String>,
+    consult_state: teams_cli::calling::consult::Consult,
+    cancel_consult: Option<tokio::sync::oneshot::Sender<()>>,
     /// The screen picked to share, waiting for Teams to take our re-offer.
     share_pending: Option<(
         teams_cli::calling::screencast::ScreenCapture,
@@ -3678,6 +3706,39 @@ fn rtt_outbox() -> &'static tokio::sync::mpsc::UnboundedSender<String> {
 }
 
 /// Log media health every 5 s while a call lasts.
+/// Hold (or resume) the first call while a consult goes on.
+async fn set_first_held(slot: &mut CallSlot, held: bool) -> anyhow::Result<()> {
+    match (slot.active.as_mut(), slot.outgoing.as_mut()) {
+        (Some(call), _) => call.hold(&CallAuth::load().await?, held).await,
+        (None, Some(call)) => call.hold(held).await,
+        _ => Err(anyhow::anyhow!("No call")),
+    }
+}
+
+/// Show the consult as it stands in the call window.
+fn publish_consult(qt: &cxx_qt::CxxQtThread<qobject::Backend>, slot: &CallSlot) {
+    let view = slot.consult_state.view();
+    let text = if view.is_null() { String::new() } else { view.to_string() };
+    let _ = qt.queue(move |mut this| this.as_mut().set_call_consult_json(QString::from(text.as_str())));
+}
+
+/// The consult call is over (they hung up or didn't answer, or you ended
+/// it): back to the held call, as Teams' Resume.
+async fn consult_ended(qt: &cxx_qt::CxxQtThread<qobject::Backend>, slot: &mut CallSlot) {
+    use teams_cli::calling::consult::{Action, Event};
+    let (next, action) = slot.consult_state.step(Event::ConsultEnded);
+    slot.consult_state = next;
+    if action == Action::ResumeFirst {
+        slot.consult_tag = None;
+        slot.consult = None;
+        if let Err(e) = set_first_held(slot, false).await {
+            tracing::warn!("resume after consult: {}", short_error(&e));
+        }
+        let _ = qt.queue(|mut this| this.as_mut().set_call_held(false));
+    }
+    publish_consult(qt, slot);
+}
+
 fn spawn_call_stats_logger(qt: cxx_qt::CxxQtThread<qobject::Backend>) {
     runtime().spawn(async move {
         let mut tick = 0u64;
@@ -5053,6 +5114,22 @@ async fn ensure_recorder(meeting: &teams_cli::calling::recorder::Meeting) -> any
 }
 
 async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
+    // The consult call's events (its own callback tag): its end takes us
+    // back to the held call; the rest is its own.
+    if json.contains("\"callTag\"")
+        && let Some(tag) = serde_json::from_str::<serde_json::Value>(json)
+            .ok()
+            .and_then(|v| v["callTag"].as_str().map(str::to_string))
+    {
+        let mut slot = call_slot().lock().await;
+        if slot.consult_tag.as_deref() == Some(tag.as_str()) {
+            if teams_cli::calling::incoming::is_call_end_event(json) {
+                tracing::info!("the consult call ended");
+                consult_ended(qt, &mut slot).await;
+            }
+            return;
+        }
+    }
     // An event for a call we moved out of (a meeting left for a breakout
     // room, or the room left for the meeting) is that call's, not ours.
     if json.contains("\"callTag\"")
@@ -5648,7 +5725,17 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
                 let mut slot = call_slot().lock().await;
                 slot.active = None;
                 slot.outgoing = None;
+                // A consult transfer replaced the consult call: it is over.
+                slot.consult_state = Default::default();
+                slot.consult_tag = None;
+                let consult = slot.consult.take();
+                publish_consult(qt, &slot);
                 drop(slot);
+                if let Some(call) = consult {
+                    runtime().spawn(async move {
+                        let _ = call.hang_up().await;
+                    });
+                }
                 let _ = qt.queue(|mut this| {
                     this.as_mut()
                         .set_status_text(QString::from("Call transferred"));
@@ -5657,6 +5744,12 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
             }
             Err(phrase) => {
                 tracing::info!("transfer failed");
+                {
+                    let mut slot = call_slot().lock().await;
+                    let (next, _) = slot.consult_state.step(teams_cli::calling::consult::Event::Failed);
+                    slot.consult_state = next;
+                    publish_consult(qt, &slot);
+                }
                 let _ = qt.queue(move |mut this| {
                     this.as_mut().set_status_text(QString::from(
                         format!("Transfer failed: {phrase}").as_str(),
@@ -5702,6 +5795,24 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         let was_ringing = slot.ringing.take().is_some();
         // The other side ended it: drop media without signalling an end.
         let was_active = slot.active.take().is_some() || slot.outgoing.take().is_some();
+        // While consulting, the consult call carries on as the call.
+        if was_active && let Some(consult) = slot.consult.take() {
+            tracing::info!("the held call ended; the consult call carries on");
+            let name = slot.consult_state.target().map(|t| (t.name.clone(), t.mri.clone()));
+            slot.consult_state = Default::default();
+            slot.consult_tag = None;
+            slot.outgoing = Some(consult);
+            publish_consult(qt, &slot);
+            drop(slot);
+            let _ = qt.queue(move |mut this| {
+                this.as_mut().set_call_held(false);
+                if let Some((n, m)) = name {
+                    this.as_mut().set_call_peer(QString::from(n.as_str()));
+                    this.as_mut().set_call_peer_id(QString::from(m.as_str()));
+                }
+            });
+            return;
+        }
         drop(slot);
         if was_ringing || was_active {
             tracing::info!(was_ringing, was_active, "call ended by the other side");
@@ -6854,7 +6965,8 @@ impl qobject::Backend {
                             }
                         };
                     let can_share = active.can_share();
-                    tracing::info!(has_audio, can_video, camera, can_share, "call answered");
+                    let e2ee = active.is_e2ee();
+                    tracing::info!(has_audio, can_video, camera, can_share, e2ee, "call answered");
                     call_slot().lock().await.active = Some(active);
                     spawn_call_stats_logger(qt.clone());
                     let _ = qt.queue(move |mut this| {
@@ -6863,6 +6975,7 @@ impl qobject::Backend {
                         this.as_mut().set_call_can_dtmf(can_dtmf);
                         this.as_mut().set_call_can_share(can_share);
                         this.as_mut().set_call_camera_on(camera);
+                        this.as_mut().set_call_e2ee(e2ee);
                         this.as_mut().set_call_muted(false);
                         this.as_mut().set_call_state(QString::from("connected"));
                     });
@@ -6991,12 +7104,15 @@ impl qobject::Backend {
                         can_video,
                         can_share,
                         camera,
+                        e2ee = call.is_e2ee(),
                         "outgoing call connected"
                     );
+                    let e2ee = call.is_e2ee();
                     slot.outgoing = Some(call);
                     drop(slot);
                     spawn_call_stats_logger(qt.clone());
                     let _ = qt.queue(move |mut this| {
+                        this.as_mut().set_call_e2ee(e2ee);
                         this.as_mut().set_call_has_audio(has_audio);
                         this.as_mut().set_call_can_dtmf(can_dtmf);
                         this.as_mut().set_call_can_video(can_video);
@@ -8277,6 +8393,19 @@ impl qobject::Backend {
         self.as_mut().end_call_ui();
         runtime().spawn(async {
             let mut slot = call_slot().lock().await;
+            // Leaving ends a consult too.
+            slot.consult_state = Default::default();
+            slot.consult_tag = None;
+            if let Some(cancel) = slot.cancel_consult.take() {
+                let _ = cancel.send(());
+            }
+            if let Some(consult) = slot.consult.take() {
+                runtime().spawn(async move {
+                    if let Err(e) = consult.hang_up().await {
+                        tracing::warn!("consult hang up failed: {}", short_error(&e));
+                    }
+                });
+            }
             if let Some(earlier) = slot.moved_from.take() {
                 runtime().spawn(leave_moved_from(earlier));
             }
@@ -9939,10 +10068,10 @@ impl qobject::Backend {
             let slot = call_slot().lock().await;
             let result = match (slot.active.as_ref(), slot.outgoing.as_ref()) {
                 (Some(call), _) => match CallAuth::load().await {
-                    Ok(auth) => call.transfer(&auth, &target).await,
+                    Ok(auth) => call.transfer(&auth, &target, None).await,
                     Err(e) => Err(e),
                 },
-                (None, Some(call)) => call.transfer(&target).await,
+                (None, Some(call)) => call.transfer(&target, None).await,
                 _ => Err(anyhow::anyhow!("No call")),
             };
             drop(slot);
@@ -9953,6 +10082,195 @@ impl qobject::Backend {
             tracing::info!(ok = result.is_ok(), "transfer requested");
             let _ = qt
                 .queue(move |mut this| this.as_mut().set_status_text(QString::from(text.as_str())));
+        });
+    }
+
+    pub fn consult_call(mut self: Pin<&mut Self>, oid: &QString, name: &QString) {
+        use teams_cli::calling::consult::{Action, Event, Person};
+        let oid = oid.to_string().trim().to_ascii_lowercase();
+        let name = name.to_string();
+        let my_oid = teams_cli::config::Config::load().ok().and_then(|c| c.object_id()).unwrap_or_default();
+        let Some(chat) = outgoing::one_to_one_chat_id(&my_oid, &oid) else {
+            self.as_mut().set_status_text(QString::from("Consult: not someone you can call"));
+            return;
+        };
+        let mri = format!("8:orgid:{oid}");
+        let was_held = self.rust().call_held;
+        let qt = self.qt_thread();
+        let tag = outgoing::new_call_tag();
+        let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
+        runtime().spawn(async move {
+            {
+                let mut slot = call_slot().lock().await;
+                let (next, action) = slot.consult_state.step(Event::Start(Person { mri: mri.clone(), name }));
+                if action != Action::HoldAndCall {
+                    return;
+                }
+                slot.consult_state = next;
+                slot.consult_tag = Some(tag.clone());
+                slot.cancel_consult = Some(cancel_tx);
+                if !was_held && let Err(e) = set_first_held(&mut slot, true).await {
+                    tracing::warn!("consult hold: {}", short_error(&e));
+                }
+                publish_consult(&qt, &slot);
+            }
+            if !was_held {
+                let _ = qt.queue(|mut this| this.as_mut().set_call_held(true));
+            }
+            tracing::info!("consult call placed");
+            let result = outgoing::place_call_tagged(&chat, &mri, &tag, cancel_rx).await;
+            let mut slot = call_slot().lock().await;
+            slot.cancel_consult = None;
+            match result {
+                Ok(call) if matches!(slot.consult_state, teams_cli::calling::consult::Consult::Placing { .. }) => {
+                    tracing::info!(replace = call.replace_link().is_some(), "consult call answered");
+                    slot.consult = Some(call);
+                    let (next, _) = slot.consult_state.step(Event::Answered);
+                    slot.consult_state = next;
+                    publish_consult(&qt, &slot);
+                }
+                Ok(call) => {
+                    // The consult was ended while it rang.
+                    drop(slot);
+                    let _ = call.hang_up().await;
+                }
+                Err(e) => {
+                    tracing::info!("consult call failed: {}", short_error(&e));
+                    let msg = format!("Consult: {}", short_error(&e));
+                    consult_ended(&qt, &mut slot).await;
+                    let _ = qt.queue(move |mut this| this.as_mut().set_status_text(QString::from(msg.as_str())));
+                }
+            }
+        });
+    }
+
+    pub fn consult_transfer(self: Pin<&mut Self>) {
+        use teams_cli::calling::consult::{Action, Event};
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let mut slot = call_slot().lock().await;
+            let (next, action) = slot.consult_state.step(Event::Transfer);
+            if action != Action::SendTransfer {
+                return;
+            }
+            let target = next.target().map(|t| t.mri.clone()).unwrap_or_default();
+            slot.consult_state = next;
+            publish_consult(&qt, &slot);
+            let replaces = slot.consult.as_ref().and_then(|c| c.replace_link().map(str::to_string));
+            tracing::info!(replaces = replaces.is_some(), "consult transfer");
+            let result = match (slot.active.as_ref(), slot.outgoing.as_ref()) {
+                (Some(call), _) => match CallAuth::load().await {
+                    Ok(auth) => call.transfer(&auth, &target, replaces.as_deref()).await,
+                    Err(e) => Err(e),
+                },
+                (None, Some(call)) => call.transfer(&target, replaces.as_deref()).await,
+                _ => Err(anyhow::anyhow!("No call")),
+            };
+            if let Err(e) = result {
+                tracing::warn!("consult transfer: {}", short_error(&e));
+                let (next, _) = slot.consult_state.step(Event::Failed);
+                slot.consult_state = next;
+                publish_consult(&qt, &slot);
+                let msg = format!("Transfer: {}", short_error(&e));
+                let _ = qt.queue(move |mut this| this.as_mut().set_status_text(QString::from(msg.as_str())));
+            }
+        });
+    }
+
+    pub fn consult_merge(self: Pin<&mut Self>) {
+        use teams_cli::calling::consult::{Action, Event};
+        let first_peer = self.rust().call_peer_id.to_string();
+        let first_name = self.rust().call_peer.to_string();
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let mut slot = call_slot().lock().await;
+            let (next, action) = slot.consult_state.step(Event::Merge);
+            if action != Action::SendMerge {
+                return;
+            }
+            let target = next.target().cloned().expect("a consult has a target");
+            slot.consult_state = next;
+            publish_consult(&qt, &slot);
+            let consult_call = slot.consult.take();
+            let result = async {
+                let my_oid = teams_cli::config::Config::load().ok().and_then(|c| c.object_id()).context("Not signed in")?;
+                // Teams' getCallingConversationWith: the chat of everyone
+                // in both calls, which the merged call takes as its group.
+                let members = vec![format!("8:orgid:{my_oid}"), first_peer.clone(), target.mri.clone()];
+                let client = TeamsClient::new().await?;
+                let thread = api::create_group_chat(&client, &members, "").await?;
+                let consult = consult_call.as_ref().context("No consult call")?;
+                let person = outgoing::MergePerson {
+                    id: first_peer.clone(),
+                    participant_id: uuid::Uuid::new_v4().to_string(),
+                    display_name: Some(first_name.clone()).filter(|n| !n.is_empty()),
+                    // A 1:1 call's roster carries no call links for the
+                    // other side's leg, so (as Teams then does) they are
+                    // invited into the group call.
+                    replacement: None,
+                };
+                consult.merge_in(&thread, &[person]).await?;
+                anyhow::Ok(thread)
+            }
+            .await;
+            slot.consult = consult_call;
+            match result {
+                Ok(thread) => {
+                    tracing::info!("calls merged");
+                    let (next, _) = slot.consult_state.step(Event::Done);
+                    slot.consult_state = next;
+                    slot.consult_tag = None;
+                    // The consult call goes on as the group call; the held
+                    // call is left.
+                    let first_active = slot.active.take();
+                    let first_outgoing = slot.outgoing.take();
+                    slot.outgoing = slot.consult.take();
+                    publish_consult(&qt, &slot);
+                    drop(slot);
+                    if let Some(call) = first_outgoing {
+                        let _ = call.hang_up().await;
+                    }
+                    if let Some(call) = first_active
+                        && let Ok(auth) = CallAuth::load().await
+                    {
+                        let _ = auth.hang_up(call).await;
+                    }
+                    let names = format!("{first_name}, {}", target.name);
+                    let _ = qt.queue(move |mut this| {
+                        this.as_mut().set_call_held(false);
+                        this.as_mut().set_call_peer(QString::from(names.as_str()));
+                        this.as_mut().set_call_thread_id(QString::from(thread.as_str()));
+                        this.as_mut().set_status_text(QString::from("Calls merged"));
+                    });
+                }
+                Err(e) => {
+                    tracing::warn!("merge: {}", short_error(&e));
+                    let (next, _) = slot.consult_state.step(Event::Failed);
+                    slot.consult_state = next;
+                    publish_consult(&qt, &slot);
+                    let msg = format!("Merge: {}", short_error(&e));
+                    let _ = qt.queue(move |mut this| this.as_mut().set_status_text(QString::from(msg.as_str())));
+                }
+            }
+        });
+    }
+
+    pub fn consult_end(self: Pin<&mut Self>) {
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let mut slot = call_slot().lock().await;
+            if let Some(cancel) = slot.cancel_consult.take() {
+                let _ = cancel.send(());
+            }
+            let call = slot.consult.take();
+            consult_ended(&qt, &mut slot).await;
+            drop(slot);
+            if let Some(call) = call {
+                tracing::info!("consult call ended");
+                if let Err(e) = call.hang_up().await {
+                    tracing::warn!("consult hang up failed: {}", short_error(&e));
+                }
+            }
         });
     }
 
@@ -10129,6 +10447,7 @@ impl qobject::Backend {
         }
         self.as_mut().set_call_held(false);
         self.as_mut().set_call_held_by_peer(false);
+        self.as_mut().set_call_e2ee(false);
         self.as_mut().set_call_can_dtmf(false);
         self.as_mut().set_call_hand_raised(false);
         if !self.rust().call_state.is_empty() {
@@ -11193,6 +11512,16 @@ impl qobject::Backend {
         runtime().spawn(async move {
             let result = load_overview().await;
             tracing::info!(ok = result.is_ok(), "overview loaded");
+            // Your End-to-end encrypted calls setting (Teams reads it at
+            // start): 1:1 calls ask for E2EE while it is on.
+            runtime().spawn(async {
+                if let Ok(client) = TeamsClient::new().await
+                    && let Ok(on) = api::preferences::e2ee_calls_enabled(&client).await
+                {
+                    tracing::info!(on, "end-to-end encrypted calls setting");
+                    teams_cli::calling::webrtc_audio::set_prefer_e2ee(on);
+                }
+            });
             if let Err(e) = &result {
                 tracing::warn!("overview failed: {}", short_error(e));
             }
@@ -19315,6 +19644,9 @@ impl qobject::Backend {
                     anyhow::Ok(None)
                 } else if kind == "mt" {
                     api::preferences::set_middle_tier_setting(&client, &name, value.as_bool().unwrap_or(false)).await?;
+                    if name == "useEndToEndEncryption" {
+                        teams_cli::calling::webrtc_audio::set_prefer_e2ee(value.as_bool().unwrap_or(false));
+                    }
                     anyhow::Ok(None)
                 } else {
                     Ok(Some(api::preferences::set_property(&client, &name, &value).await?))

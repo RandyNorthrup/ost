@@ -1762,10 +1762,16 @@ Window {
         chatUrl: backend.callChatUrl
         onOpenApp: key => { rail.openApp(key); window.raise(); window.requestActivate() }
         canDtmf: backend.callCanDtmf
+        e2ee: backend.callE2ee
         onDtmf: key => backend.sendDtmf(key)
         directory: backend.peopleJson ? JSON.parse(backend.peopleJson) : []
         onSearchPeople: q => backend.searchPeople(q)
         onTransfer: (oid, name) => backend.transferCall(oid)
+        consultCall: backend.callConsultJson ? JSON.parse(backend.callConsultJson) : null
+        onConsultByCall: (oid, name) => backend.consultCall(oid, name)
+        onConsultTransfer: backend.consultTransfer()
+        onConsultMerge: backend.consultMerge()
+        onConsultEnd: backend.consultEnd()
         // Consult, as Teams' chat consult: hold the caller and open a chat
         // with the person in the call's Chat pane; Transfer finishes it.
         onConsult: (oid, name) => {
@@ -1940,6 +1946,37 @@ Window {
         }
     }
     Timer { id: quitTimer; interval: 3000; onTriggered: Qt.quit() }
+    // --consult-call=<oid>: with --call-test --remote-hangup, 5 s after a
+    // 1:1 call connects consult that person by call (Teams' Consult ▸ Start
+    // a call: this call held, a second one placed); once they answer,
+    // --consult-transfer transfers this call to them (replacing the consult
+    // call), --consult-merge merges both calls, else the consult is ended
+    // after 20 s and this call resumed. CONSULT lines (`-consult-*.png`).
+    Timer {
+        id: consultTest
+        readonly property string target: (Qt.application.arguments.find(a => a.startsWith("--consult-call=")) || "").split("=")[1] || ""
+        running: target.length > 0 && backend.callState === "connected"
+        interval: 5000; repeat: true
+        property int step: 0
+        property int connectedAt: -1
+        function cap(t) { callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-consult-" + t + ".png"))) }
+        onTriggered: {
+            const c = callWindow.consultCall
+            console.warn("CONSULT step", step, "state", c ? c.state : "none", "held", backend.callHeld, "status", backend.statusText)
+            if (step === 0) callWindow.consultByCallForTest(target, "Consult target")
+            else if (step === 1) cap("calling")
+            else if (c && c.state === "connected" && connectedAt < 0) { connectedAt = step; cap("connected") }
+            else if (connectedAt >= 0 && step === connectedAt + 2) {
+                if (Qt.application.arguments.indexOf("--consult-transfer") >= 0) backend.consultTransfer()
+                else if (Qt.application.arguments.indexOf("--consult-merge") >= 0) backend.consultMerge()
+            }
+            else if (connectedAt >= 0 && step === connectedAt + 4) cap("after")
+            else if (connectedAt >= 0 && step === connectedAt + 6 && c) backend.consultEnd()
+            else if (!c && step > 2 && connectedAt < 0 && step > 12) { console.warn("CONSULT never connected"); stop() }
+            else if (connectedAt >= 0 && step === connectedAt + 8) { console.warn("CONSULT done", JSON.stringify(c)); cap("done"); stop() }
+            step++
+        }
+    }
     // --call-encryption: with --call-test (or --call-out) in a 1:1 call,
     // 4 s after it connects open the encryption card under the bar's shield
     // (Teams' Encryption status) and capture it (`-encryption.png`); logs

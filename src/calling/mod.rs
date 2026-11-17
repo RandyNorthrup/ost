@@ -9,6 +9,7 @@ pub mod apm;
 pub mod audio;
 pub mod audio_codec;
 pub mod breakout;
+pub mod consult;
 pub mod call_health;
 pub mod call_test;
 #[cfg(feature = "video")]

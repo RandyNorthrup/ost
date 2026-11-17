@@ -46,6 +46,8 @@ pub struct OutgoingCall {
     hold_link: Option<String>,
     resume_link: Option<String>,
     transfer_link: Option<String>,
+    /// The callee's `links.replace` (what a consult then transfer names).
+    replace_link: Option<String>,
     /// Where our own re-offers go (`links.mediaRenegotiation`).
     renegotiation_link: Option<String>,
     /// Meetings: the conversation's publishState / removeState links
@@ -818,6 +820,47 @@ impl OutgoingCall {
         Ok(())
     }
 
+    /// Merge another call's people into this one (Teams' P2PAndP2P merge):
+    /// this call becomes a group call on `thread_id` (the chat of everyone
+    /// in both calls) and each person is added with the leg they replace in
+    /// the other call ([`merge_body`]). The other call is left afterwards.
+    pub async fn merge_in(&self, thread_id: &str, people: &[MergePerson]) -> Result<()> {
+        let link = self.add_participant_link.clone().context("No addParticipant link")?;
+        if !super::incoming::is_service_link(&link) {
+            bail!("addParticipant: not a Teams service link");
+        }
+        let config = Config::load()?;
+        let ic3 = config.get_ic3_token().context("No calling (IC3) token")?.token;
+        let (surl, epid) = &self.callbacks;
+        let mut from = self.me.0.clone();
+        if let Some(o) = from.as_object_mut() {
+            o.entry("languageId").or_insert_with(|| "en-US".into());
+        }
+        let body = merge_body(&from, thread_id, people, |p| signaling::trouter_callback(surl, epid, p));
+        tracing::info!(people = people.len(), "merging calls");
+        let resp = self
+            .http
+            .post(&link)
+            .bearer_auth(ic3)
+            .header("x-microsoft-skype-chain-id", &self.call_id)
+            .header("x-microsoft-skype-message-id", uuid::Uuid::new_v4().to_string())
+            .header("x-microsoft-skype-client", signaling::SKYPE_CLIENT_HEADER)
+            .header("ms-teams-partition", signaling::TEAMS_PARTITION)
+            .header("ms-teams-region", signaling::TEAMS_REGION)
+            .header("ms-teams-ring", signaling::TEAMS_RING)
+            .json(&body)
+            .send()
+            .await
+            .context("Merging calls")?;
+        let status = resp.status();
+        if !status.is_success() {
+            let text = resp.text().await.unwrap_or_default();
+            bail!("Merging calls failed ({status}): {}", &text[..text.len().min(300)]);
+        }
+        tracing::info!(%status, "merge requested");
+        Ok(())
+    }
+
     /// Tell the meeting whether we want live captions, as Teams does once
     /// they start or stop: `PUT updateEndpointMetadata` with our
     /// participant (and its language) and `transcriptionPrefs`.
@@ -1218,8 +1261,10 @@ impl OutgoingCall {
         }
     }
 
-    /// Transfer the call to `target` (an `8:orgid:` MRI).
-    pub async fn transfer(&self, target: &str) -> Result<()> {
+    /// Transfer the call to `target` (an `8:orgid:` MRI); `replaces`: our
+    /// consult call with them (its `links.replace`), for consult then
+    /// transfer.
+    pub async fn transfer(&self, target: &str, replaces: Option<&str>) -> Result<()> {
         let link = self
             .transfer_link
             .as_deref()
@@ -1236,8 +1281,15 @@ impl OutgoingCall {
             target,
             details,
             |p| signaling::trouter_callback(&surl, &epid, p),
+            replaces,
         )
         .await
+    }
+
+    /// Where a transfer that replaces this call points (the callee's
+    /// acceptance `links.replace`): what a consult then transfer names.
+    pub fn replace_link(&self) -> Option<&str> {
+        self.replace_link.as_deref()
     }
 
     /// Put the call on hold, or resume it (our media only).
@@ -1249,6 +1301,11 @@ impl OutgoingCall {
 
     pub fn can_dtmf(&self) -> bool {
         self.media.as_ref().is_some_and(|m| m.can_dtmf())
+    }
+
+    /// The call is end-to-end encrypted (both sides asked for it).
+    pub fn is_e2ee(&self) -> bool {
+        self.media.as_ref().is_some_and(|m| m.is_e2ee())
     }
 
     /// The call negotiated video we can send (camera button usable).
@@ -1630,6 +1687,76 @@ pub fn callee_mri_for_chat(chat_id: &str, my_oid: &str) -> Option<String> {
     Some(format!("8:orgid:{other}"))
 }
 
+/// The 1:1 chat two people share (Teams' `19:<oid>_<oid>@unq.gbl.spaces`,
+/// the two object ids in sorted order): where a call to someone is placed.
+pub fn one_to_one_chat_id(my_oid: &str, other_oid: &str) -> Option<String> {
+    let (a, b) = (my_oid.to_ascii_lowercase(), other_oid.to_ascii_lowercase());
+    if uuid::Uuid::parse_str(&a).is_err() || uuid::Uuid::parse_str(&b).is_err() || a == b {
+        return None;
+    }
+    let (x, y) = if a <= b { (a, b) } else { (b, a) };
+    Some(format!("19:{x}_{y}@unq.gbl.spaces"))
+}
+
+/// Someone a merge moves into the call: their MRI, the participant id
+/// their new leg gets, and (Teams' `replacementDetails`) the leg of theirs
+/// it replaces in the other call when the roster gave its call links:
+/// `{replaces: <endpoint callLinks.replacement>, replacementTargetParticipantId}`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MergePerson {
+    pub id: String,
+    pub participant_id: String,
+    pub display_name: Option<String>,
+    pub replacement: Option<serde_json::Value>,
+}
+
+/// Teams' merge request (its `addParticipantsAsync` with ReplaceParticipant
+/// for a P2P-into-P2P merge): `{participants: {from, to: [{id,
+/// displayName, participantId, replacementDetails}]}, groupContext: null,
+/// groupChat: {threadId, messageId: null}, links: {addParticipantSuccess,
+/// addParticipantFailure}}`.
+pub fn merge_body(
+    from: &serde_json::Value,
+    thread_id: &str,
+    people: &[MergePerson],
+    cb: impl Fn(&str) -> String,
+) -> serde_json::Value {
+    let to: Vec<serde_json::Value> = people
+        .iter()
+        .map(|p| {
+            let mut t = serde_json::json!({ "id": p.id, "participantId": p.participant_id });
+            if let Some(n) = &p.display_name {
+                t["displayName"] = n.clone().into();
+            }
+            if let Some(r) = &p.replacement {
+                t["replacementDetails"] = r.clone();
+            }
+            t
+        })
+        .collect();
+    serde_json::json!({
+        "participants": { "from": from, "to": to },
+        "participantInvitationData": {},
+        "groupContext": null,
+        "groupChat": { "threadId": thread_id, "messageId": null },
+        "links": {
+            "addParticipantSuccess": cb("conversation/addParticipantSuccess/"),
+            "addParticipantFailure": cb("conversation/addParticipantFailure/"),
+        },
+    })
+}
+
+/// The leg a person has in a call, from a roster participant's
+/// `endpointDetails[].callLinks.replacement` (Teams'
+/// `setParticipantCallLinks`): what a merge names in `replacementDetails`.
+pub fn leg_replacement(participant: &serde_json::Value) -> Option<serde_json::Value> {
+    participant.get("endpointDetails")?.as_array()?.iter().find_map(|e| {
+        let replaces = e.pointer("/callLinks/replacement")?.as_str()?;
+        let leg = e.get("participantId")?.as_str()?;
+        Some(serde_json::json!({ "replaces": replaces, "replacementTargetParticipantId": leg }))
+    })
+}
+
 /// POST JSON to a Teams service link; the JSON reply (Null when empty).
 async fn cc_post(
     http: &reqwest::Client,
@@ -1915,6 +2042,8 @@ struct Acceptance {
     call_leg: Option<String>,
     hold: Option<String>,
     transfer: Option<String>,
+    /// What a transfer replacing this call names (`links.replace`).
+    replace: Option<String>,
     /// Where our re-offers go (screen sharing).
     renegotiation: Option<String>,
     end: Option<String>,
@@ -1970,6 +2099,7 @@ fn read_answer(json: &str) -> Option<std::result::Result<Acceptance, String>> {
         call_leg: link("callLeg"),
         hold: link("hold"),
         transfer: link("transfer"),
+        replace: link("replace").or_else(|| link("replacement")),
         renegotiation: link("mediaRenegotiation"),
         end: link("end"),
         media_descriptions: link("updateMediaDescriptions"),
@@ -2179,6 +2309,18 @@ pub async fn place_call(
     cancel: tokio::sync::oneshot::Receiver<()>,
 ) -> Result<OutgoingCall> {
     start(thread_id, Target::Person(callee_mri, video), cancel).await
+}
+
+/// [`place_call`] with its callback tag chosen up front ([`new_call_tag`]):
+/// a second call placed while another goes on (a consult call), whose
+/// events must be told apart from the first call's from the start.
+pub async fn place_call_tagged(
+    thread_id: &str,
+    callee_mri: &str,
+    call_tag: &str,
+    cancel: tokio::sync::oneshot::Receiver<()>,
+) -> Result<OutgoingCall> {
+    start_tagged(thread_id, Target::Person(callee_mri, false), Some(call_tag.to_string()), cancel).await
 }
 
 /// A Teams meeting, from its join link
@@ -2689,7 +2831,7 @@ async fn start_tagged(
     super::incoming::debug_dump("sdp-call-offer", &offer);
     super::incoming::debug_dump("sdp-call-answer", &acceptance.sdp);
     let media = match WebRtcOffer::parse(&acceptance.sdp) {
-        Some(answer) => match WebRtcAudioSession::start_as_offerer(local, answer).await {
+        Some(answer) => match WebRtcAudioSession::start_as_offerer(local, answer.clone()).await {
             Ok(m) => {
                 m.set_local_sdp(&offer);
                 // Preheated: Teams' call is muted with its speaker off
@@ -2697,6 +2839,8 @@ async fn start_tagged(
                 if preheat {
                     m.set_held(true);
                 }
+                // We asked for E2EE and the callee's answer said yes.
+                m.set_e2ee(answer.e2ee && offer.lines().any(|l| l.trim_end() == super::webrtc_audio::E2EE_ATTRIBUTE));
                 Some(m)
             }
             Err(e) => {
@@ -2747,6 +2891,7 @@ async fn start_tagged(
         hold_link: acceptance.hold,
         resume_link: None,
         transfer_link: acceptance.transfer,
+        replace_link: acceptance.replace,
         renegotiation_link: acceptance
             .renegotiation
             .filter(|l| super::incoming::is_service_link(l)),
@@ -2840,6 +2985,44 @@ async fn start_tagged(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn merge_requests_are_teams() {
+        let from = serde_json::json!({ "id": "8:orgid:a", "participantId": "p-a" });
+        let people = [
+            MergePerson {
+                id: "8:orgid:b".into(),
+                participant_id: "new-b".into(),
+                display_name: Some("B".into()),
+                replacement: Some(serde_json::json!({ "replaces": "https://cc/leg-b/replacement", "replacementTargetParticipantId": "leg-b" })),
+            },
+            MergePerson { id: "8:orgid:c".into(), participant_id: "new-c".into(), display_name: None, replacement: None },
+        ];
+        let b = merge_body(&from, "19:x@thread.v2", &people, |p| format!("cb/{p}"));
+        assert_eq!(b["groupChat"], serde_json::json!({ "threadId": "19:x@thread.v2", "messageId": null }));
+        assert!(b["groupContext"].is_null());
+        assert_eq!(b["participants"]["from"], from);
+        assert_eq!(b["participants"]["to"][0]["replacementDetails"]["replaces"], "https://cc/leg-b/replacement");
+        assert_eq!(b["participants"]["to"][0]["participantId"], "new-b");
+        assert!(b["participants"]["to"][1].get("replacementDetails").is_none());
+        assert_eq!(b["links"]["addParticipantSuccess"], "cb/conversation/addParticipantSuccess/");
+        // The leg comes from the roster's endpoint call links.
+        let p = serde_json::json!({ "id": "8:orgid:b", "endpointDetails": [{ "participantId": "leg-b", "callLinks": { "replacement": "https://cc/leg-b/replacement" } }] });
+        assert_eq!(leg_replacement(&p), people[0].replacement);
+        assert_eq!(leg_replacement(&serde_json::json!({ "endpointDetails": [{ "participantId": "x" }] })), None);
+    }
+
+    #[test]
+    fn one_to_one_chats_sort_the_two_ids() {
+        let a = "9edcc62f-2f4b-4f55-bbf9-02c7cbaadbb5";
+        let b = "4287e791-1b98-4963-8b94-281c50472683";
+        let want = format!("19:{b}_{a}@unq.gbl.spaces");
+        assert_eq!(one_to_one_chat_id(a, b).as_deref(), Some(want.as_str()));
+        assert_eq!(one_to_one_chat_id(b, a).as_deref(), Some(want.as_str()));
+        assert_eq!(callee_mri_for_chat(&want, a), Some(format!("8:orgid:{b}")));
+        assert_eq!(one_to_one_chat_id(a, a), None);
+        assert_eq!(one_to_one_chat_id(a, "nope"), None);
+    }
 
     /// A breakout room joined before it opened ends the conversation with
     /// 403 / 5745 (Teams' NotAllowedToJoinBreakoutRoom); other ends keep
