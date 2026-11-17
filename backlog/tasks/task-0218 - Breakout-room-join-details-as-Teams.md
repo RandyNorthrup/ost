@@ -1,10 +1,10 @@
 ---
 id: TASK-0218
 title: Breakout room join details as Teams
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-11-17T06:54:00Z'
-updated_date: '2026-11-17T20:28:00Z'
+updated_date: '2026-11-17T20:43:00Z'
 labels:
   - desktop
 dependencies: []
@@ -18,8 +18,8 @@ What TASK-0216 left (docs/spec/call-and-meeting-window.md §1.8l): OST doesn't s
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Room calls carry meetingData and OST keeps the main conversation while in a room, as Teams
-- [ ] #2 A failed room join shows Teams' retry screen in the room's window
+- [x] #1 Room calls carry meetingData and OST keeps the main conversation while in a room, as Teams
+- [x] #2 A failed room join shows Teams' retry screen in the room's window
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -31,3 +31,23 @@ What TASK-0216 left (docs/spec/call-and-meeting-window.md §1.8l): OST doesn't s
 - Found while testing: Join now while the pre-join's preheat was still being placed dropped the preheat request mid-flight, leaving a preheated endpoint in the meeting (preheatedParticipants 1); the watcher now lets it finish (withdrawn, a late answer left). With that ghost gone the organizer stays alone in the main meeting fine.
 - Live on linuxlt (OST Test 2 organizing in OST, ost-test1 participant in OST, meeting3): the participant's Room 1 call and the organizer's room calls carried meetingData; the participant kept the main conversation and returned through it (call posted to it with the main meeting's meetingData, joined in ~1.4 s, room left); the organizer's Join on unopened Room 2 showed the retry screen with the main meeting held ("On hold", Resume), then Dismiss + Resume brought it back; rooms removed, both left. Screens: bro4-rooms-unopened-join.png, bro4-rooms-unopened-held.png, brp4-watch-*.png on linuxlt /tmp/j219.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Room calls and a refused room work as in Teams.
+
+Changes:
+- Room calls carry meetingData from the update after the conversation join.
+- In a room, the participant leaves the main meeting and rejoins its conversation without a call. Going back posts the call straight into it.
+- A refused room (403/5745) shows Teams' screen in the room's window (title and description, Dismiss); the main meeting stays held with Resume.
+- Harness --breakout-watch-join; the organizer test removes stale rooms. Spec §1.8l.
+
+Tests:
+- Live, with OST Test 2 organizing and ost-test1 as participant, both in OST:
+  - every room call had meetingData;
+  - going back took about 1.4 s;
+  - the organizer joining an unopened room got the retry screen, then Dismiss and Resume.
+
+Follow-up: TASK-0222 (late joiners, a refused participant).
+<!-- SECTION:FINAL_SUMMARY:END -->

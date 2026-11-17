@@ -1,10 +1,10 @@
 ---
 id: TASK-0219
 title: Pre-join preheat for every case as Teams
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-11-17T08:21:00Z'
-updated_date: '2026-11-17T19:50:00Z'
+updated_date: '2026-11-17T20:43:00Z'
 labels:
   - desktop
 dependencies: []
@@ -18,7 +18,7 @@ What TASK-0215 left (docs/spec/call-and-meeting-window.md §1.8k): a channel Mee
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Every pre-join preheats as Teams does, with Teams' request fields, checked against Teams desktop on winpc
+- [x] #1 Every pre-join preheats as Teams does, with Teams' request fields, checked against Teams desktop on winpc
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -29,3 +29,28 @@ What TASK-0215 left (docs/spec/call-and-meeting-window.md §1.8k): a channel Mee
 - OST: the preheat request carries Teams' fields (callModalities Audio + ScreenViewer; mediaDescriptions recvonly for the sendrecv video lines only - describing every m-line was refused, 410 InvalidInitialOfferMediaDescriptions / InvalidFinalAnswerMediaDescriptions; participantPropertyBag.aiVoiceConsent; the null contexts); every meeting call carries the property bag. The Trouter acceptance reply's links keep the call's tag; meeting joins no longer POST the acknowledgement (Teams doesn't). A pre-join opened in a call preheats; closing it leaves the preheat.
 - Live on linuxlt: --preheat-test --preheat-join (preheated, Join now, stayed 57 s with no acknowledgement POST, left, event deleted); --preheat-test --preheat-cancel --preheat-in-call=<meeting> (preheated while in the first meeting, Phone audio offered in about 2 s, Cancel left the preheat, then the first meeting was left). Lib tests: 699 passed.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Pre-join preheats in every case Teams does, with Teams' request fields.
+
+Teams desktop measured on winpc:
+- preheat on;
+- preheat while in a call on;
+- dial plans on;
+- a channel Meet now is not preheated (OST matches).
+
+Changes:
+- The preheat request sends Audio + ScreenViewer, marks only the camera and sharing video lines receive-only, and adds the AI voice-consent property bag.
+- The acceptance is acknowledged only in the Trouter reply: no POST, and the reply links keep the call tag.
+- Pre-join opened while in another call now preheats, and closing it leaves the preheat.
+- Fix: Join now during a preheat no longer leaves a hidden preheated endpoint behind.
+- Harness --preheat-in-call; spec §1.8k.
+
+Tests:
+- 702 lib tests.
+- Live: preheated join stayed 57 s; preheat while in a meeting offered Phone audio in about 2 s and Cancel left it.
+
+Follow-up: TASK-0222 (ongoing-meeting preheat flag).
+<!-- SECTION:FINAL_SUMMARY:END -->
