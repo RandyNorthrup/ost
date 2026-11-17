@@ -4,7 +4,7 @@ title: End-to-end encrypted 1:1 calls as Teams, with its Privacy setting
 status: In Progress
 assignee: []
 created_date: '2026-11-15T04:40:00Z'
-updated_date: '2026-11-17T18:15:00Z'
+updated_date: '2026-11-17T19:42:00Z'
 labels:
   - calling
   - settings
@@ -35,4 +35,6 @@ Teams' Settings > Privacy has 'End-to-end encrypted calls' (GraphQL isE2EECallEn
 - Tenant: UserControlled encryption policy granted to the test accounts only.
 
 - 2026-11-17: two more encrypted Teams to OST calls captured, with OST's key dump. No hash of keys, certificates or fingerprints matches Teams' five-group number. Next: static analysis of Teams' native calling library to find the derivation.
+
+- 2026-11-17 (e2ee.rs): Teams' derivation recovered from RtmMediaManager.dll: SHA-512 of the two raw DTLS fingerprints sorted by byte, then PBKDF2-HMAC-SHA512 with an empty salt, 16384 iterations, 64 bytes. OST computes it on every E2EE call. Still open: Teams' byte-to-five-group digit formatting. Research tooling is in docs/dev/e2ee-research.
 <!-- SECTION:NOTES:END -->
