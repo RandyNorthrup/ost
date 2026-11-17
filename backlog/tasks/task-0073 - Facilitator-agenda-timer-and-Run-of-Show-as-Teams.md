@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-09T09:29:00Z'
-updated_date: '2026-11-17T04:07:00Z'
+updated_date: '2026-11-17T06:06:00Z'
 labels:
   - desktop
   - meetings
@@ -31,4 +31,6 @@ Teams' meeting timer also has an agenda timer (Copilot Facilitator drafts topics
 Built so far (dde4544): More > Facilitator > Turn on/off Facilitator and Enable/Disable voice with Teams' requests (ost-test1's Copilot licence is enough); checked live on and off.
 
 Not built: the agenda timer never appeared in Teams in this tenant (its setting to start an agenda yourself is off), so there is nothing to compare against; Run of Show needs a town hall or webinar with Facilitator (TASK-0184); Facilitator ▾ with the new controls.
+
+- Run of Show (#2): Teams only enables it for internal test builds; the town hall form has no Run of Show setting in this tenant (TASK-0184, 2026-11-16).
 <!-- SECTION:NOTES:END -->
