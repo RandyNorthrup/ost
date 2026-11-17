@@ -276,7 +276,10 @@ Window {
                 }
                 // Teams' divider (18 x 32) and its effects button (14/600,
                 // brand while the picker is open). Teams calls it "Effects
-                // and avatars"; OST has no avatars (TASK-0140).
+                // and avatars" only where it can render Microsoft's avatars
+                // (its desktop app on WebView2); elsewhere, as here, it is
+                // "Video effects" (docs/spec/call-and-meeting-window.md,
+                // Avatars).
                 Item {
                     width: 18; height: 32
                     anchors.verticalCenter: parent.verticalCenter

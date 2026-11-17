@@ -712,6 +712,7 @@ pub async fn create_echo_call(
         meeting_info: None,
         scenario: Some("UserInitiatedTestCall"),
         two_step: false,
+        preheat: false,
     };
     create_call_with(http, epconv_url, params, sdp_offer, &opts).await
 }
@@ -844,7 +845,10 @@ pub async fn create_1to1_call_to(
 /// meetings, from the join link), so the conversation service puts us in
 /// the meeting's conversation. The conversation is joined first, then the
 /// call, as Teams joins every meeting (from its pre-join screen, and when
-/// it moves into a breakout room or back).
+/// it moves into a breakout room or back). `preheat`: join it as Teams'
+/// pre-join does while its window is open (`endpointProperties.
+/// preheatProperties: 1`): the call and its media are set up, but nobody
+/// sees us until we make ourselves visible (`OutgoingCall::join_preheated`).
 pub async fn join_meeting(
     http: &reqwest::Client,
     epconv_url: &str,
@@ -852,6 +856,7 @@ pub async fn join_meeting(
     sdp_offer: &str,
     meeting_message_id: &str,
     organizer: Option<(&str, &str)>,
+    preheat: bool,
 ) -> Result<(ConversationCreated, ConversationJoined)> {
     let opts = CreateOptions {
         group_chat: true,
@@ -866,6 +871,7 @@ pub async fn join_meeting(
         meeting_info: Some(meeting_info(organizer, (params.caller_oid, params.tenant_id))),
         scenario: None,
         two_step: true,
+        preheat,
     };
     create_call_with(http, epconv_url, params, sdp_offer, &opts).await
 }
@@ -921,6 +927,7 @@ pub async fn create_group_call(
         meeting_info: None,
         scenario: None,
         two_step: false,
+        preheat: false,
     };
     create_call_with(http, epconv_url, params, sdp_offer, &opts).await
 }
@@ -948,6 +955,7 @@ pub async fn create_channel_meeting(
         meeting_info: None,
         scenario: None,
         two_step: false,
+        preheat: false,
     };
     create_call_with(http, epconv_url, params, sdp_offer, &opts).await
 }
@@ -975,6 +983,23 @@ struct CreateOptions<'a> {
     /// way the meeting's details carry its dial-in (`pstnDetails`) and
     /// PSTN capability; created and joined in one go they come without.
     two_step: bool,
+    /// Teams' pre-join preheat (`endpointState.endpointProperties.
+    /// preheatProperties: 1`, captured 2026-11-16): the call is joined
+    /// hidden (no roster entry for anyone, our own included) until an
+    /// updateEndpointState sets it to 0.
+    preheat: bool,
+}
+
+/// Our endpoint's properties in a call request: preheated (Teams'
+/// pre-join) or not.
+fn endpoint_properties(preheat: bool) -> serde_json::Value {
+    let mut p = serde_json::json!({
+        "additionalEndpointProperties": { "infoShownInReportMode": "FullInformation" }
+    });
+    if preheat {
+        p["preheatProperties"] = 1.into();
+    }
+    p
 }
 
 /// Teams' conversation-only join (the first of its two meeting requests):
@@ -1087,6 +1112,7 @@ async fn create_call(
         meeting_info: None,
         scenario: None,
         two_step: false,
+        preheat: false,
     };
     create_call_with(http, epconv_url, params, sdp_offer, &opts).await
 }
@@ -1160,11 +1186,7 @@ async fn create_call_with(
         "meetingInfo": opts.meeting_info,
         "endpointState": {
             "endpointStateSequenceNumber": 0,
-            "endpointProperties": {
-                "additionalEndpointProperties": {
-                    "infoShownInReportMode": "FullInformation"
-                }
-            }
+            "endpointProperties": endpoint_properties(opts.preheat)
         },
         "callInvitation": {
             "callModalities": ["Audio", "Video", "ScreenViewer"],
@@ -1642,5 +1664,20 @@ mod meeting_info_tests {
             meeting_info(None, ("my-oid", "my-tenant")),
             serde_json::json!({ "tenantId": "my-tenant", "organizerId": "my-oid" })
         );
+    }
+}
+
+#[cfg(test)]
+mod preheat_tests {
+    use super::endpoint_properties;
+
+    #[test]
+    fn a_preheated_join_says_so_in_its_endpoint_properties() {
+        // Teams' pre-join call request (Teams on the web, 2026-11-16).
+        assert_eq!(
+            endpoint_properties(true),
+            serde_json::json!({ "preheatProperties": 1, "additionalEndpointProperties": { "infoShownInReportMode": "FullInformation" } })
+        );
+        assert!(endpoint_properties(false).get("preheatProperties").is_none());
     }
 }

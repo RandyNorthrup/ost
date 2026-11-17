@@ -192,6 +192,50 @@ pub fn phone_audio(json: &Value, anonymous: bool) -> Option<PhoneAudio> {
     })
 }
 
+/// How long Teams' pre-join waits for the meeting's PSTN details before
+/// it decides from the capability alone (ECS `pstnCapabilitiesTimeoutInMs`,
+/// 15000).
+pub const PSTN_CAPABILITIES_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+
+/// Teams' pre-join Phone audio (its `pstnStateProvider`, read from Teams
+/// on the web 2026-11-16) from the meeting's latest details: the preheated
+/// call's join response or a conversation update. `None` while the
+/// details can't tell yet: Teams decides only once the meeting's
+/// capability is there (with a dial-out type other than "Disabled", or
+/// PSTN conferencing not refused) together with its invitation; then
+/// Phone audio is offered exactly when [`phone_audio`] says it is
+/// available. Held in a lobby the details never get that far (no
+/// invitation, no dial-in): see [`prejoin_fallback`].
+pub fn prejoin_pstn(json: &Value, anonymous: bool) -> Option<bool> {
+    let d = meeting_details(json)?;
+    let cap = d.get("meetingCapability").filter(|c| c.is_object())?;
+    let dial_out = cap.get("pstnConferencingDialOutType").and_then(Value::as_str).unwrap_or("");
+    let dial_out_allowed = !dial_out.is_empty() && !dial_out.eq_ignore_ascii_case("Disabled");
+    let refused = cap.get("allowPstnConferencing") == Some(&Value::Bool(false));
+    let invitation = d.get("invitation").is_some_and(|i| !i.is_null());
+    if !(dial_out_allowed || !refused) || !invitation {
+        return None;
+    }
+    Some(phone_audio(json, anonymous).is_some_and(|p| p.available))
+}
+
+/// Teams' pre-join Phone audio when the details didn't settle it within
+/// [`PSTN_CAPABILITIES_TIMEOUT`]: the meeting allows PSTN conferencing
+/// (Teams' `getPstnDialCapabilities().isDialInEnabled`), from its latest
+/// details (`None`: none came).
+pub fn prejoin_fallback(json: Option<&Value>) -> bool {
+    json.and_then(meeting_details)
+        .and_then(|d| d.pointer("/meetingCapability/allowPstnConferencing"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
+
+/// Whether a response or conversation update carries the meeting's
+/// details (the pre-join keeps the latest).
+pub fn has_meeting_details(json: &Value) -> bool {
+    meeting_details(json).is_some()
+}
+
 /// One of the dial plan's normalization rules.
 #[derive(Debug, Clone)]
 struct Rule {
@@ -447,6 +491,37 @@ mod tests {
         );
         // The conversation-only join (before the call) has no details.
         assert_eq!(dial_in(&json!({"meetingDetails": {"pstnDetails": null}})), None);
+    }
+
+    /// What Teams' pre-join saw (Teams on the web, 2026-11-16): the
+    /// conversation-only join (no invitation yet), the preheated call's
+    /// details (an OST-made meeting and a Meet now alike), and a lobby
+    /// (capability without a dial-out type, no invitation, no dial-in).
+    #[test]
+    fn prejoin_decides_phone_audio_as_teams() {
+        let mut call = join_response();
+        call["meetingDetails"]["invitation"] = json!({"text": "Microsoft Teams meeting"});
+        assert_eq!(prejoin_pstn(&call, false), Some(true));
+        // The conversation-only join: refused, and no invitation.
+        let conv = json!({"meetingDetails": {"pstnDetails": null, "meetingCapability": {"allowPstnConferencing": false, "pstnConferencingDialOutType": "InternationalAndDomestic"}}});
+        assert_eq!(prejoin_pstn(&conv, false), None);
+        assert!(!prejoin_fallback(Some(&conv)));
+        // Held in a lobby: undecided, then the fallback offers it.
+        let lobby = json!({"body": {"meetingDetails": {"pstnDetails": null, "invitation": null, "meetingCapability": {"allowPstnConferencing": true, "pstnConferencingDialOutType": null}}}});
+        assert_eq!(prejoin_pstn(&lobby, false), None);
+        assert!(prejoin_fallback(Some(&lobby)));
+        assert!(!prejoin_fallback(None));
+        // Decided but without dial-in details: not offered.
+        let mut no_details = call.clone();
+        no_details["meetingDetails"]["pstnDetails"] = Value::Null;
+        assert_eq!(prejoin_pstn(&no_details, false), Some(false));
+        // An organizer without Audio Conferencing: refused, dial-out off.
+        let mut refused = call.clone();
+        refused["meetingDetails"]["meetingCapability"]["allowPstnConferencing"] = false.into();
+        refused["meetingDetails"]["meetingCapability"]["pstnConferencingDialOutType"] = "Disabled".into();
+        assert_eq!(prejoin_pstn(&refused, false), None);
+        assert!(!prejoin_fallback(Some(&refused)));
+        assert!(has_meeting_details(&lobby) && !has_meeting_details(&json!({"body": {}})));
     }
 
     #[test]

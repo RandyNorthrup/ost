@@ -1196,10 +1196,20 @@ pub mod qobject {
         /// "Disconnect": take your phone out of the meeting.
         #[qinvokable]
         fn disconnect_phone_audio(self: Pin<&mut Backend>);
-        /// The pre-join window's Phone audio: whether the meeting a link
-        /// names offers it (prejoin_phone_json).
+        /// The pre-join window opened for a meeting: Teams joins its call
+        /// hidden while the window is open (its preheat), which tells
+        /// whether the meeting offers Phone audio (prejoin_phone_json).
         #[qinvokable]
         fn check_prejoin_phone(self: Pin<&mut Backend>, join_url: &QString);
+        /// The pre-join window's Join now: the preheated call is joined
+        /// for real (with the mic as chosen; `with_audio` false: Don't use
+        /// audio or Phone audio), else the meeting is joined as before.
+        #[qinvokable]
+        fn join_meeting_from_prejoin(self: Pin<&mut Backend>, join_url: &QString, title: &QString, mic_on: bool, with_audio: bool);
+        /// The pre-join window went away without joining (Cancel, Escape,
+        /// closed): leave its preheated call, as Teams does.
+        #[qinvokable]
+        fn cancel_prejoin(self: Pin<&mut Backend>);
         /// Teams' "Turn off other videos": stop (or resume) asking for
         /// others' cameras.
         #[qinvokable]
@@ -2882,7 +2892,32 @@ struct CallSlot {
         teams_cli::calling::screencast::ScreenCapture,
         std::sync::mpsc::Receiver<teams_cli::calling::camera::YuvFrame>,
     )>,
+    /// The meeting the pre-join window shows, joined hidden (Teams'
+    /// preheat) until Join now or Cancel.
+    preheat: Option<Preheat>,
 }
+
+/// Teams' preheated pre-join call (Teams on the web, 2026-11-16): joined
+/// hidden as the pre-join window opens, so the window knows whether the
+/// meeting offers Phone audio; Join now makes it visible, Cancel leaves
+/// it, and after a minute (ECS `preheatedCallTimeoutInMs`) Teams leaves
+/// it by itself (Join now then joins afresh).
+struct Preheat {
+    /// The meeting's join link.
+    url: String,
+    /// The call's callback tag: its events are the pre-join's, not a
+    /// call's.
+    tag: String,
+    /// The preheated call, once the meeting answered.
+    call: Option<OutgoingCall>,
+    /// Withdraws the call while it is still being placed.
+    cancel: Option<tokio::sync::oneshot::Sender<()>>,
+    /// Ends its watcher (joined or cancelled).
+    stop: std::sync::Arc<tokio::sync::Notify>,
+}
+
+/// How long Teams keeps a preheated call (ECS `preheatedCallTimeoutInMs`).
+const PREHEAT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
 
 /// The connected call, answered or placed: what changing our media
 /// (camera, screen) needs from it.
@@ -3428,6 +3463,170 @@ fn event_json(e: &teams_cli::calling::live_event::LiveEvent, busy: &str, failed:
 }
 
 /// Leave the meeting we moved out of (its media is already off).
+/// Leave a preheated call, or withdraw it while it's being placed.
+fn dispose_preheat(mut p: Preheat) {
+    if let Some(cancel) = p.cancel.take() {
+        let _ = cancel.send(());
+    }
+    let call = p.call.take();
+    runtime().spawn(async move {
+        // Its conversation ending as we leave is its own, not a call's.
+        call_slot().lock().await.left_tags.push(p.tag.clone());
+        if let Some(call) = call {
+            match call.leave().await {
+                Ok(()) => tracing::info!("left the preheated call"),
+                Err(e) => tracing::warn!("leaving the preheated call: {}", short_error(&e)),
+            }
+        }
+    });
+}
+
+/// The pre-join window opened for a meeting: join it hidden as Teams'
+/// preheat does, and tell the window whether it offers Phone audio as
+/// Teams' pre-join decides it (teams_cli::calling::phone_audio::
+/// prejoin_pstn): from the meeting's latest details once they can tell,
+/// else 15 s after the window opened from whether it allows PSTN
+/// conferencing. The call stays until Join now or Cancel, or a minute
+/// (Teams then leaves it).
+async fn preheat_for_prejoin(qt: cxx_qt::CxxQtThread<qobject::Backend>, url: String, link: outgoing::MeetingLink) {
+    use teams_cli::calling::phone_audio::{PSTN_CAPABILITIES_TIMEOUT, has_meeting_details, prejoin_fallback, prejoin_pstn};
+    let opened = tokio::time::Instant::now();
+    let tag = outgoing::new_call_tag();
+    let stop = std::sync::Arc::new(tokio::sync::Notify::new());
+    let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
+    {
+        let mut slot = call_slot().lock().await;
+        if let Some(old) = slot.preheat.take() {
+            old.stop.notify_one();
+            dispose_preheat(old);
+        }
+        slot.preheat = Some(Preheat { url, tag: tag.clone(), call: None, cancel: Some(cancel_tx), stop: stop.clone() });
+    }
+    let ours = |slot: &CallSlot| slot.preheat.as_ref().is_some_and(|p| p.tag == tag);
+    let publish = |available: bool, how: &'static str| {
+        let tag = tag.clone();
+        let qt = qt.clone();
+        async move {
+            if !call_slot().lock().await.preheat.as_ref().is_some_and(|p| p.tag == tag) {
+                return;
+            }
+            tracing::info!(available, how, "pre-join phone audio");
+            let json = serde_json::json!({ "checked": true, "available": available }).to_string();
+            let _ = qt.queue(move |mut this| this.as_mut().set_prejoin_phone_json(QString::from(json.as_str())));
+        }
+    };
+    let mut events = teams_cli::event_hub::subscribe();
+    tracing::info!("pre-join: preheating the meeting's call");
+    let start = outgoing::preheat_meeting(&link, &tag, cancel_rx);
+    tokio::pin!(start);
+    let mut placed = false;
+    let mut decided = false;
+    let mut latest: Option<serde_json::Value> = None;
+    let mut expires: Option<tokio::time::Instant> = None;
+    let fallback_at = opened + PSTN_CAPABILITIES_TIMEOUT;
+    loop {
+        tokio::select! {
+            r = &mut start, if !placed => {
+                placed = true;
+                let mut slot = call_slot().lock().await;
+                match r {
+                    Ok(call) if ours(&*slot) => {
+                        tracing::info!(in_lobby = call.in_lobby(), "pre-join: the call is preheated");
+                        if let Some(d) = call.joined_details() {
+                            latest = Some(d.clone());
+                        }
+                        if let Some(p) = slot.preheat.as_mut() {
+                            p.cancel = None;
+                            p.call = Some(call);
+                        }
+                        expires = Some(tokio::time::Instant::now() + PREHEAT_TIMEOUT);
+                    }
+                    Ok(call) => {
+                        // Cancelled while it was being placed.
+                        drop(slot);
+                        if let Err(e) = call.leave().await {
+                            tracing::warn!("leaving the withdrawn preheated call: {}", short_error(&e));
+                        }
+                        return;
+                    }
+                    Err(e) => {
+                        tracing::info!("pre-join: preheat failed: {}", short_error(&e));
+                        if let Some(p) = slot.preheat.as_mut().filter(|p| p.tag == tag) {
+                            p.cancel = None;
+                        }
+                    }
+                }
+                drop(slot);
+                if !decided && let Some(available) = latest.as_ref().and_then(|d| prejoin_pstn(d, false)) {
+                    decided = true;
+                    publish(available, "details").await;
+                }
+                if decided && expires.is_none() {
+                    return;
+                }
+            }
+            ev = events.recv() => {
+                let ev = match ev {
+                    Ok(ev) => ev,
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(_) => return,
+                };
+                if ev.kind != teams_cli::event_hub::EventKind::Call {
+                    continue;
+                }
+                let Ok(v) = serde_json::from_str::<serde_json::Value>(&ev.json) else { continue };
+                if v["callTag"].as_str() != Some(tag.as_str()) {
+                    continue;
+                }
+                if teams_cli::calling::incoming::is_call_end_event(&ev.json) && placed {
+                    // The meeting ended it (or we left): nothing to keep.
+                    tracing::info!("pre-join: the preheated call ended");
+                    let mut slot = call_slot().lock().await;
+                    if ours(&*slot) {
+                        slot.preheat = None;
+                        slot.left_tags.push(tag.clone());
+                    }
+                    expires = None;
+                    if decided {
+                        return;
+                    }
+                    continue;
+                }
+                if has_meeting_details(&v) {
+                    latest = Some(v);
+                    if !decided && let Some(available) = latest.as_ref().and_then(|d| prejoin_pstn(d, false)) {
+                        decided = true;
+                        publish(available, "details").await;
+                    }
+                }
+            }
+            _ = tokio::time::sleep_until(fallback_at), if !decided => {
+                decided = true;
+                publish(prejoin_fallback(latest.as_ref()), "fallback").await;
+                if placed && expires.is_none() {
+                    return;
+                }
+            }
+            _ = tokio::time::sleep_until(expires.unwrap_or(opened)), if expires.is_some() => {
+                // Teams leaves its preheated call after a minute.
+                let p = {
+                    let mut slot = call_slot().lock().await;
+                    if ours(&*slot) { slot.preheat.take() } else { None }
+                };
+                if let Some(p) = p {
+                    tracing::info!("pre-join: the preheated call timed out");
+                    dispose_preheat(p);
+                }
+                expires = None;
+                if decided {
+                    return;
+                }
+            }
+            _ = stop.notified() => return,
+        }
+    }
+}
+
 async fn leave_moved_from(call: OutgoingCall) {
     match call.hang_up().await {
         Ok(()) => tracing::info!("left the meeting we moved out of"),
@@ -4851,6 +5050,16 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         && call_slot().lock().await.left_tags.contains(&tag)
     {
         tracing::debug!(event = %json.chars().take(300).collect::<String>(), "event of a call we moved out of");
+        return;
+    }
+    // The pre-join's preheated call: its watcher (preheat_for_prejoin)
+    // reads its events; it isn't a call of ours until Join now.
+    if json.contains("\"callTag\"")
+        && let Some(tag) = serde_json::from_str::<serde_json::Value>(json)
+            .ok()
+            .and_then(|v| v["callTag"].as_str().map(str::to_string))
+        && call_slot().lock().await.preheat.as_ref().is_some_and(|p| p.tag == tag)
+    {
         return;
     }
     // The held main meeting's events: its rooms (managed from the room
@@ -9087,8 +9296,24 @@ impl qobject::Backend {
     pub fn check_prejoin_phone(mut self: Pin<&mut Self>, join_url: &QString) {
         let url = join_url.to_string();
         self.as_mut().set_prejoin_phone_json(QString::from(r#"{"checked":false,"available":false}"#));
-        // The meeting's invitation in your calendar (the event with this
-        // join link) says whether it has dial-in.
+        // A meeting started now (Meet now) has nothing to preheat yet.
+        if url.is_empty() {
+            self.as_mut().set_prejoin_phone_json(QString::from(r#"{"checked":true,"available":false}"#));
+            return;
+        }
+        // Teams joins the meeting hidden while its pre-join window is open
+        // (its preheat): the meeting's details then say whether it offers
+        // Phone audio. Not while OST is in a call (it can't join another).
+        if self.rust().call_state.is_empty()
+            && let Some(link) = outgoing::MeetingLink::parse(&url)
+        {
+            let qt = self.qt_thread();
+            runtime().spawn(preheat_for_prejoin(qt, url, link));
+            runtime().spawn(load_dial_plan());
+            return;
+        }
+        // In a call: the meeting's invitation in your calendar (the event
+        // with this join link) says whether it has dial-in.
         let event_id = serde_json::from_str::<serde_json::Value>(&self.rust().calendar_json.to_string())
             .ok()
             .and_then(|v| {
@@ -9123,6 +9348,92 @@ impl qobject::Backend {
             let _ = qt.queue(move |mut this| this.as_mut().set_prejoin_phone_json(QString::from(json.as_str())));
         });
         runtime().spawn(load_dial_plan());
+    }
+
+    pub fn join_meeting_from_prejoin(mut self: Pin<&mut Self>, join_url: &QString, title: &QString, mic_on: bool, with_audio: bool) {
+        if !self.rust().call_state.is_empty() {
+            return;
+        }
+        let url = join_url.to_string();
+        // The preheated call, if it is still up (Teams leaves it after a
+        // minute) and for this meeting.
+        let preheated = runtime().block_on(async {
+            let mut slot = call_slot().lock().await;
+            match slot.preheat.take() {
+                Some(mut p) if p.url == url && p.call.is_some() => {
+                    p.stop.notify_one();
+                    p.call.take()
+                }
+                Some(p) => {
+                    // Not up yet, or another meeting's: withdraw it and
+                    // join afresh.
+                    p.stop.notify_one();
+                    dispose_preheat(p);
+                    None
+                }
+                None => None,
+            }
+        });
+        let Some(mut call) = preheated else {
+            self.join_meeting(join_url, title);
+            return;
+        };
+        let Some(link) = outgoing::MeetingLink::parse(&url) else {
+            return;
+        };
+        self.as_mut().set_call_breakout_json(QString::default());
+        if self.rust().call_held_meeting_json.is_empty() {
+            self.as_mut().set_call_breakout_all_json(QString::default());
+        }
+        self.as_mut().set_call_breakout_room_json(QString::default());
+        self.as_mut().set_call_breakout_rooms_json(QString::default());
+        self.as_mut().reset_meeting_view(&link, join_url, title);
+        self.as_mut().set_call_state(QString::from("connecting"));
+        tracing::info!(mic_on, with_audio, "join meeting (preheated)");
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let muted = !mic_on || !with_audio;
+            match call.join_preheated(muted, with_audio).await {
+                Ok(()) => {
+                    let view = JoinedView::of(&call);
+                    let in_lobby = call.in_lobby();
+                    tracing::info!(has_audio = view.has_audio, in_lobby, "meeting joined (preheated)");
+                    seed_roster(&qt, &call).await;
+                    let id = call.call_id().to_string();
+                    let mut slot = call_slot().lock().await;
+                    slot.left_calls.retain(|left| *left != id);
+                    slot.outgoing = Some(call);
+                    drop(slot);
+                    spawn_call_stats_logger(qt.clone());
+                    let _ = qt.queue(move |mut this| {
+                        this.as_mut().set_call_muted(muted);
+                        this.as_mut().show_joined(view, in_lobby);
+                    });
+                }
+                Err(e) => {
+                    let msg = short_error(&e);
+                    tracing::info!("preheated join failed: {msg}");
+                    if let Err(e) = call.leave().await {
+                        tracing::warn!("leaving the preheated call: {}", short_error(&e));
+                    }
+                    let _ = qt.queue(move |mut this| {
+                        this.as_mut().set_status_text(QString::from(format!("Couldn't join the meeting: {msg}").as_str()));
+                        this.as_mut().end_call_ui();
+                    });
+                }
+            }
+        });
+    }
+
+    pub fn cancel_prejoin(self: Pin<&mut Self>) {
+        runtime().spawn(async {
+            let Some(p) = call_slot().lock().await.preheat.take() else {
+                return;
+            };
+            tracing::info!("pre-join closed: leaving its preheated call");
+            p.stop.notify_one();
+            dispose_preheat(p);
+        });
     }
 
     pub fn download_attendance_list(mut self: Pin<&mut Self>) {

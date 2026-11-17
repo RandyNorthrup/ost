@@ -149,6 +149,16 @@ pub struct OutgoingCall {
     /// The meeting has started (`state.isMeetingActivated`): Teams' lobby
     /// text says someone will let you in shortly, else when it starts.
     meeting_started: bool,
+    /// The conversation's leave link (leaving a meeting before joining it,
+    /// as Teams' pre-join Cancel does).
+    leave_link: Option<String>,
+    /// Joined hidden while the pre-join window is open (Teams' preheat):
+    /// nothing is sent or played, and nobody sees us, until
+    /// [`OutgoingCall::join_preheated`].
+    preheated: bool,
+    /// The join response's `meetingDetails` (with its PSTN state), for the
+    /// pre-join's Phone audio.
+    joined_details: Option<serde_json::Value>,
 }
 
 /// Someone waiting in a meeting's lobby.
@@ -222,6 +232,63 @@ impl OutgoingCall {
 
     pub fn is_muted(&self) -> bool {
         self.media.as_ref().is_some_and(|m| m.is_muted())
+    }
+
+    /// Joined hidden by the pre-join window (Teams' preheat), not yet for
+    /// real.
+    pub fn is_preheated(&self) -> bool {
+        self.preheated
+    }
+
+    /// The join response's meeting details (`{"meetingDetails": …}`), for
+    /// the pre-join's PSTN state.
+    pub fn joined_details(&self) -> Option<&serde_json::Value> {
+        self.joined_details.as_ref()
+    }
+
+    /// Join now on a preheated call, as Teams' joinPreheatedCall: our
+    /// endpoint state with `preheatProperties: 0` (and `isMuted` when
+    /// joining with the mic off) makes us visible (held in the lobby, the
+    /// lobby sees us), then our endpoint metadata; then the computer's
+    /// audio is unmuted, unless we join without it (`with_audio` false:
+    /// Don't use audio, Phone audio). Nothing is renegotiated: the media is
+    /// up already.
+    pub async fn join_preheated(&mut self, muted: bool, with_audio: bool) -> Result<()> {
+        if !self.preheated {
+            return Ok(());
+        }
+        let (link, seq) = self
+            .endpoint_state
+            .as_ref()
+            .context("The preheated call has no endpoint state link")?;
+        let n = seq.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+        cc_post(&self.http, &self.skype_token, link, &preheat_join_body(&self.me.0, muted, n), "Join (preheated)").await?;
+        self.preheated = false;
+        if let Some(link) = self.metadata_link.clone() {
+            let body = serde_json::json!({
+                "participants": { "from": self.me.0 },
+                "endpointMetadata": { "holographicCapabilities": 3 },
+            });
+            if let Err(e) = cc_send(&self.http, reqwest::Method::PUT, &self.skype_token, &link, &body, "Endpoint metadata").await {
+                tracing::warn!("endpoint metadata after the preheated join: {e:#}");
+            }
+        }
+        if let Some(m) = &self.media {
+            m.set_muted(muted);
+            m.set_held(!with_audio);
+        }
+        tracing::info!(muted, with_audio, "joined the preheated call");
+        Ok(())
+    }
+
+    /// Leave the meeting's conversation (and with it the call), as Teams'
+    /// pre-join Cancel does for its preheated call: `POST links.leave`.
+    pub async fn leave(mut self) -> Result<()> {
+        self.media = None;
+        let link = self.leave_link.clone().context("No leave link")?;
+        cc_post(&self.http, &self.skype_token, &link, &leave_body(&self.me.0), "Leave").await?;
+        tracing::info!("left the meeting's conversation");
+        Ok(())
     }
 
     /// Hold or resume the call with the call controller, then our media.
@@ -1525,7 +1592,7 @@ impl OutgoingCall {
                 .await
                 .context("Call end failed to send")?;
             if resp.status().is_success() {
-                tracing::info!(tag = %self.call_tag, "hung up the call leg");
+                tracing::info!(tag = %self.call_tag, status = %resp.status(), "hung up the call leg");
                 return Ok(());
             }
             tracing::info!("callLeg end returned {}, trying end link", resp.status());
@@ -1666,6 +1733,28 @@ fn reaction_body(
             "to": [],
             "type": "Reaction",
         }],
+    })
+}
+
+/// Teams' joinPreheatedCall endpoint state: `preheatProperties` 0 (and
+/// `state.isMuted` when joining muted).
+fn preheat_join_body(from: &serde_json::Value, muted: bool, seq: u64) -> serde_json::Value {
+    let mut state = serde_json::json!({
+        "endpointStateSequenceNumber": seq,
+        "endpointProperties": { "preheatProperties": 0 },
+    });
+    if muted {
+        state["state"] = serde_json::json!({ "isMuted": true });
+    }
+    serde_json::json!({ "from": from, "endpointState": state })
+}
+
+/// Teams' leave body (the pre-join's Cancel, and leaving a meeting).
+fn leave_body(from: &serde_json::Value) -> serde_json::Value {
+    serde_json::json!({
+        "participants": { "from": from },
+        "conversationTransactionEnd": { "reason": "noError", "code": 0, "phrase": "ConversationEndNoModalityConnected" },
+        "callTransactionEnd": { "code": 0, "subCode": 0, "phrase": "CallEndReasonLocalUserInitiated", "resultCategories": ["Success"] },
     })
 }
 
@@ -2201,6 +2290,24 @@ pub async fn join_meeting(
     start_tagged(&link.thread_id, Target::Meeting(link), Some(call_tag.to_string()), cancel).await
 }
 
+/// Join a Teams meeting the way Teams' pre-join window does while it is
+/// open (its preheat, Teams on the web 2026-11-16): the conversation, then
+/// the call with `preheatProperties: 1`. The call and its media come up,
+/// but nobody sees us (the roster leaves our endpoint out; held in a
+/// lobby, only we see ourselves there) and nothing is sent or played.
+/// The meeting's details arrive as for a real join (its dial-in, so
+/// pre-join knows about Phone audio). [`OutgoingCall::join_preheated`]
+/// then joins for real; [`OutgoingCall::leave`] cancels. `call_tag` is
+/// the tag for its callback URLs, so its events can be told apart before
+/// it resolves.
+pub async fn preheat_meeting(
+    link: &MeetingLink,
+    call_tag: &str,
+    cancel: tokio::sync::oneshot::Receiver<()>,
+) -> Result<OutgoingCall> {
+    start(&link.thread_id, Target::MeetingPreheat(link, call_tag), cancel).await
+}
+
 /// Start or join a group chat's call (`19:…@thread.v2`), as Teams does:
 /// Meet now (a huddle; members are nudged), Audio call (members are rung)
 /// or Join (the chat's ongoing call).
@@ -2269,6 +2376,9 @@ enum Target<'a> {
     /// The meeting a join link names (its message id on the thread and
     /// its organizer).
     Meeting(&'a MeetingLink),
+    /// The same meeting joined preheated (pre-join), with the callback tag
+    /// to use.
+    MeetingPreheat(&'a MeetingLink, &'a str),
     /// A new meeting in a channel (Meet now), with this title.
     ChannelMeeting(&'a str),
     /// Teams' test call with the Echo bot.
@@ -2316,7 +2426,10 @@ async fn start_tagged(
     // This call's own callback base (`…/x<tag>/callAgent/…`): its events
     // say which call they're for, so a meeting we're leaving while joining
     // the next (breakout rooms) can't end the new one.
-    let call_tag = call_tag.unwrap_or_else(new_call_tag);
+    let call_tag = match &target {
+        Target::MeetingPreheat(_, tag) => tag.to_string(),
+        _ => call_tag.unwrap_or_else(new_call_tag),
+    };
     let surl = format!("{}/x{call_tag}/", surl.trim_end_matches('/'));
 
     let mut local = LocalAudio::prepare().await?;
@@ -2344,7 +2457,7 @@ async fn start_tagged(
     // everyone in it (shares are tagged with it). A new call gets a new id.
     let joins_ongoing = matches!(
         target,
-        Target::Meeting(_) | Target::Group(signaling::GroupCallKind::Join)
+        Target::Meeting(_) | Target::MeetingPreheat(..) | Target::Group(signaling::GroupCallKind::Join)
     );
     let ongoing = if joins_ongoing {
         match crate::api::client::TeamsClient::new().await {
@@ -2406,7 +2519,11 @@ async fn start_tagged(
     } else {
         Vec::new()
     };
-    let meeting_message_id = if let Target::Meeting(link) = &target { Some(link.message_id.clone()) } else { None };
+    let meeting_message_id = match &target {
+        Target::Meeting(link) | Target::MeetingPreheat(link, _) => Some(link.message_id.clone()),
+        _ => None,
+    };
+    let preheat = matches!(target, Target::MeetingPreheat(..));
     let (created, _joined) = match target {
         Target::Person(callee, _) => {
             signaling::create_1to1_call_to(&http, &epconv_url, &params, &offer, Some(callee))
@@ -2416,9 +2533,9 @@ async fn start_tagged(
             signaling::create_group_call(&http, &epconv_url, &params, &offer, &members, kind)
                 .await?
         }
-        Target::Meeting(link) => {
+        Target::Meeting(link) | Target::MeetingPreheat(link, _) => {
             let organizer = link.organizer_id.as_deref().zip(link.tenant_id.as_deref());
-            signaling::join_meeting(&http, &epconv_url, &params, &offer, &link.message_id, organizer).await?
+            signaling::join_meeting(&http, &epconv_url, &params, &offer, &link.message_id, organizer, preheat).await?
         }
         Target::ChannelMeeting(subject) => {
             signaling::create_channel_meeting(&http, &epconv_url, &params, &offer, subject).await?
@@ -2575,6 +2692,11 @@ async fn start_tagged(
         Some(answer) => match WebRtcAudioSession::start_as_offerer(local, answer).await {
             Ok(m) => {
                 m.set_local_sdp(&offer);
+                // Preheated: Teams' call is muted with its speaker off
+                // until Join now.
+                if preheat {
+                    m.set_held(true);
+                }
                 Some(m)
             }
             Err(e) => {
@@ -2706,7 +2828,18 @@ async fn start_tagged(
                     .find_map(|p| v.pointer(p).and_then(|b| b.as_bool()))
             })
             .unwrap_or(true),
+        leave_link: leave_url.clone(),
+        preheated: preheat,
+        joined_details: serde_json::from_str::<serde_json::Value>(&created.response_body)
+            .ok()
+            .and_then(|v| ["/meetingDetails", "/conversationResponse/meetingDetails"].iter().find_map(|p| v.pointer(p).cloned()))
+            .map(|d| serde_json::json!({ "meetingDetails": d })),
     })
+}
+
+/// A new call's callback tag (`…/x<tag>/callAgent/…`).
+pub fn new_call_tag() -> String {
+    uuid::Uuid::new_v4().simple().to_string()[..12].to_string()
 }
 
 #[cfg(test)]
@@ -2788,6 +2921,21 @@ mod tests {
         assert!(!people[1].suspected);
         // Only anonymous guests are screened.
         assert!(!people[2].suspected);
+    }
+
+    /// Teams' preheated join and its Cancel (Teams on the web, 2026-11-16).
+    #[test]
+    fn preheated_join_and_leave_bodies() {
+        let me = serde_json::json!({ "id": "8:orgid:me", "displayName": "Me", "endpointId": "e", "participantId": "p", "languageId": "en-us" });
+        assert_eq!(
+            preheat_join_body(&me, false, 1),
+            serde_json::json!({ "from": me, "endpointState": { "endpointStateSequenceNumber": 1, "endpointProperties": { "preheatProperties": 0 } } })
+        );
+        assert_eq!(preheat_join_body(&me, true, 1)["endpointState"]["state"], serde_json::json!({ "isMuted": true }));
+        let leave = leave_body(&me);
+        assert_eq!(leave["participants"]["from"], me);
+        assert_eq!(leave["conversationTransactionEnd"]["phrase"], "ConversationEndNoModalityConnected");
+        assert_eq!(leave["callTransactionEnd"]["phrase"], "CallEndReasonLocalUserInitiated");
     }
 
     #[test]
