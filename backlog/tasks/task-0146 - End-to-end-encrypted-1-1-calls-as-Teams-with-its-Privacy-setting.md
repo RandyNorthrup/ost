@@ -1,10 +1,10 @@
 ---
 id: TASK-0146
 title: End-to-end encrypted 1:1 calls as Teams, with its Privacy setting
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-11-15T04:40:00Z'
-updated_date: '2026-11-17T20:12:00Z'
+updated_date: '2026-11-17T22:25:00Z'
 labels:
   - calling
   - settings
@@ -22,7 +22,7 @@ Teams' Settings > Privacy has 'End-to-end encrypted calls' (GraphQL isE2EECallEn
 <!-- AC:BEGIN -->
 - [x] #1 Privacy shows 'End-to-end encrypted calls' with Teams' text and Learn more link (https://go.microsoft.com/fwlink/?linkid=2174740), disabled when the tenant admin doesn't allow it
 - [x] #2 The setting is read and saved where Teams keeps it, and Teams on winpc shows the same value
-- [ ] #3 A 1:1 call between OST and Teams with both settings on is end-to-end encrypted, shown as Teams shows it in the call
+- [x] #3 A 1:1 call between OST and Teams with both settings on is end-to-end encrypted, shown as Teams shows it in the call
 - [x] #4 Recording and transcription are unavailable in such a call, as in Teams
 <!-- AC:END -->
 
@@ -41,3 +41,25 @@ Teams' Settings > Privacy has 'End-to-end encrypted calls' (GraphQL isE2EECallEn
 - 2026-11-17 (b9fa5f9): formatting found in the Service Worker cache chunk of Teams desktop. Take the last 16 bytes of the PBKDF2 output, hex-encode, split into 8-hex chunks, parseInt % 100000 padded to 5 digits, then regroup as 5x4. The unit test reproduces both live Teams calls exactly. The encryption card shows the numbers.
 - Left for AC3: a live look at OST's card next to Teams' popup in an encrypted call (needs winpc).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+End-to-end encrypted 1:1 calls work with Teams in both directions, showing the same verification numbers as Teams.
+
+Changes:
+- Privacy > End-to-end encrypted calls, as Teams: greyed unless the tenant policy lets users choose. Stored at {mt}/beta/usersettings/useEndToEndEncryption, synced both ways.
+- With the setting on, OST offers and echoes a=x-e2ee as Teams does. The media is already end-to-end through the DTLS handshake.
+- Verification numbers, recovered from Teams' native RtmMediaManager.dll and its Service Worker cached UI chunk:
+  - SHA-512 of the two sorted raw DTLS fingerprints;
+  - PBKDF2-HMAC-SHA512 (empty salt, 16384 iterations, 64 bytes), keeping the last 16 bytes;
+  - five-digit groups from 8-hex chunks, regrouped as 5x4.
+  Code in src/calling/e2ee.rs.
+- The encryption card follows Teams' popup (280x216). An encrypted call hides recording, transcription, transfer, consult, park, Copilot and apps, as Teams. A cxx-qt naming bug (callE2Ee) had hidden E2EE entirely; fixed.
+
+Tests:
+- e2ee unit tests reproduce two live Teams calls exactly; 702 lib tests.
+- Live: Teams calling OST and OST calling Teams each showed matching numbers in both apps.
+
+Tenant: UserControlled encryption policy granted to the test accounts only. Switches left off.
+<!-- SECTION:FINAL_SUMMARY:END -->
