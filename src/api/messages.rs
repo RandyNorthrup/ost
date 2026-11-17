@@ -733,6 +733,10 @@ pub struct MessageView {
     /// Several cards shown as Teams' carousel (`message/card.carousel`).
     #[serde(default)]
     pub carousel: bool,
+    /// Immersive Reader's HTML for a message with cards (its raw content
+    /// with each card as text, as Teams sends it); empty otherwise.
+    #[serde(default)]
+    pub reader_html: String,
     /// Whether the message @mentions you (Teams marks it with an "@").
     #[serde(default)]
     pub mentions_me: bool,
@@ -1708,6 +1712,14 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
     // Which mention ids (`itemid`) are you, from properties.mentions.
     let my_mentions = my_mention_ids(props, me);
     let cards = if deleted { Vec::new() } else { cards };
+    // What Immersive Reader reads: the raw message with each card's
+    // placeholder replaced by the card as text (Teams' reader content).
+    let reader_html = if cards.is_empty() {
+        String::new()
+    } else {
+        let list: Vec<(String, serde_json::Value)> = cards.iter().map(|c| (c.content_type.clone(), c.content.clone())).collect();
+        super::reader_text::reader_html(&s("/content"), &kind, &list)
+    };
     // Files, cards, pictures, GIFs and stickers keep emoticons small (as in
     // Teams, where any other image counts).
     let may_be_big = files.is_empty() && cards.is_empty() && images.is_empty() && media.is_empty() && videos.is_empty();
@@ -1753,6 +1765,7 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
         files,
         cards,
         carousel,
+        reader_html,
         mentions_me: !my_mentions.is_empty() && !deleted,
         mention_kind: if deleted {
             String::new()

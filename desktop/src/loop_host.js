@@ -171,7 +171,7 @@
         const vp = fs.viewProperties || {};
         Object.assign(persisted, {
             hostCorrelationId: correlation,
-            hostScenarioName: cfg.kind === "channelPages" ? scenario + "_Page_ChannelTab" : scenario + "_Page_Chat",
+            hostScenarioName: cfg.kind === "channelPages" ? scenario + "_Page_ChannelTab" : cfg.kind === "meetingNotes" ? scenario + "_Page_MeetingNotes" : scenario + "_Page_Chat",
             hostName: cfg.hostName,
             hostScenarioStartTime: Date.now(),
             loopAudience: cfg.audience,
@@ -268,7 +268,11 @@
             identityType: "Enterprise",
             tokenFetcher: o => tokenProvider.getToken(siteScopes(o.siteUrl), { claims: o.claims, forceRefresh: o.refresh, siteUrl: o.siteUrl, driveId: o.driveId, itemId: o.itemId, request: o.request || null })
         }, fluidLogger, "Teams");
-        const createRequest = fileName => F.createOdspCreateContainerRequest(cfg.create.siteUrl, cfg.create.driveId, cfg.create.filePath, fileName, { scope: "default", role: "edit" });
+        // A channel's page is made with its share link (scope default, role
+        // edit); a meeting's notes without one (Teams makes the link after).
+        const createRequest = fileName => cfg.create.noShareLink
+            ? F.createOdspCreateContainerRequest(cfg.create.siteUrl, cfg.create.driveId, cfg.create.filePath, fileName)
+            : F.createOdspCreateContainerRequest(cfg.create.siteUrl, cfg.create.driveId, cfg.create.filePath, fileName, { scope: "default", role: "edit" });
         reg("FluidUrlResolverProvider", { get FluidUrlResolverProvider() { return this }, urlResolver, get Disposable() { return this }, dispose() {} });
         reg("FluidDocumentServiceFactoryProvider", { get FluidDocumentServiceFactoryProvider() { return this }, documentServiceFactory,
                                                      getCreateDocumentRequest: async n => createRequest(n), get Disposable() { return this }, dispose() {} });

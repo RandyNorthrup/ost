@@ -42,11 +42,14 @@ Rectangle {
         { key: "clipchamp", icon: "video", label: "Clipchamp", keys: "" },
         { key: "shifts", icon: "calendar-clock-20", label: "Shifts", keys: "" },
         { key: "help", icon: "question-circle-20", label: "Help", keys: "" },
+        { key: "events", icon: "ticket-diagonal-20", label: "Events", keys: "" },
         // A Word, Excel or PowerPoint file open in Office for the web takes
         // the slot as its app (Teams' "Teams" choice).
         { key: "office", icon: "document-20", label: officeLabel || "Office", keys: "" }
     ]
     property string officeLabel: ""
+    /// Apps pinned to the bar (Events' Pin app).
+    property var pinned: backend.setting("eventsAppPinned") === "true" ? ["events"] : []
     // Teams desktop's rail, with its labels and shortcuts (Copilot left out).
     readonly property var apps: (split ? [
         { key: "activity", icon: "alert", label: "Activity", keys: "Ctrl+1" },
@@ -61,14 +64,14 @@ Rectangle {
         { key: "calendar", icon: "calendar", label: "Calendar", keys: "Ctrl+3" },
         { key: "calls", icon: "call", label: "Calls", keys: "Ctrl+4" },
         { key: "onedrive", icon: "onedrive", label: "OneDrive", keys: "Ctrl+5" },
-    ]).concat(extraApps.filter(a => opened.indexOf(a.key) >= 0 || current === a.key)).concat([
+    ]).concat(extraApps.filter(a => opened.indexOf(a.key) >= 0 || current === a.key || pinned.indexOf(a.key) >= 0)).concat([
         { key: "add", icon: "add-app", label: "Store", keys: "" },
         { key: "more", icon: "more", label: "View more apps", keys: "" },
     ])
     // Teams keeps one slot for an app opened from View more apps: the
     // newest replaces the last.
     function openApp(key) {
-        opened = [key]
+        opened = pinned.indexOf(key) >= 0 ? opened : [key]
         current = key
     }
 
@@ -163,7 +166,7 @@ Rectangle {
         background: Rectangle { radius: 8; color: theme.menu; border.color: theme.dividerSoft }
         // Teams' list and order for this account. Shifts, Clipchamp and
         // Whiteboard are apps Teams hosts (OST's TeamsJS host); Events is
-        // Teams' own module, not built in OST yet, so it opens on the web.
+        // Teams' own module, drawn natively (EventsView).
         readonly property var all: [
             { key: "shifts", label: "Shifts", icon: "calendar-clock-20", color: "#5B5FC7" },
             { key: "planner", label: "Planner", icon: "clipboard-task-list-ltr-24-filled", color: theme.brand },
@@ -171,7 +174,7 @@ Rectangle {
             { key: "help", label: "Help", icon: "question-circle-20", color: theme.textStrong },
             { key: "clipchamp", label: "Clipchamp", icon: "video", color: "#8764B8" },
             { key: "whiteboard", label: "Whiteboard", icon: "board-20", color: "#0F6CBD" },
-            { url: "https://teams.cloud.microsoft/", label: "Events", icon: "ticket-diagonal-20", color: theme.textStrong },
+            { key: "events", label: "Events", icon: "ticket-diagonal-20", color: theme.textStrong },
             { key: "people", label: "People", icon: "people-20", color: theme.textStrong }
         ]
         contentItem: Column {

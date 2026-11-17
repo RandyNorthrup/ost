@@ -104,6 +104,12 @@ pub struct OutgoingCall {
     meeting_states_link: Option<String>,
     /// The meeting timer as last received.
     timers: super::meeting_timer::Timers,
+    /// The meeting's notes as the call shares them (collabResources.notes,
+    /// collabLeaders.notes).
+    notes: super::meeting_notes::Notes,
+    /// The meeting's organizer as `oid@tid` (the join response's
+    /// meetingInfo), for the meeting-notes service.
+    notes_organizer: String,
     /// The thread the call belongs to.
     thread_id: String,
     /// A meeting's lobby chat (`activeModalities.groupChat.lobbyThreadId`):
@@ -749,6 +755,54 @@ impl OutgoingCall {
             }
             _ => false,
         }
+    }
+
+    /// What Teams' meeting-notes service is told about this meeting
+    /// (getOrCreateMeetingNotes): its chat thread, organizer (`oid@tid`),
+    /// title, join link and calendar id.
+    pub fn notes_context(&self) -> serde_json::Value {
+        let info = self.meeting_info.clone();
+        let s = |f: fn(&super::meeting_info::MeetingInfo) -> &String| info.as_ref().map(|i| f(i).clone()).unwrap_or_default();
+        serde_json::json!({
+            "threadId": self.thread_id,
+            "organizer": self.notes_organizer,
+            "meetingTitle": s(|i| &i.title),
+            "meetingUrl": s(|i| &i.join_url),
+            "iCalUid": s(|i| &i.ical_uid),
+        })
+    }
+
+    /// The meeting's notes as last received.
+    pub fn notes(&self) -> &super::meeting_notes::Notes {
+        &self.notes
+    }
+
+    /// Take a conversation update's notes states; true when they changed.
+    pub fn apply_notes(&mut self, json: &serde_json::Value) -> bool {
+        self.notes.apply(json)
+    }
+
+    /// Set meeting states for everyone (Teams' updateMeetingStates), such
+    /// as the notes' claim and link.
+    pub async fn publish_meeting_states(&self, states: serde_json::Value, what: &str) -> Result<()> {
+        let link = self.meeting_states_link.clone().context("This call has no meeting states")?;
+        let mut from = self.me.0.clone();
+        if let Some(o) = from.as_object_mut() {
+            o.entry("languageId").or_insert_with(|| "en-us".into());
+        }
+        let body = serde_json::json!({
+            "from": from,
+            "meetingStates": states,
+            "updateMeetingStatesStatus": signaling::trouter_callback(
+                &self.callbacks.0,
+                &self.callbacks.1,
+                "conversation/updateMeetingStatesStatus/",
+            ),
+            "operationId": uuid::Uuid::new_v4().to_string(),
+        });
+        tracing::info!(what, "meeting states: publishing");
+        cc_post(&self.http, &self.skype_token, &link, &body, what).await?;
+        Ok(())
     }
 
     /// Change the meeting's ad-hoc timer for everyone (Teams'
@@ -2017,6 +2071,22 @@ async fn start(
             super::meeting_timer::Timers::from_state(&t, &Default::default())
         })
         .unwrap_or_default();
+    let notes_organizer = serde_json::from_str::<serde_json::Value>(&created.response_body)
+        .ok()
+        .and_then(|v| {
+            let mi = ["/meetingInfo", "/conversationResponse/meetingInfo"].iter().find_map(|p| v.pointer(p).cloned())?;
+            let o = mi.get("organizerId")?.as_str()?.to_string();
+            let t = mi.get("tenantId")?.as_str()?.to_string();
+            (!o.is_empty() && !t.is_empty()).then(|| format!("{o}@{t}"))
+        })
+        .unwrap_or_default();
+    let notes = {
+        let mut n = super::meeting_notes::Notes::default();
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&created.response_body) {
+            n.apply(&v);
+        }
+        n
+    };
     let lobby_thread = group_chat_field(&created.response_body, "lobbyThreadId");
     tracing::debug!(?lobby_thread, "meeting lobby chat");
     let message_link = conversation_link(&created.response_body, "sendMessage");
@@ -2192,6 +2262,8 @@ async fn start(
         add_participant_link,
         meeting_states_link,
         timers,
+        notes,
+        notes_organizer,
         thread_id: thread_id.to_string(),
         unmute_link,
         lobby_thread,

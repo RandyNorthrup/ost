@@ -141,7 +141,7 @@ Left to right. Items whose visibility rule (§1.4) fails are removed.
 | 7 | | **ViewModeButton** | View | "Change your view" | `calling_view_mode_icon_label`, `calling_change_view_mode_button_tooltip` |
 | 8 | | OrganizerControlButton | Controls | Controls | `calling_organizer_control_button_icon_label` |
 | 9 | | BroadcastQnaButton | Q&A | | `broadcast_qna_icon_label` |
-| 10 | | **MeetingDetailsButton** | Notes | "Open notes"/"Close notes" | `calling_meeting_details_icon_label` |
+| 10 | | **MeetingDetailsButton** | Notes | "Open notes"/"Close notes"; opens the meeting's notes (a Loop page) in the side panel, app-host.md "Meeting Notes" | `calling_meeting_details_icon_label` |
 | 11 | | **StartBreakoutRoomButton** | Rooms | "Create breakout rooms" | `calling_breakout_room_icon_label` |
 | 12 | | MeetingCollab / OneCopilot / BizChatCopilot | (Copilot; label not traced) | | |
 | 13 | | CallContextButton | | | |

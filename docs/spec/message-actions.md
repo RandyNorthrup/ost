@@ -524,7 +524,7 @@ PUT {chatsvc}/v1/users/ME/conversations/{convId}/messages/{messageId}/properties
 - Chunks (`mo`), all `text/html`:
   1. `"{imDisplayName} {toLocaleDateString} {toLocaleTimeString} <br/>"`
   2. `"<br/>{subject}<br/>"` (only when there is a subject)
-  3. The message HTML. Adaptive-card and MediaCard content is flattened to text and spliced in place of the card placeholder.
+  3. The message HTML. Adaptive-card and MediaCard content is flattened to text and spliced in place of the card placeholder (app-host.md "Immersive Reader" has the exact text; OST: `api::reader_text`).
 - On exit, focus returns to the message container.
 - On Teams on the web (2026-11-16) the item sits in ··· ▸ More actions ▸ in chats; the SDK's
   frame, messages and the chunks Teams sends are in app-host.md "Immersive Reader". OST

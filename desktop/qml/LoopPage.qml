@@ -8,10 +8,12 @@ import com.ost.desktop
 // of a host page that has Teams' origin, loaded with Fluid's container
 // loader and Teams' host services (loop_host.js, in the page's main world),
 // its tokens Teams' own from OST's sign-in through a bridge in an isolated
-// world (loop_bridge.js). Used by a chat's Notes and a channel's Pages.
+// world (loop_bridge.js). Used by a chat's Notes, a channel's Pages and
+// the call window's meeting notes.
 Item {
     id: root
-    /// "fluidThread" (a chat's Notes) or "channelPages" (a channel's Page).
+    /// "fluidThread" (a chat's Notes), "channelPages" (a channel's Page) or
+    /// "meetingNotes" (the call window's Notes).
     property string kind: "fluidThread"
     /// The page's link (its `nav` names the file); empty with `create`.
     property string componentUrl: ""
@@ -19,6 +21,8 @@ Item {
     /// report its link (created).
     property bool create: false
     property string channel: ""
+    /// A meeting's notes made here are named after the meeting (`title`).
+    property string title: ""
     /// "loading", "ready" (rendered) or "error".
     property string state_: "loading"
     property string error: ""
@@ -46,7 +50,7 @@ Item {
     function start() {
         if (started || !channelJs || (!componentUrl && !create)) return
         started = true
-        backend.loopHostRequest("config", hostId + ":cfg", JSON.stringify({ kind: root.kind, mode: root.create ? "create" : "load", channel: root.channel }))
+        backend.loopHostRequest("config", hostId + ":cfg", JSON.stringify({ kind: root.kind, mode: root.create ? "create" : "load", channel: root.channel, title: root.title }))
     }
     function stateForTest() { return JSON.stringify({ state: root.state_, error: root.error, events: root.events, url: root.componentUrl.split("?")[0] }) }
     function evalForTest(js, cb) { web.runJavaScript(js, cb) }

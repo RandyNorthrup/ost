@@ -382,8 +382,8 @@ prod/beta/eventOverviews?pageSize=…&sortBy=…&sortOrder=…&startTo|startFrom
 endFrom|endTo=…&returnRequesterProperties=…&eventStatus=…&includeRequesterStatus=…`
 with Teams' own token for resource 7fc21101-d09b-4343-8eb3-21187e0431a4
 (Manage counts Drafts / Published / Past with `manageFilterType`,
-`eventTypes` Townhall, Webinar). OST hasn't built this module (TASK-0038
-left).
+`eventTypes` Townhall, Webinar). OST draws it natively (TASK-0209):
+docs/spec/events.md.
 
 ## Copilot (the chat list's row, measured 2026-11-16)
 - The row: `list-item-metaos-copilot` (`OneGQL_BizChatMetaOSConversation|
@@ -468,6 +468,20 @@ left).
   mimeType: "text/html"}, {content: <the message's HTML, cards as text>,
   mimeType: "text/html"}]}, launchToPostMessageSentDurationInMs,
   sendPreferences: false, internalSdkUseAADBearerTokenForGcmCall: true}})`.
+  The message's HTML is its raw content with each card's placeholder
+  (`<span itemid="…</span></span>`, a media card's `<URIObject
+  type="SWIFT.1" …</URIObject>`) replaced by `<br> {card text} <br>`
+  (Teams' module 299105). The card text is Teams' accessible text for it
+  (module 498891): an Adaptive Card's `speak`; a hero, thumbnail or
+  sign-in card's "Card title:\n{title}. \n\n", "Card subtitle:",
+  "Card text content:" (HTML stripped), "Image {i}:\n\n" per picture
+  (from 0) and per button "Button {n}:", "Button title:", "Button value:"
+  (openUrl); an Office 365 connector card's title, text and per section
+  "Section {n}:", its title, text and activity title, subtitle and text.
+  Measured on a thumbnail (link) card: `<p>OST TEST 168a app card …</p>
+  \r\n<br> Card title:\nRust (programming language). \n\nCard text
+  content:\nRust is a general-purpose … programming. \n\nImage
+  0:\n\n <br>`. OST: `api::reader_text`, the message's `reader_html`.
   The reader answers `ImmersiveReader-SessionId:…`, `readyToPlay`,
   `ImmersiveReader-LaunchResponse:{"success":true,…}`,
   `ImmersiveReader-LaunchSuccessful`, and calls
@@ -505,15 +519,60 @@ left).
   `fileOpenPreference` teamsV2 / web); Teams desktop adds Desktop app with
   Office installed (file-actions.md).
 
-## Meeting Notes (in the call window; code read 2026-11-16, not measured live)
-- The call's More ▸ Notes (`MeetingNotesButton`, `enableMeetingNotesLink`)
-  opens the meeting's notes in a side panel. Teams gets or makes them
-  through its CMD artifacts service (GraphQL `getOrCreateMeetingNotes`,
-  `GetOrCreateMeetingNotesInput`; base from ECS
-  `teamsCopilotAggregatorEndpoint`, resource
-  `cmdMeetingArtifactsServiceResource`), a Loop page shown with Loop's
-  page container. Not captured live (it needs a meeting in Teams on the
-  web) and not built in OST yet (TASK-0038 left).
+## Meeting Notes (in the call window; measured 2026-11-16, TASK-0209)
+- The call's Notes (`MeetingDetailsButton`, "Open notes" / "Close notes")
+  opens the side panel `calling-right-side-panel` "Meeting notes" (360
+  wide, #F5F5F5): a white header 58 tall ("Notes" 18/25.7 bold #252423 22
+  in; More actions and Close 32 x 32, 16 from the right) and, 16 under it,
+  the notes as a Loop page (Loop's page container in a sourceless frame,
+  359 x 523 in a 752 tall window; the meeting blueprint: Agenda "Topic,
+  @name, time allotted", Meeting notes "Add meeting notes", Follow-up
+  tasks "Add task"). More actions: Shared locations, Copy component, See
+  who has access, Open in Loop, Add to Loop workspace.
+- Where the page comes from (Teams' modules 648378 call-meeting-notes,
+  600612 its helper, 559325 CollabNotesContext, services-io-collab-object;
+  measured on a solo Meet now in Teams on the web):
+  - the call's meeting state `collabResources.notes` `{value: {type:
+    "notes", resourceUri}, sequenceNumber}`, when someone made them;
+  - Teams' meeting-notes service: `POST https://teams.microsoft.com/api/
+    mcps/prod/notes/getOrCreateMeetingNotes` (ECS
+    `cmdMeetingNotesServiceEndpoint`, resource `cmdMeetingArtifactsServiceResource`
+    6bc3b958-689b-49f5-9006-36d165f30e00) with `{threadId, organizer
+    ("<oid>@<tid>"), meetingTitle, messageId "0", meetingUrl,
+    externalEntityKey (iCalUid), seriesExternalEntityKey, locale}` →
+    `{resources: [{type: "notes", location, resourceState
+    (committed / pending)}], expiry}`; pending is asked again up to three
+    times after the expiry (5 s default, 30 s at most). Teams calls it when
+    its Copilot bot pings the call (`copilotBotPing`) and from the meeting
+    chat's notes (`getOrCreateMeetingNotesViaService`); scheduled meetings
+    also use the collab object service (`…/mcps/prod/collab`
+    readandoptionallyreserve / commitresource);
+  - otherwise, as Teams on the web did for the Meet now:
+    `updateMeetingStates {"collabLeaders.notes": {"value": {"type":
+    "notes"}, "sequenceNumber": 1}}`, `GET graph me/drive/special/meetings`,
+    the page made by Fluid (`POST {onedrive}/_api/v2.1/drives/{d}/items/
+    root:/Meetings/<meeting title>.loop:/opStream/snapshots/snapshot`, no
+    share link scope; Loop's `blueprintId: "meeting"`), `POST …/items/{i}/
+    createLink {"type": "edit", "scope": "organization"}`, then
+    `updateMeetingStates {"collabResources.notes": {"value": {"type":
+    "notes", "resourceUri": "<the link>?nav=…"}, "sequenceNumber": 1}}`.
+- OST (`MeetingNotesPane.qml`, `api::meeting_notes`,
+  `calling::meeting_notes`, `--call-notes-test`) does the same in that
+  order and shows the page in its Loop host (kind `meetingNotes`).
+- The service wants the meeting's iCalUid for a scheduled meeting (400
+  `InvalidNotesCreationRequest` "Missing externalEntityKey or
+  seriesExternalEntityKey for scheduled meeting" without it); a call
+  joined by its link has none in the join response, so OST takes it, the
+  organizer and the subject from the meeting chat's thread properties.
+  A scheduled meeting refuses the leader claim (`updateMeetingStates`
+  400, subCode 6169 "This meeting does not support electing collab
+  leader"): Teams makes those notes through the collab object service
+  instead (not traced; OST doesn't).
+- Live (OST on linuxlt, 2026-11-16, a solo scheduled meeting of
+  ost-test1's with nobody invited): Notes → the service answered with the
+  notes' link at once (committed); Loop's page container framed, loaded,
+  rendered and connected in the Notes panel ("Just start typing…", the
+  insert row). The meeting and its notes file were deleted afterwards.
 
 ## OST's host (why this design)
 Options weighed:
@@ -595,11 +654,9 @@ Options weighed:
     paragraph") opens signed in in OST's Loop host (framed, code,
     rendered, connected), with Teams' header and insert row
     (`--loop-test=page --loop-tab=Page`).
-  - [ ] Events: Teams' own module, not built (opens on the web).
-  - [ ] Meeting Notes in the call window: not captured live, not built.
-  - [ ] Immersive Reader: Teams flattens cards into the message's chunk
-    ("Card title: … Card text content: …"); OST sends the message's HTML
-    only.
+  - [x] Events: drawn natively (TASK-0209, docs/spec/events.md).
+  - [x] Meeting Notes in the call window (TASK-0209, above).
+  - [x] Immersive Reader with cards (TASK-0209, below).
 
 Host features:
 - [x] The host: the frame as Teams', initialize / getContext /

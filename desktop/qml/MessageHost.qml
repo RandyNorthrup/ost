@@ -264,12 +264,13 @@ Item {
     }
     // Immersive Reader: Teams' chunks for a message (message-actions.md
     // §10): "<sender> <date> <time> <br/>", the subject when there is one,
-    // then the message's HTML.
+    // then the message's HTML; a message with cards gives its raw HTML with
+    // each card as text (reader_html, app-host.md "Immersive Reader").
     function openImmersiveReader(m) {
         const d = new Date(m.time || m.timestamp || Date.now())
         const chunks = [{ content: (m.sender || "") + " " + d.toLocaleDateString(Qt.locale("en_US"), "M/d/yyyy") + " " + d.toLocaleTimeString(Qt.locale("en_US"), "h:mm:ss AP") + " <br/>", mimeType: "text/html" }]
         if (m.subject) chunks.push({ content: "<br/>" + m.subject + "<br/>", mimeType: "text/html" })
-        chunks.push({ content: m.html || m.content || m.text || "", mimeType: "text/html" })
+        chunks.push({ content: m.reader_html || m.html || m.content || m.text || "", mimeType: "text/html" })
         immersiveReader.launch(chunks)
     }
     ImmersiveReader { id: immersiveReader }

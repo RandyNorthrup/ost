@@ -36,22 +36,30 @@ pub const HOST_NAME: &str = "Microsoft Teams Maglev";
 pub enum Kind {
     ChatNotes,
     ChannelPage,
+    /// A meeting's notes in the call window's Notes panel.
+    MeetingNotes,
 }
 
 impl Kind {
     pub fn parse(s: &str) -> Self {
-        if s == "channelPages" { Kind::ChannelPage } else { Kind::ChatNotes }
+        match s {
+            "channelPages" => Kind::ChannelPage,
+            "meetingNotes" => Kind::MeetingNotes,
+            _ => Kind::ChatNotes,
+        }
     }
     fn name(self) -> &'static str {
         match self {
             Kind::ChatNotes => "fluidThread",
             Kind::ChannelPage => "channelPages",
+            Kind::MeetingNotes => "meetingNotes",
         }
     }
-    /// Teams' settings category for the page (its fluid settings).
+    /// Teams' settings category for the page (its fluid settings; the
+    /// meeting notes panel's isn't traced, so it takes the chat notes').
     fn category(self) -> &'static str {
         match self {
-            Kind::ChatNotes => "fluidThread",
+            Kind::ChatNotes | Kind::MeetingNotes => "fluidThread",
             Kind::ChannelPage => "channelPages",
         }
     }
@@ -141,7 +149,7 @@ fn category_defaults(kind: Kind) -> Value {
         "startInPostCriticalEnabled": true, "useResolvedUrlForLocator": true,
     });
     match kind {
-        Kind::ChatNotes => {
+        Kind::ChatNotes | Kind::MeetingNotes => {
             d["sizeLimitValueBytes"] = json!(6291456);
             d["viewProperties"] = vp("Small");
         }

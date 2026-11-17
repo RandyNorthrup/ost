@@ -29,6 +29,7 @@ pub mod network_quality;
 pub mod media;
 pub mod meeting_info;
 pub mod meeting_media;
+pub mod meeting_notes;
 pub mod meeting_options;
 pub mod meeting_timer;
 pub mod muted_speech;

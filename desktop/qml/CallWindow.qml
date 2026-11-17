@@ -658,7 +658,8 @@ Window {
         else if (["RecordingButton", "TranscriptButton", "ClosedCaptionsButton", "RealTimeTextButton"].indexOf(name) >= 0) recordControl(name)
         else if (name === "ViewModeButton") { viewMenu.parent = barItem(name); viewMenu.open() }
         else if (name === "OrganizerControlButton") { loadControls(); controlsMenu.open() }
-        else if (name === "MeetingDetailsButton") Qt.openUrlExternally(chatUrl)
+        // Notes: the meeting's notes as a Loop page in the side pane.
+        else if (name === "MeetingDetailsButton") { side = side === "notes" ? "" : "notes"; if (side === "notes") meetingNotesPane.open() }
         else if (name === "MeetingAppsAddButton") { appsMenu.parent = barItem(name); appsMenu.open() }
         else if (name === "MoreButton") {
             if (newControls) { if (newMore.visible) newMore.close(); else newMore.openAt(barItem(name)) }
@@ -715,7 +716,7 @@ Window {
             ReactionButton: { label: "Send a reaction", icon: "call-react" },
             ViewModeButton: { label: "View", icon: "call-view", chevron: true },
             OrganizerControlButton: { label: "Controls", icon: "call-controls", chevron: true },
-            MeetingDetailsButton: { label: "Open notes", icon: "call-notes" },
+            MeetingDetailsButton: { label: side === "notes" ? "Close notes" : "Open notes", icon: "call-notes", checked: side === "notes" },
             StartBreakoutRoomButton: { label: "Breakout rooms", icon: "call-rooms" },
             MeetingAppsAddButton: { label: "Get more apps and agents", icon: "call-apps" },
             PopoutContentButton: { label: "Pop out", icon: "call-popout" },
@@ -1884,6 +1885,7 @@ Window {
 
     // Side pane: the chat with them, or the people in the call.
     property alias chatPane: chatPane
+    property alias meetingNotesPaneForTest: meetingNotesPane
     Rectangle {
         id: sidePane
         visible: win.side !== ""
@@ -1891,7 +1893,7 @@ Window {
         anchors { top: bar.bottom; right: parent.right; bottom: parent.bottom }
         // (Copilot's pane is 320 wide.)
         width: win.side === "copilot" ? 320 : 360
-        color: win.side === "people" || win.side === "info" || win.side === "audio" || win.side === "transcript" || win.side === "captionStyles" || win.side === "accessibility" || win.side === "callHealth" || win.side === "rooms" || win.side === "video" ? theme.pane : theme.surface
+        color: win.side === "people" || win.side === "info" || win.side === "audio" || win.side === "transcript" || win.side === "captionStyles" || win.side === "accessibility" || win.side === "callHealth" || win.side === "rooms" || win.side === "video" || win.side === "notes" ? theme.pane : theme.surface
         clip: true
         Conversation {
             id: chatPane
@@ -2054,6 +2056,12 @@ Window {
             styles: win.captionStyles
             onClosed: win.side = ""
             onChanged: s => win.saveCaptionStyles(s)
+        }
+        MeetingNotesPane {
+            id: meetingNotesPane
+            visible: win.side === "notes"
+            anchors.fill: parent
+            onClosed: win.side = ""
         }
         MeetingInfoPane {
             id: meetingInfoPane
@@ -2865,7 +2873,7 @@ Window {
                                                  icon: "transcript-panel-20", checked: side === "transcript" }]
         }
         else if (name === "MeetingFacilitatorTimerButton") e = timerCanView ? { label: "Timer", icon: "nmc-timer", checked: timerVisible } : null
-        else if (name === "MeetingDetailsButton") e = { label: "Notes", icon: "nmc-notes" }
+        else if (name === "MeetingDetailsButton") e = { label: "Notes", icon: "nmc-notes", checked: side === "notes" }
         else if (name === "ClosedCaptionsButton") e = { label: "Captions", icon: "nmc-captions", checked: captionsOn }
         else if (name === "StartBreakoutRoomButton") e = { label: "Rooms", icon: "nmc-rooms", checked: side === "rooms" }
         else if (name === "RealTimeTextButton") e = { label: "RTT", icon: "nmc-rtt", checked: rttOn, enabled: !rttOn }
@@ -3398,7 +3406,7 @@ Window {
     // Controls: the meeting options (organizers), as Teams opens them.
     Component { id: cControls; BarButton { id: ctlB; icon: win.newControls ? "nmc-controls" : "call-controls"; label: "Controls"; checked: controlsMenu.visible; enabled: win.controlEnabled("OrganizerControlButton"); onClicked: win.runControl("OrganizerControlButton"); Component.onCompleted: win.controlsButton = ctlB } }
     // Notes: Teams keeps meeting notes in the meeting chat's Notes tab.
-    Component { id: cNotes; BarButton { icon: win.newControls ? "nmc-notes" : "call-notes"; label: "Notes"; tip: "Open notes"; enabled: win.controlEnabled("MeetingDetailsButton"); onClicked: win.runControl("MeetingDetailsButton") } }
+    Component { id: cNotes; BarButton { icon: win.newControls ? "nmc-notes" : "call-notes"; label: "Notes"; tip: win.side === "notes" ? "Close notes" : "Open notes"; checked: win.side === "notes"; enabled: win.controlEnabled("MeetingDetailsButton"); onClicked: win.runControl("MeetingDetailsButton") } }
     Component { id: cRooms; BarButton { icon: win.newControls ? "nmc-rooms" : "call-rooms"; label: "Rooms"; tip: win.breakoutRooms.length ? "Breakout rooms" : "Create breakout rooms"; checked: win.side === "rooms"; enabled: win.controlEnabled("StartBreakoutRoomButton"); onClicked: win.runControl("StartBreakoutRoomButton") } }
     // A More grid control the user pinned to the bar (new controls): its
     // grid label and glyph.

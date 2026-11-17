@@ -280,6 +280,9 @@ pub mod qobject {
         /// Teams' Meeting info pane: {title, hours, schedule, location,
         /// body (HTML), canCopy}, or "" before it's loaded.
         #[qproperty(QString, call_meeting_info_json)]
+        /// The meeting's notes link the call shares (its
+        /// collabResources.notes meeting state), "" until someone made them.
+        #[qproperty(QString, call_notes_url)]
         /// Why the service ended the last call when Teams shows a screen
         /// for it: "deniedFromLobby", "notAdmittedForLongTime", "removed"
         /// or "".
@@ -1347,6 +1350,14 @@ pub mod qobject {
         #[qsignal]
         fn loop_host_reply(self: Pin<&mut Backend>, id: QString, json: QString);
 
+        /// The Events app's request answered (events_request).
+        #[qsignal]
+        fn events_reply(self: Pin<&mut Backend>, id: QString, json: QString);
+
+        /// The call window's Notes request answered (call_notes_request).
+        #[qsignal]
+        fn call_notes_reply(self: Pin<&mut Backend>, id: QString, json: QString);
+
         /// A video_clip_load finished: {id, quality, path (file URL),
         /// qualities: [{id, height}], error}.
         #[qsignal]
@@ -1886,6 +1897,16 @@ pub mod qobject {
         /// the same `id`.
         #[qinvokable]
         fn loop_host_request(self: Pin<&mut Backend>, kind: &QString, id: &QString, payload: &QString);
+        /// The Events app (docs/spec/events.md): `kind` discover, manage,
+        /// features, create, overview or cancel; answered by events_reply
+        /// with the same `id`.
+        #[qinvokable]
+        fn events_request(self: Pin<&mut Backend>, kind: &QString, id: &QString, payload: &QString);
+        /// The call window's Notes: `kind` resolve (the shared link, Teams'
+        /// meeting-notes service, or {create, title} to make them) or made
+        /// (share a page just made); answered by call_notes_reply.
+        #[qinvokable]
+        fn call_notes_request(self: Pin<&mut Backend>, kind: &QString, id: &QString, payload: &QString);
         /// Look a pasted Loop link up for Add an existing page (to
         /// pageLinkJson).
         #[qinvokable]
@@ -2530,6 +2551,7 @@ pub struct BackendRust {
     call_recording_state: QString,
     call_recording_tip: QString,
     call_meeting_info_json: QString,
+    call_notes_url: QString,
     call_end_reason: QString,
     call_controls_json: QString,
     people_names_json: QString,
@@ -4857,6 +4879,17 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
             if let Some(cap) = changed {
                 tracing::info!(?cap, "meeting capability changed");
                 let _ = qt.queue(move |mut this| this.as_mut().show_capability(cap, true));
+            }
+            // The meeting's notes were made or claimed.
+            let notes = call_slot()
+                .lock()
+                .await
+                .outgoing
+                .as_mut()
+                .and_then(|call| call.apply_notes(&v).then(|| call.notes().resource_uri.clone()));
+            if let Some(uri) = notes {
+                tracing::info!(shared = !uri.is_empty(), "meeting notes changed");
+                let _ = qt.queue(move |mut this| this.as_mut().set_call_notes_url(QString::from(uri.as_str())));
             }
             // The meeting timer changed (someone's start, pause, …).
             let timers = call_slot()
@@ -7778,6 +7811,7 @@ impl qobject::Backend {
         self.as_mut().set_call_ai_on(false);
         self.as_mut().show_processing(Default::default());
         self.as_mut().set_call_meeting_info_json(QString::default());
+        self.as_mut().set_call_notes_url(QString::default());
         self.as_mut().set_call_lobby_thread(QString::default());
         self.as_mut().show_transcript(Vec::new(), true);
         self.as_mut().reset_captions();
@@ -15651,7 +15685,15 @@ impl qobject::Backend {
                         let client = TeamsClient::new().await?;
                         let page_kind = api::loop_page::Kind::parse(&s("kind"));
                         let mut cfg = api::loop_page::host_config(&client, page_kind);
-                        if s("mode") == "create" {
+                        if s("mode") == "create" && page_kind == api::loop_page::Kind::MeetingNotes {
+                            // A meeting's notes: Loop's meeting blueprint in
+                            // your OneDrive's Meetings folder, no share link
+                            // yet (Teams makes the organization link after).
+                            let t = api::meeting_notes::meetings_target(&client).await?;
+                            cfg["create"] = json!({ "siteUrl": t.site_url, "driveId": t.drive_id, "filePath": t.file_path,
+                                                    "fileName": api::meeting_notes::file_name(&s("title")), "blueprintId": "meeting",
+                                                    "noShareLink": true });
+                        } else if s("mode") == "create" {
                             let t = api::loop_page::channel_page_target(&client, &s("channel")).await?;
                             cfg["create"] = json!({ "siteUrl": t.site_url, "driveId": t.drive_id, "filePath": t.file_path,
                                                     "fileName": "Loop paragraph.loop", "blueprintId": "paragraph" });
@@ -15697,6 +15739,113 @@ impl qobject::Backend {
                 _ => json!({ "error": "unknown" }).to_string(),
             };
             let _ = qt.queue(move |mut this| this.as_mut().loop_host_reply(QString::from(id.as_str()), QString::from(answer.as_str())));
+        });
+    }
+
+    pub fn events_request(self: Pin<&mut Self>, kind: &QString, id: &QString, payload: &QString) {
+        let (kind, id, payload) = (kind.to_string(), id.to_string(), payload.to_string());
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let p: serde_json::Value = serde_json::from_str(&payload).unwrap_or_default();
+            let s = |k: &str| p.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string();
+            let r = async {
+                let client = TeamsClient::new().await?;
+                match kind.as_str() {
+                    "discover" => {
+                        let f = api::events::DiscoverFilter {
+                            my_events: p.get("myEvents").and_then(|v| v.as_bool()).unwrap_or(false),
+                            from: s("from"),
+                            to: s("to"),
+                        };
+                        api::events::discover(&client, &f).await
+                    }
+                    "manage" => api::events::manage(&client).await,
+                    "features" => api::events::feature_details(&client).await,
+                    "create" => {
+                        let e: api::events::NewEvent = serde_json::from_value(p.clone()).unwrap_or_default();
+                        let r = api::events::create_draft(&client, &e).await?;
+                        tracing::info!(state = %r["state"], "events: draft saved");
+                        Ok(r)
+                    }
+                    "overview" => api::events::overview(&client, &s("id")).await,
+                    "cancel" => {
+                        api::events::cancel(&client, &s("id")).await?;
+                        tracing::info!("events: event cancelled");
+                        Ok(json!({ "ok": true }))
+                    }
+                    _ => anyhow::bail!("unknown"),
+                }
+            }
+            .await;
+            let answer = match r {
+                Ok(v) => v.to_string(),
+                Err(e) => {
+                    tracing::warn!("events {kind}: {}", short_error(&e));
+                    json!({ "error": short_error(&e) }).to_string()
+                }
+            };
+            let _ = qt.queue(move |mut this| this.as_mut().events_reply(QString::from(id.as_str()), QString::from(answer.as_str())));
+        });
+    }
+
+    pub fn call_notes_request(self: Pin<&mut Self>, kind: &QString, id: &QString, payload: &QString) {
+        let (kind, id, payload) = (kind.to_string(), id.to_string(), payload.to_string());
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let p: serde_json::Value = serde_json::from_str(&payload).unwrap_or_default();
+            let s = |k: &str| p.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string();
+            let r: anyhow::Result<serde_json::Value> = async {
+                match kind.as_str() {
+                    "resolve" => {
+                        // 1. A link the call already shares.
+                        let (shared, leader, ctx) = {
+                            let slot = call_slot().lock().await;
+                            let call = slot.outgoing.as_ref().context("Not in a call")?;
+                            (call.notes().resource_uri.clone(), call.notes().leader, call.notes_context())
+                        };
+                        if !shared.is_empty() {
+                            return Ok(json!({ "url": shared, "source": "call" }));
+                        }
+                        // 2. Teams' meeting-notes service.
+                        let mut m: api::meeting_notes::Meeting = serde_json::from_value(ctx.clone()).unwrap_or_default();
+                        if let Ok(client) = TeamsClient::new().await {
+                            api::meeting_notes::fill_from_chat(&client, &mut m).await;
+                        }
+                        match api::meeting_notes::get_or_create(&m).await {
+                            Ok(url) => return Ok(json!({ "url": url, "source": "service" })),
+                            Err(e) => tracing::info!("meeting notes service: {}", short_error(&e)),
+                        }
+                        // 3. Make them, as Teams does when the service can't:
+                        // claim making them, unless someone already did.
+                        if leader && s("force").is_empty() {
+                            return Ok(json!({ "waiting": true }));
+                        }
+                        let slot = call_slot().lock().await;
+                        let call = slot.outgoing.as_ref().context("Not in a call")?;
+                        call.publish_meeting_states(call.notes().claim(), "Meeting notes claim").await?;
+                        Ok(json!({ "create": true, "title": m.meeting_title }))
+                    }
+                    "made" => {
+                        let client = TeamsClient::new().await?;
+                        let link = api::meeting_notes::edit_link(&client, &s("driveId"), &s("itemId")).await?;
+                        let uri = api::meeting_notes::shared_link(&link, &s("componentUrl"));
+                        let slot = call_slot().lock().await;
+                        let call = slot.outgoing.as_ref().context("Not in a call")?;
+                        call.publish_meeting_states(call.notes().share(&uri), "Meeting notes link").await?;
+                        Ok(json!({ "url": uri, "source": "made" }))
+                    }
+                    _ => anyhow::bail!("unknown"),
+                }
+            }
+            .await;
+            let answer = match r {
+                Ok(v) => v.to_string(),
+                Err(e) => {
+                    tracing::warn!("meeting notes {kind}: {}", short_error(&e));
+                    json!({ "error": short_error(&e) }).to_string()
+                }
+            };
+            let _ = qt.queue(move |mut this| this.as_mut().call_notes_reply(QString::from(id.as_str()), QString::from(answer.as_str())));
         });
     }
 

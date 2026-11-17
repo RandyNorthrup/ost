@@ -132,6 +132,8 @@ fn main() {
         "qml/TaskModuleDialog.qml",
         "qml/ShareToOutlookDialog.qml",
         "qml/ImmersiveReader.qml",
+        "qml/EventsView.qml",
+        "qml/MeetingNotesPane.qml",
         "qml/ExistingPageDialog.qml",
         "qml/BreakoutTab.qml",
         "qml/TabWindow.qml",
