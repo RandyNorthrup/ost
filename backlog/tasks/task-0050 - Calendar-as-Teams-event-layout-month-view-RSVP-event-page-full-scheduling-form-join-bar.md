@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-07T03:57:00Z'
-updated_date: '2026-11-17T11:01:00Z'
+updated_date: '2026-11-17T15:14:00Z'
 labels:
   - calendar
 dependencies: []
@@ -38,4 +38,9 @@ Built so far: Day, Work week and Week views with event cards (Join, Chat, Edit, 
 - 2026-11-17 (41d9320): all-day strip, overlap lanes, midnight split, Month grid, card RSVP with series menus, event page (Tracking, RSVP with note, Cancel meeting), Teams' calv2 scheduling form (schedulingService/create then events), Meet now and Join with an ID dialogs, channel meetings (group calendar, channel cancel), channel header Schedule a meeting. Spec docs/spec/calendar.md; harness --cal-test.
 - Verified live: Day/Work week/Week layout, RSVP with note (Graph shows Accepted), form send to a channel and its cancel.
 - Open: Month view events missing in capture; Week column widths wrong when today is mid-week (future days crushed); RSVP goes through Graph (Outlook RespondToCalendarEvent refused OST's token) and Follow is missing; Join with an ID only finds meetings in your calendar; join bar and scheduled-meeting start notification not built; personal/recurring/edit sends and the channel post not yet checked live.
+
+- 2026-11-17 (calendar follow-up merged): Month asked for one day of events; the range now comes from the view. Week widths keep each future day at least one event wide. Follow = Tentative + attendance Follow. Outlook's RespondToCalendarEvent needs the hosted calendar's token (app ceb96695 via the broker); the calendar service's respond call is the fallback, and Graph is no longer used.
+- Join with an ID resolves the ID and passcode through the conversation service, as Teams. The MeetingStart notification drives the scheduled-meeting banner and the join bar, using Teams' rules.
+- Live: personal recurring meeting with test2, edit through Teams' own update request, channel header Schedule a meeting, channel post and cancel.
+- Left: measure the join bar layout and Week-with-lanes widths on winpc, and run OST itself through the Outlook RSVP path (the default profile is back on teams-web). Both are with the agent.
 <!-- SECTION:NOTES:END -->
