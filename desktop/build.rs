@@ -219,6 +219,7 @@ fn main() {
         "qml/EnrollmentDone.qml",
         "qml/FaceCaptureDialog.qml",
         "qml/VoiceCaptureDialog.qml",
+        "qml/UnparkDialog.qml",
         "qml/ChatNotesTab.qml",
         "qml/LoopPage.qml",
         "qml/ChannelPageTab.qml",

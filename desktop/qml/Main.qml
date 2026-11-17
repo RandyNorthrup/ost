@@ -1766,6 +1766,7 @@ Window {
         canDtmf: backend.callCanDtmf
         e2ee: backend.callE2ee
         canPark: backend.callCanPark
+        callContinues: backend.callContinues
         parkCode: backend.callState === "parked" ? backend.callParkCode : ""
         onParkCall: backend.parkCall()
         onDtmf: key => backend.sendDtmf(key)
@@ -1951,6 +1952,21 @@ Window {
         }
     }
     Timer { id: quitTimer; interval: 3000; onTriggered: Qt.quit() }
+    // --unpark-dialog-test: open the Calls app and its "Pick up a parked
+    // call" dialog, capture it (`-unpark-dialog.png`), and quit.
+    Timer {
+        running: Qt.application.arguments.indexOf("--unpark-dialog-test") >= 0 && backend.signedIn
+        interval: 3500; repeat: false
+        onTriggered: {
+            rail.current = "calls"
+            callsView.openUnparkForTest()
+            captureTimer.start()
+        }
+    }
+    Timer {
+        id: captureTimer; interval: 1200
+        onTriggered: { window.contentItem.grabToImage(r => { r.saveToFile(window.shotPath.replace(".png", "-unpark-dialog.png")); Qt.quit() }) }
+    }
     // --hangup-after=<s>: with --call-test --remote-hangup, leave the call
     // <s> seconds after it (first) connects, whatever became of it (a
     // merge's group call, a transfer's new call); HANGUP lines.
@@ -10370,6 +10386,7 @@ Window {
     }
 
     CallsView {
+        id: callsView
         visible: rail.current === "calls"
         anchors { top: appBanner.bottom; bottom: parent.bottom; left: rail.right; right: parent.right }
         calls: backend.callsJson ? JSON.parse(backend.callsJson) : []

@@ -837,6 +837,9 @@ pub struct ActiveCall {
     transfer_link: Option<String>,
     /// Where our own re-offers go (`links.mediaRenegotiation`).
     renegotiation_link: Option<String>,
+    /// Each remote person's merge leg from roster events (their
+    /// `callLinks.replacement`), keyed by lowercase MRI.
+    remote_legs: std::collections::HashMap<String, serde_json::Value>,
 }
 
 impl Drop for ActiveCall {
@@ -848,6 +851,19 @@ impl Drop for ActiveCall {
 }
 
 impl ActiveCall {
+    /// Record each remote person's merge leg from a roster event, for a
+    /// later silent merge (Teams' `setParticipantCallLinks`).
+    pub fn note_roster_legs(&mut self, json: &str) {
+        for (mri, leg) in super::outgoing::roster_legs(json) {
+            self.remote_legs.insert(mri, leg);
+        }
+    }
+
+    /// The merge leg last seen for `mri`.
+    pub fn remote_leg(&self, mri: &str) -> Option<serde_json::Value> {
+        self.remote_legs.get(&mri.to_ascii_lowercase()).cloned()
+    }
+
     /// The other party's MRI (who called us).
     pub fn peer_id(&self) -> Option<String> {
         self.notification.participants.as_ref()?.from.as_ref()?.id.clone()
@@ -1403,6 +1419,7 @@ pub async fn answer(
         resume_link: None,
         transfer_link: leg.transfer,
         renegotiation_link: leg.renegotiation,
+        remote_legs: std::collections::HashMap::new(),
     })
 }
 
@@ -1476,6 +1493,7 @@ async fn answer_webrtc(
         resume_link: None,
         transfer_link: leg.transfer,
         renegotiation_link: leg.renegotiation,
+        remote_legs: std::collections::HashMap::new(),
     })
 }
 

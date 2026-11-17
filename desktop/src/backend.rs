@@ -375,6 +375,10 @@ pub mod qobject {
         #[qproperty(bool, call_e2ee)]
         /// The pickup code of the call you just parked ("" when none).
         #[qproperty(QString, call_park_code)]
+        /// The next "connected" is the same call carried on (a transfer,
+        /// merge or park retrieve replaced it without closing the window),
+        /// so the call clock keeps running instead of restarting.
+        #[qproperty(bool, call_continues)]
         /// Teams' isCallParkAvailable for you (park policy and Enterprise
         /// Voice), read as a call connects.
         #[qproperty(bool, call_can_park)]
@@ -2788,6 +2792,7 @@ pub struct BackendRust {
     call_held_by_peer: bool,
     call_e2ee: bool,
     call_park_code: QString,
+    call_continues: bool,
     call_can_park: bool,
     call_consult_json: QString,
     call_can_dtmf: bool,
@@ -3784,6 +3789,7 @@ async fn take_transfer(qt: cxx_qt::CxxQtThread<qobject::Backend>, request: teams
             let name = request.target_name.clone();
             let mri = request.target_mri.clone();
             let _ = qt.queue(move |mut this| {
+                this.as_mut().set_call_continues(true);
                 this.as_mut().set_call_held(false);
                 this.as_mut().set_call_held_by_peer(false);
                 this.as_mut().set_call_e2ee(e2ee);
@@ -5704,6 +5710,19 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
     }
     if let Some(delta) = teams_cli::calling::roster::roster_delta(json) {
         tracing::info!(changes = delta.len(), "roster update");
+        // Keep each call's merge legs (for a silent merge) up to date.
+        if !teams_cli::calling::outgoing::roster_legs(json).is_empty() {
+            let mut slot = call_slot().lock().await;
+            if let Some(c) = slot.active.as_mut() {
+                c.note_roster_legs(json);
+            }
+            if let Some(c) = slot.outgoing.as_mut() {
+                c.note_roster_legs(json);
+            }
+            if let Some(c) = slot.consult.as_mut() {
+                c.note_roster_legs(json);
+            }
+        }
         let _ = qt.queue(move |mut this| {
             if !this.rust().call_meeting {
                 // A 1:1 call: the roster tells when the other person holds.
@@ -5763,6 +5782,8 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         let _ = qt.queue(move |mut this| {
             this.as_mut().set_call_peer(QString::from(peer.as_str()));
             this.as_mut().set_call_peer_id(QString::from(peer_id.as_str()));
+            // The call carries on in the same window: keep the clock.
+            this.as_mut().set_call_continues(true);
             // Answered at once, with no ringing (Teams accepts a
             // replacement by itself).
             this.as_mut().set_call_state(QString::from("ringing"));
@@ -7295,6 +7316,7 @@ impl qobject::Backend {
     /// Place a 1:1 call (or an unpark) and show it as Teams does.
     fn place_and_show(mut self: Pin<&mut Self>, placement: Placement, peer: QString, callee: String) {
         let video = matches!(placement, Placement::Person { video: true, .. });
+        self.as_mut().set_call_continues(matches!(placement, Placement::Unpark(_)));
         self.as_mut().set_call_peer(peer);
         self.as_mut()
             .set_call_peer_id(QString::from(callee.as_str()));
@@ -10437,6 +10459,14 @@ impl qobject::Backend {
             slot.consult_state = next;
             publish_consult(&qt, &slot);
             let consult_call = slot.consult.take();
+            // The held call still holds the first person; take their merge
+            // leg from its roster so the service moves them silently (Teams'
+            // ReplaceParticipant), else they're invited and ring.
+            let first_leg = slot
+                .active
+                .as_ref()
+                .and_then(|c| c.remote_leg(&first_peer))
+                .or_else(|| slot.outgoing.as_ref().and_then(|c| c.remote_leg(&first_peer)));
             let result = async {
                 let my_oid = teams_cli::config::Config::load().ok().and_then(|c| c.object_id()).context("Not signed in")?;
                 // Teams' getCallingConversationWith: the chat of everyone
@@ -10445,14 +10475,14 @@ impl qobject::Backend {
                 let client = TeamsClient::new().await?;
                 let thread = api::create_group_chat(&client, &members, "").await?;
                 let consult = consult_call.as_ref().context("No consult call")?;
+                tracing::info!(silent = first_leg.is_some(), "merging the held person in");
                 let person = outgoing::MergePerson {
                     id: first_peer.clone(),
                     participant_id: uuid::Uuid::new_v4().to_string(),
                     display_name: Some(first_name.clone()).filter(|n| !n.is_empty()),
-                    // A 1:1 call's roster carries no call links for the
-                    // other side's leg, so (as Teams then does) they are
-                    // invited into the group call.
-                    replacement: None,
+                    // Their leg in the held call: the service replaces it
+                    // (silent); without it they are invited and ring.
+                    replacement: first_leg.clone(),
                 };
                 consult.merge_in(&thread, &[person]).await?;
                 anyhow::Ok(thread)
@@ -10703,6 +10733,7 @@ impl qobject::Backend {
         self.as_mut().set_call_e2ee(false);
         self.as_mut().set_call_can_park(false);
         self.as_mut().set_call_park_code(QString::default());
+        self.as_mut().set_call_continues(false);
         self.as_mut().set_call_can_dtmf(false);
         self.as_mut().set_call_hand_raised(false);
         if !self.rust().call_state.is_empty() {

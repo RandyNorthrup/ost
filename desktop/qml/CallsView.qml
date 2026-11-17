@@ -95,6 +95,23 @@ Item {
             Accessible.name: "View contacts"
         }
         Rectangle {
+            id: hcFillMore
+            x: parent.width - 81; y: 15; width: 32; height: 31; radius: theme.radius
+            color: mot.hovered ? theme.rowHover : "transparent"
+            FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: theme.onFill(hcFillMore, theme.textStrong) }
+            HoverHandler { id: mot; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: callsMore.open() }
+            Accessible.role: Accessible.Button
+            Accessible.name: "More calls options"
+            MenuPopup {
+                id: callsMore
+                width: 240
+                y: parent.height + 4
+                items: [{ label: "Pick up a parked call", icon: "call-park-20" }]
+                onPicked: i => { if (i === 0) unparkDialog.start() }
+            }
+        }
+        Rectangle {
             id: hcFill3
             x: parent.width - 43; y: 15; width: 32; height: 31; radius: theme.radius
             color: sdt.hovered ? theme.rowHover : "transparent"
@@ -477,4 +494,7 @@ Item {
             }
         }
     }
+    UnparkDialog { id: unparkDialog }
+    function openUnparkForTest() { unparkDialog.start() }
+
 }

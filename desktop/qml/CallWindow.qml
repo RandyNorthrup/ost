@@ -27,6 +27,10 @@ Window {
     property bool muted
     property bool hasAudio: true
     property real connectedAt: 0
+    // The next "connected" is the same call carried on (a transfer, merge
+    // or park retrieve replaced it without closing the window), so the
+    // clock keeps running instead of restarting.
+    property bool callContinues: false
     signal leave()
     signal toggleMute()
     /// Video: whether the call can carry ours, and whether the camera is on.
@@ -614,9 +618,16 @@ Window {
         onTriggered: win.seconds = Math.floor((Date.now() - win.connectedAt) / 1000)
     }
     onStateChanged: {
-        // Resuming a held meeting carries on its time (nextConnectedAt).
-        if (state === "connected") { connectedAt = nextConnectedAt || Date.now(); nextConnectedAt = 0; seconds = Math.floor((Date.now() - connectedAt) / 1000) }
+        // Resuming a held meeting carries on its time (nextConnectedAt); a
+        // call that replaced the one we were in (a transfer, a merge, a
+        // retrieved park) keeps the running clock too, since the window
+        // never closed.
+        if (state === "connected") {
+            if (connectedAt === 0 || !win.callContinues) connectedAt = nextConnectedAt || Date.now()
+            nextConnectedAt = 0; seconds = Math.floor((Date.now() - connectedAt) / 1000)
+        }
         else consulting = null
+        if (state === "ended" || state === "") connectedAt = 0
         // A new call: lobby notifications are on again.
         if (state === "calling") lobbyToast.resetForCall()
         if (state === "calling" || state === "connecting") { transcriptRan = false; openTranscriptWhenStarted = false }

@@ -53,6 +53,10 @@ pub struct OutgoingCall {
     answered_by: Option<String>,
     /// Where our own re-offers go (`links.mediaRenegotiation`).
     renegotiation_link: Option<String>,
+    /// Each remote person's merge leg, from roster events (their
+    /// `callLinks.replacement`), keyed by lowercase MRI: a silent merge
+    /// names it so the service moves them instead of ringing.
+    remote_legs: std::collections::HashMap<String, serde_json::Value>,
     /// Meetings: the conversation's publishState / removeState links
     /// (Raise hand), and the id of our raised hand.
     state_links: (Option<String>, Option<String>),
@@ -1263,6 +1267,19 @@ impl OutgoingCall {
 
     /// Our raised hand's state id, learned from the roster when the
     /// publish reply didn't carry it.
+    /// Record each remote person's merge leg from a roster event, so a
+    /// later merge can move them silently ([`roster_legs`]).
+    pub fn note_roster_legs(&mut self, json: &str) {
+        for (mri, leg) in roster_legs(json) {
+            self.remote_legs.insert(mri, leg);
+        }
+    }
+
+    /// The merge leg last seen for `mri` (an `8:orgid:` MRI).
+    pub fn remote_leg(&self, mri: &str) -> Option<serde_json::Value> {
+        self.remote_legs.get(&mri.to_ascii_lowercase()).cloned()
+    }
+
     pub fn note_hand(&mut self, id: Option<String>) {
         if self.hand.is_none() {
             self.hand = id;
@@ -1768,6 +1785,35 @@ pub fn merge_body(
             "addParticipantFailure": cb("conversation/addParticipantFailure/"),
         },
     })
+}
+
+/// Each remote participant's merge leg from a roster event (their
+/// `endpointDetails[].callLinks.replacement`), keyed by lowercase MRI:
+/// what a silent merge names so the service moves them instead of ringing.
+pub fn roster_legs(json: &str) -> Vec<(String, serde_json::Value)> {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(json) else {
+        return Vec::new();
+    };
+    if !v.get("callAgentPath").and_then(|p| p.as_str()).is_some_and(|p| p.starts_with("conversation/rosterUpdate")) {
+        return Vec::new();
+    }
+    let Some(parts) = v.pointer("/body/participants").and_then(|p| p.as_object()) else {
+        return Vec::new();
+    };
+    parts
+        .iter()
+        .filter_map(|(mri, p)| {
+            // A roster event keys endpoints by id (the parsed form uses
+            // `endpointDetails`); each has a participantId and callLinks.
+            let ep = p.get("endpoints")?.as_object()?.values().find(|e| e.pointer("/callLinks/replacement").is_some())?;
+            let replaces = ep.pointer("/callLinks/replacement")?.as_str()?;
+            let leg = ep.get("participantId")?.as_str()?;
+            Some((
+                mri.to_ascii_lowercase(),
+                serde_json::json!({ "replaces": replaces, "replacementTargetParticipantId": leg }),
+            ))
+        })
+        .collect()
 }
 
 /// The leg a person has in a call, from a roster participant's
@@ -3029,6 +3075,7 @@ async fn start_tagged(
         renegotiation_link: acceptance
             .renegotiation
             .filter(|l| super::incoming::is_service_link(l)),
+        remote_legs: std::collections::HashMap::new(),
         state_links,
         hand: None,
         state_seq: 0,
@@ -3144,6 +3191,26 @@ mod tests {
         let p = serde_json::json!({ "id": "8:orgid:b", "endpointDetails": [{ "participantId": "leg-b", "callLinks": { "replacement": "https://cc/leg-b/replacement" } }] });
         assert_eq!(leg_replacement(&p), people[0].replacement);
         assert_eq!(leg_replacement(&serde_json::json!({ "endpointDetails": [{ "participantId": "x" }] })), None);
+    }
+
+    #[test]
+    fn roster_legs_read_each_persons_merge_leg() {
+        // A roster event keys endpoints by id (measured); the leg is the
+        // endpoint's participantId + callLinks.replacement.
+        let ev = serde_json::json!({
+            "callAgentPath": "conversation/rosterUpdate/",
+            "body": { "participants": {
+                "8:orgid:B": { "details": {}, "endpoints": {
+                    "ep1": { "participantId": "leg-b", "callLinks": { "replacement": "https://cc/leg-b/replacement" } }
+                } },
+                "8:orgid:C": { "details": {}, "endpoints": { "ep2": { "participantId": "leg-c" } } }
+            } }
+        });
+        let legs: std::collections::HashMap<_, _> = roster_legs(&ev.to_string()).into_iter().collect();
+        assert_eq!(legs["8:orgid:b"], serde_json::json!({ "replaces": "https://cc/leg-b/replacement", "replacementTargetParticipantId": "leg-b" }));
+        assert!(!legs.contains_key("8:orgid:c"));
+        // Not a roster event.
+        assert!(roster_legs(r#"{"callAgentPath":"call/end/","body":{}}"#).is_empty());
     }
 
     #[test]
