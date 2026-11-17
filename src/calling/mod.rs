@@ -34,6 +34,7 @@ pub mod meeting_options;
 pub mod meeting_timer;
 pub mod muted_speech;
 pub mod outgoing;
+pub mod phone_audio;
 pub mod presenter_mode;
 #[cfg(all(feature = "audio", target_os = "linux"))]
 pub mod pw_defaults;

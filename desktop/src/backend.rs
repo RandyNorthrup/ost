@@ -276,6 +276,8 @@ pub mod qobject {
         #[qproperty(bool, call_ai_available)]
         /// The meeting's Facilitator is enabled.
         #[qproperty(bool, call_ai_facilitator)]
+        /// Facilitator may speak (More ▸ Facilitator ▸ Enable voice).
+        #[qproperty(bool, call_ai_facilitator_voice)]
         /// Everyone can present in the meeting (Teams then shows the
         /// meeting timer).
         #[qproperty(bool, call_everyone_presents)]
@@ -289,6 +291,15 @@ pub mod qobject {
         /// Teams' Meeting info pane: {title, hours, schedule, location,
         /// body (HTML), canCopy}, or "" before it's loaded.
         #[qproperty(QString, call_meeting_info_json)]
+        /// Teams' phone audio for the meeting: {available, dialIn,
+        /// dialOut, dial: {toll, tollFree, conferenceText, localNumbersUrl,
+        /// tollAria, …} or null, state: "" | "connecting" | "connected" |
+        /// "failed", number (as shown), error (Teams' message)}.
+        #[qproperty(QString, call_phone_json)]
+        /// The pre-join window's Phone audio for the meeting being joined:
+        /// {checked (Teams' "Checking for dial-in info…" until true),
+        /// available}.
+        #[qproperty(QString, prejoin_phone_json)]
         /// The meeting's notes link the call shares (its
         /// collabResources.notes meeting state), "" until someone made them.
         #[qproperty(QString, call_notes_url)]
@@ -1161,6 +1172,22 @@ pub mod qobject {
         /// text.
         #[qinvokable]
         fn copy_meeting_join_info(self: Pin<&mut Backend>);
+        /// Teams' Call me box: {enabled (Call me), display (the number as
+        /// Teams shows it once the box loses focus)} for what was typed,
+        /// with your dial plan.
+        #[qinvokable]
+        fn phone_number_check(self: &Backend, text: &QString) -> QString;
+        /// Teams' "Call me": the meeting calls this number and puts it in
+        /// the meeting as your audio (call_phone_json follows it).
+        #[qinvokable]
+        fn call_me_back(self: Pin<&mut Backend>, text: &QString);
+        /// "Disconnect": take your phone out of the meeting.
+        #[qinvokable]
+        fn disconnect_phone_audio(self: Pin<&mut Backend>);
+        /// The pre-join window's Phone audio: whether the meeting a link
+        /// names offers it (prejoin_phone_json).
+        #[qinvokable]
+        fn check_prejoin_phone(self: Pin<&mut Backend>, join_url: &QString);
         /// Teams' "Turn off other videos": stop (or resume) asking for
         /// others' cameras.
         #[qinvokable]
@@ -2606,11 +2633,17 @@ pub struct BackendRust {
     call_ai_indicator: bool,
     call_ai_available: bool,
     call_ai_facilitator: bool,
+    call_ai_facilitator_voice: bool,
+    call_ai_facilitator_live_notes: bool,
     call_everyone_presents: bool,
     call_ai_on: bool,
     call_recording_state: QString,
     call_recording_tip: QString,
     call_meeting_info_json: QString,
+    call_phone_json: QString,
+    prejoin_phone_json: QString,
+    /// The phone "Call me" put in the meeting (for Disconnect).
+    phone_mri: String,
     call_notes_url: QString,
     call_end_reason: QString,
     call_controls_json: QString,
@@ -3273,6 +3306,57 @@ struct JoinedView {
     can_share: bool,
     started: bool,
     timers: teams_cli::calling::meeting_timer::Timers,
+    /// The meeting's phone audio (call_phone_json, no call me yet).
+    phone: String,
+}
+
+/// call_phone_json for a call: Teams' PSTN state and dial-in details, and
+/// where "Call me" stands.
+fn phone_json(call: &OutgoingCall, state: &str, number: &str, error: &str) -> String {
+    let p = call.phone_audio();
+    serde_json::json!({
+        "available": p.available,
+        "dialIn": p.dial_in,
+        "dialOut": p.dial_out,
+        "dial": call.dial_in().map(|d| d.to_json()),
+        "state": state,
+        "number": number,
+        "error": error,
+    })
+    .to_string()
+}
+
+/// The number "Call me" is calling, as shown.
+static PHONE_NUMBER: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+
+/// Your dial plan's normalization rules (Teams' dialPlanPolicy), once read.
+static DIAL_PLAN: std::sync::RwLock<Option<teams_cli::calling::phone_audio::DialPlan>> = std::sync::RwLock::new(None);
+
+fn dial_plan() -> teams_cli::calling::phone_audio::DialPlan {
+    DIAL_PLAN.read().ok().and_then(|p| p.clone()).unwrap_or_default()
+}
+
+/// Read your dial plan (effective policy tenantDialPlan) once.
+async fn load_dial_plan() {
+    if DIAL_PLAN.read().is_ok_and(|p| p.is_some()) {
+        return;
+    }
+    let r = async {
+        let client = TeamsClient::new().await?;
+        api::custom_emoji::effective_policies(&client, &["tenantDialPlan"]).await
+    }
+    .await;
+    match r {
+        Ok(v) => {
+            let policy = v.pointer("/tenantDialPlan/value").cloned().unwrap_or_default();
+            let plan = teams_cli::calling::phone_audio::DialPlan::from_policy(&policy);
+            tracing::info!(rules = plan.has_rules(), "dial plan");
+            if let Ok(mut w) = DIAL_PLAN.write() {
+                *w = Some(plan);
+            }
+        }
+        Err(e) => tracing::warn!("dial plan: {}", short_error(&e)),
+    }
 }
 
 impl JoinedView {
@@ -3288,6 +3372,7 @@ impl JoinedView {
             can_share: call.can_share(),
             started: call.meeting_started(),
             timers: call.timers().clone(),
+            phone: phone_json(call, "", "", ""),
         }
     }
 }
@@ -4965,6 +5050,41 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
             let _ = qt.queue(move |mut this| this.as_mut().show_processing(p));
         }
     }
+    // The meeting's answer to "Call me".
+    if (json.contains("conversation/addParticipantSuccess") || json.contains("conversation/addParticipantFailure"))
+        && let Ok(v) = serde_json::from_str::<serde_json::Value>(json)
+    {
+        let mut slot = call_slot().lock().await;
+        if let Some(call) = slot.outgoing.as_mut()
+            && let Some(outcome) = call.call_me_outcome(&v)
+        {
+            let shown = PHONE_NUMBER.lock().map(|n| n.clone()).unwrap_or_default();
+            let (json, mri) = match outcome {
+                Ok(mri) => {
+                    tracing::info!("call me: the phone joined");
+                    (phone_json(call, "connected", &shown, ""), mri)
+                }
+                Err(text) => {
+                    tracing::info!(%text, "call me failed");
+                    (phone_json(call, "failed", &shown, &text), String::new())
+                }
+            };
+            let connected = !mri.is_empty();
+            let _ = qt.queue(move |mut this| {
+                this.as_mut().rust_mut().phone_mri = mri;
+                this.as_mut().set_call_phone_json(QString::from(json.as_str()));
+                // Teams mutes the computer's mic and speaker once the
+                // phone carries the meeting's audio.
+                if connected {
+                    if !this.rust().call_muted {
+                        this.as_mut().toggle_mute();
+                    }
+                    this.as_mut().use_no_audio();
+                }
+            });
+            return;
+        }
+    }
     // The meeting locked or unlocked, or changed what attendees may do.
     if json.contains("conversationUpdate") || json.contains("meetingCapability") {
         tracing::debug!(event = %json.chars().take(3000).collect::<String>(), "conversation update");
@@ -4989,6 +5109,27 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
             if let Some(uri) = notes {
                 tracing::info!(shared = !uri.is_empty(), "meeting notes changed");
                 let _ = qt.queue(move |mut this| this.as_mut().set_call_notes_url(QString::from(uri.as_str())));
+            }
+            // The meeting's dial-in or PSTN capability changed.
+            let phone = {
+                let mut slot = call_slot().lock().await;
+                slot.outgoing.as_mut().and_then(|call| {
+                    call.apply_phone_audio(&v).then(|| {
+                        let p = call.phone_audio();
+                        tracing::info!(available = p.available, "phone audio changed");
+                        (p, call.dial_in().map(|d| d.to_json()))
+                    })
+                })
+            };
+            if let Some((p, dial)) = phone {
+                let _ = qt.queue(move |mut this| {
+                    let mut j: serde_json::Value = serde_json::from_str(&this.rust().call_phone_json.to_string()).unwrap_or_else(|_| serde_json::json!({}));
+                    j["available"] = p.available.into();
+                    j["dialIn"] = p.dial_in.into();
+                    j["dialOut"] = p.dial_out.into();
+                    j["dial"] = dial.unwrap_or(serde_json::Value::Null);
+                    this.as_mut().set_call_phone_json(QString::from(j.to_string().as_str()));
+                });
             }
             // The meeting timer changed (someone's start, pause, …).
             let timers = call_slot()
@@ -7907,9 +8048,11 @@ impl qobject::Backend {
         self.as_mut().set_call_ai_indicator(false);
         self.as_mut().set_call_ai_available(false);
         self.as_mut().set_call_ai_facilitator(false);
+        self.as_mut().set_call_ai_facilitator_voice(false);
         self.as_mut().set_call_ai_on(false);
         self.as_mut().show_processing(Default::default());
         self.as_mut().set_call_meeting_info_json(QString::default());
+        self.as_mut().set_call_phone_json(QString::default());
         self.as_mut().set_call_notes_url(QString::default());
         self.as_mut().set_call_lobby_thread(QString::default());
         self.as_mut().show_transcript(Vec::new(), true);
@@ -7930,6 +8073,8 @@ impl qobject::Backend {
         self.as_mut().set_call_can_video(v.can_video);
         self.as_mut().set_call_can_share(v.can_share);
         self.as_mut().set_call_lobby_presenter(v.started);
+        self.as_mut().set_call_phone_json(QString::from(v.phone.as_str()));
+        runtime().spawn(load_dial_plan());
         // Held in the lobby: Teams keeps the pre-join screen until someone
         // admits us.
         self.as_mut().set_call_state(QString::from(if in_lobby { "lobby" } else { "connected" }));
@@ -7960,6 +8105,10 @@ impl qobject::Backend {
         if self.rust().call_ai_facilitator != cap.facilitator {
             self.as_mut().set_call_ai_facilitator(cap.facilitator);
         }
+        if self.rust().call_ai_facilitator_voice != cap.facilitator_speech {
+            self.as_mut().set_call_ai_facilitator_voice(cap.facilitator_speech);
+        }
+        self.as_mut().rust_mut().call_ai_facilitator_live_notes = cap.facilitator_live_notes;
     }
 
     /// Show what the meeting's call recorder does: AI is on while its
@@ -8003,13 +8152,67 @@ impl qobject::Backend {
 
     pub fn meeting_action(self: Pin<&mut Self>, action: &QString) {
         let action = action.to_string();
+        let link = self.call_meeting_link();
+        let live_notes = self.rust().call_ai_facilitator_live_notes;
         let qt = self.qt_thread();
         runtime().spawn(async move {
+            // Teams' Turn on / Turn off Facilitator: the meeting's
+            // Facilitator option first (organizers).
+            if let ("facilitatorOn" | "facilitatorOff", Some(l)) = (action.as_str(), link.as_ref()) {
+                let on = action == "facilitatorOn";
+                let r = async {
+                    let client = TeamsClient::new().await?;
+                    api::meeting_options::set_facilitator(
+                        &client,
+                        l.tenant_id.as_deref().unwrap_or_default(),
+                        l.organizer_id.as_deref().unwrap_or_default(),
+                        &l.thread_id,
+                        &l.message_id,
+                        on,
+                    )
+                    .await
+                }
+                .await;
+                match r {
+                    Ok(v) => tracing::info!(on = v, "facilitator option saved"),
+                    Err(e) => {
+                        tracing::warn!("facilitator option: {}", short_error(&e));
+                        let failed = action.clone();
+                        let _ = qt.queue(move |this| this.meeting_action_failed(QString::from(failed.as_str())));
+                        return;
+                    }
+                }
+            }
             let mut slot = call_slot().lock().await;
             let Some(call) = slot.outgoing.as_mut() else {
                 return;
             };
             let result = match action.as_str() {
+                // Off: Teams takes the Facilitator agent out of the call and
+                // turns its settings off.
+                "facilitatorOff" => {
+                    if let Some(bot) = call
+                        .joined_roster()
+                        .into_iter()
+                        .find(|p| p.id.eq_ignore_ascii_case(teams_cli::calling::meeting_options::FACILITATOR_BOT))
+                        && let Err(e) = call.remove(&bot.id, "Facilitator").await
+                    {
+                        tracing::warn!("removing Facilitator: {}", short_error(&e));
+                    }
+                    call.update_meeting_settings(serde_json::json!({
+                        "groupCopilotDetails": { "enabled": false, "liveNotesEnabled": false, "speechEnabled": false }
+                    }))
+                    .await
+                }
+                // On: the option is enough; Facilitator needs the
+                // transcript (the call window asks to start it).
+                "facilitatorOn" => Ok(()),
+                "facilitatorVoiceOn" | "facilitatorVoiceOff" => {
+                    call.update_meeting_settings(serde_json::json!({
+                        "groupCopilotDetails": { "enabled": true, "liveNotesEnabled": live_notes, "speechEnabled": action == "facilitatorVoiceOn" }
+                    }))
+                    .await
+                }
                 "lock" | "unlock" => {
                     call.update_meeting_settings(serde_json::json!({ "lockMeeting": action == "lock" }))
                         .await
@@ -8499,7 +8702,13 @@ impl qobject::Backend {
         let qt = self.qt_thread();
         runtime().spawn(async move {
             use teams_cli::calling::meeting_info as mi;
-            let Some(info) = call_slot().lock().await.outgoing.as_ref().and_then(|c| c.meeting_info()) else {
+            let Some((info, dial)) = call_slot()
+                .lock()
+                .await
+                .outgoing
+                .as_ref()
+                .and_then(|c| c.meeting_info().map(|i| (i, c.dial_in().map(|d| d.to_json()))))
+            else {
                 return;
             };
             let event = if info.ical_uid.is_empty() {
@@ -8553,6 +8762,8 @@ impl qobject::Backend {
                 "location": info.location,
                 "body": mi::body_for_display(&body),
                 "canCopy": !copy.0.is_empty(),
+                // Teams' dial-in block (the meeting's pstnDetails).
+                "dial": dial,
             })
             .to_string();
             tracing::info!(has_event = event.is_some(), body = body.len(), "meeting info loaded");
@@ -8569,6 +8780,122 @@ impl qobject::Backend {
             // SAFETY: two NUL-terminated strings, copied by Qt before returning.
             unsafe { ost_set_clipboard(t.as_ptr(), h.as_ptr()) };
         }
+    }
+
+    pub fn phone_number_check(&self, text: &QString) -> QString {
+        let text = text.to_string();
+        let plan = dial_plan();
+        QString::from(
+            serde_json::json!({ "enabled": plan.can_call(&text), "display": plan.display(&text) })
+                .to_string()
+                .as_str(),
+        )
+    }
+
+    pub fn call_me_back(self: Pin<&mut Self>, text: &QString) {
+        let text = text.to_string();
+        let plan = dial_plan();
+        if !plan.can_call(&text) {
+            return;
+        }
+        let shown = plan.display(&text);
+        let mri = plan.phone_mri(&text);
+        if let Ok(mut n) = PHONE_NUMBER.lock() {
+            *n = shown.clone();
+        }
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let mut slot = call_slot().lock().await;
+            let Some(call) = slot.outgoing.as_mut() else { return };
+            let connecting = phone_json(call, "connecting", &shown, "");
+            let _ = qt.queue(move |mut this| this.as_mut().set_call_phone_json(QString::from(connecting.as_str())));
+            match call.call_me_back(&mri).await {
+                Ok(()) => {
+                    drop(slot);
+                    // Teams gives the call 120 s to connect.
+                    let qt2 = qt.clone();
+                    let shown2 = shown.clone();
+                    runtime().spawn(async move {
+                        tokio::time::sleep(std::time::Duration::from_secs(120)).await;
+                        let mut slot = call_slot().lock().await;
+                        let Some(call) = slot.outgoing.as_mut() else { return };
+                        if call.call_me_pending().is_some() {
+                            call.cancel_call_me();
+                            tracing::info!("call me timed out");
+                            let json = phone_json(call, "failed", &shown2, "We could not complete the call. The user is unavailable at the moment.");
+                            let _ = qt2.queue(move |mut this| this.as_mut().set_call_phone_json(QString::from(json.as_str())));
+                        }
+                    });
+                }
+                Err(e) => {
+                    tracing::warn!("call me: {}", short_error(&e));
+                    let json = phone_json(call, "failed", &shown, "We could not complete the call. The user is unavailable at the moment.");
+                    let _ = qt.queue(move |mut this| this.as_mut().set_call_phone_json(QString::from(json.as_str())));
+                }
+            }
+        });
+    }
+
+    pub fn disconnect_phone_audio(self: Pin<&mut Self>) {
+        let phone: serde_json::Value = serde_json::from_str(&self.rust().call_phone_json.to_string()).unwrap_or_default();
+        let mri = self.rust().phone_mri.clone();
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let slot = call_slot().lock().await;
+            let Some(call) = slot.outgoing.as_ref() else { return };
+            if !mri.is_empty()
+                && let Err(e) = call.remove(&mri, phone["number"].as_str().unwrap_or("")).await
+            {
+                tracing::warn!("disconnecting the phone: {}", short_error(&e));
+            }
+            tracing::info!("phone audio disconnected");
+            let json = phone_json(call, "", "", "");
+            let _ = qt.queue(move |mut this| {
+                this.as_mut().rust_mut().phone_mri.clear();
+                this.as_mut().set_call_phone_json(QString::from(json.as_str()));
+            });
+        });
+    }
+
+    pub fn check_prejoin_phone(mut self: Pin<&mut Self>, join_url: &QString) {
+        let url = join_url.to_string();
+        self.as_mut().set_prejoin_phone_json(QString::from(r#"{"checked":false,"available":false}"#));
+        // The meeting's invitation in your calendar (the event with this
+        // join link) says whether it has dial-in.
+        let event_id = serde_json::from_str::<serde_json::Value>(&self.rust().calendar_json.to_string())
+            .ok()
+            .and_then(|v| {
+                v.as_array()?
+                    .iter()
+                    .find(|e| e["join_url"].as_str().is_some_and(|u| !u.is_empty() && u == url))
+                    .and_then(|e| e["id"].as_str().map(str::to_string))
+            });
+        tracing::info!(found = event_id.is_some(), "pre-join phone audio: the meeting's calendar event");
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let dial = match event_id {
+                Some(id) => match async {
+                    let client = TeamsClient::new().await?;
+                    api::calendar::event_body(&client, &id).await
+                }
+                .await
+                {
+                    Ok(body) => {
+                        tracing::info!(body = body.len(), dial_block = body.contains("tel:"), "pre-join invitation read");
+                        teams_cli::calling::phone_audio::dial_in_from_invite(&body)
+                    }
+                    Err(e) => {
+                        tracing::warn!("pre-join dial-in: {}", short_error(&e));
+                        None
+                    }
+                },
+                None => None,
+            };
+            tracing::info!(available = dial.is_some(), "pre-join phone audio checked");
+            let json = serde_json::json!({ "checked": true, "available": dial.is_some() }).to_string();
+            let _ = qt.queue(move |mut this| this.as_mut().set_prejoin_phone_json(QString::from(json.as_str())));
+        });
+        runtime().spawn(load_dial_plan());
     }
 
     pub fn download_attendance_list(mut self: Pin<&mut Self>) {

@@ -45,11 +45,13 @@ fn details(json: &Value) -> Option<&Value> {
 /// The meeting info in a join (conversation) response.
 pub fn from_join_response(json: &Value) -> Option<MeetingInfo> {
     let d = details(json)?;
-    let props: Value = d
-        .get("meetingChatProperties")
-        .and_then(Value::as_str)
-        .and_then(|s| serde_json::from_str(s).ok())
-        .unwrap_or_default();
+    // A JSON string in a one-request join's response, an object once the
+    // call joins the meeting's conversation (as Teams does).
+    let props: Value = match d.get("meetingChatProperties") {
+        Some(Value::String(s)) => serde_json::from_str(s).unwrap_or_default(),
+        Some(o @ Value::Object(_)) => o.clone(),
+        _ => Value::Null,
+    };
     let s = |v: &Value, k: &str| v.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
     let time = |k: &str| {
         [d.get(k), props.get(k)]
@@ -542,6 +544,10 @@ mod tests {
         assert_eq!(m.join_url, "https://teams.microsoft.com/l/meetup-join/x");
         v["meetingDetails"]["shortJoinUrl"] = "https://teams.microsoft.com/meet/29?p=a".into();
         assert_eq!(from_join_response(&v).unwrap().join_url, "https://teams.microsoft.com/meet/29?p=a");
+        // Joined through the meeting's conversation the properties come as
+        // an object (Teams on the web, 2026-11-16).
+        v["meetingDetails"]["meetingChatProperties"] = props;
+        assert_eq!(from_join_response(&v).unwrap().title, "OST calendar test: created from OST");
     }
 
     #[test]

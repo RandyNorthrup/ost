@@ -699,6 +699,7 @@ pub async fn create_echo_call(
         meetup: false,
         meeting_info: None,
         scenario: Some("UserInitiatedTestCall"),
+        two_step: false,
     };
     create_call_with(http, epconv_url, params, sdp_offer, &opts).await
 }
@@ -850,6 +851,7 @@ pub async fn join_meeting(
         meetup: false,
         meeting_info: Some(meeting_info(organizer, (params.caller_oid, params.tenant_id))),
         scenario: None,
+        two_step: true,
     };
     create_call_with(http, epconv_url, params, sdp_offer, &opts).await
 }
@@ -904,6 +906,7 @@ pub async fn create_group_call(
         meetup: false,
         meeting_info: None,
         scenario: None,
+        two_step: false,
     };
     create_call_with(http, epconv_url, params, sdp_offer, &opts).await
 }
@@ -930,6 +933,7 @@ pub async fn create_channel_meeting(
         meetup: true,
         meeting_info: None,
         scenario: None,
+        two_step: false,
     };
     create_call_with(http, epconv_url, params, sdp_offer, &opts).await
 }
@@ -951,6 +955,96 @@ struct CreateOptions<'a> {
     meeting_info: Option<serde_json::Value>,
     /// The call's scenario (`UserInitiatedTestCall` for the test call).
     scenario: Option<&'a str>,
+    /// Join the meeting's conversation first, then its call (Teams on the
+    /// web, captured 2026-11-16: `POST epconv` without a call, then the
+    /// call `POST`ed to the conversation it answers with). Joined that
+    /// way the meeting's details carry its dial-in (`pstnDetails`) and
+    /// PSTN capability; created and joined in one go they come without.
+    two_step: bool,
+}
+
+/// Teams' conversation-only join (the first of its two meeting requests):
+/// our participant and the conversation's callbacks, no call. Answers the
+/// conversation's controller URL.
+async fn join_conversation_only(
+    http: &reqwest::Client,
+    epconv_url: &str,
+    params: &ConversationCallParams<'_>,
+    opts: &CreateOptions<'_>,
+) -> Result<String> {
+    let tc = |path: &str| trouter_callback(params.trouter_surl, params.endpoint_id, path);
+    let payload = serde_json::json!({
+        "conversationRequest": {
+            "subject": null,
+            "roster": { "type": "Delta", "rosterUpdate": tc("conversation/rosterUpdate/") },
+            "properties": {
+                "allowConversationWithoutHost": true,
+                "enableGroupCallEventMessages": true,
+                "enableGroupCallUpgradeMessage": false,
+                "enableGroupCallMeetupGeneration": opts.meetup
+            },
+            "links": {
+                "conversationEnd": tc("conversation/conversationEnd/"),
+                "conversationUpdate": tc("conversation/conversationUpdate/"),
+                "localParticipantUpdate": tc("conversation/localParticipantUpdate/"),
+                "addParticipantSuccess": tc("conversation/addParticipantSuccess/"),
+                "addParticipantFailure": tc("conversation/addParticipantFailure/"),
+                "receiveMessage": tc("conversation/receiveMessage/")
+            }
+        },
+        "groupContext": null,
+        "groupChat": { "threadId": params.thread_id, "messageId": opts.meeting_message_id },
+        "participants": {
+            "from": {
+                "id": params.caller_mri,
+                "displayName": params.caller_display_name,
+                "endpointId": params.endpoint_id,
+                "participantId": params.participant_id,
+                "languageId": "en-US"
+            }
+        },
+        "capabilities": null,
+        "endpointCapabilities": 73463,
+        "clientEndpointCapabilities": 9336554,
+        "endpointMetadata": { "holographicCapabilities": 3 },
+        "meetingInfo": opts.meeting_info,
+        "endpointState": {
+            "endpointStateSequenceNumber": 0,
+            "endpointProperties": { "additionalEndpointProperties": { "infoShownInReportMode": "FullInformation" } }
+        },
+        "debugContent": { "ecsEtag": "\"0\"", "causeId": &params.message_id[..8.min(params.message_id.len())] }
+    });
+    let resp = http
+        .post(epconv_url)
+        .header("Authorization", format!("Bearer {}", params.ic3_token))
+        .header("x-microsoft-skype-chain-id", params.chain_id)
+        .header("x-microsoft-skype-message-id", uuid::Uuid::new_v4().to_string())
+        .header("x-microsoft-skype-client", SKYPE_CLIENT_HEADER)
+        .header("Referer", "https://teams.microsoft.com/")
+        .header("ms-teams-partition", TEAMS_PARTITION)
+        .header("ms-teams-region", TEAMS_REGION)
+        .header("ms-teams-ring", TEAMS_RING)
+        .header("x-ms-migration", "True")
+        .json(&payload)
+        .send()
+        .await
+        .context("Joining the meeting's conversation")?;
+    let status = resp.status();
+    let headers = resp.headers().clone();
+    let body = resp.text().await.unwrap_or_default();
+    if !status.is_success() {
+        anyhow::bail!("Joining the meeting's conversation failed ({status}): {}", &body[..body.len().min(300)]);
+    }
+    let v: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
+    let controller = v
+        .pointer("/conversationController")
+        .and_then(|c| c.as_str())
+        .map(str::to_string)
+        .or_else(|| headers.get("location").and_then(|h| h.to_str().ok()).map(str::to_string))
+        .filter(|c| super::incoming::is_service_link(c))
+        .context("No conversationController for the meeting's conversation")?;
+    tracing::info!("joined the meeting's conversation");
+    Ok(controller)
 }
 
 async fn create_call(
@@ -972,6 +1066,7 @@ async fn create_call(
         meetup: false,
         meeting_info: None,
         scenario: None,
+        two_step: false,
     };
     create_call_with(http, epconv_url, params, sdp_offer, &opts).await
 }
@@ -1091,13 +1186,25 @@ async fn create_call_with(
         payload["participants"]["invitationType"] = t.into();
     }
 
+    // Meetings: the conversation first, then the call to it (Teams').
+    let target_url = if opts.two_step {
+        match join_conversation_only(http, epconv_url, params, opts).await {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::warn!("conversation-only join: {e:#}; joining in one request");
+                epconv_url.to_string()
+            }
+        }
+    } else {
+        epconv_url.to_string()
+    };
     tracing::info!(
         "1:1 call: POST {} (single-shot epconv with SDP)",
-        epconv_url
+        if opts.two_step { "the meeting's conversation" } else { epconv_url }
     );
 
     let resp = http
-        .post(epconv_url)
+        .post(&target_url)
         .header("Authorization", format!("Bearer {}", params.ic3_token))
         .header("Content-Type", "application/json")
         .header("x-microsoft-skype-chain-id", params.chain_id)

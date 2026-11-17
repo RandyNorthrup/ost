@@ -600,6 +600,13 @@ pub struct Facts {
     pub can_take_control: bool,
     /// The user's arrangement of the new controls.
     pub customization: Customization,
+    /// The meeting offers phone audio with dial-in (Teams' PstnButton:
+    /// `pstnCapabilities.isDialInEnabled && isPSTNEnabled` and dial-in
+    /// details).
+    pub call_me: bool,
+    /// Teams' Facilitator entry point (More ▸ Facilitator ▸): a Copilot
+    /// licence in a scheduled meeting.
+    pub facilitator: bool,
 }
 
 impl Facts {
@@ -666,6 +673,11 @@ impl Facts {
             // health) and Settings ▸ Hide me / Optimize for room (the old
             // controls keep those two in View ▸ More options).
             "JoinInfoMenuControl" => true,
+            // More ▸ Call me (the old controls' flat callingOverflow;
+            // Join info ▸ Call me with the new ones).
+            "PstnButton" => self.call_me && !self.p2p,
+            // More ▸ Facilitator ▸ Turn on / off Facilitator, Enable voice.
+            "FacilitatorButton" => self.facilitator && self.scheduled && !self.breakout_room,
             "ToggleHideMyselfButton" | "ByodMeetingRoomModeButton" => self.centered && !self.p2p,
             _ => false,
         }
@@ -982,5 +994,33 @@ mod tests {
         assert_eq!(layout_name(true, false, false), LayoutName::OneToOneOrGroupCall);
         assert_eq!(layout_name(true, true, false), LayoutName::OneToOnePstn);
         assert_eq!(layout_name(true, false, true), LayoutName::ConsultAndAdd);
+    }
+
+    #[test]
+    fn call_me_and_facilitator_in_more_as_teams() {
+        // Teams on the web (2026-11-16, a meeting with Audio Conferencing,
+        // ost-test1 licensed for Copilot): More reads … Meeting info,
+        // Facilitator ▸, Timer … Settings ▸ | Call me, Report a concern,
+        // Help.
+        let facts = Facts { scheduled: true, organizer: true, reactions: true, call_me: true, facilitator: true, ..Default::default() };
+        let a = arrange(&facts, &|_| 56.0, 17.0, 5000.0);
+        let flat: Vec<String> = more_names(&a).concat();
+        let at = |n: &str| flat.iter().position(|x| x == n).unwrap_or_else(|| panic!("{n} missing: {flat:?}"));
+        assert!(at("MeetingInfoButton") < at("FacilitatorButton") && at("FacilitatorButton") < at("MeetingFacilitatorTimerButton"));
+        assert!(at("SettingsMenuControl") < at("PstnButton") && at("PstnButton") < at("ReportMeetingButton"));
+        // Call me is a section of one (callingOverflow) right before Report
+        // a concern and Help: the menu merges it into theirs (no divider).
+        let secs = more_names(&a);
+        assert!(secs.iter().any(|s| s == &["PstnButton".to_string()]), "Call me alone: {secs:?}");
+        assert_eq!(flat[at("PstnButton")..], ["PstnButton", "ReportMeetingButton", "MeetingHelpButton"]);
+        // Without dial-in (or a licence) neither shows.
+        let plain = arrange(&Facts { scheduled: true, ..Default::default() }, &|_| 56.0, 17.0, 5000.0);
+        let flat: Vec<String> = more_names(&plain).concat();
+        assert!(!flat.contains(&"PstnButton".to_string()) && !flat.contains(&"FacilitatorButton".to_string()));
+        // The new controls: Join info ▸ Meeting info, Call me, Call health.
+        let n = arrange(&Facts { call_me: true, ..new_controls_meeting() }, &|_| 56.0, 17.0, 5000.0);
+        let info = n.more.iter().flat_map(|s| s.items.iter()).find(|i| i.name == "JoinInfoMenuControl").unwrap();
+        let items: Vec<&str> = info.sections.iter().flat_map(|s| s.items.iter().map(|i| i.name.as_str())).collect();
+        assert_eq!(items, ["MeetingInfoButton", "PstnButton", "CallHealth"]);
     }
 }

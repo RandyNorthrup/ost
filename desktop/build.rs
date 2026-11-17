@@ -134,6 +134,7 @@ fn main() {
         "qml/ImmersiveReader.qml",
         "qml/EventsView.qml",
         "qml/MeetingNotesPane.qml",
+        "qml/PhoneAudioDialog.qml",
         "qml/ExistingPageDialog.qml",
         "qml/BreakoutTab.qml",
         "qml/TabWindow.qml",

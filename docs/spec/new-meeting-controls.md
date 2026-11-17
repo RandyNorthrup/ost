@@ -237,8 +237,11 @@ Built (CallWindow.qml, MenuPopup.qml, SettingsView.qml,
   local settings, `meetingControlsLayouts`).
 - [ ] Drag and drop between the bar and More.
 - [x] Copilot (licensed users; call-and-meeting-window.md §1.8j).
-- [ ] Facilitator, Interpreter, Call me (OST has no such features;
-  hidden as in the current layout).
+- [x] Join info ▸ Call me (with dial-in; call-and-meeting-window.md
+  §1.8k).
+- [ ] Facilitator ▾ in More's grid (the current controls' More ▸
+  Facilitator ▸ is built, §1.8h) and Interpreter (OST has no AI
+  interpretation).
 - [ ] Dark and High contrast were not measured in Teams with the new
   controls on; OST draws them with the same Fluent tokens as the current
   bar (checked in OST with `--theme=dark` / `--theme=highContrast`).

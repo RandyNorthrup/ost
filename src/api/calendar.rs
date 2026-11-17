@@ -129,6 +129,18 @@ pub async fn event_by_ical_uid(client: &TeamsClient, ical_uid: &str) -> Result<O
     }))
 }
 
+/// A calendar event's body (HTML), by its id: a Teams meeting's
+/// invitation, with its dial-in block when the meeting has one.
+pub async fn event_body(client: &TeamsClient, id: &str) -> Result<String> {
+    let v: serde_json::Value = client
+        .graph_get(&format!("/me/events/{}?$select=body", event_path_id(id)?))
+        .await?
+        .json()
+        .await
+        .context("Failed to read the calendar event")?;
+    Ok(v.pointer("/body/content").and_then(|c| c.as_str()).unwrap_or_default().to_string())
+}
+
 /// Graph event ids are base64url-ish; refuse anything else in a path.
 fn event_path_id(id: &str) -> Result<&str> {
     if id.is_empty()

@@ -634,8 +634,34 @@ Window {
         organizer: organizer, onHold: held, canPopOut: presenting && !contentPoppedOut, reactions: true,
         roomToJoin: roomToJoin, canReturnToMain: canReturnToMain, breakoutRoom: backend.callBreakoutRoomJson !== "" || !!heldMeeting,
         centered: newControls, customization: controlsCustomization, echo: testCall, copilot: copilotAllowed,
-        canTakeControl: presenting && !!controlState.capable
+        canTakeControl: presenting && !!controlState.capable,
+        callMe: !!phone.available && !!phone.dialIn && !!phone.dial, facilitator: copilotAllowed
     })
+    /// Teams' phone audio for the meeting (Backend call_phone_json).
+    readonly property var phone: backend.callPhoneJson ? JSON.parse(backend.callPhoneJson) : ({})
+    /// Teams' "Use phone for audio" (after joining with Phone audio, More ▸
+    /// Call me).
+    function openPhoneAudio() { phoneDialog.open() }
+    function phoneDialogForTest() { return phoneDialog }
+    PhoneAudioDialog {
+        id: phoneDialog
+        anchors.fill: parent
+        phone: win.phone
+    }
+    /// More ▸ Facilitator ▸: Turn on / Turn off Facilitator, Enable /
+    /// Disable voice (Teams' FacilitatorButton menu, measured 2026-11-16).
+    readonly property var facilitatorItems: [
+        { name: "FacilitatorToggle", label: aiFacilitator ? "Turn off Facilitator" : "Turn on Facilitator", icon: "ai-facilitator", enabled: organizer },
+        { name: "FacilitatorVoice", label: backend.callAiFacilitatorVoice ? "Disable voice" : "Enable voice", icon: "sound-wave-circle-20", enabled: aiFacilitator && organizer }
+    ]
+    function facilitatorAction(name) {
+        if (name === "FacilitatorToggle") {
+            if (aiFacilitator) { backend.meetingAction("facilitatorOff"); return }
+            backend.meetingAction("facilitatorOn")
+            // Facilitator works from the transcript: Teams asks to start it.
+            if (!transcribing) { facilitatorAsk = true; copilotAsk.visible = true }
+        } else if (name === "FacilitatorVoice") backend.meetingAction(backend.callAiFacilitatorVoice ? "facilitatorVoiceOff" : "facilitatorVoiceOn")
+    }
     TextMetrics { id: resumeMetrics; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; text: "Resume" }
     // Each control's slot (button 48 + 4 either side; split buttons 74).
     TextMetrics { id: joinRoomMetrics; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; text: "Join room" }
@@ -719,6 +745,7 @@ Window {
         else if (name === "CameraEffectsButton") side = side === "video" ? "" : "video"
         else if (name === "AudioSettingsButton") side = side === "audio" ? "" : "audio"
         else if (name === "MeetingInfoButton") { side = side === "info" ? "" : "info"; if (side === "info") loadMeetingInfo() }
+        else if (name === "PstnButton") openPhoneAudio()
         else if (name === "MeetingHelpButton") { helpWindow.show(); helpWindow.raise(); helpWindow.requestActivate() }
         else if (name === "ReportMeetingButton") openMeetingReport()
         else if (name === "MeetingFacilitatorTimerButton") toggleTimer()
@@ -775,6 +802,10 @@ Window {
     readonly property bool recording: recordingState === "Recording" || recordingState === "RecordingAndTranscribing"
     function moreLabel(n) {
         if (n === "MeetingInfoButton") return { label: "Meeting info", icon: "info-20" }
+        // Teams' PstnButton ("Call me", the Call glyph).
+        if (n === "PstnButton") return { label: "Call me", icon: "call-20", enabled: live }
+        // Teams' FacilitatorButton: its glyph in brand while Facilitator is on.
+        if (n === "FacilitatorButton") return { label: "Facilitator", icon: "ai-facilitator", iconColor: aiFacilitator ? theme.brand : undefined }
         if (n === "CameraEffectsButton") return { label: "Video effects and settings", icon: "video-background-effect-20" }
         if (n === "AudioSettingsButton") return { label: "Audio settings", icon: "speaker-settings-20" }
         if (n === "RecordingMenuControl") return { label: "Record and transcribe", icon: "record-20" }
@@ -838,6 +869,7 @@ Window {
             sec.forEach(it => {
                 const row = Object.assign({ name: it.name }, moreLabel(it.name))
                 if (it.sections) row.submenu = submenuOf(it)
+                if (it.name === "FacilitatorButton") row.submenu = facilitatorItems
                 out.push(row)
             })
             if (i < sections.length - 1 && sec.length > 1) out.push({ separator: true })
@@ -946,7 +978,7 @@ Window {
     readonly property bool copilotShown: side === "copilot"
     function openCopilot() {
         if (side === "copilot") { side = ""; return }
-        if (!transcribing && !copilotAsk.visible) { copilotAsk.visible = true; return }
+        if (!transcribing && !copilotAsk.visible) { facilitatorAsk = false; copilotAsk.visible = true; return }
         copilotAsk.visible = false
         side = "copilot"
         if (!copilotLaunch) backend.meetingCopilotLaunch(copilotHostTheme)
@@ -969,25 +1001,36 @@ Window {
     Shortcut { sequence: "Alt+C"; enabled: win.live && win.ubar.bar.concat(win.ubar.overflowed).indexOf("MeetingCollabButton") >= 0; onActivated: win.openCopilot() }
     function copilotAskForTest() { return copilotAsk }
     function copilotStartForTest() { copilotAsk.visible = false; copilotAfterTranscript = true; recordStart.ask("transcription") }
+    function recordStartForTest(mode) { recordStart.ask(mode) }
     function copilotEventsForTest() { return copilotLoader.item ? copilotLoader.item.hostEvents : [] }
     // Teams' calling alert (ufd_copilotShowTranscriptUfd): 320 x 136.7,
     // #FAFAFA, radius 8, centred 10.7 under the bar; the Copilot mark (20)
     // and the title (12 px) 12.7 in, Close (16) at the end, the text 14/20
     // #616161 at 40.7, Cancel and Start (143.3 x 31.3) at 92.7.
+    // Teams' Facilitator alert is the same card (ufd_groupCopilotShow-
+    // TranscriptUfd, measured 2026-11-16: 320 x 138, a #F0F0F0 hairline,
+    // the 16 px Facilitator glyph 13 in, the title at 37, Dismiss and
+    // Start); Start turns the transcript on after the language question.
+    property bool facilitatorAsk: false
     Rectangle {
         id: copilotAsk
         visible: false
         z: 50
         x: (win.width - width) / 2; y: bar.height + 10.7
-        width: 320; height: 136.7; radius: 8
+        width: 320; height: win.facilitatorAsk ? 138 : 136.7; radius: 8
         color: theme.pick("#FAFAFA", "#292929", "#000000")
-        border.width: theme.highContrast ? 1 : 0; border.color: "#FFFFFF"
+        border.width: theme.highContrast || win.facilitatorAsk ? 1 : 0
+        border.color: theme.highContrast ? "#FFFFFF" : theme.pick("#F0F0F0", "#3D3D3D", "#FFFFFF")
         Accessible.role: Accessible.AlertMessage
-        Accessible.name: "Start transcription to use Copilot"
-        FluentIcon { x: 12.7; y: 12.7; size: 20; name: "ai-copilot"; color: theme.text }
+        Accessible.name: win.facilitatorAsk ? "Start transcription to use Facilitator" : "Start transcription to use Copilot"
+        FluentIcon {
+            x: win.facilitatorAsk ? 13 : 12.7; y: win.facilitatorAsk ? 13 : 12.7
+            size: win.facilitatorAsk ? 16 : 20
+            name: win.facilitatorAsk ? "ai-facilitator" : "ai-copilot"; color: theme.text
+        }
         Text {
-            x: 40.7; y: 12.7; height: 20; verticalAlignment: Text.AlignVCenter
-            text: "Start transcription to use Copilot"
+            x: win.facilitatorAsk ? 37 : 40.7; y: win.facilitatorAsk ? 13 : 12.7; height: 20; verticalAlignment: Text.AlignVCenter
+            text: win.facilitatorAsk ? "Start transcription to use Facilitator" : "Start transcription to use Copilot"
             font.family: theme.font; font.pixelSize: 12; color: theme.text
         }
         FluentIcon {
@@ -998,16 +1041,21 @@ Window {
             Accessible.name: "Close"
         }
         Text {
-            x: 12.7; y: 40.7; width: 296.7
-            text: "Transcription is required to get help from Copilot in the meeting."
+            x: win.facilitatorAsk ? 13 : 12.7; y: win.facilitatorAsk ? 41 : 40.7; width: 296.7
+            text: win.facilitatorAsk ? "Transcription is required to get help from Facilitator in this meeting."
+                                     : "Transcription is required to get help from Copilot in the meeting."
             wrapMode: Text.Wrap
             font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
             color: theme.textSecondary
         }
-        SettingsParts.Button { x: 12.7; y: 92.7; width: 143.3; label: "Cancel"; onClicked: copilotAsk.visible = false }
+        SettingsParts.Button { x: 12.7; y: win.facilitatorAsk ? 93 : 92.7; width: 143.3; label: win.facilitatorAsk ? "Dismiss" : "Cancel"; onClicked: copilotAsk.visible = false }
         SettingsParts.Button {
-            x: 164; y: 92.7; width: 143.3; label: "Start"; primary: true
-            onClicked: { copilotAsk.visible = false; win.copilotAfterTranscript = true; recordStart.ask("transcription") }
+            x: 164; y: win.facilitatorAsk ? 93 : 92.7; width: 143.3; label: "Start"; primary: true
+            onClicked: {
+                copilotAsk.visible = false
+                if (!win.facilitatorAsk) win.copilotAfterTranscript = true
+                recordStart.ask("transcription")
+            }
         }
     }
     // A transcript has run in this meeting (Teams' hasBeenStarted: More
@@ -1069,7 +1117,9 @@ Window {
         return false
     }
     function recordControl(name) {
-        if (name === "ClosedCaptionsButton") setCaptions(!captionsOn)
+        if (name === "FacilitatorToggle" || name === "FacilitatorVoice") facilitatorAction(name)
+        else if (name === "PstnButton") openPhoneAudio()
+        else if (name === "ClosedCaptionsButton") setCaptions(!captionsOn)
         else if (name === "RealTimeTextButton") { if (!rttOn) rttAsk.open() }
         else if (name === "AccessibilitySettingsButton") side = side === "accessibility" ? "" : "accessibility"
         else if (name === "CallHealth") side = side === "callHealth" ? "" : "callHealth"
@@ -3030,6 +3080,7 @@ Window {
         if (n === "SettingsMenuControl") return { label: "Settings", icon: "nmc-settings" }
         if (n === "MeetingInfoButton") return { label: "Meeting info", icon: "nmc-info", checked: side === "info" }
         if (n === "CallHealth") return { label: "Call health", icon: "nmc-health", checked: side === "callHealth" }
+        if (n === "PstnButton") return { label: "Call me", icon: "nmc-callme" }
         if (n === "AccessibilitySettingsButton") return { label: "Accessibility settings", icon: "nmc-accessibility", checked: side === "accessibility" }
         if (n === "ChatBubblesButton") return chatBubblesSuppressed ? { label: "Show chat bubbles", icon: "nmc-bubbles" }
                                                                    : { label: "Don't show chat bubbles", icon: "nmc-bubbles-off" }

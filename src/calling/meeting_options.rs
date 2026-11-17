@@ -30,6 +30,10 @@ pub const RESTRICT_AUDIO: u32 = 1;
 pub const RESTRICT_VIDEO: u32 = 2;
 pub const RESTRICT_CHAT: u32 = 4;
 
+/// The Facilitator agent in a meeting's roster (Teams takes it out of the
+/// call when Facilitator is turned off; captured 2026-11-16).
+pub const FACILITATOR_BOT: &str = "28:8e55a7b1-6766-4f0a-8610-ecacfe3d569a";
+
 /// What `meetingDetails.meetingCapability` says about the meeting.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct MeetingCapability {
@@ -42,6 +46,11 @@ pub struct MeetingCapability {
     pub copilot: bool,
     /// Its Facilitator is enabled (`groupCopilotDetails.enabled`).
     pub facilitator: bool,
+    /// Facilitator may speak (`groupCopilotDetails.speechEnabled`: More ▸
+    /// Facilitator ▸ Enable voice).
+    pub facilitator_speech: bool,
+    /// `groupCopilotDetails.liveNotesEnabled`.
+    pub facilitator_live_notes: bool,
     /// Everyone can present (`presenterOption` "Everyone" or
     /// "EveryoneInCompany"): Teams shows the meeting timer then.
     pub everyone_presents: bool,
@@ -78,6 +87,16 @@ pub fn meeting_capability(json: &Value) -> Option<MeetingCapability> {
         facilitator: cap
             .get("groupCopilotDetails")
             .and_then(|g| g.get("enabled"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        facilitator_speech: cap
+            .get("groupCopilotDetails")
+            .and_then(|g| g.get("speechEnabled"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        facilitator_live_notes: cap
+            .get("groupCopilotDetails")
+            .and_then(|g| g.get("liveNotesEnabled"))
             .and_then(Value::as_bool)
             .unwrap_or(false),
         everyone_presents: matches!(

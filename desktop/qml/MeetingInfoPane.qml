@@ -84,6 +84,49 @@ Rectangle {
                     color: theme.text
                 }
             }
+            // Teams' dial-in block (measured in Teams on the web,
+            // 2026-11-16): 30 below the lines above, the 20 px dial pad
+            // glyph, then 30 in: "Dial in manually", the toll number as a
+            // tel: link with " (Toll)", the toll-free one, "Get local
+            // numbers" and "Conference ID: 975 755 048 #", 14/20.
+            Item { visible: dialBlock.visible; width: 1; height: 30 }
+            Item {
+                id: dialBlock
+                readonly property var dial: root.info ? root.info.dial : null
+                visible: !!dial
+                width: parent.width; height: dialCol.implicitHeight
+                FluentIcon { x: 0; y: 2; name: "dialpad-20"; size: 20; color: theme.text }
+                Column {
+                    id: dialCol
+                    x: 30; width: parent.width - 30
+                    Text {
+                        text: "Dial in manually"
+                        font.family: theme.font; font.pixelSize: 14
+                        lineHeight: 20; lineHeightMode: Text.FixedHeight
+                        color: theme.text
+                    }
+                    DialLink { visible: !!dialBlock.dial; number: dialBlock.dial ? dialBlock.dial.toll : ""; kind: " (Toll)"; aria: dialBlock.dial ? dialBlock.dial.tollAria : "" }
+                    DialLink { visible: !!dialBlock.dial && dialBlock.dial.tollFree.length > 0; number: dialBlock.dial ? dialBlock.dial.tollFree : ""; kind: " (Toll-Free)"; aria: dialBlock.dial ? dialBlock.dial.tollFreeAria : "" }
+                    Text {
+                        visible: !!dialBlock.dial && dialBlock.dial.localNumbersUrl.length > 0
+                        text: "Get local numbers"
+                        font.family: theme.font; font.pixelSize: 14
+                        lineHeight: 20; lineHeightMode: Text.FixedHeight
+                        font.underline: localHover.hovered
+                        color: theme.brandLink
+                        HoverHandler { id: localHover; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: Qt.openUrlExternally(dialBlock.dial.localNumbersUrl) }
+                        Accessible.role: Accessible.Link
+                        Accessible.name: text
+                    }
+                    Text {
+                        text: dialBlock.dial ? dialBlock.dial.conferenceText : ""
+                        font.family: theme.font; font.pixelSize: 14
+                        lineHeight: 20; lineHeightMode: Text.FixedHeight
+                        color: theme.text
+                    }
+                }
+            }
             Item { visible: !!root.info && root.info.canCopy; width: 1; height: 30 }
             Row {
                 visible: !!root.info && root.info.canCopy
@@ -130,6 +173,31 @@ Rectangle {
                 onLinkActivated: link => Qt.openUrlExternally(link)
                 HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
             }
+        }
+    }
+    // A dial-in number: the number as a tel: link (brand, underlined) and
+    // its kind ("(Toll)") in the text colour.
+    component DialLink: Row {
+        property string number
+        property string kind
+        property string aria
+        Text {
+            text: parent.number
+            font.family: theme.font; font.pixelSize: 14
+            lineHeight: 20; lineHeightMode: Text.FixedHeight
+            // Fluent's Link: the underline shows on hover.
+            font.underline: numberHover.hovered
+            color: theme.brandLink
+            HoverHandler { id: numberHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: Qt.openUrlExternally("tel:" + parent.parent.number) }
+            Accessible.role: Accessible.Link
+            Accessible.name: parent.aria
+        }
+        Text {
+            text: parent.kind
+            font.family: theme.font; font.pixelSize: 14
+            lineHeight: 20; lineHeightMode: Text.FixedHeight
+            color: theme.textStrong
         }
     }
     // Teams' spinner while the meeting's details load.

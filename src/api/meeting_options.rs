@@ -15,6 +15,37 @@ use serde_json::{Value, json};
 
 use super::client::TeamsClient;
 
+/// The meeting's Facilitator option's path (captured from Teams on the
+/// web, 2026-11-16): `/beta/meetings/v1/facilitator/options/{organizer}/
+/// {thread}/{message}?monarch=true`, the thread as it is.
+pub fn facilitator_path(organizer: &str, thread: &str, message: &str) -> String {
+    format!("/beta/meetings/v1/facilitator/options/{organizer}/{thread}/{message}?monarch=true")
+}
+
+/// Teams' More ▸ Facilitator ▸ Turn on / Turn off Facilitator:
+/// `POST …/facilitator/options/…` with `{"options": [{"name":
+/// "IsGroupCopilotEnabled", "type": "Boolean", "currentValue": on}]}`;
+/// the reply lists the option as saved.
+pub async fn set_facilitator(client: &TeamsClient, tenant: &str, organizer: &str, thread: &str, message: &str, on: bool) -> Result<bool> {
+    check_ids(tenant, organizer, thread, message)?;
+    let (base, token) = super::tabs::middle_tier(client).await?;
+    let v: Value = client
+        .http()
+        .post(format!("{base}{}", facilitator_path(organizer, thread, message)))
+        .bearer_auth(&token)
+        .json(&json!({"options": [{"name": "IsGroupCopilotEnabled", "type": "Boolean", "currentValue": on}]}))
+        .send()
+        .await?
+        .error_for_status()
+        .context("Facilitator")?
+        .json()
+        .await?;
+    if v["success"] != json!(true) {
+        bail!("Facilitator wasn't changed");
+    }
+    Ok(v.pointer("/options/0/currentValue").and_then(Value::as_bool).unwrap_or(on))
+}
+
 /// The options URL's path under the middle tier.
 pub fn options_path(tenant: &str, organizer: &str, thread: &str, message: &str) -> String {
     format!(

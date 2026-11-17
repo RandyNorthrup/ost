@@ -139,6 +139,8 @@ Window {
         micOn = true; audio = "computer"; cameraOn = false
         effectsOpen = false; effectsPaneOpen = false
         findRooms()
+        // A meeting started now has no dial-in to look up yet.
+        backend.checkPrejoinPhone("")
         show(); raise(); requestActivate()
         titleField.forceActiveFocus(); titleField.cursorPosition = titleField.text.length
     }
@@ -152,8 +154,17 @@ Window {
         effectsOpen = false; effectsPaneOpen = false
         retryReason = ""
         findRooms()
+        backend.checkPrejoinPhone(url)
         show(); raise(); requestActivate()
     }
+    /// Teams' PSTN state for this meeting before joining
+    /// (Backend::check_prejoin_phone): checked, then available.
+    readonly property var phoneState: backend.prejoinPhoneJson ? JSON.parse(backend.prejoinPhoneJson) : ({ checked: false, available: false })
+    readonly property bool phoneChecked: !!phoneState.checked
+    readonly property bool phoneAvailable: !!phoneState.available
+    // Teams keeps your last audio choice (prejoinScreenSelectedAudio):
+    // Phone audio comes back once the meeting is known to offer it.
+    onPhoneAvailableChanged: if (phoneAvailable && audio === "computer" && backend.setting("prejoinAudio") === "phone") audio = "phone"
     readonly property bool canJoin: !lobby && (audio !== "room" || !!room)
     readonly property string mic: { const v = backend.setting("micDevice"); return v && v !== "default" ? v : "Default microphone" }
     readonly property string speaker: { const v = backend.setting("speakerDevice"); return v && v !== "default" ? v : "Default speaker" }
@@ -449,9 +460,63 @@ Window {
                     Text { anchors.verticalCenter: parent.verticalCenter; width: 260; elide: Text.ElideRight; text: win.speaker; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
                 }
             }
-            // Phone audio needs the tenant's Audio Conferencing; Teams greys
-            // it the same way when the meeting has no dial-in.
-            OptionCard { key: "phone"; label: "Phone audio"; usable: false }
+            // Teams' Phone audio (measured in Teams on the web, 2026-11-16):
+            // offered when the meeting has dial-in (Audio Conferencing);
+            // selected, its header fills the column as Room audio's does,
+            // over "We'll give you a number to call after you join, or we
+            // can call you." (14/20 #616161, padding 16 18, on #FAFAFA,
+            // 89.3 tall). Disabled: "You don't have access to dial-in
+            // information for this meeting".
+            Rectangle {
+                id: phoneCard
+                readonly property bool selected: win.audio === "phone"
+                readonly property bool usable: win.phoneAvailable && !win.lobby
+                width: 449; radius: 4
+                height: selected ? phoneHeader.height + 89.3 : win.otherCardHeight
+                color: theme.highContrast && selected ? theme.hcHighlight : theme.surface
+                border.color: theme.dividerSoft; border.width: 0.67
+                Item {
+                    id: phoneHeader
+                    width: parent.width
+                    height: phoneCard.selected ? Math.max(44.7, 330.2 - 3 * win.otherCardHeight - 3 * audioColumn.spacing - 89.3) : parent.height
+                    Radio {
+                        x: 16; anchors.verticalCenter: parent.verticalCenter
+                        on: phoneCard.selected; label: "Phone audio"
+                        highlighted: phoneCard.selected; unusable: !phoneCard.usable
+                        opacity: phoneCard.usable || theme.highContrast ? 1 : 0.45
+                    }
+                    HoverHandler { id: phoneHover; cursorShape: phoneCard.usable ? Qt.PointingHandCursor : Qt.ArrowCursor }
+                    TapHandler { enabled: phoneCard.usable; onTapped: win.audio = "phone" }
+                    QC.ToolTip.visible: phoneHover.hovered && !phoneCard.usable && win.phoneChecked
+                    QC.ToolTip.delay: 500
+                    QC.ToolTip.text: "You don't have access to dial-in information for this meeting"
+                }
+                Rectangle {
+                    visible: phoneCard.selected
+                    x: 0.67; y: phoneHeader.height; width: parent.width - 1.33; height: 0.67; color: theme.dividerSoft
+                }
+                Rectangle {
+                    visible: phoneCard.selected
+                    x: 0.67; y: phoneHeader.height + 0.67; width: parent.width - 1.33; height: 88.6
+                    bottomLeftRadius: 4; bottomRightRadius: 4
+                    color: theme.quoteFill
+                    Text {
+                        x: 18; width: parent.width - 36
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: "We'll give you a number to call after you join, or we can call you."
+                        wrapMode: Text.Wrap
+                        font.family: theme.font; font.pixelSize: theme.base
+                        lineHeight: 20; lineHeightMode: Text.FixedHeight
+                        color: theme.textSecondary
+                    }
+                }
+                Accessible.role: Accessible.RadioButton
+                Accessible.name: "Phone audio"
+                Accessible.description: !win.phoneChecked ? "Checking for dial-in info…"
+                    : win.phoneAvailable ? "Dial in from any phone, or we'll call you."
+                    : "You don't have access to dial-in information for this meeting"
+                Accessible.checked: selected
+            }
             // Teams' Room audio (measured on winpc 2026-11-15): selected, its
             // header fills the column (178.7 with the 89.2 pane) over Teams'
             // room picker. A connected room device (a USB speakerphone) is
@@ -553,7 +618,18 @@ Window {
             HoverHandler { id: jnh; cursorShape: win.canJoin ? Qt.PointingHandCursor : Qt.ArrowCursor }
             // Room audio waits for a room (Teams disables Join until one is
             // picked); a connected room device joins with its own audio.
-            TapHandler { enabled: win.canJoin; onTapped: { win.close(); win.join(win.audio !== "none" && win.micOn, win.audio !== "none", win.cameraOn) } }
+            // Phone audio joins without the computer's audio (Teams'
+            // isPSTN), then offers Call me or the dial-in numbers. Teams
+            // keeps the choice, except Room audio and Don't use audio.
+            TapHandler {
+                enabled: win.canJoin
+                onTapped: {
+                    if (win.audio === "computer" || win.audio === "phone") backend.setSetting("prejoinAudio", win.audio)
+                    win.close()
+                    const computer = win.audio !== "none" && win.audio !== "phone"
+                    win.join(computer && win.micOn, computer, win.cameraOn)
+                }
+            }
             Accessible.role: Accessible.Button
             Accessible.name: "Join now"
         }

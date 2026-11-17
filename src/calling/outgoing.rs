@@ -102,6 +102,18 @@ pub struct OutgoingCall {
     add_participant_link: Option<String>,
     /// The conversation's updateMeetingStates link (the meeting timer).
     meeting_states_link: Option<String>,
+    /// The conversation's addParticipantAndModality link ("Call me").
+    add_modality_link: Option<String>,
+    /// The meeting's dial-in details (`meetingDetails.pstnDetails`).
+    dial_in: Option<super::phone_audio::DialIn>,
+    /// Whether the meeting offers phone audio (Teams' PSTN state).
+    phone_audio: super::phone_audio::PhoneAudio,
+    /// The phone "Call me" is calling (its participant id), until the
+    /// meeting says it joined or failed.
+    call_me: Option<String>,
+    /// The meeting's message id in its chat ("0" for a scheduled
+    /// meeting, the post for a channel meeting): Teams' teamsMessageId.
+    group_message_id: Option<String>,
     /// The meeting timer as last received.
     timers: super::meeting_timer::Timers,
     /// The meeting's notes as the call shares them (collabResources.notes,
@@ -586,6 +598,8 @@ impl OutgoingCall {
         self.metadata_link = link("updateEndpointMetadata").or(self.metadata_link.take());
         self.add_participant_link = link("addParticipant").or(self.add_participant_link.take());
         self.meeting_states_link = link("updateMeetingStates").or(self.meeting_states_link.take());
+        self.add_modality_link = link("addParticipantAndModality").or(self.add_modality_link.take());
+        self.apply_phone_audio(update);
         self.unmute_link = link("unmute");
         self.message_link = link("sendMessage");
         if let Some(l) = link("updateEndpointState") {
@@ -771,6 +785,107 @@ impl OutgoingCall {
     /// The meeting's title, times, location and calendar link (Meeting info).
     pub fn meeting_info(&self) -> Option<super::meeting_info::MeetingInfo> {
         self.meeting_info.clone()
+    }
+
+    /// The meeting's dial-in details, when it has them.
+    pub fn dial_in(&self) -> Option<&super::phone_audio::DialIn> {
+        self.dial_in.as_ref()
+    }
+
+    /// Whether the meeting offers phone audio.
+    pub fn phone_audio(&self) -> super::phone_audio::PhoneAudio {
+        self.phone_audio
+    }
+
+    /// Note a conversation update's meeting details (dial-in, PSTN
+    /// capability); true when they changed. An update without dial-in
+    /// details keeps the ones the join gave.
+    pub fn apply_phone_audio(&mut self, json: &serde_json::Value) -> bool {
+        let Some(mut p) = super::phone_audio::phone_audio(json, false) else { return false };
+        let d = super::phone_audio::dial_in(json).or_else(|| self.dial_in.clone());
+        if d.is_some() && super::phone_audio::dial_in(json).is_none() {
+            p.available = p.dial_in && p.dial_out;
+        }
+        let changed = p != self.phone_audio || d != self.dial_in;
+        self.phone_audio = p;
+        self.dial_in = d;
+        changed
+    }
+
+    /// The phone "Call me" is calling, if any.
+    pub fn call_me_pending(&self) -> Option<&str> {
+        self.call_me.as_deref()
+    }
+
+    /// Teams' "Call me": ask the meeting to call `phone_mri` ("4:+1…") and
+    /// put it in the meeting as our audio
+    /// (`POST links.addParticipantAndModality`). The outcome comes back as
+    /// an addParticipantSuccess / addParticipantFailure event.
+    pub async fn call_me_back(&mut self, phone_mri: &str) -> Result<()> {
+        if !phone_mri.starts_with("4:") || phone_mri.len() < 4 {
+            bail!("Not a phone number");
+        }
+        let link = self.add_modality_link.clone().context("No addParticipantAndModality link")?;
+        if !super::incoming::is_service_link(&link) {
+            bail!("addParticipantAndModality: not a Teams service link");
+        }
+        let config = Config::load()?;
+        let ic3 = config.get_ic3_token().context("No calling (IC3) token")?.token;
+        let (surl, epid) = &self.callbacks;
+        let tc = |p: &str| signaling::trouter_callback(surl, epid, p);
+        let links = serde_json::json!({
+            "addParticipantSuccess": tc("conversation/addParticipantSuccess/"),
+            "addParticipantFailure": tc("conversation/addParticipantFailure/"),
+        });
+        let mut from = self.me.0.clone();
+        if let Some(o) = from.as_object_mut() {
+            o.entry("languageId").or_insert_with(|| "en-us".into());
+        }
+        let body = super::phone_audio::call_me_back_body(
+            &from,
+            phone_mri,
+            &self.thread_id,
+            self.group_message_id.as_deref(),
+            links,
+        );
+        tracing::info!("call me back");
+        let resp = self
+            .http
+            .post(&link)
+            .bearer_auth(ic3)
+            .header("x-microsoft-skype-chain-id", &self.call_id)
+            .header("x-microsoft-skype-message-id", uuid::Uuid::new_v4().to_string())
+            .header("x-microsoft-skype-client", signaling::SKYPE_CLIENT_HEADER)
+            .header("ms-teams-partition", signaling::TEAMS_PARTITION)
+            .header("ms-teams-region", signaling::TEAMS_REGION)
+            .header("ms-teams-ring", signaling::TEAMS_RING)
+            .json(&body)
+            .send()
+            .await
+            .context("Call me")?;
+        let status = resp.status();
+        if !status.is_success() {
+            let text = resp.text().await.unwrap_or_default();
+            bail!("Call me failed ({status}): {}", &text[..text.len().min(300)]);
+        }
+        tracing::info!(%status, "call me back accepted");
+        self.call_me = Some(phone_mri.to_string());
+        Ok(())
+    }
+
+    /// The meeting's answer to "Call me", if `event` is it: Ok(the phone's
+    /// id) when it joined, Err(Teams' message) when it failed. The pending
+    /// number is forgotten either way.
+    pub fn call_me_outcome(&mut self, event: &serde_json::Value) -> Option<std::result::Result<String, String>> {
+        let mri = self.call_me.clone()?;
+        let r = super::phone_audio::call_me_back_result(event, &mri)?;
+        self.call_me = None;
+        Some(r.map(|()| mri))
+    }
+
+    /// Stop waiting for a Call me (Teams gives it 120 s).
+    pub fn cancel_call_me(&mut self) {
+        self.call_me = None;
     }
 
     /// Note a conversation update; true when the meeting's lock or
@@ -2066,6 +2181,7 @@ async fn start(
     } else {
         Vec::new()
     };
+    let meeting_message_id = if let Target::Meeting(link) = &target { Some(link.message_id.clone()) } else { None };
     let (created, _joined) = match target {
         Target::Person(callee, _) => {
             signaling::create_1to1_call_to(&http, &epconv_url, &params, &offer, Some(callee))
@@ -2107,6 +2223,17 @@ async fn start(
     let metadata_link = conversation_link(&created.response_body, "updateEndpointMetadata");
     let add_participant_link = conversation_link(&created.response_body, "addParticipant");
     let meeting_states_link = conversation_link(&created.response_body, "updateMeetingStates");
+    let add_modality_link = conversation_link(&created.response_body, "addParticipantAndModality");
+    let group_message_id = meeting_message_id.or_else(|| group_chat_field(&created.response_body, "messageId"));
+    let (dial_in, phone_audio) = serde_json::from_str::<serde_json::Value>(&created.response_body)
+        .ok()
+        .map(|v| {
+            let p = super::phone_audio::phone_audio(&v, false).unwrap_or_default();
+            let d = super::phone_audio::dial_in(&v);
+            tracing::info!(available = p.available, dial_in = p.dial_in, dial_out = p.dial_out, details = d.is_some(), "phone audio");
+            (d, p)
+        })
+        .unwrap_or_default();
     let timers = serde_json::from_str::<serde_json::Value>(&created.response_body)
         .ok()
         .and_then(|v| {
@@ -2304,6 +2431,11 @@ async fn start(
         metadata_link,
         add_participant_link,
         meeting_states_link,
+        add_modality_link,
+        dial_in,
+        phone_audio,
+        call_me: None,
+        group_message_id,
         timers,
         notes,
         notes_organizer,
