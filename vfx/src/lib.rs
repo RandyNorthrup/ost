@@ -119,6 +119,121 @@ pub struct Settings {
 
 static PICKING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+/// Teams' Weatherperson effect (presenter modes Standout and Reporter):
+/// your camera is sent with the background cut out, written into the
+/// picture itself (an "implicit mask" in the luma), so each receiver can
+/// lay you over the shared screen.
+static PRESENTER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Turn the Weatherperson effect on or off for every camera picture.
+pub fn set_presenter_mask(on: bool) {
+    PRESENTER.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn presenter_mask() -> bool {
+    PRESENTER.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// SlimCV's implicit mask (ExtractAlphaLuma's inverse, as Teams' web
+/// compositor documents it): compressionFactor 28, REDUCED_RANGE 16–240,
+/// LUMA_COMPRESS_LEVEL 32. Your luma is squeezed into 59…255; the
+/// background is black (below the receivers' threshold of 23).
+pub mod implicit {
+    pub const RANGE_HIGH: f32 = 240.0;
+    pub const RANGE_LOW: f32 = 16.0;
+    /// compressionFactor / LUMA_COMPRESS_LEVEL.
+    pub const CF: f32 = 28.0 / 32.0;
+    /// lumaMin = 255 − (240 − 16) × 28 / 32.
+    pub const LUMA_MIN: u8 = 59;
+    /// floor(59 × 0.4): below it is background.
+    pub const THRESHOLD: u8 = 23;
+
+    /// A person's luma, squeezed into LUMA_MIN…255.
+    pub fn encode(y: u8) -> u8 {
+        let y = (y as f32).clamp(RANGE_LOW, RANGE_HIGH);
+        (255.0 - (RANGE_HIGH - y) * CF).round().clamp(LUMA_MIN as f32, 255.0) as u8
+    }
+
+    /// RestorePixel: 240 − (255 − y) × 32/28.
+    pub fn decode(y: u8) -> u8 {
+        (RANGE_HIGH - (255.0 - y as f32) / CF).max(0.0).round() as u8
+    }
+}
+
+/// Write the implicit mask into an I420 frame: where `mask` (MASK x
+/// MASK, the person's chance) is under one half the luma is 0 and the
+/// colour neutral; elsewhere the luma is squeezed into 59…255.
+pub fn apply_implicit_mask(data: &mut [u8], mask: &[f32], w: usize, h: usize) {
+    if data.len() < w * h * 3 / 2 || mask.len() < MASK * MASK {
+        return;
+    }
+    let (cw, ch) = (w / 2, h / 2);
+    let at = |x: usize, y: usize| mask[(y * MASK / h).min(MASK - 1) * MASK + (x * MASK / w).min(MASK - 1)];
+    let (yp, uv) = data.split_at_mut(w * h);
+    let (up, vp) = uv.split_at_mut(cw * ch);
+    for y in 0..h {
+        for x in 0..w {
+            let i = y * w + x;
+            yp[i] = if at(x, y) >= 0.5 { implicit::encode(yp[i]) } else { 0 };
+        }
+    }
+    for cy in 0..ch {
+        for cx in 0..cw {
+            let back = (0..2).all(|dy| (0..2).all(|dx| yp[(cy * 2 + dy) * w + cx * 2 + dx] == 0));
+            if back {
+                up[cy * cw + cx] = 128;
+                vp[cy * cw + cx] = 128;
+            }
+        }
+    }
+}
+
+/// A received camera with an implicit mask, as RGBA: Teams' compositor
+/// shader (a 3x3 luma erosion against the threshold; the rest restored
+/// and decoded as BT.601) — background pixels come out transparent.
+pub fn implicit_mask_rgba(
+    yp: &[u8],
+    up: &[u8],
+    vp: &[u8],
+    strides: (usize, usize, usize),
+    w: usize,
+    h: usize,
+    out: &mut [u8],
+) {
+    if out.len() < w * h * 4 {
+        return;
+    }
+    let luma = |x: isize, y: isize| -> u8 {
+        let (x, y) = (x.clamp(0, w as isize - 1) as usize, y.clamp(0, h as isize - 1) as usize);
+        yp[y * strides.0 + x]
+    };
+    for y in 0..h {
+        for x in 0..w {
+            let o = (y * w + x) * 4;
+            let (xi, yi) = (x as isize, y as isize);
+            let mut keep = true;
+            'n: for dy in -1..=1 {
+                for dx in -1..=1 {
+                    if luma(xi + dx, yi + dy) < implicit::THRESHOLD {
+                        keep = false;
+                        break 'n;
+                    }
+                }
+            }
+            if !keep {
+                out[o..o + 4].copy_from_slice(&[0, 0, 0, 0]);
+                continue;
+            }
+            let yv = implicit::decode(yp[y * strides.0 + x]) as f32;
+            let u = up[(y / 2) * strides.1 + x / 2] as f32;
+            let v = vp[(y / 2) * strides.2 + x / 2] as f32;
+            let rgb = yuv_to_rgb(yv, u, v);
+            out[o..o + 3].copy_from_slice(&rgb);
+            out[o + 3] = 255;
+        }
+    }
+}
+
 /// Green Screen's colour picking: the camera picture without effects
 /// meanwhile.
 pub fn set_picking(on: bool) {
@@ -282,6 +397,15 @@ impl Processor {
 
     /// Apply the chosen effects to an I420 frame in place: brightness,
     /// soft focus and the background, then a video app's filter.
+    /// The Weatherperson effect, after [`Self::process`] (and after the
+    /// self-view took its copy): the background cut out into the luma.
+    /// Nothing until the first mask is in.
+    pub fn presenter_effect(&mut self, width: u32, height: u32, data: &mut [u8]) {
+        if presenter_mask() && self.have_mask {
+            apply_implicit_mask(data, &self.mask, width as usize, height as usize);
+        }
+    }
+
     pub fn process(&mut self, width: u32, height: u32, data: &mut [u8]) {
         // While you pick Green Screen's colour you see your real backdrop.
         if PICKING.load(std::sync::atomic::Ordering::Relaxed) {
@@ -300,7 +424,8 @@ impl Processor {
         if s.brightness {
             brighten(&mut data[..w * h]);
         }
-        if matches!(s.background, Background::None) && !s.soft_focus {
+        let presenter = presenter_mask();
+        if matches!(s.background, Background::None) && !s.soft_focus && !presenter {
             self.have_mask = false;
             return;
         }
@@ -324,6 +449,9 @@ impl Processor {
         }
         if s.soft_focus {
             soften(&mut data[..w * h], &self.mask, w, h, &mut self.blur);
+        }
+        if presenter && matches!(s.background, Background::None) {
+            return;
         }
         // What goes behind you.
         let picture = match &s.background {
@@ -810,6 +938,36 @@ mod tests {
         blur_i420(&data, w, h, 4, &mut b);
         let dev = |v: &[u8]| v[..w * h].iter().map(|&p| (p as i32 - 128).abs()).sum::<i32>();
         assert!(dev(&b) >= dev(&a));
+    }
+
+    #[test]
+    fn the_implicit_mask_is_teams_luma_squeeze() {
+        // Teams' constants: lumaMin 59, threshold 23.
+        assert_eq!(implicit::encode(16), 59);
+        assert_eq!(implicit::encode(240), 255);
+        assert_eq!(implicit::encode(0), 59, "below the video range is clamped");
+        for y in [16u8, 60, 128, 200, 240] {
+            assert!((implicit::decode(implicit::encode(y)) as i32 - y as i32).abs() <= 1, "{y}");
+        }
+        // A frame: the left half is the person, the right half background.
+        let (w, h) = (16usize, 8usize);
+        let mut frame = vec![100u8; w * h * 3 / 2];
+        let mask: Vec<f32> = (0..MASK * MASK).map(|i| if i % MASK < MASK / 2 { 1.0 } else { 0.0 }).collect();
+        apply_implicit_mask(&mut frame, &mask, w, h);
+        assert_eq!(frame[0], implicit::encode(100));
+        assert_eq!(frame[w - 1], 0);
+        assert_eq!(frame[w * h + w / 2 - 1], 128, "the background's colour is neutral");
+        // Received: the person is opaque with its luma back, the rest clear
+        // (and a pixel next to the background is eroded away).
+        let (yp, uv) = frame.split_at(w * h);
+        let (up, vp) = uv.split_at(w * h / 4);
+        let mut rgba = vec![0u8; w * h * 4];
+        implicit_mask_rgba(yp, up, vp, (w, w / 2, w / 2), w, h, &mut rgba);
+        assert_eq!(rgba[3], 255);
+        assert_eq!(rgba[(w - 1) * 4 + 3], 0);
+        assert_eq!(rgba[(w / 2 - 1) * 4 + 3], 0, "eroded at the edge");
+        let back = yuv_to_rgb(100.0, 100.0, 100.0);
+        assert!((rgba[0] as i32 - back[0] as i32).abs() <= 2);
     }
 
     #[test]

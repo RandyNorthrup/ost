@@ -32,6 +32,8 @@ pub enum Source {
 pub struct ScreenCapture {
     stop: Arc<AtomicBool>,
     session: Option<ashpd::desktop::Session<Screencast>>,
+    /// Content from camera: the camera capture, kept running.
+    _camera: Option<super::camera::CameraCapture>,
 }
 
 impl ScreenCapture {
@@ -93,8 +95,24 @@ impl ScreenCapture {
             Self {
                 stop,
                 session: Some(session),
+                _camera: None,
             },
             rx,
+        ))
+    }
+
+    /// Teams' Content from camera: a camera (a whiteboard, a document or
+    /// live video in front of it) shared as the screen is, at 1280x720.
+    pub fn from_camera(device: &str) -> Result<(Self, mpsc::Receiver<YuvFrame>)> {
+        let (camera, frames) = super::camera::CameraCapture::start(Some(device), MAX_W, MAX_H, 15)?;
+        tracing::info!(device, "content from camera started");
+        Ok((
+            Self {
+                stop: Arc::new(AtomicBool::new(false)),
+                session: None,
+                _camera: Some(camera),
+            },
+            frames,
         ))
     }
 

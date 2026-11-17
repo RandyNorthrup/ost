@@ -316,3 +316,41 @@ extern "C" void ost_banner_place(const char *title, const char *corner, int marg
     ls->setAnchors(s, (top ? 1 : 2) | (left ? 4 : 8));
     ls->setMargins(s, QMargins(0, top ? margin : 0, 0, top ? 0 : margin));
 }
+
+// Teams' Sharing control bar: centred at the top of the screen (8 px down,
+// 5 minimized) or where it was dragged. On Wayland it becomes a layer-shell
+// surface above windows (an app can't place its own windows there); on
+// X11 the QML window places itself.
+extern "C" bool ost_toolbar_prepare(const char *title)
+{
+    QWindow *w = window_titled(title);
+    if (!w || w->isVisible())
+        return false;
+    w->setProperty("_q_showWithoutActivating", true);
+    const LayerShell *ls = layer_shell();
+    if (!ls || !QGuiApplication::platformName().startsWith(QLatin1String("wayland")))
+        return false;
+    void *s = ls->get(w);
+    if (!s)
+        return false;
+    ls->setLayer(s, 3);                     // LayerOverlay: over full-screen windows too
+    ls->setKeyboardInteractivity(s, 2);     // OnDemand: its menus' search takes keys when clicked
+    ls->setActivateOnShow(s, false);
+    ls->setScope(s, QStringLiteral("ost-sharing-control-bar"));
+    ls->setAnchors(s, 1);                   // top, centred
+    return true;
+}
+
+// `x` < 0: centred; else that far from the screen's left. `y` from its top.
+extern "C" void ost_toolbar_place(const char *title, int x, int y)
+{
+    QWindow *w = window_titled(title);
+    const LayerShell *ls = layer_shell();
+    if (!w || !ls)
+        return;
+    void *s = ls->get(w);
+    if (!s)
+        return;
+    ls->setAnchors(s, x < 0 ? 1 : (1 | 4));
+    ls->setMargins(s, QMargins(x < 0 ? 0 : x, y, 0, 0));
+}

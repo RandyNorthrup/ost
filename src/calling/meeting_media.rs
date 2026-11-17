@@ -188,6 +188,29 @@ enum Command {
     Resend,
     /// Send what we typed for real-time text since the last.
     RealTimeText(String),
+    /// Give / take control.
+    Control(ControlCommand),
+}
+
+/// What the call window does about give / take control
+/// ([`super::screen_control`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ControlCommand {
+    /// We share (or stopped); `enabled`: our screen can be controlled.
+    Sharing { on: bool, enabled: bool },
+    /// We watch this sharer (their data source), or nobody.
+    Viewing(Option<u32>),
+    Request,
+    CancelRequest,
+    Accept,
+    Deny,
+    Give(u32),
+    /// Sharer: Take back. Viewer: Stop control.
+    Terminate,
+    /// These data sources left the call.
+    Left(Vec<u32>),
+    /// Our mouse or keyboard event, for the sharer we control.
+    Input(Vec<u8>),
 }
 
 /// The source id that asks for nothing (MS-RTP's SOURCE_NONE): Teams
@@ -325,6 +348,11 @@ impl MeetingVideo {
         let _ = self.commands.send(Command::RealTimeText(text.to_string()));
     }
 
+    /// Give / take control: what the call window did.
+    pub fn screen_control(&self, c: ControlCommand) {
+        let _ = self.commands.send(Command::Control(c));
+    }
+
     /// Our data source id (whose real-time text is ours), once known.
     pub fn source_id(&self) -> Option<u32> {
         lock(&self.state).source_id
@@ -422,6 +450,53 @@ fn due(
     out
 }
 
+/// Give / take control's role in this meeting (sharing and whether we can
+/// be controlled; the sharer we watch), kept across media sessions.
+fn control_role() -> &'static Mutex<(Option<bool>, Option<u32>)> {
+    static R: std::sync::OnceLock<Mutex<(Option<bool>, Option<u32>)>> = std::sync::OnceLock::new();
+    R.get_or_init(|| Mutex::new((None, None)))
+}
+
+/// The call ended: no role to take up in the next one.
+pub fn clear_control_role() {
+    *lock(control_role()) = (None, None);
+}
+
+/// Give / take control's wishes: sends on the channel, events for the
+/// call window (`ost/screenControl/`).
+fn control_out(session: &mut Session, sender: &DataSender, outs: Vec<super::screen_control::Out>) {
+    use super::screen_control::Out;
+    for o in outs {
+        let body = match o {
+            Out::Send { to, message } => {
+                match session.screen_control(to, &message) {
+                    Some(packet) => {
+                        tracing::info!(to, action = message.action, reason = message.terminated_reason, "screen control sent");
+                        sender.send(packet);
+                    }
+                    None => tracing::warn!("screen control before the data channel is up: dropped"),
+                }
+                continue;
+            }
+            Out::Capable { capable, denied_by_sharer } => {
+                serde_json::json!({"type": "capable", "capable": capable, "deniedBySharer": denied_by_sharer})
+            }
+            Out::Controllable(list) => serde_json::json!({"type": "controllable", "sources": list}),
+            Out::IncomingRequest { from } => serde_json::json!({"type": "request", "source": from}),
+            Out::RequestWithdrawn { from } => serde_json::json!({"type": "withdrawn", "source": from}),
+            Out::ControlChanged { in_control, controller, reason } => {
+                serde_json::json!({"type": "changed", "inControl": in_control, "controller": controller, "reason": reason})
+            }
+            Out::RequestFailed { reason } => serde_json::json!({"type": "failed", "reason": reason}),
+        };
+        tracing::info!(%body, "screen control");
+        crate::event_hub::publish(
+            crate::event_hub::EventKind::Call,
+            serde_json::json!({"callAgentPath": "ost/screenControl/", "body": body}).to_string(),
+        );
+    }
+}
+
 async fn run(
     sender: DataSender,
     mut events: tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
@@ -431,6 +506,10 @@ async fn run(
 ) {
     let mut session = Session::new();
     let mut tick = tokio::time::interval(HEARTBEAT);
+    let mut control = super::screen_control::Session::new();
+    let mut control_tick = tokio::time::interval(std::time::Duration::from_millis(500));
+    let mut inputs_sent = 0u64;
+    let mut inputs_received = 0u64;
     // What's in force on each receiving stream.
     let mut sent: HashMap<i64, SourceRequest> = HashMap::new();
     let send_requests = |session: &mut Session, sent: &mut HashMap<i64, SourceRequest>| {
@@ -461,6 +540,17 @@ async fn run(
                         match inc {
                             Incoming::Ack { id } => {
                                 tracing::info!(id, "MCP session up");
+                                let role = *lock(control_role());
+                                let now = std::time::Instant::now();
+                                let outs = match role {
+                                    (Some(enabled), _) if control.role() != super::screen_control::Role::Sharer => control.start_sharing(enabled),
+                                    (None, Some(s)) if control.role() == super::screen_control::Role::None => control.start_viewing(s, now),
+                                    _ => Vec::new(),
+                                };
+                                if !outs.is_empty() {
+                                    tracing::info!(?role, "screen control: role taken up on the new session");
+                                    control_out(&mut session, &sender, outs);
+                                }
                                 lock(&state).source_id = session.source_id();
                                 sent.clear();
                                 send_requests(&mut session, &mut sent);
@@ -513,6 +603,27 @@ async fn run(
                                     .to_string(),
                                 );
                             }
+                            Incoming::ScreenControl { source, message } => {
+                                tracing::info!(source, action = message.action, reason = message.terminated_reason, "screen control received");
+                                let outs = control.receive(source, &message, std::time::Instant::now());
+                                control_out(&mut session, &sender, outs);
+                            }
+                            Incoming::ControlInput { source, bytes } => {
+                                inputs_received += 1;
+                                if inputs_received <= 5 || inputs_received.is_multiple_of(50) {
+                                    tracing::info!(source, inputs_received, taken = control.takes_input_from(source), bytes = ?bytes, "control input received");
+                                }
+                                if control.takes_input_from(source) {
+                                    crate::event_hub::publish(
+                                        crate::event_hub::EventKind::Call,
+                                        serde_json::json!({
+                                            "callAgentPath": "ost/controlInput/",
+                                            "body": {"source": source, "bytes": bytes},
+                                        })
+                                        .to_string(),
+                                    );
+                                }
+                            }
                             Incoming::Other(v) => tracing::debug!("MCP message {v}"),
                         }
                     }
@@ -544,11 +655,58 @@ async fn run(
                     }
                     None => tracing::warn!("real-time text before the data channel is up: dropped"),
                 },
+                Some(Command::Control(c)) => {
+                    let now = std::time::Instant::now();
+                    let outs = match c {
+                        ControlCommand::Sharing { on: true, enabled } => {
+                            lock(control_role()).0 = Some(enabled);
+                            control.start_sharing(enabled)
+                        }
+                        ControlCommand::Sharing { on: false, .. } => {
+                            lock(control_role()).0 = None;
+                            control.stop_sharing()
+                        }
+                        ControlCommand::Viewing(Some(s)) => {
+                            lock(control_role()).1 = Some(s);
+                            control.start_viewing(s, now)
+                        }
+                        ControlCommand::Viewing(None) => {
+                            lock(control_role()).1 = None;
+                            control.stop_viewing()
+                        }
+                        ControlCommand::Request => control.request(now),
+                        ControlCommand::CancelRequest => control.cancel_request(),
+                        ControlCommand::Accept => control.accept(now),
+                        ControlCommand::Deny => control.deny(),
+                        ControlCommand::Give(to) => control.give(to, now),
+                        ControlCommand::Terminate => control.terminate(now),
+                        ControlCommand::Left(list) => control.left(&list),
+                        ControlCommand::Input(bytes) => {
+                            if let Some(to) = control.controlled_sharer()
+                                && let Some(packet) = session.control_input(to, &bytes)
+                            {
+                                inputs_sent += 1;
+                                if inputs_sent <= 3 || inputs_sent.is_multiple_of(50) {
+                                    tracing::info!(to, inputs_sent, from = ?session.source_id(), bytes = ?bytes, "control input sent");
+                                }
+                                sender.send(packet);
+                            }
+                            Vec::new()
+                        }
+                    };
+                    control_out(&mut session, &sender, outs);
+                }
                 None => return,
             },
             _ = tick.tick() => {
                 if session.is_up() {
                     sender.send(session.heartbeat());
+                }
+            }
+            _ = control_tick.tick() => {
+                let outs = control.tick(std::time::Instant::now());
+                if !outs.is_empty() {
+                    control_out(&mut session, &sender, outs);
                 }
             }
         }

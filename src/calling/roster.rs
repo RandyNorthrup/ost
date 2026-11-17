@@ -39,6 +39,10 @@ pub struct Participant {
     /// Their spotlight's state id (Teams' "spotlight" published state):
     /// spotlighted for everyone.
     pub spotlight: Option<String>,
+    /// Their presenter mode while they present (Teams' "weatherPerson"
+    /// published state): its content, the layout JSON (`{mode, x, y,
+    /// width, height, zOrder, background?}`).
+    pub weather_person: Option<String>,
     /// An anonymous guest (Teams shows its Unverified trust icon).
     pub guest: bool,
     /// A guest Teams' join shield flagged as a bot (Teams keeps the app
@@ -56,6 +60,9 @@ pub struct Participant {
     /// text a data channel message is.
     #[serde(skip)]
     pub data_sources: Vec<i64>,
+    /// The data stream of the endpoint that shares its screen: where give
+    /// / take control's messages go.
+    pub share_data_source: Option<i64>,
     /// The update listed their endpoints' streams; one that didn't (Teams'
     /// first update after joining names people only) leaves the
     /// stream-derived fields as they were.
@@ -225,6 +232,29 @@ fn delta_on(json: &str, prefix: &str) -> Option<Vec<Participant>> {
                                 .and_then(|i| i.as_str())
                                 .unwrap_or("spotlight")
                                 .to_string()
+                        }),
+                    weather_person: p
+                        .get("publishedStates")
+                        .and_then(|s| s.as_array())
+                        .into_iter()
+                        .flatten()
+                        .find(|s| s.get("stateType").and_then(|t| t.as_str()) == Some("weatherPerson"))
+                        .map(|s| match s.get("content") {
+                            Some(serde_json::Value::String(c)) => c.clone(),
+                            Some(c) => c.to_string(),
+                            None => "{}".to_string(),
+                        }),
+                    share_data_source: p
+                        .get("endpoints")
+                        .and_then(|e| e.as_object())
+                        .into_iter()
+                        .flat_map(|e| e.values())
+                        .filter_map(|ep| ep.pointer("/call/mediaStreams")?.as_array())
+                        .find(|ms| sending_source(&ms.iter().collect::<Vec<_>>(), "applicationsharing-video").is_some())
+                        .and_then(|ms| {
+                            ms.iter()
+                                .find(|m| m.get("type").and_then(|t| t.as_str()) == Some("data"))
+                                .and_then(|m| m.get("sourceId")?.as_i64())
                         }),
                     on_hold: !streams.is_empty()
                         && streams.iter().all(|m| {
@@ -456,6 +486,7 @@ pub fn apply(roster: &mut Vec<Participant>, delta: Vec<Participant>) {
                     p.share_source = x.share_source;
                     p.audio_source = x.audio_source;
                     p.data_sources = std::mem::take(&mut x.data_sources);
+                    p.share_data_source = x.share_data_source;
                     p.server_muted = x.server_muted;
                     p.muted = x.muted;
                     p.devices = x.devices;

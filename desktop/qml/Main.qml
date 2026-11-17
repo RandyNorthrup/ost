@@ -342,7 +342,10 @@ Window {
             backend.syncCallPresence()
             // Include sound: the computer's sound goes with the screen.
             backend.setShareSound(backend.callSharing && callWindow.shareIncludeSound)
+            // Presenter mode and give control follow the share.
+            backend.presentingSharingChanged()
         }
+        function onCallCameraOnChanged() { backend.presentingCameraChanged() }
     }
     // Bring the main window back (tray, or a second launch of OST).
     function showRaised() {
@@ -1730,6 +1733,12 @@ Window {
         sharing: backend.callSharing
         onToggleShare: backend.toggleShare()
         onStartShare: kind => backend.startShare(kind)
+        presentingState: backend.callPresentingJson ? JSON.parse(backend.callPresentingJson) : ({ mode: "ContentOnly", control: {} })
+        onSetPresenterMode: mode => backend.setPresenterMode(mode)
+        onSetPresenterBackground: json => backend.setPresenterBackground(json)
+        onSetShareOptimize: on => backend.setShareOptimize(on)
+        onScreenControl: (action, arg) => backend.screenControl(action, arg)
+        onShareIncludeSoundChanged: if (backend.callSharing) backend.setShareSound(shareIncludeSound)
         held: backend.callHeld
         heldByPeer: backend.callHeldByPeer
         onToggleHold: backend.toggleHold()
@@ -2591,6 +2600,23 @@ Window {
     property bool rejoined: false
     property int admittedAt: 0
     property int shareTrayShared: 0
+    // --join-present / --join-take-control (TASK-0210).
+    property int presentStarted: 0
+    property int presentAccepted: 0
+    property int presentGiven: 0
+    property int controlAsked: 0
+    property int controlGot: 0
+    property var controlKeys: []
+    Timer {
+        id: controlKeyTimer
+        interval: 100; repeat: true
+        onTriggered: {
+            if (window.controlKeys.length === 0) { stop(); return }
+            const k = window.controlKeys[0]
+            window.controlKeys = window.controlKeys.slice(1)
+            backend.controlKey(k[0], k[1], k[2], false)
+        }
+    }
     readonly property int joinStay: Math.round(parseInt((Qt.application.arguments.find(a => a.startsWith("--join-stay=")) || "--join-stay=0").slice(12)) / 2)
     // --join-url=<link>: the test meeting's link when it isn't in the
     // calendar's loaded week.
@@ -2745,6 +2771,104 @@ Window {
                 else if (window.shareTrayShared && step === window.shareTrayShared + 20) { log("stopping"); callWindow.runControl("ShareButton") }
                 else if (window.shareTrayShared && step === window.shareTrayShared + 22) log("stopped")
                 else if (step % 5 === 0) log("wait")
+            } else if (step >= 8 && step <= Math.min(400, 11 + window.joinStay) && Qt.application.arguments.indexOf("--join-present") >= 0) {
+                // --join-present (TASK-0210): present as Teams. With
+                // --join-present-mode=<Weatherperson|SideBySide|NewsAnchor>
+                // the camera goes on and the tray's presenter mode is
+                // picked (--join-present-bg=<aplBackground_0nn> adds a
+                // background); Window opens the desktop's picker (pick a
+                // harmless window within a minute). While sharing: the
+                // Sharing control bar (expanded, then minimized), control
+                // requests accepted (--join-present-accept) or Give control
+                // to the first viewer who can take it (--join-present-give),
+                // the Layout switched at the end (--join-present-switch=
+                // <mode>), then Stop sharing. Logs JOIN present lines;
+                // pictures -present-*.png.
+                const shot = n => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-present-" + n + ".png")))
+                const barShot = n => { const b = callWindow.sharingBarForTest(); if (b) b.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-present-" + n + ".png"))) }
+                const arg = k => (Qt.application.arguments.find(a => a.startsWith(k + "=")) || "").slice(k.length + 1)
+                const mode = arg("--join-present-mode")
+                const log = t => console.warn("JOIN present", t, "sharing", backend.callSharing, "camera", backend.callCameraOn, "state", backend.callPresentingJson,
+                                              "bar", !!callWindow.sharingBarForTest(), "expanded", callWindow.sharingBarForTest() ? callWindow.sharingBarForTest().expanded : false,
+                                              "minimized", callWindow.visibility === Window.Minimized)
+                const st = callWindow.controlState
+                if (step === 8) { callWindow.side = ""; if (mode && !backend.callCameraOn) backend.toggleCamera() }
+                // Content from camera's drill-down, captured on the way.
+                else if (step === 9) { callWindow.runControl("ShareButton"); callWindow.shareTrayForTest().drill = "camera" }
+                else if (step === 10) shot("tray-camera")
+                else if (step === 11) callWindow.shareTrayForTest().drill = ""
+                else if (step === 12) { if (mode) callWindow.shareTrayForTest().pickMode(mode); if (arg("--join-present-bg")) callWindow.shareTrayForTest().drill = "backgrounds" }
+                else if (step === 13) { log("tray"); shot(arg("--join-present-bg") ? "tray-backgrounds" : "tray") }
+                else if (step === 14 && arg("--join-present-bg")) { const b = arg("--join-present-bg"); callWindow.shareTrayForTest().pickBackground({ id: b, url: callWindow.shareTrayForTest().backgroundUrl(b, false), name: "" }) }
+                else if (step === 15 && arg("--join-present-bg")) { shot("tray-background-picked"); callWindow.shareTrayForTest().drill = "" }
+                else if (step === 16) callWindow.shareTrayForTest().share(Qt.application.arguments.indexOf("--join-present-screen") >= 0 ? "screen" : "window")
+                else if (step > 16 && !window.presentStarted && backend.callSharing) { window.presentStarted = step; log("started") }
+                else if (window.presentStarted && step === window.presentStarted + 1) { log("bar"); barShot("bar") }
+                else if (window.presentStarted && step === window.presentStarted + 8) { log("bar minimized"); barShot("bar-min") }
+                // The bar's Layout menu, open (pinned, expanded).
+                else if (window.presentStarted && mode && step === window.presentStarted + 10) { const b = callWindow.sharingBarForTest(); if (b) { b.pinned = true; b.expanded = true; b.openLayoutMenuForTest() } }
+                else if (window.presentStarted && mode && step === window.presentStarted + 11) barShot("bar-layout")
+                else if (window.presentStarted && mode && step === window.presentStarted + 12) { const b = callWindow.sharingBarForTest(); if (b) b.closeMenusForTest() }
+                else if (window.presentStarted && step > window.presentStarted + 8 && step < 9 + window.joinStay) {
+                    // A request comes in: accept it.
+                    if (Qt.application.arguments.indexOf("--join-present-accept") >= 0 && st.request && !window.presentAccepted) {
+                        window.presentAccepted = step; log("request from " + st.request); shot("request")
+                        callWindow.screenControl("accept", "")
+                    }
+                    // Give control to the first viewer who can take it.
+                    if (Qt.application.arguments.indexOf("--join-present-give") >= 0 && !window.presentGiven && (st.controllable || []).length > 0) {
+                        window.presentGiven = step; log("give to " + st.controllable[0])
+                        const b = callWindow.sharingBarForTest(); if (b) { b.expanded = true; b.pinned = true }
+                        callWindow.screenControl("give", st.controllable[0])
+                    }
+                    if (window.presentGiven && step === window.presentGiven + 2) barShot("bar-given")
+                    if (arg("--join-present-switch") && step === 1 + window.joinStay) { callWindow.setPresenterMode(arg("--join-present-switch")); log("switched") }
+                    if (step % 5 === 0) log("wait")
+                }
+                else if (window.presentStarted && step === 9 + window.joinStay) { log("stopping"); callWindow.runControl("ShareButton") }
+                else if (window.presentStarted && step === 11 + window.joinStay) log("stopped")
+                else if (step % 5 === 0) log("wait")
+            } else if (step >= 8 && step <= Math.min(400, 11 + window.joinStay) && Qt.application.arguments.indexOf("--join-take-control") >= 0) {
+                // --join-take-control (TASK-0210): someone else presents;
+                // once their screen can be controlled the bar shows Take
+                // control: ask (Teams' "Request control?"), and once given
+                // control click the middle of their picture and type
+                // "OST TEST" there, then Stop control. Captures the stage
+                // whenever their presenter mode is on (-control-stage.png).
+                // Logs JOIN control lines; pictures -control-*.png.
+                const shot = n => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-control-" + n + ".png")))
+                const st = callWindow.controlState
+                const log = t => console.warn("JOIN control", t, "presenter", callWindow.shareId, "state", backend.callPresentingJson, "bar", callWindow.ubar.bar.indexOf("ScreensharingControlButton") >= 0)
+                if (step === 8) callWindow.side = ""
+                else if (!window.controlAsked && st.capable && callWindow.presenting) {
+                    window.controlAsked = step; log("capable"); shot("capable")
+                    callWindow.runControl("ScreensharingControlButton")
+                }
+                else if (window.controlAsked && step === window.controlAsked + 1) { shot("request-dialog"); callWindow.requestControlDialogForTest().confirmed(); callWindow.requestControlDialogForTest().close() }
+                else if (window.controlAsked && step === window.controlAsked + 2) { log("asked"); shot("waiting") }
+                else if (st.state === "controlling" && !window.controlGot) { window.controlGot = step; log("controlling"); shot("controlling") }
+                else if (window.controlGot && step === window.controlGot + 1) {
+                    backend.controlMouse(0, 0, false, 0.5, 0.5, 0)
+                    backend.controlMouse(2, 0, true, 0.5, 0.5, 0)
+                    backend.controlMouse(2, 0, false, 0.5, 0.5, 0)
+                }
+                else if (window.controlGot && step === window.controlGot + 2) {
+                    // "OST TEST": Shift for the capitals, then each key.
+                    const keys = [[0x01000020, 50, false], [0x4f, 32, false], [0x4f, 32, true], [0x53, 39, false], [0x53, 39, true], [0x54, 28, false], [0x54, 28, true], [0x01000020, 50, true],
+                                  [0x20, 65, false], [0x20, 65, true],
+                                  [0x01000020, 50, false], [0x54, 28, false], [0x54, 28, true], [0x45, 26, false], [0x45, 26, true], [0x53, 39, false], [0x53, 39, true], [0x54, 28, false], [0x54, 28, true], [0x01000020, 50, true]]
+                    // As typed: one key event every 100 ms.
+                    window.controlKeys = keys
+                    controlKeyTimer.start()
+                    log("typing")
+                }
+                else if (window.controlGot && step === window.controlGot + 5) { shot("typed"); callWindow.runControl("ScreensharingControlButton"); log("released") }
+                else if (window.controlGot && step === window.controlGot + 7) { log("after release"); shot("released") }
+                if (callWindow.presenting && step % 10 === 0) {
+                    log("wait")
+                    console.warn("JOIN control composite", JSON.stringify(callWindow.presenterCompositeForTest()))
+                    shot("stage-" + step)
+                }
             } else if (step >= 8 && step <= Math.min(100, 11 + window.joinStay) && Qt.application.arguments.indexOf("--join-copilot") >= 0) {
                 // --join-copilot: Copilot in the meeting (TASK-0188, a
                 // Copilot-licensed account): the bar's Copilot, Teams'

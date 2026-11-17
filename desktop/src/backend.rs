@@ -56,7 +56,13 @@ unsafe extern "C" {
     fn ost_banner_prepare(title: *const core::ffi::c_char) -> bool;
     /// Put the banner window in a corner (src/native.cpp).
     fn ost_banner_place(title: *const core::ffi::c_char, corner: *const core::ffi::c_char, margin: i32);
+    /// The Sharing control bar's window as a layer-shell surface (Wayland).
+    fn ost_toolbar_prepare(title: *const core::ffi::c_char) -> bool;
+    fn ost_toolbar_place(title: *const core::ffi::c_char, x: i32, y: i32);
 }
+
+/// The Sharing control bar's window title (Teams').
+const SHARING_BAR_TITLE: &core::ffi::CStr = c"Sharing control bar";
 
 /// The banner window's title (how native.cpp finds it).
 const BANNER_WINDOW_TITLE: &core::ffi::CStr = c"OST notifications";
@@ -257,6 +263,9 @@ pub mod qobject {
         #[qproperty(bool, call_test)]
         /// The computer's sound is shared (Include sound).
         #[qproperty(bool, call_share_sound)]
+        /// Presenting (presenting.rs): our presenter mode, Add background,
+        /// Optimize, and give / take control's state.
+        #[qproperty(QString, call_presenting_json)]
         /// The test call's report once it ends (Teams' Post EchoBot
         /// Calling Screen): [{kind, title, problems}] for Microphone,
         /// Speaker, Camera and Network; empty while it runs.
@@ -1272,6 +1281,10 @@ pub mod qobject {
         /// ("window"); the desktop's picker offers only that kind.
         #[qinvokable]
         fn start_share(self: Pin<&mut Backend>, kind: &QString);
+        /// Teams' Content from camera: share this camera (its device path)
+        /// as the screen is.
+        #[qinvokable]
+        fn start_content_camera(self: Pin<&mut Backend>, device: &QString);
         /// Teams' Include sound: the computer's sound goes into the call
         /// with the shared screen (mixed into your audio), or stops.
         #[qinvokable]
@@ -1280,6 +1293,41 @@ pub mod qobject {
         /// "Don't use audio": no sound sent or played in this call.
         #[qinvokable]
         fn use_no_audio(self: Pin<&mut Backend>);
+
+        /// Presenter mode: "ContentOnly", "Weatherperson" (Standout),
+        /// "SideBySide", "NewsAnchor" (Reporter).
+        #[qinvokable]
+        fn set_presenter_mode(self: Pin<&mut Backend>, mode: &QString);
+        /// Add background: `{id, url, name}`, or "" for none.
+        #[qinvokable]
+        fn set_presenter_background(self: Pin<&mut Backend>, json: &QString);
+        /// Optimize for video content.
+        #[qinvokable]
+        fn set_share_optimize(self: Pin<&mut Backend>, on: bool);
+        /// Sharing started or stopped (presenter mode, give control).
+        #[qinvokable]
+        fn presenting_sharing_changed(self: Pin<&mut Backend>);
+        /// The camera went on or off (the camera modes need it).
+        #[qinvokable]
+        fn presenting_camera_changed(self: Pin<&mut Backend>);
+        /// Give / take control: request, cancel, release, accept, deny,
+        /// give (`arg`: their MRI), takeBack.
+        #[qinvokable]
+        fn screen_control(self: Pin<&mut Backend>, action: &QString, arg: &QString);
+        /// In control of a presenter's screen: our mouse (0 move, 1 wheel,
+        /// 2 button) at x, y (0–1 over the picture).
+        #[qinvokable]
+        fn control_mouse(self: Pin<&mut Backend>, kind: i32, button: i32, down: bool, x: f64, y: f64, wheel: i32);
+        /// In control: our key (Qt key, native scan code).
+        #[qinvokable]
+        fn control_key(self: Pin<&mut Backend>, key: i32, scan_code: u32, up: bool, repeat: bool);
+        /// A presenter's mode laid out on a stage (Teams' compositor).
+        #[qinvokable]
+        fn presenter_layout(self: &Backend, layout: &QString, w: f64, h: f64, content_aspect: f64, presenter_aspect: f64) -> QString;
+        /// Give / take control happened: `kind` request, withdrawn,
+        /// given, takenBack, stopped, denied, hasControl, controlEnded.
+        #[qsignal]
+        fn screen_control_notice(self: Pin<&mut Backend>, kind: QString, mri: QString, name: QString);
 
         /// Raise or lower your hand in the meeting.
         #[qinvokable]
@@ -2210,6 +2258,14 @@ pub mod qobject {
         /// TL).
         #[qinvokable]
         fn place_banner_window(self: &Backend, corner: &QString);
+        /// The Sharing control bar window, before it first shows: a
+        /// layer-shell surface on Wayland (true), else it places itself.
+        #[qinvokable]
+        fn prepare_sharing_bar(self: &Backend) -> bool;
+        /// Put the Sharing control bar `y` from the top, centred (`x` < 0)
+        /// or `x` from the left.
+        #[qinvokable]
+        fn place_sharing_bar(self: &Backend, x: i32, y: i32);
         /// A banner's quick reply: send `text` to `chat_id`.
         #[qinvokable]
         fn banner_reply(self: Pin<&mut Backend>, chat_id: &QString, text: &QString);
@@ -2542,6 +2598,10 @@ pub struct BackendRust {
     call_speaking_while_muted: bool,
     call_test: bool,
     call_share_sound: bool,
+    call_presenting_json: QString,
+    presenting: presenting::Presenting,
+    /// The presenter we watch (their data source), for give / take control.
+    presenting_viewing: Option<u32>,
     call_test_report: QString,
     call_ai_indicator: bool,
     call_ai_available: bool,
@@ -2729,6 +2789,9 @@ pub struct BackendRust {
     drafts: Option<HashMap<String, Draft>>,
 }
 
+#[path = "presenting.rs"]
+mod presenting;
+
 /// The call this app is ringing for or in. Lives on the engine side so the
 /// media keeps running independently of the Qt thread.
 #[derive(Default)]
@@ -2866,6 +2929,25 @@ async fn offer_screen(kind: teams_cli::calling::screencast::Source) -> anyhow::R
         anyhow::ensure!(call.can_share(), "This call can't take a shared screen");
     }
     let (capture, frames) = teams_cli::calling::screencast::ScreenCapture::start_kind(kind).await?;
+    offer_capture(capture, frames).await
+}
+
+/// Teams' Content from camera: share this camera as the screen is.
+async fn offer_camera_content(device: String) -> anyhow::Result<bool> {
+    {
+        let mut slot = call_slot().lock().await;
+        let call = MediaCall::of(&mut slot).context("The call has ended")?;
+        anyhow::ensure!(call.can_share(), "This call can't take shared content");
+    }
+    let (capture, frames) = teams_cli::calling::screencast::ScreenCapture::from_camera(&device)?;
+    offer_capture(capture, frames).await
+}
+
+/// Offer what's captured to the call (see [`offer_screen`]).
+async fn offer_capture(
+    capture: teams_cli::calling::screencast::ScreenCapture,
+    frames: std::sync::mpsc::Receiver<teams_cli::calling::camera::YuvFrame>,
+) -> anyhow::Result<bool> {
     let mut guard = call_slot().lock().await;
     let slot = &mut *guard;
     let mut call = MediaCall::of(slot).context("The call has ended")?;
@@ -4713,6 +4795,23 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
                     this.show_transcript(rows, false);
                 }
             });
+        }
+        return;
+    }
+    // Give / take control: the controller's input, and the protocol's
+    // events (presenting.rs).
+    if json.contains("\"callAgentPath\":\"ost/controlInput/\"") {
+        if let Some(bytes) = serde_json::from_str::<serde_json::Value>(json)
+            .ok()
+            .and_then(|v| v.pointer("/body/bytes")?.as_array().map(|a| a.iter().filter_map(|b| b.as_u64().map(|b| b as u8)).collect::<Vec<u8>>()))
+        {
+            presenting::control_input(bytes);
+        }
+        return;
+    }
+    if json.contains("\"callAgentPath\":\"ost/screenControl/\"") {
+        if let Some(body) = serde_json::from_str::<serde_json::Value>(json).ok().and_then(|v| v.get("body").cloned()) {
+            let _ = qt.queue(move |this| this.screen_control_event(body));
         }
         return;
     }
@@ -8802,6 +8901,31 @@ impl qobject::Backend {
         self.as_mut().set_call_share_sound(on);
     }
 
+    pub fn start_content_camera(mut self: Pin<&mut Self>, device: &QString) {
+        if self.rust().call_sharing {
+            return;
+        }
+        let device = device.to_string();
+        // Control (Teams: give control is for screens and windows).
+        self.as_mut().rust_mut().presenting.kind = None;
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            match offer_camera_content(device).await {
+                Ok(true) => {
+                    let _ = qt.queue(|mut this| this.as_mut().set_call_sharing(true));
+                    spawn_share_watch(qt.clone());
+                }
+                Ok(false) => {}
+                Err(e) => {
+                    tracing::warn!("content from camera: {}", short_error(&e));
+                    let _ = qt.queue(move |mut this| {
+                        this.as_mut().set_status_text(QString::from(format!("Share: {}", short_error(&e)).as_str()));
+                    });
+                }
+            }
+        });
+    }
+
     pub fn start_share(self: Pin<&mut Self>, kind: &QString) {
         if self.rust().call_sharing {
             return;
@@ -8814,8 +8938,11 @@ impl qobject::Backend {
         self.share_kind(kind);
     }
 
-    fn share_kind(self: Pin<&mut Self>, kind: teams_cli::calling::screencast::Source) {
+    fn share_kind(mut self: Pin<&mut Self>, kind: teams_cli::calling::screencast::Source) {
         let on = !self.rust().call_sharing;
+        if on {
+            self.as_mut().rust_mut().presenting.kind = Some(kind);
+        }
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let result = if on {
@@ -8980,6 +9107,11 @@ impl qobject::Backend {
         }
         self.as_mut().show_rtt(ended);
         let mut roster = std::mem::take(&mut self.as_mut().rust_mut().roster);
+        let gone: Vec<teams_cli::calling::roster::Participant> = delta
+            .iter()
+            .filter(|p| !p.active)
+            .filter_map(|p| roster.iter().find(|r| r.id == p.id).cloned())
+            .collect();
         teams_cli::calling::roster::apply(&mut roster, delta);
 
         let json = serde_json::to_string(&roster).unwrap_or_else(|_| "[]".into());
@@ -9005,6 +9137,27 @@ impl qobject::Backend {
                 .set_call_share_mri(QString::from(share_mri.as_str()));
         }
         let share_source = presenter.and_then(|p| p.1);
+        // Give / take control: the presenter we watch; who left.
+        let watched = roster.iter().find(|p| p.id != me && p.share_source.is_some()).cloned();
+        if let Some(w) = watched.as_ref() {
+            let mine = roster.iter().find(|p| p.id == me).map(|p| p.data_sources.clone()).unwrap_or_default();
+            if self.rust().presenting_viewing.is_none() {
+                tracing::info!(presenter_data = ?w.data_sources, presenter_share_data = ?w.share_data_source, my_data = ?mine, "screen control: data sources");
+            }
+        }
+        self.as_mut().presenting_roster(&gone, watched.as_ref());
+        // Presenters in Standout or Reporter send their camera with its
+        // background cut out (decoded with Teams' implicit mask).
+        let masked: Vec<i64> = roster
+            .iter()
+            .filter(|p| p.id != me)
+            .filter(|p| {
+                p.weather_person.as_deref().is_some_and(|w| {
+                    serde_json::from_str::<teams_cli::calling::presenter_mode::Published>(w).is_ok_and(|l| l.mode().cuts_background())
+                })
+            })
+            .filter_map(|p| p.video_source)
+            .collect();
         // The attendance list: who else is here now.
         if self.rust().call_meeting && !roster.is_empty() {
             let here: Vec<(String, String)> = roster
@@ -9040,6 +9193,8 @@ impl qobject::Backend {
                     .iter()
                     .filter_map(|(mri, src, _)| Some((mri.clone(), shown.get(src)?.clone().into())))
                     .collect();
+                let masked_keys: Vec<String> = masked.iter().filter_map(|s| shown.get(s).cloned()).collect();
+                teams_cli::calling::frames::set_implicit_masks(&masked_keys);
                 let json = serde_json::Value::Object(keys).to_string();
                 let _ = qt.queue(move |mut this| {
                     if this.rust().call_video_json.to_string() != json {
@@ -9054,6 +9209,9 @@ impl qobject::Backend {
 
     /// Show the call as over; the UI fades it out from "ended".
     fn end_call_ui(mut self: Pin<&mut Self>) {
+        teams_cli::calling::meeting_media::clear_control_role();
+        self.as_mut().rust_mut().presenting_viewing = None;
+        self.as_mut().rust_mut().presenting.control = Default::default();
         if self.rust().call_test && self.rust().call_test_report.is_empty() {
             let watch = echo_watch().lock().unwrap_or_else(|e| e.into_inner()).take();
             let mut report = watch.map(|w| w.report).unwrap_or_default();
@@ -17416,6 +17574,16 @@ impl qobject::Backend {
     pub fn prepare_banner_window(&self) -> bool {
         // SAFETY: on the Qt thread; the title is a C string.
         unsafe { ost_banner_prepare(BANNER_WINDOW_TITLE.as_ptr()) }
+    }
+
+    pub fn prepare_sharing_bar(&self) -> bool {
+        // SAFETY: on the Qt thread; the title is a C string.
+        unsafe { ost_toolbar_prepare(SHARING_BAR_TITLE.as_ptr()) }
+    }
+
+    pub fn place_sharing_bar(&self, x: i32, y: i32) {
+        // SAFETY: on the Qt thread; the title is a C string.
+        unsafe { ost_toolbar_place(SHARING_BAR_TITLE.as_ptr(), x, y) }
     }
 
     pub fn place_banner_window(&self, corner: &QString) {

@@ -223,6 +223,8 @@ fn main() {
         "qml/TestCallReport.qml",
         "qml/TestCallDevices.qml",
         "qml/ShareTray.qml",
+        "qml/SharingControlBar.qml",
+        "qml/ControlAlert.qml",
     ];
     let mut resources: Vec<String> = Vec::new();
     for dir in [

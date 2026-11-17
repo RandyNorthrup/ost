@@ -49,6 +49,33 @@ pub fn latest(key: &str) -> Option<Frame> {
         .cloned()
 }
 
+fn masked() -> &'static Mutex<std::collections::HashSet<String>> {
+    static M: OnceLock<Mutex<std::collections::HashSet<String>>> = OnceLock::new();
+    M.get_or_init(Default::default)
+}
+
+/// Decode `key` as a presenter's camera with Teams' implicit mask (their
+/// background clears), or as an ordinary picture.
+pub fn set_implicit_mask(key: &str, on: bool) {
+    let mut m = masked().lock().unwrap_or_else(|e| e.into_inner());
+    if on {
+        m.insert(key.to_string());
+    } else {
+        m.remove(key);
+    }
+}
+
+/// Only these keys keep the mask (the rest are cleared).
+pub fn set_implicit_masks(keys: &[String]) {
+    let mut m = masked().lock().unwrap_or_else(|e| e.into_inner());
+    m.clear();
+    m.extend(keys.iter().cloned());
+}
+
+pub fn implicit_mask(key: &str) -> bool {
+    masked().lock().unwrap_or_else(|e| e.into_inner()).contains(key)
+}
+
 /// Forget `key`'s frames (its video stopped).
 pub fn clear(key: &str) {
     store()

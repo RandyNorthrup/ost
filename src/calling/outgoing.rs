@@ -460,6 +460,43 @@ impl OutgoingCall {
         Ok(())
     }
 
+    /// Presenter modes (Standout, Side-by-side, Reporter): Teams' publishState
+    /// "weatherPerson" at user level for everyone, its content the layout
+    /// (`{mode, x, y, width, height, zOrder: 2, background?}`), so each
+    /// receiver composites our camera over the shared screen. `None` takes
+    /// it back (removeState, scope "all", that state type), as Teams does
+    /// on Content only or when sharing stops.
+    pub async fn weather_person(&mut self, layout: Option<serde_json::Value>) -> Result<()> {
+        self.state_seq += 1;
+        let from = self.me.0.clone();
+        match layout {
+            Some(content) => {
+                let link = self.state_links.0.clone().context("This meeting doesn't take presenter modes")?;
+                let body = serde_json::json!({
+                    "from": from,
+                    "publishedState": {
+                        "content": content,
+                        "level": "user",
+                        "stateType": "weatherPerson",
+                        "sequenceNumber": self.state_seq,
+                    },
+                });
+                cc_post(&self.http, &self.skype_token, &link, &body, "Presenter mode").await?;
+            }
+            None => {
+                let link = self.state_links.1.clone().context("This meeting doesn't take presenter modes")?;
+                let body = serde_json::json!({
+                    "from": from,
+                    "sequenceNumber": self.state_seq,
+                    "scope": "all",
+                    "stateType": "weatherPerson",
+                });
+                cc_post(&self.http, &self.skype_token, &link, &body, "Content only").await?;
+            }
+        }
+        Ok(())
+    }
+
     /// Spotlight someone for everyone (Teams' publishState: "spotlight" at
     /// user level, scope "specified" with them), or stop (removeState of
     /// that state).
@@ -988,6 +1025,12 @@ impl OutgoingCall {
     /// Our data source id in the meeting (whose real-time text is ours).
     pub fn data_source_id(&self) -> Option<u32> {
         self.media.as_ref().and_then(|m| m.data_source_id())
+    }
+
+    /// Give / take control of a shared screen; false when the call has no
+    /// meeting data channel.
+    pub fn screen_control(&self, c: super::meeting_media::ControlCommand) -> bool {
+        self.media.as_ref().is_some_and(|m| m.screen_control(c))
     }
 
     /// The processor asks for one of our streams (controlVideoStreaming).

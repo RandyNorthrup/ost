@@ -1332,6 +1332,11 @@ impl WebRtcAudioSession {
         self.meeting_video.as_ref().and_then(|v| v.source_id())
     }
 
+    /// In a meeting: give / take control of a shared screen.
+    pub fn screen_control(&self, c: super::meeting_media::ControlCommand) -> bool {
+        self.meeting_video.as_ref().map(|v| v.screen_control(c)).is_some()
+    }
+
     /// The other side has the call on hold.
     pub fn is_held_by_peer(&self) -> bool {
         self.held_by_peer.load(Ordering::Relaxed)

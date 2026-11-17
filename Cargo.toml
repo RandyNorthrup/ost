@@ -85,7 +85,7 @@ ost-vfx = { path = "vfx", optional = true }
 openh264-sys2 = { version = "0.9", optional = true }
 sdl2 = { version = "0.38", optional = true }
 # Screen sharing: the xdg-desktop-portal ScreenCast portal and PipeWire.
-ashpd = { version = "0.14", optional = true, default-features = false, features = ["tokio", "screencast"] }
+ashpd = { version = "0.14", optional = true, default-features = false, features = ["tokio", "screencast", "remote_desktop"] }
 pipewire = { version = "0.10", optional = true }
 
 [features]

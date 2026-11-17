@@ -595,6 +595,9 @@ pub struct Facts {
     /// Copilot in meetings for this user (a Copilot licence; Teams'
     /// shouldEnableMeetingCollabButton with useAIFeatureLicense).
     pub copilot: bool,
+    /// Someone else shares and can be controlled from here (their
+    /// AvailableAck came: Teams' ScreensharingControlButton).
+    pub can_take_control: bool,
     /// The user's arrangement of the new controls.
     pub customization: Customization,
 }
@@ -605,6 +608,7 @@ impl Facts {
     pub fn shows(&self, control: &str) -> bool {
         match control {
             "PopoutContentButton" => self.can_pop_out,
+            "ScreensharingControlButton" => self.can_take_control,
             "ResumeButton" => self.p2p && self.on_hold,
             "CallTransferButtonV2" | "CallConsultativeTransferButtonV2" => self.p2p,
             "ChatButton" => !self.pstn && !self.echo,

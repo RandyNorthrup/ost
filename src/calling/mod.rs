@@ -34,11 +34,14 @@ pub mod meeting_options;
 pub mod meeting_timer;
 pub mod muted_speech;
 pub mod outgoing;
+pub mod presenter_mode;
 #[cfg(all(feature = "audio", target_os = "linux"))]
 pub mod pw_defaults;
 pub mod recorder;
 pub mod room_devices;
 pub mod recording;
+#[cfg(feature = "screencast")]
+pub mod remote_input;
 #[cfg(feature = "audio")]
 pub mod ringtone;
 pub mod roster;
@@ -47,6 +50,7 @@ pub mod rtcp;
 pub mod rtp;
 #[cfg(feature = "screencast")]
 pub mod screencast;
+pub mod screen_control;
 #[cfg(feature = "audio")]
 pub mod system_sound;
 pub mod sdp;

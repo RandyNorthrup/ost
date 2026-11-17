@@ -223,7 +223,17 @@ fn decode_loop(rx: mpsc::Receiver<VideoPacket>, want: Arc<AtomicBool>, key: &str
                     Ok(Some(yuv)) => {
                         let (w, h) = yuv.dimensions();
                         let mut rgba = vec![0u8; w * h * 4];
-                        yuv.write_rgba8(&mut rgba);
+                        if super::frames::implicit_mask(key) {
+                            // A presenter in Standout or Reporter: their
+                            // background, cut out into the luma, clears.
+                            ost_vfx::implicit_mask_rgba(yuv.y(), yuv.u(), yuv.v(), yuv.strides(), w, h, &mut rgba);
+                            if decoded.is_multiple_of(150) {
+                                let clear = rgba.chunks_exact(4).filter(|p| p[3] == 0).count();
+                                tracing::info!(key, w, h, clear_percent = clear * 100 / (w * h).max(1), "presenter camera with implicit mask");
+                            }
+                        } else {
+                            yuv.write_rgba8(&mut rgba);
+                        }
                         super::frames::publish(key, w as u32, h as u32, rgba);
                         health.frame(w as u32, h as u32);
                         decoded += 1;
@@ -382,6 +392,20 @@ pub struct VideoSender {
 static EFFICIENCY: AtomicBool = AtomicBool::new(false);
 const EFFICIENT_FS: u32 = (424 / 16 + 1) * (240 / 16);
 const EFFICIENT_KBPS: u32 = 300;
+
+/// The Sharing control bar's Optimize ("Optimize for video content"):
+/// the shared screen is sent at a video's frame rate.
+static SCREEN_MOTION: AtomicBool = AtomicBool::new(false);
+const MOTION_FPS: u32 = 30;
+const MOTION_KBPS: u32 = 2500;
+
+pub fn set_screen_motion(on: bool) {
+    SCREEN_MOTION.store(on, Ordering::Relaxed);
+}
+
+pub fn screen_motion() -> bool {
+    SCREEN_MOTION.load(Ordering::Relaxed)
+}
 
 pub fn set_efficiency(on: bool) {
     EFFICIENCY.store(on, Ordering::Relaxed);
@@ -656,8 +680,10 @@ fn send_loop(
     while !stop.load(Ordering::Relaxed) {
         // A meeting's processor may ask for less (Teams' vdclc).
         let limits = control.as_ref().and_then(|c| c.get());
-        let fps = limits.map_or(cfg.fps, |l| l.max_fps.clamp(1, 30));
-        let kbps = limits.map_or(cfg.kbps, |l| l.max_kbps.clamp(50, 4000));
+        let motion = cfg.health == super::call_health::Kind::ShareSend && screen_motion();
+        let (base_fps, base_kbps) = if motion { (MOTION_FPS, MOTION_KBPS) } else { (cfg.fps, cfg.kbps) };
+        let fps = limits.map_or(base_fps, |l| l.max_fps.clamp(1, 30));
+        let kbps = limits.map_or(base_kbps, |l| l.max_kbps.clamp(50, 4000));
         // In a meeting, also what the send-side estimate leaves for video
         // after audio and packet overhead (Teams' encoder follows its send
         // limit the same way).
@@ -705,6 +731,12 @@ fn send_loop(
                 f.height / 2,
                 preview_rgba(&f.data, f.width, f.height),
             );
+        }
+        // Presenter modes Standout and Reporter: the background cut out
+        // into the picture (Teams' Weatherperson effect); you still see
+        // yourself as usual.
+        if let Some(fx) = effects.as_mut() {
+            fx.presenter_effect(f.width, f.height, &mut f.data);
         }
         // The size the processor allows (16x16 macroblocks a frame).
         let (tw, th) = limits.map_or((f.width, f.height), |l| {

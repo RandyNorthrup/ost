@@ -37,6 +37,35 @@ Window {
     property bool canShare: false
     property bool sharing: false
     signal toggleShare()
+    /// Presenting (TASK-0210): our presenter mode, Add background,
+    /// Optimize and give / take control (the backend's
+    /// call_presenting_json: {mode, background, optimize, control: {capable,
+    /// deniedBySharer, state, controller, request, controllable}}).
+    property var presentingState: ({ mode: "ContentOnly", control: {} })
+    readonly property var controlState: presentingState.control || ({})
+    signal setPresenterMode(string mode)
+    signal setPresenterBackground(string json)
+    signal setShareOptimize(bool on)
+    signal screenControl(string action, string arg)
+    /// What we share ("screen" or "window"): the Sharing control bar's
+    /// badge and its Give control menu.
+    property string shareKind: "window"
+    /// Teams: sharing minimizes the meeting window (its compact view
+    /// shows) and the Sharing control bar opens; stopping brings the
+    /// window back.
+    onSharingChanged: {
+        if (sharing && meeting) showMinimized()
+        else if (!sharing && visibility === Window.Minimized) { showNormal(); raise() }
+        // Teams refreshes Call health at once when your media turns on or off.
+        if (side === "callHealth") refreshCallHealth()
+    }
+    /// The Sharing control bar's More ▸ Chat / People: the pane in the
+    /// meeting window, shown again.
+    function showSidePane(name) {
+        if (visibility === Window.Minimized) showNormal()
+        raise(); requestActivate()
+        if (side !== name) runControl(name === "chat" ? "ChatButton" : "RosterButton")
+    }
     /// A Teams meeting: Teams' meeting toolbar, the roster and its stage.
     property bool meeting: false
     /// The meeting's participants (from the roster): [{id, name, role}].
@@ -604,7 +633,8 @@ Window {
         p2p: !meeting, pstn: pstnCall, consult: false, scheduled: scheduled,
         organizer: organizer, onHold: held, canPopOut: presenting && !contentPoppedOut, reactions: true,
         roomToJoin: roomToJoin, canReturnToMain: canReturnToMain, breakoutRoom: backend.callBreakoutRoomJson !== "" || !!heldMeeting,
-        centered: newControls, customization: controlsCustomization, echo: testCall, copilot: copilotAllowed
+        centered: newControls, customization: controlsCustomization, echo: testCall, copilot: copilotAllowed,
+        canTakeControl: presenting && !!controlState.capable
     })
     TextMetrics { id: resumeMetrics; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; text: "Resume" }
     // Each control's slot (button 48 + 4 either side; split buttons 74).
@@ -645,7 +675,8 @@ Window {
             VideoButton: cCamera, MicrophoneButton: cMic, ShareButton: cShare,
             // More's grid controls the user pinned to the bar.
             RecordingButton: cPinned, TranscriptButton: cPinned, MeetingFacilitatorTimerButton: cPinned,
-            ClosedCaptionsButton: cPinned, RealTimeTextButton: cPinned
+            ClosedCaptionsButton: cPinned, RealTimeTextButton: cPinned,
+            ScreensharingControlButton: cTakeControl
         })[name] || null
     }
     // What each control does, from the bar or from More.
@@ -674,6 +705,11 @@ Window {
             else openShareTray()
         }
         else if (name === "PopoutContentButton") contentPoppedOut = true
+        else if (name === "ScreensharingControlButton") {
+            // Teams' viewer button: Take control (asks first), Stop control.
+            if (controlState.state === "controlling") screenControl("release", "")
+            else if (controlState.state !== "requested") requestControlDialog.open()
+        }
         else if (name === "CallTransferButtonV2" || name === "CallConsultativeTransferButtonV2") {
             picker.mode = name === "CallTransferButtonV2" ? "transfer" : "consult"
             picker.parent = barItem(name); picker.open()
@@ -702,6 +738,8 @@ Window {
         if (name === "DialpadButton") return live && canDtmf
         if (name === "HoldButton") return live && hasAudio
         if (name === "RealTimeTextButton") return !rttOn
+        // Waiting for approval; or the sharer's company turned it off.
+        if (name === "ScreensharingControlButton") return controlState.state !== "requested" && !controlState.deniedBySharer
         // Copilot off in the meeting's options (copilotMode Disabled).
         if (name === "MeetingCollabButton") return live && aiAvailable
         return true
@@ -1263,7 +1301,6 @@ Window {
     signal refreshCallHealth()
     // Teams refreshes at once when your media turns on or off.
     onCameraOnChanged: if (side === "callHealth") refreshCallHealth()
-    onSharingChanged: if (side === "callHealth") refreshCallHealth()
     function callHealthPaneForTest() { return callHealthPane }
     property var timerData: null
     property bool everyonePresents: false
@@ -1676,17 +1713,96 @@ Window {
                 visible: tiles.content
                 x: tiles.mainX + 2; y: tiles.mainY + 2
                 width: tiles.mainW - 4; height: tiles.mainH - 4
+                clip: true
+                // Presenter modes (Teams' weatherPerson state): the
+                // presenter's camera composited with the screen, laid out
+                // by Teams' arithmetic (presenter_mode.rs).
+                readonly property var presenterEntry: win.roster.find(p => p.id === win.shareId) || null
+                readonly property var wp: {
+                    const s = presenterEntry ? presenterEntry.weather_person : ""
+                    if (!s) return null
+                    try { const l = JSON.parse(s); return l && l.mode && l.mode !== "ContentOnly" ? l : null } catch (e) { return null }
+                }
+                readonly property string camKey: wp ? (win.videoKeys[win.shareId] || "") : ""
+                readonly property var comp: {
+                    if (!wp || !camKey) return null
+                    const ca = meetingShare.frameHeight > 0 ? meetingShare.frameWidth / meetingShare.frameHeight : 0
+                    const pa = presenterCam.frameHeight > 0 ? presenterCam.frameWidth / presenterCam.frameHeight : 0
+                    const r = backend.presenterLayout(JSON.stringify(wp), width, height, ca, pa)
+                    return r ? JSON.parse(r) : null
+                }
+                // Side-by-side and Reporter: Add background's picture behind.
+                Image {
+                    visible: !!contentTile.comp && !!contentTile.wp && !!contentTile.wp.background && !!contentTile.wp.background.url
+                    anchors.fill: parent
+                    fillMode: Image.PreserveAspectCrop
+                    asynchronous: true
+                    source: visible ? (contentTile.wp.background.url.startsWith("http") ? "" : "https://statics.teams.cdn.office.net") + contentTile.wp.background.url : ""
+                }
                 VideoFrame {
                     id: meetingShare
                     source: "share"
                     fit: true
                     letterbox: false
-                    anchors.fill: parent
+                    readonly property var area: contentTile.comp ? contentTile.comp.content : null
+                    x: area ? area.x * contentTile.width : 0
+                    y: area ? area.y * contentTile.height : 0
+                    width: area ? area.width * contentTile.width : contentTile.width
+                    height: area ? area.height * contentTile.height : contentTile.height
                     Timer {
                         interval: 33; repeat: true
                         running: win.visible && contentTile.visible
-                        onTriggered: meetingShare.refresh()
+                        onTriggered: { meetingShare.refresh(); if (contentTile.camKey) presenterCam.refresh() }
                     }
+                }
+                VideoFrame {
+                    id: presenterCam
+                    visible: !!contentTile.comp
+                    source: contentTile.camKey
+                    fit: !!contentTile.comp && !contentTile.comp.crop
+                    letterbox: false
+                    readonly property var area: contentTile.comp ? contentTile.comp.presenter : null
+                    x: area ? area.x * contentTile.width : 0
+                    y: area ? area.y * contentTile.height : 0
+                    width: area ? area.width * contentTile.width : 0
+                    height: area ? area.height * contentTile.height : 0
+                }
+                // In control of the presenter's screen: our mouse and keys
+                // go to it (Teams' control capturer: positions over the
+                // picture from 0 to 65535, moves at most every 30–50 ms).
+                MouseArea {
+                    id: controlArea
+                    readonly property bool active: win.controlState.state === "controlling"
+                    enabled: active
+                    visible: active
+                    x: meetingShare.x; y: meetingShare.y; width: meetingShare.width; height: meetingShare.height
+                    hoverEnabled: true
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
+                    cursorShape: Qt.ArrowCursor
+                    focus: active
+                    // The picture inside the frame (fitted, letterboxed).
+                    readonly property real fw: meetingShare.frameWidth > 0 ? meetingShare.frameWidth : width
+                    readonly property real fh: meetingShare.frameHeight > 0 ? meetingShare.frameHeight : height
+                    readonly property real pictureScale: Math.min(width / fw, height / fh)
+                    readonly property real px: (width - fw * pictureScale) / 2
+                    readonly property real py: (height - fh * pictureScale) / 2
+                    property real lastMove: 0
+                    function nx(mx) { return (mx - px) / (fw * pictureScale) }
+                    function ny(my) { return (my - py) / (fh * pictureScale) }
+                    function inside(mx, my) { const x = nx(mx), y = ny(my); return x >= 0 && x < 1 && y >= 0 && y < 1 }
+                    function button(b) { return b === Qt.RightButton ? 1 : b === Qt.MiddleButton ? 2 : 0 }
+                    onPositionChanged: mouse => {
+                        if (!inside(mouse.x, mouse.y)) return
+                        const now = Date.now()
+                        if (now - lastMove < (pressed ? 30 : 50)) return
+                        lastMove = now
+                        backend.controlMouse(0, 0, false, nx(mouse.x), ny(mouse.y), 0)
+                    }
+                    onPressed: mouse => { forceActiveFocus(); if (inside(mouse.x, mouse.y)) backend.controlMouse(2, button(mouse.button), true, nx(mouse.x), ny(mouse.y), 0) }
+                    onReleased: mouse => { if (inside(mouse.x, mouse.y)) backend.controlMouse(2, button(mouse.button), false, nx(mouse.x), ny(mouse.y), 0) }
+                    onWheel: wheel => backend.controlMouse(1, 0, false, nx(wheel.x), ny(wheel.y), wheel.angleDelta.y > 0 ? 120 : -120)
+                    Keys.onPressed: event => { backend.controlKey(event.key, event.nativeScanCode, false, event.isAutoRepeat); event.accepted = true }
+                    Keys.onReleased: event => { if (!event.isAutoRepeat) backend.controlKey(event.key, event.nativeScanCode, true, false); event.accepted = true }
                 }
                 Rectangle {
                     id: hcFill5
@@ -3487,6 +3603,22 @@ Window {
             onChevronClicked: win.openAudioOptions(micB)
         }
     }
+    // Teams' ScreensharingControlButton (someone else presents and their
+    // screen can be controlled): Take control, Waiting for approval,
+    // Stop control.
+    Component {
+        id: cTakeControl
+        BarButton {
+            readonly property string st: win.controlState.state || "none"
+            icon: "take-control-20"
+            label: st === "controlling" ? "Stop control" : st === "requested" ? "Waiting for approval" : "Take control"
+            checked: st === "controlling"
+            tip: win.controlState.deniedBySharer ? "Requesting control is disabled by the sharer company's administrator"
+                : st === "controlling" ? "Stop control" : st === "requested" ? "Waiting for approval" : "Take control of the presentation"
+            enabled: win.controlEnabled("ScreensharingControlButton")
+            onClicked: win.runControl("ScreensharingControlButton")
+        }
+    }
     Component {
         id: cShare
         BarButton {
@@ -3695,7 +3827,127 @@ Window {
         id: shareTray
         parent: win.contentItem
         cameraOn: win.cameraOn
-        onShare: kind => { close(); win.startShare(kind) }
+        mode: win.presentingState.mode || "ContentOnly"
+        backgroundId: win.presentingState.background ? win.presentingState.background.id : ""
+        onShare: kind => { close(); win.shareKind = kind; win.startShare(kind) }
+        onPickMode: m => win.setPresenterMode(m)
+        onPickBackground: b => win.setPresenterBackground(JSON.stringify(b))
+        onContentCamera: type => { contentCameraDialog.type = type; contentCameraDialog.open() }
+    }
+    // Content from camera's setup (Teams' content camera setup dialog):
+    // Camera and Content type, then Share — the camera goes out as shared
+    // content (as the screen does).
+    Popup {
+        id: contentCameraDialog
+        property string type: "whiteboard"
+        property var devices: []
+        property string device: ""
+        parent: Overlay.overlay
+        anchors.centerIn: Overlay.overlay
+        modal: true; focus: true
+        width: 440; padding: 24
+        background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
+        Overlay.modal: Rectangle { color: Qt.rgba(0, 0, 0, 0.4) }
+        onAboutToShow: {
+            const d = JSON.parse(backend.videoDevices() || "{}")
+            devices = d.devices || []
+            device = d.current || (devices[0] ? devices[0].path : "")
+        }
+        contentItem: Column {
+            spacing: 16
+            Text {
+                text: "Content from camera"
+                font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text
+            }
+            Column {
+                spacing: 4
+                Text { text: "Camera"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                Dropdown {
+                    width: 392
+                    label: (contentCameraDialog.devices.find(d => d.path === contentCameraDialog.device) || { name: "None" }).name
+                    options: contentCameraDialog.devices.map(d => [d.path, d.name])
+                    accessibleName: "Camera"
+                    onPicked: code => contentCameraDialog.device = code
+                }
+            }
+            Column {
+                spacing: 4
+                Text { text: "Content type"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                Dropdown {
+                    width: 392
+                    label: ({ whiteboard: "Whiteboard", document: "Document", video: "Video" })[contentCameraDialog.type]
+                    options: [["whiteboard", "Whiteboard"], ["document", "Document"], ["video", "Video"]]
+                    accessibleName: "Content type"
+                    onPicked: code => contentCameraDialog.type = code
+                }
+            }
+            Row {
+                anchors.right: parent.right
+                spacing: 8
+                SettingsParts.Button { label: "Cancel"; onClicked: contentCameraDialog.close() }
+                SettingsParts.Button {
+                    label: "Share"; primary: true
+                    enabled: contentCameraDialog.device.length > 0
+                    onClicked: { contentCameraDialog.close(); win.shareKind = "camera"; backend.startContentCamera(contentCameraDialog.device) }
+                }
+            }
+        }
+    }
+    function sharingBarForTest() { return sharingBarLoader.item }
+    /// The presenter's mode on the stage: {layout, comp, camKey, stage}.
+    function presenterCompositeForTest() {
+        return { layout: contentTile.wp, comp: contentTile.comp, camKey: contentTile.camKey, stage: [contentTile.width, contentTile.height],
+                 share: [meetingShare.frameWidth, meetingShare.frameHeight], camera: [presenterCam.frameWidth, presenterCam.frameHeight] }
+    }
+    function requestControlDialogForTest() { return requestControlDialog }
+    // Teams' Sharing control bar while we share (SharingControlBar.qml).
+    Loader {
+        id: sharingBarLoader
+        active: win.sharing && win.meeting
+        sourceComponent: Component {
+            SharingControlBar { call: win; kind: win.shareKind }
+        }
+    }
+    // Take control ▸ (Teams' ScreensharingControlButton): "Request
+    // control?" first.
+    ConfirmDialog {
+        id: requestControlDialog
+        title: "Request control?"
+        body: "You'll control the content the presenter is sharing."
+        confirmText: "Request"
+        onConfirmed: win.screenControl("request", "")
+    }
+    // Give / take control's alerts (calling alerts 523673 and the
+    // viewer's notices).
+    property var controlAlert: null
+    Connections {
+        target: backend
+        function onScreenControlNotice(kind, mri, name) {
+            const n = name || "Someone"
+            if (kind === "request") win.controlAlert = { kind: "request", text: n + " is requesting control.", mri: mri }
+            else if (kind === "withdrawn" && win.controlAlert && win.controlAlert.kind === "request") win.controlAlert = null
+            else if (kind === "hasControl") win.controlAlert = { kind: "has", text: n + " has control.", mri: mri }
+            else if (kind === "controlEnded" && win.controlAlert && win.controlAlert.kind === "has") win.controlAlert = null
+            else if (kind === "given") win.controlAlert = { kind: "note", text: "You have been given screen control" }
+            else if (kind === "denied") win.controlAlert = { kind: "note", text: "Your request for control wasn't accepted." }
+            else if (kind === "takenBack") win.controlAlert = { kind: "note", text: "The person sharing took control back." }
+            else if (kind === "stopped") win.controlAlert = { kind: "note", text: "Screen control has been stopped" }
+        }
+    }
+    Timer {
+        running: !!win.controlAlert && win.controlAlert.kind === "note"
+        interval: 5000
+        onTriggered: win.controlAlert = null
+    }
+    ControlAlert {
+        alert: win.controlAlert
+        x: stage.x + (stage.width - width) / 2
+        y: win.belowBar + 10.7
+        z: 6
+        onGive: { win.screenControl("accept", ""); win.controlAlert = null }
+        onDeny: { win.screenControl("deny", ""); win.controlAlert = null }
+        onTakeBack: { win.screenControl("takeBack", ""); win.controlAlert = null }
+        onDismissed: win.controlAlert = null
     }
     // Teams' test call (Settings ▸ Devices ▸ Make a test call): once it
     // ends, its results replace the bar and stage until Close.

@@ -20,6 +20,9 @@ pub const MCP_DATA_ID: u8 = 18;
 pub const TRANSCRIPT_DATA_ID: u8 = 3;
 /// Real-time text (Teams' RTT handler).
 pub const RTT_DATA_ID: u8 = 24;
+/// Give / take control's protocol and the controller's input
+/// ([`super::screen_control`]).
+pub use super::screen_control::{INPUT_DATA_ID as CONTROL_INPUT_DATA_ID, PROTOCOL_DATA_ID as CONTROL_DATA_ID};
 /// An MCP payload's first byte: its format's version.
 const PAYLOAD_VERSION: u8 = 1;
 /// What we take part in, as Teams declares it in `syn`.
@@ -96,6 +99,10 @@ pub enum Incoming {
     /// characters, a backspace removing one, a newline ending the line),
     /// from their data source.
     RealTimeText { source: u32, text: String },
+    /// Give / take control: a protocol message from a data source.
+    ScreenControl { source: u32, message: super::screen_control::Message },
+    /// Give / take control: the controller's mouse or keyboard event.
+    ControlInput { source: u32, bytes: Vec<u8> },
     Other(Value),
 }
 
@@ -121,6 +128,8 @@ pub struct Session {
     seq: u16,
     /// Real-time text's own packet sequence.
     rtt_seq: u16,
+    /// Give / take control's packet sequences (protocol, input).
+    control_seq: (u16, u16),
     packets: Depacketizer,
     /// Source requests are numbered across the call (Teams keeps one
     /// counter for all of its video control messages).
@@ -139,6 +148,7 @@ impl Session {
             id: UNASSIGNED_ID,
             seq: 0,
             rtt_seq: 0,
+            control_seq: (0, 0),
             packets: Depacketizer::new(),
             request_seq: 0,
         }
@@ -169,6 +179,23 @@ impl Session {
         Some(packet)
     }
 
+    /// A give / take control protocol message to one data source; None
+    /// until the session is up.
+    pub fn screen_control(&mut self, to: u32, m: &super::screen_control::Message) -> Option<Vec<u8>> {
+        let source = self.source_id()?;
+        let packet = datapacket::packetize(CONTROL_DATA_ID, self.control_seq.0, source, &[to], &m.encode());
+        self.control_seq.0 = self.control_seq.0.wrapping_add(1);
+        Some(packet)
+    }
+
+    /// Our mouse or keyboard event for the sharer we control.
+    pub fn control_input(&mut self, to: u32, bytes: &[u8]) -> Option<Vec<u8>> {
+        let source = self.source_id()?;
+        let packet = datapacket::packetize(CONTROL_INPUT_DATA_ID, self.control_seq.1, source, &[to], bytes);
+        self.control_seq.1 = self.control_seq.1.wrapping_add(1);
+        Some(packet)
+    }
+
     fn frame(&mut self, message: &Value) -> Vec<u8> {
         let h = Header {
             seq: self.seq,
@@ -184,6 +211,7 @@ impl Session {
         self.id = UNASSIGNED_ID;
         self.seq = 0;
         self.rtt_seq = 0;
+        self.control_seq = (0, 0);
         self.packets = Depacketizer::new();
         self.frame(&json!({"type": "syn", "client_capabilities": CLIENT_CAPABILITIES}))
     }
@@ -251,6 +279,14 @@ impl Session {
                     .and_then(|v| v.get("s")?.as_str().map(str::to_string))
                     .map(|text| vec![Incoming::RealTimeText { source: m.source_id, text }])
                     .unwrap_or_default();
+            }
+            CONTROL_DATA_ID => {
+                return super::screen_control::Message::decode(&m.payload)
+                    .map(|message| vec![Incoming::ScreenControl { source: m.source_id, message }])
+                    .unwrap_or_default();
+            }
+            CONTROL_INPUT_DATA_ID => {
+                return vec![Incoming::ControlInput { source: m.source_id, bytes: m.payload }];
             }
             _ => {}
         }
