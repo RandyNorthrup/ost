@@ -612,6 +612,20 @@ pub struct Facts {
     /// Teams' Facilitator entry point (More ▸ Facilitator ▸): a Copilot
     /// licence in a scheduled meeting.
     pub facilitator: bool,
+    /// A town hall (Teams' isTownhall: `forceAttendeeStreaming` or a
+    /// `scheduledTownhall` conversation).
+    pub town_hall: bool,
+    /// A webinar (its template).
+    pub webinar: bool,
+    /// Your meeting role is Attendee.
+    pub attendee: bool,
+    /// Teams' isGreenRoom: not an attendee, connected, the green room on
+    /// and the event not live.
+    pub green_room: bool,
+    /// Teams' stagingRoomEventPhase: "prelive", "active", "ended" or "".
+    pub event_phase: String,
+    /// The meeting's Q&A is on (`yammerQNAEnabled`).
+    pub qna: bool,
 }
 
 impl Facts {
@@ -637,7 +651,8 @@ impl Facts {
             // (showRaiseHandInReactionMenu).
             "RaiseHandsButton" => !self.p2p && !(self.centered && self.shows("ReactionButton")),
             "ReactionButton" => !self.p2p && self.reactions,
-            "OrganizerControlButton" => self.organizer,
+            // Not for town halls (Teams' isTownhall hides Controls).
+            "OrganizerControlButton" => self.organizer && !self.town_hall,
             // Copilot: meetings and group calls (not 1:1 calls), licensed.
             "MeetingCollabButton" => self.copilot && !self.p2p,
             // Private meetings and scheduled channel meetings: Teams'
@@ -645,7 +660,7 @@ impl Facts {
             // !isChannelMeeting) && (isPrivateMeeting || channel notes)`, so
             // not an ad hoc channel meeting (OST's Meet now) or a group call.
             "MeetingDetailsButton" => self.scheduled && !self.breakout_room,
-            "StartBreakoutRoomButton" => self.is_meeting() && self.organizer,
+            "StartBreakoutRoomButton" => self.is_meeting() && self.organizer && !self.town_hall,
             "ReturnToBreakoutRoomButton" => self.room_to_join,
             "BreakoutRoomReturnToMainButton" => self.can_return_to_main,
             "MeetingAppsAddButton" => !self.pstn,
@@ -673,7 +688,7 @@ impl Facts {
             // More ▸ Help (Teams' Help app on its meetings page).
             "MeetingHelpButton" => self.is_meeting(),
             // More ▸ Report a concern (a security report about the meeting).
-            "ReportMeetingButton" => self.is_meeting(),
+            "ReportMeetingButton" => self.is_meeting() && !self.town_hall && !self.webinar,
             // Settings ▸ Call health (every call: the media path counts
             // its streams in any call).
             "CallHealth" => true,
@@ -690,7 +705,13 @@ impl Facts {
             // Join info ▸ Call me with the new ones).
             "PstnButton" => self.call_me && !self.p2p,
             // More ▸ Facilitator ▸ Turn on / off Facilitator, Enable voice.
-            "FacilitatorButton" => self.facilitator && self.scheduled && !self.breakout_room,
+            "FacilitatorButton" => self.facilitator && self.scheduled && !self.breakout_room && !self.town_hall && !self.webinar,
+            // The green room's Start meeting (presenters, before the event
+            // is live) and End event / End meeting (once it is).
+            "StagingRoomStartMeetingButton" => self.event_phase == "prelive" && !self.attendee && self.green_room,
+            "StagingRoomEndMeetingButton" => self.event_phase == "active" && !self.attendee,
+            // Q&A (Viva Engage's meeting Q&A) where the meeting has it on.
+            "YammerQnaButton" => self.qna,
             "ToggleHideMyselfButton" | "ByodMeetingRoomModeButton" => self.centered && !self.p2p,
             _ => false,
         }
@@ -929,6 +950,33 @@ mod tests {
                 assert!(!gall.iter().any(|n| n == gone), "a group call ({centered}) has no {gone}");
             }
         }
+    }
+
+    #[test]
+    fn a_town_hall_green_room() {
+        // The organizer in a town hall's green room (Teams' calculate-
+        // VisibilityOverrides): Start meeting before Leave, Q&A; no
+        // Controls, Rooms, Report or Facilitator.
+        let w = |_: &str| 56.0;
+        let green = Facts { scheduled: true, organizer: true, town_hall: true, green_room: true, event_phase: "prelive".into(),
+                            qna: true, facilitator: true, ..Default::default() };
+        let a = arrange(&green, &w, 17.0, 5000.0);
+        assert_eq!(a.end, ["StagingRoomStartMeetingButton", "CallButton"]);
+        assert!(a.bar.contains(&"YammerQnaButton".to_string()));
+        for gone in ["OrganizerControlButton", "StartBreakoutRoomButton"] {
+            assert!(!a.bar.iter().any(|n| n == gone), "{gone}");
+        }
+        let more: Vec<String> = a.more.iter().flat_map(|s| s.items.iter().map(|i| i.name.clone())).collect();
+        assert!(!more.iter().any(|n| n == "ReportMeetingButton" || n == "FacilitatorButton"));
+        // Live: End event instead.
+        let live = Facts { green_room: false, event_phase: "active".into(), ..green.clone() };
+        assert_eq!(arrange(&live, &w, 17.0, 5000.0).end, ["StagingRoomEndMeetingButton", "CallButton"]);
+        // Attendees never get either.
+        let att = Facts { attendee: true, organizer: false, ..green };
+        assert_eq!(arrange(&att, &w, 17.0, 5000.0).end, ["CallButton"]);
+        // A webinar keeps breakout rooms.
+        let web = Facts { scheduled: true, organizer: true, webinar: true, ..Default::default() };
+        assert!(arrange(&web, &w, 17.0, 5000.0).bar.contains(&"StartBreakoutRoomButton".to_string()));
     }
 
     fn new_controls_meeting() -> Facts {

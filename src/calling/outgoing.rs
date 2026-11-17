@@ -102,6 +102,12 @@ pub struct OutgoingCall {
     add_participant_link: Option<String>,
     /// The conversation's updateMeetingStates link (the meeting timer).
     meeting_states_link: Option<String>,
+    /// A town hall's or webinar's live state and green room
+    /// (live_event.rs), as last reported.
+    event: super::live_event::LiveEvent,
+    /// The conversation's updateMeetingLiveState link (Start meeting, End
+    /// event).
+    live_state_link: Option<String>,
     /// The conversation's addParticipantAndModality link ("Call me").
     add_modality_link: Option<String>,
     /// The meeting's dial-in details (`meetingDetails.pstnDetails`).
@@ -537,10 +543,13 @@ impl OutgoingCall {
             .0
             .clone()
             .context("This meeting can't spotlight")?;
+        // Teams (enableContentShareQueueInManagedMode, on): what of theirs
+        // is on screen, the person (and not their screen share).
+        let content = serde_json::json!({ "isParticipantSpotlighted": true, "isScreenShareSpotlighted": false }).to_string();
         let body = serde_json::json!({
             "from": from,
             "publishedState": {
-                "content": "{}",
+                "content": content,
                 "level": "user",
                 "stateType": "spotlight",
                 "sequenceNumber": self.state_seq,
@@ -598,6 +607,10 @@ impl OutgoingCall {
         self.metadata_link = link("updateEndpointMetadata").or(self.metadata_link.take());
         self.add_participant_link = link("addParticipant").or(self.add_participant_link.take());
         self.meeting_states_link = link("updateMeetingStates").or(self.meeting_states_link.take());
+        self.live_state_link = link("updateMeetingLiveState").or(self.live_state_link.take());
+        if let Some(e) = super::live_event::live_event(update) {
+            self.event = e;
+        }
         self.add_modality_link = link("addParticipantAndModality").or(self.add_modality_link.take());
         self.apply_phone_audio(update);
         self.unmute_link = link("unmute");
@@ -978,6 +991,64 @@ impl OutgoingCall {
         });
         tracing::info!(state = adhoc.state(), sequence = self.timers.sequence, "meeting timer: publishing");
         cc_post(&self.http, &self.skype_token, &link, &body, "Meeting timer").await?;
+        Ok(())
+    }
+
+    /// The meeting as a town hall or webinar (its live state, green room,
+    /// attendee view), as last reported.
+    pub fn event(&self) -> super::live_event::LiveEvent {
+        self.event.clone()
+    }
+
+    /// Note a conversation update's event facts; true when they changed.
+    pub fn apply_event(&mut self, json: &serde_json::Value) -> bool {
+        match super::live_event::live_event(json) {
+            Some(e) if e != self.event => {
+                tracing::info!(phase = %e.phase, seq = e.seq, town_hall = e.town_hall, "event live state");
+                self.event = e;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// The curtain Teams shows while the event starts (`live`) or ends
+    /// for attendees: a user-level "ufd" state; its state id.
+    pub async fn publish_curtain(&mut self, live: bool) -> Result<Option<String>> {
+        let link = self.state_links.0.clone().context("This meeting can't start for attendees")?;
+        self.state_seq += 1;
+        let body = serde_json::json!({
+            "from": self.me.0,
+            "publishedState": super::live_event::curtain_state(live, &self.call_id, self.state_seq),
+        });
+        let reply = cc_post(&self.http, &self.skype_token, &link, &body, "Stage curtain").await?;
+        Ok(reply
+            .pointer("/publishStateResponse/stateId")
+            .or_else(|| reply.pointer("/publishStateResponse/publishedState/stateId"))
+            .or_else(|| reply.pointer("/stateId"))
+            .and_then(|v| v.as_str())
+            .map(str::to_string))
+    }
+
+    /// Remove a state we published (the curtain).
+    pub async fn remove_own_state(&mut self, state_id: &str) -> Result<()> {
+        let link = self.state_links.1.clone().context("This meeting can't remove states")?;
+        self.state_seq += 1;
+        let body = serde_json::json!({ "from": self.me.0, "sequenceNumber": self.state_seq, "scope": "specified", "stateIds": [state_id] });
+        cc_post(&self.http, &self.skype_token, &link, &body, "Remove state").await?;
+        Ok(())
+    }
+
+    /// Start (`live`) or end the event for attendees: Teams'
+    /// updateMeetingLiveState with the live state's sequence number.
+    pub async fn update_live_state(&mut self, live: bool) -> Result<()> {
+        let link = self.live_state_link.clone().context("This meeting has no green room")?;
+        let status = signaling::trouter_callback(&self.callbacks.0, &self.callbacks.1, "conversation/updateMeetingLiveStateStatus/");
+        let op = uuid::Uuid::new_v4().to_string();
+        let from = super::meeting_options::state_from(&self.me.0);
+        let body = super::live_event::live_state_body(&from, live, self.event.seq, &status, &op);
+        tracing::info!(live, seq = self.event.seq, "event live state: updating");
+        cc_post(&self.http, &self.skype_token, &link, &body, "Meeting live state").await?;
         Ok(())
     }
 
@@ -2444,6 +2515,11 @@ async fn start(
         metadata_link,
         add_participant_link,
         meeting_states_link,
+        event: serde_json::from_str::<serde_json::Value>(&created.response_body)
+            .ok()
+            .and_then(|v| super::live_event::live_event(&v))
+            .unwrap_or_default(),
+        live_state_link: conversation_link(&created.response_body, "updateMeetingLiveState"),
         add_modality_link,
         dial_in,
         phone_audio,

@@ -57,6 +57,15 @@ Rectangle {
     signal pinToggled(bool on)
     signal viewMeetings()
     signal toast(var d)
+    /// The event page's Join: its meeting's pre-join.
+    signal joinEvent(string url, string title, string start, string end)
+    /// The event page's chat button: the event meeting's chat.
+    signal openEventChat(string chatId, string title)
+    /// Copy join details: the title, time and join link (Teams' own text
+    /// wasn't captured).
+    function joinDetails(ev) {
+        return (ev.title || "") + "\n" + whenText(ev.start, ev.end, true) + "\n\nJoin: " + (ev.join_url || "")
+    }
 
     readonly property string cdn: "https://teams.public.onecdn.static.microsoft/evergreen-assets/illustrations/"
     readonly property var templates: [
@@ -113,7 +122,7 @@ Rectangle {
         page = "form"
         if (!features) call("features", {}, v => { if (!v.error) features = v })
     }
-    function openEvent(card) { current = card; page = "event"; call("overview", { id: card.id }, v => { if (!v.error && v.card) current = Object.assign({}, v.card, { access: v.access, inviteOnly: v.inviteOnly }) }) }
+    function openEvent(card) { current = card; page = "event"; call("overview", { id: card.id }, v => { if (!v.error && v.card) current = Object.assign({}, v.card, { access: v.access, inviteOnly: v.inviteOnly, registration: v.registration }) }) }
     Component.onCompleted: reload()
     onVisibleChanged: if (visible && page === "") reload()
     function stateForTest() {
@@ -470,9 +479,16 @@ Rectangle {
         property bool large: false
         property var open: [true, false, false, false]
         property bool saving: false
+        // A town hall streams to a large audience by default (3,000
+        // view-only attendees, green room on); its tiles are Mic and Camera
+        // (off, "Selected capacity does not support this engagement
+        // feature.") and Q&A, then "Manage what attendees see".
+        readonly property bool townHall: template.type === "Townhall"
+        property string attendeeView: "Off"
         function reset(t, s, e) {
-            template = t; start = s; end = e; access = "Organization"; registration = false; greenRoom = false
-            mic = true; camera = true; react = true; chat = true; qna = true; capacity = 0; large = false
+            const th = t.type === "Townhall"
+            template = t; start = s; end = e; access = "Organization"; registration = false; greenRoom = th
+            mic = !th; camera = !th; react = true; chat = true; qna = true; capacity = th ? 3000 : 0; large = th; attendeeView = "Off"
             open = [true, false, false, false]; nameField.text = "New event"; description.text = ""; contentY = 0
         }
         function toggle(i) { const o = open.slice(); o[i] = !o[i]; open = o }
@@ -481,7 +497,8 @@ Rectangle {
             return { eventType: template.type, title: nameField.text.trim(), description: description.text ? "<p>" + description.text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/\n/g, "<br>") + "</p>" : "",
                      start: start.toISOString(), end: end.toISOString(), access: access, registration: registration, greenRoom: greenRoom,
                      allowMic: mic, allowCamera: camera, reactions: react, chat: chat, qna: qna,
-                     capacity: large ? 10000 : capacity, baseExperience: large }
+                     capacity: townHall ? capacity : large ? 10000 : capacity, baseExperience: !townHall && large,
+                     largeAudience: townHall && large, attendeeView: attendeeView }
         }
         readonly property var times: {
             const out = []
@@ -490,7 +507,7 @@ Rectangle {
         }
         function timeLabel(hm) { const d = new Date(2000, 0, 1, hm[0], hm[1]); return theme.time(d) }
         Btn { x: 24; y: 32; icon: "arrow-left-20"; text: ""; pad: 6; onClicked: root.page = "create"; Accessible.name: "Go back" }
-        Text { x: 64; y: 34; text: "New event"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+        Text { x: 64; y: 34; text: form.townHall && form.template.key === "townhall" ? "New town hall" : "New event"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
         Btn { anchors.right: parent.right; anchors.rightMargin: 22; y: 32; primary: true; icon: "save-20"; text: "Save and continue"; usable: nameField.text.trim().length > 0 && !form.saving; onClicked: saveDialog.open() }
         Column {
             id: formCol
@@ -650,7 +667,8 @@ Rectangle {
             // 4. Set up experience and options.
             Section {
                 index: 3; title: "Set up experience and options"
-                summary: (form.large ? "10,000" : form.capacity ? Number(form.capacity).toLocaleString(Qt.locale("en_US"), "f", 0) : "1,000") + " attendees"
+                summary: form.townHall ? (form.large ? "Optimize for large audience · " : "") + Number(form.capacity).toLocaleString(Qt.locale("en_US"), "f", 0) + " attendees"
+                    : (form.large ? "10,000" : form.capacity ? Number(form.capacity).toLocaleString(Qt.locale("en_US"), "f", 0) : "1,000") + " attendees"
                 Column {
                     width: parent.width
                     Item { width: 1; height: 16 }
@@ -661,14 +679,19 @@ Rectangle {
                         spacing: 24; height: 36
                         Dropdown {
                             width: 250; height: 32; anchors.verticalCenter: parent.verticalCenter; accessibleName: "Set your max event capacity"
-                            label: (form.large ? "10,000" : form.capacity ? Number(form.capacity).toLocaleString(Qt.locale("en_US"), "f", 0) : "1,000") + " attendees"
-                            options: [["0", "1,000 attendees"]].concat(((root.features || {}).eventCapacity || { eventCapacityOptions: [] }).eventCapacityOptions
+                            label: form.townHall ? (options.find(o => o[0] === String(form.capacity)) || options[1])[1]
+                                : (form.large ? "10,000" : form.capacity ? Number(form.capacity).toLocaleString(Qt.locale("en_US"), "f", 0) : "1,000") + " attendees"
+                            // A town hall offers 1,000, 3,000 and the view-only 10,000
+                            // (measured 2026-11-17).
+                            options: form.townHall ? [["1000", "1,000 attendees"], ["3000", "3,000 attendees"], ["10000", "10,000 attendees (View only, with Q&A)"]]
+                                : [["0", "1,000 attendees"]].concat(((root.features || {}).eventCapacity || { eventCapacityOptions: [] }).eventCapacityOptions
                                 .filter(o => o.isAvailableForUserLicense && !o.isBaseEventExperience).map(o => [String(o.capacity), Number(o.capacity).toLocaleString(Qt.locale("en_US"), "f", 0) + " attendees"]))
-                            onPicked: c => { form.capacity = Number(c); form.large = false }
+                            onPicked: c => { form.capacity = Number(c); if (!form.townHall) form.large = false }
                         }
                         Row {
                             spacing: 8; anchors.verticalCenter: parent.verticalCenter
-                            SettingsParts.Toggle { stateLabel: false; on: form.large; accessibleName: "Optimize for large audience"; onToggled: v => form.large = v }
+                            SettingsParts.Toggle { stateLabel: false; on: form.large; accessibleName: "Optimize for large audience"
+                                onToggled: v => { form.large = v; if (form.townHall) { form.capacity = v ? 3000 : 1000; form.mic = !v; form.camera = !v } } }
                             Text { text: "Optimize for large audience"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
                         }
                     }
@@ -678,22 +701,45 @@ Rectangle {
                     Grid {
                         columns: 3; spacing: 8
                         Repeater {
-                            model: [["mic", "Mic", "mic-20", "mic-off-20"], ["camera", "Camera", "video-20", "video-off-20"], ["react", "React", "emoji-20", "emoji-20"],
-                                    ["chat", "Chat", "chat-20", "chat-bubbles-off-20"], ["qna", "Q&A", "chat-bubbles-question-20", "chat-bubbles-question-20"]]
+                            // A streaming town hall: Mic and Camera unavailable, then Q&A;
+                            // an interactive one: Mic, Camera, React, "During event" (chat), Q&A.
+                            model: form.townHall && form.large
+                                ? [["mic", "Mic", "mic-20", "mic-off-20", true], ["camera", "Camera", "video-20", "video-off-20", true], ["qna", "Q&A", "chat-bubbles-question-20", "chat-bubbles-question-20"]]
+                                : [["mic", "Mic", "mic-20", "mic-off-20"], ["camera", "Camera", "video-20", "video-off-20"], ["react", "React", "emoji-20", "emoji-20"],
+                                   ["chat", form.townHall ? "During event" : "Chat", "chat-20", "chat-bubbles-off-20"], ["qna", "Q&A", "chat-bubbles-question-20", "chat-bubbles-question-20"]]
                             Rectangle {
                                 id: tile
                                 required property var modelData
                                 readonly property bool on: form[modelData[0]]
+                                // Unavailable at this capacity (Teams' tooltip: "Selected capacity
+                                // does not support this engagement feature.").
+                                readonly property bool unavailable: !!modelData[4]
+                                opacity: unavailable ? 0.3 : 1
+                                ToolTip.visible: unavailable && tileHover.hovered; ToolTip.text: "Selected capacity does not support this engagement feature."
                                 width: 132; height: 75; radius: 12; color: theme.surface; border.color: theme.divider; border.width: 1
                                 FluentIcon { anchors.horizontalCenter: parent.horizontalCenter; y: 16; name: tile.on ? tile.modelData[2] : tile.modelData[3]; size: 20; color: tile.on ? theme.brand : theme.textSecondary }
                                 Text { anchors.horizontalCenter: parent.horizontalCenter; y: 41.5; text: tile.modelData[1]; font.family: theme.font; font.pixelSize: 14; color: tile.on ? theme.text : theme.textSecondary }
-                                HoverHandler { cursorShape: Qt.PointingHandCursor }
-                                TapHandler { onTapped: form[tile.modelData[0]] = !tile.on }
+                                HoverHandler { id: tileHover; cursorShape: tile.unavailable ? Qt.ArrowCursor : Qt.PointingHandCursor }
+                                TapHandler { enabled: !tile.unavailable; onTapped: form[tile.modelData[0]] = !tile.on }
                                 Accessible.role: Accessible.CheckBox; Accessible.name: tile.modelData[1]; Accessible.checked: tile.on
                             }
                         }
                     }
                     Item { width: 1; height: 16 }
+                    // A town hall's "Manage what attendees see" (Off, On, On with
+                    // preview): who and what attendees see is brought on screen.
+                    Item {
+                        visible: form.townHall; width: 412; height: visible ? 80 : 0
+                        Text { text: "Manage what attendees see"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                        Text { y: 26; text: "Control the layout, content, and people seen on screen."; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                        Dropdown {
+                            x: 1; y: 49; width: 410; height: 30; accessibleName: "Manage what attendees see"
+                            options: [["Off", "Off"], ["On", "On"], ["Preview", "On with preview"]]
+                            label: (options.find(o => o[0] === form.attendeeView) || options[0])[1]
+                            onPicked: v => form.attendeeView = v
+                        }
+                    }
+                    Item { visible: form.townHall; width: 1; height: visible ? 16 : 0 }
                     Item {
                         width: 412; height: 68
                         Text { text: "Enable green room"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
@@ -814,7 +860,10 @@ Rectangle {
             color: theme.pick("#F5F5F5", "#292929", "#000000"); border.color: theme.divider; border.width: 1
             Image { x: 28; anchors.verticalCenter: parent.verticalCenter; width: 48; height: 48; source: root.cdn + "webp/128/editor-l-standard-128x128.webp"; sourceSize: Qt.size(96, 96) }
             Text { x: 85; y: 24; width: parent.width - 120; text: "This event is a draft. Publish when you’re ready to share with attendees."; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text; elide: Text.ElideRight }
-            Text { x: 85; y: 50; width: parent.width - 120; wrapMode: Text.Wrap; text: "Only organizers and presenters you’ve invited can view this event. Organizers have permission to make edits."; font.family: theme.font; font.pixelSize: 16; lineHeight: 22; lineHeightMode: Text.FixedHeight; color: theme.text }
+            Text { x: 85; y: 50; width: parent.width - 360; wrapMode: Text.Wrap; text: "Only organizers and presenters you’ve invited can view this event. Organizers have permission to make edits."; font.family: theme.font; font.pixelSize: 16; lineHeight: 22; lineHeightMode: Text.FixedHeight; color: theme.text }
+            // Publish event (172 x 40, 24 from the card's right).
+            Btn { anchors.right: parent.right; anchors.rightMargin: 24; anchors.verticalCenter: parent.verticalCenter; height: 40; fontSize: 16
+                  primary: true; icon: "rocket-20"; text: "Publish event"; onClicked: publishDialog.openFor(root.current) }
         }
         Item {
             id: evHead
@@ -843,6 +892,11 @@ Rectangle {
             FluentSurface { anchors.fill: parent; depth: 2; radius: 16; color: theme.surface }
             Column {
                 x: 21; y: 21; width: parent.width - 42; spacing: 18
+                // A published event that hasn't started: "Upcoming" (brand on
+                // #E8EBFA, 22 tall, pill).
+                Rectangle { visible: eventPage.ev.state === "Published" && new Date(eventPage.ev.start) > new Date(); height: 22; radius: 11; width: upc.implicitWidth + 16
+                    color: theme.pick("#E8EBFA", "#2F2F4A", "#000000"); border.color: theme.pick("#C5CBFA", "#444791", "#FFFFFF"); border.width: 1
+                    Text { id: upc; anchors.centerIn: parent; text: "Upcoming"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.brand } }
                 Rectangle { visible: eventPage.ev.state === "Canceled"; height: 24; radius: 12; width: cxl.implicitWidth + 20; color: "transparent"; border.color: theme.danger
                     Text { id: cxl; anchors.centerIn: parent; text: "Canceled"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.danger } }
                 Row { spacing: 8; FluentIcon { name: "calendar-clock-20"; size: 20; color: theme.brand }
@@ -851,7 +905,33 @@ Rectangle {
                       Text { text: eventPage.ev.location || "Online"; font.family: theme.font; font.pixelSize: 14; color: theme.text } }
                 Row { spacing: 8; FluentIcon { name: "people-20"; size: 20; color: theme.brand }
                       Text { text: eventPage.ev.access === "Public" ? "Anyone can view and join." : eventPage.ev.inviteOnly ? "Only people and groups you choose can view and join." : "Anyone in your org can view and join."; font.family: theme.font; font.pixelSize: 14; color: theme.text } }
+                // Join (the meeting's pre-join; disabled while a draft) with its
+                // menu (Copy join link, Copy join details), then the event chat.
+                Row {
+                    width: parent.width; height: 32; spacing: 8
+                    readonly property bool can: eventPage.ev.state !== "Canceled" && !eventPage.draft && !!eventPage.ev.join_url
+                    Rectangle {
+                        width: parent.width - 40; height: 32; radius: 4; color: parent.can ? (joinHover.hovered ? theme.brandHover : theme.brandFill) : theme.pick("#F0F0F0", "#333333", "#000000")
+                        Row { anchors.centerIn: parent; anchors.horizontalCenterOffset: -12; spacing: 6
+                            FluentIcon { name: "video-20"; size: 20; color: parent.parent.parent.can ? theme.textOnBrand : theme.disabled }
+                            Text { anchors.verticalCenter: parent.verticalCenter; text: "Join"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: parent.parent.parent.can ? theme.textOnBrand : theme.disabled } }
+                        Rectangle { x: parent.width - 25; y: 0; width: 1; height: 32; color: theme.pick("#FFFFFF", "#141414", "#000000"); opacity: 0.5 }
+                        FluentIcon { x: parent.width - 20; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-16"; size: 16; color: parent.parent.can ? theme.textOnBrand : theme.disabled }
+                        HoverHandler { id: joinHover; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { enabled: parent.parent.can; onTapped: (ev) => {
+                            if (ev.position.x > parent.width - 25) { joinMenu.parent = parent; joinMenu.x = parent.width - joinMenu.implicitWidth; joinMenu.y = 36; joinMenu.open() }
+                            else root.joinEvent(eventPage.ev.join_url, eventPage.ev.title, eventPage.ev.start, eventPage.ev.end) } }
+                        Accessible.role: Accessible.Button; Accessible.name: "Join"
+                    }
+                    Btn { width: 32; outlined: true; icon: "chat-20"; text: ""; pad: 6; usable: parent.can; Accessible.name: "Chat with participants"
+                          onClicked: { const m = decodeURIComponent(eventPage.ev.join_url).match(/19:meeting_[^/]+@thread\.v2/); if (m) root.openEventChat(m[0], eventPage.ev.title) } }
+                }
             }
+        }
+        MenuPopup {
+            id: joinMenu
+            items: [{ key: "link", label: "Copy join link", icon: "copy-20" }, { key: "details", label: "Copy join details", icon: "text-align-justify-20" }]
+            onPicked: i => { backend.copyText(i.key === "link" ? eventPage.ev.join_url : root.joinDetails(eventPage.ev)); root.toast({ text: "Copied", intent: "success" }) }
         }
         MenuPopup {
             id: evMenu
@@ -859,6 +939,91 @@ Rectangle {
             onPicked: i => cancelDialog.open()
         }
     }
+    // "Ready to publish your event?" (800 wide, radius 8, padding 24;
+    // measured 2026-11-17): the settings that lock on publishing as chips,
+    // then Cancel and Publish event (rocket). Publishing is
+    // `PATCH events/{id}` {state: Published}; the People & emails lists
+    // are read first so OST can say who will be invited.
+    Popup {
+        id: publishDialog
+        parent: Overlay.overlay
+        modal: true; padding: 24
+        x: (parent.width - width) / 2; y: (parent.height - height) / 2
+        width: 800
+        background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
+        property var ev: ({})
+        property var people: null
+        property bool busy: false
+        function openFor(e) { ev = e || {}; people = null; open(); root.call("people", { id: ev.id }, v => { if (!v.error) people = v }) }
+        contentItem: Column {
+            spacing: 0
+            Text { text: "Ready to publish your event?"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text; height: 28 }
+            Item { width: 1; height: 13 }
+            Text { width: 752; wrapMode: Text.Wrap; text: "Invites will be sent to attendees. You can add more attendees and share the event after it's published."; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+            Item { width: 1; height: 15 }
+            Text { text: "These settings can’t be changed after publishing"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text; height: 22 }
+            Item { width: 1; height: 8 }
+            Row {
+                spacing: 8
+                Repeater {
+                    model: [["people-community-20", "Who can view and join:", publishDialog.ev.access === "Public" ? "Public" : publishDialog.ev.inviteOnly ? "Specific people" : "Your organization"],
+                            ["clipboard-20", "Registration:", publishDialog.ev.registration ? "On" : "Off"]]
+                    Rectangle {
+                        required property var modelData
+                        height: 32; radius: 16; width: pubr.implicitWidth + 24; color: theme.surface; border.color: theme.divider; border.width: 1
+                        Row { id: pubr; x: 12; anchors.verticalCenter: parent.verticalCenter; spacing: 6
+                            FluentIcon { name: modelData[0]; size: 20; color: theme.textSecondary }
+                            Text { anchors.verticalCenter: parent.verticalCenter; text: modelData[1]; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.textSecondary }
+                            Text { anchors.verticalCenter: parent.verticalCenter; text: modelData[2]; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } }
+                    }
+                }
+            }
+            Item { width: 1; height: 16 }
+            Row {
+                anchors.right: parent.right; spacing: 8
+                Btn { width: 96; outlined: true; text: "Cancel"; onClicked: publishDialog.close() }
+                Btn { primary: true; icon: "rocket-20"; text: "Publish event"; usable: !publishDialog.busy
+                      onClicked: {
+                          publishDialog.busy = true
+                          root.call("publish", { id: publishDialog.ev.id }, v => {
+                              publishDialog.busy = false; publishDialog.close()
+                              if (v.error) { root.toast({ text: "Couldn't publish the event. " + v.error, intent: "error" }); return }
+                              root.current = Object.assign({}, root.current, { state: v.state || "Published" })
+                              root.manageData = null
+                              publishedDialog.open()
+                          })
+                      } }
+            }
+        }
+    }
+    // "Success! Your event has been published" (800 wide; title 20/28
+    // semibold centred, "Help your attendees discover it:"): the copy
+    // buttons (36 tall, outlined, full width of the right column).
+    Popup {
+        id: publishedDialog
+        parent: Overlay.overlay
+        modal: true; padding: 24
+        x: (parent.width - width) / 2; y: (parent.height - height) / 2
+        width: 800
+        background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
+        contentItem: Column {
+            spacing: 0
+            Item { width: 752; height: 28
+                Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Success! Your event has been published"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+                Btn { anchors.right: parent.right; icon: "dismiss-20"; text: ""; pad: 6; onClicked: publishedDialog.close(); Accessible.name: "Close" } }
+            Text { width: 752; horizontalAlignment: Text.AlignHCenter; text: "Help your attendees discover it:"; font.family: theme.font; font.pixelSize: 14; color: theme.text; height: 20 }
+            Item { width: 1; height: 28 }
+            Column {
+                anchors.right: parent.right; width: 369; spacing: 10
+                Repeater {
+                    model: [["document-20", "Copy join details", "details"], ["link-20", "Copy event page link", "page"]]
+                    Btn { required property var modelData; width: 369; height: 32; outlined: true; icon: modelData[0]; text: modelData[1]
+                          onClicked: { const ev = root.current || {}; backend.copyText(modelData[2] === "page" ? (ev.site_url || "") : root.joinDetails(ev)); root.toast({ text: "Copied", intent: "success" }) } }
+                }
+            }
+        }
+    }
+    function publishCurrentForTest() { if (current) call("publish", { id: current.id }, v => { console.warn("EVENTS publish", JSON.stringify(v)); if (!v.error) current = Object.assign({}, current, { state: v.state }) }) }
     // "Cancel event?" (one-events-cancel-event-dialog).
     Popup {
         id: cancelDialog
@@ -886,6 +1051,7 @@ Rectangle {
         }
     }
     function cancelCurrentForTest() { if (current) call("cancel", { id: current.id }, v => { console.warn("EVENTS cancel", JSON.stringify(v)); current = Object.assign({}, current, { state: v.error ? current.state : "Canceled" }) }) }
+    function openOptionsForTest() { form.open = [false, false, false, true]; form.contentY = 0 }
     function saveForTest(name) { nameField.text = name; saveDialog.open() }
     function confirmSaveForTest() { saveDialog.contentItem.children[saveDialog.contentItem.children.length - 1].children[1].clicked() }
 }

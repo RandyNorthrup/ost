@@ -2918,6 +2918,32 @@ Window {
                     console.warn("JOIN control composite", JSON.stringify(callWindow.presenterCompositeForTest()))
                     shot("stage-" + step)
                 }
+            } else if (step >= 8 && step <= Math.min(400, 11 + window.joinStay) && Qt.application.arguments.indexOf("--join-event") >= 0) {
+                // --join-event: a town hall or webinar (TASK-0184): the bar and
+                // green room as joined, Q&A (--join-event-qna), Start meeting
+                // with its confirmation (--join-event-start), the live bar,
+                // then End event with its confirmation (--join-event-end) near
+                // the end. Needs --join-stay=90 or more. Logs JOIN event lines;
+                // pictures -event-*.
+                const shot = n => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-event-" + n + ".png")))
+                const has = f => Qt.application.arguments.indexOf(f) >= 0
+                const log = t => console.warn("JOIN event", t, backend.callEventJson, "role", callWindow.myRole, "bar", JSON.stringify(callWindow.ubar.bar),
+                                              "end", JSON.stringify(callWindow.ubar.end), "attendees", callWindow.attendeeCount, "side", callWindow.side)
+                const endAt = 11 + window.joinStay - 14
+                if (step === 8) { callWindow.side = ""; log("joined"); shot("green") }
+                else if (step === 9 && has("--join-event-qna")) callWindow.runControl("YammerQnaButton")
+                else if (step === 18 && has("--join-event-qna")) { log("qna"); shot("qna") }
+                else if (step === 19) { callWindow.side = "people" }
+                else if (step === 20) { log("people"); shot("people"); callWindow.side = "" }
+                else if (step === 21 && has("--join-event-start")) { callWindow.runControl("StagingRoomStartMeetingButton"); log("start asked") }
+                else if (step === 22 && has("--join-event-start")) { shot("start-dialog"); callWindow.startEventForTest() }
+                else if (step === 23 && has("--join-event-start")) { log("starting"); shot("starting") }
+                else if (step === 32) { log("after start"); shot("live") }
+                else if (step === endAt && has("--join-event-end")) { callWindow.runControl("StagingRoomEndMeetingButton"); log("end asked") }
+                else if (step === endAt + 1 && has("--join-event-end")) { shot("end-dialog"); callWindow.endEventForTest() }
+                else if (step === endAt + 8 && has("--join-event-end")) { log("ended"); shot("ended") }
+                else if (step === 11 + window.joinStay) log("end")
+                else if (step > 23 && step % 5 === 0) log("wait")
             } else if (step >= 8 && step <= Math.min(100, 11 + window.joinStay) && Qt.application.arguments.indexOf("--join-copilot") >= 0) {
                 // --join-copilot: Copilot in the meeting (TASK-0188, a
                 // Copilot-licensed account): the bar's Copilot, Teams'
@@ -6682,7 +6708,10 @@ Window {
             const cap = tag => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-events-" + tag + ".png")))
             const ev = eventsView.item
             const log = tag => console.warn("EVENTS", tag, ev ? ev.stateForTest() : "no view")
-            const live = Qt.application.arguments.indexOf("--events-test=create") >= 0
+            // =townhall: the same with Teams' Town hall template (TASK-0184),
+            // the draft named "OST TEST 184 town hall draft <time>".
+            const townHall = Qt.application.arguments.indexOf("--events-test=townhall") >= 0
+            const live = Qt.application.arguments.indexOf("--events-test=create") >= 0 || townHall
             switch (step) {
             case 0: rail.openApp("events"); break
             case 3: log("discover"); cap("discover"); break
@@ -6690,9 +6719,9 @@ Window {
             case 6: log("manage"); cap("manage"); break
             case 7: ev.startCreate(); break
             case 8: log("create"); cap("create"); break
-            case 9: ev.startForm(ev.templates[0]); break
-            case 10: cap("form"); break
-            case 11: if (!live) { log("done"); if (Qt.application.arguments.indexOf("--events-stay") < 0) Qt.quit(); step = 1000; return } ev.saveForTest("OST TEST 209 draft " + Qt.formatTime(new Date(), "hh:mm")); break
+            case 9: ev.startForm(ev.templates[townHall ? 2 : 0]); break
+            case 10: if (townHall) ev.openOptionsForTest(); cap("form"); break
+            case 11: if (!live) { log("done"); if (Qt.application.arguments.indexOf("--events-stay") < 0) Qt.quit(); step = 1000; return } ev.saveForTest((townHall ? "OST TEST 184 town hall draft " : "OST TEST 209 draft ") + Qt.formatTime(new Date(), "hh:mm")); break
             case 12: cap("save"); ev.confirmSaveForTest(); break
             case 16: log("saved"); cap("draft"); break
             case 17: ev.cancelCurrentForTest(); break
@@ -6700,7 +6729,7 @@ Window {
             case 22: log("manage after"); cap("manage-after"); break
             // Test cleanup: a cancelled event stays in your calendar as
             // "Canceled: <title>" (as in Teams); the test's are removed.
-            case 23: for (const c of (backend.calendarJson ? JSON.parse(backend.calendarJson) : []).filter(c => /^Canceled: OST TEST 209/.test(c.subject))) { console.warn("EVENTS removing", c.subject); backend.deleteEvent(c.id) } break
+            case 23: for (const c of (backend.calendarJson ? JSON.parse(backend.calendarJson) : []).filter(c => /^Canceled: OST TEST (209|184 town hall draft)/.test(c.subject))) { console.warn("EVENTS removing", c.subject); backend.deleteEvent(c.id) } break
             case 25: if (Qt.application.arguments.indexOf("--events-stay") < 0) Qt.quit(); break
             }
             step++
@@ -10099,6 +10128,8 @@ Window {
             onPinToggled: on => { backend.setSetting("eventsAppPinned", on ? "true" : "false"); rail.pinned = on ? ["events"] : [] }
             onViewMeetings: rail.current = "calendar"
             onToast: d => window.showToast(d)
+            onJoinEvent: (url, title, start, end) => preJoin.openFor(url, title, start, end)
+            onOpenEventChat: (id, title) => { rail.current = "chat"; window.composing = false; backend.selectChat(id, title) }
         }
     }
     PlannerView {

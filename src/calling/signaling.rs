@@ -7,6 +7,18 @@ use anyhow::{Context, Result};
 use super::CallNotification;
 use uuid;
 
+/// What OST's calling stack supports (Teams' `ClientEndpointCapabilities`):
+/// breakout rooms (2), attendance tracking (8), streaming (32), end-to-end
+/// encryption (64), shared line appearance v2 (128), room distributions
+/// (512), streaming promotion (1024), room moves (4096), presenter
+/// capability reduction (8192), nudges from streaming into real time
+/// (131072), lobby chat (262144), reactions (524288) and presenter slide
+/// control (8388608). Teams on the web adds `blockPresenterJoinInEvents`
+/// (16384): the service then refuses its presenters in town halls (403,
+/// subCode 5131, "Joining a town hall as a presenter or organizer isn't
+/// available on the web"); the desktop app, like OST, doesn't.
+pub const CLIENT_ENDPOINT_CAPABILITIES: u64 = 2 | 8 | 32 | 64 | 128 | 512 | 1024 | 4096 | 8192 | 131072 | 262144 | 524288 | 8388608;
+
 // Common headers for Teams calling API requests.
 // TODO: region headers are hardcoded to AMER — derive from config for other tenants.
 pub(crate) const SKYPE_CLIENT_HEADER: &str =
@@ -147,7 +159,7 @@ pub async fn create_conversation(
         "capabilities": null,
         // Capability bitmasks captured from Teams web client traffic
         "endpointCapabilities": 73463,
-        "clientEndpointCapabilities": 9336554,
+        "clientEndpointCapabilities": CLIENT_ENDPOINT_CAPABILITIES,
         "endpointMetadata": { "holographicCapabilities": 3 },
         "meetingInfo": null,
         "endpointState": {
@@ -304,7 +316,7 @@ pub async fn join_conversation_with_sdp(
         // Capability bitmasks captured from Teams web client traffic
         "capabilities": null,
         "endpointCapabilities": 73463,
-        "clientEndpointCapabilities": 9336554,
+        "clientEndpointCapabilities": CLIENT_ENDPOINT_CAPABILITIES,
         "endpointMetadata": { "holographicCapabilities": 3 },
         "meetingInfo": {
             "organizerId": params.caller_oid,
@@ -1005,7 +1017,7 @@ async fn join_conversation_only(
         },
         "capabilities": null,
         "endpointCapabilities": 73463,
-        "clientEndpointCapabilities": 9336554,
+        "clientEndpointCapabilities": CLIENT_ENDPOINT_CAPABILITIES,
         "endpointMetadata": { "holographicCapabilities": 3 },
         "meetingInfo": opts.meeting_info,
         "endpointState": {
@@ -1135,7 +1147,7 @@ async fn create_call_with(
         },
         "capabilities": null,
         "endpointCapabilities": 73463,
-        "clientEndpointCapabilities": 9336554,
+        "clientEndpointCapabilities": CLIENT_ENDPOINT_CAPABILITIES,
         "endpointMetadata": { "holographicCapabilities": 3 },
         "meetingInfo": opts.meeting_info,
         "endpointState": {
@@ -1434,7 +1446,7 @@ pub async fn subscribe_conversation(
         },
         "capabilities": null,
         "endpointCapabilities": 73463,
-        "clientEndpointCapabilities": 9336554,
+        "clientEndpointCapabilities": CLIENT_ENDPOINT_CAPABILITIES,
         "endpointMetadata": { "holographicCapabilities": 3 },
         "meetingInfo": null,
         "endpointState": {

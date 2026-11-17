@@ -299,6 +299,11 @@ pub mod qobject {
         /// tollAria, …} or null, state: "" | "connecting" | "connected" |
         /// "failed", number (as shown), error (Teams' message)}.
         #[qproperty(QString, call_phone_json)]
+        /// A town hall or webinar (calling::live_event): {townHall,
+        /// webinar, staging, phase, seq, attendeeView, qna, reactions,
+        /// busy ("" | "starting" | "ending"), failed ("" | "start" | "end")},
+        /// or "" for other calls.
+        #[qproperty(QString, call_event_json)]
         /// The pre-join window's Phone audio for the meeting being joined:
         /// {checked (Teams' "Checking for dial-in info…" until true),
         /// available}.
@@ -931,6 +936,10 @@ pub mod qobject {
         /// bits to set (mic 1, camera 2).
         #[qinvokable]
         fn set_attendee_restrictions(self: Pin<&mut Backend>, bits: i32);
+        /// Start the town hall or webinar for attendees (`live`), or end it
+        /// for them (Teams' green room Start meeting / End event).
+        #[qinvokable]
+        fn set_event_live(self: Pin<&mut Backend>, live: bool);
         /// Save the attendance list to Downloads (Teams' Download
         /// attendance list).
         #[qinvokable]
@@ -2645,6 +2654,7 @@ pub struct BackendRust {
     call_recording_tip: QString,
     call_meeting_info_json: QString,
     call_phone_json: QString,
+    call_event_json: QString,
     prejoin_phone_json: QString,
     /// The phone "Call me" put in the meeting (for Disconnect).
     phone_mri: String,
@@ -3312,6 +3322,8 @@ struct JoinedView {
     timers: teams_cli::calling::meeting_timer::Timers,
     /// The meeting's phone audio (call_phone_json, no call me yet).
     phone: String,
+    /// The meeting as a town hall or webinar (call_event_json).
+    event: String,
 }
 
 /// call_phone_json for a call: Teams' PSTN state and dial-in details, and
@@ -3377,8 +3389,24 @@ impl JoinedView {
             started: call.meeting_started(),
             timers: call.timers().clone(),
             phone: phone_json(call, "", "", ""),
+            event: event_json(&call.event(), "", ""),
         }
     }
+}
+
+/// call_event_json: the meeting's event facts ("" when it isn't a town
+/// hall or webinar and has no green room), what's being done and what
+/// failed.
+fn event_json(e: &teams_cli::calling::live_event::LiveEvent, busy: &str, failed: &str) -> String {
+    if !e.is_event() && !e.staging {
+        return String::new();
+    }
+    let mut v = serde_json::to_value(e).unwrap_or_default();
+    v["eventPhase"] = serde_json::json!(e.event_phase());
+    v["managed"] = serde_json::json!(e.managed());
+    v["busy"] = serde_json::json!(busy);
+    v["failed"] = serde_json::json!(failed);
+    v.to_string()
 }
 
 /// Leave the meeting we moved out of (its media is already off).
@@ -5102,6 +5130,17 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
             if let Some(cap) = changed {
                 tracing::info!(?cap, "meeting capability changed");
                 let _ = qt.queue(move |mut this| this.as_mut().show_capability(cap, true));
+            }
+            // A town hall or webinar started or ended for attendees.
+            let event = call_slot()
+                .lock()
+                .await
+                .outgoing
+                .as_mut()
+                .and_then(|call| call.apply_event(&v).then(|| call.event()));
+            if let Some(e) = event {
+                let text = event_json(&e, "", "");
+                let _ = qt.queue(move |mut this| this.as_mut().set_call_event_json(QString::from(text.as_str())));
             }
             // The meeting's notes were made or claimed.
             let notes = call_slot()
@@ -8074,6 +8113,7 @@ impl qobject::Backend {
         self.as_mut().show_processing(Default::default());
         self.as_mut().set_call_meeting_info_json(QString::default());
         self.as_mut().set_call_phone_json(QString::default());
+        self.as_mut().set_call_event_json(QString::default());
         self.as_mut().set_call_notes_url(QString::default());
         self.as_mut().set_call_lobby_thread(QString::default());
         self.as_mut().show_transcript(Vec::new(), true);
@@ -8095,6 +8135,7 @@ impl qobject::Backend {
         self.as_mut().set_call_can_share(v.can_share);
         self.as_mut().set_call_lobby_presenter(v.started);
         self.as_mut().set_call_phone_json(QString::from(v.phone.as_str()));
+        self.as_mut().set_call_event_json(QString::from(v.event.as_str()));
         runtime().spawn(load_dial_plan());
         // Held in the lobby: Teams keeps the pre-join screen until someone
         // admits us.
@@ -8250,6 +8291,61 @@ impl qobject::Backend {
                 let _ = qt.queue(move |this| {
                     this.meeting_action_failed(QString::from(failed.as_str()))
                 });
+            }
+        });
+    }
+
+    /// The green room's Start meeting (`live`) and End event for
+    /// attendees, as Teams' meetingGoLive / meetingShowEndCurtain: the
+    /// curtain state, three seconds, the new live state, the curtain
+    /// removed. call_event_json shows "starting" / "ending" meanwhile and
+    /// "start" / "end" in `failed` when it didn't work.
+    pub fn set_event_live(self: Pin<&mut Self>, live: bool) {
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let show = |busy: &'static str, failed: &'static str, e: teams_cli::calling::live_event::LiveEvent| {
+                let text = event_json(&e, busy, failed);
+                let _ = qt.queue(move |mut this| this.as_mut().set_call_event_json(QString::from(text.as_str())));
+            };
+            let (curtain, event) = {
+                let mut slot = call_slot().lock().await;
+                let Some(call) = slot.outgoing.as_mut() else { return };
+                let e = call.event();
+                // Teams: no-op once live, ended or already changing.
+                if !e.staging || (live && e.phase != "staging") || (!live && e.phase != "live") {
+                    return;
+                }
+                (call.publish_curtain(live).await, e)
+            };
+            show(if live { "starting" } else { "ending" }, "", event.clone());
+            let curtain = match curtain {
+                Ok(id) => id,
+                Err(e) => {
+                    tracing::warn!(live, "event curtain: {}", short_error(&e));
+                    None
+                }
+            };
+            tokio::time::sleep(std::time::Duration::from_secs(teams_cli::calling::live_event::CURTAIN_SECONDS)).await;
+            let result = {
+                let mut slot = call_slot().lock().await;
+                let Some(call) = slot.outgoing.as_mut() else { return };
+                let r = call.update_live_state(live).await;
+                if let Some(id) = curtain.as_deref()
+                    && let Err(e) = call.remove_own_state(id).await
+                {
+                    tracing::warn!("event curtain removal: {}", short_error(&e));
+                }
+                (r, call.event())
+            };
+            match result {
+                (Ok(()), e) => {
+                    tracing::info!(live, "event live state requested");
+                    show("", "", e);
+                }
+                (Err(err), e) => {
+                    tracing::warn!(live, "event live state: {}", short_error(&err));
+                    show("", if live { "start" } else { "end" }, e);
+                }
             }
         });
     }
@@ -16274,6 +16370,12 @@ impl qobject::Backend {
                         Ok(r)
                     }
                     "overview" => api::events::overview(&client, &s("id")).await,
+                    "people" => api::events::people(&client, &s("id")).await,
+                    "publish" => {
+                        let r = api::events::publish(&client, &s("id")).await?;
+                        tracing::info!(state = %r["state"], "events: event published");
+                        Ok(r)
+                    }
                     "cancel" => {
                         api::events::cancel(&client, &s("id")).await?;
                         tracing::info!("events: event cancelled");

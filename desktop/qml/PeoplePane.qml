@@ -10,6 +10,9 @@ Rectangle {
     id: root
     /// In the call: [{name, id, you, mutedNow, role, hand}].
     property var people: []
+    /// Presenters manage what attendees see (a town hall or webinar with
+    /// Manage what attendees see on).
+    property bool managed: false
     /// The call's chat members ([{mri, name, me, presence}]): those not in
     /// the call show under "People added to the chat (n)", as Teams lists them.
     property var chatMembers: []
@@ -470,7 +473,12 @@ Rectangle {
             if (root.canManage) out.push({ k: "mute", t: "Mute participant", icon: "mic-off-20", off: !!w.mutedNow })
             out.push(w.id === root.pinnedId ? { k: "unpin", t: "Unpin for me", icon: "pin-off-20" } : { k: "pin", t: "Pin for me", icon: "pin-20" })
             if (root.canManage) {
-                out.push(w.spotlight ? { k: "unspotlight", t: "Stop spotlighting", icon: "spotlight-20" } : { k: "spotlight", t: "Spotlight for everyone", icon: "spotlight-20" })
+                // Manage what attendees see: Teams' spotlight becomes "Bring on
+                // screen" / "Take off screen" (calling:bring_on_stage_label).
+                if (root.managed)
+                    out.push(w.spotlight ? { k: "unspotlight", t: "Take off screen", icon: "spotlight-20" } : { k: "spotlight", t: "Bring on screen", icon: "spotlight-20" })
+                else
+                    out.push(w.spotlight ? { k: "unspotlight", t: "Stop spotlighting", icon: "spotlight-20" } : { k: "spotlight", t: "Spotlight for everyone", icon: "spotlight-20" })
                 if ((w.role || "").toLowerCase() !== "organizer")
                     out.push((w.role || "").toLowerCase() === "attendee"
                         ? { k: "presenter", t: "Make a presenter", icon: "presenter-off-20" }

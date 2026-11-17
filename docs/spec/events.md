@@ -213,9 +213,12 @@ New event (Create from scratch):
   green room), the save dialog, the draft's page and Cancel.
 - [ ] Not built: View audio recaps, Connect apps, Custom range, See more,
   the event card's ··· items, the event page's tabs other than Overview,
-  Edit details, Share, Preview, Publish event, Duplicate, Save as
+  Edit details, Share, Preview, Duplicate, Save as
   template; the form's people pickers (co-organizers, presenters,
   invitees), room locations, the description's formatting toolbar, the
   time zone picker, the stage preview, All options and Manage apps;
   Manage immersive collections. Pin app is kept on this device (Teams'
   pinned-apps setting isn't traced).
+- [x] Since TASK-0184 (docs/spec/town-halls-and-webinars.md): the Town hall
+  template's form, Publish event with Teams' two dialogs, Upcoming, Join
+  and its menu, and the event chat button.

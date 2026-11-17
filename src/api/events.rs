@@ -127,6 +127,9 @@ pub struct EventCard {
     pub location: String,
     /// The meeting's join link (first session).
     pub join_url: String,
+    /// The event's page (`siteUrl`, events.teams.microsoft.com), what
+    /// "Copy event page link" copies.
+    pub site_url: String,
 }
 
 /// The cards in an eventOverviews reply (`results[].eventDetails`).
@@ -164,6 +167,7 @@ pub fn cards_from(reply: &Value, ams_v2: &str) -> Vec<EventCard> {
                     .and_then(Value::as_str)
                     .unwrap_or_default()
                     .to_string(),
+                site_url: s("/siteUrl"),
             })
         })
         .collect()
@@ -298,6 +302,9 @@ pub struct NewEvent {
     pub capacity: u64,
     /// Optimize for large audience (Teams' base event experience).
     pub base_experience: bool,
+    /// A town hall's "Optimize for large audience" (on by default): the
+    /// event streams to view-only attendees (3,000 by default).
+    pub large_audience: bool,
 }
 
 /// The time zone details Teams sends with an event (its time zone keys are
@@ -322,6 +329,8 @@ pub fn create_body(e: &NewEvent, owner: &Value, tz: Value, promo: &str) -> Value
         "Private" => ("Private", true),
         _ => ("Private", false),
     };
+    let town_hall = e.event_type == "Townhall";
+    let meeting_options = new_meeting_options(e, town_hall);
     let to_ms = |s: &str| {
         chrono::DateTime::parse_from_rfc3339(s)
             .map(|d| iso(d.with_timezone(&chrono::Utc)))
@@ -347,9 +356,11 @@ pub fn create_body(e: &NewEvent, owner: &Value, tz: Value, promo: &str) -> Value
         },
         "speakerJoinLinkProperties": { "isSpeakerJoinLinkEnabled": true },
         "productionModeProperties": { "enableManagedModeContentSharePreview": true, "enableProductionStudioMeetingOption": true },
+        // A town hall's comment stream: its own backroom chat, apps on the
+        // streaming thread (captured 2026-11-17).
         "commentStreamProperties": {
-            "isCommentStreamEnabled": false, "isPolicyAndLicenseCheckEnabled": false, "isSeparateBackroomChatThreadEnabled": false,
-            "useBackroomChatAsMainThread": false, "useStreamingThreadForApps": false
+            "isCommentStreamEnabled": town_hall, "isPolicyAndLicenseCheckEnabled": town_hall, "isSeparateBackroomChatThreadEnabled": town_hall,
+            "useBackroomChatAsMainThread": false, "useStreamingThreadForApps": town_hall
         },
         "eventCapacityProperties": if e.capacity > 0 {
             json!({ "maxEventCapacity": e.capacity, "isBaseEventExperience": e.base_experience })
@@ -357,37 +368,58 @@ pub fn create_body(e: &NewEvent, owner: &Value, tz: Value, promo: &str) -> Value
             Value::Null
         },
         "substrateGroupSessionKey": uuid::Uuid::new_v4().to_string(),
-        "meetingOptions": {
-            "allowTeamsMeetingReactions": e.reactions,
-            "allowMeetingChat": if e.chat { "Enabled" } else { "Disabled" },
-            "yammerQNAEnabled": e.qna,
-            "allowPstnUsersToBypassLobby": false,
-            "autoAdmittedUsers": "EveryoneInCompany",
-            "usersCanAdmitFromLobby": "OrganizersAndPresentersOnly",
-            "attendanceReportEnabled": true,
-            "entryExitAnnouncementsEnabled": false,
-            "attendeeRestrictions": match (e.allow_mic, e.allow_camera) {
-                (true, true) => "UnRestricted",
-                (false, true) => "DisableAudio",
-                (true, false) => "DisableVideo",
-                (false, false) => "DisableAv",
-            },
-            "autoRecordAndTranscribeMode": "AutoRecordingAndTranscription",
-            "meetingSpokenLanguage": "en-us",
-            "whoCanManageQna": "OrganizersAndCoorganizers",
-            "producerOption": "OrganizersAndPresentersOnly",
-            "stagingRoomEnabled": e.green_room,
-            "recorderOption": "OrganizersAndPresentersOnly",
-            "copilotMode": "EnabledWithTranscript",
-            "attendeeViewModes": null,
-            "allowedUsersForMeetingDetails": "UsersAllowedToByPassTheLobby",
-            "whoCanAccessTranscriptAndRecording": "Default",
-            "enableMultiLingualMeeting": false,
-            "isGroupCopilotEnabled": false
-        },
+        "meetingOptions": meeting_options,
         "clientTags": { "version": "2.0" },
         "theme": { "primaryColor": "#5B5FC7", "promoImage": promo }
     })
+}
+
+/// A new event's meeting options as the form sends them. A town hall
+/// streaming to a large audience (Teams' default) has view-only attendees:
+/// mic and camera off (`"DisableAudio,DisableVideo"`), no reactions or
+/// lobby setting, the chat left to the service (null); a town hall's
+/// green room is on unless turned off. "Manage what attendees see" isn't
+/// sent: Teams' form sent `attendeeViewModes` null with it On (captured
+/// 2026-11-17).
+fn new_meeting_options(e: &NewEvent, town_hall: bool) -> Value {
+    let streaming = town_hall && e.large_audience;
+    let restrictions = match (e.allow_mic, e.allow_camera) {
+        _ if streaming => "DisableAudio,DisableVideo",
+        (true, true) => "UnRestricted",
+        (false, true) => "DisableAudio",
+        (true, false) => "DisableVideo",
+        (false, false) => "DisableAv",
+    };
+    let mut o = json!({
+        "allowTeamsMeetingReactions": e.reactions,
+        "allowMeetingChat": if e.chat { "Enabled" } else { "Disabled" },
+        "yammerQNAEnabled": e.qna,
+        "allowPstnUsersToBypassLobby": false,
+        "autoAdmittedUsers": "EveryoneInCompany",
+        "usersCanAdmitFromLobby": "OrganizersAndPresentersOnly",
+        "attendanceReportEnabled": true,
+        "entryExitAnnouncementsEnabled": false,
+        "attendeeRestrictions": restrictions,
+        "autoRecordAndTranscribeMode": "AutoRecordingAndTranscription",
+        "meetingSpokenLanguage": "en-us",
+        "whoCanManageQna": "OrganizersAndCoorganizers",
+        "producerOption": "OrganizersAndPresentersOnly",
+        "stagingRoomEnabled": e.green_room,
+        "recorderOption": "OrganizersAndPresentersOnly",
+        "copilotMode": "EnabledWithTranscript",
+        "attendeeViewModes": null,
+        "allowedUsersForMeetingDetails": "UsersAllowedToByPassTheLobby",
+        "whoCanAccessTranscriptAndRecording": "Default",
+        "enableMultiLingualMeeting": false,
+        "isGroupCopilotEnabled": false
+    });
+    if streaming {
+        let m = o.as_object_mut().expect("an object");
+        m.remove("allowTeamsMeetingReactions");
+        m.remove("autoAdmittedUsers");
+        m.insert("allowMeetingChat".into(), Value::Null);
+    }
+    o
 }
 
 /// Teams' default promo pictures (ECS `virtualEvents.
@@ -457,11 +489,52 @@ pub async fn overview(client: &TeamsClient, id: &str) -> Result<Value> {
         .pop();
     Ok(json!({ "card": card, "description": v.pointer("/event/description").cloned().unwrap_or_default(),
                "access": v.pointer("/event/access/accessType").cloned().unwrap_or_default(),
-               "inviteOnly": v.pointer("/event/access/inviteOnly").cloned().unwrap_or_default() }))
+               "inviteOnly": v.pointer("/event/access/inviteOnly").cloned().unwrap_or_default(),
+               "registration": v.pointer("/event/access/isRegistrationEnabled").cloned().unwrap_or_default() }))
 }
 
 fn urlencoding(s: &str) -> String {
     url::form_urlencoded::byte_serialize(s.as_bytes()).collect()
+}
+
+/// The People & emails tab's lists: who is invited and how many have
+/// registered, to show before publishing (the event's `overview` and
+/// Teams' `…/attendees?status=…&count=true`).
+pub async fn people(client: &TeamsClient, id: &str) -> Result<Value> {
+    let id = event_path(id)?;
+    let base = format!("{}/events/{}", regional_endpoint(client), urlencoding(&id));
+    let statuses = "Waitlisted,ProcessingWaitlisting,PendingApproval,ProcessingApproval,ProcessingRejection,Rejected,ProcessingRegistration,Registered,ProcessingCancellation,Canceled,ProcessingPendingApproval";
+    let overview_url = format!("{base}/overview");
+    let attendees_url = format!("{base}/attendees?status={statuses}&pageSize=20&skip=0&count=true");
+    let (event, attendees) = tokio::join!(
+        get_json(&overview_url, false),
+        get_json(&attendees_url, false)
+    );
+    let event = event?.get("event").cloned().unwrap_or_default();
+    let names = |k: &str| -> Vec<Value> {
+        event.get(k).and_then(Value::as_array).into_iter().flatten()
+            .map(|p| json!(p.get("displayName").or_else(|| p.get("email")).cloned().unwrap_or_default()))
+            .collect()
+    };
+    Ok(json!({
+        "organizers": [event.pointer("/owner/displayName").cloned().unwrap_or_default()],
+        "coOrganizers": names("team"),
+        "presenters": names("presenters"),
+        "invited": names("attendees"),
+        "registered": attendees.ok().and_then(|a| a.get("totalCount").or_else(|| a.get("count")).cloned()).unwrap_or(json!(0)),
+    }))
+}
+
+/// Publish an event (the draft card's Publish event ▸ "Ready to publish
+/// your event?" ▸ Publish event): `PATCH events/{id}` with
+/// `{"state": "Published", "meetingOptions": null}` (captured 2026-11-17).
+/// Invites go to its invited attendees, presenters and co-organizers.
+pub async fn publish(client: &TeamsClient, id: &str) -> Result<Value> {
+    let id = event_path(id)?;
+    let body = json!({ "state": "Published", "meetingOptions": null });
+    let r = send(reqwest::Method::PATCH, &format!("{}/events/{}", regional_endpoint(client), urlencoding(&id)), Some(&body), false).await?;
+    let v: Value = r.json().await.context("The published event")?;
+    Ok(json!({ "id": v.get("id").cloned().unwrap_or_default(), "state": v.get("state").cloned().unwrap_or_default() }))
 }
 
 /// Cancel an event (the event page's ··· ▸ Cancel): Teams'
@@ -540,6 +613,30 @@ mod tests {
         assert_eq!(p["eventCapacityProperties"], Value::Null);
         let big = create_body(&NewEvent { capacity: 10000, base_experience: true, ..Default::default() }, &json!({}), json!({}), "");
         assert_eq!(big["eventCapacityProperties"], json!({"maxEventCapacity": 10000, "isBaseEventExperience": true}));
+    }
+
+    #[test]
+    fn a_town_hall_is_sent_as_teams_sends_it() {
+        // Teams' town hall template, defaults kept (captured 2026-11-17).
+        let e = NewEvent { event_type: "Townhall".into(), title: "OST TEST 184 town hall".into(), access: "Public".into(),
+                           green_room: true, qna: true, capacity: 3000, large_audience: true, ..Default::default() };
+        let b = create_body(&e, &json!({}), json!({}), "");
+        assert_eq!(b["type"], "Townhall");
+        assert_eq!(b["access"], json!({"accessType": "Public", "inviteOnly": false, "isRegistrationEnabled": false}));
+        assert_eq!(b["eventCapacityProperties"], json!({"maxEventCapacity": 3000, "isBaseEventExperience": false}));
+        assert_eq!(b["commentStreamProperties"], json!({"isCommentStreamEnabled": true, "isPolicyAndLicenseCheckEnabled": true,
+            "isSeparateBackroomChatThreadEnabled": true, "useBackroomChatAsMainThread": false, "useStreamingThreadForApps": true}));
+        let o = &b["meetingOptions"];
+        assert_eq!(o["attendeeRestrictions"], "DisableAudio,DisableVideo");
+        assert_eq!(o["allowMeetingChat"], Value::Null);
+        assert!(o.get("allowTeamsMeetingReactions").is_none() && o.get("autoAdmittedUsers").is_none());
+        assert_eq!(o["stagingRoomEnabled"], true);
+        assert_eq!(o["yammerQNAEnabled"], true);
+        assert_eq!(o["attendeeViewModes"], Value::Null);
+        // A webinar keeps its comment stream off.
+        let w = create_body(&NewEvent { event_type: "Webinar".into(), ..Default::default() }, &json!({}), json!({}), "");
+        assert_eq!(w["commentStreamProperties"]["isCommentStreamEnabled"], false);
+        assert!(w["meetingOptions"].get("allowTeamsMeetingReactions").is_some());
     }
 
     #[test]

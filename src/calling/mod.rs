@@ -23,6 +23,7 @@ pub mod echo_report;
 pub mod frames;
 pub mod ice;
 pub mod incoming;
+pub mod live_event;
 pub mod live_roster;
 pub mod mcp;
 pub mod network_quality;

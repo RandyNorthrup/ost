@@ -636,12 +636,39 @@ Window {
     readonly property bool compactBar: newControls && width < 480
     readonly property var ubarFacts: ({
         p2p: !meeting, pstn: pstnCall, consult: false, scheduled: scheduled, adhoc: adhocMeeting,
-        organizer: organizer, onHold: held, canPopOut: presenting && !contentPoppedOut, reactions: true,
+        organizer: organizer, onHold: held, canPopOut: presenting && !contentPoppedOut,
+        // A town hall or webinar shows React only where the meeting allows reactions.
+        reactions: !isEvent || !!liveEvent.reactions,
         roomToJoin: roomToJoin, canReturnToMain: canReturnToMain, breakoutRoom: backend.callBreakoutRoomJson !== "" || !!heldMeeting,
         centered: newControls, customization: dragPreview || controlsCustomization, echo: testCall, copilot: copilotAllowed,
         canTakeControl: presenting && !!controlState.capable,
-        callMe: !!phone.available && !!phone.dialIn && !!phone.dial, facilitator: copilotAllowed
+        callMe: !!phone.available && !!phone.dialIn && !!phone.dial, facilitator: copilotAllowed,
+        townHall: !!liveEvent.townHall, webinar: !!liveEvent.webinar, attendee: myRole === "attendee",
+        greenRoom: !!liveEvent.staging && myRole !== "attendee" && live && liveEvent.eventPhase === "prelive",
+        eventPhase: liveEvent.eventPhase || "", qna: !!liveEvent.qna && scheduled
     })
+    /// A town hall or webinar (Backend call_event_json): its green room,
+    /// live state, Manage what attendees see and Q&A
+    /// (docs/spec/town-halls-and-webinars.md).
+    readonly property var liveEvent: backend.callEventJson ? JSON.parse(backend.callEventJson) : ({})
+    /// Teams' isEvent: a town hall or webinar says "event" (End event).
+    readonly property bool isEvent: !!liveEvent.townHall || !!liveEvent.webinar
+    /// Teams' enableTownhallDelayMessage (off in shipped clients): the
+    /// town hall's own Start event wording.
+    readonly property bool townhallDelayMessage: false
+    /// Attendees in the meeting (Teams counts its attendees and streaming
+    /// attendees for the LIVE pill and Start's confirmation).
+    readonly property int attendeeCount: roster.filter(p => p.active !== false && (p.role || "").toLowerCase() === "attendee").length
+    property bool greenRoomAlertClosed: false
+    /// Teams' Q&A page for this meeting: its id ("0#{thread}#0", base64)
+    /// in a TeamsMeeting reference, with the tenant, call and template.
+    function qnaUrl() {
+        const mid = Qt.btoa("0#" + backend.callThreadId + "#0")
+        const ref = Qt.btoa(JSON.stringify({ _type: "TeamsMeeting", id: mid })).replace(/=+$/, "")
+        const g = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === "x" ? r : (r & 3 | 8)).toString(16) })
+        return "https://web.yammer.com/teamsmeeting/teams-meeting/" + ref + "?client=teams&qnaAppType=native&meetingTenantId=" + encodeURIComponent(backend.tenantId() || "")
+            + (liveEvent.townHall ? "&meetingTemplate=Townhall" : liveEvent.webinar ? "&meetingTemplate=Webinar" : "") + "&appSessionId=" + g
+    }
     /// Teams' phone audio for the meeting (Backend call_phone_json).
     readonly property var phone: backend.callPhoneJson ? JSON.parse(backend.callPhoneJson) : ({})
     /// Teams' "Use phone for audio" (after joining with Phone audio, More ▸
@@ -671,6 +698,13 @@ Window {
     // Each control's slot (button 48 + 4 either side; split buttons 74).
     TextMetrics { id: joinRoomMetrics; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; text: "Join room" }
     TextMetrics { id: returnMetrics; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; text: "Return" }
+    TextMetrics { id: startEventMetrics; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; text: win.startLabel }
+    TextMetrics { id: endEventMetrics; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; text: win.endLabel }
+    /// The green room's buttons (Teams' StagingRoomStartMeetingButton,
+    /// "Start meeting" unless enableTownhallDelayMessage; End event for
+    /// town halls and webinars, else End meeting).
+    readonly property string startLabel: townhallDelayMessage && liveEvent.townHall ? "Start event" : "Start meeting"
+    readonly property string endLabel: isEvent ? "End event" : "End meeting"
     // The compact bar: 32 px buttons in 36 px slots, split buttons 54.
     readonly property real ubarButton: compactBar ? 36 : 56
     readonly property real ubarDivider: compactBar ? 9 : 17
@@ -678,6 +712,8 @@ Window {
                                          ResumeButton: Math.ceil(resumeMetrics.advanceWidth) + 20 + 8 + 40 + 8,
                                          ReturnToBreakoutRoomButton: Math.ceil(joinRoomMetrics.advanceWidth) + 24.67 + 16,
                                          BreakoutRoomReturnToMainButton: Math.ceil(returnMetrics.advanceWidth) + 24.67 + 16,
+                                         StagingRoomStartMeetingButton: Math.ceil(startEventMetrics.advanceWidth) + 24.67 + 16,
+                                         StagingRoomEndMeetingButton: Math.ceil(endEventMetrics.advanceWidth) + 24.67 + 16,
                                          default: ubarButton })
     // The middle slot's room: from 4 past the indicators (shield, timer)
     // to 17 before Leave; the new controls' slot ends 4 before the end
@@ -703,6 +739,7 @@ Window {
             ViewModeButton: cView, OrganizerControlButton: cControls, MeetingDetailsButton: cNotes,
             StartBreakoutRoomButton: cRooms, MeetingAppsAddButton: cApps, MoreButton: cMore,
             ReturnToBreakoutRoomButton: cJoinRoom, BreakoutRoomReturnToMainButton: cReturnMain,
+            StagingRoomStartMeetingButton: cStartEvent, StagingRoomEndMeetingButton: cEndEvent, YammerQnaButton: cQna,
             VideoButton: cCamera, MicrophoneButton: cMic, ShareButton: cShare,
             // More's grid controls the user pinned to the bar.
             RecordingButton: cPinned, TranscriptButton: cPinned, MeetingFacilitatorTimerButton: cPinned,
@@ -757,6 +794,9 @@ Window {
         else if (name === "StartBreakoutRoomButton") { side = side === "rooms" ? "" : "rooms"; if (side === "rooms") backend.breakoutAction("refresh", "{}") }
         else if (name === "ReturnToBreakoutRoomButton") joinBreakoutRoom()
         else if (name === "BreakoutRoomReturnToMainButton") returnToMainMeeting()
+        else if (name === "StagingRoomStartMeetingButton") { if (!liveEvent.busy) startEventDialog.open() }
+        else if (name === "StagingRoomEndMeetingButton") { if (!liveEvent.busy) endEventDialog.open() }
+        else if (name === "YammerQnaButton") side = side === "qna" ? "" : "qna"
     }
     function controlEnabled(name) {
         if (!holdOk(name)) return false
@@ -1226,12 +1266,48 @@ Window {
             Accessible.name: aiIndicator.tip
             Accessible.onPressAction: if (win.aiAvailable) aiPopover.open()
         }
+        // Teams' event state pill (VirtualEventsLiveIndicator) with a green
+        // room: "Not started", "Live" or "Ended", then (presenters) the
+        // attendees; attendees see "Waiting", "Live", "Ended".
+        Rectangle {
+            id: liveIndicator
+            readonly property string phase: win.liveEvent.eventPhase || ""
+            readonly property bool attendeeView: win.myRole === "attendee"
+            visible: win.meeting && !win.compactBar && !!win.liveEvent.staging && (!attendeeView || phase === "active" || phase === "ended" || !!win.liveEvent.townHall)
+            x: timerText.x - width - 8
+            anchors.verticalCenter: parent.verticalCenter
+            height: 24; radius: 12; width: liveRow.implicitWidth + 16
+            color: phase === "active" ? "#C4314B" : theme.pick("#F0F0F0", "#333333", "#000000")
+            border.width: theme.highContrast ? 1 : 0; border.color: theme.text
+            readonly property string label: phase === "active" ? "Live" : phase === "ended" ? "Ended" : attendeeView ? "Waiting" : "Not started"
+            readonly property string tip: attendeeView
+                ? (phase === "active" ? "The event is live." : phase === "ended" ? "The event has ended." : "Waiting for the event to start.")
+                : phase === "active" ? (win.attendeeCount === 1 ? "1 attendee watching" : win.attendeeCount + " attendees watching")
+                : phase === "ended" ? (win.attendeeCount === 1 ? "1 attendee remains" : win.attendeeCount + " attendees remain")
+                : (win.attendeeCount === 1 ? "1 attendee waiting" : win.attendeeCount + " attendees waiting")
+            Row {
+                id: liveRow
+                x: 8; anchors.verticalCenter: parent.verticalCenter; spacing: 6
+                Text { anchors.verticalCenter: parent.verticalCenter; text: liveIndicator.label; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold
+                       color: liveIndicator.phase === "active" ? "#FFFFFF" : theme.textStrong }
+                Rectangle { visible: !liveIndicator.attendeeView; width: 1; height: 12; anchors.verticalCenter: parent.verticalCenter
+                            color: liveIndicator.phase === "active" ? "#FFFFFF" : theme.textSecondary }
+                FluentIcon { visible: !liveIndicator.attendeeView; anchors.verticalCenter: parent.verticalCenter; name: "people-16"; size: 16
+                             color: liveIndicator.phase === "active" ? "#FFFFFF" : theme.textStrong }
+                Text { visible: !liveIndicator.attendeeView; anchors.verticalCenter: parent.verticalCenter; text: win.attendeeCount; font.family: theme.font; font.pixelSize: 12
+                       color: liveIndicator.phase === "active" ? "#FFFFFF" : theme.textStrong }
+            }
+            HoverHandler { id: liveHover }
+            IndicatorTip { target: liveIndicator; text: liveIndicator.tip; shown: liveHover.hovered }
+            Accessible.role: Accessible.StaticText; Accessible.name: liveIndicator.label + ". " + liveIndicator.tip
+        }
         Text {
             id: timerText
             // After the shield (and the AI indicator), 6.67 into the
             // duration's slot.
             x: win.compactBar ? (!win.meeting ? 10.7 : 30 + (recordingIndicator.visible ? 22 : 0) + (aiIndicator.visible ? 24.9 : 0) + 2.7)
                : !win.meeting ? 16 : 38 + (recordingIndicator.visible ? 30 : 0) + (aiIndicator.visible ? 37.33 : 0) + 6.67
+                 + (liveIndicator.visible ? liveIndicator.width + 8 : 0)
             anchors.verticalCenter: parent.verticalCenter
             text: win.state === "connected" ? win.clock(win.seconds) : "--:--"
             color: theme.textStrong
@@ -1622,6 +1698,28 @@ Window {
         }
         // Meetings: alone, your picture and "Waiting for others to join…";
         // otherwise a tile for each other person.
+        // An attendee waiting for a webinar or town hall to start (Teams'
+        // staging screen: "Welcome to", the title, "This meeting will start
+        // shortly"), or after it ended ("The event has concluded. Thank you
+        // for attending.").
+        Rectangle {
+            id: stagingScreen
+            readonly property string phase: win.liveEvent.eventPhase || ""
+            visible: win.meeting && win.myRole === "attendee" && (phase === "prelive" || phase === "ended")
+            anchors.fill: parent; radius: parent.radius; color: theme.pane; z: 5
+            Column {
+                anchors.centerIn: parent; spacing: 8; width: parent.width - 48
+                Text { visible: stagingScreen.phase === "prelive"; width: parent.width; horizontalAlignment: Text.AlignHCenter; text: "Welcome to"
+                       color: theme.text; font.family: theme.font; font.pixelSize: 16 }
+                Text { visible: stagingScreen.phase === "prelive"; width: parent.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; text: win.peer
+                       color: theme.text; font.family: theme.font; font.pixelSize: 24; font.weight: Font.Bold }
+                Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
+                       text: stagingScreen.phase === "ended" ? "The event has concluded. Thank you for attending." : "This meeting will start shortly"
+                       color: theme.text; font.family: theme.font; font.pixelSize: 16 }
+            }
+            Accessible.role: Accessible.StaticText
+            Accessible.name: stagingScreen.phase === "ended" ? "The event has concluded. Thank you for attending." : "Welcome to " + win.peer + ". This meeting will start shortly"
+        }
         Column {
             visible: win.meeting && win.others.length === 0
             anchors.centerIn: parent
@@ -2258,6 +2356,19 @@ Window {
             onClosed: win.side = ""
             onChanged: s => win.saveCaptionStyles(s)
         }
+        // Q&A (Teams' YammerQnaButton): Viva Engage's meeting Q&A, the page
+        // Teams hosts in its side pane, with the call and the template.
+        Loader {
+            id: qnaPaneLoader
+            active: win.side === "qna"
+            visible: active
+            anchors.fill: parent
+            sourceComponent: WebApp {
+                showHeader: false; appName: "Q&A"; appId: "5db56dd0-534d-467b-aeda-d622bee2574a"; location: win.peer
+                home: win.qnaUrl(); teamsHost: true; deepNaa: false; hostThread: backend.callThreadId
+                hostContext: ({ entityId: "", subEntityId: "" })
+            }
+        }
         MeetingNotesPane {
             id: meetingNotesPane
             visible: win.side === "notes"
@@ -2282,6 +2393,7 @@ Window {
             lobbyChatAvailable: win.lobbyChatAvailable
             onChatLobby: win.openLobbyChat()
             meeting: win.meeting
+            managed: !!win.liveEvent.managed
             onClosed: win.side = ""
             onAdmit: (id, name) => win.admitLobby(id, name, false)
             onAdmitSuspected: (id, name) => admitAsk.ask(id, name)
@@ -3827,27 +3939,39 @@ Window {
         id: btb
         property string label
         property string control
+        property bool primary: false
+        property bool usable: true
+        property string tip: ""
         width: btbText.implicitWidth + 24.67 + 16; height: bar.height
         Rectangle {
             id: hcFill13
             anchors.centerIn: parent
             width: btbText.implicitWidth + 24.67; height: 31.33; radius: 4
-            color: btbHover.hovered ? theme.menuHover : theme.surface
-            border.color: theme.stroke; border.width: 0.67
+            color: btb.primary ? (!btb.usable ? theme.pick("#F0F0F0", "#333333", "#000000") : btbHover.hovered ? theme.brandHover : theme.brandFill)
+                : btbHover.hovered ? theme.menuHover : theme.surface
+            border.color: btb.primary ? "transparent" : theme.stroke; border.width: 0.67
             Text {
                 id: btbText
                 anchors.centerIn: parent
                 text: btb.label
                 font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
-                color: theme.onFill(hcFill13, theme.text)
+                color: !btb.usable ? theme.disabled : btb.primary ? theme.textOnBrand : theme.onFill(hcFill13, theme.text)
             }
-            HoverHandler { id: btbHover; cursorShape: Qt.PointingHandCursor }
-            TapHandler { onTapped: win.runControl(btb.control) }
+            HoverHandler { id: btbHover; cursorShape: btb.usable ? Qt.PointingHandCursor : Qt.ArrowCursor }
+            TapHandler { enabled: btb.usable; onTapped: win.runControl(btb.control) }
+            ToolTip.visible: btb.tip !== "" && btbHover.hovered; ToolTip.text: btb.tip
         }
         Accessible.role: Accessible.Button
         Accessible.name: btb.label
     }
     Component { id: cJoinRoom; BarTextButton { label: "Join room"; control: "ReturnToBreakoutRoomButton" } }
+    // Start meeting (primary) and End event in the end slot; disabled
+    // while a presenter starts or ends it (Teams' tooltips).
+    Component { id: cStartEvent; BarTextButton { label: win.startLabel; control: "StagingRoomStartMeetingButton"; primary: true; usable: !win.liveEvent.busy
+        tip: win.liveEvent.busy ? (win.isEvent ? "A presenter already started the event" : "A presenter already started the meeting") : "" } }
+    Component { id: cEndEvent; BarTextButton { label: win.endLabel; control: "StagingRoomEndMeetingButton"; usable: !win.liveEvent.busy
+        tip: win.liveEvent.busy ? (win.isEvent ? "Someone already ended the event" : "Someone already ended the meeting") : "" } }
+    Component { id: cQna; BarButton { icon: "chat-bubbles-question-20"; label: "Q&A"; tip: "Q&A"; checked: win.side === "qna"; onClicked: win.runControl("YammerQnaButton") } }
     Component { id: cReturnMain; BarTextButton { label: "Return"; control: "BreakoutRoomReturnToMainButton" } }
     Component { id: cApps; BarButton { id: appsB; icon: "call-apps"; label: "Apps"; tip: appsMenu.visible ? "Close apps" : "Find apps and more"; checked: appsMenu.visible && appsMenu.parent === appsB; onClicked: win.runControl("MeetingAppsAddButton") } }
     Component { id: cMore; BarButton { icon: win.newControls ? "nmc-more" : "call-more"; label: "More"; tip: "More actions"; checked: moreMenu.visible || newMore.visible; dropTarget: win.dragZone === "more"; onClicked: win.runControl("MoreButton") } }
@@ -4208,6 +4332,61 @@ Window {
     }
     // Take control ▸ (Teams' ScreensharingControlButton): "Request
     // control?" first.
+    // The green room's Start (Teams' staging-room-meeting-start-dialog)
+    // and End event confirmations, and their failures.
+    ConfirmDialog {
+        id: startEventDialog
+        readonly property bool th: win.townhallDelayMessage && !!win.liveEvent.townHall
+        title: th ? "Start the event for everyone?" : "Start the meeting for everyone?"
+        body: th ? (win.attendeeCount === 1 ? "1 attendee will enter and watch the event at a slight delay." : win.attendeeCount + " attendees will enter and watch the event at a slight delay.")
+                 : (win.attendeeCount === 1 ? "1 attendee will enter the meeting" : win.attendeeCount + " attendees will enter the meeting")
+        confirmText: th ? "Start event" : "Start meeting"
+        onConfirmed: backend.setEventLive(true)
+    }
+    ConfirmDialog {
+        id: endEventDialog
+        title: win.isEvent ? "End the event for attendees?" : "End the meeting for attendees?"
+        body: win.isEvent ? "This will end the event for all attendees and return organizers and presenters to the Green Room."
+                          : "This will end the meeting for all attendees and return organizers and presenters to the Green Room."
+        confirmText: win.isEvent ? "End event for all attendees" : "End meeting"
+        onConfirmed: backend.setEventLive(false)
+    }
+    property int eventFailures: 0
+    function startEventForTest() { startEventDialog.close(); backend.setEventLive(true) }
+    function endEventForTest() { endEventDialog.close(); backend.setEventLive(false) }
+    ConfirmDialog {
+        id: eventFailedDialog
+        property bool starting: true
+        title: starting ? "Unable to start meeting" : (win.isEvent ? "Couldn't end event" : "Couldn't end meeting")
+        body: starting ? (win.eventFailures > 1 ? "Wait and try again later or ask another presenter or organizer to start the meeting for you." : "Let's try starting the meeting again.")
+                       : win.eventFailures > 1 ? "Wait and try again or ask another organizer to end it." : (win.isEvent ? "Let's try ending the event again." : "Let's try ending the meeting again.")
+        confirmText: "Try again"
+        onConfirmed: backend.setEventLive(starting)
+    }
+    Connections {
+        target: backend
+        function onCallEventJsonChanged() {
+            const f = win.liveEvent.failed || ""
+            if (f) { win.eventFailures++; eventFailedDialog.starting = f === "start"; eventFailedDialog.open() }
+            else if (win.liveEvent.eventPhase === "active") win.eventFailures = 0
+        }
+    }
+    // "Start the meeting whenever you're ready." (Teams' green room alert,
+    // info, dismissable) while presenters wait in the green room.
+    CallAlert {
+        readonly property bool ended: win.liveEvent.eventPhase === "ended" && win.myRole !== "attendee"
+        visible: (win.ubarFacts.greenRoom || ended) && !win.liveEvent.busy && !win.greenRoomAlertClosed && !win.breakoutAlert
+        x: stage.x + (stage.width - width) / 2
+        y: win.belowBar + 10.7
+        z: 6
+        // Back in the green room after the end (Teams' info alert).
+        text: !ended ? "Start the meeting whenever you're ready."
+            : win.isEvent ? "The event has ended for attendees. If recording was enabled, it has now stopped."
+            : "The meeting has ended for attendees and recording has stopped."
+        icon: "info-20"
+        onDismissed: win.greenRoomAlertClosed = true
+        onEndedChanged: if (ended) win.greenRoomAlertClosed = false
+    }
     ConfirmDialog {
         id: requestControlDialog
         title: "Request control?"
