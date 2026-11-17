@@ -662,6 +662,12 @@ pub struct Facts {
     /// Teams' isCallParkAvailable: call park allowed by your policy and
     /// Enterprise Voice (a Teams Phone licence), the call not on hold.
     pub can_park: bool,
+    /// Teams' voicemail greeting call (Settings ▸ Calls ▸ Record a
+    /// greeting, `isVoicemailGreeting`; measured on winpc 2026-11-17): Mic,
+    /// Dial pad, More (only Audio settings) and Leave; no Chat, People,
+    /// View, Apps, Camera or Share, and it can't be held, transferred or
+    /// parked.
+    pub voicemail: bool,
 }
 
 impl Facts {
@@ -676,13 +682,16 @@ impl Facts {
         if self.e2ee && e2ee_hidden(control) {
             return false;
         }
+        if self.voicemail {
+            return matches!(control, "MicrophoneButton" | "DialpadButton" | "CallButton" | "AudioSettingsButton");
+        }
         match control {
             "PopoutContentButton" => self.can_pop_out,
             "ScreensharingControlButton" => self.can_take_control,
-            "ResumeButton" => self.p2p && self.on_hold,
-            "CallTransferButtonV2" | "CallConsultativeTransferButtonV2" => self.p2p,
-            "ChatButton" => !self.pstn && !self.echo,
-            "RosterButton" => !self.echo,
+            "ResumeButton" => self.p2p && self.on_hold && !self.voicemail,
+            "CallTransferButtonV2" | "CallConsultativeTransferButtonV2" => self.p2p && !self.voicemail,
+            "ChatButton" => !self.pstn && !self.echo && !self.voicemail,
+            "RosterButton" => !self.echo && !self.voicemail,
             "ViewModeButton" | "VideoButton" | "MicrophoneButton" | "ShareButton"
             | "CallButton" | "DialpadButton" => true,
             // Not in 1:1 calls (the component renders nothing for P2P).
@@ -703,9 +712,9 @@ impl Facts {
             "ReturnToBreakoutRoomButton" => self.room_to_join,
             "BreakoutRoomReturnToMainButton" => self.can_return_to_main,
             "MeetingAppsAddButton" => !self.pstn,
-            "HoldButton" => self.p2p && !self.on_hold,
+            "HoldButton" => self.p2p && !self.on_hold && !self.voicemail,
             "MergeCallsButton" => self.consult,
-            "CallParkButton" => self.p2p && self.can_park && !self.on_hold,
+            "CallParkButton" => self.p2p && self.can_park && !self.on_hold && !self.voicemail,
             // In More (live: the AV framework replaces Devices with these).
             "AudioSettingsButton" | "CameraEffectsButton" => true,
             // Meetings (Teams' isMeeting), not a chat's group call.
@@ -890,6 +899,27 @@ mod tests {
         let calling = l.more.iter().find(|s| s.name == "callingOverflow").expect("callingOverflow");
         let items: Vec<&str> = calling.items.iter().map(|i| i.name.as_str()).collect();
         assert_eq!(items, ["MergeCallsButton", "CallParkButton"]);
+    }
+
+    /// Teams' voicemail greeting call: the dial pad stays (the voicemail
+    /// is driven by keys), Chat, People, hold, transfer and park don't.
+    #[test]
+    fn a_voicemail_greeting_call_keeps_only_the_dial_pad() {
+        let facts = Facts { p2p: true, voicemail: true, can_park: true, ..Default::default() };
+        let a = arrange(&facts, &|_| 48.0, 17.0, 5000.0);
+        let all: Vec<&str> = a
+            .bar
+            .iter()
+            .map(String::as_str)
+            .chain(a.more.iter().flat_map(|s| s.items.iter().map(|i| i.name.as_str())))
+            .collect();
+        assert!(all.contains(&"DialpadButton") && all.contains(&"MicrophoneButton") && all.contains(&"AudioSettingsButton"));
+        assert_eq!(a.end, ["CallButton"]);
+        for gone in ["ChatButton", "RosterButton", "HoldButton", "CallTransferButtonV2", "CallParkButton", "VideoButton", "ShareButton", "ViewModeButton", "MeetingAppsAddButton", "CameraEffectsButton"] {
+            assert!(!all.contains(&gone), "{gone} shown");
+        }
+        let plain = arrange(&Facts { p2p: true, ..Default::default() }, &|_| 48.0, 17.0, 5000.0);
+        assert!(plain.bar.iter().any(|n| n == "ChatButton"));
     }
 
     #[test]

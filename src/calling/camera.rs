@@ -70,6 +70,8 @@ impl CameraCapture {
         let path = device_path.unwrap_or("/dev/video0");
         let dev = Device::with_path(path)
             .with_context(|| format!("Failed to open camera at {}", path))?;
+        // Teams' "Automatically adjust camera controls", where chosen.
+        super::camera_controls::apply_preferred(path);
 
         // Try to set format — prefer YUYV (widely supported), fall back to whatever works
         let mut fmt = dev.format().context("Failed to get camera format")?;

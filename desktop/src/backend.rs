@@ -382,6 +382,9 @@ pub mod qobject {
         /// merge or park retrieve replaced it without closing the window),
         /// so the call clock keeps running instead of restarting.
         #[qproperty(bool, call_continues)]
+        /// The call is Teams' voicemail greeting call (Record a greeting):
+        /// titled Voicemail, no Chat, People, hold, transfer or park.
+        #[qproperty(bool, call_voicemail)]
         /// Teams' isCallParkAvailable for you (park policy and Enterprise
         /// Voice), read as a call connects.
         #[qproperty(bool, call_can_park)]
@@ -883,6 +886,10 @@ pub mod qobject {
         /// the Echo bot, in the call window; its report shows when it ends.
         #[qinvokable]
         fn make_test_call(self: Pin<&mut Backend>);
+        /// Settings > Calls > Voicemail > Record a greeting: Teams' call to
+        /// your own voicemail, where the greeting is recorded.
+        #[qinvokable]
+        fn record_voicemail_greeting(self: Pin<&mut Backend>);
         /// Channels: Teams' Meet now, a new meeting in the channel with
         /// this title (from the pre-join's title field).
         #[qinvokable]
@@ -1648,6 +1655,31 @@ pub mod qobject {
         /// call's audio at once.
         #[qinvokable]
         fn set_music_mode(self: Pin<&mut Backend>, on: bool, echo_cancellation: bool);
+        /// Teams' Spatial audio (Settings ▸ Devices): whether the speaker
+        /// can play it (stereo, not Bluetooth; Teams' isSpatialCapable).
+        #[qinvokable]
+        fn spatial_audio_capable(self: &Backend) -> bool;
+        /// The call window's spatial audio state: whether it applies now
+        /// (layout, call type, people) and the tiles' centres on the stage
+        /// as [{id: mri, x, y}] in percent (Teams'
+        /// updateSpatialAudioParticipantsPosition).
+        #[qinvokable]
+        fn set_spatial_state(self: Pin<&mut Backend>, valid: bool, positions: &QString);
+        /// Teams' "Automatically adjust camera controls" as the camera is
+        /// set now: "true", "false", or "" (it has no automatic controls).
+        #[qinvokable]
+        fn camera_auto_controls(self: &Backend, path: &QString) -> QString;
+        /// Put the camera's automatic controls on or off (kept on this
+        /// device as Teams' automaticCameraSettingsSelected).
+        #[qinvokable]
+        fn set_camera_auto_controls(self: Pin<&mut Backend>, path: &QString, on: bool) -> bool;
+        /// The camera's own controls (OST's camera settings), as JSON.
+        #[qinvokable]
+        fn camera_controls_json(self: &Backend, path: &QString) -> QString;
+        #[qinvokable]
+        fn set_camera_control(self: &Backend, path: &QString, id: i64, value: i64) -> bool;
+        #[qinvokable]
+        fn reset_camera_controls(self: &Backend, path: &QString);
         /// Teams' taskbar badge: the app bar's unread total on the window
         /// icon, else your presence glyph (kind as the tray's).
         #[qinvokable]
@@ -2802,6 +2834,7 @@ pub struct BackendRust {
     call_e2ee_numbers: QString,
     call_park_code: QString,
     call_continues: bool,
+    call_voicemail: bool,
     call_can_park: bool,
     call_consult_json: QString,
     call_can_dtmf: bool,
@@ -3834,6 +3867,7 @@ async fn take_transfer(qt: cxx_qt::CxxQtThread<qobject::Backend>, request: teams
         transferor: Some(request.transferor.clone()),
         transfer_context: request.transfer_context.clone(),
         unpark_code: None,
+        voicemail: None,
     };
     let tag = outgoing::new_call_tag();
     let (_cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
@@ -3895,6 +3929,8 @@ enum Placement {
     Person { chat_id: String, callee: String, video: bool },
     /// Retrieving a parked call with its pickup code.
     Unpark(i64),
+    /// Your own voicemail, to record your greeting.
+    Voicemail,
 }
 
 /// Hold (or resume) the first call while a consult goes on.
@@ -6814,6 +6850,42 @@ fn apply_audio_devices(map: &serde_json::Map<String, serde_json::Value>) {
         _ => default,
     };
     teams_cli::calling::apm::set_music_mode(flag("musicMode", false), flag("musicModeEcho", true));
+    // Teams' Teletypewriter (TTY) mode, Spatial audio (off unless turned
+    // on: enableSpatialAudioDefaultOn is off) and "Automatically adjust
+    // camera controls" (unset: the camera keeps its own), all kept on this
+    // device as Teams keeps them.
+    let local = |k: &str| map.get(k).and_then(|v| v.as_str()).map(|v| v == "true");
+    teams_cli::calling::apm::set_tty_mode(local("ttyMode").unwrap_or(false));
+    teams_cli::calling::spatial::set_enabled(local("spatialAudio").unwrap_or(false));
+    teams_cli::calling::camera_controls::set_preferred_auto(local("autoCameraControls"));
+}
+
+/// Teams' isSpatialCapable for the speaker calls use: stereo and not
+/// Bluetooth, from PipeWire's description of it.
+fn spatial_capable() -> bool {
+    // Asked whenever the call window's tiles move: PipeWire is asked
+    // again every few seconds (a speaker plugged in or chosen shows).
+    static LAST: std::sync::Mutex<Option<(std::time::Instant, bool)>> = std::sync::Mutex::new(None);
+    let mut last = LAST.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((at, v)) = *last
+        && at.elapsed() < std::time::Duration::from_secs(5)
+    {
+        return v;
+    }
+    let v = speaker_spatial_capable();
+    *last = Some((std::time::Instant::now(), v));
+    v
+}
+
+fn speaker_spatial_capable() -> bool {
+    let chosen = teams_cli::calling::audio::preferred_devices().1;
+    let speaker = chosen.or_else(|| teams_cli::calling::pw_defaults::default_endpoints().1);
+    let endpoints = teams_cli::calling::room_devices::audio_endpoints();
+    let Some(e) = endpoints.iter().find(|e| e.sink && Some(&e.name) == speaker.as_ref()) else {
+        return false;
+    };
+    // PipeWire leaves audio.channels out for some sinks: stereo then.
+    teams_cli::calling::spatial::speaker_capable(if e.channels == 0 { 2 } else { e.channels }, &e.bus)
 }
 
 /// Start OST when you sign in to the desktop (an XDG autostart entry).
@@ -7424,6 +7496,16 @@ impl qobject::Backend {
         self.place_and_show(Placement::Unpark(code), QString::from("Parked call"), String::new());
     }
 
+    /// Teams' Record a greeting (`startVoicemailCall`): a call to your own
+    /// voicemail, titled as Teams titles it (voicemail_call_title).
+    pub fn record_voicemail_greeting(self: Pin<&mut Self>) {
+        if !self.rust().call_state.is_empty() && self.rust().call_state.to_string() != "ended" {
+            return;
+        }
+        tracing::info!("calling own voicemail to record a greeting");
+        self.place_and_show(Placement::Voicemail, QString::from("Voicemail"), String::new());
+    }
+
     /// Park the call (Teams' Park Call): the pickup code comes back on the
     /// transfer's completion, and the call ends for us.
     pub fn park_call(mut self: Pin<&mut Self>) {
@@ -7452,6 +7534,7 @@ impl qobject::Backend {
     fn place_and_show(mut self: Pin<&mut Self>, placement: Placement, peer: QString, callee: String) {
         let video = matches!(placement, Placement::Person { video: true, .. });
         self.as_mut().set_call_continues(matches!(placement, Placement::Unpark(_)));
+        self.as_mut().set_call_voicemail(matches!(placement, Placement::Voicemail));
         self.as_mut().set_call_peer(peer);
         self.as_mut()
             .set_call_peer_id(QString::from(callee.as_str()));
@@ -7473,6 +7556,7 @@ impl qobject::Backend {
             let result = match placement {
                 Placement::Person { chat_id, callee, video } => outgoing::place_call(&chat_id, &callee, video, cancel_rx).await,
                 Placement::Unpark(code) => outgoing::unpark_call("", code, cancel_rx).await,
+                Placement::Voicemail => outgoing::call_own_voicemail(cancel_rx).await,
             };
             let mut slot = call_slot().lock().await;
             slot.cancel_placing = None;
@@ -10978,6 +11062,7 @@ impl qobject::Backend {
         self.as_mut().set_call_can_park(false);
         self.as_mut().set_call_park_code(QString::default());
         self.as_mut().set_call_continues(false);
+        self.as_mut().set_call_voicemail(false);
         self.as_mut().set_call_can_dtmf(false);
         self.as_mut().set_call_hand_raised(false);
         if !self.rust().call_state.is_empty() {
@@ -14595,6 +14680,79 @@ impl qobject::Backend {
         runtime().spawn(crate::launcher_badge::update(i64::from(count)));
     }
 
+    pub fn spatial_audio_capable(&self) -> bool {
+        spatial_capable()
+    }
+
+    pub fn set_spatial_state(self: Pin<&mut Self>, valid: bool, positions: &QString) {
+        let list: Vec<serde_json::Value> = serde_json::from_str(&positions.to_string()).unwrap_or_default();
+        let placed: Vec<(u32, f32, f32)> = list
+            .iter()
+            .filter_map(|p| {
+                let id = p.get("id")?.as_str()?;
+                let source = self.rust().roster.iter().find(|r| r.id == id)?.audio_source?;
+                let num = |k: &str| p.get(k).and_then(|v| v.as_f64()).map(|v| v as f32);
+                Some((u32::try_from(source).ok()?, num("x")?, num("y")?))
+            })
+            .collect();
+        let valid = valid && spatial_capable();
+        let was = teams_cli::calling::spatial::active();
+        teams_cli::calling::spatial::set_valid(valid);
+        teams_cli::calling::spatial::set_positions(&placed);
+        let now = teams_cli::calling::spatial::active();
+        if was != now || placed.len() != list.len() {
+            tracing::info!(on = now, valid, placed = placed.len(), tiles = list.len(), "spatial audio");
+        }
+        tracing::debug!(?placed, "spatial audio positions");
+    }
+
+    pub fn camera_auto_controls(&self, path: &QString) -> QString {
+        match teams_cli::calling::camera_controls::auto_state(&path.to_string()) {
+            Ok(Some(true)) => QString::from("true"),
+            Ok(Some(false)) => QString::from("false"),
+            _ => QString::default(),
+        }
+    }
+
+    pub fn set_camera_auto_controls(mut self: Pin<&mut Self>, path: &QString, on: bool) -> bool {
+        self.as_mut().set_setting(&QString::from("autoCameraControls"), &QString::from(if on { "true" } else { "false" }));
+        teams_cli::calling::camera_controls::set_preferred_auto(Some(on));
+        match teams_cli::calling::camera_controls::set_auto(&path.to_string(), on) {
+            Ok(_) => true,
+            Err(e) => {
+                tracing::info!("camera automatic controls: {}", short_error(&e));
+                false
+            }
+        }
+    }
+
+    pub fn camera_controls_json(&self, path: &QString) -> QString {
+        match teams_cli::calling::camera_controls::controls(&path.to_string()) {
+            Ok(list) => QString::from(serde_json::to_string(&list).unwrap_or_default().as_str()),
+            Err(e) => {
+                tracing::info!("camera controls: {}", short_error(&e));
+                QString::from("[]")
+            }
+        }
+    }
+
+    pub fn set_camera_control(&self, path: &QString, id: i64, value: i64) -> bool {
+        let Ok(id) = u32::try_from(id) else { return false };
+        match teams_cli::calling::camera_controls::set(&path.to_string(), id, value) {
+            Ok(()) => true,
+            Err(e) => {
+                tracing::info!("camera control: {}", short_error(&e));
+                false
+            }
+        }
+    }
+
+    pub fn reset_camera_controls(&self, path: &QString) {
+        if let Err(e) = teams_cli::calling::camera_controls::reset(&path.to_string()) {
+            tracing::info!("camera controls reset: {}", short_error(&e));
+        }
+    }
+
     pub fn set_music_mode(mut self: Pin<&mut Self>, on: bool, echo_cancellation: bool) {
         let v = |b: bool| QString::from(if b { "on" } else { "off" });
         self.as_mut().set_setting(&QString::from("musicMode"), &v(on));
@@ -15550,7 +15708,7 @@ impl qobject::Backend {
         if name == "theme" {
             self.as_mut().set_theme_mode(QString::from(value.as_str()));
         }
-        if ["micDevice", "speakerDevice", "secondaryRinger", "autoGainControl", "efficiencyMode"].contains(&name.as_str()) {
+        if ["micDevice", "speakerDevice", "secondaryRinger", "autoGainControl", "efficiencyMode", "ttyMode", "spatialAudio"].contains(&name.as_str()) {
             apply_audio_devices(&map);
         }
         if ["videoBackground", "videoBlur", "adjustBrightness", "softFocus", "greenScreen", "greenScreenColor"].contains(&name.as_str()) {

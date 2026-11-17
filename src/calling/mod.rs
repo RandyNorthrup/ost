@@ -15,6 +15,8 @@ pub mod call_test;
 #[cfg(feature = "video")]
 pub mod camera;
 #[cfg(feature = "video")]
+pub mod camera_controls;
+#[cfg(feature = "video")]
 pub mod codec;
 pub mod datachannel;
 pub mod datapacket;
@@ -58,6 +60,7 @@ pub mod screen_control;
 #[cfg(feature = "audio")]
 pub mod system_sound;
 pub mod sdp;
+pub mod spatial;
 pub mod sdp_compress;
 pub mod signaling;
 pub mod srtp;

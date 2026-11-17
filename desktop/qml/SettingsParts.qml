@@ -74,7 +74,7 @@ Item {
             return h
         }
         width: parent ? parent.width : 0
-        height: Math.max(bodyCol.children.length ? bodyTop + bodyHeight : pad + headerHeight,
+        height: Math.max(bodyCol.visibleChildren.length ? bodyTop + bodyHeight : pad + headerHeight,
                          trailingLoader.item && !isNaN(trailingY) ? trailingY + trailingLoader.height : 0) + bottomPad
         radius: 8
         color: "transparent"
@@ -187,7 +187,8 @@ Item {
         height: Math.max(rowHeight, labelCol.height + 15)
         Column {
             id: labelCol
-            y: 8; width: parent.width - toggle.width - 24
+            // Teams' text column stops 10 short of the On/Off label.
+            y: 8; width: parent.width - toggle.width - toggle.anchors.rightMargin - 15
             Text { width: parent.width; text: sr.label; wrapMode: Text.Wrap; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: sr.usable ? theme.text : theme.disabled }
             Text {
                 visible: !!sr.sublabel; width: parent.width

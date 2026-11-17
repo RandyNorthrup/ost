@@ -360,8 +360,28 @@ impl AudioPlayback {
         Self::start_with(TARGET_RATE, Some(device.to_string()))
     }
 
+    /// Stereo frames (left, right) at `rate` Hz: a call's audio placed in
+    /// the stereo field (spatial audio). A mono speaker gets their mix.
+    pub fn start_stereo_at(call_rate: u32) -> Option<(Self, mpsc::SyncSender<Vec<[i16; 2]>>)> {
+        Self::start_frames(call_rate, None)
+    }
+
     fn start_with(call_rate: u32, device: Option<String>) -> Option<(Self, mpsc::SyncSender<Vec<i16>>)> {
+        let (playback, stereo_tx) = Self::start_frames(call_rate, device)?;
         let (frame_tx, frame_rx) = mpsc::sync_channel::<Vec<i16>>(50);
+        // Mono frames play the same on every channel.
+        thread::spawn(move || {
+            while let Ok(frame) = frame_rx.recv() {
+                if stereo_tx.send(frame.iter().map(|&s| [s, s]).collect()).is_err() {
+                    return;
+                }
+            }
+        });
+        Some((playback, frame_tx))
+    }
+
+    fn start_frames(call_rate: u32, device: Option<String>) -> Option<(Self, mpsc::SyncSender<Vec<[i16; 2]>>)> {
+        let (frame_tx, frame_rx) = mpsc::sync_channel::<Vec<[i16; 2]>>(50);
         let (keep_tx, keep_rx) = mpsc::channel::<()>();
 
         let started = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -370,7 +390,7 @@ impl AudioPlayback {
         // The call writes frames here; a feeder resamples them into the
         // ring the current output stream drains (at that device's rate).
         let ring = std::sync::Arc::new(std::sync::Mutex::new(
-            std::collections::VecDeque::<i16>::new(),
+            std::collections::VecDeque::<[i16; 2]>::new(),
         ));
         let device_rate = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(call_rate));
         {
@@ -378,18 +398,21 @@ impl AudioPlayback {
             let device_rate = device_rate.clone();
             thread::spawn(move || {
                 while let Ok(frame) = frame_rx.recv() {
+                    let mid: Vec<i16> = frame.iter().map(|f| ((i32::from(f[0]) + i32::from(f[1])) / 2) as i16).collect();
                     // What we play is the echo canceller's reference.
                     if call_rate == 48_000
                         && let Some(p) = super::apm::current()
                     {
-                        let mut reference = frame.clone();
+                        let mut reference = mid.clone();
                         p.lock().unwrap_or_else(|e| e.into_inner()).render(&mut reference);
                     }
-                    let peak = frame.iter().map(|s| s.unsigned_abs() as u32).max().unwrap_or(0) * 100 / 32768;
+                    let peak = frame.iter().flatten().map(|s| s.unsigned_abs() as u32).max().unwrap_or(0) * 100 / 32768;
                     SPEAKER_PEAK.fetch_max(peak, std::sync::atomic::Ordering::Relaxed);
                     let rate = device_rate.load(std::sync::atomic::Ordering::Relaxed);
-                    let samples = if rate != call_rate {
-                        resample(&frame, call_rate, rate)
+                    let samples: Vec<[i16; 2]> = if rate != call_rate {
+                        let ch = |c: usize| resample(&frame.iter().map(|f| f[c]).collect::<Vec<_>>(), call_rate, rate);
+                        let (l, r) = (ch(0), ch(1));
+                        l.into_iter().zip(r).map(|(l, r)| [l, r]).collect()
                     } else {
                         frame
                     };
@@ -535,7 +558,7 @@ fn open_capture(frame_tx: mpsc::SyncSender<Vec<i16>>, target: u32) -> Option<cpa
 /// draining `ring` (filled at the rate stored in `device_rate`) with the
 /// call's volume applied.
 fn open_playback(
-    ring: std::sync::Arc<std::sync::Mutex<std::collections::VecDeque<i16>>>,
+    ring: std::sync::Arc<std::sync::Mutex<std::collections::VecDeque<[i16; 2]>>>,
     device_rate: std::sync::Arc<std::sync::atomic::AtomicU32>,
     target: u32,
     only: Option<&str>,
@@ -563,10 +586,21 @@ fn open_playback(
         move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
             let volume = SPEAKER_VOLUME.load(std::sync::atomic::Ordering::Relaxed) as i32;
             let mut r = ring.lock().unwrap();
-            // The call is mono: the same sample on every channel.
+            // Left and right on the first two channels, their mix on a mono
+            // speaker's one and on the rest.
             for frame in data.chunks_mut(usize::from(channels.max(1))) {
-                let s = (r.pop_front().unwrap_or(0) as i32 * volume / 100) as i16;
-                frame.iter_mut().for_each(|x| *x = s);
+                let [l, rr] = r.pop_front().unwrap_or([0, 0]);
+                let scale = |v: i32| (v * volume / 100) as i16;
+                let mid = scale((i32::from(l) + i32::from(rr)) / 2);
+                match frame {
+                    [only] => *only = mid,
+                    [a, b, rest @ ..] => {
+                        *a = scale(i32::from(l));
+                        *b = scale(i32::from(rr));
+                        rest.iter_mut().for_each(|x| *x = mid);
+                    }
+                    [] => {}
+                }
             }
         },
         move |err| {
@@ -608,6 +642,20 @@ fn pick_config(device: &Device, input: bool, target: u32) -> Option<(StreamConfi
     };
     tracing::debug!(input, configs = ?configs.iter().map(|c| (c.sample_format(), c.channels(), c.min_sample_rate(), c.max_sample_rate())).collect::<Vec<_>>(), "device configs");
 
+    // A speaker plays in stereo where it can (spatial audio places voices
+    // left and right; mono audio goes out the same on both).
+    if !input {
+        for cfg in &configs {
+            if cfg.sample_format() == SampleFormat::I16
+                && cfg.channels() == 2
+                && cfg.min_sample_rate() <= target
+                && cfg.max_sample_rate() >= target
+            {
+                let sc = (*cfg).with_sample_rate(target);
+                return Some((sc.into(), target));
+            }
+        }
+    }
     for cfg in &configs {
         if cfg.sample_format() == SampleFormat::I16
             && cfg.channels() == 1

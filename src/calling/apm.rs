@@ -138,9 +138,39 @@ pub fn auto_gain() -> bool {
     AUTO_GAIN.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// Teams' Teletypewriter (TTY) mode (Settings ▸ Accessibility): the
+/// desktop media stack's `enableTtySupport`, which sets the audio channel's
+/// TTY mode (RtmMediaManager → RTMPLTFM `EnableTty`, the audio engine's
+/// `AudioEngineSetSettingTTyMode`). A TTY device's Baudot tones (45.45 baud
+/// FSK at 1400/1800 Hz) are not speech: echo cancellation, noise
+/// suppression and gain control would cut, attenuate or pump them, so in
+/// TTY mode the microphone goes out unprocessed, and the encoder keeps
+/// tones whole (see `audio_codec`). Like Teams ("Changes will be applied
+/// for your next call") a call takes the setting as it starts.
+static TTY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn set_tty_mode(on: bool) {
+    TTY.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn tty_mode() -> bool {
+    TTY.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// The TTY mode the running call started with.
+static CALL_TTY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Whether the running call (or the next, between calls) is in TTY mode.
+pub fn call_tty_mode() -> bool {
+    CALL_TTY.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// The processing the settings call for: (echo, noise, gain).
 fn wanted() -> (bool, NoiseLevel, bool) {
-    if music_mode() {
+    if call_tty_mode() {
+        // A TTY device's tones pass through untouched.
+        (false, NoiseLevel::Off, false)
+    } else if music_mode() {
         // Noise suppression stays the user's switch (Teams turns it off
         // when music mode starts, and lets you turn it back on).
         (MUSIC_ECHO.load(std::sync::atomic::Ordering::Relaxed), noise_level(), false)
@@ -169,6 +199,14 @@ pub fn current() -> Option<Shared> {
 /// Start processing for a call (dropping the returned handle's last copy
 /// and calling [`stop`] ends it).
 pub fn start() -> Option<Shared> {
+    // The call takes TTY mode as it is now (Teams applies a change to the
+    // next call).
+    CALL_TTY.store(tty_mode(), std::sync::atomic::Ordering::Relaxed);
+    if call_tty_mode() {
+        tracing::info!("TTY mode: the microphone goes out unprocessed");
+        stop();
+        return None;
+    }
     // OST_APM=off: no processing (diagnostics).
     if std::env::var("OST_APM").is_ok_and(|v| v == "off") {
         return None;

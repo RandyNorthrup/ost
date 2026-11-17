@@ -1157,12 +1157,24 @@ pub fn meeting_data_of(event_json: &str, tag: Option<&str>) -> Option<serde_json
 /// the call is the one a transfer asked us to make (our side of someone's
 /// transfer or park, `call/transfer/`), and `unparkContent {pickupCode}`
 /// when it retrieves a parked call (the callee is then `4:*11`).
+/// `voicemail`: a call to the callee's voicemail (Teams' `startCallToVoicemail`:
+/// the callee carries `endpointType: "voicemail"` and the invitation
+/// `voicemailSettings {localResourcePath}`, `"greeting"` to record your
+/// greeting, as Settings ▸ Calls ▸ Record a greeting does).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct CallExtras {
     pub transferor: Option<serde_json::Value>,
     pub transfer_context: Option<serde_json::Value>,
     pub unpark_code: Option<i64>,
+    pub voicemail: Option<String>,
 }
+
+/// Teams' voicemail service (`KNOWN_BOTS.VOICEMAIL_BOT_ID`): who answers a
+/// call to a voicemail.
+pub const VOICEMAIL_BOT_MRI: &str = "28:14524421-25b4-403a-a0f7-e62d4379cabc";
+
+/// The voicemail resource Teams' Record a greeting asks for (`qr.WV`).
+pub const VOICEMAIL_GREETING: &str = "greeting";
 
 /// Teams' park server for its Park Call ("teamPark", its `ParkContext.
 /// Team`), the callee of a call that retrieves a parked call (Teams'
@@ -1179,6 +1191,13 @@ pub fn apply_call_extras(invitation: &mut serde_json::Value, extras: &CallExtras
     }
     if let Some(code) = extras.unpark_code {
         invitation["unparkContent"] = serde_json::json!({ "pickupCode": code });
+    }
+    if let Some(path) = &extras.voicemail {
+        invitation["voicemailSettings"] = if path.is_empty() {
+            serde_json::json!({})
+        } else {
+            serde_json::json!({ "localResourcePath": path })
+        };
     }
 }
 
@@ -1450,10 +1469,18 @@ async fn create_call_with(
     } else {
         serde_json::Value::Null
     };
+    // A call to a voicemail names its callee's voicemail endpoint.
+    let to_voicemail = opts.extras.is_some_and(|e| e.voicemail.is_some());
     let to: Vec<serde_json::Value> = opts
         .to
         .iter()
-        .map(|id| serde_json::json!({ "id": id }))
+        .map(|id| {
+            if to_voicemail {
+                serde_json::json!({ "id": id, "endpointType": "voicemail" })
+            } else {
+                serde_json::json!({ "id": id })
+            }
+        })
         .collect();
     let tc = |path: &str| trouter_callback(params.trouter_surl, params.endpoint_id, path);
     let cause_id = &params.message_id[..8.min(params.message_id.len())];
@@ -2083,6 +2110,7 @@ mod tests {
             transferor: Some(serde_json::json!({ "details": { "id": "8:orgid:a" }, "authorizationToken": "t" })),
             transfer_context: None,
             unpark_code: None,
+            voicemail: None,
         });
         assert_eq!(inv["transferor"]["authorizationToken"], "t");
         assert!(inv.get("unparkContent").is_none());
@@ -2091,5 +2119,17 @@ mod tests {
         assert_eq!(inv["unparkContent"], serde_json::json!({ "pickupCode": 42 }));
         assert!(inv["transferor"].is_null());
         assert_eq!(CALL_PARK_MRI, "4:*11");
+    }
+
+    /// Teams' Record a greeting: the invitation asks the voicemail for its
+    /// greeting resource.
+    #[test]
+    fn voicemail_call_asks_for_the_greeting() {
+        let mut inv = serde_json::json!({});
+        apply_call_extras(&mut inv, &CallExtras { voicemail: Some(VOICEMAIL_GREETING.into()), ..Default::default() });
+        assert_eq!(inv["voicemailSettings"], serde_json::json!({ "localResourcePath": "greeting" }));
+        let mut inv = serde_json::json!({});
+        apply_call_extras(&mut inv, &CallExtras { voicemail: Some(String::new()), ..Default::default() });
+        assert_eq!(inv["voicemailSettings"], serde_json::json!({}));
     }
 }

@@ -1962,7 +1962,7 @@ impl WebRtcAudioSession {
         }
         // Echo cancellation, noise suppression and gain for this call.
         #[cfg(feature = "audio")]
-        if super::apm::start().is_none() {
+        if super::apm::start().is_none() && !super::apm::call_tty_mode() {
             tracing::warn!("Audio processing unavailable: no echo cancellation");
         }
         #[cfg(feature = "audio")]
@@ -1973,12 +1973,13 @@ impl WebRtcAudioSession {
         #[cfg(not(feature = "audio"))]
         let mic_rx: Option<std::sync::mpsc::Receiver<Vec<i16>>> = None;
         #[cfg(feature = "audio")]
-        let (playback, spk_tx) = match audio::AudioPlayback::start_at(super::audio_codec::CALL_RATE) {
+        // Stereo, so spatial audio can place voices (super::spatial).
+        let (playback, spk_tx) = match audio::AudioPlayback::start_stereo_at(super::audio_codec::CALL_RATE) {
             Some((p, tx)) => (Some(p), Some(tx)),
             None => (None, None),
         };
         #[cfg(not(feature = "audio"))]
-        let spk_tx: Option<std::sync::mpsc::SyncSender<Vec<i16>>> = None;
+        let spk_tx: Option<std::sync::mpsc::SyncSender<Vec<[i16; 2]>>> = None;
 
         let mut tasks = Vec::new();
         let held = Arc::new(AtomicBool::new(false));
@@ -2186,11 +2187,37 @@ impl WebRtcAudioSession {
                 }
             })
         };
-        let peer = tokio::time::timeout(ICE_TIMEOUT, peer_rx.recv())
+        let first = tokio::time::timeout(ICE_TIMEOUT, peer_rx.recv())
             .await
             .ok()
             .flatten()
             .context("ICE found no path to the caller")?;
+        // A direct path answering a moment later is better than the
+        // peer's relay (DTLS through a media processor's relay candidate
+        // can fail to arrive): wait briefly for the others and take the
+        // highest-priority remote candidate that answered.
+        let rank = |a: &SocketAddr| {
+            offer
+                .candidates
+                .iter()
+                .filter(|c| c.transport == ice::Transport::Udp && c.component == 1)
+                .find(|c| format!("{}:{}", c.address, c.port).parse::<SocketAddr>().ok() == Some(*a))
+                .map(|c| u64::from(c.priority))
+                // An address the peer checked us from (peer reflexive).
+                .unwrap_or(u64::from(u32::MAX) / 2)
+        };
+        let mut peer = first;
+        if offer.candidates.iter().any(|c| c.candidate_type == ice::CandidateType::Relay) {
+            let until = tokio::time::Instant::now() + Duration::from_millis(600);
+            while let Ok(Some(other)) = tokio::time::timeout_at(until, peer_rx.recv()).await {
+                if rank(&other) > rank(&peer) {
+                    peer = other;
+                }
+            }
+            if peer != first {
+                tracing::info!(%first, %peer, "ICE: a better path answered");
+            }
+        }
         checks.abort();
         *remote.lock().await = Some(peer);
         tracing::info!(%peer, "ICE connected");
@@ -2488,7 +2515,7 @@ struct RecvCtx {
     peer_tx: mpsc::Sender<SocketAddr>,
     srtp: Arc<Mutex<Option<srtp::SrtpStreams>>>,
     stats: Arc<Mutex<WebRtcStats>>,
-    spk_tx: Option<std::sync::mpsc::SyncSender<Vec<i16>>>,
+    spk_tx: Option<std::sync::mpsc::SyncSender<Vec<[i16; 2]>>>,
     /// The peer's Opus payload type (else only PCMU is played).
     opus_pt: Option<u8>,
     /// Our audio SSRC (the peer's receiver reports on it) and its RTP
@@ -2528,10 +2555,11 @@ async fn recv_loop(ctx: RecvCtx) {
     let mut decoder = super::audio_codec::Decoder::new(ctx.opus_pt);
     let mut rr_logged = std::time::Instant::now() - Duration::from_secs(10);
     let mut bwe_logged = std::time::Instant::now() - Duration::from_secs(10);
-    let mut announced = false;
+    let mut announced = std::collections::HashSet::<SocketAddr>::new();
     // Video streams seen, and streams nothing took, noted once each
     // (diagnostics).
     let mut noted = std::collections::HashSet::<(u32, u8)>::new();
+    let mut spatializer = super::spatial::Spatializer::new(super::audio_codec::CALL_RATE);
     loop {
         let Ok((len, from)) = ctx.socket.recv_from(&mut buf).await else {
             continue;
@@ -2548,8 +2576,12 @@ async fn recv_loop(ctx: RecvCtx) {
                 }
                 // Either their check reached us or ours was answered: this
                 // address works.
-                if !announced && (ice::is_stun_request(data) || ice::is_stun_response(data)) {
-                    announced = ctx.peer_tx.try_send(from).is_ok();
+                // Every working address is reported once (ICE picks the best).
+                if (ice::is_stun_request(data) || ice::is_stun_response(data))
+                    && announced.len() < 8
+                    && announced.insert(from)
+                {
+                    let _ = ctx.peer_tx.try_send(from);
                 }
             }
             20..=63 => {
@@ -2736,7 +2768,11 @@ async fn recv_loop(ctx: RecvCtx) {
                         tracing::debug!(ssrc = pkt.ssrc, pt = pkt.payload_type, len = pkt.payload.len(), samples = pcm.len(), "audio stream played");
                     }
                     if !pcm.is_empty() {
-                        let _ = tx.try_send(pcm);
+                        // Spatial audio: the mix from where its speakers'
+                        // tiles are (else centred, as before).
+                        let azimuth = super::spatial::azimuth_for(&super::active_speakers::csrcs(&plain));
+                        let stereo = spatializer.process(&pcm, azimuth);
+                        let _ = tx.try_send(stereo);
                     }
                 }
             }

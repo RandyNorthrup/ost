@@ -165,8 +165,25 @@ pub const SPEECH_BITRATE: i32 = 36_000;
 /// 128 kbps); Opus's nearest band to that is full band.
 pub const MUSIC_BITRATE: i32 = 128_000;
 
+/// Opus in TTY mode: a TTY device's Baudot tones (1400 and 1800 Hz) are
+/// kept whole rather than modelled as speech (the CELT layer at a
+/// transparent rate, no voice activity shaping).
+pub const TTY_BITRATE: i32 = 64_000;
+
 #[cfg(feature = "audio")]
 fn tune(e: &mut opus::Encoder, music: bool) {
+    if super::apm::call_tty_mode() {
+        let r = e
+            .set_application(opus::Application::Audio)
+            .and_then(|_| e.set_signal(opus::Signal::Music))
+            .and_then(|_| e.set_max_bandwidth(opus::Bandwidth::Wideband))
+            .and_then(|_| e.set_bitrate(opus::Bitrate::Bits(TTY_BITRATE)))
+            .and_then(|_| e.set_vbr(false));
+        if let Err(err) = r {
+            tracing::warn!("Opus TTY tuning: {err}");
+        }
+        return;
+    }
     let r = if music {
         e.set_application(opus::Application::Audio)
             .and_then(|_| e.set_signal(opus::Signal::Music))

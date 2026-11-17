@@ -2016,6 +2016,38 @@ Rectangle {
                 subtitle: "Available: Start reordering, an alternate to drag and drop in the chats and channels list."
                 trailing: Component { SettingsParts.Toggle { on: backend.setting("singlePointReordering") === "true"; accessibleName: "Turn on single pointer controls"; onToggled: v => { backend.setSetting("singlePointReordering", v ? "true" : "false"); on = v; window.singlePointReordering = v } } }
             }
+            // Teams' Teletypewriter (TTY) mode (measured on winpc 2026-11-16:
+            // the last card, 93.3 tall, Teams' accessibility glyph, the
+            // subtitle on two 16 px lines). Kept on this device (Teams'
+            // TTY local storage); the call's audio takes it as the next
+            // call starts (apm::set_tty_mode), and after a change Teams
+            // shows "Changes will be applied for your next call" with its
+            // info glyph under the header (and announces it).
+            SettingsParts.Card {
+                id: ttyCard
+                visible: root.page === "accessibility"
+                property bool changed: false
+                icon: "accessibility-20"; title: "Teletypewriter (TTY) mode"
+                subtitle: "Use the TTY mode to communicate using text over the phone. For this to work, you’ll need to connect a TTY device."
+                trailing: Component { SettingsParts.Toggle { on: backend.setting("ttyMode") === "true"; accessibleName: "Teletypewriter (TTY) mode"; onToggled: v => { backend.setSetting("ttyMode", v ? "true" : "false"); on = v; ttyCard.changed = true } } }
+                // Measured on winpc 2026-11-17: the glyph 8 left of the
+                // text column, 16 under the subtitle; the text 10 after it;
+                // the card 129.3 tall then.
+                Row {
+                    visible: ttyCard.changed
+                    x: -8
+                    spacing: 10
+                    FluentIcon { name: "info-20"; size: 20; color: theme.text }
+                    Text {
+                        height: 20; verticalAlignment: Text.AlignVCenter
+                        text: "Changes will be applied for your next call"
+                        font.family: theme.font; font.pixelSize: 14
+                        color: theme.text
+                        Accessible.role: Accessible.AlertMessage
+                        Accessible.name: text
+                    }
+                }
+            }
 
             // ---- Devices: Audio (Teams' Settings ▸ Devices, measured on
             // winpc 2026-11-14) ----
@@ -2025,9 +2057,9 @@ Rectangle {
             // choices (Voice isolation needs Microsoft's voice profile, so
             // Teams shows it disabled), a divider and Secondary Ringer.
             // "Make a test call" places Teams' test call
-            // (call-and-meeting-window.md §12a). Teams' "Sync device
-            // buttons" (headset HID buttons) and Spatial audio (OST can't
-            // render it) aren't offered.
+            // (call-and-meeting-window.md §12a), and Spatial audio follows
+            // (calling::spatial). Teams' "Sync device buttons" (headset HID
+            // buttons) isn't offered.
             Text {
                 visible: root.page === "devices" && !root.subPage
                 width: parent.width; height: 44
@@ -2107,6 +2139,41 @@ Rectangle {
                 }
                 SettingsParts.Gap { size: 24 }
                 Rectangle { x: -44.3; width: devices.width - 25.4; height: 0.67; color: theme.pick("#F0F0F0", "#3D3D3D", "#000000") }
+                // Teams' Spatial audio (measured on winpc 2026-11-14: 30.7
+                // under the divider, the switch centred on the title and its
+                // two lines, 30 over the next divider). Off unless turned on
+                // (enableSpatialAudioDefaultOn is off); shown Off and
+                // disabled when the speaker can't play it (not stereo, or
+                // Bluetooth) or in a 1:1 call, as Teams' SpatialAudioContainer.
+                // Kept on this device (Teams' spatialAudioEnabled).
+                SettingsParts.Gap { size: 22.7 }
+                // Its glyph (Fluent's person-sound-spatial, Teams'
+                // SpatialAudioIcon) sits in the card's icon column, centred
+                // on the text (winpc 2026-11-17).
+                Item {
+                    width: parent.width; height: spatialRow.height
+                    FluentIcon {
+                        x: -38; y: 8 + (spatialRow.height - 15 - 20) / 2
+                        name: "person-sound-spatial-20"; size: 20
+                        color: theme.text
+                    }
+                    SettingsParts.SwitchRow {
+                        id: spatialRow
+                        readonly property bool capable: root.page === "devices" && backend.spatialAudioCapable()
+                        readonly property bool inOneToOne: backend.callState === "connected" && !callWindow.meeting
+                        label: "Spatial audio"
+                        sublabel: "Voices will sound like they're coming from where each person is positioned on your screen. Not yet available with wireless headphones. Available with Together mode, Gallery and Speaker view."
+                        link: "Learn more"
+                        centred: true
+                        rowHeight: 36
+                        usable: capable && !inOneToOne
+                        on: usable && root.local("spatialAudio", "false") === "true"
+                        onToggled: v => { backend.setSetting("spatialAudio", v ? "true" : "false"); on = v }
+                        onLinkActivated: Qt.openUrlExternally("https://support.microsoft.com/en-us/office/spatial-audio-in-teams-meetings-547b5f81-1825-4ee1-a1cf-f02e12db4fdb")
+                    }
+                }
+                SettingsParts.Gap { size: 22.6 }
+                Rectangle { x: -44.3; width: devices.width - 25.4; height: 0.67; color: theme.pick("#F0F0F0", "#3D3D3D", "#000000") }
                 SettingsParts.Gap { size: 30 }
                 SettingsParts.SubHeading { text: "Secondary Ringer" }
                 SettingsParts.Gap { size: 16.7 }
@@ -2129,9 +2196,10 @@ Rectangle {
             // swatch in a 22 px white frame at its right — pressing it
             // turns the preview into an eyedropper: click your backdrop),
             // Camera, Green Screen, Mirror my video, Adjust brightness and
-            // Soft focus. Teams' "Automatically adjust camera controls" and
-            // "Open camera settings" are Windows camera controls, and Super
-            // resolution is TASK-0139's.
+            // Soft focus, with "Automatically adjust camera controls" and
+            // "Open camera settings" under Camera (the camera's V4L2
+            // controls, calling::camera_controls). Super resolution is
+            // TASK-0139's.
             Text {
                 visible: root.page === "devices" && !root.subPage
                 width: parent.width; height: 44
@@ -2151,6 +2219,12 @@ Rectangle {
                 property bool picking: false
                 property var cameras: []
                 property string currentCamera: ""
+                /// Teams' switch: your choice, else the camera's own state.
+                function autoCamera() {
+                    const chosen = root.local("autoCameraControls", "")
+                    if (chosen !== "") return chosen === "true"
+                    return currentCamera !== "" && backend.cameraAutoControls(currentCamera) === "true"
+                }
                 onShowingChanged: {
                     if (showing) {
                         const d = JSON.parse(backend.videoDevices())
@@ -2266,9 +2340,39 @@ Rectangle {
                         videoCard.currentCamera = c.path
                         backend.setCameraDevice(c.path)
                         if (videoCard.previewing) { backend.setCameraPreview(false); backend.setCameraPreview(true) }
+                        autoCamRow.on = videoCard.autoCamera()
                     }
                 }
                 SettingsParts.Gap { size: 30 }
+                // Teams' "Automatically adjust camera controls" (measured on
+                // winpc 2026-11-14: a 36 px switch row 30.6 under the
+                // camera; with it off, "Open camera settings" (14, brand)
+                // right under it and Teams' note (12, on a 17.1 line), 30
+                // over Green Screen). The switch puts the camera's own
+                // automatic controls on or off (V4L2); it shows your choice,
+                // else what the camera is set to. Kept on this device
+                // (Teams' automaticCameraSettingsSelected).
+                SettingsParts.SwitchRow {
+                    id: autoCamRow
+                    label: "Automatically adjust camera controls"
+                    rowHeight: on ? 66 : 36
+                    on: videoCard.showing && videoCard.autoCamera()
+                    onToggled: v => { backend.setCameraAutoControls(videoCard.currentCamera, v); on = v }
+                }
+                SettingsParts.Link {
+                    visible: !autoCamRow.on
+                    height: 16.1
+                    verticalAlignment: Text.AlignVCenter
+                    text: "Open camera settings"
+                    onClicked: cameraSettings.show(videoCard.currentCamera, (videoCard.cameras.find(c => c.path === videoCard.currentCamera) || {}).name || "")
+                }
+                Text {
+                    visible: !autoCamRow.on
+                    text: "Some settings might not be available for all camera types."
+                    font.family: theme.font; font.pixelSize: 12; lineHeight: 17.1; lineHeightMode: Text.FixedHeight
+                    color: theme.textSecondary
+                }
+                SettingsParts.Gap { visible: !autoCamRow.on; size: 30.1 }
                 SettingsParts.SwitchRow {
                     id: greenScreenRow
                     label: "Green Screen"
@@ -2298,6 +2402,7 @@ Rectangle {
                     onToggled: v => videoEffects.setSoftFocus(v)
                 }
             }
+            CameraSettingsDialog { id: cameraSettings }
             // Teams' Connected devices (measured on winpc 2026-11-15, 204.9
             // tall): "Manage your connected devices" with Manage devices
             // (Teams' paired phones, its Better Together list), and
@@ -2452,10 +2557,20 @@ Rectangle {
             SettingsParts.Card {
                 visible: root.page === "calls"
                 icon: "voicemail-20"; title: "Voicemail"
-                // Teams' "Record a custom greeting" calls your voicemail
-                // (TASK-0152). Voicemail settings can't be read back (Teams
-                // shows them unset too); what you set here shows.
-                SettingsParts.SubHeading { text: "Choose a language for your default greeting" }
+                // Teams' "Record a custom greeting" (measured on winpc
+                // 2026-11-10: its button at the body's top, a divider 15 under
+                // it) calls your own voicemail, where the greeting is
+                // recorded (Backend record_voicemail_greeting). Voicemail
+                // settings can't be read back (Teams shows them unset too);
+                // what you set here shows.
+                SettingsParts.ButtonRow {
+                    label: "Record a custom greeting"
+                    buttonText: "Record a greeting"
+                    onClicked: backend.recordVoicemailGreeting()
+                }
+                SettingsParts.Gap { size: 15.1 }
+                SettingsParts.Divider {}
+                SettingsParts.SubHeading { text: "Choose a language for your default greeting"; gapAbove: 15.6 }
                 SettingsParts.Gap { size: 10.7 }
                 SearchCombobox {
                     width: 258.7; height: 30.7
@@ -2943,6 +3058,17 @@ Rectangle {
         return out.sort((a, b) => a[0] - b[0])
     }
     function scrollToForTest(y) { content.contentY = y }
+    // Settings ▸ Devices' camera controls and spatial audio, and
+    // Accessibility's TTY card (TASK-0158, 0157, 0151 harnesses).
+    function scrollToCardForTest(card) { const c = card === "video" ? videoCard : card === "tty" ? ttyCard : devices; content.contentY = Math.max(0, Math.min(pageCol.y + c.y - 12, content.contentHeight - content.height)) }
+    function cameraForTest() { return { camera: videoCard.currentCamera, autoOn: autoCamRow.on, rowY: autoCamRow.mapToItem(videoCard, 0, 0).y, cardH: videoCard.height } }
+    function toggleAutoCameraForTest(on) { autoCamRow.toggled(on) }
+    function openCameraSettingsForTest() { cameraSettings.show(videoCard.currentCamera, (videoCard.cameras.find(c => c.path === videoCard.currentCamera) || {}).name || "") }
+    function cameraSettingsForTest() { return cameraSettings }
+    function spatialRowForTest() { return { on: spatialRow.on, usable: spatialRow.usable, capable: spatialRow.capable, y: spatialRow.mapToItem(devices, 0, 0).y, h: spatialRow.height, cardH: devices.height } }
+    function toggleSpatialForTest(on) { spatialRow.toggled(on) }
+    function ttyForTest() { return { changed: ttyCard.changed, h: ttyCard.height, setting: backend.setting("ttyMode") } }
+    function toggleTtyForTest(on) { backend.setSetting("ttyMode", on ? "true" : "false"); ttyCard.changed = true }
     /// Editor spellcheck (the Editor card's links): General scrolled to it,
     /// or its Manage spellcheck languages page.
     function showEditor(manage) {

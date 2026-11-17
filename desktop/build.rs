@@ -124,6 +124,7 @@ fn main() {
         "qml/BreakoutRoomsPane.qml",
         "qml/BreakoutTextDialog.qml",
         "qml/GreetingDialog.qml",
+        "qml/CameraSettingsDialog.qml",
         "qml/CallAlert.qml",
         "qml/ChatBubble.qml",
         "qml/MeetingReportDialog.qml",

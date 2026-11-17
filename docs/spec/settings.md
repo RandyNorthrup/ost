@@ -183,6 +183,82 @@ Everything below is in userPersonalSettings unless marked local.
   seconds"). Built in TASK-0153: OST enrols, updates, exports and deletes both profiles with
   Teams' biometric service (`api::biometric`), with Teams' capture dialogs.
 
+## Calls ▸ Voicemail ▸ Record a greeting (read 2026-11-17)
+
+- The card's first row (measured on winpc 2026-11-10): "Record a custom greeting" with the
+  secondary button "Record a greeting" (138.3 x 31.3) at the body's top, a divider 15 under it,
+  then the greeting language.
+- The button is Teams' `ComponentsCallSettingsStartCallMutation`: `startCall(conversation: {id:
+  <your MRI>}, isVoicemail: true)`. Teams' `startVoicemailCall` makes a 1:1 call to yourself,
+  titled "Voicemail" (calling `voicemail_call_title`), `startCallToVoicemail({voicemailResourcePath:
+  "greeting"})`. The call request names the callee `{id: <your MRI>, endpointType: "voicemail"}`
+  and carries `callInvitation.voicemailSettings {localResourcePath: "greeting"}`; Teams'
+  voicemail service (`28:14524421-25b4-403a-a0f7-e62d4379cabc`) answers it.
+- In the call (`isVoicemailGreeting`; measured on winpc 2026-11-17): the bar is Mic, Dial pad,
+  More (only Audio settings) and Leave, with the dial pad open from the start; no Chat, People,
+  View, Apps, Camera, Share, recording indicator, hold, transfer or park.
+- The voicemail's menu (heard 2026-11-17): 1 plays and records your personal greeting ("Please
+  record your greeting after the tone… press the pound key", then 1 accept, 2 re-record, 3
+  delete and use the default greeting, * cancel), 2 the away greeting, * exits.
+- OST: `outgoing::call_own_voicemail`, Backend `record_voicemail_greeting`, the ubar fact
+  `voicemail`.
+
+## Devices ▸ Spatial audio (read 2026-11-17, row measured 2026-11-14)
+
+- The row sits in Audio settings after Voice isolation, between dividers (30.7 under the first,
+  30 over the next), Fluent's person-sound-spatial glyph in the card's icon column centred on
+  it: "Spatial audio" over "Voices will sound like they're coming from where each
+  person is positioned on your screen. Not yet available with wireless headphones. Available
+  with Together mode, Gallery and Speaker view. Learn more" (12 px, #616161), the switch centred
+  on the text. Learn more:
+  https://support.microsoft.com/en-us/office/spatial-audio-in-teams-meetings-547b5f81-1825-4ee1-a1cf-f02e12db4fdb
+- It is kept on the device (`spatialAudioEnabled`), off by default (`enableSpatialAudioDefaultOn`
+  false). It shows Off and disabled when the speaker isn't spatial capable (slimcore's
+  `isSpatialCapable`: stereo, not wireless) or during a 1:1 call.
+- In a call (`SpatialAudioMixinImplementation`) it applies while the layout is Gallery, Speaker
+  or Together mode, the call isn't P2P and more than one other person (not bots) is in it. The
+  call window sends each tile's place on the stage in percent
+  (`updateSpatialAudioParticipantsPosition`, at most every 240 ms) and Teams passes
+  `[{participantId: <audio sourceId>, x, y}]` to the media stack. Teams' own path receives the
+  speakers unmixed (codec `x-much2`/`x-much3`) and pans each with an HRTF panner.
+- OST (`calling::spatial`): the meeting's mix names its speakers in its CSRCs, so each 20 ms is
+  placed at their tiles' mean place (equal-power pan over ±60° with the interaural time
+  difference), the speaker opened in stereo.
+
+## Devices ▸ Automatically adjust camera controls (read 2026-11-17, row measured 2026-11-14)
+
+- In Video settings under Camera: "Automatically adjust camera controls" with its switch (a 36
+  px row, 30.7 under the camera). With the switch off, "Open camera settings" (14 px, brand;
+  on Windows after a 16 px Windows logo, which OST leaves out) right under it and "Some
+  settings might not be available for all camera types." (12 px on a 17.1 line), 30 over Green
+  Screen.
+- The switch is the preview renderer's `cameraAutoControl(enable)`: the camera's own automatic
+  exposure, white balance, focus and gain. Teams keeps the choice on the device
+  (`automaticCameraSettingsSelected`); until one is made it shows what the camera is set to.
+- Open camera settings opens Windows' camera settings (`ms-settings:camera?cameraId=…`, where
+  `enableWindowsCameraSettingsLaunch` is on, Windows 11) or else the camera's own settings
+  (`openCameraSettings`, its driver's property page).
+- OST: `calling::camera_controls` (V4L2: `auto_exposure`, `white_balance_automatic`,
+  `focus_automatic_continuous`, `gain_automatic`, `hue_auto`; off keeps the values the camera
+  reached), applied whenever a camera opens; Open camera settings opens OST's camera settings
+  (CameraSettingsDialog) with the camera's controls, each with Auto where it has one.
+
+## Accessibility ▸ Teletypewriter (TTY) mode (read 2026-11-17, card measured 2026-11-16)
+
+- The last card (93.3 tall): Teams' accessibility glyph, "Teletypewriter (TTY) mode" and "Use the
+  TTY mode to communicate using text over the phone. For this to work, you’ll need to connect a
+  TTY device." with its switch. After a change the card shows Teams' info glyph and "Changes
+  will be applied for your next call" (`tty_dialog_active_call_warning`, also announced).
+- The switch is `toggleTTYSetting` → `deviceManagerService.enableTTYSupport` → the media stack's
+  `mediaConfigurationService.enableTtySupport` (`setMediaConfig {enableTtySupport}`), kept in local
+  storage and loaded at start (`loadTTYSetting`); desktop only (`showTTYSettings`).
+- Natively RtmMediaManager parses `enableTtySupport` into the audio channel's `EnableTty` and the
+  audio engine's TTY mode (`AudioEngineSetSettingTTyMode`, beside `EnableSilenceSuppression`,
+  comfort noise and receive AGC).
+- OST (`apm::set_tty_mode`): a call that starts in TTY mode sends the microphone unprocessed (no
+  echo cancellation, noise suppression or gain control) and Opus at 64 kbit/s CBR in its CELT
+  mode, so a TTY device's Baudot tones go through whole.
+
 ## Devices ▸ Connected devices (measured 2026-11-15)
 
 - The last card on Devices (204.9 tall, a laptop icon): "Manage your connected devices" with
@@ -259,7 +335,8 @@ How OST does it:
     files), saved with `POST {mt}/beta/usersettings/{mri}/ringtonesettings` and read with
     `POST {mt}/beta/users/useraggregatesettings {"voiceAdminSettings": true}`; incoming calls
     ring with it on the speaker and the secondary ringer.
-  - Not built: recorded greetings and the transfer rules (they need the people picker).
+  - Record a greeting (TASK-0152): Teams' call to your own voicemail.
+  - Not built: the transfer rules (they need the people picker).
 - Files and links: the download location (OST's downloads use it), the file-open choice,
   file previews, "Always ask where to save downloaded file" and "Always open web links in:"
   (TASK-0119; docs/spec/file-actions.md).

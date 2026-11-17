@@ -31,6 +31,9 @@ Window {
     // or park retrieve replaced it without closing the window), so the
     // clock keeps running instead of restarting.
     property bool callContinues: false
+    /// Teams' voicemail greeting call (Settings ▸ Calls ▸ Record a
+    /// greeting): no Chat or People, no hold, transfer or park.
+    property bool voicemail: false
     signal leave()
     signal toggleMute()
     /// Video: whether the call can carry ours, and whether the camera is on.
@@ -189,6 +192,46 @@ Window {
     /// remove).
     signal participantAction(string action, string id, string name, string stateId)
     readonly property var others: roster.filter(p => p.id !== selfId)
+    // Teams' spatial audio (SpatialAudioMixinImplementation): on while the
+    // layout is Gallery or Speaker (Together mode too in Teams), the call
+    // isn't a 1:1 call and more than one other person (not a bot) is in
+    // it; each tile's centre on the stage, in percent, goes to the media
+    // path for that person's voice (every 240 ms at most, as Teams'
+    // debounced updateParticipantPositions).
+    readonly property bool spatialLayout: meeting && live && (layout === "gallery" || layout === "speaker")
+        && others.filter(p => p.active !== false && (p.id || "").indexOf("28:") !== 0).length > 1
+    function spatialTiles() {
+        const out = []
+        const stage = tiles
+        if (!stage.visible || stage.width <= 0 || stage.height <= 0) return out
+        const walk = item => {
+            for (let i = 0; i < item.children.length; i++) {
+                const c = item.children[i]
+                if (!c.visible) continue
+                if (c.person !== undefined && c.call !== undefined && c.person && c.person.id && !c.person.self && c.width > 0) {
+                    const p = c.mapToItem(stage, c.width / 2, c.height / 2)
+                    out.push({ id: c.person.id, x: Math.round(p.x / stage.width * 1000) / 10, y: Math.round(p.y / stage.height * 1000) / 10 })
+                } else walk(c)
+            }
+        }
+        walk(stage)
+        return out
+    }
+    function spatialForTest() { return { layout: spatialLayout, tiles: spatialTiles() } }
+    Timer {
+        id: spatialTimer
+        interval: 240; repeat: true
+        running: win.visible && win.meeting && win.live
+        property string last: ""
+        onTriggered: {
+            const t = win.spatialLayout ? win.spatialTiles() : []
+            const key = win.spatialLayout + JSON.stringify(t)
+            if (key === last) return
+            last = key
+            backend.setSpatialState(win.spatialLayout, JSON.stringify(t))
+        }
+        onRunningChanged: if (!running) { last = ""; backend.setSpatialState(false, "[]") }
+    }
     // Teams shows Controls and Rooms to the meeting's organizer only.
     readonly property bool organizer: ((roster.find(p => p.id === selfId) || {}).role || "").toLowerCase() === "organizer"
     readonly property string myRole: ((roster.find(p => p.id === selfId) || {}).role || "").toLowerCase()
@@ -623,6 +666,9 @@ Window {
         // retrieved park) keeps the running clock too, since the window
         // never closed.
         if (state === "connected") {
+            // Teams' voicemail greeting call opens with its dial pad (the
+            // voicemail's menu is driven by keys; winpc 2026-11-17).
+            if (voicemail) Qt.callLater(() => { if (win.voicemail && win.live && !dialPad.visible && win.controlEnabled("DialpadButton")) win.runControl("DialpadButton") })
             if (connectedAt === 0 || !win.callContinues) connectedAt = nextConnectedAt || Date.now()
             nextConnectedAt = 0; seconds = Math.floor((Date.now() - connectedAt) / 1000)
         }
@@ -683,7 +729,7 @@ Window {
         townHall: !!liveEvent.townHall, webinar: !!liveEvent.webinar, attendee: myRole === "attendee",
         greenRoom: !!liveEvent.staging && myRole !== "attendee" && live && liveEvent.eventPhase === "prelive",
         eventPhase: liveEvent.eventPhase || "", qna: !!liveEvent.qna && scheduled,
-        e2ee: e2ee, canPark: canPark
+        e2ee: e2ee, canPark: canPark, voicemail: voicemail
     })
     /// A town hall or webinar (Backend call_event_json): its green room,
     /// live state, Manage what attendees see and Q&A

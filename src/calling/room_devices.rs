@@ -176,6 +176,8 @@ pub struct Endpoint {
     pub product_id: Option<u16>,
     pub product_name: String,
     pub form_factor: String,
+    /// Its channels (`audio.channels`; 0 when PipeWire doesn't say).
+    pub channels: u32,
 }
 
 /// Teams' composite audio devices from the endpoints: USB devices with a
@@ -243,6 +245,11 @@ fn camera_of(vendor: u16, product: u16) -> Option<String> {
         }
     }
     None
+}
+
+/// PipeWire's audio sinks and sources with their devices' properties.
+pub fn audio_endpoints() -> Vec<Endpoint> {
+    endpoints()
 }
 
 #[cfg(all(feature = "audio", target_os = "linux"))]
@@ -390,6 +397,7 @@ fn pipewire_endpoints() -> Option<Vec<Endpoint>> {
                     vendor_id: usb_id(&vendor),
                     product_id: usb_id(&product),
                     form_factor: get(n, dev, "device.form-factor"),
+                    channels: n.get("audio.channels").and_then(|c| c.parse().ok()).unwrap_or(0),
                     product_name,
                     name,
                 })
@@ -412,6 +420,7 @@ mod tests {
             product_id: Some(ids.1),
             product_name: format!("{key} model"),
             form_factor: String::new(),
+            channels: 2,
         }
     }
 
