@@ -902,6 +902,27 @@ impl OutgoingCall {
         &self.call_tag
     }
 
+    /// The meeting conversation's own URL: its controller, else its leave
+    /// link without `/leave`.
+    pub fn conversation_url(&self) -> Option<String> {
+        self.controller.clone().or_else(|| {
+            let l = self.leave_link.as_deref()?;
+            let (path, query) = l.split_once('?').unwrap_or((l, ""));
+            let path = path.trim_end_matches('/').strip_suffix("/leave")?;
+            Some(if query.is_empty() { path.to_string() } else { format!("{path}?{query}") })
+        })
+    }
+
+    /// Leave the meeting as Teams leaves one it moves out of (`POST
+    /// links.leave`), else hang up.
+    pub async fn leave_or_hang_up(self) -> Result<()> {
+        if self.leave_link.is_some() {
+            self.leave().await
+        } else {
+            self.hang_up().await
+        }
+    }
+
     /// Our participant id in the call.
     pub fn participant_id(&self) -> &str {
         self.me.0["participantId"].as_str().unwrap_or_default()
@@ -2545,7 +2566,131 @@ pub async fn join_meeting(
     call_tag: &str,
     cancel: tokio::sync::oneshot::Receiver<()>,
 ) -> Result<OutgoingCall> {
-    start_tagged(&link.thread_id, Target::Meeting(link), Some(call_tag.to_string()), cancel).await
+    join_meeting_with(link, call_tag, JoinHow::default(), cancel).await
+}
+
+/// How a meeting is joined beyond its link ([`join_meeting_with`]).
+#[derive(Default, Clone, Copy)]
+pub struct JoinHow<'a> {
+    /// Wait this long after the conversation join for the meeting's
+    /// `meetingData`, which the call then carries (Teams' moves into a
+    /// breakout room send the room's code and passcode).
+    pub meeting_data_wait: Option<Duration>,
+    /// The meeting's conversation we kept without a call (the main
+    /// meeting while in a breakout room): the call goes straight to it,
+    /// with its `meetingData`, as Teams goes back to the main meeting.
+    pub kept: Option<&'a KeptConversation>,
+}
+
+/// [`join_meeting`], the way `how` says.
+pub async fn join_meeting_with(
+    link: &MeetingLink,
+    call_tag: &str,
+    how: JoinHow<'_>,
+    cancel: tokio::sync::oneshot::Receiver<()>,
+) -> Result<OutgoingCall> {
+    start_tagged(&link.thread_id, Target::Meeting(link, how), Some(call_tag.to_string()), cancel).await
+}
+
+/// A meeting's conversation we're in without a call: Teams keeps the main
+/// meeting's this way while you're in one of its breakout rooms (captured
+/// 2026-11-17: once the room's call is accepted it leaves the main
+/// meeting and at once joins its conversation again without a call, a new
+/// participant id), so the main meeting's updates keep coming; going back
+/// posts the call straight to it.
+pub struct KeptConversation {
+    /// The meeting's join link.
+    pub join_url: String,
+    pub link: MeetingLink,
+    controller: String,
+    leave_link: Option<String>,
+    participant_id: String,
+    tag: String,
+    meeting_data: Option<serde_json::Value>,
+    me: serde_json::Value,
+    http: reqwest::Client,
+    skype_token: String,
+}
+
+impl KeptConversation {
+    /// The tag of its callbacks (its events carry it as `callTag`).
+    pub fn call_tag(&self) -> &str {
+        &self.tag
+    }
+
+    /// Keep what the conversation's update says (its `meetingData`).
+    pub fn note_event(&mut self, json: &str) {
+        if let Some(md) = signaling::meeting_data_of(json, Some(&self.tag)) {
+            self.meeting_data = Some(md);
+        }
+    }
+
+    /// Leave the conversation (`POST links.leave`).
+    pub async fn leave(self) -> Result<()> {
+        let link = self.leave_link.clone().unwrap_or_else(|| {
+            let (path, query) = self.controller.split_once('?').unwrap_or((&self.controller, ""));
+            let path = path.trim_end_matches('/');
+            if query.is_empty() { format!("{path}/leave") } else { format!("{path}/leave?{query}") }
+        });
+        cc_post(&self.http, &self.skype_token, &link, &leave_body(&self.me), "Leave the kept conversation").await?;
+        tracing::info!("left the main meeting's conversation");
+        Ok(())
+    }
+}
+
+/// Join a meeting's conversation again without a call, at its own URL
+/// (`conversation_url`, from the call we just left there): see
+/// [`KeptConversation`].
+pub async fn keep_conversation(join_url: &str, link: &MeetingLink, conversation_url: &str) -> Result<KeptConversation> {
+    let config = Config::load()?;
+    let ic3_token = config.get_ic3_token().context("No calling (IC3) token")?.token;
+    let skype_token = config.get_skype_token().context("Not signed in")?.token;
+    let oid = config.object_id().context("Signed-in user has no object id")?;
+    let tenant_id = config.tenant_id().context("No tenant id")?;
+    let display_name = config.display_name().unwrap_or_default();
+    let (surl, endpoint_id) = crate::trouter::current_endpoint().context("Push channel is not connected")?;
+    let tag = new_call_tag();
+    let surl = format!("{}/x{tag}/", surl.trim_end_matches('/'));
+    let caller_mri = format!("8:orgid:{oid}");
+    let participant_id = uuid::Uuid::new_v4().to_string();
+    let chain_id = uuid::Uuid::new_v4().to_string();
+    let message_id = uuid::Uuid::new_v4().to_string();
+    let params = signaling::ConversationCallParams {
+        ic3_token: &ic3_token,
+        trouter_surl: &surl,
+        caller_mri: &caller_mri,
+        caller_display_name: &display_name,
+        endpoint_id: &endpoint_id,
+        participant_id: &participant_id,
+        thread_id: &link.thread_id,
+        chain_id: &chain_id,
+        message_id: &message_id,
+        caller_oid: &oid,
+        tenant_id: &tenant_id,
+    };
+    let http = reqwest::Client::new();
+    let organizer = link.organizer_id.as_deref().zip(link.tenant_id.as_deref());
+    let (controller, leave_link) =
+        signaling::join_conversation_without_call(&http, conversation_url, &params, &link.message_id, organizer).await?;
+    tracing::info!(tag = %tag, "kept the main meeting's conversation (no call)");
+    Ok(KeptConversation {
+        join_url: join_url.to_string(),
+        link: link.clone(),
+        controller,
+        leave_link,
+        me: serde_json::json!({
+            "id": caller_mri,
+            "displayName": display_name,
+            "endpointId": endpoint_id,
+            "participantId": participant_id,
+            "languageId": "en-US",
+        }),
+        participant_id,
+        tag,
+        meeting_data: None,
+        http,
+        skype_token,
+    })
 }
 
 /// Join a Teams meeting the way Teams' pre-join window does while it is
@@ -2683,8 +2828,8 @@ enum Target<'a> {
     /// A group chat's call: Meet now, Audio call or Join.
     Group(signaling::GroupCallKind),
     /// The meeting a join link names (its message id on the thread and
-    /// its organizer).
-    Meeting(&'a MeetingLink),
+    /// its organizer), joined as `JoinHow` says.
+    Meeting(&'a MeetingLink, JoinHow<'a>),
     /// The same meeting joined preheated (pre-join), with the callback tag
     /// to use.
     MeetingPreheat(&'a MeetingLink, &'a str),
@@ -2737,6 +2882,9 @@ async fn start_tagged(
     // the next (breakout rooms) can't end the new one.
     let call_tag = match &target {
         Target::MeetingPreheat(_, tag) => tag.to_string(),
+        // Into the conversation we kept: its callbacks' tag, so its
+        // conversation's events and the call's are one call's.
+        Target::Meeting(_, JoinHow { kept: Some(k), .. }) => k.tag.clone(),
         _ => call_tag.unwrap_or_else(new_call_tag),
     };
     let surl = format!("{}/x{call_tag}/", surl.trim_end_matches('/'));
@@ -2760,13 +2908,17 @@ async fn start_tagged(
         local.offer_sdp()
     };
     let caller_mri = format!("8:orgid:{oid}");
-    let participant_id = uuid::Uuid::new_v4().to_string();
+    // Into the conversation we kept: as the participant we are there.
+    let participant_id = match &target {
+        Target::Meeting(_, JoinHow { kept: Some(k), .. }) => k.participant_id.clone(),
+        _ => uuid::Uuid::new_v4().to_string(),
+    };
     // Joining a call that's going on (a meeting's, or a chat's), Teams
     // uses that call's id as the chain id: it's the call's id for
     // everyone in it (shares are tagged with it). A new call gets a new id.
     let joins_ongoing = matches!(
         target,
-        Target::Meeting(_) | Target::MeetingPreheat(..) | Target::Group(signaling::GroupCallKind::Join)
+        Target::Meeting(..) | Target::MeetingPreheat(..) | Target::Group(signaling::GroupCallKind::Join)
     );
     let ongoing = if joins_ongoing {
         match crate::api::client::TeamsClient::new().await {
@@ -2829,10 +2981,11 @@ async fn start_tagged(
         Vec::new()
     };
     let meeting_message_id = match &target {
-        Target::Meeting(link) | Target::MeetingPreheat(link, _) => Some(link.message_id.clone()),
+        Target::Meeting(link, _) | Target::MeetingPreheat(link, _) => Some(link.message_id.clone()),
         _ => None,
     };
     let preheat = matches!(target, Target::MeetingPreheat(..));
+    let meeting_join = matches!(target, Target::Meeting(..) | Target::MeetingPreheat(..));
     let (created, _joined) = match target {
         Target::Person(callee, _) => {
             signaling::create_1to1_call_to(&http, &epconv_url, &params, &offer, Some(callee))
@@ -2845,9 +2998,20 @@ async fn start_tagged(
             signaling::create_group_call(&http, &epconv_url, &params, &offer, &members, kind)
                 .await?
         }
-        Target::Meeting(link) | Target::MeetingPreheat(link, _) => {
+        Target::Meeting(link, how) => {
             let organizer = link.organizer_id.as_deref().zip(link.tenant_id.as_deref());
-            signaling::join_meeting(&http, &epconv_url, &params, &offer, &link.message_id, organizer, preheat).await?
+            let opts = signaling::MeetingJoinOptions {
+                preheat: false,
+                meeting_data_wait: how.meeting_data_wait,
+                meeting_data: how.kept.and_then(|k| k.meeting_data.clone()),
+                conversation_url: how.kept.map(|k| k.controller.as_str()),
+            };
+            signaling::join_meeting(&http, &epconv_url, &params, &offer, &link.message_id, organizer, &opts).await?
+        }
+        Target::MeetingPreheat(link, _) => {
+            let organizer = link.organizer_id.as_deref().zip(link.tenant_id.as_deref());
+            let opts = signaling::MeetingJoinOptions { preheat: true, ..Default::default() };
+            signaling::join_meeting(&http, &epconv_url, &params, &offer, &link.message_id, organizer, &opts).await?
         }
         Target::ChannelMeeting(subject) => {
             signaling::create_channel_meeting(&http, &epconv_url, &params, &offer, subject).await?
@@ -3003,7 +3167,12 @@ async fn start_tagged(
     };
     tracing::info!(in_lobby = acceptance.in_lobby, "callee answered");
 
+    // Teams acknowledges a meeting call's acceptance in its Trouter reply
+    // only (captured joins, preheated or not, POST nothing to the
+    // acknowledgement link); OST's reply carries the same links (with this
+    // call's tag). Other calls are acknowledged here too.
     if let Some(ack) = &acceptance.acknowledgement
+        && !meeting_join
         && let Err(e) = signaling::acknowledge_call_acceptance(&http, ack, &params).await
     {
         tracing::warn!("Acceptance acknowledgement failed: {:#}", e);

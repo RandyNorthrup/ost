@@ -1631,7 +1631,8 @@ Window {
         // Cancel, Escape or closing the window without joining: Teams
         // leaves the call its pre-join preheated.
         onCancelled: backend.cancelPrejoin()
-        onVisibleChanged: if (!visible) Qt.callLater(() => { if (!preJoin.visible && backend.callState === "") backend.cancelPrejoin() })
+        // (Also while in another call: that pre-join preheated too.)
+        onVisibleChanged: if (!visible) Qt.callLater(() => { if (!preJoin.visible) backend.cancelPrejoin() })
         // The switches still count in the lobby: they apply once admitted.
         onMicOnChanged: if (lobby) window.muteOnJoin = !micOn
         onCameraOnChanged: if (lobby) window.cameraOnJoin = cameraOn
@@ -2259,6 +2260,9 @@ Window {
         breakoutMove.stop()
         if (!room || window.breakoutMain) return
         window.lastBreakoutRoom = room
+        // Where the main meeting's time stands, should it be held under a
+        // room that refuses us.
+        callWindow.heldElapsedBase = callWindow.seconds
         window.breakoutUndo = { main: null }
         window.breakoutMain = JSON.parse(backend.currentMeeting())
         console.warn("BREAKOUT moving to", room.name)
@@ -2342,6 +2346,18 @@ Window {
         // A room (or the main meeting) couldn't be joined: we're still in
         // the meeting we came from (an organizer's held main meeting comes
         // back), and the window says why.
+        // A room refused us (Teams' NotAllowedToJoinBreakoutRoom): the
+        // room's window turns into Teams' retry screen (Dismiss only); the
+        // meeting we came from stays on hold in its own window, Resume
+        // takes us back (Teams doesn't by itself).
+        function onRoomJoinRefused() {
+            console.warn("BREAKOUT room refused us; retry screen, main meeting on hold")
+            // The refusing room said it is closed: nothing moves us back.
+            breakoutReturn.stop()
+            window.breakoutMain = window.breakoutUndo ? window.breakoutUndo.main : null
+            window.breakoutUndo = null
+            callWindow.retryReason = "notAllowedToJoinBreakoutRoom"
+        }
         function onMeetingMoveFailed(title, text) {
             console.warn("BREAKOUT move failed:", title, text)
             callWindow.showBreakoutAlert(text || title)
@@ -2395,11 +2411,14 @@ Window {
     // join that (closed) room again 15 s later: the move fails and the
     // main meeting goes on.
     Timer {
-        running: Qt.application.arguments.indexOf("--breakout-watch") >= 0 && backend.callState !== ""
+        running: Qt.application.arguments.indexOf("--breakout-watch") >= 0 && (backend.callState !== "" || callWindow.retryReason !== "")
         interval: 1500; repeat: true
         property string last: ""
         property int n: 0
         property int backFor: 0
+        property int refusedFor: 0
+        property int assignedFor: 0
+        property bool joinedRoom: false
         property bool rejoined: false
         onTriggered: {
             if (Qt.application.arguments.indexOf("--breakout-watch-rejoin") >= 0 && !rejoined && window.lastBreakoutRoom
@@ -2408,7 +2427,21 @@ Window {
                 console.warn("BREAKOUTWATCH rejoining the closed room", window.lastBreakoutRoom.name, "from", backend.callPeer)
                 window.goToBreakoutRoom(window.lastBreakoutRoom)
             }
-            const phase = JSON.stringify([callWindow.breakoutAlert ? callWindow.breakoutAlert.text : "", callWindow.roomToJoin,
+            // --breakout-watch-join: Join room (the bar's) once a room is
+            // assigned to us and open, when nothing moves us there.
+            if (Qt.application.arguments.indexOf("--breakout-watch-join") >= 0 && callWindow.roomToJoin && !joinedRoom
+                    && backend.callState === "connected" && window.assignedOpenRoom && ++assignedFor === 8) {
+                joinedRoom = true
+                console.warn("BREAKOUTWATCH joining the assigned room", window.assignedOpenRoom.name)
+                window.goToBreakoutRoom(window.assignedOpenRoom)
+            }
+            // The room refused us: its retry screen, the main meeting on
+            // hold; after a few seconds Dismiss and Resume.
+            if (callWindow.retryReason === "notAllowedToJoinBreakoutRoom" && ++refusedFor === 5) {
+                console.warn("BREAKOUTWATCH dismissing the retry screen; resuming", backend.callHeldMeetingJson)
+                callWindow.retryReason = ""; window.resumeHeldMeeting()
+            }
+            const phase = JSON.stringify([callWindow.retryReason, callWindow.breakoutAlert ? callWindow.breakoutAlert.text : "", callWindow.roomToJoin,
                                           !!window.breakoutMain, callWindow.canReturnToMain, backend.callState,
                                           window.breakoutRoomState ? window.breakoutRoomState.closed : null, backend.callPeer])
             if (phase === last) return
@@ -2424,7 +2457,7 @@ Window {
     // announcement ("OST test 100: …"), Rename, close the rooms, Remove
     // rooms — capturing each step ("-rooms-<n>.png") and logging the rooms.
     Timer {
-        running: Qt.application.arguments.indexOf("--breakout-test") >= 0 && backend.callState === "connected"
+        running: Qt.application.arguments.indexOf("--breakout-test") >= 0 && (backend.callState === "connected" || callWindow.retryReason !== "")
         interval: 3000; repeat: true
         property int step: -1
         // --breakout-wait=<s>: stay that long with the rooms open (after
@@ -2443,7 +2476,8 @@ Window {
             step++
             const t = callWindow.roomsForTest
             ;({
-                1: () => { t("pane"); },
+                // Rooms an earlier run left behind go first.
+                1: () => { if (callWindow.breakoutRooms.length) { log("removing earlier rooms"); callWindow.breakoutRun("delete_all", {}) } t("pane") },
                 2: () => shot("create"),
                 3: () => callWindow.createBreakoutRooms(1, "automatic"),
                 // --breakout-manual: nobody is moved automatically (people
@@ -2486,7 +2520,10 @@ Window {
                     if (Qt.application.arguments.indexOf("--breakout-join-unopened") >= 0 && room) { console.warn("BREAKOUTTEST joining the unopened room", room.open); callWindow.joinRoomAsOrganizer(room) }
                 },
                 55: () => { if (Qt.application.arguments.indexOf("--breakout-join-unopened") >= 0) { console.warn("BREAKOUTTEST soon after the unopened room", backend.callHeldMeetingJson || "none", backend.callState, backend.callPeer, "alert", callWindow.breakoutAlert ? callWindow.breakoutAlert.text : ""); shot("unopened-join-alert") } },
-                58: () => { if (Qt.application.arguments.indexOf("--breakout-join-unopened") >= 0) { console.warn("BREAKOUTTEST after the unopened room", backend.callHeldMeetingJson || "none", backend.callState, backend.callPeer, "role", callWindow.myRole, "people", JSON.stringify(callWindow.people.map(p => p.name)), "alert", callWindow.breakoutAlert ? callWindow.breakoutAlert.text : "", "status", backend.statusText); shot("unopened-join") } },
+                58: () => { if (Qt.application.arguments.indexOf("--breakout-join-unopened") >= 0) { console.warn("BREAKOUTTEST after the unopened room", backend.callHeldMeetingJson || "none", backend.callState, backend.callPeer, "role", callWindow.myRole, "people", JSON.stringify(callWindow.people.map(p => p.name)), "alert", callWindow.breakoutAlert ? callWindow.breakoutAlert.text : "", "status", backend.statusText, "retry", callWindow.retryReason, "held window", !!callWindow.heldWindowForTest()); shot("unopened-join"); heldShot("unopened-held") } },
+                // The room's retry screen: Dismiss, then Resume the held
+                // main meeting (as Teams, nothing resumes it by itself).
+                59: () => { if (Qt.application.arguments.indexOf("--breakout-join-unopened") >= 0 && callWindow.retryReason) { console.warn("BREAKOUTTEST dismissing the retry screen; resuming"); callWindow.retryReason = ""; window.resumeHeldMeeting() } },
                 60: () => { log("later"); shot("later"); t("remove") },
                 61: () => shot("remove"),
                 62: () => { t("close"); callWindow.breakoutRun("delete_all", {}) },
@@ -7238,6 +7275,7 @@ Window {
         property var ev: null
         property int doneAt: -1
         property int joinedAt: -1
+        property int inCallSteps: 0
         function arg(n) { return Qt.application.arguments.indexOf(n) >= 0 }
         readonly property string given: window.joinUrl
         readonly property string subject: (Qt.application.arguments.find(a => a.startsWith("--preheat-subject=")) || "").slice(18) || "OST TEST 215 preheat"
@@ -7248,16 +7286,27 @@ Window {
             const names = () => JSON.parse(backend.callRosterJson || "[]").map(p => p.name || p.displayName || p.id)
             const lobby = () => JSON.parse(backend.callLobbyJson || "[]").map(p => p.name)
             const host = arg("--preheat-host")
-            if (step === 0) {
+            // --preheat-in-call=<link>: be in that meeting first (muted),
+            // then open the pre-join (Teams preheats it there too).
+            const inCall = (Qt.application.arguments.find(a => a.startsWith("--preheat-in-call=")) || "").slice(18)
+            if (inCall && step === 0) { window.muteOnJoin = true; backend.joinMeeting(inCall, "OST in-call meeting") }
+            if (inCall && !window.preheatOpened && backend.callState !== "connected") {
+                if (step % 3 === 0) log("waiting to be in the first meeting", backend.callState)
+                if (step > 60) { log("never in the first meeting"); Qt.quit() }
+                step++; return
+            }
+            if (step === 0 || (inCall && !ev && step >= 1 && !window.preheatEventAsked)) {
+                window.preheatEventAsked = true; window.preheatEventAt = step
+                if (inCall) log("in the first meeting", backend.callPeer)
                 if (given) ev = { join_url: given, subject: subject, id: "" }
                 else {
                     const s = new Date(); s.setSeconds(0, 0); const e = new Date(s.getTime() + 30 * 60000)
                     backend.createEvent(subject, s.toISOString(), e.toISOString(), "", true)
                 }
-            } else if (!ev && step <= 8) {
+            } else if (!ev && step <= window.preheatEventAt + 8) {
                 const found = (backend.calendarJson ? JSON.parse(backend.calendarJson) : []).find(x => x.subject === subject && x.join_url)
                 if (found) { ev = found; log("event made", subject) }
-                if (step === 8 && !ev) { log("no event"); Qt.quit() }
+                if (step === window.preheatEventAt + 8 && !ev) { log("no event"); Qt.quit() }
                 step++; return
             } else if (ev && step < 100 && !window.preheatOpened) {
                 window.preheatOpened = true
@@ -7294,9 +7343,11 @@ Window {
                 // Never quit while still in a call: leave first.
                 if (backend.callState !== "" && backend.callState !== "ended") {
                     if ((step - doneAt) % 5 === 4) { log("still in the call", backend.callState, "- leaving"); backend.hangUp() }
-                    step++; return
+                    step++; inCallSteps++; return
                 }
-                const t = step - doneAt
+                // (Counted from when the call was over, so the test event
+                // is still deleted.)
+                const t = step - doneAt - inCallSteps
                 if (t === 3) log("after", "state", JSON.stringify(backend.callState), "prejoin visible", preJoin.visible)
                 if (t === 4 && ev && ev.id && !given) backend.deleteEvent(ev.id)
                 if (t === 6) backend.loadCalendar(new Date(Date.now() - 86400000).toISOString().slice(0, 19) + "Z", new Date(Date.now() + 86400000).toISOString().slice(0, 19) + "Z")
@@ -7307,6 +7358,8 @@ Window {
     }
     property bool preheatOpened: false
     property int preheatOpenedAt: 0
+    property bool preheatEventAsked: false
+    property int preheatEventAt: 0
 
     // --planner-test: open Planner from View more apps; add a private task,
     // complete it; create a plan in OST Test Team, add a task, delete the

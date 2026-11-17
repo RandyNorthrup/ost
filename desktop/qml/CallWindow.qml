@@ -2723,7 +2723,7 @@ Window {
     }
     Window {
         id: heldWindow
-        visible: !!win.heldMeeting && win.visible
+        visible: !!win.heldMeeting
         title: win.heldMeeting ? win.heldMeeting.title : ""
         width: win.width; height: win.height
         x: win.x + 40; y: win.y + 40

@@ -20,10 +20,15 @@ import QtQuick
 // - notAdmittedForLongTime: "Sorry, no one has responded to your request
 //   to join. Please try again.", Rejoin and Dismiss;
 // - removed: "Removed from the meeting", "Someone just removed you from
-//   the meeting. You can try to rejoin.", Rejoin and Dismiss.
+//   the meeting. You can try to rejoin.", Rejoin and Dismiss;
+// - notAllowedToJoinBreakoutRoom (a breakout room that refused us, in the
+//   room's window): "You don't have access to this room", "The room isn't
+//   open yet, or you might have been assigned to a different one.",
+//   Dismiss.
 Rectangle {
     id: rs
-    /// "deniedFromLobby", "notAdmittedForLongTime" or "removed".
+    /// "deniedFromLobby", "notAdmittedForLongTime", "removed" or
+    /// "notAllowedToJoinBreakoutRoom".
     property string reason: ""
     signal retry()
     signal dismiss()
@@ -32,7 +37,10 @@ Rectangle {
     readonly property var spec: ({
         deniedFromLobby: { icon: "prohibited-20", title: "Sorry, but you were denied access to the meeting.", description: "", retry: "" },
         notAdmittedForLongTime: { icon: "", title: "Sorry, no one has responded to your request to join. Please try again.", description: "", retry: "Rejoin" },
-        removed: { icon: "", title: "Removed from the meeting", description: "Someone just removed you from the meeting. You can try to rejoin.", retry: "Rejoin" }
+        removed: { icon: "", title: "Removed from the meeting", description: "Someone just removed you from the meeting. You can try to rejoin.", retry: "Rejoin" },
+        // A breakout room that refused us (403 / 5745): no icon, and not
+        // rejoinable (Teams' checkBreakoutRoomsConditions), so Dismiss only.
+        notAllowedToJoinBreakoutRoom: { icon: "", title: "You don't have access to this room", description: "The room isn't open yet, or you might have been assigned to a different one.", retry: "" }
     })[reason] || { icon: "", title: "", description: "", retry: "" }
 
     Column {

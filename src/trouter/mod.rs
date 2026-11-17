@@ -584,7 +584,23 @@ pub(crate) fn sync_reply_body(frame: &str) -> Option<String> {
     v.get("callAcceptance")?;
     let endpoint_id = url.split("/callAgent/").nth(1)?.split('/').next()?;
     let (surl, _) = current_endpoint()?;
-    Some(acceptance_ack_body(&surl, endpoint_id).to_string())
+    Some(acceptance_ack_body(&tagged_base(&surl, &url), endpoint_id).to_string())
+}
+
+/// The callback base a pushed request came to: ours, plus the call's own
+/// tag segment (`…/x<tag>/callAgent/…`) when it has one, so the links we
+/// hand back reach that call (as Teams' acknowledgement links share its
+/// callbacks' base).
+fn tagged_base(surl: &str, url: &str) -> String {
+    let before = url.split("/callAgent/").next().unwrap_or_default();
+    let tag = before
+        .rsplit('/')
+        .next()
+        .filter(|s| s.len() > 1 && s.starts_with('x') && s[1..].bytes().all(|b| b.is_ascii_hexdigit()));
+    match tag {
+        Some(t) => format!("{}/{t}/", surl.trim_end_matches('/')),
+        None => surl.to_string(),
+    }
 }
 
 /// `callAcceptanceAcknowledgement` with the links Teams sends back.
@@ -831,6 +847,12 @@ mod data_frame_tests {
             .unwrap();
         assert!(link.starts_with("https://t.example/v4/f/abc/callAgent/ep-1/"));
         assert!(link.ends_with("/call/mediaRenegotiation/"));
+        // A tagged call's acknowledgement links keep its tag.
+        assert_eq!(
+            super::tagged_base("https://t.example/v4/f/abc/", "/v4/f/abc/x996a465debe3/callAgent/ep-1/h/call/acceptance/"),
+            "https://t.example/v4/f/abc/x996a465debe3/"
+        );
+        assert_eq!(super::tagged_base("https://t.example/v4/f/abc/", "/v4/f/abc/callAgent/ep-1/h/call/acceptance/"), "https://t.example/v4/f/abc/");
         // Only call acceptances get a reply body.
         let other = r#"3:::{"id":3,"url":"/v4/f/abc/callAgent/ep-1/h/call/progress/","body":"{}"}"#;
         assert!(sync_reply_body(other).is_none());

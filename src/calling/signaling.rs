@@ -714,6 +714,9 @@ pub async fn create_echo_call(
         two_step: false,
         preheat: false,
         extras: None,
+        meeting_data: None,
+        meeting_data_wait: None,
+        conversation_url: None,
     };
     create_call_with(http, epconv_url, params, sdp_offer, &opts).await
 }
@@ -869,8 +872,9 @@ pub async fn join_meeting(
     sdp_offer: &str,
     meeting_message_id: &str,
     organizer: Option<(&str, &str)>,
-    preheat: bool,
+    how: &MeetingJoinOptions<'_>,
 ) -> Result<(ConversationCreated, ConversationJoined)> {
+    let preheat = how.preheat;
     let opts = CreateOptions {
         group_chat: true,
         meeting_message_id: Some(meeting_message_id),
@@ -886,8 +890,26 @@ pub async fn join_meeting(
         two_step: true,
         preheat,
         extras: None,
+        meeting_data: how.meeting_data.clone(),
+        meeting_data_wait: how.meeting_data_wait,
+        conversation_url: how.conversation_url,
     };
     create_call_with(http, epconv_url, params, sdp_offer, &opts).await
+}
+
+/// How a meeting is joined ([`join_meeting`]).
+#[derive(Debug, Default, Clone)]
+pub struct MeetingJoinOptions<'a> {
+    /// Teams' pre-join preheat (hidden until Join now).
+    pub preheat: bool,
+    /// Wait this long after the conversation join for its `meetingData`
+    /// (Teams' moves into a breakout room send the room's).
+    pub meeting_data_wait: Option<std::time::Duration>,
+    /// `meetingData` known already.
+    pub meeting_data: Option<serde_json::Value>,
+    /// The conversation we're in already without a call: the call goes
+    /// straight to it (Teams going back to the main meeting it kept).
+    pub conversation_url: Option<&'a str>,
 }
 
 /// A scheduled meeting's `meetingInfo`, as Teams sends it when joining:
@@ -943,6 +965,9 @@ pub async fn create_group_call(
         two_step: false,
         preheat: false,
         extras: None,
+        meeting_data: None,
+        meeting_data_wait: None,
+        conversation_url: None,
     };
     create_call_with(http, epconv_url, params, sdp_offer, &opts).await
 }
@@ -972,6 +997,9 @@ pub async fn create_channel_meeting(
         two_step: false,
         preheat: false,
         extras: None,
+        meeting_data: None,
+        meeting_data_wait: None,
+        conversation_url: None,
     };
     create_call_with(http, epconv_url, params, sdp_offer, &opts).await
 }
@@ -1006,6 +1034,122 @@ struct CreateOptions<'a> {
     preheat: bool,
     /// What a 1:1 call carries besides its callee ([`CallExtras`]).
     extras: Option<&'a CallExtras>,
+    /// The meeting's `meetingData {meetingCode, passcode}` to send with
+    /// the call, when known already (the main meeting's, going back to
+    /// it from a breakout room).
+    meeting_data: Option<serde_json::Value>,
+    /// Two-step joins: how long to wait after the conversation join for
+    /// the conversation's update that names its `meetingData`, which
+    /// Teams then sends with the call (it moves into a breakout room 1.8 s
+    /// after joining its conversation, by when that update is in). Without
+    /// a wait the call carries it only if the update is already there.
+    meeting_data_wait: Option<std::time::Duration>,
+    /// Post the call straight to this conversation, which we're in
+    /// already without a call (Teams going back from a breakout room to
+    /// the main meeting it kept: `groupChat: null`, its `meetingData`).
+    conversation_url: Option<&'a str>,
+}
+
+/// Teams' `participantPropertyBag` on a meeting call: its AI interpreter
+/// voice consent (`aiVoiceConsentValue` "0": no simulated voice, as
+/// ost-test1's policy and preference give it in Teams' captured joins).
+fn participant_property_bag() -> serde_json::Value {
+    serde_json::json!({
+        "aiVoiceConsent": { "value": { "aiVoiceConsentValue": "0" }, "sequenceNumber": 0 }
+    })
+}
+
+/// Teams' `mediaContent.mediaDescriptions` for a call it joins sending no
+/// video (a preheated pre-join): its video lines offered `sendrecv` (the
+/// camera's and sharing's, which media descriptions turn on and off) each
+/// described `recvonly`, `requestId` 1. Audio, receive-only slots and the
+/// data line aren't described (Teams' capture: mids 1-6 and 18 of its
+/// offer, exactly its sendrecv video lines).
+fn recvonly_media_descriptions(sdp_offer: &str) -> serde_json::Value {
+    let mut descriptions: Vec<serde_json::Value> = Vec::new();
+    let mut video = false;
+    let mut mid: Option<&str> = None;
+    let mut sendrecv = false;
+    let mut flush = |video: bool, mid: Option<&str>, sendrecv: bool| {
+        if let (true, Some(m), true) = (video, mid, sendrecv) {
+            descriptions.push(serde_json::json!({ "mid": m, "direction": "recvonly" }));
+        }
+    };
+    for line in sdp_offer.lines().map(str::trim_end) {
+        if line.starts_with("m=") {
+            flush(video, mid, sendrecv);
+            video = line.starts_with("m=video");
+            mid = None;
+            sendrecv = false;
+        } else if let Some(m) = line.strip_prefix("a=mid:") {
+            mid = Some(m);
+        } else if line == "a=sendrecv" {
+            sendrecv = true;
+        }
+    }
+    flush(video, mid, sendrecv);
+    serde_json::json!({ "descriptions": descriptions, "requestId": 1 })
+}
+
+/// The `meetingData` a just-joined conversation's update names: what has
+/// come already, or (with `wait`) what comes within it.
+async fn await_meeting_data(
+    updates: &mut tokio::sync::broadcast::Receiver<crate::event_hub::Event>,
+    tag: Option<&str>,
+    wait: Option<std::time::Duration>,
+) -> Option<serde_json::Value> {
+    let deadline = tokio::time::Instant::now() + wait.unwrap_or_default();
+    loop {
+        let ev = match updates.try_recv() {
+            Ok(ev) => ev,
+            Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_)) => continue,
+            Err(tokio::sync::broadcast::error::TryRecvError::Empty) => {
+                let left = deadline.saturating_duration_since(tokio::time::Instant::now());
+                if left.is_zero() {
+                    return None;
+                }
+                match tokio::time::timeout(left, updates.recv()).await {
+                    Ok(Ok(ev)) => ev,
+                    Ok(Err(tokio::sync::broadcast::error::RecvError::Lagged(_))) => continue,
+                    _ => return None,
+                }
+            }
+            Err(_) => return None,
+        };
+        if let Some(md) = meeting_data_of(&ev.json, tag) {
+            return Some(md);
+        }
+    }
+}
+
+/// The call tag in a callback base (`…/x<tag>/`), if it has one.
+fn surl_tag(surl: &str) -> Option<&str> {
+    surl.trim_end_matches('/')
+        .rsplit('/')
+        .next()
+        .and_then(|s| s.strip_prefix('x'))
+        .filter(|t| !t.is_empty() && t.bytes().all(|b| b.is_ascii_hexdigit()))
+}
+
+/// A conversation update's `meetingData {meetingCode, passcode}` (the
+/// meeting's code and passcode, as Teams keeps them from its conversation
+/// and sends them with its call), for the call tagged `tag`.
+pub fn meeting_data_of(event_json: &str, tag: Option<&str>) -> Option<serde_json::Value> {
+    if !event_json.contains("\"meetingData\"") {
+        return None;
+    }
+    let v: serde_json::Value = serde_json::from_str(event_json).ok()?;
+    if let Some(tag) = tag
+        && v.get("callTag").and_then(|t| t.as_str()) != Some(tag)
+    {
+        return None;
+    }
+    if !v.get("callAgentPath").and_then(|p| p.as_str()).is_some_and(|p| p.starts_with("conversation/")) {
+        return None;
+    }
+    let md = v.pointer("/body/meetingData")?;
+    let code = md.get("meetingCode")?.as_str().filter(|c| !c.is_empty())?;
+    Some(serde_json::json!({ "meetingCode": code, "passcode": md.get("passcode").cloned().unwrap_or(serde_json::Value::Null) }))
 }
 
 /// What a 1:1 call request can carry besides its callee (Teams' web calling
@@ -1060,6 +1204,40 @@ async fn join_conversation_only(
     opts: &CreateOptions<'_>,
 ) -> Result<(String, Option<String>)> {
     join_conversation_with(http, epconv_url, params, opts, None).await.map(|(c, l, _)| (c, l))
+}
+
+/// Join a meeting's conversation again, without a call, at its own URL
+/// (Teams keeping the main meeting while in a breakout room, captured
+/// 2026-11-17: once the room's call is accepted it leaves the main meeting
+/// and at once `POST`s this to the main conversation, a new participant
+/// id, so the main meeting's updates keep coming). Answers the
+/// conversation's controller and its leave link.
+pub async fn join_conversation_without_call(
+    http: &reqwest::Client,
+    conversation_url: &str,
+    params: &ConversationCallParams<'_>,
+    meeting_message_id: &str,
+    organizer: Option<(&str, &str)>,
+) -> Result<(String, Option<String>)> {
+    let opts = CreateOptions {
+        group_chat: true,
+        meeting_message_id: Some(meeting_message_id),
+        to: Vec::new(),
+        conversation_type: None,
+        invitation_type: None,
+        suppress_dialout: true,
+        subject: None,
+        meetup: false,
+        meeting_info: Some(meeting_info(organizer, (params.caller_oid, params.tenant_id))),
+        scenario: None,
+        two_step: true,
+        preheat: false,
+        extras: None,
+        meeting_data: None,
+        meeting_data_wait: None,
+        conversation_url: None,
+    };
+    join_conversation_with(http, conversation_url, params, &opts, None).await.map(|(c, l, _)| (c, l))
 }
 
 /// The conversation-only join, by thread or (Teams' Join with an ID,
@@ -1148,6 +1326,8 @@ async fn join_conversation_with(
         .and_then(|c| c.as_str())
         .map(str::to_string)
         .or_else(|| headers.get("location").and_then(|h| h.to_str().ok()).map(str::to_string))
+        // Joined again at the conversation's own URL: that is its controller.
+        .or_else(|| epconv_url.contains("/conv/").then(|| epconv_url.to_string()))
         .filter(|c| super::incoming::is_service_link(c))
         .context("No conversationController for the meeting's conversation")?;
     let leave = v
@@ -1184,6 +1364,9 @@ pub async fn resolve_meeting_code(
         two_step: true,
         preheat: false,
         extras: None,
+        meeting_data: None,
+        meeting_data_wait: None,
+        conversation_url: None,
     };
     let (_controller, leave, v) = join_conversation_with(http, epconv_url, params, &opts, Some(meeting_data)).await?;
     let text = v.to_string();
@@ -1247,6 +1430,9 @@ async fn create_call(
         two_step: false,
         preheat: false,
         extras,
+        meeting_data: None,
+        meeting_data_wait: None,
+        conversation_url: None,
     };
     create_call_with(http, epconv_url, params, sdp_offer, &opts).await
 }
@@ -1364,11 +1550,42 @@ async fn create_call_with(
     if let Some(extras) = opts.extras {
         apply_call_extras(&mut payload["callInvitation"], extras);
     }
+    // Teams' preheated pre-join call (captured 2026-11-16): audio and
+    // sharing only, every m-line recvonly (muted, nothing sent), its
+    // participant property bag, and the media fields its join carries.
+    if opts.preheat {
+        let inv = &mut payload["callInvitation"];
+        inv["callModalities"] = serde_json::json!(["Audio", "ScreenViewer"]);
+        inv["clientTransferContext"] = serde_json::Value::Null;
+        inv["customContext"] = serde_json::Value::Null;
+        inv["emergencyContent"] = serde_json::Value::Null;
+        inv["voicemailSettings"] = serde_json::json!({});
+        inv["locationContent"] = serde_json::Value::Null;
+        inv["networkContent"] = serde_json::Value::Null;
+        inv["areaContent"] = serde_json::Value::Null;
+        inv["mediaContent"]["mediaDescriptions"] = recvonly_media_descriptions(sdp_offer);
+        payload["contentSharing"] = serde_json::Value::Null;
+    }
+    if opts.meeting_info.is_some() {
+        payload["participantPropertyBag"] = participant_property_bag();
+    }
 
-    // Meetings: the conversation first, then the call to it (Teams').
-    let (target_url, conversation_leave) = if opts.two_step {
+    // Meetings: the conversation first, then the call to it (Teams'). Its
+    // update names the meeting's code and passcode, which the call carries.
+    let mut meeting_data = opts.meeting_data.clone();
+    let (target_url, conversation_leave) = if let Some(url) = opts.conversation_url {
+        // Already in that conversation (without a call): straight to it.
+        payload["groupChat"] = serde_json::Value::Null;
+        (url.to_string(), None)
+    } else if opts.two_step {
+        let mut updates = crate::event_hub::subscribe();
         match join_conversation_only(http, epconv_url, params, opts).await {
-            Ok((c, leave)) => (c, leave),
+            Ok((c, leave)) => {
+                if meeting_data.is_none() {
+                    meeting_data = await_meeting_data(&mut updates, surl_tag(params.trouter_surl), opts.meeting_data_wait).await;
+                }
+                (c, leave)
+            }
             Err(e) => {
                 tracing::warn!("conversation-only join: {e:#}; joining in one request");
                 (epconv_url.to_string(), None)
@@ -1377,6 +1594,10 @@ async fn create_call_with(
     } else {
         (epconv_url.to_string(), None)
     };
+    if let Some(md) = meeting_data {
+        tracing::info!("the call carries the meeting's meetingData");
+        payload["meetingData"] = md;
+    }
     // The call request failed after we joined the conversation: leave it,
     // so no participant without a call stays behind.
     let leave_joined_conversation = || async {
@@ -1816,6 +2037,38 @@ mod preheat_tests {
             serde_json::json!({ "preheatProperties": 1, "additionalEndpointProperties": { "infoShownInReportMode": "FullInformation" } })
         );
         assert!(endpoint_properties(false).get("preheatProperties").is_none());
+    }
+
+    #[test]
+    fn a_preheated_call_describes_its_sendrecv_video_lines_as_recvonly() {
+        // Audio, a receive-only slot and the data line aren't described.
+        let sdp = "v=0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\na=mid:0\r\na=sendrecv\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\na=mid:1\r\na=sendrecv\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\na=mid:2\r\na=recvonly\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\na=mid:11\r\na=sendrecv\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\na=mid:12\r\n";
+        assert_eq!(
+            super::recvonly_media_descriptions(sdp),
+            serde_json::json!({ "descriptions": [
+                { "mid": "1", "direction": "recvonly" },
+                { "mid": "11", "direction": "recvonly" }
+            ], "requestId": 1 })
+        );
+        assert_eq!(
+            super::participant_property_bag(),
+            serde_json::json!({ "aiVoiceConsent": { "value": { "aiVoiceConsentValue": "0" }, "sequenceNumber": 0 } })
+        );
+    }
+
+    #[test]
+    fn the_conversation_update_names_the_meeting_code() {
+        // Teams' room conversation update (captured 2026-11-17, values made up).
+        let ev = r#"{"callAgentPath":"conversation/conversationUpdate/","callTag":"abc123","body":{"meetingInfo":{},"meetingData":{"meetingCode":"2804365176741122","passcode":"wG7nz3CB"}}}"#;
+        assert_eq!(
+            super::meeting_data_of(ev, Some("abc123")),
+            Some(serde_json::json!({ "meetingCode": "2804365176741122", "passcode": "wG7nz3CB" }))
+        );
+        // Another call's, or a chat message's meetingData: null, isn't it.
+        assert!(super::meeting_data_of(ev, Some("def456")).is_none());
+        assert!(super::meeting_data_of(r#"{"callAgentPath":"conversation/conversationUpdate/","body":{"meetingData":null}}"#, None).is_none());
+        assert_eq!(super::surl_tag("https://t/v4/f/abc/xabc123/"), Some("abc123"));
+        assert_eq!(super::surl_tag("https://t/v4/f/abc/"), None);
     }
 }
 
