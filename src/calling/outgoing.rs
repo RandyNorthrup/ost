@@ -2837,11 +2837,6 @@ async fn start_tagged(
     })
 }
 
-/// A new call's callback tag (`…/x<tag>/callAgent/…`).
-pub fn new_call_tag() -> String {
-    uuid::Uuid::new_v4().simple().to_string()[..12].to_string()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
