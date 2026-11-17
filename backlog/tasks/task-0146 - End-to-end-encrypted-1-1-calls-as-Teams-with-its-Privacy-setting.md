@@ -4,7 +4,7 @@ title: End-to-end encrypted 1:1 calls as Teams, with its Privacy setting
 status: In Progress
 assignee: []
 created_date: '2026-11-15T04:40:00Z'
-updated_date: '2026-11-17T15:02:00Z'
+updated_date: '2026-11-17T18:15:00Z'
 labels:
   - calling
   - settings
@@ -33,4 +33,6 @@ Teams' Settings > Privacy has 'End-to-end encrypted calls' (GraphQL isE2EECallEn
 - With the setting on, Teams' offer differs by one SDP line, a=x-e2ee. OST adds it to offers and echoes it in answers. Teams called OST Test 2 with both settings on and showed "End-to-end encryption enabled for this call". Both sides hid Transfer, Consult, Copilot, recording and transcription.
 - Open (AC3): OST's card has no verification numbers. Teams derives them in native code, and no hash of the DTLS certificates or fingerprints tried matches two captured calls. OST calling Teams with E2EE on is not yet tested live.
 - Tenant: UserControlled encryption policy granted to the test accounts only.
+
+- 2026-11-17: two more encrypted Teams to OST calls captured, with OST's key dump. No hash of keys, certificates or fingerprints matches Teams' five-group number. Next: static analysis of Teams' native calling library to find the derivation.
 <!-- SECTION:NOTES:END -->
