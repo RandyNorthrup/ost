@@ -3,9 +3,11 @@ id: TASK-0221
 title: >-
   Call transfer and park extras as Teams: silent merge, Pick up a parked call,
   timer
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-17T17:56:00Z'
+updated_date: '2026-11-17T19:19:00Z'
 labels:
   - calls
 dependencies: []
@@ -22,7 +24,17 @@ Gaps left after TASK-0186: OST's merge invites the held person (they ring) where
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 Merge Calls moves the held person into the group call without ringing them, as Teams
-- [ ] #2 The Calls view has Teams' 'Pick up a parked call' entry and dialog; entering a pickup code retrieves the call
+- [x] #2 The Calls view has Teams' 'Pick up a parked call' entry and dialog; entering a pickup code retrieves the call
 - [ ] #3 OST as the person moved by a consult transfer that Teams starts carries on in the new call, verified live
 - [ ] #4 The call timer keeps the call's original start when a call is replaced by a transfer, park pickup or merge, as Teams
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+- 2026-11-17 (merged 1da0d70):
+  - Silent merge: OST keeps each person's replacement link from roster events and names the held person's leg in replacementDetails, so the service moves them in; it falls back to an invite. Unit-tested, not yet live.
+  - "Pick up a parked call" dialog, from Teams' unpark bundle, opened from the Calls view's More menu. Main-thread check of the capture: OK.
+  - The call clock carries over when a call is replaced.
+- Left: a live three-person silent merge, a Teams-started consult transfer moving OST, and a live timer check. All need winpc.
+<!-- SECTION:NOTES:END -->
