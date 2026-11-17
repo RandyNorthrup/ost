@@ -1,10 +1,11 @@
 ---
 id: TASK-0157
 title: Spatial audio as Teams
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-15T09:37:00Z'
-updated_date: '2026-11-17T23:01:00Z'
+updated_date: '2026-11-17T23:41:00Z'
 labels:
   - calling
   - devices
@@ -20,7 +21,7 @@ Settings > Devices > Audio settings > 'Spatial audio' (Available with Together m
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Devices shows 'Spatial audio' with Teams' text and link, kept as Teams keeps it
+- [x] #1 Devices shows 'Spatial audio' with Teams' text and link, kept as Teams keeps it
 - [ ] #2 With it on and a stereo output, each participant's voice comes from their tile's side in Gallery, Speaker and Together mode, as in Teams
 <!-- AC:END -->
 
@@ -32,4 +33,10 @@ Settings > Devices > Audio settings > 'Spatial audio' (Available with Together m
 - Built: calling::spatial (state, positions by audio source, capability, Spatializer: equal-power pan over ±60° plus the interaural delay, gliding per frame); the meeting mix is placed at the mean place of its CSRCs' tiles; call playback now opens the speaker in stereo (audio::start_stereo_at; mono audio plays identically on both channels); CallWindow reports tile centres every 240 ms with Teams' validity rule; Backend set_spatial_state / spatial_audio_capable (PipeWire channels and bus); the Settings row with Teams' text, link and glyph.
 - Not as Teams: OST doesn't decode x-much2 (Microsoft's proprietary unmixed-audio codec), so two people talking at once are heard together from between their tiles rather than each from their own; one at a time each comes from their tile. OST has no Together mode yet, so that layout can't be exercised (the rule accepts it when it exists).
 - Verified live on linuxlt: meeting "OST calendar test" with two Chrome test guests (Piper speech as their mics), OST joined with spatial on, its playback recorded from a virtual stereo sink (sp1.raw, tools lr.py). Gallery: Guest 1's tile at x 74.8 % → Guest 1 alone: right 7.6 dB louder than left for its whole 20 s; Guest 2's tile at x 50 % → Guest 2 alone: L = R exactly; both together → right 3.5 dB (mean place 62 %). Log: "spatial audio on=true valid=true placed=2 tiles=2". Left the meeting (hung up the call leg, 202).
+
+- 2026-11-17 (910c0ab): the setting row is as Teams (off by default; disabled for non-stereo, Bluetooth and 1:1). The placement follows the active speakers' tile positions in Gallery and Speaker view. Call audio opens in stereo.
+- Live: Gallery left and right tiles 7.7 dB to their side, centre even; Speaker view followed the tile.
+- Open:
+  - Two people talking at once are placed between their tiles. Teams gets each speaker as a separate stream (x-much2, its multi-channel audio) and places each voice; OST must receive and decode those per-speaker streams to match.
+  - Together mode is retired in Teams, so there's nothing to place there.
 <!-- SECTION:NOTES:END -->
