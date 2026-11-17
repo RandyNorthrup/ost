@@ -230,6 +230,13 @@ Window {
     // has no AI ("AI isn't available in this meeting"); lit while the
     // meeting's transcript runs ("AI is on in the meeting").
     property bool aiIndicator: false
+    /// End-to-end encryption (Teams' e2eeStatusChangedEvent): whether the
+    /// call is end-to-end encrypted, and its encryption numbers (Teams'
+    /// fingerprint hash as 4-digit groups) to compare with the other side.
+    property bool e2ee: false
+    property var e2eeNumbers: []
+    function encryptionCardForTest() { encryptionCard.open() }
+    function encryptionCardItemForTest() { return encryptionCard }
     property bool aiAvailable: false
     property bool aiFacilitator: false
     property bool aiOn: false
@@ -645,7 +652,8 @@ Window {
         callMe: !!phone.available && !!phone.dialIn && !!phone.dial, facilitator: copilotAllowed,
         townHall: !!liveEvent.townHall, webinar: !!liveEvent.webinar, attendee: myRole === "attendee",
         greenRoom: !!liveEvent.staging && myRole !== "attendee" && live && liveEvent.eventPhase === "prelive",
-        eventPhase: liveEvent.eventPhase || "", qna: !!liveEvent.qna && scheduled
+        eventPhase: liveEvent.eventPhase || "", qna: !!liveEvent.qna && scheduled,
+        e2ee: e2ee
     })
     /// A town hall or webinar (Backend call_event_json): its green room,
     /// live state, Manage what attendees see and Q&A
@@ -1197,14 +1205,28 @@ Window {
         // The new controls' bar is Teams' NeutralBackground1 (#292929 in
         // dark, measured), a step up from the stage's surface.
         color: win.barFill
-        // Meetings: Teams' shield (meeting info) beside the timer: a 30 x 32
-        // indicator at x 8 with its 20 px glyph, then the duration in
-        // 14 px #424242 with 6.7 px of padding.
-        FluentIcon {
-            visible: win.meeting
+        // Teams' encryption indicator (E2EEncryptionIndicator, id
+        // e2ee-status; measured on winpc 2026-11-17 in a 1:1 call and in
+        // meetings): a 30 x 32 button at x 8 with the 20 px Shield (Shield
+        // Lock when the call is end-to-end encrypted), then the duration in
+        // 14 px #424242 with 6.7 px of padding. Its tooltip is "Encryption
+        // status"; a click opens the encryption card under it.
+        Item {
+            id: encryptionIndicator
             // Compact: a 22 px indicator with its 14 px glyph.
-            x: win.compactBar ? 12 : 13; y: win.compactBar ? 12.7 : 20
-            name: "call-shield"; size: win.compactBar ? 14 : 20; color: theme.textStrong
+            x: win.compactBar ? 7 : 8; y: win.compactBar ? 8.7 : 14
+            width: win.compactBar ? 22 : 30; height: win.compactBar ? 22 : 32
+            FluentIcon {
+                anchors.centerIn: parent
+                name: win.e2ee ? "shield-lock-20" : "call-shield"; size: win.compactBar ? 14 : 20
+                color: encHover.hovered || encryptionCard.visible ? theme.brandForeground1 : theme.textStrong
+            }
+            HoverHandler { id: encHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: encryptionCard.visible ? encryptionCard.close() : encryptionCard.open() }
+            IndicatorTip { target: encryptionIndicator; text: "Encryption status"; shown: encHover.hovered && !encryptionCard.visible }
+            Accessible.role: Accessible.Button
+            Accessible.name: "Encryption status"
+            Accessible.onPressAction: encryptionCard.open()
         }
         // The AI indicator (measured in Teams, 2026-11-08): a 37.33 x 32
         // button at x 38 with a 28 x 20 pill (padding 0 4) holding the
@@ -1305,8 +1327,8 @@ Window {
             id: timerText
             // After the shield (and the AI indicator), 6.67 into the
             // duration's slot.
-            x: win.compactBar ? (!win.meeting ? 10.7 : 30 + (recordingIndicator.visible ? 22 : 0) + (aiIndicator.visible ? 24.9 : 0) + 2.7)
-               : !win.meeting ? 16 : 38 + (recordingIndicator.visible ? 30 : 0) + (aiIndicator.visible ? 37.33 : 0) + 6.67
+            x: win.compactBar ? 30 + (recordingIndicator.visible ? 22 : 0) + (aiIndicator.visible ? 24.9 : 0) + 2.7
+               : 38 + (recordingIndicator.visible ? 30 : 0) + (aiIndicator.visible ? 37.33 : 0) + 6.67
                  + (liveIndicator.visible ? liveIndicator.width + 8 : 0)
             anchors.verticalCenter: parent.verticalCenter
             text: win.state === "connected" ? win.clock(win.seconds) : "--:--"
@@ -2923,6 +2945,76 @@ Window {
             const p = aiIndicator.mapToItem(Overlay.overlay, 0, 0)
             x = p.x
             y = p.y + aiIndicator.height + 13.33
+        }
+    }
+    // The encryption card (Teams' e2ee status dialog, a Fluent popover;
+    // measured on winpc 2026-11-17): 280.3 wide, 13.3 under the indicator
+    // and start-aligned to it, padding 12, radius 4, shadow 16, 12/16
+    // #616161 text with "Learn more" (#4F52B2) after it. Not end-to-end
+    // encrypted: "This call (meeting) is secured by OST data encryption."
+    // End-to-end encrypted (Teams' M8): the title (semibold), "Verify your
+    // call's encryption by making sure the numbers below are the same for
+    // both of you." (meetings: "…for all participants."), and the
+    // encryption numbers on a #F5F5F5 band (radius 4, padding 10).
+    Popup {
+        id: encryptionCard
+        parent: Overlay.overlay
+        width: 280.33; padding: 12
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        onAboutToShow: {
+            const p = encryptionIndicator.mapToItem(Overlay.overlay, 0, 0)
+            x = p.x
+            y = p.y + encryptionIndicator.height + 13.33
+        }
+        background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
+        contentItem: Column {
+            spacing: 8
+            Text {
+                visible: win.e2ee
+                width: parent.width; wrapMode: Text.Wrap
+                text: win.meeting ? "End-to-end encryption enabled for this meeting" : "End-to-end encryption enabled for this call"
+                font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
+                lineHeight: 20; lineHeightMode: Text.FixedHeight
+                color: theme.text
+            }
+            Text {
+                id: encryptionText
+                width: parent.width; wrapMode: Text.Wrap
+                textFormat: Text.StyledText
+                linkColor: theme.brandForeground1
+                text: (!win.e2ee ? (win.meeting ? "This meeting is secured by OST data encryption. " : "This call is secured by OST data encryption. ")
+                       : win.meeting ? "This meeting is end-to-end encrypted if the numbers below are the same for all participants. "
+                       : "Verify your call's encryption by making sure the numbers below are the same for both of you. ")
+                      + "<a href=\"" + (win.e2ee ? "https://go.microsoft.com/fwlink/?linkid=2174740" : "https://go.microsoft.com/fwlink/?linkid=2174896") + "\">Learn more</a>"
+                font.family: theme.font; font.pixelSize: 12
+                lineHeight: 16; lineHeightMode: Text.FixedHeight
+                color: theme.textSecondary
+                onLinkActivated: l => Qt.openUrlExternally(l)
+                HoverHandler { cursorShape: encryptionText.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
+                Accessible.name: win.e2ee ? "Learn more about OST End-to-end encryption" : "Learn more about OST data encryption"
+            }
+            Rectangle {
+                visible: win.e2ee && win.e2eeNumbers.length > 0
+                width: parent.width; height: numbersFlow.implicitHeight + 20; radius: 4
+                color: theme.pick("#F5F5F5", "#1F1F1F", "#000000")
+                Flow {
+                    id: numbersFlow
+                    x: 10; y: 10; width: parent.width - 20
+                    spacing: 12
+                    Repeater {
+                        model: win.e2eeNumbers
+                        Text {
+                            required property var modelData
+                            text: modelData
+                            font.family: theme.font; font.pixelSize: 14
+                            lineHeight: 20; lineHeightMode: Text.FixedHeight
+                            color: theme.text
+                        }
+                    }
+                }
+                Accessible.role: Accessible.StaticText
+                Accessible.name: "End-to-end encryption numbers " + win.e2eeNumbers.join(" ")
+            }
         }
     }
     NetworkPopover {

@@ -1947,6 +1947,17 @@ Rectangle {
                 icon: "people-list-20"; title: "Identify me in attendance reports"; subtitle: "Let meeting or event organizer know your attendance information."
                 trailing: Component { SettingsParts.Toggle { on: root.prop("showInMeetingReport", [], "true") !== "false"; accessibleName: "Identify me in attendance reports"; onToggled: v => root.setProp("showInMeetingReport", "", v ? "true" : "false") } }
             }
+            // Teams' E2EE card (settings-app m4, measured on winpc): its
+            // switch is greyed when the tenant's encryption policy doesn't let
+            // users choose (callingEndtoEndEncryptionEnabledType Disabled);
+            // the choice is kept in the middle tier (useEndToEndEncryption).
+            SettingsParts.Card {
+                visible: root.page === "privacy" && !root.subPage
+                icon: "call-20"; title: "End-to-end encrypted calls"
+                subtitle: "One-on-one OST calls are end-to-end encrypted if both participants turn on this setting. Some features won't be available, including recording and transcription. <a href=\"https://go.microsoft.com/fwlink/?linkid=2174740\">Learn more</a>"
+                onLinkActivated: l => Qt.openUrlExternally(l)
+                trailing: Component { SettingsParts.Toggle { on: root.mt.useEndToEndEncryption === true; usable: root.mt.e2eeAllowedByAdmin === true; accessibleName: "End-to-end encrypted calls"; onToggled: v => root.setMt("useEndToEndEncryption", v) } }
+            }
             SettingsParts.Card {
                 visible: root.page === "privacy" && !root.subPage
                 icon: "image-sparkle-20"; title: "Optional connected experiences"

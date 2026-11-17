@@ -237,6 +237,36 @@ struct OverrideEntry {
     settings: Value,
 }
 
+/// The controls Teams' presets mark `isE2EEHidden`: left out of an
+/// end-to-end encrypted call (recording, transcription, transfer, park,
+/// merge, Copilot, apps…).
+pub fn e2ee_hidden(name: &str) -> bool {
+    static NAMES: std::sync::OnceLock<std::collections::HashSet<String>> = std::sync::OnceLock::new();
+    NAMES
+        .get_or_init(|| {
+            fn walk(v: &Value, out: &mut std::collections::HashSet<String>) {
+                match v {
+                    Value::Object(o) => {
+                        if o.get("isE2EEHidden").and_then(Value::as_bool) == Some(true)
+                            && let Some(n) = o.get("name").and_then(Value::as_str)
+                        {
+                            out.insert(n.to_string());
+                        }
+                        o.values().for_each(|c| walk(c, out));
+                    }
+                    Value::Array(a) => a.iter().for_each(|c| walk(c, out)),
+                    _ => {}
+                }
+            }
+            let mut out = std::collections::HashSet::new();
+            if let Ok(v) = serde_json::from_str::<Value>(CONFIG) {
+                walk(&v, &mut out);
+            }
+            out
+        })
+        .contains(name)
+}
+
 fn config() -> &'static Config {
     static C: std::sync::OnceLock<Config> = std::sync::OnceLock::new();
     C.get_or_init(|| serde_json::from_str(CONFIG).expect("ubar_layout.json"))
@@ -626,6 +656,9 @@ pub struct Facts {
     pub event_phase: String,
     /// The meeting's Q&A is on (`yammerQNAEnabled`).
     pub qna: bool,
+    /// The call is end-to-end encrypted (Teams hides what its presets mark
+    /// `isE2EEHidden`).
+    pub e2ee: bool,
 }
 
 impl Facts {
@@ -637,6 +670,9 @@ impl Facts {
     /// Whether Teams shows `control` (bar controls and More's items OST
     /// has).
     pub fn shows(&self, control: &str) -> bool {
+        if self.e2ee && e2ee_hidden(control) {
+            return false;
+        }
         match control {
             "PopoutContentButton" => self.can_pop_out,
             "ScreensharingControlButton" => self.can_take_control,
@@ -666,6 +702,9 @@ impl Facts {
             "MeetingAppsAddButton" => !self.pstn,
             "HoldButton" => self.p2p && !self.on_hold,
             "MergeCallsButton" => self.consult,
+            // Teams' isCallParkAvailable also needs Enterprise Voice (a
+            // Teams Phone licence) besides the park policy; OST has no park.
+            "CallParkButton" => false,
             // In More (live: the AV framework replaces Devices with these).
             "AudioSettingsButton" | "CameraEffectsButton" => true,
             // Meetings (Teams' isMeeting), not a chat's group call.
@@ -1072,6 +1111,23 @@ mod tests {
         // On hold: Resume is with Leave.
         let held = arrange(&Facts { p2p: true, on_hold: true, centered: true, ..Default::default() }, &|_| 56.0, 17.0, 5000.0);
         assert_eq!(held.end, ["ResumeButton", "CallButton"]);
+    }
+
+    #[test]
+    fn end_to_end_encrypted_calls_drop_what_teams_hides() {
+        for centered in [false, true] {
+            let plain = arrange(&Facts { p2p: true, centered, ..Default::default() }, &|_| 56.0, 17.0, 5000.0);
+            assert!(plain.bar.contains(&"CallTransferButtonV2".to_string()));
+            let e2ee = arrange(&Facts { p2p: true, centered, e2ee: true, ..Default::default() }, &|_| 56.0, 17.0, 5000.0);
+            for gone in ["CallTransferButtonV2", "CallConsultativeTransferButtonV2", "MeetingAppsAddButton"] {
+                assert!(!e2ee.bar.contains(&gone.to_string()), "{gone} in an E2EE call");
+            }
+            assert!(e2ee.bar.contains(&"HoldButton".to_string()) && e2ee.bar.contains(&"DialpadButton".to_string()));
+        }
+        for n in ["RecordingButton", "TranscriptButton", "CallParkButton", "MergeCallsButton", "RecordingIndicator"] {
+            assert!(e2ee_hidden(n), "{n}");
+        }
+        assert!(!e2ee_hidden("HoldButton") && !e2ee_hidden("E2EEncryptionIndicator"));
     }
 
     #[test]

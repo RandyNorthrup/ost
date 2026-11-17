@@ -181,12 +181,14 @@ pub const PLAIN_PROPERTIES: [&str; 8] = [
 /// these; unsaved settings are absent and take Teams' defaults).
 pub async fn all_properties(client: &TeamsClient) -> Result<serde_json::Value> {
     let url = format!("{}/v1/users/ME/properties", client.chat_service_url());
-    let v: serde_json::Value = client
-        .chat_get(&url)
-        .await?
-        .json()
-        .await
-        .context("User properties reply")?;
+    let resp = match client.chat_get(&url).await {
+        Ok(r) => r,
+        // An account that never saved a property has none yet (404,
+        // "UserProperties not found"): every setting is at its default.
+        Err(e) if format!("{e:#}").contains("UserProperties not found") => return Ok(serde_json::json!({})),
+        Err(e) => return Err(e),
+    };
+    let v: serde_json::Value = resp.json().await.context("User properties reply")?;
     Ok(parsed_properties(&v))
 }
 
@@ -255,10 +257,34 @@ pub async fn middle_tier_settings(client: &TeamsClient) -> Result<serde_json::Va
         (Some(t), Some(o)) => get(format!("beta/users/getUserTranscriptMeetingSettings/tenant/{t}/user/{o}")).await,
         _ => None,
     };
+    // End-to-end encrypted calls: your choice (a bare JSON boolean) and
+    // whether the tenant lets you choose.
+    let e2ee = get(E2EE_SETTING_PATH.into()).await;
+    let e2ee_policy = super::custom_emoji::effective_policies(client, &["teamsEnhancedEncryptionPolicy"]).await.ok();
     Ok(serde_json::json!({
         "blockAnonymousCaller": blocked.as_ref().and_then(|b| b["blockAnonymousCaller"].as_bool()).unwrap_or(false),
         "enableSpeakerAttribution": transcript.as_ref().and_then(|t| t.pointer("/attributionSettings/enableSpeakerAttribution")?.as_bool()).unwrap_or(true),
+        "useEndToEndEncryption": e2ee.as_ref().and_then(serde_json::Value::as_bool).unwrap_or(false),
+        "e2eeAllowedByAdmin": e2ee_policy.as_ref().is_some_and(e2ee_calls_allowed),
     }))
+}
+
+/// Where Teams keeps "End-to-end encrypted calls" (Settings ▸ Privacy;
+/// `e2eeMiddleTierEndpoint` "/beta" + "/usersettings/useEndToEndEncryption",
+/// read from there since `e2eeReadSettingFromBVD` is on): GET answers a bare
+/// boolean, PUT takes `{useEndToEndEncryption}`.
+pub const E2EE_SETTING_PATH: &str = "beta/usersettings/useEndToEndEncryption";
+
+/// Whether the tenant lets you turn on end-to-end encrypted calls (Teams'
+/// `e2eePolicyEnabled`): the effective teamsEnhancedEncryptionPolicy's
+/// `callingEndtoEndEncryptionEnabledType` is anything but "Disabled" (its
+/// default; "DisabledUserOverride" lets you choose).
+pub fn e2ee_calls_allowed(policies: &serde_json::Value) -> bool {
+    policies
+        .pointer("/teamsEnhancedEncryptionPolicy/value/callingEndtoEndEncryptionEnabledType")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("Disabled")
+        != "Disabled"
 }
 
 /// Your calling settings, as Settings ▸ Calls reads them (`GET {mt}/beta/
@@ -388,6 +414,9 @@ pub async fn set_middle_tier_setting(client: &TeamsClient, key: &str, on: bool) 
         "blockAnonymousCaller" => http
             .post(format!("{mt}/beta/usersettings/blockedCallers"))
             .json(&serde_json::json!({ "blockAnonymousCaller": on })),
+        "useEndToEndEncryption" => http
+            .put(format!("{mt}/{E2EE_SETTING_PATH}"))
+            .json(&serde_json::json!({ "useEndToEndEncryption": on })),
         "enableSpeakerAttribution" => {
             let (t, o) = client.tenant_id().zip(client.object_id()).context("No tenant or user id")?;
             http.put(format!("{mt}/beta/users/updateUserTranscriptMeetingSettings/tenant/{t}/user/{o}"))
@@ -459,6 +488,15 @@ pub fn automatic_replies_body(v: &serde_json::Value) -> serde_json::Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn e2ee_calls_follow_the_encryption_policy() {
+        let p = |t: &str| serde_json::json!({ "teamsEnhancedEncryptionPolicy": { "value": { "callingEndtoEndEncryptionEnabledType": t } } });
+        assert!(!e2ee_calls_allowed(&p("Disabled")));
+        assert!(e2ee_calls_allowed(&p("DisabledUserOverride")));
+        // No policy read: Teams' default (Disabled).
+        assert!(!e2ee_calls_allowed(&serde_json::json!({})));
+    }
 
     #[test]
     fn call_redirection_bodies_are_teams() {
