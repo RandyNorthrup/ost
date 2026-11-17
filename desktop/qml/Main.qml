@@ -1765,6 +1765,7 @@ Window {
         onOpenApp: key => { rail.openApp(key); window.raise(); window.requestActivate() }
         canDtmf: backend.callCanDtmf
         e2ee: backend.callE2ee
+        e2eeNumbers: backend.callE2eeNumbers ? backend.callE2eeNumbers.split(" ") : []
         canPark: backend.callCanPark
         callContinues: backend.callContinues
         parkCode: backend.callState === "parked" ? backend.callParkCode : ""

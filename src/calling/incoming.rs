@@ -972,6 +972,11 @@ impl ActiveCall {
         self.webrtc.as_ref().is_some_and(|w| w.is_e2ee())
     }
 
+    /// Teams' verification numbers when the call is end-to-end encrypted.
+    pub fn e2ee_numbers(&self) -> Vec<String> {
+        self.webrtc.as_ref().map(|w| w.e2ee_numbers()).unwrap_or_default()
+    }
+
     /// The other side has the call on hold.
     pub fn is_held_by_peer(&self) -> bool {
         self.webrtc.as_ref().is_some_and(|w| w.is_held_by_peer())

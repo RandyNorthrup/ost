@@ -1409,6 +1409,9 @@ pub struct WebRtcAudioSession {
     /// Both sides asked for an end-to-end encrypted call (`a=x-e2ee` in the
     /// offer and the answer) and its keys come from our DTLS handshake.
     e2ee: AtomicBool,
+    /// Teams' end-to-end encryption verification numbers for this DTLS
+    /// session (five 4-digit groups; see `super::e2ee`).
+    security_numbers: Vec<String>,
     /// Our DTLS role, kept in re-answers: "active" (client) or "passive".
     dtls_role: &'static str,
     stats: Arc<Mutex<WebRtcStats>>,
@@ -1477,6 +1480,12 @@ impl WebRtcAudioSession {
     /// Whether the call is end-to-end encrypted, as Teams counts it.
     pub fn is_e2ee(&self) -> bool {
         self.e2ee.load(Ordering::Relaxed)
+    }
+
+    /// Teams' verification numbers for this session when it is end-to-end
+    /// encrypted (empty otherwise): what both sides' encryption cards show.
+    pub fn e2ee_numbers(&self) -> Vec<String> {
+        if self.is_e2ee() { self.security_numbers.clone() } else { Vec::new() }
     }
 
     /// Remember the SDP we sent (offer or answer), to answer re-offers.
@@ -2199,6 +2208,9 @@ impl WebRtcAudioSession {
         };
         *srtp_ctx.lock().await = Some(srtp::SrtpStreams::new(&keys.0, &keys.1)?);
         tracing::info!("DTLS-SRTP established");
+        // Teams' verification numbers for this session (shown when the
+        // call is end-to-end encrypted).
+        let security_numbers = security_numbers(dtls.ssl());
         // A meeting's media control plane: a data channel in this DTLS
         // session, when the processor took our data line.
         // The processor's layer requests for what we send, by stream: its
@@ -2433,6 +2445,7 @@ impl WebRtcAudioSession {
             held_by_peer: AtomicBool::new(false),
             superseded: AtomicBool::new(false),
             e2ee: AtomicBool::new(false),
+            security_numbers,
             dtls_role: if dtls_client { "active" } else { "passive" },
             stats,
             #[cfg(feature = "audio")]
@@ -3083,11 +3096,11 @@ fn dtls_handshake(
     };
 
     let ssl = stream.ssl();
-    let presented_digest = ssl
+    let presented = ssl
         .peer_certificate()
         .context("Peer sent no DTLS certificate")?
         .digest(MessageDigest::sha256())?;
-    let hex: Vec<String> = presented_digest.iter().map(|b| format!("{b:02X}")).collect();
+    let hex: Vec<String> = presented.iter().map(|b| format!("{b:02X}")).collect();
     let presented = format!("sha-256 {}", hex.join(":"));
     if !presented.eq_ignore_ascii_case(expected_fingerprint.trim()) {
         bail!("DTLS certificate does not match the SDP fingerprint");
@@ -3101,23 +3114,6 @@ fn dtls_handshake(
     }
     let mut km = [0u8; SRTP_KEYING_LEN];
     ssl.export_keying_material(&mut km, "EXTRACTOR-dtls_srtp", None)?;
-    // Teams' E2EE security-code hash (SHA-512(sorted fingerprints) then
-    // PBKDF2-HMAC-SHA512; see `super::e2ee`). Logged so it can be checked
-    // against Teams' own (a Frida capture of GetDtlsFingerprintHash) and,
-    // once the digit formatting is confirmed, shown as the numbers. The
-    // local cert's fingerprint and the peer's are both 32-byte SHA-256.
-    if let Some(local_cert) = ssl.certificate() {
-        if let Ok(local_digest) = local_cert.digest(MessageDigest::sha256()) {
-            let to32 = |d: &[u8]| -> Option<[u8; 32]> { d.try_into().ok() };
-            if let (Some(local_fp), Some(remote_fp)) = (to32(&local_digest), to32(&presented_digest)) {
-                let hash = super::e2ee::security_code_hash(&local_fp, &remote_fp);
-                tracing::info!(
-                    security_code_hash = %hash.iter().map(|b| format!("{b:02x}")).collect::<String>(),
-                    "e2ee security code hash"
-                );
-            }
-        }
-    }
     // Diagnostics (OST_TROUTER_DUMP_DIR): both certificates, for working
     // out how a peer derives its end-to-end encryption numbers.
     if std::env::var_os("OST_TROUTER_DUMP_DIR").is_some() {
@@ -3146,6 +3142,21 @@ fn dtls_handshake(
         );
     }
     Ok((split_srtp_keys(&km, client), stream))
+}
+
+/// Teams' end-to-end encryption verification numbers for this DTLS session
+/// ([`super::e2ee::security_numbers`] over our certificate's and the peer's
+/// SHA-256 fingerprints); empty if either certificate is missing.
+fn security_numbers(ssl: &openssl::ssl::SslRef) -> Vec<String> {
+    let digest = |c: &openssl::x509::X509Ref| -> Option<[u8; 32]> {
+        c.digest(MessageDigest::sha256()).ok()?.as_ref().try_into().ok()
+    };
+    let local = ssl.certificate().and_then(digest);
+    let peer = ssl.peer_certificate().and_then(|c| digest(&c));
+    match (local, peer) {
+        (Some(l), Some(p)) => super::e2ee::security_numbers(&l, &p),
+        _ => Vec::new(),
+    }
 }
 
 /// The raw `SSL*` behind an `SslRef`.

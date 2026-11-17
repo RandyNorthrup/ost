@@ -373,6 +373,9 @@ pub mod qobject {
         #[qproperty(bool, call_held_by_peer)]
         /// The call is end-to-end encrypted (Teams' E2EE 1:1 call).
         #[qproperty(bool, call_e2ee)]
+        /// Teams' end-to-end encryption verification numbers for the call
+        /// (five 4-digit groups, space-separated; empty when not E2EE).
+        #[qproperty(QString, call_e2ee_numbers)]
         /// The pickup code of the call you just parked ("" when none).
         #[qproperty(QString, call_park_code)]
         /// The next "connected" is the same call carried on (a transfer,
@@ -2791,6 +2794,7 @@ pub struct BackendRust {
     call_held: bool,
     call_held_by_peer: bool,
     call_e2ee: bool,
+    call_e2ee_numbers: QString,
     call_park_code: QString,
     call_continues: bool,
     call_can_park: bool,
@@ -3776,6 +3780,7 @@ async fn take_transfer(qt: cxx_qt::CxxQtThread<qobject::Backend>, request: teams
                 tracing::warn!("transfer completion: {}", short_error(&e));
             }
             let e2ee = call.is_e2ee();
+            let e2ee_numbers = call.e2ee_numbers().join(" ");
             let mut slot = call_slot().lock().await;
             // The call we leave ends on its own; its events aren't ours.
             if slot.active.take().is_some() {
@@ -3793,6 +3798,7 @@ async fn take_transfer(qt: cxx_qt::CxxQtThread<qobject::Backend>, request: teams
                 this.as_mut().set_call_held(false);
                 this.as_mut().set_call_held_by_peer(false);
                 this.as_mut().set_call_e2ee(e2ee);
+                this.as_mut().set_call_e2ee_numbers(QString::from(e2ee_numbers.as_str()));
                 this.as_mut().set_call_peer(QString::from(name.as_str()));
                 this.as_mut().set_call_peer_id(QString::from(mri.as_str()));
             });
@@ -7177,6 +7183,7 @@ impl qobject::Backend {
                         };
                     let can_share = active.can_share();
                     let e2ee = active.is_e2ee();
+                    let e2ee_numbers = active.e2ee_numbers().join(" ");
                     tracing::info!(has_audio, can_video, camera, can_share, e2ee, "call answered");
                     call_slot().lock().await.active = Some(active);
                     spawn_call_stats_logger(qt.clone());
@@ -7187,6 +7194,7 @@ impl qobject::Backend {
                         this.as_mut().set_call_can_share(can_share);
                         this.as_mut().set_call_camera_on(camera);
                         this.as_mut().set_call_e2ee(e2ee);
+                        this.as_mut().set_call_e2ee_numbers(QString::from(e2ee_numbers.as_str()));
                         this.as_mut().set_call_muted(false);
                         this.as_mut().set_call_state(QString::from("connected"));
                     });
@@ -7367,6 +7375,7 @@ impl qobject::Backend {
                         "outgoing call connected"
                     );
                     let e2ee = call.is_e2ee();
+                    let e2ee_numbers = call.e2ee_numbers().join(" ");
                     // A retrieved parked call is with whoever was parked.
                     let retrieved = call.answered_by().filter(|_| unpark).map(str::to_string);
                     tracing::info!(named = retrieved.is_some(), "answered by");
@@ -7378,6 +7387,7 @@ impl qobject::Backend {
                             this.as_mut().set_call_peer(QString::from(name.as_str()));
                         }
                         this.as_mut().set_call_e2ee(e2ee);
+                        this.as_mut().set_call_e2ee_numbers(QString::from(e2ee_numbers.as_str()));
                         this.as_mut().set_call_has_audio(has_audio);
                         this.as_mut().set_call_can_dtmf(can_dtmf);
                         this.as_mut().set_call_can_video(can_video);
@@ -10731,6 +10741,7 @@ impl qobject::Backend {
         self.as_mut().set_call_held(false);
         self.as_mut().set_call_held_by_peer(false);
         self.as_mut().set_call_e2ee(false);
+        self.as_mut().set_call_e2ee_numbers(QString::default());
         self.as_mut().set_call_can_park(false);
         self.as_mut().set_call_park_code(QString::default());
         self.as_mut().set_call_continues(false);

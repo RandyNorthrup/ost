@@ -1349,6 +1349,11 @@ impl OutgoingCall {
         self.media.as_ref().is_some_and(|m| m.is_e2ee())
     }
 
+    /// Teams' verification numbers when the call is end-to-end encrypted.
+    pub fn e2ee_numbers(&self) -> Vec<String> {
+        self.media.as_ref().map(|m| m.e2ee_numbers()).unwrap_or_default()
+    }
+
     /// The call negotiated video we can send (camera button usable).
     /// In a meeting or group call: show these cameras (roster
     /// `main-video` sourceIds, most wanted first). Returns sourceId ->
