@@ -1,9 +1,11 @@
 ---
 id: TASK-0073
 title: Facilitator agenda timer and Run of Show as Teams
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-09T09:29:00Z'
+updated_date: '2026-11-17T04:07:00Z'
 labels:
   - desktop
   - meetings
@@ -22,3 +24,11 @@ Teams' meeting timer also has an agenda timer (Copilot Facilitator drafts topics
 - [ ] #1 With Facilitator on, the agenda timer shows and edits as Teams', verified against Teams in a Facilitator-enabled meeting
 - [ ] #2 Run of Show in a town hall or webinar shows and behaves as Teams'
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Built so far (dde4544): More > Facilitator > Turn on/off Facilitator and Enable/Disable voice with Teams' requests (ost-test1's Copilot licence is enough); checked live on and off.
+
+Not built: the agenda timer never appeared in Teams in this tenant (its setting to start an agenda yourself is off), so there is nothing to compare against; Run of Show needs a town hall or webinar with Facilitator (TASK-0184); Facilitator ▾ with the new controls.
+<!-- SECTION:NOTES:END -->
