@@ -1510,6 +1510,10 @@ pub mod qobject {
         #[qsignal]
         fn card_invoke_done(self: Pin<&mut Backend>, op: QString, result: QString, error: QString);
 
+        /// A calendar_action finished: its op, its result (JSON) and an error.
+        #[qsignal]
+        fn calendar_action_done(self: Pin<&mut Backend>, op: QString, result: QString, error: QString);
+
         /// A drive_action finished: its op, its result (JSON) and an error.
         #[qsignal]
         fn drive_action_done(self: Pin<&mut Backend>, op: QString, result: QString, error: QString);
@@ -2218,6 +2222,14 @@ pub mod qobject {
         /// Delete an event (cancels a meeting you organise).
         #[qinvokable]
         fn delete_event(self: Pin<&mut Backend>, id: &QString);
+
+        /// The calendar's actions, as Teams' calendar does them (src/api/calendar.rs):
+        /// "detail" {id}, "respond" {id, response, send, note}, "schedule"
+        /// {form}, "update" {id, form}, "cancel" {event, teamId, note},
+        /// "availability" {people: [[mail, name]], start, end}. The answer
+        /// comes back in calendar_action_done.
+        #[qinvokable]
+        fn calendar_action(self: Pin<&mut Backend>, op: &QString, args_json: &QString);
 
         /// Create a calendar event (UTC times); optionally a Teams meeting.
         /// Attendees: comma- or semicolon-separated e-mail addresses.
@@ -5104,6 +5116,13 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
             });
         }
         return;
+    }
+    // A notification about a meeting (its kind and fields, never values).
+    if json.contains("\"notificationType\"") && !json.contains("HuddleMeetingStart") {
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(json) {
+            let keys: Vec<&String> = v.as_object().map(|o| o.keys().collect()).unwrap_or_default();
+            tracing::info!(kind = %v["notificationType"], ?keys, "call notification");
+        }
     }
     if let Some(start) = teams_cli::calling::incoming::meeting_start(json) {
         tracing::info!(thread = %start.thread_id, "meeting started in a chat");
@@ -10678,7 +10697,12 @@ impl qobject::Backend {
                 Ok(events) => {
                     tracing::info!(events = events.len(), "calendar loaded");
                     let text = serde_json::to_string(&events).unwrap_or_else(|_| "[]".into());
+                    let range = (start.clone(), end.clone());
                     let _ = qt.queue(move |mut this| {
+                        // A range shown since (switching views) wins over this one.
+                        if this.rust().calendar_range.as_ref() != Some(&range) {
+                            return;
+                        }
                         this.as_mut()
                             .set_calendar_json(QString::from(text.as_str()))
                     });
@@ -18075,6 +18099,88 @@ impl qobject::Backend {
                 Err(e) => this
                     .as_mut()
                     .set_status_text(QString::from(short_error(&e).as_str())),
+            });
+        });
+    }
+
+    pub fn calendar_action(mut self: Pin<&mut Self>, op: &QString, args_json: &QString) {
+        let op = op.to_string();
+        let args: serde_json::Value = serde_json::from_str(&args_json.to_string()).unwrap_or(json!({}));
+        let me = api::calendar::Me {
+            name: self.rust().user_name.to_string(),
+            mail: self.rust().user_mail.to_string(),
+            mri: self.rust().my_mri.clone().unwrap_or_default(),
+        };
+        let busy = match op.as_str() {
+            "respond" => "Sending your response…",
+            "schedule" => "Scheduling…",
+            "update" => "Sending update…",
+            "cancel" => "Cancelling…",
+            _ => "",
+        };
+        if !busy.is_empty() {
+            self.as_mut().set_status_text(QString::from(busy));
+        }
+        let qt = self.qt_thread();
+        let op2 = op.clone();
+        runtime().spawn(async move {
+            let s = |k: &str| args[k].as_str().unwrap_or_default().to_string();
+            let result: anyhow::Result<serde_json::Value> = async {
+                let client = TeamsClient::new().await?;
+                match op.as_str() {
+                    "detail" => api::calendar::event_detail(&client, &s("id")).await,
+                    "meetNow" => Ok(json!({ "joinUrl": api::calendar::meet_now(&client, &s("subject")).await?, "subject": s("subject") })),
+                    "joinById" => match api::calendar::meeting_by_id(&client, &s("meetingId"), &s("passcode")).await? {
+                        Some((url, subject, start, end)) => Ok(json!({ "joinUrl": url, "subject": subject, "start": start, "end": end })),
+                        None => anyhow::bail!("We couldn't find a meeting with that ID and passcode."),
+                    },
+                    "respond" => {
+                        api::calendar::respond(&client, &s("id"), &s("response"), args["send"].as_bool().unwrap_or(true), &s("note")).await?;
+                        Ok(json!({}))
+                    }
+                    "schedule" => {
+                        let form: api::calendar::MeetingForm = serde_json::from_value(args["form"].clone())?;
+                        api::calendar::schedule(&client, &form, &me).await
+                    }
+                    "update" => {
+                        let form: api::calendar::MeetingForm = serde_json::from_value(args["form"].clone())?;
+                        api::calendar::update_meeting(&client, &s("id"), &form).await?;
+                        Ok(json!({}))
+                    }
+                    "cancel" => {
+                        api::calendar::cancel_meeting(&client, &args["event"], &s("teamId"), &s("note")).await?;
+                        Ok(json!({}))
+                    }
+                    "availability" => {
+                        let people: Vec<(String, String)> = args["people"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .filter_map(|p| Some((p[0].as_str()?.to_string(), p[1].as_str().unwrap_or_default().to_string())))
+                            .collect();
+                        let (map, tz) = api::calendar::availability(&client, &me, &people, &s("start"), &s("end")).await?;
+                        Ok(json!({ "freeBusy": map, "timeZone": tz }))
+                    }
+                    other => anyhow::bail!("Unknown calendar action {other}"),
+                }
+            }
+            .await;
+            let _ = qt.queue(move |mut this| {
+                let (text, error) = match result {
+                    Ok(v) => (v.to_string(), String::new()),
+                    Err(e) => {
+                        tracing::warn!(op = %op2, "calendar action failed: {}", short_error(&e));
+                        (String::new(), short_error(&e))
+                    }
+                };
+                if ["respond", "schedule", "update", "cancel"].contains(&op2.as_str()) {
+                    this.as_mut().set_status_text(QString::from(error.as_str()));
+                    if error.is_empty() {
+                        this.as_mut().refresh_calendar();
+                    }
+                }
+                tracing::info!(op = %op2, ok = error.is_empty(), "calendar action");
+                this.as_mut().calendar_action_done(QString::from(op2.as_str()), QString::from(text.as_str()), QString::from(error.as_str()));
             });
         });
     }

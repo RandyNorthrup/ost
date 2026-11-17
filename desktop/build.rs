@@ -16,6 +16,7 @@ fn main() {
         "qml/CallWindow.qml",
         "qml/CallsView.qml",
         "qml/CalendarView.qml",
+        "qml/MeetingForm.qml",
         "qml/NewChat.qml",
         "qml/ChannelPosts.qml",
         "qml/KeyboardShortcuts.qml",

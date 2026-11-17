@@ -3682,6 +3682,95 @@ Window {
         }
     }
 
+    // --cal-test (docs/desktop.md): the calendar as Teams lays it out, its
+    // card, event page, form and dialogs, and the calendar's actions on
+    // test events. Pictures cal-*.png in --shots=<dir>; CALTEST lines.
+    Timer {
+        id: calTest
+        readonly property var args: Qt.application.arguments
+        // "~" stands for a space (handy over ssh).
+        function arg(k, d) { const a = args.find(x => x.startsWith("--" + k + "=")); return a ? a.slice(k.length + 3).replace(/~/g, " ") : (d === undefined ? "" : d) }
+        readonly property string dir: arg("shots", "/tmp/act") + "/"
+        running: args.indexOf("--cal-test") >= 0 && backend.signedIn && (step > 0 || backend.calendarJson.length > 2)
+        interval: 3000; repeat: true
+        property int step: 0
+        onRunningChanged: console.warn("CALTEST running", running)
+        Component.onCompleted: console.warn("CALTEST ready", args.indexOf("--cal-test"), backend.signedIn, backend.calendarJson.length)
+        property string done: ""
+        function cap(tag) { window.contentItem.grabToImage(r => r.saveToFile(dir + "cal-" + tag + ".png")); console.warn("CALTEST shot", tag) }
+        function ev(subject) { return JSON.parse(backend.calendarJson).find(e => e.subject === subject) }
+        property var conn: Connections {
+            target: backend
+            function onCalendarActionDone(op, result, error) { calTest.done = op + (error ? " ERROR " + error : " ok"); console.warn("CALTEST action", op, error ? "ERROR " + error : "ok", (result || "").slice(0, 400)) }
+        }
+        onTriggered: {
+            const d = arg("cal-date")
+            if (step === 0) {
+                rail.current = "calendar"
+                if (arg("cal-view")) calendarView.view = arg("cal-view")
+                if (d) calendarView.start = calendarView.startFor(new Date(d + "T12:00:00"))
+            } else if (arg("cal-respond") && step === 2) {
+                // --cal-respond=<subject>|<Accept|Tentative|Decline|Follow>|<series 0/1>|<note>
+                const p = arg("cal-respond").split("|"), e = ev(p[0])
+                console.warn("CALTEST respond", p[0], !!e, e ? e.response : "")
+                if (e) { calendarView.cardForTest(p[0]); calendarView.respondForTest(p[1], p[2] === "1", p[3] || "") }
+            } else if (arg("cal-respond") && step === 8) {
+                const p = arg("cal-respond").split("|"), e = ev(p[0])
+                console.warn("CALTEST answered", p[0], e ? e.response : "gone"); calendarView.cardForTest(p[0])
+            } else if (arg("cal-respond") && step === 9) cap("answered")
+            else if (arg("cal-respond") && step === 10) Qt.quit()
+            else if (arg("cal-schedule") && step === 2) {
+                // --cal-schedule=<title> with --cal-attendee, --cal-channel=Team/Channel,
+                // --cal-start=<ISO>, --cal-minutes, --cal-repeat=<index> --cal-until=<date>,
+                // --cal-location, --cal-body; --cal-save-only captures without sending.
+                const ch = arg("cal-channel").split("/")
+                const s = new Date(arg("cal-start", new Date(Date.now() + 86400000).toISOString()))
+                if (ch.length === 2) { const t = (JSON.parse(backend.teamsJson || "[]")).find(t => t.name === ch[0]); const c = t ? t.channels.find(c => c.name === ch[1]) : null; calendarView.newChannelMeeting(t ? t.id : "", ch[0], c ? c.id : "", ch[1]) }
+                else calendarView.newMeeting()
+                const f = calendarView.formForTest
+                f.typeTitleForTest(arg("cal-schedule"))
+                f.setTimesForTest(s, new Date(s.getTime() + parseInt(arg("cal-minutes", "30")) * 60000))
+                if (arg("cal-attendee")) f.addAttendeeForTest(arg("cal-attendee"), arg("cal-attendee"))
+                if (arg("cal-location")) f.setLocationForTest(arg("cal-location"))
+                if (arg("cal-body")) f.typeBodyForTest(arg("cal-body"))
+            } else if (arg("cal-schedule") && step === 3 && arg("cal-repeat")) {
+                calendarView.formForTest.pickRepeatForTest(parseInt(arg("cal-repeat")))
+            } else if (arg("cal-schedule") && step === 4 && arg("cal-repeat")) {
+                cap("recurrence"); calendarView.formForTest.saveRecurrenceForTest(arg("cal-until") ? new Date(arg("cal-until") + "T00:00:00") : null)
+            } else if (arg("cal-schedule") && step === 5) cap("form-filled")
+            else if (arg("cal-schedule") && step === 6) { if (args.indexOf("--cal-save-only") < 0) calendarView.formForTest.submitForTest(); else Qt.quit() }
+            else if (arg("cal-schedule") && step === 12) { const e = ev(arg("cal-schedule")); console.warn("CALTEST scheduled", arg("cal-schedule"), !!e, e ? JSON.stringify({ join: !!e.join_url, channel: e.channel_id, attendees: e.attendees.length, type: e.event_type }) : ""); if (e) calendarView.cardForTest(e.subject) }
+            else if (arg("cal-schedule") && step === 13) cap("scheduled")
+            else if (arg("cal-schedule") && step === 14) Qt.quit()
+            else if (arg("cal-cancel") && step === 2) {
+                // --cal-cancel=<subject> [--cal-cancel-note=<text>]: the event page's Cancel meeting.
+                console.warn("CALTEST cancel page", calendarView.pageForTest(arg("cal-cancel")))
+            } else if (arg("cal-cancel") && step === 3) { calendarView.formForTest.openCancelForTest(); }
+            else if (arg("cal-cancel") && step === 4) { cap("cancel"); calendarView.formForTest.confirmCancelForTest(arg("cal-cancel-note")) }
+            else if (arg("cal-cancel") && step === 9) { console.warn("CALTEST cancelled", !ev(arg("cal-cancel")) || ev(arg("cal-cancel")).is_cancelled); Qt.quit() }
+            else if (!arg("cal-respond") && !arg("cal-schedule") && !arg("cal-cancel")) {
+                // Pictures: the views, the card and page of --cal-peek, the form and dialogs.
+                const peek = arg("cal-peek")
+                const seq = [
+                    () => cap((calendarView.view) + "-view"),
+                    () => { calendarView.view = "week" }, () => cap("week-view"),
+                    () => { calendarView.view = "day" }, () => cap("day-view"),
+                    () => { calendarView.view = "month"; if (d) calendarView.start = calendarView.startFor(new Date(d + "T12:00:00")) }, () => cap("month-view"),
+                    () => { calendarView.view = "workweek"; if (d) calendarView.start = calendarView.startFor(new Date(d + "T12:00:00")) },
+                    () => console.warn("CALTEST peek", peek, calendarView.cardForTest(peek)), () => cap("peek"),
+                    () => { calendarView.detailsForTest.close(); console.warn("CALTEST page", calendarView.pageForTest(peek)) }, () => cap("page"),
+                    () => { calendarView.formForTest.openRsvpNoteForTest() }, () => cap("rsvp-note"),
+                    () => { calendarView.formOpen = false; calendarView.newMeeting() }, () => cap("form"),
+                    () => { calendarView.formOpen = false; calendarView.meetNowForTest.openFresh() }, () => cap("meetnow"),
+                    () => { calendarView.meetNowForTest.close(); calendarView.joinIdForTest.openFresh() }, () => cap("joinid"),
+                    () => { calendarView.joinIdForTest.close(); Qt.quit() }
+                ]
+                if (step >= 1 && step - 1 < seq.length) seq[step - 1]()
+            }
+            step++
+        }
+    }
+
     // --group-call-test: call the "OST group test" chat, stay 50 s,
     // capture the call window and People, hang up.
     Timer {
@@ -10064,11 +10153,22 @@ Window {
         }
     }
 
+    Connections {
+        target: backend
+        function onCalendarActionDone(op, result, error) { calendarView.actionDone(op, result, error) }
+    }
     CalendarView {
         id: calendarView
         visible: rail.current === "calendar"
         anchors { top: appBanner.bottom; bottom: parent.bottom; left: rail.right; right: parent.right }
         events: backend.calendarJson ? JSON.parse(backend.calendarJson) : []
+        teams: backend.teamsJson ? JSON.parse(backend.teamsJson) : []
+        people: backend.peopleJson ? JSON.parse(backend.peopleJson) : []
+        me: ({ name: backend.userName, mail: backend.userMail, mri: backend.userMri })
+        onCalendarAction: (op, args) => backend.calendarAction(op, args)
+        onSearchPeople: q => backend.searchPeople(q)
+        // Join with an ID: Teams' meeting link for the ID and passcode.
+        onJoinWithId: (id, pass) => backend.calendarAction("joinById", JSON.stringify({ meetingId: id, passcode: pass }))
         onRangeChanged: (s, e) => backend.loadCalendar(s, e)
         onCreateEvent: (subject, s, e, who, teams) => backend.createEvent(subject, s, e, who, teams)
         onDeleteEvent: id => backend.deleteEvent(id)
@@ -10339,7 +10439,8 @@ Window {
         const w = channelWindowComponent.createObject(null, { channelId: channelId, teamId: team.id, teamName: team.name, channelName: ch.name })
         const all = Object.assign({}, window.channelWindows); all[channelId] = w; window.channelWindows = all
         w.meetNow.connect((id, name) => preJoin.openMeetNow(id, "Meeting in \"" + name + "\""))
-        w.scheduleMeeting.connect(() => { rail.current = "calendar"; calendarView.newMeeting() })
+        // Schedule a meeting: Teams' form with this channel filled in.
+        w.scheduleMeeting.connect(() => { rail.current = "calendar"; calendarView.newChannelMeeting(w.teamId, w.teamName, w.channelId, w.channelName) })
         w.manageChannel.connect(id => window.openManageChannel(id))
         w.closing.connect(() => { const rest = Object.assign({}, window.channelWindows); delete rest[channelId]; window.channelWindows = rest; w.destroy() })
         w.show()
@@ -10840,7 +10941,14 @@ Window {
         onOpenPrivacySettings: { settingsView.page = "privacy"; rail.current = "settings" }
         // A suggested reply's meeting: Teams' scheduling form for the chat.
         onScheduleMeetingWith: (attendees, startIso, endIso) => { rail.current = "calendar"; calendarView.newMeetingWith(attendees, startIso, endIso) }
-        onScheduleMeeting: { rail.current = "calendar"; calendarView.newMeeting() }
+        // From a channel's header: the form with the channel filled in.
+        onScheduleMeeting: {
+            rail.current = "calendar"
+            if (conversation.isChannel) {
+                const ch = (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).reduce((a, t) => a.concat(t.channels || []), []).find(c => c.id === conversation.chatId)
+                calendarView.newChannelMeeting(conversation.teamId, conversation.teamName, conversation.chatId, ch ? ch.name : backend.currentChatName)
+            } else calendarView.newMeeting()
+        }
         onOpenInNewWindow: {
             const c = chatList.chats.find(c => c.id === backend.currentChatId) || {}
             window.openChatWindow(backend.currentChatId, backend.currentChatName, c.peerMri || "", c.presence || "")
