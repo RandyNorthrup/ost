@@ -219,7 +219,93 @@ shows.)
 - Saved per client: `localStorage` "Settings"/"UserAndExperience",
   `stageSettings.callingControlsPreferences.layouts[{id, controls:[{name,
   slot, group, priority}]}]` — not synced.
-- Drag and drop between the bar and More (dnd-kit) does the same.
+- Drag and drop between the bar and More (dnd-kit) does the same (§6a).
+
+### 6a. Drag and drop (measured on winpc 2026-11-16 by driving Teams' pointer through the debugger; Teams' unified-bar bundle) — TASK-0208
+
+- **What moves.** A customizable bar control (secondary and contextual
+  groups: React, Chat, People, Copilot, Controls…) and a More grid item
+  (not "Get more apps and agents"). Docked controls (Mic, Camera, Share,
+  More, Leave) don't move. Sensors: the mouse after **2 px** (dnd-kit
+  `distance: 2`), touch after a 200 ms hold (tolerance 5), and the
+  keyboard's arrows.
+- **While dragging** (dnd-kit `DragOverlay`, z 1031): a copy of the control
+  follows the pointer at **opacity 0.7** with `cursor: grabbing`, drawn by
+  the renderer of the group it is over (a bar button over the bar — 56 × 60
+  slot, its 48 px button in the hover fill #EBEBEB with #242424 ink — a grid
+  item over the grid), tooltips off. The control itself keeps its place
+  invisible, and the bar makes room where it would land (the other controls
+  slide over: Chat dragged right over People → React, People, [gap], Copilot…).
+- **Over More** (the button, a droppable "slot container"): "Unpin {name}".
+  More shows pressed (light #D6D6D6, dark #141414) with a brand glyph, the
+  copy fades to **0.4** (`transition: opacity .35s ease-out`) and the bar
+  closes the gap. Dropping unpins (the control heads More's grid).
+- **Over a control of its own group**: "Move {name} before / after
+  {other}" — `after` when the drag has travelled right (`delta.x > 0`),
+  `before` when left. Dropping reorders.
+- **A grid item over the bar**: "Pin {name}" — the bar makes room for it;
+  dropping pins it there (Chat from the grid dropped over People after a
+  rightward drag landed after People).
+- **Not allowed** (a control that can't take it, e.g. a bar control over
+  Mic): the evaluator says `blocked`; the pointer shows not-allowed and a
+  drop changes nothing. A drop whose copy doesn't overlap its target
+  (`cancelDrop`) changes nothing either. Escape cancels.
+- **Drop**: the copy animates to its place in 200 ms (`ease`), the control
+  showing again at the end. Screen readers hear each step (dnd-kit
+  announcements: "Move Chat after People", "Unpin Chat", "Pin Record").
+- The result is saved exactly as Move / Pin / Unpin save it (§6).
+
+## 7. Dark and High contrast (measured on winpc 2026-11-16, setting on) — TASK-0208
+
+| | Light | Dark | High contrast |
+|---|---|---|---|
+| Bar | #FFFFFF, bottom 0.67 #E0E0E0 | **#292929**, bottom 0.67 #525252 | #000000, bottom 0.67 #FFFFFF |
+| Glyphs and labels at rest | #424242 | #D6D6D6 | #FFFFFF |
+| Hovered button (its half of a split button) | #EBEBEB, ink #242424 | **#333333**, ink #FFFFFF | #1AEBFF, ink #000000 |
+| The other half of a hovered split button | **#F5F5F5** (ink stays #424242) | **#3D3D3D** | #1AEBFF |
+| Leave glyph / label | #B10E1C / #242424 | **#DC626D** / #FFFFFF | #FFFFFF / #FFFFFF |
+| Leave hovered / its other half | #FDF3F4 / #FDF6F3 | #3B0509 / #411200 | #1AEBFF |
+| Checked (People with its pane open) | glyph and 30.8 × 2 underline #5B5FC7, label #242424 | glyph and underline #7F85F5, label #FFFFFF | glyph and underline #FFFFFF |
+| Divider | 0.67 #D1D1D1 | 0.67 #666666 | 0.67 #FFFFFF |
+| Timer, shield | #424242 | #D6D6D6 | #FFFFFF |
+| More, React popover, right-click menu | #FFFFFF | #292929 | #000000 with a 0.67 #FFFFFF edge |
+| Grid item hovered | #EBEBEB, ink #242424 | #333333, ink #FFFFFF | #1AEBFF, ink #000000 |
+| List row hovered | #F5F5F5, glyph brand #5B5FC7 | #3D3D3D, glyph #7F85F5 | #1AEBFF, ink #000000 |
+| More's divider | #E0E0E0 | #525252 | #FFFFFF |
+| "Get more apps and agents" | #FFFFFF, edge #D1D1D1; hovered #EBEBEB, edge #C7C7C7 | #292929, edge #666666; hovered #333333, edge #757575 | #000000, edge #FFFFFF; hovered #1AEBFF |
+| Raise hand | outlined as the apps button | #292929, edge #666666; hovered #333333, #757575 | as the apps button |
+| A reaction hovered | #EBEBEB, the picture growing to 38.4 px | #333333 | #1AEBFF |
+
+## 8. Meet now and group calls (TASK-0208)
+
+- **Meet now** (Calendar ▸ Meet now, organizer, alone; winpc 2026-11-16):
+  with the setting **on**, the same controls as the scheduled meeting —
+  bar Mic, Camera, Share | React, Chat, People, Copilot, Controls, More,
+  Leave; grid Record, Transcribe, Facilitator ▾, Interpreter, Timer, Notes,
+  Captions, Rooms, RTT, Apps; list View ▸, Join info ▸ (Meeting info, Call
+  me, Call health), Settings ▸ (Accessibility settings, Don't show chat
+  bubbles, Hide me, Video effects and settings, Audio settings, Optimize for
+  room), Report a concern, Help. With it **off**, the current bar — Chat,
+  People, Raise, React, View, Controls, More | Camera, Mic, Share | Leave —
+  with Notes, Breakout rooms, Copilot and Apps overflowed into More at the
+  top (856 px window), then Record and transcribe ▸, Meeting info,
+  Facilitator, Timer, Video effects and settings, Audio settings, Language
+  and speech ▸, Settings ▸ (Call health, Accessibility settings, Don't show
+  chat bubbles, Mute notifications), Call me, Report a concern, Help. Teams'
+  visibility rules don't depend on the setting.
+- **Teams' rules for the kinds of call** (`calculateVisibilityOverrides`):
+  Notes needs a private meeting or a scheduled channel meeting and, ad hoc,
+  `enableMeetingNotesInMeetNowCall` and not a channel meeting — so a
+  calendar Meet now has Notes, a channel's Meet now (an ad hoc channel
+  meeting) doesn't; Rooms needs a meeting (`isMeeting`) and the organizer;
+  Report a concern needs a private, ad hoc or Meet now meeting and not a
+  group call; Controls needs the Organizer role. Record, Transcribe,
+  Captions, Meeting info, Chat bubbles, Hide me and Accessibility don't look
+  at the kind of call; Timer is off in group calls unless
+  `supportStructuredMeetingsTimerInGroupCalls`; RTT follows its policy.
+- **Group calls** (a chat's Meet now or call) could not be measured live:
+  the only group chats the test account has include real people, and
+  starting a call there would ring them.
 
 ## OST status
 
@@ -235,19 +321,35 @@ Built (CallWindow.qml, MenuPopup.qml, SettingsView.qml,
 - [x] Overflow order and the compact bar under 480 px.
 - [x] Move before / after, Pin, Unpin, Reset (saved per layout in OST's
   local settings, `meetingControlsLayouts`).
-- [ ] Drag and drop between the bar and More.
+- [x] Drag and drop between the bar and More (§6a; CallWindow.qml
+  `dragBegin` / `dragMove` / `dragEnd`): 2 px to start, Teams' 0.7 copy in
+  the hovered button's or grid item's look, the bar making room as the
+  result would be (the arrangement previewed live, the control hidden in
+  its place), More pressed and the copy at 0.4 over More (unpin), before /
+  after by the drag's direction, grid items pinned on the bar, not-allowed
+  over Mic, Camera, Share and Leave, Escape cancels; saved as the
+  right-click menu saves. Not built: touch's 200 ms hold, the keyboard
+  sensor, the 200 ms drop animation and the screen-reader announcements.
 - [x] Copilot (licensed users; call-and-meeting-window.md §1.8j).
 - [x] Join info ▸ Call me (with dial-in; call-and-meeting-window.md
   §1.8k).
 - [ ] Facilitator ▾ in More's grid (the current controls' More ▸
   Facilitator ▸ is built, §1.8h) and Interpreter (OST has no AI
   interpretation).
-- [ ] Dark and High contrast were not measured in Teams with the new
-  controls on; OST draws them with the same Fluent tokens as the current
-  bar (checked in OST with `--theme=dark` / `--theme=highContrast`).
-- [ ] The Meet now and group-call visibility of Notes, Rooms, Record and the
-  like still follows OST's current rules (Teams showed Notes and Rooms in a
-  Meet now); not compared with the setting off.
+- [x] Dark and High contrast as measured (§7; Theme.qml `nmc*`): the bar's
+  #292929 in dark, Teams' hover pair on split buttons, Leave's red tints
+  and #DC626D, checked glyph and underline (white in High contrast), the
+  More / React surfaces, hovered grid items, the apps and Raise buttons,
+  reactions growing on hover, list glyphs turning brand on hover.
+- [x] Meet now (§8): a channel's Meet now is a meeting (`adhoc`): Rooms,
+  Record and transcribe, Captions, RTT, Timer, Meeting info, Report a
+  concern, Help and the accessibility settings show as in a meeting, and
+  Notes doesn't (an ad hoc channel meeting). OST has no Calendar Meet now
+  (without a channel), whose controls are a scheduled meeting's.
+- [ ] Group calls: OST keeps hiding Record, Transcribe, Captions, RTT,
+  Meeting info, Help and the accessibility settings in a chat's call, which
+  Teams' rules show; not measured live (§8) and not checked to work in
+  OST's group calls.
 
 Live check (2026-11-16, linuxlt, ost-test1, the OST calendar test meeting
 alone): `--join-test --join-new-controls --join-stay=80` in light, dark and

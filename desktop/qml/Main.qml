@@ -1789,6 +1789,7 @@ Window {
         locked: backend.callMeetingLocked
         networkStrength: backend.callNetworkStrength || "Good"
         scheduled: backend.callScheduled
+        adhocMeeting: backend.callAdhocMeeting
         attendeeRestrictions: backend.callAttendeeRestrictions
         aiIndicator: backend.callAiIndicator
         aiAvailable: backend.callAiAvailable
@@ -2669,6 +2670,45 @@ Window {
                 // denied), capture the meeting, then leave.
                 const st = backend.callState
                 if (step % 5 === 3) console.warn("JOIN lobby-wait state", st, "visible", preJoin.visible, "lobby", preJoin.lobby)
+                // --join-lobby-data (TASK-0213): once admitted, use the
+                // meeting's data channel as it came back after the media
+                // moved: live captions on (someone speaks), then take
+                // control of whoever presents (as --join-take-control),
+                // then captions off. JOIN lobby-data lines; -lobby-*.png.
+                if (admittedAt && st === "connected" && Qt.application.arguments.indexOf("--join-lobby-data") >= 0) {
+                    const a = step - admittedAt
+                    const grab = n => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-lobby-" + n + ".png")))
+                    const caps = () => JSON.parse(backend.callCaptionsJson || "[]")
+                    const cst = callWindow.controlState
+                    const log = t => console.warn("JOIN lobby-data", t, "a", a, "captionsOn", backend.callCaptionsOn, "captions", caps().length,
+                                                  "last", JSON.stringify(caps().slice(-1)).slice(0, 160),
+                                                  "presenter", callWindow.shareId, "control", JSON.stringify(cst))
+                    if (a === 2) { callWindow.side = ""; callWindow.recordControl("ClosedCaptionsButton"); log("captions asked") }
+                    else if (a === 14) { log("captions"); grab("captions") }
+                    else if (a > 14 && !window.controlAsked && cst.capable && callWindow.presenting) {
+                        window.controlAsked = step; log("capable"); grab("control-capable")
+                        callWindow.runControl("ScreensharingControlButton")
+                    }
+                    else if (window.controlAsked && step === window.controlAsked + 1) { callWindow.requestControlDialogForTest().confirmed(); callWindow.requestControlDialogForTest().close() }
+                    else if (window.controlAsked && step === window.controlAsked + 2) log("control asked")
+                    else if (cst.state === "controlling" && !window.controlGot) { window.controlGot = step; log("controlling"); grab("controlling") }
+                    else if (window.controlGot && step === window.controlGot + 1) {
+                        backend.controlMouse(0, 0, false, 0.5, 0.5, 0)
+                        backend.controlMouse(2, 0, true, 0.5, 0.5, 0)
+                        backend.controlMouse(2, 0, false, 0.5, 0.5, 0)
+                    }
+                    else if (window.controlGot && step === window.controlGot + 2) {
+                        // "OST TEST", as --join-take-control types it.
+                        window.controlKeys = [[0x01000020, 50, false], [0x4f, 32, false], [0x4f, 32, true], [0x53, 39, false], [0x53, 39, true], [0x54, 28, false], [0x54, 28, true], [0x01000020, 50, true],
+                                              [0x20, 65, false], [0x20, 65, true],
+                                              [0x01000020, 50, false], [0x54, 28, false], [0x54, 28, true], [0x45, 26, false], [0x45, 26, true], [0x53, 39, false], [0x53, 39, true], [0x54, 28, false], [0x54, 28, true], [0x01000020, 50, true]]
+                        controlKeyTimer.start()
+                        log("typing")
+                    }
+                    else if (window.controlGot && step === window.controlGot + 5) { grab("control-typed"); callWindow.runControl("ScreensharingControlButton"); log("released") }
+                    else if (window.controlGot && step === window.controlGot + 7) { log("after release"); callWindow.recordControl("ClosedCaptionsButton") }
+                    else if (step % 5 === 0) log("wait")
+                }
                 if (st === "lobby" && step % 5 === 0) preJoin.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-inlobby.png")))
                 else if (st === "connected" && !admittedAt) { admittedAt = step; console.warn("JOIN lobby-wait admitted at step", step) }
                 else if (admittedAt && step === admittedAt + 3) callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-admitted.png")))
@@ -2947,6 +2987,55 @@ Window {
                     log("restored")
                 }
                 else if (step === 41) shot("restored")
+            } else if (step >= 8 && step <= Math.min(80, 11 + window.joinStay) && Qt.application.arguments.indexOf("--join-nmc-drag") >= 0) {
+                // --join-nmc-drag (TASK-0208): the new controls (on for the
+                // test, put back after) at 856 wide, as Teams on winpc:
+                // drag Chat right past People (reorder), Chat onto More
+                // (unpin), Chat from More's grid back onto the bar (pin),
+                // People over Mic (not allowed), Copilot and Escape
+                // (cancelled); each captured mid-drag and after the drop.
+                // Then (steps 40–70) it waits for a real drag from outside:
+                // the log gives Chat's and More's screen points. JOIN drag
+                // lines; -drag-*.png. Needs --join-stay=150.
+                const shot = n => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-drag-" + n + ".png")))
+                const bar = () => callWindow.ubar.bar.filter(n => n !== "|").join(",")
+                const at = n => callWindow.centerForTest(n)
+                const log = t => console.warn("JOIN drag", t, "zone", callWindow.dragZone, "bar", bar(), "grid", JSON.stringify(callWindow.newGridItems.map(e => e.label)),
+                                              "saved", backend.setting("meetingControlsLayouts"))
+                const p = (q, dx, dy) => Qt.point(q.x + dx, q.y + dy)
+                if (step === 8) {
+                    window.nmcWas = backend.setting("newMeetingControls")
+                    backend.setSetting("newMeetingControls", "true"); callWindow.newControls = true
+                    callWindow.arrangeForTest("reset", ""); callWindow.side = ""; callWindow.width = 856
+                }
+                else if (step === 9) { log("start"); shot("start") }
+                else if (step === 10) { const c = at("ChatButton"); callWindow.dragForTest("ChatButton", "bar", [c, p(c, 20, 0), p(c, 70, 0)], false) }
+                else if (step === 11) { log("reorder over People"); shot("reorder") }
+                else if (step === 12) callWindow.dragEndForTest(true)
+                else if (step === 13) { log("reordered"); shot("reordered") }
+                else if (step === 14) { const c = at("ChatButton"), m = at("MoreButton"); callWindow.dragForTest("ChatButton", "bar", [c, p(c, 10, 0), m], false) }
+                else if (step === 15) { log("over More"); shot("unpin") }
+                else if (step === 16) callWindow.dragEndForTest(true)
+                else if (step === 17) { log("unpinned"); callWindow.newMoreForTest() }
+                else if (step === 18) shot("unpinned-more")
+                else if (step === 19) { const g = callWindow.gridCenterForTest("ChatButton"); const r = at("RosterButton"); callWindow.dragForTest("ChatButton", "grid", [g, p(g, -10, -10), p(r, -10, 0)], false) }
+                else if (step === 20) { log("pin over People"); shot("pin") }
+                else if (step === 21) { callWindow.dragEndForTest(true); callWindow.closeMenusForTest() }
+                else if (step === 22) { log("pinned"); shot("pinned") }
+                else if (step === 23) { const r = at("RosterButton"), m = at("MicrophoneButton"); callWindow.dragForTest("RosterButton", "bar", [r, p(r, -10, 0), m], false) }
+                else if (step === 24) { log("over Mic"); shot("blocked") }
+                else if (step === 25) callWindow.dragEndForTest(true)
+                else if (step === 26) { log("after blocked drop"); const c = at("MeetingCollabButton").x ? at("MeetingCollabButton") : at("OrganizerControlButton"); callWindow.dragForTest(callWindow.ubar.bar.indexOf("MeetingCollabButton") >= 0 ? "MeetingCollabButton" : "OrganizerControlButton", "bar", [c, p(c, -60, 0)], false) }
+                else if (step === 27) { log("before Escape"); callWindow.dragEndForTest("escape") }
+                else if (step === 28) { log("escaped"); shot("escaped") }
+                else if (step === 30) { callWindow.arrangeForTest("reset", ""); log("reset") }
+                else if (step === 32) {
+                    const g = n => { const c = at(n); const s = callWindow.contentItem.mapToGlobal(c.x, c.y); return Math.round(s.x) + "," + Math.round(s.y) }
+                    console.warn("JOIN drag screen", "chat", g("ChatButton"), "people", g("RosterButton"), "more", g("MoreButton"), "copilot", g("MeetingCollabButton"))
+                }
+                else if (step >= 34 && step <= 70 && step % 4 === 0) log("real")
+                else if (step === 71) { log("after real"); callWindow.arrangeForTest("reset", "") }
+                else if (step === 72) { backend.setSetting("newMeetingControls", window.nmcWas); callWindow.newControls = window.nmcWas === "true"; log("restored") }
             } else if (step >= 8 && step <= 30 && Qt.application.arguments.indexOf("--join-keys") >= 0) {
                 // --join-keys: log the state each step while keys are sent
                 // from outside (Teams' call shortcuts).

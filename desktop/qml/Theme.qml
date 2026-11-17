@@ -179,6 +179,19 @@ QtObject {
     readonly property color input: pick("#FFFFFF", "#292929", "#000000")          // compose box
     readonly property color selected: pick("#FFFFFF", "#242424", "#1AEBFF")       // the open row in a pane
     readonly property color rowHover: pick("#EBEBEB", "#2E2E2E", "#1AEBFF")
+    // Teams' New meeting controls (measured on winpc in light, dark and
+    // High contrast, 2026-11-16): a hovered bar button or More grid item,
+    // the other half of a hovered split button, and Leave's two halves.
+    readonly property color nmcHover: pick("#EBEBEB", "#333333", "#1AEBFF")
+    readonly property color nmcHoverOther: pick("#F5F5F5", "#3D3D3D", "#1AEBFF")
+    readonly property color nmcLeaveHover: pick("#FDF3F4", "#3B0509", "#1AEBFF")
+    readonly property color nmcLeaveHoverOther: pick("#FDF6F3", "#411200", "#1AEBFF")
+    /// Leave's glyph (CallEnd, colorPaletteRedForeground1-like).
+    readonly property color nmcLeave: pick("#B10E1C", "#DC626D", "#FFFFFF")
+    /// More while a dragged control is over it (unpin), its glyph brand.
+    readonly property color nmcDropTarget: pick("#D6D6D6", "#141414", "#1AEBFF")
+    /// A checked bar button's glyph and underline (People with its pane open).
+    readonly property color nmcChecked: pick("#5B5FC7", "#7F85F5", "#FFFFFF")
     readonly property color searchFill: pick("#FAFAFA", "#242424", "#000000")
     readonly property color menu: pick("#FFFFFF", "#292929", "#000000")           // flyouts, tooltips
     readonly property color menuHover: pick("#F5F5F5", "#3D3D3D", "#1AEBFF")      // NeutralBackground1Hover (menu items)

@@ -1182,7 +1182,14 @@ impl OutgoingCall {
             };
             format!("{};ss_{n}", self.call_id)
         });
-        let body = media_descriptions_body(camera, tag.as_deref(), request_id);
+        // The processor's mids for our lines (its own after it moved the
+        // call to itself).
+        use super::meeting_media::{CAMERA_MID, SHARE_MID};
+        let mids = match &self.media {
+            Some(m) => (m.wire_mid(CAMERA_MID), m.wire_mid(SHARE_MID)),
+            None => (CAMERA_MID.to_string(), SHARE_MID.to_string()),
+        };
+        let body = media_descriptions_body(camera, tag.as_deref(), request_id, (&mids.0, &mids.1));
         cc_post(
             &self.http,
             &self.skype_token,
@@ -1336,11 +1343,17 @@ impl OutgoingCall {
     /// Answer the other side's re-offer (hold, resume, camera); returns
     /// whether it now has us on hold.
     pub async fn answer_renegotiation(&mut self, event: &serde_json::Value) -> Result<bool> {
+        let cb = |p: &str| signaling::trouter_callback(&self.callbacks.0, &self.callbacks.1, p);
+        let controller = serde_json::json!({
+            "controlVideoStreaming": cb("call/controlVideoStreaming/"),
+            "csrcInfo": cb("call/csrcInfo/"),
+        });
         super::incoming::answer_renegotiation(
             &self.http,
             &self.skype_token,
             &mut self.media,
             Some(self.me.clone()),
+            Some(controller),
             event,
         )
         .await
@@ -1599,22 +1612,22 @@ fn endpoint_state_body(from: &serde_json::Value, muted: bool, seq: u64) -> serde
 /// (both are sendrecv in our offer; a line described sending must be, else
 /// 1047 "Invalid MediaDescriptions"). Off, a line is "recvonly"; a shared
 /// screen is "sendonly", tagged with the call's id and the share's number
-/// (Teams: "<callId>;ss_<n>").
+/// (Teams: "<callId>;ss_<n>"). `mids`: the camera's and sharing line's.
 fn media_descriptions_body(
     camera: bool,
     sharing: Option<&str>,
     request_id: u64,
+    (camera_mid, share_mid): (&str, &str),
 ) -> serde_json::Value {
-    use super::meeting_media::{CAMERA_MID, SHARE_MID};
     let camera = if camera {
-        serde_json::json!({"mid": CAMERA_MID, "direction": "sendrecv", "label": "main-video"})
+        serde_json::json!({"mid": camera_mid, "direction": "sendrecv", "label": "main-video"})
     } else {
-        serde_json::json!({"mid": CAMERA_MID, "direction": "recvonly"})
+        serde_json::json!({"mid": camera_mid, "direction": "recvonly"})
     };
     let share = if sharing.is_some() {
-        serde_json::json!({"mid": SHARE_MID, "direction": "sendonly", "label": "applicationsharing-video"})
+        serde_json::json!({"mid": share_mid, "direction": "sendonly", "label": "applicationsharing-video"})
     } else {
-        serde_json::json!({"mid": SHARE_MID, "direction": "recvonly"})
+        serde_json::json!({"mid": share_mid, "direction": "recvonly"})
     };
     let mut descriptions =
         serde_json::json!({"descriptions": [camera, share], "requestId": request_id});
@@ -2527,7 +2540,7 @@ mod tests {
 
     #[test]
     fn media_descriptions_say_what_the_lines_do() {
-        let b = media_descriptions_body(true, None, 2);
+        let b = media_descriptions_body(true, None, 2, ("1", "11"));
         let d = &b["UpdateMediaDescriptions"]["mediaDescriptions"];
         assert_eq!(d["requestId"], 2);
         assert_eq!(
@@ -2539,7 +2552,7 @@ mod tests {
         );
         assert!(d.get("negotiationTag").is_none());
         // A share is "sendonly", tagged as Teams tags it.
-        let s = media_descriptions_body(false, Some("f74ff03b;ss_2"), 3);
+        let s = media_descriptions_body(false, Some("f74ff03b;ss_2"), 3, ("1", "11"));
         let d = &s["UpdateMediaDescriptions"]["mediaDescriptions"];
         assert_eq!(
             d["descriptions"],

@@ -17,7 +17,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use super::twcc::EXTENSION_ID;
 
 /// Where the estimate starts (bit/s), and its bounds.
 const START_BPS: f64 = 600_000.0;
@@ -133,7 +132,7 @@ fn unwrap_seq(seq: u16, latest: u64) -> u64 {
         .unwrap_or(u64::from(seq))
 }
 
-/// Append a one-byte header extension (id 3, two bytes) to a packet
+/// Append a one-byte header extension (the call's id, two bytes) to a packet
 /// without extensions. False when the packet already has some.
 pub fn add_extension(rtp: &mut Vec<u8>, seq: u16) -> bool {
     if rtp.len() < 12 || rtp[0] & 0x10 != 0 {
@@ -145,7 +144,7 @@ pub fn add_extension(rtp: &mut Vec<u8>, seq: u16) -> bool {
         return false;
     }
     rtp[0] |= 0x10;
-    let ext = [0xBE, 0xDE, 0x00, 0x01, (EXTENSION_ID << 4) | 1, (seq >> 8) as u8, seq as u8, 0x00];
+    let ext = [0xBE, 0xDE, 0x00, 0x01, (super::twcc::extension_id() << 4) | 1, (seq >> 8) as u8, seq as u8, 0x00];
     rtp.splice(at..at, ext);
     true
 }

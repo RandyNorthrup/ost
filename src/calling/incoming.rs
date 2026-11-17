@@ -210,12 +210,25 @@ fn reanswer_content_type(neg: &serde_json::Value) -> String {
 /// does to play music, or escalating to a group call) gets a fresh answer,
 /// and the media moves to a new session with ICE and DTLS against it.
 /// `me`: our participant JSON and media-acknowledgement callback.
+/// `controller`: in a meeting, our `clientContentForMediaController`
+/// callbacks, which Teams repeats in each answer.
+///
+/// A meeting's processor moves the call to itself with a new offer when a
+/// lobby admits us (TASK-0213): it offers the lines of our first offer
+/// again — audio, camera, receive slots, sharing, data — under mids of its
+/// own. Teams (pluginless, measured 2026-11-16) answers on a new peer
+/// connection with every line, creates `main-channel` on it at once and
+/// drops the old one once the new is connected; its media control plane
+/// then starts over with a new `syn`. OST does the same: the new session
+/// is a meeting session with its data channel, answering with the
+/// processor's mids ([`webrtc_audio::MidMap`]).
 /// Returns whether the other side has us on hold.
 pub(crate) async fn answer_renegotiation(
     http: &reqwest::Client,
     skype_token: &str,
     session: &mut Option<webrtc_audio::WebRtcAudioSession>,
     me: Option<(serde_json::Value, String)>,
+    controller: Option<serde_json::Value>,
     event: &serde_json::Value,
 ) -> Result<bool> {
     let neg = event
@@ -230,25 +243,74 @@ pub(crate) async fn answer_renegotiation(
         .pointer("/mediaContent/newOffer")
         .and_then(|v| v.as_bool())
         == Some(true);
+    let meeting = current.is_meeting();
     let mut moved = None;
     let sdp = if new_offer {
-        let parsed =
-            webrtc_audio::WebRtcOffer::parse(&offer).context("New offer without DTLS-SRTP")?;
-        let local = webrtc_audio::LocalAudio::prepare().await?;
-        let sdp = local.answer_sdp_with(&parsed, false);
-        moved = Some((local, parsed));
-        sdp
+        let map = meeting.then(|| webrtc_audio::MidMap::for_meeting_offer(&offer)).flatten();
+        let mut local = webrtc_audio::LocalAudio::prepare().await?;
+        match map {
+            Some(map) => {
+                let canonical = map.to_ours(&offer);
+                let mut parsed = webrtc_audio::WebRtcOffer::parse(&canonical)
+                    .context("New offer without DTLS-SRTP")?;
+                local.meeting = true;
+                local.receive_video = true;
+                local.twcc_id = super::twcc::offered_extension_id(&offer).unwrap_or(super::twcc::EXTENSION_ID);
+                let ours = local.answer_sdp_meeting(&canonical, &parsed);
+                // What the processor sends on the slots and the sharing
+                // line: the types we answered there.
+                let slot_pt = parsed.slots.first().and_then(|s| webrtc_audio::answered_pt(&ours, &s.mid));
+                let share_pt = parsed.share_slot.as_ref().and_then(|s| webrtc_audio::answered_pt(&ours, &s.mid));
+                if let (Some(a), Some(b)) = (slot_pt.or(share_pt), share_pt.or(slot_pt)) {
+                    local.answered_pts = Some((a, b));
+                }
+                for s in parsed.slots.iter_mut().chain(parsed.share_slot.iter_mut()) {
+                    if let Some(pt) = webrtc_audio::answered_pt(&ours, &s.mid) {
+                        s.pt = pt;
+                    }
+                }
+                tracing::info!(
+                    slots = parsed.slots.len(),
+                    data = ?parsed.data_stream,
+                    share = parsed.share_slot.is_some(),
+                    twcc = local.twcc_id,
+                    "answering the meeting processor's move as a meeting"
+                );
+                let wire = map.to_wire(&ours);
+                moved = Some((local, parsed, Some(map)));
+                wire
+            }
+            None => {
+                let parsed =
+                    webrtc_audio::WebRtcOffer::parse(&offer).context("New offer without DTLS-SRTP")?;
+                let sdp = local.answer_sdp_with(&parsed, false);
+                moved = Some((local, parsed, None));
+                sdp
+            }
+        }
     } else {
         current.answer_reoffer(&offer)?
     };
     debug_dump("sdp-reanswer", &sdp);
+    // A meeting's answers say what the call carries, as Teams' do (the
+    // processor's offers name nothing).
+    let modalities = match neg.get("callModalities") {
+        Some(serde_json::Value::Array(a)) if meeting && a.is_empty() => {
+            share_modalities(current.is_sharing(), current.camera_on())
+        }
+        Some(m) => m.clone(),
+        None => serde_json::json!(["audio"]),
+    };
     let mut answer = serde_json::json!({
-        "callModalities": neg.get("callModalities").cloned().unwrap_or(serde_json::json!(["audio"])),
+        "callModalities": modalities,
         "mediaContent": { "blob": sdp, "contentType": reanswer_content_type(neg) },
     });
     if let Some((sender, ack)) = me {
         answer["sender"] = sender;
         answer["links"] = serde_json::json!({ "mediaAcknowledgement": ack });
+    }
+    if let Some(c) = controller.filter(|_| meeting) {
+        answer["clientContentForMediaController"] = c;
     }
     cc_request(
         http,
@@ -259,15 +321,27 @@ pub(crate) async fn answer_renegotiation(
         "Re-answer",
     )
     .await?;
-    if let Some((local, parsed)) = moved {
+    if let Some((local, parsed, map)) = moved {
         let muted = current.is_muted();
         let held = current.is_held();
-        let fresh = webrtc_audio::WebRtcAudioSession::start(local, parsed).await?;
+        let camera = current.camera_on().then(|| current.camera_device());
+        let mut fresh = webrtc_audio::WebRtcAudioSession::start(local, parsed).await?;
         fresh.set_local_sdp(&sdp);
         fresh.set_muted(muted);
         fresh.set_held(held);
-        tracing::info!("media moved to the new offer");
-        // The old session (its socket, camera and tasks) stops here.
+        if let Some(map) = map {
+            fresh.set_mid_map(map);
+        }
+        // Our camera goes on sending from the new session.
+        if let Some(device) = camera
+            && let Err(e) = fresh.set_camera(true, device)
+        {
+            tracing::warn!("camera not taken over by the new media session: {e:#}");
+        }
+        tracing::info!(meeting = fresh.is_meeting(), "media moved to the new offer");
+        // The old session (its socket, camera and tasks) stops here; the
+        // call's echo canceller and send estimate are the new one's.
+        current.supersede();
         *session = Some(fresh);
     }
     Ok(session.as_ref().is_some_and(|s| s.is_held_by_peer()))
@@ -740,7 +814,7 @@ impl ActiveCall {
             .me
             .as_ref()
             .map(|m| (m.json(), m.callback("call/mediaAcknowledgement/")));
-        answer_renegotiation(&auth.http, &auth.skype_token, &mut self.webrtc, me, event).await
+        answer_renegotiation(&auth.http, &auth.skype_token, &mut self.webrtc, me, None, event).await
     }
 
     /// The call takes dial-pad tones.

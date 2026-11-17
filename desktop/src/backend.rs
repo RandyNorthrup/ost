@@ -253,6 +253,9 @@ pub mod qobject {
         /// The call is a scheduled meeting joined from its link (not a
         /// chat's group call or Meet now).
         #[qproperty(bool, call_scheduled)]
+        /// The call is a channel's Meet now: a meeting, ad hoc (Teams shows
+        /// it a meeting's controls but Notes).
+        #[qproperty(bool, call_adhoc_meeting)]
         /// Held in a meeting's lobby (call_state "lobby"): someone is in
         /// the meeting, so Teams says they'll let you in shortly.
         #[qproperty(bool, call_lobby_presenter)]
@@ -2620,6 +2623,7 @@ pub struct BackendRust {
     call_meeting_locked: bool,
     call_network_strength: QString,
     call_scheduled: bool,
+    call_adhoc_meeting: bool,
     call_lobby_presenter: bool,
     call_attendee_restrictions: i32,
     call_speaking_while_muted: bool,
@@ -5270,6 +5274,7 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
             this.as_mut().set_call_video_offered(video);
             this.as_mut().set_call_meeting(false);
             this.as_mut().set_call_scheduled(false);
+            this.as_mut().set_call_adhoc_meeting(false);
             this.as_mut().set_call_state(QString::from("ringing"));
         });
         // Teams web's calls only say they're video calls in the full
@@ -5329,10 +5334,22 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         };
         let slot = guard;
         drop(slot);
+        // A new offer moved the media to a new session (a meeting's after
+        // a lobby admission): its media control plane starts empty, so ask
+        // again for the cameras and the share the roster shows.
+        let moved = event
+            .pointer("/body/mediaNegotiation/mediaContent/newOffer")
+            .and_then(|v| v.as_bool())
+            == Some(true);
         match result {
             Ok(held) => {
-                tracing::info!(held, "re-offer answered");
-                let _ = qt.queue(move |mut this| this.as_mut().set_call_held_by_peer(held));
+                tracing::info!(held, moved, "re-offer answered");
+                let _ = qt.queue(move |mut this| {
+                    this.as_mut().set_call_held_by_peer(held);
+                    if moved && this.rust().call_meeting {
+                        this.as_mut().apply_roster(Vec::new());
+                    }
+                });
             }
             Err(e) => tracing::warn!("re-offer not answered: {}", short_error(&e)),
         }
@@ -6653,6 +6670,7 @@ impl qobject::Backend {
         self.as_mut().set_call_video_offered(false);
         self.as_mut().set_call_meeting(false);
         self.as_mut().set_call_scheduled(false);
+        self.as_mut().set_call_adhoc_meeting(false);
         self.as_mut().set_call_ai_indicator(false);
         self.as_mut().show_processing(Default::default());
         self.as_mut().show_transcript(Vec::new(), true);
@@ -6841,6 +6859,8 @@ impl qobject::Backend {
             .set_call_thread_id(QString::from(chat_id.as_str()));
         self.as_mut().load_call_chat_members();
         self.as_mut().set_call_scheduled(false);
+        // A channel's Meet now (no group call kind) is a meeting, ad hoc.
+        self.as_mut().set_call_adhoc_meeting(kind.is_none() && !test);
         self.as_mut().set_call_ai_indicator(false);
         self.as_mut().show_processing(Default::default());
         self.as_mut().show_transcript(Vec::new(), true);
@@ -8041,6 +8061,7 @@ impl qobject::Backend {
         self.as_mut().set_call_muted(false);
         self.as_mut().rust_mut().attendance = Default::default();
         self.as_mut().set_call_scheduled(true);
+        self.as_mut().set_call_adhoc_meeting(false);
         self.as_mut().set_call_meeting_locked(false);
         self.as_mut().set_call_attendee_restrictions(0);
         self.as_mut().set_call_speaking_while_muted(false);

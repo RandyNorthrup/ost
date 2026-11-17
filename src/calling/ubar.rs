@@ -571,6 +571,11 @@ pub struct Facts {
     /// A scheduled meeting (joined from its link), not a chat's group call
     /// or Meet now.
     pub scheduled: bool,
+    /// A Meet now meeting (Teams' ad hoc meeting: a channel's Meet now). A
+    /// meeting all the same (Teams' isMeeting, not isGroupCall): Teams
+    /// shows it a meeting's controls, except Notes, which an ad hoc
+    /// channel meeting doesn't have (TASK-0208).
+    pub adhoc: bool,
     /// Your meeting role is Organizer.
     pub organizer: bool,
     /// You put the call on hold.
@@ -610,6 +615,11 @@ pub struct Facts {
 }
 
 impl Facts {
+    /// A meeting (scheduled or Meet now), not a chat's group call.
+    pub fn is_meeting(&self) -> bool {
+        self.scheduled || self.adhoc
+    }
+
     /// Whether Teams shows `control` (bar controls and More's items OST
     /// has).
     pub fn shows(&self, control: &str) -> bool {
@@ -630,9 +640,12 @@ impl Facts {
             "OrganizerControlButton" => self.organizer,
             // Copilot: meetings and group calls (not 1:1 calls), licensed.
             "MeetingCollabButton" => self.copilot && !self.p2p,
-            // Private scheduled meetings (not Meet now: its flag is off).
+            // Private meetings and scheduled channel meetings: Teams'
+            // `(!isAdhocMeeting || enableMeetingNotesInMeetNowCall &&
+            // !isChannelMeeting) && (isPrivateMeeting || channel notes)`, so
+            // not an ad hoc channel meeting (OST's Meet now) or a group call.
             "MeetingDetailsButton" => self.scheduled && !self.breakout_room,
-            "StartBreakoutRoomButton" => self.scheduled && self.organizer,
+            "StartBreakoutRoomButton" => self.is_meeting() && self.organizer,
             "ReturnToBreakoutRoomButton" => self.room_to_join,
             "BreakoutRoomReturnToMainButton" => self.can_return_to_main,
             "MeetingAppsAddButton" => !self.pstn,
@@ -641,34 +654,34 @@ impl Facts {
             // In More (live: the AV framework replaces Devices with these).
             "AudioSettingsButton" | "CameraEffectsButton" => true,
             // Meetings (Teams' isMeeting), not a chat's group call.
-            "MeetingInfoButton" => self.scheduled,
+            "MeetingInfoButton" => self.is_meeting(),
             // Record and transcribe ▸ (the meeting's call recorder).
             // Show or hide the Transcript pane (the call window adds it
             // once a transcript has run, as Teams' hasBeenStarted).
             "RecordingMenuControl" | "RecordingButton" | "TranscriptButton" | "TranscriptPanelButton" => {
-                self.scheduled
+                self.is_meeting()
             }
             // More ▸ Timer (the meeting's shared timer; the call window
             // hides it where Teams' timer can't be seen).
-            "MeetingFacilitatorTimerButton" => self.scheduled,
+            "MeetingFacilitatorTimerButton" => self.is_meeting(),
             // Language and speech ▸ Show live captions (the meeting's
             // recorder provides them).
-            "LanguageSpeechMenuControl" | "ClosedCaptionsButton" => self.scheduled,
+            "LanguageSpeechMenuControl" | "ClosedCaptionsButton" => self.is_meeting(),
             // Language and speech ▸ Turn on RTT for this call (real-time
             // text on the meeting's data channel).
-            "RealTimeTextButton" => self.scheduled,
+            "RealTimeTextButton" => self.is_meeting(),
             // More ▸ Help (Teams' Help app on its meetings page).
-            "MeetingHelpButton" => self.scheduled,
+            "MeetingHelpButton" => self.is_meeting(),
             // More ▸ Report a concern (a security report about the meeting).
-            "ReportMeetingButton" => self.scheduled,
+            "ReportMeetingButton" => self.is_meeting(),
             // Settings ▸ Call health (every call: the media path counts
             // its streams in any call).
             "CallHealth" => true,
             // Settings ▸ Accessibility settings (the in-meeting pane).
-            "AccessibilitySettingsButton" | "MuteNotificationsButton" | "ChatBubblesButton" => self.scheduled,
+            "AccessibilitySettingsButton" | "MuteNotificationsButton" | "ChatBubblesButton" => self.is_meeting(),
             // The new controls keep Video effects and Audio settings in
             // Settings ▸, so it shows in every call.
-            "SettingsMenuControl" => self.scheduled || self.centered,
+            "SettingsMenuControl" => self.is_meeting() || self.centered,
             // The new controls' More: Join info ▸ (Meeting info, Call
             // health) and Settings ▸ Hide me / Optimize for room (the old
             // controls keep those two in View ▸ More options).
@@ -891,6 +904,31 @@ mod tests {
         let held = arrange(&Facts { p2p: true, on_hold: true, ..Default::default() }, &w, 17.0, 5000.0);
         assert!(held.bar.contains(&"ResumeButton".to_string()) && !held.bar.contains(&"HoldButton".to_string()));
         assert!(!held.bar.contains(&"RaiseHandsButton".to_string()));
+    }
+
+    /// Teams' Meet now is a meeting (measured on winpc 2026-11-16 with New
+    /// meeting controls on and off: the same controls as a scheduled
+    /// meeting); an ad hoc channel meeting has no Notes; a group call
+    /// none of the meeting's own controls.
+    #[test]
+    fn meet_now_is_a_meeting_and_group_calls_are_not() {
+        let w = |_: &str| 56.0;
+        let grid = |a: &Arranged| a.more.iter().filter(|s| s.grid).flat_map(|s| s.items.iter().map(|i| i.name.clone())).collect::<Vec<_>>();
+        for centered in [true, false] {
+            let meet_now = Facts { adhoc: true, organizer: true, reactions: true, centered, ..Default::default() };
+            let a = arrange(&meet_now, &w, 17.0, 5000.0);
+            let all: Vec<String> = a.bar.iter().cloned().chain(grid(&a)).chain(a.more.iter().flat_map(|s| s.items.iter().map(|i| i.name.clone()))).collect();
+            for want in ["StartBreakoutRoomButton", "OrganizerControlButton", "MeetingHelpButton"] {
+                assert!(all.iter().any(|n| n == want), "Meet now ({centered}) shows {want}: {all:?}");
+            }
+            assert!(!all.iter().any(|n| n == "MeetingDetailsButton"), "an ad hoc channel meeting has no Notes");
+            let group = Facts { reactions: true, centered, ..Default::default() };
+            let g = arrange(&group, &w, 17.0, 5000.0);
+            let gall: Vec<String> = g.bar.iter().cloned().chain(g.more.iter().flat_map(|s| s.items.iter().map(|i| i.name.clone()))).collect();
+            for gone in ["MeetingDetailsButton", "StartBreakoutRoomButton", "OrganizerControlButton", "ReportMeetingButton"] {
+                assert!(!gall.iter().any(|n| n == gone), "a group call ({centered}) has no {gone}");
+            }
+        }
     }
 
     fn new_controls_meeting() -> Facts {

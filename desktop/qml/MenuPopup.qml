@@ -267,7 +267,10 @@ Popup {
                         visible: !!row.modelData.icon
                         x: root.checkColumn ? 30 : root.fabric ? 8 : 6; anchors.verticalCenter: parent.verticalCenter; size: root.fabric ? 16 : 20
                         name: row.modelData.icon || ""
-                        color: theme.onFill(hcFill1, row.modelData.iconColor ? row.modelData.iconColor : row.modelData.checked ? theme.brand : row.ink)
+                        // Teams' new-controls menus turn a hovered row's
+                        // glyph brand (Fluent's MenuItem icon hover).
+                        color: theme.onFill(hcFill1, row.modelData.iconColor ? row.modelData.iconColor
+                                            : row.modelData.checked || (root.newStyle && mh.hovered && row.on) ? theme.brand : row.ink)
                     }
                     FluentIcon {
                         visible: !root.viewStyle && (!row.modelData.icon || root.checkColumn) && !row.modelData.toggle && row.modelData.checked === true

@@ -606,11 +606,16 @@ Window {
     readonly property bool pstnCall: !meeting && (backend.callPeerId || "").indexOf("4:") === 0
     /// A scheduled meeting (joined from its link), not a chat's group call.
     property bool scheduled: false
+    /// A channel's Meet now: a meeting, ad hoc.
+    property bool adhocMeeting: false
     // Teams' New meeting controls (Settings ▸ General ▸ Meeting, a Teams
     // Labs feature kept on this device): its InlineCentered layout. Read
     // again whenever the window is activated, so turning it on or off in
     // Settings reaches a meeting in progress, as in Teams.
     property bool newControls: backend.setting("newMeetingControls") === "true"
+    /// The bar's fill: the new controls' NeutralBackground1, else the
+    /// surface.
+    readonly property color barFill: newControls ? theme.menu : theme.surface
     // The user's arrangement of the new controls (Pin, Unpin, Move), per
     // client as Teams keeps it: {unpinned, pinned, order} per layout.
     property var controlsLayouts: { try { return JSON.parse(backend.setting("meetingControlsLayouts") || "{}") } catch (e) { return {} } }
@@ -630,10 +635,10 @@ Window {
     // without labels (measured with New meeting controls on).
     readonly property bool compactBar: newControls && width < 480
     readonly property var ubarFacts: ({
-        p2p: !meeting, pstn: pstnCall, consult: false, scheduled: scheduled,
+        p2p: !meeting, pstn: pstnCall, consult: false, scheduled: scheduled, adhoc: adhocMeeting,
         organizer: organizer, onHold: held, canPopOut: presenting && !contentPoppedOut, reactions: true,
         roomToJoin: roomToJoin, canReturnToMain: canReturnToMain, breakoutRoom: backend.callBreakoutRoomJson !== "" || !!heldMeeting,
-        centered: newControls, customization: controlsCustomization, echo: testCall, copilot: copilotAllowed,
+        centered: newControls, customization: dragPreview || controlsCustomization, echo: testCall, copilot: copilotAllowed,
         canTakeControl: presenting && !!controlState.capable,
         callMe: !!phone.available && !!phone.dialIn && !!phone.dial, facilitator: copilotAllowed
     })
@@ -1149,7 +1154,9 @@ Window {
         id: bar
         // The compact bar (new controls under 480 px): 40 tall.
         width: parent.width; height: win.compactBar ? 40 : 60
-        color: theme.surface
+        // The new controls' bar is Teams' NeutralBackground1 (#292929 in
+        // dark, measured), a step up from the stage's surface.
+        color: win.barFill
         // Meetings: Teams' shield (meeting info) beside the timer: a 30 x 32
         // indicator at x 8 with its 20 px glyph, then the duration in
         // 14 px #424242 with 6.7 px of padding.
@@ -1200,7 +1207,7 @@ Window {
                 id: hcFill1
                 x: win.compactBar ? 2.7 : 4.67; y: win.compactBar ? 4 : 6
                 width: win.compactBar ? 19.6 : 28; height: win.compactBar ? 14 : 20; radius: height / 2
-                color: aiIndicator.active ? (aiHover.hovered ? theme.brandHover : theme.brandFill) : theme.surface
+                color: aiIndicator.active ? (aiHover.hovered ? theme.brandHover : theme.brandFill) : win.barFill
                 FluentIcon {
                     x: win.compactBar ? 2.8 : 4; y: 0
                     name: aiIndicator.active ? "sparkle-20-filled" : "sparkle-off-20-regular"; size: win.compactBar ? 14 : 20
@@ -1250,6 +1257,8 @@ Window {
                 Loader {
                     required property string modelData
                     sourceComponent: modelData === "|" ? barDivider : win.barComponent(modelData)
+                    // The dragged control keeps its place hidden.
+                    opacity: win.dragState && !win.dragState.cancelled && win.dragState.name === modelData ? 0 : 1
                     onLoaded: if (modelData !== "|") {
                         win.registerBarItem(modelData, item)
                         // The new controls: right-click to arrange them.
@@ -1257,6 +1266,31 @@ Window {
                     }
                 }
             }
+        }
+        // Dragging the new controls (see dragBegin): the bar outlives the
+        // controls it lays out again while the drag goes on.
+        HoverHandler {
+            id: barDragHover
+            enabled: win.newControls
+        }
+        DragHandler {
+            id: barDrag
+            target: null
+            dragThreshold: 2
+            acceptedButtons: Qt.LeftButton
+            // Only a press on a control that can move starts a drag.
+            enabled: win.newControls && (active || win.ubar.movable.some(g => g.indexOf(win.barControlAt(bar.mapToItem(win.contentItem, barDragHover.point.position))) >= 0))
+            cursorShape: win.dragZone === "blocked" ? Qt.ForbiddenCursor : Qt.ClosedHandCursor
+            readonly property point at: win.contentItem.mapFromItem(null, centroid.scenePosition)
+            onActiveChanged: {
+                if (active) {
+                    const p = win.contentItem.mapFromItem(null, centroid.scenePressPosition)
+                    const n = win.barControlAt(p)
+                    win.dragBegin(n, "bar", p, win.barItems[n] ? win.barItems[n].mapToItem(win.contentItem, 0, 0) : null)
+                    win.dragMove(at)
+                } else if (win.dragState) win.dragEnd(true)
+            }
+            onAtChanged: if (active && win.dragState) win.dragMove(at)
         }
         // Leave: 13 px in from the middle group's end, 14 from the window edge.
         Row {
@@ -1278,7 +1312,8 @@ Window {
                 // room" with its exit arrow, and Leave meeting in its menu.
                 icon: win.heldMeeting ? "arrow-exit-20-filled" : "call-leave-filled"
                 label: win.heldMeeting ? "Leave room" : "Leave"; strong: true
-                iconColor: theme.hc("#B10E1C", "#FFFFFF")
+                iconColor: win.newControls ? theme.nmcLeave : theme.hc("#B10E1C", "#FFFFFF")
+                danger: true
                 tip: win.heldMeeting ? "Leave room" : "Leave"; shortcut: "Ctrl+Shift+H"
                 // Teams splits Leave only when its menu has more than Leave.
                 split: win.meeting && win.leaveItems.length > 1
@@ -2258,7 +2293,7 @@ Window {
             canMuteAll: win.canMuteAll
             onMuteAll: muteAllAsk.open()
             canManage: win.organizer
-            canReport: win.scheduled
+            canReport: win.scheduled || win.adhocMeeting
             pinnedId: win.pinnedId
             onParticipantAction: (action, id, name, stateId) => {
                 if (action === "pin") win.pinnedId = id
@@ -2810,7 +2845,7 @@ Window {
         x: win.compactBar ? 2 : 4; y: win.compactBar ? 41 : 59.3
         width: win.newControls ? 250 : 249.3; height: win.newControls ? 104.7 : 73.3
         padding: 0
-        background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
+        background: FluentSurface { depth: 16; radius: 4; color: win.newControls ? theme.menu : theme.surface }
         Row {
             x: win.newControls ? 16.7 : 20.7; y: win.newControls ? 16.7 : 20.7; spacing: win.newControls ? 14.13 : 12
             Repeater {
@@ -2818,8 +2853,14 @@ Window {
                 Rectangle {
                     required property var modelData
                     width: 32; height: 32; radius: 4
-                    color: rmHover.hovered ? theme.menuHover : "transparent"
-                    Image { x: 4; y: 4; width: 24; height: 24; smooth: true; source: win.reactionUrl(parent.modelData.n, false) }
+                    // The new controls: Teams' bar hover, the picture
+                    // growing to 38.4 px (1.6 times) while hovered.
+                    color: rmHover.hovered ? (win.newControls ? theme.nmcHover : theme.menuHover) : "transparent"
+                    Image {
+                        x: 4; y: 4; width: 24; height: 24; smooth: true; source: win.reactionUrl(parent.modelData.n, false)
+                        scale: win.newControls && rmHover.hovered ? 1.6 : 1
+                        Behavior on scale { NumberAnimation { duration: 100 } }
+                    }
                     HoverHandler { id: rmHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: { if (!win.newControls) reactMenu.close(); win.sendReaction(parent.modelData.n) } }
                     Accessible.role: Accessible.Button
@@ -2832,9 +2873,9 @@ Window {
             visible: win.newControls
             x: 12.7; y: 56.7; width: 224.7; height: 35.3; radius: 4
             color: win.handRaised ? (raiseHover.hovered ? theme.brandHover : theme.checkedFill)
-                 : raiseHover.hovered ? theme.menuHover : theme.surface
+                 : raiseHover.hovered ? theme.nmcHover : theme.menu
             border.width: 0.67
-            border.color: win.handRaised ? theme.hc("#C7C7C7", "#1AEBFF") : theme.stroke
+            border.color: win.handRaised ? theme.hc("#C7C7C7", "#1AEBFF") : raiseHover.hovered ? theme.strokeHover : theme.stroke
             Row {
                 anchors.centerIn: parent; spacing: 6
                 FluentIcon {
@@ -3195,6 +3236,34 @@ Window {
             readonly property int rows: Math.ceil(cells.length / 3)
             readonly property real gridHeight: rows > 0 ? rows * 58 - 6 : 0
             height: gridHeight + (apps ? (rows > 0 ? 12 : 0) + 32 : 0) + 6
+            /// The grid item at `p` (this item's coordinates), or "".
+            function cellAt(p) {
+                const col = Math.floor((p.x - 12) / 96), row = Math.floor(p.y / 58)
+                if (col < 0 || col > 2 || row < 0 || p.x - 12 - col * 96 >= 70 || p.y - row * 58 >= 52) return ""
+                const c = cells[row * 3 + col]
+                return c ? c.name : ""
+            }
+            // Dragging a grid item onto the bar (see dragBegin).
+            HoverHandler { id: gridDragHover }
+            DragHandler {
+                target: null
+                dragThreshold: 2
+                acceptedButtons: Qt.LeftButton
+                enabled: active || gridRoot.cellAt(gridDragHover.point.position) !== ""
+                cursorShape: win.dragZone === "blocked" ? Qt.ForbiddenCursor : Qt.ClosedHandCursor
+                readonly property point at: win.contentItem.mapFromItem(null, centroid.scenePosition)
+                onActiveChanged: {
+                    if (active) {
+                        const g = gridRoot.mapFromItem(null, centroid.scenePressPosition)
+                        const n = gridRoot.cellAt(g)
+                        const p = win.contentItem.mapFromItem(null, centroid.scenePressPosition)
+                        const col = Math.floor((g.x - 12) / 96), row = Math.floor(g.y / 58)
+                        win.dragBegin(n, "grid", p, gridRoot.mapToItem(win.contentItem, 12 + col * 96, row * 58))
+                        win.dragMove(at)
+                    } else if (win.dragState) win.dragEnd(true)
+                }
+                onAtChanged: if (active && win.dragState) win.dragMove(at)
+            }
             Repeater {
                 model: gridRoot.cells
                 Item {
@@ -3209,7 +3278,7 @@ Window {
                         id: hcFillCell
                         width: 70; height: 52
                         radius: 4; topRightRadius: cell.hasMenu ? 0 : 4; bottomRightRadius: cell.hasMenu ? 0 : 4
-                        color: cellHover.hovered && cell.on ? theme.rowHover : "transparent"
+                        color: cellHover.hovered && cell.on ? theme.nmcHover : "transparent"
                         FluentIcon {
                             x: 22.5; y: 4.5; size: 25; name: cell.modelData.icon || ""
                             color: theme.onFill(hcFillCell, !cell.on ? theme.disabled : cell.modelData.checked ? theme.brand
@@ -3246,7 +3315,7 @@ Window {
                         visible: cell.hasMenu
                         x: 70; width: 22; height: 52
                         topRightRadius: 4; bottomRightRadius: 4
-                        color: chevHoverCell.hovered ? theme.rowHover : "transparent"
+                        color: chevHoverCell.hovered ? theme.nmcHover : "transparent"
                         FluentIcon { x: 3; y: 18; size: 16; name: "call-chevron"; color: theme.onFill(hcFillCellChev, theme.textStrong) }
                         HoverHandler { id: chevHoverCell; cursorShape: Qt.PointingHandCursor }
                         TapHandler {
@@ -3267,8 +3336,8 @@ Window {
                 visible: !!gridRoot.apps
                 y: gridRoot.gridHeight + (gridRoot.rows > 0 ? 12 : 0)
                 width: 284; height: 32; radius: 4
-                color: appsHover.hovered ? theme.menuHover : theme.surface
-                border.width: 0.67; border.color: theme.stroke
+                color: appsHover.hovered ? theme.nmcHover : theme.menu
+                border.width: 0.67; border.color: appsHover.hovered ? theme.strokeHover : theme.stroke
                 Text {
                     anchors.centerIn: parent
                     text: gridRoot.apps ? gridRoot.apps.label : ""
@@ -3355,6 +3424,170 @@ Window {
         onPicked: i => win.arrange(items[i].action, win.arrangeTarget)
     }
     function arrangeForTest(action, name) { arrange(action, name) }
+
+    // Drag and drop between the bar and More (the new controls; Teams'
+    // dnd-kit, measured on winpc 2026-11-16, docs/spec/new-meeting-
+    // controls.md §6a): a customizable bar control or a grid item moves
+    // after 2 px. A copy follows the pointer at 0.7 opacity, drawn as a
+    // bar button over the bar (as a grid item over More), in its hover
+    // fill; the bar makes room where it would land and the control itself
+    // is hidden there. Over More (the button or its menu) a bar control is
+    // unpinned: More shows pressed and the copy fades to 0.4. Over a
+    // control of its own group a bar control moves before it when dragged
+    // left, after it when dragged right; a grid item dropped on the bar is
+    // pinned there. Over a control that can't take it (Mic, Camera, Share,
+    // Leave) the pointer says it isn't allowed. Escape cancels. The result
+    // is saved as Move / Pin / Unpin save it.
+    property var dragState: null
+    /// The arrangement shown while dragging (saved on a drop).
+    property var dragPreview: null
+    /// Where the pointer is: "bar" (a place on the bar), "more" (More),
+    /// "blocked", or "".
+    property string dragZone: ""
+    /// Draw the dragged copy as a grid item ("grid") or a bar button.
+    property string dragLook: "bar"
+    function dragInside(it, p) {
+        if (!it || !it.visible) return false
+        const q = it.mapToItem(win.contentItem, 0, 0)
+        return p.x >= q.x && p.x < q.x + it.width && p.y >= q.y && p.y < q.y + it.height
+    }
+    /// The bar control under `p` (window coordinates), or "".
+    function barControlAt(p) {
+        for (const n of ubar.bar) if (n !== "|" && dragInside(barItems[n], p)) return n
+        return ""
+    }
+    function dragOverMore(p) {
+        if (dragInside(barItems["MoreButton"], p) && ubar.bar.indexOf("MoreButton") >= 0) return true
+        return newMore.visible && p.x >= newMore.x && p.x < newMore.x + newMore.width && p.y >= newMore.y && p.y < newMore.y + newMore.height
+    }
+    function dragCopy(c) {
+        const o = JSON.parse(JSON.stringify(c || {}))
+        o.unpinned = o.unpinned || []; o.pinned = o.pinned || []; o.order = o.order || []
+        return o
+    }
+    /// Start dragging `name` from the bar or the grid, the pointer at `p`.
+    function dragBegin(name, from, p, topLeft) {
+        if (!newControls || !name || name === "MeetingAppsAddButton") return false
+        const groups = ubar.movable.map(g => g.slice())
+        const grid = ubar.more.filter(s => s.grid).reduce((a, s) => a.concat(s.items.map(i => i.name)), [])
+        const movable = groups.some(g => g.indexOf(name) >= 0)
+        if (from === "bar" ? !movable : !(movable || grid.indexOf(name) >= 0)) return false
+        const q = topLeft || p
+        dragState = { name: name, from: from, start: p, offset: Qt.point(p.x - q.x, p.y - q.y), groups: groups,
+                      label: controlLabel(name), icon: (gridEntry(name) || {}).icon || "" }
+        dragLook = from === "grid" ? "grid" : "bar"
+        dragZone = ""
+        dragPreview = null
+        dragGhost.place(p)
+        return true
+    }
+    function dragMove(p) {
+        const d = dragState
+        if (!d || d.cancelled) return
+        dragGhost.place(p)
+        const dx = p.x - d.start.x
+        const base = dragCopy(controlsCustomization)
+        const order = d.groups.reduce((a, g) => a.concat(g), [])
+        if (dragOverMore(p)) {
+            // Only a bar control can be unpinned; a grid item over its
+            // own menu changes nothing.
+            if (d.from === "bar" || ubar.overflowed.indexOf(d.name) >= 0) {
+                base.unpinned = [d.name].concat(base.unpinned.filter(n => n !== d.name))
+                base.pinned = base.pinned.filter(n => n !== d.name)
+                dragPreview = base; dragZone = "more"
+            } else { dragPreview = null; dragZone = "" }
+            return
+        }
+        const over = barControlAt(p)
+        if (!over) {
+            // Off the controls: nothing would change (the bar's own gaps
+            // keep the last place).
+            if (!dragInside(bar, p)) { dragPreview = null; dragZone = "" }
+            return
+        }
+        dragLook = "bar"
+        if (over === d.name) return
+        const target = d.groups.find(g => g.indexOf(over) >= 0)
+        const own = d.groups.find(g => g.indexOf(d.name) >= 0)
+        if (!target || (own && own !== target)) { dragPreview = null; dragZone = "blocked"; return }
+        // Before when dragged left, after when dragged right (Teams'
+        // resolveMode on the drag's horizontal travel).
+        const rest = order.filter(n => n !== d.name)
+        const at = rest.indexOf(over) + (dx > 0 ? 1 : 0)
+        rest.splice(at, 0, d.name)
+        base.order = rest
+        if (!own) {
+            if (base.unpinned.indexOf(d.name) >= 0) base.unpinned = base.unpinned.filter(n => n !== d.name)
+            else if (base.pinned.indexOf(d.name) < 0) base.pinned.push(d.name)
+        }
+        dragPreview = base; dragZone = "bar"
+    }
+    function dragEnd(dropped) {
+        const d = dragState
+        const result = dragPreview
+        const keep = dropped && d && !d.cancelled && result && (dragZone === "bar" || dragZone === "more")
+        if (keep) {
+            console.info("meeting controls: dragged", d.name, dragZone === "more" ? "into More" : "on the bar")
+            saveCustomization(result)
+        }
+        dragPreview = null; dragZone = ""; dragState = null
+    }
+    function dragCancel() { if (dragState) { dragState = Object.assign({}, dragState, { cancelled: true }); dragPreview = null; dragZone = "" } }
+    Shortcut { sequence: "Escape"; enabled: !!win.dragState; onActivated: win.dragCancel() }
+    // The dragged copy: a bar button (56 x 60, its 48 px button in the
+    // hover fill) or a grid item (70 x 52), above the menus.
+    Item {
+        id: dragGhost
+        parent: Overlay.overlay
+        z: 1000
+        visible: !!win.dragState && !win.dragState.cancelled
+        width: win.dragLook === "grid" ? 70 : 56; height: win.dragLook === "grid" ? 52 : 60
+        opacity: win.dragZone === "more" ? 0.4 : 0.7
+        Behavior on opacity { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
+        function place(p) {
+            const d = win.dragState
+            if (!d) return
+            const q = win.contentItem.mapToItem(parent, p.x - d.offset.x, p.y - d.offset.y)
+            x = q.x; y = q.y
+        }
+        Rectangle {
+            id: hcFillGhost
+            x: win.dragLook === "grid" ? 0 : 4; y: win.dragLook === "grid" ? 0 : 6
+            width: win.dragLook === "grid" ? 70 : 48; height: win.dragLook === "grid" ? 52 : 48
+            radius: 4; color: theme.nmcHover
+            FluentIcon {
+                x: win.dragLook === "grid" ? 22.5 : 11.5; y: win.dragLook === "grid" ? 4.5 : 3.5; size: 25
+                name: win.dragState ? win.dragState.icon : ""; color: theme.onFill(hcFillGhost, theme.text)
+            }
+            Text {
+                x: 0.7; y: win.dragLook === "grid" ? 33.3 : 30.3; width: parent.width - 1.3; height: 16
+                horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+                text: win.dragState ? win.dragState.label : ""; elide: Text.ElideRight
+                font.family: theme.font; font.pixelSize: 11; color: theme.onFill(hcFillGhost, theme.text)
+            }
+        }
+    }
+    function dragForTest(name, from, points, drop) {
+        const it = from === "bar" ? barItems[name] : null
+        if (!dragBegin(name, from, points[0], it ? it.mapToItem(win.contentItem, 0, 0) : null)) return false
+        for (const p of points.slice(1)) dragMove(p)
+        const zone = dragZone
+        if (drop) dragEnd(true)
+        return zone
+    }
+    /// A bar control's centre (window coordinates), or (0, 0).
+    function centerForTest(name) {
+        const it = ubar.bar.indexOf(name) >= 0 ? barItems[name] : null
+        return it ? it.mapToItem(win.contentItem, it.width / 2, it.height / 2) : Qt.point(0, 0)
+    }
+    /// A grid item's centre while More is open (its 24.67 px inset, 96 px
+    /// columns and 58 px rows).
+    function gridCenterForTest(name) {
+        const i = newGridItems.filter(e => !e.apps).findIndex(e => e.name === name)
+        if (i < 0 || !newMore.visible) return Qt.point(0, 0)
+        return Qt.point(newMore.x + 24.67 + (i % 3) * 96 + 35, newMore.y + 12.67 + Math.floor(i / 3) * 58 + 26)
+    }
+    function dragEndForTest(drop) { if (drop === "escape") { dragCancel(); dragEnd(true) } else dragEnd(drop) }
     function controlMenuForTest(name) { const it = barItems[name]; if (it) openControlMenu(name, it, Qt.point(24, 24)) }
     function arrangeMenuForTest() { return arrangeMenu }
     // Dial pad: Teams' keypad under the button; keys send tones.
@@ -3617,7 +3850,7 @@ Window {
     Component { id: cJoinRoom; BarTextButton { label: "Join room"; control: "ReturnToBreakoutRoomButton" } }
     Component { id: cReturnMain; BarTextButton { label: "Return"; control: "BreakoutRoomReturnToMainButton" } }
     Component { id: cApps; BarButton { id: appsB; icon: "call-apps"; label: "Apps"; tip: appsMenu.visible ? "Close apps" : "Find apps and more"; checked: appsMenu.visible && appsMenu.parent === appsB; onClicked: win.runControl("MeetingAppsAddButton") } }
-    Component { id: cMore; BarButton { icon: win.newControls ? "nmc-more" : "call-more"; label: "More"; tip: "More actions"; checked: moreMenu.visible || newMore.visible; onClicked: win.runControl("MoreButton") } }
+    Component { id: cMore; BarButton { icon: win.newControls ? "nmc-more" : "call-more"; label: "More"; tip: "More actions"; checked: moreMenu.visible || newMore.visible; dropTarget: win.dragZone === "more"; onClicked: win.runControl("MoreButton") } }
     Component {
         id: cCamera
         BarButton {
@@ -3719,6 +3952,10 @@ Window {
         property bool checked: false
         /// Camera, Mic, Share and Leave: #242424 at rest.
         property bool strong: false
+        /// Leave: the new controls hover it in red tints.
+        property bool danger: false
+        /// More while a dragged control would be unpinned into it.
+        property bool dropTarget: false
         readonly property bool hovered: bbHover.hovered
         property color iconColor: bb.strong || bbHover.hovered ? theme.text : theme.textStrong
         /// A count beside the icon (People: how many are in the meeting).
@@ -3786,10 +4023,15 @@ Window {
             visible: bb.split
             x: bb.bx + bb.bw; y: bb.by; width: bb.cw; height: bb.compact ? 32 : 48
             topRightRadius: 4; bottomRightRadius: 4
-            color: (chevHover.hovered || bb.chevronChecked) ? theme.rowHover : "transparent"
+            // The new controls: the hovered half in Teams' bar hover, the
+            // other half a shade lighter (Leave in its red tints).
+            color: !win.newControls ? ((chevHover.hovered || bb.chevronChecked) ? theme.rowHover : "transparent")
+                 : (chevHover.hovered || bb.chevronChecked) ? (bb.danger ? theme.nmcLeaveHover : theme.nmcHover)
+                 : bbHover.hovered && bb.enabled ? (bb.danger ? theme.nmcLeaveHoverOther : theme.nmcHoverOther) : "transparent"
             // Disabled together with the button (Teams' split buttons).
             opacity: bb.enabled ? 1 : 0.45
-            FluentIcon { x: bb.compact ? 4 : 3; y: bb.compact ? 10 : 16; name: "call-chevron"; size: bb.compact ? 12 : 16; color: theme.onFill(hcFill14, theme.text) }
+            FluentIcon { x: bb.compact ? 4 : 3; y: bb.compact ? 10 : 16; name: "call-chevron"; size: bb.compact ? 12 : 16
+                         color: theme.onFill(hcFill14, !win.newControls || bb.strong || chevHover.hovered || bb.chevronChecked ? theme.text : theme.textStrong) }
             HoverHandler { id: chevHover; cursorShape: bb.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
             TapHandler { enabled: bb.enabled; onTapped: bb.chevronClicked() }
             Accessible.role: Accessible.Button
@@ -3800,11 +4042,16 @@ Window {
             x: bb.bx; y: bb.by; width: bb.bw; height: bb.compact ? 32 : 48
             radius: 4
             topRightRadius: bb.split ? 0 : 4; bottomRightRadius: bb.split ? 0 : 4
-            color: bbHover.hovered && bb.enabled ? theme.rowHover : "transparent"
+            color: !win.newControls ? (bbHover.hovered && bb.enabled ? theme.rowHover : "transparent")
+                 : bb.dropTarget ? theme.nmcDropTarget
+                 : bbHover.hovered && bb.enabled ? (bb.danger ? theme.nmcLeaveHover : theme.nmcHover)
+                 : bb.split && chevHover.hovered && bb.enabled ? (bb.danger ? theme.nmcLeaveHoverOther : theme.nmcHoverOther) : "transparent"
             opacity: bb.enabled ? 1 : 0.45
             FluentIcon {
                 x: bb.compact ? 6 : (bb.bw - 25) / 2; y: bb.compact ? 6 : 3.5
-                name: bb.icon; size: bb.compact ? 20 : 25; color: theme.onFill(hcFill15, bb.iconColor)
+                // The new controls draw a checked control's glyph in brand
+                // (white in High contrast).
+                name: bb.icon; size: bb.compact ? 20 : 25; color: theme.onFill(hcFill15, win.newControls && (bb.checked || bb.dropTarget) ? theme.nmcChecked : bb.iconColor)
                 // Teams' alert badge (roster-button-badge): 18 px with a
                 // 2 px white ring, #C50F1F, 10/700 white, 16 px right of
                 // and 1.8 px above the glyph's corner.
@@ -3836,13 +4083,13 @@ Window {
                 horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
                 text: bb.label
                 elide: Text.ElideRight
-                color: theme.onFill(hcFill15, bb.strong || bbHover.hovered ? theme.text : theme.textStrong)
+                color: theme.onFill(hcFill15, bb.strong || bbHover.hovered || (win.newControls && bb.checked) ? theme.text : theme.textStrong)
                 font.family: theme.font; font.pixelSize: 11
             }
             Rectangle {
                 visible: bb.checked
                 x: 0.7; y: bb.compact ? 34.3 : 50.3; width: bb.bw - 1.3; height: 2; radius: 1
-                color: theme.brand
+                color: win.newControls ? theme.nmcChecked : theme.brand
             }
             HoverHandler { id: bbHover; cursorShape: bb.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
             TapHandler { onTapped: if (bb.enabled) bb.clicked() }

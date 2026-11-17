@@ -14,6 +14,34 @@ pub const EXTENSION_ID: u8 = 3;
 pub const EXTENSION_URI: &str =
     r"http:\\www.ietf.org\id\draft-holmer-rmcat-transport-wide-cc-extensions-01";
 
+/// The id the current call uses: ours when we offered, the media
+/// processor's when we answered its offer (the move after a lobby
+/// admission: Teams answers with the offer's ids, there 5).
+static CURRENT_ID: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(EXTENSION_ID);
+
+/// The transport-wide sequence extension's id in this call.
+pub fn extension_id() -> u8 {
+    CURRENT_ID.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Use `id` for the transport-wide sequence from now on.
+pub fn set_extension_id(id: u8) {
+    CURRENT_ID.store(id, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// The id an SDP (a media processor's offer) gives the transport-wide
+/// sequence extension.
+pub fn offered_extension_id(sdp: &str) -> Option<u8> {
+    sdp.lines().find_map(|l| {
+        let rest = l.trim_end().strip_prefix("a=extmap:")?;
+        let (id, uri) = rest.split_once(' ')?;
+        if uri.trim() != EXTENSION_URI {
+            return None;
+        }
+        id.split('/').next()?.parse().ok()
+    })
+}
+
 /// Receive deltas are in 250 µs units; reference time in 64 ms units.
 const DELTA_US: i64 = 250;
 const REFERENCE_US: i64 = 64_000;
@@ -45,7 +73,7 @@ pub fn sequence_number(rtp: &[u8]) -> Option<u16> {
             if id == 15 {
                 break;
             }
-            if id == EXTENSION_ID && len == 2 {
+            if id == extension_id() && len == 2 {
                 return Some(u16::from_be_bytes([*ext.get(i + 1)?, *ext.get(i + 2)?]));
             }
             i += 1 + len;
@@ -58,7 +86,7 @@ pub fn sequence_number(rtp: &[u8]) -> Option<u16> {
                 continue;
             }
             let len = usize::from(ext[i + 1]);
-            if id == EXTENSION_ID && len == 2 {
+            if id == extension_id() && len == 2 {
                 return Some(u16::from_be_bytes([*ext.get(i + 2)?, *ext.get(i + 3)?]));
             }
             i += 2 + len;

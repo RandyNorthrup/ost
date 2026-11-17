@@ -187,6 +187,104 @@ fn sections(sdp: &str) -> Vec<(Option<String>, String)> {
     out
 }
 
+/// A meeting processor's own mids against ours. When the processor moves
+/// a call to itself (`newOffer`, as after a lobby admission) it offers the
+/// lines of our first offer in the same order — audio, our camera, the
+/// receive slots, sharing, data — but numbers them its own way (live:
+/// audio 1, camera 2, slots 5–13, sharing 3, data 4). The call keeps
+/// working with our mids inside and the processor's on the wire.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MidMap {
+    /// (the processor's mid, ours).
+    pairs: Vec<(String, String)>,
+}
+
+impl MidMap {
+    /// Our mid for each line of a processor's meeting offer, by kind,
+    /// label and order; None when it isn't one (no data line, or no
+    /// main video line).
+    pub fn for_meeting_offer(offer: &str) -> Option<Self> {
+        use super::meeting_media as mm;
+        let mut slots = mm::slot_mids();
+        let mut camera_taken = false;
+        let mut pairs = Vec::new();
+        let (mut has_data, mut has_video) = (false, false);
+        for (mid, body) in sections(offer) {
+            let Some(theirs) = mid else { continue };
+            let kind = body.split_whitespace().next().unwrap_or_default().trim_start_matches("m=");
+            let label = body.lines().find_map(|l| l.trim_end().strip_prefix("a=label:")).unwrap_or_default();
+            let ours = match kind {
+                "audio" => Some("0".to_string()),
+                "video" if label == "applicationsharing-video" => Some(mm::SHARE_MID.to_string()),
+                "video" if !camera_taken => {
+                    camera_taken = true;
+                    has_video = true;
+                    Some(mm::CAMERA_MID.to_string())
+                }
+                "video" => slots.next(),
+                "x-data" => {
+                    has_data = true;
+                    Some(mm::DATA_MID.to_string())
+                }
+                _ => None,
+            };
+            // A line we have no place for keeps a mid of its own (turned
+            // down in the answer).
+            let ours = ours.unwrap_or_else(|| format!("x{theirs}"));
+            pairs.push((theirs, ours));
+        }
+        (has_data && has_video).then_some(Self { pairs })
+    }
+
+    fn map(&self, sdp: &str, to_ours: bool) -> String {
+        let swap = |m: &str| -> String {
+            self.pairs
+                .iter()
+                .find(|(t, o)| if to_ours { t == m } else { o == m })
+                .map(|(t, o)| if to_ours { o.clone() } else { t.clone() })
+                .unwrap_or_else(|| m.to_string())
+        };
+        let mut out = String::with_capacity(sdp.len());
+        for l in sdp.split_inclusive('\n') {
+            let ending = &l[l.trim_end().len()..];
+            let t = l.trim_end();
+            if let Some(m) = t.strip_prefix("a=mid:") {
+                out.push_str(&format!("a=mid:{}{ending}", swap(m)));
+            } else if let Some(list) = t.strip_prefix("a=group:BUNDLE") {
+                let mids: Vec<String> = list.split_whitespace().map(swap).collect();
+                out.push_str(&format!("a=group:BUNDLE {}{ending}", mids.join(" ")));
+            } else {
+                out.push_str(l);
+            }
+        }
+        out
+    }
+
+    /// The processor's SDP with our mids.
+    pub fn to_ours(&self, sdp: &str) -> String {
+        self.map(sdp, true)
+    }
+
+    /// Our SDP with the processor's mids.
+    pub fn to_wire(&self, sdp: &str) -> String {
+        self.map(sdp, false)
+    }
+
+    /// The processor's mid for one of ours.
+    pub fn wire_mid(&self, ours: &str) -> String {
+        self.pairs.iter().find(|(_, o)| o == ours).map_or_else(|| ours.to_string(), |(t, _)| t.clone())
+    }
+}
+
+/// The payload type an SDP of ours gives the line `mid` (its first
+/// format), unless the line is turned down.
+pub fn answered_pt(sdp: &str, mid: &str) -> Option<u8> {
+    let m = section_with_mid(sdp, mid)?.lines().next()?;
+    let mut f = m.split_whitespace();
+    let port = f.nth(1)?;
+    (port != "0").then(|| f.nth(1)?.parse().ok())?
+}
+
 /// Whether a re-offer puts us on hold: its audio neither sends nor is
 /// active (`sendonly` or `inactive`, RFC 3264 8.4).
 pub fn offer_holds(offer: &str) -> bool {
@@ -713,6 +811,13 @@ pub struct LocalAudio {
     /// A meeting or group call: our offer has receive slots and a data
     /// line, and others' video comes through the media control plane.
     pub meeting: bool,
+    /// The transport-wide sequence extension's id (ours when offering;
+    /// the processor's offer's when answering it).
+    pub twcc_id: u8,
+    /// When we answered a meeting processor's own offer: the payload types
+    /// it then sends others' video and the presenter's screen with (slots,
+    /// sharing). Otherwise it sends with our offer's types.
+    pub answered_pts: Option<(u8, u8)>,
 }
 
 impl LocalAudio {
@@ -750,6 +855,8 @@ impl LocalAudio {
             camera_on: false,
             dtmf_pt: Some(PT_DTMF_DEFAULT),
             meeting: false,
+            twcc_id: super::twcc::EXTENSION_ID,
+            answered_pts: None,
         })
     }
 
@@ -815,6 +922,67 @@ impl LocalAudio {
             },
         ));
         s
+    }
+
+    /// Our answer to a meeting processor's own offer (`canonical`: its
+    /// offer with our mids, see [`MidMap`]), as Teams answers the move
+    /// after a lobby admission: every line it offers answered in order —
+    /// audio, our camera line (sendrecv), the receive slots (recvonly,
+    /// SSRC range 1-1), screen sharing (sendrecv) and the data line —
+    /// with our transport, DTLS `active`, and the H.264 type it offers on
+    /// each line. Lines we have no use for are turned down. The mids are
+    /// ours; [`MidMap::to_wire`] puts the processor's back.
+    pub fn answer_sdp_meeting(&self, canonical: &str, offer: &WebRtcOffer) -> String {
+        use super::meeting_media as mm;
+        let port = self.socket.local_addr().map(|a| a.port()).unwrap_or(9);
+        let addr = self.public_address();
+        let session_id = u64::from(self.ssrc) << 16 | 1;
+        let slots: Vec<String> = mm::slot_mids().collect();
+        let mut body = String::new();
+        let mut bundle: Vec<&str> = Vec::new();
+        for (mid, kind, proto_fmts) in &offer.sections {
+            let h264 = || video_line(canonical, mid, None);
+            let section = if kind == "audio" && *mid == offer.audio_mid {
+                Some(self.audio_section(port, &addr, mid, "active", offer.dtmf_pt, Some(offer)))
+            } else if kind == "video" && (mid == mm::CAMERA_MID || slots.contains(mid) || mid == mm::SHARE_MID) {
+                h264().map(|v| {
+                    let (direction, label, ssrc) = if mid == mm::CAMERA_MID {
+                        ("sendrecv", "main-video", self.video_ssrc)
+                    } else if mid == mm::SHARE_MID {
+                        ("sendrecv", "applicationsharing-video", self.share_ssrc)
+                    } else {
+                        ("recvonly", "main-video", 1)
+                    };
+                    self.video_section(
+                        port,
+                        &addr,
+                        VideoLine { mid, setup: "active", pt: v.payload_type, profile: &v.profile, direction, label, ssrc },
+                    )
+                })
+            } else if kind == "x-data" && mid == mm::DATA_MID {
+                Some(
+                    mm::data_section(port, &addr, &self.ufrag, &self.pwd, &self.identity.fingerprint, self.ssrc.wrapping_add(1))
+                        .replace("a=setup:actpass", "a=setup:active"),
+                )
+            } else {
+                None
+            };
+            match section {
+                Some(s) => {
+                    bundle.push(mid);
+                    body.push_str(&s);
+                }
+                None => {
+                    let fmt = proto_fmts.split_whitespace().nth(1).unwrap_or("0");
+                    let proto = proto_fmts.split_whitespace().next().unwrap_or("RTP/SAVP");
+                    body.push_str(&format!("m={kind} 0 {proto} {fmt}\r\nc=IN IP4 0.0.0.0\r\na=mid:{mid}\r\na=inactive\r\n"));
+                }
+            }
+        }
+        format!(
+            "v=0\r\no=- {session_id} 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\na=group:BUNDLE {}\r\na=msid-semantic: WMS ost\r\n{body}",
+            bundle.join(" ")
+        )
     }
 
     /// A meeting or group call offer, as Teams makes it: audio, our camera
@@ -935,7 +1103,7 @@ impl LocalAudio {
         if self.meeting {
             s.push_str(&format!(
                 "a=extmap:{} {}\r\n",
-                super::twcc::EXTENSION_ID,
+                self.twcc_id,
                 super::twcc::EXTENSION_URI
             ));
             s.push_str("a=rtcp-fb:* transport-cc\r\n");
@@ -1023,7 +1191,7 @@ impl LocalAudio {
         if self.meeting {
             s.push_str(&format!(
                 "a=extmap:{} {}\r\n",
-                super::twcc::EXTENSION_ID,
+                self.twcc_id,
                 super::twcc::EXTENSION_URI
             ));
             s.push_str("a=rtcp-fb:* transport-cc\r\n");
@@ -1151,6 +1319,13 @@ pub struct WebRtcAudioSession {
         super::webrtc_video::VideoSender,
         tokio::task::JoinHandle<()>,
     )>,
+    /// The camera device it was turned on with (taken up again when the
+    /// media moves to a new session).
+    #[cfg(feature = "video")]
+    camera_device: Option<String>,
+    /// A meeting processor numbered our lines its own way (after it moved
+    /// the call to itself): its mids against ours.
+    mid_map: std::sync::Mutex<Option<MidMap>>,
     /// What sending our screen needs, and the sharing line's mid.
     #[cfg(feature = "video")]
     share_out: Option<(VideoOut, String)>,
@@ -1198,6 +1373,9 @@ pub struct WebRtcAudioSession {
     local_sdp: std::sync::Mutex<(String, u64)>,
     /// The other side put the call on hold.
     held_by_peer: AtomicBool,
+    /// A new session took over the call (the media moved): ending this one
+    /// leaves the call's echo canceller and send estimate to it.
+    superseded: AtomicBool,
     /// Our DTLS role, kept in re-answers: "active" (client) or "passive".
     dtls_role: &'static str,
     stats: Arc<Mutex<WebRtcStats>>,
@@ -1221,12 +1399,18 @@ struct VideoOut {
 
 impl Drop for WebRtcAudioSession {
     fn drop(&mut self) {
-        super::send_bwe::reset();
+        let last = !self.superseded.load(Ordering::Relaxed);
+        if last {
+            super::send_bwe::reset();
+            super::twcc::set_extension_id(super::twcc::EXTENSION_ID);
+        }
         for t in &self.tasks {
             t.abort();
         }
         #[cfg(feature = "audio")]
-        super::apm::stop();
+        if last {
+            super::apm::stop();
+        }
         #[cfg(feature = "video")]
         if let Some((_, fwd)) = self.camera.take() {
             fwd.abort();
@@ -1258,6 +1442,40 @@ impl WebRtcAudioSession {
         *self.current_sdp.lock().unwrap_or_else(|e| e.into_inner()) = sdp.to_string();
     }
 
+    /// A meeting processor that moved the call to itself numbers our lines
+    /// its own way: keep its mids for re-answers and media descriptions.
+    pub fn set_mid_map(&self, map: MidMap) {
+        *self.mid_map.lock().unwrap_or_else(|e| e.into_inner()) = Some(map);
+    }
+
+    /// The mid the other side knows one of our lines by.
+    pub fn wire_mid(&self, ours: &str) -> String {
+        match &*self.mid_map.lock().unwrap_or_else(|e| e.into_inner()) {
+            Some(m) => m.wire_mid(ours),
+            None => ours.to_string(),
+        }
+    }
+
+    /// A new session takes over this call: ending this one leaves the
+    /// call's echo canceller and send estimate alone.
+    pub fn supersede(&self) {
+        self.superseded.store(true, Ordering::Relaxed);
+    }
+
+    /// A meeting session (receive slots and the media control plane).
+    pub fn is_meeting(&self) -> bool {
+        self.meeting_video.is_some()
+    }
+
+    /// The camera device our camera was last turned on with (None: the
+    /// default one).
+    pub fn camera_device(&self) -> Option<String> {
+        #[cfg(feature = "video")]
+        return self.camera_device.clone();
+        #[cfg(not(feature = "video"))]
+        None
+    }
+
     /// Answer the peer's re-offer, noting whether it holds the call.
     pub fn answer_reoffer(&self, offer: &str) -> Result<String> {
         let mut g = self.local_sdp.lock().unwrap_or_else(|e| e.into_inner());
@@ -1266,6 +1484,9 @@ impl WebRtcAudioSession {
         }
         g.1 += 1;
         let sdp = reanswer(&g.0, offer, g.1, self.dtls_role);
+        // Our mids for what the processor's re-offer says of our lines.
+        let mapped = self.mid_map.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|m| m.to_ours(offer));
+        let offer = mapped.as_deref().unwrap_or(offer);
         *self.current_sdp.lock().unwrap_or_else(|e| e.into_inner()) = sdp.clone();
         self.held_by_peer
             .store(offer_holds(offer), Ordering::Relaxed);
@@ -1397,6 +1618,7 @@ impl WebRtcAudioSession {
                 return Ok(());
             }
             let v = self.video_out.as_ref().context("This call has no video")?;
+            self.camera_device = device.clone();
             let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
             let sender = super::webrtc_video::VideoSender::start(
                 tx,
@@ -1681,6 +1903,11 @@ impl WebRtcAudioSession {
         let stats = Arc::new(Mutex::new(WebRtcStats::default()));
         let remote: Arc<Mutex<Option<SocketAddr>>> = Arc::new(Mutex::new(None));
 
+        // Meetings: the transport-wide sequence goes in the extension id
+        // our SDP gave it.
+        if local.meeting {
+            super::twcc::set_extension_id(local.twcc_id);
+        }
         // Echo cancellation, noise suppression and gain for this call.
         #[cfg(feature = "audio")]
         if super::apm::start().is_none() {
@@ -1763,11 +1990,12 @@ impl WebRtcAudioSession {
             let share = (key == "share" && local.meeting)
                 .then(|| offer.share_slot.clone())
                 .flatten();
-            // (The processor sends with the payload types of our offer.)
+            // (The processor sends with the payload types of our offer, or
+            // of our answer to its own offer.)
             v.map(|v| VideoStream {
                 pt: share
                     .as_ref()
-                    .map_or(v.payload_type, |_| PT_H264_SHARE_OFFER),
+                    .map_or(v.payload_type, |_| local.answered_pts.map_or(PT_H264_SHARE_OFFER, |p| p.1)),
                 rx: Arc::new(super::webrtc_video::VideoReceiver::start(key)),
                 ssrc: Arc::new(std::sync::atomic::AtomicU32::new(v.ssrc.unwrap_or(0))),
                 range: share
@@ -1782,7 +2010,7 @@ impl WebRtcAudioSession {
                 .filter(|_| local.meeting)
                 .map(|slot| VideoStream {
                     // Our offer's H.264 payload type: what it's sent with.
-                    pt: PT_H264_OFFER,
+                    pt: local.answered_pts.map_or(PT_H264_OFFER, |p| p.0),
                     rx: Arc::new(super::webrtc_video::VideoReceiver::start(
                         &super::meeting_media::frame_key(&slot.mid),
                     )),
@@ -2124,6 +2352,9 @@ impl WebRtcAudioSession {
             #[cfg(feature = "video")]
             camera: None,
             #[cfg(feature = "video")]
+            camera_device: None,
+            mid_map: std::sync::Mutex::new(None),
+            #[cfg(feature = "video")]
             share_out: share_out.map(|o| {
                 (
                     o,
@@ -2157,6 +2388,7 @@ impl WebRtcAudioSession {
             local_sdp: std::sync::Mutex::new((String::new(), 2)),
             current_sdp: std::sync::Mutex::new(String::new()),
             held_by_peer: AtomicBool::new(false),
+            superseded: AtomicBool::new(false),
             dtls_role: if dtls_client { "active" } else { "passive" },
             stats,
             #[cfg(feature = "audio")]
@@ -3362,6 +3594,8 @@ m=x-data 59842 RTP/SAVP 127 126\r\na=mid:2\r\n";
                 camera_on: false,
                 dtmf_pt: Some(PT_DTMF_DEFAULT),
                 meeting: false,
+                twcc_id: super::super::twcc::EXTENSION_ID,
+                answered_pts: None,
                 candidates: vec![ice::IceCandidate {
                     foundation: "1".into(),
                     component: 1,
@@ -3388,6 +3622,119 @@ m=x-data 59842 RTP/SAVP 127 126\r\na=mid:2\r\n";
         let parsed = WebRtcOffer::parse(&offer).unwrap();
         assert_eq!(parsed.setup, "actpass");
         assert_eq!(parsed.ice_ufrag, "abcd");
+    }
+
+    /// A meeting processor's move after a lobby admission, shaped as it
+    /// came live (2026-11-16): the lines of our first offer under its own
+    /// mids (audio 1, camera 2, slots 5–13, sharing 3, data 4), Teams'
+    /// RTP/AVP dialect, no setup or directions, H.265 first.
+    fn processor_move_offer() -> String {
+        let video = |mid: &str, label: &str, stream: u32, range: (u32, u32)| {
+            format!(
+                "m=video 3478 RTP/AVP 114 122 107 123 115 125 99\r\nc=IN IP4 52.113.222.85\r\n\
+                 a=x-source-streamid:{stream}\r\na=ice-ufrag:sNTU\r\na=ice-pwd:vWhvWhvWhvWhvWhvWhvWhvWh\r\na=rtcp-mux\r\n\
+                 a=label:{label}\r\na=mid:{mid}\r\na=rtpmap:114 H265v2/90000\r\n\
+                 a=fmtp:114 profile-level-id=01C099;packetization-mode=1\r\na=rtpmap:122 x-h264uc/90000\r\n\
+                 a=rtpmap:107 H264/90000\r\na=fmtp:107 max-br=208;packetization-mode=1;max-fs=240;profile-level-id=42C02A\r\n\
+                 a=rtpmap:99 rtx/90000\r\na=fmtp:99 apt=107;rtx-time=3000\r\n\
+                 a=fingerprint:sha-256 E9:12:AB\r\n\
+                 a=extmap:3 http:\\\\skype.com\\experiments\\rtp-hdrext\\fast_bandwidth_feedback#version_3\r\n\
+                 a=extmap:5 {}\r\na=x-ssrc-range:{}-{}\r\n",
+                super::super::twcc::EXTENSION_URI,
+                range.0,
+                range.1
+            )
+        };
+        let mut s = String::from(
+            "v=0\r\no=- 149792 0 IN IP4 127.0.0.1\r\ns=session\r\nc=IN IP4 52.113.222.85\r\nt=0 0\r\n\
+             a=group:BUNDLE 1 2 5 6 7 8 9 10 11 12 13 3 4\r\n\
+             m=audio 3478 RTP/AVP 96 111 0 101\r\nc=IN IP4 52.113.222.85\r\na=x-source-streamid:414\r\n\
+             a=ice-ufrag:Awo6\r\na=ice-pwd:hFWhFWhFWhFWhFWhFWhFWhFW\r\na=rtcp-mux\r\na=label:main-audio\r\na=mid:1\r\n\
+             a=rtpmap:96 CN/48000\r\na=rtpmap:111 OPUS/48000/2\r\na=rtpmap:0 PCMU/8000\r\na=rtpmap:101 telephone-event/8000\r\n\
+             a=fingerprint:sha-256 E9:12:AB\r\na=x-ssrc-range:23001-23001\r\n",
+        );
+        s.push_str(&video("2", "main-video", 415, (23002, 23101)));
+        for (i, mid) in ["5", "6", "7", "8", "9", "10", "11", "12", "13"].iter().enumerate() {
+            let lo = 23102 + 100 * i as u32;
+            s.push_str(&video(mid, "main-video", 416 + i as u32, (lo, lo + 99)));
+        }
+        s.push_str(&video("3", "applicationsharing-video", 425, (43902, 44001)));
+        s.push_str(
+            "m=x-data 3480 RTP/AVP 127 126\r\nc=IN IP4 52.113.222.85\r\na=x-source-streamid:426\r\n\
+             a=ice-ufrag:6Znk\r\na=ice-pwd:k6Qk6Qk6Qk6Qk6Qk6Qk6Qk6Q\r\na=rtcp-mux\r\na=label:data\r\na=mid:4\r\n\
+             a=rtpmap:127 x-data/90000\r\na=rtpmap:126 rtx/90000\r\na=fingerprint:sha-256 E9:12:AB\r\n\
+             a=x-ssrc-range:44902-45001\r\na=x-data-protocol:rtp sctp\r\n",
+        );
+        s
+    }
+
+    #[test]
+    fn a_processor_move_maps_its_mids_to_ours() {
+        let offer = processor_move_offer();
+        let map = MidMap::for_meeting_offer(&offer).expect("a meeting offer");
+        // Audio, our camera, the nine slots, sharing and data.
+        assert_eq!(map.wire_mid("0"), "1");
+        assert_eq!(map.wire_mid("1"), "2");
+        assert_eq!(map.wire_mid("2"), "5");
+        assert_eq!(map.wire_mid("10"), "13");
+        assert_eq!(map.wire_mid("11"), "3");
+        assert_eq!(map.wire_mid("12"), "4");
+        let ours = map.to_ours(&offer);
+        assert!(ours.contains("a=group:BUNDLE 0 1 2 3 4 5 6 7 8 9 10 11 12\r\n"), "{ours}");
+        assert_eq!(map.to_wire(&ours), offer, "the mapping goes both ways");
+        // What the session reads from it with our mids.
+        let parsed = WebRtcOffer::parse(&ours).unwrap();
+        assert_eq!(parsed.data_stream, Some(426));
+        assert_eq!(parsed.slots.len(), 9);
+        assert_eq!((parsed.slots[0].mid.as_str(), parsed.slots[0].stream_msid), ("2", 416));
+        assert_eq!(parsed.share_slot.as_ref().map(|s| (s.mid.as_str(), s.stream_msid)), Some(("11", 425)));
+        assert_eq!(parsed.camera_stream, Some(415));
+        assert_eq!(super::super::twcc::offered_extension_id(&offer), Some(5));
+        // An audio-only processor offer is no meeting move.
+        let audio_only = &offer[..offer.find("m=video").unwrap()];
+        assert!(MidMap::for_meeting_offer(audio_only).is_none());
+    }
+
+    #[test]
+    fn a_processor_move_is_answered_as_a_meeting() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let local = rt.block_on(async {
+            let mut l = LocalAudio::prepare().await.unwrap();
+            l.meeting = true;
+            l.twcc_id = 5;
+            l
+        });
+        let offer = processor_move_offer();
+        let map = MidMap::for_meeting_offer(&offer).unwrap();
+        let canonical = map.to_ours(&offer);
+        let parsed = WebRtcOffer::parse(&canonical).unwrap();
+        let answer = map.to_wire(&local.answer_sdp_meeting(&canonical, &parsed));
+        // Every offered line answered, in the offer's order and mids.
+        assert!(answer.contains("a=group:BUNDLE 1 2 5 6 7 8 9 10 11 12 13 3 4\r\n"), "{answer}");
+        let sections: Vec<&str> = answer.split("\r\nm=").skip(1).collect();
+        assert_eq!(sections.len(), 13);
+        let mid_of = |s: &str| s.lines().find_map(|l| l.strip_prefix("a=mid:")).unwrap_or_default().to_string();
+        assert_eq!(
+            sections.iter().map(|s| mid_of(s)).collect::<Vec<_>>(),
+            ["1", "2", "5", "6", "7", "8", "9", "10", "11", "12", "13", "3", "4"]
+        );
+        assert!(sections[0].starts_with("audio ") && sections[0].contains("a=label:main-audio"));
+        // Our camera sendrecv, the slots receive only (range 1-1), sharing
+        // sendrecv: H.264 at the processor's type, DTLS active.
+        assert!(sections[1].starts_with("video ") && sections[1].contains(" RTP/SAVP 107\r\n"));
+        assert!(sections[1].contains("a=sendrecv") && sections[1].contains("a=label:main-video"));
+        assert!(sections[2].contains("a=recvonly") && sections[2].contains("a=x-ssrc-range:1-1"));
+        assert!(sections[11].contains("a=label:applicationsharing-video") && sections[11].contains("a=sendrecv"));
+        assert!(sections[12].starts_with("x-data ") && sections[12].contains("a=sctp-port:5000"));
+        assert!(sections.iter().all(|s| s.contains("a=setup:active") && !s.contains("actpass")));
+        // Transport-wide sequence numbers under the processor's id.
+        assert!(sections[1].contains(&format!("a=extmap:5 {}", super::super::twcc::EXTENSION_URI)));
+        assert_eq!(answered_pt(&answer, "5"), Some(107));
+        assert_eq!(answered_pt(&answer, "4"), Some(127));
+        // A later plain re-offer from the processor is answered from it.
+        let again = reanswer(&answer, &offer.replace("o=- 149792 0", "o=- 149792 1"), 3, "active");
+        assert_eq!(again.matches("\r\nm=").count(), 13);
+        assert!(again.contains("a=group:BUNDLE 1 2 5 6 7 8 9 10 11 12 13 3 4\r\n"));
     }
 
     #[test]

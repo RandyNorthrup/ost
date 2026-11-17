@@ -132,7 +132,7 @@ An MCP payload is a version byte `0x01`, then a JSON array of one message, to th
 - `dsh` (dominant speaker history) is announced as an MP send capability.
 - The guest also posts `maxVideoSendCapabilities` per sending mid to `applyChannelParameters` (via the `cc/v1/mcProxy` link): `{"applyChannelParameters":{"multiChannelParameter":{"mids":["1"],"mediaParameter":"{\"maxVideoSendCapabilities\":{\"caps\":{\"max-width\":1280,\"max-height\":1280,\"max-fps\":30,\"max-streams\":3,\"max-layers\":3,\"sequence-number\":24}}}"}}}`.
 
-The MP re-offers after lobby admission (`call/mediaRenegotiation`); the client answers on the `negotiations` link, and a new MCP session (new `syn`) starts on the new data channel.
+The MP re-offers after lobby admission (`call/mediaRenegotiation` with `newOffer: true`); the client answers on the `negotiations` link from a new peer connection, and a new MCP session (new `syn`) starts on the new data channel. The re-offer carries the lines of the client's first offer under the MP's own mids; see call-and-meeting-window.md §6 Lobby, "Admitted: the media move and the data channel" (TASK-0213).
 
 ## OST's implementation (2026-11-07, verified live)
 
