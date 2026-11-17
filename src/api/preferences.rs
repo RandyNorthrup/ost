@@ -287,6 +287,36 @@ pub fn e2ee_calls_allowed(policies: &serde_json::Value) -> bool {
         != "Disabled"
 }
 
+/// Whether Teams offers Park Call to you (its callingSupportService's
+/// `_isCallParkEnabled && _isEvEnabled`): the effective teamsCallParkPolicy
+/// allows it (`allowCallPark`, left out when false) and you're an
+/// Enterprise Voice user (`voiceAdminSettings.isEvEnabled`, which needs a
+/// Teams Phone licence).
+pub fn call_park_allowed(policies: &serde_json::Value, voice_admin: &serde_json::Value) -> bool {
+    policies.pointer("/teamsCallParkPolicy/value/allowCallPark").and_then(serde_json::Value::as_bool) == Some(true)
+        && voice_admin.pointer("/voiceAdminSettings/value/isEvEnabled").and_then(serde_json::Value::as_bool) == Some(true)
+}
+
+/// [`call_park_allowed`] for you, read from the middle tier.
+pub async fn call_park_available(client: &TeamsClient) -> Result<bool> {
+    let policies = super::custom_emoji::effective_policies(client, &["teamsCallParkPolicy"]).await?;
+    let mt = client.middle_tier_url().context("No middle-tier address")?;
+    let token = super::directory::middle_tier_token().await?;
+    let resp = client
+        .http()
+        .post(format!("{mt}/beta/users/useraggregatesettings"))
+        .bearer_auth(token)
+        .json(&serde_json::json!({ "voiceAdminSettings": true }))
+        .send()
+        .await
+        .context("Voice admin settings request")?;
+    if !resp.status().is_success() {
+        anyhow::bail!("HTTP {} reading voice admin settings", resp.status().as_u16());
+    }
+    let voice: serde_json::Value = resp.json().await.unwrap_or_default();
+    Ok(call_park_allowed(&policies, &voice))
+}
+
 /// Your "End-to-end encrypted calls" choice (off unless saved on).
 pub async fn e2ee_calls_enabled(client: &TeamsClient) -> Result<bool> {
     let mt = client.middle_tier_url().context("No middle-tier address")?;
@@ -499,6 +529,17 @@ pub fn automatic_replies_body(v: &serde_json::Value) -> serde_json::Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn call_park_needs_the_policy_and_enterprise_voice() {
+        let policy = |on: bool| serde_json::json!({ "teamsCallParkPolicy": { "value": { "allowCallPark": on, "parkTimeoutSeconds": 300 } } });
+        let no_ev = serde_json::json!({ "voiceAdminSettings": { "value": { "accountType": "User" } } });
+        let ev = serde_json::json!({ "voiceAdminSettings": { "value": { "isEvEnabled": true } } });
+        assert!(!call_park_allowed(&policy(true), &no_ev));
+        assert!(call_park_allowed(&policy(true), &ev));
+        assert!(!call_park_allowed(&policy(false), &ev));
+        assert!(!call_park_allowed(&serde_json::json!({ "teamsCallParkPolicy": { "value": {} } }), &ev));
+    }
 
     #[test]
     fn e2ee_calls_follow_the_encryption_policy() {

@@ -659,6 +659,9 @@ pub struct Facts {
     /// The call is end-to-end encrypted (Teams hides what its presets mark
     /// `isE2EEHidden`).
     pub e2ee: bool,
+    /// Teams' isCallParkAvailable: call park allowed by your policy and
+    /// Enterprise Voice (a Teams Phone licence), the call not on hold.
+    pub can_park: bool,
 }
 
 impl Facts {
@@ -702,9 +705,7 @@ impl Facts {
             "MeetingAppsAddButton" => !self.pstn,
             "HoldButton" => self.p2p && !self.on_hold,
             "MergeCallsButton" => self.consult,
-            // Teams' isCallParkAvailable also needs Enterprise Voice (a
-            // Teams Phone licence) besides the park policy; OST has no park.
-            "CallParkButton" => false,
+            "CallParkButton" => self.p2p && self.can_park && !self.on_hold,
             // In More (live: the AV framework replaces Devices with these).
             "AudioSettingsButton" | "CameraEffectsButton" => true,
             // Meetings (Teams' isMeeting), not a chat's group call.
@@ -1128,6 +1129,12 @@ mod tests {
             assert!(e2ee_hidden(n), "{n}");
         }
         assert!(!e2ee_hidden("HoldButton") && !e2ee_hidden("E2EEncryptionIndicator"));
+        // Park: Teams' isCallParkAvailable (policy and Enterprise Voice),
+        // not on hold, not end-to-end encrypted.
+        assert!(!Facts { p2p: true, ..Default::default() }.shows("CallParkButton"));
+        assert!(Facts { p2p: true, can_park: true, ..Default::default() }.shows("CallParkButton"));
+        assert!(!Facts { p2p: true, can_park: true, on_hold: true, ..Default::default() }.shows("CallParkButton"));
+        assert!(!Facts { p2p: true, can_park: true, e2ee: true, ..Default::default() }.shows("CallParkButton"));
     }
 
     #[test]

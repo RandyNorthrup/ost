@@ -529,6 +529,47 @@ pub fn transfer_body(
     Ok(body)
 }
 
+/// Teams' Park Call request (its web stack's `parkByTransfer` for
+/// "teamPark": a transfer to ourselves naming the park type): the service
+/// moves the other side to the park server and answers on
+/// `call/transferCompletion` with `unparkContent.pickupCode`.
+pub fn park_body(me: &str, transferor: serde_json::Value, cb: impl Fn(&str) -> String) -> serde_json::Value {
+    serde_json::json!({
+        "callTransfer": {
+            "target": { "id": me },
+            "transferor": { "details": transferor, "authorizationToken": null },
+            "parkType": "teamPark",
+            "links": {
+                "transferAcceptance": cb("call/transferAcceptance/"),
+                "transferCompletion": cb("call/transferCompletion/"),
+            },
+        }
+    })
+}
+
+/// A park's pickup code from its `call/transferCompletion` (code 0 with
+/// `unparkContent.pickupCode`).
+pub fn park_pickup_code(json: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(json).ok()?;
+    let body = v.get("body").unwrap_or(&v);
+    let code = body.pointer("/unparkContent/pickupCode")?;
+    code.as_str().map(str::to_string).or_else(|| code.as_i64().map(|c| c.to_string()))
+}
+
+/// Send a park request on a call's transfer link.
+pub(crate) async fn request_park(
+    http: &reqwest::Client,
+    skype_token: &str,
+    transfer_link: &str,
+    me: &str,
+    transferor: serde_json::Value,
+    cb: impl Fn(&str) -> String,
+) -> Result<()> {
+    let body = park_body(me, transferor, cb);
+    cc_request(http, skype_token, reqwest::Method::POST, transfer_link, &body, "Park").await?;
+    Ok(())
+}
+
 /// Hand the call to someone else (Teams' Transfer): the call controller
 /// rings `target` (an `8:orgid:` MRI) and connects them in our place; with
 /// `replaces`, it swaps them into the consult call we have with them.
@@ -544,6 +585,88 @@ pub(crate) async fn request_transfer(
 ) -> Result<()> {
     let body = transfer_body(target, transferor, cb, replaces)?;
     cc_request(http, skype_token, reqwest::Method::POST, transfer_link, &body, "Transfer").await?;
+    Ok(())
+}
+
+/// Who ended a call, from its end event (`callEnd.sender`, or a
+/// conversation end's `callControllerTransactionEnd.sender`). The ends of
+/// a call a consult transfer replaced name the transferor, which tells
+/// them from the ends of the call that replaced it.
+pub fn end_sender(json: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(json).ok()?;
+    let body = v.get("body").unwrap_or(&v);
+    ["/callEnd/sender/id", "/callControllerTransactionEnd/sender/id", "/sender/id"]
+        .iter()
+        .find_map(|p| body.pointer(p).and_then(|s| s.as_str()))
+        .map(str::to_string)
+}
+
+/// A call that replaces the one we're in (`call/replacement/`: someone we
+/// consulted with transferred their caller to us, or a merge moved us):
+/// the new call's invitation, to be answered at once (Teams'
+/// onIncomingCallReplacement, `callType` "replaces"). The event's body is
+/// the invitation itself.
+pub fn replacement_invitation(json: &str) -> Option<IncomingCall> {
+    let v: serde_json::Value = serde_json::from_str(json).ok()?;
+    let path = v.get("callAgentPath").and_then(|p| p.as_str())?;
+    if !path.starts_with("call/replacement") {
+        return None;
+    }
+    IncomingCall::parse(&v.get("body")?.to_string())
+}
+
+/// Someone transferring (or parking) the call we're in asks us to make the
+/// new call (`call/transfer/` with `callTransfer`, captured 2026-11-17 when
+/// Teams desktop parked a call with OST: target = the parker, `parkType`
+/// "teamPark", `isConsultative`, `replacementDetails`, a transferor with the
+/// service's authorization token, and acceptance and completion links).
+#[derive(Debug, Clone, PartialEq)]
+pub struct TransferRequest {
+    pub target_mri: String,
+    pub target_name: String,
+    /// `{details, authorizationToken}`, sent back in the new call's
+    /// `callInvitation.transferor`.
+    pub transferor: serde_json::Value,
+    /// The transferor's `transferContext`, sent back as
+    /// `callInvitation.clientTransferContext`.
+    pub transfer_context: Option<serde_json::Value>,
+    /// "teamPark", "callPark"… for a park; None for a transfer.
+    pub park_type: Option<String>,
+    pub acceptance_link: Option<String>,
+    pub completion_link: Option<String>,
+}
+
+/// Read a transfer request from a call event.
+pub fn transfer_request(json: &str) -> Option<TransferRequest> {
+    let v: serde_json::Value = serde_json::from_str(json).ok()?;
+    let path = v.get("callAgentPath").and_then(|p| p.as_str()).unwrap_or_default();
+    if !path.is_empty() && !path.starts_with("call/transfer/") {
+        return None;
+    }
+    let t = v.pointer("/body/callTransfer").or_else(|| v.get("callTransfer"))?;
+    let target_mri = t.pointer("/target/id")?.as_str()?.to_string();
+    let link = |k: &str| t.pointer(&format!("/links/{k}")).and_then(|l| l.as_str()).filter(|l| is_service_link(l)).map(str::to_string);
+    Some(TransferRequest {
+        target_name: t.pointer("/target/displayName").and_then(|n| n.as_str()).unwrap_or_default().to_string(),
+        transferor: t.get("transferor").cloned().unwrap_or(serde_json::Value::Null),
+        transfer_context: t.get("transferContext").filter(|c| !c.is_null()).cloned(),
+        park_type: t.get("parkType").and_then(|p| p.as_str()).filter(|p| !p.is_empty() && *p != "none").map(str::to_string),
+        acceptance_link: link("transferAcceptance"),
+        completion_link: link("transferCompletion"),
+        target_mri,
+    })
+}
+
+/// Tell the transferor we took their transfer (`{transferAcceptance: {}}`)
+/// or how it ended (`{transferCompletion: {code}}`, 0 when the new call
+/// connected), as Teams' `signalTransferAcceptedAsync` /
+/// `signalTransferCompletedAsync`.
+pub async fn answer_transfer_request(auth: &CallAuth, link: &str, completion_code: Option<u64>) -> Result<()> {
+    let body = match completion_code {
+        None => serde_json::json!({ "transferAcceptance": {} }),
+        Some(code) => serde_json::json!({ "transferCompletion": { "code": code } }),
+    };
+    cc_request(&auth.http, &auth.skype_token, reqwest::Method::POST, link, &body, "Transfer answer").await?;
     Ok(())
 }
 
@@ -725,6 +848,16 @@ impl Drop for ActiveCall {
 }
 
 impl ActiveCall {
+    /// The other party's MRI (who called us).
+    pub fn peer_id(&self) -> Option<String> {
+        self.notification.participants.as_ref()?.from.as_ref()?.id.clone()
+    }
+
+    /// The service's call id.
+    pub fn call_id(&self) -> Option<String> {
+        self.notification.debug_content.as_ref().and_then(|d| d.call_id.clone())
+    }
+
     /// When the call was answered.
     pub fn started(&self) -> Instant {
         self.started
@@ -778,6 +911,18 @@ impl ActiveCall {
         }
         self.set_held(held);
         Ok(())
+    }
+
+    /// Park the call (Teams' Park Call); the pickup code comes on
+    /// `call/transferCompletion` ([`park_pickup_code`]).
+    pub async fn park(&self, auth: &CallAuth) -> Result<()> {
+        let me = self.me.as_ref().context("Park needs a Teams call")?;
+        let link = self.transfer_link.as_deref().context("This call can't be parked")?;
+        let details = serde_json::json!({
+            "id": me.id, "endpointId": me.endpoint_id,
+            "participantId": me.participant_id, "languageId": "en-US",
+        });
+        request_park(&auth.http, &auth.skype_token, link, &me.id, details, |p| me.callback(p)).await
     }
 
     /// Transfer the call to `target` (an `8:orgid:` MRI); `replaces`: our
@@ -1706,6 +1851,46 @@ impl CallAuth {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn replacement_events_carry_the_new_invitation() {
+        // Only the call/replacement path is a replacement.
+        assert!(replacement_invitation(r#"{"callAgentPath":"call/transfer/","body":{}}"#).is_none());
+        assert!(replacement_invitation(r#"{"callAgentPath":"call/replacement/","body":{"callEnded":{}}}"#).is_none());
+        // The replaced call's ends (measured) name the transferor.
+        let end = r#"{"callAgentPath":"call/end/","body":{"callEnd":{"reason":"noError","sender":{"id":"8:orgid:b"},"code":0},"debugContent":null}}"#;
+        assert_eq!(end_sender(end).as_deref(), Some("8:orgid:b"));
+        let conv = r#"{"callAgentPath":"conversation/conversationEnd/","body":{"code":0,"subCode":5002,"sender":null,"callControllerTransactionEnd":{"sender":{"id":"8:orgid:b"}}}}"#;
+        assert_eq!(end_sender(conv).as_deref(), Some("8:orgid:b"));
+    }
+
+    #[test]
+    fn park_requests_and_pickup_codes_are_teams() {
+        let me = serde_json::json!({ "id": "8:orgid:a", "endpointId": "e", "participantId": "p" });
+        let b = park_body("8:orgid:a", me.clone(), |p| format!("cb/{p}"));
+        assert_eq!(b["callTransfer"]["target"]["id"], "8:orgid:a");
+        assert_eq!(b["callTransfer"]["parkType"], "teamPark");
+        assert_eq!(b["callTransfer"]["transferor"]["details"], me);
+        assert_eq!(b["callTransfer"]["links"]["transferCompletion"], "cb/call/transferCompletion/");
+        assert_eq!(park_pickup_code(r#"{"callAgentPath":"call/transferCompletion/","body":{"transferCompletion":{"code":0},"unparkContent":{"pickupCode":"42"}}}"#).as_deref(), Some("42"));
+        assert_eq!(park_pickup_code(r#"{"body":{"unparkContent":{"pickupCode":17}}}"#).as_deref(), Some("17"));
+        assert_eq!(park_pickup_code(r#"{"body":{"transferCompletion":{"code":0}}}"#), None);
+    }
+
+    #[test]
+    fn transfer_and_park_requests_are_read_as_captured() {
+        // Teams desktop parking a call with OST (2026-11-17), trimmed.
+        let ev = r#"{"callAgentPath":"call/transfer/","body":{"callTransfer":{"target":{"id":"8:orgid:4287e791-1b98-4963-8b94-281c50472683","displayName":"OST Test 1","participantId":"p1"},"replacementDetails":{"replacementTargetParticipantId":"leg"},"isConsultative":true,"disableForwardingAndUnanswered":false,"transferor":{"details":{"id":"8:orgid:4287e791-1b98-4963-8b94-281c50472683"},"authorizationToken":"tok"},"sharedCorrelationId":"c","parkType":"teamPark","links":{"transferAcceptance":"https://api.flightproxy.teams.microsoft.com/api/v2/ep/cc/a","transferCompletion":"https://api.flightproxy.teams.microsoft.com/api/v2/ep/cc/c"}}}}"#;
+        let r = transfer_request(ev).unwrap();
+        assert_eq!(r.target_mri, "8:orgid:4287e791-1b98-4963-8b94-281c50472683");
+        assert_eq!(r.target_name, "OST Test 1");
+        assert_eq!(r.park_type.as_deref(), Some("teamPark"));
+        assert_eq!(r.transferor["authorizationToken"], "tok");
+        assert!(r.acceptance_link.is_some() && r.completion_link.is_some());
+        assert!(r.transfer_context.is_none());
+        // Other call events aren't transfer requests.
+        assert!(transfer_request(r#"{"callAgentPath":"call/transferCompletion/","body":{"transferCompletion":{"code":0}}}"#).is_none());
+    }
 
     #[test]
     fn transfers_are_teams_and_consult_names_the_call_it_replaces() {

@@ -234,6 +234,15 @@ Window {
     /// call is end-to-end encrypted, and its encryption numbers (Teams'
     /// fingerprint hash as 4-digit groups) to compare with the other side.
     property bool e2ee: false
+    /// Teams' isCallParkAvailable for you (park policy and Enterprise Voice).
+    property bool canPark: false
+    /// The call was parked: Teams' window then says "Call is parked" with
+    /// the pickup code and Copy code (measured on winpc 2026-11-17).
+    property string parkCode: ""
+    function parkedViewForTest() { return parkedView }
+    /// Park Call (More): the call goes to the park server and its pickup
+    /// code comes back.
+    signal parkCall()
     property var e2eeNumbers: []
     function encryptionCardForTest() { encryptionCard.open() }
     function encryptionCardItemForTest() { return encryptionCard }
@@ -663,7 +672,7 @@ Window {
         townHall: !!liveEvent.townHall, webinar: !!liveEvent.webinar, attendee: myRole === "attendee",
         greenRoom: !!liveEvent.staging && myRole !== "attendee" && live && liveEvent.eventPhase === "prelive",
         eventPhase: liveEvent.eventPhase || "", qna: !!liveEvent.qna && scheduled,
-        e2ee: e2ee
+        e2ee: e2ee, canPark: canPark
     })
     /// A town hall or webinar (Backend call_event_json): its green room,
     /// live state, Manage what attendees see and Q&A
@@ -802,6 +811,7 @@ Window {
         }
         else if (name === "DialpadButton") { if (dialPad.visible) dialPad.close(); else { dialPad.parent = barItem(name); dialPad.open() } }
         else if (name === "HoldButton" || name === "ResumeButton") toggleHold()
+        else if (name === "CallParkButton") parkCall()
         else if (name === "CameraEffectsButton") side = side === "video" ? "" : "video"
         else if (name === "AudioSettingsButton") side = side === "audio" ? "" : "audio"
         else if (name === "MeetingInfoButton") { side = side === "info" ? "" : "info"; if (side === "info") loadMeetingInfo() }
@@ -888,6 +898,7 @@ Window {
             : { label: "Don't show chat bubbles", icon: "chat-bubbles-off-20" }
         if (n === "MeetingHelpButton") return { label: "Help", icon: "question-circle-20" }
         if (n === "ReportMeetingButton") return { label: "Report a concern", icon: "shield-error-20" }
+        if (n === "CallParkButton") return { label: "Park Call", icon: "call-park-20" }
         if (n === "MeetingFacilitatorTimerButton") return timerCanView
             ? { label: "Timer", icon: "timer-20", endCheck: timerVisible } : null
         if (n === "MuteNotificationsButton") return notificationsMuted
@@ -2957,6 +2968,52 @@ Window {
             y = p.y + aiIndicator.height + 13.33
         }
     }
+    // Teams' parked view (1280 x 680 window, measured): centred, "Call is
+    // parked" 24/32 bold, 30 below it "Share this code {code} to retrieve
+    // the call" 16/22 bold, 30 below that Copy code (192 x 31.3, white,
+    // radius 4, 14/20 semibold #424242; aria "Copy code {code}").
+    Rectangle {
+        id: parkedView
+        visible: win.parkCode !== ""
+        anchors.fill: parent
+        z: 50
+        color: theme.surface
+        Column {
+            anchors.centerIn: parent
+            spacing: 30
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: "Call is parked"
+                font.family: theme.font; font.pixelSize: 24; font.weight: Font.Bold
+                lineHeight: 32; lineHeightMode: Text.FixedHeight
+                color: theme.text
+            }
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: "Share this code " + win.parkCode + " to retrieve the call"
+                font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold
+                lineHeight: 22; lineHeightMode: Text.FixedHeight
+                color: theme.text
+            }
+            Rectangle {
+                id: copyCode
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: 192; height: 31.33; radius: 4
+                color: copyHover.hovered ? theme.rowHover : theme.surface
+                border.width: 1; border.color: theme.stroke
+                Text {
+                    anchors.centerIn: parent
+                    text: "Copy code"
+                    font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
+                    color: theme.text
+                }
+                HoverHandler { id: copyHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: backend.copyText(win.parkCode) }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Copy code " + win.parkCode
+            }
+        }
+    }
     // The encryption card (Teams' e2ee status dialog, a Fluent popover;
     // measured on winpc 2026-11-17): 280.3 wide, 13.3 under the indicator
     // and start-aligned to it, padding 12, radius 4, shadow 16, 12/16
@@ -3344,6 +3401,7 @@ Window {
         if (n === "AudioSettingsButton") return { label: "Audio settings", icon: "nmc-audio", checked: side === "audio" }
         if (n === "ByodMeetingRoomModeButton") return { label: "Optimize for room", icon: "nmc-room", checked: roomMode }
         if (n === "ReportMeetingButton") return { label: "Report a concern", icon: "nmc-report" }
+        if (n === "CallParkButton") return { label: "Park Call", icon: "call-park-20" }
         if (n === "MeetingHelpButton") return { label: "Help", icon: "nmc-help" }
         return null
     }

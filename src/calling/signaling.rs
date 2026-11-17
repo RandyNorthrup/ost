@@ -713,6 +713,7 @@ pub async fn create_echo_call(
         scenario: Some("UserInitiatedTestCall"),
         two_step: false,
         preheat: false,
+        extras: None,
     };
     create_call_with(http, epconv_url, params, sdp_offer, &opts).await
 }
@@ -837,7 +838,19 @@ pub async fn create_1to1_call_to(
     sdp_offer: &str,
     callee_mri: Option<&str>,
 ) -> Result<(ConversationCreated, ConversationJoined)> {
-    create_call(http, epconv_url, params, sdp_offer, callee_mri).await
+    create_call(http, epconv_url, params, sdp_offer, callee_mri, None).await
+}
+
+/// [`create_1to1_call_to`] with a transfer's or an unpark's [`CallExtras`].
+pub async fn create_1to1_call_with(
+    http: &reqwest::Client,
+    epconv_url: &str,
+    params: &ConversationCallParams<'_>,
+    sdp_offer: &str,
+    callee_mri: &str,
+    extras: &CallExtras,
+) -> Result<(ConversationCreated, ConversationJoined)> {
+    create_call(http, epconv_url, params, sdp_offer, Some(callee_mri), Some(extras)).await
 }
 
 /// Join a scheduled Teams meeting: a call request with no callee, tied to
@@ -872,6 +885,7 @@ pub async fn join_meeting(
         scenario: None,
         two_step: true,
         preheat,
+        extras: None,
     };
     create_call_with(http, epconv_url, params, sdp_offer, &opts).await
 }
@@ -928,6 +942,7 @@ pub async fn create_group_call(
         scenario: None,
         two_step: false,
         preheat: false,
+        extras: None,
     };
     create_call_with(http, epconv_url, params, sdp_offer, &opts).await
 }
@@ -956,6 +971,7 @@ pub async fn create_channel_meeting(
         scenario: None,
         two_step: false,
         preheat: false,
+        extras: None,
     };
     create_call_with(http, epconv_url, params, sdp_offer, &opts).await
 }
@@ -988,6 +1004,38 @@ struct CreateOptions<'a> {
     /// hidden (no roster entry for anyone, our own included) until an
     /// updateEndpointState sets it to 0.
     preheat: bool,
+    /// What a 1:1 call carries besides its callee ([`CallExtras`]).
+    extras: Option<&'a CallExtras>,
+}
+
+/// What a 1:1 call request can carry besides its callee (Teams' web calling
+/// stack, `callInvitation`): `transferor` and `clientTransferContext` when
+/// the call is the one a transfer asked us to make (our side of someone's
+/// transfer or park, `call/transfer/`), and `unparkContent {pickupCode}`
+/// when it retrieves a parked call (the callee is then `4:*11`).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct CallExtras {
+    pub transferor: Option<serde_json::Value>,
+    pub transfer_context: Option<serde_json::Value>,
+    pub unpark_code: Option<i64>,
+}
+
+/// Teams' park server for its Park Call ("teamPark", its `ParkContext.
+/// Team`), the callee of a call that retrieves a parked call (Teams'
+/// `Kd.PARK`; `*14` is the call queue's CallParkV2, `*13` music on hold).
+pub const CALL_PARK_MRI: &str = "4:*11";
+
+/// Put [`CallExtras`] into a call request's `callInvitation`.
+pub fn apply_call_extras(invitation: &mut serde_json::Value, extras: &CallExtras) {
+    if let Some(t) = &extras.transferor {
+        invitation["transferor"] = t.clone();
+    }
+    if let Some(c) = &extras.transfer_context {
+        invitation["clientTransferContext"] = c.clone();
+    }
+    if let Some(code) = extras.unpark_code {
+        invitation["unparkContent"] = serde_json::json!({ "pickupCode": code });
+    }
 }
 
 /// Our endpoint's properties in a call request: preheated (Teams'
@@ -1135,6 +1183,7 @@ pub async fn resolve_meeting_code(
         scenario: None,
         two_step: true,
         preheat: false,
+        extras: None,
     };
     let (_controller, leave, v) = join_conversation_with(http, epconv_url, params, &opts, Some(meeting_data)).await?;
     let text = v.to_string();
@@ -1181,6 +1230,7 @@ async fn create_call(
     params: &ConversationCallParams<'_>,
     sdp_offer: &str,
     callee_mri: Option<&str>,
+    extras: Option<&CallExtras>,
 ) -> Result<(ConversationCreated, ConversationJoined)> {
     let opts = CreateOptions {
         group_chat: callee_mri.is_none(),
@@ -1196,6 +1246,7 @@ async fn create_call(
         scenario: None,
         two_step: false,
         preheat: false,
+        extras,
     };
     create_call_with(http, epconv_url, params, sdp_offer, &opts).await
 }
@@ -1309,6 +1360,9 @@ async fn create_call_with(
     }
     if let Some(t) = opts.invitation_type {
         payload["participants"]["invitationType"] = t.into();
+    }
+    if let Some(extras) = opts.extras {
+        apply_call_extras(&mut payload["callInvitation"], extras);
     }
 
     // Meetings: the conversation first, then the call to it (Teams').
@@ -1762,5 +1816,27 @@ mod preheat_tests {
             serde_json::json!({ "preheatProperties": 1, "additionalEndpointProperties": { "infoShownInReportMode": "FullInformation" } })
         );
         assert!(endpoint_properties(false).get("preheatProperties").is_none());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn transfer_and_unpark_calls_carry_teams_extras() {
+        let mut inv = serde_json::json!({ "replaces": null, "transferor": null });
+        apply_call_extras(&mut inv, &CallExtras {
+            transferor: Some(serde_json::json!({ "details": { "id": "8:orgid:a" }, "authorizationToken": "t" })),
+            transfer_context: None,
+            unpark_code: None,
+        });
+        assert_eq!(inv["transferor"]["authorizationToken"], "t");
+        assert!(inv.get("unparkContent").is_none());
+        let mut inv = serde_json::json!({ "transferor": null });
+        apply_call_extras(&mut inv, &CallExtras { unpark_code: Some(42), ..Default::default() });
+        assert_eq!(inv["unparkContent"], serde_json::json!({ "pickupCode": 42 }));
+        assert!(inv["transferor"].is_null());
+        assert_eq!(CALL_PARK_MRI, "4:*11");
     }
 }

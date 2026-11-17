@@ -3108,9 +3108,24 @@ fn dtls_handshake(
             c.and_then(|c| c.to_der().ok()).map(|d| d.iter().map(|b| format!("{b:02x}")).collect::<String>()).unwrap_or_default()
         };
         let local = ssl.certificate().map(|c| c.to_owned());
+        let hex = |b: &[u8]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
+        let (mut cr, mut sr) = ([0u8; 32], [0u8; 32]);
+        let (crn, srn) = (ssl.client_random(&mut cr), ssl.server_random(&mut sr));
+        let mut master = [0u8; 48];
+        let mn = ssl.session().map(|s| s.master_key(&mut master)).unwrap_or(0);
+        // A test call's keys, kept only in the developer dump directory:
+        // the numbers may come from the DTLS-SRTP keying material.
         super::incoming::debug_dump(
             "dtls-certs",
-            &format!("client {client}\nlocal {}\npeer {}\n", der(local), der(ssl.peer_certificate())),
+            &format!(
+                "client {client}\nlocal {}\npeer {}\nkm {}\nclient_random {}\nserver_random {}\nmaster {}\n",
+                der(local),
+                der(ssl.peer_certificate()),
+                hex(&km),
+                hex(&cr[..crn]),
+                hex(&sr[..srn]),
+                hex(&master[..mn])
+            ),
         );
     }
     Ok((split_srtp_keys(&km, client), stream))

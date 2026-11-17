@@ -48,6 +48,9 @@ pub struct OutgoingCall {
     transfer_link: Option<String>,
     /// The callee's `links.replace` (what a consult then transfer names).
     replace_link: Option<String>,
+    /// Who answered (`callAcceptance.acceptedBy.displayName`): the person
+    /// a retrieved parked call brings back.
+    answered_by: Option<String>,
     /// Where our own re-offers go (`links.mediaRenegotiation`).
     renegotiation_link: Option<String>,
     /// Meetings: the conversation's publishState / removeState links
@@ -885,6 +888,11 @@ impl OutgoingCall {
         super::transcript::history(&self.http, &link, &self.call_id).await
     }
 
+    /// Who answered the call, when the service named them.
+    pub fn answered_by(&self) -> Option<&str> {
+        self.answered_by.as_deref()
+    }
+
     /// The tag in this call's callback URLs.
     pub fn call_tag(&self) -> &str {
         &self.call_tag
@@ -1283,6 +1291,22 @@ impl OutgoingCall {
             |p| signaling::trouter_callback(&surl, &epid, p),
             replaces,
         )
+        .await
+    }
+
+    /// Park the call (Teams' Park Call); the pickup code comes on
+    /// `call/transferCompletion`.
+    pub async fn park(&self) -> Result<()> {
+        let link = self.transfer_link.as_deref().context("This call can't be parked")?;
+        let mut details = self.me.0.clone();
+        if let Some(o) = details.as_object_mut() {
+            o.remove("displayName");
+        }
+        let me = details.get("id").and_then(|i| i.as_str()).unwrap_or_default().to_string();
+        let (surl, epid) = self.callbacks.clone();
+        super::incoming::request_park(&self.http, &self.skype_token, link, &me, details, |p| {
+            signaling::trouter_callback(&surl, &epid, p)
+        })
         .await
     }
 
@@ -2035,6 +2059,10 @@ fn leave_link(create_response: &str) -> Option<String> {
         .map(str::to_string)
 }
 
+/// How long an early (provisional) media answer waits for the callee's
+/// acceptance before it is taken as the answer.
+const EARLY_ANSWER_GRACE: std::time::Duration = std::time::Duration::from_secs(20);
+
 /// What the callee's answer told us.
 struct Acceptance {
     sdp: String,
@@ -2044,6 +2072,12 @@ struct Acceptance {
     transfer: Option<String>,
     /// What a transfer replacing this call names (`links.replace`).
     replace: Option<String>,
+    /// `acceptedBy.displayName`.
+    answered_by: Option<String>,
+    /// An early `mediaAnswer` (the callee's media before it accepted):
+    /// Teams treats it as provisional and takes the call's links (callLeg,
+    /// replacement…) from the `callAcceptance` that follows.
+    provisional: bool,
     /// Where our re-offers go (screen sharing).
     renegotiation: Option<String>,
     end: Option<String>,
@@ -2100,6 +2134,12 @@ fn read_answer(json: &str) -> Option<std::result::Result<Acceptance, String>> {
         hold: link("hold"),
         transfer: link("transfer"),
         replace: link("replace").or_else(|| link("replacement")),
+        answered_by: body
+            .pointer("/callAcceptance/acceptedBy/displayName")
+            .and_then(|n| n.as_str())
+            .filter(|n| !n.trim().is_empty())
+            .map(str::to_string),
+        provisional: body.get("mediaAnswer").is_some() && body.get("callAcceptance").is_none(),
         renegotiation: link("mediaRenegotiation"),
         end: link("end"),
         media_descriptions: link("updateMediaDescriptions"),
@@ -2309,6 +2349,31 @@ pub async fn place_call(
     cancel: tokio::sync::oneshot::Receiver<()>,
 ) -> Result<OutgoingCall> {
     start(thread_id, Target::Person(callee_mri, video), cancel).await
+}
+
+/// The call a transfer asks us to make (Teams' `onTransferRequested`: our
+/// side of someone transferring or parking the call we're in): a 1:1 call
+/// to the transfer's target carrying its `transferor` (with the service's
+/// authorization token) and transfer context, with its own callback tag.
+pub async fn place_transfer_call(
+    thread_id: &str,
+    target_mri: &str,
+    extras: &signaling::CallExtras,
+    call_tag: &str,
+    cancel: tokio::sync::oneshot::Receiver<()>,
+) -> Result<OutgoingCall> {
+    start_tagged(thread_id, Target::PersonWith(target_mri, extras), Some(call_tag.to_string()), cancel).await
+}
+
+/// Retrieve a parked call with its pickup code (Teams' `startUnparkCall`:
+/// a call to the park server, `4:*11`, with `unparkContent {pickupCode}`).
+pub async fn unpark_call(
+    thread_id: &str,
+    pickup_code: i64,
+    cancel: tokio::sync::oneshot::Receiver<()>,
+) -> Result<OutgoingCall> {
+    let extras = signaling::CallExtras { unpark_code: Some(pickup_code), ..Default::default() };
+    start_tagged(thread_id, Target::PersonWith(signaling::CALL_PARK_MRI, &extras), None, cancel).await
 }
 
 /// [`place_call`] with its callback tag chosen up front ([`new_call_tag`]):
@@ -2562,6 +2627,8 @@ pub fn is_group_chat(thread_id: &str) -> bool {
 enum Target<'a> {
     /// A 1:1 call to this MRI; a video call when true.
     Person(&'a str, bool),
+    /// A 1:1 (audio) call carrying a transfer's or an unpark's extras.
+    PersonWith(&'a str, &'a signaling::CallExtras),
     /// A group chat's call: Meet now, Audio call or Join.
     Group(signaling::GroupCallKind),
     /// The meeting a join link names (its message id on the thread and
@@ -2629,7 +2696,7 @@ async fn start_tagged(
     // those who subscribe to it.
     // Meetings and group calls offer receive slots and a data line, as
     // Teams does: others' video comes as the media control plane asks.
-    let meeting_media = cfg!(feature = "video") && !matches!(target, Target::Person(..));
+    let meeting_media = cfg!(feature = "video") && !matches!(target, Target::Person(..) | Target::PersonWith(..));
     let offer = if let (Target::Person(_, video), true) = (&target, cfg!(feature = "video")) {
         local.receive_video = true;
         local.camera_on = *video;
@@ -2719,6 +2786,9 @@ async fn start_tagged(
         Target::Person(callee, _) => {
             signaling::create_1to1_call_to(&http, &epconv_url, &params, &offer, Some(callee))
                 .await?
+        }
+        Target::PersonWith(callee, extras) => {
+            signaling::create_1to1_call_with(&http, &epconv_url, &params, &offer, callee, extras).await?
         }
         Target::Group(kind) => {
             signaling::create_group_call(&http, &epconv_url, &params, &offer, &members, kind)
@@ -2811,8 +2881,18 @@ async fn start_tagged(
     tracing::info!("call placed; waiting for the answer");
 
     let wait_answer = async {
+        // An early mediaAnswer waits for the callAcceptance after it (its
+        // links); if none comes within EARLY_ANSWER_GRACE it is the answer.
+        let mut early: Option<Acceptance> = None;
         loop {
-            let ev = match events.recv().await {
+            let ev = tokio::select! {
+                ev = events.recv() => ev,
+                _ = tokio::time::sleep(EARLY_ANSWER_GRACE), if early.is_some() => {
+                    tracing::info!("no acceptance after the early answer; taking it");
+                    return Ok(early.take().expect("early answer"));
+                }
+            };
+            let ev = match ev {
                 Ok(ev) => ev,
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
                 Err(e) => bail!("Push channel closed: {e}"),
@@ -2823,6 +2903,10 @@ async fn start_tagged(
                 continue;
             }
             match read_answer(&ev.json) {
+                Some(Ok(a)) if a.provisional => {
+                    tracing::info!("early media answer; waiting for the acceptance");
+                    early.get_or_insert(a);
+                }
                 Some(Ok(a)) => return Ok(a),
                 Some(Err(reason)) => match CallEnded::from_event(&ev.json) {
                     Some(end) => {
@@ -2941,6 +3025,7 @@ async fn start_tagged(
         resume_link: None,
         transfer_link: acceptance.transfer,
         replace_link: acceptance.replace,
+        answered_by: acceptance.answered_by,
         renegotiation_link: acceptance
             .renegotiation
             .filter(|l| super::incoming::is_service_link(l)),
@@ -3313,6 +3398,15 @@ mod tests {
             r#"{"callAgentPath":"call/end/","body":{"callEnd":{"code":603,"phrase":"Declined"}}}"#;
         assert_eq!(read_answer(end).unwrap().err().unwrap(), "Declined (603)");
         assert!(read_answer(r#"{"callAgentPath":"call/progress/","body":{}}"#).is_none());
+        // An early mediaAnswer is provisional; the acceptance carries the
+        // call's links (callLeg, replacement) and who answered.
+        let early = r#"{"callAgentPath":"call/mediaAnswer/","body":{"mediaAnswer":{"mediaContent":{"blob":"v=0"},"links":{"mediaAcknowledgement":"https://m"}}}}"#;
+        assert!(read_answer(early).unwrap().unwrap().provisional);
+        let accepted = r#"{"callAgentPath":"call/acceptance/","body":{"callAcceptance":{"acceptedBy":{"displayName":"OST Test 3"},"mediaContent":{"blob":"v=0"},"links":{"callLeg":"https://leg","replacement":"https://r"}}}}"#;
+        let a = read_answer(accepted).unwrap().unwrap();
+        assert!(!a.provisional);
+        assert_eq!(a.replace.as_deref(), Some("https://r"));
+        assert_eq!(a.answered_by.as_deref(), Some("OST Test 3"));
     }
 
     #[test]

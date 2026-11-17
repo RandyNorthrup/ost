@@ -1724,7 +1724,7 @@ Window {
     CallWindow {
         id: callWindow
         onGreenScreenSettings: window.showGreenScreenSettings()
-        visible: ["calling", "connecting", "connected", "ended"].indexOf(backend.callState) >= 0 || retryReason !== ""
+        visible: ["calling", "connecting", "connected", "ended", "parked"].indexOf(backend.callState) >= 0 || retryReason !== ""
         onRejoin: window.rejoinMeeting()
         controlsOptions: { const o = {}; (backend.callControlsJson ? JSON.parse(backend.callControlsJson).options : []).forEach(x => o[x.name] = x); return o }
         controlsPeople: backend.callControlsJson ? JSON.parse(backend.callControlsJson) : ({})
@@ -1765,6 +1765,9 @@ Window {
         onOpenApp: key => { rail.openApp(key); window.raise(); window.requestActivate() }
         canDtmf: backend.callCanDtmf
         e2ee: backend.callE2ee
+        canPark: backend.callCanPark
+        parkCode: backend.callState === "parked" ? backend.callParkCode : ""
+        onParkCall: backend.parkCall()
         onDtmf: key => backend.sendDtmf(key)
         directory: backend.peopleJson ? JSON.parse(backend.peopleJson) : []
         onSearchPeople: q => backend.searchPeople(q)
@@ -1948,6 +1951,18 @@ Window {
         }
     }
     Timer { id: quitTimer; interval: 3000; onTriggered: Qt.quit() }
+    // --hangup-after=<s>: with --call-test --remote-hangup, leave the call
+    // <s> seconds after it (first) connects, whatever became of it (a
+    // merge's group call, a transfer's new call); HANGUP lines.
+    Timer {
+        readonly property int secs: parseInt((Qt.application.arguments.find(a => a.startsWith("--hangup-after=")) || "=0").split("=")[1]) || 0
+        running: secs > 0 && backend.callState === "connected"
+        interval: secs * 1000
+        onTriggered: {
+            console.warn("HANGUP after", secs, "s; peer", backend.callPeer, "thread", backend.callThreadId)
+            callWindow.contentItem.grabToImage(r => { r.saveToFile(window.shotPath.replace(".png", "-before-hangup.png")); backend.hangUp(); quitTimer.start() })
+        }
+    }
     // --consult-call=<oid>: with --call-test --remote-hangup, 5 s after a
     // 1:1 call connects consult that person by call (Teams' Consult ▸ Start
     // a call: this call held, a second one placed); once they answer,
@@ -1973,11 +1988,65 @@ Window {
                 else if (Qt.application.arguments.indexOf("--consult-merge") >= 0) backend.consultMerge()
             }
             else if (connectedAt >= 0 && step === connectedAt + 4) cap("after")
-            else if (connectedAt >= 0 && step === connectedAt + 6 && c) backend.consultEnd()
+            // A transfer or merge under way is left to finish (Teams can
+            // take half a minute to act on it); only a plain consult ends.
+            else if (connectedAt >= 0 && step === connectedAt + 6 && c && c.state === "connected") backend.consultEnd()
             else if (!c && step > 2 && connectedAt < 0 && step > 12) { console.warn("CONSULT never connected"); stop() }
-            else if (connectedAt >= 0 && step === connectedAt + 8) { console.warn("CONSULT done", JSON.stringify(c)); cap("done"); stop() }
+            else if (connectedAt >= 0 && step >= connectedAt + 8 && (!c || step >= connectedAt + 20)) { console.warn("CONSULT done", JSON.stringify(c)); cap("done"); stop() }
             step++
         }
+    }
+    // A parked call's pickup code (the backend's toast says Teams'
+    // "Share this code … to retrieve the call").
+    Connections {
+        target: backend
+        function onCallParkCodeChanged() {
+            if (!backend.callParkCode) return
+            console.warn("PARK code", backend.callParkCode)
+            if (Qt.application.arguments.indexOf("--park-test") >= 0) parkedShot.start()
+        }
+    }
+    // --park-test: the parked view captured (`-parked.png`), then closed.
+    Timer {
+        id: parkedShot
+        interval: 3000
+        onTriggered: callWindow.contentItem.grabToImage(r => { r.saveToFile(window.shotPath.replace(".png", "-parked.png")); backend.hangUp() })
+    }
+    // --park-test: with --call-test --remote-hangup (or --call-out), 8 s
+    // after a 1:1 call connects, More ▸ Park Call; PARK lines (the bar's
+    // Park Call, the pickup code), `-park-more.png`.
+    Timer {
+        running: Qt.application.arguments.indexOf("--park-test") >= 0 && backend.callState === "connected"
+        interval: 8000
+        onTriggered: {
+            console.warn("PARK can park", backend.callCanPark, "bar", JSON.stringify(callWindow.ubar.more.map(s => s.items.map(i => i.name))))
+            callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-park-more.png")))
+            backend.parkCall()
+        }
+    }
+    // --unpark=<code>: once signed in, retrieve the parked call with that
+    // pickup code (a call to the park server); 25 s in, `-unparked.png` and
+    // hang up. UNPARK lines.
+    Timer {
+        readonly property string code: (Qt.application.arguments.find(a => a.startsWith("--unpark=")) || "").split("=")[1] || ""
+        running: code.length > 0 && backend.signedIn
+        interval: 6000
+        onTriggered: { console.warn("UNPARK", code); backend.unparkCall(code) }
+    }
+    Connections {
+        target: backend
+        enabled: Qt.application.arguments.some(a => a.startsWith("--unpark="))
+        function onCallStateChanged() {
+            console.warn("UNPARK state", backend.callState, backend.callPeer, backend.statusText)
+            if (backend.callState === "connected") unparkHang.start()
+            if (backend.callState === "ended") quitTimer.start()
+        }
+    }
+    // --unpark: 25 s in the retrieved call, capture it and hang up.
+    Timer {
+        id: unparkHang
+        interval: 25000
+        onTriggered: callWindow.contentItem.grabToImage(r => { r.saveToFile(window.shotPath.replace(".png", "-unparked.png")); backend.hangUp() })
     }
     // --call-encryption: with --call-test (or --call-out) in a 1:1 call,
     // 4 s after it connects open the encryption card under the bar's shield

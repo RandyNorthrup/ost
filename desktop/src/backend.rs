@@ -373,6 +373,11 @@ pub mod qobject {
         #[qproperty(bool, call_held_by_peer)]
         /// The call is end-to-end encrypted (Teams' E2EE 1:1 call).
         #[qproperty(bool, call_e2ee)]
+        /// The pickup code of the call you just parked ("" when none).
+        #[qproperty(QString, call_park_code)]
+        /// Teams' isCallParkAvailable for you (park policy and Enterprise
+        /// Voice), read as a call connects.
+        #[qproperty(bool, call_can_park)]
         /// The consult call ({state, mri, name}: calling, connected,
         /// transferring, merging), or "".
         #[qproperty(QString, call_consult_json)]
@@ -1417,6 +1422,12 @@ pub mod qobject {
         /// End the consult call and go back to the held one.
         #[qinvokable]
         fn consult_end(self: Pin<&mut Backend>);
+        /// Park the call (Teams' Park Call).
+        #[qinvokable]
+        fn park_call(self: Pin<&mut Backend>);
+        /// Retrieve a parked call with its pickup code.
+        #[qinvokable]
+        fn unpark_call(self: Pin<&mut Backend>, code: &QString);
 
         /// Send a dial-pad key (0-9, *, #) as a tone in the call.
         #[qinvokable]
@@ -2776,6 +2787,8 @@ pub struct BackendRust {
     call_held: bool,
     call_held_by_peer: bool,
     call_e2ee: bool,
+    call_park_code: QString,
+    call_can_park: bool,
     call_consult_json: QString,
     call_can_dtmf: bool,
     call_can_share: bool,
@@ -2934,6 +2947,12 @@ struct CallSlot {
     consult: Option<OutgoingCall>,
     consult_tag: Option<String>,
     consult_state: teams_cli::calling::consult::Consult,
+    /// A transfer or park replaced the answered (untagged) call: its end
+    /// is not the end of the call we're now in.
+    superseded_untagged: bool,
+    /// A consult transfer replaced the answered call with this person
+    /// (the transferor): its ends, which name them, aren't ours.
+    replaced_peer: Option<String>,
     cancel_consult: Option<tokio::sync::oneshot::Sender<()>>,
     /// The screen picked to share, waiting for Teams to take our re-offer.
     share_pending: Option<(
@@ -3714,6 +3733,81 @@ fn rtt_outbox() -> &'static tokio::sync::mpsc::UnboundedSender<String> {
 }
 
 /// Log media health every 5 s while a call lasts.
+/// Our side of someone's transfer or park (Teams' onTransferRequested):
+/// place the call they asked for, carrying their transferor and context;
+/// once it is answered tell them (transferAcceptance, then
+/// transferCompletion code 0) and carry on in the new call; else report
+/// the failure (code 500).
+async fn take_transfer(qt: cxx_qt::CxxQtThread<qobject::Backend>, request: teams_cli::calling::incoming::TransferRequest) {
+    let auth = match CallAuth::load().await {
+        Ok(a) => a,
+        Err(e) => {
+            tracing::warn!("transfer: {}", short_error(&e));
+            return;
+        }
+    };
+    let my_oid = teams_cli::config::Config::load().ok().and_then(|c| c.object_id()).unwrap_or_default();
+    let target_oid = request.target_mri.strip_prefix("8:orgid:").unwrap_or_default().to_string();
+    let chat = outgoing::one_to_one_chat_id(&my_oid, &target_oid).unwrap_or_default();
+    let extras = teams_cli::calling::signaling::CallExtras {
+        transferor: Some(request.transferor.clone()),
+        transfer_context: request.transfer_context.clone(),
+        unpark_code: None,
+    };
+    let tag = outgoing::new_call_tag();
+    let (_cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
+    let result = outgoing::place_transfer_call(&chat, &request.target_mri, &extras, &tag, cancel_rx).await;
+    match result {
+        Ok(call) => {
+            tracing::info!("transferred call connected");
+            if let Some(link) = &request.acceptance_link
+                && let Err(e) = teams_cli::calling::incoming::answer_transfer_request(&auth, link, None).await
+            {
+                tracing::warn!("transfer acceptance: {}", short_error(&e));
+            }
+            if let Some(link) = &request.completion_link
+                && let Err(e) = teams_cli::calling::incoming::answer_transfer_request(&auth, link, Some(0)).await
+            {
+                tracing::warn!("transfer completion: {}", short_error(&e));
+            }
+            let e2ee = call.is_e2ee();
+            let mut slot = call_slot().lock().await;
+            // The call we leave ends on its own; its events aren't ours.
+            if slot.active.take().is_some() {
+                slot.superseded_untagged = true;
+            }
+            if let Some(old) = slot.outgoing.take() {
+                slot.left_tags.push(old.call_tag().to_string());
+            }
+            slot.outgoing = Some(call);
+            drop(slot);
+            let name = request.target_name.clone();
+            let mri = request.target_mri.clone();
+            let _ = qt.queue(move |mut this| {
+                this.as_mut().set_call_held(false);
+                this.as_mut().set_call_held_by_peer(false);
+                this.as_mut().set_call_e2ee(e2ee);
+                this.as_mut().set_call_peer(QString::from(name.as_str()));
+                this.as_mut().set_call_peer_id(QString::from(mri.as_str()));
+            });
+        }
+        Err(e) => {
+            tracing::warn!("transferred call failed: {}", short_error(&e));
+            if let Some(link) = &request.completion_link {
+                let _ = teams_cli::calling::incoming::answer_transfer_request(&auth, link, Some(500)).await;
+            }
+        }
+    }
+}
+
+/// What [`qobject::Backend::place_and_show`] places.
+enum Placement {
+    /// A 1:1 call in this chat.
+    Person { chat_id: String, callee: String, video: bool },
+    /// Retrieving a parked call with its pickup code.
+    Unpark(i64),
+}
+
 /// Hold (or resume) the first call while a consult goes on.
 async fn set_first_held(slot: &mut CallSlot, held: bool) -> anyhow::Result<()> {
     match (slot.active.as_mut(), slot.outgoing.as_mut()) {
@@ -3747,7 +3841,23 @@ async fn consult_ended(qt: &cxx_qt::CxxQtThread<qobject::Backend>, slot: &mut Ca
     publish_consult(qt, slot);
 }
 
+/// Whether Teams would offer you Park Call in this call (your park policy
+/// and Enterprise Voice), read as the call connects.
+fn spawn_call_park_check(qt: cxx_qt::CxxQtThread<qobject::Backend>) {
+    runtime().spawn(async move {
+        let park = async { api::preferences::call_park_available(&TeamsClient::new().await?).await }.await;
+        match park {
+            Ok(on) => {
+                tracing::info!(on, "call park available");
+                let _ = qt.queue(move |mut this| this.as_mut().set_call_can_park(on));
+            }
+            Err(e) => tracing::warn!("call park: {}", short_error(&e)),
+        }
+    });
+}
+
 fn spawn_call_stats_logger(qt: cxx_qt::CxxQtThread<qobject::Backend>) {
+    spawn_call_park_check(qt.clone());
     runtime().spawn(async move {
         let mut tick = 0u64;
         let mut muted_speech = teams_cli::calling::muted_speech::Detector::new();
@@ -5629,6 +5739,37 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         });
         return;
     }
+    // Someone we consulted with transferred their caller to us: the new
+    // call replaces our call with them, answered at once (Teams'
+    // replacementRequested). The replaced call's end is not ours.
+    if let Some(call) = teams_cli::calling::incoming::replacement_invitation(json) {
+        tracing::info!("call replaced by a transferred call");
+        let mut slot = call_slot().lock().await;
+        let old = slot.active.as_ref().map(|c| (c.peer_id(), c.call_id()));
+        if let Some((peer, id)) = old {
+            slot.replaced_peer = peer;
+            slot.left_calls.extend(id);
+        }
+        // The new call is answered (untagged): its end is ours, whatever
+        // an earlier transfer or park left behind.
+        slot.superseded_untagged = false;
+        if let Some(old) = slot.outgoing.take() {
+            slot.left_tags.push(old.call_tag().to_string());
+        }
+        let peer = call.caller_name();
+        let peer_id = call.caller_id().unwrap_or_default();
+        slot.ringing = Some(call);
+        drop(slot);
+        let _ = qt.queue(move |mut this| {
+            this.as_mut().set_call_peer(QString::from(peer.as_str()));
+            this.as_mut().set_call_peer_id(QString::from(peer_id.as_str()));
+            // Answered at once, with no ringing (Teams accepts a
+            // replacement by itself).
+            this.as_mut().set_call_state(QString::from("ringing"));
+            this.as_mut().accept_call(false);
+        });
+        return;
+    }
     if let Some(call) = IncomingCall::parse(json) {
         tracing::debug!(payload = %json.chars().take(6000).collect::<String>(), "incoming call payload");
         let mut slot = call_slot().lock().await;
@@ -5731,6 +5872,27 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         }
         return;
     }
+    // Our park's completion: its pickup code, and the call is over for us.
+    if let Some(code) = teams_cli::calling::incoming::park_pickup_code(json) {
+        tracing::info!("call parked");
+        let mut slot = call_slot().lock().await;
+        slot.active = None;
+        slot.outgoing = None;
+        drop(slot);
+        // Teams keeps the call window on "Call is parked" with the code.
+        let _ = qt.queue(move |mut this| {
+            this.as_mut().set_call_park_code(QString::from(code.as_str()));
+            this.as_mut().set_status_text(QString::from("Call is parked"));
+            this.as_mut().set_call_state(QString::from("parked"));
+        });
+        return;
+    }
+    // Someone transferring or parking our call asks us to make the new call.
+    if let Some(request) = teams_cli::calling::incoming::transfer_request(json) {
+        tracing::info!(park = request.park_type.is_some(), "transfer requested of us");
+        runtime().spawn(take_transfer(qt.clone(), request));
+        return;
+    }
     if let Some(outcome) = teams_cli::calling::incoming::transfer_outcome(json) {
         match outcome {
             Ok(()) => {
@@ -5806,6 +5968,20 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
             let _ = qt.queue(move |mut this| this.as_mut().set_call_end_reason(QString::from(r.key())));
         }
         let mut slot = call_slot().lock().await;
+        // After a transfer or park replaced the answered call, every
+        // untagged end (its call/end, then its conversation's end) is that
+        // call's; the call we're now in has its own tag.
+        if slot.replaced_peer.is_some() && teams_cli::calling::incoming::end_sender(json) == slot.replaced_peer {
+            tracing::info!("the call a consult transfer replaced ended");
+            return;
+        }
+        if slot.superseded_untagged {
+            if !json.contains("\"callTag\"") {
+                tracing::info!("the call a transfer replaced ended");
+                return;
+            }
+            slot.superseded_untagged = false;
+        }
         let was_ringing = slot.ringing.take().is_some();
         // The other side ended it: drop media without signalling an end.
         let was_active = slot.active.take().is_some() || slot.outgoing.take().is_some();
@@ -7076,6 +7252,49 @@ impl qobject::Backend {
             return;
         };
         self.as_mut().remember_header_call(video);
+        self.place_and_show(Placement::Person { chat_id, callee: callee.clone(), video }, peer, callee);
+    }
+
+    /// Retrieve a parked call with its pickup code (Teams' Calls ▸ Park ▸
+    /// Retrieve): a call to the park server that comes back as the call.
+    pub fn unpark_call(self: Pin<&mut Self>, code: &QString) {
+        if !self.rust().call_state.is_empty() {
+            return;
+        }
+        let Ok(code) = code.to_string().trim().parse::<i64>() else {
+            return;
+        };
+        tracing::info!("retrieving a parked call");
+        self.place_and_show(Placement::Unpark(code), QString::from("Parked call"), String::new());
+    }
+
+    /// Park the call (Teams' Park Call): the pickup code comes back on the
+    /// transfer's completion, and the call ends for us.
+    pub fn park_call(mut self: Pin<&mut Self>) {
+        self.as_mut().set_status_text(QString::from("Parking..."));
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let slot = call_slot().lock().await;
+            let result = match (slot.active.as_ref(), slot.outgoing.as_ref()) {
+                (Some(call), _) => match CallAuth::load().await {
+                    Ok(auth) => call.park(&auth).await,
+                    Err(e) => Err(e),
+                },
+                (None, Some(call)) => call.park().await,
+                _ => Err(anyhow::anyhow!("No call")),
+            };
+            drop(slot);
+            tracing::info!(ok = result.is_ok(), "park requested");
+            if let Err(e) = result {
+                let msg = format!("Park: {}", short_error(&e));
+                let _ = qt.queue(move |mut this| this.as_mut().set_status_text(QString::from(msg.as_str())));
+            }
+        });
+    }
+
+    /// Place a 1:1 call (or an unpark) and show it as Teams does.
+    fn place_and_show(mut self: Pin<&mut Self>, placement: Placement, peer: QString, callee: String) {
+        let video = matches!(placement, Placement::Person { video: true, .. });
         self.as_mut().set_call_peer(peer);
         self.as_mut()
             .set_call_peer_id(QString::from(callee.as_str()));
@@ -7093,7 +7312,11 @@ impl qobject::Backend {
         let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
         runtime().block_on(async { call_slot().lock().await.cancel_placing = Some(cancel_tx) });
         runtime().spawn(async move {
-            let result = outgoing::place_call(&chat_id, &callee, video, cancel_rx).await;
+            let unpark = matches!(placement, Placement::Unpark(_));
+            let result = match placement {
+                Placement::Person { chat_id, callee, video } => outgoing::place_call(&chat_id, &callee, video, cancel_rx).await,
+                Placement::Unpark(code) => outgoing::unpark_call("", code, cancel_rx).await,
+            };
             let mut slot = call_slot().lock().await;
             slot.cancel_placing = None;
             match result {
@@ -7122,10 +7345,16 @@ impl qobject::Backend {
                         "outgoing call connected"
                     );
                     let e2ee = call.is_e2ee();
+                    // A retrieved parked call is with whoever was parked.
+                    let retrieved = call.answered_by().filter(|_| unpark).map(str::to_string);
+                    tracing::info!(named = retrieved.is_some(), "answered by");
                     slot.outgoing = Some(call);
                     drop(slot);
                     spawn_call_stats_logger(qt.clone());
                     let _ = qt.queue(move |mut this| {
+                        if let Some(name) = retrieved {
+                            this.as_mut().set_call_peer(QString::from(name.as_str()));
+                        }
                         this.as_mut().set_call_e2ee(e2ee);
                         this.as_mut().set_call_has_audio(has_audio);
                         this.as_mut().set_call_can_dtmf(can_dtmf);
@@ -8407,6 +8636,8 @@ impl qobject::Backend {
         self.as_mut().end_call_ui();
         runtime().spawn(async {
             let mut slot = call_slot().lock().await;
+            slot.superseded_untagged = false;
+            slot.replaced_peer = None;
             // Leaving ends a consult too.
             slot.consult_state = Default::default();
             slot.consult_tag = None;
@@ -10238,6 +10469,14 @@ impl qobject::Backend {
                     // call is left.
                     let first_active = slot.active.take();
                     let first_outgoing = slot.outgoing.take();
+                    // The held call's ends (it ends as we leave it, or as
+                    // the service moves its person) aren't the group call's.
+                    if first_active.is_some() {
+                        slot.superseded_untagged = true;
+                    }
+                    if let Some(call) = &first_outgoing {
+                        slot.left_tags.push(call.call_tag().to_string());
+                    }
                     slot.outgoing = slot.consult.take();
                     publish_consult(&qt, &slot);
                     drop(slot);
@@ -10462,6 +10701,8 @@ impl qobject::Backend {
         self.as_mut().set_call_held(false);
         self.as_mut().set_call_held_by_peer(false);
         self.as_mut().set_call_e2ee(false);
+        self.as_mut().set_call_can_park(false);
+        self.as_mut().set_call_park_code(QString::default());
         self.as_mut().set_call_can_dtmf(false);
         self.as_mut().set_call_hand_raised(false);
         if !self.rust().call_state.is_empty() {
