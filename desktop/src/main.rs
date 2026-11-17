@@ -162,6 +162,10 @@ fn main() {
     if let Some(app) = app.as_mut() {
         app.exec();
     }
+    // Tear down our own Qt objects while the application still exists: the
+    // QML engine (windows, Backend and its callbacks) first, then the app.
+    drop(engine);
+    drop(app);
     // Quit: later launches start afresh.
     if std::env::args().len() <= 1
         && let Some(path) = instance_socket()
@@ -176,4 +180,28 @@ fn main() {
         let err = std::process::Command::new(exe).args(std::env::args_os().skip(1)).exec();
         tracing::warn!("restart failed: {err}");
     }
+    exit_without_static_teardown();
+}
+
+/// Leave without running C++ static destructors. Qt Multimedia keeps its
+/// PipeWire audio context in a global whose destructor (run from the exit
+/// handlers) stops its PipeWire thread while that thread can still be
+/// handling a registry event as other audio nodes go away (WebEngine's, our
+/// sound effects'); it then copies into freed memory and the quit
+/// segfaults (seen intermittently, backtrace: `__run_exit_handlers` →
+/// `pw_thread_loop_stop` on the main thread, `memcpy` in libQt6Multimedia on
+/// the "QAudioContext" thread). Our own objects are already gone, the log
+/// file is written unbuffered, and the OS reclaims the rest, so nothing
+/// needs those destructors; the Tokio workers and Chromium's threads stop
+/// with the process instead of racing teardown too.
+fn exit_without_static_teardown() -> ! {
+    use std::io::Write;
+    let _ = std::io::stdout().flush();
+    let _ = std::io::stderr().flush();
+    unsafe extern "C" {
+        fn _exit(status: i32) -> !;
+    }
+    // SAFETY: `_exit` only ends the process; it is called once, at the very
+    // end of main, after every Rust value that needs dropping is dropped.
+    unsafe { _exit(0) }
 }
