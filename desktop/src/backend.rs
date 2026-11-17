@@ -2967,6 +2967,11 @@ struct CallSlot {
     /// A consult transfer replaced the answered call with this person
     /// (the transferor): its ends, which name them, aren't ours.
     replaced_peer: Option<String>,
+    /// Each remote person's merge leg from roster events, by lowercase MRI,
+    /// whatever call was in the slot then: an answered call's first roster
+    /// arrives with its acceptance, before the call is stored, and the
+    /// held call's person is in no other call, so a merge finds them here.
+    roster_legs: std::collections::HashMap<String, serde_json::Value>,
     cancel_consult: Option<tokio::sync::oneshot::Sender<()>>,
     /// The screen picked to share, waiting for Teams to take our re-offer.
     share_pending: Option<(
@@ -3848,6 +3853,7 @@ async fn take_transfer(qt: cxx_qt::CxxQtThread<qobject::Backend>, request: teams
             }
             let e2ee = call.is_e2ee();
             let e2ee_numbers = call.e2ee_numbers().join(" ");
+            let answered_by = call.answered_by().map(str::to_string);
             let mut slot = call_slot().lock().await;
             // The call we leave ends on its own; its events aren't ours.
             if slot.active.take().is_some() {
@@ -3858,7 +3864,11 @@ async fn take_transfer(qt: cxx_qt::CxxQtThread<qobject::Backend>, request: teams
             }
             slot.outgoing = Some(call);
             drop(slot);
-            let name = request.target_name.clone();
+            // Teams' request may not name the target: then who answered.
+            let name = Some(request.target_name.clone())
+                .filter(|n| !n.trim().is_empty())
+                .or_else(|| answered_by.clone())
+                .unwrap_or_default();
             let mri = request.target_mri.clone();
             let _ = qt.queue(move |mut this| {
                 this.as_mut().set_call_continues(true);
@@ -4385,6 +4395,9 @@ const TYPING_SEND_INTERVAL_SECS: u64 = 20;
 
 /// How long an unanswered call rings before it counts as missed.
 const RING_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+/// How long a silent merge keeps the held call before leaving it: the
+/// service moves the held person's leg into the group call first.
+const MERGE_LEAVE_DELAY: std::time::Duration = std::time::Duration::from_secs(15);
 
 /// How many chats to load per request.
 const CHAT_LIMIT: usize = 50;
@@ -5807,8 +5820,10 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
     if let Some(delta) = teams_cli::calling::roster::roster_delta(json) {
         tracing::info!(changes = delta.len(), "roster update");
         // Keep each call's merge legs (for a silent merge) up to date.
-        if !teams_cli::calling::outgoing::roster_legs(json).is_empty() {
+        let legs = teams_cli::calling::outgoing::roster_legs(json);
+        if !legs.is_empty() {
             let mut slot = call_slot().lock().await;
+            slot.roster_legs.extend(legs);
             if let Some(c) = slot.active.as_mut() {
                 c.note_roster_legs(json);
             }
@@ -5868,8 +5883,27 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         // The new call is answered (untagged): its end is ours, whatever
         // an earlier transfer or park left behind.
         slot.superseded_untagged = false;
-        if let Some(old) = slot.outgoing.take() {
+        // Teams' client ends the call a replacement replaces: when Teams
+        // transferred (consult then transfer), it holds that consult call
+        // until we leave it (measured live).
+        let replaced_active = slot.active.take();
+        let replaced_outgoing = slot.outgoing.take();
+        if let Some(old) = &replaced_outgoing {
             slot.left_tags.push(old.call_tag().to_string());
+        }
+        if replaced_active.is_some() || replaced_outgoing.is_some() {
+            runtime().spawn(async move {
+                if let Some(old) = replaced_outgoing {
+                    let _ = old.hang_up().await;
+                }
+                if let Some(old) = replaced_active
+                    && let Ok(auth) = CallAuth::load().await
+                    && let Err(e) = auth.hang_up(old).await
+                {
+                    tracing::warn!("leaving the replaced call: {}", short_error(&e));
+                }
+                tracing::info!("left the call the replacement replaced");
+            });
         }
         let peer = call.caller_name();
         let peer_id = call.caller_id().unwrap_or_default();
@@ -6119,6 +6153,9 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
                 }
             });
             return;
+        }
+        if was_active {
+            slot.roster_legs.clear();
         }
         drop(slot);
         if was_ringing || was_active {
@@ -8842,6 +8879,7 @@ impl qobject::Backend {
             let mut slot = call_slot().lock().await;
             slot.superseded_untagged = false;
             slot.replaced_peer = None;
+            slot.roster_legs.clear();
             // Leaving ends a consult too.
             slot.consult_state = Default::default();
             slot.consult_tag = None;
@@ -10656,7 +10694,8 @@ impl qobject::Backend {
                 .active
                 .as_ref()
                 .and_then(|c| c.remote_leg(&first_peer))
-                .or_else(|| slot.outgoing.as_ref().and_then(|c| c.remote_leg(&first_peer)));
+                .or_else(|| slot.outgoing.as_ref().and_then(|c| c.remote_leg(&first_peer)))
+                .or_else(|| slot.roster_legs.get(&first_peer.to_ascii_lowercase()).cloned());
             let result = async {
                 let my_oid = teams_cli::config::Config::load().ok().and_then(|c| c.object_id()).context("Not signed in")?;
                 // Teams' getCallingConversationWith: the chat of everyone
@@ -10700,14 +10739,25 @@ impl qobject::Backend {
                     slot.outgoing = slot.consult.take();
                     publish_consult(&qt, &slot);
                     drop(slot);
-                    if let Some(call) = first_outgoing {
-                        let _ = call.hang_up().await;
-                    }
-                    if let Some(call) = first_active
-                        && let Ok(auth) = CallAuth::load().await
-                    {
-                        let _ = auth.hang_up(call).await;
-                    }
+                    // A silent merge moves the person's leg out of the held
+                    // call: leaving it before the service has done so loses
+                    // the leg ("Replacement call was not found", measured),
+                    // so leave it once the move is done.
+                    let silent = first_leg.is_some();
+                    runtime().spawn(async move {
+                        if silent {
+                            tokio::time::sleep(MERGE_LEAVE_DELAY).await;
+                        }
+                        if let Some(call) = first_outgoing {
+                            let _ = call.hang_up().await;
+                        }
+                        if let Some(call) = first_active
+                            && let Ok(auth) = CallAuth::load().await
+                        {
+                            let _ = auth.hang_up(call).await;
+                        }
+                        tracing::info!(silent, "left the held call after the merge");
+                    });
                     let names = format!("{first_name}, {}", target.name);
                     let _ = qt.queue(move |mut this| {
                         this.as_mut().set_call_held(false);

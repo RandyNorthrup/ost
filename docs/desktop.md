@@ -298,6 +298,7 @@ account.
 | `--call-test` | Wait for a call, capture the toast, answer, capture, hang up (`--accept-video` answers with video when offered, `--camera-on` turns the camera on once connected). |
 | `--call-panes` | As `--call-test`, also opening the Chat and People panes. |
 | `--remote-hangup` | Stay in the call until the caller ends it. |
+| `--call-person=<oid>` | Call that person as the Calls app does (open the 1:1 chat with them and call), then behave as `--call-out`. |
 | `--call-out` | Call the first chat. |
 | `--onedrive-test` | Visit Home, My files (making and deleting a test folder), a folder, Shared and Libraries. |
 | `--link-preview-test[=<text>]` | In OST group test, types a link into compose as keys (AutoLink on Space) and logs the preview (LINKPREVIEW). `--link-preview-send` sends it and reads the sent message's preview back. `--link-preview-remove-only` removes the preview from your newest message that has one. `--link-preview-privacy` turns Optional connected experiences off, checks that no preview is made or shown, then turns it back on. Pictures go in /tmp/act. |
@@ -320,6 +321,7 @@ account.
 | `--loop-test --loop-steps=<file>` | A Page view (Loop, page only) driven by the file's steps, one every 5 s: a JavaScript line, `SHOT <name>`, `INSERT <command>` (the insert row) or `TYPE <keys>` (`<END>` is Ctrl+End, `<RET>` Return). Needs `QML_XHR_ALLOW_FILE_READ=1`. Use a scratch page of the test account's own. |
 | `--consult-call=<oid>` | With `--call-test --remote-hangup`, 5 s after a 1:1 call connects: consult that person by call (this call held, a second call placed); once they answer, `--consult-transfer` transfers this call to them (replacing the consult call) or `--consult-merge` merges both calls, else the consult is ended after 20 s and this call resumed. CONSULT lines (`-consult-{calling,connected,after,done}.png`). |
 | `--unpark-dialog-test` | Opens the Calls app and its "Pick up a parked call" dialog and captures it (`-unpark-dialog.png`). |
+| `--clock-log` | Every 5 s in a call, CLOCK lines: the call window's clock in seconds, the call state and the peer (does the clock run on across a transfer, merge or park pickup). |
 | `--hangup-after=<s>` | With `--call-test --remote-hangup`: leaves the call `<s>` seconds after it connects, whatever it has become (a merge's group call, a transferred call), capturing `-before-hangup.png` first; HANGUP lines (peer, thread). |
 | `--park-test` | With `--call-test --remote-hangup` (or `--call-out`), 8 s after a 1:1 call connects: logs whether Park Call is offered (PARK lines: `callCanPark`, the More items) and captures `-park-more.png`, then More ▸ Park Call; once the pickup code comes back, PARK code, the parked view `-parked.png`, and the window is closed. |
 | `--unpark=<code>` | Once signed in, retrieves the parked call with that pickup code (a call to Teams' park server, `4:*11`, carrying `unparkContent {pickupCode}`) stays 25 s (`-unparked.png`) and hangs up; UNPARK lines (call state, peer). |

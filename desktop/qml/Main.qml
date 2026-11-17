@@ -1765,8 +1765,8 @@ Window {
         chatUrl: backend.callChatUrl
         onOpenApp: key => { rail.openApp(key); window.raise(); window.requestActivate() }
         canDtmf: backend.callCanDtmf
-        e2ee: backend.callE2ee
-        e2eeNumbers: backend.callE2eeNumbers ? backend.callE2eeNumbers.split(" ") : []
+        e2ee: backend.callE2Ee
+        e2eeNumbers: backend.callE2EeNumbers ? backend.callE2EeNumbers.split(" ") : []
         canPark: backend.callCanPark
         callContinues: backend.callContinues
         parkCode: backend.callState === "parked" ? backend.callParkCode : ""
@@ -1891,7 +1891,10 @@ Window {
     }
 
     // --call-test: capture the toast, answer, capture the call, hang up.
-    readonly property bool callOut: Qt.application.arguments.indexOf("--call-out") >= 0
+    readonly property bool callOut: Qt.application.arguments.indexOf("--call-out") >= 0 || callPersonOid !== ""
+    // --call-person=<oid>: call that person (as the Calls app does: open the
+    // 1:1 chat with them and call), then behave as --call-out.
+    readonly property string callPersonOid: (Qt.application.arguments.find(a => a.startsWith("--call-person=")) || "").slice(14)
     readonly property bool callTest: callOut || Qt.application.arguments.indexOf("--call-test") >= 0 || Qt.application.arguments.indexOf("--hold-test") >= 0 || Qt.application.arguments.some(a => a.indexOf("--transfer-test=") === 0) || Qt.application.arguments.indexOf("--call-panes") >= 0
     property string favName: ""
     readonly property bool callPanes: Qt.application.arguments.indexOf("--call-panes") >= 0
@@ -1954,6 +1957,14 @@ Window {
         }
     }
     Timer { id: quitTimer; interval: 3000; onTriggered: Qt.quit() }
+    // --clock-log: every 5 s in a call, CLOCK lines with the call window's
+    // clock (seconds), the call state and the peer: shows whether the clock
+    // runs on across a transfer, merge or park pickup.
+    Timer {
+        running: Qt.application.arguments.indexOf("--clock-log") >= 0 && backend.callState !== ""
+        interval: 5000; repeat: true
+        onTriggered: console.warn("CLOCK", callWindow.seconds, backend.callState, backend.callPeer)
+    }
     // --unpark-dialog-test: open the Calls app and its "Pick up a parked
     // call" dialog, capture it (`-unpark-dialog.png`), and quit.
     Timer {
@@ -2605,14 +2616,27 @@ Window {
     Timer { id: shareShot; interval: 3000; onTriggered: callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-share.png"))) }
     // --call-out: open the first chat and call it.
     Timer {
-        running: window.callOut && backend.signedIn && !backend.callState
+        running: window.callPersonOid !== "" && backend.signedIn && !backend.callState && !window.outStarted
+        interval: 4000
+        onTriggered: {
+            window.outStarted = true
+            rail.current = "chat"
+            window.callAfterOpen = true
+            backend.openChatWith(window.callPersonOid, "")
+        }
+    }
+    Timer {
+        running: window.callOut && window.callPersonOid === "" && backend.signedIn && !backend.callState
         interval: 4000
         onTriggered: {
             const chats = backend.chatsJson ? JSON.parse(backend.chatsJson) : []
-            if (!backend.currentChatId && chats.length > 0) {
-                // --open-chat=<id> picks whom to call; else the first chat.
-                const want = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
-                const c = chats.find(c => c.id === want || c.name === want) || chats[0]
+            // --open-chat=<id or name> picks whom to call (even when another
+            // chat opened at start); else the first chat.
+            const want = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            const wanted = want ? chats.find(c => c.id === want || c.name === want) : null
+            if (want && !wanted) { restart(); return }
+            if (chats.length > 0 && (wanted ? backend.currentChatId !== wanted.id : !backend.currentChatId)) {
+                const c = wanted || chats[0]
                 backend.selectChat(c.id, c.name); restart(); return
             }
             if (window.outStarted) return

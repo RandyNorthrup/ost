@@ -3030,10 +3030,13 @@ Window {
     // and start-aligned to it, padding 12, radius 4, shadow 16, 12/16
     // #616161 text with "Learn more" (#4F52B2) after it. Not end-to-end
     // encrypted: "This call (meeting) is secured by OST data encryption."
-    // End-to-end encrypted (Teams' M8): the title (semibold), "Verify your
-    // call's encryption by making sure the numbers below are the same for
-    // both of you." (meetings: "…for all participants."), and the
-    // encryption numbers on a #F5F5F5 band (radius 4, padding 10).
+    // End-to-end encrypted (measured on winpc 2026-11-17, a live E2EE call):
+    // a 10 px column; the title 14/20 semibold #242424 with 16 px bottom
+    // padding; "Verify your call's encryption by making sure the numbers
+    // below are the same for both of you." (meetings: "…for all
+    // participants.") 12/20 #616161 with Learn more; then, 16 px further
+    // down, the five 4-digit numbers (14/20 #242424) spread edge to edge
+    // on a #FAFAFA band (radius 4, padding 10, 40 tall). 280.3 x 217.3.
     Popup {
         id: encryptionCard
         parent: Overlay.overlay
@@ -3046,10 +3049,11 @@ Window {
         }
         background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
         contentItem: Column {
-            spacing: 8
+            spacing: 10
             Text {
                 visible: win.e2ee
                 width: parent.width; wrapMode: Text.Wrap
+                bottomPadding: 16
                 text: win.meeting ? "End-to-end encryption enabled for this meeting" : "End-to-end encryption enabled for this call"
                 font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
                 lineHeight: 20; lineHeightMode: Text.FixedHeight
@@ -3065,24 +3069,27 @@ Window {
                        : "Verify your call's encryption by making sure the numbers below are the same for both of you. ")
                       + "<a href=\"" + (win.e2ee ? "https://go.microsoft.com/fwlink/?linkid=2174740" : "https://go.microsoft.com/fwlink/?linkid=2174896") + "\">Learn more</a>"
                 font.family: theme.font; font.pixelSize: 12
-                lineHeight: 16; lineHeightMode: Text.FixedHeight
+                lineHeight: win.e2ee ? 20 : 16; lineHeightMode: Text.FixedHeight
                 color: theme.textSecondary
                 onLinkActivated: l => Qt.openUrlExternally(l)
                 HoverHandler { cursorShape: encryptionText.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
                 Accessible.name: win.e2ee ? "Learn more about OST End-to-end encryption" : "Learn more about OST data encryption"
             }
-            Rectangle {
+            Item {
                 visible: win.e2ee && win.e2eeNumbers.length > 0
-                width: parent.width; height: numbersFlow.implicitHeight + 20; radius: 4
-                color: theme.pick("#F5F5F5", "#1F1F1F", "#000000")
-                Flow {
-                    id: numbersFlow
-                    x: 10; y: 10; width: parent.width - 20
-                    spacing: 12
+                width: parent.width; height: 16 + 40
+                Rectangle {
+                    id: numbersBand
+                    y: 16; width: parent.width; height: 40; radius: 4
+                    color: theme.pick("#FAFAFA", "#1F1F1F", "#000000")
+                    // Teams spreads the groups edge to edge (space-between).
                     Repeater {
                         model: win.e2eeNumbers
                         Text {
                             required property var modelData
+                            required property int index
+                            readonly property real slot: win.e2eeNumbers.length > 1 ? (numbersBand.width - 20 - implicitWidth) / (win.e2eeNumbers.length - 1) : 0
+                            x: 10 + index * slot; y: 10
                             text: modelData
                             font.family: theme.font; font.pixelSize: 14
                             lineHeight: 20; lineHeightMode: Text.FixedHeight
