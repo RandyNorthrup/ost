@@ -839,10 +839,12 @@ pub async fn create_1to1_call_to(
     create_call(http, epconv_url, params, sdp_offer, callee_mri).await
 }
 
-/// Join a scheduled Teams meeting: the same single-shot call request with
-/// no callee, tied to the meeting's chat thread and its message id (`0`
-/// for scheduled meetings, from the join link), so the conversation
-/// service puts us in the meeting's conversation.
+/// Join a scheduled Teams meeting: a call request with no callee, tied to
+/// the meeting's chat thread and its message id (`0` for scheduled
+/// meetings, from the join link), so the conversation service puts us in
+/// the meeting's conversation. The conversation is joined first, then the
+/// call, as Teams joins every meeting (from its pre-join screen, and when
+/// it moves into a breakout room or back).
 pub async fn join_meeting(
     http: &reqwest::Client,
     epconv_url: &str,
@@ -977,13 +979,13 @@ struct CreateOptions<'a> {
 
 /// Teams' conversation-only join (the first of its two meeting requests):
 /// our participant and the conversation's callbacks, no call. Answers the
-/// conversation's controller URL.
+/// conversation's controller URL and its leave link.
 async fn join_conversation_only(
     http: &reqwest::Client,
     epconv_url: &str,
     params: &ConversationCallParams<'_>,
     opts: &CreateOptions<'_>,
-) -> Result<String> {
+) -> Result<(String, Option<String>)> {
     let tc = |path: &str| trouter_callback(params.trouter_surl, params.endpoint_id, path);
     let payload = serde_json::json!({
         "conversationRequest": {
@@ -1047,6 +1049,7 @@ async fn join_conversation_only(
     if !status.is_success() {
         anyhow::bail!("Joining the meeting's conversation failed ({status}): {}", &body[..body.len().min(300)]);
     }
+    tracing::debug!(body = %&body[..body.len().min(4000)], "conversation-only join response");
     let v: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
     let controller = v
         .pointer("/conversationController")
@@ -1055,8 +1058,13 @@ async fn join_conversation_only(
         .or_else(|| headers.get("location").and_then(|h| h.to_str().ok()).map(str::to_string))
         .filter(|c| super::incoming::is_service_link(c))
         .context("No conversationController for the meeting's conversation")?;
+    let leave = v
+        .pointer("/links/leave")
+        .and_then(|l| l.as_str())
+        .filter(|l| super::incoming::is_service_link(l))
+        .map(str::to_string);
     tracing::info!("joined the meeting's conversation");
-    Ok(controller)
+    Ok((controller, leave))
 }
 
 async fn create_call(
@@ -1199,16 +1207,25 @@ async fn create_call_with(
     }
 
     // Meetings: the conversation first, then the call to it (Teams').
-    let target_url = if opts.two_step {
+    let (target_url, conversation_leave) = if opts.two_step {
         match join_conversation_only(http, epconv_url, params, opts).await {
-            Ok(c) => c,
+            Ok((c, leave)) => (c, leave),
             Err(e) => {
                 tracing::warn!("conversation-only join: {e:#}; joining in one request");
-                epconv_url.to_string()
+                (epconv_url.to_string(), None)
             }
         }
     } else {
-        epconv_url.to_string()
+        (epconv_url.to_string(), None)
+    };
+    // The call request failed after we joined the conversation: leave it,
+    // so no participant without a call stays behind.
+    let leave_joined_conversation = || async {
+        if let Some(url) = &conversation_leave
+            && let Err(e) = leave_conversation(http, url, params, 0).await
+        {
+            tracing::warn!("leaving the meeting's conversation: {e:#}");
+        }
     };
     tracing::info!(
         "1:1 call: POST {} (single-shot epconv with SDP)",
@@ -1229,8 +1246,14 @@ async fn create_call_with(
         .header("x-ms-migration", "True")
         .json(&payload)
         .send()
-        .await
-        .context("1:1 call POST to epconv failed")?;
+        .await;
+    let resp = match resp {
+        Ok(r) => r,
+        Err(e) => {
+            leave_joined_conversation().await;
+            return Err(anyhow::Error::new(e).context("1:1 call POST to epconv failed"));
+        }
+    };
 
     let status = resp.status();
     let headers = resp.headers().clone();
@@ -1240,6 +1263,7 @@ async fn create_call_with(
     tracing::debug!("1:1 call response body: {}", &body[..body.len().min(2000)]);
 
     if !status.is_success() {
+        leave_joined_conversation().await;
         anyhow::bail!("1:1 call epconv failed ({}): {}", status, body);
     }
 

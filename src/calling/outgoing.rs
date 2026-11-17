@@ -1525,6 +1525,7 @@ impl OutgoingCall {
                 .await
                 .context("Call end failed to send")?;
             if resp.status().is_success() {
+                tracing::info!(tag = %self.call_tag, "hung up the call leg");
                 return Ok(());
             }
             tracing::info!("callLeg end returned {}, trying end link", resp.status());
@@ -1890,6 +1891,127 @@ fn read_answer(json: &str) -> Option<std::result::Result<Acceptance, String>> {
     }))
 }
 
+/// The service ended a call before it was answered (`call/end` or
+/// `conversation/conversationEnd`): its code, sub-code and phrase.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CallEnded {
+    pub code: u64,
+    pub sub_code: u64,
+    pub phrase: String,
+}
+
+impl CallEnded {
+    /// The end in a call end event, if it is one.
+    pub fn from_event(json: &str) -> Option<Self> {
+        if !super::incoming::is_call_end_event(json) {
+            return None;
+        }
+        let v: serde_json::Value = serde_json::from_str(json).ok()?;
+        let body = v.get("body").filter(|b| !b.is_null()).unwrap_or(&v);
+        let end = body.get("callEnd").unwrap_or(body);
+        let num = |k: &str| end.get(k).and_then(|c| c.as_u64()).unwrap_or_default();
+        Some(Self {
+            code: num("code"),
+            sub_code: num("subCode"),
+            phrase: end.get("phrase").and_then(|p| p.as_str()).unwrap_or("call ended").to_string(),
+        })
+    }
+
+    /// Teams' "not allowed to join breakout room" end (403, sub-code
+    /// 5745: "Conversation ending after breakout room is not open."),
+    /// which it shows as "You don't have access to this room".
+    pub fn not_allowed_in_breakout_room(&self) -> bool {
+        self.code == 403 && self.sub_code == 5745
+    }
+}
+
+impl std::fmt::Display for CallEnded {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} ({})", self.phrase, self.code)
+    }
+}
+
+impl std::error::Error for CallEnded {}
+
+/// How long a failed or withdrawn call's late answer is watched for.
+const LATE_LEG_WATCH: Duration = Duration::from_secs(30);
+
+/// The callback tag a call event carries (`callTag`, from the
+/// `…/x<tag>/callAgent/…` callback it came on).
+fn event_call_tag(json: &str) -> Option<String> {
+    if !json.contains("\"callTag\"") {
+        return None;
+    }
+    let v: serde_json::Value = serde_json::from_str(json).ok()?;
+    v.get("callTag")?.as_str().map(str::to_string)
+}
+
+/// Whether a call event is another placed call's (it carries a tag that
+/// isn't `tag`). Untagged events (invitations) may be anyone's.
+fn is_other_calls_event(json: &str, tag: &str) -> bool {
+    event_call_tag(json).is_some_and(|t| t != tag)
+}
+
+/// A call whose join failed (or was withdrawn) after its request went out:
+/// watch its events a little longer and hang up the leg of an answer that
+/// still comes, so none is left behind in the meeting.
+fn end_late_leg(
+    mut events: tokio::sync::broadcast::Receiver<event_hub::Event>,
+    tag: String,
+    http: reqwest::Client,
+    skype_token: String,
+) {
+    tokio::spawn(async move {
+        let deadline = tokio::time::sleep(LATE_LEG_WATCH);
+        tokio::pin!(deadline);
+        loop {
+            let ev = tokio::select! {
+                _ = &mut deadline => return,
+                ev = events.recv() => ev,
+            };
+            let ev = match ev {
+                Ok(ev) => ev,
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(_) => return,
+            };
+            if ev.kind != EventKind::Call || event_call_tag(&ev.json).as_deref() != Some(tag.as_str()) {
+                continue;
+            }
+            let Some(Ok(late)) = read_answer(&ev.json) else {
+                continue;
+            };
+            tracing::info!("a failed join's call was answered late; hanging it up");
+            let ended = match (&late.call_leg, &late.end) {
+                (Some(leg), _) => http
+                    .delete(leg)
+                    .header("X-Skypetoken", &skype_token)
+                    .json(&serde_json::json!({
+                        "callEnd": { "code": 0, "subCode": 0, "phrase": "CallEndReasonLocalUserInitiated" }
+                    }))
+                    .send()
+                    .await
+                    .map(|r| r.status()),
+                (None, Some(end)) => http
+                    .post(end)
+                    .header("X-Skypetoken", &skype_token)
+                    .json(&serde_json::json!({}))
+                    .send()
+                    .await
+                    .map(|r| r.status()),
+                (None, None) => {
+                    tracing::warn!("the late answer has no leg to end");
+                    return;
+                }
+            };
+            match ended {
+                Ok(status) => tracing::info!(%status, "late call leg ended"),
+                Err(e) => tracing::warn!("ending the late call leg: {e:#}"),
+            }
+            return;
+        }
+    });
+}
+
 /// Whether the join response holds our endpoint in the meeting's lobby:
 /// its roster entry has the `lobby` modality and no `call` (the media
 /// processor's acceptance carries no modalities either way, so it can't
@@ -2060,13 +2182,23 @@ fn percent_decode(s: &str) -> Option<String> {
     String::from_utf8(out).ok()
 }
 
-/// Join a Teams meeting. Resolves once the meeting's conference server
-/// answers and audio is set up; `cancel` withdraws while it connects.
+/// A new call's callback tag (`…/x<tag>/callAgent/…`): its events carry it
+/// as `callTag`, so they can't be taken for another call's.
+pub fn new_call_tag() -> String {
+    uuid::Uuid::new_v4().simple().to_string()[..12].to_string()
+}
+
+/// Join a Teams meeting (a breakout room is one too). Resolves once the
+/// meeting's conference server answers and audio is set up; `cancel`
+/// withdraws while it connects. `call_tag` (from [`new_call_tag`]) is the
+/// call's callback tag, so the caller can tell its events, even after the
+/// join failed, from those of the meeting it's in.
 pub async fn join_meeting(
     link: &MeetingLink,
+    call_tag: &str,
     cancel: tokio::sync::oneshot::Receiver<()>,
 ) -> Result<OutgoingCall> {
-    start(&link.thread_id, Target::Meeting(link), cancel).await
+    start_tagged(&link.thread_id, Target::Meeting(link), Some(call_tag.to_string()), cancel).await
 }
 
 /// Start or join a group chat's call (`19:…@thread.v2`), as Teams does:
@@ -2146,6 +2278,15 @@ enum Target<'a> {
 async fn start(
     thread_id: &str,
     target: Target<'_>,
+    cancel: tokio::sync::oneshot::Receiver<()>,
+) -> Result<OutgoingCall> {
+    start_tagged(thread_id, target, None, cancel).await
+}
+
+async fn start_tagged(
+    thread_id: &str,
+    target: Target<'_>,
+    call_tag: Option<String>,
     mut cancel: tokio::sync::oneshot::Receiver<()>,
 ) -> Result<OutgoingCall> {
     let mut config = Config::load()?;
@@ -2175,7 +2316,7 @@ async fn start(
     // This call's own callback base (`…/x<tag>/callAgent/…`): its events
     // say which call they're for, so a meeting we're leaving while joining
     // the next (breakout rooms) can't end the new one.
-    let call_tag = uuid::Uuid::new_v4().simple().to_string()[..12].to_string();
+    let call_tag = call_tag.unwrap_or_else(new_call_tag);
     let surl = format!("{}/x{call_tag}/", surl.trim_end_matches('/'));
 
     let mut local = LocalAudio::prepare().await?;
@@ -2368,12 +2509,20 @@ async fn start(
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
                 Err(e) => bail!("Push channel closed: {e}"),
             };
-            if ev.kind != EventKind::Call {
+            // Another call's events (the meeting we're moving out of, or
+            // the main meeting held under a breakout room) aren't ours.
+            if ev.kind != EventKind::Call || is_other_calls_event(&ev.json, &call_tag) {
                 continue;
             }
             match read_answer(&ev.json) {
                 Some(Ok(a)) => return Ok(a),
-                Some(Err(reason)) => bail!("{reason}"),
+                Some(Err(reason)) => match CallEnded::from_event(&ev.json) {
+                    Some(end) => {
+                        tracing::info!(code = end.code, sub_code = end.sub_code, phrase = %end.phrase, "the call ended before it was answered");
+                        return Err(anyhow::Error::new(end));
+                    }
+                    None => bail!("{reason}"),
+                },
                 None => continue,
             }
         }
@@ -2395,9 +2544,19 @@ async fn start(
         }
     };
     let acceptance = tokio::select! {
-        answer = wait_answer => answer?,
-        _ = tokio::time::sleep(RING_TIMEOUT) => return Err(withdraw(408, "No answer").await),
-        _ = &mut cancel => return Err(withdraw(487, "Call cancelled").await),
+        answer = wait_answer => answer,
+        _ = tokio::time::sleep(RING_TIMEOUT) => Err(withdraw(408, "No answer").await),
+        _ = &mut cancel => Err(withdraw(487, "Call cancelled").await),
+    };
+    let acceptance = match acceptance {
+        Ok(a) => a,
+        Err(e) => {
+            // The call request is out: its answer can still come after the
+            // conversation ended or we withdrew, and would leave a call leg
+            // behind. End any that does.
+            end_late_leg(events, call_tag, http, skype_token);
+            return Err(e);
+        }
     };
     tracing::info!(in_lobby = acceptance.in_lobby, "callee answered");
 
@@ -2553,6 +2712,43 @@ async fn start(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A breakout room joined before it opened ends the conversation with
+    /// 403 / 5745 (Teams' NotAllowedToJoinBreakoutRoom); other ends keep
+    /// their message.
+    #[test]
+    fn call_ended_reads_the_end() {
+        let room = r#"{"callAgentPath":"conversation/conversationEnd/","callTag":"0f3a9b2c4d5e","body":{"code":403,"subCode":5745,"phrase":"Conversation ending after breakout room is not open."}}"#;
+        let end = CallEnded::from_event(room).expect("an end");
+        assert_eq!((end.code, end.sub_code), (403, 5745));
+        assert!(end.not_allowed_in_breakout_room());
+        assert_eq!(end.to_string(), "Conversation ending after breakout room is not open. (403)");
+        let denied = r#"{"callAgentPath":"call/end/","body":{"callEnd":{"code":0,"subCode":5854,"phrase":"DeniedInLobby"}}}"#;
+        let end = CallEnded::from_event(denied).expect("an end");
+        assert_eq!((end.code, end.sub_code), (0, 5854));
+        assert!(!end.not_allowed_in_breakout_room());
+        assert!(CallEnded::from_event(r#"{"callAgentPath":"call/acceptance/","body":{}}"#).is_none());
+        // An error made from it still reads as before and can be told apart.
+        let e = anyhow::Error::new(CallEnded::from_event(room).unwrap());
+        assert!(e.downcast_ref::<CallEnded>().is_some_and(CallEnded::not_allowed_in_breakout_room));
+    }
+
+    /// A call's answer is only ever taken from its own callbacks: the
+    /// meeting we're moving out of (or the held main meeting) has its own
+    /// tag; untagged events (invitations) stay anyone's.
+    #[test]
+    fn events_of_other_calls() {
+        let ours = r#"{"callAgentPath":"call/acceptance/","callTag":"aaaaaaaaaaaa","body":{}}"#;
+        let theirs = r#"{"callAgentPath":"conversation/conversationEnd/","callTag":"bbbbbbbbbbbb","body":{"code":0}}"#;
+        let untagged = r#"{"callAgentPath":"call/end/","body":{}}"#;
+        assert_eq!(event_call_tag(ours).as_deref(), Some("aaaaaaaaaaaa"));
+        assert!(!is_other_calls_event(ours, "aaaaaaaaaaaa"));
+        assert!(is_other_calls_event(theirs, "aaaaaaaaaaaa"));
+        assert!(!is_other_calls_event(untagged, "aaaaaaaaaaaa"));
+        let tag = new_call_tag();
+        assert_eq!(tag.len(), 12);
+        assert!(tag.chars().all(|c| c.is_ascii_hexdigit()));
+    }
 
     /// Shapes from a Teams web guest held in the test meeting's lobby
     /// (2026-11-08): the media processor accepts with no call modalities;

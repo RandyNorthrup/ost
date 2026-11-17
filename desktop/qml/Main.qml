@@ -2097,11 +2097,20 @@ Window {
     readonly property var breakoutRoomState: backend.callBreakoutRoomJson ? JSON.parse(backend.callBreakoutRoomJson) : null
     readonly property var assignedOpenRoom: breakoutRooms.find(r => r.open) || null
     readonly property int breakoutMoveSeconds: 10
+    // What breakoutMain was before the move under way, for a move that
+    // fails (we stay where we were).
+    property var breakoutUndo: null
+    // The room last moved to (the harness joins it again once closed).
+    property var lastBreakoutRoom: null
     function goToBreakoutRoom(room) {
         breakoutMove.stop()
         if (!room || window.breakoutMain) return
+        window.lastBreakoutRoom = room
+        window.breakoutUndo = { main: null }
         window.breakoutMain = JSON.parse(backend.currentMeeting())
         console.warn("BREAKOUT moving to", room.name)
+        // Teams carries your mic state into the room (and back).
+        window.muteOnJoin = backend.callMuted
         backend.moveMeeting(room.join_url, room.name)
     }
     // Back to the main meeting held for a room: its time carries on.
@@ -2115,9 +2124,11 @@ Window {
         if (callWindow.heldMeeting) { window.resumeHeldMeeting(); return }
         const main = window.breakoutMain
         if (!main) return
+        window.breakoutUndo = { main: main }
         window.breakoutMain = null
         const url = window.breakoutRoomState && window.breakoutRoomState.main_join_url || main.url
         console.warn("BREAKOUT back to", main.title)
+        window.muteOnJoin = backend.callMuted
         backend.moveMeeting(url, main.title)
     }
     onAssignedOpenRoomChanged: {
@@ -2154,6 +2165,7 @@ Window {
         // Teams holds the organizer's main meeting while they're in a room.
         function onJoinRoomAsOrganizer(room) {
             callWindow.heldElapsedBase = callWindow.seconds
+            window.muteOnJoin = backend.callMuted
             backend.joinRoomHoldingMain(room.join_url, room.name)
         }
         function onLeaveRoom(resume) { breakoutReturn.stop(); if (resume) window.resumeHeldMeeting(); else backend.leaveRoom(false) }
@@ -2174,6 +2186,16 @@ Window {
             }
         }
         function onBreakoutActionDone(action, error) { callWindow.breakoutDone(action, error) }
+        // A room (or the main meeting) couldn't be joined: we're still in
+        // the meeting we came from (an organizer's held main meeting comes
+        // back), and the window says why.
+        function onMeetingMoveFailed(title, text) {
+            console.warn("BREAKOUT move failed:", title, text)
+            callWindow.showBreakoutAlert(text || title)
+            if (callWindow.heldMeeting) { window.resumeHeldMeeting(); return }
+            window.breakoutMain = window.breakoutUndo ? window.breakoutUndo.main : null
+            window.breakoutUndo = null
+        }
     }
     // --remove-history-check=<chat id>: open the chat and log the messages
     // shown (after Remove chat history only the newer ones).
@@ -2216,15 +2238,26 @@ Window {
     // --breakout-watch (with --join-test, as a participant): capture the
     // call window ("-watch-<n>.png") and log whenever the breakout phase
     // changes (the alert, Join room, in a room, Return, closed).
+    // --breakout-watch-rejoin: back in the main meeting after a room,
+    // join that (closed) room again 15 s later: the move fails and the
+    // main meeting goes on.
     Timer {
         running: Qt.application.arguments.indexOf("--breakout-watch") >= 0 && backend.callState !== ""
         interval: 1500; repeat: true
         property string last: ""
         property int n: 0
+        property int backFor: 0
+        property bool rejoined: false
         onTriggered: {
+            if (Qt.application.arguments.indexOf("--breakout-watch-rejoin") >= 0 && !rejoined && window.lastBreakoutRoom
+                    && !window.breakoutMain && backend.callState === "connected" && ++backFor === 10) {
+                rejoined = true
+                console.warn("BREAKOUTWATCH rejoining the closed room", window.lastBreakoutRoom.name, "from", backend.callPeer)
+                window.goToBreakoutRoom(window.lastBreakoutRoom)
+            }
             const phase = JSON.stringify([callWindow.breakoutAlert ? callWindow.breakoutAlert.text : "", callWindow.roomToJoin,
                                           !!window.breakoutMain, callWindow.canReturnToMain, backend.callState,
-                                          window.breakoutRoomState ? window.breakoutRoomState.closed : null])
+                                          window.breakoutRoomState ? window.breakoutRoomState.closed : null, backend.callPeer])
             if (phase === last) return
             last = phase; n++
             console.warn("BREAKOUTWATCH", n, phase, "bar", JSON.stringify(callWindow.ubar.bar.slice(0, 3)))
@@ -2241,7 +2274,11 @@ Window {
         running: Qt.application.arguments.indexOf("--breakout-test") >= 0 && backend.callState === "connected"
         interval: 3000; repeat: true
         property int step: -1
+        // --breakout-wait=<s>: stay that long with the rooms open (after
+        // "opened") before going on, for the other side to act.
+        property real holdUntil: 0
         onTriggered: {
+            if (Date.now() < holdUntil) return
             const shot = n => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-rooms-" + n + ".png")))
             const heldShot = n => { const w = callWindow.heldWindowForTest(); if (w) w.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-rooms-" + n + ".png"))) }
             const joinTest = Qt.application.arguments.indexOf("--breakout-join") >= 0
@@ -2256,6 +2293,9 @@ Window {
                 1: () => { t("pane"); },
                 2: () => shot("create"),
                 3: () => callWindow.createBreakoutRooms(1, "automatic"),
+                // --breakout-manual: nobody is moved automatically (people
+                // get "Join room") and they may return to the main meeting.
+                5: () => { if (Qt.application.arguments.indexOf("--breakout-manual") >= 0) callWindow.breakoutRun("settings", { auto_move: false, allow_return: true }) },
                 6: () => { log("created"); shot("manage") },
                 7: () => t("assign"),
                 8: () => shot("assign"),
@@ -2263,7 +2303,11 @@ Window {
                 10: () => shot("settings"),
                 11: () => t("back"),
                 12: () => callWindow.breakoutRun("open", { threads: callWindow.breakoutRooms.map(r => r.thread) }),
-                20: () => { log("opened"); shot("open") },
+                20: () => {
+                    log("opened"); shot("open")
+                    const wait = parseInt((Qt.application.arguments.find(a => a.startsWith("--breakout-wait=")) || "").slice(16)) || 0
+                    if (wait > 0) { console.warn("BREAKOUTTEST waiting", wait); holdUntil = Date.now() + wait * 1000 }
+                },
                 21: () => t("announce"),
                 22: () => shot("announce"),
                 23: () => { t("close"); callWindow.breakoutRun("announce", { message: "OST test 100: breakout announcement from OST" }) },
@@ -2280,6 +2324,16 @@ Window {
                 43: () => { if (joinTest) { console.warn("BREAKOUTTEST resumed", backend.callHeldMeetingJson || "none", backend.callState, backend.callPeer, "role", callWindow.myRole, "people", JSON.stringify(callWindow.people.map(p => p.name)), "time", callWindow.seconds, "bar", JSON.stringify(callWindow.ubar.bar)); shot("resumed") } },
                 46: () => callWindow.breakoutRun("close", { threads: callWindow.breakoutRooms.map(r => r.thread) }),
                 49: () => { log("closed"); shot("closed") },
+                // --breakout-join-unopened: add "Room 2" (never opened) and
+                // Join it from its menu: the join fails and the main meeting
+                // is back, its window saying why.
+                50: () => { if (Qt.application.arguments.indexOf("--breakout-join-unopened") >= 0) callWindow.breakoutRun("add", { name: "Room 2" }) },
+                53: () => {
+                    const room = callWindow.breakoutRooms.find(r => r.name === "Room 2")
+                    if (Qt.application.arguments.indexOf("--breakout-join-unopened") >= 0 && room) { console.warn("BREAKOUTTEST joining the unopened room", room.open); callWindow.joinRoomAsOrganizer(room) }
+                },
+                55: () => { if (Qt.application.arguments.indexOf("--breakout-join-unopened") >= 0) { console.warn("BREAKOUTTEST soon after the unopened room", backend.callHeldMeetingJson || "none", backend.callState, backend.callPeer, "alert", callWindow.breakoutAlert ? callWindow.breakoutAlert.text : ""); shot("unopened-join-alert") } },
+                58: () => { if (Qt.application.arguments.indexOf("--breakout-join-unopened") >= 0) { console.warn("BREAKOUTTEST after the unopened room", backend.callHeldMeetingJson || "none", backend.callState, backend.callPeer, "role", callWindow.myRole, "people", JSON.stringify(callWindow.people.map(p => p.name)), "alert", callWindow.breakoutAlert ? callWindow.breakoutAlert.text : "", "status", backend.statusText); shot("unopened-join") } },
                 60: () => { log("later"); shot("later"); t("remove") },
                 61: () => shot("remove"),
                 62: () => { t("close"); callWindow.breakoutRun("delete_all", {}) },

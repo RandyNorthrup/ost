@@ -1530,6 +1530,11 @@ pub mod qobject {
         /// worked.
         #[qsignal]
         fn breakout_action_done(self: Pin<&mut Backend>, action: QString, error: QString);
+        /// Joining a breakout room (or going back to the main meeting)
+        /// failed: the meeting we came from goes on (a held main meeting
+        /// is to be resumed). `title` and `text` say why, as Teams does.
+        #[qsignal]
+        fn meeting_move_failed(self: Pin<&mut Backend>, title: QString, text: QString);
         /// The tray asks for the window (its icon or the name row).
         #[qsignal]
         fn tray_show(self: Pin<&mut Backend>);
@@ -2694,6 +2699,9 @@ pub struct BackendRust {
     meeting_join_info: (String, String),
     /// The meeting last joined (link, title), for Rejoin.
     last_join: (QString, QString),
+    /// The meeting a move (to a breakout room or back) left, as its window
+    /// showed it: where a failed move goes back to.
+    move_undo: Option<MoveUndo>,
     /// What the meeting's call recorder does (for the recording
     /// indicator's names as the roster changes).
     processing: teams_cli::calling::roster::Processing,
@@ -2838,6 +2846,16 @@ pub struct BackendRust {
 
 #[path = "presenting.rs"]
 mod presenting;
+
+/// The meeting a move between meetings left (its link, title and breakout
+/// state), to go back to when the move fails.
+#[derive(Clone, Default)]
+struct MoveUndo {
+    url: QString,
+    title: QString,
+    breakout_json: QString,
+    breakout_room_json: QString,
+}
 
 /// The call this app is ringing for or in. Lives on the engine side so the
 /// media keeps running independently of the Qt thread.
@@ -7608,7 +7626,8 @@ impl qobject::Backend {
                 this.as_mut().set_call_held_meeting_json(QString::from(held.as_str()));
                 this.as_mut().set_call_camera_on(false);
                 this.as_mut().set_call_state(QString::default());
-                this.as_mut().join_meeting(&QString::from(url.as_str()), &QString::from(title.as_str()));
+                // Teams joins the room as any meeting: its conversation, then the call.
+                this.as_mut().start_meeting_join(&QString::from(url.as_str()), &QString::from(title.as_str()));
             });
         });
     }
@@ -7679,15 +7698,28 @@ impl qobject::Backend {
         QString::from(json!({ "url": url.to_string(), "title": title.to_string() }).to_string().as_str())
     }
 
-    pub fn move_meeting(self: Pin<&mut Self>, join_url: &QString, title: &QString) {
+    pub fn move_meeting(mut self: Pin<&mut Self>, join_url: &QString, title: &QString) {
         let (url, title) = (join_url.to_string(), title.to_string());
+        // Where a failed move goes back to.
+        let (from_url, from_title) = self.rust().last_join.clone();
+        let undo = MoveUndo {
+            url: from_url,
+            title: from_title,
+            breakout_json: self.rust().call_breakout_json.clone(),
+            breakout_room_json: self.rust().call_breakout_room_json.clone(),
+        };
+        self.as_mut().rust_mut().move_undo = Some(undo);
         let qt = self.qt_thread();
         runtime().spawn(async move {
             // As Teams moves between meetings: the one we leave goes quiet
-            // now and is left once the next one answers (join_meeting).
+            // now (camera off, nothing sent or played) and is left once the
+            // next one answers (join_meeting); if that fails, we stay in it.
             let mut slot = call_slot().lock().await;
             if let Some(mut call) = slot.outgoing.take() {
-                call.stop_media();
+                if call.camera_on() {
+                    let _ = call.set_camera(false, None);
+                }
+                call.set_held(true);
                 if slot.left_calls.len() >= 16 {
                     slot.left_calls.remove(0);
                 }
@@ -7705,7 +7737,8 @@ impl qobject::Backend {
             let _ = qt.queue(move |mut this| {
                 this.as_mut().set_call_camera_on(false);
                 this.as_mut().set_call_state(QString::default());
-                this.as_mut().join_meeting(&QString::from(url.as_str()), &QString::from(title.as_str()));
+                // Teams joins as any meeting: the conversation, then the call.
+                this.as_mut().start_meeting_join(&QString::from(url.as_str()), &QString::from(title.as_str()));
             });
         });
     }
@@ -7818,6 +7851,18 @@ impl qobject::Backend {
     }
 
     pub fn join_meeting(mut self: Pin<&mut Self>, join_url: &QString, title: &QString) {
+        // Not a move between meetings: nothing to go back to.
+        if self.rust().call_state.is_empty() {
+            self.as_mut().rust_mut().move_undo = None;
+        }
+        self.start_meeting_join(join_url, title);
+    }
+
+    /// Join a meeting: from the pre-join screen, or moving from another
+    /// meeting (a breakout room, or back), with `move_undo` saying where we
+    /// came from. Teams joins either way in its two steps (the
+    /// conversation, then the call).
+    fn start_meeting_join(mut self: Pin<&mut Self>, join_url: &QString, title: &QString) {
         if !self.rust().call_state.is_empty() {
             return;
         }
@@ -7841,8 +7886,10 @@ impl qobject::Backend {
         let qt = self.qt_thread();
         let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
         runtime().block_on(async { call_slot().lock().await.cancel_placing = Some(cancel_tx) });
+        let call_tag = outgoing::new_call_tag();
+        let undo = self.as_mut().rust_mut().move_undo.take();
         runtime().spawn(async move {
-            let result = outgoing::join_meeting(&link, cancel_rx).await;
+            let result = outgoing::join_meeting(&link, &call_tag, cancel_rx).await;
             let mut slot = call_slot().lock().await;
             slot.cancel_placing = None;
             match result {
@@ -7866,13 +7913,76 @@ impl qobject::Backend {
                     let _ = qt.queue(move |mut this| this.as_mut().show_joined(view, in_lobby));
                 }
                 Err(e) => {
+                    let msg = short_error(&e);
+                    tracing::info!("meeting join ended: {msg}");
+                    // Whatever that call still sends (a late answer, which
+                    // outgoing hangs up, or its end) isn't the meeting's
+                    // we're in.
+                    if slot.left_tags.len() >= 16 {
+                        slot.left_tags.remove(0);
+                    }
+                    slot.left_tags.push(call_tag.clone());
+                    let room_closed = e
+                        .downcast_ref::<outgoing::CallEnded>()
+                        .is_some_and(|end| end.not_allowed_in_breakout_room());
+                    // Teams' retry screen for a room you can't join.
+                    let (why_title, why_text) = if room_closed {
+                        (
+                            "You don't have access to this room".to_string(),
+                            "The room isn't open yet, or you might have been assigned to a different one.".to_string(),
+                        )
+                    } else {
+                        ("Couldn't join the meeting".to_string(), msg.clone())
+                    };
+                    // The window's alert: Teams' sentence, or just the title.
+                    let alert_text = if room_closed { why_text.clone() } else { String::new() };
+                    // An organizer's room joined over the held main
+                    // meeting: that meeting goes on (QML resumes it).
+                    if slot.held_main.is_some() {
+                        drop(slot);
+                        tracing::info!("the room couldn't be joined; back to the held main meeting");
+                        let _ = qt.queue(move |mut this| {
+                            this.as_mut().set_status_text(QString::from(format!("{why_title}: {why_text}").as_str()));
+                            this.as_mut().meeting_move_failed(QString::from(why_title.as_str()), QString::from(alert_text.as_str()));
+                        });
+                        return;
+                    }
+                    // Moving between meetings: stay in the one we were
+                    // leaving, as Teams does (it leaves it only once the
+                    // next one is connected).
+                    if let Some(undo) = undo.filter(|_| slot.moved_from.is_some())
+                        && let Some(earlier) = slot.moved_from.take()
+                    {
+                        earlier.set_held(false);
+                        let (id, tag) = (earlier.call_id().to_string(), earlier.call_tag().to_string());
+                        slot.left_calls.retain(|left| *left != id);
+                        slot.left_tags.retain(|left| *left != tag);
+                        drop(slot);
+                        tracing::info!("the move failed; staying in the meeting we were leaving");
+                        let view = JoinedView::of(&earlier);
+                        let back = undo.clone();
+                        let _ = qt.queue(move |mut this| {
+                            if let Some(link) = outgoing::MeetingLink::parse(&back.url.to_string()) {
+                                this.as_mut().reset_meeting_view(&link, &back.url, &back.title);
+                            }
+                            this.as_mut().set_call_breakout_json(back.breakout_json.clone());
+                            this.as_mut().set_call_breakout_room_json(back.breakout_room_json.clone());
+                            this.as_mut().set_call_state(QString::from("connecting"));
+                        });
+                        resume_roster(&qt, &earlier).await;
+                        call_slot().lock().await.outgoing = Some(earlier);
+                        let _ = qt.queue(move |mut this| {
+                            this.as_mut().show_joined(view, false);
+                            this.as_mut().set_status_text(QString::from(format!("{why_title}: {why_text}").as_str()));
+                            this.as_mut().meeting_move_failed(QString::from(why_title.as_str()), QString::from(alert_text.as_str()));
+                        });
+                        return;
+                    }
                     let moved_from = slot.moved_from.take();
                     drop(slot);
                     if let Some(earlier) = moved_from {
                         runtime().spawn(leave_moved_from(earlier));
                     }
-                    let msg = short_error(&e);
-                    tracing::info!("meeting join ended: {msg}");
                     let _ = qt.queue(move |mut this| {
                         this.as_mut().set_status_text(QString::from(
                             format!("Couldn't join the meeting: {msg}").as_str(),
