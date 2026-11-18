@@ -1,10 +1,11 @@
 ---
 id: TASK-0156
 title: Sync device buttons (headset call controls) as Teams
-status: To Do
-assignee: []
+status: Done
+assignee:
+  - '@claude'
 created_date: '2026-11-15T09:37:00Z'
-updated_date: '2026-11-18T04:05:00Z'
+updated_date: '2026-11-18T04:41:00Z'
 labels:
   - calling
   - devices
@@ -20,8 +21,8 @@ Settings > Devices > Audio settings > 'Sync device buttons' (This lets you use a
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Devices shows 'Sync device buttons' with Teams' text, kept as Teams keeps it
-- [ ] #2 With it on, a headset's answer, hang-up and mute buttons control OST's calls, and OST's mute state shows on the headset, as in Teams
+- [x] #1 Devices shows 'Sync device buttons' with Teams' text, kept as Teams keeps it
+- [x] #2 With it on, a headset's answer, hang-up and mute buttons control OST's calls, and OST's mute state shows on the headset, as in Teams
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -34,3 +35,25 @@ Settings > Devices > Audio settings > 'Sync device buttons' (This lets you use a
 - Live (OST Test 2 calling ost-test1): Ring LED while ringing; hook 1 answered; mute/unmute toggled the call and the Mute LED; hook 0 hung up, LEDs off, caller ended. Reject button declined. Sync off: hook and mute ignored, no LEDs. Missed call pushed to the device; the Teams button then opened Calls. Pre-join mute toggled the pre-join mic and LED. Long press raised the hand in a meeting (HTTP 200).
 - Open: Bluetooth (HFP) headset buttons; reading the UCQ string needs write access to /dev/bus/usb (without it unknown vendors get mute only).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Headset call buttons and lights work as in Teams.
+
+Changes:
+- Settings > Devices: "Audio device button controls" with "Transfer controls to this app", and "Sync audio device buttons when in use on this app" (audioDeviceSyncEnabled, on by default, kept on the device).
+- src/calling/hid_telephony.rs reads hidraw telephony usages with Teams' rules:
+  - known vendors get hook, flash, mute and reject; others get mute only unless UCQ says headset;
+  - off-hook answers and on-hook hangs up, with a 1 s guard;
+  - Reject declines; Mute toggles the call or the pre-join mic.
+- Lights: Off-Hook, Ring, Mute, Hold. Teams button: short press opens Calls after a missed call or brings OST forward; a long press in a meeting raises the hand.
+- Arbitration between OST instances, with Teams' transfer prompt. Harness --headset-test.
+- Rig: an emulated Jabra telephony headset on linuxlt (~/byod-gadget.sh headset, ~/hs-emu.py).
+
+Tests:
+- 723 lib tests.
+- Live with OST Test 2 calling ost-test1: ring light; off-hook answers; mute and light; on-hook hangs up; reject declines; Sync off ignores the buttons; Teams button after a missed call; pre-join mute; long-press raise hand.
+
+Follow-up: TASK-0223 (Bluetooth, UCQ, transfer prompt live).
+<!-- SECTION:FINAL_SUMMARY:END -->

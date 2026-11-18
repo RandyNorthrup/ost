@@ -1,10 +1,11 @@
 ---
 id: TASK-0161
 title: Room audio with the tenant's Teams Rooms (search, Nearby, add the room)
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-15T20:59:00Z'
-updated_date: '2026-11-18T04:06:00Z'
+updated_date: '2026-11-18T04:41:00Z'
 labels:
   - calls
   - devices
@@ -20,8 +21,8 @@ Teams' pre-join Room audio also finds the tenant's Teams Rooms: 'Search for a ro
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Typing in Room audio's picker finds the tenant's rooms as Teams does
-- [ ] #2 Other Suggestions and Nearby list rooms as Teams does, with Teams' hints
+- [x] #1 Typing in Room audio's picker finds the tenant's rooms as Teams does
+- [x] #2 Other Suggestions and Nearby list rooms as Teams does, with Teams' hints
 - [ ] #3 Joining with a tenant room adds the room to the meeting as Teams does
 <!-- AC:END -->
 
@@ -38,4 +39,9 @@ Built so far: Room audio's picker (search box, Connected room devices, Other Sug
 - OST: api::rooms (findmeetinglocations, resolve, beacon parser), desktop room_ble (BlueZ LE scan), backend tenant_rooms / nearby_rooms / add_room_to_meeting, OutgoingCall::add_room, PreJoin picker sections (Nearby, Other Suggestions, search), Teams' hints, harness --rooms-test. Emulated Teams Rooms beacon: scratchpad hid/mtr-beacon.sh (bluetoothctl on this PC).
 - Live (linuxlt, ost-test1): search 'OST' -> OST Test Room (Offline), as Teams; Nearby -> OST Test Room from the emulated beacon (-35 dBm, adjacent); joining a Meet now in OST layout test with the room: invitation accepted by the conversation (202), then addParticipantFailure 'The user is unavailable at the moment' because no endpoint is signed in as the room.
 - Open: the room joining needs an endpoint signed in as ost-test-room (a Teams Rooms device, or OST signed in as the room: a password sign-in the user has to do); ultrasound room detection (Teams' native DSP) not implemented.
+
+- 2026-11-18 (6845cd4): Room audio picker as Teams. Search and Other Suggestions come from Outlook findmeetinglocations, with presence; Nearby comes from Teams Rooms Bluetooth beacons (desktop/src/room_ble.rs) with Teams' Bluetooth hints. Joining with a tenant room joins without computer audio and then invites the room, as Teams.
+- Live: search "OST" returned OST Test Room (Offline), as Teams; Other Suggestions was empty, as Teams; Nearby listed the room from an emulated beacon.
+- Tenant: Teams Rooms Basic ($0) assigned to OST Test Room.
+- AC3 open: the invite was accepted (202) and then failed "user unavailable", because nothing is signed in as the room. Teams' own join with that room on winpc didn't add it either. Verifying needs the room account signed in somewhere (a one-time password sign-in).
 <!-- SECTION:NOTES:END -->
