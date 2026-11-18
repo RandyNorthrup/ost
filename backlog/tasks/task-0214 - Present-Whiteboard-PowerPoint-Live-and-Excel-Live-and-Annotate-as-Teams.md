@@ -1,10 +1,11 @@
 ---
 id: TASK-0214
 title: Present Whiteboard, PowerPoint Live and Excel Live, and Annotate, as Teams
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-17T02:43:00Z'
-updated_date: '2026-11-18T19:37:00Z'
+updated_date: '2026-11-18T20:10:00Z'
 labels:
   - desktop
 dependencies: []
@@ -20,7 +21,7 @@ What TASK-0210 left (docs/spec/call-and-meeting-window.md §9c): starting a Micr
 <!-- AC:BEGIN -->
 - [ ] #1 OST starts and views Whiteboard, PowerPoint Live and Excel Live shares as Teams
 - [ ] #2 Annotate works on a shared screen as in Teams
-- [ ] #3 Content from camera has Teams' preview and clean-up
+- [x] #3 Content from camera has Teams' preview and clean-up
 - [ ] #4 Teams controls a screen OST shares, and OST gives control from its side, checked live
 <!-- AC:END -->
 
@@ -33,4 +34,6 @@ What TASK-0210 left (docs/spec/call-and-meeting-window.md §9c): starting a Micr
 - Content from camera: built by a helper (merged: ContentCameraDialog.qml, ost_vfx::content_camera); I added learning the board behind a presenter already standing there, reran the 11 s no-edges path, and checked Teams as the viewer of OST's camera share.
 - AC4: Teams took control of OST's shared screen (portal approved; Teams' press moved linuxlt's cursor to that point); OST's Give control reached Teams (Ack, Stop control).
 - Open: PowerPoint's attendee Take control, laser/ink sync and Cameo frames; Excel Live from a Teams presenter (no recent workbook in Teams' tray); Teams as viewer of OST's Whiteboard/Annotate from a second browser-signed-in account (OST Test 2's device-code sign-in can't mint the Whiteboard/Excel NAA tokens); Teams' keys while controlling (Teams drops focus after its first press when driven through VNC).
+
+- Merged into desktop/foundation (2026-11-18): build OK; 741 lib, 28 desktop and 24 vfx tests passed. AC3 (Content from camera) verified live, including the 11 s no-board path and Teams as viewer. Open: the rechecks, viewing from a different account, Excel Live from Teams, PowerPoint Live's control/laser/ink/camera, keys during give control.
 <!-- SECTION:NOTES:END -->
