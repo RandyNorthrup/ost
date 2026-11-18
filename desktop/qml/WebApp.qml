@@ -1,4 +1,5 @@
 import QtQuick
+import QtCore
 import QtQuick.Window
 import QtQuick.Controls.Basic
 import QtWebEngine
@@ -582,6 +583,17 @@ Item {
             if (u.indexOf("https://") !== 0 && u !== "about:blank") req.reject()
         }
         // Sign-in and other pop-ups get a window of their own.
+        // A page's Print (window.print(), as Outlook's print dialog calls
+        // it): the page as a PDF in Downloads, opened for printing.
+        property string printPath: ""
+        function printTo() {
+            const dir = String(StandardPaths.writableLocation(StandardPaths.DownloadLocation)).replace(/^file:\/\//, "")
+            printPath = dir + "/" + (root.appName || "Page").replace(/[^A-Za-z0-9 _-]/g, "") + " " + Qt.formatDateTime(new Date(), "yyyy-MM-dd hhmmss") + ".pdf"
+            return printPath
+        }
+        onPrintRequested: printToPdf(printTo())
+        onPrintRequestedByFrame: frame => frame.printToPdf(printTo())
+        onPdfPrintingFinished: (filePath, success) => { console.warn("WEBAPP printed", filePath, success); if (success) Qt.openUrlExternally("file://" + filePath) }
         onNewWindowRequested: req => {
             const w = popup.createObject(null, {})
             req.openIn(w.view)

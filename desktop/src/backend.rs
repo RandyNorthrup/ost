@@ -20249,6 +20249,28 @@ impl qobject::Backend {
                     // Teams' calendar settings: Time scale, the day count,
                     // the Filter menu, Saved views, categories.
                     "prefs" => api::calendar::calendar_prefs(&client).await,
+                    // Your other calendars (the pane's My calendars and
+                    // Groups) and their events, for Split view.
+                    "calendars" => Ok(json!({ "calendars": api::calendar::calendars(&client).await? })),
+                    // The tile's menu: Charm, Show as, Categorize, Private.
+                    "charm" => {
+                        api::calendar::set_charm(&s("id"), args["charm"].as_i64().unwrap_or(0)).await?;
+                        Ok(json!({}))
+                    }
+                    "patchEvent" => {
+                        api::calendar::patch_event(&client, &s("id"), &args["patch"]).await?;
+                        Ok(json!({}))
+                    }
+                    "calendarEvents" => {
+                        let mut all = Vec::new();
+                        for c in args["calendars"].as_array().into_iter().flatten().filter_map(|c| c.as_str()) {
+                            match api::calendar::calendar_view_of(&client, c, &s("start"), &s("end")).await {
+                                Ok(mut e) => all.append(&mut e),
+                                Err(e) => tracing::warn!("calendar view: {}", short_error(&e)),
+                            }
+                        }
+                        Ok(json!({ "events": all, "start": s("start") }))
+                    }
                     "setFilters" => {
                         api::calendar::set_calendar_filters(&args["filters"]).await?;
                         Ok(json!({}))
@@ -20343,7 +20365,7 @@ impl qobject::Backend {
                         (String::new(), short_error(&e))
                     }
                 };
-                if ["respond", "schedule", "update", "cancel", "propose"].contains(&op2.as_str()) {
+                if ["respond", "schedule", "update", "cancel", "propose", "charm", "patchEvent"].contains(&op2.as_str()) {
                     this.as_mut().set_status_text(QString::from(error.as_str()));
                     if error.is_empty() {
                         this.as_mut().refresh_calendar();

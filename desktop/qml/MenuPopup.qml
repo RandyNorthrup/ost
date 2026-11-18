@@ -192,6 +192,20 @@ Popup {
                 sub.y = p.y + rowItem.height - sub.implicitHeight
         }
         sub.open()
+        // Once laid out with its rows (its size can lag the new items),
+        // keep it on screen: flipped left past the window's right, lifted
+        // to end above the window's bottom.
+        Qt.callLater(() => {
+            if (!sub.opened) return
+            const win = root.contentItem.Window.window
+            if (!win) return
+            if (!root.submenuLeft) {
+                const right = root.contentItem.mapToItem(null, sub.x, 0).x + sub.width
+                if (right > win.width) sub.x = -sub.width - root.padding
+            }
+            const top = root.contentItem.mapToItem(null, 0, sub.y).y
+            if (top + sub.height > win.height) sub.y = Math.max(-top + sub.y + 8, sub.y - (top + sub.height - win.height) - 8)
+        })
     }
     onClosed: if (subMenu) subMenu.close()
     // A persistent pick changes the rows (a checkbox): an open submenu

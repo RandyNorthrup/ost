@@ -364,6 +364,13 @@
                 respond(source, from, d, [r]);
                 return;
             }
+            case "stageView.open":
+                // A page opening itself in a stage view, as a pop-out
+                // window (Outlook's event form's Open in new window):
+                // {appId, contentUrl, threadId, title, websiteUrl, openMode}.
+                ost.event("stageViewOpen", JSON.stringify(args[0] || {}));
+                respond(source, from, d, [null]);
+                return;
             case "stageView.self.close":
                 // A stage view page closing itself (Outlook's event form
                 // after Save or Discard): the host closes it.

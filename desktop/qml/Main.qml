@@ -4260,6 +4260,7 @@ Window {
         property string done: ""
         property bool liveDialogShot: false
         property int liveOpenedAt: 0
+        property string splitSaved: ""
         function cap(tag) { window.contentItem.grabToImage(r => r.saveToFile(dir + "cal-" + tag + ".png")); console.warn("CALTEST shot", tag) }
         function ev(subject) { return JSON.parse(backend.calendarJson).find(e => e.subject === subject) }
         property var conn: Connections {
@@ -4382,7 +4383,58 @@ Window {
                 // it over QTWEBENGINE_REMOTE_DEBUGGING), then the calendar.
                 if (step === 1) calendarView.openEventForm()
                 else if (step === 8) cap("event-form")
+                // --cal-popout: Open in new window, then the window itself.
+                else if (step === 10 && args.indexOf("--cal-popout") >= 0) calendarView.popOutCompose({})
+                else if (step === 18 && args.indexOf("--cal-popout") >= 0) { const w = calendarView.popoutForTest; console.warn("CALTEST popout", !!w && w.visible, w ? w.width + "x" + w.height : ""); if (w) w.contentItem.grabToImage(r => r.saveToFile(calTest.dir + "cal-popout.png")) }
+                else if (step === 24 && args.indexOf("--cal-popout") >= 0) { const w = calendarView.popoutForTest; if (w) w.close() }
                 else if (step * 3 >= parseInt(arg("cal-wait", "180"))) { cap("event-form-end"); console.warn("CALTEST events", JSON.stringify(JSON.parse(backend.calendarJson).map(e => e.subject))); Qt.quit() }
+            }
+            else if (arg("cal-more")) {
+                // TASK-0220 follow-ups. --cal-more=menus: the toolbar's "…"
+                // and its Share, an event's right-click menu (--cal-peek)
+                // with Charm; =split: every calendar ticked, Split view, then
+                // put back; =copilot: a suggestion handed to Copilot
+                // (--cal-prompt); =outlook: Outlook's own command
+                // (--cal-outlook=<event subject or "surface">|<command>), kept
+                // --cal-wait seconds for driving over remote debugging.
+                const cv = calendarView, mode = arg("cal-more")
+                let seq = []
+                if (mode === "menus") seq = [
+                    () => cap("more-start"),
+                    () => cv.moreMenuForTest.open(), () => { console.warn("CALTEST more", JSON.stringify(cv.moreMenuItems.map(x => x.label))); cap("more-menu") },
+                    () => { const i = cv.moreMenuItems.findIndex(x => x.label === "Filter" || x.label === "Filter applied"); if (i >= 0) cv.moreMenuForTest.openSubmenuForTest(i) },
+                    () => { cap("more-filter"); const m = cv.moreMenuForTest.subMenu; if (m) m.openSubmenuForTest(3) }, () => cap("more-filter-meetings"),
+                    () => { cv.moreMenuForTest.close(); const e = cv.eventBySubject(arg("cal-peek")); if (e) cv.tileMenuForTest(e); else console.warn("CALTEST no event", arg("cal-peek")) },
+                    () => { console.warn("CALTEST tile", JSON.stringify(cv.tileMenuForTest(cv.eventBySubject(arg("cal-peek")) || {}).items.map(x => x.label || "-"))); cap("tile-menu") },
+                    () => { const m = cv.tileMenuForTest(cv.eventBySubject(arg("cal-peek")) || {}); const i = m.items.findIndex(x => x.label === "Charm"); if (i >= 0) m.openSubmenuForTest(i) }, () => cap("tile-charm"),
+                    () => { const m = cv.tileMenuForTest(cv.eventBySubject(arg("cal-peek")) || {}); const i = m.items.findIndex(x => x.label === "Show as"); if (i >= 0) m.openSubmenuForTest(i) }, () => cap("tile-showas"),
+                    () => Qt.quit()
+                ]
+                else if (mode === "split") {
+                    if (!calTest.splitSaved) calTest.splitSaved = JSON.stringify({ sel: cv.otherSelected, split: cv.splitView })
+                    seq = [
+                        () => { console.warn("CALTEST calendars", JSON.stringify(cv.calendarList.map(c => [c.section, c.name]))); cv.showAllCalendars = true }, () => cap("calendars-all"),
+                        () => { for (const c of cv.otherCalendars) if (cv.otherSelected.indexOf(c.id) < 0 && (!arg("cal-split-only") || c.name.indexOf(arg("cal-split-only")) >= 0)) cv.toggleCalendar(c.id) },
+                        () => {}, () => { console.warn("CALTEST extra", cv.extraEvents.length, "canSplit", cv.canSplit); cap("calendars-ticked") },
+                        () => { cv.splitView = true }, () => {}, () => { console.warn("CALTEST split", cv.splitActive, cv.nCols, JSON.stringify(cv.splitPieces.map(p => [p.col, p.ev.subject]))); cap("split-view") },
+                        () => { const o = JSON.parse(calTest.splitSaved); cv.splitView = o.split; for (const c of cv.otherCalendars) if ((cv.otherSelected.indexOf(c.id) >= 0) !== (o.sel.indexOf(c.id) >= 0)) cv.toggleCalendar(c.id); cv.showAllCalendars = false },
+                        () => { console.warn("CALTEST restored", JSON.stringify(cv.otherSelected), cv.splitView); cap("split-restored"); Qt.quit() }
+                    ]
+                }
+                else if (mode === "copilot") seq = [
+                    () => cv.openCopilotWith(arg("cal-prompt", "Schedule 1 hour of focus time"), true),
+                    () => {}, () => {}, () => {}, () => {}, () => cap("copilot-1"),
+                    () => {}, () => {}, () => {}, () => {}, () => cap("copilot-2"),
+                    () => { cv.moreMenuForTest.open() }, () => { console.warn("CALTEST more with pane", JSON.stringify(cv.moreMenuItems.map(x => x.label))); cap("copilot-more") },
+                    () => { cv.moreMenuForTest.close(); cv.copilotOpen = false }, () => { cap("copilot-closed"); Qt.quit() }
+                ]
+                else if (mode === "outlook") {
+                    const o = arg("cal-outlook").split("|"), wait = parseInt(arg("cal-wait", "60"))
+                    if (step === 1) { if (o[0] === "surface") cv.openOutlookCommand(o.slice(1)); else { const e = cv.eventBySubject(o[0]); if (e) cv.openOwaItem(e, o[1] || ""); else console.warn("CALTEST no event", o[0]) } }
+                    else if (step % 5 === 0 && step * 3 < wait) cap("outlook-" + step)
+                    else if (step * 3 >= wait) { cap("outlook-end"); Qt.quit() }
+                }
+                if (step >= 1 && step - 1 < seq.length) seq[step - 1]()
             }
             else if (args.indexOf("--cal-extras") >= 0) {
                 // TASK-0220: Filter, view menu, Time scale, Day count, Saved

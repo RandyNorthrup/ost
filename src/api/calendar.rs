@@ -45,6 +45,23 @@ pub struct CalendarEvent {
     pub allow_new_time_proposals: bool,
     /// An unsent meeting (Graph `isDraft`): the Filter menu's Draft.
     pub is_draft: bool,
+    /// What Outlook knows of the event that Graph doesn't say (its
+    /// GetCalendarView item), for Teams' Filter menu: a meeting (IsMeeting),
+    /// a scheduling poll's hold (EventPollMetadata `Type`: OrganizerHold or
+    /// AttendeeHold, and your `VoteType`), a desk booking
+    /// (CalendarEventClassifications DeskBooking) and the hybrid RSVP's
+    /// requested attendance (RequestedAttendanceMode, e.g. InPersonRequired).
+    pub is_meeting: Option<bool>,
+    pub poll_hold: String,
+    pub poll_vote: String,
+    pub is_desk_booking: bool,
+    pub attendance_mode: String,
+    /// The calendar it's in, for events read from another calendar than
+    /// your own (Split view): its Graph id, or `group:<id>`.
+    pub calendar_id: String,
+    /// Its charm (Outlook's event icon) as Outlook names it ("Plane"; empty
+    /// for none), from Outlook's view.
+    pub charm: String,
 }
 
 /// One invitee and their answer.
@@ -82,7 +99,204 @@ pub async fn calendar_view(
         .json()
         .await
         .context("Calendar reply")?;
-    Ok(parse_events(&v))
+    let mut events = parse_events(&v);
+    if crate::auth::oauth::browser_sign_in() {
+        match outlook_items(start, end).await {
+            Ok(items) => merge_outlook_items(&mut events, &items),
+            Err(e) => tracing::debug!("Outlook calendar view: {e:#}"),
+        }
+    }
+    Ok(events)
+}
+
+/// One of your calendars as Teams' calendar pane lists it: your own
+/// (My calendars: Calendar, United States holidays, Birthdays, ones you
+/// made) and your Microsoft 365 groups' (Groups).
+#[derive(Debug, Clone, Default, serde::Serialize)]
+pub struct CalendarInfo {
+    /// Graph's calendar id, or `group:<group id>`.
+    pub id: String,
+    pub name: String,
+    /// "My calendars" or "Groups".
+    pub section: String,
+    pub is_default: bool,
+    /// Its colour (Graph's hexColor; empty for the default).
+    pub color: String,
+    /// Whether you can share it (Teams' "…" Share lists these).
+    pub can_share: bool,
+}
+
+pub async fn calendars(client: &TeamsClient) -> Result<Vec<CalendarInfo>> {
+    let v: serde_json::Value = client
+        .graph_get("/me/calendars?$select=id,name,hexColor,isDefaultCalendar,canShare&$top=100")
+        .await?
+        .json()
+        .await?;
+    let mut out: Vec<CalendarInfo> = v["value"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|c| CalendarInfo {
+            id: c["id"].as_str().unwrap_or_default().to_string(),
+            name: c["name"].as_str().unwrap_or_default().to_string(),
+            section: "My calendars".into(),
+            is_default: c["isDefaultCalendar"].as_bool().unwrap_or(false),
+            color: c["hexColor"].as_str().unwrap_or_default().to_string(),
+            can_share: c["canShare"].as_bool().unwrap_or(false),
+        })
+        .collect();
+    if let Ok(r) = client.graph_get("/me/memberOf/microsoft.graph.group?$select=id,displayName,groupTypes&$top=100").await
+        && let Ok(g) = r.json::<serde_json::Value>().await
+    {
+        for x in g["value"].as_array().into_iter().flatten() {
+            let unified = x["groupTypes"].as_array().is_some_and(|t| t.iter().any(|t| t.as_str() == Some("Unified")));
+            if unified {
+                out.push(CalendarInfo {
+                    id: format!("group:{}", x["id"].as_str().unwrap_or_default()),
+                    name: x["displayName"].as_str().unwrap_or_default().to_string(),
+                    section: "Groups".into(),
+                    is_default: false,
+                    color: String::new(),
+                    can_share: false,
+                });
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Events overlapping `[start, end)` in one of your calendars, or a group's.
+pub async fn calendar_view_of(client: &TeamsClient, calendar: &str, start: &str, end: &str) -> Result<Vec<CalendarEvent>> {
+    let base = match calendar.strip_prefix("group:") {
+        Some(g) if !g.is_empty() && g.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-') => format!("/groups/{g}/calendarView"),
+        Some(_) => bail!("Not a group id"),
+        None => format!("/me/calendars/{}/calendarView", event_path_id(calendar)?),
+    };
+    let path = format!(
+        "{base}?startDateTime={start}&endDateTime={end}&$top=250&$orderby=start/dateTime\
+         &$select=id,subject,start,end,isAllDay,location,organizer,isOnlineMeeting,onlineMeeting,showAs,bodyPreview,isOrganizer,\
+         iCalUId,type,seriesMasterId,responseStatus,responseRequested,attendees,isCancelled,categories,sensitivity,allowNewTimeProposals,isDraft"
+    );
+    let v: serde_json::Value = client.graph_get_with(&path, &[("Prefer", "IdType=\"ImmutableId\"")]).await?.json().await?;
+    let mut events = parse_events(&v);
+    for e in &mut events {
+        e.calendar_id = calendar.to_string();
+    }
+    Ok(events)
+}
+
+/// Make a calendar of your own (`POST /me/calendars`), and delete one.
+pub async fn create_calendar(client: &TeamsClient, name: &str) -> Result<String> {
+    let v: serde_json::Value = client.graph_post("/me/calendars", &serde_json::json!({ "name": name })).await?.json().await?;
+    Ok(v["id"].as_str().unwrap_or_default().to_string())
+}
+
+pub async fn delete_calendar(client: &TeamsClient, id: &str) -> Result<()> {
+    client.graph_delete(&format!("/me/calendars/{}", event_path_id(id)?)).await?;
+    Ok(())
+}
+
+/// The same range from Outlook's own calendar view (GetCalendarView, as
+/// Teams' calendar reads it), by item id.
+async fn outlook_items(start: &str, end: &str) -> Result<std::collections::HashMap<String, serde_json::Value>> {
+    let local = |t: &str| format!("{}.000", t.trim_end_matches('Z').split('.').next().unwrap_or(t));
+    let body = serde_json::json!({
+        "__type": "GetCalendarViewJsonRequest:#Exchange",
+        "Header": {
+            "__type": "JsonRequestHeaders:#Exchange",
+            "RequestServerVersion": "V2018_01_08",
+            "TimeZoneContext": { "__type": "TimeZoneContext:#Exchange", "TimeZoneDefinition": { "__type": "TimeZoneDefinitionType:#Exchange", "Id": "UTC" } }
+        },
+        "Body": {
+            "__type": "GetCalendarViewRequest:#Exchange",
+            "CalendarId": { "__type": "TargetFolderId:#Exchange", "BaseFolderId": { "__type": "DistinguishedFolderId:#Exchange", "Id": "calendar" } },
+            "RangeStart": local(start), "RangeEnd": local(end),
+            "ClientSupportsIrm": true, "OptimizeExtendedPropertyLoading": true, "IncludeSkypeTeamsProperties": true
+        }
+    });
+    let v = owa_action("GetCalendarView", &body).await?;
+    Ok(v.pointer("/Body/Items")
+        .and_then(|i| i.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|i| Some((i.pointer("/ItemId/Id")?.as_str()?.to_string(), i.clone())))
+        .collect())
+}
+
+/// Outlook's view of each event, matched by its immutable id (Graph's is
+/// the same id, URL-safe).
+fn merge_outlook_items(events: &mut [CalendarEvent], items: &std::collections::HashMap<String, serde_json::Value>) {
+    for e in events.iter_mut() {
+        let Some(i) = items.get(&ews_id(&e.id)) else { continue };
+        e.is_meeting = i.get("IsMeeting").and_then(|b| b.as_bool());
+        let poll: std::collections::HashMap<&str, &str> = i
+            .get("EventPollMetadata")
+            .and_then(|m| m.as_str())
+            .unwrap_or_default()
+            .split('|')
+            .filter_map(|kv| kv.split_once(':'))
+            .collect();
+        if i.get("EventPollFinalizedChoice").is_none_or(|c| c.is_null()) {
+            e.poll_hold = poll.get("Type").copied().unwrap_or_default().to_string();
+        }
+        e.poll_vote = poll.get("VoteType").copied().unwrap_or_default().to_string();
+        e.is_desk_booking = i
+            .get("CalendarEventClassifications")
+            .and_then(|c| c.as_array())
+            .is_some_and(|c| c.iter().any(|x| x.as_str() == Some("DeskBooking")));
+        e.attendance_mode = i.get("RequestedAttendanceMode").and_then(|m| m.as_str()).unwrap_or_default().to_string();
+        e.charm = match i.get("Charm") {
+            Some(serde_json::Value::String(c)) if c != "None" => c.clone(),
+            Some(serde_json::Value::Number(n)) if n.as_i64() != Some(0) => n.to_string(),
+            _ => String::new(),
+        };
+    }
+}
+
+/// Set an event's charm, as Teams' calendar does (Outlook's UpdateItem,
+/// the item's Charm field).
+pub async fn set_charm(id: &str, charm: i64) -> Result<()> {
+    let body = serde_json::json!({
+        "__type": "UpdateItemJsonRequest:#Exchange",
+        "Header": { "__type": "JsonRequestHeaders:#Exchange", "RequestServerVersion": "V2018_01_08" },
+        "Body": {
+            "__type": "UpdateItemRequest:#Exchange",
+            "ItemChanges": [{
+                "__type": "ItemChange:#Exchange",
+                "ItemId": { "__type": "ItemId:#Exchange", "Id": ews_id(event_path_id(id)?) },
+                "Updates": [{
+                    "__type": "SetItemField:#Exchange",
+                    "Path": { "__type": "PropertyUri:#Exchange", "FieldURI": "Charm" },
+                    "Item": { "__type": "CalendarItem:#Exchange", "Charm": charm }
+                }]
+            }],
+            "ConflictResolution": "AlwaysOverwrite",
+            "MessageDisposition": "SaveOnly",
+            "SendCalendarInvitationsOrCancellations": "SendToNone"
+        }
+    });
+    let v = owa_action("UpdateItem", &body).await?;
+    let code = v.pointer("/Body/ResponseMessages/Items/0/ResponseCode").and_then(|c| c.as_str()).unwrap_or_default();
+    if code != "NoError" {
+        bail!("Outlook didn't set the charm: {code}");
+    }
+    Ok(())
+}
+
+/// Change what the tile's menu changes on an event of yours: Show as,
+/// categories, Private (Graph's showAs, categories, sensitivity).
+pub async fn patch_event(client: &TeamsClient, id: &str, patch: &serde_json::Value) -> Result<()> {
+    let mut body = serde_json::Map::new();
+    for k in ["showAs", "categories", "sensitivity"] {
+        if let Some(v) = patch.get(k) {
+            body.insert(k.into(), v.clone());
+        }
+    }
+    if body.is_empty() {
+        bail!("Nothing to change");
+    }
+    client.graph_patch(&format!("/me/events/{}", event_path_id(id)?), &serde_json::Value::Object(body)).await?;
+    Ok(())
 }
 
 /// Create an event in your calendar (`start`/`end` in UTC,
@@ -301,6 +515,7 @@ fn parse_events(v: &serde_json::Value) -> Vec<CalendarEvent> {
                 channel_message_id,
                 allow_new_time_proposals: e.get("allowNewTimeProposals").and_then(|b| b.as_bool()).unwrap_or(false),
                 is_draft: e.get("isDraft").and_then(|b| b.as_bool()).unwrap_or(false),
+                ..Default::default()
             }
         })
         .collect()
@@ -991,13 +1206,24 @@ fn mt_event(form: &MeetingForm, me: &Me, group_mail: Option<&str>) -> Result<ser
         attendees.push(serde_json::json!({"address": g, "role": "User", "type": "Required"}));
     }
     let id = (0..5).map(|_| rand_u32().to_string()).collect::<Vec<_>>().join("-");
+    // Without the middle tier's name for your zone (a mailbox with no time
+    // zone answers none) the event goes in UTC, and so must its times: the
+    // middle tier reads them as wall-clock times in eventTimeZone.
+    let in_zone = |t: &str| {
+        if !form.time_zone.is_empty() {
+            return t.to_string();
+        }
+        chrono::DateTime::parse_from_rfc3339(t)
+            .map(|d| d.with_timezone(&chrono::Utc).format("%Y-%m-%dT%H:%M:%S+00:00").to_string())
+            .unwrap_or_else(|_| t.to_string())
+    };
     let mut ev = serde_json::json!({
         "attendees": attendees,
         "bodyContent": form.body_html,
         "clientOptimisticEventId": id,
         "doNotForward": false,
         "emptyBodyPlaceholder": "Scheduled a meeting",
-        "endTime": form.end,
+        "endTime": in_zone(&form.end),
         "eventTimeZone": if form.time_zone.is_empty() { "UTC" } else { &form.time_zone },
         "eventType": if form.recurrence.is_some() { "RecurringMaster" } else { "Single" },
         "isAllDayEvent": form.all_day,
@@ -1014,7 +1240,7 @@ fn mt_event(form: &MeetingForm, me: &Me, group_mail: Option<&str>) -> Result<ser
         "reminderMinutesBeforeStart": 15,
         "sensitivityLabelId": "",
         "showAs": if form.show_as.is_empty() { "Busy" } else { &form.show_as },
-        "startTime": form.start,
+        "startTime": in_zone(&form.start),
         "subject": form.subject.trim(),
         "utcOffset": utc_offset,
     });
@@ -1383,6 +1609,21 @@ mod older_tests {
         assert_eq!(e.attendees[0].proposed_start, "2026-11-20T18:00:00Z");
         assert_eq!(e.attendees[0].proposed_end, "2026-11-20T18:30:00Z");
         assert!(e.attendees[1].proposed_start.is_empty());
+    }
+
+    #[test]
+    fn outlook_items_fill_what_graph_lacks() {
+        let mut events = parse_events(&serde_json::json!({"value": [{"id": "AAkALg_x-y", "subject": "Hold"}]}));
+        let mut items = std::collections::HashMap::new();
+        items.insert(ews_id("AAkALg_x-y"), serde_json::json!({"IsMeeting": true, "EventPollMetadata": "Type:AttendeeHold|VoteType:Yes|HoldId:1",
+            "CalendarEventClassifications": ["DeskBooking"], "RequestedAttendanceMode": "InPersonRequired", "Charm": "Plane"}));
+        merge_outlook_items(&mut events, &items);
+        let e = &events[0];
+        assert_eq!(e.is_meeting, Some(true));
+        assert_eq!((e.poll_hold.as_str(), e.poll_vote.as_str()), ("AttendeeHold", "Yes"));
+        assert!(e.is_desk_booking);
+        assert_eq!(e.attendance_mode, "InPersonRequired");
+        assert_eq!(e.charm, "Plane");
     }
 
     #[test]

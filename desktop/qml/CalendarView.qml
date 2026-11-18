@@ -57,12 +57,37 @@ Item {
     property bool splitView: false
     /// Split view needs two calendars shown, and Month has none (Teams:
     /// disabled with fewer than two selected).
-    readonly property int selectedCalendars: showCalendar ? 1 : 0
+    readonly property int selectedCalendars: (showCalendar ? 1 : 0) + otherSelected.length
+    /// Your calendars (Graph: your own and your groups'), Teams' pane's My
+    /// calendars and Groups; the ones ticked besides Calendar, and their
+    /// events for the range shown.
+    property var calendarList: []
+    property var otherSelected: []
+    property var extraEvents: []
+    property bool showAllCalendars: false
+    readonly property var otherCalendars: calendarList.filter(c => !c.is_default)
+    function calendarById(id) { return calendarList.find(c => c.id === id) || { id: id, name: "", color: "" } }
+    function toggleCalendar(id) {
+        const l = otherSelected.slice(), i = l.indexOf(id)
+        if (i >= 0) l.splice(i, 1); else l.push(id)
+        otherSelected = l
+        calendarLocal.selectedCalendars = JSON.stringify(l)
+        loadExtraEvents()
+    }
+    property string rangeStartIso: ""
+    property string rangeEndIso: ""
+    function loadExtraEvents() {
+        if (!otherSelected.length) { extraEvents = []; return }
+        if (rangeStartIso) calendarAction("calendarEvents", JSON.stringify({ calendars: otherSelected, start: rangeStartIso, end: rangeEndIso }))
+    }
+    /// The calendars Split view shows, in the pane's order: yours first.
+    readonly property var splitCalendars: (showCalendar ? [{ id: "", name: "Calendar", color: "" }] : []).concat(otherCalendars.filter(c => otherSelected.indexOf(c.id) >= 0))
+    readonly property bool splitActive: splitView && canSplit
     readonly property bool canSplit: selectedCalendars >= 2 && !monthView
     // Teams' device-local marker (localStorage UnselectedReservationFilter):
     // the first time a device opens the calendar, Reservations ▸ Desk is
     // unchecked and saved.
-    Settings { id: calendarLocal; location: StandardPaths.writableLocation(StandardPaths.AppConfigLocation) + "/calendar.ini"; category: "calendar"; property string unselectedReservationFilter: "" }
+    Settings { id: calendarLocal; location: StandardPaths.writableLocation(StandardPaths.AppConfigLocation) + "/calendar.ini"; category: "calendar"; property string unselectedReservationFilter: ""; property string selectedCalendars: "[]" }
     function applyPrefs(r) {
         timeScale = [60, 30, 15, 10, 6, 5].indexOf(r.timeScale) >= 0 ? r.timeScale : 30
         numDays = Math.max(1, Math.min(7, r.numDays || 1))
@@ -136,12 +161,14 @@ Item {
     }
     // Teams' rules for what each unchecked value hides (its calendar's
     // filter, V2): an event shows only when every unchecked value lets it.
-    function evIsMeeting(e) { return e.is_organizer === false || (e.attendees || []).length > 0 }
+    // Outlook's IsMeeting when its calendar view gave it, else from Graph.
+    function evIsMeeting(e) { return e.is_meeting !== undefined && e.is_meeting !== null ? !!e.is_meeting : e.is_organizer === false || (e.attendees || []).length > 0 }
+    function pollVoted(e, vote) { return (e.poll_vote || "").toLowerCase() === vote.toLowerCase() }
     function evRecurring(e) { return ["occurrence", "exception", "seriesMaster"].indexOf(e.event_type) >= 0 }
     function passesFilter(e, type, v) {
         const meeting = evIsMeeting(e), attendee = meeting && !e.is_organizer
         switch (type) {
-        case "General": return v !== "Appointments" || meeting
+        case "General": return v !== "Appointments" || meeting || !!e.poll_hold
         case "Meetings":
             switch (v) {
             case "Drafts": return !e.is_draft
@@ -156,11 +183,18 @@ Item {
             return true
         case "ShowAs": return (e.show_as || "").toLowerCase() !== v.toLowerCase()
         case "Recurrence": return v === "Single" ? evRecurring(e) : !evRecurring(e)
-        // Hybrid RSVP's requested attendance (none in OST's events: not
-        // requested) and desk bookings or poll holds (none kept).
-        case "InPerson": return v === "Required" ? e.attendance_mode !== "inPersonRequired" : e.attendance_mode === "inPersonRequired"
+        // From Outlook's view of the event: the hybrid RSVP's requested
+        // attendance, desk bookings and scheduling polls' holds.
+        case "InPerson": return v === "Required" ? e.attendance_mode !== "InPersonRequired" : e.attendance_mode === "InPersonRequired"
         case "Reservations": return !e.is_desk_booking
-        case "PollHolds": return !e.poll_hold
+        case "PollHolds":
+            switch (v) {
+            case "SeeAll": return e.poll_hold !== "OrganizerHold"
+            case "VotedYes": return !(e.poll_hold === "AttendeeHold" && pollVoted(e, "Yes"))
+            case "VotedNo": return !(e.poll_hold === "AttendeeHold" && pollVoted(e, "No"))
+            case "NotVoted": return !(e.poll_hold === "AttendeeHold" && pollVoted(e, "HasNotVoted"))
+            }
+            return true
         }
         return true
     }
@@ -410,6 +444,8 @@ Item {
         const r = result ? JSON.parse(result) : {}
         if (op === "detail" && !error && formLayer.visible && form.event && r.id === form.event.id) form.detail = r
         else if (op === "prefs" && !error) applyPrefs(r)
+        else if (op === "calendars" && !error) { calendarList = r.calendars || []; otherSelected = otherSelected.filter(id => calendarList.some(c => c.id === id)); loadExtraEvents() }
+        else if (op === "calendarEvents" && !error) { if (r.start === rangeStartIso) extraEvents = r.events || [] }
         else if (op === "saveView" && !error && r.view) {
             const v = r.view, list = savedViews.filter(x => x.id !== v.id)
             const i = savedViews.findIndex(x => x.id === v.id)
@@ -470,7 +506,9 @@ Item {
     function emitRange() { Qt.callLater(emitRangeNow) }
     function emitRangeNow() {
         const end = new Date(start); end.setDate(end.getDate() + spanDays())
+        rangeStartIso = iso(start); rangeEndIso = iso(end)
         rangeChanged(iso(start), iso(end))
+        loadExtraEvents()
     }
     onStartChanged: emitRange()
     // Leaving Month: the week of today when it's in the month shown, else
@@ -487,7 +525,10 @@ Item {
         emitRange()
     }
     Component.onCompleted: { emitRange(); loadPrefs() }
-    function loadPrefs() { calendarAction("prefs", "{}") }
+    function loadPrefs() {
+        calendarAction("prefs", "{}"); calendarAction("calendars", "{}")
+        try { otherSelected = JSON.parse(calendarLocal.selectedCalendars || "[]") } catch (e) { otherSelected = [] }
+    }
     readonly property string rangeLabel: {
         if (monthView) return Qt.formatDate(focusMonth, "MMMM yyyy")
         const a = start, b = dayAt(days - 1)
@@ -508,35 +549,49 @@ Item {
         if (sameDay(s, new Date(en - 1))) return false
         return (en - s) >= 86400000 || (s.getHours() === 0 && s.getMinutes() === 0) || (en.getHours() === 0 && en.getMinutes() === 0)
     }
-    readonly property var shown: showCalendar ? events.filter(e => (!e.is_cancelled || e.is_organizer === false) && passesFilters(e)) : []
+    readonly property var shown: (showCalendar ? events : []).concat(extraEvents.filter(e => otherSelected.indexOf(e.calendar_id) >= 0))
+        .filter(e => (!e.is_cancelled || e.is_organizer === false) && passesFilters(e))
+    // One day's timed pieces in side-by-side lanes (Teams: earlier first,
+    // then shorter).
+    function layDay(list0, d0, d1) {
+        const list = []
+        for (const e of list0) {
+            if (inStrip(e)) continue
+            const s = evStart(e), en = evEnd(e)
+            if (en <= d0 || s >= d1) continue
+            const a = Math.max(0, (s - d0) / 60000), b = Math.min(1440, (en - d0) / 60000)
+            list.push({ ev: e, s: a, e: Math.max(b, a + 15), lane: 0, lanes: 1 })
+        }
+        list.sort((x, y) => x.s - y.s || x.e - y.e)
+        let cluster = [], laneEnds = [], clusterEnd = -1
+        const close = () => { for (const p of cluster) p.lanes = laneEnds.length; cluster = []; laneEnds = [] }
+        for (const p of list) {
+            if (p.s >= clusterEnd) { close(); clusterEnd = -1 }
+            let lane = laneEnds.findIndex(t => t <= p.s)
+            if (lane < 0) { lane = laneEnds.length; laneEnds.push(p.e) } else laneEnds[lane] = p.e
+            p.lane = lane
+            cluster.push(p)
+            clusterEnd = Math.max(clusterEnd, p.e)
+        }
+        close()
+        return list
+    }
+    /// Split view: per calendar, per day, its pieces.
+    readonly property var splitPieces: {
+        const out = []
+        if (!splitActive) return out
+        for (let k = 0; k < splitCalendars.length; k++) {
+            const id = splitCalendars[k].id
+            const mine = shown.filter(e => (e.calendar_id || "") === id)
+            for (let i = 0; i < days; i++) for (const p of layDay(mine, dayAt(i), dayAt(i + 1))) out.push(Object.assign({ col: k * days + i }, p))
+        }
+        return out
+    }
     /// Timed pieces per day column: [{ev, s, e (minutes), lane, lanes}].
     readonly property var dayPieces: {
         const out = []
         if (monthView) return out
-        for (let i = 0; i < days; i++) {
-            const d0 = dayAt(i), d1 = dayAt(i + 1), list = []
-            for (const e of shown) {
-                if (inStrip(e)) continue
-                const s = evStart(e), en = evEnd(e)
-                if (en <= d0 || s >= d1) continue
-                const a = Math.max(0, (s - d0) / 60000), b = Math.min(1440, (en - d0) / 60000)
-                list.push({ ev: e, s: a, e: Math.max(b, a + 15), lane: 0, lanes: 1 })
-            }
-            // Earlier first, then shorter (Teams: A 9–10, C 9:30–10, B 9:30–11).
-            list.sort((x, y) => x.s - y.s || x.e - y.e)
-            let cluster = [], laneEnds = [], clusterEnd = -1
-            const close = () => { for (const p of cluster) p.lanes = laneEnds.length; cluster = []; laneEnds = [] }
-            for (const p of list) {
-                if (p.s >= clusterEnd) { close(); clusterEnd = -1 }
-                let lane = laneEnds.findIndex(t => t <= p.s)
-                if (lane < 0) { lane = laneEnds.length; laneEnds.push(p.e) } else laneEnds[lane] = p.e
-                p.lane = lane
-                cluster.push(p)
-                clusterEnd = Math.max(clusterEnd, p.e)
-            }
-            close()
-            out.push(list)
-        }
+        for (let i = 0; i < days; i++) out.push(layDay(shown, dayAt(i), dayAt(i + 1)))
         return out
     }
     /// The all-day strip's bars: [{ev, c0, c1, row}].
@@ -572,6 +627,9 @@ Item {
     readonly property var colWidths: {
         const W = Math.max(0, gridArea.width - gutter), n = days
         if (monthView) return []
+        // Split view: each calendar's block of days, a day at least 100 px,
+        // scrolling sideways when they don't fit.
+        if (splitActive) return Array(nCols).fill(Math.max(100, W / nCols))
         if (n === 1 || todayIndex < 0 || !wideLayout) return Array(n).fill(W / n)
         const u = W / n, w = Array(n).fill(0), t = todayIndex, tm = t + 1 < n ? t + 1 : -1
         w[t] = 1.5 * u
@@ -582,6 +640,14 @@ Item {
         for (let i = 0; i < n; i++) if (i !== t && i !== tm) w[i] = weights > 0 ? Math.max(0, left) * weight(i) / weights : 0
         return w
     }
+    /// Columns: the days, or in Split view each calendar's days in turn.
+    readonly property int nCols: splitActive ? splitCalendars.length * days : days
+    function dayOfCol(c) { return splitActive ? c % days : c }
+    readonly property real splitHead: splitActive ? 56.67 : 0
+    readonly property real gridWidth: gutter + colWidths.reduce((a, b) => a + b, 0)
+    readonly property var splitStripBars: splitActive
+        ? stripBars.map(b => { const k = Math.max(0, splitCalendars.findIndex(c => c.id === (b.ev.calendar_id || ""))); return Object.assign({}, b, { c0: b.c0 + k * days, c1: b.c1 + k * days }) })
+        : stripBars
     function colX(i) { let x = gutter; for (let k = 0; k < i; k++) x += colWidths[k] || 0; return x }
     function colW(i) { return colWidths[i] || 0 }
 
@@ -675,30 +741,66 @@ Item {
                 }
             }
         }
-        Column {
-            x: 16; y: 340; width: parent.width - 32
-            spacing: 6
-            Text { text: "My calendars"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
-            Item {
-                width: parent.width; height: 28
-                Rectangle {
-                    id: hcFill3
-                    x: 6; anchors.verticalCenter: parent.verticalCenter
-                    width: 16; height: 16; radius: 2
-                    color: root.showCalendar ? theme.brandFill : "transparent"
-                    border.color: root.showCalendar ? "transparent" : theme.textStrong
-                    FluentIcon { visible: root.showCalendar; anchors.centerIn: parent; name: "checkmark-12"; size: 12; color: theme.onFill(hcFill3, "white") }
+        // Your calendars, as Teams' pane lists them: My calendars, then
+        // Groups; collapsed it shows the ticked ones, "Show all" the rest.
+        Flickable {
+            x: 16; y: 340; width: parent.width - 32; height: parent.height - 340
+            contentHeight: calCol.implicitHeight; clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            Column {
+                id: calCol
+                width: parent.width
+                spacing: 6
+                Text { text: "My calendars"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
+                CalRow { label: "Calendar"; on: root.showCalendar; onToggled: root.showCalendar = !root.showCalendar }
+                Repeater {
+                    model: root.otherCalendars.filter(c => c.section === "My calendars" && (root.showAllCalendars || root.otherSelected.indexOf(c.id) >= 0))
+                    CalRow { required property var modelData; label: modelData.name; on: root.otherSelected.indexOf(modelData.id) >= 0; tick: modelData.color || theme.brandFill; onToggled: root.toggleCalendar(modelData.id) }
                 }
-                Text { x: 32; anchors.verticalCenter: parent.verticalCenter; text: "Calendar"; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
-                TapHandler { onTapped: root.showCalendar = !root.showCalendar }
-                HoverHandler { cursorShape: Qt.PointingHandCursor }
-                Accessible.role: Accessible.CheckBox
-                Accessible.name: "Calendar"
-                Accessible.checked: root.showCalendar
+                Text {
+                    visible: root.otherCalendars.some(c => c.section === "Groups" && (root.showAllCalendars || root.otherSelected.indexOf(c.id) >= 0))
+                    topPadding: 8; text: "Groups"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text
+                }
+                Repeater {
+                    model: root.otherCalendars.filter(c => c.section === "Groups" && (root.showAllCalendars || root.otherSelected.indexOf(c.id) >= 0))
+                    CalRow { required property var modelData; label: modelData.name; on: root.otherSelected.indexOf(modelData.id) >= 0; onToggled: root.toggleCalendar(modelData.id) }
+                }
+                Text {
+                    visible: root.otherCalendars.length > 0
+                    topPadding: 8; leftPadding: 32
+                    text: root.showAllCalendars ? "Show selected" : "Show all"
+                    font.family: theme.font; font.pixelSize: theme.base; color: theme.brand
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: root.showAllCalendars = !root.showAllCalendars }
+                    Accessible.role: Accessible.Link; Accessible.name: text
+                }
             }
         }
     }
 
+    // A calendar's tick box in the pane.
+    component CalRow: Item {
+        id: cr
+        property string label
+        property bool on: false
+        property color tick: theme.brandFill
+        signal toggled()
+        width: parent ? parent.width : 0; height: 28
+        Rectangle {
+            id: crBox
+            x: 6; anchors.verticalCenter: parent.verticalCenter
+            width: 16; height: 16; radius: 2
+            color: cr.on ? cr.tick : "transparent"
+            border.color: cr.on ? "transparent" : theme.textStrong
+            FluentIcon { visible: cr.on; anchors.centerIn: parent; name: "checkmark-12"; size: 12; color: theme.onFill(crBox, "white") }
+        }
+        Text { x: 32; width: parent.width - 32; elide: Text.ElideRight; anchors.verticalCenter: parent.verticalCenter; text: cr.label; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
+        TapHandler { onTapped: cr.toggled() }
+        HoverHandler { cursorShape: Qt.PointingHandCursor }
+        Accessible.role: Accessible.CheckBox
+        Accessible.name: cr.label
+        Accessible.checked: cr.on
+    }
     component NavButton: Rectangle {
         id: nb
         property alias icon: nbIcon.name
@@ -785,7 +887,7 @@ Item {
                     FluentSurface { anchors.fill: parent; depth: 16; radius: 12; color: chipHover.hovered ? theme.hc("#F5F5F5", "#000000") : theme.surface }
                     Text { id: chipText; x: 12; anchors.verticalCenter: parent.verticalCenter; text: chip.modelData; font.family: theme.font; font.pixelSize: 12; color: theme.text }
                     HoverHandler { id: chipHover; cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: { dabChips.visible = false; root.copilotPrompt = chip.modelData; root.copilotOpen = true } }
+                    TapHandler { onTapped: { dabChips.visible = false; root.openCopilotWith(chip.modelData, true) } }
                     Accessible.role: Accessible.Button
                     Accessible.name: chip.modelData
                 }
@@ -853,15 +955,16 @@ Item {
             }
             NavButton {
                 id: moreBtn
-                visible: !root.filterInline
                 icon: "more-horizontal-20"; tip: "More options"
                 onClicked: moreMenu.open()
                 MenuPopup {
                     id: moreMenu
                     submenuMinWidth: 0
+                    perItemIcons: true
                     y: parent.height + 4
-                    items: [{ label: root.filterApplied ? "Filter applied" : "Filter", icon: "filter-20", outlined: root.filterApplied, submenu: root.filterMenuItems }]
-                    onSubPicked: (i, j) => root.filterAct(items[i].submenu[j].act)
+                    items: root.moreMenuItems
+                    onPicked: i => root.moreAct(items[i].act)
+                    onSubPicked: (i, j) => { if (items[i].act === "filter") root.filterAct(items[i].submenu[j].act); else root.moreAct(items[i].submenu[j].act) }
                     onSubSubPicked: (i, j, k) => root.filterAct(items[i].submenu[j].submenu[k].act)
                 }
             }
@@ -914,17 +1017,43 @@ Item {
         visible: !root.monthView
         anchors { top: bar.bottom; bottom: parent.bottom; left: pane.right; right: parent.right; rightMargin: root.copilotWidth }
         // Day headers (54) and the all-day strip.
+        clip: true
         Item {
             id: heads
-            width: parent.width; height: 54 + root.stripHeight
+            x: -grid.contentX
+            width: Math.max(parent.width, root.gridWidth); height: root.splitHead + 54 + root.stripHeight
+            // Split view: each calendar's name over its days, and its close.
             Repeater {
-                model: root.days
+                model: root.splitActive ? root.splitCalendars : []
+                Rectangle {
+                    id: blk
+                    required property var modelData
+                    required property int index
+                    x: root.colX(index * root.days); width: root.colX((index + 1) * root.days) - x; height: root.splitHead
+                    color: theme.surface
+                    Rectangle { width: 1; height: parent.height; color: theme.hc("#D1D1D1", "#FFFFFF") }
+                    Text {
+                        x: 13; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 13 - 40; elide: Text.ElideRight
+                        text: blk.modelData.name; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold
+                        color: blk.modelData.color || theme.brand
+                    }
+                    NavButton {
+                        anchors.right: parent.right; anchors.rightMargin: 4; anchors.verticalCenter: parent.verticalCenter
+                        icon: "dismiss-20"; tip: "Close " + blk.modelData.name
+                        onClicked: { if (blk.modelData.id === "") root.showCalendar = false; else root.toggleCalendar(blk.modelData.id) }
+                    }
+                    Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: theme.hc("#E0E0E0", "#FFFFFF") }
+                }
+            }
+            Repeater {
+                model: root.nCols
                 Rectangle {
                     required property int index
-                    readonly property date day: root.dayAt(index)
-                    readonly property bool today: index === root.todayIndex
-                    x: root.colX(index); width: root.colW(index); height: heads.height
-                    color: root.busyDay(index) ? theme.hc("#EEEFF9", "#000000") : root.pastDay(index) ? theme.hc("#FAFAFA", "#000000") : theme.surface
+                    readonly property int dayIndex: root.dayOfCol(index)
+                    readonly property date day: root.dayAt(dayIndex)
+                    readonly property bool today: dayIndex === root.todayIndex
+                    x: root.colX(index); width: root.colW(index); y: root.splitHead; height: heads.height - y
+                    color: root.busyDay(dayIndex) ? theme.hc("#EEEFF9", "#000000") : root.pastDay(dayIndex) ? theme.hc("#FAFAFA", "#000000") : theme.surface
                     Rectangle { visible: parent.today; width: parent.width; height: 3; color: theme.brand }
                     Text { x: 13; y: 8; text: parent.day.getDate(); font.family: theme.font; font.pixelSize: 20; color: parent.today ? theme.brand : theme.text }
                     Text { x: 13; y: 33; text: Qt.formatDate(parent.day, root.wideLayout ? "dddd" : "ddd"); font.family: theme.font; font.pixelSize: theme.small; color: parent.today ? theme.brand : theme.textSecondary }
@@ -933,14 +1062,14 @@ Item {
                 }
             }
             Repeater {
-                model: root.stripBars
+                model: root.splitStripBars
                 Rectangle {
                     id: sb
                     required property var modelData
                     readonly property var ev: modelData.ev
                     x: root.colX(modelData.c0) + 2.6
                     width: root.colX(modelData.c1) + root.colW(modelData.c1) - 12 - x
-                    y: 56 + modelData.row * 21; height: 18
+                    y: root.splitHead + 56 + modelData.row * 21; height: 18
                     radius: 4
                     color: root.fillOf(ev)
                     ShowAsBar { ev: sb.ev; height: parent.height }
@@ -951,6 +1080,7 @@ Item {
                     }
                     HoverHandler { cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: details.show(sb.ev, sb) }
+                    TapHandler { acceptedButtons: Qt.RightButton; onTapped: ep => tileMenu.openFor(sb.ev, sb, ep.position.x, ep.position.y) }
                     Accessible.role: Accessible.Button
                     Accessible.name: (ev.subject || "Event") + ", all day event"
                 }
@@ -962,9 +1092,11 @@ Item {
             id: grid
             anchors { top: heads.bottom; bottom: parent.bottom; left: parent.left; right: parent.right }
             contentHeight: 24 * root.hourHeight
+            contentWidth: Math.max(width, root.gridWidth)
             clip: true
             boundsBehavior: Flickable.StopAtBounds
             ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+            ScrollBar.horizontal: ScrollBar { policy: ScrollBar.AsNeeded }
             Component.onCompleted: contentY = Math.max(0, Math.min(contentHeight - height, (new Date().getHours() - 1) * root.hourHeight))
             Connections {
                 target: root
@@ -972,14 +1104,15 @@ Item {
             }
             // Day backgrounds: past days, hours outside 8–17 and busy days.
             Repeater {
-                model: root.days
+                model: root.nCols
                 Item {
                     required property int index
-                    readonly property bool weekend: [0, 6].indexOf(root.dayAt(index).getDay()) >= 0
+                    readonly property int d: root.dayOfCol(index)
+                    readonly property bool weekend: [0, 6].indexOf(root.dayAt(d).getDay()) >= 0
                     x: root.colX(index); width: root.colW(index); height: grid.contentHeight
-                    Rectangle { anchors.fill: parent; color: root.busyDay(index) ? theme.hc("#EEEFF9", "#000000") : root.pastDay(index) || parent.weekend ? theme.hc("#FAFAFA", "#000000") : theme.surface }
-                    Rectangle { visible: !root.busyDay(index) && !root.pastDay(index) && !parent.weekend; width: parent.width; height: 8 * root.hourHeight; color: theme.hc("#FAFAFA", "#000000") }
-                    Rectangle { visible: !root.busyDay(index) && !root.pastDay(index) && !parent.weekend; y: 17 * root.hourHeight; width: parent.width; height: 7 * root.hourHeight; color: theme.hc("#FAFAFA", "#000000") }
+                    Rectangle { anchors.fill: parent; color: root.busyDay(parent.d) ? theme.hc("#EEEFF9", "#000000") : root.pastDay(parent.d) || parent.weekend ? theme.hc("#FAFAFA", "#000000") : theme.surface }
+                    Rectangle { visible: !root.busyDay(parent.d) && !root.pastDay(parent.d) && !parent.weekend; width: parent.width; height: 8 * root.hourHeight; color: theme.hc("#FAFAFA", "#000000") }
+                    Rectangle { visible: !root.busyDay(parent.d) && !root.pastDay(parent.d) && !parent.weekend; y: 17 * root.hourHeight; width: parent.width; height: 7 * root.hourHeight; color: theme.hc("#FAFAFA", "#000000") }
                     Rectangle { width: 1; height: parent.height; color: theme.hc("#D1D1D1", "#FFFFFF") }
                 }
             }
@@ -987,9 +1120,9 @@ Item {
                 model: 24
                 Item {
                     required property int index
-                    y: index * root.hourHeight; width: grid.width; height: root.hourHeight
+                    y: index * root.hourHeight; width: grid.contentWidth; height: root.hourHeight
                     Text {
-                        visible: index > 0
+                        visible: index > 0 && grid.contentX <= 0
                         x: 10; y: 8
                         text: (index % 12 === 0 ? 12 : index % 12) + " " + (index < 12 ? "AM" : "PM")
                         font.family: theme.font; font.pixelSize: 11; color: theme.textSecondary
@@ -1002,25 +1135,26 @@ Item {
                             required property int index
                             x: root.gutter; y: (index + 1) * root.slotHeight
                             spacing: 3
-                            Repeater { model: Math.ceil((grid.width - root.gutter) / 6); Rectangle { width: 3; height: 1; color: theme.hc("#E0E0E0", "#3F3F3F") } }
+                            Repeater { model: Math.ceil((grid.contentWidth - root.gutter) / 6); Rectangle { width: 3; height: 1; color: theme.hc("#E0E0E0", "#3F3F3F") } }
                         }
                     }
                 }
             }
             // Click an empty slot to schedule there.
             MouseArea {
-                x: root.gutter; width: grid.width - root.gutter; height: grid.contentHeight
+                x: root.gutter; width: grid.contentWidth - root.gutter; height: grid.contentHeight
                 onClicked: m => {
                     let col = 0
-                    while (col < root.days - 1 && root.gutter + m.x >= root.colX(col + 1)) col++
+                    while (col < root.nCols - 1 && root.gutter + m.x >= root.colX(col + 1)) col++
                     const slot = Math.floor(m.y / root.slotHeight)
-                    const d = root.dayAt(col); d.setHours(0, slot * root.timeScale, 0, 0)
+                    const d = root.dayAt(root.dayOfCol(col)); d.setHours(0, slot * root.timeScale, 0, 0)
                     root.openForm(d, [], null)
                 }
             }
             Repeater {
                 id: eventRepeater
                 model: {
+                    if (root.splitActive) return root.splitPieces
                     const all = []
                     root.dayPieces.forEach((list, i) => list.forEach(p => all.push(Object.assign({ col: i }, p))))
                     return all
@@ -1081,8 +1215,24 @@ Item {
                     }
                     HoverHandler { cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: details.show(evTile.ev, evTile) }
+                    TapHandler { acceptedButtons: Qt.RightButton; onTapped: ep => tileMenu.openFor(evTile.ev, evTile, ep.position.x, ep.position.y) }
                     Accessible.role: Accessible.Button
                     Accessible.name: (ev.subject || "Event") + ", " + theme.time(root.evStart(ev)) + " to " + theme.time(root.evEnd(ev))
+                }
+            }
+            // Scrolled sideways (Split view): the hours stay at the left.
+            Rectangle {
+                visible: grid.contentX > 0
+                x: grid.contentX; width: root.gutter; height: grid.contentHeight
+                color: theme.surface; z: 3
+                Repeater {
+                    model: 23
+                    Text {
+                        required property int index
+                        x: 10; y: (index + 1) * root.hourHeight + 8
+                        text: ((index + 1) % 12 === 0 ? 12 : (index + 1) % 12) + " " + (index + 1 < 12 ? "AM" : "PM")
+                        font.family: theme.font; font.pixelSize: 11; color: theme.textSecondary
+                    }
                 }
             }
             // Now: a line across today, dashed before it, with a dot.
@@ -1517,19 +1667,6 @@ Item {
                         }
                     }
                 }
-                // Propose new time (Teams' calendar: "Tentative and propose
-                // new time" / "Decline and propose new time"), when the
-                // organizer allows proposals.
-                Text {
-                    visible: details.ev.allow_new_time_proposals !== false
-                    x: 37; topPadding: 10
-                    text: "Propose new time"
-                    font.family: theme.font; font.pixelSize: 14; color: theme.brand
-                    HoverHandler { cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: proposeMenu.openFor(parent) }
-                    Accessible.role: Accessible.Button
-                    Accessible.name: "Propose new time"
-                }
             }
             // Answered: the answer and Change.
             Row {
@@ -1617,15 +1754,36 @@ Item {
     /// Copilot's entry points show for a Copilot licence (Teams' calendar:
     /// the Copilot button, the card's room, prepare and prompt rows).
     property bool copilotEntries: false
-    function askCopilot(prompt) { details.close(); root.copilotPrompt = prompt; root.copilotOpen = true }
-    MenuPopup {
-        id: proposeMenu
-        function openFor(item) { parent = item; x = 0; y = item.height + 2; open() }
-        items: [{ label: "Tentative and propose new time" }, { label: "Decline and propose new time" }]
-        onPicked: i => { const e = details.ev; details.close(); proposeDialog.openFor(e, i === 0 ? "Tentative" : "Decline") }
+    function askCopilot(prompt) { details.close(); openCopilotWith(prompt, true) }
+    // A suggestion or prompt goes to Copilot as Teams' calendar hands it
+    // over: the pane's host sends updatePromptInputData {promptText,
+    // correlationId, promptTimestamp, isDraft (not to be sent yet)} once the
+    // pane is ready.
+    property bool copilotReady: false
+    property var copilotPending: null
+    // The prompt each suggestion sends (Outlook's calendar strings).
+    readonly property var copilotPrompts: ({
+        "Find my next one-on-one with": ["When is my next one-on-one with /", false],
+        "Show me meetings I haven't responded to next week": ["Show me meetings I haven't responded to next week? Don't offer to respond on my behalf", true],
+        "What are the top three things I should focus on right now?": ["Look through all my emails, chats and meetings and let me know what are the top 3 things I need to get done in the future.", true],
+        "Schedule 1 hour of focus time": ["Schedule 1 hour of focus time for me in the next week", true],
+        "What are the anticipated outcomes?": ["For this meeting, search across all enterprise data (agenda, documents, chats, emails), gather only relevant information, and infer anticipated end-of-meeting outcomes to propose.", true]
+    })
+    function openCopilotWith(label, execute) {
+        const p = copilotPrompts[label]
+        copilotPending = { promptText: p ? p[0] : label, isDraft: p ? !p[1] : !execute }
+        copilotOpen = true
+        if (copilotReady) sendCopilotPrompt()
     }
-    // Propose new time: Teams' calendar's "Propose new time:" with the
-    // time, the answer (Tentative or Decline), an optional message, Send.
+    function sendCopilotPrompt() {
+        if (!copilotPending || !copilotHost.item) return
+        const d = Object.assign({ correlationId: guid(), promptTimestamp: new Date().toISOString(), queryAnnotations: [], rawEntityData: [], focusOnLoadTarget: "Compose" }, copilotPending)
+        copilotPending = null
+        copilotHost.item.sendFrameMessage("updatePromptInputData", [d])
+    }
+    // Propose new time where Outlook's own form can't be hosted (no
+    // browser sign-in): its "Propose new time:" with the time, the answer
+    // (Tentative or Decline), an optional message, Send.
     Dialog600 {
         id: proposeDialog
         property var ev: ({})
@@ -1673,6 +1831,241 @@ Item {
             }
         }
     }
+    // An event's right-click menu, as Teams' calendar (Outlook's
+    // CalendarItemContextMenu): the Teams meeting's Join, Chat with
+    // participants and Copy meeting link; Print; your answer (Accept,
+    // Decline, Tentative, Propose new time) and Forward when invited;
+    // Charm, Show as, Categorize and Private; Duplicate event, Save as
+    // .ics and Delete. Print, Propose new time, Forward, Duplicate and
+    // Save as .ics open Outlook's own forms, as Teams does.
+    MenuPopup {
+        id: tileMenu
+        property var ev: ({})
+        function openFor(e, item, px, py) {
+            ev = e; parent = item; x = px; y = py
+            items = build(e)
+            open()
+        }
+        perItemIcons: true
+        submenuMinWidth: 0
+        function build(e) {
+            const invited = e.is_organizer === false
+            const r = e.response || ""
+            const out = []
+            if (e.join_url) out.push({ label: "Join Teams meeting", icon: "video-20", act: "join" }, { label: "Chat with participants", icon: "chat-20", act: "chat" }, { label: "Copy meeting link", icon: "link-20", act: "copy" }, { separator: true })
+            out.push({ label: "Print", icon: "print-20", act: "owa:Print" }, { separator: true })
+            if (invited) {
+                out.push({ label: "Accept", icon: "checkmark-20", checked: r === "accepted", act: "rsvp:Accept" },
+                         { label: "Decline", icon: "dismiss-20", checked: r === "declined", act: "rsvp:Decline" },
+                         { label: "Tentative", icon: "question-20", checked: r === "tentativelyAccepted", act: "rsvp:Tentative" })
+                if (e.allow_new_time_proposals !== false) out.push({ label: "Propose new time", icon: "calendar-arrow-right-20", act: "owa:Propose new time" })
+                out.push({ label: "Forward", icon: "arrow-forward-20", act: "owa:Forward" }, { separator: true })
+            }
+            const shows = [["free", "Free"], ["workingElsewhere", "Working elsewhere"], ["tentative", "Tentative"], ["busy", "Busy"], ["oof", "Away"]]
+            // Charm › opens the charm picker beside it (Outlook's CharmPicker).
+            out.push({ label: "Charm", icon: root.charmOf(e) ? root.charmMenuIcon(root.charmOf(e)) : "emoji-20", chevron: true, flyout: true },
+                     { label: "Show as", icon: "status-20", submenu: shows.map(x => ({ label: x[1], checked: e.show_as === x[0], act: "showAs:" + x[0] })) },
+                     { label: "Categorize", icon: "tag-20", submenu: root.categories.map(c => ({ label: c.name, tag: root.categoryTag(c.color), checked: (e.categories || []).indexOf(c.name) >= 0, act: "cat:" + c.name })) },
+                     { label: "Private", icon: "lock-closed-20", checked: e.sensitivity === "private", act: "private" },
+                     { separator: true },
+                     { label: "Duplicate event", icon: "copy-20", act: "owa:Duplicate" },
+                     { label: "Save as .ics", icon: "arrow-download-20", act: "owa:Save as .ics" },
+                     { label: "Delete", icon: "delete-20", act: "delete" })
+            return out
+        }
+        onPicked: i => root.tileAct(ev, items[i].act)
+        onSubPicked: (i, j) => root.tileAct(ev, items[i].submenu[j].act)
+        onFlyoutRequested: (i, row) => {
+            if (i < 0 || !row) { tileCharms.close(); return }
+            const p = row.mapToItem(root, row.width + 8, 0)
+            tileCharms.x = p.x + tileCharms.width > root.width - 8 ? row.mapToItem(root, 0, 0).x - tileCharms.width - 8 : p.x
+            tileCharms.y = Math.max(8, Math.min(root.height - tileCharms.height - 8, p.y))
+            tileCharms.open()
+        }
+        onClosed: tileCharms.close()
+    }
+    // An event's charm: Outlook names it ("Plane"); the picker's ids.
+    function charmOf(e) {
+        const c = (e && e.charm) || ""
+        if (!c) return 0
+        if (/^[0-9]+$/.test(c)) return parseInt(c)
+        const k = c.toLowerCase(), hit = charms.find(x => x[1].replace(/[^A-Za-z]/g, "").toLowerCase() === k)
+        return hit ? hit[0] : 0
+    }
+    Popup {
+        id: tileCharms
+        parent: root
+        padding: 4; width: 454; height: 112
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        background: FluentSurface { depth: 16; radius: 4 }
+        contentItem: Grid {
+            columns: 12; spacing: 4
+            Repeater {
+                model: root.charms
+                Rectangle {
+                    id: tcCell
+                    required property var modelData
+                    width: 32; height: 32; radius: 2
+                    color: root.charmOf(tileMenu.ev) === modelData[0] ? theme.hc("#DCDFFA", "#1AEBFF") : tcHover.hovered ? theme.rowHover : "transparent"
+                    FluentIcon { anchors.centerIn: parent; name: tcCell.modelData[2] || "prohibited-20"; size: 17; color: theme.onFill(tcCell, theme.textSecondary) }
+                    HoverHandler { id: tcHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: { const e = tileMenu.ev; tileCharms.close(); tileMenu.close(); root.tileAct(e, "charm:" + tcCell.modelData[0]) } }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: tcCell.modelData[1] + " icon"
+                }
+            }
+        }
+    }
+    function tileCharmsForTest() { return tileCharms }
+    function tileAct(e, a) {
+        if (!a) return
+        const id = e.id
+        if (a === "join") root.joinMeeting(e.join_url, e.subject || "Meeting")
+        else if (a === "chat") root.openMeetingChat(e.join_url, e.subject || "Meeting")
+        else if (a === "copy") backend.copyText(e.join_url)
+        else if (a === "owa:Propose new time" && !objectId) proposeDialog.openFor(e, "Tentative")
+        else if (a.startsWith("owa:")) openOwaItem(e, a.slice(4))
+        else if (a.startsWith("rsvp:")) calendarAction("respond", JSON.stringify({ id: id, event: { id: id, ical_uid: e.ical_uid, event_type: e.event_type, start_utc: e.start_utc, series_master_id: e.series_master_id }, series: false, response: a.slice(5), send: true, note: "" }))
+        else if (a.startsWith("charm:")) calendarAction("charm", JSON.stringify({ id: id, charm: parseInt(a.slice(6)) }))
+        else if (a.startsWith("showAs:")) calendarAction("patchEvent", JSON.stringify({ id: id, patch: { showAs: a.slice(7) } }))
+        else if (a.startsWith("cat:")) {
+            const c = (e.categories || []).slice(), n = a.slice(4), k = c.indexOf(n)
+            if (k >= 0) c.splice(k, 1); else c.push(n)
+            calendarAction("patchEvent", JSON.stringify({ id: id, patch: { categories: c } }))
+        }
+        else if (a === "private") calendarAction("patchEvent", JSON.stringify({ id: id, patch: { sensitivity: e.sensitivity === "private" ? "normal" : "private" } }))
+        else if (a === "delete") { details.show(e, null); details.confirming = true }
+    }
+    // The toolbar's "…" (Outlook's CalendarSurfaceToolbar overflow): what
+    // doesn't fit (Filter; with Copilot's pane open, the toolbar's own
+    // items), Share (a submenu of your calendars when more than one can be
+    // shared), Print, Calendar settings.
+    readonly property var shareable: calendarList.filter(c => c.can_share)
+    readonly property var moreMenuItems: {
+        const out = []
+        // With the pane open (measured on winpc): Go to today, previous,
+        // next, the range, the view, Filter, a divider, New (split), then
+        // Share, Print, Calendar settings.
+        const unit = monthView ? "month" : view === "day" ? "day" : "week"
+        if (copilotOpen) out.push(
+            { label: "Go to today", icon: "calendar-today-20", act: "today" },
+            { label: "Go to previous " + unit, icon: "chevron-left-20", act: "prev" },
+            { label: "Go to next " + unit, icon: "chevron-right-20", act: "next" },
+            { label: rangeLabel, icon: "calendar-month-20", act: "range" },
+            { label: ({ day: "Day", workweek: "Work week", week: "Week", month: "Month" })[view], icon: "calendar-work-week-20", submenu: viewMenuItems.filter(x => !x.separator && !x.heading && x.act), act: "view" })
+        if (!filterInline || copilotOpen) out.push({ label: filterApplied ? "Filter applied" : "Filter", icon: "filter-20", outlined: filterApplied, submenu: filterMenuItems, act: "filter" }, { separator: true })
+        if (copilotOpen) out.push({ label: "New", icon: "calendar-add-20", split: true, act: "new", submenu: [{ label: "Event", icon: "calendar-ltr-20", act: "newEvent" }, { label: "Channel meeting", icon: "channel-20", act: "new" }] })
+        out.push(shareable.length > 1
+            ? { label: "Share", icon: "share-20", submenu: shareable.map(c => ({ label: c.name, icon: "calendar-ltr-20", act: "share:" + c.name })), act: "share" }
+            : { label: "Share", icon: "share-20", act: "share" },
+            { label: "Print", icon: "print-20", act: "print" },
+            { label: "Calendar settings", icon: "settings-20", act: "settings" })
+        return out
+    }
+    function moreAct(a) {
+        if (!a) return
+        if (Array.isArray(a)) { viewAct(a); return }
+        if (a === "share") openOutlookCommand(["Share"])
+        else if (a.startsWith("share:")) openOutlookCommand(["Share", a.slice(6)])
+        else if (a === "print") openOutlookCommand(["Print"])
+        else if (a === "settings") openOutlookCommand(["Calendar settings"])
+        else if (a === "today") start = startFor(new Date())
+        else if (a === "prev") shift(-1)
+        else if (a === "next") shift(1)
+        else if (a === "range") { month.shown = new Date(start.getFullYear(), start.getMonth(), 1); paneShown = true }
+        else if (a === "newEvent") openEventForm()
+        else if (a === "new") openForm(null, [], null)
+    }
+    function tileMenuForTest(e) { tileMenu.openFor(e, root, 400, 200); return tileMenu }
+
+    // Outlook's event page, hosted as Teams hosts it (its reading form,
+    // hosted/calendar/item/<id>), opening one of its own commands when it
+    // is up: Propose new time (Outlook's propose form with its scheduling
+    // grid), Print, Forward, Duplicate, Save as .ics.
+    function owaItemPath(e) {
+        let id = (e.id || "").replace(/-/g, "/").replace(/_/g, "+")
+        while (id.length % 4) id += "="
+        return "/hosted/calendar/item/" + encodeURIComponent(id)
+    }
+    function openOwaItem(e, command) {
+        openOutlook(surfaceUrl(), owaItemPath(e), command ? [command] : [], false)
+    }
+    /// Outlook's calendar surface, hosted as Teams hosts it, for its own
+    /// "…" commands' dialogs (Share, Print, Calendar settings); the layer
+    /// closes with the dialog.
+    function surfaceUrl() { return "https://outlook.office.com/hosted/calendar/'OID:" + objectId + "@" + tenantId + "'" }
+    function openOutlookCommand(steps) { openOutlook(surfaceUrl(), "", ["More options"].concat(steps), true) }
+    function openOutlook(url, route, steps, autoClose) {
+        details.close()
+        owaItemLayer.url = url; owaItemLayer.route = route; owaItemLayer.steps = steps; owaItemLayer.autoClose = autoClose
+        owaItemHost.active = false; owaItemLayer.visible = true; owaItemHost.active = true
+    }
+    // Drives Outlook's own page as a click would. `route`: the page to show
+    // first (Outlook's router: the event page, which a fresh load sends back
+    // to the calendar view); then each step names a button or menu item by
+    // its text or label, clicked in turn (one kept in the answer button's
+    // or More's menu is found by opening those once each). The page asks
+    // its host to close (stageView.self.close) when Outlook leaves the
+    // event page (Send, Cancel, Close) or, with autoClose, once the dialog
+    // the steps opened has gone.
+    function owaCommandScript(route, steps, autoClose) {
+        return "(() => { if (location.host !== 'outlook.office.com' || !location.pathname.startsWith('/hosted/calendar')) return;"
+            + " const route = " + JSON.stringify(route) + ", steps = " + JSON.stringify(steps) + ", autoClose = " + (autoClose ? "true" : "false") + ";"
+            + " if (!route && !steps.length) return;"
+            + " const txt = el => (el.textContent || '').replace(/[^\\x20-\\x7e]/g, '').trim();"
+            + " const lab = el => (el.getAttribute('aria-label') || txt(el)).trim();"
+            + " let n = 0, k = 0, routed = !route, onRoute = false, opened = new Set(), shown = 0, gone = 0;"
+            + " const close = () => window.parent.postMessage({ id: 990001, func: 'stageView.self.close', args: [], timestamp: Date.now() }, '*');"
+            + " const t = setInterval(() => { n++;"
+            + "  const all = [...document.querySelectorAll('button,[role=button],[role=menuitem],[role=menuitemcheckbox],[role=menuitemradio]')].filter(b => b.offsetParent);"
+            + "  if (!routed) { if (all.length < 5) return; routed = true; history.pushState({}, '', route); dispatchEvent(new PopStateEvent('popstate', { state: {} })); n = 0; return; }"
+            + "  if (route) { const here = location.pathname.startsWith('/hosted/calendar/item/') || location.pathname.startsWith('/hosted/calendar/deeplink/');"
+            + "   if (here) onRoute = true; else if (onRoute) { clearInterval(t); close(); return; } }"
+            + "  if (k >= steps.length) { if (!autoClose) return;"
+            + "   const d = document.querySelector('[role=dialog],[role=alertdialog]');"
+            + "   if (d) { shown = 1; gone = 0 } else if (shown && ++gone > 4) { clearInterval(t); close() } else if (!shown && n > 200) { clearInterval(t); close() }"
+            + "   return; }"
+            + "  if (n > 200) { k = steps.length; if (autoClose) { clearInterval(t); close() } return; }"
+            + "  const want = steps[k];"
+            + "  const hit = all.find(b => txt(b) === want || lab(b) === want);"
+            + "  if (hit) { hit.click(); k++; n = 0; return; }"
+            + "  if (n % 3) return;"
+            + "  const menu = all.find(b => b.getAttribute('aria-haspopup') && b.getAttribute('aria-expanded') !== 'true' && !opened.has(lab(b))"
+            + "   && /^(Accept|Accepted|Tentative|Tentatively accepted|Decline|Declined|Respond|RSVP|More actions|More options|More)/.test(lab(b)));"
+            + "  if (menu) { opened.add(lab(menu)); menu.click(); }"
+            + " }, 250); })()"
+    }
+    Rectangle {
+        id: owaItemLayer
+        visible: false
+        anchors.fill: parent
+        color: theme.hc("#FAFAFA", "#000000")
+        z: 11
+        property string url: ""
+        property string route: ""
+        property var steps: []
+        property bool autoClose: false
+        Loader {
+            id: owaItemHost
+            active: false
+            anchors.fill: parent
+            sourceComponent: WebApp {
+                showHeader: false; teamsHost: true; deepNaa: true
+                appName: "Calendar"; appId: "ef56c0de-36fc-4ef8-b417-3d82ba9d073c"
+                homeTemplate: owaItemLayer.url
+                hostContext: ({ entityId: "calendar" })
+                frameScript: root.owaCommandScript(owaItemLayer.route, owaItemLayer.steps, owaItemLayer.autoClose)
+                onHostEvent: (name, json) => {
+                    console.warn("CALITEM host", name, (json || "").slice(0, 300))
+                    if (name === "stageViewClose") root.closeOwaItem()
+                    // The form's own Open in new window.
+                    else if (name === "stageViewOpen") { root.closeOwaItem(); root.popOutCompose(JSON.parse(json || "{}")) }
+                }
+            }
+        }
+    }
+    function closeOwaItem() { owaItemLayer.visible = false; owaItemHost.active = false; emitRange() }
+    function owaItemForTest() { return owaItemHost.item }
     function proposeForTest(e, response, start, minutes, note) {
         details.close(); proposeDialog.openFor(e, response)
         proposeDialog.day = midnight(start); proposeDialog.startMin = start.getHours() * 60 + start.getMinutes(); proposeDialog.minutes = minutes
@@ -2002,7 +2395,9 @@ Item {
                     appName: "Copilot"; appId: "b5abf2ae-c16b-4310-8f8a-d3bcdb52f162"
                     frameContext: "sidePanel"
                     homeTemplate: root.copilotUrl()
+                    onHostEvent: (name, json) => { if (name === "success" || name === "ChatReady") { root.copilotReady = true; root.sendCopilotPrompt() } }
                 }
+                onActiveChanged: if (!active) root.copilotReady = false
             }
         }
     }
@@ -2035,6 +2430,16 @@ Item {
             color: theme.surface
             Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.hc("#D1D1D1", "#FFFFFF") }
             Text { x: 16; anchors.verticalCenter: parent.verticalCenter; text: "New event"; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
+            // Open in new window (Teams' stage view pop-out of the same page).
+            Rectangle {
+                id: composePop
+                anchors.right: composeClose.left; width: 48; height: 48
+                color: cpHover.hovered ? theme.rowHover : "transparent"
+                FluentIcon { anchors.centerIn: parent; name: "open-20"; size: 20; color: theme.onFill(composePop, theme.text) }
+                HoverHandler { id: cpHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: root.popOutCompose({}) }
+                Accessible.role: Accessible.Button; Accessible.name: "Open in new window"
+            }
             Rectangle {
                 id: composeClose
                 anchors.right: parent.right; width: 48; height: 48
@@ -2054,11 +2459,46 @@ Item {
                 appName: "Calendar"; appId: "ef56c0de-36fc-4ef8-b417-3d82ba9d073c"
                 homeTemplate: "https://outlook.office.com/hosted/calendar/deeplink/compose"
                 hostContext: ({ entityId: "calendar", subEntityId: JSON.stringify({ type: "compose" }) })
-                onHostEvent: (name, json) => { console.warn("CALCOMPOSE host", name, (json || "").slice(0, 300)); if (name === "stageViewClose") composeLayer.visible = false }
+                onHostEvent: (name, json) => {
+                    console.warn("CALCOMPOSE host", name, (json || "").slice(0, 300))
+                    if (name === "stageViewClose") composeLayer.visible = false
+                    // The form's own Open in new window: the same page in a
+                    // window of its own (Teams' stage view pop-out).
+                    else if (name === "stageViewOpen") root.popOutCompose(JSON.parse(json || "{}"))
+                }
+            }
+        }
+    }
+    Component {
+        id: composeWindow
+        Window {
+            id: cw
+            property string url: ""
+            title: "New event | Calendar"
+            width: root.Window.window ? root.Window.window.width : 1280
+            height: root.Window.window ? root.Window.window.height : 680
+            color: theme.hc("#FAFAFA", "#000000")
+            onClosing: Qt.callLater(() => cw.destroy())
+            WebApp {
+                anchors.fill: parent
+                showHeader: false; teamsHost: true; deepNaa: true
+                appName: "Calendar"; appId: "ef56c0de-36fc-4ef8-b417-3d82ba9d073c"
+                homeTemplate: cw.url || "https://outlook.office.com/hosted/calendar/deeplink/compose"
+                hostContext: ({ entityId: "calendar", subEntityId: JSON.stringify({ type: "compose" }) })
+                frameContext: "content"
+                onHostEvent: (name, json) => { if (name === "stageViewClose") { cw.close(); root.refreshAfterCompose() } }
             }
         }
     }
     signal composeClosed()
+    function popOutCompose(p) {
+        composeLayer.visible = false; composeHost.active = false
+        const w = composeWindow.createObject(null, { url: p.contentUrl || "", title: p.title || "New event | Calendar" })
+        w.show()
+        popoutForTest = w
+        return w
+    }
+    property var popoutForTest: null
     function refreshAfterCompose() { root.composeClosed(); emitRange() }
 
     // ── the scheduling form and event page (Teams' own, MeetingForm) ────
