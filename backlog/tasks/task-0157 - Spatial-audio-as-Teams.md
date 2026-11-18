@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-15T09:37:00Z'
-updated_date: '2026-11-18T00:27:00Z'
+updated_date: '2026-11-18T00:51:00Z'
 labels:
   - calling
   - devices
@@ -46,4 +46,8 @@ Settings > Devices > Audio settings > 'Spatial audio' (Available with Together m
   - Built: calling::much (parse, payload type, MuchMixer: one Opus decoder and one Spatializer per speaker, mixed in stereo; unknown kinds skipped and logged once), offered in meetings while spatial audio is on and the speaker is spatial capable (spatial::wants_unmixed, set from Backend); the receive loop decodes PT 113 per speaker and places each at their own tile (spatial::azimuth_of). Mixed audio keeps the CSRC placement.
   - Verified live on linuxlt (meeting "OST calendar test", two Chrome test guests, Hide for me so their tiles sit at 25 % and 75 %, OST playback recorded from a virtual stereo sink): log "meeting audio per speaker (x-much2) pt=113". Both talking at once: L-R correlation 0.43 (the earlier mix-placement run: 0.88), the right channel's transcript is Guest 2 alone, the left carries Guest 1. Each alone: +7.6 dB on its side (left) / +5.9 dB (right). Left the meeting cleanly.
   - Limit: OST offers x-much2 at join; turning spatial audio on mid-meeting applies from the next meeting (Teams renegotiates mid-call).
+
+- 2026-11-17 (3945f7a): x-much2 is Opus in a simple container: a speaker count, then per speaker a kind byte (0x44 Opus), the 4-byte roster id, a 2-byte length and a 20 ms mono Opus frame, as PT 113. It is offered while spatial audio is on. OST decodes each speaker on its own and places them at their tiles.
+- Live: with two guests talking at once, left/right correlation fell from 0.88 to 0.43, and the right channel transcribes as one guest alone.
+- Left: switching mid-call, as Teams does (in progress).
 <!-- SECTION:NOTES:END -->
