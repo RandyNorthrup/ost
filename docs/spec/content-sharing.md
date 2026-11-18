@@ -185,4 +185,27 @@ Captured (presenter "OST TEST 214 deck.pptx", 2026-11-18):
   the board goes out as the state and is kept for the meeting; viewers see
   others' annotation boards over the shared picture.
 - [x] Pop out shows the session's page in its own window.
-- Live checks: see TASK-0214's notes.
+- Live checks (2026-11-18, Teams on winpc as ost-test1, OST on linuxlt):
+  - PowerPoint Live, OST Test 2 presenting "OST TEST 214 deck.pptx": the
+    session started (addModality 202, addModalitySuccess with its links),
+    OST's stage showed PowerPoint's presenter view (slide, notes, strip);
+    Teams joined it and showed the slide ("1 of 3", its own frame
+    `slideshowframe-pptframe-…`, with Teams' Take control); OST's Next went
+    out as a Nav state (200) and Teams followed to "2 of 3"; Stop sharing
+    (DELETE 204) took Teams' stage back to people.
+  - PowerPoint Live, Teams presenting the same deck: OST found it in the
+    roster, joined it (200), loaded the attendee slide show and followed
+    Teams' jump to slide 3 ("3 of 3"); Teams' Stop presenting ended it in
+    OST.
+  - Whiteboard, OST Test 2 presenting: the session started and OST's stage
+    hosted the board with the bar's Stop sharing and Pop out, but
+    Whiteboard showed "This whiteboard is unsaved": its nested app
+    authentication needs the browser sign-in (OST Test 2 is signed in with
+    a device code), so Whiteboard and Excel are checked with ost-test1.
+  - Your own sessions from your other devices are viewed (Teams on another
+    device presenting); only the one this device presents is left out.
+- Not built: the attendee's PowerPoint "Take control" (Teams'
+  takeControlPptBtn: the attendee takes the presentation over), private
+  viewing's toggle from OST's own bar (PowerPoint's own frame has it),
+  PowerPoint's laser and ink sync (LiveInking proxied messages) and Cameo's
+  camera frames into the slide show.

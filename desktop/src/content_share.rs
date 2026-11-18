@@ -359,14 +359,20 @@ impl qobject::Backend {
     /// handleIncomingContentSharingFromRoster). New ones are joined, to
     /// get their state updates; ended ones go.
     pub(crate) fn content_from_roster(mut self: Pin<&mut Self>) {
+        // Your other devices' sessions too (Teams presenting on another
+        // device): only the one this device presents is left out.
+        let mine = self.rust().content.mine.as_ref().map(|m| m.correlation_id.clone()).unwrap_or_default();
         let me = self.rust().user_mri.to_string().to_ascii_lowercase();
+        let starting = !self.rust().content.starting.is_empty();
         let now: Vec<cs::Session> = self
             .rust()
             .roster
             .iter()
-            .filter(|p| p.id != me && p.active)
+            .filter(|p| p.active)
             .flat_map(|p| p.content_sessions.iter().filter_map(|i| cs::session_from_roster(i, &p.id, &p.name)))
-            .filter(|s| !s.correlation_id.is_empty())
+            .filter(|s| !s.correlation_id.is_empty() && s.correlation_id != mine)
+            // Ours while it starts (before the conversation names it).
+            .filter(|s| !(starting && s.presenter == me))
             .collect();
         let before = std::mem::take(&mut self.as_mut().rust_mut().content.others);
         let mut others = Vec::new();

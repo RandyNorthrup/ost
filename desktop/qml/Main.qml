@@ -3190,8 +3190,8 @@ Window {
                 console.warn("JOIN event found", !!ev)
                 // A short link (teams.microsoft.com/meet/<ID>?p=<passcode>):
                 // Join with an ID, as Teams resolves it.
-                const short = /\/meet\/(\d+)\?p=([^&]+)/.exec(ev.join_url)
-                if (short) calendarView.joinWithId(short[1], decodeURIComponent(short[2]))
+                const shortLink = /\/meet\/(\d+)\?p=([^&]+)/.exec(ev.join_url)
+                if (shortLink) calendarView.joinWithId(shortLink[1], decodeURIComponent(shortLink[2]))
                 else calendarView.joinMeeting(ev.join_url, ev.subject)
                 // --join-prejoin-camera: turn the camera on in pre-join.
                 if (Qt.application.arguments.indexOf("--join-prejoin-camera") >= 0) preJoin.cameraOn = true
