@@ -2811,6 +2811,26 @@ pub async fn preheat_meeting(
     start(&link.thread_id, Target::MeetingPreheat(link, call_tag), cancel).await
 }
 
+/// Teams' ECS `meetingJoin.joinOngoingMeetingInPreheatedFlow` (Teams
+/// desktop's preheatService, read from its bundles 2026-11-17; default off,
+/// on in ost-test1's settings): a pre-join's preheat of a meeting whose
+/// call is going on joins that call (`call.join({conversationUrl,
+/// conversationId})`, the active call Teams knows from the meeting chat's
+/// `awareness_conversationLiveState`) instead of starting one
+/// (`call.start`, the conversation first, then the call to it).
+fn preheat_joins_ongoing() -> bool {
+    crate::api::ecs::setting("meetingJoin", "joinOngoingMeetingInPreheatedFlow")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+}
+
+/// Where an ongoing call is joined: its conversation's URL (a service
+/// link) and the meeting's `meetingData` the liveness entry names.
+fn ongoing_join(live: &crate::api::LiveCall) -> Option<(&str, Option<&serde_json::Value>)> {
+    super::incoming::is_service_link(&live.conversation_url)
+        .then(|| (live.conversation_url.as_str(), live.meeting_data.as_ref()))
+}
+
 /// Join with an ID: the meeting a meeting ID and passcode stand for, as
 /// Teams' calling stack finds it (the conversation joined with
 /// `meetingData {meetingCode, passcode, meetingUrl}`, then left), as a
@@ -3072,7 +3092,8 @@ async fn start_tagged(
         None
     };
     let chain_id = ongoing
-        .map(|c| c.call_id)
+        .as_ref()
+        .map(|c| c.call_id.clone())
         .filter(|id| !id.is_empty())
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let message_id = uuid::Uuid::new_v4().to_string();
@@ -3145,7 +3166,20 @@ async fn start_tagged(
         }
         Target::MeetingPreheat(link, _) => {
             let organizer = link.organizer_id.as_deref().zip(link.tenant_id.as_deref());
-            let opts = signaling::MeetingJoinOptions { preheat: true, ..Default::default() };
+            // A meeting whose call is going on: with Teams' ECS
+            // joinOngoingMeetingInPreheatedFlow (on for ost-test1) the
+            // preheat joins that call where it is, as Teams' join of an
+            // ongoing meeting does (preheatService joinExistingCall).
+            let live = preheat_joins_ongoing().then_some(ongoing.as_ref()).flatten().and_then(ongoing_join);
+            let opts = signaling::MeetingJoinOptions {
+                preheat: true,
+                conversation_url: live.map(|(url, _)| url),
+                meeting_data: live.and_then(|(_, md)| md.cloned()),
+                ..Default::default()
+            };
+            if live.is_some() {
+                tracing::info!("pre-join: the meeting is going on; preheating its call where it is");
+            }
             signaling::join_meeting(&http, &epconv_url, &params, &offer, &link.message_id, organizer, &opts).await?
         }
         Target::ChannelMeeting(subject) => {
@@ -3210,6 +3244,10 @@ async fn start_tagged(
         }
         n
     };
+    if meeting_join && let Some(i) = created.response_body.find("\"breakoutDetails\"") {
+        let tail: String = created.response_body[i..].chars().take(1200).collect();
+        tracing::debug!(details = %tail, "meeting join: breakout details");
+    }
     let lobby_thread = group_chat_field(&created.response_body, "lobbyThreadId");
     tracing::debug!(?lobby_thread, "meeting lobby chat");
     let message_link = conversation_link(&created.response_body, "sendMessage");

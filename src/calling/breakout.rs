@@ -22,7 +22,20 @@ pub struct AssignedRoom {
 /// The rooms a call event assigns us, if it is a breakout update.
 pub fn assigned_rooms(json: &str) -> Option<Vec<AssignedRoom>> {
     let v: serde_json::Value = serde_json::from_str(json).ok()?;
-    let rooms = v.pointer("/body/breakoutDetails/mainMeetingProperties")?.get("assignedBreakoutRooms");
+    rooms_of(v.pointer("/body/breakoutDetails/mainMeetingProperties")?)
+}
+
+/// The rooms a meeting's join already assigns us (its join response's
+/// `meetingDetails.breakoutDetails`): someone joining after the rooms
+/// opened has their room from the start, and Teams starts from it
+/// (offered on the bar, not moved). `None` when it names none.
+pub fn assigned_rooms_at_join(details: &serde_json::Value) -> Option<Vec<AssignedRoom>> {
+    let rooms = rooms_of(details.pointer("/meetingDetails/breakoutDetails/mainMeetingProperties")?)?;
+    (!rooms.is_empty()).then_some(rooms)
+}
+
+fn rooms_of(props: &serde_json::Value) -> Option<Vec<AssignedRoom>> {
+    let rooms = props.get("assignedBreakoutRooms");
     let rooms = match rooms {
         Some(r) => r.as_array()?.clone(),
         None => Vec::new(),
@@ -141,6 +154,18 @@ mod tests {
         assert!(rooms[0].open && rooms[0].auto_move);
         assert_eq!(rooms[0].name, "Room 1");
         assert!(assigned_rooms(r#"{"body":{"x":1}}"#).is_none());
+    }
+
+    #[test]
+    fn a_late_joiner_has_its_room_from_the_join() {
+        let joined = serde_json::json!({ "meetingDetails": { "breakoutDetails": { "breakoutRoomProperties": null, "mainMeetingProperties": {
+            "assignedBreakoutRooms": [{ "name": "Room 1", "isOpen": true, "meetingJoinUrl": "https://teams.microsoft.com/l/meetup-join/19%3ameeting_Mm%40thread.v2/0", "allowMoveParticipantsAutomatically": false, "moveJitter": 0 }]
+        } } } });
+        let rooms = assigned_rooms_at_join(&joined).unwrap();
+        assert!(rooms[0].open && !rooms[0].auto_move);
+        // No rooms (the usual join): nothing to start from.
+        let none = serde_json::json!({ "meetingDetails": { "breakoutDetails": { "mainMeetingProperties": { "breakoutRoomManagers": [] } } } });
+        assert!(assigned_rooms_at_join(&none).is_none());
     }
 
     #[test]

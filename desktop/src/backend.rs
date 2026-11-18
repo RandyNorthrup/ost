@@ -3121,6 +3121,10 @@ struct Preheat {
     cancel: Option<tokio::sync::oneshot::Sender<()>>,
     /// Ends its watcher (joined or cancelled).
     stop: std::sync::Arc<tokio::sync::Notify>,
+    /// The breakout rooms its updates assign us (call_breakout_json): a
+    /// late joiner's room comes while the call is preheated, and Join now
+    /// starts from it.
+    breakout: Option<String>,
 }
 
 /// How long Teams keeps a preheated call (ECS `preheatedCallTimeoutInMs`).
@@ -3605,6 +3609,9 @@ struct JoinedView {
     phone: String,
     /// The meeting as a town hall or webinar (call_event_json).
     event: String,
+    /// The breakout rooms the join already assigns us (call_breakout_json;
+    /// empty when none).
+    breakout: String,
 }
 
 /// call_phone_json for a call: Teams' PSTN state and dial-in details, and
@@ -3671,6 +3678,11 @@ impl JoinedView {
             timers: call.timers().clone(),
             phone: phone_json(call, "", "", ""),
             event: event_json(&call.event(), "", ""),
+            breakout: call
+                .joined_details()
+                .and_then(teams_cli::calling::breakout::assigned_rooms_at_join)
+                .map(|rooms| serde_json::to_string(&rooms).unwrap_or_default())
+                .unwrap_or_default(),
         }
     }
 }
@@ -3728,7 +3740,7 @@ async fn preheat_for_prejoin(qt: cxx_qt::CxxQtThread<qobject::Backend>, url: Str
             old.stop.notify_one();
             dispose_preheat(old);
         }
-        slot.preheat = Some(Preheat { url, tag: tag.clone(), call: None, cancel: Some(cancel_tx), stop: stop.clone() });
+        slot.preheat = Some(Preheat { url, tag: tag.clone(), call: None, cancel: Some(cancel_tx), stop: stop.clone(), breakout: None });
     }
     let ours = |slot: &CallSlot| slot.preheat.as_ref().is_some_and(|p| p.tag == tag);
     let publish = |available: bool, how: &'static str| {
@@ -5505,9 +5517,17 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         && let Some(tag) = serde_json::from_str::<serde_json::Value>(json)
             .ok()
             .and_then(|v| v["callTag"].as_str().map(str::to_string))
-        && call_slot().lock().await.preheat.as_ref().is_some_and(|p| p.tag == tag)
     {
-        return;
+        let mut slot = call_slot().lock().await;
+        if let Some(p) = slot.preheat.as_mut().filter(|p| p.tag == tag) {
+            if json.contains("breakoutDetails")
+                && let Some(rooms) = teams_cli::calling::breakout::assigned_rooms(json)
+            {
+                tracing::info!(rooms = rooms.len(), open = rooms.iter().filter(|r| r.open).count(), "pre-join: breakout rooms (kept for Join now)");
+                p.breakout = Some(serde_json::to_string(&rooms).unwrap_or_default());
+            }
+            return;
+        }
     }
     // The main meeting's conversation we keep while in a breakout room:
     // its updates (its meeting code, our assignments) and its end.
@@ -8975,7 +8995,7 @@ impl qobject::Backend {
         let qt = self.qt_thread();
         let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
         runtime().block_on(async { call_slot().lock().await.cancel_placing = Some(cancel_tx) });
-        let call_tag = outgoing::new_call_tag();
+        let mut call_tag = outgoing::new_call_tag();
         let undo = self.as_mut().rust_mut().move_undo.take();
         // A participant moving from the main meeting into one of its
         // rooms (not in a room now): Teams keeps the main meeting's
@@ -9004,7 +9024,32 @@ impl qobject::Backend {
             if kept.is_some() {
                 tracing::info!("back to the main meeting through its kept conversation");
             }
-            let result = outgoing::join_meeting_with(&link, &call_tag, how, cancel_rx).await;
+            let mut result = outgoing::join_meeting_with(&link, &call_tag, how, cancel_rx).await;
+            // A participant's move whose meeting didn't take them (a room
+            // that refuses them, 403 / 5745, or any other failure): Teams
+            // tries once more (ECS enableRetryMoveOnTargetCallDisconnect,
+            // on; watched in Teams desktop 2026-11-17), still in the
+            // meeting it came from. Not an organizer's Join over the held
+            // main meeting, and not a move we cancelled.
+            let participant_move = undo.is_some() && !call_slot().lock().await.held_main.is_some();
+            if participant_move
+                && let Err(e) = &result
+                && e.to_string() != "Call cancelled"
+            {
+                tracing::info!("the move failed ({}); trying once more, as Teams does", short_error(e));
+                {
+                    let mut slot = call_slot().lock().await;
+                    if slot.left_tags.len() >= 16 {
+                        slot.left_tags.remove(0);
+                    }
+                    slot.left_tags.push(call_tag.clone());
+                }
+                call_tag = outgoing::new_call_tag();
+                let (retry_tx, retry_rx) = tokio::sync::oneshot::channel();
+                call_slot().lock().await.cancel_placing = Some(retry_tx);
+                let how = outgoing::JoinHow { meeting_data_wait: how.meeting_data_wait, kept: kept.as_ref() };
+                result = outgoing::join_meeting_with(&link, &call_tag, how, retry_rx).await;
+            }
             let mut slot = call_slot().lock().await;
             slot.cancel_placing = None;
             // Not back after all: we keep the main meeting's conversation.
@@ -9078,32 +9123,6 @@ impl qobject::Backend {
                         });
                         return;
                     }
-                    if room_closed
-                        && let Some(undo) = undo.as_ref().filter(|_| slot.moved_from.is_some())
-                        && let Some(earlier) = slot.moved_from.take()
-                    {
-                        let (id, tag) = (earlier.call_id().to_string(), earlier.call_tag().to_string());
-                        slot.left_calls.retain(|left| *left != id);
-                        slot.left_tags.retain(|left| *left != tag);
-                        slot.held_main = Some((earlier, undo.url.clone(), undo.title.clone()));
-                        slot.held_breakout = Some((undo.breakout_json.to_string(), undo.breakout_room_json.to_string()));
-                        drop(slot);
-                        tracing::info!("the room couldn't be joined; its window shows the retry screen, the meeting we came from stays on hold");
-                        let thread = outgoing::MeetingLink::parse(&undo.url.to_string()).map(|l| l.thread_id).unwrap_or_default();
-                        let held = json!({
-                            "title": undo.title.to_string(), "url": undo.url.to_string(), "thread": thread,
-                            "since": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0),
-                        })
-                        .to_string();
-                        let _ = qt.queue(move |mut this| {
-                            this.as_mut().set_call_held_meeting_json(QString::from(held.as_str()));
-                            this.as_mut().set_call_state(QString::default());
-                            // The refusing room's own state (it is "closed") isn't ours.
-                            this.as_mut().set_call_breakout_room_json(QString::default());
-                            this.as_mut().room_join_refused();
-                        });
-                        return;
-                    }
                     // An organizer's room joined over the held main
                     // meeting: that meeting goes on (QML resumes it).
                     if slot.held_main.is_some() {
@@ -9126,6 +9145,10 @@ impl qobject::Backend {
                         slot.left_calls.retain(|left| *left != id);
                         slot.left_tags.retain(|left| *left != tag);
                         drop(slot);
+                        // Teams shows nothing: the participant just stays
+                        // in the meeting, in the same window (watched in
+                        // Teams desktop 2026-11-17, a room refusing with
+                        // 403 / 5745).
                         tracing::info!("the move failed; staying in the meeting we were leaving");
                         let view = JoinedView::of(&earlier);
                         let back = undo.clone();
@@ -9141,8 +9164,8 @@ impl qobject::Backend {
                         call_slot().lock().await.outgoing = Some(earlier);
                         let _ = qt.queue(move |mut this| {
                             this.as_mut().show_joined(view, false);
-                            this.as_mut().set_status_text(QString::from(format!("{why_title}: {why_text}").as_str()));
-                            this.as_mut().meeting_move_failed(QString::from(why_title.as_str()), QString::from(alert_text.as_str()));
+                            tracing::debug!("not shown, as in Teams: {why_title}: {why_text}");
+                            this.as_mut().meeting_move_failed(QString::default(), QString::default());
                         });
                         return;
                     }
@@ -9439,6 +9462,12 @@ impl qobject::Backend {
         self.as_mut().set_call_lobby_presenter(v.started);
         self.as_mut().set_call_phone_json(QString::from(v.phone.as_str()));
         self.as_mut().set_call_event_json(QString::from(v.event.as_str()));
+        // Joined after the rooms opened: our room is known from the join,
+        // before the call shows as connected (where Teams starts from).
+        if !v.breakout.is_empty() && self.rust().call_breakout_json.is_empty() {
+            tracing::info!("the join assigns us a breakout room");
+            self.as_mut().set_call_breakout_json(QString::from(v.breakout.as_str()));
+        }
         runtime().spawn(load_dial_plan());
         // Held in the lobby: Teams keeps the pre-join screen until someone
         // admits us.
@@ -10345,7 +10374,7 @@ impl qobject::Backend {
             match slot.preheat.take() {
                 Some(mut p) if p.url == url && p.call.is_some() => {
                     p.stop.notify_one();
-                    p.call.take()
+                    p.call.take().map(|c| (c, p.breakout.take()))
                 }
                 Some(p) => {
                     // Not up yet, or another meeting's: withdraw it and
@@ -10357,7 +10386,7 @@ impl qobject::Backend {
                 None => None,
             }
         });
-        let Some(mut call) = preheated else {
+        let Some((mut call, breakout)) = preheated else {
             self.join_meeting(join_url, title);
             return;
         };
@@ -10390,6 +10419,10 @@ impl qobject::Backend {
                     spawn_call_stats_logger(qt.clone());
                     let _ = qt.queue(move |mut this| {
                         this.as_mut().set_call_muted(muted);
+                        // Rooms assigned while preheated: where Teams starts.
+                        if let Some(b) = breakout {
+                            this.as_mut().set_call_breakout_json(QString::from(b.as_str()));
+                        }
                         this.as_mut().show_joined(view, in_lobby);
                     });
                 }

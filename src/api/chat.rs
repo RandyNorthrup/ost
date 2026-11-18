@@ -181,6 +181,10 @@ pub struct LiveCall {
     pub conversation_type: String,
     pub initiator: String,
     pub initiator_name: String,
+    /// The meeting's `meetingData {meetingCode, passcode}`, while a
+    /// meeting's call goes on (Teams' active calls keep it and send it
+    /// when they join the call where it is).
+    pub meeting_data: Option<serde_json::Value>,
 }
 
 /// The call going on in a thread, if any: an `Active` liveness entry that
@@ -212,6 +216,10 @@ pub fn live_call(
                 conversation_type: s("conversationType"),
                 initiator: s("groupCallInitiator"),
                 initiator_name: s("groupCallInitiatorDisplayName"),
+                meeting_data: v
+                    .get("meetingData")
+                    .filter(|m| m.get("meetingCode").and_then(|c| c.as_str()).is_some_and(|c| !c.is_empty()))
+                    .cloned(),
             }
         })
 }
@@ -1464,6 +1472,15 @@ mod live_call_tests {
         )]
         .into();
         assert!(live_call(&ended, 1_794_070_000).is_none());
+        // A meeting's call names its code and passcode (meeting3 as
+        // OST Test 1 saw it, 2026-11-17); a chat's call has none.
+        assert!(call.meeting_data.is_none());
+        let meeting = r#"{"conversationUrl":"https://api.flightproxy.teams.microsoft.com/api/v2/ep/conv-usea-02-prod-aks.conv.skype.com/conv/7ImO","conversationId":"59cb","groupCallInitiator":"8:orgid:9edc","expiration":1794992223,"status":"Active","conversationType":"scheduledMeeting","meetingData":{"meetingCode":"2994875690452594","passcode":"jp3nm7Cb"}}"#;
+        let props: std::collections::HashMap<String, serde_json::Value> =
+            [("awareness_conversationLiveState:0".to_string(), serde_json::json!(meeting))].into();
+        let call = live_call(&props, 1_794_990_000).unwrap();
+        assert_eq!(call.meeting_data.unwrap()["meetingCode"], "2994875690452594");
+        assert!(call.conversation_url.contains("/conv/7ImO"));
     }
 }
 

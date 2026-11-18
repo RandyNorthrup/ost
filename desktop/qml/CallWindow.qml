@@ -558,13 +558,16 @@ Window {
     // Teams' Create rooms: "Room 1" … "Room n"; automatic assignment
     // spreads everyone else evenly at random; letting people choose sets
     // the rooms' allowUsersToSelectBreakoutRoom.
-    function createBreakoutRooms(count, mode) {
+    // `late`: people not in the meeting yet assigned to the first room
+    // (Teams' assignment before they join; the late-joiner harness).
+    function createBreakoutRooms(count, mode, late) {
         const others = people.filter(p => !p.you)
         for (let i = others.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [others[i], others[j]] = [others[j], others[i]] }
         const rooms = []
         for (let i = 0; i < count; i++) rooms.push({ name: "Room " + (i + 1), participants: [] })
         if (mode === "automatic")
             others.forEach((p, i) => rooms[i % count].participants.push({ mri: p.id, role: p.guest ? "guest" : "admin", tenantId: backend.tenantId() }))
+        for (const mri of late || []) rooms[0].participants.push({ mri: mri, role: "admin", tenantId: backend.tenantId() })
         breakoutRun("create", { rooms: rooms, settings: { allow_select: mode === "selfselect", allow_return: false } })
     }
     function importBreakoutCsv() { csvDialog.open() }

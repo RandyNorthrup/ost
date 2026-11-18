@@ -2379,7 +2379,8 @@ Window {
     property bool breakoutLeaving: false
     readonly property var breakoutRooms: backend.callBreakoutJson ? JSON.parse(backend.callBreakoutJson) : []
     readonly property var breakoutRoomState: backend.callBreakoutRoomJson ? JSON.parse(backend.callBreakoutRoomJson) : null
-    readonly property var assignedOpenRoom: breakoutRooms.find(r => r.open) || null
+    // Teams' "Join room" (canJoinAssignedRoom): the assigned room, open.
+    readonly property var assignedOpenRoom: assignedRoomNow && assignedRoomNow.open ? assignedRoomNow : null
     readonly property int breakoutMoveSeconds: 10
     // What breakoutMain was before the move under way, for a move that
     // fails (we stay where we were).
@@ -2418,10 +2419,42 @@ Window {
         window.muteOnJoin = backend.callMuted
         backend.moveMeeting(url, main.title)
     }
-    onAssignedOpenRoomChanged: {
+    // Teams' rule for a change of your room (breakoutRoomParticipant-
+    // CallChangeHandler, watched in Teams desktop on winpc 2026-11-17):
+    // the room assigned when the main meeting's call connects is where it
+    // starts from, and only a change from it moves you. A late joiner whose
+    // room is open already is offered it ("Join room" on the bar) but not
+    // moved; a room that opens (or is assigned) while you're in the
+    // meeting moves you, another open room moves you between rooms, and
+    // yours closing or going away cancels a move under way.
+    property var breakoutPrevAssigned: null
+    readonly property var assignedRoomNow: breakoutRooms.length ? breakoutRooms[0] : null
+    function breakoutChange(prev, next) {
+        const same = !!prev && !!next && prev.join_url === next.join_url
+        if (prev && !prev.open && next && next.open) return "room"
+        if (prev && prev.open && (!next || !next.open)) return "main"
+        if (!prev && next && next.open) return "room"
+        if (!same && prev && prev.open && next && next.open) return "between"
+        return ""
+    }
+    Connections {
+        target: backend
+        // Where Teams starts from: the room assigned when the call connects
+        // (its breakout details come with the join).
+        function onCallStateChanged() {
+            if (backend.callState === "connected" && !window.breakoutMain && !callWindow.heldMeeting) {
+                window.breakoutPrevAssigned = window.assignedRoomNow
+                console.warn("BREAKOUT assigned when connected:", window.assignedRoomNow ? window.assignedRoomNow.name + (window.assignedRoomNow.open ? " (open)" : "") : "none")
+            }
+        }
+    }
+    onAssignedRoomNowChanged: {
         if (window.breakoutMain || backend.callState !== "connected") return
-        const room = assignedOpenRoom
-        if (!room) { breakoutMove.stop(); return }
+        const change = breakoutChange(window.breakoutPrevAssigned, assignedRoomNow)
+        window.breakoutPrevAssigned = assignedRoomNow
+        if (change === "main") { breakoutMove.stop(); return }
+        if (change !== "room" && change !== "between") return
+        const room = assignedRoomNow
         if (breakoutMove.running && breakoutMove.room && breakoutMove.room.join_url === room.join_url) return
         breakoutMove.room = room
         if (room.auto_move) {
@@ -2433,6 +2466,9 @@ Window {
         }
     }
     onBreakoutRoomStateChanged: {
+        // Only the room we're in: a room still being joined (one that
+        // refuses us says it's closed) moves nobody back.
+        if (backend.callState !== "connected") return
         if (!(window.breakoutMain || callWindow.heldMeeting) || !breakoutRoomState || !breakoutRoomState.closed || breakoutReturn.running) return
         callWindow.showBreakoutAlert("We'll move you back to the main meeting in " + breakoutMoveSeconds + " seconds.")
         breakoutReturn.interval = breakoutMoveSeconds * 1000 + breakoutRoomState.move_jitter_ms
@@ -2490,7 +2526,9 @@ Window {
         }
         function onMeetingMoveFailed(title, text) {
             console.warn("BREAKOUT move failed:", title, text)
-            callWindow.showBreakoutAlert(text || title)
+            breakoutReturn.stop()
+            // A participant's failed move shows nothing (Teams).
+            if (text || title) callWindow.showBreakoutAlert(text || title)
             if (callWindow.heldMeeting) { window.resumeHeldMeeting(); return }
             window.breakoutMain = window.breakoutUndo ? window.breakoutUndo.main : null
             window.breakoutUndo = null
@@ -2550,12 +2588,24 @@ Window {
         property int assignedFor: 0
         property bool joinedRoom: false
         property bool rejoined: false
+        property bool triedRoom: false
+        property int tryFor: 0
         onTriggered: {
             if (Qt.application.arguments.indexOf("--breakout-watch-rejoin") >= 0 && !rejoined && window.lastBreakoutRoom
                     && !window.breakoutMain && backend.callState === "connected" && ++backFor === 10) {
                 rejoined = true
                 console.warn("BREAKOUTWATCH rejoining the closed room", window.lastBreakoutRoom.name, "from", backend.callPeer)
                 window.goToBreakoutRoom(window.lastBreakoutRoom)
+            }
+            // --breakout-watch-try=<join link>: once in the main meeting a
+            // while, move into that room (one that refuses us, as Teams'
+            // own move into a room of your choice): Teams tries once more,
+            // then you just stay in the meeting.
+            const tryUrl = (Qt.application.arguments.find(a => a.startsWith("--breakout-watch-try=")) || "").slice(21)
+            if (tryUrl && !triedRoom && !window.breakoutMain && backend.callState === "connected" && ++tryFor === 10) {
+                triedRoom = true
+                console.warn("BREAKOUTWATCH trying the room", tryUrl.slice(0, 90))
+                window.goToBreakoutRoom({ name: "Room 2", join_url: tryUrl, open: true, auto_move: false, move_jitter_ms: 0 })
             }
             // --breakout-watch-join: Join room (the bar's) once a room is
             // assigned to us and open, when nothing moves us there.
@@ -2609,7 +2659,9 @@ Window {
                 // Rooms an earlier run left behind go first.
                 1: () => { if (callWindow.breakoutRooms.length) { log("removing earlier rooms"); callWindow.breakoutRun("delete_all", {}) } t("pane") },
                 2: () => shot("create"),
-                3: () => callWindow.createBreakoutRooms(1, "automatic"),
+                // --breakout-late=<mri>: someone not in the meeting yet is
+                // assigned to Room 1 too (they join once it's open).
+                3: () => callWindow.createBreakoutRooms(1, "automatic", (Qt.application.arguments.find(a => a.startsWith("--breakout-late=")) || "").slice(16).split(",").filter(m => m)),
                 // --breakout-manual: nobody is moved automatically (people
                 // get "Join room") and they may return to the main meeting.
                 5: () => { if (Qt.application.arguments.indexOf("--breakout-manual") >= 0) callWindow.breakoutRun("settings", { auto_move: false, allow_return: true }) },
@@ -2644,7 +2696,14 @@ Window {
                 // --breakout-join-unopened: add "Room 2" (never opened) and
                 // Join it from its menu: the join fails and the main meeting
                 // is back, its window saying why.
-                50: () => { if (Qt.application.arguments.indexOf("--breakout-join-unopened") >= 0) callWindow.breakoutRun("add", { name: "Room 2" }) },
+                // --breakout-unopened-wait=<s>: add "Room 2" (never opened)
+                // and stay that long, for someone else to try it.
+                50: () => { if (Qt.application.arguments.indexOf("--breakout-join-unopened") >= 0 || Qt.application.arguments.some(a => a.startsWith("--breakout-unopened-wait="))) callWindow.breakoutRun("add", { name: "Room 2" }) },
+                52: () => {
+                    const wait = parseInt((Qt.application.arguments.find(a => a.startsWith("--breakout-unopened-wait=")) || "").slice(25)) || 0
+                    const room = callWindow.breakoutRooms.find(r => r.name === "Room 2")
+                    if (wait > 0) { console.warn("BREAKOUTTEST unopened room", room ? room.join_url : "none", "waiting", wait); holdUntil = Date.now() + wait * 1000 }
+                },
                 53: () => {
                     const room = callWindow.breakoutRooms.find(r => r.name === "Room 2")
                     if (Qt.application.arguments.indexOf("--breakout-join-unopened") >= 0 && room) { console.warn("BREAKOUTTEST joining the unopened room", room.open); callWindow.joinRoomAsOrganizer(room) }
