@@ -3,10 +3,10 @@ id: TASK-0222
 title: >-
   Breakout and preheat leftovers as Teams: late joiners' rooms, refused
   participant, ongoing-meeting preheat
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-11-17T20:43:00Z'
-updated_date: '2026-11-18T08:36:00Z'
+updated_date: '2026-11-18T09:05:00Z'
 labels:
   - calls
 dependencies: []
@@ -22,8 +22,8 @@ What TASK-0218/0219 left: a participant who joins after rooms are open isn't off
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A participant who joins after breakout rooms are open is moved to or offered their room as Teams does, verified live
-- [ ] #2 A participant refused by a room sees what Teams shows, observed in Teams and matched
+- [x] #1 A participant who joins after breakout rooms are open is moved to or offered their room as Teams does, verified live
+- [x] #2 A participant refused by a room sees what Teams shows, observed in Teams and matched
 - [ ] #3 What joinOngoingMeetingInPreheatedFlow changes in Teams is found and OST does the same, verified against Teams
 <!-- AC:END -->
 
@@ -38,4 +38,6 @@ What TASK-0218/0219 left: a participant who joins after rooms are open isn't off
 - AC3, Teams: with the flag on, startPreheating asks getExistingCallInfo. If the meeting's call is going on, it calls joinExistingCall, i.e. call.join({conversationUrl, conversationId}) from the chat's awareness_conversationLiveState; otherwise call.start. On winpc the flag-on branch ran (logged), but ost-test1's active calls had no entry for meeting3 (it had left that chat), so Teams started the call there. SlimCore's wire is not visible. Teams web (flag off) captured in OST's web profile: conversation join first, then the call.
 - AC3, OST: preheat_joins_ongoing reads the ECS flag. An ongoing meeting's preheat posts the call straight to the liveness conversationUrl, with groupChat null and the liveness meetingData; LiveCall.meeting_data was added. Live run ph1 (ost-test1 preheating meeting3 with OST Test 2 in it): preheating its call where it is, 200 OK, Phone audio from details, Join now, roster [OST Test 1, OST Test 2], left.
 - Live OST runs on linuxlt in /tmp/brk: late3 (late joiner: assigned when connected Room 1 open, no alert, Join room on bar; late3-watch-3.png), late2 (direct join, same), try2 (refused participant: retried, stayed, nothing shown; try2-watch-*.png). Lib tests: 724 passed.
+
+- Merged 8eca4e7 (2026-11-18): build OK, 724 lib tests passed. AC1 and AC2 verified live against Teams. AC3 open: Teams' direct join of an ongoing call is traced in its bundle and seen at a logpoint, but not yet watched end to end on winpc.
 <!-- SECTION:NOTES:END -->
