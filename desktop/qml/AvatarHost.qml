@@ -80,7 +80,7 @@ Item {
             // streams; meetings for the reactions the app plays as emotes.
             runtimeSupports: ({ video: { mediaStream: {}, sharedFrame: {} }, meeting: {} })
             videoApp: ({ socket: backend.avatarSocket(), appOrigin: "https://mesh.public.onecdn.static.microsoft" })
-            frameScript: (Qt.application.arguments.indexOf("--avatar-test") >= 0 ? "window.__ostDebug = 1;\n" : "") + backend.videoAppFrameScript()
+            frameScript: (Qt.application.arguments.indexOf("--avatar-test") >= 0 ? "window.__ostDebug = 1;\n" : "") + (Qt.application.arguments.indexOf("--avatar-slow-raf") >= 0 ? "window.__ostSlowRaf = 1;\n" : "") + backend.videoAppFrameScript()
             onHostEvent: (name, json) => {
                 let a = null
                 try { a = JSON.parse(json) } catch (e) {}

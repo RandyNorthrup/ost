@@ -59,6 +59,12 @@
     // (object, method, the argument's start), the player's own log, what
     // it renders and loads, sent to the host page's log (the app replaces
     // the console with its telemetry buffer).
+    // Experiment (--avatar-slow-raf): animation frames once a second, as
+    // Chromium gives Teams' hidden renderer frame.
+    if (window.__ostSlowRaf) {
+        const raf = window.requestAnimationFrame.bind(window);
+        window.requestAnimationFrame = cb => setTimeout(() => raf(cb), 1000);
+    }
     if (window.__ostDebug) {
         const log = text => window.parent.postMessage({ ostTexture: "log", text: String(text).slice(0, 300) }, HOST_ORIGIN);
         let verboseUntil = 0;
@@ -94,14 +100,57 @@
                 I.UpdateVisemeData = function () { nv++; return v.apply(this, arguments) };
                 setInterval(() => { log("renders " + nr + "/5s visemes " + nv + "/5s"); nr = 0; nv = 0 }, 5000);
             }
-            // What it loads from now on (emote animations and the like).
+            // What it loads from now on (emote animations and the like),
+            // with each asset's size and encoding.
             const f = window.fetch;
             window.fetch = function (input) {
                 const url = String((input && input.url) || input).slice(0, 200);
-                return f.apply(this, arguments).then(r => { log("fetch " + r.status + " " + url); return r }, e => { log("fetch failed " + url + " " + e); throw e });
+                return f.apply(this, arguments).then(r => {
+                    log("fetch " + r.status + " " + url + " type " + r.headers.get("content-type") + " enc " + r.headers.get("content-encoding") + " len " + r.headers.get("content-length"));
+                    if (/\/assets\//.test(url)) r.clone().arrayBuffer().then(b => { const u8 = new Uint8Array(b, 0, Math.min(16, b.byteLength)); log("asset bytes " + b.byteLength + " head " + String.fromCharCode(...u8).replace(/[^ -~]/g, ".") + " " + url.slice(-40)) });
+                    return r;
+                }, e => { log("fetch failed " + url + " " + e); throw e });
             };
+            // The player's WebGL context, to compare with Teams' WebView2.
+            try {
+                const c = document.querySelector("canvas");
+                const gl = c && (c.getContext("webgl2") || c.getContext("webgl"));
+                if (gl) {
+                    const dbg = gl.getExtension("WEBGL_debug_renderer_info");
+                    log("gl " + gl.getParameter(gl.VERSION) + " | " + gl.getParameter(gl.SHADING_LANGUAGE_VERSION) + " | " + (dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : "?"));
+                    log("gl attrs " + JSON.stringify(gl.getContextAttributes()));
+                    log("gl ext " + gl.getSupportedExtensions().join(","));
+                    log("gl max tex " + gl.getParameter(gl.MAX_TEXTURE_SIZE) + " uniforms " + gl.getParameter(gl.MAX_VERTEX_UNIFORM_VECTORS) + " ua " + navigator.userAgent);
+                }
+            } catch (e) { log("gl " + e) }
+            // The page's storage (Unity's persistent files live in IndexedDB).
+            const storage = when => {
+                try {
+                    if (indexedDB.databases) indexedDB.databases().then(d => {
+                        log("idb " + when + " " + JSON.stringify(d));
+                        // Unity's files (IDBFS: a FILE_DATA store keyed by path).
+                        for (const db of d) {
+                            const r = indexedDB.open(db.name);
+                            r.onerror = () => log("idb " + when + " open " + db.name + " failed " + r.error);
+                            r.onsuccess = () => {
+                                const h = r.result, names = [...h.objectStoreNames];
+                                log("idb " + when + " " + db.name + " stores " + names.join(","));
+                                if (names.indexOf("FILE_DATA") >= 0) {
+                                    const k = h.transaction("FILE_DATA").objectStore("FILE_DATA").getAllKeys();
+                                    k.onsuccess = () => { const ks = k.result.map(String); log("idbfs " + when + " " + ks.length + " files " + ks.slice(0, 40).join(" ").slice(0, 280)) };
+                                }
+                                h.close();
+                            };
+                        }
+                    }, e => log("idb " + when + " failed " + e));
+                    const FS = u.Module && u.Module.FS;
+                    const walk = (p, n) => { try { for (const e of FS.readdir(p)) { if (e === "." || e === "..") continue; const q = p + "/" + e; const st = FS.stat(q); if (FS.isDir(st.mode)) { if (n < 4) walk(q, n + 1) } else log("fs " + when + " " + q + " " + st.size) } } catch (x) { log("fs " + when + " " + p + " " + x) } };
+                    if (FS) walk("/idbfs", 0); else log("fs " + when + " no FS");
+                } catch (x) { log("storage " + when + " " + x) }
+            };
+            setTimeout(() => storage("start"), 10000);
             const send = u.SendMessage.bind(u);
-            u.SendMessage = (o, m, a) => { if (/Emote/.test(m)) verboseUntil = Date.now() + 8000; if (!/Viseme|Render/.test(m)) log("unity " + o + "." + m + " " + String(a === undefined ? "" : a).slice(0, 200)); return send(o, m, a) };
+            u.SendMessage = (o, m, a) => { if (/Emote/.test(m)) { verboseUntil = Date.now() + 8000; setTimeout(() => storage("emote+5s"), 5000) } if (!/Viseme|Render/.test(m)) log("unity " + o + "." + m + " " + String(a === undefined ? "" : a).slice(0, 200)); return send(o, m, a) };
         }, 500);
     }
 })();

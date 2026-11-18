@@ -6683,6 +6683,17 @@ Window {
     // --avatar-test: Teams' avatars (its Avatars app, hosted by
     // AvatarHost) before joining (a Meet now's pre-join, never joined):
     // the app signed in and listing your avatars, the pre-join picker on
+    // The avatar's own video four times a second for 6 s after each
+    // reaction (-self-<epoch ms>.png), only while the avatar is the camera.
+    Timer {
+        id: selfBurst
+        interval: 250; repeat: true
+        property double until: 0
+        onTriggered: {
+            if (Date.now() > until || !backend.avatarCamera()) { stop(); return }
+            backend.saveVideoFrame("self", window.shotPath.replace(".png", "-self-" + Date.now() + ".png"))
+        }
+    }
     // its Avatars tab with your first avatar chosen and previewed, the
     // pre-join Avatars pane, then the Avatars app's builder from the app
     // bar. With --avatar-call it then joins a Meet now (nobody else in
@@ -6772,11 +6783,11 @@ Window {
             case 37: callWindow.videoFlyoutForTest().close(); callWindow.videoEffectsPaneForTest().tab = "avatars"; callWindow.side = "video"; break
             // Like while muted (as Teams sends it with the mic off), laugh
             // with the mic on.
-            case 40: callWindow.reactForTest("like"); log("reacted like", Date.now(), "muted", backend.callMuted); break
-            case 42: callWindow.reactForTest("like"); log("reacted like again", Date.now()); break
+            case 40: callWindow.reactForTest("like"); selfBurst.until = Date.now() + 6000; selfBurst.restart(); log("reacted like", Date.now(), "muted", backend.callMuted); break
+            case 42: callWindow.reactForTest("like"); selfBurst.until = Date.now() + 6000; selfBurst.restart(); log("reacted like again", Date.now()); break
             case 43: if (backend.callMuted) backend.toggleMute(); break
             case 44: capCall("pane"); break
-            case 45: callWindow.reactForTest("laugh"); log("reacted laugh", Date.now(), "muted", backend.callMuted); break
+            case 45: callWindow.reactForTest("laugh"); selfBurst.until = Date.now() + 6000; selfBurst.restart(); log("reacted laugh", Date.now(), "muted", backend.callMuted); break
             case 47: capCall("reaction"); break
             // The guest leaving with the pane open: the pane after 2, 4, 8
             // and 16 s.
