@@ -112,6 +112,10 @@ Window {
         // the lip sync.
         muted: callWindow.visible ? callWindow.muted : !preJoin.micOn
         thread: callWindow.visible && backend.callMeeting ? backend.callThreadId : ""
+        // Your raised hand: Teams' meeting.raiseHandStateChanged, which the
+        // app plays as its hand-raise emote while the hand is up.
+        readonly property bool handUp: callWindow.visible && callWindow.handRaised
+        onHandUpChanged: send("meeting.raiseHandStateChanged", [{ raiseHandState: { isHandRaised: handUp } }])
     }
     /// Teams' "Customize Avatar" deep link (Create More, Create your
     /// avatar, Edit my avatar): the Avatars app's builder from the app bar,
@@ -6680,9 +6684,6 @@ Window {
         }
     }
 
-    // --avatar-test: Teams' avatars (its Avatars app, hosted by
-    // AvatarHost) before joining (a Meet now's pre-join, never joined):
-    // the app signed in and listing your avatars, the pre-join picker on
     // The avatar's own video four times a second for 6 s after each
     // reaction (-self-<epoch ms>.png), only while the avatar is the camera.
     Timer {
@@ -6694,6 +6695,23 @@ Window {
             backend.saveVideoFrame("self", window.shotPath.replace(".png", "-self-" + Date.now() + ".png"))
         }
     }
+    // --avatar-likes=<n>: n Likes 3 s apart from the call's step 33 (to see
+    // which of them the avatar plays).
+    Timer {
+        id: likeLoop
+        interval: 3000; repeat: true
+        property int left: 0
+        property int n: 0
+        onTriggered: {
+            if (left <= 0) { stop(); return }
+            left--; n++
+            callWindow.reactForTest("like")
+            console.warn("AVATAR reacted like#" + n + " " + Date.now())
+        }
+    }
+    // --avatar-test: Teams' avatars (its Avatars app, hosted by
+    // AvatarHost) before joining (a Meet now's pre-join, never joined):
+    // the app signed in and listing your avatars, the pre-join picker on
     // its Avatars tab with your first avatar chosen and previewed, the
     // pre-join Avatars pane, then the Avatars app's builder from the app
     // bar. With --avatar-call it then joins a Meet now (nobody else in
@@ -6777,7 +6795,16 @@ Window {
                 break
             // Your reaction, played by the avatar (the guest's frames show
             // it in the video itself).
-            case 34: log("drawing in call", backend.avatarDrawing()); capCall("call"); break
+            // A Like before Camera ▾ and the side pane are opened too.
+            case 33: {
+                const many = parseInt((Qt.application.arguments.find(x => x.startsWith("--avatar-likes=")) || "--avatar-likes=0").slice(15))
+                if (many > 0) { likeLoop.left = many; likeLoop.n = 0; likeLoop.restart(); selfBurst.until = Date.now() + many * 3000 + 4000; selfBurst.restart(); waited = 0; break }
+                callWindow.reactForTest("like"); selfBurst.until = Date.now() + 6000; selfBurst.restart(); log("reacted early like", Date.now()); break
+            }
+            // (While the Likes run.)
+            case 34:
+                if (likeLoop.running) return
+                log("drawing in call", backend.avatarDrawing()); capCall("call"); break
             case 35: callWindow.videoOptionsForTest(); break
             case 36: capCall("flyout"); break
             case 37: callWindow.videoFlyoutForTest().close(); callWindow.videoEffectsPaneForTest().tab = "avatars"; callWindow.side = "video"; break
@@ -6788,6 +6815,8 @@ Window {
             case 43: if (backend.callMuted) backend.toggleMute(); break
             case 44: capCall("pane"); break
             case 45: callWindow.reactForTest("laugh"); selfBurst.until = Date.now() + 6000; selfBurst.restart(); log("reacted laugh", Date.now(), "muted", backend.callMuted); break
+            // Your hand up for 6 s: the app raises the avatar's hand.
+            case 46: if (!callWindow.handRaised) backend.toggleHand(); log("hand raised", Date.now()); selfBurst.until = Date.now() + 6000; selfBurst.restart(); break
             case 47: capCall("reaction"); break
             // The guest leaving with the pane open: the pane after 2, 4, 8
             // and 16 s.
@@ -6796,6 +6825,7 @@ Window {
                 waited = 0; log("alone again", callWindow.roster.length); paneAt = step
                 break
             case 49: case 50: case 52: case 56: {
+                if (step === 49 && callWindow.handRaised) backend.toggleHand()
                 capCall("pane-left-" + (step - paneAt) * 2)
                 const pg = callWindow.videoEffectsPaneForTest().avatarPanelForTest().pageForTest()
                 if (pg) pg.stateForTest(r => log("pane page", step - paneAt, r))

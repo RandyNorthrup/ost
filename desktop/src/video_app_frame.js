@@ -68,6 +68,19 @@
     if (window.__ostDebug) {
         const log = text => window.parent.postMessage({ ostTexture: "log", text: String(text).slice(0, 300) }, HOST_ORIGIN);
         let verboseUntil = 0;
+        // Unity's main loop: how often it runs, and anything it throws.
+        {
+            // Unity's main loop runs on animation frames, or on timers once
+            // the player sets a frame rate: count both, and what it throws.
+            const raf = window.requestAnimationFrame.bind(window), st = window.setTimeout.bind(window);
+            let rafTicks = 0, timerTicks = 0, gaps = [], last = 0;
+            const tick = (kind, cb, arg) => { const n = performance.now(); if (last) gaps.push(n - last); last = n; if (kind === "raf") rafTicks++; else timerTicks++; try { return cb(arg) } catch (e) { log("unity loop threw " + String(e && e.message || e).slice(0, 200)); throw e } };
+            window.requestAnimationFrame = cb => raf(t => cb && cb.name === "Browser_mainLoop_runner" ? tick("raf", cb, t) : cb(t));
+            window.setTimeout = function (fn, ms, ...rest) { if (typeof fn === "function" && fn.name === "Browser_mainLoop_runner") return st(() => tick("timer", fn), ms); return st(fn, ms, ...rest) };
+            setInterval(() => { const mx = gaps.length ? Math.round(Math.max(...gaps)) : 0; log("unity loop raf " + rafTicks + " timer " + timerTicks + " /5s, max gap " + mx + "ms"); rafTicks = 0; timerTicks = 0; gaps = [] }, 5000);
+        }
+        addEventListener("error", e => log("page error " + String(e.message || e.error).slice(0, 200) + " @" + (e.filename || "").slice(-60) + ":" + e.lineno), true);
+        addEventListener("unhandledrejection", e => log("page rejection " + String(e.reason && (e.reason.stack || e.reason.message) || e.reason).slice(0, 240)));
         // What the page and its Unity player log about emotes and failures
         // (whatever console the page installs later).
         for (const k of ["log", "info", "warn", "error", "debug"]) {
@@ -82,6 +95,8 @@
             if (!u || !u.SendMessage) return;
             clearInterval(hook);
             log("unity ready");
+            // The page's main thread blocked for long (a long frame).
+            try { new PerformanceObserver(l => { for (const e of l.getEntries()) if (e.duration > 150) log("longtask " + Math.round(e.duration) + "ms at " + Math.round(performance.timeOrigin + e.startTime)) }).observe({ type: "longtask", buffered: false }) } catch (e) { log("longtask " + e) }
             // The Unity player's own log (it goes to the app's telemetry
             // buffer, not the console).
             const h = document._MeshGlobals.LogAndErrorHandler;
@@ -98,6 +113,8 @@
                 const r = I.Render, v = I.UpdateVisemeData;
                 I.Render = function () { nr++; return r.apply(this, arguments) };
                 I.UpdateVisemeData = function () { nv++; return v.apply(this, arguments) };
+                // Every other call into the renderer (resolution, mood, camera…).
+                for (const k of Object.keys(I)) { if (k === "Render" || k === "UpdateVisemeData" || k === "ResetVisemeData" || typeof I[k] !== "function") continue; const fn = I[k]; I[k] = function (...a) { log("interop " + k + " " + JSON.stringify(a).slice(0, 160)); return fn.apply(this, a) } }
                 setInterval(() => { log("renders " + nr + "/5s visemes " + nv + "/5s"); nr = 0; nv = 0 }, 5000);
             }
             // What it loads from now on (emote animations and the like),
@@ -119,7 +136,9 @@
                     const dbg = gl.getExtension("WEBGL_debug_renderer_info");
                     log("gl " + gl.getParameter(gl.VERSION) + " | " + gl.getParameter(gl.SHADING_LANGUAGE_VERSION) + " | " + (dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : "?"));
                     log("gl attrs " + JSON.stringify(gl.getContextAttributes()));
-                    log("gl ext " + gl.getSupportedExtensions().join(","));
+                    const ext = gl.getSupportedExtensions().join(",");
+                    for (let i = 0; i < ext.length; i += 250) log("gl ext " + i + " " + ext.slice(i, i + 250));
+                    log("gl limits vu " + gl.getParameter(gl.MAX_VERTEX_UNIFORM_VECTORS) + " fu " + gl.getParameter(gl.MAX_FRAGMENT_UNIFORM_VECTORS) + " vtex " + gl.getParameter(gl.MAX_VERTEX_TEXTURE_IMAGE_UNITS) + " ubo " + gl.getParameter(gl.MAX_UNIFORM_BLOCK_SIZE) + " vub " + gl.getParameter(gl.MAX_VERTEX_UNIFORM_BLOCKS) + " attrs " + gl.getParameter(gl.MAX_VERTEX_ATTRIBS));
                     log("gl max tex " + gl.getParameter(gl.MAX_TEXTURE_SIZE) + " uniforms " + gl.getParameter(gl.MAX_VERTEX_UNIFORM_VECTORS) + " ua " + navigator.userAgent);
                 }
             } catch (e) { log("gl " + e) }
@@ -135,6 +154,7 @@
                             r.onsuccess = () => {
                                 const h = r.result, names = [...h.objectStoreNames];
                                 log("idb " + when + " " + db.name + " stores " + names.join(","));
+                                for (const st of ["avatar_settings", "scene_manager", "pinned_emotes"]) if (names.indexOf(st) >= 0) { const g = h.transaction(st).objectStore(st).getAll(); g.onsuccess = () => log("idb " + when + " " + st + " " + JSON.stringify(g.result).slice(0, 280)) }
                                 if (names.indexOf("FILE_DATA") >= 0) {
                                     const k = h.transaction("FILE_DATA").objectStore("FILE_DATA").getAllKeys();
                                     k.onsuccess = () => { const ks = k.result.map(String); log("idbfs " + when + " " + ks.length + " files " + ks.slice(0, 40).join(" ").slice(0, 280)) };
@@ -152,5 +172,15 @@
             const send = u.SendMessage.bind(u);
             u.SendMessage = (o, m, a) => { if (/Emote/.test(m)) { verboseUntil = Date.now() + 8000; setTimeout(() => storage("emote+5s"), 5000) } if (!/Viseme|Render/.test(m)) log("unity " + o + "." + m + " " + String(a === undefined ? "" : a).slice(0, 200)); return send(o, m, a) };
         }, 500);
+    }
+    // Experiment (--avatar-slow-loop): the Unity player's own main loop
+    // once a second, as Chromium runs timers in Teams' hidden renderer
+    // frame; the app's Render() calls still draw every frame.
+    if (window.__ostSlowLoop) {
+        const st = window.setTimeout;
+        window.setTimeout = function (fn, ms, ...rest) {
+            if (typeof fn === "function" && fn.name === "Browser_mainLoop_runner") return st.call(window, fn, Math.max(ms || 0, 1000));
+            return st.call(window, fn, ms, ...rest);
+        };
     }
 })();

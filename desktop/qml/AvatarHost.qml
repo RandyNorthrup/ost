@@ -80,7 +80,7 @@ Item {
             // streams; meetings for the reactions the app plays as emotes.
             runtimeSupports: ({ video: { mediaStream: {}, sharedFrame: {} }, meeting: {} })
             videoApp: ({ socket: backend.avatarSocket(), appOrigin: "https://mesh.public.onecdn.static.microsoft" })
-            frameScript: (Qt.application.arguments.indexOf("--avatar-test") >= 0 ? "window.__ostDebug = 1;\n" : "") + (Qt.application.arguments.indexOf("--avatar-slow-raf") >= 0 ? "window.__ostSlowRaf = 1;\n" : "") + backend.videoAppFrameScript()
+            frameScript: (Qt.application.arguments.indexOf("--avatar-test") >= 0 ? "window.__ostDebug = 1;\n" : "") + (Qt.application.arguments.indexOf("--avatar-slow-raf") >= 0 ? "window.__ostSlowRaf = 1;\n" : "") + (Qt.application.arguments.indexOf("--avatar-slow-loop") >= 0 ? "window.__ostSlowLoop = 1;\n" : "") + backend.videoAppFrameScript()
             onHostEvent: (name, json) => {
                 let a = null
                 try { a = JSON.parse(json) } catch (e) {}
@@ -91,6 +91,10 @@ Item {
                 } else if (name === "videoRegistered") {
                     host.registered = true
                     console.info("AVATARS registered for frames " + json)
+                    // The avatar is built: hand it its selection again (its
+                    // emote system only takes up an avatar applied after the
+                    // first build; reactions and the raised hand play then).
+                    if (host.effectRegistered && host.avatarId) host.apply()
                 } else if (name === "videoEffectRegistered") {
                     host.effectRegistered = true
                     if (host.avatarId) host.apply()
