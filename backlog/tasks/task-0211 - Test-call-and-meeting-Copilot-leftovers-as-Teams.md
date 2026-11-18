@@ -1,11 +1,11 @@
 ---
 id: TASK-0211
 title: Test call and meeting Copilot leftovers as Teams
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-16T23:39:00Z'
-updated_date: '2026-11-18T15:06:00Z'
+updated_date: '2026-11-18T15:19:00Z'
 labels:
   - desktop
 dependencies: []
@@ -22,7 +22,7 @@ Left from TASK-0141 and TASK-0188 (docs/spec/call-and-meeting-window.md):
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 The Echo bot's avatar and the test-call report causes match Teams
-- [ ] #2 Meeting Copilot opens with Teams desktop's first page, answers all of the app's host messages, and offers Turn on Copilot for everyone as Teams does
+- [x] #2 Meeting Copilot opens with Teams desktop's first page, answers all of the app's host messages, and offers Turn on Copilot for everyone as Teams does
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -44,3 +44,17 @@ Left from TASK-0141 and TASK-0188 (docs/spec/call-and-meeting-window.md):
   - Copilot pane and side panes: Teams' end slot widths (32rem < 947, 36rem to 1439, 42rem, 48rem, 60rem); 360 at 1280. With the pane open at 1280 both bars keep Copilot; OST matches (cop3-copilot-pane, tc12-copilot-ask).
 - The mic-permission rig side effect (speaker "Didn't work") comes from the rig: refusing the PipeWire socket takes the speaker away too; OST reports that correctly. Not an OST bug.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Test call and meeting Copilot now match Teams desktop, measured live on winpc.
+
+- Echo bot: square bot avatar (BotAvatar.qml) with Teams' default bot image for every 28: participant.
+- Test-call report causes from src/calling/device_health.rs: permission refused, device failed to start, camera frozen >5 s, network disconnected; each caused and checked live.
+- Meeting Copilot: first page rendered server-side as desktop does (SSR form, hostRing, runtime capabilities); no unhandled host messages.
+- Copilot "Only during the meeting": as in this tenant's Teams (enableToggleCopilotDuringMeeting off), Copilot goes straight to the spoken-language question, runs alone and shows Teams' notice (text and geometry measured). The call version is built from Teams' code. Echo test call: Copilot pane opens at once, no Apps on the classic bar.
+- Side panes use Teams' width steps (320/360/420/480/600); Copilot stays on the bar at 1280.
+- Harness: --test-call-copilot, --join-subject=, --join-copilot-turn-on, --call-window=WxH, OST_CAMERA_DEVICE.
+- Tests: 734 lib tests pass. A temporary ost-test1-only meeting policy was used and removed.
+<!-- SECTION:FINAL_SUMMARY:END -->
