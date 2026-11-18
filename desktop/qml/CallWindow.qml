@@ -4746,67 +4746,16 @@ Window {
         onShare: kind => { close(); win.shareKind = kind; win.startShare(kind) }
         onPickMode: m => win.setPresenterMode(m)
         onPickBackground: b => win.setPresenterBackground(JSON.stringify(b))
-        onContentCamera: type => { contentCameraDialog.type = type; contentCameraDialog.open() }
+        onContentCamera: type => contentCameraDialog.openFor(type)
     }
-    // Content from camera's setup (Teams' content camera setup dialog):
-    // Camera and Content type, then Share — the camera goes out as shared
-    // content (as the screen does).
-    Popup {
+    // Content from camera's setup (Teams' content camera setup dialog,
+    // ContentCameraDialog.qml): the processed camera goes out as shared
+    // content, as the screen does.
+    ContentCameraDialog {
         id: contentCameraDialog
-        property string type: "whiteboard"
-        property var devices: []
-        property string device: ""
-        parent: Overlay.overlay
-        anchors.centerIn: Overlay.overlay
-        modal: true; focus: true
-        width: 440; padding: 24
-        background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
-        Overlay.modal: Rectangle { color: Qt.rgba(0, 0, 0, 0.4) }
-        onAboutToShow: {
-            const d = JSON.parse(backend.videoDevices() || "{}")
-            devices = d.devices || []
-            device = d.current || (devices[0] ? devices[0].path : "")
-        }
-        contentItem: Column {
-            spacing: 16
-            Text {
-                text: "Content from camera"
-                font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text
-            }
-            Column {
-                spacing: 4
-                Text { text: "Camera"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
-                Dropdown {
-                    width: 392
-                    label: (contentCameraDialog.devices.find(d => d.path === contentCameraDialog.device) || { name: "None" }).name
-                    options: contentCameraDialog.devices.map(d => [d.path, d.name])
-                    accessibleName: "Camera"
-                    onPicked: code => contentCameraDialog.device = code
-                }
-            }
-            Column {
-                spacing: 4
-                Text { text: "Content type"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
-                Dropdown {
-                    width: 392
-                    label: ({ whiteboard: "Whiteboard", document: "Document", video: "Video" })[contentCameraDialog.type]
-                    options: [["whiteboard", "Whiteboard"], ["document", "Document"], ["video", "Video"]]
-                    accessibleName: "Content type"
-                    onPicked: code => contentCameraDialog.type = code
-                }
-            }
-            Row {
-                anchors.right: parent.right
-                spacing: 8
-                SettingsParts.Button { label: "Cancel"; onClicked: contentCameraDialog.close() }
-                SettingsParts.Button {
-                    label: "Share"; primary: true
-                    enabled: contentCameraDialog.device.length > 0
-                    onClicked: { contentCameraDialog.close(); win.shareKind = "camera"; backend.startContentCamera(contentCameraDialog.device) }
-                }
-            }
-        }
+        onShare: device => { win.shareKind = "camera"; backend.startContentCamera(device) }
     }
+    function contentCameraDialogForTest() { return contentCameraDialog }
     function sharingBarForTest() { return sharingBarLoader.item }
     /// The presenter's mode on the stage: {layout, comp, camKey, stage}.
     function presenterCompositeForTest() {

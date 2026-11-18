@@ -1537,7 +1537,7 @@ Window {
     Timer {
         id: shotTimer
         interval: 15000
-        running: window.shotPath.length > 0 && Qt.application.arguments.indexOf("--draft-format-test") < 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--table-test") < 0 && Qt.application.arguments.indexOf("--hovercard-test") < 0 && Qt.application.arguments.indexOf("--chat-shot") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--pause-test")) && Qt.application.arguments.indexOf("--settings-test") < 0 && Qt.application.arguments.indexOf("--settings-pages-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--meet-now-test") < 0 && Qt.application.arguments.indexOf("--mute-test") < 0 && Qt.application.arguments.indexOf("--video-call-test") < 0 && Qt.application.arguments.indexOf("--meeting-chat-test") < 0 && Qt.application.arguments.indexOf("--breakpoints-test") < 0 && Qt.application.arguments.indexOf("--fun-picker-test") < 0 && Qt.application.arguments.indexOf("--attach-test") < 0 && Qt.application.arguments.indexOf("--copilot-test") < 0 && Qt.application.arguments.indexOf("--attach-link-test") < 0 && Qt.application.arguments.indexOf("--thread-attach-test") < 0 && Qt.application.arguments.indexOf("--picker-bar-test") < 0 && Qt.application.arguments.indexOf("--filecard-test") < 0 && Qt.application.arguments.indexOf("--videoclip-test") < 0 && Qt.application.arguments.indexOf("--recorder-test") < 0 && Qt.application.arguments.indexOf("--recorder-edit-test") < 0 && Qt.application.arguments.indexOf("--teleprompter-test") < 0 && Qt.application.arguments.indexOf("--video-effects-test") < 0 && Qt.application.arguments.indexOf("--video-filters-test") < 0 && Qt.application.arguments.indexOf("--green-screen-test") < 0 && Qt.application.arguments.indexOf("--leave-confirm-test") < 0 && Qt.application.arguments.indexOf("--shortcut-profile-test") < 0 && Qt.application.arguments.indexOf("--new-chat-window-test") < 0 && Qt.application.arguments.indexOf("--chatlist-keys-test") < 0 && Qt.application.arguments.indexOf("--translation-test") < 0 && Qt.application.arguments.indexOf("--regional-test") < 0 && Qt.application.arguments.indexOf("--editor-test") < 0 && Qt.application.arguments.indexOf("--appearance-test") < 0 && Qt.application.arguments.indexOf("--collab-test") < 0 && Qt.application.arguments.indexOf("--notif-test") < 0 && Qt.application.arguments.indexOf("--accounts-test") < 0 && Qt.application.arguments.indexOf("--privacy-test") < 0 && Qt.application.arguments.indexOf("--calls-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--cards-test")) && !Qt.application.arguments.some(a => a.startsWith("--recognition-test=")) && Qt.application.arguments.indexOf("--recognition-states") < 0 && Qt.application.arguments.indexOf("--about-test") < 0 && Qt.application.arguments.indexOf("--room-audio-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--link-preview-test")) && Qt.application.arguments.indexOf("--fileviewer-test") < 0 && Qt.application.arguments.indexOf("--poll-test") < 0 && Qt.application.arguments.indexOf("--media-order-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--custom-emoji")) && Qt.application.arguments.indexOf("--onedrive-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--onedrive-rows-test")) && !Qt.application.arguments.some(a => a.startsWith("--version-history-test")) && !Qt.application.arguments.some(a => a.startsWith("--details-test")) && Qt.application.arguments.indexOf("--preview-test") < 0 && Qt.application.arguments.indexOf("--sortview-test") < 0 && Qt.application.arguments.indexOf("--zip-test") < 0 && Qt.application.arguments.indexOf("--files-links-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--picker-test")) && Qt.application.arguments.indexOf("--folder-bar-test") < 0 && Qt.application.arguments.indexOf("--quick-access-test") < 0 && Qt.application.arguments.indexOf("--picker-views-test") < 0 && Qt.application.arguments.indexOf("--comments-test") < 0 && Qt.application.arguments.indexOf("--bell-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--folder-extras-test")) && Qt.application.arguments.indexOf("--planner-test") < 0 && Qt.application.arguments.indexOf("--apps-test") < 0 && Qt.application.arguments.indexOf("--channel-files-test") < 0 && Qt.application.arguments.indexOf("--store-test") < 0 && Qt.application.arguments.indexOf("--webapp-test") < 0 && Qt.application.arguments.indexOf("--loop-test") < 0 && Qt.application.arguments.indexOf("--tab-menu-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--tab-drag-test=")) && Qt.application.arguments.indexOf("--delete-undo-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat=")) && window.appDetailsTest.length === 0 && Qt.application.arguments.indexOf("--chatlist-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--share-test")) && !Qt.application.arguments.some(a => a.startsWith("--file-actions-test")) && Qt.application.arguments.indexOf("--open-file-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--sharefile-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-grid-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-communities-test")) && Qt.application.arguments.indexOf("--meeting-details-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--attendance-test=")) && !Qt.application.arguments.some(a => a.startsWith("--remove-history-")) && !Qt.application.arguments.some(a => a.startsWith("--embedded-apps-test")) && Qt.application.arguments.indexOf("--test-call-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--events-test")) && Qt.application.arguments.indexOf("--call-notes-test") < 0 && Qt.application.arguments.indexOf("--phone-audio-test") < 0 && Qt.application.arguments.indexOf("--preheat-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--e2ee-setting-test")) && !Qt.application.arguments.some(a => /^--(voicemail-greeting|camera-controls|spatial-audio|tty)-test/.test(a)) && Qt.application.arguments.indexOf("--avatar-test") < 0
+        running: window.shotPath.length > 0 && Qt.application.arguments.indexOf("--draft-format-test") < 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--table-test") < 0 && Qt.application.arguments.indexOf("--hovercard-test") < 0 && Qt.application.arguments.indexOf("--chat-shot") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--pause-test")) && Qt.application.arguments.indexOf("--settings-test") < 0 && Qt.application.arguments.indexOf("--settings-pages-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--meet-now-test") < 0 && Qt.application.arguments.indexOf("--mute-test") < 0 && Qt.application.arguments.indexOf("--video-call-test") < 0 && Qt.application.arguments.indexOf("--meeting-chat-test") < 0 && Qt.application.arguments.indexOf("--breakpoints-test") < 0 && Qt.application.arguments.indexOf("--fun-picker-test") < 0 && Qt.application.arguments.indexOf("--attach-test") < 0 && Qt.application.arguments.indexOf("--copilot-test") < 0 && Qt.application.arguments.indexOf("--attach-link-test") < 0 && Qt.application.arguments.indexOf("--thread-attach-test") < 0 && Qt.application.arguments.indexOf("--picker-bar-test") < 0 && Qt.application.arguments.indexOf("--filecard-test") < 0 && Qt.application.arguments.indexOf("--videoclip-test") < 0 && Qt.application.arguments.indexOf("--recorder-test") < 0 && Qt.application.arguments.indexOf("--recorder-edit-test") < 0 && Qt.application.arguments.indexOf("--teleprompter-test") < 0 && Qt.application.arguments.indexOf("--video-effects-test") < 0 && Qt.application.arguments.indexOf("--video-filters-test") < 0 && Qt.application.arguments.indexOf("--green-screen-test") < 0 && Qt.application.arguments.indexOf("--leave-confirm-test") < 0 && Qt.application.arguments.indexOf("--shortcut-profile-test") < 0 && Qt.application.arguments.indexOf("--new-chat-window-test") < 0 && Qt.application.arguments.indexOf("--chatlist-keys-test") < 0 && Qt.application.arguments.indexOf("--translation-test") < 0 && Qt.application.arguments.indexOf("--regional-test") < 0 && Qt.application.arguments.indexOf("--editor-test") < 0 && Qt.application.arguments.indexOf("--appearance-test") < 0 && Qt.application.arguments.indexOf("--collab-test") < 0 && Qt.application.arguments.indexOf("--notif-test") < 0 && Qt.application.arguments.indexOf("--accounts-test") < 0 && Qt.application.arguments.indexOf("--privacy-test") < 0 && Qt.application.arguments.indexOf("--calls-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--cards-test")) && !Qt.application.arguments.some(a => a.startsWith("--recognition-test=")) && Qt.application.arguments.indexOf("--recognition-states") < 0 && Qt.application.arguments.indexOf("--about-test") < 0 && Qt.application.arguments.indexOf("--room-audio-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--link-preview-test")) && Qt.application.arguments.indexOf("--fileviewer-test") < 0 && Qt.application.arguments.indexOf("--poll-test") < 0 && Qt.application.arguments.indexOf("--media-order-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--custom-emoji")) && Qt.application.arguments.indexOf("--onedrive-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--onedrive-rows-test")) && !Qt.application.arguments.some(a => a.startsWith("--version-history-test")) && !Qt.application.arguments.some(a => a.startsWith("--details-test")) && Qt.application.arguments.indexOf("--preview-test") < 0 && Qt.application.arguments.indexOf("--sortview-test") < 0 && Qt.application.arguments.indexOf("--zip-test") < 0 && Qt.application.arguments.indexOf("--files-links-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--picker-test")) && Qt.application.arguments.indexOf("--folder-bar-test") < 0 && Qt.application.arguments.indexOf("--quick-access-test") < 0 && Qt.application.arguments.indexOf("--picker-views-test") < 0 && Qt.application.arguments.indexOf("--comments-test") < 0 && Qt.application.arguments.indexOf("--bell-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--folder-extras-test")) && Qt.application.arguments.indexOf("--planner-test") < 0 && Qt.application.arguments.indexOf("--apps-test") < 0 && Qt.application.arguments.indexOf("--channel-files-test") < 0 && Qt.application.arguments.indexOf("--store-test") < 0 && Qt.application.arguments.indexOf("--webapp-test") < 0 && Qt.application.arguments.indexOf("--loop-test") < 0 && Qt.application.arguments.indexOf("--tab-menu-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--tab-drag-test=")) && Qt.application.arguments.indexOf("--delete-undo-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat=")) && window.appDetailsTest.length === 0 && Qt.application.arguments.indexOf("--chatlist-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--share-test")) && !Qt.application.arguments.some(a => a.startsWith("--file-actions-test")) && Qt.application.arguments.indexOf("--open-file-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--sharefile-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-grid-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-communities-test")) && Qt.application.arguments.indexOf("--meeting-details-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--attendance-test=")) && !Qt.application.arguments.some(a => a.startsWith("--remove-history-")) && !Qt.application.arguments.some(a => a.startsWith("--embedded-apps-test")) && Qt.application.arguments.indexOf("--test-call-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--events-test")) && Qt.application.arguments.indexOf("--call-notes-test") < 0 && Qt.application.arguments.indexOf("--phone-audio-test") < 0 && Qt.application.arguments.indexOf("--preheat-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--e2ee-setting-test")) && !Qt.application.arguments.some(a => /^--(voicemail-greeting|camera-controls|spatial-audio|tty)-test/.test(a)) && Qt.application.arguments.indexOf("--avatar-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--content-camera-test"))
         onTriggered: {
             if (!backend.hasCredentials) {
                 if (!backend.signInPage) {
@@ -3138,6 +3138,9 @@ Window {
     property bool rejoined: false
     property int admittedAt: 0
     property int shareTrayShared: 0
+    // --join-content-camera (TASK-0214).
+    property int ccamDetected: 0
+    property int ccamShared: 0
     // --join-present / --join-take-control (TASK-0210).
     property int presentStarted: 0
     property int presentAccepted: 0
@@ -3366,6 +3369,35 @@ Window {
                 else if (window.shareTrayShared && step === window.shareTrayShared + 3) { log("sharing"); shot("sharing") }
                 else if (window.shareTrayShared && step === window.shareTrayShared + 20) { log("stopping"); callWindow.runControl("ShareButton") }
                 else if (window.shareTrayShared && step === window.shareTrayShared + 22) log("stopped")
+                else if (step % 5 === 0) log("wait")
+            } else if (step >= 8 && step <= Math.min(200, 11 + window.joinStay) && Qt.application.arguments.some(a => a.startsWith("--join-content-camera"))) {
+                // --join-content-camera[=whiteboard|document|video]
+                // (TASK-0214): Share ▸ Content from camera ▸ that type
+                // (default whiteboard), Teams' setup dialog: its info, Got
+                // it, the preview while it looks for the board and once the
+                // edges are found, then Share: the processed camera on the
+                // screen-sharing line for 20 s (the shared frame saved),
+                // then Stop sharing. JOIN ccam lines; pictures -ccam-*.png.
+                const a = Qt.application.arguments.find(x => x.startsWith("--join-content-camera"))
+                const type = a.indexOf("=") > 0 ? a.slice(a.indexOf("=") + 1) : "whiteboard"
+                const dlg = callWindow.contentCameraDialogForTest()
+                const shot = n => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-ccam-" + n + ".png")))
+                const log = t => console.warn("JOIN ccam", t, "sharing", backend.callSharing, "kind", callWindow.shareKind, "dialog", dlg.visible, "info", dlg.infoView,
+                                              "detecting", dlg.detecting, "toast", dlg.toast ? dlg.toastText : "", "state", backend.contentCameraState())
+                if (step === 8) { callWindow.side = ""; callWindow.runControl("ShareButton"); callWindow.shareTrayForTest().drill = "camera" }
+                else if (step === 9) { log("tray"); shot("tray") }
+                else if (step === 10) { callWindow.shareTrayForTest().close(); dlg.openFor(type) }
+                else if (step === 11) { log("opened"); shot(dlg.infoView ? "info" : "opened") }
+                else if (step === 12) { if (dlg.infoView) dlg.gotIt() }
+                else if (step === 14) { log("preview"); shot("looking") }
+                else if (step > 14 && !window.ccamDetected && !window.ccamShared && (!dlg.detecting || step === 30) && dlg.previewRunning) {
+                    window.ccamDetected = step; log("detected"); shot("detected"); backend.saveVideoFrame("content-camera", window.shotPath.replace(".png", "-ccam-preview.png"))
+                }
+                else if (window.ccamDetected && step === window.ccamDetected + 1 && !window.ccamShared) dlg.doShare()
+                else if (window.ccamDetected && !window.ccamShared && backend.callSharing) { window.ccamShared = step; log("shared") }
+                else if (window.ccamShared && step === window.ccamShared + 3) { log("sharing"); shot("sharing"); backend.saveVideoFrame("content-camera-shared", window.shotPath.replace(".png", "-ccam-shared.png")) }
+                else if (window.ccamShared && step === window.ccamShared + 10) { log("stopping"); callWindow.runControl("ShareButton") }
+                else if (window.ccamShared && step === window.ccamShared + 12) log("stopped")
                 else if (step % 5 === 0) log("wait")
             } else if (step >= 8 && step <= Math.min(400, 11 + window.joinStay) && Qt.application.arguments.indexOf("--join-present") >= 0) {
                 // --join-present (TASK-0210): present as Teams. With
@@ -6947,6 +6979,65 @@ Window {
             case 62: fx.setBlur(before.k); fx.setBackground(before.b); fx.setBrightness(before.br); fx.setSoftFocus(before.sf); fx.setMirror(before.m); break
             case 64: log("after", backend.callState, { b: fx.background, k: fx.blurKind }); Qt.quit(); return
             }
+            step++
+        }
+    }
+
+    // --content-camera-test[=whiteboard|document|video] (TASK-0214):
+    // Teams' Content from camera setup dialog over the main window, no
+    // call: its info (Don't show again left alone), Got it, the preview
+    // while it looks for the board ("Looking for a whiteboard"), once the
+    // edges are found (the processed frame saved), Overlay presenter off
+    // and on, Rotate (and three more back), Scan Again, Detect edges off,
+    // then closed. Run with OST_CAMERA_DEVICE=<test camera>. CCAM lines;
+    // pictures -ccam-*.png. --content-camera-fail: wait for the 11 s
+    // "Couldn't detect edges" path instead (a camera without a board).
+    Loader {
+        id: ccamTest
+        active: Qt.application.arguments.some(a => a.startsWith("--content-camera-test"))
+        sourceComponent: Component { ContentCameraDialog { } }
+    }
+    Timer {
+        running: ccamTest.status === Loader.Ready
+        interval: 1000; repeat: true
+        property int step: 0
+        property int found: 0
+        onTriggered: {
+            const a = Qt.application.arguments.find(x => x.startsWith("--content-camera-test"))
+            const type = a.indexOf("=") > 0 ? a.slice(a.indexOf("=") + 1) : "whiteboard"
+            const fail = Qt.application.arguments.indexOf("--content-camera-fail") >= 0
+            const dlg = ccamTest.item
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-ccam-" + n + ".png")))
+            const log = t => console.warn("CCAM", t, JSON.stringify({ info: dlg.infoView, detecting: dlg.detecting, preview: dlg.previewRunning, share: dlg.shareEnabled,
+                                                                       toast: dlg.toast ? dlg.toastText : "", quadOn: dlg.quadOn, cleanupOn: dlg.cleanupOn, size: [dlg.width, dlg.height] }), backend.contentCameraState())
+            const f = found
+            if (step === 0) { dlg.openFor(type) }
+            else if (step === 2) { log("opened"); shot(dlg.infoView ? "info" : "opened") }
+            else if (step === 3) { if (dlg.infoView) dlg.gotIt() }
+            else if (step === 5) { log("preview"); shot("looking") }
+            else if (fail) {
+                if (step === 13) { log("before timeout"); shot("still-looking") }
+                else if (step === 17) { log("timed out"); shot("no-edges") }
+                else if (step === 25) { log("toast gone"); shot("no-edges-after") }
+                else if (step === 26) { dlg.close(); log("closed") }
+                else if (step === 28) { log("done"); Qt.quit() }
+            }
+            else if (step > 5 && !f && (!dlg.detecting || step === 20) && dlg.previewRunning) {
+                found = step; log("detected"); shot("detected"); backend.saveVideoFrame("content-camera", window.shotPath.replace(".png", "-ccam-preview.png"))
+            }
+            else if (f && step === f + 1) dlg.toggleCleanup()
+            else if (f && step === f + 3) { log("overlay off"); shot("overlay-off") }
+            else if (f && step === f + 4) dlg.toggleCleanup()
+            else if (f && step === f + 6) { log("overlay on"); dlg.rotate() }
+            else if (f && step === f + 8) { log("rotated"); shot("rotated") }
+            else if (f && step === f + 9) { dlg.rotate(); dlg.rotate(); dlg.rotate() }
+            else if (f && step === f + 11) { log("rotated back"); dlg.scanAgain() }
+            else if (f && step === f + 12) { log("scan again"); shot("scan-again") }
+            else if (f && step === f + 20) { log("after scan again"); dlg.toggleEdges() }
+            else if (f && step === f + 22) { log("edges off"); shot("edges-off") }
+            else if (f && step === f + 23) { dlg.close(); log("closed") }
+            else if (f && step === f + 25) { log("done"); Qt.quit() }
+            else if (step === 60) { log("gave up"); Qt.quit() }
             step++
         }
     }
