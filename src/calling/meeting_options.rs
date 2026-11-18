@@ -44,6 +44,10 @@ pub struct MeetingCapability {
     /// AI is available in the meeting (`copilotMode` "Enabled" or
     /// "EnabledWithTranscript").
     pub copilot: bool,
+    /// Copilot without a saved transcript: the meeting's Allow Copilot
+    /// "Only during the meeting" (`copilotMode` "Enabled"). Teams then
+    /// asks "Turn on Copilot for everyone?" before it starts Copilot.
+    pub copilot_only: bool,
     /// Its Facilitator is enabled (`groupCopilotDetails.enabled`).
     pub facilitator: bool,
     /// Facilitator may speak (`groupCopilotDetails.speechEnabled`: More ▸
@@ -84,6 +88,7 @@ pub fn meeting_capability(json: &Value) -> Option<MeetingCapability> {
             cap.get("copilotMode").and_then(Value::as_str),
             Some("Enabled" | "EnabledWithTranscript")
         ),
+        copilot_only: cap.get("copilotMode").and_then(Value::as_str) == Some("Enabled"),
         facilitator: cap
             .get("groupCopilotDetails")
             .and_then(|g| g.get("enabled"))

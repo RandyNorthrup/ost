@@ -472,6 +472,7 @@ fn open_capture(frame_tx: mpsc::SyncSender<Vec<i16>>, target: u32) -> Option<cpa
     tracing::info!("Audio input device: {}", dev_name);
     let Some((config, device_rate)) = pick_config(&device, true, target) else {
         tracing::warn!("Cannot find suitable input config for {}", dev_name);
+        super::device_health::mic_failed("no usable configuration");
         return None;
     };
     let frame_device_samples = (device_rate as usize * 20) / 1000;
@@ -543,13 +544,16 @@ fn open_capture(frame_tx: mpsc::SyncSender<Vec<i16>>, target: u32) -> Option<cpa
         Ok(s) => s,
         Err(e) => {
             tracing::warn!("Failed to build audio input stream: {}", e);
+            super::device_health::mic_failed(&e.to_string());
             return None;
         }
     };
     if let Err(e) = stream.play() {
         tracing::warn!("Failed to start audio input stream: {}", e);
+        super::device_health::mic_failed(&e.to_string());
         return None;
     }
+    super::device_health::note_mic(super::device_health::Open::Ok);
     tracing::info!(
         "Audio capture started (device {}Hz, target {}Hz)",
         device_rate,
@@ -580,6 +584,7 @@ fn open_playback(
     tracing::info!("Audio output device: {}", dev_name);
     let Some((config, rate)) = pick_config(&device, false, target) else {
         tracing::warn!("Cannot find suitable output config for {}", dev_name);
+        super::device_health::note_speaker(super::device_health::Open::Failed);
         return None;
     };
     device_rate.store(rate, std::sync::atomic::Ordering::Relaxed);
@@ -615,13 +620,16 @@ fn open_playback(
         Ok(s) => s,
         Err(e) => {
             tracing::warn!("Failed to build audio output stream: {}", e);
+            super::device_health::note_speaker(super::device_health::Open::from_error(&e.to_string()));
             return None;
         }
     };
     if let Err(e) = stream.play() {
         tracing::warn!("Failed to start audio output stream: {}", e);
+        super::device_health::note_speaker(super::device_health::Open::from_error(&e.to_string()));
         return None;
     }
+    super::device_health::note_speaker(super::device_health::Open::Ok);
     tracing::info!(
         "Audio playback started (device {}Hz {}ch, target {}Hz mono)",
         rate,

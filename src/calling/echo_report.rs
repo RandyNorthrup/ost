@@ -11,7 +11,8 @@ use serde::Serialize;
 pub const NOT_FOUND: &str = "None found";
 pub const MUTED: &str = "Muted";
 pub const DIDNT_WORK: &str = "Didn’t work";
-pub const NEED_PERMISSION: &str = "Teams needs permission to use this device";
+/// (Teams names itself here; OST says its own name.)
+pub const NEED_PERMISSION: &str = "OST needs permission to use this device";
 pub const CALL_DROP: &str = "Call drop detected";
 pub const POOR_CONNECTION: &str = "Poor connection";
 
@@ -101,6 +102,9 @@ pub struct Watch {
     /// The Echo bot has joined (its leaving then ends the call).
     pub bot_seen: bool,
     poor_seconds: u32,
+    /// The microphone was refused (no permission): it never ran, so its
+    /// silence isn't a second problem.
+    mic_refused: bool,
 }
 
 impl Watch {
@@ -114,7 +118,7 @@ impl Watch {
         if !muted {
             self.unmuted_seconds += 1;
             self.heard |= mic_signal;
-            if !self.heard && self.unmuted_seconds >= SILENT_SECONDS {
+            if !self.heard && !self.mic_refused && self.unmuted_seconds >= SILENT_SECONDS {
                 self.report.note(Event::MicNotWorking);
             }
         }
@@ -127,6 +131,42 @@ impl Watch {
             }
         } else {
             self.poor_seconds = 0;
+        }
+    }
+}
+
+/// How long a running camera may give no frame before it froze (Teams'
+/// VideoCaptureDeviceFreeze: "Camera stops producing frames for more than
+/// 5 seconds").
+pub const CAMERA_FREEZE_MS: i64 = 5_000;
+
+impl Watch {
+    /// One second of the devices and the network, as Teams' stack raises
+    /// their quality events: permission refused, a device that failed to
+    /// start, a frozen camera, the network gone.
+    pub fn devices(&mut self, d: &super::device_health::Devices) {
+        use super::device_health::Open;
+        match d.mic {
+            Open::Permission => {
+                self.mic_refused = true;
+                self.report.note(Event::MicPermission)
+            }
+            Open::Failed => self.report.note(Event::MicNotWorking),
+            _ => {}
+        }
+        if matches!(d.speaker, Open::Permission | Open::Failed) {
+            self.report.note(Event::SpeakerNotWorking);
+        }
+        match d.camera {
+            Open::Permission => self.report.note(Event::CameraPermission),
+            Open::Failed => self.report.note(Event::CameraNotWorking),
+            _ => {}
+        }
+        if d.camera_silent_ms.is_some_and(|ms| ms >= CAMERA_FREEZE_MS) {
+            self.report.note(Event::CameraNotWorking);
+        }
+        if !d.online {
+            self.report.note(Event::CallDrop);
         }
     }
 }
@@ -228,6 +268,34 @@ mod tests {
             w.second(false, true, Strength::Bad);
         }
         assert_eq!(w.report.network, vec![POOR_CONNECTION]);
+    }
+
+    #[test]
+    fn device_and_network_problems() {
+        use crate::calling::device_health::{Devices, Open};
+        let mut w = Watch::new();
+        let ok = Devices { mic: Open::Ok, speaker: Open::Ok, camera: Open::Ok, camera_silent_ms: Some(40), online: true };
+        w.devices(&ok);
+        assert_eq!(w.report, Report::default());
+        // A camera that stops giving frames for 5 s froze.
+        w.devices(&Devices { camera_silent_ms: Some(CAMERA_FREEZE_MS - 1), ..ok });
+        assert!(w.report.camera.is_empty());
+        w.devices(&Devices { camera_silent_ms: Some(CAMERA_FREEZE_MS), ..ok });
+        assert_eq!(w.report.camera, vec![DIDNT_WORK]);
+        // Permission refused, and the network gone.
+        w.devices(&Devices { mic: Open::Permission, camera: Open::Permission, online: false, ..ok });
+        w.devices(&Devices { online: false, ..ok });
+        assert_eq!(w.report.microphone, vec![NEED_PERMISSION]);
+        // A refused mic's silence isn't reported as well.
+        for _ in 0..10 {
+            w.second(false, false, Strength::Good);
+        }
+        assert_eq!(w.report.microphone, vec![NEED_PERMISSION]);
+        assert_eq!(w.report.camera, vec![DIDNT_WORK, NEED_PERMISSION]);
+        assert_eq!(w.report.network, vec![CALL_DROP]);
+        // A speaker that failed to start didn't work.
+        w.devices(&Devices { speaker: Open::Failed, ..ok });
+        assert_eq!(w.report.speaker, vec![DIDNT_WORK]);
     }
 
     #[test]

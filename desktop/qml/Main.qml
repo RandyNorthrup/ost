@@ -286,10 +286,10 @@ Window {
     // Feedback ▸ Report a problem / Give a compliment: Teams' feedback
     // window, sent to OST's GitHub (FeedbackWindow.qml).
     property var feedbackWindow: null
-    function openFeedback(kind, area, context) {
+    function openFeedback(kind, area, context, initialText) {
         if (feedbackWindow) feedbackWindow.close()
         const c = Qt.createComponent("FeedbackWindow.qml")
-        feedbackWindow = c.createObject(null, { kind: kind, area: area, context: context, captureTarget: window.contentItem })
+        feedbackWindow = c.createObject(null, { kind: kind, area: area, context: context, initialText: initialText || "", captureTarget: window.contentItem })
         feedbackWindow.closing.connect(() => { const w = feedbackWindow; feedbackWindow = null; if (w) w.destroy() })
         feedbackWindow.show()
         feedbackWindow.requestActivate()
@@ -1841,6 +1841,10 @@ Window {
     CallWindow {
         id: callWindow
         onGreenScreenSettings: window.showGreenScreenSettings()
+        // The call quality survey's Had issues: Report a problem for the
+        // feedback repo; and its end closes the call window.
+        onQualityFeedback: (text, details) => window.openFeedback("problem", "Call quality", details, text)
+        onQualitySurveyDone: if (backend.callState === "ended") backend.callState = ""
         visible: ["calling", "connecting", "connected", "ended", "parked"].indexOf(backend.callState) >= 0 || retryReason !== ""
         onRejoin: window.rejoinMeeting()
         controlsOptions: { const o = {}; (backend.callControlsJson ? JSON.parse(backend.callControlsJson).options : []).forEach(x => o[x.name] = x); return o }
@@ -1929,6 +1933,8 @@ Window {
         attendeeRestrictions: backend.callAttendeeRestrictions
         aiIndicator: backend.callAiIndicator
         aiAvailable: backend.callAiAvailable
+        copilotOnly: backend.callCopilotOnly
+        copilotRunning: backend.callCopilotRunning
         aiFacilitator: backend.callAiFacilitator
         aiOn: backend.callAiOn
         recordingState: backend.callRecordingState
@@ -2004,7 +2010,7 @@ Window {
     Timer {
         // The test call's results stay until Close (Teams' Post EchoBot
         // Calling Screen).
-        running: backend.callState === "ended" && !backend.callTest
+        running: backend.callState === "ended" && !backend.callTest && !callWindow.qualitySurvey
         interval: 2000
         onTriggered: backend.callState = ""
     }
@@ -2076,6 +2082,44 @@ Window {
         }
     }
     Timer { id: quitTimer; interval: 3000; onTriggered: Qt.quit() }
+    // --cqf-test[=good] (with a call that ends, e.g. --join-test, and
+    // --cqf-always so the call is asked about): Teams' call quality survey
+    // once the call ends (Settings ▸ Privacy's opt-in must be on): the
+    // rating page; then Had issues, the second category with its first two
+    // reasons ticked, Send feedback (Report a problem opens filled in; it
+    // is closed unsent) and the thank-you; or with =good, Good and the
+    // thank-you. CQF lines; pictures -cqf-*.png.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--cqf-test")) && backend.callState === "ended" || step > 0
+        interval: 2000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const good = Qt.application.arguments.indexOf("--cqf-test=good") >= 0
+            const v = callWindow.qualitySurveyForTest()
+            const shot = n => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-cqf-" + n + ".png")))
+            const log = t => console.warn("CQF", t, "page", v.page, "shown", v.visible, "category", v.current ? v.current.id : "", "ticked", JSON.stringify(v.reasons))
+            if (step === 0) {
+                console.warn("CQF survey", JSON.stringify(callWindow.qualitySurvey))
+                if (!callWindow.qualitySurvey) { console.warn("CQF none"); Qt.quit(); return }
+                log("rate"); shot("rate")
+            } else if (step === 1) { if (good) v.thank(); else v.page = "issues" }
+            else if (step === 2) { log(good ? "thanks" : "issues"); shot(good ? "thanks" : "issues"); if (good) step = 20 }
+            else if (step === 3) {
+                if (v.categories.length > 1) v.category = 1
+                const items = v.current.items
+                const t = {}; t[items[0].id] = true; t[items[1].id] = true; v.ticked = t
+            } else if (step === 4) { log("ticked"); shot("ticked") }
+            else if (step === 5) { v.sendFeedback(v.reasons); v.thank() }
+            else if (step === 6) {
+                const fw = window.feedbackWindow
+                console.warn("CQF feedback", !!fw, fw ? fw.area : "", JSON.stringify(fw ? fw.context : ""))
+                if (fw) fw.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-cqf-feedback.png")))
+                shot("thanks")
+            } else if (step === 7) { if (window.feedbackWindow) window.feedbackWindow.close(); log("closed") }
+            else if (step === 23 || step === 9) { console.warn("CQF done", backend.callState); Qt.quit() }
+            step++
+        }
+    }
     // --clock-log: every 5 s in a call, CLOCK lines with the call window's
     // clock (seconds), the call state and the peer: shows whether the clock
     // runs on across a transfer, merge or park pickup.
@@ -3115,9 +3159,12 @@ Window {
     // --join-url=<link>: the test meeting's link when it isn't in the
     // calendar's loaded week.
     readonly property string joinUrl: (Qt.application.arguments.find(a => a.startsWith("--join-url=")) || "").slice(11)
+    // --join-subject=<title start> ("~" for spaces): the calendar's meeting
+    // to join instead of "OST calendar test".
+    readonly property string joinSubject: (Qt.application.arguments.find(a => a.startsWith("--join-subject=")) || "").slice(15).replace(/~/g, " ") || "OST calendar test"
     Timer {
         running: Qt.application.arguments.indexOf("--join-test") >= 0 && backend.signedIn
-                 && (window.joinUrl.length > 0 || backend.calendarJson.indexOf("OST calendar test") >= 0)
+                 && (window.joinUrl.length > 0 || backend.calendarJson.indexOf(window.joinSubject) >= 0)
         interval: 2000; repeat: true
         property int step: 0
         onTriggered: {
@@ -3133,7 +3180,7 @@ Window {
             } else if (step === 0) {
                 const ev = window.joinUrl.length > 0
                     ? { join_url: window.joinUrl, subject: "OST calendar test: created from OST" }
-                    : JSON.parse(backend.calendarJson).find(e => e.subject.indexOf("OST calendar test") === 0 && e.join_url)
+                    : JSON.parse(backend.calendarJson).find(e => e.subject.indexOf(window.joinSubject) === 0 && e.join_url)
                 console.warn("JOIN event found", !!ev)
                 calendarView.joinMeeting(ev.join_url, ev.subject)
                 // --join-prejoin-camera: turn the camera on in pre-join.
@@ -3446,16 +3493,19 @@ Window {
                 const shot = n => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-copilot-" + n + ".png")))
                 const log = t => console.warn("JOIN copilot", t, "bar", callWindow.ubar.bar.indexOf("MeetingCollabButton") >= 0, "more", callWindow.ubar.more.indexOf("MeetingCollabButton") >= 0,
                                               "allowed", callWindow.copilotAllowed, "ai", callWindow.aiAvailable, "side", callWindow.side, "ask", callWindow.copilotAskForTest().visible,
-                                              "transcribing", callWindow.transcribing, "launch", !!callWindow.copilotLaunch, "events", JSON.stringify(callWindow.copilotEventsForTest()))
+                                              "transcribing", callWindow.transcribing, "launch", !!callWindow.copilotLaunch, "events", JSON.stringify(callWindow.copilotEventsForTest()),
+                                              "copilotOnly", callWindow.copilotOnly, "turnOnAsk", callWindow.copilotTurnOnAskForTest(), "copilotRunning", callWindow.copilotRunning,
+                                              "notice", callWindow.copilotNoticeForTest().visible)
                 if (step === 8) { callWindow.side = ""; log("start"); shot("bar") }
                 else if (step === 9) callWindow.runControl("MeetingCollabButton")
                 else if (step === 10) { log("asked"); shot("ask") }
                 else if (step === 11 && callWindow.copilotAskForTest().visible) callWindow.copilotStartForTest()
                 else if (step === 12) { shot("language"); console.warn("JOIN copilot language confirmed", callWindow.confirmRecordDialogForTest()) }
-                else if (step === 20) { log("pane"); shot("pane") }
+                else if (step === 20) { log("pane"); shot("pane"); if (callWindow.copilotNoticeForTest().visible) console.warn("JOIN copilot notice shown") }
                 else if (step === 30) { log("pane later"); shot("pane-later") }
                 else if (step === 50) { log("pane answer"); shot("pane-answer") }
                 else if (step === 9 + window.joinStay && Qt.application.arguments.indexOf("--join-copilot-stop") >= 0 && callWindow.transcribing) callWindow.recorderCommand("stopTranscription", "", false)
+                else if (step === 9 + window.joinStay && Qt.application.arguments.indexOf("--join-copilot-stop") >= 0 && callWindow.copilotRunning) callWindow.recorderCommand("stopCopilot", "", false)
                 else if (step === 11 + window.joinStay) log("end")
                 else if (step > 12 && step % 5 === 0) log("wait")
             } else if (step >= 8 && step <= 44 && Qt.application.arguments.indexOf("--join-new-controls") >= 0) {
@@ -4079,7 +4129,7 @@ Window {
                     backend.endMeeting()
                 } else backend.hangUp()
             }
-            else if (step === 16 + window.joinStay) { Qt.quit() }
+            else if (step === 16 + window.joinStay && !Qt.application.arguments.some(a => a.startsWith("--cqf-test"))) { Qt.quit() }
             step++
         }
     }
@@ -6056,6 +6106,14 @@ Window {
             else if (step === 1) shot("devices")
             else if (step === 2) backend.makeTestCall()
             else if (step === 10) callShot("call")
+            // --test-call-copilot: Copilot in the test call (a calling
+            // scenario): its question captured, then dismissed.
+            else if (step === 12 && Qt.application.arguments.indexOf("--test-call-copilot") >= 0) callWindow.runControl("MeetingCollabButton")
+            else if (step === 13 && Qt.application.arguments.indexOf("--test-call-copilot") >= 0) {
+                const a = callWindow.copilotAskForTest()
+                console.warn("TESTCALL copilot ask", a.visible, a.Accessible.name, "copilotOnly", callWindow.copilotOnly, "calling", callWindow.callingScenario)
+                callShot("copilot-ask")
+            } else if (step === 14 && Qt.application.arguments.indexOf("--test-call-copilot") >= 0) callWindow.copilotAskForTest().visible = false
             else if (step === 60 && backend.callState !== "ended" && backend.callState !== "") { console.warn("TESTCALL leaving"); backend.hangUp() }
             if (step > 2 && ended < 0 && backend.callState === "ended") ended = step
             if (ended >= 0) {
@@ -6261,6 +6319,28 @@ Window {
             else if (step === 10) settingsView.pageForTest("about")
             else if (step === 11) { shot("about"); console.warn("CALLS notices", backend.thirdPartyNoticesUrl()) }
             else { Qt.quit(); return }
+            step++
+        }
+    }
+
+    // --cqf-setting-test: Settings ▸ Privacy's call quality survey opt-in
+    // (in the Surveys card): as found (off by default), turned on, captured,
+    // and turned off again. CQFSET lines; pictures -cqfset-{off,on}.png.
+    Timer {
+        running: Qt.application.arguments.indexOf("--cqf-setting-test") >= 0 && backend.signedIn && backend.orgName.length > 0
+        interval: 3000; repeat: true
+        property int step: 0
+        property string found: ""
+        function shot(n) { window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-cqfset-" + n + ".png"))) }
+        onTriggered: {
+            if (step === 0) { found = backend.setting("callQualitySurvey"); console.warn("CQFSET found", JSON.stringify(found)); rail.current = "settings"; settingsView.pageForTest("privacy") }
+            else if (step === 1) { settingsView.scrollForTest(); settingsView.scrollByForTest(-330) }
+            else if (step === 2) shot("off")
+            else if (step === 3) { backend.setSetting("callQualitySurvey", "true"); settingsView.pageForTest("about") }
+            else if (step === 4) settingsView.pageForTest("privacy")
+            else if (step === 5) { settingsView.scrollForTest(); settingsView.scrollByForTest(-330) }
+            else if (step === 6) { shot("on"); console.warn("CQFSET on", backend.setting("callQualitySurvey")) }
+            else if (step === 7) { backend.setSetting("callQualitySurvey", found === "true" ? "true" : "false"); console.warn("CQFSET put back", backend.setting("callQualitySurvey")); Qt.quit(); return }
             step++
         }
     }

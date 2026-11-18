@@ -80,9 +80,29 @@ place.
 ## 5. Calls
 
 Teams sometimes asks for call quality after a call ("How was the call
-quality?"). OST can ask the same, as an opt-in in Settings > Privacy (off by
-default). A rating of 1–2 stars opens Report a problem with the call's
-details (media path, codecs, durations; never participants' names).
+quality?"). OST asks the same, as an opt-in in Settings > Privacy (the
+Surveys card's "Ask me about call quality after calls", off by default,
+kept on this device; usable while Surveys is on, as Teams asks only then).
+
+What Teams does (its CQF bundle, read 2026-11-18; the survey measured on
+winpc 2026-11-11): it samples calls (`samplingRatesForCQF` on desktop: 1:1,
+group, meeting and screen share from chat 0.1; PSTN and interop 0) and
+skips the test call and calls under 5 s (8 s for a meeting). The live
+style is ThumbsCombined: "How was the call quality?" with Had issues
+(rating 1) and Good (rating 5). Good is sent at once and "Thanks for the
+feedback!" shows for 3 s. Had issues shows "What could've been better?"
+with the categories Audio (8 call items and the 2 reliability ones),
+Video (8) and Screenshare (8), both the categories and their items
+shuffled, the reasons as checkboxes in two columns, "Privacy statement",
+Dismiss and Send feedback. An unanswered survey goes after 60 s.
+
+OST (`calling::quality_survey`, `CallQualitySurvey.qml`): the same pages,
+sampling and shuffles. Good sends nothing anywhere. Send feedback opens
+Report a problem (area "Call quality") with the reasons as its text and the
+call's technical details in its details: the kind of call, its length,
+the reasons' ids and the Call health values at the end (network, audio,
+video and sharing: round trip, loss, jitter, bit rates, codecs,
+resolutions); never anyone's name. The reporter submits it on GitHub.
 
 ## 6. The repo (needs the owner's go-ahead)
 

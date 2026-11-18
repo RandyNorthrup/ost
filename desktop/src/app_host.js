@@ -425,7 +425,7 @@
                 return;
             case "shortcutRelay.getHostShortcuts":
                 // Teams' own keyboard shortcuts, which the app passes up.
-                respond(source, from, d, [{ shortcuts: HOST_SHORTCUTS, overridableShortcuts: [] }]);
+                respond(source, from, d, [{ shortcuts: Array.isArray(cfg.shortcuts) ? cfg.shortcuts : HOST_SHORTCUTS, overridableShortcuts: [] }]);
                 return;
             case "ChatReady":
             case "appLoadedFromCache":

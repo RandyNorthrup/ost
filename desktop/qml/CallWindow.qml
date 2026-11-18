@@ -304,6 +304,11 @@ Window {
     function encryptionCardForTest() { encryptionCard.open() }
     function encryptionCardItemForTest() { return encryptionCard }
     property bool aiAvailable: false
+    /// The meeting's Allow Copilot is "Only during the meeting"
+    /// (copilotMode "Enabled"): Copilot runs without a saved transcript.
+    property bool copilotOnly: false
+    /// Copilot runs (the recorder's copilot processing mode).
+    property bool copilotRunning: false
     property bool aiFacilitator: false
     property bool aiOn: false
     /// Teams' Meeting info pane: {title, hours, schedule, location, body,
@@ -1026,8 +1031,8 @@ Window {
         id: recordStart
         onConfirmed: (language, audioOnly) => {
             // Teams opens the Transcript pane for whoever starts it.
-            if (mode !== "recording" && !win.copilotAfterTranscript) win.openTranscriptWhenStarted = true
-            win.recorderCommand(mode === "transcription" ? "startTranscription" : "startRecording", language, audioOnly)
+            if (mode !== "recording" && mode !== "copilot" && !win.copilotAfterTranscript) win.openTranscriptWhenStarted = true
+            win.recorderCommand(mode === "copilot" ? "startCopilot" : mode === "transcription" ? "startTranscription" : "startRecording", language, audioOnly)
         }
     }
     // The Transcript pane: its rows, and asking for the stored ones.
@@ -1120,9 +1125,21 @@ Window {
     property var copilotLaunch: null
     property bool copilotAfterTranscript: false
     readonly property bool copilotShown: side === "copilot"
+    // With the meeting's Copilot "Only during the meeting" Teams asks
+    // "Turn on Copilot for everyone?" (Cancel / Turn on) instead; Turn on
+    // asks the spoken language, then starts Copilot alone (no transcript
+    // is kept) and opens the pane (Teams' copilot-ufd-control, read
+    // 2026-11-18).
+    // In a call (1:1 or a chat's group call: Teams' calling scenario) it
+    // asks "Turn on Copilot for everyone in this call?" instead, with Just
+    // Copilot (Copilot alone) and Transcribe (the transcript), and without
+    // a transcript the text names the call ("…from Copilot in the call.").
+    property bool copilotTurnOnAsk: false
+    readonly property bool callingScenario: !scheduled && !adhocMeeting
+    readonly property bool copilotOrTranscript: transcribing || copilotRunning
     function openCopilot() {
         if (side === "copilot") { side = ""; return }
-        if (!transcribing && !copilotAsk.visible) { facilitatorAsk = false; copilotAsk.visible = true; return }
+        if (!copilotOrTranscript && !copilotAsk.visible) { facilitatorAsk = false; copilotTurnOnAsk = copilotOnly; copilotAsk.visible = true; return }
         copilotAsk.visible = false
         side = "copilot"
         if (!copilotLaunch) backend.meetingCopilotLaunch(copilotHostTheme)
@@ -1131,7 +1148,10 @@ Window {
     function sendCopilotContext() {
         if (!copilotLaunch || !copilotLoader.item) return
         const chat = JSON.parse(JSON.stringify(copilotLaunch.contextualChat))
-        chat.contentItems[0].meetingContext.isTranscriptRunningDuringMeeting = transcribing
+        // Teams: running while either transcript runs; kept only for the
+        // meeting while Copilot runs alone.
+        chat.contentItems[0].meetingContext.isTranscriptRunningDuringMeeting = copilotOrTranscript
+        chat.contentItems[0].meetingContext.isTemporaryStorageForMeetingTranscript = copilotRunning && !transcribing
         copilotLoader.item.sendFrameMessage("contextualChatChanged", [chat])
         copilotLoader.item.sendFrameMessage("updateCapabilities", [copilotLaunch.capabilities])
     }
@@ -1144,7 +1164,9 @@ Window {
     }
     Shortcut { sequence: "Alt+C"; enabled: win.live && win.ubar.bar.concat(win.ubar.overflowed).indexOf("MeetingCollabButton") >= 0; onActivated: win.openCopilot() }
     function copilotAskForTest() { return copilotAsk }
-    function copilotStartForTest() { copilotAsk.visible = false; copilotAfterTranscript = true; recordStart.ask("transcription") }
+    // Start (Turn on in a meeting, Just Copilot in a call).
+    function copilotStartForTest() { const turnOn = copilotTurnOnAsk; copilotAsk.visible = false; copilotAfterTranscript = true; recordStart.ask(turnOn ? "copilot" : "transcription") }
+    function copilotTurnOnAskForTest() { return copilotTurnOnAsk }
     function recordStartForTest(mode) { recordStart.ask(mode) }
     function copilotEventsForTest() { return copilotLoader.item ? copilotLoader.item.hostEvents : [] }
     // Teams' calling alert (ufd_copilotShowTranscriptUfd): 320 x 136.7,
@@ -1161,20 +1183,23 @@ Window {
         visible: false
         z: 50
         x: (win.width - width) / 2; y: bar.height + 10.7
-        width: 320; height: win.facilitatorAsk ? 138 : 136.7; radius: 8
+        width: 320; height: win.facilitatorAsk ? 138 : askText.y + askText.implicitHeight + 12 + 31.3 + 12.7; radius: 8
         color: theme.pick("#FAFAFA", "#292929", "#000000")
         border.width: theme.highContrast || win.facilitatorAsk ? 1 : 0
         border.color: theme.highContrast ? "#FFFFFF" : theme.pick("#F0F0F0", "#3D3D3D", "#FFFFFF")
         Accessible.role: Accessible.AlertMessage
-        Accessible.name: win.facilitatorAsk ? "Start transcription to use Facilitator" : "Start transcription to use Copilot"
+        Accessible.name: askTitle.text
         FluentIcon {
             x: win.facilitatorAsk ? 13 : 12.7; y: win.facilitatorAsk ? 13 : 12.7
             size: win.facilitatorAsk ? 16 : 20
             name: win.facilitatorAsk ? "ai-facilitator" : "ai-copilot"; color: theme.text
         }
         Text {
+            id: askTitle
             x: win.facilitatorAsk ? 37 : 40.7; y: win.facilitatorAsk ? 13 : 12.7; height: 20; verticalAlignment: Text.AlignVCenter
-            text: win.facilitatorAsk ? "Start transcription to use Facilitator" : "Start transcription to use Copilot"
+            text: win.facilitatorAsk ? "Start transcription to use Facilitator"
+                : win.copilotTurnOnAsk ? (win.callingScenario ? "Turn on Copilot for everyone in this call?" : "Turn on Copilot for everyone?")
+                : "Start transcription to use Copilot"
             font.family: theme.font; font.pixelSize: 12; color: theme.text
         }
         FluentIcon {
@@ -1185,23 +1210,91 @@ Window {
             Accessible.name: "Close"
         }
         Text {
+            id: askText
             x: win.facilitatorAsk ? 13 : 12.7; y: win.facilitatorAsk ? 41 : 40.7; width: 296.7
             text: win.facilitatorAsk ? "Transcription is required to get help from Facilitator in this meeting."
-                                     : "Transcription is required to get help from Copilot in the meeting."
+                : win.copilotTurnOnAsk ? (win.callingScenario ? "Copilot uses the audio, chat, and other content to answer questions. Start transcription to get an AI-generated recap."
+                                                              : "Copilot uses the audio, chat, and other content to answer questions during the meeting.")
+                : win.callingScenario ? "Transcription is required to get help from Copilot in the call."
+                : "Transcription is required to get help from Copilot in the meeting."
             wrapMode: Text.Wrap
             font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
             color: theme.textSecondary
         }
-        SettingsParts.Button { x: 12.7; y: win.facilitatorAsk ? 93 : 92.7; width: 143.3; label: win.facilitatorAsk ? "Dismiss" : "Cancel"; onClicked: copilotAsk.visible = false }
+        readonly property bool callChoice: win.copilotTurnOnAsk && !win.facilitatorAsk && win.callingScenario
+        readonly property real buttonsY: win.facilitatorAsk ? 93 : askText.y + askText.implicitHeight + 12
+        // In a call: Just Copilot (dontStartTranscriptButton) starts Copilot
+        // alone; in a meeting: Cancel.
         SettingsParts.Button {
-            x: 164; y: win.facilitatorAsk ? 93 : 92.7; width: 143.3; label: "Start"; primary: true
+            x: 12.7; y: copilotAsk.buttonsY; width: 143.3
+            label: win.facilitatorAsk ? "Dismiss" : copilotAsk.callChoice ? "Just Copilot" : "Cancel"
+            onClicked: {
+                copilotAsk.visible = false
+                if (!copilotAsk.callChoice) return
+                win.copilotAfterTranscript = true
+                recordStart.ask("copilot")
+            }
+        }
+        SettingsParts.Button {
+            x: 164; y: copilotAsk.buttonsY; width: 143.3; primary: true
+            label: copilotAsk.callChoice ? "Transcribe" : win.copilotTurnOnAsk && !win.facilitatorAsk ? "Turn on" : "Start"
             onClicked: {
                 copilotAsk.visible = false
                 if (!win.facilitatorAsk) win.copilotAfterTranscript = true
-                recordStart.ask("transcription")
+                recordStart.ask(win.copilotTurnOnAsk && !win.facilitatorAsk && !copilotAsk.callChoice ? "copilot" : "transcription")
             }
         }
     }
+    onCopilotRunningChanged: {
+        if (copilotLaunch && copilotLoader.item && copilotLoader.item.hostEvents.indexOf("ChatReady") >= 0) sendCopilotContext()
+        if (!copilotRunning) { copilotOnNotice.visible = false; return }
+        if (copilotAfterTranscript) { copilotAfterTranscript = false; side = "copilot"; if (!copilotLaunch) backend.meetingCopilotLaunch(copilotHostTheme) }
+        if (!transcribing) copilotOnNotice.visible = true
+    }
+    // Teams' calling alert once Copilot runs alone (ShowCopilotOnlyMode,
+    // the licensed bizChat text): "Copilot is available in this meeting",
+    // "Copilot uses your data to generate responses during the meeting.
+    // Interactions with Copilot might be retained due to the host
+    // organization's policy." and the privacy link; the same card as the
+    // transcript alert, without buttons.
+    Rectangle {
+        id: copilotOnNotice
+        visible: false
+        z: 50
+        x: (win.width - width) / 2; y: bar.height + 10.7
+        width: 320; height: noticeText.y + noticeText.implicitHeight + 12.7; radius: 8
+        color: theme.pick("#FAFAFA", "#292929", "#000000")
+        border.width: theme.highContrast ? 1 : 0
+        border.color: "#FFFFFF"
+        Accessible.role: Accessible.AlertMessage
+        Accessible.name: "Copilot is available in this meeting"
+        FluentIcon { x: 12.7; y: 12.7; size: 20; name: "ai-copilot"; color: theme.text }
+        Text {
+            x: 40.7; y: 12.7; height: 20; verticalAlignment: Text.AlignVCenter
+            text: "Copilot is available in this meeting"
+            font.family: theme.font; font.pixelSize: 12; color: theme.text
+        }
+        FluentIcon {
+            x: 291.3; y: 14.7; size: 16; name: "dismiss-16"; color: noticeClose.hovered ? theme.text : theme.textSecondary
+            HoverHandler { id: noticeClose; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: copilotOnNotice.visible = false }
+            Accessible.role: Accessible.Button
+            Accessible.name: "Close"
+        }
+        Text {
+            id: noticeText
+            x: 12.7; y: 40.7; width: 296.7
+            textFormat: Text.StyledText
+            text: "Copilot uses your data to generate responses during the meeting. Interactions with Copilot might be retained due to the host organization's policy."
+                  + (win.privacyUrl ? " <a href=\"" + win.privacyUrl + "\">Privacy policy</a>" : "")
+            linkColor: theme.link
+            onLinkActivated: link => Qt.openUrlExternally(link)
+            wrapMode: Text.Wrap
+            font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
+            color: theme.textSecondary
+        }
+    }
+    function copilotNoticeForTest() { return copilotOnNotice }
     // A transcript has run in this meeting (Teams' hasBeenStarted: More
     // then offers Show transcript).
     property bool transcriptRan: false
@@ -2437,6 +2530,16 @@ Window {
                     showHeader: false; teamsHost: true; deepNaa: true
                     appName: "Copilot"; appId: "b5abf2ae-c16b-4310-8f8a-d3bcdb52f162"
                     frameContext: "sidePanel"
+                    // Teams desktop server-renders the pane's first page
+                    // (it posts the app's token with the address; the app
+                    // then reports renderMode "SSR"), and offers it the
+                    // Copilot eligibility, performance and mouse relay
+                    // capabilities (measured 2026-11-18).
+                    ssr: true
+                    runtimeSupports: ({ appPerformanceMetrics: {}, copilot: { eligibility: {} }, mouseRelay: {} })
+                    // Teams' meeting window's shortcuts, as it lists them to
+                    // the pane (measured 2026-11-18).
+                    hostShortcuts: ["ctrl+.", "alt+/", "ctrl+e", "ctrl+/", "ctrl+shift+/", "ctrl+shift+7", "ctrl+g", "ctrl+n", "ctrl+shift+n", "ctrl+shift+f", "ctrl+,", "f1", "ctrl++", "ctrl+=", "ctrl+-", "ctrl+_", "ctrl+0", "ctrl+alt+shift+r", "alt+q", "ctrl+shift+t", "ctrl+\\", "ctrl+1", "ctrl+2", "ctrl+3", "ctrl+4", "ctrl+5", "ctrl+6", "ctrl+7", "ctrl+8", "ctrl+9", "ctrl+l", "ctrl+m", "ctrl+alt+t", "f6", "shift+f6", "ctrl+f6", "ctrl+shift+f6", "alt+left", "alt+right", "ctrl+h", "shift+esc", "f", "p", "del", "s", "r", "t", "e", "u", "q", "ctrl+j", "ctrl+o", "ctrl+alt+r", "alt+p", "alt+c", "alt+shift+r", "alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+6", "alt+7", "alt+8", "alt+9", "ctrl+alt+z", "ctrl+alt+u", "ctrl+alt+q", "ctrl+alt+b", "ctrl+alt+c", "ctrl+alt+a", "alt+pagedown", "alt+pageup", "ctrl+alt+down", "ctrl+alt+up", "ctrl+shift+s", "ctrl+shift+j", "ctrl+shift+r", "alt+shift+v", "f11", "ctrl+shift+p", "alt+shift++", "alt+shift+=", "alt+shift+-", "alt+shift+_", "alt+shift+0", "ctrl+f", "ctrl+alt+f", "ctrl+alt+w", "ctrl+alt+q", "ctrl+alt+enter", "ctrl+shift+enter", "ctrl+shift+a", "ctrl+shift+a", "ctrl+shift+a", "ctrl+shift+d", "ctrl+shift+d", "meta+shift+y", "alt+shift+a", "ctrl+shift+e", "ctrl+shift+space", "ctrl+shift+m", "ctrl+shift+u", "ctrl+shift+o", "ctrl+shift+y", "ctrl+shift+h", "ctrl+shift+k", "alt+shift+c", "ctrl+shift+l", "ctrl+alt+shift+s", "ctrl+space", "ctrl+alt+shift+1", "shift+esc", "ctrl+alt+k", "ctrl+alt+u", "ctrl+alt+m", "ctrl+alt+c", "alt+t", "alt+l", "ctrl+alt+shift+2", "ctrl+alt+shift+8"]
                     hostThread: backend.callThreadId
                     hostContext: win.copilotLaunch.context
                     home: win.copilotLaunch.url
@@ -4484,7 +4587,9 @@ Window {
         ToolTip {
             id: bbTip
             parent: bb
-            visible: bb.tip.length > 0 && bbHover.hovered
+            // Not over the screens that replace the bar once the call ends
+            // (the test call's results, the call quality survey).
+            visible: bb.tip.length > 0 && bbHover.hovered && !win.barCovered
             delay: 250
             topPadding: 4; bottomPadding: 6; leftPadding: 11; rightPadding: 11
             readonly property bool flip: bb.mapToItem(null, 4 + implicitWidth, 0).x > (bb.Window.window ? bb.Window.window.width : 1e9)
@@ -4791,6 +4896,53 @@ Window {
         onDeny: { win.screenControl("deny", ""); win.controlAlert = null }
         onTakeBack: { win.screenControl("takeBack", ""); win.controlAlert = null }
         onDismissed: win.controlAlert = null
+    }
+    // Teams' post-call "How was the call quality?" (docs/spec/
+    // feedback-and-help.md §5), for those who opted in under Settings ▸
+    // Privacy: once a call Teams would sample ends (not the test call, not
+    // one under 5 s, or 8 s for a meeting, which Teams asks about as "pretty
+    // short"), the survey replaces the window until it's answered or
+    // dismissed (60 s).
+    property var qualitySurvey: null
+    readonly property bool barCovered: state === "ended" && (!!qualitySurvey || (testCall && testReport.length > 0))
+    property string qualityKind: ""
+    property int qualitySeconds: 0
+    signal qualityFeedback(string text, string details)
+    signal qualitySurveyDone()
+    function qualityCallKind() {
+        if ((backend.callPeerId || "").indexOf("4:") === 0) return "pstn"
+        if (!meeting) return "oneToOne"
+        // A chat's group call isn't a meeting (Teams' CQF call types).
+        return scheduled || adhocMeeting ? "meeting" : "group"
+    }
+    Connections {
+        target: win
+        function onStateChanged() {
+            if (win.state === "connected") { win.qualitySurvey = null; return }
+            if (win.state !== "ended" || win.testCall || win.qualitySurvey || win.retryReason) return
+            const kind = win.qualityCallKind()
+            if (win.seconds < (kind === "meeting" ? 8 : 5)) return
+            const json = backend.callQualitySurvey(kind, win.canVideo)
+            if (!json) return
+            win.qualityKind = kind
+            win.qualitySeconds = win.seconds
+            win.qualitySurvey = JSON.parse(json)
+        }
+    }
+    function qualitySurveyForTest() { return qualitySurveyView }
+    CallQualitySurvey {
+        id: qualitySurveyView
+        anchors.fill: parent
+        z: 100
+        visible: win.state === "ended" && !!win.qualitySurvey
+        survey: win.qualitySurvey || ({})
+        onSendFeedback: reasons => {
+            const all = (win.qualitySurvey.categories || []).reduce((a, c) => a.concat(c.items), [])
+            const labels = reasons.map(r => (all.find(i => i.id === r) || {}).label).filter(l => !!l)
+            const text = "The call quality had issues" + (labels.length ? ": " + labels.join("; ") : ".")
+            win.qualityFeedback(text, backend.callQualityDetails(win.qualityKind, win.qualitySeconds, JSON.stringify(reasons)))
+        }
+        onFinished: { win.qualitySurvey = null; win.qualitySurveyDone() }
     }
     // Teams' test call (Settings ▸ Devices ▸ Make a test call): once it
     // ends, its results replace the bar and stage until Close.

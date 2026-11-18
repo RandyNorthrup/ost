@@ -73,6 +73,8 @@ fn main() {
         "qml/GuestAvatar.qml",
         "qml/LobbyToast.qml",
         "qml/MeetingTile.qml",
+        "qml/BotAvatar.qml",
+        "qml/CallQualitySurvey.qml",
         "qml/RetryScreen.qml",
         "qml/MeetingOptionsDialog.qml",
         "qml/MeetingPeoplePicker.qml",

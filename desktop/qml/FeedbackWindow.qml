@@ -29,6 +29,10 @@ Window {
     /// Where it was sent from, and what OST knows about it.
     property string area: "Settings and more"
     property string context: ""
+    /// What the form's text starts with (the call quality survey's
+    /// reasons).
+    property string initialText: ""
+    Component.onCompleted: if (initialText) text.text = initialText
     /// What Capture screenshot grabs (the main window).
     property Item captureTarget: null
     readonly property bool compliment: kind === "compliment"

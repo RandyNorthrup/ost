@@ -1929,6 +1929,19 @@ Rectangle {
                 visible: root.page === "privacy" && !root.subPage
                 icon: "clipboard-task-list-20"; title: "Surveys"; subtitle: "Participate in surveys from OST."
                 trailing: Component { SettingsParts.Toggle { on: root.prop("userEnableSurveysNotification", [], "true") !== "false"; accessibleName: "Surveys"; onToggled: v => root.setProp("userEnableSurveysNotification", "", v ? "true" : "false") } }
+                // OST's opt-in for Teams' post-call "How was the call
+                // quality?" (off by default; kept on this device). Teams asks
+                // only while Surveys is on, so this does too.
+                SettingsParts.CheckRow {
+                    id: cqfRow
+                    readonly property bool surveysOn: root.prop("userEnableSurveysNotification", [], "true") !== "false"
+                    property bool optedIn: backend.setting("callQualitySurvey") === "true"
+                    label: "Ask me about call quality after calls"
+                    sublabel: "OST asks after some calls. If a call had issues, Report a problem opens with its technical details (no one's name) for you to post as a public issue on GitHub."
+                    usable: surveysOn
+                    checked: optedIn && surveysOn
+                    onToggled: on => { backend.setSetting("callQualitySurvey", on ? "true" : "false"); optedIn = on }
+                }
             }
             SettingsParts.Card {
                 visible: root.page === "privacy" && !root.subPage
@@ -3071,6 +3084,7 @@ Rectangle {
     }
     function oofForTest() { return oofPage }
     function scrollForTest() { content.contentY = Math.max(0, content.contentHeight - content.height) }
+    function scrollByForTest(dy) { content.contentY = Math.max(0, Math.min(content.contentHeight - content.height, content.contentY + dy)) }
     function greetingDialogForTest() { return greetingDialog }
     /// Each visible card on the page: [y in the window, height, first text].
     function cardsForTest() {

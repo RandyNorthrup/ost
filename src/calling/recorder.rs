@@ -46,6 +46,13 @@ pub enum Command {
     /// The meeting's spoken language, for its captions and transcript
     /// (`meeting.spoken_language`).
     SetCaptionsLanguage,
+    /// Copilot without a saved transcript (the meeting's Allow Copilot
+    /// "Only during the meeting", copilotMode "Enabled"): Teams'
+    /// `sendCopilotCommand` — mode "transcription", processing modes
+    /// `["copilot"]`, the spoken language, our Skype token with the
+    /// recorder token (read in Teams' bundles 2026-11-18).
+    StartCopilot,
+    StopCopilot,
 }
 
 impl Command {
@@ -55,7 +62,8 @@ impl Command {
                 "start"
             }
             Command::StopTranscription | Command::StopRecording => "stop",
-            Command::StartCaptions => "start",
+            Command::StartCaptions | Command::StartCopilot => "start",
+            Command::StopCopilot => "stop",
             Command::SetCaptionsLanguage => "setLanguage",
         }
     }
@@ -66,6 +74,7 @@ impl Command {
             Command::StartRecording { .. } | Command::StopRecording => &["recording", "realTimeTranscript"],
             Command::StartRecordingOnly { .. } => &["recording"],
             Command::StartCaptions | Command::SetCaptionsLanguage => &["closedCaptions"],
+            Command::StartCopilot | Command::StopCopilot => &["copilot"],
         }
     }
 
@@ -76,13 +85,18 @@ impl Command {
                 | Command::StopTranscription
                 | Command::StartCaptions
                 | Command::SetCaptionsLanguage
+                | Command::StartCopilot
+                | Command::StopCopilot
         )
     }
 
     /// Teams asks for the recorder-service token alone for recording and
     /// the transcript; other commands (captions) carry our Skype token too.
     pub fn needs_skype_token(self) -> bool {
-        matches!(self, Command::StartCaptions | Command::SetCaptionsLanguage)
+        matches!(
+            self,
+            Command::StartCaptions | Command::SetCaptionsLanguage | Command::StartCopilot | Command::StopCopilot
+        )
     }
 }
 
@@ -129,12 +143,18 @@ pub fn body(
         b["mode"] = json!("transcription");
     }
     b["processingModes"] = json!(command.modes());
-    if command == Command::SetCaptionsLanguage {
+    if command == Command::StartCopilot {
+        b["actionParameters"] = json!({
+            "spokenLanguage": if meeting.spoken_language.is_empty() { "en-us" } else { meeting.spoken_language.as_str() },
+            "type": "start",
+        });
+    } else if command == Command::StopCopilot {
+    } else if command == Command::SetCaptionsLanguage {
         b["actionParameters"] = json!({
             "spokenLanguage": if meeting.spoken_language.is_empty() { "en-us" } else { meeting.spoken_language.as_str() },
             "type": "setLanguage",
         });
-    } else if command.action() == "start" && command != Command::StartCaptions {
+    } else if command.action() == "start" && command != Command::StartCaptions && command != Command::StartCopilot {
         let kind = if command.transcription() { "Meeting Transcript" } else { "Meeting Recording" };
         let mut p = json!({
             "recordingFeatures": features(),
@@ -300,6 +320,21 @@ mod tests {
         let mut keys: Vec<_> = t.as_object().unwrap().keys().cloned().collect();
         keys.sort();
         assert_eq!(keys, ["action", "mode", "participantLegId", "participantMri", "participantSkypeToken", "processingModes", "timestamp"]);
+    }
+
+    #[test]
+    fn copilot_only_bodies_as_teams_sends_them() {
+        let now = chrono::Local.with_ymd_and_hms(2026, 11, 18, 3, 15, 0).unwrap();
+        let c = body(Command::StartCopilot, "8:orgid:a", "leg", &meeting(), now, "cid");
+        assert_eq!(c["action"], "start");
+        assert_eq!(c["mode"], "transcription");
+        assert_eq!(c["processingModes"], json!(["copilot"]));
+        assert_eq!(c["actionParameters"], json!({ "spokenLanguage": "en-us", "type": "start" }));
+        assert!(Command::StartCopilot.needs_skype_token());
+        let s = body(Command::StopCopilot, "8:orgid:a", "leg", &meeting(), now, "cid");
+        assert_eq!(s["action"], "stop");
+        assert_eq!(s["processingModes"], json!(["copilot"]));
+        assert!(s.get("actionParameters").is_none());
     }
 
     #[test]

@@ -30,6 +30,9 @@ use sha2::{Digest, Sha256};
 pub const APP_ID: &str = "b5abf2ae-c16b-4310-8f8a-d3bcdb52f162";
 /// The app's chat page.
 pub const CHAT_URL: &str = "https://m365copilotapp.svc.cloud.microsoft/chat";
+/// The ring the host names in the address (`hostRing`), the same as the
+/// `ringId` OST's TeamsJS context gives apps.
+pub const HOST_RING: &str = "general";
 /// The CMM id Teams' meeting entry point refers the app with.
 pub const MEETING_CMMID: &str = "cmm35g04qbs";
 
@@ -102,6 +105,8 @@ pub fn content_url(m: &Meeting) -> String {
             .append_pair("sessionId", &m.app_session)
             .append_pair("renderingSurface", "copilotSidePanel")
             .append_pair("theme", if m.theme.is_empty() { "default" } else { &m.theme })
+            // Teams names its ring (the ring OST's context gives apps).
+            .append_pair("hostRing", HOST_RING)
             .append_pair("parentSessionId", &m.host_session);
     }
     u.to_string()
@@ -201,6 +206,8 @@ mod tests {
         let u = content_url(&m);
         assert!(u.starts_with("https://m365copilotapp.svc.cloud.microsoft/chat?OID=4287e791-1b98-4963-8b94-281c50472683%402716d134"));
         assert!(u.contains("renderingSurface=copilotSidePanel") && u.contains("mysite=scnetsolutions-my.sharepoint.com"));
+        // Teams names its ring between the theme and the parent session.
+        assert!(u.contains("&theme=default&hostRing=general&parentSessionId=s0"));
         let c = contextual_chat(&m);
         assert_eq!(c["contentItems"][0]["meetingContext"]["organizerId"], "4287e791-1b98-4963-8b94-281c50472683@2716d134-5614-4856-a48d-2002edd9a570");
         assert_eq!(c["contentItems"][0]["meetingContext"]["isTranscriptRunningDuringMeeting"], true);

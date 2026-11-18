@@ -277,6 +277,12 @@ pub mod qobject {
         #[qproperty(bool, call_ai_indicator)]
         /// AI is available in the meeting (copilotMode Enabled).
         #[qproperty(bool, call_ai_available)]
+        /// The meeting's Copilot runs without a saved transcript (Allow
+        /// Copilot "Only during the meeting": copilotMode "Enabled").
+        #[qproperty(bool, call_copilot_only)]
+        /// Copilot runs in the meeting (the recorder's `copilot`
+        /// processing mode is active).
+        #[qproperty(bool, call_copilot_running)]
         /// The meeting's Facilitator is enabled.
         #[qproperty(bool, call_ai_facilitator)]
         /// Facilitator may speak (More ▸ Facilitator ▸ Enable voice).
@@ -660,6 +666,19 @@ pub mod qobject {
         /// Open the feedback form from any window (feedback_requested).
         #[qinvokable]
         fn request_feedback(self: Pin<&mut Backend>, kind: &QString, area: &QString, context: &QString);
+        /// Teams' post-call "How was the call quality?" for the call that
+        /// just ended (`kind`: oneToOne, group, meeting, pstn, interop,
+        /// screenshareFromChat; `video`: it could carry video), as an
+        /// opt-in: {question, categories} when asked (Settings ▸ Privacy's
+        /// call quality survey on and the call sampled as Teams samples
+        /// it), else "". Keeps the call's Call health values for the report.
+        #[qinvokable]
+        fn call_quality_survey(self: Pin<&mut Backend>, kind: &QString, video: bool) -> QString;
+        /// Report a problem's details for the survey's "Had issues"
+        /// (`reasons_json`: the ticked item ids): the reasons and the
+        /// call's technical details, no one's name.
+        #[qinvokable]
+        fn call_quality_details(self: &Backend, kind: &QString, duration_s: i32, reasons_json: &QString) -> QString;
         /// Paste the clipboard's picture into `dir`; its path, or "".
         #[qinvokable]
         fn paste_clipboard_image(self: &Backend, dir: &QString) -> QString;
@@ -2841,6 +2860,11 @@ pub struct BackendRust {
     call_test_report: QString,
     call_ai_indicator: bool,
     call_ai_available: bool,
+    call_copilot_only: bool,
+    call_copilot_running: bool,
+    /// The ended call's Call health values, for the call quality survey's
+    /// report.
+    cqf_metrics: Vec<(String, String)>,
     call_ai_facilitator: bool,
     call_ai_facilitator_voice: bool,
     call_ai_facilitator_live_notes: bool,
@@ -4143,6 +4167,7 @@ fn spawn_call_stats_logger(qt: cxx_qt::CxxQtThread<qobject::Backend>) {
                     (echo_watch().lock().unwrap_or_else(|e| e.into_inner()).as_mut(), strength)
                 {
                     w.second(muted, signal, strength);
+                    w.devices(&teams_cli::calling::device_health::devices());
                 }
                 let now = muted_speech.report(muted, teams_cli::calling::audio::mic_recent_level());
                 if now != speaking_muted {
@@ -4335,6 +4360,11 @@ fn test_camera() -> Option<(String, String)> {
 fn camera_device() -> Option<String> {
     if ost_vfx::avatar::active() {
         return Some(teams_cli::calling::camera::AVATAR_DEVICE.to_string());
+    }
+    // OST_CAMERA_DEVICE=/dev/videoN: this instance's camera (tests on a
+    // machine other instances share, whose settings file is common).
+    if let Some(d) = std::env::var("OST_CAMERA_DEVICE").ok().filter(|d| d.starts_with("/dev/video")) {
+        return Some(d);
     }
     load_settings()
         .get("cameraDevice")
@@ -8010,6 +8040,9 @@ impl qobject::Backend {
     ) {
         self.as_mut().set_call_test(test);
         self.as_mut().set_call_test_report(QString::default());
+        if test {
+            teams_cli::calling::device_health::reset();
+        }
         *echo_watch().lock().unwrap_or_else(|e| e.into_inner()) =
             test.then(teams_cli::calling::echo_report::Watch::new);
         let subject = title.to_string();
@@ -9572,6 +9605,8 @@ impl qobject::Backend {
         self.as_mut().set_call_timer_json(QString::default());
         self.as_mut().set_call_ai_indicator(false);
         self.as_mut().set_call_ai_available(false);
+        self.as_mut().set_call_copilot_only(false);
+        self.as_mut().set_call_copilot_running(false);
         self.as_mut().set_call_ai_facilitator(false);
         self.as_mut().set_call_ai_facilitator_voice(false);
         self.as_mut().set_call_ai_on(false);
@@ -9632,6 +9667,9 @@ impl qobject::Backend {
         if self.rust().call_ai_available != cap.copilot {
             self.as_mut().set_call_ai_available(cap.copilot);
         }
+        if self.rust().call_copilot_only != cap.copilot_only {
+            self.as_mut().set_call_copilot_only(cap.copilot_only);
+        }
         if self.rust().call_everyone_presents != cap.everyone_presents {
             self.as_mut().set_call_everyone_presents(cap.everyone_presents);
         }
@@ -9651,6 +9689,13 @@ impl qobject::Backend {
         let on = p.transcript.is_some() || p.copilot;
         if self.rust().call_ai_on != on {
             self.as_mut().set_call_ai_on(on);
+        }
+        if self.rust().call_copilot_running != p.copilot {
+            self.as_mut().set_call_copilot_running(p.copilot);
+            if p.copilot {
+                // Its notice links the privacy statement.
+                self.as_mut().ensure_call_privacy_url();
+            }
         }
         self.as_mut().rust_mut().processing = p;
         self.as_mut().show_recording_indicator();
@@ -9851,6 +9896,10 @@ impl qobject::Backend {
             "startRecording" if transcribing => Command::StartRecordingOnly { audio_only },
             "startRecording" => Command::StartRecording { audio_only },
             "stopRecording" => Command::StopRecording,
+            // Turn on Copilot for everyone (the meeting's Copilot "Only
+            // during the meeting").
+            "startCopilot" => Command::StartCopilot,
+            "stopCopilot" => Command::StopCopilot,
             _ => return,
         };
         // The organizer as the roster names them (else us).
@@ -10013,16 +10062,24 @@ impl qobject::Backend {
             now,
         );
         self.as_mut().publish_captions();
-        if self.rust().call_privacy_url.is_empty() {
-            let qt = self.qt_thread();
-            runtime().spawn(async move {
-                let url = match TeamsClient::new().await {
-                    Ok(client) => api::directory::privacy_statement_url(&client).await,
-                    Err(_) => api::directory::MICROSOFT_PRIVACY_STATEMENT.to_string(),
-                };
-                let _ = qt.queue(move |mut this| this.as_mut().set_call_privacy_url(QString::from(url.as_str())));
-            });
+        self.ensure_call_privacy_url();
+    }
+
+    /// The organization's privacy statement for the call's notices (RTT,
+    /// Copilot alone), as Teams links them; Microsoft's when the tenant
+    /// names none.
+    fn ensure_call_privacy_url(self: Pin<&mut Self>) {
+        if !self.rust().call_privacy_url.is_empty() {
+            return;
         }
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let url = match TeamsClient::new().await {
+                Ok(client) => api::directory::privacy_statement_url(&client).await,
+                Err(_) => api::directory::MICROSOFT_PRIVACY_STATEMENT.to_string(),
+            };
+            let _ = qt.queue(move |mut this| this.as_mut().set_call_privacy_url(QString::from(url.as_str())));
+        });
     }
 
     pub fn start_rtt(self: Pin<&mut Self>) {
@@ -13069,6 +13126,53 @@ impl qobject::Backend {
             _ => teams_cli::feedback::repo_url(),
         };
         QString::from(url.as_str())
+    }
+
+    pub fn call_quality_survey(mut self: Pin<&mut Self>, kind: &QString, video: bool) -> QString {
+        use teams_cli::calling::quality_survey as cqf;
+        let kind = cqf::CallKind::parse(&kind.to_string());
+        // Teams asks only while Settings ▸ Privacy ▸ Surveys is on (its
+        // synced userEnableSurveysNotification, on unless "false").
+        let surveys_on = serde_json::from_str::<serde_json::Value>(&self.rust().settings_json.to_string())
+            .ok()
+            .and_then(|v| v.pointer("/props/userEnableSurveysNotification").and_then(|x| x.as_str()).map(|x| x != "false"))
+            .unwrap_or(true);
+        // --cqf-always (harness) or OST_CQF_ALWAYS=1: opted in and asked
+        // after every call instead of Teams' sample (tests on a machine
+        // whose settings file other instances share).
+        let always = std::env::args().any(|a| a == "--cqf-always") || std::env::var("OST_CQF_ALWAYS").as_deref() == Ok("1");
+        let opted_in = surveys_on && (always || load_settings().get("callQualitySurvey").and_then(|v| v.as_str()) == Some("true"));
+        let rand = |n: usize| (uuid::Uuid::new_v4().as_u128() % n.max(1) as u128) as usize;
+        let roll = rand(1_000_000) as f64 / 1_000_000.0;
+        let asked = opted_in && (cqf::sampled(kind, roll) || (always && kind.sampling_rate() > 0.0));
+        tracing::info!(opted_in, asked, ?kind, "call quality survey");
+        if !asked {
+            return QString::default();
+        }
+        // The call's media as Call health last showed it.
+        let state = teams_cli::calling::call_health::MediaState {
+            microphone: true,
+            camera: true,
+            sharing: true,
+            watching_share: true,
+        };
+        let report = health_sampler()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .report(&teams_cli::calling::call_health::current(), &state);
+        let mut metrics: Vec<(String, String)> = report.values.into_iter().map(|(k, v)| (k, v.value)).collect();
+        metrics.sort();
+        self.as_mut().rust_mut().cqf_metrics = metrics;
+        QString::from(cqf::questionnaire(kind, video, rand).to_string().as_str())
+    }
+
+    pub fn call_quality_details(&self, kind: &QString, duration_s: i32, reasons_json: &QString) -> QString {
+        use teams_cli::calling::quality_survey as cqf;
+        let reasons: Vec<String> = serde_json::from_str(&reasons_json.to_string()).unwrap_or_default();
+        QString::from(
+            cqf::report_details(cqf::CallKind::parse(&kind.to_string()), duration_s.max(0) as u64, &reasons, &self.cqf_metrics)
+                .as_str(),
+        )
     }
 
     pub fn request_feedback(self: Pin<&mut Self>, kind: &QString, area: &QString, context: &QString) {

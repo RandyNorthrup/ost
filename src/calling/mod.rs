@@ -20,6 +20,7 @@ pub mod camera_controls;
 pub mod codec;
 pub mod datachannel;
 pub mod datapacket;
+pub mod device_health;
 #[cfg(feature = "video-capture")]
 pub mod display;
 pub mod e2ee;
@@ -44,6 +45,7 @@ pub mod muted_speech;
 pub mod outgoing;
 pub mod phone_audio;
 pub mod presenter_mode;
+pub mod quality_survey;
 #[cfg(all(feature = "audio", target_os = "linux"))]
 pub mod pw_defaults;
 pub mod recorder;

@@ -10,6 +10,8 @@ Item {
     property var call
     property var person: ({})
     readonly property bool self: !!person.self
+    /// A bot in the call (Teams' isBot: the id starts with "28:").
+    readonly property bool bot: !self && String(person.id || "").indexOf("28:") === 0
     /// The compact view's tiles: name tags without the name, 4 px in.
     property bool compact: false
     /// Your tile floating over the stage (two people): the name tag
@@ -72,7 +74,14 @@ Item {
             size: Math.min(200, Math.round(parent.height * 0.4975))
             name: mt.person.name || ""
             photoId: mt.self ? "me" : (mt.person.id || "")
-            visible: !video.visible
+            visible: !video.visible && !mt.bot
+        }
+        // A bot (a 28: participant: the Echo bot in the test call) gets
+        // Teams' agent avatar instead, at the same size.
+        BotAvatar {
+            anchors.centerIn: parent
+            size: Math.min(200, Math.round(parent.height * 0.4975))
+            visible: !video.visible && mt.bot
         }
         VideoFrame {
             id: video

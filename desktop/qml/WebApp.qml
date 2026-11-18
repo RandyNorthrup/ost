@@ -43,6 +43,9 @@ Item {
     property string frameAllow: ""
     /// Capabilities Teams adds to its runtime answer for this app.
     property var runtimeSupports: null
+    /// The host's shortcuts for shortcutRelay.getHostShortcuts, where the
+    /// window's differ from the main window's (the meeting window's).
+    property var hostShortcuts: null
     /// TeamsJS hostClientType ("desktop", as Teams desktop).
     property string hostClientType: "desktop"
     /// An Office file's page: "<serviceName>.<ctx>" of who opened it.
@@ -206,7 +209,7 @@ Item {
             url += (url.indexOf("?") < 0 ? "?" : "&") + "source=" + encodeURIComponent("TEAMS-ELECTRON." + root.officeSource + ".content") + "&appSessionId=" + c.appSessionId
         hostBridge.config = JSON.stringify({ hostId: root.hostId, url: url, appId: root.appId, title: root.appName,
                                              frameContext: root.frameContext, hostClientType: root.hostClientType, deepNaa: root.deepNaa, context: c,
-                                             ssr: root.ssr, allow: root.frameAllow, supports: root.runtimeSupports,
+                                             ssr: root.ssr, allow: root.frameAllow, supports: root.runtimeSupports, shortcuts: root.hostShortcuts,
                                              meetingBoard: root.meetingBoard ? { organizer: root.meetingBoard.organizer || "" } : null,
                                              video: root.videoApp })
         root.hostLoading = true

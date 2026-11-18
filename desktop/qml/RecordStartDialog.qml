@@ -25,8 +25,11 @@ Popup {
     background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
     Overlay.modal: Rectangle { color: Qt.rgba(0, 0, 0, 0.4) }
 
-    /// "transcription", "recordingAndTranscription" or "recording".
+    /// "transcription", "recordingAndTranscription" or "recording";
+    /// "copilot" (Turn on Copilot for everyone: the same spoken-language
+    /// question, Teams' MeetingCollabUFDCopilotOnlyMode entry point).
     property string mode: "transcription"
+    readonly property bool languageOnly: mode === "transcription" || mode === "copilot"
     property string language: "en-us"
     property bool audioOnly: false
     property bool moreOptions: true
@@ -59,8 +62,8 @@ Popup {
     }
 
     readonly property bool withLanguage: mode !== "recording"
-    readonly property bool withRecordMode: mode !== "transcription"
-    width: mode === "transcription" ? 480 : 522
+    readonly property bool withRecordMode: !languageOnly
+    width: languageOnly ? 480 : 522
     height: buttons.y + 31.33 + 24.67
 
     Text {
@@ -68,7 +71,7 @@ Popup {
         width: root.width - 24.67 - 74.67
         verticalAlignment: Text.AlignVCenter
         elide: Text.ElideRight
-        text: root.mode === "transcription" ? "What language is everyone speaking?"
+        text: root.languageOnly ? "What language is everyone speaking?"
             : root.mode === "recording" ? "Start recording" : "Start recording and transcription"
         font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold
         color: theme.text
@@ -161,7 +164,7 @@ Popup {
         x: root.width - 24.67 - width
         // Measured: 14.67 under the language dropdown, 18 under the
         // record box (18.67 in "Start recording").
-        y: content.y + content.height + (root.mode === "transcription" ? 14.67 : root.mode === "recording" ? 18.67 : 18)
+        y: content.y + content.height + (root.languageOnly ? 14.67 : root.mode === "recording" ? 18.67 : 18)
         spacing: 8
         component DialogButton: Rectangle {
             id: db
