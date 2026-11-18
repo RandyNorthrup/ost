@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-17T16:27:00Z'
-updated_date: '2026-11-18T21:54:00Z'
+updated_date: '2026-11-18T22:21:00Z'
 labels:
   - calendar
 dependencies: []
@@ -24,11 +24,11 @@ Calendar parts Teams has that OST doesn't yet, found while finishing TASK-0050: 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 The calendar toolbar has Teams' Filter menu (Appointments, Meetings, Poll holds, Reservations, Categories, Show as, Recurrence, In-person) and filters events as Teams does, including the 'Filter applied' state
-- [ ] #2 Time scale, Saved views and Split view work as in Teams desktop
-- [ ] #3 Propose new time works from an invitation as in Teams, and the organizer sees the proposal
-- [ ] #4 New ▾ Event opens Teams' Event form and creates an event as Teams does
+- [x] #2 Time scale, Saved views and Split view work as in Teams desktop
+- [x] #3 Propose new time works from an invitation as in Teams, and the organizer sees the proposal
+- [x] #4 New ▾ Event opens Teams' Event form and creates an event as Teams does
 - [ ] #5 The Live meetings dialog's avatar row shows everyone in each live call, as Teams
-- [ ] #6 The calendar's Copilot entry points are shown as in Teams for a Copilot-licensed user
+- [x] #6 The calendar's Copilot entry points are shown as in Teams for a Copilot-licensed user
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -59,4 +59,6 @@ Follow-ups (2026-11-18, second pass):
 - AC5: Teams' join bar comes from MeetingStart notifications (services-live-meeting-status-bar). It drops huddles, starts from the lobby, duplicates within 60 s, and events outside 15 min before the start to 5 min after the end. The client must be running when the call starts. Live with two meetings: OST got A's start, and the dialog showed A with O2. B's restart sent ost-test1 no MeetingStart, and the guests stayed in A's lobby, so +N and the two-card dialog are still to be shown.
 - AC6: suggestions and card prompts go into the pane with updatePromptInputData {promptText, correlationId, promptTimestamp, isDraft, focusOnLoadTarget} once it's ready, using Outlook's prompt strings. Checked live: "Schedule 1 hour of focus time for me in the next week" ran in the pane, and nothing was booked. With the pane open, "…" holds Go to today, previous, next, the range, the view, Filter, New (split), Share, Print, Calendar settings (measured on winpc), matched live.
 - Open: Outlook's Print button in its print dialog made no print request in QtWebEngine (it prints a nested frame). WebApp now turns window.print into a PDF in Downloads, but this path is not reached yet.
+
+- Merged d7dcbd1 (2026-11-18): build OK, 745 lib tests passed. AC2, AC3, AC4 and AC6 verified live. Open: AC1 Print from Outlook's dialog and Instructions ›; AC5 multi-meeting +N and Teams' avatar overlap.
 <!-- SECTION:NOTES:END -->
