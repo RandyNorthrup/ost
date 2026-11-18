@@ -1429,6 +1429,11 @@ impl OutgoingCall {
         }
     }
 
+    /// Whether our media is held (nothing sent or played).
+    pub fn is_held(&self) -> bool {
+        self.media.as_ref().is_some_and(|m| m.is_held())
+    }
+
     pub fn can_dtmf(&self) -> bool {
         self.media.as_ref().is_some_and(|m| m.can_dtmf())
     }

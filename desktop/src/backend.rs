@@ -8820,15 +8820,21 @@ impl qobject::Backend {
         self.as_mut().rust_mut().move_undo = Some(undo);
         let qt = self.qt_thread();
         runtime().spawn(async move {
-            // As Teams moves between meetings: the one we leave goes quiet
-            // now (camera off, nothing sent or played) and is left once the
-            // next one answers (join_meeting); if that fails, we stay in it.
+            // As Teams moves between meetings (breakoutRoomParticipants-
+            // Service moveToMeetingByIntent: only turnOffVideo, the source
+            // call stays Connected; watched in Teams desktop 2026-11-17):
+            // the one we leave turns its camera off but keeps its audio,
+            // both ways, until the next one answers (join_meeting), and is
+            // left then; if that fails, we stay in it. (An organizer's Join
+            // over the main meeting holds it instead: join_room_holding_main.)
             let mut slot = call_slot().lock().await;
             if let Some(mut call) = slot.outgoing.take() {
                 if call.camera_on() {
                     let _ = call.set_camera(false, None);
                 }
-                call.set_held(true);
+                if let Some(st) = call.stats().await {
+                    tracing::info!(played = st.audio_samples_received, sent = st.packets_sent, held = call.is_held(), "moving: the meeting we leave, audio so far");
+                }
                 if slot.left_calls.len() >= 16 {
                     slot.left_calls.remove(0);
                 }
@@ -9073,6 +9079,10 @@ impl qobject::Backend {
                     let moved_from = slot.moved_from.take();
                     drop(slot);
                     if let Some(earlier) = moved_from {
+                        // Its audio went on while the next one connected.
+                        if let Some(st) = earlier.stats().await {
+                            tracing::info!(played = st.audio_samples_received, sent = st.packets_sent, held = earlier.is_held(), "moved: the meeting we leave, audio so far");
+                        }
                         if into_room {
                             let main_url = undo.as_ref().map(|u| u.url.to_string()).unwrap_or_default();
                             runtime().spawn(leave_and_keep_main(earlier, main_url));
