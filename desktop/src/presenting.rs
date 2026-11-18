@@ -204,6 +204,17 @@ impl qobject::Backend {
             // whole screen, and nothing tells an app where the shared
             // window is, so the controller's clicks would land elsewhere.
             let whole_screen = self.rust().presenting.kind == Some(teams_cli::calling::screencast::Source::Screen);
+            // What we share, with the screen's size (viewers size Annotate to it).
+            runtime().spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                let size = if whole_screen { teams_cli::calling::screencast::last_size() } else { None };
+                let mut slot = call_slot().lock().await;
+                if let Some(call) = slot.outgoing.as_mut()
+                    && let Err(e) = call.screen_sharer_attributes(if whole_screen { "Monitor" } else { "Window" }, size).await
+                {
+                    tracing::warn!("screen sharer attributes: {}", short_error(&e));
+                }
+            });
             runtime().spawn(async move {
                 let enabled = whole_screen && teams_cli::calling::remote_input::available().await;
                 tracing::info!(enabled, "sharing: give control");

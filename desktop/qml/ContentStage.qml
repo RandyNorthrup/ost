@@ -78,6 +78,13 @@ Item {
         c.correlationId = session.correlationId
         return JSON.stringify(c)
     }
+    // Excel Live: the session's context goes to the app whenever it changes
+    // (Teams' onExtensibleAppContextChanged, first when the page loads).
+    function pushExcelContext() {
+        if (kind === "extensible_app" && boardLoader.item && excelContext)
+            boardLoader.item.sendFrameMessage("onExtensibleAppContextChanged", [excelContext])
+    }
+    onExcelContextChanged: pushExcelContext()
     // The board's address for viewers who already loaded the frame:
     // Teams' whiteboardUrlChanged [url, passThrough].
     property string sentUrl: ""
@@ -117,6 +124,7 @@ Item {
                     try { r = JSON.parse(json) } catch (e) {}
                     if (r.url) root.boardReported(r.url, r.passThrough)
                 } else if (name === "readyForUrl") root.pushBoard(true)
+                else if (name === "appLoaded" || name === "success") root.pushExcelContext()
             }
         }
     }
@@ -124,6 +132,9 @@ Item {
     property string presenterName: ""
     property int attendees: 1
     property string pptLayout: "ContentOnly"
+    property string pptCameoKey: ""
+    /// The deck PowerPoint shows has a cameo.
+    readonly property bool pptCameoDetected: pptLoader.item ? pptLoader.item.cameoDetected : false
     signal pptNavigated(string state)
     /// Test hook: the presenter's next slide (Teams' Next).
     function pptNextForTest() { if (pptLoader.item) pptLoader.item.next() }
@@ -138,7 +149,9 @@ Item {
             presenterName: root.presenterName
             attendees: root.attendees
             layout: root.pptLayout
+            cameoKey: root.pptCameoKey
             onNavigated: state => root.pptNavigated(state)
+            onTakeControlRequested: backend.contentTakeControl(root.session.correlationId)
         }
     }
     // Teams' "Loading…" while the session has no board yet.

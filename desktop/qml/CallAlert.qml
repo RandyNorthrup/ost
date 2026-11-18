@@ -11,9 +11,15 @@ Item {
     id: root
     property string icon: ""
     property string text
+    /// A title above the text (Teams' alerts with one, such as
+    /// PowerPoint Live's "Another user took control").
+    property string title: ""
+    /// An action button under the text ("Take back").
+    property string actionText: ""
     signal dismissed()
+    signal action()
     width: 320
-    height: Math.max(41.33, body.height + 21.33)
+    height: Math.max(41.33, body.y + body.height + (actionText ? 8 + 32 : 0) + 10.67)
     RectangularShadow { anchors.fill: surface; radius: 8; offset.y: 0.6; blur: 1.8; color: theme.shadowAmbient }
     RectangularShadow { anchors.fill: surface; radius: 8; offset.y: 3.2; blur: 7.2; color: theme.shadowKey }
     Rectangle {
@@ -29,14 +35,44 @@ Item {
         color: theme.textStrong
     }
     Text {
+        id: heading
+        visible: root.title.length > 0
+        x: body.x; y: 10.67
+        width: body.width
+        wrapMode: Text.Wrap
+        lineHeight: 20; lineHeightMode: Text.FixedHeight
+        text: root.title
+        font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
+        color: theme.text
+    }
+    Text {
         id: body
-        x: root.icon.length > 0 ? 44 : 12.67; y: 10.67
+        x: root.icon.length > 0 ? 44 : 12.67; y: root.title.length > 0 ? heading.y + heading.height : 10.67
         width: root.width - x - 44
         wrapMode: Text.Wrap
         lineHeight: 20; lineHeightMode: Text.FixedHeight
         text: root.text
         font.family: theme.font; font.pixelSize: 14
         color: root.icon.length > 0 ? theme.textSecondary : theme.text
+    }
+    Rectangle {
+        id: actionButton
+        visible: root.actionText.length > 0
+        x: body.x; y: body.y + body.height + 8
+        width: actionLabel.implicitWidth + 24; height: 32; radius: 4
+        color: actionHover.pressed ? theme.pick("#E0E0E0", "#1F1F1F", "#000000") : actionHover.hovered ? theme.pick("#F5F5F5", "#3D3D3D", "#000000") : theme.surface
+        border.width: 1; border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF")
+        Text {
+            id: actionLabel
+            anchors.centerIn: parent
+            text: root.actionText
+            font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
+            color: theme.text
+        }
+        HoverHandler { id: actionHover; cursorShape: Qt.PointingHandCursor; property bool pressed: actionTap.pressed }
+        TapHandler { id: actionTap; onTapped: root.action() }
+        Accessible.role: Accessible.Button
+        Accessible.name: root.actionText
     }
     Rectangle {
         id: hcFill1
@@ -49,5 +85,5 @@ Item {
         Accessible.name: "Dismiss"
     }
     Accessible.role: Accessible.AlertMessage
-    Accessible.name: root.text
+    Accessible.name: root.title ? root.title + " " + root.text : root.text
 }

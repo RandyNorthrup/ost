@@ -804,8 +804,13 @@ Window {
         eventPhase: liveEvent.eventPhase || "", qna: !!liveEvent.qna && scheduled,
         e2ee: e2ee, canPark: canPark, voicemail: voicemail,
         whiteboardSharing: !!contentState.mine && !!contentState.mine.content && ["whiteboard", "extensible_app"].indexOf(contentState.mine.content.type) >= 0,
-        pptSharing: !!contentState.mine && !!contentState.mine.content && contentState.mine.content.type === "ppt"
+        pptSharing: pptPresenting,
+        pptViewing: pptViewed && myRole !== "attendee"
     })
+    /// We present PowerPoint Live.
+    readonly property bool pptPresenting: !!contentState.mine && !!contentState.mine.content && contentState.mine.content.type === "ppt"
+    /// We view someone's PowerPoint Live (the stage shows it, not ours).
+    readonly property bool pptViewed: !pptPresenting && !!contentSession && !contentSession.mine && !!contentSession.content && contentSession.content.type === "ppt"
     /// A town hall or webinar (Backend call_event_json): its green room,
     /// live state, Manage what attendees see and Q&A
     /// (docs/spec/town-halls-and-webinars.md).
@@ -874,7 +879,7 @@ Window {
                                          StagingRoomStartMeetingButton: Math.ceil(startEventMetrics.advanceWidth) + 24.67 + 16,
                                          StagingRoomEndMeetingButton: Math.ceil(endEventMetrics.advanceWidth) + 24.67 + 16,
                                          // Teams' "Stop sharing" (62 wide) and PowerPoint Live's Layout + Stop sharing.
-                                         WhiteboardControlsSection: 70, PptControlsSection: 126,
+                                         WhiteboardControlsSection: 70, PptControlsSection: pptViewed ? 60 : 126,
                                          default: ubarButton })
     // The middle slot's room: from 4 past the indicators (shield, timer)
     // to 17 before Leave; the new controls' slot ends 4 before the end
@@ -938,7 +943,11 @@ Window {
         // Stop sharing a Whiteboard (Teams' whiteboard-sharing-controls);
         // PowerPoint Live asks first ("Stop presenting?").
         else if (name === "WhiteboardControlsSection") backend.contentShareStop()
-        else if (name === "PptControlsSection") stopPresentingDialog.open()
+        // A viewer's Take control takes the presentation over at once.
+        else if (name === "PptControlsSection") {
+            if (pptViewed) backend.contentTakeControl(contentSession.correlationId)
+            else stopPresentingDialog.open()
+        }
         else if (name === "ScreensharingControlButton") {
             // Teams' viewer button: Take control (asks first), Stop control.
             if (controlState.state === "controlling") screenControl("release", "")
@@ -1750,7 +1759,11 @@ Window {
     property var callHealth: ({})
     signal refreshCallHealth()
     // Teams refreshes at once when your media turns on or off.
-    onCameraOnChanged: if (side === "callHealth") refreshCallHealth()
+    onCameraOnChanged: {
+        if (side === "callHealth") refreshCallHealth()
+        // PowerPoint Live's Cameo goes back to Content only when the camera goes off.
+        if (!cameraOn && pptPresenting && pptLayout === "Cameo") { pptLayout = "ContentOnly"; backend.contentPptCameo(false) }
+    }
     function callHealthPaneForTest() { return callHealthPane }
     property var timerData: null
     property bool everyonePresents: false
@@ -2310,7 +2323,8 @@ Window {
                     title: win.peer
                     presenterName: win.contentSession ? (win.contentSession.mine ? win.selfName : win.contentSession.presenterName) : ""
                     attendees: win.others.length + 1
-                    pptLayout: win.pptLayout
+                    pptLayout: win.pptStageLayout
+                    pptCameoKey: win.pptCameoKey
                     onPptNavigated: state => backend.contentShareState(state)
                     onBoardReported: (url, passThrough) => {
                         backend.contentShareState(JSON.stringify(passThrough !== undefined && passThrough !== null
@@ -2891,7 +2905,8 @@ Window {
                     title: win.peer
                     presenterName: win.contentSession ? (win.contentSession.mine ? win.selfName : win.contentSession.presenterName) : ""
                     attendees: win.others.length + 1
-                    pptLayout: win.pptLayout
+                    pptLayout: win.pptStageLayout
+                    pptCameoKey: win.pptCameoKey
                     onPptNavigated: state => backend.contentShareState(state)
                     onBoardReported: (url, passThrough) => {
                         backend.contentShareState(JSON.stringify(passThrough !== undefined && passThrough !== null
@@ -3016,6 +3031,23 @@ Window {
         roomName: win.breakoutInvite ? win.breakoutInvite.name : ""
         onLater: win.breakoutInvite = null
         onJoin: { win.breakoutInvite = null; win.joinBreakoutRoom() }
+    }
+    // PowerPoint Live taken over (Teams' PptSharingStolen warning):
+    // "Another user took control" / "{name} is now in control of the
+    // presentation." with Take back (takes it again).
+    property string pptTakenDismissed: ""
+    CallAlert {
+        readonly property string takenBy: win.contentState.takenBy || ""
+        visible: takenBy !== "" && win.pptTakenDismissed !== takenBy && !win.breakoutAlert && win.pptViewed
+        x: stage.x + (stage.width - width) / 2
+        y: win.belowBar + 10.7
+        z: 6
+        icon: "warning-20-filled"
+        title: "Another user took control"
+        text: takenBy + " is now in control of the presentation."
+        actionText: "Take back"
+        onAction: { win.pptTakenDismissed = takenBy; backend.contentTakeControl(win.contentSession.correlationId) }
+        onDismissed: win.pptTakenDismissed = takenBy
     }
     CallAlert {
         visible: !!win.breakoutAlert
@@ -4512,12 +4544,21 @@ Window {
     Component {
         id: cPptControls
         Row {
+            // Viewing: Take control (ppt-sharing-viewer-controls'
+            // takeControlPptBtn).
             BarButton {
+                visible: win.pptViewed
+                icon: "take-control-20"; label: "Take control"; tip: "Take control"
+                onClicked: win.runControl("PptControlsSection")
+            }
+            BarButton {
+                visible: !win.pptViewed
                 id: pptLayoutB
                 icon: "scb-layout"; label: "Layout"; tip: "Layout"
                 onClicked: { pptLayoutMenu.parent = pptLayoutB; pptLayoutMenu.open() }
             }
             BarButton {
+                visible: !win.pptViewed
                 icon: win.newControls ? "nmc-share-stop" : "call-share-stop-filled"; label: "Stop sharing"; strong: !win.newControls
                 iconColor: theme.hc("#B10E1C", "#FFFFFF")
                 tip: "Stop sharing"
@@ -4528,14 +4569,34 @@ Window {
     // PowerPoint Live's Layout: Content only or Cameo (your camera on the
     // slide).
     property string pptLayout: "ContentOnly"
+    onPptPresentingChanged: if (!pptPresenting) pptLayout = "ContentOnly"
+    readonly property bool pptCameoDetected: {
+        const s = contentStageForTest()
+        return !!s && s.pptCameoDetected
+    }
+    // The slide show's layout: ours while we present, else the presenter's
+    // (their weatherPerson state's mode, Teams' sharingLayoutMode).
+    readonly property string pptStageLayout: {
+        if (pptPresenting) return pptLayout
+        const s = contentSession
+        if (!s) return "ContentOnly"
+        const p = pptPresenterEntry
+        try { const l = p && p.weather_person ? JSON.parse(p.weather_person) : null; return l && l.mode === "Cameo" ? "Cameo" : "ContentOnly" } catch (e) { return "ContentOnly" }
+    }
+    // Cameo's picture: our camera while we present, else the presenter's
+    // incoming video (each client composites it, as Teams).
+    readonly property string pptCameoKey: pptPresenting ? (cameraOn ? "self" : "") : (pptPresenterEntry ? (videoKeys[pptPresenterEntry.id] || "") : "")
+    readonly property var pptPresenterEntry: contentSession ? (roster.find(r => String(r.id).toLowerCase() === contentSession.presenter) || null) : null
     MenuPopup {
         id: pptLayoutMenu
         y: parent ? parent.height + 5 : 0
         items: [
             { label: "Content only", checked: win.pptLayout === "ContentOnly" },
-            { label: "Cameo", checked: win.pptLayout === "Cameo" }
+            // Teams: Cameo needs your camera and a cameo in the deck.
+            { label: "Cameo", checked: win.pptLayout === "Cameo", enabled: win.cameraOn && win.pptCameoDetected,
+              tip: !win.cameraOn ? "Turn on your camera to select this layout" : !win.pptCameoDetected ? "Add your video feed to this slide to use Cameo." : "" }
         ]
-        onPicked: i => win.pptLayout = i === 1 ? "Cameo" : "ContentOnly"
+        onPicked: i => { win.pptLayout = i === 1 ? "Cameo" : "ContentOnly"; backend.contentPptCameo(win.pptLayout === "Cameo") }
     }
     // Teams' "Stop presenting?" (400 x 205, measured 2026-11-18).
     ConfirmDialog {
@@ -4925,9 +4986,18 @@ Window {
     property alias shareIncludeSound: shareTray.includeSound
     /// PowerPoint Live or Excel Live for `file` ({name, url, driveId,
     /// itemId}); Excel Live gives the meeting's people edit access.
-    function startOfficeLive(kind, file) {
+    function startOfficeLive(kind, file, confirmed) {
+        // Excel Live asks first (Teams' "Share with all participants?").
+        if (kind === "excel" && !confirmed) { meetingFileShareDialog.file = file; meetingFileShareDialog.open(); return }
         const people = others.map(p => String(p.id || "")).filter(i => i.indexOf("8:orgid:") === 0).map(i => i.slice(8))
         backend.contentShareStart(kind, JSON.stringify({ url: file.url || "", driveId: file.driveId || file.drive_id || "", itemId: file.itemId || file.id || "", people: people }))
+    }
+    MeetingFileShareDialog {
+        id: meetingFileShareDialog
+        property var file: null
+        fileName: file ? (file.name || "") : ""
+        learnMoreUrl: "https://support.microsoft.com/office/sharing-files-folders-and-list-items-74cab0bf-39c6-4112-a63f-88ee121722d0?ns=spostandard"
+        onConfirmed: if (file) win.startOfficeLive("excel", file, true)
     }
     function openShareTray() {
         const b = barItem("ShareButton")

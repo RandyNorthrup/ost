@@ -3212,6 +3212,10 @@ Window {
                 const noAudio = preJoin.audio === "none"
                 const cam = preJoin.cameraOn
                 preJoin.close(); preJoin.join(!noAudio && Qt.application.arguments.indexOf("--join-muted") < 0, !noAudio, cam)
+            } else if (step >= 3 && step <= 6 && !backend.callState && preJoin.visible) {
+                // Join with an ID can open the pre-join screen late: join once it's there.
+                console.warn("JOIN retry")
+                preJoin.close(); preJoin.join(Qt.application.arguments.indexOf("--join-muted") < 0, true, preJoin.cameraOn)
             } else if (step >= 3 && step <= 153 + window.joinStay && Qt.application.arguments.indexOf("--join-lobby-wait") >= 0) {
                 // --join-lobby-wait: held in the lobby (a second account):
                 // capture the waiting screen, wait to be admitted (or
@@ -3423,7 +3427,14 @@ Window {
                 }
                 else if (step === 25) { log("presenting"); shot("stage") }
                 else if (step === 35) { log("later"); shot("stage-later") }
-                else if (step === 40 && kind === "ppt") callWindow.contentStageForTest().pptNextForTest()
+                else if (step === 40 && kind === "ppt" && Qt.application.arguments.indexOf("--join-content-cameo") < 0) callWindow.contentStageForTest().pptNextForTest()
+                // --join-content-cameo (ppt): the camera on, then Layout ▸ Cameo, captured.
+                else if (step === 28 && kind === "ppt" && Qt.application.arguments.indexOf("--join-content-cameo") >= 0 && !backend.callCameraOn) backend.toggleCamera()
+                else if (step === 36 && kind === "ppt" && Qt.application.arguments.indexOf("--join-content-cameo") >= 0) {
+                    console.warn("CONTENT cameo detected", callWindow.pptCameoDetected, "camera", callWindow.cameraOn)
+                    callWindow.pptLayout = "Cameo"; backend.contentPptCameo(true)
+                }
+                else if (step === 44 && Qt.application.arguments.indexOf("--join-content-cameo") >= 0) { log("cameo"); shot("cameo") }
                 else if (step === 45) { log("moved"); shot("stage-moved") }
                 else if (step === 3 + window.joinStay && kind && callWindow.contentState.mine) { log("stopping"); backend.contentShareStop() }
                 else if (step === 6 + window.joinStay) { log("stopped"); shot("stopped") }

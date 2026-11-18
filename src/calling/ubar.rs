@@ -674,6 +674,10 @@ pub struct Facts {
     /// We present PowerPoint Live (PptControlsSection: Layout, Stop
     /// sharing).
     pub ppt_sharing: bool,
+    /// We view someone's PowerPoint Live and may take it over
+    /// (PptControlsSection's viewer controls, Take control: any meeting
+    /// role but Attendee).
+    pub ppt_viewing: bool,
 }
 
 impl Facts {
@@ -701,7 +705,7 @@ impl Facts {
             "PopoutContentButton" => self.can_pop_out,
             "ScreensharingControlButton" => self.can_take_control,
             "WhiteboardControlsSection" => self.whiteboard_sharing,
-            "PptControlsSection" => self.ppt_sharing,
+            "PptControlsSection" => self.ppt_sharing || self.ppt_viewing,
             "ResumeButton" => self.p2p && self.on_hold && !self.voicemail,
             "CallTransferButtonV2" | "CallConsultativeTransferButtonV2" => self.p2p && !self.voicemail,
             "ChatButton" => !self.pstn && !self.echo && !self.voicemail,

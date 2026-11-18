@@ -1480,6 +1480,25 @@ pub mod qobject {
         /// Stop presenting the session.
         #[qinvokable]
         fn content_share_stop(self: Pin<&mut Backend>);
+        /// Take over the PowerPoint Live session someone else presents
+        /// (Teams' takeControlPptBtn).
+        #[qinvokable]
+        fn content_take_control(self: Pin<&mut Backend>, correlation: &QString);
+        /// PowerPoint Live's pointer (laser, cursor) to everyone, as a
+        /// proxied LiveInking message (`event_data`: Teams' AnnotationData).
+        #[qinvokable]
+        fn content_send_inking(self: Pin<&mut Backend>, event_data: &QString);
+        /// PowerPoint Live's Layout: Cameo (true) or Content only.
+        #[qinvokable]
+        fn content_ppt_cameo(self: Pin<&mut Backend>, on: bool);
+        /// Where PowerPoint Live's slide-show page gets Cameo pictures
+        /// (cameo_feed: a loopback WebSocket with a secret path).
+        #[qinvokable]
+        fn cameo_socket(self: &Backend) -> QString;
+        /// Someone's PowerPoint Live pointer (a LiveInking message):
+        /// `event_data` is their AnnotationData, `from` their participant id.
+        #[qsignal]
+        fn content_inking(self: Pin<&mut Backend>, from: QString, event_data: QString);
         /// A shared board's frame address on the stage (Teams' whiteboard
         /// renderer): `session_url` with Teams' parameters; `extra` a JSON
         /// object of more parameters (Annotate's).
@@ -3196,6 +3215,11 @@ struct CallSlot {
     /// A transfer or park replaced the answered (untagged) call: its end
     /// is not the end of the call we're now in.
     superseded_untagged: bool,
+    /// When we answered a group chat's call by joining its conversation:
+    /// the invitation itself stays unanswered and the service ends it
+    /// about a minute later (untagged: 408 "Call timed out without any
+    /// signaling after attach from callee endpoints"). That end isn't ours.
+    group_invite_at: Option<std::time::Instant>,
     /// A consult transfer replaced the answered call with this person
     /// (the transferor): its ends, which name them, aren't ours.
     replaced_peer: Option<String>,
@@ -5830,6 +5854,10 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         return;
     }
     // Meeting reactions: show them on the sender's tile.
+    // (PowerPoint Live's LiveInking messages come the same way.)
+    if json.contains("\"LiveInking\"") && content_share::content_event(json, qt).await {
+        return;
+    }
     if let Some(reactions) = teams_cli::calling::roster::meeting_reactions(json) {
         for (mri, name) in reactions {
             let _ = qt.queue(move |this| {
@@ -6555,6 +6583,13 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         // call's; the call we're now in has its own tag.
         if slot.replaced_peer.is_some() && teams_cli::calling::incoming::end_sender(json) == slot.replaced_peer {
             tracing::info!("the call a consult transfer replaced ended");
+            return;
+        }
+        if !json.contains("\"callTag\"")
+            && let Some(at) = slot.group_invite_at.take()
+            && at.elapsed() < std::time::Duration::from_secs(300)
+        {
+            tracing::info!("the group call's invitation we joined instead of answering ended");
             return;
         }
         if slot.superseded_untagged {
@@ -7812,6 +7847,7 @@ impl qobject::Backend {
                 if let Some(id) = rung.call_id() {
                     slot.left_calls.push(id);
                 }
+                slot.group_invite_at = Some(std::time::Instant::now());
             }
             thread
         });
@@ -8298,11 +8334,14 @@ impl qobject::Backend {
                     let can_video = call.can_send_video();
                     let can_share = call.can_share();
                     tracing::info!(has_audio, can_dtmf, can_video, can_share, "group call started");
+                    // The group call's dial-in (Teams' Join info ▸ Call me).
+                    let phone = phone_json(&call, "", "", "");
                     seed_roster(&qt, &call).await;
                     slot.outgoing = Some(call);
                     drop(slot);
                     spawn_call_stats_logger(qt.clone());
                     let _ = qt.queue(move |mut this| {
+                        this.as_mut().set_call_phone_json(QString::from(phone.as_str()));
                         this.as_mut().set_call_has_audio(has_audio);
                         this.as_mut().set_call_can_dtmf(can_dtmf);
                         this.as_mut().set_call_can_video(can_video);

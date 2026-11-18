@@ -37,6 +37,42 @@
 
         let ready = false;
         let pending = null;
+        // Cameo: the presenter's camera into the slide show (Teams'
+        // VideoFrameToPptForCameo), from OST's loopback feed.
+        const cameo = { url: "", key: "", width: 0, height: 0, ws: null, sent: "", bounds: false, frames: 0 };
+        const cameoFrame = buf => {
+            if (!frame.contentWindow) return;
+            const v = new DataView(buf);
+            const w = v.getUint32(0, true), h = v.getUint32(4, true);
+            const px = w && h ? buf.slice(8) : new ArrayBuffer(0);
+            const meta = '{"sharedArrayBuffer": false, "width": ' + w + ', "height": ' + h + ', "format": "BGRA"}';
+            frame.contentWindow.postMessage({ bufferMetadata: meta, arrayBuffer: px }, podsOrigin, [px]);
+            cameo.frames++;
+            if (cameo.frames === 1 || cameo.frames % 300 === 0) ost.log("cameo frames " + cameo.frames + " " + w + "x" + h);
+        };
+        const cameoWant = () => {
+            const want = JSON.stringify({ key: cameo.key, width: cameo.width, height: cameo.height });
+            if (cameo.ws && cameo.ws.readyState === 1 && want !== cameo.sent) { cameo.ws.send(want); cameo.sent = want; ost.log("cameo wants " + want); }
+        };
+        const cameoSet = (url, key) => {
+            if (!url || !key) {
+                if (cameo.ws) { cameo.ws.close(); cameo.ws = null; }
+                if (cameo.key) cameoFrame(new ArrayBuffer(8));
+                cameo.key = ""; cameo.sent = "";
+                return;
+            }
+            cameo.key = key;
+            if (!cameo.ws || cameo.url !== url) {
+                if (cameo.ws) cameo.ws.close();
+                cameo.url = url; cameo.sent = "";
+                const ws = new WebSocket(url);
+                ws.binaryType = "arraybuffer";
+                ws.onopen = () => cameoWant();
+                ws.onmessage = e => { if (e.data instanceof ArrayBuffer && ready) cameoFrame(e.data); };
+                ws.onclose = () => { if (cameo.ws === ws) cameo.ws = null; };
+                cameo.ws = ws;
+            } else cameoWant();
+        };
         const post = o => { if (frame.contentWindow) frame.contentWindow.postMessage(JSON.stringify(o), podsOrigin); };
         const now = Date.now();
         window.addEventListener("message", e => {
@@ -87,7 +123,39 @@
                     ost.event("slideCount", JSON.stringify({ count: m.m_slidesCount }));
                     break;
                 case 3:
-                    ost.event("currentPosition", JSON.stringify({ slideIndex: m.m_slideIndex }));
+                    ost.event("currentPosition", JSON.stringify({ slideIndex: m.m_slideIndex, timeLineMappings: m.m_timeLineMappings || [],
+                                                                metadata: m.m_metadata || null }));
+                    break;
+                case 53: // AnnotationEvent: ink, laser, cursor (Teams relays them).
+                    ost.event("annotation", JSON.stringify({ eventType: m.m_annotationEventType, eventJson: m.m_annotationEventJson,
+                                                           strokeID: m.m_annotationStrokeID, slideID: m.m_annotationSlideID,
+                                                           metadata: m.m_metadata || null }));
+                    break;
+                case 72: // TakeControl from PowerPoint's own button.
+                    ost.event("takeControl", "{}");
+                    break;
+                case 48: { // OnSlideViewBoundsChanged: the size Cameo's pictures take.
+                    const b = m.m_slideViewBounds || {};
+                    const w = Math.round((b.right || 0) - (b.left || 0)), h = Math.round((b.bottom || 0) - (b.top || 0));
+                    if (w > 0 && h > 0) cameo.bounds = true;
+                    if (w > 0 && h > 0 && (w !== cameo.width || h !== cameo.height)) { cameo.width = w; cameo.height = h; cameoWant(); }
+                    break;
+                }
+                case 66: // CameoDetectedInPresentation: the deck has a cameo (Teams' Layout ▸ Cameo needs one).
+                    ost.event("cameoDetected", JSON.stringify({ detected: !!m.m_fCameoDetectedInPresentation }));
+                    break;
+                case 67: { // CameoFrameRequestForSlide: the cameo on this slide and its size.
+                    const c = (m.m_cameoInSlide || [])[0];
+                    ost.log("cameo request " + JSON.stringify(m.m_cameoInSlide || []).slice(0, 200));
+                    // Without slide-view bounds yet, the cameo's own size (device pixels).
+                    if (c && !cameo.bounds) {
+                        const w = Math.ceil((c.m_widthInPixels || 0) * (window.devicePixelRatio || 1));
+                        const h = Math.ceil((c.m_heightInPixels || 0) * (window.devicePixelRatio || 1));
+                        if (w > 0 && h > 0 && (w !== cameo.width || h !== cameo.height)) { cameo.width = w; cameo.height = h; cameoWant(); }
+                    }
+                    break;
+                }
+                case 18: // Pointer moves over the frame (Teams hides its bar's auto-hide on them).
                     break;
                 case 10:
                     ost.event("error", JSON.stringify({ code: m.m_code, name: m.m_errorName || "" }));
@@ -114,6 +182,8 @@
         });
         ost.command.connect(json => { try { const o = JSON.parse(json); if (ready && typeof o.m_type === "number") post(o); } catch (e) {} });
         ost.layoutChanged.connect(mode => { if (ready) post({ m_type: 46, m_sharingLayoutMode: mode }); });
+        // Cameo's pictures: {url, key} (the camera's frames), or {} to stop.
+        ost.cameo.connect(json => { let c = {}; try { c = JSON.parse(json); } catch (e) {} cameoSet(c.url || "", c.key || ""); });
         ost.token.connect((resource, token) => { if (ready) post({ m_type: 49, m_token: token, m_resourceId: resource }); });
     });
 })();

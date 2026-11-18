@@ -224,6 +224,7 @@ fn capture(
             };
             (n.width, n.height) = (info.size().width, info.size().height);
             tracing::info!(format = ?info.format(), n.width, n.height, "screen capture format");
+            LAST_SIZE.store(((n.width as u64) << 32) | n.height as u64, std::sync::atomic::Ordering::Relaxed);
         })
         .process(move |stream, n| {
             let Some(mut buffer) = stream.dequeue_buffer() else {
@@ -343,6 +344,16 @@ fn capture(
 
 /// The size a `w`x`h` source is sent at: fitted inside MAX_W x MAX_H,
 /// never enlarged, with even sides (I420 halves them).
+/// The size of the latest screen capture (as the desktop gives it).
+static LAST_SIZE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// The size of what the latest screen capture shares, once known.
+pub fn last_size() -> Option<(u32, u32)> {
+    let v = LAST_SIZE.load(std::sync::atomic::Ordering::Relaxed);
+    let (w, h) = ((v >> 32) as u32, v as u32);
+    (w > 0 && h > 0).then_some((w, h))
+}
+
 pub fn fitted(w: u32, h: u32) -> (u32, u32) {
     let scale = (MAX_W as f64 / w as f64)
         .min(MAX_H as f64 / h as f64)

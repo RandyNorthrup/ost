@@ -408,8 +408,31 @@ Built (CallWindow.qml, MenuPopup.qml, SettingsView.qml,
   Mic, Camera, Share | React, Chat, People, More, grid Record, Transcribe,
   Timer, Captions, RTT, Apps, list View ▸, Join info ▸ (Call health),
   Settings ▸, Help. (Controls and Copilot are Teams' starter's and a
-  Copilot licence's; Interpreter and Call me depend on what OST Test 2
-  hasn't: AI interpretation and dial-in.)
+  Copilot licence's.) Rechecked 2026-11-18 after two fixes: an answered
+  group call now stays up (the unanswered invitation's own end — untagged,
+  408 "Call timed out without any signaling after attach from callee
+  endpoints", ~58 s in — is ignored), and the group call's dial-in from its
+  join is published, so Join info ▸ shows **Call me** and Call health, as
+  Teams does for an Audio Conferencing user.
+- What Teams needs for the two (unified-bar-container-manager, async-entry,
+  live licence check 2026-11-18):
+  - **Interpreter** (useAiInterpretationAvailable): ECS
+    `enableAiInterpretation`, and either the bypass flag or the meeting
+    policy's `aiInterpreter` (`meetingPolicy.aiInterpreter`; the calling
+    policy's for 1:1 calls) "Enabled" **and** a Microsoft 365 Copilot
+    licence (`isCopilot`, not for MTO); or the organizer turned
+    interpretation on for everyone (then attendees without Copilot get it
+    too). The test accounts' meeting policy has `aiInterpreter` Enabled;
+    only ost-test1 has a Copilot licence (MICROSOFT_365_COPILOT_FOR_BUSINESS,
+    the tenant's 25-seat trial with 24 seats unassigned). OST Test 2 and 3
+    would show Interpreter with one of those trial seats assigned. OST
+    has no AI interpretation of its own yet.
+  - **Call me** (PstnButton, sM): the call's `pstnCapabilities.isDialInEnabled`
+    and `isPSTNEnabled`, an interactive calling screen, and dial-in details
+    for the meeting (`meetingInfoFromCall.pstnDetails`, there when the
+    organizer has Audio Conferencing). ost-test1 and OST Test 2 have
+    Microsoft Teams Audio Conferencing (dial-out USA/CAN); OST Test 3 has
+    only Teams Phone Standard and Business Basic, so it gets no Call me.
 
 Live check (2026-11-16, linuxlt, ost-test1, the OST calendar test meeting
 alone): `--join-test --join-new-controls --join-stay=80` in light, dark and

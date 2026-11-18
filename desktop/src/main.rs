@@ -1,6 +1,7 @@
 //! OST desktop: a native Qt 6 / QML client on the OST engine.
 
 mod avatars;
+mod cameo_feed;
 mod backend;
 mod clip_edit;
 mod clip_frames;

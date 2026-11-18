@@ -98,6 +98,7 @@ fn main() {
         "qml/AdmitSuspectedDialog.qml",
         "qml/PeoplePane.qml",
         "qml/ConfirmDialog.qml",
+        "qml/MeetingFileShareDialog.qml",
         "qml/LiveMeetingsDialog.qml",
         "qml/AudioFlyout.qml",
         "qml/InviteDialog.qml",

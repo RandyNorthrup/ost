@@ -25,6 +25,9 @@ pub struct ContentShare {
     pub board: String,
     /// The tray's recent decks and workbooks: {ppt: [...], excel: [...]}.
     pub recent: serde_json::Value,
+    /// Who took our presentation over (Teams' PptSharingStolen alert),
+    /// until it's dismissed or we take it back.
+    pub taken_by: String,
 }
 
 impl qobject::Backend {
@@ -37,6 +40,7 @@ impl qobject::Backend {
             "error": c.error,
             "board": c.board,
             "recent": c.recent,
+            "takenBy": c.taken_by,
         })
         .to_string();
         if self.rust().call_content_json.to_string() != json {
@@ -124,6 +128,72 @@ impl qobject::Backend {
                 && let Err(e) = call.stop_content_sharing().await
             {
                 tracing::warn!("stopping the content share: {}", short_error(&e));
+            }
+        });
+    }
+
+    /// Take over a PowerPoint Live session someone else presents (Teams'
+    /// Take control): once the service answers it is ours, and the stage
+    /// switches PowerPoint to the presenter's role.
+    pub fn content_take_control(self: Pin<&mut Self>, correlation: &QString) {
+        let corr = correlation.to_string();
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let r = {
+                let mut slot = call_slot().lock().await;
+                match slot.outgoing.as_mut() {
+                    Some(call) => call.take_content_control(&corr).await,
+                    None => Err(anyhow::anyhow!("Not in a meeting")),
+                }
+            };
+            let _ = qt.queue(move |mut this| {
+                match r {
+                    Ok(s) => {
+                        let c = &mut this.as_mut().rust_mut().content;
+                        c.others.retain(|o| o.correlation_id != s.correlation_id);
+                        c.taken_by.clear();
+                        c.mine = Some(s);
+                    }
+                    Err(e) => {
+                        tracing::warn!("taking control of the presentation: {}", short_error(&e));
+                        this.as_mut().rust_mut().content.error = short_error(&e);
+                    }
+                }
+                this.as_mut().show_content();
+            });
+        });
+    }
+
+    /// PowerPoint Live's Layout ▸ Cameo (on) or Content only (off): Teams
+    /// publishes the presenter's weatherPerson state with mode "Cameo" (the
+    /// default presenter position, zOrder 2) so attendees switch their
+    /// slide shows too; Content only takes it back.
+    pub fn content_ppt_cameo(self: Pin<&mut Self>, on: bool) {
+        runtime().spawn(async move {
+            let s = teams_cli::calling::presenter_mode::config::WP_PRESENTER_SIZE;
+            let layout = on.then(|| serde_json::json!({ "mode": "Cameo", "x": 1.0 - s, "y": 1.0 - s, "width": s, "height": s, "zOrder": 2 }));
+            let mut slot = call_slot().lock().await;
+            let Some(call) = slot.outgoing.as_mut() else { return };
+            match call.weather_person(layout).await {
+                Ok(()) => tracing::info!(on, "PowerPoint Live layout published"),
+                Err(e) => tracing::warn!("PowerPoint Live layout: {}", short_error(&e)),
+            }
+        });
+    }
+
+    pub fn cameo_socket(&self) -> QString {
+        QString::from(crate::cameo_feed::socket().as_str())
+    }
+
+    /// PowerPoint Live's pointer to everyone (LiveInking).
+    pub fn content_send_inking(self: Pin<&mut Self>, event_data: &QString) {
+        let data = event_data.to_string();
+        runtime().spawn(async move {
+            let sender = call_slot().lock().await.outgoing.as_ref().and_then(|c| c.live_inking_sender());
+            if let Some(s) = sender
+                && let Err(e) = s.send(&data).await
+            {
+                tracing::debug!("LiveInking: {}", short_error(&e));
             }
         });
     }
@@ -434,12 +504,46 @@ impl qobject::Backend {
 /// A call event about content sharing: our session started or failed, or
 /// a state update or end for one we joined. True when it was one.
 pub(crate) async fn content_event(json: &str, qt: &cxx_qt::CxxQtThread<qobject::Backend>) -> bool {
+    // Someone's PowerPoint Live pointer (proxied LiveInking messages).
+    if json.contains("\"LiveInking\"") && json.contains("conversation/receiveMessage") {
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(json) else { return false };
+        let inks = cs::live_inking(&v);
+        if inks.is_empty() {
+            return false;
+        }
+        let _ = qt.queue(move |mut this| {
+            for (from, _, data) in inks {
+                this.as_mut().content_inking(QString::from(from.as_str()), QString::from(data.as_str()));
+            }
+        });
+        return true;
+    }
     if !(json.contains("conversation/addModality") || json.contains("conversation/contentSharing")) {
         return false;
     }
     let Ok(v) = serde_json::from_str::<serde_json::Value>(json) else { return false };
     let mut slot = call_slot().lock().await;
     let Some(call) = slot.outgoing.as_mut() else { return false };
+    // Someone took control of a presentation (ours, or one we view).
+    if let Some((corr, presenter, taken)) = call.content_presenter(&v) {
+        let _ = qt.queue(move |mut this| {
+            let name = this.rust().roster.iter().find(|p| p.id.eq_ignore_ascii_case(&presenter)).map(|p| p.name.clone()).unwrap_or_default();
+            let c = &mut this.as_mut().rust_mut().content;
+            if taken && let Some(mut s) = c.mine.take().filter(|m| m.correlation_id == corr) {
+                tracing::info!("someone took control of our presentation");
+                s.mine = false;
+                s.presenter = presenter.clone();
+                s.presenter_name = name.clone();
+                c.others.retain(|o| o.correlation_id != corr);
+                c.others.push(s);
+                c.taken_by = name;
+            } else if let Some(o) = c.others.iter_mut().find(|o| o.correlation_id == corr) {
+                o.presenter = presenter.clone();
+                o.presenter_name = name;
+            }
+            this.as_mut().show_content();
+        });
+    }
     if let Some(r) = call.content_started(&v) {
         drop(slot);
         let _ = qt.queue(move |mut this| {
@@ -552,8 +656,11 @@ async fn start_content(kind: &str, args: &serde_json::Value, title: &str, me_oid
             let call_id = call_slot().lock().await.outgoing.as_ref().map(|c| c.call_id().to_string()).unwrap_or_default();
             let x = api::live_share::excel_share(&client, d, i, &people, &call_id).await?;
             let s = |k: &str| x.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string();
-            let content = cs::excel_content(&thread, &message, &s("url"), "Excel", &people, &s("fileId"));
-            let state = serde_json::json!({ "extensibleAppContext": { "permittedFileUsers": people } }).to_string();
+            let content = cs::excel_content(&thread, &message, &s("url"), "Excel", &s("fileId"), &s("substrateId"));
+            // Teams names the presenter first among who may open it.
+            let mut permitted = vec![me_oid.to_string()];
+            permitted.extend(people.iter().filter(|p| p.as_str() != me_oid).cloned());
+            let state = cs::excel_state(&permitted, &s("fileId"));
             (content, String::new(), Some(state))
         }
         "content" => {

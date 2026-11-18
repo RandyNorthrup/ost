@@ -128,6 +128,51 @@ Captured (presenter "OST TEST 214 deck.pptx", 2026-11-18):
   Stop sharing asks "Stop presenting?" / "This will end the presentation for
   everyone. To switch presenters select Cancel so the next person can take
   control" [Cancel] [Stop presenting] (400 × 205).
+- **Take control** (an attendee; Teams' PptControlsSection shows the
+  viewer's `ppt-sharing-viewer-controls` ▸ `takeControlPptBtn` "Take
+  control" to every meeting role but Attendee; production has
+  `enableMoveTakeControlButtonToPPT` off, so it's on the bar, not in
+  PowerPoint's frame): `POST links.takeControl` (the session's join answer
+  link) with `{participants: {from}}`; the answer is `{identifier,
+  presenter: {id}, subject, sessionState}`. Everyone (the old presenter
+  too) gets `contentSharingUpdate` naming the new presenter. The frames
+  switch roles in place (SetNavigationOptions 31 and SwitchRole 34: 1
+  presenting, 0 viewing, 2 browsing privately); the new presenter asks
+  PowerPoint where it stands (GetCurrentPosition 3) and sends that as a Nav
+  state. The old presenter's bar goes back to Take control, and it gets
+  Teams' warning alert PptSharingStolen: "Another user took control" /
+  "{userName} is now in control of the presentation." [Take back] (Take
+  back is the same request).
+- **Ink and laser** (measured 2026-11-18, Teams on winpc presenting with
+  PowerPoint's Drawing tools — pointer, laser, pen, highlighter, eraser):
+  the frame sends `m_type 53` AnnotationEvent up (`m_annotationEventType`,
+  `m_annotationEventJson`, `m_annotationStrokeID`, `m_annotationSlideID`,
+  `m_metadata {ae, se}`; types: 0 stroke added, 1 erased, 2 all erased on
+  the slide, 3–5 wet, 6 laser start, 7 laser move, 8 laser end, 9 laser
+  removed, 12 cursor move, 13 cursor hidden). Dry ink (0–2) goes out as a
+  session state `{stateId, causeId, updateType: "DryInk",
+  requestingParticipantId, slideIndex, timeLineMappings,
+  newDryInkEvent: {eventType, eventJson, strokeID, slideID, metadata},
+  presentationUrlEvent, metadata {PresenterId, StateId, …}}` — seen as
+  OST's sequence 3 and 4 after two pen strokes; the pointer (6–9, 12, 13)
+  as a proxied "LiveInking" message on the conversation's message link
+  (`payload.EventData` the same AnnotationData as a JSON string, scope
+  "all"). Viewers hand either to their frame as `m_type 53` down
+  (`m_eventType, m_slideID, m_strokeID, m_eventJson, m_metadata`).
+- **Cameo** (Layout ▸ Cameo): Teams enables it only with the camera on
+  ("Turn on your camera to select this layout") and a cameo in the deck
+  (PowerPoint's `m_type 66` CameoDetectedInPresentation; otherwise "Add
+  your video feed to this slide to use Cameo."; with a plain deck it is
+  greyed, measured 2026-11-18). Picking it publishes the presenter's
+  weatherPerson state `{mode: "Cameo", x, y, width, height, zOrder: 2}`
+  and sends `PPTSharingLayoutChanged` (46) to the frame; attendees take
+  the mode from that state. Every client composites the presenter's camera
+  itself (its own camera, or the presenter's incoming video) at the slide
+  view's size (`m_type 48` `m_slideViewBounds {left, top, right,
+  bottom}`) and posts it into the frame: `postMessage({bufferMetadata:
+  '{"sharedArrayBuffer": false, "width": W, "height": H, "format":
+  "BGRA"}', arrayBuffer}, origin, [arrayBuffer])` (a 0 × 0 frame with an
+  empty buffer when there's no picture).
 
 ## 4. Excel Live and Annotate (from Teams' code)
 
@@ -173,6 +218,25 @@ Captured (presenter "OST TEST 214 deck.pptx", 2026-11-18):
   SwitchRole, …); the presenter's OnPositionChanged goes out as Teams'
   "Nav" state and attendees GoToSlide; Layout (Content only, Cameo) and
   Stop sharing with Teams' "Stop presenting?".
+- [x] PowerPoint Live's Take control (`content_sharing::take_control_body`,
+  `OutgoingCall::take_content_control` / `content_presenter`): the
+  viewer's Take control on the bar (PptControlsSection, not for
+  Attendees) and PowerPoint's own (m_type 72); the session moves between
+  "ours" and "viewed" as the updates name the presenter, the frame
+  switches roles in place, and the old presenter gets "Another user took
+  control" with Take back (CallAlert's title and action).
+- [x] Ink and laser: the presenter's frame's AnnotationEvents go out as
+  DryInk states (strokes) and LiveInking messages (pointer,
+  `OutgoingCall::live_inking_sender`, sent without holding the call);
+  viewers draw others' DryInk states and LiveInking messages
+  (`content_sharing::live_inking`, Backend `contentInking`) with
+  SetAnnotation.
+- [x] Cameo: Layout ▸ Cameo as Teams enables it (camera on, a cameo in the
+  deck), published as the weatherPerson state; attendees follow the
+  presenter's mode; the camera's picture (ours, or the presenter's
+  incoming video) reaches the frame at the slide view's size through
+  `cameo_feed` (a loopback WebSocket with a secret path, BGRA) and
+  ppt_host.js's VideoFrameToPptForCameo.
 - [x] Excel Live (`api::live_share::excel_share`): an edit link for the
   meeting's people, Excel's meeting stage page from its app definition,
   the extensible_app session; attendees host it with isPresenter and
@@ -231,12 +295,43 @@ Captured (presenter "OST TEST 214 deck.pptx", 2026-11-18):
     Meeting.whiteboard`); once KWin's excludeFromCapture was set the
     toolbar disappeared from what Teams received (set after the window is
     mapped: 1.5 s and 3 s after it shows).
+  - Rechecked 2026-11-18 (afternoon) with the fixes in:
+    - Annotate (ost-test1 sharing linuxlt's screen): KWin reports the
+      overlay `excludeFromCapture` true once mapped; the "Starting
+      annotations for everyone…" card shows on linuxlt and not in the
+      picture Teams receives.
+    - Whiteboard, Teams presenting in "OST TEST 214 recheck" (Teams'
+      template "Note pack - yellow" on the board): OST (ost-test1) showed
+      that same board, and with Teams' Follow me on, "Following OST Test 1"
+      with Teams' viewport ("Participants are following you" in Teams).
+    - Whiteboard, OST Test 3 presenting: Teams (a different account)
+      opened the meeting's board with both people on it (O1, O3), Fit to
+      Screen showing the same Note pack.
+    - Annotate, OST Test 3 sharing its screen: the session started and the
+      overlay stayed out of the picture, but Teams showed no annotation
+      layer (only Take control). Teams' sharer also publishes its
+      participant property `screenSharerAttributes {source,
+      annotationWindowSize {width, height, offset, fullHeight}}` when
+      sharing starts (updateScreensharerPropertyBag); OST now sends it too.
+    - Excel Live, Teams presenting: Teams first asks "Share with all
+      participants?" (400 × 235; "Everyone invited to this meeting will be
+      able to access this file. Learn more", the file's card with "People
+      invited to this meeting can edit", Cancel / Share). Its session's
+      content: `{appId, conversationId, extensibleAppContext:
+      '{"permittedFileUsers":[],"appLoadState":"preLoadApp","fileId"}',
+      initialNoteContent: [], loaderLabel: "Excel", messageId: "0",
+      permittedFileUsers: [], shareUrl: "", substrateId: "SPO_" +
+      base64("{siteId},{webId},{listId}") + "_" + driveItemId, type:
+      "extensible_app", url}`; its state `{url: "", extensibleAppContext:
+      {permittedFileUsers: [the presenter], appLoadState: "fullLoadApp",
+      fileId}}`. OST Test 3 hosted Excel's page but it stayed on "Your
+      colleague is preparing to share an Excel workbook": Teams sends the
+      context to the app as `onExtensibleAppContextChanged` whenever it
+      changes, which OST didn't. Both fixed (content, state and the
+      message as Teams; the dialog before OST's own Excel Live).
   - With the same account on both ends Teams treats a session as its own
     (it showed Stop sharing and "This may take a few seconds..." for OST's
     Excel Live, and no annotation layer), so Teams-as-viewer checks of
     Whiteboard and Annotate need a second browser-signed-in account.
-- Not built: the attendee's PowerPoint "Take control" (Teams'
-  takeControlPptBtn: the attendee takes the presentation over), private
-  viewing's toggle from OST's own bar (PowerPoint's own frame has it),
-  PowerPoint's laser and ink sync (LiveInking proxied messages) and Cameo's
-  camera frames into the slide show.
+- Not built: private viewing's toggle from OST's own bar (PowerPoint's own
+  frame has it, as in Teams with isMovePrivateViewingToPPTEnabled).

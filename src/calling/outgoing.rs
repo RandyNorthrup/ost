@@ -471,6 +471,32 @@ impl OutgoingCall {
         Ok(())
     }
 
+    /// What we share, for everyone (Teams' updateScreensharerPropertyBag
+    /// when screen sharing starts): our `screenSharerAttributes` — the
+    /// source ("Monitor" or "Window") and the annotation window's size (the
+    /// shared screen's), which viewers need to show Annotate over it.
+    pub async fn screen_sharer_attributes(&mut self, source: &str, size: Option<(u32, u32)>) -> Result<()> {
+        let link = self.properties_link.clone().context("This meeting can't update participants")?;
+        self.state_seq += 1;
+        let op = uuid::Uuid::new_v4().to_string();
+        let from = serde_json::json!({
+            "id": self.me.0["id"],
+            "endpointId": self.me.0["endpointId"],
+            "participantId": self.me.0["participantId"],
+        });
+        let body = screen_sharer_body(
+            from,
+            source,
+            size,
+            self.state_seq,
+            &op,
+            &signaling::trouter_callback(&self.callbacks.0, &self.callbacks.1, "conversation/updateParticipantPropertiesStatus/"),
+        );
+        cc_post(&self.http, &self.skype_token, &link, &body, "Screen sharer attributes").await?;
+        tracing::info!(?size, "screen sharer attributes sent");
+        Ok(())
+    }
+
     /// Clear a guest's bot screening (Teams' markParticipantAsNotBot: an
     /// updateParticipantsProperties for that participant).
     async fn mark_not_bot(&self, id: &str) -> Result<()> {
@@ -1284,6 +1310,73 @@ impl OutgoingCall {
             return Some((corr, None));
         }
         None
+    }
+
+    /// Take over a session someone else presents (PowerPoint Live's Take
+    /// control): `POST links.takeControl` from the session's join; once
+    /// it answers the session is ours (its state goes out through our
+    /// updateSessionState from then on).
+    pub async fn take_content_control(&mut self, correlation: &str) -> Result<super::content_sharing::Session> {
+        use super::content_sharing as cs;
+        let s = self.joined_content.get(correlation).cloned().context("Not viewing that session")?;
+        let link = s.links.take_control.clone().context("The session has no takeControl link")?;
+        let body = cs::take_control_body(&self.content_from());
+        tracing::info!(%correlation, "content sharing: taking control");
+        let text = self.content_request(reqwest::Method::POST, &link, &body, correlation).await?;
+        let mut mine = s;
+        mine.mine = true;
+        mine.presenter = self.me.0.get("id").and_then(|i| i.as_str()).unwrap_or_default().to_ascii_lowercase();
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
+            let c = v.get("contentSharing").unwrap_or(&v);
+            mine.links.merge(cs::SessionLinks::from(c.get("links").unwrap_or(&serde_json::Value::Null)));
+            if let Some(st) = c.get("sessionState").and_then(|s| s.as_str()).filter(|s| !s.is_empty()) {
+                mine.state = st.to_string();
+            }
+            if let Some(n) = c.get("sequenceNumber").and_then(|n| n.as_u64()) {
+                mine.sequence = mine.sequence.max(n);
+            }
+        }
+        tracing::info!(update = mine.links.update_state.is_some(), "content sharing: we present now");
+        self.joined_content.remove(correlation);
+        self.my_content = Some(mine.clone());
+        Ok(mine)
+    }
+
+    /// A session's presenter changed (someone took control): if it was
+    /// ours, it becomes one we view. (correlation id, the new presenter,
+    /// whether it was taken from us.)
+    pub fn content_presenter(&mut self, event: &serde_json::Value) -> Option<(String, String, bool)> {
+        let (corr, presenter) = super::content_sharing::update_presenter(event)?;
+        let me = self.me.0.get("id").and_then(|i| i.as_str()).unwrap_or_default().to_ascii_lowercase();
+        if self.my_content.as_ref().is_some_and(|m| m.correlation_id == corr) && presenter != me {
+            let mut s = self.my_content.take()?;
+            tracing::info!(%corr, "content sharing: someone took control");
+            s.mine = false;
+            s.presenter = presenter.clone();
+            // We keep getting its updates (our session's callbacks).
+            self.joined_content.insert(corr.clone(), s);
+            return Some((corr, presenter, true));
+        }
+        if let Some(s) = self.joined_content.get_mut(&corr)
+            && s.presenter != presenter
+            && presenter != me
+        {
+            s.presenter = presenter.clone();
+            return Some((corr, presenter, false));
+        }
+        None
+    }
+
+    /// What sends PowerPoint Live's pointer (laser, cursor) to everyone:
+    /// proxied LiveInking messages (Teams' sendLiveInkingMessage), sent
+    /// without holding the call.
+    pub fn live_inking_sender(&self) -> Option<LiveInkingSender> {
+        Some(LiveInkingSender {
+            http: self.http.clone(),
+            token: self.skype_token.clone(),
+            link: self.message_link.clone()?,
+            me: self.me.0.clone(),
+        })
     }
 
     /// Forget a joined session that left the roster.
@@ -2226,6 +2319,23 @@ fn lobby_people(reply: &serde_json::Value) -> Vec<LobbyPerson> {
 }
 
 /// Teams' SendProxiedMessage body for a reaction (scope "all").
+/// Sends PowerPoint Live's pointer as LiveInking messages
+/// ([`OutgoingCall::live_inking_sender`]).
+#[derive(Clone)]
+pub struct LiveInkingSender {
+    http: reqwest::Client,
+    token: String,
+    link: String,
+    me: serde_json::Value,
+}
+
+impl LiveInkingSender {
+    pub async fn send(&self, event_data: &str) -> Result<()> {
+        let body = super::content_sharing::live_inking_body(&self.me, event_data, &uuid::Uuid::new_v4().to_string());
+        cc_post(&self.http, &self.token, &self.link, &body, "LiveInking").await.map(|_| ())
+    }
+}
+
 fn reaction_body(
     me: &serde_json::Value,
     name: &str,
@@ -2364,6 +2474,27 @@ fn controller_link(create_response: &str) -> Option<String> {
         .and_then(|u| u.as_str())
         .filter(|u| super::incoming::is_service_link(u))
         .map(str::to_string)
+}
+
+/// Teams' updateParticipantsProperties body for our own screen sharer
+/// attributes (scope "self").
+fn screen_sharer_body(from: serde_json::Value, source: &str, size: Option<(u32, u32)>, seq: u64, op: &str, status_link: &str) -> serde_json::Value {
+    let size = size.map(|(w, h)| serde_json::json!({ "width": w, "height": h, "offset": 0, "fullHeight": null }));
+    serde_json::json!({
+        "from": from.clone(),
+        "to": [{
+            "id": from["id"],
+            "propertyBag": {
+                "screenSharerAttributes": {
+                    "value": { "source": source, "annotationWindowSize": size },
+                    "sequenceNumber": seq,
+                },
+            },
+        }],
+        "scope": "self",
+        "links": { "updateParticipantPropertiesStatus": status_link },
+        "operationId": op,
+    })
 }
 
 /// Teams' updateParticipantsProperties body clearing a guest's screening.

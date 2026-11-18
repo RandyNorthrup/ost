@@ -105,20 +105,38 @@ pub fn annotation_content(conversation: &str, message_id: &str) -> Value {
     })
 }
 
-/// An Excel Live share's content (16908 `ee`): the Excel app's meeting
-/// stage page for the file, and who may open it.
-pub fn excel_content(conversation: &str, message_id: &str, url: &str, app_name: &str, permitted: &[String], substrate_file_id: &str) -> Value {
-    let context = json!({ "permittedFileUsers": permitted }).to_string();
+/// An Excel Live share's content, as Teams presents it (seen live
+/// 2026-11-18): the Excel app's meeting stage page for the file, its
+/// context while the app preloads (`appLoadState` "preLoadApp", the file's
+/// SharePoint unique id) and the file's substrate id.
+pub fn excel_content(conversation: &str, message_id: &str, url: &str, app_name: &str, file_id: &str, substrate_id: &str) -> Value {
+    let context = json!({ "permittedFileUsers": [], "appLoadState": "preLoadApp", "fileId": file_id }).to_string();
     json!({
+        "appId": EXCEL_APP_ID,
         "conversationId": format!("{conversation}|{EXCEL_APP_ID}"),
-        "id": EXCEL_APP_ID,
+        "extensibleAppContext": context,
+        "initialNoteContent": [],
+        "loaderLabel": app_name,
+        "messageId": message_id,
+        "permittedFileUsers": [],
+        "shareUrl": "",
+        "substrateId": substrate_id,
         "type": "extensible_app",
         "url": url,
-        "messageId": message_id,
-        "loaderLabel": app_name,
-        "extensibleAppContext": context,
-        "substrateFileId": substrate_file_id,
     })
+}
+
+/// An Excel Live share's state once the workbook is shared with the
+/// meeting (Teams' "fullLoadApp"): who may open it and the file.
+pub fn excel_state(permitted: &[String], file_id: &str) -> String {
+    json!({ "url": "", "extensibleAppContext": { "permittedFileUsers": permitted, "appLoadState": "fullLoadApp", "fileId": file_id } }).to_string()
+}
+
+/// A SharePoint file's substrate id (Teams' `substrateId`): "SPO_", the
+/// unpadded base64 of "{siteId},{webId},{listId}", "_", the drive item id.
+pub fn substrate_id(site_id: &str, web_id: &str, list_id: &str, item_id: &str) -> String {
+    let ids = base64::engine::general_purpose::STANDARD_NO_PAD.encode(format!("{site_id},{web_id},{list_id}"));
+    format!("SPO_{ids}_{item_id}")
 }
 
 /// What a PowerPoint Live share names (89637 `buildSharingContentDto`).
@@ -230,6 +248,71 @@ pub fn stop_body(from: &Value) -> Value {
     })
 }
 
+/// `POST links.takeControl` (Teams' PPTSharingSession.takeControl,
+/// calling-pluginless `eG`): an attendee takes the presentation over. The
+/// answer names the new presenter; everyone (the old presenter too) then
+/// gets a `contentSharingUpdate` naming them.
+pub fn take_control_body(from: &Value) -> Value {
+    json!({ "participants": { "from": from } })
+}
+
+/// Who presents a session now, from a `contentSharingUpdate` or a take
+/// control answer: (correlation id, the presenter's MRI, lower case).
+pub fn update_presenter(event: &Value) -> Option<(String, String)> {
+    let b = body(event);
+    let b = b.get("contentSharing").unwrap_or(b);
+    let p = b.get("presenter")?;
+    let id = p.get("id").or(Some(p)).and_then(Value::as_str)?.to_ascii_lowercase();
+    let corr = b.get("contentSharingCorrelationId").and_then(Value::as_str).unwrap_or_default().to_string();
+    (!id.is_empty()).then_some((corr, id))
+}
+
+/// Teams' PowerPoint Live pointer events (laser, cursor) go to the
+/// meeting as a proxied "LiveInking" message (89637 `sendLiveInkingMessage`)
+/// on the conversation's message link, like reactions: the annotation
+/// event as a JSON string in `payload.EventData`.
+pub fn live_inking_body(me: &Value, event_data: &str, operation: &str) -> Value {
+    json!({
+        "from": {
+            "displayName": me["displayName"],
+            "endpointId": me["endpointId"],
+            "id": me["id"],
+            "languageId": me.get("languageId").cloned().unwrap_or(json!("")),
+            "participantId": me["participantId"],
+        },
+        "messageContent": [{
+            "operationId": operation,
+            "payload": { "EventData": event_data },
+            "scope": "all",
+            "to": [],
+            "type": "LiveInking",
+        }],
+    })
+}
+
+/// LiveInking messages in a call event (`conversation/receiveMessage/`):
+/// (sender participant id, sender MRI, the EventData JSON string).
+pub fn live_inking(event: &Value) -> Vec<(String, String, String)> {
+    if !path(event).starts_with("conversation/receiveMessage") {
+        return Vec::new();
+    }
+    let b = body(event);
+    let list: Vec<&Value> = match b.get("messageContent").and_then(Value::as_array) {
+        Some(l) => l.iter().collect(),
+        None => vec![b],
+    };
+    let from = b.get("from").or_else(|| event.get("from"));
+    list.into_iter()
+        .filter(|m| m.get("type").and_then(Value::as_str) == Some("LiveInking"))
+        .filter_map(|m| {
+            let data = m.pointer("/payload/EventData").and_then(Value::as_str)?.to_string();
+            let f = m.get("from").or(from);
+            let s = |k: &str| f.and_then(|f| f.get(k)).and_then(Value::as_str).unwrap_or_default().to_string();
+            Some((s("participantId"), s("id").to_ascii_lowercase(), data))
+        })
+        .collect()
+}
+
 /// A session's links, from addModalitySuccess or a join's answer.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SessionLinks {
@@ -240,6 +323,20 @@ pub struct SessionLinks {
 }
 
 impl SessionLinks {
+    /// Take the links `other` has (a take control answer's) over ours.
+    pub fn merge(&mut self, other: SessionLinks) {
+        for (mine, theirs) in [
+            (&mut self.controller, other.controller),
+            (&mut self.update_state, other.update_state),
+            (&mut self.take_control, other.take_control),
+            (&mut self.leave, other.leave),
+        ] {
+            if theirs.is_some() {
+                *mine = theirs;
+            }
+        }
+    }
+
     pub fn from(links: &Value) -> SessionLinks {
         let s = |k: &str| links.get(k).and_then(Value::as_str).filter(|u| super::incoming::is_service_link(u)).map(str::to_string);
         SessionLinks {
@@ -521,5 +618,51 @@ mod tests {
             "https://app.whiteboard.microsoft.com/meeting?embed=1&meetingType=1&meetingTenantId=t&participantTimestamp=5"
         );
         assert_eq!(serde_json::from_str::<Value>(&board_state("u", None, Some("p"))).unwrap(), json!({"url": "u", "initiatorParticipantId": "p"}));
+    }
+
+    #[test]
+    fn take_control_and_presenter_changes() {
+        let from = json!({"id": "8:orgid:a", "participantId": "p"});
+        assert_eq!(take_control_body(&from), json!({"participants": {"from": from}}));
+        let ev = json!({"callAgentPath": "conversation/contentSharingUpdate/", "body": {"contentSharing": {
+            "contentSharingCorrelationId": "c1", "presenter": {"id": "8:orgid:B", "participantId": "q"}, "sessionState": "{}"}}});
+        assert_eq!(update_presenter(&ev), Some(("c1".into(), "8:orgid:b".into())));
+        assert_eq!(update_presenter(&json!({"body": {"contentSharingCorrelationId": "c"}})), None);
+        let answer = json!({"identifier": "x", "presenter": {"id": "8:orgid:a"}, "subject": "", "sessionState": "{}"});
+        assert_eq!(update_presenter(&answer).map(|p| p.1), Some("8:orgid:a".into()));
+        let mut l = SessionLinks { controller: Some("c".into()), ..Default::default() };
+        l.merge(SessionLinks { update_state: Some("u".into()), ..Default::default() });
+        assert_eq!((l.controller.as_deref(), l.update_state.as_deref()), (Some("c"), Some("u")));
+    }
+
+    #[test]
+    fn excel_content_as_teams() {
+        // The substrate id Teams sent for OST TEST 214 workbook.xlsx (2026-11-18).
+        assert_eq!(
+            substrate_id("fa160c33-a34a-4705-87b6-1f62802d97df", "21b0d3cf-2b9e-45f6-a12e-fcf782c99233", "0e0a18f3-101b-4090-a53e-1e24c4d98efd", "01BV7C2BGPBMSL2ZCLX5GYAJ4JTMY7ICRO"),
+            "SPO_ZmExNjBjMzMtYTM0YS00NzA1LTg3YjYtMWY2MjgwMmQ5N2RmLDIxYjBkM2NmLTJiOWUtNDVmNi1hMTJlLWZjZjc4MmM5OTIzMywwZTBhMThmMy0xMDFiLTQwOTAtYTUzZS0xZTI0YzRkOThlZmQ_01BV7C2BGPBMSL2ZCLX5GYAJ4JTMY7ICRO"
+        );
+        let c = excel_content("19:m@thread.v2", "0", "https://x/", "Excel", "f1", "SPO_a_b");
+        assert_eq!(c["appId"], EXCEL_APP_ID);
+        assert_eq!(c["conversationId"], format!("19:m@thread.v2|{EXCEL_APP_ID}"));
+        let ctx: Value = serde_json::from_str(c["extensibleAppContext"].as_str().unwrap()).unwrap();
+        assert_eq!(ctx, json!({"permittedFileUsers": [], "appLoadState": "preLoadApp", "fileId": "f1"}));
+        let st: Value = serde_json::from_str(&excel_state(&["a".into()], "f1")).unwrap();
+        assert_eq!(st["extensibleAppContext"]["appLoadState"], "fullLoadApp");
+        assert_eq!(st["url"], "");
+    }
+
+    #[test]
+    fn live_inking_messages() {
+        let me = json!({"displayName": "A", "endpointId": "e", "id": "8:orgid:a", "participantId": "p"});
+        let b = live_inking_body(&me, "{\"eventType\":7}", "op");
+        assert_eq!(b["messageContent"][0]["type"], "LiveInking");
+        assert_eq!(b["messageContent"][0]["payload"]["EventData"], "{\"eventType\":7}");
+        assert_eq!(b["messageContent"][0]["scope"], "all");
+        assert_eq!(b["from"]["participantId"], "p");
+        let ev = json!({"callAgentPath": "conversation/receiveMessage/", "body": {"from": {"id": "8:orgid:B", "participantId": "q"},
+            "messageContent": [{"type": "Reaction", "payload": {}}, {"type": "LiveInking", "payload": {"EventData": "{\"eventType\":6}"}}]}});
+        assert_eq!(live_inking(&ev), vec![("q".to_string(), "8:orgid:b".to_string(), "{\"eventType\":6}".to_string())]);
+        assert!(live_inking(&json!({"callAgentPath": "conversation/update/"})).is_empty());
     }
 }

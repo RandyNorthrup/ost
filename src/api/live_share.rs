@@ -291,6 +291,7 @@ pub async fn excel_share(client: &TeamsClient, drive_id: &str, item_id: &str, pe
         "url": excel_stage_url(&content_url, "onedrive", call_id, &sub),
         "shareUrl": share_url,
         "fileId": unique,
+        "substrateId": crate::calling::content_sharing::substrate_id(&s("/sharepointIds/siteId"), &s("/sharepointIds/webId"), &s("/sharepointIds/listId"), &s("/id")),
         "subEntityId": sub,
     }))
 }

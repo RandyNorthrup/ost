@@ -510,6 +510,7 @@ async fn run(
     let mut control_tick = tokio::time::interval(std::time::Duration::from_millis(500));
     let mut inputs_sent = 0u64;
     let mut inputs_received = 0u64;
+    let mut keys_received = 0u64;
     // What's in force on each receiving stream.
     let mut sent: HashMap<i64, SourceRequest> = HashMap::new();
     let send_requests = |session: &mut Session, sent: &mut HashMap<i64, SourceRequest>| {
@@ -610,8 +611,15 @@ async fn run(
                             }
                             Incoming::ControlInput { source, bytes } => {
                                 inputs_received += 1;
-                                if inputs_received <= 5 || inputs_received.is_multiple_of(50) {
+                                // Keys are counted, not logged (a controller may type a password).
+                                let key = bytes.first() == Some(&0);
+                                if key {
+                                    keys_received += 1;
+                                }
+                                if inputs_received <= 5 && !key || inputs_received.is_multiple_of(50) {
                                     tracing::info!(source, inputs_received, taken = control.takes_input_from(source), bytes = ?bytes, "control input received");
+                                } else if key && (keys_received <= 40 || keys_received.is_multiple_of(50)) {
+                                    tracing::info!(source, keys_received, inputs_received, taken = control.takes_input_from(source), "control key received");
                                 }
                                 if control.takes_input_from(source) {
                                     crate::event_hub::publish(

@@ -13,6 +13,14 @@ Item {
     property string presenterName: ""
     property int attendees: 1
     property string layout: "ContentOnly"
+    /// The deck has a cameo (PowerPoint's CameoDetectedInPresentation).
+    property bool cameoDetected: false
+    /// Cameo's picture (a video frame key: "self" or the presenter's).
+    property string cameoKey: ""
+    readonly property bool cameoOn: started && layout === "Cameo" && cameoKey !== ""
+    function updateCameo() { bridge.cameo(cameoOn ? JSON.stringify({ url: backend.cameoSocket(), key: cameoKey }) : "{}") }
+    onCameoOnChanged: updateCameo()
+    onCameoKeyChanged: if (cameoOn) updateCameo()
     readonly property bool mine: !!session && !!session.mine
     /// The presenter moved to a slide: Teams' Nav state (89637
     /// sendSessionUpdateInternal), as the session's new state.
@@ -26,14 +34,63 @@ Item {
         if (!session || !session.state) return null
         try { return JSON.parse(session.state) } catch (e) { return null }
     }
-    // Attendees follow the presenter's Nav updates (not their own).
+    // Attendees follow the presenter's updates (not their own): Nav moves
+    // the slide, DryInk draws the presenter's ink (Teams'
+    // handleInboundNewDryInkEventUpdate → SetAnnotation).
     onStateObjChanged: {
         const s = stateObj
-        if (mine || !s || s.slideIndex === undefined) return
+        if (mine || !s) return
         if (s.requestingParticipantId && s.requestingParticipantId === bridge.participantId) return
+        if (s.newDryInkEvent && (s.updateType === "DryInk" || s.updateType === undefined)) setAnnotation(s.newDryInkEvent)
+        if (s.slideIndex === undefined || (s.updateType && s.updateType !== "Nav")) return
         bridge.goToSlide(JSON.stringify({ slideIndex: s.slideIndex, timeLineMappings: s.timeLineMappings || [], metadata: s.metadata || null }))
     }
     onLayoutChanged: bridge.layoutChanged(layout)
+    /// Someone's ink, laser or cursor into our slide show (Teams'
+    /// SetAnnotation, m_type 53 down).
+    function setAnnotation(a) {
+        if (!a || a.eventType === undefined) return
+        bridge.command(JSON.stringify({ m_type: 53, m_eventType: a.eventType, m_slideID: a.slideID, m_strokeID: a.strokeID,
+                                        m_eventJson: a.eventJson, m_metadata: a.metadata || null }))
+    }
+    // The presenter's pointer, from their LiveInking messages.
+    Connections {
+        target: backend
+        function onContentInking(from, data) {
+            if (root.mine || from === bridge.participantId) return
+            let a = null
+            try { a = JSON.parse(data) } catch (e) { return }
+            root.setAnnotation(a)
+        }
+    }
+    // Control changed hands (Take control): PowerPoint switches roles in
+    // place (Teams' updateWRSViewingNavigation: SetNavigationOptions and
+    // SwitchRole), and a new presenter sends where it stands as a Nav.
+    property bool started: false
+    onMineChanged: {
+        if (!started) return
+        bridge.command(JSON.stringify({ m_type: 31, m_enableAdvanceOnClick: mine, m_enableKeyboardNavigation: mine }))
+        bridge.command(JSON.stringify({ m_type: 34, m_role: mine ? 1 : 0 }))
+        if (mine) { lastNav = null; bridge.command(JSON.stringify({ m_type: 3 })) }
+    }
+    /// Teams' takeControlPptBtn: ask for the session.
+    signal takeControlRequested()
+    property int annotationSeq: 0
+    function presenterAnnotation(json) {
+        let a = {}
+        try { a = JSON.parse(json) } catch (e) { return }
+        const t = a.eventType
+        // Dry ink (added, erased, all erased on a slide) goes out in the
+        // session state; the pointer (laser 6–9, cursor 12–13) as LiveInking.
+        if (t === 0 || t === 1 || t === 2) {
+            const p = root.lastNav || {}
+            const stateId = root.guid()
+            root.navigated(JSON.stringify({ stateId: stateId, causeId: root.guid(), updateType: "DryInk", requestingParticipantId: bridge.participantId,
+                slideIndex: p.slideIndex || 0, timeLineMappings: p.timeLineMappings || [], privateViewingEnabled: false,
+                newDryInkEvent: a, presentationUrlEvent: { presentationUrl: "" },
+                metadata: Object.assign({}, p.metadata || {}, { PresenterId: bridge.participantId, StateId: stateId }), mediaStates: [] }))
+        } else if (t >= 6 && t <= 9 || t === 12 || t === 13) backend.contentSendInking(json)
+    }
 
     QtObject {
         id: bridge
@@ -44,8 +101,15 @@ Item {
         signal layoutChanged(string mode)
         signal token(string resource, string token)
         signal command(string json)
+        signal cameo(string json)
         function event(name, json) {
-            console.info("PPTLIVE " + name)
+            if (name !== "annotation") console.info("PPTLIVE " + name)
+            if (name === "ready") root.started = true
+            if (name === "cameoDetected") { try { root.cameoDetected = !!JSON.parse(json).detected } catch (e) {} return }
+            if (name === "annotation") { if (root.mine) root.presenterAnnotation(json); return }
+            if (name === "takeControl") { if (!root.mine) root.takeControlRequested(); return }
+            // A new presenter's position (asked when control came to us).
+            if (name === "currentPosition" && root.mine && !root.lastNav) name = "position"
             if (name === "position" && root.mine) {
                 let p = {}
                 try { p = JSON.parse(json) } catch (e) {}

@@ -25,6 +25,7 @@ pub struct Injector {
     /// Buttons held down, released if control ends mid-drag.
     held: Vec<i32>,
     keys: Vec<i32>,
+    keys_injected: u64,
 }
 
 /// Whether the desktop can let us take input (a RemoteDesktop portal
@@ -81,7 +82,7 @@ impl Injector {
         let stream = started.streams().first().context("Nothing was picked to control")?;
         let size = stream.size().map_or((1920.0, 1080.0), |(w, h)| (w as f64, h as f64));
         tracing::info!(node = stream.pipe_wire_node_id(), ?size, devices = ?started.devices(), "remote control allowed");
-        Ok(Self { proxy, stream: stream.pipe_wire_node_id(), size, session, held: Vec::new(), keys: Vec::new() })
+        Ok(Self { proxy, stream: stream.pipe_wire_node_id(), size, session, held: Vec::new(), keys: Vec::new(), keys_injected: 0 })
     }
 
     /// Play one of the controller's events.
@@ -134,6 +135,11 @@ impl Injector {
         };
         let state = if k.up { KeyState::Released } else { KeyState::Pressed };
         self.proxy.notify_keyboard_keycode(&self.session, code, state, Default::default()).await?;
+        // How many went in (not which: a controller may type a password).
+        self.keys_injected += 1;
+        if self.keys_injected <= 40 || self.keys_injected.is_multiple_of(50) {
+            tracing::info!(count = self.keys_injected, "remote control: key played");
+        }
         if k.up {
             self.keys.retain(|c| *c != code);
         } else if !self.keys.contains(&code) {
