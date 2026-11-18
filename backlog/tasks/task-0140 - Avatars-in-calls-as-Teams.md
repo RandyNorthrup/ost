@@ -1,11 +1,11 @@
 ---
 id: TASK-0140
 title: Avatars in calls as Teams
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-14T18:00:00Z'
-updated_date: '2026-11-18T15:29:00Z'
+updated_date: '2026-11-18T16:09:00Z'
 labels:
   - calls
 dependencies: []
@@ -21,7 +21,7 @@ Teams' Camera ▾ flyout, pre-join quick picker and Video effects and settings p
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 Research documents how Teams' avatars are stored, rendered and sent
-- [ ] #2 Avatars work in OST the way Teams runs them: the Avatars video app (96a116ab…) hosted as a video app with camera-less frames, the viseme lip-sync model on the mic, avatars listed as effects, reactions and the Avatar builder tab, matched to Teams on winpc
+- [x] #2 Avatars work in OST the way Teams runs them: the Avatars video app (96a116ab…) hosted as a video app with camera-less frames, the viseme lip-sync model on the mic, avatars listed as effects, reactions and the Avatar builder tab, matched to Teams on winpc
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -59,3 +59,16 @@ Reactions as emotes (2026-11-18):
 - Teams under overload (24 busy loops on winpc's 12 cores, 100% CPU): 1 of 2 sessions played the Like in time.
 - Also: the raised hand is sent to the app (meeting.raiseHandStateChanged); the renderer's Web Audio starts without a click (WebView2 parity); the selection is re-sent once the app asks for frames.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Avatars run in OST the way Teams desktop runs them, matched to Teams on winpc.
+
+- OST hosts the Avatars video app (96a116ab) on its app host with NAA and WebView2-style texture streams of camera-less frames; the app's own viseme ONNX model drives lip-sync from the mic; the rendered frames go out as the ost-avatar camera.
+- UI as Teams: pre-join Effects and avatars, Camera flyout Avatars tab and Turn off Avatars, side pane Avatars tab hosting the app's panel, the Avatar builder in the app bar with Teams' header and Present now.
+- Solo stage at 16:9 with the name tag; side pane redraws after roster changes; avatar sent at 1280x720 up to 30 fps; last-used avatar kept on the device as Teams does.
+- Reactions and raised hand reach the app as Teams' meeting.meetingReactionReceived / raiseHandStateChanged. The emote problem was starvation: the host page sent a full NV12 frame per input across processes and every drawn frame was copied twice. Now only the header rows cross and each frame is copied once; the app draws at 30 fps and the first emote plays in about 1 s. OST Test 3 saw 9 of 9 Likes within 0.5–1 s at load 5–8 (release builds); Teams under a 100% CPU hog played 1 of 2, so overload behaviour matches.
+- Harness: --avatar-test, --avatar-likes=<n>, --join-frames(=burst).
+- Tests: 734 lib, 28 desktop crate tests pass.
+<!-- SECTION:FINAL_SUMMARY:END -->
