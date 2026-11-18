@@ -91,6 +91,10 @@ Item {
                 } else if (name === "videoRegistered") {
                     host.registered = true
                     console.info("AVATARS registered for frames " + json)
+                    // The avatar is built: hand it its selection again (its
+                    // emote system only takes up an avatar applied after the
+                    // first build; reactions and the raised hand play then).
+                    if (host.effectRegistered && host.avatarId) host.apply()
                 } else if (name === "videoEffectRegistered") {
                     host.effectRegistered = true
                     if (host.avatarId) host.apply()

@@ -241,6 +241,7 @@ fn main() {
         "qml/PptLiveStage.qml",
         "qml/AnnotationOverlay.qml",
         "qml/ControlAlert.qml",
+        "qml/ContentCameraDialog.qml",
     ];
     let mut resources: Vec<String> = Vec::new();
     for dir in [

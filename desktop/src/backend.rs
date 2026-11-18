@@ -1417,6 +1417,27 @@ pub mod qobject {
         /// as the screen is.
         #[qinvokable]
         fn start_content_camera(self: Pin<&mut Backend>, device: &QString);
+        /// Content from camera's setup dialog: open this camera and show
+        /// it processed as the "content-camera" frames (your video turns
+        /// off first when it's the same camera). False if it can't start.
+        #[qinvokable]
+        fn content_camera_open(self: Pin<&mut Backend>, device: &QString) -> bool;
+        /// The dialog closed without sharing: the camera stops.
+        #[qinvokable]
+        fn content_camera_close(self: Pin<&mut Backend>);
+        /// Teams' applyScanVideoEffect: JSON {quadEnabled, cleanupEnabled,
+        /// zoomEnabled, normalizedQuad: [8]}.
+        #[qinvokable]
+        fn content_camera_apply(self: Pin<&mut Backend>, effects: &QString);
+        /// Teams' Rotate: a quarter turn clockwise.
+        #[qinvokable]
+        fn content_camera_rotate(self: Pin<&mut Backend>);
+        /// Teams' scanVideoEffect: JSON {quadEnabled, cleanupEnabled,
+        /// zoomEnabled, quadDetails: {normalizedQuad, quadStable,
+        /// frameSize: {width, height}}, rotation, frames, ended}; "" when
+        /// no content camera runs.
+        #[qinvokable]
+        fn content_camera_state(self: Pin<&mut Backend>) -> QString;
         /// Teams' Include sound: the computer's sound goes into the call
         /// with the shared screen (mixed into your audio), or stops.
         #[qinvokable]
@@ -3333,14 +3354,20 @@ async fn offer_screen(kind: teams_cli::calling::screencast::Source) -> anyhow::R
 }
 
 /// Teams' Content from camera: share this camera as the screen is.
-async fn offer_camera_content(device: String) -> anyhow::Result<bool> {
+async fn offer_camera_content(camera: teams_cli::calling::content_camera::ContentCamera) -> anyhow::Result<bool> {
     {
         let mut slot = call_slot().lock().await;
         let call = MediaCall::of(&mut slot).context("The call has ended")?;
         anyhow::ensure!(call.can_share(), "This call can't take shared content");
     }
-    let (capture, frames) = teams_cli::calling::screencast::ScreenCapture::from_camera(&device)?;
+    let (capture, frames) = teams_cli::calling::screencast::ScreenCapture::from_content_camera(&camera);
     offer_capture(capture, frames).await
+}
+
+/// The content camera of Content from camera's setup dialog.
+fn content_camera() -> &'static std::sync::Mutex<Option<teams_cli::calling::content_camera::ContentCamera>> {
+    static C: std::sync::Mutex<Option<teams_cli::calling::content_camera::ContentCamera>> = std::sync::Mutex::new(None);
+    &C
 }
 
 /// Offer what's captured to the call (see [`offer_screen`]).
@@ -8498,15 +8525,33 @@ impl qobject::Backend {
 
     pub fn save_video_frame(&self, key: &QString, path: &QString) -> bool {
         let Some(f) = teams_cli::calling::frames::latest(&key.to_string()) else { return false };
-        let write = || -> anyhow::Result<()> {
-            let file = std::fs::File::create(path.to_string())?;
-            let mut enc = png::Encoder::new(std::io::BufWriter::new(file), f.width, f.height);
-            enc.set_color(png::ColorType::Rgba);
-            enc.set_depth(png::BitDepth::Eight);
-            enc.write_header()?.write_image_data(&f.rgba)?;
-            Ok(())
-        };
-        write().is_ok()
+        // A quarter-size picture, written off the GUI thread: test runs save
+        // several a second during a call without loading the machine.
+        let path = path.to_string();
+        std::thread::spawn(move || {
+            let (w, h) = ((f.width / 4).max(1), (f.height / 4).max(1));
+            let mut small = Vec::with_capacity((w * h * 4) as usize);
+            for y in 0..h {
+                let row = ((y * 4) * f.width) as usize * 4;
+                for x in 0..w {
+                    let i = row + (x * 4) as usize * 4;
+                    small.extend_from_slice(&f.rgba[i..i + 4]);
+                }
+            }
+            let write = || -> anyhow::Result<()> {
+                let file = std::fs::File::create(&path)?;
+                let mut enc = png::Encoder::new(std::io::BufWriter::new(file), w, h);
+                enc.set_color(png::ColorType::Rgba);
+                enc.set_depth(png::BitDepth::Eight);
+                enc.set_compression(png::Compression::Fast);
+                enc.write_header()?.write_image_data(&small)?;
+                Ok(())
+            };
+            if let Err(e) = write() {
+                tracing::warn!("saving a video frame failed: {e}");
+            }
+        });
+        true
     }
 
     pub fn time_zone_name(self: Pin<&mut Self>) -> QString {
@@ -11061,16 +11106,104 @@ impl qobject::Backend {
         self.as_mut().set_call_share_sound(on);
     }
 
+    pub fn content_camera_open(mut self: Pin<&mut Self>, device: &QString) -> bool {
+        let device = device.to_string();
+        let mut slot = content_camera().lock().unwrap_or_else(|e| e.into_inner());
+        if slot.as_ref().is_some_and(|c| c.device() == device && !c.ended()) {
+            return true;
+        }
+        *slot = None;
+        if device.is_empty() {
+            return false;
+        }
+        // Teams: "We'll stop sharing your video while you're doing this."
+        if self.rust().call_camera_on && camera_device().as_deref() == Some(device.as_str()) {
+            tracing::info!("content camera: turning your video off (the same camera)");
+            self.as_mut().toggle_camera();
+        }
+        match teams_cli::calling::content_camera::ContentCamera::start(&device) {
+            Ok(c) => {
+                *slot = Some(c);
+                true
+            }
+            Err(e) => {
+                tracing::warn!("content camera: {}", short_error(&e));
+                false
+            }
+        }
+    }
+
+    pub fn content_camera_close(self: Pin<&mut Self>) {
+        if content_camera().lock().unwrap_or_else(|e| e.into_inner()).take().is_some() {
+            tracing::info!("content camera: dialog closed");
+        }
+    }
+
+    pub fn content_camera_apply(self: Pin<&mut Self>, effects: &QString) {
+        let v: serde_json::Value = serde_json::from_str(&effects.to_string()).unwrap_or_default();
+        let mut quad = ost_vfx::content_camera::NO_QUAD;
+        if let Some(q) = v["normalizedQuad"].as_array() {
+            for (i, x) in q.iter().take(8).enumerate() {
+                quad[i] = x.as_f64().unwrap_or(0.0) as f32;
+            }
+        }
+        let o = ost_vfx::content_camera::Options {
+            quad_enabled: v["quadEnabled"].as_bool().unwrap_or(false),
+            cleanup_enabled: v["cleanupEnabled"].as_bool().unwrap_or(false),
+            zoom_enabled: v["zoomEnabled"].as_bool().unwrap_or(false),
+            normalized_quad: quad,
+        };
+        if let Some(c) = content_camera().lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+            c.apply(o);
+        }
+    }
+
+    pub fn content_camera_rotate(self: Pin<&mut Self>) {
+        if let Some(c) = content_camera().lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+            c.rotate();
+        }
+    }
+
+    pub fn content_camera_state(self: Pin<&mut Self>) -> QString {
+        let slot = content_camera().lock().unwrap_or_else(|e| e.into_inner());
+        let Some(c) = slot.as_ref() else { return QString::default() };
+        let st = c.state();
+        QString::from(
+            serde_json::json!({
+                "quadEnabled": st.quad_enabled,
+                "cleanupEnabled": st.cleanup_enabled,
+                "zoomEnabled": st.zoom_enabled,
+                "quadDetails": {
+                    "normalizedQuad": st.normalized_quad,
+                    "quadStable": st.quad_stable,
+                    "frameSize": { "width": st.frame_size.0, "height": st.frame_size.1 },
+                },
+                "rotation": st.rotation,
+                "frames": c.frames(),
+                "ended": c.ended(),
+                "pending": c.pending(),
+            })
+            .to_string()
+            .as_str(),
+        )
+    }
+
     pub fn start_content_camera(mut self: Pin<&mut Self>, device: &QString) {
         if self.rust().call_sharing {
             return;
         }
-        let device = device.to_string();
+        // The dialog's camera, with its effects as they were (Teams'
+        // Share), now the share's.
+        if !self.as_mut().content_camera_open(device) {
+            return;
+        }
+        let Some(camera) = content_camera().lock().unwrap_or_else(|e| e.into_inner()).take() else { return };
+        camera.set_preview(false);
         // Control (Teams: give control is for screens and windows).
         self.as_mut().rust_mut().presenting.kind = None;
         let qt = self.qt_thread();
         runtime().spawn(async move {
-            match offer_camera_content(device).await {
+            match offer_camera_content(camera).await {
                 Ok(true) => {
                     let _ = qt.queue(|mut this| this.as_mut().set_call_sharing(true));
                     spawn_share_watch(qt.clone());

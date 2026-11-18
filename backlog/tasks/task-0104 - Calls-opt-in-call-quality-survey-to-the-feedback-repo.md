@@ -1,11 +1,11 @@
 ---
 id: TASK-0104
 title: 'Calls: opt-in call quality survey to the feedback repo'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-11T01:52:00Z'
-updated_date: '2026-11-18T15:06:00Z'
+updated_date: '2026-11-18T15:19:00Z'
 labels:
   - feedback
   - calls
@@ -23,7 +23,7 @@ Teams' post-call 'How was the call quality?' as an opt-in (off by default); low 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 Settings > Privacy has the opt-in, off by default
-- [ ] #2 When on, the survey shows after calls as Teams' (How was the call quality? with Had issues / Good); Had issues with its Video / Screenshare / Audio reasons sends Report a problem to the feedback repo with media details and no participant names
+- [x] #2 When on, the survey shows after calls as Teams' (How was the call quality? with Had issues / Good); Had issues with its Video / Screenshare / Audio reasons sends Report a problem to the feedback repo with media details and no participant names
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -44,3 +44,14 @@ Built so far: Only Teams' Surveys switch under Privacy (synced like Teams', on b
 - Merged 39cfa18 (2026-11-18). AC1 done. AC2 built and checked in OST; Teams' survey layout is being measured live on winpc before it's checked.
 - 2026-11-18 (follow-up) Teams' survey measured live on winpc: its sampling forced with a conditional CDP breakpoint in checkIfSampledForPostCallCQF (session closed and the override cleared by a final Meet now; no rating sent, both surveys dismissed). ThumbsCombined is one page: title 28/700, the thumbs, then the 580-wide "What could've been better?" group with tabs, two 282-wide reason columns, the privacy line and Dismiss / Send feedback. CallQualitySurvey.qml rebuilt to those measurements (one page, Teams' glyphs and colours); OST's privacy line says Report a problem opens a public GitHub issue. Checked in OST: cop3-cqf-rate / -ticked / -feedback / -thanks.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Post-call "How was the call quality?" survey as Teams, opt-in.
+
+- Settings > Privacy > Surveys: "Ask me about call quality after calls", off by default, device-local, usable only while Surveys is on.
+- When on: after 10% of 1:1, group and meeting calls (never phone calls), CallQualitySurvey.qml shows Teams' one-page layout, measured live on winpc by forcing its sampling: thumbs, "What could've been better?" with Audio (10) / Video (8) / Screenshare (8) shuffled reasons, privacy line, Dismiss / Send feedback. Good thanks you for 3 s; unanswered closes after 60 s.
+- Send feedback opens Report a problem (area Call quality) with the ticked reasons and the call type, length, reason ids and Call health values; no names.
+- src/calling/quality_survey.rs; harness --cqf-test[=good], --cqf-always, --cqf-setting-test. 734 lib tests pass.
+<!-- SECTION:FINAL_SUMMARY:END -->

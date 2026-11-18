@@ -557,6 +557,11 @@ Item {
         settings.javascriptCanOpenWindows: true
         settings.localContentCanAccessRemoteUrls: false
         settings.localContentCanAccessFileUrls: false
+        // A video app (the Avatars renderer) runs out of sight and never
+        // gets a click: its Web Audio runs without one, as in Teams'
+        // WebView2 (its Unity player's clock stops with a suspended
+        // AudioContext).
+        settings.playbackRequiresUserGesture: !root.videoApp
         // The host's channel lives in the isolated world its script runs
         // in; app frames never see it.
         webChannel: root.teamsHost ? hostChannel : null

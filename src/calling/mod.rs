@@ -19,6 +19,8 @@ pub mod camera;
 pub mod camera_controls;
 #[cfg(feature = "video")]
 pub mod codec;
+#[cfg(feature = "video")]
+pub mod content_camera;
 pub mod datachannel;
 pub mod datapacket;
 pub mod device_health;

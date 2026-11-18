@@ -34,6 +34,8 @@ pub struct ScreenCapture {
     session: Option<ashpd::desktop::Session<Screencast>>,
     /// Content from camera: the camera capture, kept running.
     _camera: Option<super::camera::CameraCapture>,
+    /// Content from camera after its dialog: the processed camera.
+    _content: Option<super::content_camera::ContentCamera>,
 }
 
 impl ScreenCapture {
@@ -96,6 +98,7 @@ impl ScreenCapture {
                 stop,
                 session: Some(session),
                 _camera: None,
+                _content: None,
             },
             rx,
         ))
@@ -111,9 +114,27 @@ impl ScreenCapture {
                 stop: Arc::new(AtomicBool::new(false)),
                 session: None,
                 _camera: Some(camera),
+                _content: None,
             },
             frames,
         ))
+    }
+
+    /// Teams' Content from camera after its setup dialog: the processed
+    /// camera ([`super::content_camera`]) goes out as the screen does;
+    /// the share keeps the camera running until it stops.
+    pub fn from_content_camera(camera: &super::content_camera::ContentCamera) -> (Self, mpsc::Receiver<YuvFrame>) {
+        let (frames, ended) = camera.share();
+        tracing::info!(device = camera.device(), "content from camera shared");
+        (
+            Self {
+                stop: ended,
+                session: None,
+                _camera: None,
+                _content: Some(camera.clone()),
+            },
+            frames,
+        )
     }
 
     /// Whether the capture has stopped (the shared window closed, or the

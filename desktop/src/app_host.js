@@ -149,25 +149,26 @@
                     const n = v.getUint32(20, true);
                     const visemes = new Uint8Array(b, 24, Math.min(n, b.byteLength - 24));
                     const codedH = h + HEADER_ROWS;
-                    const data = new ArrayBuffer(w * codedH * 3 / 2);
-                    const px = new Uint8Array(data);
-                    px.fill(16, 0, w * codedH);
-                    px.fill(128, w * codedH);
-                    const head = new DataView(data, 0, 32);
+                    // The header rows only: the app's frame lays them over a
+                    // blank picture it keeps (the camera-less frames are
+                    // otherwise all alike), so no frame-sized buffer crosses
+                    // between the two pages.
+                    const header = new ArrayBuffer(4 * w);
+                    const head = new DataView(header, 0, 32);
                     [LAYOUT_ID, 1, HEADER_ROWS, 0, w, h, 2, visemes.length ? 1 : 0].forEach((x, i) => head.setUint32(i * 4, x, true));
                     if (visemes.length) {
-                        const meta = new DataView(data, 2 * w, 12);
+                        const meta = new DataView(header, 2 * w, 12);
                         meta.setUint32(0, AUDIO_INFERENCE_RESULT, true);
                         meta.setUint32(4, 12, true);
                         meta.setUint32(8, visemes.length, true);
-                        px.set(visemes, 2 * w + 12);
+                        new Uint8Array(header).set(visemes.subarray(0, 2 * w - 12), 2 * w + 12);
                     }
                     const timestamp = Math.round(seq * 1e6 / 15);
                     seqs.set(timestamp, seq);
                     if (seqs.size > 16) seqs.delete(seqs.keys().next().value);
                     inFlight++;
                     setTimeout(() => { if (seqs.has(timestamp)) { seqs.delete(timestamp); inFlight = Math.max(0, inFlight - 1) } }, 2000);
-                    frame.contentWindow.postMessage({ ostTexture: "in", streamId, width: w, height: codedH, timestamp, data }, cfg.video.appOrigin, [data]);
+                    frame.contentWindow.postMessage({ ostTexture: "in", streamId, width: w, height: codedH, timestamp, header }, cfg.video.appOrigin, [header]);
                 };
                 ws.onclose = () => setTimeout(connect, 500);
             };
@@ -196,11 +197,10 @@
                     if (seq === undefined) return;
                     seqs.delete(d.timestamp);
                     inFlight = Math.max(0, inFlight - 1);
-                    const msg = new Uint8Array(20 + d.data.byteLength);
-                    const v = new DataView(msg.buffer);
+                    // The frame leaves room for this message's 20-byte head.
+                    const v = new DataView(d.data, 0, 20);
                     v.setUint32(0, 1, true); v.setUint32(4, d.width, true); v.setUint32(8, d.height, true); v.setBigUint64(12, BigInt(seq), true);
-                    msg.set(new Uint8Array(d.data), 20);
-                    ws.send(msg.buffer);
+                    ws.send(d.data);
                 }
             };
         })() : null;
