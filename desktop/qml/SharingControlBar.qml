@@ -210,12 +210,18 @@ Window {
                 }
             }
             BarItem {
+                // Teams' Annotate (AnnotationPresenterButton): whole-screen
+                // shares only; a Microsoft Whiteboard annotation session
+                // over the shared screen (docs/spec/content-sharing.md §4).
+                readonly property bool on: bar.call.annotating
                 icon: "scb-annotate"
                 label: "Annotate"
-                // Teams: whole-screen shares only. OST has no annotation
-                // canvas yet (Teams' collaborative annotations).
-                enabled: false
-                tip: bar.kind === "screen" ? "Start annotation" : "Annotation is available when you share your screen"
+                checked: on
+                enabled: bar.kind === "screen" && !bar.call.annotationBusy
+                tip: bar.kind !== "screen" ? "Annotation is available when you share your screen"
+                     : bar.call.annotationBusy ? (on ? "Annotations is stopping" : "Annotations is starting")
+                     : on ? "Stop annotation" : "Start annotation"
+                onClicked: bar.call.toggleAnnotation()
             }
             Divider {}
             BarItem {

@@ -61,6 +61,8 @@ Window {
     /// shows) and the Sharing control bar opens; stopping brings the
     /// window back.
     onSharingChanged: {
+        // Stopping the screen share stops Annotate (Teams' stopAnnotationFromSharer).
+        if (!sharing && annotating) backend.contentShareStop()
         if (sharing && meeting) showMinimized()
         else if (!sharing && visibility === Window.Minimized) { showNormal(); raise() }
         // Teams refreshes Call health at once when your media turns on or off.
@@ -129,10 +131,63 @@ Window {
                                                 && !micRestricted && state === "connected"
     /// Who presents their screen in the meeting (empty: nobody).
     property string shareId: ""
+    /// Content-sharing sessions (Backend call_content_json): Whiteboard,
+    /// PowerPoint Live, Excel Live, Annotate — {mine, others, starting,
+    /// error, board}.
+    readonly property var contentState: { try { return JSON.parse(backend.callContentJson || "{}") || ({}) } catch (e) { return ({}) } }
+    /// The session the stage shows: ours, else the newest someone else
+    /// presents (Annotate draws over a shared screen instead).
+    readonly property var contentSession: {
+        const m = contentState.mine
+        if (m && m.content && m.content.type !== "annotation") return m
+        const o = (contentState.others || []).filter(x => x.content && x.content.type !== "annotation")
+        return o.length ? o[o.length - 1] : null
+    }
+    readonly property bool contentShown: meeting && !!contentSession
+    // Annotate (the Sharing control bar's): our annotation session over
+    // the screen we share, or someone's over theirs.
+    readonly property bool annotating: !!contentState.mine && !!contentState.mine.content && contentState.mine.content.type === "annotation"
+    readonly property bool annotationBusy: contentState.starting === "annotation"
+    readonly property var annotationViewed: {
+        const o = (contentState.others || []).filter(x => x.content && x.content.type === "annotation" && x.presenter === shareId)
+        return o.length ? o[o.length - 1] : null
+    }
+    function toggleAnnotation() {
+        if (annotating) backend.contentShareStop()
+        else if (!annotationBusy) backend.contentShareStart("annotation", "{}")
+    }
+    // The presenter's annotation board on top of the shared screen
+    // (annotation-app: screenSharer=1 and the shared screen's size).
+    readonly property string annotationFrameUrl: {
+        if (!annotating || !contentState.board) return ""
+        const s = Qt.application.screens[0]
+        return backend.contentBoardFrameUrl(contentState.board, true, JSON.stringify({
+            sharedScreenWidth: String(s ? s.width : 1920), sharedScreenFullHeight: String(s ? s.height : 1080),
+            isScreenSharerOnT2: "true", osType: "Linux", meetingType: String(contentMeetingType),
+            meetingTenantId: backend.tenantId(), screenSharer: "1" }))
+    }
+    Loader {
+        active: win.annotationFrameUrl !== "" && win.sharing
+        sourceComponent: AnnotationOverlay {
+            visible: true
+            frameUrl: win.annotationFrameUrl
+            thread: backend.callThreadId
+            meetingTitle: win.peer
+            onBoardReported: (url, passThrough) => {
+                const u = url.indexOf("annotation=true") >= 0 ? url : url + (url.indexOf("?") >= 0 ? "&" : "?") + "annotation=true"
+                backend.contentShareState(JSON.stringify(passThrough !== undefined && passThrough !== null ? { url: u, passThrough: passThrough } : { url: u }))
+                backend.contentSaveBoard("annotation", url)
+            }
+        }
+    }
+    readonly property string contentKind: contentSession && contentSession.content ? (contentSession.content.type || "") : ""
+    /// Teams' meetingType for shared boards (content_sharing::meeting_type).
+    readonly property int contentMeetingType: !meeting ? 5 : adhocMeeting ? 3 : scheduled ? 0 : 4
     readonly property bool presenting: meeting && shareId !== ""
     /// Pop out: the shared content shows in its own window.
     property bool contentPoppedOut: false
-    onPresentingChanged: if (!presenting) contentPoppedOut = false
+    onPresentingChanged: if (!presenting && !contentShown) contentPoppedOut = false
+    onContentShownChanged: if (!presenting && !contentShown) contentPoppedOut = false
     readonly property string presenterName: (others.find(p => p.id === shareId) || {}).name || ""
     /// The meeting's link to share (Share invite).
     property string inviteUrl: ""
@@ -737,7 +792,7 @@ Window {
     readonly property bool compactBar: newControls && width < 480
     readonly property var ubarFacts: ({
         p2p: !meeting, pstn: pstnCall, consult: false, scheduled: scheduled, adhoc: adhocMeeting,
-        organizer: organizer, onHold: held, canPopOut: presenting && !contentPoppedOut,
+        organizer: organizer, onHold: held, canPopOut: (presenting || contentShown) && !contentPoppedOut,
         // A town hall or webinar shows React only where the meeting allows reactions.
         reactions: !isEvent || !!liveEvent.reactions,
         roomToJoin: roomToJoin, canReturnToMain: canReturnToMain, breakoutRoom: backend.callBreakoutRoomJson !== "" || !!heldMeeting,
@@ -747,7 +802,9 @@ Window {
         townHall: !!liveEvent.townHall, webinar: !!liveEvent.webinar, attendee: myRole === "attendee",
         greenRoom: !!liveEvent.staging && myRole !== "attendee" && live && liveEvent.eventPhase === "prelive",
         eventPhase: liveEvent.eventPhase || "", qna: !!liveEvent.qna && scheduled,
-        e2ee: e2ee, canPark: canPark, voicemail: voicemail
+        e2ee: e2ee, canPark: canPark, voicemail: voicemail,
+        whiteboardSharing: !!contentState.mine && !!contentState.mine.content && ["whiteboard", "extensible_app"].indexOf(contentState.mine.content.type) >= 0,
+        pptSharing: !!contentState.mine && !!contentState.mine.content && contentState.mine.content.type === "ppt"
     })
     /// A town hall or webinar (Backend call_event_json): its green room,
     /// live state, Manage what attendees see and Q&A
@@ -816,6 +873,8 @@ Window {
                                          BreakoutRoomReturnToMainButton: Math.ceil(returnMetrics.advanceWidth) + 24.67 + 16,
                                          StagingRoomStartMeetingButton: Math.ceil(startEventMetrics.advanceWidth) + 24.67 + 16,
                                          StagingRoomEndMeetingButton: Math.ceil(endEventMetrics.advanceWidth) + 24.67 + 16,
+                                         // Teams' "Stop sharing" (62 wide) and PowerPoint Live's Layout + Stop sharing.
+                                         WhiteboardControlsSection: 70, PptControlsSection: 126,
                                          default: ubarButton })
     // The middle slot's room: from 4 past the indicators (shield, timer)
     // to 17 before Leave; the new controls' slot ends 4 before the end
@@ -846,7 +905,8 @@ Window {
             // More's grid controls the user pinned to the bar.
             RecordingButton: cPinned, TranscriptButton: cPinned, MeetingFacilitatorTimerButton: cPinned,
             ClosedCaptionsButton: cPinned, RealTimeTextButton: cPinned,
-            ScreensharingControlButton: cTakeControl
+            ScreensharingControlButton: cTakeControl,
+            WhiteboardControlsSection: cContentStop, PptControlsSection: cPptControls
         })[name] || null
     }
     // What each control does, from the bar or from More.
@@ -875,6 +935,10 @@ Window {
             else openShareTray()
         }
         else if (name === "PopoutContentButton") contentPoppedOut = true
+        // Stop sharing a Whiteboard (Teams' whiteboard-sharing-controls);
+        // PowerPoint Live asks first ("Stop presenting?").
+        else if (name === "WhiteboardControlsSection") backend.contentShareStop()
+        else if (name === "PptControlsSection") stopPresentingDialog.open()
         else if (name === "ScreensharingControlButton") {
             // Teams' viewer button: Take control (asks first), Stop control.
             if (controlState.state === "controlling") screenControl("release", "")
@@ -1690,7 +1754,9 @@ Window {
     function callHealthPaneForTest() { return callHealthPane }
     property var timerData: null
     property bool everyonePresents: false
-    readonly property bool timerCanView: meeting && everyonePresents
+    // A chat's group call has no presenter option: everyone presents (Teams
+    // showed Timer in a group chat's Meet now and Audio call, 2026-11-18).
+    readonly property bool timerCanView: meeting && (everyonePresents || (!scheduled && !adhocMeeting && !testCall))
     readonly property bool timerViewOnly: !timerCanView || myRole === "attendee"
     property bool timerVisible: false
     // You cancelled it: Teams keeps your strip; everyone else's closes.
@@ -1994,7 +2060,7 @@ Window {
             }
         }
         Column {
-            visible: win.meeting && win.others.length === 0 && !soloSelf.visible
+            visible: win.meeting && win.others.length === 0 && !soloSelf.visible && !win.contentShown
             anchors.centerIn: parent
             spacing: 24
             Avatar { ring: false; size: 154; name: win.selfName || "You"; photoId: "me"; anchors.horizontalCenter: parent.horizontalCenter }
@@ -2013,7 +2079,7 @@ Window {
         // divider with a 1 px #D1D1D1 line resizes it.
         Item {
             id: tiles
-            visible: win.meeting && win.others.length > 0 && (win.layout !== "focus" || win.presenting)
+            visible: win.meeting && (win.others.length > 0 || win.contentShown) && (win.layout !== "focus" || win.presenting || win.contentShown)
             anchors { fill: parent; margins: 2.67 }
             // Spotlight (for everyone) and Pin for me put that person on
             // the stage, everyone else in the side gallery.
@@ -2032,7 +2098,7 @@ Window {
             // (no one in Focus on content).
             // (Popped out, the content has its own window and the stage
             // goes back to people.)
-            readonly property bool content: win.presenting && !win.contentPoppedOut
+            readonly property bool content: (win.presenting || win.contentShown) && !win.contentPoppedOut
             // Teams (updateShouldMeBeInOverlay, live): with at most two
             // people tiles, the other person fills the stage and you float
             // over it, bottom right.
@@ -2196,6 +2262,62 @@ Window {
                     asynchronous: true
                     source: visible ? (contentTile.wp.background.url.startsWith("http") ? "" : "https://statics.teams.cdn.office.net") + contentTile.wp.background.url : ""
                 }
+                // Someone annotates the screen they share: their board, see-
+                // through, over the picture (Teams' AnnotationOverlay).
+                Loader {
+                    id: annotationLayer
+                    z: 3
+                    x: meetingShare.x; y: meetingShare.y; width: meetingShare.width; height: meetingShare.height
+                    readonly property var st: { try { return win.annotationViewed && win.annotationViewed.state ? JSON.parse(win.annotationViewed.state) : null } catch (e) { return null } }
+                    readonly property string boardUrl: st && st.url ? st.url : ""
+                    // The board the frame first loaded; later boards are posted
+                    // to it (whiteboardUrlChanged).
+                    property string loadedFor: ""
+                    property string frameUrl: ""
+                    active: !!win.annotationViewed && boardUrl !== "" && !win.contentShown
+                    onActiveChanged: if (active) {
+                        loadedFor = boardUrl
+                        frameUrl = backend.contentBoardFrameUrl(boardUrl, false, JSON.stringify({ meetingType: String(win.contentMeetingType),
+                            meetingTenantId: backend.tenantId(), participantTimestamp: String(Date.now()) }))
+                    }
+                    onBoardUrlChanged: if (item && loadedFor !== "" && boardUrl !== "" && boardUrl !== loadedFor) { loadedFor = boardUrl; item.sendFrameMessage("whiteboardUrlChanged", [boardUrl]) }
+                    sourceComponent: WebApp {
+                        transparentPage: true
+                        showHeader: false
+                        appName: "Whiteboard"
+                        appId: "95de633a-083e-42f5-b444-a4295d8e9314"
+                        location: win.peer
+                        home: annotationLayer.frameUrl
+                        teamsHost: true
+                        deepNaa: false
+                        frameContext: "meetingStage"
+                        hostThread: backend.callThreadId
+                        hostContext: ({ entityId: "", subEntityId: "" })
+                    }
+                }
+                // A Whiteboard, PowerPoint Live or Excel Live share: the
+                // session's page (ContentStage.qml), over the screen share.
+                ContentStage {
+                    id: contentStage
+                    visible: win.contentShown
+                    z: 2
+                    anchors.fill: parent
+                    // (Popped out, the session's page moves to that window.)
+                    session: win.contentPoppedOut ? null : win.contentSession
+                    board: win.contentState.board || ""
+                    meetingType: win.contentMeetingType
+                    thread: backend.callThreadId
+                    title: win.peer
+                    presenterName: win.contentSession ? (win.contentSession.mine ? win.selfName : win.contentSession.presenterName) : ""
+                    attendees: win.others.length + 1
+                    pptLayout: win.pptLayout
+                    onPptNavigated: state => backend.contentShareState(state)
+                    onBoardReported: (url, passThrough) => {
+                        backend.contentShareState(JSON.stringify(passThrough !== undefined && passThrough !== null
+                            ? { url: url, passThrough: passThrough } : { url: url }))
+                        backend.contentSaveBoard(win.contentKind, url)
+                    }
+                }
                 VideoFrame {
                     id: meetingShare
                     source: "share"
@@ -2263,6 +2385,7 @@ Window {
                 }
                 Rectangle {
                     id: hcFill5
+                    visible: !win.contentShown
                     anchors { left: parent.left; bottom: parent.bottom; leftMargin: 8; bottomMargin: 8 }
                     height: 24; radius: 4
                     width: contentName.implicitWidth + 12
@@ -2755,6 +2878,27 @@ Window {
                 visible: true
                 color: theme.hc("#F5F5F5", "#000000")
                 onClosing: win.contentPoppedOut = false
+                // A Whiteboard, PowerPoint Live or Excel Live share pops out
+                // with its page.
+                ContentStage {
+                    visible: win.contentShown
+                    z: 2
+                    x: 2.67; y: 2.67; width: parent.width - 5.33; height: parent.height - 5.33
+                    session: win.contentSession
+                    board: win.contentState.board || ""
+                    meetingType: win.contentMeetingType
+                    thread: backend.callThreadId
+                    title: win.peer
+                    presenterName: win.contentSession ? (win.contentSession.mine ? win.selfName : win.contentSession.presenterName) : ""
+                    attendees: win.others.length + 1
+                    pptLayout: win.pptLayout
+                    onPptNavigated: state => backend.contentShareState(state)
+                    onBoardReported: (url, passThrough) => {
+                        backend.contentShareState(JSON.stringify(passThrough !== undefined && passThrough !== null
+                            ? { url: url, passThrough: passThrough } : { url: url }))
+                        backend.contentSaveBoard(win.contentKind, url)
+                    }
+                }
                 VideoFrame {
                     id: poppedShare
                     x: 2.67; y: 2.67; width: parent.width - 5.33; height: parent.height - 5.33
@@ -4352,6 +4496,56 @@ Window {
     // Compact: 9 wide, the line 4 in and 21.6 tall.
     Component { id: barDivider; Item { width: win.ubarDivider; height: bar.height; Rectangle { x: win.compactBar ? 4 : 8; y: win.compactBar ? 8.9 : 13.5; width: 0.67; height: win.compactBar ? 21.6 : 33; color: theme.stroke } } }
     Component { id: cPopout; BarButton { icon: "call-popout"; label: "Pop out"; tip: "Pop out"; onClicked: win.runControl("PopoutContentButton") } }
+    // Presenting a Whiteboard: Teams' whiteboard-sharing-controls, "Stop
+    // sharing" (62 wide, measured 2026-11-18).
+    Component {
+        id: cContentStop
+        BarButton {
+            icon: win.newControls ? "nmc-share-stop" : "call-share-stop-filled"; label: "Stop sharing"; strong: !win.newControls
+            iconColor: theme.hc("#B10E1C", "#FFFFFF")
+            tip: "Stop sharing"
+            onClicked: win.runControl("WhiteboardControlsSection")
+        }
+    }
+    // Presenting PowerPoint Live: Layout (Content only, Cameo) and Stop
+    // sharing (ppt-sharing-layout-toolbar, stopPresentingPptBtn).
+    Component {
+        id: cPptControls
+        Row {
+            BarButton {
+                id: pptLayoutB
+                icon: "scb-layout"; label: "Layout"; tip: "Layout"
+                onClicked: { pptLayoutMenu.parent = pptLayoutB; pptLayoutMenu.open() }
+            }
+            BarButton {
+                icon: win.newControls ? "nmc-share-stop" : "call-share-stop-filled"; label: "Stop sharing"; strong: !win.newControls
+                iconColor: theme.hc("#B10E1C", "#FFFFFF")
+                tip: "Stop sharing"
+                onClicked: win.runControl("PptControlsSection")
+            }
+        }
+    }
+    // PowerPoint Live's Layout: Content only or Cameo (your camera on the
+    // slide).
+    property string pptLayout: "ContentOnly"
+    MenuPopup {
+        id: pptLayoutMenu
+        y: parent ? parent.height + 5 : 0
+        items: [
+            { label: "Content only", checked: win.pptLayout === "ContentOnly" },
+            { label: "Cameo", checked: win.pptLayout === "Cameo" }
+        ]
+        onPicked: i => win.pptLayout = i === 1 ? "Cameo" : "ContentOnly"
+    }
+    // Teams' "Stop presenting?" (400 x 205, measured 2026-11-18).
+    ConfirmDialog {
+        id: stopPresentingDialog
+        dialogWidth: 400
+        title: "Stop presenting?"
+        body: "This will end the presentation for everyone. To switch presenters select Cancel so the next person can take control"
+        confirmText: "Stop presenting"
+        onConfirmed: backend.contentShareStop()
+    }
     Component { id: cTransfer; BarButton { icon: "call-transfer"; label: "Transfer"; tip: "Transfer"; enabled: win.controlEnabled("CallTransferButtonV2"); checked: picker.visible && picker.mode === "transfer"; onClicked: win.runControl("CallTransferButtonV2") } }
     Component { id: cConsult; BarButton { icon: "consult"; label: "Consult"; tip: "Consult then transfer"; enabled: win.controlEnabled("CallConsultativeTransferButtonV2"); checked: picker.visible && picker.mode === "consult"; onClicked: win.runControl("CallConsultativeTransferButtonV2") } }
     Component { id: cDialpad; BarButton { icon: "dialpad"; label: "Dial pad"; tip: "Dial pad"; enabled: win.controlEnabled("DialpadButton"); checked: dialPad.visible; onClicked: win.runControl("DialpadButton") } }
@@ -4729,14 +4923,23 @@ Window {
     // (kept in the window), down to 7.3 above the window's bottom.
     signal startShare(string kind)
     property alias shareIncludeSound: shareTray.includeSound
+    /// PowerPoint Live or Excel Live for `file` ({name, url, driveId,
+    /// itemId}); Excel Live gives the meeting's people edit access.
+    function startOfficeLive(kind, file) {
+        const people = others.map(p => String(p.id || "")).filter(i => i.indexOf("8:orgid:") === 0).map(i => i.slice(8))
+        backend.contentShareStart(kind, JSON.stringify({ url: file.url || "", driveId: file.driveId || file.drive_id || "", itemId: file.itemId || file.id || "", people: people }))
+    }
     function openShareTray() {
         const b = barItem("ShareButton")
         const c = b && b !== bar ? b.mapToItem(win.contentItem, b.width / 2, 0).x : win.width / 2
         shareTray.x = Math.max(8, Math.min(win.width - 360 - 8, c - 180))
         shareTray.y = bar.height - 0.7
         shareTray.open()
+        // PowerPoint Live's and Excel Live's recent files (Office's MRU).
+        backend.contentRecentLoad()
     }
     function shareTrayForTest() { return shareTray }
+    function contentStageForTest() { return contentStage }
     ShareTray {
         id: shareTray
         parent: win.contentItem
@@ -4746,67 +4949,32 @@ Window {
         onShare: kind => { close(); win.shareKind = kind; win.startShare(kind) }
         onPickMode: m => win.setPresenterMode(m)
         onPickBackground: b => win.setPresenterBackground(JSON.stringify(b))
-        onContentCamera: type => { contentCameraDialog.type = type; contentCameraDialog.open() }
+        onContentCamera: type => contentCameraDialog.openFor(type)
+        onWhiteboard: { close(); backend.contentShareStart("whiteboard", "{}") }
+        pptFiles: (win.contentState.recent || {}).ppt || []
+        excelFiles: (win.contentState.recent || {}).excel || []
+        onOfficeFile: (kind, file) => { close(); win.startOfficeLive(kind, file) }
+        onBrowse: where => { close(); if (where === "onedrive") { officePicker.entry = "myfiles"; officePicker.open() } }
     }
-    // Content from camera's setup (Teams' content camera setup dialog):
-    // Camera and Content type, then Share — the camera goes out as shared
-    // content (as the screen does).
-    Popup {
+    // Browse OneDrive: a deck from your OneDrive for PowerPoint Live (or a
+    // workbook for Excel Live).
+    CloudPicker {
+        id: officePicker
+        onAttached: files => {
+            const f = files && files[0]
+            if (!f) return
+            const n = String(f.name || "").toLowerCase()
+            win.startOfficeLive(/\.(xlsx|xlsm|xlsb)$/.test(n) ? "excel" : "ppt", { name: f.name, url: f.web_url || "", driveId: f.drive_id || "", itemId: f.id || "" })
+        }
+    }
+    // Content from camera's setup (Teams' content camera setup dialog,
+    // ContentCameraDialog.qml): the processed camera goes out as shared
+    // content, as the screen does.
+    ContentCameraDialog {
         id: contentCameraDialog
-        property string type: "whiteboard"
-        property var devices: []
-        property string device: ""
-        parent: Overlay.overlay
-        anchors.centerIn: Overlay.overlay
-        modal: true; focus: true
-        width: 440; padding: 24
-        background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
-        Overlay.modal: Rectangle { color: Qt.rgba(0, 0, 0, 0.4) }
-        onAboutToShow: {
-            const d = JSON.parse(backend.videoDevices() || "{}")
-            devices = d.devices || []
-            device = d.current || (devices[0] ? devices[0].path : "")
-        }
-        contentItem: Column {
-            spacing: 16
-            Text {
-                text: "Content from camera"
-                font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text
-            }
-            Column {
-                spacing: 4
-                Text { text: "Camera"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
-                Dropdown {
-                    width: 392
-                    label: (contentCameraDialog.devices.find(d => d.path === contentCameraDialog.device) || { name: "None" }).name
-                    options: contentCameraDialog.devices.map(d => [d.path, d.name])
-                    accessibleName: "Camera"
-                    onPicked: code => contentCameraDialog.device = code
-                }
-            }
-            Column {
-                spacing: 4
-                Text { text: "Content type"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
-                Dropdown {
-                    width: 392
-                    label: ({ whiteboard: "Whiteboard", document: "Document", video: "Video" })[contentCameraDialog.type]
-                    options: [["whiteboard", "Whiteboard"], ["document", "Document"], ["video", "Video"]]
-                    accessibleName: "Content type"
-                    onPicked: code => contentCameraDialog.type = code
-                }
-            }
-            Row {
-                anchors.right: parent.right
-                spacing: 8
-                SettingsParts.Button { label: "Cancel"; onClicked: contentCameraDialog.close() }
-                SettingsParts.Button {
-                    label: "Share"; primary: true
-                    enabled: contentCameraDialog.device.length > 0
-                    onClicked: { contentCameraDialog.close(); win.shareKind = "camera"; backend.startContentCamera(contentCameraDialog.device) }
-                }
-            }
-        }
+        onShare: device => { win.shareKind = "camera"; backend.startContentCamera(device) }
     }
+    function contentCameraDialogForTest() { return contentCameraDialog }
     function sharingBarForTest() { return sharingBarLoader.item }
     /// The presenter's mode on the stage: {layout, comp, camKey, stage}.
     function presenterCompositeForTest() {

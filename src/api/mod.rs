@@ -33,6 +33,7 @@ pub mod list_rows;
 pub mod loop_page;
 pub mod versions;
 pub mod item_details;
+pub mod live_share;
 pub mod zip_download;
 pub mod quick_access;
 pub mod folders;

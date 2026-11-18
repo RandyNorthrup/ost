@@ -516,6 +516,89 @@ pub async fn meeting_board(client: &TeamsClient, thread: &str, organizer_oid: &s
     Ok(url.to_string())
 }
 
+/// The meeting's annotation board (Teams' Annotate; 326418
+/// `getAnnotationUrl`): `GET {mt}/beta/meetings/annotation?threadId=…
+/// &organizerId=…&tenantId=…&meetingTitle=…` (no messageId) answers
+/// `{url, shareUrl}`.
+pub async fn meeting_annotation_board(client: &TeamsClient, thread: &str, organizer_oid: &str, title: &str) -> Result<String> {
+    let (base, token) = super::tabs::middle_tier(client).await?;
+    let e = super::tabs::encode_uri_component;
+    let q = format!(
+        "threadId={}&organizerId={}&tenantId={}&meetingTitle={}",
+        e(thread),
+        e(&format!("8:orgid:{organizer_oid}")),
+        e(&client.tenant_id().unwrap_or_default()),
+        e(title)
+    );
+    let v: serde_json::Value = client
+        .http()
+        .get(format!("{base}/beta/meetings/annotation?{q}"))
+        .bearer_auth(&token)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let url = v.get("url").and_then(|u| u.as_str()).unwrap_or_default();
+    anyhow::ensure!(url.starts_with("https://"), "No annotation board for this meeting");
+    Ok(url.to_string())
+}
+
+/// Keep the meeting's annotation board as Teams does once Whiteboard
+/// reports it (326418 `postAnnotationWhiteboard`): `POST {mt}/beta/
+/// meetings/annotation?threadId=…&messageId=…&organizerId=…&tenantId=…`,
+/// the address (without its proof token) as a JSON string.
+pub async fn save_meeting_annotation_board(client: &TeamsClient, thread: &str, organizer_oid: &str, url: &str) -> Result<()> {
+    let url = board_url_to_save(url).context("Not a whiteboard address")?;
+    let (base, token) = super::tabs::middle_tier(client).await?;
+    client
+        .http()
+        .post(format!("{base}/beta/meetings/annotation?{}", board_query(client, thread, organizer_oid)))
+        .bearer_auth(&token)
+        .json(&url)
+        .send()
+        .await?
+        .error_for_status()?;
+    Ok(())
+}
+
+/// A shared board's address in the meeting stage, as Teams' whiteboard
+/// renderer loads it (measured 2026-11-18, Teams presenting Whiteboard in
+/// a Meet now): the session's address (`meeting?embed=1&meetingTitle=…
+/// &initiatorId=…&initiatorTimestamp=…`, `meetingType`, `meetingTenantId`
+/// from 89637 `Tm`), then correlationId, culture, enableReactApp,
+/// isInitiator, isEduUser, meetingId, teamsEnvV2, client, userRole,
+/// teamsCallId, meetingTenantId, isMeetingRecurring, isEU, userId,
+/// userTenantId, isNAAEnabled. `extra` adds Annotate's parameters
+/// (screenSharer, sharedScreenWidth…).
+#[allow(clippy::too_many_arguments)]
+pub fn shared_board_frame_url(session_url: &str, correlation: &str, initiator: bool, meeting_id: &str, call_id: &str, user: &str, tenant: &str, extra: &[(&str, String)]) -> Option<String> {
+    let mut u = url::Url::parse(session_url).ok().filter(|u| u.scheme() == "https")?;
+    {
+        let mut q = u.query_pairs_mut();
+        for (k, v) in extra {
+            q.append_pair(k, v);
+        }
+        q.append_pair("correlationId", correlation)
+            .append_pair("culture", "en-us")
+            .append_pair("enableReactApp", "1")
+            .append_pair("isInitiator", if initiator { "1" } else { "0" })
+            .append_pair("isEduUser", "0")
+            .append_pair("meetingId", meeting_id)
+            .append_pair("teamsEnvV2", "prod")
+            .append_pair("client", "TeamsModern")
+            .append_pair("userRole", "Member")
+            .append_pair("teamsCallId", call_id)
+            .append_pair("meetingTenantId", tenant)
+            .append_pair("isMeetingRecurring", "false")
+            .append_pair("isEU", "false")
+            .append_pair("userId", user)
+            .append_pair("userTenantId", tenant)
+            .append_pair("isNAAEnabled", "true");
+    }
+    Some(u.to_string())
+}
+
 fn board_query(client: &TeamsClient, thread: &str, organizer_oid: &str) -> String {
     let e = super::tabs::encode_uri_component;
     format!(

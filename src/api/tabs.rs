@@ -325,7 +325,7 @@ pub fn copy_link_in(tab: &Tab, channel_id: &str, chat: bool, tenant_id: &str) ->
 }
 
 /// JavaScript's encodeURIComponent (leaves `A-Z a-z 0-9 - _ . ! ~ * ' ( )`).
-pub(crate) fn encode_uri_component(s: &str) -> String {
+pub fn encode_uri_component(s: &str) -> String {
     let mut out = String::new();
     for b in s.bytes() {
         if b.is_ascii_alphanumeric() || b"-_.!~*'()".contains(&b) {

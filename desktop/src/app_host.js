@@ -411,17 +411,40 @@
                 // token) and answers.
                 respond(source, from, d, []);
                 const url = typeof args[0] === "string" ? args[0] : "";
+                // A shared board (Teams' whiteboard renderer): the call
+                // window sends it to the session (its address may hold a
+                // proof token: never logged).
+                if (url) ost.event("whiteboardUrl", JSON.stringify({ url, passThrough: args[1] === undefined ? null : args[1] }));
                 if (cfg.meetingBoard && url) {
                     const r = JSON.parse(await native("saveBoard", { url, organizer: cfg.meetingBoard.organizer || "" }));
                     ost.event("boardSaved", JSON.stringify({ ok: !!r.ok }));
                 }
                 return;
             }
+            case "getExtensibleAppContext":
+                // Excel Live: Teams answers with the session's
+                // extensibleAppContext (and a correlation id) as JSON.
+                respond(source, from, d, [cfg.extensibleAppContext || "{}"]);
+                return;
+            case "startClickThroughMode":
+            case "stopClickThroughMode":
+                // Annotate: Whiteboard's toolbar alone keeps the pointer
+                // (Teams' window shrinks to it), or the whole board again.
+                respond(source, from, d, []);
+                ost.event(f, JSON.stringify({ toolbar: args[0] && typeof args[0] === "object" ? args[0] : null }));
+                return;
+            case "saveAnnotation":
+                // Teams answers with a still of the shared screen; OST has
+                // none to give (Whiteboard then saves the ink alone).
+                respond(source, from, d, []);
+                ost.event("saveAnnotation", "{}");
+                return;
             case "readyForUrl":
                 // Meeting Whiteboard's custom message: Teams answers, then
                 // passes the meeting's board content (none yet).
                 respond(source, from, d, []);
                 if (handlers.has("updateBoardContentFromTeams")) send("updateBoardContentFromTeams", ["[]", ""]);
+                ost.event("readyForUrl", "{}");
                 return;
             case "shortcutRelay.getHostShortcuts":
                 // Teams' own keyboard shortcuts, which the app passes up.

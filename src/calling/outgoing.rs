@@ -119,6 +119,13 @@ pub struct OutgoingCall {
     live_state_link: Option<String>,
     /// The conversation's addParticipantAndModality link ("Call me").
     add_modality_link: Option<String>,
+    /// The conversation's addModality link (content-sharing sessions:
+    /// Whiteboard, PowerPoint Live, Excel Live, Annotate).
+    content_link: Option<String>,
+    /// The content-sharing session we present, once started.
+    my_content: Option<super::content_sharing::Session>,
+    /// Sessions others present that we joined (by correlation id).
+    joined_content: std::collections::HashMap<String, super::content_sharing::Session>,
     /// The meeting's dial-in details (`meetingDetails.pstnDetails`).
     dial_in: Option<super::phone_audio::DialIn>,
     /// Whether the meeting offers phone audio (Teams' PSTN state).
@@ -690,6 +697,7 @@ impl OutgoingCall {
             self.event = e;
         }
         self.add_modality_link = link("addParticipantAndModality").or(self.add_modality_link.take());
+        self.content_link = link("addModality").or(self.content_link.take());
         self.apply_phone_audio(update);
         self.unmute_link = link("unmute");
         self.message_link = link("sendMessage");
@@ -940,6 +948,17 @@ impl OutgoingCall {
         &self.thread_id
     }
 
+    /// The meeting's message in its chat (Teams' teamsMessageId: "0" for
+    /// a meeting).
+    pub fn message_id(&self) -> &str {
+        self.group_message_id.as_deref().unwrap_or("0")
+    }
+
+    /// The meeting organizer's object id (the join response's meetingInfo).
+    pub fn organizer_oid(&self) -> Option<&str> {
+        self.notes_organizer.split('@').next().filter(|o| !o.is_empty())
+    }
+
     /// The meeting's title, times, location and calendar link (Meeting info).
     pub fn meeting_info(&self) -> Option<super::meeting_info::MeetingInfo> {
         self.meeting_info.clone()
@@ -1090,6 +1109,188 @@ impl OutgoingCall {
 
     /// The meeting's answer to adding the room, if `event` is it: Ok when
     /// the room joined, Err(Teams' message) when it couldn't.
+    /// Ask the conversation service (`method` on `link`, a Teams service
+    /// address) with the calling token and Teams' headers, plus a content
+    /// session's chain id.
+    async fn content_request(&self, method: reqwest::Method, link: &str, body: &serde_json::Value, chain: &str) -> Result<String> {
+        if !super::incoming::is_service_link(link) {
+            bail!("content sharing: not a Teams service link");
+        }
+        let config = Config::load()?;
+        let ic3 = config.get_ic3_token().context("No calling (IC3) token")?.token;
+        let resp = self
+            .http
+            .request(method.clone(), link)
+            .bearer_auth(ic3)
+            .header(super::content_sharing::CHAIN_ID_HEADER, chain)
+            .header("x-microsoft-skype-chain-id", &self.call_id)
+            .header("x-microsoft-skype-message-id", uuid::Uuid::new_v4().to_string())
+            .header("x-microsoft-skype-client", signaling::SKYPE_CLIENT_HEADER)
+            .header("ms-teams-partition", signaling::TEAMS_PARTITION)
+            .header("ms-teams-region", signaling::TEAMS_REGION)
+            .header("ms-teams-ring", signaling::TEAMS_RING)
+            .json(body)
+            .send()
+            .await
+            .context("content sharing")?;
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        if !status.is_success() {
+            bail!("content sharing {method} failed ({status}): {}", &text[..text.len().min(300)]);
+        }
+        tracing::info!(%method, %status, "content sharing request");
+        Ok(text)
+    }
+
+    /// Our participant as content-sharing requests name it.
+    fn content_from(&self) -> serde_json::Value {
+        let mut from = self.me.0.clone();
+        if let Some(o) = from.as_object_mut() {
+            o.entry("languageId").or_insert_with(|| "en-US".into());
+        }
+        from
+    }
+
+    fn content_callback(&self) -> impl Fn(&str) -> String + '_ {
+        let (surl, epid) = &self.callbacks;
+        move |p: &str| signaling::trouter_callback(surl, epid, p)
+    }
+
+    /// Whether this call can present content-sharing sessions (the
+    /// conversation gave its addModality link).
+    pub fn can_share_content(&self) -> bool {
+        self.content_link.is_some()
+    }
+
+    /// Start presenting `content` (Teams' sharing-content DTO) with an
+    /// optional first state: `POST links.addModality`. The session is ours
+    /// once `conversation/addModalitySuccess/` names its correlation id
+    /// ([`OutgoingCall::content_started`]). Returns the correlation id.
+    pub async fn start_content_sharing(&mut self, content: serde_json::Value, subject: &str, state: Option<&str>) -> Result<String> {
+        use super::content_sharing as cs;
+        let link = self.content_link.clone().context("This call can't share content (no addModality link)")?;
+        let correlation = uuid::Uuid::new_v4().to_string();
+        let identifier = cs::encode_identifier(&content);
+        let body = cs::add_modality_body(&self.content_from(), &identifier, subject, state, &self.content_callback());
+        tracing::info!(kind = cs::content_type(&content), %correlation, "content sharing: adding the modality");
+        self.content_request(reqwest::Method::POST, &link, &body, &correlation).await?;
+        self.my_content = Some(cs::Session {
+            correlation_id: correlation.clone(),
+            presenter: self.me.0.get("id").and_then(|i| i.as_str()).unwrap_or_default().to_ascii_lowercase(),
+            content,
+            identifier,
+            subject: subject.to_string(),
+            state: state.unwrap_or_default().to_string(),
+            mine: true,
+            ..Default::default()
+        });
+        Ok(correlation)
+    }
+
+    /// Our session's addModalitySuccess (true: it started) or failure
+    /// (Err: Teams' phrase), if `event` is either for it.
+    pub fn content_started(&mut self, event: &serde_json::Value) -> Option<std::result::Result<super::content_sharing::Session, String>> {
+        use super::content_sharing as cs;
+        let mine = self.my_content.as_mut()?;
+        if let Some((corr, session, links, state)) = cs::add_modality_success(event) {
+            if !corr.is_empty() && corr != mine.correlation_id {
+                return None;
+            }
+            mine.session_id = session;
+            mine.links = links;
+            if let Some(s) = state {
+                mine.state = s;
+            }
+            tracing::info!(session = %mine.session_id, update = mine.links.update_state.is_some(), "content sharing started");
+            return Some(Ok(mine.clone()));
+        }
+        if let Some(why) = cs::add_modality_failure(event) {
+            tracing::warn!(%why, "content sharing failed");
+            self.my_content = None;
+            return Some(Err(why));
+        }
+        None
+    }
+
+    /// The session we present, if any.
+    pub fn my_content(&self) -> Option<&super::content_sharing::Session> {
+        self.my_content.as_ref()
+    }
+
+    /// Send our session's new state (`POST links.updateSessionState`).
+    pub async fn update_content_state(&mut self, state: &str) -> Result<()> {
+        let from = self.content_from();
+        let mine = self.my_content.as_mut().context("Not sharing content")?;
+        let link = mine.links.update_state.clone().context("The session has no updateSessionState link yet")?;
+        mine.sequence += 1;
+        mine.state = state.to_string();
+        let body = super::content_sharing::update_state_body(&from, mine.sequence, state, &uuid::Uuid::new_v4().to_string());
+        let chain = mine.correlation_id.clone();
+        self.content_request(reqwest::Method::POST, &link, &body, &chain).await.map(|_| ())
+    }
+
+    /// Stop presenting (`DELETE links.contentSharingController`).
+    pub async fn stop_content_sharing(&mut self) -> Result<()> {
+        let Some(mine) = self.my_content.take() else { return Ok(()) };
+        let link = mine.links.controller.clone().context("The session has no controller link")?;
+        let body = super::content_sharing::stop_body(&self.content_from());
+        tracing::info!(correlation = %mine.correlation_id, "content sharing: stopping");
+        self.content_request(reqwest::Method::DELETE, &link, &body, &mine.correlation_id).await.map(|_| ())
+    }
+
+    /// Join a session someone else presents (from the roster), to get its
+    /// state updates: `POST sessionInformation.contentSharingController`.
+    pub async fn join_content(&mut self, mut session: super::content_sharing::Session) -> Result<super::content_sharing::Session> {
+        if let Some(s) = self.joined_content.get(&session.correlation_id) {
+            return Ok(s.clone());
+        }
+        let link = session.join_link.clone().context("The session has no join link")?;
+        let body = super::content_sharing::join_body(&self.content_from(), &self.content_callback());
+        let text = self.content_request(reqwest::Method::POST, &link, &body, &session.correlation_id).await?;
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
+            let cs = v.get("contentSharing").unwrap_or(&v);
+            session.links = super::content_sharing::SessionLinks::from(cs.get("links").unwrap_or(&serde_json::Value::Null));
+            if let Some(st) = cs.get("sessionState").and_then(|s| s.as_str()).filter(|s| !s.is_empty()) {
+                session.state = st.to_string();
+            }
+            if let Some(n) = cs.get("sequenceNumber").and_then(|n| n.as_u64()) {
+                session.sequence = n;
+            }
+        }
+        tracing::info!(correlation = %session.correlation_id, kind = session.kind(), "content sharing: joined");
+        self.joined_content.insert(session.correlation_id.clone(), session.clone());
+        Ok(session)
+    }
+
+    /// A state update for a session we joined (newer than the last), or
+    /// its end: (correlation id, Some(new state)) or (correlation id, None).
+    pub fn content_event(&mut self, event: &serde_json::Value) -> Option<(String, Option<String>)> {
+        use super::content_sharing as cs;
+        if let Some((corr, state, seq)) = cs::session_update(event) {
+            if let Some(s) = self.joined_content.get_mut(&corr) {
+                if seq != 0 && seq <= s.sequence {
+                    return None;
+                }
+                s.sequence = seq;
+                s.state = state.clone();
+            }
+            return Some((corr, Some(state)));
+        }
+        if let Some(corr) = cs::session_end(event) {
+            self.joined_content.remove(&corr);
+            if self.my_content.as_ref().is_some_and(|m| m.correlation_id == corr) {
+                self.my_content = None;
+            }
+            return Some((corr, None));
+        }
+        None
+    }
+
+    /// Forget a joined session that left the roster.
+    pub fn forget_content(&mut self, correlation: &str) {
+        self.joined_content.remove(correlation);
+    }
+
     pub fn room_outcome(&mut self, event: &serde_json::Value) -> Option<std::result::Result<String, String>> {
         let mri = self.room_pending.clone()?;
         let r = super::phone_audio::call_me_back_result(event, &mri)?;
@@ -3216,6 +3417,8 @@ async fn start_tagged(
     let add_participant_link = conversation_link(&created.response_body, "addParticipant");
     let meeting_states_link = conversation_link(&created.response_body, "updateMeetingStates");
     let add_modality_link = conversation_link(&created.response_body, "addParticipantAndModality");
+    let content_link = conversation_link(&created.response_body, "addModality");
+    tracing::info!(content = content_link.is_some(), "content sharing link");
     let group_message_id = meeting_message_id.or_else(|| group_chat_field(&created.response_body, "messageId"));
     let (dial_in, phone_audio) = serde_json::from_str::<serde_json::Value>(&created.response_body)
         .ok()
@@ -3480,6 +3683,9 @@ async fn start_tagged(
             .unwrap_or_default(),
         live_state_link: conversation_link(&created.response_body, "updateMeetingLiveState"),
         add_modality_link,
+        content_link,
+        my_content: None,
+        joined_content: Default::default(),
         dial_in,
         phone_audio,
         call_me: None,

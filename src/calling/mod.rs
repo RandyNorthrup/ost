@@ -10,6 +10,7 @@ pub mod audio;
 pub mod audio_codec;
 pub mod breakout;
 pub mod consult;
+pub mod content_sharing;
 pub mod call_health;
 pub mod call_test;
 #[cfg(feature = "video")]
@@ -18,6 +19,8 @@ pub mod camera;
 pub mod camera_controls;
 #[cfg(feature = "video")]
 pub mod codec;
+#[cfg(feature = "video")]
+pub mod content_camera;
 pub mod datachannel;
 pub mod datapacket;
 pub mod device_health;

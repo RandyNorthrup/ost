@@ -52,7 +52,9 @@ Item {
     property string officeSource: ""
     readonly property bool headerShown: showHeader && !personalFullScreen
 
-    Rectangle { anchors.fill: parent; color: theme.surface }
+    /// A see-through page (Annotate: ink over the shared screen).
+    property bool transparentPage: false
+    Rectangle { anchors.fill: parent; color: root.transparentPage ? "transparent" : theme.surface }
 
     /// The app's Teams id: Teams' own app header (entity-header) then,
     /// with the app's tile from its definition and its "…" menu.
@@ -126,6 +128,8 @@ Item {
     property var meetingBoard: null
     /// A video app (Avatars): its frames' socket and origin (app_host.js).
     property var videoApp: null
+    /// Excel Live: the context Teams answers getExtensibleAppContext with.
+    property string extensibleAppContext: ""
     /// A script for the app's own frames (in their world, from the start).
     property string frameScript: ""
     /// Ask the hosted configuration page to save (Teams' Save).
@@ -211,7 +215,7 @@ Item {
                                              frameContext: root.frameContext, hostClientType: root.hostClientType, deepNaa: root.deepNaa, context: c,
                                              ssr: root.ssr, allow: root.frameAllow, supports: root.runtimeSupports, shortcuts: root.hostShortcuts,
                                              meetingBoard: root.meetingBoard ? { organizer: root.meetingBoard.organizer || "" } : null,
-                                             video: root.videoApp })
+                                             video: root.videoApp, extensibleAppContext: root.extensibleAppContext })
         root.hostLoading = true
         web.loadHtml(backend.appHostPage(root.appName), "https://teams.cloud.microsoft/")
     }
@@ -546,6 +550,7 @@ Item {
     }
     WebEngineView {
         id: web
+        backgroundColor: root.transparentPage ? "transparent" : "white"
         anchors { top: pageHeader.bottom; left: parent.left; right: parent.right; bottom: parent.bottom }
         // The profile and first page are set once everything is complete:
         // the prototype's instance() isn't ready while bindings first run.
