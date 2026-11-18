@@ -33,8 +33,21 @@ Item {
     // participantTimestamp), then the renderer's.
     function frameUrl() {
         if (kind === "whiteboard" || kind === "annotation") {
-            const base = mine ? (board || (session.content.url || "")) : (stateObj.url || session.content.url || "")
+            // A viewer waits for the presenter's board (the state's url),
+            // with the session's own parameters added (Teams'
+            // appendSearchParams): opening the session's address alone
+            // would start a new board.
+            let base = mine ? (board || (session.content.url || "")) : (stateObj.url || "")
             if (!base) return ""
+            if (!mine && session.content.url) {
+                const have = {}
+                const q = base.indexOf("?")
+                if (q >= 0) base.slice(q + 1).split("&").forEach(p => have[p.split("=")[0]] = true)
+                const cu = String(session.content.url)
+                const cq = cu.indexOf("?")
+                const extra = cq < 0 ? [] : cu.slice(cq + 1).split("&").filter(p => p && !have[p.split("=")[0]])
+                if (extra.length) base += (q >= 0 ? "&" : "?") + extra.join("&")
+            }
             const extra = { meetingType: String(meetingType), meetingTenantId: backend.tenantId() }
             if (!mine) extra.participantTimestamp = String(Date.now())
             return backend.contentBoardFrameUrl(base, mine, JSON.stringify(extra))
@@ -70,8 +83,8 @@ Item {
     property string sentUrl: ""
     /// The address the frame loaded (later boards are posted to it).
     property string loadedUrl: ""
-    function pushBoard() {
-        if (mine || !boardLoader.item || !stateObj.url || stateObj.url === sentUrl) return
+    function pushBoard(force) {
+        if (mine || !boardLoader.item || !stateObj.url || (stateObj.url === sentUrl && !force)) return
         sentUrl = stateObj.url
         boardLoader.item.sendFrameMessage("whiteboardUrlChanged", stateObj.passThrough !== undefined && stateObj.passThrough !== null
                                           ? [stateObj.url, stateObj.passThrough] : [stateObj.url])
@@ -103,7 +116,7 @@ Item {
                     let r = {}
                     try { r = JSON.parse(json) } catch (e) {}
                     if (r.url) root.boardReported(r.url, r.passThrough)
-                } else if (name === "readyForUrl") root.pushBoard()
+                } else if (name === "readyForUrl") root.pushBoard(true)
             }
         }
     }

@@ -719,6 +719,24 @@ impl Cleaner {
         if self.board_key != fit || self.board.len() != out.len() {
             self.board_key = fit;
             self.board = out.clone();
+            // Where someone already stands when clean-up starts, the board
+            // behind them isn't known yet: a clean white board until they
+            // move off it and it is learnt (as Teams' does), never a copy
+            // of the presenter.
+            let (byp, bcp) = self.board.split_at_mut(w * h);
+            let (bup, bvp) = bcp.split_at_mut((w / 2) * (h / 2));
+            for y in by..by + bh {
+                for x in bx..bx + bw {
+                    if keep[y * w + x] >= 13 {
+                        byp[y * w + x] = 255;
+                        if y % 2 == 0 && x % 2 == 0 {
+                            let ci = (y / 2) * cwid + x / 2;
+                            bup[ci] = 128;
+                            bvp[ci] = 128;
+                        }
+                    }
+                }
+            }
         }
         let (oy, oc) = out.split_at_mut(w * h);
         let (ou, ov) = oc.split_at_mut((w / 2) * (h / 2));
@@ -1354,6 +1372,49 @@ mod tests {
         assert!((over_white - (white as i32 + 120) / 2).abs() < 6, "{over_white}");
         // Beside them (inside the grown mask) the board as it was.
         assert_eq!(out[18 * w + 22], ink);
+    }
+
+    #[test]
+    fn a_presenter_already_there_is_learnt_away() {
+        // The presenter stands over the stroke from the first frame: the
+        // board behind them isn't known, so they're drawn over a white
+        // board (not over a copy of themselves); once they step aside the
+        // stroke there is learnt.
+        let (w, h) = (64usize, 36usize);
+        let fit = (0, 0, w, h);
+        let mut board = vec![128u8; w * h * 3 / 2];
+        for y in 0..h {
+            for x in 0..w {
+                board[y * w + x] = if (16..20).contains(&y) { 30 } else { 220 };
+            }
+        }
+        let none = vec![0u8; w * h];
+        let (mut person, mut grown) = (vec![0u8; w * h], vec![0u8; w * h]);
+        let mut framed = board.clone();
+        for y in 8..28 {
+            for x in 24..40 {
+                person[y * w + x] = 255;
+                framed[y * w + x] = 120;
+            }
+        }
+        for y in 4..32 {
+            for x in 20..44 {
+                grown[y * w + x] = 255;
+            }
+        }
+        let mut c = Cleaner::default();
+        let mut out = Vec::new();
+        c.run(&framed, w, h, fit, Some((&person, &grown)), &mut out);
+        let over = out[18 * w + 32] as i32;
+        assert!((over - (255 + 120) / 2).abs() < 8, "{over}");
+        // They step aside: the stroke behind them is learnt…
+        c.run(&board, w, h, fit, Some((&none, &none)), &mut out);
+        let ink = out[18 * w + 32];
+        assert!(ink < 60, "{ink}");
+        // …and shows through when they come back.
+        c.run(&framed, w, h, fit, Some((&person, &grown)), &mut out);
+        let back = out[18 * w + 32] as i32;
+        assert!((back - (ink as i32 + 120) / 2).abs() < 6, "{back}");
     }
 
     #[test]

@@ -261,16 +261,22 @@ pub async fn excel_share(client: &TeamsClient, drive_id: &str, item_id: &str, pe
         .await?;
     let s = |p: &str| item.pointer(p).and_then(|x| x.as_str()).unwrap_or_default().to_string();
     let name = s("/name");
-    let recipients: Vec<serde_json::Value> = people.iter().map(|o| serde_json::json!({ "objectId": o })).collect();
-    let link: serde_json::Value = client
-        .graph_post(
-            &format!("/drives/{drive_id}/items/{item_id}/createLink"),
-            &serde_json::json!({ "type": "edit", "scope": "users", "recipients": recipients, "sendNotification": false }),
-        )
-        .await?
-        .json()
-        .await?;
-    let share_url = link.pointer("/link/webUrl").and_then(|u| u.as_str()).unwrap_or_default().to_string();
+    // Only the people who can't open it yet need the link (with nobody
+    // else in the meeting, the workbook's own address).
+    let share_url = if people.is_empty() {
+        s("/webUrl")
+    } else {
+        let recipients: Vec<serde_json::Value> = people.iter().map(|o| serde_json::json!({ "objectId": o })).collect();
+        let link: serde_json::Value = client
+            .graph_post(
+                &format!("/drives/{drive_id}/items/{item_id}/createLink"),
+                &serde_json::json!({ "type": "edit", "scope": "users", "recipients": recipients, "sendNotification": false }),
+            )
+            .await?
+            .json()
+            .await?;
+        link.pointer("/link/webUrl").and_then(|u| u.as_str()).unwrap_or_default().to_string()
+    };
     let def = super::app_details::definition(client, crate::calling::content_sharing::EXCEL_APP_ID).await?;
     let content_url = def
         .pointer("/staticTabs/0/contentUrl")
