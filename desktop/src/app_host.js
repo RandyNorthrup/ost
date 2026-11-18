@@ -519,8 +519,17 @@
             // A frame a video app drew (from its frame's texture stream).
             if (video && d && d.ostTexture === "out" && frame && e.source === frame.contentWindow) { video.drawn(d); return; }
             if (video && d && d.ostTexture === "log" && frame && e.source === frame.contentWindow) { ost.log("app: " + String(d.text || "").slice(0, 300)); return; }
-            if (!d || typeof d !== "object" || typeof d.func !== "string" || !frame) return;
+            if (!d || typeof d !== "object" || !frame) return;
             const fromFrame = e.source === frame.contentWindow;
+            // A print from the app's frame or a frame in it (OST's print
+            // hook): its document, for the host to print.
+            if (typeof d.ostPrint === "string") {
+                let inApp = fromFrame;
+                if (!inApp) { try { inApp = !!e.source && e.source !== window && e.source.top === window } catch (x) { inApp = false } }
+                if (inApp) ost.event("printHtml", JSON.stringify({ html: d.ostPrint, base: String(d.base || "") }));
+                return;
+            }
+            if (typeof d.func !== "string") return;
             let nested = false;
             if (!fromFrame) { try { nested = !!e.source && e.source !== window && e.source.top === window } catch (x) { nested = false } }
             if (!fromFrame && !nested) return;

@@ -169,6 +169,11 @@ Popup {
                 }
                 // The people in the call (Teams' participants-live-roster-list:
                 // at most 3, then +N), the starter until the roster comes.
+                // Teams' participants-live-roster-list (from its CSS, not
+                // measured live): each avatar carries isRosterParticipantAvatar,
+                // margin 0 -1rem 0 0 at Teams' 10 px rem, so each overlaps the
+                // next by 10 px; the list pads 1rem on its right; then +N, an
+                // avatar of the same size labelled with how many are hidden.
                 Row {
                     id: people
                     readonly property var list: root.rosters[card.modelData.threadId]

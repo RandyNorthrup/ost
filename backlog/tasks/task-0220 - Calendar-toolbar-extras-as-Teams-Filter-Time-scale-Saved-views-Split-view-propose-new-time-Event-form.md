@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-17T16:27:00Z'
-updated_date: '2026-11-18T22:21:00Z'
+updated_date: '2026-11-18T23:19:00Z'
 labels:
   - calendar
 dependencies: []
@@ -61,4 +61,8 @@ Follow-ups (2026-11-18, second pass):
 - Open: Outlook's Print button in its print dialog made no print request in QtWebEngine (it prints a nested frame). WebApp now turns window.print into a PDF in Downloads, but this path is not reached yet.
 
 - Merged d7dcbd1 (2026-11-18): build OK, 745 lib tests passed. AC2, AC3, AC4 and AC6 verified live. Open: AC1 Print from Outlook's dialog and Instructions ›; AC5 multi-meeting +N and Teams' avatar overlap.
+Last three items (2026-11-18):
+- Print: Outlook's print dialog writes its preview into a same-origin PrintableIframe and calls that frame's contentWindow.print() (Teams prints it with WebView2). QtWebEngine gave OST no print request for it, so WebApp now injects a print hook into every app frame. The hook catches window.print and print on the child frames reached through contentWindow, and posts the document to the host page (app_host.js, ostPrint). OST loads it in a hidden view, prints it to a PDF in Downloads and opens that. Verified on linuxlt with a PDF only (--cal-print-quiet): "Calendar 2026-11-18 142202.pdf", A4, 1 page, Outlook's work-week preview with the test event. lpstat shows no new jobs. The test PDF is deleted.
+- Instructions ›: in the tile menu for a Copilot user, as Outlook's CalendarItemContextMenu has it (calendarInstructions). Create instruction (only when you're not the organizer) opens Copilot's pane with the draft "Always {accept|follow|decline} meeting from {organizer}", or "Automatically delete canceled meetings" / "Help me create calendar instructions". Manage instructions opens Outlook's Calendar settings at Calendar instructions. Verified live: the draft in the pane, unsent, and the settings page. Outlook's command steps now match by visible text, because Fluent tabs keep a hidden copy of their label.
+- AC5 live: test2 and test3 each organized a new meeting with ost-test1 (OST TEST 223 live E and F), with the lobby set to Everyone (examples/meeting_lobby) and put back to EveryoneInCompany afterwards. With OST running as ost-test1 before the calls started, OST got both MeetingStarts and showed "Meetings Started: OST TEST 223 live E +1 / View meetings". The Live meetings dialog had E with O2, two guests and +1 (OST Test 2 admitted three guests) and F with O3. Teams on winpc, idle and running, showed no join bar (no MeetingStart reached it), and restarted calls get no MeetingStart at all. So the avatar overlap is taken from Teams' Griffel CSS (griffel-37c74cd32cb2b4d1.css), not measured live: isRosterParticipantAvatar margin 0 -1rem 0 0, html font-size 10px, so a 10 px overlap; chatLiveRosterList padding-right 1rem; +N is an avatar of the same size. OST already matches.
 <!-- SECTION:NOTES:END -->

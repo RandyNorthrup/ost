@@ -4421,6 +4421,18 @@ Window {
                     () => { const m = cv.tileMenuForTest(cv.eventBySubject(arg("cal-peek")) || {}); const i = m.items.findIndex(x => x.label === "Show as"); if (i >= 0) m.openSubmenuForTest(i) }, () => cap("tile-showas"),
                     () => Qt.quit()
                 ]
+                // =instr: the tile menu's Instructions ▸ Create instruction (a
+                // draft in Copilot's pane) and Manage instructions (Outlook's
+                // settings) on --cal-peek.
+                else if (mode === "instr") seq = [
+                    () => { const e = cv.eventBySubject(arg("cal-peek")); const m = cv.tileMenuForTest(e || {}); const i = m.items.findIndex(x => x.label === "Instructions"); if (i >= 0) m.openSubmenuForTest(i) },
+                    () => { console.warn("CALTEST instructions", JSON.stringify((cv.tileMenuForTest(cv.eventBySubject(arg("cal-peek")) || {}).items.find(x => x.label === "Instructions") || {}).submenu || [])); cap("instr-menu") },
+                    () => { cv.tileMenuForTest(cv.eventBySubject(arg("cal-peek")) || {}).close(); cv.tileAct(cv.eventBySubject(arg("cal-instr-invite")) || { organizer: "OST Test 3", response: "tentativelyAccepted" }, "instr:create") },
+                    () => {}, () => {}, () => {}, () => {}, () => {}, () => cap("instr-create"),
+                    () => { cv.copilotOpen = false; cv.tileAct(cv.eventBySubject(arg("cal-peek")), "instr:manage") },
+                    () => {}, () => {}, () => {}, () => {}, () => {}, () => cap("instr-manage"),
+                    () => Qt.quit()
+                ]
                 else if (mode === "split") {
                     if (!calTest.splitSaved) calTest.splitSaved = JSON.stringify({ sel: cv.otherSelected, split: cv.splitView })
                     seq = [
@@ -4441,6 +4453,8 @@ Window {
                 ]
                 else if (mode === "outlook") {
                     const o = arg("cal-outlook").split("|"), wait = parseInt(arg("cal-wait", "60"))
+                    // --cal-print-quiet: a print goes to its PDF only.
+                    cv.printQuietlyForTest = args.indexOf("--cal-print-quiet") >= 0
                     if (step === 1) { if (o[0] === "surface") cv.openOutlookCommand(o.slice(1)); else { const e = cv.eventBySubject(o[0]); if (e) cv.openOwaItem(e, o[1] || ""); else console.warn("CALTEST no event", o[0]) } }
                     else if (step % 5 === 0 && step * 3 < wait) cap("outlook-" + step)
                     else if (step * 3 >= wait) { cap("outlook-end"); Qt.quit() }

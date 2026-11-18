@@ -1866,8 +1866,19 @@ Item {
             out.push({ label: "Charm", icon: root.charmOf(e) ? root.charmMenuIcon(root.charmOf(e)) : "emoji-20", chevron: true, flyout: true },
                      { label: "Show as", icon: "status-20", submenu: shows.map(x => ({ label: x[1], checked: e.show_as === x[0], act: "showAs:" + x[0] })) },
                      { label: "Categorize", icon: "tag-20", submenu: root.categories.map(c => ({ label: c.name, tag: root.categoryTag(c.color), checked: (e.categories || []).indexOf(c.name) >= 0, act: "cat:" + c.name })) },
-                     { label: "Private", icon: "lock-closed-20", checked: e.sensitivity === "private", act: "private" },
-                     { separator: true },
+                     { label: "Private", icon: "lock-closed-20", checked: e.sensitivity === "private", act: "private" })
+            // Instructions › (Copilot's calendar instructions, for a Copilot
+            // user): Create instruction (not on your own meetings) hands
+            // Copilot "Always {accept|follow|decline} meeting from {organizer}"
+            // to finish; Manage instructions opens Outlook's Calendar
+            // settings at Calendar instructions.
+            if (copilotEntries && !e.is_draft) {
+                const sub = []
+                if (invited) sub.push({ label: "Create instruction", act: "instr:create" })
+                sub.push({ label: "Manage instructions", act: "instr:manage" })
+                out.push({ label: "Instructions", icon: "calendar-sparkle-20", submenu: sub })
+            }
+            out.push({ separator: true },
                      { label: "Duplicate event", icon: "copy-20", act: "owa:Duplicate" },
                      { label: "Save as .ics", icon: "arrow-download-20", act: "owa:Save as .ics" },
                      { label: "Delete", icon: "delete-20", act: "delete" })
@@ -1935,6 +1946,13 @@ Item {
         }
         else if (a === "private") calendarAction("patchEvent", JSON.stringify({ id: id, patch: { sensitivity: e.sensitivity === "private" ? "normal" : "private" } }))
         else if (a === "delete") { details.show(e, null); details.confirming = true }
+        else if (a === "instr:manage") openOutlookCommand(["Calendar settings", "Calendar instructions"])
+        else if (a === "instr:create") {
+            const verb = e.response === "tentativelyAccepted" ? "follow" : e.response === "declined" ? "decline" : "accept"
+            if (e.is_cancelled) openCopilotWith("Automatically delete canceled meetings", false)
+            else if (e.organizer) openCopilotWith("Always " + verb + " meeting from " + e.organizer, false)
+            else openCopilotWith("Help me create calendar instructions", true)
+        }
     }
     // The toolbar's "…" (Outlook's CalendarSurfaceToolbar overflow): what
     // doesn't fit (Filter; with Copilot's pane open, the toolbar's own
@@ -2012,12 +2030,13 @@ Item {
         return "(() => { if (location.host !== 'outlook.office.com' || !location.pathname.startsWith('/hosted/calendar')) return;"
             + " const route = " + JSON.stringify(route) + ", steps = " + JSON.stringify(steps) + ", autoClose = " + (autoClose ? "true" : "false") + ";"
             + " if (!route && !steps.length) return;"
-            + " const txt = el => (el.textContent || '').replace(/[^\\x20-\\x7e]/g, '').trim();"
+            // innerText: what shows (Fluent tabs keep a hidden copy of their label).
+            + " const txt = el => (el.innerText || el.textContent || '').replace(/[^\\x20-\\x7e]/g, ' ').replace(/\\s+/g, ' ').trim();"
             + " const lab = el => (el.getAttribute('aria-label') || txt(el)).trim();"
             + " let n = 0, k = 0, routed = !route, onRoute = false, opened = new Set(), shown = 0, gone = 0;"
             + " const close = () => window.parent.postMessage({ id: 990001, func: 'stageView.self.close', args: [], timestamp: Date.now() }, '*');"
             + " const t = setInterval(() => { n++;"
-            + "  const all = [...document.querySelectorAll('button,[role=button],[role=menuitem],[role=menuitemcheckbox],[role=menuitemradio]')].filter(b => b.offsetParent);"
+            + "  const all = [...document.querySelectorAll('button,[role=button],[role=menuitem],[role=menuitemcheckbox],[role=menuitemradio],[role=tab],[role=treeitem],[role=link],a')].filter(b => b.offsetParent);"
             + "  if (!routed) { if (all.length < 5) return; routed = true; history.pushState({}, '', route); dispatchEvent(new PopStateEvent('popstate', { state: {} })); n = 0; return; }"
             + "  if (route) { const here = location.pathname.startsWith('/hosted/calendar/item/') || location.pathname.startsWith('/hosted/calendar/deeplink/');"
             + "   if (here) onRoute = true; else if (onRoute) { clearInterval(t); close(); return; } }"
@@ -2055,6 +2074,8 @@ Item {
                 homeTemplate: owaItemLayer.url
                 hostContext: ({ entityId: "calendar" })
                 frameScript: root.owaCommandScript(owaItemLayer.route, owaItemLayer.steps, owaItemLayer.autoClose)
+                printQuietly: root.printQuietlyForTest
+                onPagePrinted: (path, ok) => console.warn("CALTEST printed", path, ok)
                 onHostEvent: (name, json) => {
                     console.warn("CALITEM host", name, (json || "").slice(0, 300))
                     if (name === "stageViewClose") root.closeOwaItem()
@@ -2064,6 +2085,7 @@ Item {
             }
         }
     }
+    property bool printQuietlyForTest: false
     function closeOwaItem() { owaItemLayer.visible = false; owaItemHost.active = false; emitRange() }
     function owaItemForTest() { return owaItemHost.item }
     function proposeForTest(e, response, start, minutes, note) {

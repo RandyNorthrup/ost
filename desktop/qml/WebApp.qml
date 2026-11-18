@@ -245,6 +245,9 @@ Item {
             backend.appHostRequest(root.appId, root.hostThread, root.hostTeamThread, root.hostTabId, kind, id, json)
         }
         function event(name, json) {
+            // A frame's print (window.print in it or in a child frame, as
+            // Outlook's print dialog prints its PrintableIframe): printed here.
+            if (name === "printHtml") { root.printHtml(json); return }
             root.hostEvents = root.hostEvents.concat([name])
             console.info("APPHOST " + root.appName + " " + name)
             root.hostEvent(name, json)
@@ -467,8 +470,56 @@ Item {
     }
     /// Where the page is shared (for Shared locations), e.g. "General · Team".
     property string location: ""
+    /// Teams desktop prints an app's page with WebView2's print; OST prints
+    /// it to a PDF in Downloads and opens that for printing. `json`: {html,
+    /// base} of the document a frame asked to print.
+    function printHtml(json) {
+        let d = {}
+        try { d = JSON.parse(json) } catch (e) { return }
+        if (!d.html) return
+        console.info("APPHOST " + root.appName + " print " + d.html.length)
+        printer.pending = true
+        printer.loadHtml(d.html, d.base || root.home)
+    }
+    signal pagePrinted(string filePath, bool success)
+    function printed(filePath, success) {
+        console.warn("WEBAPP printed", filePath, success)
+        root.pagePrinted(filePath, success)
+        if (success && !root.printQuietly) Qt.openUrlExternally("file://" + filePath)
+    }
+    /// Tests: print without opening the PDF.
+    property bool printQuietly: false
+    WebEngineView {
+        id: printer
+        property bool pending: false
+        visible: false
+        width: 816; height: 1056
+        onLoadingChanged: req => {
+            if (pending && req.status === WebEngineView.LoadSucceededStatus) { pending = false; printToPdf(web.printTo()) }
+        }
+        onPdfPrintingFinished: (filePath, success) => root.printed(filePath, success)
+    }
+    // Catches window.print in every frame and in the child frames they make
+    // (a same-origin iframe they fill and print), and hands the document to
+    // the host page, which passes it to OST (printHtml).
+    readonly property string printHookScript: "(() => { if (window.__ostPrintHook) return; window.__ostPrintHook = true;"
+        + " const send = doc => { try { window.top.postMessage({ ostPrint: '<!DOCTYPE html>' + doc.documentElement.outerHTML, base: doc.baseURI && doc.baseURI !== 'about:blank' ? doc.baseURI : location.href }, '*') } catch (e) {} };"
+        + " window.print = () => send(document);"
+        + " const d = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'contentWindow');"
+        + " if (d && d.get) Object.defineProperty(HTMLIFrameElement.prototype, 'contentWindow', { configurable: true, enumerable: d.enumerable, get() { const w = d.get.call(this);"
+        + "  try { if (w && w.__ostPrint !== w.print) { w.__ostPrint = () => send(w.document); w.print = w.__ostPrint } } catch (e) {} return w } }); })()"
     Component.onCompleted: {
         web.profile = webAppsProfile.instance()
+        printer.profile = web.profile
+        if (root.teamsHost) {
+            const hook = WebEngine.script()
+            hook.name = "ost-print-hook"
+            hook.sourceCode = root.printHookScript
+            hook.injectionPoint = WebEngineScript.DocumentCreation
+            hook.worldId = WebEngineScript.MainWorld
+            hook.runsOnSubFrames = true
+            web.userScripts.insert(hook)
+        }
         if (root.frameScript) {
             const script = WebEngine.script()
             script.name = "ost-app-frame"
@@ -593,7 +644,7 @@ Item {
         }
         onPrintRequested: printToPdf(printTo())
         onPrintRequestedByFrame: frame => frame.printToPdf(printTo())
-        onPdfPrintingFinished: (filePath, success) => { console.warn("WEBAPP printed", filePath, success); if (success) Qt.openUrlExternally("file://" + filePath) }
+        onPdfPrintingFinished: (filePath, success) => root.printed(filePath, success)
         onNewWindowRequested: req => {
             const w = popup.createObject(null, {})
             req.openIn(w.view)
