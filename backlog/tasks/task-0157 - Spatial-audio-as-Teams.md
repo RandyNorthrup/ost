@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-15T09:37:00Z'
-updated_date: '2026-11-17T23:41:00Z'
+updated_date: '2026-11-18T00:27:00Z'
 labels:
   - calling
   - devices
@@ -39,4 +39,11 @@ Settings > Devices > Audio settings > 'Spatial audio' (Available with Together m
 - Open:
   - Two people talking at once are placed between their tiles. Teams gets each speaker as a separate stream (x-much2, its multi-channel audio) and places each voice; OST must receive and decode those per-speaker streams to match.
   - Together mode is retired in Teams, so there's nothing to place there.
+
+- x-much2 (Teams' MUCHv2, per-speaker meeting audio) reversed and built (2026-11-17):
+  - Where: Teams web's pluginless stack selects MUCHv2 while spatial audio is configured (selectCodec), offering `a=rtpmap:113 x-much2/48000/2` (x-much3 is PT 96); its decoder is the healer wasm (teams-modular-packages healer.wasmmodule, CAudioDecode_MUCHv2_c / CCoreAudioHealerMuchv2), natively much_utilities::MuchStreamDecoder in RTMPLTFM.dll.
+  - On the wire (captured with OST_OFFER_MUCH=1 + OST_DUMP_RTP, two guests talking): the media processor answers x-much2 and sends all meeting audio as PT 113 from its mix SSRC, CSRCs = active speakers, a one-byte header extension (id 3) counting packets. Payload = u8 stream count; per speaker u8 kind (0x44 = Opus), u32 BE audio source id, u16 BE length, frame = 20 ms mono Opus 48 kHz (SILK WB, TOC 0x48). All 3471 frames of the capture decoded with libopus; each speaker's track transcribed cleanly on its own (whisper).
+  - Built: calling::much (parse, payload type, MuchMixer: one Opus decoder and one Spatializer per speaker, mixed in stereo; unknown kinds skipped and logged once), offered in meetings while spatial audio is on and the speaker is spatial capable (spatial::wants_unmixed, set from Backend); the receive loop decodes PT 113 per speaker and places each at their own tile (spatial::azimuth_of). Mixed audio keeps the CSRC placement.
+  - Verified live on linuxlt (meeting "OST calendar test", two Chrome test guests, Hide for me so their tiles sit at 25 % and 75 %, OST playback recorded from a virtual stereo sink): log "meeting audio per speaker (x-much2) pt=113". Both talking at once: L-R correlation 0.43 (the earlier mix-placement run: 0.88), the right channel's transcript is Guest 2 alone, the left carries Guest 1. Each alone: +7.6 dB on its side (left) / +5.9 dB (right). Left the meeting cleanly.
+  - Limit: OST offers x-much2 at join; turning spatial audio on mid-meeting applies from the next meeting (Teams renegotiates mid-call).
 <!-- SECTION:NOTES:END -->

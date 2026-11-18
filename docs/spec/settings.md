@@ -221,9 +221,19 @@ Everything below is in userPersonalSettings unless marked local.
   (`updateSpatialAudioParticipantsPosition`, at most every 240 ms) and Teams passes
   `[{participantId: <audio sourceId>, x, y}]` to the media stack. Teams' own path receives the
   speakers unmixed (codec `x-much2`/`x-much3`) and pans each with an HRTF panner.
-- OST (`calling::spatial`): the meeting's mix names its speakers in its CSRCs, so each 20 ms is
-  placed at their tiles' mean place (equal-power pan over ±60° with the interaural time
-  difference), the speaker opened in stereo.
+- x-much2 on the wire (received from Teams' media processor 2026-11-17): offered as
+  `a=rtpmap:113 x-much2/48000/2` ahead of Opus, the answer keeps it and the media processor
+  sends every meeting audio packet as PT 113 from its mix SSRC, the active speakers in the
+  CSRCs (plus a one-byte header extension, id 3, counting packets). The payload is: u8 stream
+  count, then per active speaker u8 kind (0x44: Opus), u32 audio source id (big endian, the
+  roster sourceId), u16 frame length (big endian) and the frame: 20 ms of mono Opus at 48 kHz
+  (SILK wideband, TOC 0x48). Each speaker's frames decode on their own with libopus.
+- OST (`calling::spatial`, `calling::much`): while spatial audio is on and the speaker can play
+  it, a meeting offers x-much2; each speaker gets their own Opus decoder and their own placer
+  (equal-power pan over ±60° with the interaural time difference) at their tile, and the
+  placed voices are summed in stereo. Without x-much2 (spatial audio off at join, or a mix) the
+  mix is placed at its CSRCs' mean place. Turning spatial audio on mid-meeting takes effect
+  at the next meeting (Teams renegotiates the codec mid-call).
 
 ## Devices ▸ Automatically adjust camera controls (read 2026-11-17, row measured 2026-11-14)
 

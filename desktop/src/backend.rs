@@ -6857,6 +6857,9 @@ fn apply_audio_devices(map: &serde_json::Map<String, serde_json::Value>) {
     let local = |k: &str| map.get(k).and_then(|v| v.as_str()).map(|v| v == "true");
     teams_cli::calling::apm::set_tty_mode(local("ttyMode").unwrap_or(false));
     teams_cli::calling::spatial::set_enabled(local("spatialAudio").unwrap_or(false));
+    // Whether the speaker can play it decides if meetings ask for each
+    // speaker's own audio (x-much2), as Teams' isSpatialCapable does.
+    teams_cli::calling::spatial::set_capable(spatial_capable());
     teams_cli::calling::camera_controls::set_preferred_auto(local("autoCameraControls"));
 }
 
@@ -14695,7 +14698,9 @@ impl qobject::Backend {
                 Some((u32::try_from(source).ok()?, num("x")?, num("y")?))
             })
             .collect();
-        let valid = valid && spatial_capable();
+        let capable = spatial_capable();
+        teams_cli::calling::spatial::set_capable(capable);
+        let valid = valid && capable;
         let was = teams_cli::calling::spatial::active();
         teams_cli::calling::spatial::set_valid(valid);
         teams_cli::calling::spatial::set_positions(&placed);

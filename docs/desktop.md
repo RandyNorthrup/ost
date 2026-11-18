@@ -199,6 +199,7 @@ Files OST keeps:
 | --- | --- |
 | `OST_SYSTEM_FRAME=1` | Use the desktop's own window frame instead of Teams' title bar buttons. |
 | `OST_NO_KEYRING=1` | Don't use the system keyring for tokens (headless machines, CI). |
+| `OST_DUMP_RTP=<file>` | Append every decrypted RTP packet of payload type `OST_DUMP_RTP_PT` (default 113, x-much2) to the file, length-prefixed (protocol research). `OST_OFFER_MUCH=1` offers x-much2 in meetings even with spatial audio off. |
 | `OST_TROUTER_DUMP_DIR=<dir>` | Write every push frame (and call SDP) there, owner-only. Frames contain message text and call links: for protocol work only. |
 | `RUST_LOG=info` | Engine and backend logging (to stderr). Logging is kept to shapes and states, not message text or tokens. |
 | `QT_SCALE_FACTOR=1.5` | Qt's own scaling; used to line OST up with Teams captured at 150 %. |

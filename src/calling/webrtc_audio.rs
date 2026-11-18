@@ -155,6 +155,8 @@ pub struct WebRtcOffer {
     /// The peer's Opus payload type, when it takes Opus (Teams offers it
     /// first; the call then sends Opus instead of PCMU).
     pub opus_pt: Option<u8>,
+    /// The peer's x-much2 payload type, when it took per-speaker audio.
+    pub much_pt: Option<u8>,
     /// The screen-sharing video line, if offered (even inactive).
     pub sharing: Option<OfferedVideo>,
     /// A media processor's answer to a meeting offer: our receive slots.
@@ -769,6 +771,7 @@ impl WebRtcOffer {
             dtmf_pt: dtmf_payload_type(&audio),
             dtmf48_pt: super::audio_codec::dtmf_payload_type(&audio, 48000),
             opus_pt: super::audio_codec::opus_payload_type(&audio),
+            much_pt: super::much::payload_type(&audio),
             slots: super::meeting_media::answered_slots(sdp),
             data_stream: super::meeting_media::data_stream(sdp),
             share_slot: super::meeting_media::answered_share(sdp),
@@ -1166,6 +1169,12 @@ impl LocalAudio {
         let mut formats: Vec<(u8, String, Option<String>)> = Vec::new();
         match answering {
             None => {
+                // Spatial audio: each speaker's own audio (Teams' MUCHv2,
+                // offered first while spatial audio is on and the speaker
+                // can play it). OST_OFFER_MUCH=1 offers it regardless.
+                if self.meeting && (super::spatial::wants_unmixed() || std::env::var("OST_OFFER_MUCH").is_ok()) {
+                    formats.push((super::much::PAYLOAD_TYPE, super::much::RTPMAP.into(), None));
+                }
                 if opus {
                     formats.push((PT_OPUS, "opus/48000/2".into(), Some("minptime=10;useinbandfec=1".into())));
                 }
@@ -2144,6 +2153,7 @@ impl WebRtcAudioSession {
                 super::audio_codec::Codec::Opus(pt) => Some(pt),
                 super::audio_codec::Codec::Pcmu => None,
             },
+            much_pt: offer.much_pt.filter(|_| local.meeting),
             held: held.clone(),
             twcc: twcc.clone(),
             bwe: bwe.clone(),
@@ -2518,6 +2528,8 @@ struct RecvCtx {
     spk_tx: Option<std::sync::mpsc::SyncSender<Vec<[i16; 2]>>>,
     /// The peer's Opus payload type (else only PCMU is played).
     opus_pt: Option<u8>,
+    /// The peer's x-much2 payload type (each speaker's own audio).
+    much_pt: Option<u8>,
     /// Our audio SSRC (the peer's receiver reports on it) and its RTP
     /// clock rate.
     audio_ssrc: u32,
@@ -2560,6 +2572,10 @@ async fn recv_loop(ctx: RecvCtx) {
     // (diagnostics).
     let mut noted = std::collections::HashSet::<(u32, u8)>::new();
     let mut spatializer = super::spatial::Spatializer::new(super::audio_codec::CALL_RATE);
+    let mut much = super::much::MuchMixer::new(super::audio_codec::CALL_RATE);
+    if let Some(pt) = ctx.much_pt {
+        tracing::info!(pt, "meeting audio per speaker (x-much2)");
+    }
     loop {
         let Ok((len, from)) = ctx.socket.recv_from(&mut buf).await else {
             continue;
@@ -2722,14 +2738,30 @@ async fn recv_loop(ctx: RecvCtx) {
                     }
                     continue;
                 }
-                if !decoder.handles(pt)
+                // OST_DUMP_RTP=<file>: every decrypted RTP packet of payload
+                // type OST_DUMP_RTP_PT (default 113, x-much2), length-prefixed
+                // (protocol research).
+                if let Ok(path) = std::env::var("OST_DUMP_RTP") {
+                    let want: u8 = std::env::var("OST_DUMP_RTP_PT").ok().and_then(|v| v.parse().ok()).unwrap_or(113);
+                    if pt == want {
+                        use std::io::Write;
+                        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+                            let _ = f.write_all(&(plain.len() as u32).to_le_bytes());
+                            let _ = f.write_all(&plain);
+                        }
+                    }
+                }
+                // Meeting audio: the mix, or each speaker's own (x-much2).
+                let much_packet = ctx.much_pt == Some(pt);
+                let is_audio = decoder.handles(pt) || much_packet;
+                if !is_audio
                     && let Ok(pkt) = rtp::decode(&plain)
                     && noted.insert((pkt.ssrc, pt))
                 {
                     tracing::debug!(ssrc = pkt.ssrc, pt, len, "RTP stream nothing receives");
                 }
                 // A meeting's mix names who is in it: the speakers.
-                if decoder.handles(pt)
+                if is_audio
                     && let Some(speakers) = &ctx.speakers
                 {
                     let csrcs = super::active_speakers::csrcs(&plain);
@@ -2740,7 +2772,7 @@ async fn recv_loop(ctx: RecvCtx) {
                 }
                 // Call health counts every audio packet that arrives,
                 // whether or not it's played.
-                if decoder.handles(pt)
+                if is_audio
                     && let Ok(pkt) = rtp::decode(&plain)
                 {
                     let s = health.stream(super::call_health::Kind::AudioRecv, pkt.ssrc);
@@ -2750,28 +2782,39 @@ async fn recv_loop(ctx: RecvCtx) {
                     if s.packets.load(Ordering::Relaxed) == 1 {
                         health.set_codec(
                             super::call_health::Kind::AudioRecv,
-                            if pkt.payload_type == 0 { "PCMU" } else { "OPUS" },
+                            if much_packet { "MUCHv2" } else if pkt.payload_type == 0 { "PCMU" } else { "OPUS" },
                         );
                     }
                 }
                 if let (Some(tx), Ok(pkt)) = (&ctx.spk_tx, rtp::decode(&plain))
-                    && decoder.handles(pkt.payload_type)
+                    && is_audio
                     && !ctx.held.load(Ordering::Relaxed)
                 {
-                    let pcm = decoder.decode(pkt.payload_type, &pkt.payload);
+                    let stereo = if much_packet {
+                        // Each speaker decoded on their own and placed at
+                        // their own tile (centred while spatial audio is
+                        // off or doesn't apply).
+                        much.decode(&pkt.payload, &super::spatial::azimuth_of)
+                    } else {
+                        let pcm = decoder.decode(pkt.payload_type, &pkt.payload);
+                        if pcm.is_empty() {
+                            Vec::new()
+                        } else {
+                            // Spatial audio over a mix: where its speakers'
+                            // tiles are (else centred).
+                            let azimuth = super::spatial::azimuth_for(&super::active_speakers::csrcs(&plain));
+                            spatializer.process(&pcm, azimuth)
+                        }
+                    };
                     {
                         let mut st = ctx.stats.lock().await;
                         st.audio_loss.on_packet(pkt.sequence_number);
-                        st.audio_samples_received += pcm.len() as u64;
+                        st.audio_samples_received += stereo.len() as u64;
                     }
                     if noted.insert((pkt.ssrc, pkt.payload_type)) {
-                        tracing::debug!(ssrc = pkt.ssrc, pt = pkt.payload_type, len = pkt.payload.len(), samples = pcm.len(), "audio stream played");
+                        tracing::debug!(ssrc = pkt.ssrc, pt = pkt.payload_type, len = pkt.payload.len(), samples = stereo.len(), "audio stream played");
                     }
-                    if !pcm.is_empty() {
-                        // Spatial audio: the mix from where its speakers'
-                        // tiles are (else centred, as before).
-                        let azimuth = super::spatial::azimuth_for(&super::active_speakers::csrcs(&plain));
-                        let stereo = spatializer.process(&pcm, azimuth);
+                    if !stereo.is_empty() {
                         let _ = tx.try_send(stereo);
                     }
                 }

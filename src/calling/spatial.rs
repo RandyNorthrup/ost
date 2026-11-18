@@ -16,10 +16,11 @@
 //!   y}]`), which renders each voice from there (an HRTF panner per
 //!   stream).
 //!
-//! OST receives the meeting's mix, which names its contributing sources
-//! (RTP CSRCs). Each 20 ms of the mix is placed where the tiles of the
-//! people speaking in it are: an equal-power pan with the interaural time
-//! difference of a voice from that direction.
+//! OST asks the meeting for each speaker's own audio (x-much2, `super::much`)
+//! and places each voice at its own tile: an equal-power pan with the
+//! interaural time difference of a voice from that direction. A plain mix
+//! (no x-much2) is placed where the tiles of the people speaking in it are
+//! (its RTP CSRCs).
 
 use std::collections::BTreeMap;
 use std::sync::Mutex;
@@ -77,6 +78,31 @@ pub fn active() -> bool {
 pub fn set_positions(positions: &[(u32, f32, f32)]) {
     let mut s = lock();
     s.positions = positions.iter().map(|&(id, x, y)| (id, (x.clamp(0.0, 100.0), y.clamp(0.0, 100.0)))).collect();
+}
+
+/// Where one speaker (an audio source) is heard: their tile's place as an
+/// azimuth (-1 left edge … 1 right), None when spatial audio is off or
+/// they have no tile.
+pub fn azimuth_of(source: u32) -> Option<f32> {
+    let s = lock();
+    if !(s.enabled && s.valid) {
+        return None;
+    }
+    s.positions.get(&source).map(|p| (p.0 - 50.0) / 50.0)
+}
+
+static CAPABLE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// The speaker calls use can play spatial audio (Teams' isSpatialCapable).
+pub fn set_capable(on: bool) {
+    CAPABLE.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Whether a meeting joined now asks for each speaker's own audio
+/// (x-much2), as Teams does while spatial audio is on and the speaker can
+/// play it (its MUCHv2 codec selection).
+pub fn wants_unmixed() -> bool {
+    enabled() && CAPABLE.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 /// Where a packet with these contributing sources is heard: the mean of
