@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-14T18:00:00Z'
-updated_date: '2026-11-18T02:18:00Z'
+updated_date: '2026-11-18T03:04:00Z'
 labels:
   - calls
 dependencies: []
@@ -33,4 +33,10 @@ AC2 (2026-11-17), built the way Teams runs avatars:
 - AvatarHost.qml runs Microsoft's Avatars app (96a116ab) out of sight on OST's TeamsJS host (frameContext sidePanel, NAA) while avatars are shown or are the camera. video_app_frame.js gives its frame WebView2's chrome.webview texture streams; app_host.js starts the stream (video.startVideoExtensibilityVideoStream, metadataInTexture) and builds camera-less NV12 frames in TeamsJS' one-texture layout carrying the visemes; desktop/src/avatars.rs is the localhost frame socket; vfx/src/avatar.rs asks for a frame each camera tick, keeps the app's newest and runs the app's own viseme model (VisemeModel-0.3.39.onnx: 1992 samples at 16 kHz in, 22 softmax out; tract) on the call's microphone.
 - The avatar is a camera device (ost-avatar); video effects skip it. UI: pre-join Effects and avatars with Video effects | Avatars (notice, picker, create your avatar), pre-join Avatars pane, Camera flyout Avatars tab and Turn off Avatars box, side pane Avatars tab with the app's uiOnly panel and Preview / Apply avatars, the Avatars app (Avatar builder) in the app bar, own reactions sent as meeting.meetingReactionReceived, mute as audioInferenceDiscardStatusChange.
 - Live on linuxlt as ost-test1: signed in, listed Avatar 1 and 70 backgrounds, applied, drew 640x360 frames in the preview and a Meet now; lip-sync output reached the app; OST Test 2 saw the avatar as ost-test1's video; builder opened; both call legs hung up (202). Teams measured on winpc (pre-join picker, FRE, flyout, side pane); the Avatars app was added for ost-test1 and Avatar 1 made there.
+
+- 2026-11-17 (1295d8c): avatars as Teams runs them. OST hosts the Avatars app (96a116ab) on its app host with NAA, provides WebView2-style texture streams with camera-less NV12 frames, runs the app's own viseme model on the mic, and sends the rendered frames as a virtual camera (ost-avatar).
+- UI as Teams: pre-join "Effects and avatars" tabs, the Camera flyout's Avatars tab and "Turn off Avatars", the side pane's Avatars tab hosting the app's panel, and the builder from the app bar.
+- Live: OST Test 2 saw ost-test1's avatar as video.
+- Open (with the agent): reaction emotes seen from the far side, solo self tile, side-pane black panel, builder header, 1280x720 at about 27 fps, last-used avatar in roaming prefs, app tile icon, and the remaining winpc measurements.
+- Tests: 711 lib and 28 desktop crate tests.
 <!-- SECTION:NOTES:END -->
