@@ -5,7 +5,7 @@ status: To Do
 assignee:
   - '@claude'
 created_date: '2026-11-16T21:56:00Z'
-updated_date: '2026-11-18T19:37:00Z'
+updated_date: '2026-11-18T23:06:00Z'
 labels:
   - desktop
 dependencies: []
@@ -33,4 +33,7 @@ What TASK-0155 left of Teams' New meeting controls (docs/spec/new-meeting-contro
 - AC3 (2026-11-18): measured live on winpc — calendar Meet now (setting on and off, re-measured), a group chat's Meet now and its Audio call (test-only chat "OST TEST group call": ost-test1, OST Test 2, OST Test 3), setting on and off. Teams treats both chat calls as group calls: Record/Transcribe, Captions, RTT, Timer, Help and the accessibility settings show; Meeting info, Notes, Rooms, Facilitator and Report a concern don't. docs/spec/new-meeting-controls.md §8.
 - OST: `ubar::Facts::group_call` shows those controls in group calls; Timer shows there (no presenter option); a ringing group call is joined as the chat's group call (`IncomingCall::group_thread`) instead of being answered as a 1:1 call, and its unanswered invitation's end no longer ends the call.
 - Live with OST Test 2 (`--group-call-nmc`, `--group-call-answer`, `--group-call-huddle`): joining Teams' group Meet now and answering Teams' Audio call both give Teams' group-call bar and More, setting off and on. Left: Interpreter (OST has no AI interpretation); Call me depends on dial-in, which OST Test 2 lacks.
+
+- 2026-11-18 (evening) recheck, OST Test 2 answering Teams' Audio call in "OST TEST group call": Teams' unanswered-invitation end (untagged call/end 408 "Call timed out without any signaling after attach from callee endpoints", ~58 s in) no longer ends OST's group call (CallSlot::group_invite_at); OST stayed connected until it left at ~2 min 45 s. The group call's dial-in from its join is now published, so Join info ▸ shows Call me and Call health, as Teams for an Audio Conferencing user.
+- Interpreter / Call me requirements (Teams' code + live licence check): Interpreter needs ECS enableAiInterpretation and meetingPolicy.aiInterpreter "Enabled" (it is, for the test accounts) plus a Microsoft 365 Copilot licence (only ost-test1 has one; 24 trial seats unassigned), or the organizer turning interpretation on for everyone. Call me needs the call's isDialInEnabled + isPSTNEnabled and dial-in details for the meeting (organizer with Audio Conferencing: ost-test1 and OST Test 2 have it; OST Test 3 has not). docs/spec/new-meeting-controls.md §8.
 <!-- SECTION:NOTES:END -->

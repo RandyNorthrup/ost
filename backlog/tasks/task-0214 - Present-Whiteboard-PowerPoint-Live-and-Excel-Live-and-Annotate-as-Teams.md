@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-17T02:43:00Z'
-updated_date: '2026-11-18T20:10:00Z'
+updated_date: '2026-11-18T23:06:00Z'
 labels:
   - desktop
 dependencies: []
@@ -36,4 +36,13 @@ What TASK-0210 left (docs/spec/call-and-meeting-window.md §9c): starting a Micr
 - Open: PowerPoint's attendee Take control, laser/ink sync and Cameo frames; Excel Live from a Teams presenter (no recent workbook in Teams' tray); Teams as viewer of OST's Whiteboard/Annotate from a second browser-signed-in account (OST Test 2's device-code sign-in can't mint the Whiteboard/Excel NAA tokens); Teams' keys while controlling (Teams drops focus after its first press when driven through VNC).
 
 - Merged into desktop/foundation (2026-11-18): build OK; 741 lib, 28 desktop and 24 vfx tests passed. AC3 (Content from camera) verified live, including the 11 s no-board path and Teams as viewer. Open: the rechecks, viewing from a different account, Excel Live from Teams, PowerPoint Live's control/laser/ink/camera, keys during give control.
+- 2026-11-18 (evening) rechecks and open items:
+  - Annotate overlay out of the share: verified (KWin excludeFromCapture true once mapped; the overlay card shows on linuxlt, not in Teams' picture).
+  - Teams presenting Whiteboard: OST showed Teams' existing board ("Note pack - yellow") and followed Teams' Follow me.
+  - Different account (OST Test 3, browser sign-in): Teams viewed its Whiteboard (same meeting board, both users on it). Annotate: session and overlay fine, but Teams showed no annotation layer; Teams' sharer publishes screenSharerAttributes {source, annotationWindowSize}, which OST now sends too (verified sent; Teams' view of it not yet rechecked).
+  - Excel Live from Teams (workbook opened once in Teams so the tray lists it): OST Test 3 hosted Excel's page; fixed: Teams sends onExtensibleAppContextChanged to the app and its content/state carry appLoadState preLoadApp/fullLoadApp, fileId, substrateId — OST now does both, and asks Teams' "Share with all participants?" before its own Excel Live (MeetingFileShareDialog, measured 400 × 235). Now Excel opens the workbook in OST but says "You don't have access to this file": Teams' state permits only the presenter (in a Meet now nobody is invited); needs a scheduled meeting with test3 invited to tell OST from Teams.
+  - PowerPoint Live (OST Test 3 presenting a deck with a cameo): Teams' takeControlPptBtn took it over; OST showed "Another user took control / OST Test 1 is now in control of the presentation. [Take back]", the viewer's Take control, and PowerPoint switched roles in place; Take back took it again (Teams back to Take control). Ink: Teams' pen stroke appeared in OST (DryInk state), Teams' laser too (LiveInking); OST's pen stroke appeared in Teams, OST's LiveInking posts answered 202. Cameo: Teams enables Layout ▸ Cameo only with the camera on and a cameo in the deck (OST does the same); with OST presenting and its (test) camera on, Teams showed OST's camera inside the slide's cameo. OST's own slide show didn't get frames (PowerPoint sends no slide-view bounds there; now sized from its CameoFrameRequestForSlide) — recheck pending.
+  - Keys while Teams controls OST's screen: typed through SendInput in winpc's interactive session (scheduled task, no VNC). Teams forwards the move, the press and four modifier key-ups, then nothing; Teams' own log shows its control capturer saw the mouse (Mouse entering render region, Synced Key states, Mouse clicked) but no keys — Teams appears to ignore injected keystrokes, so this needs a real key press on winpc's keyboard.
+
+- Cameo recheck (default profile, --join-content-cameo): frames reach OST's own slide show over the loopback feed, but PowerPoint doesn't draw them in OST's cameo yet (open). Annotate with screenSharerAttributes sent: Teams still shows no annotation layer (open). Test files, boards and the test camera cleaned up.
 <!-- SECTION:NOTES:END -->

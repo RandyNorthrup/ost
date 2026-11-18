@@ -328,7 +328,26 @@ Captured (presenter "OST TEST 214 deck.pptx", 2026-11-18):
       colleague is preparing to share an Excel workbook": Teams sends the
       context to the app as `onExtensibleAppContextChanged` whenever it
       changes, which OST didn't. Both fixed (content, state and the
-      message as Teams; the dialog before OST's own Excel Live).
+      message as Teams; the dialog before OST's own Excel Live). Rerun:
+      Excel opened the workbook in OST and said "You don't have access to
+      this file" — Teams' state permits only the presenter, and this Meet
+      now invites nobody; a scheduled meeting with the viewer invited is
+      needed to see whether Teams grants it.
+    - PowerPoint Live, OST Test 3 presenting a deck with a cameo: Teams'
+      Take control took it over; OST showed "Another user took control /
+      OST Test 1 is now in control of the presentation. [Take back]" and
+      its viewer's Take control, PowerPoint switching roles in place; Take
+      back took it again and Teams went back to Take control (Teams showed
+      no alert of its own then). Teams' pen stroke and laser showed in
+      OST's slide (DryInk, LiveInking); OST's pen stroke showed in Teams
+      (its LiveInking posts answered 202).
+    - Cameo: with OST presenting, its camera on (a test feed) and Layout ▸
+      Cameo, Teams showed OST's camera inside the slide's cameo (Teams'
+      viewer composites the presenter's video itself). OST's own slide show
+      gets the frames over the loopback feed (`cameo frames … 383x287`)
+      but PowerPoint doesn't draw them there yet — open.
+    - Annotate, OST Test 3 sharing with screenSharerAttributes sent: still
+      no annotation layer in Teams — open.
   - With the same account on both ends Teams treats a session as its own
     (it showed Stop sharing and "This may take a few seconds..." for OST's
     Excel Live, and no annotation layer), so Teams-as-viewer checks of
