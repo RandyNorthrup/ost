@@ -10,6 +10,7 @@ pub mod audio;
 pub mod audio_codec;
 pub mod breakout;
 pub mod consult;
+pub mod content_sharing;
 pub mod call_health;
 pub mod call_test;
 #[cfg(feature = "video")]

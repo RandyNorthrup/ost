@@ -354,3 +354,40 @@ extern "C" void ost_toolbar_place(const char *title, int x, int y)
     ls->setAnchors(s, x < 0 ? 1 : (1 | 4));
     ls->setMargins(s, QMargins(x < 0 ? 0 : x, y, 0, 0));
 }
+
+#include <QtGui/QRegion>
+
+// Annotate's window (Teams' annotation entity: transparent, frameless,
+// always on top, the whole screen): on Wayland a layer-shell surface on
+// the overlay layer anchored to every edge, which takes the keyboard only
+// when clicked.
+extern "C" bool ost_overlay_prepare(const char *title)
+{
+    QWindow *w = window_titled(title);
+    if (!w || w->isVisible())
+        return false;
+    w->setProperty("_q_showWithoutActivating", true);
+    const LayerShell *ls = layer_shell();
+    if (!ls || !QGuiApplication::platformName().startsWith(QLatin1String("wayland")))
+        return false;
+    void *s = ls->get(w);
+    if (!s)
+        return false;
+    ls->setLayer(s, 3);                     // LayerOverlay
+    ls->setKeyboardInteractivity(s, 2);     // KeyboardInteractivityOnDemand
+    ls->setActivateOnShow(s, false);
+    ls->setScope(s, QStringLiteral("ost-annotation"));
+    ls->setAnchors(s, 1 | 2 | 4 | 8);
+    ls->setMargins(s, QMargins());
+    return true;
+}
+
+// Where the window titled `title` takes the pointer: only (x, y, w, h), or
+// everywhere when w or h is 0 (Whiteboard's click-through mode).
+extern "C" void ost_window_input_region(const char *title, int x, int y, int w, int h)
+{
+    QWindow *win = window_titled(title);
+    if (!win)
+        return;
+    win->setMask(w > 0 && h > 0 ? QRegion(x, y, w, h) : QRegion());
+}

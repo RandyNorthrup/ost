@@ -303,9 +303,55 @@ shows.)
   Captions, Meeting info, Chat bubbles, Hide me and Accessibility don't look
   at the kind of call; Timer is off in group calls unless
   `supportStructuredMeetingsTimerInGroupCalls`; RTT follows its policy.
-- **Group calls** (a chat's Meet now or call) could not be measured live:
-  the only group chats the test account has include real people, and
-  starting a call there would ring them.
+- **Calendar Meet now, re-measured** (winpc 2026-11-18, "OST TEST 208
+  Meet now", 1280 × 680, DOM only): the same as above with the setting on
+  (bar at 382–931: Mic, Camera, Share | React, Chat, People, Copilot,
+  Controls, More; grid Record, Transcribe, Facilitator ▾, Interpreter,
+  Timer, Notes, Captions, Rooms, RTT, Apps; list View ▸, Join info ▸ (Meeting
+  info, Call me, Call health), Settings ▸, Report a concern, Help) and off
+  (at 1280 nothing overflows: Chat, People, Raise, React, View, Controls,
+  Notes, Rooms, Copilot, Apps, More | Camera, Mic, Share | Leave; More:
+  Record and transcribe ▸ (Start recording, Start transcription), Meeting
+  info, Facilitator ▸ (Turn on Facilitator, Enable voice), Timer, Video
+  effects and settings, Audio settings, Language and speech ▸ (Show live
+  captions Alt+Shift+C, Turn on Interpreter, Turn on RTT for this call),
+  Settings ▸ (Call health, Accessibility settings, Don't show chat bubbles,
+  Mute notifications), Call me, Report a concern, Help). Turning the
+  setting off opened Teams' "Submit feedback to Microsoft" ("What made you
+  switch back?" with eight reasons: not ready for this change, missing the
+  buttons that were on the toolbar before, Raise hand within React,
+  controls in the middle, the order of buttons, the new More layout, can't
+  find the tools, prefer the previous toolbar), cancelled unsent; the open
+  meeting's bar switched at once (`calculateAndNotify`).
+- **Group calls** (measured on winpc 2026-11-18 in a test-only group chat
+  "OST TEST group call": ost-test1, OST Test 2, OST Test 3). A group chat's
+  header offers **Meet now** (`audio-drop-in-button`: joins at once with
+  the mic on, no pre-join, nobody rung; the window is "Meeting in {chat}")
+  and, under its chevron, **Audio call** (asks "Are you sure you want to
+  call everyone in the group?" [Cancel] [Confirm], then rings everyone;
+  "Call with {chat}"; with nobody answering it ends by itself within
+  seconds and shows "Pick up where you left off").
+  - The chat's **Meet now**, setting **on**: Mic, Camera, Share | React,
+    Chat, People, Copilot, Controls, More, Leave (bar 363–912 at 1280); grid
+    Record, Transcribe, Interpreter, Timer, Captions, RTT, Apps; list View
+    ▸, Join info ▸ (**Call me, Call health**: no Meeting info), Settings ▸
+    (the same six), **Help**. No Notes, Rooms, Facilitator, Meeting info or
+    Report a concern.
+  - The chat's **Meet now**, setting **off**: Chat, People, Raise, React,
+    View, Controls, Copilot, Apps, More | Camera, Mic, Share | Leave; More:
+    Record and transcribe ▸ (Start recording, Start transcription), Timer,
+    Video effects and settings, Audio settings, Language and speech ▸ (Show
+    live captions, Turn on Interpreter, Turn on RTT for this call), Settings
+    ▸ (Call health, Accessibility settings, Don't show chat bubbles, Mute
+    notifications), Call me, Help.
+  - The chat's **Audio call** (Teams as the caller, OST Test 2 answering):
+    the same bar and More as its Meet now, with the setting on and off.
+  - So Teams treats it as a group call (Report a concern's
+    `!isGroupCall`), where Record, Transcribe, Captions, RTT, Help and the
+    accessibility settings show as the rules say, Timer shows
+    (`supportStructuredMeetingsTimerInGroupCalls` is on), Controls shows for
+    the one who started it (the Organizer role), and Meeting info, Notes,
+    Rooms, Facilitator and Report a concern don't.
 
 ## OST status
 
@@ -346,10 +392,24 @@ Built (CallWindow.qml, MenuPopup.qml, SettingsView.qml,
   concern, Help and the accessibility settings show as in a meeting, and
   Notes doesn't (an ad hoc channel meeting). OST has no Calendar Meet now
   (without a channel), whose controls are a scheduled meeting's.
-- [ ] Group calls: OST keeps hiding Record, Transcribe, Captions, RTT,
-  Meeting info, Help and the accessibility settings in a chat's call, which
-  Teams' rules show; not measured live (§8) and not checked to work in
-  OST's group calls.
+- [x] Group calls (§8, measured 2026-11-18): a chat's Meet now and Audio
+  call show Record and transcribe, Captions, RTT, Timer, Help and the
+  accessibility settings (and Settings ▸) as Teams does; Meeting info,
+  Notes, Rooms, Facilitator and Report a concern stay hidden
+  (`ubar::Facts::group_call`); Timer shows there (no presenter option in
+  a group call). A group call that rings OST (a chat's Audio call) is
+  joined as the chat's group call (`IncomingCall::group_thread`), so it gets
+  the group call's window and controls instead of a 1:1 call's. Checked
+  live 2026-11-18 with OST Test 2 in Teams' group calls (`--group-call-nmc`):
+  setting off — Chat, People, Raise, React, View, Apps, More | Camera, Mic,
+  Share | Leave, More with Record and transcribe ▸, Timer, Video effects and
+  settings, Audio settings, Language and speech ▸, Settings ▸ (Call health,
+  Accessibility settings, chat bubbles, Mute notifications), Help; on —
+  Mic, Camera, Share | React, Chat, People, More, grid Record, Transcribe,
+  Timer, Captions, RTT, Apps, list View ▸, Join info ▸ (Call health),
+  Settings ▸, Help. (Controls and Copilot are Teams' starter's and a
+  Copilot licence's; Interpreter and Call me depend on what OST Test 2
+  hasn't: AI interpretation and dial-in.)
 
 Live check (2026-11-16, linuxlt, ost-test1, the OST calendar test meeting
 alone): `--join-test --join-new-controls --join-stay=80` in light, dark and

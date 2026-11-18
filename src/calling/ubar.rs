@@ -668,12 +668,24 @@ pub struct Facts {
     /// View, Apps, Camera or Share, and it can't be held, transferred or
     /// parked.
     pub voicemail: bool,
+    /// We present a Microsoft Whiteboard (Teams' WhiteboardControlsSection:
+    /// Stop sharing on the bar).
+    pub whiteboard_sharing: bool,
+    /// We present PowerPoint Live (PptControlsSection: Layout, Stop
+    /// sharing).
+    pub ppt_sharing: bool,
 }
 
 impl Facts {
     /// A meeting (scheduled or Meet now), not a chat's group call.
     pub fn is_meeting(&self) -> bool {
         self.scheduled || self.adhoc
+    }
+
+    /// A chat's group call (its Meet now or Audio call): neither a meeting
+    /// nor a 1:1 call, and not the test call.
+    pub fn group_call(&self) -> bool {
+        !self.is_meeting() && !self.p2p && !self.pstn && !self.consult && !self.echo && !self.voicemail
     }
 
     /// Whether Teams shows `control` (bar controls and More's items OST
@@ -688,6 +700,8 @@ impl Facts {
         match control {
             "PopoutContentButton" => self.can_pop_out,
             "ScreensharingControlButton" => self.can_take_control,
+            "WhiteboardControlsSection" => self.whiteboard_sharing,
+            "PptControlsSection" => self.ppt_sharing,
             "ResumeButton" => self.p2p && self.on_hold && !self.voicemail,
             "CallTransferButtonV2" | "CallConsultativeTransferButtonV2" => self.p2p && !self.voicemail,
             "ChatButton" => !self.pstn && !self.echo && !self.voicemail,
@@ -724,30 +738,35 @@ impl Facts {
             // Record and transcribe ▸ (the meeting's call recorder).
             // Show or hide the Transcript pane (the call window adds it
             // once a transcript has run, as Teams' hasBeenStarted).
+            // Teams' rules don't look at the kind of call (measured
+            // 2026-11-18: a group chat's Meet now and Audio call show
+            // them), so meetings and group calls; not a 1:1 call.
             "RecordingMenuControl" | "RecordingButton" | "TranscriptButton" | "TranscriptPanelButton" => {
-                self.is_meeting()
+                self.is_meeting() || self.group_call()
             }
             // More ▸ Timer (the meeting's shared timer; the call window
             // hides it where Teams' timer can't be seen).
-            "MeetingFacilitatorTimerButton" => self.is_meeting(),
+            // Group calls too (supportStructuredMeetingsTimerInGroupCalls:
+            // Teams showed Timer in a group chat's Meet now).
+            "MeetingFacilitatorTimerButton" => self.is_meeting() || self.group_call(),
             // Language and speech ▸ Show live captions (the meeting's
             // recorder provides them).
-            "LanguageSpeechMenuControl" | "ClosedCaptionsButton" => self.is_meeting(),
+            "LanguageSpeechMenuControl" | "ClosedCaptionsButton" => self.is_meeting() || self.group_call(),
             // Language and speech ▸ Turn on RTT for this call (real-time
             // text on the meeting's data channel).
-            "RealTimeTextButton" => self.is_meeting(),
+            "RealTimeTextButton" => self.is_meeting() || self.group_call(),
             // More ▸ Help (Teams' Help app on its meetings page).
-            "MeetingHelpButton" => self.is_meeting(),
+            "MeetingHelpButton" => self.is_meeting() || self.group_call(),
             // More ▸ Report a concern (a security report about the meeting).
             "ReportMeetingButton" => self.is_meeting() && !self.town_hall && !self.webinar,
             // Settings ▸ Call health (every call: the media path counts
             // its streams in any call).
             "CallHealth" => true,
             // Settings ▸ Accessibility settings (the in-meeting pane).
-            "AccessibilitySettingsButton" | "MuteNotificationsButton" | "ChatBubblesButton" => self.is_meeting(),
+            "AccessibilitySettingsButton" | "MuteNotificationsButton" | "ChatBubblesButton" => self.is_meeting() || self.group_call(),
             // The new controls keep Video effects and Audio settings in
             // Settings ▸, so it shows in every call.
-            "SettingsMenuControl" => self.is_meeting() || self.centered,
+            "SettingsMenuControl" => self.is_meeting() || self.group_call() || self.centered,
             // The new controls' More: Join info ▸ (Meeting info, Call
             // health) and Settings ▸ Hide me / Optimize for room (the old
             // controls keep those two in View ▸ More options).

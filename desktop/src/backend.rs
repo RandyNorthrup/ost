@@ -59,6 +59,10 @@ unsafe extern "C" {
     /// The Sharing control bar's window as a layer-shell surface (Wayland).
     fn ost_toolbar_prepare(title: *const core::ffi::c_char) -> bool;
     fn ost_toolbar_place(title: *const core::ffi::c_char, x: i32, y: i32);
+    /// Annotate's window as an overlay layer-shell surface (Wayland).
+    fn ost_overlay_prepare(title: *const core::ffi::c_char) -> bool;
+    /// Where a window takes the pointer (all of it with w or h 0).
+    fn ost_window_input_region(title: *const core::ffi::c_char, x: i32, y: i32, w: i32, h: i32);
 }
 
 /// The Sharing control bar's window title (Teams').
@@ -269,6 +273,9 @@ pub mod qobject {
         /// Presenting (presenting.rs): our presenter mode, Add background,
         /// Optimize, and give / take control's state.
         #[qproperty(QString, call_presenting_json)]
+        /// Content-sharing sessions (content_share.rs): Whiteboard,
+        /// PowerPoint Live, Excel Live, Annotate — ours and others'.
+        #[qproperty(QString, call_content_json)]
         /// The test call's report once it ends (Teams' Post EchoBot
         /// Calling Screen): [{kind, title, problems}] for Microphone,
         /// Speaker, Camera and Network; empty while it runs.
@@ -1435,6 +1442,36 @@ pub mod qobject {
         /// The camera went on or off (the camera modes need it).
         #[qinvokable]
         fn presenting_camera_changed(self: Pin<&mut Backend>);
+        /// Present `kind` ("whiteboard", "annotation", or "content" with
+        /// `args` {content, subject, state}): a content-sharing session.
+        #[qinvokable]
+        fn content_share_start(self: Pin<&mut Backend>, kind: &QString, args: &QString);
+        /// The session we present has a new state (a JSON string).
+        #[qinvokable]
+        fn content_share_state(self: Pin<&mut Backend>, state: &QString);
+        /// Stop presenting the session.
+        #[qinvokable]
+        fn content_share_stop(self: Pin<&mut Backend>);
+        /// A shared board's frame address on the stage (Teams' whiteboard
+        /// renderer): `session_url` with Teams' parameters; `extra` a JSON
+        /// object of more parameters (Annotate's).
+        #[qinvokable]
+        fn content_board_frame_url(self: &Backend, session_url: &QString, initiator: bool, extra: &QString) -> QString;
+        /// Keep the board Whiteboard reported for the meeting (`kind`
+        /// "whiteboard" or "annotation"), as Teams does.
+        #[qinvokable]
+        fn content_save_board(self: Pin<&mut Backend>, kind: &QString, url: &QString);
+        /// PowerPoint Live's host configuration for a session (its slide
+        /// show form and Initialize message).
+        #[qinvokable]
+        fn content_ppt_config(self: &Backend, session: &QString, presenter_name: &QString, attendees: i32, dark: bool) -> QString;
+        /// PowerPoint Live's host script (ppt_host.js).
+        #[qinvokable]
+        fn ppt_host_script(self: &Backend) -> QString;
+        /// Load the share tray's recent decks and workbooks into
+        /// call_content_json's `recent`.
+        #[qinvokable]
+        fn content_recent_load(self: Pin<&mut Backend>);
         /// Give / take control: request, cancel, release, accept, deny,
         /// give (`arg`: their MRI), takeBack.
         #[qinvokable]
@@ -2520,6 +2557,17 @@ pub mod qobject {
         /// or `x` from the left.
         #[qinvokable]
         fn place_sharing_bar(self: &Backend, x: i32, y: i32);
+        /// Annotate's window (titled `title`): an overlay above everything.
+        #[qinvokable]
+        fn prepare_annotation_overlay(self: &Backend, title: &QString) -> bool;
+        /// Where the window titled `title` takes the pointer (w or h 0:
+        /// everywhere).
+        #[qinvokable]
+        fn set_window_input_region(self: &Backend, title: &QString, x: i32, y: i32, w: i32, h: i32);
+        /// Keep the window titled `title` out of screen shares (KWin's
+        /// excludeFromCapture), as Teams' annotation window is.
+        #[qinvokable]
+        fn exclude_window_from_capture(self: &Backend, title: &QString);
         /// A banner's quick reply: send `text` to `chat_id`.
         #[qinvokable]
         fn banner_reply(self: Pin<&mut Backend>, chat_id: &QString, text: &QString);
@@ -2855,6 +2903,8 @@ pub struct BackendRust {
     call_share_sound: bool,
     call_presenting_json: QString,
     presenting: presenting::Presenting,
+    call_content_json: QString,
+    content: content_share::ContentShare,
     /// The presenter we watch (their data source), for give / take control.
     presenting_viewing: Option<u32>,
     call_test_report: QString,
@@ -3067,6 +3117,8 @@ pub struct BackendRust {
     drafts: Option<HashMap<String, Draft>>,
 }
 
+#[path = "content_share.rs"]
+mod content_share;
 #[path = "presenting.rs"]
 mod presenting;
 
@@ -5901,6 +5953,11 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
             let _ = qt.queue(move |mut this| this.as_mut().show_processing(p));
         }
     }
+    // Content-sharing sessions (Whiteboard, PowerPoint Live, Excel Live,
+    // Annotate): ours starting, others' updates and ends.
+    if content_share::content_event(json, qt).await {
+        return;
+    }
     // The meeting's answer to "Call me", or to adding a room (Teams' join
     // with a room).
     if (json.contains("conversation/addParticipantSuccess") || json.contains("conversation/addParticipantFailure"))
@@ -7664,6 +7721,32 @@ impl qobject::Backend {
 
     pub fn accept_call(mut self: Pin<&mut Self>, with_video: bool) {
         if self.rust().call_state.to_string() != "ringing" {
+            return;
+        }
+        // A group chat's call (Teams' Audio call rings everyone in the
+        // chat): join its conversation as a group call, as Teams' call
+        // window shows it (the chat's roster, meeting controls), instead
+        // of answering it as a 1:1 call. Joining stops the ringing here.
+        let group = runtime().block_on(async {
+            let mut slot = call_slot().lock().await;
+            let thread = slot.ringing.as_ref().and_then(|c| c.group_thread().map(str::to_string));
+            if thread.is_some() {
+                slot.ringing = None;
+            }
+            thread
+        });
+        if let Some(thread) = group {
+            let name = self
+                .rust()
+                .chats
+                .iter()
+                .find(|c| c.get("id").and_then(|i| i.as_str()) == Some(thread.as_str()))
+                .and_then(|c| c.get("name").or_else(|| c.get("title")).and_then(|n| n.as_str()))
+                .map(str::to_string)
+                .unwrap_or_else(|| self.rust().call_peer.to_string());
+            tracing::info!(%thread, "answering a group call: joining its conversation");
+            self.as_mut().set_call_state(QString::default());
+            self.as_mut().start_group_call(thread, QString::from(name.as_str()), Some(teams_cli::calling::signaling::GroupCallKind::Join));
             return;
         }
         self.as_mut().set_call_state(QString::from("connecting"));
@@ -11537,6 +11620,8 @@ impl qobject::Backend {
         self.as_mut().rust_mut().roster = roster;
         self.as_mut()
             .set_call_roster_json(QString::from(json.as_str()));
+        // Whiteboard, PowerPoint Live, Excel Live and Annotate others present.
+        self.as_mut().content_from_roster();
         // The recording indicator names its starters from the roster.
         if !self.rust().processing.indicator_state().is_empty() {
             self.as_mut().show_recording_indicator();
@@ -11578,6 +11663,7 @@ impl qobject::Backend {
         leave_kept_main_later();
         self.as_mut().rust_mut().presenting_viewing = None;
         self.as_mut().rust_mut().presenting.control = Default::default();
+        self.as_mut().content_reset();
         if self.rust().call_test && self.rust().call_test_report.is_empty() {
             let watch = echo_watch().lock().unwrap_or_else(|e| e.into_inner()).take();
             let mut report = watch.map(|w| w.report).unwrap_or_default();
@@ -20430,6 +20516,28 @@ impl qobject::Backend {
         unsafe { ost_toolbar_prepare(SHARING_BAR_TITLE.as_ptr()) }
     }
 
+    pub fn prepare_annotation_overlay(&self, title: &QString) -> bool {
+        let t = std::ffi::CString::new(title.to_string()).unwrap_or_default();
+        // SAFETY: on the Qt thread; the title is a C string.
+        unsafe { ost_overlay_prepare(t.as_ptr()) }
+    }
+
+    pub fn set_window_input_region(&self, title: &QString, x: i32, y: i32, w: i32, h: i32) {
+        let t = std::ffi::CString::new(title.to_string()).unwrap_or_default();
+        // SAFETY: on the Qt thread; the title is a C string.
+        unsafe { ost_window_input_region(t.as_ptr(), x, y, w, h) }
+    }
+
+    pub fn exclude_window_from_capture(&self, title: &QString) {
+        let title = title.to_string();
+        runtime().spawn(async move {
+            match exclude_from_capture(&title).await {
+                Ok(()) => tracing::info!(%title, "kept out of screen shares"),
+                Err(e) => tracing::warn!("keeping {title} out of screen shares: {}", short_error(&e)),
+            }
+        });
+    }
+
     pub fn place_sharing_bar(&self, x: i32, y: i32) {
         // SAFETY: on the Qt thread; the title is a C string.
         unsafe { ost_toolbar_place(SHARING_BAR_TITLE.as_ptr(), x, y) }
@@ -21820,4 +21928,30 @@ mod mark_all_tests {
         assert_eq!(super::mark_all_targets("split_channel", &unread, &channels).len(), 2);
         assert!(super::mark_all_targets("engage_community", &unread, &channels).is_empty());
     }
+}
+
+/// Keep our window titled `title` out of screen shares: KWin's
+/// `excludeFromCapture` (Plasma 6), set by a KWin script for OST's own
+/// window, as Teams' annotation window uses WDA_EXCLUDEFROMCAPTURE.
+async fn exclude_from_capture(title: &str) -> anyhow::Result<()> {
+    let pid = std::process::id();
+    let esc = title.replace('\\', "\\\\").replace('"', "\\\"");
+    let script = format!(
+        "for (const w of workspace.windowList()) {{ if (w.pid === {pid} && w.caption === \"{esc}\") {{ w.excludeFromCapture = true; }} }}"
+    );
+    let path = std::env::temp_dir().join(format!("ost-exclude-{pid}.js"));
+    std::fs::write(&path, script)?;
+    let conn = zbus::Connection::session().await?;
+    let name = format!("ost-exclude-{pid}");
+    let scripting = zbus::Proxy::new(&conn, "org.kde.KWin", "/Scripting", "org.kde.kwin.Scripting").await?;
+    let _: Result<bool, _> = scripting.call("unloadScript", &(name.as_str(),)).await;
+    let id: i32 = scripting.call("loadScript", &(path.to_string_lossy().as_ref(), name.as_str())).await?;
+    anyhow::ensure!(id >= 0, "KWin didn't load the script");
+    let script_path = format!("/Scripting/Script{id}");
+    let s = zbus::Proxy::new(&conn, "org.kde.KWin", script_path.as_str(), "org.kde.kwin.Script").await?;
+    let () = s.call("run", &()).await?;
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    let _: Result<bool, _> = scripting.call("unloadScript", &(name.as_str(),)).await;
+    let _ = std::fs::remove_file(&path);
+    Ok(())
 }

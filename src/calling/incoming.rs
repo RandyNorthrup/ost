@@ -24,6 +24,19 @@ pub struct IncomingCall {
     /// A forked call's full invitation, fetched while it rings
     /// ([`CallAuth::probe_video`]) so we know whether it's a video call.
     attached: Option<CallNotification>,
+    /// A group call's chat (`groupChat.threadId` of a multi-party
+    /// invitation: `conversationInvitation.isMultiParty`, or
+    /// `callNotification.conversationType` "groupCall"), measured
+    /// 2026-11-18 on a Teams group chat's Audio call.
+    group_thread: Option<String>,
+}
+
+/// A ringing call's group chat, when it is a group call.
+fn group_thread_of(v: &serde_json::Value) -> Option<String> {
+    let multi = v.pointer("/conversationInvitation/isMultiParty").and_then(|b| b.as_bool()) == Some(true)
+        || v.pointer("/callNotification/conversationType").and_then(|t| t.as_str()).is_some_and(|t| t.eq_ignore_ascii_case("groupCall"));
+    let thread = v.pointer("/groupChat/threadId").and_then(|t| t.as_str()).filter(|t| t.starts_with("19:") && t.ends_with("@thread.v2"))?;
+    multi.then(|| thread.to_string())
 }
 
 impl IncomingCall {
@@ -35,10 +48,12 @@ impl IncomingCall {
             .and_then(|a| a.as_str())
             .is_some()
         {
+            let group_thread = group_thread_of(&v);
             return Some(Self {
                 notification: None,
                 forked: Some(v),
                 attached: None,
+                group_thread,
             });
         }
         let notification = super::parse_call_notification(json)?;
@@ -53,7 +68,14 @@ impl IncomingCall {
             notification: Some(notification),
             forked: None,
             attached: None,
+            group_thread: group_thread_of(&v),
         })
+    }
+
+    /// The group chat whose group call this is (Teams' group calls ring
+    /// everyone in the chat); `None` for a 1:1 call.
+    pub fn group_thread(&self) -> Option<&str> {
+        self.group_thread.as_deref()
     }
 
     /// The caller's display name, or "Unknown caller".

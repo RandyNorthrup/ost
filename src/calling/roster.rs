@@ -63,6 +63,11 @@ pub struct Participant {
     /// The data stream of the endpoint that shares its screen: where give
     /// / take control's messages go.
     pub share_data_source: Option<i64>,
+    /// The content-sharing sessions they present (Whiteboard, PowerPoint
+    /// Live, Excel Live, Annotate): each endpoint's
+    /// `contentSharing.sessionInformation`, as JSON
+    /// (content_sharing::session_from_roster).
+    pub content_sessions: Vec<String>,
     /// The update listed their endpoints' streams; one that didn't (Teams'
     /// first update after joining names people only) leaves the
     /// stream-derived fields as they were.
@@ -256,6 +261,7 @@ fn delta_on(json: &str, prefix: &str) -> Option<Vec<Participant>> {
                                 .find(|m| m.get("type").and_then(|t| t.as_str()) == Some("data"))
                                 .and_then(|m| m.get("sourceId")?.as_i64())
                         }),
+                    content_sessions: super::content_sharing::presenter_sessions(p),
                     on_hold: !streams.is_empty()
                         && streams.iter().all(|m| {
                             m.get("direction").and_then(|d| d.as_str()) == Some("inactive")
@@ -487,6 +493,7 @@ pub fn apply(roster: &mut Vec<Participant>, delta: Vec<Participant>) {
                     p.audio_source = x.audio_source;
                     p.data_sources = std::mem::take(&mut x.data_sources);
                     p.share_data_source = x.share_data_source;
+                    p.content_sessions = std::mem::take(&mut x.content_sessions);
                     p.server_muted = x.server_muted;
                     p.muted = x.muted;
                     p.devices = x.devices;
