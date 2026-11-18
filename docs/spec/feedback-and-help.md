@@ -96,6 +96,8 @@ Video (8) and Screenshare (8), both the categories and their items
 shuffled, the reasons as checkboxes in two columns, "Privacy statement",
 Dismiss and Send feedback. An unanswered survey goes after 60 s.
 
+Measured live in Teams desktop 2026-11-18 (its sampling forced over CDP for a solo Meet now): one page on #F5F5F5 — "How was the call quality?" (28/700, line 40, #424242), the two thumbs (61.33 squares, 0.67 #D1D1D1, radius 4, transparent; 50 px emoticons 5.67 in; 10.14 apart) with "Had issues" / "Good" (14/20 #252423) under them, then, 24 under, a 580-wide group: "What could've been better?" (14/20 #242424) with the category tabs beside it (radios 28.67 tall, padding 5 12, a 16 px Call / Share screen / Video glyph, 12/600 #424242, the selected one underlined 2 px #5B5FC7), the reasons in two 282-wide columns 16 apart (rows 32, 52 when wrapped; a 16 px box, 0.67 #616161, radius 2; labels 14/20 #616161), the privacy line (10/14 #424242: "By pressing \"Send Feedback\" to Microsoft, your feedback will be used to improve Microsoft products and services. Your IT admin will be able to collect this data. Privacy statement"), and Dismiss / Send feedback at the right (15 apart). OST says instead that Send feedback opens Report a problem for a public GitHub issue and nothing is sent before.
+
 OST (`calling::quality_survey`, `CallQualitySurvey.qml`): the same pages,
 sampling and shuffles. Good sends nothing anywhere. Send feedback opens
 Report a problem (area "Call quality") with the reasons as its text and the

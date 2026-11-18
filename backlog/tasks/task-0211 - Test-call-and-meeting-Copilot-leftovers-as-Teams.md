@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-16T23:39:00Z'
-updated_date: '2026-11-18T14:15:00Z'
+updated_date: '2026-11-18T15:06:00Z'
 labels:
   - desktop
 dependencies: []
@@ -38,4 +38,9 @@ Left from TASK-0141 and TASK-0188 (docs/spec/call-and-meeting-window.md):
 - Open: Teams' ubar overflow is width-only (no rule keeps an open pane's button), so whether Copilot moving into More with the pane open differs from Teams wasn't measured.
 
 - Merged 39cfa18 (2026-11-18): build OK, 734 lib tests passed. AC1 done (verified live). AC2 open: Teams' own Turn on Copilot for everyone? and Copilot's place in the bar with the pane open are being measured on winpc.
+- 2026-11-18 (follow-up) measured live in Teams desktop on winpc, ost-test1 under the temporary policy (Copilot "Only during the meeting"; removed again the same day, test meetings deleted):
+  - In a meeting with copilotMode Enabled, Copilot asks nothing more: straight to "What language is everyone speaking?", then Copilot alone and the notice "Copilot is available in this meeting" / "...during the meeting and an Intelligent recap after the meeting. Interactions and summaries..." (320 wide, #FAFAFA, 0.67 #F0F0F0, Sparkle 20, centred over the stage). "Turn on Copilot for everyone?" needs the flag enableToggleCopilotDuringMeeting, absent here. OST now does the same (the call variant stays as in the code).
+  - Echo test call: Copilot opens its pane at once (no alert); its classic bar has no Apps. OST matches.
+  - Copilot pane and side panes: Teams' end slot widths (32rem < 947, 36rem to 1439, 42rem, 48rem, 60rem); 360 at 1280. With the pane open at 1280 both bars keep Copilot; OST matches (cop3-copilot-pane, tc12-copilot-ask).
+- The mic-permission rig side effect (speaker "Didn't work") comes from the rig: refusing the PipeWire socket takes the speaker away too; OST reports that correctly. Not an OST bug.
 <!-- SECTION:NOTES:END -->

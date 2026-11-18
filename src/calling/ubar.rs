@@ -625,7 +625,7 @@ pub struct Facts {
     /// Teams' New meeting controls are on (the `InlineCentered` layout).
     pub centered: bool,
     /// Teams' test call with the Echo bot (measured 2026-11-16: no Chat
-    /// or People on its bar).
+    /// or People on its bar; 2026-11-18: no Apps).
     pub echo: bool,
     /// Copilot in meetings for this user (a Copilot licence; Teams'
     /// shouldEnableMeetingCollabButton with useAIFeatureLicense).
@@ -711,7 +711,9 @@ impl Facts {
             "StartBreakoutRoomButton" => self.is_meeting() && self.organizer && !self.town_hall,
             "ReturnToBreakoutRoomButton" => self.room_to_join,
             "BreakoutRoomReturnToMainButton" => self.can_return_to_main,
-            "MeetingAppsAddButton" => !self.pstn,
+            // The test call's classic bar has no Apps either (measured
+            // 2026-11-18: Raise, React, View, Controls, Copilot, More).
+            "MeetingAppsAddButton" => !self.pstn && !self.echo,
             "HoldButton" => self.p2p && !self.on_hold && !self.voicemail,
             "MergeCallsButton" => self.consult,
             "CallParkButton" => self.p2p && self.can_park && !self.on_hold && !self.voicemail,

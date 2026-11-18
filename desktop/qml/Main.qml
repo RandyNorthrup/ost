@@ -1840,6 +1840,12 @@ Window {
     Timer { id: reactionShot; interval: 400; onTriggered: callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-their-reaction.png"))) }
     CallWindow {
         id: callWindow
+        // --call-window=<w>x<h>: the call window's size (compared with
+        // Teams' at 1280x680).
+        Component.onCompleted: {
+            const a = Qt.application.arguments.find(x => x.startsWith("--call-window="))
+            if (a) { const p = a.slice(14).split("x"); width = parseInt(p[0]); height = parseInt(p[1]) }
+        }
         onGreenScreenSettings: window.showGreenScreenSettings()
         // The call quality survey's Had issues: Report a problem for the
         // feedback repo; and its end closes the call window.
@@ -2102,7 +2108,7 @@ Window {
                 console.warn("CQF survey", JSON.stringify(callWindow.qualitySurvey))
                 if (!callWindow.qualitySurvey) { console.warn("CQF none"); Qt.quit(); return }
                 log("rate"); shot("rate")
-            } else if (step === 1) { if (good) v.thank(); else v.page = "issues" }
+            } else if (step === 1) v.rate(good ? 5 : 1)
             else if (step === 2) { log(good ? "thanks" : "issues"); shot(good ? "thanks" : "issues"); if (good) step = 20 }
             else if (step === 3) {
                 if (v.categories.length > 1) v.category = 1

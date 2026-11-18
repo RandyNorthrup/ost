@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-11T01:52:00Z'
-updated_date: '2026-11-18T14:15:00Z'
+updated_date: '2026-11-18T15:06:00Z'
 labels:
   - feedback
   - calls
@@ -42,4 +42,5 @@ Built so far: Only Teams' Surveys switch under Privacy (synced like Teams', on b
 - Verified live on linuxlt (ost-test1, a solo test meeting, deleted after): cqfset2-cqfset-off/on (opt-in off by default, on, put back), cop1/cop2-cqf-rate, -issues, -ticked, -feedback (Report a problem filled in, closed unsent), -thanks; cqfg2-cqf-thanks (Good). Nothing was posted.
 
 - Merged 39cfa18 (2026-11-18). AC1 done. AC2 built and checked in OST; Teams' survey layout is being measured live on winpc before it's checked.
+- 2026-11-18 (follow-up) Teams' survey measured live on winpc: its sampling forced with a conditional CDP breakpoint in checkIfSampledForPostCallCQF (session closed and the override cleared by a final Meet now; no rating sent, both surveys dismissed). ThumbsCombined is one page: title 28/700, the thumbs, then the 580-wide "What could've been better?" group with tabs, two 282-wide reason columns, the privacy line and Dismiss / Send feedback. CallQualitySurvey.qml rebuilt to those measurements (one page, Teams' glyphs and colours); OST's privacy line says Report a problem opens a public GitHub issue. Checked in OST: cop3-cqf-rate / -ticked / -feedback / -thanks.
 <!-- SECTION:NOTES:END -->

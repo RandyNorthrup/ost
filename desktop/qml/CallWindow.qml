@@ -1137,9 +1137,21 @@ Window {
     property bool copilotTurnOnAsk: false
     readonly property bool callingScenario: !scheduled && !adhocMeeting
     readonly property bool copilotOrTranscript: transcribing || copilotRunning
+    // Measured live in Teams desktop (2026-11-18, ost-test1 with Allow
+    // Copilot "Only during the meeting"): in a meeting Teams asks nothing
+    // more (its "Turn on Copilot for everyone?" needs the
+    // enableToggleCopilotDuringMeeting flag, off here): Copilot goes
+    // straight to the spoken-language question, then runs alone. In the
+    // test call, which can't be transcribed, the pane opens at once.
     function openCopilot() {
         if (side === "copilot") { side = ""; return }
-        if (!copilotOrTranscript && !copilotAsk.visible) { facilitatorAsk = false; copilotTurnOnAsk = copilotOnly; copilotAsk.visible = true; return }
+        if (!copilotOrTranscript && !copilotAsk.visible && !testCall) {
+            facilitatorAsk = false
+            copilotTurnOnAsk = copilotOnly
+            if (copilotOnly && !callingScenario) { copilotAfterTranscript = true; recordStart.ask("copilot"); return }
+            copilotAsk.visible = true
+            return
+        }
         copilotAsk.visible = false
         side = "copilot"
         if (!copilotLaunch) backend.meetingCopilotLaunch(copilotHostTheme)
@@ -1250,6 +1262,8 @@ Window {
         if (!copilotRunning) { copilotOnNotice.visible = false; return }
         if (copilotAfterTranscript) { copilotAfterTranscript = false; side = "copilot"; if (!copilotLaunch) backend.meetingCopilotLaunch(copilotHostTheme) }
         if (!transcribing) copilotOnNotice.visible = true
+        // Its text depends on the meeting's Intelligent recap option.
+        if (Object.keys(controlsOptions).length === 0) loadControls()
     }
     // Teams' calling alert once Copilot runs alone (ShowCopilotOnlyMode,
     // the licensed bizChat text): "Copilot is available in this meeting",
@@ -1261,16 +1275,16 @@ Window {
         id: copilotOnNotice
         visible: false
         z: 50
-        x: (win.width - width) / 2; y: bar.height + 10.7
-        width: 320; height: noticeText.y + noticeText.implicitHeight + 12.7; radius: 8
+        x: ((win.width - (sidePane.visible ? sidePane.width : 0)) - width) / 2; y: bar.height + 10.67
+        width: 320; height: noticeText.y + noticeText.implicitHeight + 8.67; radius: 8
         color: theme.pick("#FAFAFA", "#292929", "#000000")
-        border.width: theme.highContrast ? 1 : 0
-        border.color: "#FFFFFF"
+        border.width: theme.highContrast ? 1 : 0.67
+        border.color: theme.highContrast ? "#FFFFFF" : theme.pick("#F0F0F0", "#3D3D3D", "#FFFFFF")
         Accessible.role: Accessible.AlertMessage
         Accessible.name: "Copilot is available in this meeting"
-        FluentIcon { x: 12.7; y: 12.7; size: 20; name: "ai-copilot"; color: theme.text }
+        FluentIcon { x: 12.67; y: 12.67; size: 20; name: "sparkle-20"; color: theme.text }
         Text {
-            x: 40.7; y: 12.7; height: 20; verticalAlignment: Text.AlignVCenter
+            x: 40.67; y: 12.67; height: 20; verticalAlignment: Text.AlignVCenter
             text: "Copilot is available in this meeting"
             font.family: theme.font; font.pixelSize: 12; color: theme.text
         }
@@ -1283,9 +1297,14 @@ Window {
         }
         Text {
             id: noticeText
-            x: 12.7; y: 40.7; width: 296.7
+            x: 12.67; y: 40.67; width: 294.67
             textFormat: Text.StyledText
-            text: "Copilot uses your data to generate responses during the meeting. Interactions with Copilot might be retained due to the host organization's policy."
+            // With the meeting's "Start Intelligent Recap when Copilot is
+            // turned on" (on unless the organizer turned it off) Teams names
+            // the recap too.
+            text: (win.controlValue("IsRecapEnabled") !== false
+                   ? "Copilot uses your data to generate responses during the meeting and an Intelligent recap after the meeting. Interactions and summaries with Copilot might be retained due to the host organization’s policy."
+                   : "Copilot uses your data to generate responses during the meeting. Interactions with Copilot might be retained due to the host organization's policy.")
                   + (win.privacyUrl ? " <a href=\"" + win.privacyUrl + "\">Privacy policy</a>" : "")
             linkColor: theme.link
             onLinkActivated: link => Qt.openUrlExternally(link)
@@ -2445,8 +2464,10 @@ Window {
         visible: win.side !== ""
         // Teams' calling-right-side-panel: 360 wide, flush with the window.
         anchors { top: bar.bottom; right: parent.right; bottom: parent.bottom }
-        // (Copilot's pane is 320 wide.)
-        width: win.side === "copilot" ? 320 : 360
+        // Teams' end slot (app-layout-area--end) by window width: 32rem
+        // under 947, 36rem to 1439, 42rem to 1679, 48rem to 1919, then 60rem
+        // (its layout map; measured 360 at 1280 for Copilot and the panes).
+        width: win.width < 947 ? 320 : win.width < 1440 ? 360 : win.width < 1680 ? 420 : win.width < 1920 ? 480 : 600
         color: win.side === "people" || win.side === "info" || win.side === "audio" || win.side === "transcript" || win.side === "captionStyles" || win.side === "accessibility" || win.side === "callHealth" || win.side === "rooms" || win.side === "video" || win.side === "notes" ? theme.pane : theme.surface
         clip: true
         Conversation {
