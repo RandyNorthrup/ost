@@ -131,6 +131,7 @@ fn main() {
         "qml/GreetingDialog.qml",
         "qml/CameraSettingsDialog.qml",
         "qml/CallAlert.qml",
+        "qml/BreakoutInviteAlert.qml",
         "qml/ChatBubble.qml",
         "qml/MeetingReportDialog.qml",
         "qml/CaptionsPopout.qml",

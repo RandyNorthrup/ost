@@ -2389,6 +2389,7 @@ Window {
     property var lastBreakoutRoom: null
     function goToBreakoutRoom(room) {
         breakoutMove.stop()
+        callWindow.breakoutInvite = null
         if (!room || window.breakoutMain) return
         window.lastBreakoutRoom = room
         // Where the main meeting's time stands, should it be held under a
@@ -2456,7 +2457,7 @@ Window {
         if (window.breakoutMain || backend.callState !== "connected") return
         const change = breakoutChange(window.breakoutPrevAssigned, assignedRoomNow)
         window.breakoutPrevAssigned = assignedRoomNow
-        if (change === "main") { breakoutMove.stop(); return }
+        if (change === "main") { breakoutMove.stop(); callWindow.breakoutInvite = null; return }
         if (change !== "room" && change !== "between") return
         const room = assignedRoomNow
         if (breakoutMove.running && breakoutMove.room && breakoutMove.room.join_url === room.join_url) return
@@ -2466,7 +2467,8 @@ Window {
             breakoutMove.interval = breakoutMoveSeconds * 1000 + room.move_jitter_ms
             breakoutMove.restart()
         } else {
-            callWindow.showBreakoutAlert("You've been assigned to " + room.name)
+            // Teams' invite: Later or Join room (no automatic move).
+            callWindow.breakoutInvite = room
         }
     }
     onBreakoutRoomStateChanged: {
@@ -2607,6 +2609,7 @@ Window {
         property bool rejoined: false
         property bool triedRoom: false
         property int tryFor: 0
+        property int inviteFor: 0
         onTriggered: {
             if (Qt.application.arguments.indexOf("--breakout-watch-rejoin") >= 0 && !rejoined && window.lastBreakoutRoom
                     && !window.breakoutMain && backend.callState === "connected" && ++backFor === 10) {
@@ -2638,7 +2641,13 @@ Window {
                 console.warn("BREAKOUTWATCH dismissing the retry screen; resuming", backend.callHeldMeetingJson)
                 callWindow.retryReason = ""; window.resumeHeldMeeting()
             }
-            const phase = JSON.stringify([callWindow.retryReason, callWindow.breakoutAlert ? callWindow.breakoutAlert.text : "", callWindow.roomToJoin,
+            // --breakout-watch-invite: Join room on Teams' invite once it
+            // has shown a while (as its button does).
+            if (Qt.application.arguments.indexOf("--breakout-watch-invite") >= 0 && callWindow.breakoutInvite && ++inviteFor === 6) {
+                console.warn("BREAKOUTWATCH Join room on the invite", callWindow.breakoutInvite.name)
+                callWindow.breakoutInvite = null; window.goToBreakoutRoom(window.assignedOpenRoom)
+            }
+            const phase = JSON.stringify([callWindow.retryReason, callWindow.breakoutAlert ? callWindow.breakoutAlert.text : (callWindow.breakoutInvite ? "invite: " + callWindow.breakoutInvite.name : ""), callWindow.roomToJoin,
                                           !!window.breakoutMain, callWindow.canReturnToMain, backend.callState,
                                           window.breakoutRoomState ? window.breakoutRoomState.closed : null, backend.callPeer])
             if (phase === last) return

@@ -2736,6 +2736,19 @@ Window {
     property var breakoutAlert: null
     function showBreakoutAlert(text, icon) { breakoutAlert = { text: text, icon: icon || "" }; breakoutAlertTimer.restart() }
     Timer { id: breakoutAlertTimer; interval: 10000; onTriggered: win.breakoutAlert = null }
+    // The room you're assigned to opened (no automatic move): Teams'
+    // "Join breakout room?" invite, until Later, Join room, or the room
+    // closing or a move (Main.qml).
+    property var breakoutInvite: null
+    BreakoutInviteAlert {
+        visible: !!win.breakoutInvite && !win.breakoutAlert
+        x: stage.x + (stage.width - width) / 2
+        y: win.belowBar + 10.7
+        z: 6
+        roomName: win.breakoutInvite ? win.breakoutInvite.name : ""
+        onLater: win.breakoutInvite = null
+        onJoin: { win.breakoutInvite = null; win.joinBreakoutRoom() }
+    }
     CallAlert {
         visible: !!win.breakoutAlert
         x: stage.x + (stage.width - width) / 2

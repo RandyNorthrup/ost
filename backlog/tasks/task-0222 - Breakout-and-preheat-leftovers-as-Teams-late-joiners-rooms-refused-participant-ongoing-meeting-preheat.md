@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-11-17T20:43:00Z'
-updated_date: '2026-11-18T10:08:00Z'
+updated_date: '2026-11-18T10:20:00Z'
 labels:
   - calls
 dependencies: []
@@ -45,4 +45,6 @@ What TASK-0218/0219 left: a participant who joins after rooms are open isn't off
 - 2026-11-18 AC3 re-check: OST Test 2 re-added ost-test1 to meeting3's chat, and OST Test 3 held a call in meeting1. Teams desktop's active calls still had only expired entries for both chats, so the preheat found no running call (flag-on branch, existing false); meeting1's pre-join wasn't preheated at all. Teams' join-the-running-call branch was not observed end to end.
 
 - Merged ed02e5d (2026-11-18): returning from a room to a main meeting with a lobby stays in the room until admitted, as Teams does (verified live, run lr1). Build OK, 724 lib tests passed. AC3 is still being observed on winpc; the "Join breakout room?" dialog is being built.
+- 2026-11-18 AC3 seen end to end in Teams desktop: after restarting new Teams (CDP on 9222 again), its pre-join for meeting3 (OST Test 2 in the call, ost-test1 a chat member again) logged existing true, then joinExistingCall with callUrl = the running call's conversation (conv/zkU0y2ykEUSykw..., the same URL in OST Test 2's log) and callId = the live state's conversationId. A running Teams doesn't refresh a chat's live state after a re-add; the restart reloads it. OST posts its preheat to the same URL with that id as chain id, so no change was needed.
+- 2026-11-18 Join breakout room? invite: measured in Teams desktop (calling alert ufd_BreakoutRoomInvite; geometry, fonts and colours in spec 1.8l). It stays until answered; Later closes it and Join room stays on the bar. OST: BreakoutInviteAlert.qml replaces the old assigned-to alert. Verified live (ost-test1 organizing meeting1 in OST, OST Test 3 participant): the invite showed (linuxlt:/tmp/brk/inv1-watch-4.png), and its Join room moved OST Test 3 into Room 1.
 <!-- SECTION:NOTES:END -->
