@@ -3,10 +3,10 @@ id: TASK-0222
 title: >-
   Breakout and preheat leftovers as Teams: late joiners' rooms, refused
   participant, ongoing-meeting preheat
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-11-17T20:43:00Z'
-updated_date: '2026-11-18T10:20:00Z'
+updated_date: '2026-11-18T10:55:00Z'
 labels:
   - calls
 dependencies: []
@@ -24,7 +24,7 @@ What TASK-0218/0219 left: a participant who joins after rooms are open isn't off
 <!-- AC:BEGIN -->
 - [x] #1 A participant who joins after breakout rooms are open is moved to or offered their room as Teams does, verified live
 - [x] #2 A participant refused by a room sees what Teams shows, observed in Teams and matched
-- [ ] #3 What joinOngoingMeetingInPreheatedFlow changes in Teams is found and OST does the same, verified against Teams
+- [x] #3 What joinOngoingMeetingInPreheatedFlow changes in Teams is found and OST does the same, verified against Teams
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -48,3 +48,17 @@ What TASK-0218/0219 left: a participant who joins after rooms are open isn't off
 - 2026-11-18 AC3 seen end to end in Teams desktop: after restarting new Teams (CDP on 9222 again), its pre-join for meeting3 (OST Test 2 in the call, ost-test1 a chat member again) logged existing true, then joinExistingCall with callUrl = the running call's conversation (conv/zkU0y2ykEUSykw..., the same URL in OST Test 2's log) and callId = the live state's conversationId. A running Teams doesn't refresh a chat's live state after a re-add; the restart reloads it. OST posts its preheat to the same URL with that id as chain id, so no change was needed.
 - 2026-11-18 Join breakout room? invite: measured in Teams desktop (calling alert ufd_BreakoutRoomInvite; geometry, fonts and colours in spec 1.8l). It stays until answered; Later closes it and Join room stays on the bar. OST: BreakoutInviteAlert.qml replaces the old assigned-to alert. Verified live (ost-test1 organizing meeting1 in OST, OST Test 3 participant): the invite showed (linuxlt:/tmp/brk/inv1-watch-4.png), and its Join room moved OST Test 3 into Room 1.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Breakout and preheat leftovers now behave as Teams.
+
+- Late joiners: the room assigned when the call connects is the starting point (kept from the join and the preheated call); only later changes move you. "Join room" sits on the bar, no alert (verified live, runs late2/late3).
+- Refused participant: a participant's move is retried once, then OST stays in the main meeting silently; the retry screen and hold stay only for an organizer's Join from a room's menu. Fixed a wrong "We'll move you back" alert (run try2).
+- Ongoing-meeting preheat (joinOngoingMeetingInPreheatedFlow): the preheated call is posted straight to the running call's conversation with its id, as Teams does; seen end to end in Teams desktop and matched (run ph1).
+- Return to a main meeting with a lobby: OST stays in the room until admitted, then leaves it (run lr1).
+- "Join breakout room?" invite (BreakoutInviteAlert.qml) as Teams draws it, with Later and Join room (run inv1).
+- Harness: --breakout-late, --breakout-unopened-wait, --breakout-watch-try, --breakout-watch-invite. Spec 1.8k/1.8l.
+- Tests: 724 lib tests pass. Follow-up TASK-0224 (main audio during a move) is done.
+<!-- SECTION:FINAL_SUMMARY:END -->
