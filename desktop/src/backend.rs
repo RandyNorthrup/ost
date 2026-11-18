@@ -8415,15 +8415,33 @@ impl qobject::Backend {
 
     pub fn save_video_frame(&self, key: &QString, path: &QString) -> bool {
         let Some(f) = teams_cli::calling::frames::latest(&key.to_string()) else { return false };
-        let write = || -> anyhow::Result<()> {
-            let file = std::fs::File::create(path.to_string())?;
-            let mut enc = png::Encoder::new(std::io::BufWriter::new(file), f.width, f.height);
-            enc.set_color(png::ColorType::Rgba);
-            enc.set_depth(png::BitDepth::Eight);
-            enc.write_header()?.write_image_data(&f.rgba)?;
-            Ok(())
-        };
-        write().is_ok()
+        // A quarter-size picture, written off the GUI thread: test runs save
+        // several a second during a call without loading the machine.
+        let path = path.to_string();
+        std::thread::spawn(move || {
+            let (w, h) = ((f.width / 4).max(1), (f.height / 4).max(1));
+            let mut small = Vec::with_capacity((w * h * 4) as usize);
+            for y in 0..h {
+                let row = ((y * 4) * f.width) as usize * 4;
+                for x in 0..w {
+                    let i = row + (x * 4) as usize * 4;
+                    small.extend_from_slice(&f.rgba[i..i + 4]);
+                }
+            }
+            let write = || -> anyhow::Result<()> {
+                let file = std::fs::File::create(&path)?;
+                let mut enc = png::Encoder::new(std::io::BufWriter::new(file), w, h);
+                enc.set_color(png::ColorType::Rgba);
+                enc.set_depth(png::BitDepth::Eight);
+                enc.set_compression(png::Compression::Fast);
+                enc.write_header()?.write_image_data(&small)?;
+                Ok(())
+            };
+            if let Err(e) = write() {
+                tracing::warn!("saving a video frame failed: {e}");
+            }
+        });
+        true
     }
 
     pub fn time_zone_name(self: Pin<&mut Self>) -> QString {

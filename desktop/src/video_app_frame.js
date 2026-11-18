@@ -15,6 +15,8 @@
     if (ancestors[0] !== HOST_ORIGIN || window.parent === window) return;
     if (!window.MediaStreamTrackGenerator || !window.MediaStreamTrackProcessor) return;
     const inputs = new Map();
+    // The blank camera-less picture (a VideoFrame copies what it's made of).
+    let blank = null;
     const webview = {
         async getTextureStream(streamId) {
             const generator = new MediaStreamTrackGenerator({ kind: "video" });
@@ -27,8 +29,14 @@
                 const { value: f, done } = await reader.read();
                 if (done) return;
                 try {
-                    const data = new ArrayBuffer(f.allocationSize());
-                    await f.copyTo(data);
+                    const t = performance.now();
+                    // NV12, after 20 bytes the host page fills in (its
+                    // message head to OST), so the frame is copied once.
+                    const w = f.displayWidth, h = f.displayHeight;
+                    if (f.format !== "NV12") continue;
+                    const data = new ArrayBuffer(20 + w * h * 3 / 2);
+                    await f.copyTo(data, { rect: { x: 0, y: 0, width: w, height: h }, layout: [{ offset: 20, stride: w }, { offset: 20 + w * h, stride: w }] });
+                    if (window.__ostCost) window.__ostCost.frameOut += performance.now() - t;
                     window.parent.postMessage({ ostTexture: "out", streamId, timestamp: f.timestamp, width: f.displayWidth, height: f.displayHeight,
                         format: f.format, data }, HOST_ORIGIN, [data]);
                 } catch (e) {
@@ -49,32 +57,76 @@
         const d = e.data;
         if (e.source !== window.parent || e.origin !== HOST_ORIGIN || !d || d.ostTexture !== "in") return;
         const w = inputs.get(d.streamId);
-        if (!w || !(d.data instanceof ArrayBuffer)) return;
+        if (!w || !(d.header instanceof ArrayBuffer)) return;
         try {
+            // Teams' camera-less frame: the header rows over a blank picture.
+            const size = d.width * d.height * 3 / 2;
+            if (!blank || blank.byteLength !== size) {
+                blank = new ArrayBuffer(size);
+                const px = new Uint8Array(blank);
+                px.fill(16, 0, d.width * d.height);
+                px.fill(128, d.width * d.height);
+            }
+            new Uint8Array(blank).set(new Uint8Array(d.header), 0);
+            d.data = blank;
+            const t = performance.now();
             const f = new VideoFrame(d.data, { format: "NV12", codedWidth: d.width, codedHeight: d.height, timestamp: d.timestamp });
             w.write(f).catch(() => {});
+            if (window.__ostCost) window.__ostCost.frameIn += performance.now() - t;
         } catch (x) {}
     }, true);
     // Test runs (--avatar-test): what the page asks its Unity player to do
     // (object, method, the argument's start), the player's own log, what
     // it renders and loads, sent to the host page's log (the app replaces
     // the console with its telemetry buffer).
-    // Experiment (--avatar-slow-raf): animation frames once a second, as
-    // Chromium gives Teams' hidden renderer frame.
-    if (window.__ostSlowRaf) {
-        const raf = window.requestAnimationFrame.bind(window);
-        window.requestAnimationFrame = cb => setTimeout(() => raf(cb), 1000);
-    }
     if (window.__ostDebug) {
-        const log = text => window.parent.postMessage({ ostTexture: "log", text: String(text).slice(0, 300) }, HOST_ORIGIN);
+        const log = text => window.parent.postMessage({ ostTexture: "log", text: (Date.now() % 1000000) + " " + String(text).slice(0, 300) }, HOST_ORIGIN);
         let verboseUntil = 0;
+        // Where the page's main thread goes (ms per 5 s): Unity's main loop,
+        // the app's Render() calls, GL readbacks and waits, frame copies.
+        const cost = { loop: 0, render: 0, readback: 0, wait: 0, frameIn: 0, frameOut: 0 };
+        setInterval(() => { log("cost ms/5s " + Object.entries(cost).map(([k, v]) => k + " " + Math.round(v)).join(", ")); for (const k in cost) cost[k] = 0 }, 5000);
+        window.__ostCost = cost;
+        for (const P of [window.WebGL2RenderingContext && WebGL2RenderingContext.prototype].filter(Boolean)) {
+            const g = P.getBufferSubData, w = P.clientWaitSync, f = P.finish, rp = P.readPixels;
+            P.getBufferSubData = function () { const t = performance.now(); try { return g.apply(this, arguments) } finally { cost.readback += performance.now() - t } };
+            P.readPixels = function () { const t = performance.now(); try { return rp.apply(this, arguments) } finally { cost.readback += performance.now() - t } };
+            P.clientWaitSync = function () { const t = performance.now(); try { return w.apply(this, arguments) } finally { cost.wait += performance.now() - t } };
+            P.finish = function () { const t = performance.now(); try { return f.apply(this, arguments) } finally { cost.wait += performance.now() - t } };
+            // GL uploads (calls, ms per 5 s), to see what the player does after a reaction.
+            const up = { tex: 0, texMs: 0, buf: 0, bufMs: 0, draws: 0 };
+            for (const k of ["texImage2D", "texSubImage2D", "texImage3D", "texSubImage3D", "compressedTexImage2D", "compressedTexSubImage2D", "texStorage2D"]) {
+                const o = P[k]; if (typeof o !== "function") continue;
+                P[k] = function () { const t = performance.now(); try { return o.apply(this, arguments) } finally { up.tex++; up.texMs += performance.now() - t } };
+            }
+            for (const k of ["bufferData", "bufferSubData"]) {
+                const o = P[k]; if (typeof o !== "function") continue;
+                P[k] = function () { const t = performance.now(); try { return o.apply(this, arguments) } finally { up.buf++; up.bufMs += performance.now() - t } };
+            }
+            for (const k of ["drawElements", "drawArrays", "drawElementsInstanced", "drawArraysInstanced"]) {
+                const o = P[k]; if (typeof o !== "function") continue;
+                P[k] = function () { up.draws++; return o.apply(this, arguments) };
+            }
+            setInterval(() => { log("gl uploads/5s tex " + up.tex + " (" + Math.round(up.texMs) + "ms) buf " + up.buf + " (" + Math.round(up.bufMs) + "ms) draws " + up.draws); for (const k in up) up[k] = 0 }, 5000);
+            // Shader programs the player builds (and when they finish linking).
+            const lp = P.linkProgram, gpp = P.getProgramParameter, cs = P.compileShader;
+            const linking = new Map();
+            let links = 0, done = 0, compiles = 0;
+            P.compileShader = function () { compiles++; return cs.apply(this, arguments) };
+            P.linkProgram = function (prog) { links++; linking.set(prog, performance.now()); return lp.apply(this, arguments) };
+            P.getProgramParameter = function (prog, pname) { const v = gpp.apply(this, arguments); if (linking.has(prog) && (pname === 0x91B1 || pname === this.LINK_STATUS) && v) { const ms = performance.now() - linking.get(prog); linking.delete(prog); done++; if (ms > 200) log("program linked after " + Math.round(ms) + "ms") } return v };
+            setInterval(() => { if (links || compiles) log("gl programs: " + compiles + " shaders compiled, " + links + " linked, " + done + " ready, " + linking.size + " pending"); links = 0; compiles = 0; done = 0 }, 5000);
+        }
+        // Requests the player gives up on (its UnityWebRequest timeouts abort them).
+        { const ab = AbortController.prototype.abort; AbortController.prototype.abort = function (...a) { log("abort " + String(new Error().stack || "").split("\n").slice(2, 5).map(x => x.trim().slice(0, 60)).join(" < ")); return ab.apply(this, a) } }
+        { const st0 = window.setTimeout; window.setTimeout = function (fn, ms, ...r) { if (typeof fn === "function" && ms >= 1000 && /isTimedOut/.test(String(fn))) log("request timeout set " + ms + "ms"); return st0.call(window, fn, ms, ...r) } }
         // Unity's main loop: how often it runs, and anything it throws.
         {
             // Unity's main loop runs on animation frames, or on timers once
             // the player sets a frame rate: count both, and what it throws.
             const raf = window.requestAnimationFrame.bind(window), st = window.setTimeout.bind(window);
             let rafTicks = 0, timerTicks = 0, gaps = [], last = 0;
-            const tick = (kind, cb, arg) => { const n = performance.now(); if (last) gaps.push(n - last); last = n; if (kind === "raf") rafTicks++; else timerTicks++; try { return cb(arg) } catch (e) { log("unity loop threw " + String(e && e.message || e).slice(0, 200)); throw e } };
+            const tick = (kind, cb, arg) => { const n = performance.now(); if (last) gaps.push(n - last); last = n; if (kind === "raf") rafTicks++; else timerTicks++; const t0 = performance.now(); try { return cb(arg) } catch (e) { log("unity loop threw " + String(e && e.message || e).slice(0, 200)); throw e } finally { cost.loop += performance.now() - t0 } };
             window.requestAnimationFrame = cb => raf(t => cb && cb.name === "Browser_mainLoop_runner" ? tick("raf", cb, t) : cb(t));
             window.setTimeout = function (fn, ms, ...rest) { if (typeof fn === "function" && fn.name === "Browser_mainLoop_runner") return st(() => tick("timer", fn), ms); return st(fn, ms, ...rest) };
             setInterval(() => { const mx = gaps.length ? Math.round(Math.max(...gaps)) : 0; log("unity loop raf " + rafTicks + " timer " + timerTicks + " /5s, max gap " + mx + "ms"); rafTicks = 0; timerTicks = 0; gaps = [] }, 5000);
@@ -111,7 +163,7 @@
             if (I) {
                 let nr = 0, nv = 0;
                 const r = I.Render, v = I.UpdateVisemeData;
-                I.Render = function () { nr++; return r.apply(this, arguments) };
+                I.Render = function () { nr++; const t = performance.now(); try { return r.apply(this, arguments) } finally { cost.render += performance.now() - t } };
                 I.UpdateVisemeData = function () { nv++; return v.apply(this, arguments) };
                 // Every other call into the renderer (resolution, mood, camera…).
                 for (const k of Object.keys(I)) { if (k === "Render" || k === "UpdateVisemeData" || k === "ResetVisemeData" || typeof I[k] !== "function") continue; const fn = I[k]; I[k] = function (...a) { log("interop " + k + " " + JSON.stringify(a).slice(0, 160)); return fn.apply(this, a) } }
@@ -173,13 +225,12 @@
             u.SendMessage = (o, m, a) => { if (/Emote/.test(m)) { verboseUntil = Date.now() + 8000; setTimeout(() => storage("emote+5s"), 5000) } if (!/Viseme|Render/.test(m)) log("unity " + o + "." + m + " " + String(a === undefined ? "" : a).slice(0, 200)); return send(o, m, a) };
         }, 500);
     }
-    // Experiment (--avatar-slow-loop): the Unity player's own main loop
-    // once a second, as Chromium runs timers in Teams' hidden renderer
-    // frame; the app's Render() calls still draw every frame.
-    if (window.__ostSlowLoop) {
+    // Experiment (--avatar-loop-ms=<n>): the Unity player's main loop every
+    // n ms instead of its own frame-rate timing.
+    if (window.__ostLoopMs >= 0) {
         const st = window.setTimeout;
         window.setTimeout = function (fn, ms, ...rest) {
-            if (typeof fn === "function" && fn.name === "Browser_mainLoop_runner") return st.call(window, fn, Math.max(ms || 0, 1000));
+            if (typeof fn === "function" && fn.name === "Browser_mainLoop_runner") return st.call(window, fn, window.__ostLoopMs);
             return st.call(window, fn, ms, ...rest);
         };
     }
