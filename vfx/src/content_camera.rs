@@ -171,6 +171,11 @@ pub struct Processor {
     have_mask: bool,
     rect: Vec<u8>,
     out_mask: Vec<u8>,
+    /// The mask grown by ~3 % of the frame (MASK x MASK), and warped:
+    /// where the board may be learnt (never just beside the presenter,
+    /// whose mask lags a moving person).
+    mask_dil: Vec<f32>,
+    out_keep: Vec<u8>,
     clean: Cleaner,
     out: Vec<u8>,
 }
@@ -200,6 +205,8 @@ impl Processor {
             have_mask: false,
             rect: Vec::new(),
             out_mask: Vec::new(),
+            mask_dil: Vec::new(),
+            out_keep: Vec::new(),
             clean: Cleaner::default(),
             out: Vec::new(),
         }
@@ -304,10 +311,13 @@ impl Processor {
         let quad = if self.opts.zoom_enabled && !is_trivial(&self.quad) { self.quad } else { FULL_FRAME };
         let corners = to_pixels(&quad, sw, sh);
         let fit = fit_rect(&corners, w, h);
-        let mask = if self.opts.cleanup_enabled && self.have_mask { Some(&self.mask[..]) } else { None };
-        rectify(src, sw, sh, &corners, fit, w, h, &mut self.rect, mask, &mut self.out_mask);
+        if self.opts.cleanup_enabled && self.have_mask {
+            dilate(&self.mask, &mut self.mask_dil, 6);
+        }
+        let mask = if self.opts.cleanup_enabled && self.have_mask { Some((&self.mask[..], &self.mask_dil[..])) } else { None };
+        rectify(src, sw, sh, &corners, fit, w, h, &mut self.rect, mask, (&mut self.out_mask, &mut self.out_keep));
         if self.opts.cleanup_enabled {
-            let m = if mask.is_some() { Some(&self.out_mask[..]) } else { None };
+            let m = if mask.is_some() { Some((&self.out_mask[..], &self.out_keep[..])) } else { None };
             self.clean.run(&self.rect, w, h, fit, m, &mut self.out);
         } else {
             std::mem::swap(&mut self.out, &mut self.rect);
@@ -481,8 +491,8 @@ fn rectify(
     w: usize,
     h: usize,
     out: &mut Vec<u8>,
-    mask: Option<&[f32]>,
-    out_mask: &mut Vec<u8>,
+    mask: Option<(&[f32], &[f32])>,
+    (out_mask, out_keep): (&mut Vec<u8>, &mut Vec<u8>),
 ) {
     let (bx, by, bw, bh) = fit;
     out.resize(w * h * 3 / 2, 0);
@@ -494,6 +504,8 @@ fn rectify(
     if mask.is_some() {
         out_mask.resize(w * h, 0);
         out_mask.fill(0);
+        out_keep.resize(w * h, 0);
+        out_keep.fill(0);
     }
     let (sy, sc) = src.split_at(sw * sh);
     let (su, sv) = sc.split_at((sw / 2) * (sh / 2));
@@ -512,13 +524,17 @@ fn rectify(
             let inv = 1.0 / dd;
             let (px, py) = (nx * inv, ny * inv);
             oy[row + x] = bilinear(sy, sw, sh, px - 0.5, py - 0.5);
-            if let Some(mk) = mask {
+            if let Some((mk, dil)) = mask {
                 let ix = ((px * mx) as usize).min(MASK - 1);
                 let iy = ((py * my) as usize).min(MASK - 1);
                 // The model's softmax sits near 0.3 / 0.7: the same
                 // smoothstep as the background effects.
-                let t = ((mk[iy * MASK + ix] - 0.3) / 0.4).clamp(0.0, 1.0);
-                out_mask[row + x] = (t * t * (3.0 - 2.0 * t) * 255.0) as u8;
+                let step = |v: f32| {
+                    let t = ((v - 0.3) / 0.4).clamp(0.0, 1.0);
+                    (t * t * (3.0 - 2.0 * t) * 255.0) as u8
+                };
+                out_mask[row + x] = step(mk[iy * MASK + ix]);
+                out_keep[row + x] = step(dil[iy * MASK + ix]);
             }
             nx += sx;
             ny += sy_;
@@ -560,7 +576,8 @@ struct Cleaner {
 }
 
 impl Cleaner {
-    fn run(&mut self, src: &[u8], w: usize, h: usize, fit: (usize, usize, usize, usize), mask: Option<&[u8]>, out: &mut Vec<u8>) {
+    fn run(&mut self, src: &[u8], w: usize, h: usize, fit: (usize, usize, usize, usize), masks: Option<(&[u8], &[u8])>, out: &mut Vec<u8>) {
+        let keep = masks.map(|m| m.1);
         let (bx, by, bw, bh) = fit;
         out.resize(src.len(), 0);
         out.copy_from_slice(src);
@@ -589,7 +606,7 @@ impl Cleaner {
                 for y in y0..y1 {
                     for x in x0..x1 {
                         let i = y * w + x;
-                        if mask.is_some_and(|m| m[i] > 76) {
+                        if keep.is_some_and(|m| m[i] > 13) {
                             continue;
                         }
                         hist[sy[i] as usize] += 1;
@@ -690,7 +707,7 @@ impl Cleaner {
         self.whiten(sy, su, sv, w, h, fit, out);
         // 4. Overlay presenter: the board as it was under them, the
         // presenter at half strength over it.
-        let Some(m) = mask else { return };
+        let Some((m, keep)) = masks else { return };
         if self.board_key != fit || self.board.len() != out.len() {
             self.board_key = fit;
             self.board = out.clone();
@@ -703,8 +720,12 @@ impl Cleaner {
             for x in bx..bx + bw {
                 let i = y * w + x;
                 let a = m[i] as f32 / 255.0;
-                if a < 0.2 {
+                if keep[i] < 13 {
                     byp[i] = oy[i];
+                } else if a < 0.2 {
+                    // Beside them: the board as learnt (a moving
+                    // presenter's mask lags; no ghost edges).
+                    oy[i] = byp[i];
                 } else {
                     let s = 0.5 * ((a - 0.2) / 0.3).clamp(0.0, 1.0);
                     oy[i] = (byp[i] as f32 * (1.0 - s) + sy[i] as f32 * s) as u8;
@@ -715,9 +736,12 @@ impl Cleaner {
             for x in (bx / 2)..(bx + bw) / 2 {
                 let ci = y * cwid + x;
                 let a = m[(y * 2) * w + x * 2] as f32 / 255.0;
-                if a < 0.2 {
+                if keep[(y * 2) * w + x * 2] < 13 {
                     bup[ci] = ou[ci];
                     bvp[ci] = ov[ci];
+                } else if a < 0.2 {
+                    ou[ci] = bup[ci];
+                    ov[ci] = bvp[ci];
                 } else {
                     let s = 0.5 * ((a - 0.2) / 0.3).clamp(0.0, 1.0);
                     ou[ci] = (bup[ci] as f32 * (1.0 - s) + su[ci] as f32 * s) as u8;
@@ -765,6 +789,25 @@ impl Cleaner {
                 ou[ci] = (128.0 + (su[ci] as f32 - wu) * k).clamp(16.0, 240.0) as u8;
                 ov[ci] = (128.0 + (sv[ci] as f32 - wv) * k).clamp(16.0, 240.0) as u8;
             }
+        }
+    }
+}
+
+/// Grow a MASK x MASK mask by `r` cells (a square max filter).
+fn dilate(m: &[f32], out: &mut Vec<f32>, r: usize) {
+    let n = MASK;
+    let mut tmp = vec![0f32; n * n];
+    out.resize(n * n, 0.0);
+    for y in 0..n {
+        for x in 0..n {
+            let (a, b) = (x.saturating_sub(r), (x + r).min(n - 1));
+            tmp[y * n + x] = m[y * n + a..=y * n + b].iter().fold(0f32, |s, &v| s.max(v));
+        }
+    }
+    for y in 0..n {
+        let (a, b) = (y.saturating_sub(r), (y + r).min(n - 1));
+        for x in 0..n {
+            out[y * n + x] = (a..=b).fold(0f32, |s, yy| s.max(tmp[yy * n + x]));
         }
     }
 }
@@ -1168,8 +1211,8 @@ mod tests {
         let c = to_pixels(&FULL_FRAME, w, h);
         let fit = fit_rect(&c, w, h);
         assert_eq!(fit, (0, 0, w, h));
-        let (mut out, mut om) = (Vec::new(), Vec::new());
-        rectify(&f, w, h, &c, fit, w, h, &mut out, None, &mut om);
+        let (mut out, mut om, mut ok) = (Vec::new(), Vec::new(), Vec::new());
+        rectify(&f, w, h, &c, fit, w, h, &mut out, None, (&mut om, &mut ok));
         assert_eq!(out, f);
     }
 
@@ -1224,6 +1267,50 @@ mod tests {
         assert!(!inks.is_empty());
         let ink = inks.iter().sum::<u32>() as f32 / inks.len() as f32;
         assert!(ink < 90.0, "ink {ink}");
+    }
+
+    #[test]
+    fn overlay_presenter_shows_the_board_through_them() {
+        // A 64 x 36 white board with a black stroke across; a grey
+        // presenter stands over the stroke's middle.
+        let (w, h) = (64usize, 36usize);
+        let fit = (0, 0, w, h);
+        let mut board = vec![128u8; w * h * 3 / 2];
+        for y in 0..h {
+            for x in 0..w {
+                board[y * w + x] = if (16..20).contains(&y) { 30 } else { 220 };
+            }
+        }
+        let none = vec![0u8; w * h];
+        let mut person = vec![0u8; w * h];
+        let mut grown = vec![0u8; w * h];
+        let mut framed = board.clone();
+        for y in 8..28 {
+            for x in 24..40 {
+                person[y * w + x] = 255;
+                framed[y * w + x] = 120;
+            }
+        }
+        for y in 4..32 {
+            for x in 20..44 {
+                grown[y * w + x] = 255;
+            }
+        }
+        let mut c = Cleaner::default();
+        let mut out = Vec::new();
+        // The board first, nobody in front of it…
+        c.run(&board, w, h, fit, Some((&none, &none)), &mut out);
+        let ink = out[18 * w + 32];
+        let white = out[10 * w + 32];
+        assert!(ink < 60 && white > 225, "{ink} {white}");
+        // …then the presenter: half of them, half the board they hide.
+        c.run(&framed, w, h, fit, Some((&person, &grown)), &mut out);
+        let over_ink = out[18 * w + 32] as i32;
+        let over_white = out[10 * w + 32] as i32;
+        assert!((over_ink - (ink as i32 + 120) / 2).abs() < 6, "{over_ink}");
+        assert!((over_white - (white as i32 + 120) / 2).abs() < 6, "{over_white}");
+        // Beside them (inside the grown mask) the board as it was.
+        assert_eq!(out[18 * w + 22], ink);
     }
 
     #[test]

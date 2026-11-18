@@ -7028,15 +7028,16 @@ Window {
             else if (f && step === f + 1) dlg.toggleCleanup()
             else if (f && step === f + 3) { log("overlay off"); shot("overlay-off") }
             else if (f && step === f + 4) dlg.toggleCleanup()
-            else if (f && step === f + 6) { log("overlay on"); dlg.rotate() }
-            else if (f && step === f + 8) { log("rotated"); shot("rotated") }
-            else if (f && step === f + 9) { dlg.rotate(); dlg.rotate(); dlg.rotate() }
-            else if (f && step === f + 11) { log("rotated back"); dlg.scanAgain() }
-            else if (f && step === f + 12) { log("scan again"); shot("scan-again") }
-            else if (f && step === f + 20) { log("after scan again"); dlg.toggleEdges() }
-            else if (f && step === f + 22) { log("edges off"); shot("edges-off") }
-            else if (f && step === f + 23) { dlg.close(); log("closed") }
-            else if (f && step === f + 25) { log("done"); Qt.quit() }
+            else if (f && step === f + 8) { log("overlay on"); shot("overlay-on"); backend.saveVideoFrame("content-camera", window.shotPath.replace(".png", "-ccam-overlay-frame.png")) }
+            else if (f && step === f + 9) dlg.rotate()
+            else if (f && step === f + 11) { log("rotated"); shot("rotated") }
+            else if (f && step === f + 12) { dlg.rotate(); dlg.rotate(); dlg.rotate() }
+            else if (f && step === f + 14) { log("rotated back"); dlg.scanAgain() }
+            else if (f && step === f + 15) { log("scan again"); shot("scan-again") }
+            else if (f && step === f + 23) { log("after scan again"); dlg.toggleEdges() }
+            else if (f && step === f + 25) { log("edges off"); shot("edges-off") }
+            else if (f && step === f + 26) { dlg.close(); log("closed") }
+            else if (f && step === f + 28) { log("done"); Qt.quit() }
             else if (step === 60) { log("gave up"); Qt.quit() }
             step++
         }
