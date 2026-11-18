@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-14T18:00:00Z'
-updated_date: '2026-11-18T07:05:00Z'
+updated_date: '2026-11-18T07:35:00Z'
 labels:
   - calls
 dependencies: []
@@ -50,4 +50,6 @@ Round 2 (2026-11-17):
 - Last-used avatar stays on the device: Teams' ClientPreferencesService keeps lastUsedAvatarFilter in local storage (storage.get/set, no service call), so it isn't roamed.
 - Reactions: OST delivers meeting.meetingReactionReceived. The app sends Unity the same ReceivedEmoteTriggeredBroadcastChannelMessage as Teams (recorded on winpc), the emote asset loads (200), and Unity logs the same "doesn't exist in the database" warning in both. But OST's player shows no emote, while Teams shows a thumbs-up for about 4 s. Ruled out: canvas size (16x16 vs 1280x588), the main loop paused, render rate, muted visemes (0/s), background id, triggering it again. Still open.
 - Tests on linuxlt: root lib 711 passed (1 ignored), ost-vfx 10 passed, desktop 28 passed (including the socket tests).
+
+- Merged round 2 into desktop/foundation (2026-11-17): build OK, 723 lib tests passed. Open: the reaction emote isn't shown in the outgoing avatar video (the agent continues), and the app tile uses the outline icon, not the manifest colour.
 <!-- SECTION:NOTES:END -->
