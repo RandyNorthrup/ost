@@ -7757,8 +7757,14 @@ impl qobject::Backend {
         let group = runtime().block_on(async {
             let mut slot = call_slot().lock().await;
             let thread = slot.ringing.as_ref().and_then(|c| c.group_thread().map(str::to_string));
-            if thread.is_some() {
-                slot.ringing = None;
+            if thread.is_some()
+                && let Some(rung) = slot.ringing.take()
+            {
+                // The invitation we didn't answer ends once we've joined:
+                // that end isn't ours.
+                if let Some(id) = rung.call_id() {
+                    slot.left_calls.push(id);
+                }
             }
             thread
         });
