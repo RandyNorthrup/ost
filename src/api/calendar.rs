@@ -43,6 +43,8 @@ pub struct CalendarEvent {
     pub channel_id: String,
     pub channel_message_id: String,
     pub allow_new_time_proposals: bool,
+    /// An unsent meeting (Graph `isDraft`): the Filter menu's Draft.
+    pub is_draft: bool,
 }
 
 /// One invitee and their answer.
@@ -54,6 +56,12 @@ pub struct Attendee {
     pub kind: String,
     /// none, accepted, tentativelyAccepted, declined, notResponded.
     pub response: String,
+    /// The new time they proposed (UTC, ISO 8601), if any: Graph's
+    /// `proposedNewTime`, as the organizer's event shows it.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub proposed_start: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub proposed_end: String,
 }
 
 /// Events overlapping `[start, end)` (UTC, `YYYY-MM-DDTHH:MM:SSZ`).
@@ -65,7 +73,7 @@ pub async fn calendar_view(
     let path = format!(
         "/me/calendarView?startDateTime={start}&endDateTime={end}&$top=250&$orderby=start/dateTime\
          &$select=id,subject,start,end,isAllDay,location,organizer,isOnlineMeeting,onlineMeeting,showAs,bodyPreview,isOrganizer,\
-         iCalUId,type,seriesMasterId,responseStatus,responseRequested,attendees,isCancelled,categories,sensitivity,allowNewTimeProposals"
+         iCalUId,type,seriesMasterId,responseStatus,responseRequested,attendees,isCancelled,categories,sensitivity,allowNewTimeProposals,isDraft"
     );
     // Immutable ids, as Teams' calendar (Outlook on the web) asks for them.
     let v: serde_json::Value = client
@@ -292,9 +300,18 @@ fn parse_events(v: &serde_json::Value) -> Vec<CalendarEvent> {
                 channel_id,
                 channel_message_id,
                 allow_new_time_proposals: e.get("allowNewTimeProposals").and_then(|b| b.as_bool()).unwrap_or(false),
+                is_draft: e.get("isDraft").and_then(|b| b.as_bool()).unwrap_or(false),
             }
         })
         .collect()
+}
+
+/// A Graph dateTime (UTC unless its zone says otherwise) as UTC ISO 8601.
+fn graph_utc(t: &str, zone: &str) -> String {
+    if t.is_empty() || !(zone.is_empty() || zone.eq_ignore_ascii_case("UTC")) {
+        return String::new();
+    }
+    format!("{}Z", t.split('.').next().unwrap_or(t).trim_end_matches('Z'))
 }
 
 fn attendees_of(e: &serde_json::Value) -> Vec<Attendee> {
@@ -308,6 +325,8 @@ fn attendees_of(e: &serde_json::Value) -> Vec<Attendee> {
             address: s(a, "/emailAddress/address"),
             kind: s(a, "/type"),
             response: s(a, "/status/response"),
+            proposed_start: graph_utc(&s(a, "/proposedNewTime/start/dateTime"), &s(a, "/proposedNewTime/start/timeZone")),
+            proposed_end: graph_utc(&s(a, "/proposedNewTime/end/dateTime"), &s(a, "/proposedNewTime/end/timeZone")),
         })
         .collect()
 }
@@ -348,6 +367,57 @@ pub async fn event_detail(client: &TeamsClient, id: &str) -> Result<serde_json::
 /// sign-in; on a device-code sign-in OST answers through Graph
 /// (`/me/events/{id}/accept|tentativelyAccept|decline`), which has no Follow.
 pub async fn respond(client: &TeamsClient, ev: &RsvpTarget, response: &str, send_response: bool, note: &str) -> Result<()> {
+    respond_with_time(client, ev, response, send_response, note, None).await
+}
+
+/// Propose a new time, as Teams' calendar does from an invitation
+/// ("Tentative and propose new time", "Decline and propose new time"):
+/// Outlook's `RespondToCalendarEvent` with `ProposedStartTime` and
+/// `ProposedEndTime` (local times in the mailbox's zone) beside the answer.
+/// The organizer's event then carries the proposal (Graph's attendee
+/// `proposedNewTime`) and they get a "New time proposed" response.
+pub async fn propose_new_time(client: &TeamsClient, ev: &RsvpTarget, response: &str, start: &str, end: &str, send_response: bool, note: &str) -> Result<()> {
+    if !matches!(response, "Tentative" | "Decline") {
+        bail!("A proposal goes with Tentative or Decline");
+    }
+    if !crate::auth::oauth::browser_sign_in() {
+        bail!("Proposing a new time needs the browser sign-in (Outlook's calendar service)");
+    }
+    let s = chrono::DateTime::parse_from_rfc3339(start).context("Proposed start")?;
+    let e = chrono::DateTime::parse_from_rfc3339(end).context("Proposed end")?;
+    if e <= s {
+        bail!("The proposed end is before its start");
+    }
+    match respond_with_time(client, ev, response, send_response, note, Some((s, e))).await {
+        Ok(()) => Ok(()),
+        // Outlook didn't take it: Graph's tentativelyAccept / decline with
+        // `proposedNewTime` sends the same proposal.
+        Err(err) => {
+            tracing::warn!("proposal through Outlook failed ({err:#}); sending it through Graph");
+            let verb = if response == "Decline" { "decline" } else { "tentativelyAccept" };
+            let utc = |d: chrono::DateTime<chrono::FixedOffset>| d.with_timezone(&chrono::Utc).format("%Y-%m-%dT%H:%M:%S").to_string();
+            let body = serde_json::json!({
+                "comment": note.trim(),
+                "sendResponse": send_response,
+                "proposedNewTime": {
+                    "start": { "dateTime": utc(s), "timeZone": "UTC" },
+                    "end": { "dateTime": utc(e), "timeZone": "UTC" }
+                }
+            });
+            client.graph_post(&format!("/me/events/{}/{verb}", event_path_id(&ev.id)?), &body).await?;
+            Ok(())
+        }
+    }
+}
+
+async fn respond_with_time(
+    client: &TeamsClient,
+    ev: &RsvpTarget,
+    response: &str,
+    send_response: bool,
+    note: &str,
+    proposed: Option<(chrono::DateTime<chrono::FixedOffset>, chrono::DateTime<chrono::FixedOffset>)>,
+) -> Result<()> {
     let (owa_response, attendance) = match response {
         "Accept" | "Tentative" | "Decline" => (response, 0),
         "Follow" => ("Tentative", 3),
@@ -356,9 +426,20 @@ pub async fn respond(client: &TeamsClient, ev: &RsvpTarget, response: &str, send
     if crate::auth::oauth::browser_sign_in() {
         let id = event_path_id(&ev.id)?;
         let tz = mailbox_time_zone().await;
-        owa_action("RespondToCalendarEvent", &respond_body(&ews_id(id), owa_response, attendance, send_response, note, &tz)).await?;
-        tracing::info!(response, attendance, "answered through Outlook (RespondToCalendarEvent)");
+        let mut body = respond_body(&ews_id(id), owa_response, attendance, send_response, note, &tz);
+        if let Some((s, e)) = proposed {
+            // As Outlook on the web writes them: local wall-clock times
+            // (the request's TimeZoneContext names the zone), milliseconds.
+            let local = |d: chrono::DateTime<chrono::FixedOffset>| d.format("%Y-%m-%dT%H:%M:%S%.3f").to_string();
+            body["Body"]["ProposedStartTime"] = serde_json::json!(local(s));
+            body["Body"]["ProposedEndTime"] = serde_json::json!(local(e));
+        }
+        owa_action("RespondToCalendarEvent", &body).await?;
+        tracing::info!(response, attendance, proposed = proposed.is_some(), "answered through Outlook (RespondToCalendarEvent)");
         return Ok(());
+    }
+    if proposed.is_some() {
+        bail!("Proposing a new time needs the browser sign-in");
     }
     tracing::info!(response, "answer through Teams' calendar service (device-code sign-in)");
     respond_mt(client, ev, response, send_response, note).await
@@ -461,7 +542,7 @@ fn ews_id(rest_id: &str) -> String {
 
 /// The hosted Outlook calendar's app in Teams (its broker token request:
 /// `brk-multihub://outlook.office.com`, scope `https://outlook.office.com/.default`).
-const HOSTED_CALENDAR_APP: &str = "ceb96695-e468-48ba-ba21-35e2a242d396";
+pub const HOSTED_CALENDAR_APP: &str = "ceb96695-e468-48ba-ba21-35e2a242d396";
 
 /// A browser's User-Agent, as the hosted calendar's web view sends (Outlook
 /// on the web fails every action without one).
@@ -510,6 +591,12 @@ pub async fn owa_action(action: &str, body: &serde_json::Value) -> Result<serde_
     let text = resp.text().await.unwrap_or_default();
     let v: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
     let class = v.pointer("/Body/ResponseClass").and_then(|c| c.as_str()).unwrap_or_default();
+    tracing::debug!(action, %status, class, code = v.pointer("/Body/ResponseCode").and_then(|c| c.as_str()).unwrap_or_default(), "Outlook action answered");
+    // An empty 204 is no answer: Outlook didn't take the action (seen for
+    // OST Test 3's RespondToCalendarEvent), not a success.
+    if status == reqwest::StatusCode::NO_CONTENT && text.trim().is_empty() {
+        bail!("{action}: Outlook gave no answer (204)");
+    }
     if !status.is_success() || class == "Error" {
         let msg = v
             .pointer("/Body/MessageText")
@@ -521,6 +608,197 @@ pub async fn owa_action(action: &str, body: &serde_json::Value) -> Result<serde_
         bail!("{action}: {status} {msg}");
     }
     Ok(v)
+}
+
+/// One Outlook web service request (`https://outlook.office.com/<path>`) as
+/// Teams' hosted calendar sends it: its token (the hosted calendar's app,
+/// through Teams' broker), `x-anchormailbox`, the session id,
+/// `x-outlook-client: owa` and a browser User-Agent. Its settings live
+/// there: `ows/v1.0/OutlookOptions` (Time scale, the day count),
+/// `ows/v1/OutlookCloudSettings/settings` (the Filter menu's
+/// `calendar_filters`) and `ows/v1/SaveCalendarView` (Saved views).
+pub async fn ows(method: reqwest::Method, path: &str, body: Option<&serde_json::Value>) -> Result<serde_json::Value> {
+    if !ows_path_ok(path) {
+        bail!("Not an Outlook service path: {path}");
+    }
+    let (token, _) = crate::auth::oauth::brokered_token(HOSTED_CALENDAR_APP, "https://outlook.office.com", "https://outlook.office.com/.default", None).await?;
+    let tenant = crate::config::Config::load().ok().and_then(|c| c.tenant_id).unwrap_or_default();
+    let anchor = crate::config::Config::load().ok().and_then(|c| c.object_id()).map(|o| format!("OID:{o}@{tenant}")).unwrap_or_default();
+    static SESSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    let session = SESSION.get_or_init(|| uuid::Uuid::new_v4().to_string());
+    let mut req = reqwest::Client::new()
+        .request(method.clone(), format!("https://outlook.office.com/{path}"))
+        .bearer_auth(token)
+        .header("x-anchormailbox", anchor)
+        .header("user-agent", OWA_USER_AGENT)
+        .header("x-outlook-client", "owa")
+        .header("x-owa-sessionid", session.as_str())
+        .header("x-owa-hosted-ux", "true")
+        .header("x-owa-host-app", "teams_desktop")
+        .header("x-req-source", "Calendar")
+        .header("prefer", "IdType=\"ImmutableId\", exchange.behavior=\"IncludeThirdPartyOnlineMeetingProviders\"")
+        .header("origin", "https://outlook.office.com");
+    if let Some(b) = body {
+        req = req.json(b);
+    }
+    let resp = req.send().await.with_context(|| format!("{method} {path} failed"))?;
+    let status = resp.status();
+    let text = resp.text().await.unwrap_or_default();
+    if !status.is_success() {
+        bail!("{method} {path}: {status} {}", text.chars().take(300).collect::<String>());
+    }
+    Ok(serde_json::from_str(&text).unwrap_or(serde_json::Value::Null))
+}
+
+/// The calendar's own settings as Teams' calendar keeps them: Time scale
+/// (minutes) and the Day view's day count (CalendarSurfaceOptions'
+/// `timeScaleSetting` and `numDaysInDayRange`; 0 means the default, 30 and
+/// 1), the Filter menu's unchecked values (`calendar_filters`, an array of
+/// `[filterType, [values]]`; null when you never set it), your saved views,
+/// and your categories (name and preset colour).
+pub async fn calendar_prefs(client: &TeamsClient) -> Result<serde_json::Value> {
+    let options = ows(reqwest::Method::GET, "ows/v1.0/OutlookOptions", None).await;
+    let surface = options
+        .as_ref()
+        .ok()
+        .and_then(|v| v.get("options").and_then(|o| o.as_array()).cloned())
+        .unwrap_or_default()
+        .into_iter()
+        .find(|o| is_surface_options(o))
+        .unwrap_or(serde_json::Value::Null);
+    if let Err(e) = &options {
+        tracing::warn!("calendar options: {e:#}");
+    }
+    let filters = ows(reqwest::Method::GET, "ows/v1/OutlookCloudSettings/settings/?settingname=calendar_filters", None)
+        .await
+        .map_err(|e| tracing::warn!("calendar filters: {e:#}"))
+        .ok()
+        .and_then(|v| cloud_setting_value(&v, "calendar_filters"));
+    let views = ows(reqwest::Method::GET, "ows/v1/SaveCalendarView", None)
+        .await
+        .map_err(|e| tracing::warn!("saved views: {e:#}"))
+        .ok()
+        .and_then(|v| v.get("savedViews").cloned())
+        .unwrap_or(serde_json::json!([]));
+    let categories: Vec<serde_json::Value> = match client.graph_get("/me/outlook/masterCategories").await {
+        Ok(r) => r
+            .json::<serde_json::Value>()
+            .await
+            .ok()
+            .and_then(|v| v.get("value").and_then(|c| c.as_array()).cloned())
+            .unwrap_or_default()
+            .into_iter()
+            .map(|c| serde_json::json!({ "name": c["displayName"], "color": c["color"] }))
+            .collect(),
+        Err(e) => {
+            tracing::warn!("categories: {e:#}");
+            Vec::new()
+        }
+    };
+    // Your calendar's folder id as Outlook names it (saved views keep it).
+    let calendar_id = match client.graph_get("/me/calendar?$select=id").await {
+        Ok(r) => r.json::<serde_json::Value>().await.ok().and_then(|v| v["id"].as_str().map(ews_id)).unwrap_or_default(),
+        Err(_) => String::new(),
+    };
+    let n = |k: &str, default: u64| surface.get(k).and_then(|x| x.as_u64()).filter(|x| *x > 0).unwrap_or(default);
+    Ok(serde_json::json!({
+        "timeScale": n("timeScaleSetting", 30),
+        "numDays": n("numDaysInDayRange", 1),
+        "filters": filters,
+        "savedViews": views,
+        "categories": categories,
+        "calendarId": calendar_id,
+        "objectId": crate::config::Config::load().ok().and_then(|c| c.object_id()).unwrap_or_default(),
+        "tenantId": crate::config::Config::load().ok().and_then(|c| c.tenant_id).unwrap_or_default(),
+        // A Copilot licence (authz licenseDetails isCopilot): the calendar's
+        // Copilot entry points.
+        "copilot": client.license_details().and_then(|l| l.get("isCopilot").and_then(|b| b.as_bool())).unwrap_or(false),
+    }))
+}
+
+fn is_surface_options(o: &serde_json::Value) -> bool {
+    o.get("feature").is_some_and(|f| f.as_u64() == Some(15) || f.as_str() == Some("CalendarSurfaceOptions"))
+        || o.get("timeScaleSetting").is_some()
+}
+
+/// One OutlookCloudSettings value by name (a JSON setting parsed).
+fn cloud_setting_value(v: &serde_json::Value, name: &str) -> Option<serde_json::Value> {
+    let list = v.as_array().or_else(|| v.get("value").and_then(|x| x.as_array()))?;
+    let s = list.iter().find(|s| s["name"].as_str().is_some_and(|n| n.eq_ignore_ascii_case(name)))?;
+    match &s["value"] {
+        serde_json::Value::String(t) => serde_json::from_str(t).ok(),
+        other if !other.is_null() => Some(other.clone()),
+        _ => None,
+    }
+}
+
+/// Keep the Filter menu's unchecked values, as Teams' calendar saves them:
+/// the `calendar_filters` roaming setting, registered with the global
+/// scope (type JSON, its value the `[filterType, [values]]` entries as a
+/// string; the account scope answers "Requested scope doesn't match
+/// registered scope: Global").
+pub async fn set_calendar_filters(filters: &serde_json::Value) -> Result<()> {
+    let body = serde_json::json!([{
+        "itemClass": "RoamingSetting",
+        "name": "calendar_filters",
+        "scope": "global",
+        "type": "JSON",
+        "value": filters.to_string(),
+    }]);
+    ows(reqwest::Method::PATCH, "ows/v1/OutlookCloudSettings/settings/global", Some(&body)).await?;
+    Ok(())
+}
+
+/// Change CalendarSurfaceOptions fields (`timeScaleSetting`,
+/// `numDaysInDayRange`) as Teams' calendar does: the whole feature's
+/// options with the change, PATCHed (POSTed the first time) to
+/// `ows/v1.0/OutlookOptions/CalendarSurfaceOptions` with a correlation id.
+pub async fn set_surface_options(change: &serde_json::Value) -> Result<()> {
+    let all = ows(reqwest::Method::GET, "ows/v1.0/OutlookOptions", None).await.unwrap_or_default();
+    let current = all
+        .get("options")
+        .and_then(|o| o.as_array())
+        .and_then(|l| l.iter().find(|o| is_surface_options(o)).cloned());
+    let existed = current.as_ref().is_some_and(|c| c.get("lastModifiedDateTime").is_some());
+    let mut options = current.unwrap_or_else(|| serde_json::json!({ "feature": 15 }));
+    if let (Some(o), Some(c)) = (options.as_object_mut(), change.as_object()) {
+        for k in ["feature@is.Queryable", "feature@odata.type", "createdDateTime", "lastModifiedDateTime"] {
+            o.remove(k);
+        }
+        for (k, v) in c {
+            o.insert(k.clone(), v.clone());
+        }
+    }
+    let body = serde_json::json!({ "correlationId": uuid::Uuid::new_v4().to_string(), "options": options });
+    let method = if existed { reqwest::Method::PATCH } else { reqwest::Method::POST };
+    ows(method, "ows/v1.0/OutlookOptions/CalendarSurfaceOptions", Some(&body)).await?;
+    Ok(())
+}
+
+/// Save a calendar view (Saved views ▸ Save current view, or Edit) as
+/// Teams' calendar does: `PUT ows/v1/SaveCalendarView` with the view
+/// (`id`, `viewName`, `viewIcon`, `selectedCalendarIds`, `dateRangeType`,
+/// `splitView`, `numDaysInDayRange`, `chosenHotkey`, and `filterState` as
+/// the filters' entries in a string). A new view gets its id here.
+pub async fn save_calendar_view(view: &serde_json::Value) -> Result<serde_json::Value> {
+    let mut v = view.clone();
+    if v.get("id").and_then(|i| i.as_str()).is_none_or(str::is_empty) {
+        v["id"] = serde_json::json!(uuid::Uuid::new_v4().to_string());
+    }
+    if let Some(f) = v.get("filterState").filter(|f| !f.is_string() && !f.is_null()).cloned() {
+        v["filterState"] = serde_json::json!(f.to_string());
+    }
+    ows(reqwest::Method::PUT, "ows/v1/SaveCalendarView", Some(&v)).await?;
+    Ok(v)
+}
+
+/// Delete a saved view (`DELETE ows/v1/SaveCalendarView/{id}`).
+pub async fn delete_calendar_view(id: &str) -> Result<()> {
+    if id.is_empty() || !id.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-') {
+        bail!("Not a saved view id");
+    }
+    ows(reqwest::Method::DELETE, &format!("ows/v1/SaveCalendarView/{id}"), None).await?;
+    Ok(())
 }
 
 /// Your mailbox's time zone (its Windows name, e.g. "Pacific Standard Time").
@@ -1082,4 +1360,40 @@ mod older_tests {
         assert_eq!(e.organizer, "Ada");
         assert!(e.join_url.as_deref().unwrap().contains("meetup-join"));
     }
+
+    #[test]
+    fn calendar_settings_are_read_as_outlook_keeps_them() {
+        // OutlookCloudSettings: a JSON setting's value is a string.
+        let v = serde_json::json!([{"name": "calendar_filters", "type": "Json", "value": "[[\"Reservations\",[\"Desk\"]]]"}]);
+        assert_eq!(cloud_setting_value(&v, "calendar_filters").unwrap(), serde_json::json!([["Reservations", ["Desk"]]]));
+        assert!(cloud_setting_value(&v, "calendar_apptreminders").is_none());
+        // Outlook options: CalendarSurfaceOptions is feature 15.
+        assert!(is_surface_options(&serde_json::json!({"feature": 15, "timeScaleSetting": 30})));
+        assert!(!is_surface_options(&serde_json::json!({"feature": 2})));
+    }
+
+    #[test]
+    fn proposals_come_from_the_attendees_proposed_time() {
+        let v = serde_json::json!({"value": [{"id": "x", "attendees": [{"emailAddress": {"name": "OST Test 3", "address": "t3@x"}, "type": "required",
+            "status": {"response": "tentativelyAccepted"},
+            "proposedNewTime": {"start": {"dateTime": "2026-11-20T18:00:00.0000000", "timeZone": "UTC"}, "end": {"dateTime": "2026-11-20T18:30:00.0000000", "timeZone": "UTC"}}},
+            {"emailAddress": {"name": "B", "address": "b@x"}, "type": "required", "status": {"response": "accepted"}}], "isDraft": true}]});
+        let e = &parse_events(&v)[0];
+        assert!(e.is_draft);
+        assert_eq!(e.attendees[0].proposed_start, "2026-11-20T18:00:00Z");
+        assert_eq!(e.attendees[0].proposed_end, "2026-11-20T18:30:00Z");
+        assert!(e.attendees[1].proposed_start.is_empty());
+    }
+
+    #[test]
+    fn a_proposal_goes_in_the_answer_as_local_times() {
+        let b = respond_body("AAMk=", "Tentative", 0, true, "", "Pacific Standard Time");
+        assert_eq!(b["Body"]["ProposedStartTime"], "");
+        assert!(ows_path_ok("ows/v1/SaveCalendarView") && !ows_path_ok("/ows/x") && !ows_path_ok("ows/../owa"));
+    }
+}
+
+/// An Outlook web service path OST may ask for (`ows/…`, relative).
+fn ows_path_ok(path: &str) -> bool {
+    !(path.starts_with('/') || path.contains("..") || !path.starts_with("ows/"))
 }

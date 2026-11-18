@@ -493,6 +493,9 @@ pub mod qobject {
         /// Scheduled meetings that started (Teams' live meeting join bar):
         /// [{threadId, callId, subject, joinUrl, start, end}].
         #[qproperty(QString, live_meetings_json)]
+        /// Who is in each live meeting's call while the Live meetings
+        /// dialog shows them: {threadId: [{id, name}]}.
+        #[qproperty(QString, live_meeting_rosters_json)]
         /// People search results for the new-chat picker, as JSON.
         #[qproperty(QString, people_json)]
         /// The new chat form's suggestions, as Teams' people picker lists
@@ -933,6 +936,10 @@ pub mod qobject {
             conversation_url: &QString,
             call_id: &QString,
         );
+        /// Watch the calls of these live meetings ([{threadId, callId}];
+        /// [] stops), as Teams' Live meetings dialog does, for their people.
+        #[qinvokable]
+        fn watch_live_meetings(self: Pin<&mut Backend>, meetings_json: &QString);
 
         /// Join the Teams meeting with this join link; `title` is shown in
         /// the call window.
@@ -3059,6 +3066,7 @@ pub struct BackendRust {
     calls_json: QString,
     calendar_json: QString,
     live_meetings_json: QString,
+    live_meeting_rosters_json: QString,
     people_json: QString,
     new_chat_people_json: QString,
     new_chat_people_generation: u64,
@@ -3534,6 +3542,21 @@ fn watched_call() -> &'static tokio::sync::Mutex<Option<teams_cli::calling::live
     static W: OnceLock<tokio::sync::Mutex<Option<teams_cli::calling::live_roster::LiveRoster>>> =
         OnceLock::new();
     W.get_or_init(Default::default)
+}
+
+/// The live meetings' calls the Live meetings dialog watches, by thread.
+fn watched_meetings() -> &'static tokio::sync::Mutex<HashMap<String, teams_cli::calling::live_roster::LiveRoster>> {
+    static W: OnceLock<tokio::sync::Mutex<HashMap<String, teams_cli::calling::live_roster::LiveRoster>>> = OnceLock::new();
+    W.get_or_init(Default::default)
+}
+
+/// {threadId: [{id, name}]} for the Live meetings dialog's avatar rows.
+fn meeting_rosters_json(map: &HashMap<String, teams_cli::calling::live_roster::LiveRoster>) -> String {
+    let mut out = serde_json::Map::new();
+    for (thread, sub) in map {
+        out.insert(thread.clone(), serde_json::Value::Array(sub.others().map(|p| serde_json::json!({"id": p.id, "name": p.name})).collect()));
+    }
+    serde_json::Value::Object(out).to_string()
 }
 
 /// The watched call's roster for the header: [{id, name}] of who's in it.
@@ -5745,6 +5768,30 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
                 let text = serde_json::to_string(&rooms).unwrap_or_default();
                 let _ = qt.queue(move |mut this| this.as_mut().set_call_breakout_all_json(QString::from(text.as_str())));
             }
+            return;
+        }
+    }
+    // A live meeting the Live meetings dialog watches.
+    if json.contains("\"callAgentPath\":\"subscription/") && json.contains("\"callTag\"") {
+        let mut map = watched_meetings().lock().await;
+        let ended = json.contains("subscription/conversationEnd");
+        let mut changed = false;
+        for sub in map.values_mut() {
+            if !sub.owns(json) {
+                continue;
+            }
+            if ended {
+                sub.roster.clear();
+                changed = true;
+            } else if sub.apply(json) {
+                changed = true;
+            }
+        }
+        if changed {
+            let out = meeting_rosters_json(&map);
+            let _ = qt.queue(move |mut this| this.as_mut().set_live_meeting_rosters_json(QString::from(out.as_str())));
+        }
+        if map.values().any(|s| s.owns(json)) {
             return;
         }
     }
@@ -8111,6 +8158,52 @@ impl qobject::Backend {
                 this.as_mut()
                     .set_chat_live_roster_json(QString::from(json.as_str()))
             });
+        });
+    }
+
+    pub fn watch_live_meetings(self: Pin<&mut Self>, meetings_json: &QString) {
+        let wanted: Vec<(String, String)> = serde_json::from_str::<Vec<serde_json::Value>>(&meetings_json.to_string())
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|m| Some((m["threadId"].as_str()?.to_string(), m["callId"].as_str().unwrap_or_default().to_string())))
+            .collect();
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let mut map = watched_meetings().lock().await;
+            // Leave the calls no longer shown.
+            let gone: Vec<String> = map.keys().filter(|t| !wanted.iter().any(|(w, _)| w == *t)).cloned().collect();
+            for t in gone {
+                if let Some(sub) = map.remove(&t) {
+                    sub.leave().await;
+                }
+            }
+            if let Ok(client) = TeamsClient::new().await {
+                for (thread, call_id) in &wanted {
+                    if map.contains_key(thread) {
+                        continue;
+                    }
+                    // The call's conversation, from the meeting chat's
+                    // liveness entry (as the chat header's live roster).
+                    let live = match api::thread_live_call(&client, thread).await {
+                        Ok(Some(l)) => l,
+                        Ok(None) => continue,
+                        Err(e) => {
+                            tracing::warn!("live meeting call: {}", short_error(&e));
+                            continue;
+                        }
+                    };
+                    let id = if live.call_id.is_empty() { call_id.clone() } else { live.call_id.clone() };
+                    match teams_cli::calling::live_roster::LiveRoster::subscribe_tagged(thread, &live.conversation_url, &id).await {
+                        Ok(sub) => {
+                            tracing::info!(people = sub.roster.len(), "watching a live meeting's call");
+                            map.insert(thread.clone(), sub);
+                        }
+                        Err(e) => tracing::warn!("live meeting roster: {}", short_error(&e)),
+                    }
+                }
+            }
+            let out = meeting_rosters_json(&map);
+            let _ = qt.queue(move |mut this| this.as_mut().set_live_meeting_rosters_json(QString::from(out.as_str())));
         });
     }
 
@@ -17029,7 +17122,35 @@ impl qobject::Backend {
                     teams_cli::auth::broker::execute(&s("request"), &origin, trusted).await
                 }
                 "sso" => {
+                    let asked: Vec<String> = p
+                        .get("resources")
+                        .and_then(|a| a.as_array())
+                        .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+                        .unwrap_or_default();
                     let r = async {
+                        // Teams' calendar (Outlook's hosted calendar): its own
+                        // app's token through Teams' broker, for Outlook.
+                        if app.eq_ignore_ascii_case("ef56c0de-36fc-4ef8-b417-3d82ba9d073c") {
+                            let resource = asked.first().cloned().unwrap_or_else(|| "https://outlook.office.com".into());
+                            let host = reqwest::Url::parse(&resource).ok().and_then(|u| u.host_str().map(str::to_ascii_lowercase)).unwrap_or_default();
+                            anyhow::ensure!(
+                                resource.starts_with("https://") && [".office.com", ".skype.com", ".microsoft.com"].iter().any(|d| host.ends_with(d)),
+                                "Invalid resource"
+                            );
+                            // Teams' own services (the calling stack's ic3,
+                            // for the form's Teams meeting): Teams' token.
+                            if !(resource.starts_with("https://outlook.office.com") || resource.starts_with("https://outlook.office365.com")) {
+                                return teams_cli::auth::oauth::access_token_for(&format!("{}/.default", resource.trim_end_matches('/'))).await;
+                            }
+                            let (t, _) = teams_cli::auth::oauth::brokered_token(
+                                api::calendar::HOSTED_CALENDAR_APP,
+                                "https://outlook.office.com",
+                                &format!("{}/.default", resource.trim_end_matches('/')),
+                                None,
+                            )
+                            .await?;
+                            return Ok(t);
+                        }
                         let c = TeamsClient::new().await?;
                         let f = api::app_host::facts(&c, &app).await?;
                         let resource = api::app_host::sso_resource(&f, &s("teamSiteDomain"), p.get("resources"))?;
@@ -17039,7 +17160,7 @@ impl qobject::Backend {
                     match r {
                         Ok(t) => json!({ "token": t }).to_string(),
                         Err(e) => {
-                            tracing::warn!("getAuthToken for {app} failed: {}", short_error(&e));
+                            tracing::warn!(?asked, "getAuthToken for {app} failed: {}", short_error(&e));
                             json!({ "error": "FailedToGetToken" }).to_string()
                         }
                     }
@@ -20111,6 +20232,7 @@ impl qobject::Backend {
             "schedule" => "Scheduling…",
             "update" => "Sending update…",
             "cancel" => "Cancelling…",
+            "propose" => "Sending your proposal…",
             _ => "",
         };
         if !busy.is_empty() {
@@ -20124,6 +20246,28 @@ impl qobject::Backend {
                 let client = TeamsClient::new().await?;
                 match op.as_str() {
                     "detail" => api::calendar::event_detail(&client, &s("id")).await,
+                    // Teams' calendar settings: Time scale, the day count,
+                    // the Filter menu, Saved views, categories.
+                    "prefs" => api::calendar::calendar_prefs(&client).await,
+                    "setFilters" => {
+                        api::calendar::set_calendar_filters(&args["filters"]).await?;
+                        Ok(json!({}))
+                    }
+                    "setSurface" => {
+                        api::calendar::set_surface_options(&args).await?;
+                        Ok(json!({}))
+                    }
+                    "saveView" => Ok(json!({ "view": api::calendar::save_calendar_view(&args["view"]).await? })),
+                    "deleteView" => {
+                        api::calendar::delete_calendar_view(&s("id")).await?;
+                        Ok(json!({ "id": s("id") }))
+                    }
+                    // Tentative / Decline and propose new time.
+                    "propose" => {
+                        let target: api::calendar::RsvpTarget = serde_json::from_value(args["event"].clone()).unwrap_or_default();
+                        api::calendar::propose_new_time(&client, &target, &s("response"), &s("start"), &s("end"), args["send"].as_bool().unwrap_or(true), &s("note")).await?;
+                        Ok(json!({}))
+                    }
                     "meetNow" => Ok(json!({ "joinUrl": api::calendar::meet_now(&client, &s("subject")).await?, "subject": s("subject") })),
                     // As Teams: the calling service finds the meeting from
                     // its ID and passcode (meetingData); then its join link.
@@ -20199,7 +20343,7 @@ impl qobject::Backend {
                         (String::new(), short_error(&e))
                     }
                 };
-                if ["respond", "schedule", "update", "cancel"].contains(&op2.as_str()) {
+                if ["respond", "schedule", "update", "cancel", "propose"].contains(&op2.as_str()) {
                     this.as_mut().set_status_text(QString::from(error.as_str()));
                     if error.is_empty() {
                         this.as_mut().refresh_calendar();

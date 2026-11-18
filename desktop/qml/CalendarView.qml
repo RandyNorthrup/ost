@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls.Basic
+import QtCore
 
 // The Calendar app, laid out as Teams' calendar (its Outlook-hosted
 // calendar, measured in Teams on the web as ost-test1, 2026-11-17, at 1x;
@@ -35,6 +36,278 @@ Item {
     property var teams: []
     property var people: []
     property var me: ({})
+
+    // ── Teams' calendar settings (docs/spec/calendar.md, "Filter, Time
+    // scale, Saved views, Split view") ──────────────────────────────────
+    /// Time scale in minutes: 60, 30, 15, 10, 6 or 5 (Outlook options'
+    /// CalendarSurfaceOptions.timeScaleSetting).
+    property int timeScale: 30
+    /// The Day view's day count, 1 to 7 (numDaysInDayRange).
+    property int numDays: 1
+    /// The Filter menu's unchecked values, {filterType: [values]} (Teams'
+    /// calendar_filters roaming setting): "Filter applied" while any.
+    property var filterMap: ({})
+    readonly property bool filterApplied: Object.keys(filterMap).length > 0
+    property var savedViews: []
+    /// The saved view shown (its id) until the view or a filter changes.
+    property string currentViewId: ""
+    property var categories: []
+    property string calendarId: ""
+    property bool prefsLoaded: false
+    property bool splitView: false
+    /// Split view needs two calendars shown, and Month has none (Teams:
+    /// disabled with fewer than two selected).
+    readonly property int selectedCalendars: showCalendar ? 1 : 0
+    readonly property bool canSplit: selectedCalendars >= 2 && !monthView
+    // Teams' device-local marker (localStorage UnselectedReservationFilter):
+    // the first time a device opens the calendar, Reservations ▸ Desk is
+    // unchecked and saved.
+    Settings { id: calendarLocal; location: StandardPaths.writableLocation(StandardPaths.AppConfigLocation) + "/calendar.ini"; category: "calendar"; property string unselectedReservationFilter: "" }
+    function applyPrefs(r) {
+        timeScale = [60, 30, 15, 10, 6, 5].indexOf(r.timeScale) >= 0 ? r.timeScale : 30
+        numDays = Math.max(1, Math.min(7, r.numDays || 1))
+        categories = r.categories || []
+        savedViews = r.savedViews || []
+        calendarId = r.calendarId || ""
+        objectId = r.objectId || ""
+        copilotEntries = !!r.copilot
+        tenantId = r.tenantId || ""
+        const m = {}
+        for (const e of r.filters || []) if (e && e.length === 2 && Array.isArray(e[1]) && e[1].length) m[e[0]] = e[1]
+        // A category filter's mailbox, as Teams wrote it.
+        for (const v of m.Category || []) { try { const o = JSON.parse(v); if (o.mailboxInfo) { catMailboxInfo = o.mailboxInfo; break } } catch (err) {} }
+        filterMap = m
+        if (calendarLocal.unselectedReservationFilter !== "Desk") {
+            calendarLocal.unselectedReservationFilter = "Desk"
+            if ((m.Reservations || []).indexOf("Desk") < 0) {
+                const n = Object.assign({}, m); n.Reservations = (m.Reservations || []).concat(["Desk"])
+                filterMap = n
+                saveFilters()
+            }
+        }
+        prefsLoaded = true
+    }
+    readonly property var meetingValues: ["Organizer", "Drafts", "Accepted", "DeclinedEvents", "Followed", "Maybe", "Canceled", "NotResponded"]
+    function filterValues(type) {
+        switch (type) {
+        case "Meetings": return meetingValues
+        case "PollHolds": return ["SeeAll", "VotedYes", "VotedNo", "NotVoted"]
+        case "Reservations": return ["Desk"]
+        case "ShowAs": return ["Free", "WorkingElsewhere", "Tentative", "Busy", "OOF"]
+        case "Recurrence": return ["Single", "Series"]
+        case "InPerson": return ["Required", "NotRequired"]
+        case "Category": return ["Uncategorized"].concat(categories.map(c => c.name)).map(n => catValue(n))
+        }
+        return []
+    }
+    // A category's filter value, as Teams keeps it: {mailboxInfo, categoryName}.
+    property var catMailboxInfo: null
+    function catValue(name) {
+        return JSON.stringify({ mailboxInfo: catMailboxInfo || { type: "UserMailbox", userIdentity: me.mail || "", mailboxSmtpAddress: me.mail || "" }, categoryName: name })
+    }
+    function catName(v) { try { return JSON.parse(v).categoryName || "" } catch (e) { return "" } }
+    function isExcluded(type, v) {
+        const list = filterMap[type] || []
+        return type === "Category" ? list.some(x => catName(x) === catName(v)) : list.indexOf(v) >= 0
+    }
+    /// A filter group's checkbox: 2 all shown, 1 some, 0 none.
+    function groupState(type) {
+        const n = (filterMap[type] || []).length
+        return !n ? 2 : n >= filterValues(type).length ? 0 : 1
+    }
+    function setFilters(m) { filterMap = m; currentViewId = ""; saveFilters() }
+    function saveFilters() {
+        calendarAction("setFilters", JSON.stringify({ filters: Object.keys(filterMap).map(k => [k, filterMap[k]]) }))
+    }
+    function toggleFilter(type, v) {
+        const m = Object.assign({}, filterMap), list = (m[type] || []).slice()
+        const i = type === "Category" ? list.findIndex(x => catName(x) === catName(v)) : list.indexOf(v)
+        if (i >= 0) list.splice(i, 1); else list.push(v)
+        if (list.length) m[type] = list; else delete m[type]
+        setFilters(m)
+    }
+    function filterAct(a) {
+        if (!a) return
+        const m = Object.assign({}, filterMap)
+        if (a[0] === "clear") setFilters({})
+        else if (a[0] === "toggle") toggleFilter(a[1], a[2])
+        else if (a[0] === "all") { delete m[a[1]]; setFilters(m) }
+        else if (a[0] === "none") { m[a[1]] = filterValues(a[1]).slice(); setFilters(m) }
+    }
+    // Teams' rules for what each unchecked value hides (its calendar's
+    // filter, V2): an event shows only when every unchecked value lets it.
+    function evIsMeeting(e) { return e.is_organizer === false || (e.attendees || []).length > 0 }
+    function evRecurring(e) { return ["occurrence", "exception", "seriesMaster"].indexOf(e.event_type) >= 0 }
+    function passesFilter(e, type, v) {
+        const meeting = evIsMeeting(e), attendee = meeting && !e.is_organizer
+        switch (type) {
+        case "General": return v !== "Appointments" || meeting
+        case "Meetings":
+            switch (v) {
+            case "Drafts": return !e.is_draft
+            case "Organizer": return !meeting || !e.is_organizer || !!e.is_draft
+            case "Accepted": return e.response !== "accepted"
+            case "Maybe": return !(attendee && e.response === "tentativelyAccepted")
+            case "Followed": return !(attendee && e.response === "following")
+            case "DeclinedEvents": return e.response !== "declined"
+            case "Canceled": return !e.is_cancelled
+            case "NotResponded": return e.response !== "notResponded"
+            }
+            return true
+        case "ShowAs": return (e.show_as || "").toLowerCase() !== v.toLowerCase()
+        case "Recurrence": return v === "Single" ? evRecurring(e) : !evRecurring(e)
+        // Hybrid RSVP's requested attendance (none in OST's events: not
+        // requested) and desk bookings or poll holds (none kept).
+        case "InPerson": return v === "Required" ? e.attendance_mode !== "inPersonRequired" : e.attendance_mode === "inPersonRequired"
+        case "Reservations": return !e.is_desk_booking
+        case "PollHolds": return !e.poll_hold
+        }
+        return true
+    }
+    function passesFilters(e) {
+        for (const type in filterMap) {
+            const vals = filterMap[type]
+            if (type === "Category") {
+                const off = vals.map(catName), cats = e.categories || []
+                for (const n of off) {
+                    const ok = n === "Uncategorized" ? cats.length > 0 : (!cats.length || cats.some(c => off.indexOf(c) < 0))
+                    if (!ok) return false
+                }
+                continue
+            }
+            for (const v of vals) if (!passesFilter(e, type, v)) return false
+        }
+        return true
+    }
+    // The Filter menu (Teams' FilterMenu): Clear filters; Appointments,
+    // Meetings ▸, Poll holds ▸, Reservations ▸; Categories ▸, Show as ▸,
+    // Recurrence ▸, In-person ▸. Checkboxes keep the menu open.
+    function cbIcon(st) { return st === 2 ? "checkbox-checked-20-filled" : st === 1 ? "checkbox-indeterminate-20" : "checkbox-unchecked-20" }
+    function fLeaf(type, v, label) { return { label: label, icon: cbIcon(isExcluded(type, v) ? 0 : 2), iconColor: theme.brand, persist: true, act: ["toggle", type, v] } }
+    function fUnselect(type) { return { label: "Unselect all", persist: true, enabled: groupState(type) !== 0, act: ["none", type] } }
+    function fGroup(type, label, sub) {
+        const st = groupState(type)
+        return { label: label, icon: cbIcon(st), iconColor: theme.brand, persist: true, split: true, splitLabel: "More " + label + " options", act: [st === 2 ? "none" : "all", type], submenu: sub }
+    }
+    // Outlook's category colour presets (light theme): [fill, outline].
+    readonly property var categoryPresets: [["#F6D1D5", "#C50F1F"], ["#F1D9CC", "#A74109"], ["#FFDDB3", "#8F4E00"], ["#FCEFD3", "#835B00"], ["#CEF0CD", "#0E7A0B"],
+        ["#A6E9ED", "#00666D"], ["#E5F1D3", "#405F14"], ["#D4F4FD", "#006A88"], ["#E7E4FB", "#6656D1"], ["#FBDDF0", "#AD2D7E"], ["#D8DFE0", "#657174"],
+        ["#94C8D4", "#005B70"], ["#EAE8E8", "#6E6968"], ["#CECCCB", "#474443"], ["#C4C4C4", "#333333"], ["#E9C7CD", "#750B1C"], ["#F9DCD1", "#C43501"],
+        ["#CAADA3", "#4D291C"], ["#F5EECE", "#6C5700"], ["#9AD29A", "#085108"], ["#92D1D1", "#003939"], ["#BDD99B", "#294903"], ["#C2D6E7", "#003966"],
+        ["#B9A3D3", "#512B7E"], ["#D696C0", "#87105D"]]
+    function categoryTag(color) {
+        const i = /^preset(\d+)$/.exec(color || "")
+        const c = categoryPresets[i ? Number(i[1]) : 13] || categoryPresets[13]
+        return { fill: c[0], stroke: c[1] }
+    }
+    readonly property var filterMenuItems: {
+        const m = filterMap
+        const meet = [fUnselect("Meetings"), { separator: true }, { group: "I'm the organizer" }, fLeaf("Meetings", "Organizer", "Sent"), fLeaf("Meetings", "Drafts", "Draft"),
+            { separator: true }, { group: "I'm an attendee" }, fLeaf("Meetings", "Accepted", "Accepted"), fLeaf("Meetings", "DeclinedEvents", "Declined"),
+            fLeaf("Meetings", "Followed", "Followed"), fLeaf("Meetings", "Maybe", "Tentative"), fLeaf("Meetings", "Canceled", "Canceled"), fLeaf("Meetings", "NotResponded", "Not responded")]
+        const polls = [{ label: "Organizer holds", enabled: false }, fLeaf("PollHolds", "SeeAll", "See all"), { separator: true },
+            { label: "Attendee holds", enabled: false }, fLeaf("PollHolds", "VotedYes", "Voted: yes"), fLeaf("PollHolds", "VotedNo", "Voted: no"), fLeaf("PollHolds", "NotVoted", "Not voted")]
+        const cats = [fUnselect("Category"), { separator: true }, fLeaf("Category", catValue("Uncategorized"), "Uncategorized"), { separator: true }]
+            .concat(categories.map(c => Object.assign(fLeaf("Category", catValue(c.name), c.name), { tag: categoryTag(c.color) })))
+        const showAs = [fUnselect("ShowAs"), { separator: true }, fLeaf("ShowAs", "Free", "Free"), fLeaf("ShowAs", "WorkingElsewhere", "Working elsewhere"),
+            fLeaf("ShowAs", "Tentative", "Tentative"), fLeaf("ShowAs", "Busy", "Busy"), fLeaf("ShowAs", "OOF", "Out of office")]
+        return [{ label: "Clear filters", icon: "dismiss-20", persist: true, enabled: filterApplied, act: ["clear"] }, { separator: true },
+            fLeaf("General", "Appointments", "Appointments"), fGroup("Meetings", "Meetings", meet), fGroup("PollHolds", "Poll holds", polls),
+            fGroup("Reservations", "Reservations", [fLeaf("Reservations", "Desk", "Desk")]), { separator: true },
+            fGroup("Category", "Categories", cats), fGroup("ShowAs", "Show as", showAs),
+            fGroup("Recurrence", "Recurrence", [fLeaf("Recurrence", "Single", "Single"), fLeaf("Recurrence", "Series", "Series")]),
+            fGroup("InPerson", "In-person", [fLeaf("InPerson", "Required", "Requested"), fLeaf("InPerson", "NotRequired", "Not requested")])]
+    }
+    // The view menu (Teams' CalendarViewTypes): Day ▸ (1 to 7 days), Work
+    // week, Week, Month; Split view; Time scale ▸; Saved views ▸.
+    function scaleLabel(m) { return m === 60 ? "60 minutes - Least space for details" : m === 5 ? "5 minutes - Most space for details" : m + " minutes" }
+    // Saved views' icons ("charms"): the picker's 36 in its order, and the
+    // glyph each shows in the menu (no icon, Pill, Exam and Goal: a dot).
+    readonly property var charms: [[0, "No icon", ""], [3, "Plane", "airplane-20"], [4, "Note", "notepad-20"], [5, "First aid", "briefcase-medical-20"], [6, "Trophy", "trophy-20"],
+        [7, "Home", "home-20"], [8, "Pill", "pill-20"], [9, "Luggage", "luggage-20"], [11, "Group", "people-20"], [12, "Timer", "timer-20"], [13, "Music", "music-note-2-20"],
+        [15, "Car", "vehicle-car-20"], [16, "Star", "star-20"], [18, "Person", "person-20"], [19, "Balloon", "balloon-20"], [20, "Fork knife", "food-20"], [21, "Heart", "heart-20"],
+        [22, "Soccer", "sport-soccer-20"], [23, "Movie", "movies-and-tv-20"], [25, "Books", "book-open-20"], [26, "Cake", "food-cake-20"], [27, "TV", "tv-20"],
+        [29, "Package delivery", "vehicle-truck-profile-20"], [31, "Event", "ticket-diagonal-20"], [33, "Credit card", "payment-20"], [34, "Bike", "vehicle-bicycle-20"],
+        [38, "Bus", "vehicle-bus-20"], [42, "Class", "hat-graduation-20"], [46, "Gym", "dumbbell-20"], [47, "Island", "beach-20"], [50, "Professional", "city-20"],
+        [51, "Repair", "wrench-20"], [53, "Sprint", "run-20"], [55, "Todo", "checkmark-20"], [57, "Exam", "note-edit-20"], [58, "Goal", "target-arrow-20"]]
+    function charmMenuIcon(id) {
+        const n = Number(id) || 0
+        if ([0, 8, 57, 58].indexOf(n) >= 0) return "circle-20-filled"
+        const c = charms.find(x => x[0] === n)
+        return c ? c[2] : "circle-20-filled"
+    }
+    readonly property var viewMenuItems: {
+        const days = [1, 2, 3, 4, 5, 6, 7].map(n => ({ label: n + (n > 1 ? " days" : " day"), checked: view === "day" && numDays === n, act: ["days", n] }))
+        const scales = [60, 30, 15, 10, 6, 5].map(m => ({ label: scaleLabel(m), checked: timeScale === m, persist: true, act: ["scale", m] }))
+        const views = savedViews.map(v => ({ label: v.viewName || "", icon: charmMenuIcon(v.viewIcon), checked: currentViewId === v.id, split: true,
+            splitLabel: "More " + (v.viewName || "") + " options", act: ["openView", v.id],
+            submenu: [{ label: "Open", icon: "open-20", act: ["openView", v.id] }, { label: "Edit", icon: "edit-20", act: ["editView", v.id] }, { label: "Delete", icon: "delete-20", act: ["deleteView", v.id] }] }))
+        if (views.length) views.push({ separator: true })
+        views.push({ label: "Save current view", indent: true, enabled: savedViews.length < 10, act: ["saveView"] })
+        return [{ label: "Day", icon: "calendar-day-20", checked: view === "day", split: true, splitLabel: "Expand to see more Day options", act: ["view", "day"], submenu: days },
+            { label: "Work week", icon: "calendar-work-week-20", checked: view === "workweek", act: ["view", "workweek"] },
+            { label: "Week", icon: "calendar-week-numbers-20", checked: view === "week", act: ["view", "week"] },
+            { label: "Month", icon: "calendar-month-20", checked: view === "month", act: ["view", "month"] },
+            { separator: true },
+            { label: "Split view", icon: "square-multiple-20", checked: splitView && canSplit, enabled: canSplit, act: ["split"] },
+            { separator: true },
+            { label: "Time scale", icon: "arrow-autofit-height-20", secondary: timeScale + " minutes", chevron: false, enabled: !monthView, submenu: scales },
+            { label: "Saved views", icon: "save-20", checked: !!currentViewId, submenu: views }]
+    }
+    readonly property var rangeTypes: ({ day: 1, week: 2, workweek: 3, month: 4 })
+    function viewAct(a) {
+        if (!a) return
+        switch (a[0]) {
+        case "view": currentViewId = ""; view = a[1]; break
+        case "days":
+            currentViewId = ""
+            if (numDays !== a[1]) { numDays = a[1]; calendarAction("setSurface", JSON.stringify({ numDaysInDayRange: a[1] })) }
+            if (view !== "day") view = "day"; else emitRange()
+            break
+        case "split": splitView = !splitView; currentViewId = ""; break
+        case "scale":
+            if (timeScale !== a[1]) { timeScale = a[1]; calendarAction("setSurface", JSON.stringify({ timeScaleSetting: a[1] })) }
+            break
+        case "openView": applySavedView(a[1]); break
+        case "editView": saveViewDialog.openFor(savedViews.find(v => v.id === a[1]) || null); break
+        case "deleteView": {
+            const v = savedViews.find(x => x.id === a[1])
+            if (v) { deleteViewDialog.view = v; deleteViewDialog.open() }
+            break
+        }
+        case "saveView": saveViewDialog.openFor(null); break
+        }
+    }
+    function applySavedView(id) {
+        const v = savedViews.find(x => x.id === id)
+        if (!v) return
+        if (v.numDaysInDayRange) numDays = Math.max(1, Math.min(7, v.numDaysInDayRange))
+        if (v.filterState) {
+            try {
+                const ent = typeof v.filterState === "string" ? JSON.parse(v.filterState) : v.filterState, m = {}
+                for (const e of ent) if (e && e.length === 2) m[e[0]] = e[1]
+                filterMap = m
+            } catch (err) {}
+        }
+        splitView = !!v.splitView
+        const t = ({ 1: "day", 2: "week", 3: "workweek", 4: "month" })[v.dateRangeType] || "workweek"
+        if (view !== t) view = t; else emitRange()
+        currentViewId = id
+    }
+    function saveView(existing, name, icon) {
+        const v = existing ? Object.assign({}, existing, { viewName: name, viewIcon: String(icon) })
+            : { selectedCalendarIds: calendarId ? [calendarId] : [], dateRangeType: rangeTypes[view] || 3, splitView: false, viewName: name, chosenHotkey: null,
+                numDaysInDayRange: numDays, viewIcon: String(icon), filterState: JSON.stringify(Object.keys(filterMap).map(k => [k, filterMap[k]])) }
+        calendarAction("saveView", JSON.stringify({ view: v }))
+    }
+    /// Teams' toolbar overflow: Filter goes into "More options" when the
+    /// toolbar is short of room (measured on winpc: inline from a 1321 px
+    /// calendar, 28.5 px or more between the date and the view button).
+    readonly property bool filterInline: !copilotOpen && bar.dabX - 12 - (viewButton.width + filterBtn.width + 32 + 1 + meetRow.width + newRow.width + 5 * rightRow.spacing)
+                                         - (leftRow.x + leftRow.width) >= 28.5
+    /// Copilot's pane in the calendar (Teams' "Chat with Copilot").
+    property bool copilotOpen: false
+    readonly property real copilotWidth: copilotOpen ? 580 : 0
     signal rangeChanged(string startUtc, string endUtc)
     signal joinMeeting(string joinUrl, string subject)
     signal createEvent(string subject, string startUtc, string endUtc, string attendees, bool teamsMeeting)
@@ -47,9 +320,12 @@ Item {
     /// Join with an ID: the meeting ID and passcode.
     signal joinWithId(string meetingId, string passcode)
 
-    readonly property int hourHeight: 80
+    /// An hour's height for the time scale (Teams: 40 px slots at 60 and
+    /// 30 minutes, else 30 px slots).
+    readonly property real hourHeight: ({ 60: 40, 30: 80, 15: 120, 10: 180, 6: 300, 5: 360 })[timeScale] || 80
+    readonly property real slotHeight: hourHeight * timeScale / 60
     readonly property int gutter: 48
-    readonly property int days: view === "day" ? 1 : view === "week" ? 7 : view === "month" ? 7 * monthWeeks : 5
+    readonly property int days: view === "day" ? numDays : view === "week" ? 7 : view === "month" ? 7 * monthWeeks : 5
     readonly property bool monthView: view === "month"
     /// Month view: the weeks shown (the month's, Sunday first).
     readonly property int monthWeeks: {
@@ -80,6 +356,15 @@ Item {
     property alias detailsForTest: details
     property alias joinIdForTest: joinId
     property alias meetNowForTest: meetNowDialog
+    property alias filterMenuForTest: filterMenu
+    property alias moreMenuForTest: moreMenu
+    property alias viewMenuForTest: viewMenu
+    property alias dabChipsForTest: dabChips
+    property alias saveViewForTest: saveViewDialog
+    property alias charmPickerForTest: charmPicker
+    property alias composeForTest: composeHost
+    property alias copilotForTest: copilotHost
+    function filterStateForTest() { return JSON.stringify({ inline: filterInline, applied: filterApplied, map: filterMap, shown: shown.length, events: events.length, timeScale: timeScale, hourHeight: hourHeight, numDays: numDays, days: days, views: savedViews.map(v => v.viewName + ":" + v.id), current: currentViewId, categories: categories.length, bar: bar.width }) }
 
     /// Alt+N: schedule a meeting.
     function newMeeting() { openForm(null, [], null) }
@@ -124,6 +409,16 @@ Item {
     function actionDone(op, result, error) {
         const r = result ? JSON.parse(result) : {}
         if (op === "detail" && !error && formLayer.visible && form.event && r.id === form.event.id) form.detail = r
+        else if (op === "prefs" && !error) applyPrefs(r)
+        else if (op === "saveView" && !error && r.view) {
+            const v = r.view, list = savedViews.filter(x => x.id !== v.id)
+            const i = savedViews.findIndex(x => x.id === v.id)
+            if (i >= 0) list.splice(i, 0, v); else list.push(v)
+            savedViews = list
+            currentViewId = v.id
+        }
+        else if (op === "deleteView" && !error) { savedViews = savedViews.filter(x => x.id !== r.id); if (currentViewId === r.id) currentViewId = "" }
+        else if (op === "propose" && !error) details.close()
         else if (op === "availability" && !error) { form.freeBusy = r.freeBusy || {}; if (r.timeZone) mtTimeZone = r.timeZone }
         else if ((op === "schedule" || op === "update" || op === "cancel") && !error) formLayer.visible = false
         else if (op === "joinById" && !error && r.joinUrl) root.joinMeeting(r.joinUrl, r.subject || "Meeting")
@@ -151,7 +446,7 @@ Item {
     function dayAt(i) { const d = new Date(start); d.setDate(d.getDate() + i); return d }
     function shift(n) {
         if (view === "month") { const m = new Date(focusMonth.getFullYear(), focusMonth.getMonth() + n, 1); start = startFor(m); return }
-        const d = new Date(start); d.setDate(d.getDate() + n * (view === "day" ? 1 : 7)); start = d
+        const d = new Date(start); d.setDate(d.getDate() + n * (view === "day" ? numDays : 7)); start = d
     }
     function sameDay(a, b) { return a.toDateString() === b.toDateString() }
     function midnight(d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()) }
@@ -166,7 +461,7 @@ Item {
     // `days` binding catches up with a view change (Month asked for one
     // day after Day). Coalesced, so a view and date change ask once.
     function spanDays() {
-        if (view === "day") return 1
+        if (view === "day") return numDays
         if (view === "week") return 7
         if (view !== "month") return 5
         const f = new Date(focusMonth.getFullYear(), focusMonth.getMonth(), 1)
@@ -191,7 +486,8 @@ Item {
         start = startFor(anchor)
         emitRange()
     }
-    Component.onCompleted: emitRange()
+    Component.onCompleted: { emitRange(); loadPrefs() }
+    function loadPrefs() { calendarAction("prefs", "{}") }
     readonly property string rangeLabel: {
         if (monthView) return Qt.formatDate(focusMonth, "MMMM yyyy")
         const a = start, b = dayAt(days - 1)
@@ -212,7 +508,7 @@ Item {
         if (sameDay(s, new Date(en - 1))) return false
         return (en - s) >= 86400000 || (s.getHours() === 0 && s.getMinutes() === 0) || (en.getHours() === 0 && en.getMinutes() === 0)
     }
-    readonly property var shown: showCalendar ? events.filter(e => !e.is_cancelled || e.is_organizer === false) : []
+    readonly property var shown: showCalendar ? events.filter(e => (!e.is_cancelled || e.is_organizer === false) && passesFilters(e)) : []
     /// Timed pieces per day column: [{ev, s, e (minutes), lane, lanes}].
     readonly property var dayPieces: {
         const out = []
@@ -423,8 +719,12 @@ Item {
         property string label
         property bool chevron: false
         property bool primary: false
+        /// Teams' "Filter applied": a 0.67 #BDBDBD edge.
+        property bool outlined: false
         signal clicked()
         anchors.verticalCenter: parent ? parent.verticalCenter : undefined
+        border.width: outlined ? 0.67 : 0
+        border.color: theme.hc("#BDBDBD", "#FFFFFF")
         width: bbRow.implicitWidth + 20; height: 32; radius: theme.radius
         color: primary ? (bbh.hovered ? theme.brandHover : theme.brandFill) : bbh.hovered ? theme.rowHover : "transparent"
         Row {
@@ -445,41 +745,130 @@ Item {
         id: bar
         anchors { left: pane.right; right: parent.right }
         height: 61
+        z: 2
+        /// Copilot's button: 10 from the edge, or 8.67 left of its pane.
+        readonly property real dabX: !root.copilotEntries ? bar.width + 12 - 12 : root.copilotOpen ? bar.width - root.copilotWidth - 8.67 - 44 : bar.width - 10 - 44
+        // Teams' "Chat with Copilot" (the calendar's Copilot button): a 44
+        // px round button, white with the depth-16 shadow and Copilot's 24
+        // px logo; hovering it lists Copilot's suggestions (12/20 chips,
+        // padding 9 12, radius 12, 8 apart, right-aligned under it); it
+        // opens Copilot's pane in the calendar.
+        Item {
+            id: dab
+            visible: root.copilotEntries
+            x: bar.dabX; y: 6.33; width: 44; height: 44
+            FluentSurface { anchors.fill: parent; depth: 16; radius: 22; color: dabHover.hovered ? theme.hc("#F5F5F5", "#000000") : theme.surface }
+            Image { anchors.centerIn: parent; width: 24; height: 24; sourceSize: Qt.size(48, 48); source: "../assets/icons/copilot-color-48.svg" }
+            HoverHandler { id: dabHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: { root.copilotOpen = !root.copilotOpen; dabChips.visible = false } }
+            Accessible.role: Accessible.Button
+            Accessible.name: "Chat with Copilot"
+            Timer { interval: 400; running: dabHover.hovered && !root.copilotOpen; onTriggered: dabChips.visible = true }
+        }
+        Column {
+            id: dabChips
+            visible: false
+            z: 5
+            spacing: 8
+            x: dab.x + dab.width - width; y: 57.33
+            readonly property bool inside: chipsHover.hovered || dabHover.hovered
+            onInsideChanged: if (!inside) chipsHide.restart(); else chipsHide.stop()
+            Timer { id: chipsHide; interval: 300; onTriggered: dabChips.visible = false }
+            HoverHandler { id: chipsHover }
+            Repeater {
+                model: ["Find my next one-on-one with", "Show me meetings I haven't responded to next week", "What are the top three things I should focus on right now?", "Schedule 1 hour of focus time"]
+                Item {
+                    id: chip
+                    required property string modelData
+                    anchors.right: parent ? parent.right : undefined
+                    width: chipText.implicitWidth + 24; height: 39.33
+                    FluentSurface { anchors.fill: parent; depth: 16; radius: 12; color: chipHover.hovered ? theme.hc("#F5F5F5", "#000000") : theme.surface }
+                    Text { id: chipText; x: 12; anchors.verticalCenter: parent.verticalCenter; text: chip.modelData; font.family: theme.font; font.pixelSize: 12; color: theme.text }
+                    HoverHandler { id: chipHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: { dabChips.visible = false; root.copilotPrompt = chip.modelData; root.copilotOpen = true } }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: chip.modelData
+                }
+            }
+        }
         Row {
+            id: leftRow
             x: 8; anchors.verticalCenter: parent.verticalCenter
             spacing: 6
+            // With Copilot's pane open Teams keeps only the pane toggle here.
+            readonly property bool narrow: root.copilotOpen
             NavButton { icon: "panel-left-20"; tip: root.paneShown ? "Hide navigation" : "Show navigation"; onClicked: root.paneShown = !root.paneShown }
-            Rectangle { width: 1; height: 20; anchors.verticalCenter: parent.verticalCenter; color: theme.dividerSoft }
-            BarButton2 { icon: "calendar-ltr-20"; label: "Today"; onClicked: root.start = root.startFor(new Date()); Accessible.name: "Go to today" }
-            NavButton { icon: root.monthView ? "chevron-up-20" : "chevron-left-20"; iconSize: 16; onClicked: root.shift(-1); tip: root.monthView ? "Go to previous month" : root.view === "day" ? "Go to previous day" : "Go to previous week" }
-            NavButton { icon: root.monthView ? "chevron-down-20" : "chevron-right-20"; iconSize: 16; onClicked: root.shift(1); tip: root.monthView ? "Go to next month" : root.view === "day" ? "Go to next day" : "Go to next week" }
+            Rectangle { visible: !leftRow.narrow; width: 1; height: 20; anchors.verticalCenter: parent.verticalCenter; color: theme.dividerSoft }
+            BarButton2 { visible: !leftRow.narrow; icon: "calendar-ltr-20"; label: "Today"; onClicked: root.start = root.startFor(new Date()); Accessible.name: "Go to today" }
+            NavButton { visible: !leftRow.narrow; icon: root.monthView ? "chevron-up-20" : "chevron-left-20"; iconSize: 16; onClicked: root.shift(-1); tip: root.monthView ? "Go to previous month" : root.view === "day" ? "Go to previous day" : "Go to previous week" }
+            NavButton { visible: !leftRow.narrow; icon: root.monthView ? "chevron-down-20" : "chevron-right-20"; iconSize: 16; onClicked: root.shift(1); tip: root.monthView ? "Go to next month" : root.view === "day" ? "Go to next day" : "Go to next week" }
             BarButton2 {
+                visible: !leftRow.narrow
                 label: root.rangeLabel; chevron: true
                 onClicked: { month.shown = new Date(root.start.getFullYear(), root.start.getMonth(), 1); root.paneShown = true }
                 Accessible.name: root.rangeLabel + ", Jump to a specific date"
             }
         }
         Row {
-            anchors.right: parent.right; anchors.rightMargin: 12
+            id: rightRow
+            anchors.right: parent.right; anchors.rightMargin: bar.width - bar.dabX + 12
             anchors.verticalCenter: parent.verticalCenter
             spacing: 4
             BarButton2 {
                 id: viewButton
-                icon: ({ day: "calendar-ltr-20", workweek: "calendar-ltr-20", week: "calendar-ltr-20", month: "calendar-ltr-20" })[root.view]
+                visible: !root.copilotOpen
+                icon: ({ day: "calendar-day-20", workweek: "calendar-work-week-20", week: "calendar-week-numbers-20", month: "calendar-month-20" })[root.view]
                 label: ({ day: "Day", workweek: "Work week", week: "Week", month: "Month" })[root.view]
                 chevron: true
                 onClicked: viewMenu.open()
                 Accessible.role: Accessible.ComboBox
                 MenuPopup {
                     id: viewMenu
-                    width: 216; y: parent.height + 4
-                    items: [{ label: "Day", checked: root.view === "day" }, { label: "Work week", checked: root.view === "workweek" }, { label: "Week", checked: root.view === "week" }, { label: "Month", checked: root.view === "month" }]
-                    onPicked: i => root.view = ["day", "workweek", "week", "month"][i]
+                    radioColumn: true
+                    minRowWidth: 216.43
+                    y: parent.height + 4
+                    items: root.viewMenuItems
+                    onPicked: i => root.viewAct(items[i].act)
+                    onSubPicked: (i, j) => root.viewAct(items[i].submenu[j].act)
+                    onSubSubPicked: (i, j, k) => root.viewAct(items[i].submenu[j].submenu[k].act)
+                }
+            }
+            // Filter: "Filter applied" (outlined) while anything is
+            // unchecked; in "More options" when the toolbar is short.
+            BarButton2 {
+                id: filterBtn
+                visible: root.filterInline
+                icon: "filter-20"; label: root.filterApplied ? "Filter applied" : "Filter"; chevron: true
+                outlined: root.filterApplied
+                onClicked: filterMenu.open()
+                Accessible.name: "Apply or remove calendar event filters."
+                MenuPopup {
+                    id: filterMenu
+                    submenuMinWidth: 0
+                    y: parent.height + 4
+                    items: root.filterMenuItems
+                    onPicked: i => root.filterAct(items[i].act)
+                    onSubPicked: (i, j) => root.filterAct(items[i].submenu[j].act)
+                }
+            }
+            NavButton {
+                id: moreBtn
+                visible: !root.filterInline
+                icon: "more-horizontal-20"; tip: "More options"
+                onClicked: moreMenu.open()
+                MenuPopup {
+                    id: moreMenu
+                    submenuMinWidth: 0
+                    y: parent.height + 4
+                    items: [{ label: root.filterApplied ? "Filter applied" : "Filter", icon: "filter-20", outlined: root.filterApplied, submenu: root.filterMenuItems }]
+                    onSubPicked: (i, j) => root.filterAct(items[i].submenu[j].act)
+                    onSubSubPicked: (i, j, k) => root.filterAct(items[i].submenu[j].submenu[k].act)
                 }
             }
             Rectangle { width: 1; height: 20; anchors.verticalCenter: parent.verticalCenter; color: theme.dividerSoft }
             // Meet now ▾: Start a meeting now; the chevron: Join with an ID.
             Row {
+                id: meetRow
                 anchors.verticalCenter: parent.verticalCenter
                 BarButton2 { icon: "video-20"; label: "Meet now"; onClicked: meetNowDialog.openFresh(); Accessible.name: "Start an instant Teams meeting." }
                 BarButton2 {
@@ -497,6 +886,8 @@ Item {
             }
             // New ▾: Event; Channel meeting.
             Row {
+                id: newRow
+                visible: !root.copilotOpen
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 1
                 BarButton2 { primary: true; icon: "calendar-add-20"; label: "New"; onClicked: root.openForm(null, [], null); Accessible.name: "Create a new event." }
@@ -509,7 +900,7 @@ Item {
                         x: -150; y: parent.height + 4; width: 174
                         perItemIcons: true
                         items: [{ label: "Event", icon: "calendar-ltr-20" }, { label: "Channel meeting", icon: "channel-20" }]
-                        onPicked: root.openForm(null, [], null)
+                        onPicked: i => { if (i === 0) root.openEventForm(); else root.openForm(null, [], null) }
                     }
                 }
             }
@@ -521,7 +912,7 @@ Item {
     Item {
         id: gridArea
         visible: !root.monthView
-        anchors { top: bar.bottom; bottom: parent.bottom; left: pane.right; right: parent.right }
+        anchors { top: bar.bottom; bottom: parent.bottom; left: pane.right; right: parent.right; rightMargin: root.copilotWidth }
         // Day headers (54) and the all-day strip.
         Item {
             id: heads
@@ -575,6 +966,10 @@ Item {
             boundsBehavior: Flickable.StopAtBounds
             ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
             Component.onCompleted: contentY = Math.max(0, Math.min(contentHeight - height, (new Date().getHours() - 1) * root.hourHeight))
+            Connections {
+                target: root
+                function onTimeScaleChanged() { grid.contentY = Math.max(0, Math.min(grid.contentHeight - grid.height, (new Date().getHours() - 1) * root.hourHeight)) }
+            }
             // Day backgrounds: past days, hours outside 8–17 and busy days.
             Repeater {
                 model: root.days
@@ -600,21 +995,26 @@ Item {
                         font.family: theme.font; font.pixelSize: 11; color: theme.textSecondary
                     }
                     Rectangle { x: root.gutter; width: parent.width - root.gutter; height: 1; color: theme.hc("#D1D1D1", "#FFFFFF") }
-                    Row {
-                        x: root.gutter; y: root.hourHeight / 2
-                        spacing: 3
-                        Repeater { model: Math.ceil((grid.width - root.gutter) / 6); Rectangle { width: 3; height: 1; color: theme.hc("#E0E0E0", "#3F3F3F") } }
+                    // The time scale's slots: a dashed line at each, the hour solid.
+                    Repeater {
+                        model: Math.max(0, Math.round(60 / root.timeScale) - 1)
+                        Row {
+                            required property int index
+                            x: root.gutter; y: (index + 1) * root.slotHeight
+                            spacing: 3
+                            Repeater { model: Math.ceil((grid.width - root.gutter) / 6); Rectangle { width: 3; height: 1; color: theme.hc("#E0E0E0", "#3F3F3F") } }
+                        }
                     }
                 }
             }
-            // Click an empty half hour to schedule there.
+            // Click an empty slot to schedule there.
             MouseArea {
                 x: root.gutter; width: grid.width - root.gutter; height: grid.contentHeight
                 onClicked: m => {
                     let col = 0
                     while (col < root.days - 1 && root.gutter + m.x >= root.colX(col + 1)) col++
-                    const slot = Math.floor(m.y / (root.hourHeight / 2))
-                    const d = root.dayAt(col); d.setHours(0, slot * 30, 0, 0)
+                    const slot = Math.floor(m.y / root.slotHeight)
+                    const d = root.dayAt(col); d.setHours(0, slot * root.timeScale, 0, 0)
                     root.openForm(d, [], null)
                 }
             }
@@ -973,9 +1373,55 @@ Item {
                 }
                 suffix: details.series ? "Series" : ""
             }
+            // Your meeting: each proposed time under the time, as Teams'
+            // card shows it: "{name} proposed new time" (12 px brand),
+            // then the time (12 px #616161) and Accept (14/600 brand).
+            Repeater {
+                model: details.ev.is_organizer ? (details.ev.attendees || []).filter(a => !!a.proposed_start) : []
+                Column {
+                    id: proposal
+                    required property var modelData
+                    x: 35; topPadding: -8; bottomPadding: 8; spacing: 4
+                    Text {
+                        text: (proposal.modelData.name || proposal.modelData.address) + " proposed new time"
+                        font.family: theme.font; font.pixelSize: 12; color: theme.brand
+                        HoverHandler { cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: { const e = details.ev; details.close(); root.openPage(e) } }
+                        Accessible.role: Accessible.Button; Accessible.name: text
+                    }
+                    Row {
+                        spacing: 8
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: Qt.formatDate(new Date(proposal.modelData.proposed_start), "ddd M/d/yyyy") + " " + theme.time(new Date(proposal.modelData.proposed_start)) + " - " + theme.time(new Date(proposal.modelData.proposed_end))
+                            font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary
+                        }
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: "Accept"
+                            font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.brand
+                            HoverHandler { cursorShape: Qt.PointingHandCursor }
+                            // Accepting moves the meeting to the proposed time.
+                            TapHandler { onTapped: { root.updateEvent(details.ev.id, details.ev.subject || "", proposal.modelData.proposed_start, proposal.modelData.proposed_end); details.close() } }
+                            Accessible.role: Accessible.Button; Accessible.name: "Accept the proposed time"
+                        }
+                    }
+                }
+            }
             DetailRow {
                 icon: "location-20"
                 text: details.ev.location && !(details.ev.is_online_meeting && details.ev.location === "Microsoft Teams Meeting") ? details.ev.location : "No location added"
+            }
+            // Copilot (a Copilot licence): "Add a room with Copilot" under
+            // the location (14/20 #4F52B2), as Teams' card shows it.
+            Text {
+                visible: root.copilotEntries && !!details.ev.is_online_meeting && (!details.ev.location || details.ev.location === "Microsoft Teams Meeting")
+                x: 35; topPadding: -12; bottomPadding: 8
+                text: "Add a room with Copilot"
+                font.family: theme.font; font.pixelSize: 14; color: theme.hc("#4F52B2", "#1AEBFF")
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: root.askCopilot("Add a room") }
+                Accessible.role: Accessible.Button; Accessible.name: text
             }
             // Who invited you (or the channel), and your answer.
             Item {
@@ -995,6 +1441,24 @@ Item {
                 icon: "text-description-20"
                 text: (details.ev.preview || "").replace(/_{4,}/g, "").replace(/\s+/g, " ").trim()
                 lines: 5
+            }
+            // Copilot: "Prepare for this meeting" (a 32 px outlined button,
+            // padding 0 16, #BDBDBD edge, 14 px #616161), after who invited you.
+            Item {
+                visible: root.copilotEntries && !!details.ev.is_online_meeting
+                width: 358; height: visible ? 58 : 0
+                Rectangle { x: 34; width: 324; height: 1; color: theme.hc("#F0F0F0", "#FFFFFF") }
+                FluentIcon { x: 2; y: 15; name: "calendar-sparkle-20"; size: 20; color: theme.textSecondary }
+                Rectangle {
+                    id: prepBtn
+                    x: 35; y: 13; width: prepText.implicitWidth + 32; height: 32; radius: 4
+                    color: prepHover.hovered ? theme.rowHover : theme.surface
+                    border.width: 0.67; border.color: theme.hc("#BDBDBD", "#FFFFFF")
+                    Text { id: prepText; anchors.centerIn: parent; text: "Prepare for this meeting"; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(prepBtn, theme.textSecondary) }
+                    HoverHandler { id: prepHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: root.askCopilot("Prepare for this meeting") }
+                    Accessible.role: Accessible.Button; Accessible.name: prepText.text
+                }
             }
             // Your answer, as Teams' card asks for it.
             Column {
@@ -1053,6 +1517,19 @@ Item {
                         }
                     }
                 }
+                // Propose new time (Teams' calendar: "Tentative and propose
+                // new time" / "Decline and propose new time"), when the
+                // organizer allows proposals.
+                Text {
+                    visible: details.ev.allow_new_time_proposals !== false
+                    x: 37; topPadding: 10
+                    text: "Propose new time"
+                    font.family: theme.font; font.pixelSize: 14; color: theme.brand
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: proposeMenu.openFor(parent) }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: "Propose new time"
+                }
             }
             // Answered: the answer and Change.
             Row {
@@ -1104,6 +1581,104 @@ Item {
         }
     }
     // A series answer: this event or the whole series.
+    // Copilot's prompts under a meeting's card (a separate surface 4 below
+    // it: Copilot's glyph at 12, chips 25.33 tall 8 apart at 40, padding 2
+    // 8, radius 8, a #D1D1D1 edge, 14/20).
+    Popup {
+        id: cardPrompts
+        visible: details.visible && root.copilotEntries && !!details.ev.is_online_meeting
+        x: details.x; y: details.y + details.height + 4
+        width: details.width; padding: 0
+        closePolicy: Popup.NoAutoClose
+        height: promptCol.implicitHeight + 16.5
+        background: FluentSurface { depth: 16; radius: 4 }
+        contentItem: Item {
+            FluentIcon { x: 12; y: 12.5; name: "mo-copilot"; size: 16; color: theme.textSecondary }
+            Column {
+                id: promptCol
+                x: 40; y: 8.5; spacing: 8
+                Repeater {
+                    model: ["What are key talking points?", "What are the anticipated outcomes?", "What will this meeting cover?"]
+                    Rectangle {
+                        id: chipP
+                        required property string modelData
+                        width: chipPText.implicitWidth + 16; height: 25.33; radius: 8
+                        color: chipPHover.hovered ? theme.rowHover : theme.surface
+                        border.width: 0.67; border.color: theme.stroke
+                        Text { id: chipPText; anchors.centerIn: parent; text: chipP.modelData; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(chipP, theme.text) }
+                        HoverHandler { id: chipPHover; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: root.askCopilot(chipP.modelData) }
+                        Accessible.role: Accessible.Button; Accessible.name: chipP.modelData
+                    }
+                }
+            }
+        }
+    }
+    /// Copilot's entry points show for a Copilot licence (Teams' calendar:
+    /// the Copilot button, the card's room, prepare and prompt rows).
+    property bool copilotEntries: false
+    function askCopilot(prompt) { details.close(); root.copilotPrompt = prompt; root.copilotOpen = true }
+    MenuPopup {
+        id: proposeMenu
+        function openFor(item) { parent = item; x = 0; y = item.height + 2; open() }
+        items: [{ label: "Tentative and propose new time" }, { label: "Decline and propose new time" }]
+        onPicked: i => { const e = details.ev; details.close(); proposeDialog.openFor(e, i === 0 ? "Tentative" : "Decline") }
+    }
+    // Propose new time: Teams' calendar's "Propose new time:" with the
+    // time, the answer (Tentative or Decline), an optional message, Send.
+    Dialog600 {
+        id: proposeDialog
+        property var ev: ({})
+        property string response: "Tentative"
+        property date day: new Date()
+        property int startMin: 0
+        property int minutes: 30
+        function openFor(e, r) {
+            ev = e; response = r
+            const s = new Date(e.start_utc), en = new Date(e.end_utc)
+            day = root.midnight(s); startMin = s.getHours() * 60 + s.getMinutes()
+            minutes = Math.max(15, Math.round((en - s) / 60000))
+            proposeNote.text = ""
+            open()
+        }
+        readonly property date startAt: { const d = new Date(day); d.setHours(0, startMin, 0, 0); return d }
+        readonly property date endAt: new Date(startAt.getTime() + minutes * 60000)
+        function send() {
+            root.calendarAction("propose", JSON.stringify({ event: { id: ev.id, ical_uid: ev.ical_uid, event_type: ev.event_type, start_utc: ev.start_utc },
+                response: response, start: root.isoLocal(startAt), end: root.isoLocal(endAt), send: true, note: proposeNote.text }))
+        }
+        readonly property var times: { const out = []; for (let m = 0; m < 1440; m += 30) { const d = new Date(2000, 0, 1, 0, m); out.push([String(m), theme.time(d)]) } return out }
+        contentItem: Column {
+            spacing: 16
+            Text { text: "Propose new time"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text; Accessible.role: Accessible.Heading; Accessible.name: text }
+            Text { width: 550; elide: Text.ElideRight; text: proposeDialog.ev.subject || ""; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
+            Row {
+                spacing: 8
+                Text { anchors.verticalCenter: parent.verticalCenter; text: "Propose new time:"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                DatePickerField { width: 150; date: proposeDialog.day; onPicked: d => proposeDialog.day = root.midnight(d) }
+                Dropdown { width: 120; label: theme.time(proposeDialog.startAt); options: proposeDialog.times; accessibleName: "Start time"; onPicked: c => proposeDialog.startMin = parseInt(c) }
+                Dropdown { width: 120; label: theme.time(proposeDialog.endAt); accessibleName: "End time"
+                    options: proposeDialog.times.filter(t => parseInt(t[0]) > proposeDialog.startMin); onPicked: c => proposeDialog.minutes = parseInt(c) - proposeDialog.startMin }
+            }
+            Dropdown {
+                width: 180; label: proposeDialog.response; accessibleName: "Response"
+                options: [["Tentative", "Tentative"], ["Decline", "Decline"]]
+                onPicked: c => proposeDialog.response = c
+            }
+            Field600 { id: proposeNote; hint: "Add a message (optional)" }
+            Row {
+                anchors.right: parent.right; spacing: 8
+                CardButton { label: "Cancel"; onClicked: proposeDialog.close() }
+                CardButton { primary: true; icon: "send-20"; label: "Send"; onClicked: proposeDialog.send() }
+            }
+        }
+    }
+    function proposeForTest(e, response, start, minutes, note) {
+        details.close(); proposeDialog.openFor(e, response)
+        proposeDialog.day = midnight(start); proposeDialog.startMin = start.getHours() * 60 + start.getMinutes(); proposeDialog.minutes = minutes
+        proposeNote.text = note || ""
+    }
+    function sendProposalForTest() { proposeDialog.send() }
     MenuPopup {
         id: scopeMenu
         property string response
@@ -1274,6 +1849,217 @@ Item {
             }
         }
     }
+
+
+    // ── Saved views: "Save current view" / "Edit view" (Teams' dialog,
+    // measured on winpc 2026-11-18: 340 wide, radius 4, the title 16/600,
+    // "Name this view" 14/600 #616161, the charm button 28 px, the name
+    // field 232 x 32 with a 0.67 #8A8A8A edge, Save and Cancel 32 tall) ──
+    Popup {
+        id: saveViewDialog
+        property var existing: null
+        property int charm: 0
+        function openFor(v) {
+            existing = v
+            charm = v && v.viewIcon !== undefined ? Number(v.viewIcon) || 0 : 0
+            viewName.text = v ? (v.viewName || "") : ""
+            open()
+            viewName.forceActiveFocus()
+        }
+        anchors.centerIn: Overlay.overlay
+        modal: true; padding: 0
+        width: 340; height: 208.67
+        Overlay.modal: Rectangle { color: Qt.rgba(0, 0, 0, 0.4) }
+        background: Rectangle { radius: 4; color: theme.menu; border.color: theme.hc("transparent", "#FFFFFF") }
+        contentItem: Item {
+            Text {
+                x: 27; y: 18; width: 220; elide: Text.ElideRight
+                text: saveViewDialog.existing ? "Edit view" : "Save current view"
+                font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text
+                Accessible.role: Accessible.Heading; Accessible.name: text
+            }
+            Rectangle {
+                id: svClose
+                x: 293; y: 15; width: 32; height: 32; radius: 2
+                color: svCloseHover.hovered ? theme.rowHover : "transparent"
+                FluentIcon { anchors.centerIn: parent; name: "dismiss-16"; size: 16; color: theme.onFill(svClose, theme.textSecondary) }
+                HoverHandler { id: svCloseHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: saveViewDialog.close() }
+                Accessible.role: Accessible.Button; Accessible.name: "Close"
+            }
+            Text { x: 51; y: 61; text: "Name this view"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.textSecondary }
+            Rectangle {
+                id: charmBtn
+                x: 14; y: 92.67; width: 28; height: 28; radius: 2
+                color: charmPicker.visible ? theme.hc("#DCDFFA", "#1AEBFF") : charmHover.hovered ? theme.rowHover : "transparent"
+                FluentIcon {
+                    anchors.centerIn: parent
+                    name: saveViewDialog.charm > 0 ? (root.charms.find(c => c[0] === saveViewDialog.charm) || [0, "", "symbols-20"])[2] : "symbols-20"
+                    size: saveViewDialog.charm > 0 ? 17 : 14; color: theme.onFill(charmBtn, theme.brand)
+                }
+                HoverHandler { id: charmHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: charmPicker.visible ? charmPicker.close() : charmPicker.open() }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Select an event charm button, " + (saveViewDialog.charm > 0 ? (root.charms.find(c => c[0] === saveViewDialog.charm) || [0, "No"])[1] + " icon" : "No icon") + " selected"
+                // The charms (Teams' CharmDefaultSet): 12 a row, 32 px each,
+                // 4 apart, the chosen one #DCDFFA, glyphs 17 px #616161.
+                Popup {
+                    id: charmPicker
+                    y: parent.height + 4; padding: 4
+                    width: 454; height: 112
+                    background: FluentSurface { depth: 16; radius: 4 }
+                    contentItem: Grid {
+                        columns: 12; spacing: 4
+                        Repeater {
+                            model: root.charms
+                            Rectangle {
+                                id: charmCell
+                                required property var modelData
+                                width: 32; height: 32; radius: 2
+                                color: saveViewDialog.charm === modelData[0] ? theme.hc("#DCDFFA", "#1AEBFF") : cellHover.hovered ? theme.rowHover : "transparent"
+                                FluentIcon { visible: !!charmCell.modelData[2]; anchors.centerIn: parent; name: charmCell.modelData[2]; size: 17; color: theme.onFill(charmCell, theme.textSecondary) }
+                                HoverHandler { id: cellHover; cursorShape: Qt.PointingHandCursor }
+                                TapHandler { onTapped: { saveViewDialog.charm = charmCell.modelData[0]; charmPicker.close() } }
+                                Accessible.role: Accessible.Button
+                                Accessible.name: charmCell.modelData[1] + " icon"
+                            }
+                        }
+                    }
+                }
+            }
+            Rectangle {
+                x: 51; y: 89.67; width: 232; height: 32; radius: 2
+                color: theme.surface
+                border.width: 0.67; border.color: viewName.activeFocus ? theme.brand : theme.hc("#8A8A8A", "#FFFFFF")
+                TextInput {
+                    id: viewName
+                    x: 8; width: parent.width - 16; anchors.verticalCenter: parent.verticalCenter
+                    font.family: theme.font; font.pixelSize: 14; color: theme.text; clip: true; selectByMouse: true
+                    onAccepted: if (text.trim().length) svSave.clicked()
+                }
+                Accessible.role: Accessible.EditableText; Accessible.name: "Name this view"
+            }
+            Rectangle {
+                id: svSave
+                readonly property bool on: viewName.text.trim().length > 0
+                signal clicked()
+                onClicked: { root.saveView(saveViewDialog.existing, viewName.text.trim(), saveViewDialog.charm); saveViewDialog.close() }
+                x: 144.81; y: 152.67; width: 80; height: 32; radius: 2
+                color: !on ? theme.hc("#F5F5F5", "#000000") : svSaveHover.hovered ? theme.brandHover : theme.brandFill
+                border.width: 0.67; border.color: on ? "transparent" : theme.hc("#F5F5F5", "#3FF23F")
+                Text { anchors.centerIn: parent; text: "Save"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: svSave.on ? theme.onFill(svSave, "white") : theme.disabled }
+                HoverHandler { id: svSaveHover; cursorShape: svSave.on ? Qt.PointingHandCursor : Qt.ArrowCursor }
+                TapHandler { enabled: svSave.on; onTapped: svSave.clicked() }
+                Accessible.role: Accessible.Button; Accessible.name: "Save"
+            }
+            Rectangle {
+                id: svCancel
+                x: 232.81; y: 152.67; width: 83.19; height: 32; radius: 2
+                color: svCancelHover.hovered ? theme.rowHover : theme.surface
+                border.width: 0.67; border.color: theme.hc("#BDBDBD", "#FFFFFF")
+                Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(svCancel, theme.textSecondary) }
+                HoverHandler { id: svCancelHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: saveViewDialog.close() }
+                Accessible.role: Accessible.Button; Accessible.name: "Cancel"
+            }
+        }
+    }
+    // Saved views ▸ … ▸ Delete: Teams' confirmation ("Delete view").
+    ConfirmDialog {
+        id: deleteViewDialog
+        property var view: null
+        title: "Delete view"
+        body: view ? "Do you want to delete the view \"" + (view.viewName || "") + "\"?" : ""
+        confirmText: "Delete"
+        onConfirmed: if (view) root.calendarAction("deleteView", JSON.stringify({ id: view.id }))
+    }
+
+    // ── Copilot's pane in the calendar (Teams' "Chat with Copilot", 580
+    // wide on the right: "Copilot" 16/600, Collapse and Close 32 px, then
+    // Outlook's Copilot (hosted/semanticoverview, its calendar scenario)
+    // on #FAFAFA, as the hosted calendar frames it) ──────────────────────
+    property string copilotPrompt: ""
+    Rectangle {
+        id: copilotPane
+        visible: root.copilotOpen
+        z: 3
+        anchors { top: parent.top; bottom: parent.bottom; right: parent.right }
+        width: root.copilotWidth
+        color: theme.surface
+        FluentSurface { anchors.fill: parent; depth: 4; radius: 0; z: -1 }
+        Text { x: 16.67; y: 21.67; text: "Copilot"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
+        NavButton { x: parent.width - 80; y: 20; icon: "panel-right-contract-20"; tip: "Collapse Copilot Chat"; onClicked: root.copilotOpen = false }
+        NavButton { x: parent.width - 48; y: 20; icon: "dismiss-20"; tip: "Close Copilot Chat"; onClicked: root.copilotOpen = false }
+        Rectangle {
+            anchors { top: parent.top; topMargin: 59.33; left: parent.left; right: parent.right; bottom: parent.bottom }
+            color: theme.hc("#FAFAFA", "#000000")
+            Loader {
+                id: copilotHost
+                anchors.fill: parent
+                active: root.copilotOpen
+                sourceComponent: WebApp {
+                    showHeader: false; teamsHost: true; deepNaa: true
+                    appName: "Copilot"; appId: "b5abf2ae-c16b-4310-8f8a-d3bcdb52f162"
+                    frameContext: "sidePanel"
+                    homeTemplate: root.copilotUrl()
+                }
+            }
+        }
+    }
+    property string objectId: ""
+    property string tenantId: ""
+    function guid() { return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === "x" ? r : (r & 3 | 8)).toString(16) }) }
+    function copilotUrl() {
+        const q = ["hostApp=hub", "isanonymous=true", "culture=en-us", "mysite={mySiteDomain}", "hostName=TeamsModern", "hostClientType=desktop",
+                   "sessionId=" + root.guid(), "renderingSurface=copilotSidePanel", "theme=" + (theme.dark ? "dark" : "default"), "includeAgents=true",
+                   "M365ChatFeatures=disableFPSLoggingForStreaming,enableGptWrapperInChat,enablePrefetchAnnotationContext", "overrideScenario=CalendarSidepane",
+                   "rootHub=TeamsModern", "topOrigin=https%3A%2F%2Fteams.microsoft.com", "isDeeplyNAASupported=true", "hostRing=general"]
+        return "https://outlook.office.com/hosted/semanticoverview/Users('OID:" + root.objectId + "@" + root.tenantId + "')?" + q.join("&")
+    }
+
+    // ── New ▾ Event: Teams' event form, Outlook's (the hosted calendar's
+    // compose page, as Teams' calendar opens it: hosted/calendar/deeplink/
+    // compose with subEntityId {"type":"compose"}), under Teams' 48 px
+    // "New event" bar (14/400 #616161, 16 in, a 0.67 #D1D1D1 edge) ──────
+    function openEventForm() { composeLayer.visible = true; composeHost.active = true }
+    Rectangle {
+        id: composeLayer
+        visible: false
+        anchors.fill: parent
+        color: theme.hc("#FAFAFA", "#000000")
+        z: 11
+        onVisibleChanged: if (!visible) { composeHost.active = false; root.refreshAfterCompose() }
+        Rectangle {
+            id: composeBar
+            width: parent.width; height: 48
+            color: theme.surface
+            Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.hc("#D1D1D1", "#FFFFFF") }
+            Text { x: 16; anchors.verticalCenter: parent.verticalCenter; text: "New event"; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
+            Rectangle {
+                id: composeClose
+                anchors.right: parent.right; width: 48; height: 48
+                color: ccHover.hovered ? theme.rowHover : "transparent"
+                FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(composeClose, theme.text) }
+                HoverHandler { id: ccHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: composeLayer.visible = false }
+                Accessible.role: Accessible.Button; Accessible.name: "Close"
+            }
+        }
+        Loader {
+            id: composeHost
+            anchors { top: composeBar.bottom; left: parent.left; right: parent.right; bottom: parent.bottom }
+            active: false
+            sourceComponent: WebApp {
+                showHeader: false; teamsHost: true; deepNaa: true
+                appName: "Calendar"; appId: "ef56c0de-36fc-4ef8-b417-3d82ba9d073c"
+                homeTemplate: "https://outlook.office.com/hosted/calendar/deeplink/compose"
+                hostContext: ({ entityId: "calendar", subEntityId: JSON.stringify({ type: "compose" }) })
+                onHostEvent: (name, json) => { console.warn("CALCOMPOSE host", name, (json || "").slice(0, 300)); if (name === "stageViewClose") composeLayer.visible = false }
+            }
+        }
+    }
+    signal composeClosed()
+    function refreshAfterCompose() { root.composeClosed(); emitRange() }
 
     // ── the scheduling form and event page (Teams' own, MeetingForm) ────
     Rectangle {

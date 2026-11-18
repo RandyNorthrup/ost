@@ -19,6 +19,13 @@ import QtQuick.Window
 // submenu is Fluent's MenuSplitGroup (Teams' Mark all as read): the label
 // part picks the row, and a 32 px chevron part after a 1 x 20 divider
 // opens the submenu on hover or click.
+// Teams' calendar menus add: `persist` rows that keep the menu open when
+// picked (the Filter menu's checkboxes); `group` label rows (14/400, 8 in:
+// "I'm the organizer"); `secondary` text at the row's end (Time scale's
+// "30 minutes", 12 px #616161); `tag` {fill, stroke} for a category's tag
+// glyph at 30 with the label at 56; `outlined` rows (a 0.67 #BDBDBD edge:
+// "Filter applied"); and `radioColumn` menus (the view menu: a 16 px
+// check 6 in, icons at 26, labels at 52).
 Popup {
     id: root
     property var items: []
@@ -66,7 +73,7 @@ Popup {
     /// Item rows this tall (Teams' Write with Copilot Adjust menu: 38);
     /// 0 keeps the default.
     property real rowHeight: 0
-    function rowLabelX(i) { return checkColumn ? (i.icon ? 54 : 30) : perItemIcons ? (i.icon ? 30 : 6) : labelX }
+    function rowLabelX(i) { return radioColumn ? 52 : i.tag ? 56 : checkColumn ? (i.icon ? 54 : 30) : perItemIcons ? (i.icon ? 30 : 6) : labelX }
     padding: newStyle ? 12.67 : viewStyle ? 16.67 : fabric ? 0 : 4
     /// Rows at least this wide (Teams' More menu and its submenus: 230).
     property real minRowWidth: 0
@@ -74,6 +81,8 @@ Popup {
     /// check column (the 16 px check 8 in), so icons sit at 30 and their
     /// labels at 54, and rows without an icon have their label at 30.
     property bool checkColumn: false
+    /// Teams' calendar view menu: the check 6 in, icons at 26, labels at 52.
+    property bool radioColumn: false
     /// Submenus' minimum row width; -1: as wide as this menu (Teams' More
     /// menu), 0: their own width (a split row's submenu, Teams' Mark all
     /// as read options).
@@ -102,6 +111,7 @@ Popup {
                 if (!i.split && (i.chevron || i.submenu || i.flyout)) row += root.chevronSize + root.chevronMargin
                 if (i.endCheck !== undefined) row += 16 + 6
                 if (i.endIcon) row += 4 + 20 + 8 - 6
+                if (i.secondary) row += 6 + keyMetrics.advanceWidth(i.secondary) + 2
                 w = Math.max(w, row)
             }
             return Math.ceil(w)
@@ -127,8 +137,16 @@ Popup {
                 fabric: Qt.binding(() => root.fabric),
                 fabricWidth: 232,
                 minRowWidth: Qt.binding(() => root.submenuMinWidth >= 0 ? root.submenuMinWidth : root.width - 2 * root.padding) })
-            subMenu.picked.connect(i => { const s = root.subIndex; root.close(); root.subPicked(s, i) })
-            subMenu.subPicked.connect((i, j) => { const s = root.subIndex; root.close(); root.subSubPicked(s, i, j) })
+            subMenu.picked.connect(i => {
+                const s = root.subIndex, it = subMenu.items[i]
+                if (!(it && it.persist)) root.close()
+                root.subPicked(s, i)
+            })
+            subMenu.subPicked.connect((i, j) => {
+                const s = root.subIndex, it = subMenu.items[i] && subMenu.items[i].submenu ? subMenu.items[i].submenu[j] : null
+                if (!(it && it.persist)) root.close()
+                root.subSubPicked(s, i, j)
+            })
         }
         return subMenu
     }
@@ -158,6 +176,12 @@ Popup {
         // Beside the list, or to its left (More, at the window's right).
         // OneDrive's submenus sit 4 px off the list, 4 below the row's top.
         sub.x = root.submenuLeft ? -sub.width : root.contentItem.width + (root.fabric ? 4 : 0)
+        // Fluent flips a submenu that would leave the window to the left.
+        if (!root.submenuLeft) {
+            const ww = root.contentItem.Window.width
+            const right = root.contentItem.mapToItem(null, sub.x, 0).x + sub.implicitWidth
+            if (ww > 0 && right > ww) sub.x = -sub.implicitWidth - root.padding
+        }
         sub.y = p.y + (root.fabric ? 4 : 0)
         if (root.newStyle) {
             // Fluent flips a submenu that won't fit below: its bottom level
@@ -170,6 +194,13 @@ Popup {
         sub.open()
     }
     onClosed: if (subMenu) subMenu.close()
+    // A persistent pick changes the rows (a checkbox): an open submenu
+    // shows its row's new list.
+    onItemsChanged: if (subMenu && subMenu.opened && subIndex >= 0) {
+        const it = items[subIndex]
+        if (it && it.submenu) subMenu.items = it.submenu
+        else { subMenu.close(); subIndex = -1 }
+    }
     /// Open row `i`'s submenu as hovering it would (tests).
     function openSubmenuForTest(i) {
         const rows = contentItem.children.filter(c => c.index === i)
@@ -194,12 +225,12 @@ Popup {
                 id: row
                 required property var modelData
                 required property int index
-                readonly property bool on: modelData.enabled !== false && !modelData.heading
+                readonly property bool on: modelData.enabled !== false && !modelData.heading && !modelData.group
                 readonly property color ink: !on ? theme.disabled : mh.hovered ? theme.text : theme.textStrong
                 width: root.width - 2 * root.padding
                 // A divider takes 1 px plus 4 above and below (the column's
                 // 2 px gaps count towards those).
-                height: modelData.separator ? root.separatorHeight : root.rowHeight > 0 && !modelData.heading ? root.rowHeight : modelData.toggle || root.fabric ? 36 : 32
+                height: modelData.separator ? root.separatorHeight : modelData.outlined ? 33.33 : root.rowHeight > 0 && !modelData.heading ? root.rowHeight : modelData.toggle || root.fabric ? 36 : 32
                 Rectangle {
                     visible: !!row.modelData.separator
                     anchors.verticalCenter: parent.verticalCenter
@@ -218,11 +249,24 @@ Popup {
                     Accessible.role: Accessible.Heading
                     Accessible.name: text
                 }
+                // A group's label (Teams' calendar Filter > Meetings: "I'm the
+                // organizer", 14/400 #242424, 8 px in).
+                Text {
+                    visible: !!row.modelData.group
+                    x: 8; anchors.verticalCenter: parent.verticalCenter
+                    text: row.modelData.group || ""
+                    font.family: theme.font; font.pixelSize: theme.base
+                    color: theme.text
+                    Accessible.role: Accessible.Heading
+                    Accessible.name: text
+                }
                 Rectangle {
                     id: hcFill1
-                    visible: !row.modelData.separator && !row.modelData.heading
+                    visible: !row.modelData.separator && !row.modelData.heading && !row.modelData.group
                     anchors.fill: parent; radius: root.fabric ? 0 : 4
-                    color: mh.hovered && row.on && !row.modelData.toggle && !row.modelData.split ? theme.menuHover : "transparent"
+                    color: (mh.hovered || (row.modelData.outlined && root.subIndex === row.index)) && row.on && !row.modelData.toggle && !row.modelData.split ? theme.menuHover : "transparent"
+                    border.width: row.modelData.outlined ? 0.67 : 0
+                    border.color: theme.hc("#BDBDBD", "#FFFFFF")
                     // A split row: the label part and the chevron part
                     // highlight on their own (Fluent's MenuSplitGroup).
                     Rectangle {
@@ -265,7 +309,7 @@ Popup {
                     }
                     FluentIcon {
                         visible: !!row.modelData.icon
-                        x: root.checkColumn ? 30 : root.fabric ? 8 : 6; anchors.verticalCenter: parent.verticalCenter; size: root.fabric ? 16 : 20
+                        x: root.radioColumn ? 26 : root.checkColumn ? 30 : root.fabric ? 8 : 6; anchors.verticalCenter: parent.verticalCenter; size: root.fabric ? 16 : 20
                         name: row.modelData.icon || ""
                         // Teams' new-controls menus turn a hovered row's
                         // glyph brand (Fluent's MenuItem icon hover).
@@ -273,8 +317,8 @@ Popup {
                                             : row.modelData.checked || (root.newStyle && mh.hovered && row.on) ? theme.brand : row.ink)
                     }
                     FluentIcon {
-                        visible: !root.viewStyle && (!row.modelData.icon || root.checkColumn) && !row.modelData.toggle && row.modelData.checked === true
-                        x: 8; anchors.verticalCenter: parent.verticalCenter; size: 16
+                        visible: !root.viewStyle && (!row.modelData.icon || root.checkColumn || root.radioColumn) && !row.modelData.toggle && row.modelData.checked === true
+                        x: root.radioColumn ? 6 : 8; anchors.verticalCenter: parent.verticalCenter; size: 16
                         name: "checkmark-12"; color: theme.onFill(hcFill1, row.ink)
                     }
                     // An icon at the row's end (Teams' Start reordering
@@ -294,9 +338,24 @@ Popup {
                         anchors.right: parent.right; anchors.rightMargin: 6; y: 8; size: 16
                         name: "view-check-16"; color: theme.onFill(hcFill1, row.ink)
                     }
+                    // A category's tag: its fill and outline glyphs at 30.
+                    Item {
+                        visible: !!row.modelData.tag
+                        x: 30; anchors.verticalCenter: parent.verticalCenter; width: 20; height: 20
+                        FluentIcon { anchors.fill: parent; name: "tag-20-filled"; size: 20; color: row.modelData.tag ? row.modelData.tag.fill : "transparent" }
+                        FluentIcon { anchors.fill: parent; name: "tag-20"; size: 20; color: row.modelData.tag ? row.modelData.tag.stroke : "transparent" }
+                    }
+                    Text {
+                        id: secondaryText
+                        visible: !!row.modelData.secondary
+                        anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter
+                        text: row.modelData.secondary || ""
+                        font.family: theme.font; font.pixelSize: theme.small
+                        color: theme.onFill(hcFill1, row.on ? theme.textSecondary : theme.disabled)
+                    }
                     Text {
                         x: row.modelData.toggle ? 60 : root.viewStyle && !row.modelData.icon ? 10 : root.rowLabelX(row.modelData); anchors.verticalCenter: parent.verticalCenter
-                        width: parent.width - x - 6; elide: Text.ElideRight
+                        width: parent.width - x - 6 - (secondaryText.visible ? secondaryText.implicitWidth + 8 : 0); elide: Text.ElideRight
                         text: row.modelData.label || ""
                         font.family: theme.font; font.pixelSize: theme.base
                         color: theme.onFill(hcFill1, row.modelData.toggle ? theme.text : row.ink)
@@ -310,7 +369,7 @@ Popup {
                         color: row.modelData.dot || "transparent"
                     }
                     FluentIcon {
-                        visible: (!!row.modelData.chevron || !!row.modelData.submenu || !!row.modelData.flyout) && !row.modelData.split
+                        visible: (!!row.modelData.chevron || !!row.modelData.submenu || !!row.modelData.flyout) && row.modelData.chevron !== false && !row.modelData.split
                         anchors.right: parent.right; anchors.rightMargin: root.chevronMargin; anchors.verticalCenter: parent.verticalCenter
                         name: root.viewStyle ? "view-chevron-16" : "chevron-right-" + root.chevronSize; size: root.chevronSize; color: theme.onFill(hcFill1, row.ink)
                     }
@@ -356,7 +415,7 @@ Popup {
                             // A split row's chevron part has its own tap.
                             if (row.modelData.split && ev.position.x > hcFill1.width - 31) return
                             if ((row.modelData.submenu || row.modelData.flyout) && !row.modelData.split) { root.hoverRow(row.index, row); return }
-                            if (row.modelData.toggle) { root.picked(row.index); return }
+                            if (row.modelData.toggle || row.modelData.persist) { root.picked(row.index); return }
                             root.close(); root.picked(row.index)
                         }
                     }

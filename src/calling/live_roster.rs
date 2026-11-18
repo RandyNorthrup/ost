@@ -20,6 +20,10 @@ pub struct LiveRoster {
     leave_url: Option<String>,
     params: OwnedParams,
     http: reqwest::Client,
+    /// The callback tag (`…/x<tag>/callAgent/…`) when several calls are
+    /// watched at once (the Live meetings dialog): only events carrying it
+    /// are this call's.
+    tag: Option<String>,
 }
 
 /// The signaling parameters, owned.
@@ -59,6 +63,19 @@ impl LiveRoster {
     /// Watch the call going on in `thread_id` (its liveness entry's
     /// `conversationUrl` and call id).
     pub async fn subscribe(thread_id: &str, conversation_url: &str, call_id: &str) -> Result<Self> {
+        Self::subscribe_as(thread_id, conversation_url, call_id, None).await
+    }
+
+    /// The same with its own callback tag, so that several watched calls
+    /// keep their roster updates apart (Teams' Live meetings dialog watches
+    /// each live meeting: `subscribedCallChangedEvent` with
+    /// `requireJoinWithoutModality`).
+    pub async fn subscribe_tagged(thread_id: &str, conversation_url: &str, call_id: &str) -> Result<Self> {
+        let tag = super::outgoing::new_call_tag();
+        Self::subscribe_as(thread_id, conversation_url, call_id, Some(tag)).await
+    }
+
+    async fn subscribe_as(thread_id: &str, conversation_url: &str, call_id: &str, tag: Option<String>) -> Result<Self> {
         if !super::incoming::is_service_link(conversation_url) {
             anyhow::bail!("Not a Teams conversation link");
         }
@@ -78,6 +95,10 @@ impl LiveRoster {
             .context("Signed-in user has no object id")?;
         let (trouter_surl, endpoint_id) =
             crate::trouter::current_endpoint().context("Push channel is not connected")?;
+        let trouter_surl = match &tag {
+            Some(t) => format!("{}/x{t}/", trouter_surl.trim_end_matches('/')),
+            None => trouter_surl,
+        };
         let params = OwnedParams {
             ic3_token,
             trouter_surl,
@@ -123,6 +144,7 @@ impl LiveRoster {
             leave_url: leave_link(&body),
             params,
             http,
+            tag,
         })
     }
 
@@ -134,12 +156,23 @@ impl LiveRoster {
 
     /// A `subscription/rosterUpdate/` event for this call.
     pub fn apply(&mut self, json: &str) -> bool {
+        if !self.owns(json) {
+            return false;
+        }
         match roster::subscription_roster_delta(json) {
             Some(delta) => {
                 roster::apply(&mut self.roster, delta);
                 true
             }
             None => false,
+        }
+    }
+
+    /// Whether a watched-call event is this call's (its callback tag).
+    pub fn owns(&self, json: &str) -> bool {
+        match &self.tag {
+            Some(t) => json.contains(&format!("\"callTag\":\"{t}\"")),
+            None => !json.contains("\"callTag\""),
         }
     }
 

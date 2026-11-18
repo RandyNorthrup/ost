@@ -364,6 +364,19 @@
                 respond(source, from, d, [r]);
                 return;
             }
+            case "stageView.self.close":
+                // A stage view page closing itself (Outlook's event form
+                // after Save or Discard): the host closes it.
+                ost.event("stageViewClose", "{}");
+                respond(source, from, d, [null]);
+                return;
+            case "getConfigSetting":
+                // teams.fullTrust.getConfigSetting (Outlook's hosted
+                // calendar): Teams answers its full-trust apps' feature
+                // flag of that name, or "" when it has none.
+                ost.log("getConfigSetting " + String((d.args || [])[0]).slice(0, 80));
+                respond(source, from, d, [""]);
+                return;
             case "copilot.eligibility.getEligibilityInfo":
                 // Teams' answer for the signed-in user (measured for the
                 // Workflows dialog).

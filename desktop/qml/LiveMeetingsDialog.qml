@@ -25,6 +25,12 @@ Popup {
     Overlay.modal: Rectangle { color: Qt.rgba(0, 0, 0, 0.4) }
 
     property var meetings: []
+    // Who is in each call: Teams watches each live meeting's call while the
+    // dialog shows (subscribedCallChangedEvent, joined without media).
+    readonly property var rosters: backend.liveMeetingRostersJson ? JSON.parse(backend.liveMeetingRostersJson) : ({})
+    onOpened: backend.watchLiveMeetings(JSON.stringify(meetings.map(m => ({ threadId: m.threadId, callId: m.callId || "" }))))
+    onClosed: backend.watchLiveMeetings("[]")
+    onMeetingsChanged: if (visible) backend.watchLiveMeetings(JSON.stringify(meetings.map(m => ({ threadId: m.threadId, callId: m.callId || "" }))))
     signal joinMeeting(var meeting)
     signal openChat(var meeting)
 
@@ -161,11 +167,25 @@ Popup {
                     text: root.elapsed(card.modelData)
                     font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.onFill(fill, "white")
                 }
-                Avatar {
-                    x: 141; y: 94; size: 28
-                    visible: !!card.modelData.initiator
-                    name: card.modelData.initiatorName || ""
-                    photoId: card.modelData.initiator || ""
+                // The people in the call (Teams' participants-live-roster-list:
+                // at most 3, then +N), the starter until the roster comes.
+                Row {
+                    id: people
+                    readonly property var list: root.rosters[card.modelData.threadId]
+                        || (card.modelData.initiator ? [{ id: card.modelData.initiator, name: card.modelData.initiatorName || "" }] : [])
+                    readonly property int hidden: Math.max(0, list.length - 3)
+                    x: 141; y: 94
+                    spacing: -10
+                    Repeater {
+                        model: people.list.slice(0, 3)
+                        Avatar { required property var modelData; size: 28; name: modelData.name || "?"; photoId: modelData.id || "" }
+                    }
+                    Rectangle {
+                        visible: people.hidden > 0
+                        width: 28; height: 28; radius: 14
+                        color: theme.pick("#EBEBEB", "#333333", "#000000")
+                        Text { anchors.centerIn: parent; text: "+" + people.hidden; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.pick("#616161", "#ADADAD", "#FFFFFF") }
+                    }
                 }
             }
         }

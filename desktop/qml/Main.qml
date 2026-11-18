@@ -4252,13 +4252,14 @@ Window {
         // "~" stands for a space (handy over ssh).
         function arg(k, d) { const a = args.find(x => x.startsWith("--" + k + "=")); return a ? a.slice(k.length + 3).replace(/~/g, " ") : (d === undefined ? "" : d) }
         readonly property string dir: arg("shots", "/tmp/act") + "/"
-        running: args.indexOf("--cal-test") >= 0 && backend.signedIn && (step > 0 || backend.calendarJson.length > 2)
+        running: args.indexOf("--cal-test") >= 0 && backend.signedIn && (step > 0 || backend.calendarJson.length >= 2)
         interval: 3000; repeat: true
         property int step: 0
         onRunningChanged: console.warn("CALTEST running", running)
         Component.onCompleted: console.warn("CALTEST ready", args.indexOf("--cal-test"), backend.signedIn, backend.calendarJson.length)
         property string done: ""
         property bool liveDialogShot: false
+        property int liveOpenedAt: 0
         function cap(tag) { window.contentItem.grabToImage(r => r.saveToFile(dir + "cal-" + tag + ".png")); console.warn("CALTEST shot", tag) }
         function ev(subject) { return JSON.parse(backend.calendarJson).find(e => e.subject === subject) }
         property var conn: Connections {
@@ -4344,13 +4345,79 @@ Window {
                 if (step % 5 === 0) console.warn("CALTEST live", backend.liveMeetingsJson)
                 if (step % 5 === 0 && backend.liveMeetingsJson.length > 2) cap("live-" + step)
                 // Several live: "View meetings" ▸ the Live meetings dialog, once.
-                if (window.liveMeetings.length > 1 && !calTest.liveDialogShot) {
-                    if (!liveMeetingsDialog.visible) liveMeetingsDialog.open()
-                    else { cap("live-dialog"); calTest.liveDialogShot = true; console.warn("CALTEST live dialog", window.liveMeetings.length) }
+                // --cal-live-one: the dialog with one live meeting too (to see
+                // its roster); it's captured once the roster has come.
+                if (window.liveMeetings.length > (args.indexOf("--cal-live-one") >= 0 ? 0 : 1) && !calTest.liveDialogShot) {
+                    if (!liveMeetingsDialog.visible) { liveMeetingsDialog.open(); calTest.liveOpenedAt = step }
+                    else if (step - calTest.liveOpenedAt >= 4) { cap("live-dialog"); calTest.liveDialogShot = true; console.warn("CALTEST live dialog", window.liveMeetings.length, backend.liveMeetingRostersJson) }
                 } else if (calTest.liveDialogShot && liveMeetingsDialog.visible && step % 5 === 2) liveMeetingsDialog.close()
                 if (step * 3 >= parseInt(arg("cal-wait", "300"))) Qt.quit()
             }
-            else if (!arg("cal-respond") && !arg("cal-schedule") && !arg("cal-cancel") && !arg("cal-joinid") && !arg("cal-edit") && !arg("cal-channel-header") && !arg("cal-rsvp-note") && args.indexOf("--cal-live") < 0) {
+            else if (arg("cal-propose") && step === 2) {
+                // --cal-propose=<subject>|<Tentative|Decline>|<start ISO>|<minutes>|<note>:
+                // the invitation's card, then its propose-new-time answer.
+                const p = arg("cal-propose").split("|"), e = ev(p[0])
+                console.warn("CALTEST propose", p[0], !!e, e ? e.response : "")
+                if (e) {
+                    calendarView.cardForTest(p[0])
+                    calendarView.proposeForTest(e, p[1] || "Tentative", new Date(p[2]), parseInt(p[3] || "30"), p[4] || "")
+                }
+            } else if (arg("cal-propose") && step === 3) cap("propose-dialog")
+            else if (arg("cal-propose") && step === 4) calendarView.sendProposalForTest()
+            else if (arg("cal-propose") && step === 10) {
+                const e = ev(arg("cal-propose").split("|")[0])
+                console.warn("CALTEST proposed", e ? e.response : "gone"); if (e) calendarView.cardForTest(e.subject)
+            } else if (arg("cal-propose") && step === 11) { cap("proposed"); Qt.quit() }
+            else if (arg("cal-proposals") && step === 3) {
+                // --cal-proposals=<subject>: the organizer's card and page with
+                // the attendees' proposed times.
+                const e = ev(arg("cal-proposals"))
+                console.warn("CALTEST proposals", !!e, e ? JSON.stringify(e.attendees) : "")
+                if (e) calendarView.cardForTest(e.subject)
+            } else if (arg("cal-proposals") && step === 4) cap("proposals-card")
+            else if (arg("cal-proposals") && step === 5) { calendarView.detailsForTest.close(); console.warn("CALTEST proposals page", calendarView.pageForTest(arg("cal-proposals"))) }
+            else if (arg("cal-proposals") && step === 8) { console.warn("CALTEST proposals detail", JSON.stringify(calendarView.formForTest.detail.attendees || [])); cap("proposals-page"); Qt.quit() }
+            else if (args.indexOf("--cal-event-form") >= 0) {
+                // New ▸ Event's form, kept open for --cal-wait seconds (drive
+                // it over QTWEBENGINE_REMOTE_DEBUGGING), then the calendar.
+                if (step === 1) calendarView.openEventForm()
+                else if (step === 8) cap("event-form")
+                else if (step * 3 >= parseInt(arg("cal-wait", "180"))) { cap("event-form-end"); console.warn("CALTEST events", JSON.stringify(JSON.parse(backend.calendarJson).map(e => e.subject))); Qt.quit() }
+            }
+            else if (args.indexOf("--cal-extras") >= 0) {
+                // TASK-0220: Filter, view menu, Time scale, Day count, Saved
+                // views, Copilot, the Event form. Every setting changed is
+                // put back (they roam to Teams).
+                const cv = calendarView, st = () => console.warn("CALTEST state", cv.filterStateForTest())
+                const fmenu = () => cv.filterInline ? cv.filterMenuForTest : cv.moreMenuForTest.subMenu
+                const openFilter = () => { if (cv.filterInline) cv.filterMenuForTest.open(); else { cv.moreMenuForTest.open(); cv.moreMenuForTest.openSubmenuForTest(0) } }
+                const saved = JSON.stringify(cv.filterMap), seq = [
+                    st, () => { st(); cap("extras-start") },
+                    () => openFilter(), () => { st(); cap("filter-menu") },
+                    () => fmenu().openSubmenuForTest(3), () => cap("filter-meetings"),
+                    () => fmenu().openSubmenuForTest(7), () => cap("filter-categories"),
+                    () => fmenu().openSubmenuForTest(8), () => cap("filter-showas"),
+                    () => { cv.filterMenuForTest.close(); cv.moreMenuForTest.close(); cv.filterAct(["toggle", "General", "Appointments"]) }, () => { st(); cap("filter-appointments-off") },
+                    () => cv.filterAct(["toggle", "General", "Appointments"]), () => { st(); console.warn("CALTEST filters restored", JSON.stringify(cv.filterMap) === saved) },
+                    () => cv.viewMenuForTest.open(), () => cap("view-menu"),
+                    () => cv.viewMenuForTest.openSubmenuForTest(7), () => cap("view-timescale"),
+                    () => cv.viewMenuForTest.openSubmenuForTest(0), () => cap("view-days"),
+                    () => cv.viewMenuForTest.openSubmenuForTest(8), () => cap("view-saved"),
+                    () => { cv.viewMenuForTest.close(); cv.viewAct(["scale", 15]) }, () => { st(); cap("timescale-15") },
+                    () => cv.viewAct(["scale", 30]), () => cv.viewAct(["days", 3]), () => { st(); cap("day-3") },
+                    () => cv.viewAct(["days", 1]), () => { cv.viewAct(["view", "workweek"]); st() },
+                    () => cv.viewAct(["saveView"]), () => cap("save-view"),
+                    () => cv.charmPickerForTest.open(), () => cap("save-view-charms"),
+                    () => { cv.charmPickerForTest.close(); cv.saveViewForTest.close(); cv.saveView(null, "OST TEST 220 view", 3) }, () => {}, () => { st(); cv.viewMenuForTest.open(); cv.viewMenuForTest.openSubmenuForTest(8) }, () => cap("view-saved-one"),
+                    () => { cv.viewMenuForTest.close(); const v = cv.savedViews.find(x => x.viewName === "OST TEST 220 view"); if (v) cv.calendarAction("deleteView", JSON.stringify({ id: v.id })) }, () => {}, () => { st(); cv.loadPrefs() }, () => st(),
+                    () => { cv.dabChipsForTest.visible = true }, () => cap("copilot-chips"),
+                    () => { cv.dabChipsForTest.visible = false; cv.copilotOpen = true }, () => {}, () => {}, () => {}, () => {}, () => {}, () => { st(); cap("copilot-pane") },
+                    () => { cv.copilotOpen = false; cv.openEventForm() }, () => {}, () => {}, () => {}, () => {}, () => {}, () => {}, () => cap("event-form"),
+                    () => { st(); Qt.quit() }
+                ]
+                if (step >= 1 && step - 1 < seq.length) seq[step - 1]()
+            }
+            else if (!arg("cal-respond") && !arg("cal-schedule") && !arg("cal-cancel") && !arg("cal-joinid") && !arg("cal-edit") && !arg("cal-channel-header") && !arg("cal-rsvp-note") && !arg("cal-propose") && !arg("cal-proposals") && args.indexOf("--cal-event-form") < 0 && args.indexOf("--cal-live") < 0) {
                 // Pictures: the views, the card and page of --cal-peek, the form and dialogs.
                 const peek = arg("cal-peek")
                 const seq = [
