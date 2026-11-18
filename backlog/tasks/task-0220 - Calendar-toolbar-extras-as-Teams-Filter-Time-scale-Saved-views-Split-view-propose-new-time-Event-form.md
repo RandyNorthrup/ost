@@ -3,10 +3,11 @@ id: TASK-0220
 title: >-
   Calendar toolbar extras as Teams: Filter, Time scale, Saved views, Split view,
   propose new time, Event form
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-17T16:27:00Z'
-updated_date: '2026-11-18T20:08:00Z'
+updated_date: '2026-11-18T20:32:00Z'
 labels:
   - calendar
 dependencies: []
@@ -47,4 +48,6 @@ Calendar parts Teams has that OST doesn't yet, found while finishing TASK-0050: 
   - More's Share, Print and Calendar settings rows aren't there.
   - Poll holds, desk bookings and hybrid RSVP attendance aren't read, so those filters pass everything.
   - test3's scheduling form sent an empty time zone, so its meeting landed at 2 AM (a TASK-0050 issue).
+
+- First pass merged into desktop/foundation (2026-11-18): build OK, 744 lib tests passed. Follow-up for AC1–AC6 is being verified live.
 <!-- SECTION:NOTES:END -->
