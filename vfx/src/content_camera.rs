@@ -525,16 +525,24 @@ fn rectify(
             let (px, py) = (nx * inv, ny * inv);
             oy[row + x] = bilinear(sy, sw, sh, px - 0.5, py - 0.5);
             if let Some((mk, dil)) = mask {
-                let ix = ((px * mx) as usize).min(MASK - 1);
-                let iy = ((py * my) as usize).min(MASK - 1);
+                // Bilinear between mask cells (no 7 px steps at 720p).
+                let (fx, fy) = ((px * mx - 0.5).clamp(0.0, (MASK - 1) as f32), (py * my - 0.5).clamp(0.0, (MASK - 1) as f32));
+                let (ix, iy) = (fx as usize, fy as usize);
+                let (jx, jy) = ((ix + 1).min(MASK - 1), (iy + 1).min(MASK - 1));
+                let (ax, ay) = (fx - ix as f32, fy - iy as f32);
+                let lerp = |m: &[f32]| {
+                    let t = m[iy * MASK + ix] + (m[iy * MASK + jx] - m[iy * MASK + ix]) * ax;
+                    let b = m[jy * MASK + ix] + (m[jy * MASK + jx] - m[jy * MASK + ix]) * ax;
+                    t + (b - t) * ay
+                };
                 // The model's softmax sits near 0.3 / 0.7: the same
                 // smoothstep as the background effects.
                 let step = |v: f32| {
                     let t = ((v - 0.3) / 0.4).clamp(0.0, 1.0);
                     (t * t * (3.0 - 2.0 * t) * 255.0) as u8
                 };
-                out_mask[row + x] = step(mk[iy * MASK + ix]);
-                out_keep[row + x] = step(dil[iy * MASK + ix]);
+                out_mask[row + x] = step(lerp(mk));
+                out_keep[row + x] = step(lerp(dil));
             }
             nx += sx;
             ny += sy_;
@@ -858,6 +866,33 @@ pub fn detect_quad(src: &[u8], w: usize, h: usize) -> Option<[f32; 8]> {
     // The largest 4-connected region.
     let (label, count) = largest_component(&m, dw, dh)?;
     if count < dw * dh / 10 {
+        return None;
+    }
+    // A board stands out from what's around it: brighter than the rest of
+    // the view, and not the wall itself (touching three or four edges of
+    // the frame).
+    let (mut sum_in, mut sum_out, mut n_out) = (0u64, 0u64, 0u64);
+    for (i, &on) in label.iter().enumerate() {
+        if on {
+            sum_in += ys[i] as u64;
+        } else {
+            sum_out += ys[i] as u64;
+            n_out += 1;
+        }
+    }
+    let mean_in = sum_in as f32 / count as f32;
+    let mean_out = if n_out > 0 { sum_out as f32 / n_out as f32 } else { 0.0 };
+    let edge = |f: &dyn Fn(usize) -> usize, n: usize| (0..n).any(|k| label[f(k)]);
+    let touches = [
+        edge(&|x| x, dw),
+        edge(&|x| (dh - 1) * dw + x, dw),
+        edge(&|y| y * dw, dh),
+        edge(&|y| y * dw + dw - 1, dh),
+    ]
+    .iter()
+    .filter(|&&t| t)
+    .count();
+    if mean_in < 130.0 || mean_in < mean_out * 1.15 || touches >= 3 {
         return None;
     }
     // Its outline: each row's ends, as pixel edges.
@@ -1188,6 +1223,14 @@ mod tests {
         for y in 0..h {
             for x in 0..w {
                 f[y * w + x] = ((x * 13 + y * 7) % 90 + 40) as u8;
+            }
+        }
+        assert!(detect_quad(&f, w, h).is_none());
+        // A plain wall with darker things in front of it isn't a board.
+        for y in 0..h {
+            for x in 0..w {
+                let thing = (60..200).contains(&x) && (90..260).contains(&y) || (450..590).contains(&x) && (130..300).contains(&y);
+                f[y * w + x] = if y > 315 { 70 } else if thing { 60 } else { 118 };
             }
         }
         assert!(detect_quad(&f, w, h).is_none());
