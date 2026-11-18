@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-14T18:00:00Z'
-updated_date: '2026-11-18T07:35:00Z'
+updated_date: '2026-11-18T15:29:00Z'
 labels:
   - calls
 dependencies: []
@@ -52,4 +52,10 @@ Round 2 (2026-11-17):
 - Tests on linuxlt: root lib 711 passed (1 ignored), ost-vfx 10 passed, desktop 28 passed (including the socket tests).
 
 - Merged round 2 into desktop/foundation (2026-11-17): build OK, 723 lib tests passed. Open: the reaction emote isn't shown in the outgoing avatar video (the agent continues), and the app tile uses the outline icon, not the manifest colour.
+Reactions as emotes (2026-11-18):
+- Works: OST Test 3 saw the avatar's thumbs-up for 9 of 9 Likes in 3 sessions (release builds for host and guest, load 5-8), within about 0.5-1 s, as in Teams (ge1-3.png). The laugh and the raised hand play too.
+- Root cause: the player's first emote only plays after enough rendered frames, and OST starved it. The host page built and sent a full 1280x724 NV12 buffer per frame into the app's frame (cross-process) and copied every drawn frame again for OST's socket (Chromium's network-service thread was ~26% busy). The app drew ~15 fps and a first emote took 20-40 s on a busy machine. Fix (8e00773): only the four header rows cross; the frame lays them over a blank picture it keeps; drawn frames are copied once after the 20-byte socket head. The app now draws 30 fps and the first emote plays in about 1 s.
+- Ruled out along the way: canvas size, rAF and main-loop rate (Teams: about 50 timer ticks a second, the same as OST), the background id, the stores (identical), WebGL extensions and limits, the ANGLE backend, request timeouts and aborts (none), shader compiles (none at emote time), asset bytes (identical).
+- Teams under overload (24 busy loops on winpc's 12 cores, 100% CPU): 1 of 2 sessions played the Like in time.
+- Also: the raised hand is sent to the app (meeting.raiseHandStateChanged); the renderer's Web Audio starts without a click (WebView2 parity); the selection is re-sent once the app asks for frames.
 <!-- SECTION:NOTES:END -->

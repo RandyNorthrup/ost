@@ -225,13 +225,4 @@
             u.SendMessage = (o, m, a) => { if (/Emote/.test(m)) { verboseUntil = Date.now() + 8000; setTimeout(() => storage("emote+5s"), 5000) } if (!/Viseme|Render/.test(m)) log("unity " + o + "." + m + " " + String(a === undefined ? "" : a).slice(0, 200)); return send(o, m, a) };
         }, 500);
     }
-    // Experiment (--avatar-loop-ms=<n>): the Unity player's main loop every
-    // n ms instead of its own frame-rate timing.
-    if (window.__ostLoopMs >= 0) {
-        const st = window.setTimeout;
-        window.setTimeout = function (fn, ms, ...rest) {
-            if (typeof fn === "function" && fn.name === "Browser_mainLoop_runner") return st.call(window, fn, window.__ostLoopMs);
-            return st.call(window, fn, ms, ...rest);
-        };
-    }
 })();
