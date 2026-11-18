@@ -1144,6 +1144,10 @@ pub mod qobject {
         /// Whether the Avatars app has drawn a frame lately.
         #[qinvokable]
         fn avatar_drawing(self: &Backend) -> bool;
+        /// Test hook: write the newest decoded frame of a video stream
+        /// ("self", "slot-2"…) to a PNG file, as decoded (no overlays).
+        #[qinvokable]
+        fn save_video_frame(self: &Backend, key: &QString, path: &QString) -> bool;
         /// The system's time zone (IANA name, "America/Los_Angeles").
         #[qinvokable]
         fn time_zone_name(self: Pin<&mut Backend>) -> QString;
@@ -8265,6 +8269,19 @@ impl qobject::Backend {
 
     pub fn avatar_drawing(&self) -> bool {
         ost_vfx::avatar::drawing()
+    }
+
+    pub fn save_video_frame(&self, key: &QString, path: &QString) -> bool {
+        let Some(f) = teams_cli::calling::frames::latest(&key.to_string()) else { return false };
+        let write = || -> anyhow::Result<()> {
+            let file = std::fs::File::create(path.to_string())?;
+            let mut enc = png::Encoder::new(std::io::BufWriter::new(file), f.width, f.height);
+            enc.set_color(png::ColorType::Rgba);
+            enc.set_depth(png::BitDepth::Eight);
+            enc.write_header()?.write_image_data(&f.rgba)?;
+            Ok(())
+        };
+        write().is_ok()
     }
 
     pub fn time_zone_name(self: Pin<&mut Self>) -> QString {

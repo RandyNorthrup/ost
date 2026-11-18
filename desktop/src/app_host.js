@@ -113,6 +113,7 @@
         // Teams' requests to the app (events): func and args.
         const send = (func, args) => {
             if (!frame || !frame.contentWindow) return;
+            if (cfg.video && /^meeting\./.test(func)) ost.log("event " + func + (handlers.has(func) ? "" : " (not listened to)"));
             const msg = { func, monotonicTimestamp: now() };
             if (args !== undefined) msg.args = args;
             try { frame.contentWindow.postMessage(msg, "*") } catch (e) {}
@@ -142,8 +143,8 @@
                     if (!(b instanceof ArrayBuffer) || b.byteLength < 24) return;
                     const v = new DataView(b);
                     if (v.getUint32(0, true) !== 1 || !frame || !frame.contentWindow) return;
-                    // One frame drawing at a time, one waiting.
-                    if (inFlight >= 2) return;
+                    // The host keeps the app fed (its stream queues them), up to three.
+                    if (inFlight >= 3) return;
                     const w = v.getUint32(4, true), h = v.getUint32(8, true), seq = Number(v.getBigUint64(12, true));
                     const n = v.getUint32(20, true);
                     const visemes = new Uint8Array(b, 24, Math.min(n, b.byteLength - 24));
@@ -267,7 +268,12 @@
                 respond(source, from, d, [true, { loginHint: ctx.loginHint, oid: ctx.userObjectId, tid: ctx.tid, upn: ctx.userPrincipalName, dataResidency: "public" }]);
                 return;
             case "registerHandler":
-                if (typeof args[0] === "string") handlers.add(args[0]);
+                if (typeof args[0] === "string") {
+                    // Meeting and video events a video app listens to (its
+                    // name only).
+                    if (cfg.video && !handlers.has(args[0]) && /^(meeting|video)\./.test(args[0])) ost.log("listens to " + args[0].slice(0, 80));
+                    handlers.add(args[0]);
+                }
                 return;
             case "readyToUnload":
                 if (unloadWaiter) { const g = unloadWaiter; unloadWaiter = null; g(); }
@@ -469,6 +475,7 @@
             const d = e.data;
             // A frame a video app drew (from its frame's texture stream).
             if (video && d && d.ostTexture === "out" && frame && e.source === frame.contentWindow) { video.drawn(d); return; }
+            if (video && d && d.ostTexture === "log" && frame && e.source === frame.contentWindow) { ost.log("app: " + String(d.text || "").slice(0, 300)); return; }
             if (!d || typeof d !== "object" || typeof d.func !== "string" || !frame) return;
             const fromFrame = e.source === frame.contentWindow;
             let nested = false;

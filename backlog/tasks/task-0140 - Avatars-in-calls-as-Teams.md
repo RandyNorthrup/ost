@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-14T18:00:00Z'
-updated_date: '2026-11-18T03:04:00Z'
+updated_date: '2026-11-18T07:05:00Z'
 labels:
   - calls
 dependencies: []
@@ -39,4 +39,15 @@ AC2 (2026-11-17), built the way Teams runs avatars:
 - Live: OST Test 2 saw ost-test1's avatar as video.
 - Open (with the agent): reaction emotes seen from the far side, solo self tile, side-pane black panel, builder header, 1280x720 at about 27 fps, last-used avatar in roaming prefs, app tile icon, and the remaining winpc measurements.
 - Tests: 711 lib and 28 desktop crate tests.
+
+Round 2 (2026-11-17):
+- Self view: alone in a meeting with video (or the avatar) on, your video fills the stage at 16:9 with Teams' name tag (voice bars or muted), as measured on winpc (myself-video 1031.8 x 578.7). With video off: the 154 px picture and "Invite people to join you" (organizer or presenter) or "Waiting for others to join..." (24 px semibold). The corner self tile is back to 1:1 calls only.
+- Side pane black after the guest left: QtWebEngine kept a stale frame of the pane's page (the page stayed visible, 360x166). The call window now asks the pane's pages for a new frame 0.3, 1.5 and 4 s after the roster changes. Verified in t15 (pane-left-2/4/8/16 all drawn).
+- Avatar preview window: Teams' 339.3 x 198.6 box with a 330 x 185.6 video (measured on winpc).
+- Quality: the avatar is sent at 1280x720, up to 30 fps (encoder 1280x720; OST Test 3 received 1280x720, Test 2 got 960x540 from the meeting's limits). Self preview at full resolution. The app renders about 28 times a second alone (Teams: 30), about 16 with a guest on the same laptop.
+- Avatars app: personal-tab header with its large icon (round, on #FAFAFA), its name and Present now (Teams' dialog strings; outside a call, Meet now titled "Meeting with <you>"). The app bar shows its outline icon, tinted.
+- Effect selection now sends "microsoft_none" for no background, as Teams' renderer receives it.
+- Last-used avatar stays on the device: Teams' ClientPreferencesService keeps lastUsedAvatarFilter in local storage (storage.get/set, no service call), so it isn't roamed.
+- Reactions: OST delivers meeting.meetingReactionReceived. The app sends Unity the same ReceivedEmoteTriggeredBroadcastChannelMessage as Teams (recorded on winpc), the emote asset loads (200), and Unity logs the same "doesn't exist in the database" warning in both. But OST's player shows no emote, while Teams shows a thumbs-up for about 4 s. Ruled out: canvas size (16x16 vs 1280x588), the main loop paused, render rate, muted visemes (0/s), background id, triggering it again. Still open.
+- Tests on linuxlt: root lib 711 passed (1 ignored), ost-vfx 10 passed, desktop 28 passed (including the socket tests).
 <!-- SECTION:NOTES:END -->

@@ -46,11 +46,10 @@ Item {
         applied = false
         if (effectRegistered) apply()
     }
-    /// Teams' video.effectParameterChange: the avatar, and its background
-    /// when there is one (Teams' "microsoft_none" is none).
+    /// Teams' video.effectParameterChange: the avatar and its background,
+    /// "microsoft_none" for none (what Teams' renderer receives).
     function apply() {
-        const bg = backgroundId && backgroundId !== "microsoft_none" ? [backgroundId] : []
-        send("video.effectParameterChange", [avatarId].concat(bg))
+        send("video.effectParameterChange", [avatarId, backgroundId || "microsoft_none"])
     }
     /// Muted: Teams tells the app to drop the audio inference result
     /// (video.mediaStream.audioInferenceDiscardStatusChange), and OST's
@@ -81,7 +80,7 @@ Item {
             // streams; meetings for the reactions the app plays as emotes.
             runtimeSupports: ({ video: { mediaStream: {}, sharedFrame: {} }, meeting: {} })
             videoApp: ({ socket: backend.avatarSocket(), appOrigin: "https://mesh.public.onecdn.static.microsoft" })
-            frameScript: backend.videoAppFrameScript()
+            frameScript: (Qt.application.arguments.indexOf("--avatar-test") >= 0 ? "window.__ostDebug = 1;\n" : "") + backend.videoAppFrameScript()
             onHostEvent: (name, json) => {
                 let a = null
                 try { a = JSON.parse(json) } catch (e) {}

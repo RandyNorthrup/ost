@@ -192,6 +192,16 @@ Window {
     /// remove).
     signal participantAction(string action, string id, string name, string stateId)
     readonly property var others: roster.filter(p => p.id !== selfId)
+    // The stage's tiles changing leaves the side pane's web page showing
+    // black until it draws again: ask it for a new frame.
+    onOthersChanged: { stageRefresh.round = 0; stageRefresh.restart() }
+    // (Again after 1.5 and 4 s: the tiles settle after the roster.)
+    Timer {
+        id: stageRefresh
+        property int round: 0
+        interval: round === 0 ? 300 : round === 1 ? 1200 : 2500
+        onTriggered: { videoEffectsPane.refreshFrames(); if (++round < 3) restart(); else round = 0 }
+    }
     // Teams' spatial audio (SpatialAudioMixinImplementation): on while the
     // layout is Gallery or Speaker (Together mode too in Teams), the call
     // isn't a 1:1 call and more than one other person (not a bot) is in
@@ -1796,7 +1806,8 @@ Window {
             GradientStop { position: 0.0; color: theme.hc("#F2F1F8", "#000000") }
             GradientStop { position: 1.0; color: theme.hc("#EEF6F6", "#000000") }
         }
-        // Meetings: alone, your picture and "Waiting for others to join…";
+        // Meetings: alone, your video (below) or your picture and "Invite
+        // people to join you" / "Waiting for others to join...";
         // otherwise a tile for each other person.
         // An attendee waiting for a webinar or town hall to start (Teams'
         // staging screen: "Welcome to", the title, "This meeting will start
@@ -1820,16 +1831,64 @@ Window {
             Accessible.role: Accessible.StaticText
             Accessible.name: stagingScreen.phase === "ended" ? "The event has concluded. Thank you for attending." : "Welcome to " + win.peer + ". This meeting will start shortly"
         }
+        // Alone with your video on (measured on Teams desktop, a Meet now,
+        // 2026-11-17): your own video (myself-video) fills the stage at
+        // 16:9 (1031.8 x 578.7 in a 1274.7 x 582.7 stage, 2 from the top),
+        // with its name tag (24 high, rgba(0,0,0,0.5), radius 4) 8 in from
+        // the bottom left showing your voice level and mic state.
+        Item {
+            id: soloSelf
+            visible: win.meeting && win.others.length === 0 && win.cameraOn && win.state === "connected" && !stagingScreen.visible
+            anchors { fill: parent; topMargin: 2; bottomMargin: 2 }
+            readonly property real vw: Math.min(width, height * 16 / 9)
+            Item {
+                anchors.centerIn: parent
+                width: soloSelf.vw; height: soloSelf.vw * 9 / 16
+                clip: true
+                VideoFrame {
+                    id: soloVideo
+                    anchors.fill: parent
+                    source: soloSelf.visible ? "self" : ""
+                    transform: Scale { origin.x: soloVideo.width / 2; xScale: videoEffects.mirror ? -1 : 1 }
+                }
+                Timer { interval: 33; repeat: true; running: soloSelf.visible; onTriggered: soloVideo.refresh() }
+                ReactionShown { z: 3; mri: win.selfId }
+                Rectangle {
+                    x: 8; anchors.bottom: parent.bottom; anchors.bottomMargin: 8
+                    width: soloTag.implicitWidth + 12; height: 24; radius: 4
+                    color: Qt.rgba(0, 0, 0, 0.5)
+                    Row {
+                        id: soloTag
+                        x: 6; anchors.verticalCenter: parent.verticalCenter
+                        spacing: 8
+                        // Teams' voice level: three 2 px bars (4, 7 and 10 high).
+                        Item {
+                            visible: !win.muted && win.hasAudio
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: 10; height: 10
+                            Repeater {
+                                model: [4, 7, 10]
+                                Rectangle { required property var modelData; required property int index; x: index * 4; y: 10 - modelData; width: 2; height: modelData; color: "white" }
+                            }
+                        }
+                        FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "mic-off-24"; size: 16; color: "white"; visible: win.muted || !win.hasAudio }
+                    }
+                    Accessible.role: Accessible.StaticText
+                    Accessible.name: "Myself video, " + (win.selfName || "You") + ", video is on"
+                }
+            }
+        }
         Column {
-            visible: win.meeting && win.others.length === 0
+            visible: win.meeting && win.others.length === 0 && !soloSelf.visible
             anchors.centerIn: parent
             spacing: 24
             Avatar { ring: false; size: 154; name: win.selfName || "You"; photoId: "me"; anchors.horizontalCenter: parent.horizontalCenter }
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
-                text: win.state === "connected" ? "Waiting for others to join…" : win.state === "ended" ? "You left the meeting" : "Connecting…"
+                // (Teams: an organizer or presenter is asked to invite.)
+                text: win.state === "connected" ? (win.canMuteAll ? "Invite people to join you" : "Waiting for others to join...") : win.state === "ended" ? "You left the meeting" : "Connecting…"
                 color: theme.text
-                font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold
+                font.family: theme.font; font.pixelSize: 24; font.weight: Font.DemiBold
             }
         }
         // Teams' stage layouts. The side gallery (Speaker view's others, or
@@ -2246,7 +2305,7 @@ Window {
             }
         }
         // Your own tile, bottom right, in a 1:1 call (meetings have you as
-        // a tile)
+        // a tile, or alone with your video on, on the whole stage)
         Rectangle {
             visible: !win.meeting
             z: 2

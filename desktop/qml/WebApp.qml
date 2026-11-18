@@ -57,6 +57,12 @@ Item {
     // The tile and name from the app's definition (kept once read: other
     // About dialogs share the backend's slot).
     property string tileUrl: ""
+    /// Teams' "Present now" in a personal app's header
+    /// (personal_app_header_present_button_title; ECS
+    /// enablePersonalAppsSimplifiedHeaderPresentButton, on): share the app
+    /// in the call, or start a meeting and share it.
+    property bool presentNow: personalApp && appId.length > 0
+    signal presentRequested()
     Connections {
         target: backend
         enabled: root.appId.length > 0 && root.tileUrl.length === 0
@@ -67,6 +73,13 @@ Item {
     }
     onAppIdChanged: if (appId.length > 0) backend.appAboutLoad(appId)
     function moreMenuForTest() { teamsMore.openMenu() }
+    /// Test hook: the page's visibility and size as Chromium sees them.
+    function stateForTest(cb) { web.runJavaScript("JSON.stringify({v: document.visibilityState, w: innerWidth, h: innerHeight, f: !!document.querySelector('iframe')})", r => cb(String(r))) }
+    /// Make the page draw a new frame. The view's last picture goes black
+    /// when the call window's video tiles go away (seen with the Avatars
+    /// panel when the last other person left: the page itself was still
+    /// visible and drawn, and its next frame showed again).
+    function refreshFrame() { web.runJavaScript("document.body.style.opacity = '0.999'; setTimeout(() => document.body.style.opacity = '', 200)") }
     /// Reload the page (Teams' Reload tab): a hosted app is framed again.
     function reload() { if (root.teamsHost) root.startHost(); else web.reload() }
 
@@ -328,6 +341,29 @@ Item {
                 color: theme.text
                 Accessible.role: Accessible.Heading
                 Accessible.name: text
+            }
+            // Present now (measured on Teams desktop, the Avatars app,
+            // 2026-11-17): 116.4 x 32 against the menu (its left corners
+            // rounded 4), the share glyph (20) 6 in and "Present now"
+            // (14/600 #424242) at 32.
+            Rectangle {
+                id: presentButton
+                visible: root.presentNow
+                anchors.right: teamsMore.left; y: 14.2
+                width: 116.4; height: 32
+                topLeftRadius: 4; bottomLeftRadius: 4
+                color: presentHover.hovered ? theme.menuHover : "transparent"
+                FluentIcon { x: 6; anchors.verticalCenter: parent.verticalCenter; name: "share-screen-start-20"; size: 20; color: theme.onFill(presentButton, presentHover.hovered ? theme.brand : theme.textStrong) }
+                Text {
+                    x: 32; anchors.verticalCenter: parent.verticalCenter
+                    text: "Present now"
+                    font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
+                    color: theme.onFill(presentButton, presentHover.hovered ? theme.brand : theme.textStrong)
+                }
+                HoverHandler { id: presentHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: root.presentRequested() }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Present now"
             }
             Rectangle {
                 id: teamsMore

@@ -190,6 +190,30 @@ pub fn apply_implicit_mask(data: &mut [u8], mask: &[f32], w: usize, h: usize) {
     }
 }
 
+/// An I420 picture as RGBA at full resolution (BT.601 limited range; each
+/// 2 x 2 block shares its chroma).
+pub fn i420_to_rgba(i420: &[u8], w: usize, h: usize) -> Vec<u8> {
+    let mut out = vec![255u8; w * h * 4];
+    if w < 2 || h < 2 || i420.len() < w * h * 3 / 2 {
+        return out;
+    }
+    let (y_plane, rest) = i420.split_at(w * h);
+    let (u_plane, v_plane) = rest.split_at((w / 2) * (h / 2));
+    for py in 0..h {
+        let crow = (py / 2).min(h / 2 - 1) * (w / 2);
+        for px in 0..w {
+            let y = y_plane[py * w + px] as f32 - 16.0;
+            let ci = crow + (px / 2).min(w / 2 - 1);
+            let (u, v) = (u_plane[ci] as f32 - 128.0, v_plane[ci] as f32 - 128.0);
+            let o = (py * w + px) * 4;
+            out[o] = (1.164 * y + 1.596 * v).clamp(0.0, 255.0) as u8;
+            out[o + 1] = (1.164 * y - 0.392 * u - 0.813 * v).clamp(0.0, 255.0) as u8;
+            out[o + 2] = (1.164 * y + 2.017 * u).clamp(0.0, 255.0) as u8;
+        }
+    }
+    out
+}
+
 /// A received camera with an implicit mask, as RGBA: Teams' compositor
 /// shader (a 3x3 luma erosion against the threshold; the rest restored
 /// and decoded as BT.601) — background pixels come out transparent.

@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls.Basic
+import QtQuick.Effects
 import QtQuick.Window
 
 // Left app bar: icon-only buttons on a 44 px pitch, selected one marked by a
@@ -41,7 +42,9 @@ Rectangle {
         { key: "whiteboard", icon: "board-20", label: "Whiteboard", keys: "" },
         { key: "clipchamp", icon: "video", label: "Clipchamp", keys: "" },
         { key: "shifts", icon: "calendar-clock-20", label: "Shifts", keys: "" },
-        { key: "avatars", icon: "person-20", label: "Avatars", keys: "" },
+        // An app from Teams' store shows its own outline icon (the
+        // manifest's), tinted as the rail's glyphs are.
+        { key: "avatars", icon: "person-20", iconUrl: avatarHost.app.outline || "", label: "Avatars", keys: "" },
         { key: "help", icon: "question-circle-20", label: "Help", keys: "" },
         { key: "events", icon: "ticket-diagonal-20", label: "Events", keys: "" },
         // A Word, Excel or PowerPoint file open in Office for the web takes
@@ -114,11 +117,40 @@ Rectangle {
                     color: hover.hovered && !parent.selected ? theme.hover : "transparent"
                 }
                 FluentIcon {
+                    visible: !modelData.iconUrl
                     anchors.horizontalCenter: parent.horizontalCenter
                     y: root.showNames ? 8 : (parent.height - height) / 2
                     size: 24
-                    name: parent.selected ? modelData.icon + "-filled" : modelData.icon
+                    name: modelData.iconUrl ? "" : parent.selected ? modelData.icon + "-filled" : modelData.icon
                     color: theme.onFill([hcFill1, hcFill2], parent.selected ? theme.brand : theme.icon)
+                }
+                Image {
+                    id: appOutline
+                    visible: false
+                    width: 20; height: 20
+                    source: modelData.iconUrl || ""
+                    sourceSize: Qt.size(48, 48)
+                    smooth: true
+                    layer.enabled: true
+                }
+                // (The icon's shape as a mask over the glyph colour.)
+                Rectangle {
+                    id: appOutlineFill
+                    visible: false
+                    width: 20; height: 20
+                    color: theme.onFill([hcFill1, hcFill2], parent.selected ? theme.brand : theme.icon)
+                    layer.enabled: true
+                }
+                MultiEffect {
+                    visible: !!modelData.iconUrl
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    y: root.showNames ? 10 : (parent.height - height) / 2
+                    // Teams draws an app's outline icon 20 px (its manifest's
+                    // smallImage, tinted by an SVG filter).
+                    width: 20; height: 20
+                    source: appOutlineFill
+                    maskEnabled: true
+                    maskSource: appOutline
                 }
                 Text {
                     visible: root.showNames && modelData.key !== "more"

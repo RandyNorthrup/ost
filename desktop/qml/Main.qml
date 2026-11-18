@@ -117,6 +117,41 @@ Window {
     /// avatar, Edit my avatar): the Avatars app's builder from the app bar,
     /// or the app in the Store until it's added.
     property string avatarBuilderSubEntity: ""
+    // Teams' Present now in a personal app's header: in a call, "Share
+    // <app>" — "You'll be sharing this app for everyone in the meeting to
+    // view." (Start sharing, the app's window); else "Start a meeting and
+    // share <app>" (Start meeting: an instant meeting, "Meeting with
+    // <you>", then the share once you're in).
+    property bool presentAfterJoin: false
+    function presentApp(name) {
+        const inCall = backend.callState === "connected"
+        presentDialog.inCall = inCall
+        presentDialog.title = inCall ? "Share " + name : "Start a meeting and share " + name
+        presentDialog.body = inCall ? "You'll be sharing this app for everyone in the meeting to view."
+                                    : "After the meeting starts, you'll be sharing this app for everyone to view."
+        presentDialog.confirmText = inCall ? "Start sharing" : "Start meeting"
+        presentDialog.open()
+    }
+    ConfirmDialog {
+        id: presentDialog
+        property bool inCall: false
+        dialogWidth: 480
+        onConfirmed: {
+            if (inCall) backend.startShare("window")
+            else {
+                window.presentAfterJoin = true
+                backend.calendarAction("meetNow", JSON.stringify({ subject: "Meeting with " + backend.userName }))
+            }
+        }
+    }
+    Connections {
+        target: backend
+        enabled: window.presentAfterJoin
+        function onCallStateChanged() {
+            if (backend.callState === "connected") { window.presentAfterJoin = false; backend.startShare("window") }
+            else if (backend.callState === "" && !preJoin.visible) window.presentAfterJoin = false
+        }
+    }
     function openAvatarBuilder(subEntity) {
         avatarBuilderSubEntity = subEntity || ""
         if (avatarHost.listed || avatarHost.app.url) {
@@ -2981,6 +3016,16 @@ Window {
             backend.controlKey(k[0], k[1], k[2], false)
         }
     }
+    // --join-frames=burst: also the decoded video four times a second,
+    // -burst-<epoch ms>-<key>.png (to see short animations).
+    Timer {
+        running: window.admittedAt > 0 && backend.callState === "connected" && Qt.application.arguments.indexOf("--join-frames=burst") >= 0
+        interval: 250; repeat: true
+        onTriggered: {
+            const v = JSON.parse(backend.callVideoJson || "{}")
+            for (const k of Object.values(v)) backend.saveVideoFrame(k, window.shotPath.replace(".png", "-burst-" + Date.now() + "-" + k + ".png"))
+        }
+    }
     readonly property int joinStay: Math.round(parseInt((Qt.application.arguments.find(a => a.startsWith("--join-stay=")) || "--join-stay=0").slice(12)) / 2)
     // --join-url=<link>: the test meeting's link when it isn't in the
     // calendar's loaded week.
@@ -3062,6 +3107,12 @@ Window {
                     else if (window.controlGot && step === window.controlGot + 5) { grab("control-typed"); callWindow.runControl("ScreensharingControlButton"); log("released") }
                     else if (window.controlGot && step === window.controlGot + 7) { log("after release"); callWindow.recordControl("ClosedCaptionsButton") }
                     else if (step % 5 === 0) log("wait")
+                }
+                // --join-frames: each step, the other people's video as
+                // decoded (without OST's overlays), -frame-<step>-<key>.png.
+                if (admittedAt && st === "connected" && Qt.application.arguments.some(a => a.startsWith("--join-frames"))) {
+                    const v = JSON.parse(backend.callVideoJson || "{}")
+                    for (const k of Object.values(v)) backend.saveVideoFrame(k, window.shotPath.replace(".png", "-frame-" + step + "-" + k + ".png"))
                 }
                 if (st === "lobby" && step % 5 === 0) preJoin.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-inlobby.png")))
                 else if (st === "connected" && !admittedAt) { admittedAt = step; console.warn("JOIN lobby-wait admitted at step", step) }
@@ -6473,6 +6524,7 @@ Window {
         property int step: 0
         property int waited: 0
         readonly property bool inCall: Qt.application.arguments.indexOf("--avatar-call") >= 0
+        property int paneAt: 0
         onTriggered: {
             // (Never a picture of your camera: only while the avatar is the
             // camera.)
@@ -6537,17 +6589,39 @@ Window {
                 if (Qt.application.arguments.indexOf("--avatar-guest") >= 0 && callWindow.roster.length < 2 && ++waited < 120) return
                 waited = 0
                 log("roster", callWindow.roster.length)
+                // Muted from here to the second Like (Teams' renderer gets no
+                // visemes while you're muted).
+                if (!backend.callMuted) backend.toggleMute()
                 break
+            // Your reaction, played by the avatar (the guest's frames show
+            // it in the video itself).
             case 34: log("drawing in call", backend.avatarDrawing()); capCall("call"); break
             case 35: callWindow.videoOptionsForTest(); break
             case 36: capCall("flyout"); break
             case 37: callWindow.videoFlyoutForTest().close(); callWindow.videoEffectsPaneForTest().tab = "avatars"; callWindow.side = "video"; break
+            // Like while muted (as Teams sends it with the mic off), laugh
+            // with the mic on.
+            case 40: callWindow.reactForTest("like"); log("reacted like", Date.now(), "muted", backend.callMuted); break
+            case 42: callWindow.reactForTest("like"); log("reacted like again", Date.now()); break
+            case 43: if (backend.callMuted) backend.toggleMute(); break
             case 44: capCall("pane"); break
-            case 45: callWindow.reactForTest("like"); log("reacted like"); break
+            case 45: callWindow.reactForTest("laugh"); log("reacted laugh", Date.now(), "muted", backend.callMuted); break
             case 47: capCall("reaction"); break
-            case 48: callWindow.side = ""; break
-            case 49: log("hanging up"); backend.hangUp(); break
-            case 52: log("call state", backend.callState); videoEffects.setAvatarCamera(false); log("done"); Qt.quit(); return
+            // The guest leaving with the pane open: the pane after 2, 4, 8
+            // and 16 s.
+            case 48:
+                if (Qt.application.arguments.indexOf("--avatar-guest") >= 0 && callWindow.roster.length > 1 && ++waited < 60) return
+                waited = 0; log("alone again", callWindow.roster.length); paneAt = step
+                break
+            case 49: case 50: case 52: case 56: {
+                capCall("pane-left-" + (step - paneAt) * 2)
+                const pg = callWindow.videoEffectsPaneForTest().avatarPanelForTest().pageForTest()
+                if (pg) pg.stateForTest(r => log("pane page", step - paneAt, r))
+                break
+            }
+            case 57: callWindow.side = ""; break
+            case 58: log("hanging up"); backend.hangUp(); break
+            case 61: log("call state", backend.callState); videoEffects.setAvatarCamera(false); log("done"); Qt.quit(); return
             }
             step++
         }
@@ -10993,7 +11067,17 @@ Window {
             anchors { top: appBanner.bottom; bottom: statusBar.top; left: rail.right; right: parent.right }
             sourceComponent: modelData.appId ? personalAppComp : webAppComp
             Component { id: webAppComp; WebApp { appName: modelData.name; appIcon: modelData.icon; appColor: modelData.color; home: modelData.url } }
-            Component { id: personalAppComp; WebApp { appName: modelData.name; appId: modelData.appId; teamsHost: true; personalApp: true; personalSubEntity: modelData.key === "avatars" ? window.avatarBuilderSubEntity : "" } }
+            Component {
+                id: personalAppComp
+                WebApp {
+                    appName: modelData.name; appId: modelData.appId; teamsHost: true; personalApp: true
+                    personalSubEntity: modelData.key === "avatars" ? window.avatarBuilderSubEntity : ""
+                    // The Avatars app's colour icon (its definition's
+                    // largeImageUrl), as Teams' header shows it.
+                    tileUrl: modelData.key === "avatars" ? (avatarHost.app.icon || "") : ""
+                    onPresentRequested: window.presentApp(appName)
+                }
+            }
         }
     }
     // A Word, Excel or PowerPoint file in Office for the web, as Teams'

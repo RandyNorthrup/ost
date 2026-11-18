@@ -28,7 +28,16 @@ pub fn app_info(def: &serde_json::Value) -> serde_json::Value {
         "studio": studio.map(|t| t.content_url.clone()).unwrap_or_default(),
         "studioName": studio.map(|t| t.name.clone()).unwrap_or_default(),
         "studioEntity": studio.map(|t| t.entity_id.clone()).unwrap_or_default(),
+        // Its icons and colour (Teams' app header shows the colour icon on
+        // the accent colour; the app bar, the outline icon).
+        "icon": https(def["largeImageUrl"].as_str()),
+        "outline": https(def["smallImageUrl"].as_str()),
+        "accentColor": def["accentColor"].as_str().filter(|c| c.starts_with('#')).unwrap_or_default(),
     })
+}
+
+fn https(u: Option<&str>) -> String {
+    u.filter(|u| u.starts_with("https://")).unwrap_or_default().to_string()
 }
 
 const TO_DRAW: u32 = 1;
@@ -137,6 +146,7 @@ async fn serve(stream: tokio::net::TcpStream, path: &str) -> anyhow::Result<()> 
         anyhow::Ok(())
     });
     let mut drawn = 0u64;
+    let mut since = std::time::Instant::now();
     while let Some(m) = rx.next().await {
         match m? {
             Message::Binary(b) => match decode(&b) {
@@ -144,6 +154,11 @@ async fn serve(stream: tokio::net::TcpStream, path: &str) -> anyhow::Result<()> 
                     drawn += 1;
                     if drawn == 1 {
                         tracing::info!(width = f.width, height = f.height, "Avatars app drew its first frame");
+                        since = std::time::Instant::now();
+                    } else if drawn % 300 == 0 {
+                        let fps = 299.0 / since.elapsed().as_secs_f64();
+                        tracing::info!(drawn, fps = format!("{fps:.1}"), "Avatars app drawing");
+                        since = std::time::Instant::now();
                     }
                     ost_vfx::avatar::put_output(f);
                 }
@@ -168,7 +183,7 @@ mod tests {
 
     #[test]
     fn the_app_definition_names_its_page_and_builder() {
-        let def = serde_json::json!({ "name": "Avatars",
+        let def = serde_json::json!({ "name": "Avatars", "accentColor": "#121212", "largeImageUrl": "https://x/c.png", "smallImageUrl": "http://x/o.png",
             "meetingExtensionDefinition": { "videoAppContentUrl": "https://mesh.public.onecdn.static.microsoft/mesh/avatars/prod/video?appSessionId={appSessionId}" },
             "staticTabs": [{ "entityId": "Customize Avatar", "name": "Avatar builder", "scopes": ["personal"],
                 "contentUrl": "https://mesh.public.onecdn.static.microsoft/mesh/avatars/prod/studio?appSessionId={appSessionId}" }] });
@@ -177,6 +192,7 @@ mod tests {
         assert!(i["studio"].as_str().unwrap().ends_with("/studio?appSessionId={appSessionId}"));
         assert_eq!(i["studioName"], "Avatar builder");
         assert_eq!(i["studioEntity"], "Customize Avatar");
+        assert_eq!((i["icon"].as_str(), i["outline"].as_str(), i["accentColor"].as_str()), (Some("https://x/c.png"), Some(""), Some("#121212")));
     }
 
     #[test]

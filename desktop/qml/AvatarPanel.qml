@@ -8,7 +8,8 @@ import com.ost.desktop
 // panel — its page with `uiOnly=true&avatarId=…&backgroundId=…` in Teams'
 // host (frameContext sidePanel): your avatars, their backgrounds, emotes,
 // mood and camera, "Edit my avatar" — filling the pane; in a call, under
-// it, your avatar's preview while previewing (300 wide, 16:9), "Others
+// it, your avatar's preview while previewing (330 x 185.6 in a 339.3 x
+// 198.6 box), "Others
 // won't see your avatar while you preview." (12 px, an info glyph before
 // it, 10 in), Preview / Stop preview (white) and "Apply avatars" (brand),
 // 339.3 x 32, 10 apart. Without the app, Teams' "create your avatar".
@@ -27,6 +28,8 @@ Item {
     Component.onDestruction: if (shown) videoEffects.avatarViews--
 
     property bool previewing: false
+    function pageForTest() { return page.item }
+    function refreshFrame() { if (page.item) page.item.refreshFrame() }
     function setPreview(on) {
         if (on === previewing) return
         previewing = on
@@ -87,10 +90,10 @@ Item {
         Rectangle {
             visible: root.previewing
             x: (root.width - width) / 2
-            width: 300; height: visible ? 169 + 13 : 0
+            width: 339.3; height: visible ? 198.6 : 0
             color: "transparent"
             Rectangle {
-                width: 300; height: 169; radius: 4; clip: true
+                x: 4.65; width: 330; height: 185.6; radius: 4; clip: true
                 color: theme.pick("#FAFAFA", "#1F1F1F", "#000000")
                 VideoFrame {
                     id: preview

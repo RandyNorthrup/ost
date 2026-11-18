@@ -346,8 +346,8 @@ pub struct CameraPreview {
 
 impl CameraPreview {
     pub fn start(device: Option<String>) -> anyhow::Result<Self> {
-        let (camera, frames) =
-            super::camera::CameraCapture::start(device.as_deref(), SEND_W, SEND_H, SEND_FPS)?;
+        let (w, h, fps) = capture_format(device.as_deref());
+        let (camera, frames) = super::camera::CameraCapture::start(device.as_deref(), w, h, fps)?;
         let stop = Arc::new(AtomicBool::new(false));
         let stop2 = stop.clone();
         std::thread::Builder::new()
@@ -361,8 +361,8 @@ impl CameraPreview {
                         effects.process(f.width, f.height, &mut f.data);
                         super::frames::publish(
                             "self",
-                            f.width / 2,
-                            f.height / 2,
+                            f.width,
+                            f.height,
                             preview_rgba(&f.data, f.width, f.height),
                         );
                     }
@@ -436,6 +436,26 @@ struct SendConfig {
     /// Apply the chosen video effects (background, brightness): the
     /// camera's picture, not a shared screen.
     effects: bool,
+}
+
+/// Your avatar as the camera: Teams has the Avatars app draw at 1280 x 720
+/// and sends it at about 27 fps (measured); a meeting's media processor may
+/// still ask for less (vdclc), as for a camera.
+pub const AVATAR_W: u32 = 1280;
+pub const AVATAR_H: u32 = 720;
+const AVATAR_FPS: u32 = 30;
+const AVATAR: SendConfig = SendConfig {
+    fps: AVATAR_FPS,
+    kbps: 1500,
+    preview: Some("self"),
+    repeat: None,
+    health: super::call_health::Kind::VideoSend,
+    effects: true,
+};
+
+/// The capture size and rate for a camera device (the avatar's own).
+fn capture_format(device: Option<&str>) -> (u32, u32, u32) {
+    if device == Some(super::camera::AVATAR_DEVICE) { (AVATAR_W, AVATAR_H, AVATAR_FPS) } else { (SEND_W, SEND_H, SEND_FPS) }
 }
 
 const CAMERA: SendConfig = SendConfig {
@@ -581,8 +601,9 @@ impl VideoSender {
         device: Option<String>,
         control: Option<Arc<SendControl>>,
     ) -> anyhow::Result<Self> {
-        let (camera, frames) =
-            super::camera::CameraCapture::start(device.as_deref(), SEND_W, SEND_H, SEND_FPS)?;
+        let (w, h, fps) = capture_format(device.as_deref());
+        let cfg = if device.as_deref() == Some(super::camera::AVATAR_DEVICE) { AVATAR } else { CAMERA };
+        let (camera, frames) = super::camera::CameraCapture::start(device.as_deref(), w, h, fps)?;
         let stop = Arc::new(AtomicBool::new(false));
         let keyframe = Arc::new(AtomicBool::new(true));
         let (stop2, key2) = (stop.clone(), keyframe.clone());
@@ -595,7 +616,7 @@ impl VideoSender {
                     RtpOut { tx: out, pt, ssrc },
                     &stop2,
                     &key2,
-                    CAMERA,
+                    cfg,
                     control,
                 );
                 super::frames::clear("self");
@@ -727,8 +748,8 @@ fn send_loop(
         if let Some(key) = cfg.preview {
             super::frames::publish(
                 key,
-                f.width / 2,
-                f.height / 2,
+                f.width,
+                f.height,
                 preview_rgba(&f.data, f.width, f.height),
             );
         }
@@ -824,23 +845,9 @@ fn send_loop(
 
 /// A half-size RGBA picture of an I420 frame (the self-view tile is small).
 fn preview_rgba(i420: &[u8], w: u32, h: u32) -> Vec<u8> {
-    let (w, h) = (w as usize, h as usize);
-    let (pw, ph) = (w / 2, h / 2);
-    let (y_plane, rest) = i420.split_at(w * h);
-    let (u_plane, v_plane) = rest.split_at((w / 2) * (h / 2));
-    let mut out = vec![255u8; pw * ph * 4];
-    for py in 0..ph {
-        for px in 0..pw {
-            let y = y_plane[(py * 2) * w + px * 2] as f32 - 16.0;
-            let ci = py * (w / 2) + px;
-            let (u, v) = (u_plane[ci] as f32 - 128.0, v_plane[ci] as f32 - 128.0);
-            let o = (py * pw + px) * 4;
-            out[o] = (1.164 * y + 1.596 * v).clamp(0.0, 255.0) as u8;
-            out[o + 1] = (1.164 * y - 0.392 * u - 0.813 * v).clamp(0.0, 255.0) as u8;
-            out[o + 2] = (1.164 * y + 2.017 * u).clamp(0.0, 255.0) as u8;
-        }
-    }
-    out
+    // At full resolution, so the preview is as sharp as what's sent (in
+    // ost-vfx, which is built optimised).
+    ost_vfx::i420_to_rgba(i420, w as usize, h as usize)
 }
 
 /// An RTCP Picture Loss Indication (RFC 4585) from `sender` about `media`.
@@ -1000,13 +1007,13 @@ mod tests {
     }
 
     #[test]
-    fn previews_are_half_size_rgba() {
+    fn previews_are_full_size_rgba() {
         let (w, h) = (4u32, 2u32);
         let mut f = vec![235u8; 8];
         f.extend_from_slice(&[128, 128, 128, 128]);
         let p = preview_rgba(&f, w, h);
-        assert_eq!(p.len(), 2 * 4);
-        assert!(p[0] > 250 && p[3] == 255);
+        assert_eq!(p.len(), 8 * 4);
+        assert!(p[0] > 250 && p[3] == 255 && p[7 * 4] > 250);
     }
 
     #[test]

@@ -150,6 +150,8 @@ Rectangle {
         }
     }
 
+    function avatarPanelForTest() { return avatarPanel }
+    function refreshFrames() { if (avatarPanel.visible) avatarPanel.refreshFrame() }
     AvatarPanel {
         id: avatarPanel
         visible: root.visible && (root.avatarsOnly || (root.inCall && root.tab === "avatars"))
