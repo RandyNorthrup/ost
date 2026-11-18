@@ -62,6 +62,46 @@ Window {
         room = null
         try { rooms = JSON.parse(backend.roomDevices()) } catch (e) { rooms = { devices: [], select: null, suggest: false } }
         if (rooms.select) pickRoom(rooms.select)
+        // Teams' Other Suggestions (the tenant's rooms) and Nearby.
+        suggestedRooms = []; searchedRooms = []; roomQuery = ""
+        backend.tenantRooms("")
+        refreshNearby()
+    }
+    /// Teams' tenant rooms (api::rooms): Other Suggestions, and the rooms
+    /// found for what's typed in "Search for a room" (`roomQuery`).
+    property var suggestedRooms: []
+    property var searchedRooms: []
+    property string roomQuery: ""
+    /// Teams' Nearby: Teams Rooms heard over Bluetooth while Room audio is
+    /// open, and the Bluetooth state its hint follows.
+    property var nearby: ({ supported: false, radioOn: false, rooms: [] })
+    function refreshNearby() {
+        try { nearby = JSON.parse(backend.nearbyRooms(win.visible && audio === "room")) } catch (e) {}
+    }
+    Timer { interval: 2000; repeat: true; running: win.visible && win.audio === "room"; onTriggered: win.refreshNearby() }
+    onAudioChanged: refreshNearby()
+    Connections {
+        target: backend
+        function onTenantRoomsReady(query, json) {
+            let list = []
+            try { list = JSON.parse(json) } catch (e) {}
+            if (!query) win.suggestedRooms = list
+            else if (query.trim() === win.roomQuery.trim()) win.searchedRooms = list
+        }
+    }
+    /// Teams' search: 300 ms after typing stops.
+    Timer { id: roomSearchDebounce; interval: 300; onTriggered: if (win.roomQuery.trim()) backend.tenantRooms(win.roomQuery.trim()) }
+    function searchRooms(text) {
+        if (text === roomQuery) return
+        roomQuery = text
+        searchedRooms = []
+        if (text.trim()) roomSearchDebounce.restart()
+    }
+    /// Pick a tenant room (Teams' RoomAudio with a room participant to add
+    /// once joined); `code`: its Bluetooth validation code, if heard.
+    function pickTenantRoom(r, isNearby) {
+        room = { label: r.name, mri: r.mri, code: r.code === undefined || r.code === null ? -1 : r.code, nearby: !!isNearby }
+        audio = "room"
     }
     /// Held in the meeting's lobby (Teams' InLobby pre-join state): the
     /// title says someone will let you in, Join now and the audio choices
@@ -193,7 +233,10 @@ Window {
     function joinNow() {
         if (win.audio === "computer" || win.audio === "phone") backend.setSetting("prejoinAudio", win.audio)
         win.close()
-        const computer = win.audio !== "none" && win.audio !== "phone"
+        // Teams joins with the computer's audio only for Computer audio or a
+        // connected room device; a tenant room brings its own (added once in
+        // the meeting).
+        const computer = win.audio === "computer" || (win.audio === "room" && !!win.room && !!win.room.speaker)
         // An avatar chosen: you join with it as your video (Teams); none:
         // your camera stays the camera.
         const avatar = win.avatarsOffered && videoEffects.avatarCamera && !!videoEffects.avatarId
@@ -213,7 +256,11 @@ Window {
         else if (!cameraOn) backend.setCameraPreview(avatarPreview)
     }
     // The camera is free again for the call (or for nobody) once we go.
-    onVisibleChanged: if (!visible && (cameraOn || avatarPreview)) backend.setCameraPreview(false)
+    onVisibleChanged: {
+        if (!visible && (cameraOn || avatarPreview)) backend.setCameraPreview(false)
+        // Bluetooth room discovery stops with the pre-join screen.
+        if (!visible) backend.nearbyRooms(false)
+    }
     Rectangle { anchors.fill: parent; color: theme.pane }
 
     Column {
@@ -707,15 +754,21 @@ Window {
                     x: 0.67; y: roomHeader.height + 0.67; width: parent.width - 1.33; height: 88.5
                     color: theme.pane
                     RoomPicker { x: 32.5 - 0.67; y: 16.6 - 0.67 }
-                    // Teams' line under the picker: what Room audio does once
-                    // a room is picked; else that OST finds no rooms nearby
-                    // (Teams' text where automatic room discovery is missing).
+                    // Teams' line under the picker (its room-audio subtitle):
+                    // what Room audio does once a room is picked; else what
+                    // room discovery needs: Bluetooth on ("Enable Bluetooth
+                    // to improve list of available rooms."), or none here at
+                    // all ("Automatic room discovery isn't available on your
+                    // device yet.").
                     Row {
                         x: 40.7 - 0.67; y: 48 - 0.67; spacing: 8
                         FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: win.room ? "info-20-filled" : "bluetooth-20"; size: 14; color: theme.text }
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
-                            text: win.room ? "We'll add the room's audio system to the meeting after you join." : "Automatic room discovery isn't available on your device yet."
+                            text: win.room ? "We'll add the room's audio system to the meeting after you join."
+                                : !win.nearby.supported ? "Automatic room discovery isn't available on your device yet."
+                                : win.nearby.radioOn ? "Requires a room with an audio system."
+                                : "Enable Bluetooth to improve list of available rooms."
                             font.family: theme.font; font.pixelSize: 10; color: theme.textSecondary
                         }
                         Accessible.role: Accessible.AlertMessage
@@ -808,27 +861,39 @@ Window {
     // 383.8 x 30.7 combobox, "Search for a room", its listbox (radius 4,
     // shadow16, padding 4; options 32 tall 2 apart, the check 6 in and the
     // text at 28). Sections are greyed semibold headers: "Connected room
-    // devices" with each device (Teams' USB plug, 20), then "Other
-    // Suggestions" (Teams' tenant rooms; "Unable to find any rooms" when
-    // there are none). Typing narrows the list.
+    // devices" with each device (Teams' USB plug, 20), "Nearby" (Teams
+    // Rooms heard over Bluetooth, with Teams' signal glyph) and "Other
+    // Suggestions" (the tenant's rooms), each "Unable to find any rooms"
+    // when empty; a tenant room shows its presence under its name. Typing
+    // searches the tenant's rooms (Teams' findmeetinglocations): its
+    // results replace the list.
     component RoomPicker: Item {
         id: rp
         width: 383.8; height: 30.7
-        readonly property string query: field.text === (win.room ? win.room.label : "") ? "" : field.text.trim().toLowerCase()
         readonly property var items: {
+            const status = s => ({ Available: "Available", Busy: "Busy", DoNotDisturb: "Do not disturb", BeRightBack: "Be right back", Away: "Away", Offline: "Offline", OffWork: "Offline", PresenceUnknown: "Offline" })[s] || (s ? s : "Offline")
+            if (win.roomQuery.trim() && win.searchedRooms.length)
+                return win.searchedRooms.map(r => ({ header: r.name, content: status(r.status), tenant: r }))
             const out = []
-            const devices = (win.rooms.devices || []).filter(d => !rp.query || d.label.toLowerCase().indexOf(rp.query) >= 0)
+            const devices = win.rooms.devices || []
             if (devices.length) {
                 out.push({ header: "Connected room devices", disabled: true })
                 for (const d of devices) out.push({ header: d.label, device: d })
             }
+            out.push({ header: "Nearby", disabled: true })
+            const near = (win.nearby.rooms || [])
+            if (near.length) for (const r of near) out.push({ header: r.name, content: status(r.status), tenant: r, isNearby: true })
+            else out.push({ header: "Unable to find any rooms", disabled: true, note: true })
             out.push({ header: "Other Suggestions", disabled: true })
-            out.push({ header: "Unable to find any rooms", disabled: true })
+            const others = win.suggestedRooms.filter(r => !near.some(n => n.mri === r.mri))
+            if (others.length) for (const r of others) out.push({ header: r.name, content: status(r.status), tenant: r })
+            else out.push({ header: "Unable to find any rooms", disabled: true, note: true })
             return out
         }
         Connections {
             target: win
-            function onRoomChanged() { field.text = win.room ? win.room.label : "" }
+            function onRoomChanged() { field.text = win.room ? win.room.label : win.roomQuery; if (win.room) roomList.close() }
+            function onRoomQueryChanged() { if (!win.room && field.text !== win.roomQuery) field.text = win.roomQuery }
         }
         Component.onCompleted: field.text = win.room ? win.room.label : ""
         Connections { target: win; function onRoomPickerOpenForTest() { roomList.open() } }
@@ -847,7 +912,11 @@ Window {
             font.family: theme.font; font.pixelSize: 14; color: theme.text
             selectByMouse: true
             enabled: !win.lobby
-            onTextEdited: { if (!roomList.opened) roomList.open() }
+            onTextEdited: {
+                if (win.room && text !== win.room.label) win.room = null
+                win.searchRooms(text)
+                if (!roomList.opened) roomList.open()
+            }
             Text {
                 visible: !field.text
                 text: "Search for a room"
@@ -862,7 +931,7 @@ Window {
             visible: !!win.room && !win.lobby
             anchors.right: chevron.left; anchors.rightMargin: 4; anchors.verticalCenter: parent.verticalCenter
             name: "dismiss-20"; size: 16; color: theme.textSecondary
-            TapHandler { onTapped: { win.room = null; field.text = "" } }
+            TapHandler { onTapped: { win.room = null; field.text = ""; win.searchRooms("") } }
             HoverHandler { cursorShape: Qt.PointingHandCursor }
             Accessible.role: Accessible.Button
             Accessible.name: "Clear selection"
@@ -891,25 +960,43 @@ Window {
                     id: ro
                     required property var modelData
                     readonly property bool usable: !modelData.disabled
-                    readonly property bool chosen: !!modelData.device && !!win.room && win.room.speaker === modelData.device.speaker
-                    width: roomView.width; height: 32; radius: 4
+                    readonly property bool chosen: !!win.room && (modelData.device ? win.room.speaker === modelData.device.speaker : !!modelData.tenant && win.room.mri === modelData.tenant.mri)
+                    width: roomView.width; height: modelData.content ? 48 : 32; radius: 4
                     color: roHover.hovered && usable ? theme.menuHover : "transparent"
                     FluentIcon { visible: ro.chosen; x: 6; anchors.verticalCenter: parent.verticalCenter; name: "checkmark-16"; size: 16; color: theme.onFill(ro, theme.text) }
                     Row {
                         x: 28; anchors.verticalCenter: parent.verticalCenter; spacing: 8
                         FluentIcon { visible: !!ro.modelData.device; anchors.verticalCenter: parent.verticalCenter; name: "usb-plug-20"; size: 20; color: theme.onFill(ro, theme.text) }
-                        Text {
+                        // Teams' signal glyph for a room heard nearby (fuller
+                        // when it's adjacent).
+                        FluentIcon { visible: !!ro.modelData.isNearby; anchors.verticalCenter: parent.verticalCenter; name: ro.modelData.tenant && ro.modelData.tenant.adjacent ? "cellular-data-1-20" : "cellular-data-3-20"; size: 20; color: theme.onFill(ro, theme.text) }
+                        Column {
                             anchors.verticalCenter: parent.verticalCenter
-                            text: ro.modelData.header
-                            font.family: theme.font; font.pixelSize: 14
-                            font.weight: ro.usable ? Font.Normal : Font.DemiBold
-                            color: theme.onFill(ro, ro.usable ? theme.text : theme.disabled)
+                            Text {
+                                text: ro.modelData.header
+                                font.family: theme.font; font.pixelSize: 14
+                                font.weight: ro.usable || ro.modelData.note ? Font.Normal : Font.DemiBold
+                                color: theme.onFill(ro, ro.usable ? theme.text : theme.disabled)
+                            }
+                            Text {
+                                visible: !!ro.modelData.content
+                                text: ro.modelData.content || ""
+                                font.family: theme.font; font.pixelSize: 12
+                                color: theme.onFill(ro, theme.textSecondary)
+                            }
                         }
                     }
                     HoverHandler { id: roHover; cursorShape: ro.usable ? Qt.PointingHandCursor : Qt.ArrowCursor }
-                    TapHandler { enabled: ro.usable; onTapped: { win.pickRoom(ro.modelData.device); roomList.close() } }
+                    TapHandler {
+                        enabled: ro.usable
+                        onTapped: {
+                            if (ro.modelData.device) win.pickRoom(ro.modelData.device)
+                            else if (ro.modelData.tenant) win.pickTenantRoom(ro.modelData.tenant, !!ro.modelData.isNearby)
+                            roomList.close()
+                        }
+                    }
                     Accessible.role: Accessible.ListItem
-                    Accessible.name: ro.modelData.header
+                    Accessible.name: ro.modelData.header + (ro.modelData.content ? ", " + ro.modelData.content : "")
                 }
             }
         }

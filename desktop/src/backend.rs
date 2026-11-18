@@ -1434,6 +1434,19 @@ pub mod qobject {
         /// Raise or lower your hand in the meeting.
         #[qinvokable]
         fn toggle_hand(self: Pin<&mut Backend>);
+
+        /// Teams' headset call controls: what the app is doing now, for
+        /// the headset's lights (the call from the call state; `prejoin`:
+        /// the pre-join screen is up, `prejoin_muted`: its mic is off).
+        #[qinvokable]
+        fn headset_state(self: &Backend, prejoin: bool, prejoin_muted: bool);
+        /// The headset service's state for Settings ▸ Devices: {device,
+        /// driver, asp, has_control, sync_enabled}.
+        #[qinvokable]
+        fn headset_status(self: &Backend) -> QString;
+        /// Teams' "Transfer controls to this app".
+        #[qinvokable]
+        fn headset_take_control(self: &Backend);
         /// Admit someone waiting in the lobby (Teams' Admit); `not_bot`:
         /// "This isn't a bot" was ticked for a suspected guest.
         #[qinvokable]
@@ -1479,6 +1492,28 @@ pub mod qobject {
         /// A notification was clicked: bring the window forward.
         #[qsignal]
         fn activate_requested(self: Pin<&mut Backend>);
+
+        /// tenant_rooms' answer: the query it was for and the rooms
+        /// ([{mri, name, email, status}]).
+        #[qsignal]
+        fn tenant_rooms_ready(self: Pin<&mut Backend>, query: QString, json: QString);
+        /// The room joined the meeting (`ok`), or Teams' reason it couldn't.
+        #[qsignal]
+        fn room_add_result(self: Pin<&mut Backend>, ok: bool, text: QString);
+
+        /// The headset's mute button in the pre-join screen: its mic off
+        /// (`muted`) or on.
+        #[qsignal]
+        fn headset_prejoin_mute(self: Pin<&mut Backend>, muted: bool);
+        /// The headset's Teams button: "front" (bring OST forward, and the
+        /// meeting window in a call), "calls" (a missed call) or
+        /// "voicemail".
+        #[qsignal]
+        fn headset_teams_button(self: Pin<&mut Backend>, what: QString);
+        /// Another OST has the headset's buttons: Teams' "Transfer audio
+        /// device buttons to this app?".
+        #[qsignal]
+        fn headset_transfer_prompt(self: Pin<&mut Backend>);
 
         /// Some window asked for Feedback (Report a problem / Give a
         /// compliment): the main window opens the form.
@@ -2393,6 +2428,19 @@ pub mod qobject {
         /// Settings ▸ Devices' pushToRoomAudio, on unless turned off).
         #[qinvokable]
         fn room_devices(self: &Backend) -> QString;
+        /// Teams' tenant rooms for Room audio: Other Suggestions (`query`
+        /// empty) or a search; the answer comes as tenant_rooms_ready.
+        #[qinvokable]
+        fn tenant_rooms(self: &Backend, query: &QString);
+        /// Teams' Nearby rooms (Teams Rooms heard over Bluetooth) and the
+        /// Bluetooth state for its hints: {supported, radioOn, rooms:
+        /// [{mri, name, status, code, adjacent}]}. `scan`: keep looking.
+        #[qinvokable]
+        fn nearby_rooms(self: &Backend, scan: bool) -> QString;
+        /// Teams' join with a room: add the room account to the meeting
+        /// (code -1 when the room wasn't heard over Bluetooth).
+        #[qinvokable]
+        fn add_room_to_meeting(self: &Backend, mri: &QString, name: &QString, code: i32);
         /// The call's speaker volume, 0-100 (Teams' in-call slider).
         #[qinvokable]
         fn speaker_volume(self: Pin<&mut Backend>) -> i32;
@@ -5734,11 +5782,29 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
             let _ = qt.queue(move |mut this| this.as_mut().show_processing(p));
         }
     }
-    // The meeting's answer to "Call me".
+    // The meeting's answer to "Call me", or to adding a room (Teams' join
+    // with a room).
     if (json.contains("conversation/addParticipantSuccess") || json.contains("conversation/addParticipantFailure"))
         && let Ok(v) = serde_json::from_str::<serde_json::Value>(json)
     {
         let mut slot = call_slot().lock().await;
+        if let Some(call) = slot.outgoing.as_mut()
+            && let Some(outcome) = call.room_outcome(&v)
+        {
+            drop(slot);
+            let (ok, text) = match outcome {
+                Ok(mri) => {
+                    tracing::info!(room = %mri, "the room joined the meeting");
+                    (true, String::new())
+                }
+                Err(text) => {
+                    tracing::info!(%text, "adding the room failed");
+                    (false, text)
+                }
+            };
+            let _ = qt.queue(move |mut this| this.as_mut().room_add_result(ok, QString::from(text.as_str())));
+            return;
+        }
         if let Some(call) = slot.outgoing.as_mut()
             && let Some(outcome) = call.call_me_outcome(&v)
         {
@@ -6064,6 +6130,7 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
                 slot.ringing = None;
                 drop(slot);
                 tracing::info!("call missed");
+                teams_cli::calling::hid_telephony::push_notification(teams_cli::calling::hid_telephony::AspEvent::MissedCall);
                 let _ = qt.queue(|mut this| this.as_mut().end_call_ui());
             }
         });
@@ -6248,6 +6315,11 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
             slot.roster_legs.clear();
         }
         drop(slot);
+        if was_ringing && json.contains("\"code\":487") {
+            // The caller gave up (487): a missed call. Teams tells a Teams
+            // device (its Teams button then opens Calls).
+            teams_cli::calling::hid_telephony::push_notification(teams_cli::calling::hid_telephony::AspEvent::MissedCall);
+        }
         if was_ringing || was_active {
             tracing::info!(was_ringing, was_active, "call ended by the other side");
             let _ = qt.queue(|mut this| this.as_mut().end_call_ui());
@@ -6870,6 +6942,32 @@ fn save_settings(map: &serde_json::Map<String, serde_json::Value>) -> anyhow::Re
     Ok(())
 }
 
+/// Rooms' names and presence (by MRI), for Nearby (Teams resolves each
+/// room it hears).
+static ROOM_NAMES: std::sync::Mutex<std::collections::BTreeMap<String, (String, String)>> =
+    std::sync::Mutex::new(std::collections::BTreeMap::new());
+
+fn room_names() -> std::collections::BTreeMap<String, (String, String)> {
+    ROOM_NAMES.lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
+/// Rooms as Room audio lists them, with their presence (Teams shows it
+/// under each room: "Available", "Offline").
+async fn rooms_json(client: &TeamsClient, rooms: Vec<(String, String, String)>) -> String {
+    let mris: Vec<String> = rooms.iter().map(|r| r.0.clone()).collect();
+    let presences = teams_cli::api::presence::get_presences(client.http(), &mris).await.unwrap_or_default();
+    let mut cache = ROOM_NAMES.lock().unwrap_or_else(|e| e.into_inner());
+    let out: Vec<serde_json::Value> = rooms
+        .into_iter()
+        .map(|(mri, name, email)| {
+            let status = presences.iter().find(|p| p.mri == mri).map(|p| p.availability.clone()).unwrap_or_default();
+            cache.insert(mri.clone(), (name.clone(), status.clone()));
+            serde_json::json!({"mri": mri, "name": name, "email": email, "status": status})
+        })
+        .collect();
+    serde_json::Value::Array(out).to_string()
+}
+
 /// Hand the chosen microphone and speaker to the call engine.
 fn apply_audio_devices(map: &serde_json::Map<String, serde_json::Value>) {
     let get = |k: &str| {
@@ -6879,6 +6977,13 @@ fn apply_audio_devices(map: &serde_json::Map<String, serde_json::Value>) {
             .map(str::to_string)
     };
     teams_cli::calling::audio::set_preferred_devices(get("micDevice"), get("speakerDevice"));
+    // Teams' "Sync device buttons" (on unless turned off, kept on this
+    // device as Teams' audioDeviceSyncEnabled) and the microphone whose
+    // headset's buttons count.
+    teams_cli::calling::hid_telephony::set_preferences(
+        get("micDevice"),
+        map.get("audioDeviceSyncEnabled").and_then(|v| v.as_str()) != Some("false"),
+    );
     // Teams' Secondary Ringer and "Automatically adjust mic sensitivity".
     teams_cli::calling::ringtone::set_secondary(get("secondaryRinger").filter(|d| d != "none"));
     teams_cli::calling::apm::set_auto_gain(map.get("autoGainControl").and_then(|v| v.as_str()) != Some("off"));
@@ -7144,6 +7249,13 @@ impl qobject::Backend {
             std::sync::atomic::Ordering::SeqCst,
         );
         runtime().spawn(crate::lock_watch::run());
+        // Teams' headset call controls (HID telephony): its buttons come
+        // back here.
+        teams_cli::calling::hid_telephony::start(|action| {
+            if let Some(qt) = QT_THREAD.get() {
+                let _ = qt.queue(move |this| this.on_headset_action(action));
+            }
+        });
         let frame = std::env::var_os("OST_SYSTEM_FRAME").is_some_and(|v| v != "0");
         self.as_mut().set_system_frame(frame);
         // Teams' default theme is "Follow operating system theme".
@@ -10742,6 +10854,75 @@ impl qobject::Backend {
             }
             refresh_lobby(qt).await;
         });
+    }
+
+    pub fn headset_state(&self, prejoin: bool, prejoin_muted: bool) {
+        let state = self.call_state.to_string();
+        // Teams' appState: hooked until a call connects (a ringing call is
+        // still on hook, "pulsing").
+        let hooked = matches!(state.as_str(), "" | "ended" | "ringing");
+        teams_cli::calling::hid_telephony::set_app_state(teams_cli::calling::hid_telephony::AppState {
+            hooked,
+            ringing: state == "ringing",
+            muted: !hooked && self.call_muted,
+            in_prejoin: prejoin,
+            prejoin_muted,
+            held: !hooked && self.call_held,
+        });
+    }
+
+    pub fn headset_status(&self) -> QString {
+        QString::from(serde_json::to_string(&teams_cli::calling::hid_telephony::status()).unwrap_or_default().as_str())
+    }
+
+    pub fn headset_take_control(&self) {
+        teams_cli::calling::hid_telephony::take_control();
+    }
+
+    /// A headset button, as Teams' HID service acts on it.
+    fn on_headset_action(mut self: Pin<&mut Self>, action: teams_cli::calling::hid_telephony::Action) {
+        use teams_cli::calling::hid_telephony::{Action, AspEvent};
+        let state = self.call_state.to_string();
+        let in_call = matches!(state.as_str(), "calling" | "connecting" | "connected" | "lobby");
+        tracing::info!(?action, state = %state, "headset button");
+        match action {
+            Action::Answer if state == "ringing" => self.accept_call(false),
+            Action::Reject if state == "ringing" => self.decline_call(),
+            Action::HangUp if in_call => self.hang_up(),
+            Action::SetMuted(muted) => {
+                if in_call {
+                    if self.call_muted != muted {
+                        self.toggle_mute();
+                    }
+                } else {
+                    self.as_mut().headset_prejoin_mute(muted);
+                }
+            }
+            Action::ToggleHold if state == "connected" => self.toggle_hold(),
+            Action::TeamsButton { long: true, .. } => {
+                // Teams' long press raises or lowers your hand in a
+                // meeting that isn't on hold.
+                if state == "connected" && self.call_meeting && !self.call_held {
+                    self.toggle_hand();
+                } else {
+                    tracing::info!("headset: Teams button long press with no meeting");
+                }
+            }
+            Action::TeamsButton { event, long: false } => {
+                let what = match event {
+                    AspEvent::MissedCall => "calls",
+                    AspEvent::Voicemail => "voicemail",
+                    _ => "front",
+                };
+                // Viewing it clears the device's notification.
+                if matches!(event, AspEvent::MissedCall | AspEvent::Voicemail) {
+                    teams_cli::calling::hid_telephony::push_notification(AspEvent::None);
+                }
+                self.as_mut().headset_teams_button(QString::from(what));
+            }
+            Action::TransferPrompt => self.as_mut().headset_transfer_prompt(),
+            _ => tracing::info!("headset: nothing to do now"),
+        }
     }
 
     pub fn toggle_hand(mut self: Pin<&mut Self>) {
@@ -15837,7 +16018,7 @@ impl qobject::Backend {
         if name == "theme" {
             self.as_mut().set_theme_mode(QString::from(value.as_str()));
         }
-        if ["micDevice", "speakerDevice", "secondaryRinger", "autoGainControl", "efficiencyMode", "ttyMode", "spatialAudio"].contains(&name.as_str()) {
+        if ["micDevice", "speakerDevice", "secondaryRinger", "autoGainControl", "efficiencyMode", "ttyMode", "spatialAudio", "audioDeviceSyncEnabled"].contains(&name.as_str()) {
             apply_audio_devices(&map);
         }
         // Spatial audio turned on or off (or a speaker chosen that can or
@@ -19780,6 +19961,77 @@ impl qobject::Backend {
         let meeting_room_mode = load_settings().get("pushToRoomAudio").and_then(|v| v.as_str()) != Some("false");
         let rooms = teams_cli::calling::room_devices::find(meeting_room_mode);
         QString::from(serde_json::to_string(&rooms).unwrap_or_default().as_str())
+    }
+
+    pub fn tenant_rooms(&self, query: &QString) {
+        let query = query.to_string();
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let q = query.trim().to_string();
+            let result = async {
+                let client = TeamsClient::new().await?;
+                let rooms = teams_cli::api::rooms::rooms(&client, (!q.is_empty()).then_some(q.as_str())).await?;
+                anyhow::Ok(rooms_json(&client, rooms.into_iter().map(|r| (r.mri, r.name, r.email)).collect()).await)
+            }
+            .await;
+            let json = match result {
+                Ok(j) => j,
+                Err(e) => {
+                    tracing::info!("rooms: {}", short_error(&e));
+                    "[]".to_string()
+                }
+            };
+            tracing::info!(query = %query, rooms = %json, "rooms found");
+            let _ = qt.queue(move |mut this| this.as_mut().tenant_rooms_ready(QString::from(query.as_str()), QString::from(json.as_str())));
+        });
+    }
+
+    pub fn nearby_rooms(&self, scan: bool) -> QString {
+        crate::room_ble::set_scanning(scan);
+        let (state, beacons) = crate::room_ble::snapshot();
+        let names = room_names();
+        let unknown: Vec<String> = beacons.iter().map(|b| b.mri.clone()).filter(|m| !names.contains_key(m)).collect();
+        if !unknown.is_empty() {
+            runtime().spawn(async move {
+                let Ok(client) = TeamsClient::new().await else { return };
+                if let Ok(found) = teams_cli::api::directory::short_profiles(&client, &unknown).await {
+                    let presences = teams_cli::api::presence::get_presences(client.http(), &unknown).await.unwrap_or_default();
+                    let mut cache = ROOM_NAMES.lock().unwrap_or_else(|e| e.into_inner());
+                    for (mri, name) in found {
+                        let status = presences.iter().find(|p| p.mri == mri).map(|p| p.availability.clone()).unwrap_or_default();
+                        cache.insert(mri, (name, status));
+                    }
+                }
+            });
+        }
+        let rooms: Vec<serde_json::Value> = beacons
+            .iter()
+            .filter_map(|b| {
+                let (name, status) = names.get(&b.mri)?;
+                Some(serde_json::json!({"mri": b.mri, "name": name, "status": status, "code": b.code, "adjacent": b.adjacent, "rssi": b.rssi}))
+            })
+            .collect();
+        let v = serde_json::json!({"supported": state.supported, "radioOn": state.radio_on, "rooms": rooms});
+        QString::from(v.to_string().as_str())
+    }
+
+    pub fn add_room_to_meeting(&self, mri: &QString, name: &QString, code: i32) {
+        let (mri, name) = (mri.to_string(), name.to_string());
+        // Teams looks the room up in its Bluetooth table when adding it,
+        // however it was picked: heard nearby, its code goes along.
+        let code = u16::try_from(code)
+            .ok()
+            .or_else(|| crate::room_ble::snapshot().1.into_iter().find(|b| b.mri == mri).and_then(|b| b.code));
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let mut slot = call_slot().lock().await;
+            let Some(call) = slot.outgoing.as_mut() else { return };
+            if let Err(e) = call.add_room(&mri, &name, code, false).await {
+                tracing::warn!("adding the room: {}", short_error(&e));
+                let text = short_error(&e);
+                let _ = qt.queue(move |mut this| this.as_mut().room_add_result(false, QString::from(text.as_str())));
+            }
+        });
     }
 
     pub fn speaker_volume(self: Pin<&mut Self>) -> i32 {

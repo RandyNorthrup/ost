@@ -275,6 +275,26 @@ Everything below is in userPersonalSettings unless marked local.
   echo cancellation, noise suppression or gain control) and Opus at 64 kbit/s CBR in its CELT
   mode, so a TTY device's Baudot tones go through whole.
 
+## Devices ▸ Audio device button controls and Sync device buttons (measured 2026-11-17)
+
+- Teams (desktop, outside VDI: `enableSyncDeviceButtonsToggle`) shows two rows in the Audio settings card between
+  "Make a test call" and Noise suppression (dividers above and below, at 30): "Audio device button controls" ("Choose
+  whether this Teams app responds to buttons on connected audio devices.", headset glyph) with "Transfer controls to
+  this app" (disabled, tooltip "This app already responds to buttons on your audio device.", while this app has the
+  buttons), and "Sync audio device buttons when in use on this app" ("The Teams buttons will always work when this app
+  is in use. (Recommended)"), a switch centred on its two lines. Without Teams' multi-app HID control
+  (`hid2MultiCloudMultiAppEnabled`) the switch alone shows, as "Sync device buttons" ("This lets you use all the
+  buttons on your device. The Teams button will always work.").
+- The switch is `audioDeviceSyncEnabled` in Teams' device settings (local storage), on unless turned off. Off, the
+  call-control reports (Telephony page, LEDs page, Button 7) are ignored and the headset's lights aren't set; the Teams
+  button still works. OST keeps it as the local setting `audioDeviceSyncEnabled`.
+- Which app answers the buttons (Teams' HID2 control between its apps): the one that started first takes them; another
+  that finds them held while a headset is connected asks "Transfer audio device buttons to this app?" ("Buttons on your
+  connected audio device, such as mute, answer, and hang up, will control this Teams app. Other Teams apps will no
+  longer respond to these buttons.", Cancel / Transfer controls). OST does the same between OST instances (profiles),
+  with `$XDG_RUNTIME_DIR/ost-hid-control` naming the instance that has them.
+- What the buttons do is in docs/spec/call-and-meeting-window.md "Headset call controls".
+
 ## Devices ▸ Connected devices (measured 2026-11-15)
 
 - The last card on Devices (204.9 tall, a laptop icon): "Manage your connected devices" with

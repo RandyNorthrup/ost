@@ -126,6 +126,8 @@ pub struct OutgoingCall {
     /// The phone "Call me" is calling (its participant id), until the
     /// meeting says it joined or failed.
     call_me: Option<String>,
+    /// The room being added (Teams' join with a room), until the meeting answers.
+    room_pending: Option<String>,
     /// The meeting's message id in its chat ("0" for a scheduled
     /// meeting, the post for a channel meeting): Teams' teamsMessageId.
     group_message_id: Option<String>,
@@ -1027,6 +1029,72 @@ impl OutgoingCall {
         tracing::info!(%status, "call me back accepted");
         self.call_me = Some(phone_mri.to_string());
         Ok(())
+    }
+
+    /// Teams' "join with a room" (RoomAudio): once in the meeting, add the
+    /// room account `room_mri` ("8:orgid:…") to it, as Teams'
+    /// addRoomParticipant does. The conversation is asked to invite it
+    /// (`POST links.addParticipantAndModality`) with Teams' invitation
+    /// data: how the room was found (`proximitySource`: 1 Bluetooth, which
+    /// Teams also sends for a room picked from a search, or 2 ultrasound),
+    /// that a computer asks (`deviceType`), the Bluetooth beacon's
+    /// validation code as `autoAcceptAuthorization` (a Teams Rooms device
+    /// then joins by itself), and the meeting's organizer and tenant. The
+    /// outcome comes back as addParticipantSuccess / addParticipantFailure.
+    pub async fn add_room(&mut self, room_mri: &str, room_name: &str, validation_code: Option<u16>, ultrasound: bool) -> Result<()> {
+        if !room_mri.starts_with("8:orgid:") {
+            bail!("Not a room account");
+        }
+        let link = self.add_modality_link.clone().context("No addParticipantAndModality link")?;
+        if !super::incoming::is_service_link(&link) {
+            bail!("addParticipantAndModality: not a Teams service link");
+        }
+        let config = Config::load()?;
+        let ic3 = config.get_ic3_token().context("No calling (IC3) token")?.token;
+        let (surl, epid) = &self.callbacks;
+        let tc = |p: &str| signaling::trouter_callback(surl, epid, p);
+        let links = serde_json::json!({
+            "addParticipantSuccess": tc("conversation/addParticipantSuccess/"),
+            "addParticipantFailure": tc("conversation/addParticipantFailure/"),
+        });
+        let mut from = self.me.0.clone();
+        if let Some(o) = from.as_object_mut() {
+            o.entry("languageId").or_insert_with(|| "en-us".into());
+        }
+        let meeting_info = self.notes_organizer.split_once('@').map(|(o, t)| (o.to_string(), t.to_string()));
+        let body = room_invite_body(&from, room_mri, room_name, &self.thread_id, self.group_message_id.as_deref(), validation_code, ultrasound, meeting_info, links);
+        tracing::info!(room = room_mri, code = validation_code.is_some(), "adding the room to the meeting");
+        let resp = self
+            .http
+            .post(&link)
+            .bearer_auth(ic3)
+            .header("x-microsoft-skype-chain-id", &self.call_id)
+            .header("x-microsoft-skype-message-id", uuid::Uuid::new_v4().to_string())
+            .header("x-microsoft-skype-client", signaling::SKYPE_CLIENT_HEADER)
+            .header("ms-teams-partition", signaling::TEAMS_PARTITION)
+            .header("ms-teams-region", signaling::TEAMS_REGION)
+            .header("ms-teams-ring", signaling::TEAMS_RING)
+            .json(&body)
+            .send()
+            .await
+            .context("Add the room")?;
+        let status = resp.status();
+        if !status.is_success() {
+            let text = resp.text().await.unwrap_or_default();
+            bail!("Adding the room failed ({status}): {}", &text[..text.len().min(300)]);
+        }
+        tracing::info!(%status, "room invitation accepted by the conversation");
+        self.room_pending = Some(room_mri.to_string());
+        Ok(())
+    }
+
+    /// The meeting's answer to adding the room, if `event` is it: Ok when
+    /// the room joined, Err(Teams' message) when it couldn't.
+    pub fn room_outcome(&mut self, event: &serde_json::Value) -> Option<std::result::Result<String, String>> {
+        let mri = self.room_pending.clone()?;
+        let r = super::phone_audio::call_me_back_result(event, &mri)?;
+        self.room_pending = None;
+        Some(r.map(|()| mri))
     }
 
     /// The meeting's answer to "Call me", if `event` is it: Ok(the phone's
@@ -2846,6 +2914,41 @@ pub async fn start_test_call(cancel: tokio::sync::oneshot::Receiver<()>) -> Resu
 }
 
 /// Group chats (not meetings, channels or 1:1 chats).
+/// Teams' addRoomParticipant request: our participant inviting the room
+/// account to the meeting with Teams' invitation data (see
+/// `OutgoingCall::add_room`).
+#[allow(clippy::too_many_arguments)]
+pub fn room_invite_body(
+    from: &serde_json::Value,
+    room_mri: &str,
+    room_name: &str,
+    thread_id: &str,
+    message_id: Option<&str>,
+    validation_code: Option<u16>,
+    ultrasound: bool,
+    meeting_info: Option<(String, String)>,
+    links: serde_json::Value,
+) -> serde_json::Value {
+    let mut invitation = serde_json::json!({
+        "proximitySource": if ultrasound { 2 } else { 1 },
+        "deviceType": "computer",
+        "autoAcceptAuthorization": validation_code.map(|c| serde_json::json!({ "token": c })),
+    });
+    if let Some((organizer, tenant)) = meeting_info {
+        invitation["meetingInfo"] = serde_json::json!({ "organizerId": organizer, "tenantId": tenant });
+    }
+    serde_json::json!({
+        "participants": {
+            "from": from,
+            "to": [{ "id": room_mri, "displayName": room_name }],
+        },
+        "participantInvitationData": { "invitationData": invitation },
+        "groupContext": null,
+        "groupChat": { "threadId": thread_id, "messageId": message_id },
+        "links": links,
+    })
+}
+
 pub fn is_group_chat(thread_id: &str) -> bool {
     thread_id.starts_with("19:")
         && thread_id.ends_with("@thread.v2")
@@ -3337,6 +3440,7 @@ async fn start_tagged(
         dial_in,
         phone_audio,
         call_me: None,
+        room_pending: None,
         group_message_id,
         timers,
         notes,
@@ -3371,6 +3475,20 @@ async fn start_tagged(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn room_invitation_as_teams_sends_it() {
+        let b = room_invite_body(&serde_json::json!({"id": "8:orgid:me"}), "8:orgid:room", "OST Test Room", "19:meeting_x@thread.v2", Some("0"), Some(0x1234), false, Some(("o".into(), "t".into())), serde_json::json!({}));
+        assert_eq!(b["participants"]["to"][0]["id"], "8:orgid:room");
+        let i = &b["participantInvitationData"]["invitationData"];
+        assert_eq!((i["proximitySource"].as_i64(), i["deviceType"].as_str()), (Some(1), Some("computer")));
+        assert_eq!(i["autoAcceptAuthorization"]["token"], 0x1234);
+        assert_eq!(i["meetingInfo"]["tenantId"], "t");
+        let b = room_invite_body(&serde_json::json!({}), "8:orgid:room", "", "19:x", None, None, true, None, serde_json::json!({}));
+        assert!(b["participantInvitationData"]["invitationData"]["autoAcceptAuthorization"].is_null());
+        assert_eq!(b["participantInvitationData"]["invitationData"]["proximitySource"], 2);
+    }
+
+
     use super::*;
 
     #[test]

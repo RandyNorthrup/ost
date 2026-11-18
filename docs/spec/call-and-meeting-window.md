@@ -752,6 +752,30 @@ Window title: "Meeting join | {{meetingTitle}}" (`calling_meeting_window_title`)
 | 3 | "Don't use audio" | "We'll mute your device when you join." / "You're in a room that already has meeting audio." | "We'll mute your mic and speaker." | "Join muted to avoid causing audio disruption." |
 | 4 | "Follow Meeting" | (follow mode; flags off) | "You will join in follow mode. You won't be able to see or hear others." | |
 
+- **Room audio's rooms** (TASK-0161, Teams' RoomService and room dropdown, captured on winpc 2026-11-17):
+  - The list: "Connected room devices" (BYOD, see settings.md), "Nearby" (Teams Rooms heard over Bluetooth; each with
+    Teams' signal glyph, CellularData1 when adjacent, else CellularData3) or "Unable to find any rooms", then "Other
+    Suggestions" (the tenant's rooms) or "Unable to find any rooms". A room shows its presence under its name
+    ("Offline", "Available").
+  - Other Suggestions: `POST https://outlook.office.com/SchedulingB2/api/v1.0/me/findmeetinglocations`
+    `{"MaxCandidates":10,"ConferenceRoomsOnly":true}` (Outlook token, `client-request-id`).
+  - Search for a room: the same with `"QueryConstraint":{"Query":"<typed>"},"LocationProvider":"80"`; its results replace
+    the list.
+  - Each room's `LocationEmailAddress` is resolved like a person by mail (`POST {mt}/beta/users/fetchShortProfile?
+    isMailAddress=true&…&includeDisabledAccounts=true`); its MRI is the room's id. A room without a Teams account has
+    no MRI and isn't listed.
+  - Nearby (Teams' BluetoothLEService): advertisements with Microsoft's manufacturer data (company 0x0006) `34 F0`, a
+    protocol byte (type << 5 | version; Teams Rooms 0/0), the room account's object id (packed GUID), the validation code
+    (big-endian) and the device type; kept 30 s after the last one; listed from -75 dBm, "adjacent" from -50 dBm.
+  - The hint under the picker: a room picked: "We'll add the room's audio system to the meeting after you join.";
+    else with Bluetooth: on "Requires a room with an audio system.", off "Enable Bluetooth to improve list of available
+    rooms." (with the mic blocked too: "Turn on Bluetooth or enable your microphone to detect nearby rooms."); no
+    Bluetooth LE: "Automatic room discovery isn't available on your device yet."
+  - Joining with a tenant room: the computer's audio stays off, and once in the meeting Teams adds the room
+    (addRoomParticipant): `POST links.addParticipantAndModality` with the room's MRI and `participantInvitationData:
+    {invitationData: {proximitySource: 1 (Bluetooth; also for a searched room) or 2 (ultrasound), deviceType:
+    "computer", autoAcceptAuthorization: {token: <validation code>} or null, meetingInfo: {organizerId, tenantId}}}`;
+    a Teams Rooms device accepts by itself with a valid code.
 - A suggested option gets "(suggested)", or "Suggested" in the narrow layout.
   - Room is suggested when a Bluetooth room is detected or BYOD.
   - None is suggested when a room loudspeaker is already in the meeting.
@@ -1555,3 +1579,22 @@ The chosen layout is saved through `updateUserExperiencePreferences{stageSetting
 - [ ] Compact view (§11): opens only when the call window is minimized; title "Meeting compact view | {title}"; sizes and position; per-mode toolbars without labels; "Maximize meeting window".
 - [ ] Call ended (§12): thumbs survey ("Had issues" / "Good") sampled at 10%; short-call prompt; Rejoin only after abnormal ends.
 - [ ] Keyboard shortcuts (§13), including the global ones and the shortcut text in tooltips.
+
+## Headset call controls (TASK-0156; Teams' HID service, read from its bundles 2026-11-17)
+
+- Teams opens the HID device of the selected microphone (matched by its USB ids) on the Telephony page. Its driver:
+  known vendors' devices (Jabra, Poly, EPOS, Logitech, Yealink, …) or ones whose USB "UCQ" string says speakerphone,
+  headset, handset or wireless get "Standard Hook Protect USB"; any other gets "Safe Mute Only" (the mute button only).
+- Buttons, with Sync device buttons on:
+  - Hook Switch 1 (off hook) while a call rings: answer. Hook Switch 0 (on hook) in a call: hang up (ignored while
+    ringing and for 1 s after the device or Teams took it off hook or toggled mute: Teams' hook protection).
+  - Button page usage 7 while ringing: reject. Flash: answer while ringing, else hold or resume.
+  - Phone Mute (relative: toggle; absolute: set): mutes or unmutes the call, or the pre-join screen's mic; ignored
+    with no call and no pre-join screen.
+  - The Teams button (vendor page 0xFF99 usage 4): Teams asks the device for its context over ASP (feature report 0x9A:
+    Version → protocol 1, Feature → event mask, Context → event and press). Short press: a missed call opens Calls
+    (Teams pushes MissedCall to the device), else Teams (and an ongoing meeting's window) comes forward; long press in
+    a meeting: raise or lower your hand. Without ASP the Teams button does nothing.
+- Lights: Off-Hook while a call is connecting or up, Ring while one rings, Mute with the call's (or the pre-join
+  screen's) mute, Hold while held; all off when the call ends.
+

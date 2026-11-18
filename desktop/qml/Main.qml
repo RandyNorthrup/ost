@@ -291,6 +291,40 @@ Window {
         onConfirmed: { if (checked) backend.setSetting("skipMarkAllAsReadConfirmDialog", "true"); backend.markAllRead(chatList.markAllAppType) }
         onCancelled: if (checked) backend.setSetting("skipMarkAllAsReadConfirmDialog", "true")
     }
+    // Teams' headset call controls (HID telephony; TASK-0156). The call's
+    // state (and the pre-join screen's mic) goes to the headset's lights;
+    // its mute button in the pre-join screen turns that mic off or on; its
+    // Teams button brings OST (and the meeting window) forward, or opens
+    // Calls for a missed call.
+    function syncHeadset() { backend.headsetState(preJoin.visible, !preJoin.micOn) }
+    Connections {
+        target: backend
+        function onCallStateChanged() { window.syncHeadset() }
+        function onCallMutedChanged() { window.syncHeadset() }
+        function onCallHeldChanged() { window.syncHeadset() }
+        function onHeadsetPrejoinMute(muted) { if (preJoin.visible) preJoin.micOn = !muted }
+        function onHeadsetTeamsButton(what) {
+            window.show(); window.raise(); window.requestActivate()
+            if (what === "calls" || what === "voicemail") rail.current = "calls"
+            else if (callWindow.visible) { callWindow.raise(); callWindow.requestActivate() }
+        }
+        function onHeadsetTransferPrompt() { hidTransferDialog.open() }
+    }
+    Connections {
+        target: preJoin
+        function onVisibleChanged() { window.syncHeadset() }
+        function onMicOnChanged() { window.syncHeadset() }
+    }
+    // Teams' HidControlTransferWorkflow: another OST answers the headset's
+    // buttons; take them here.
+    ConfirmDialog {
+        id: hidTransferDialog
+        dialogWidth: 600
+        title: "Transfer audio device buttons to this app?"
+        body: "Buttons on your connected audio device, such as mute, answer, and hang up, will control this OST app. Other OST apps will no longer respond to these buttons."
+        confirmText: "Transfer controls"
+        onConfirmed: backend.headsetTakeControl()
+    }
     Shortcut { sequence: "Ctrl+Alt+Z"; onActivated: chatList.clearFilters() }
     Shortcut { sequence: "Ctrl+Alt+C"; onActivated: { rail.current = "chat"; chatList.setChip("chats") } }
     Shortcut { sequence: "Ctrl+Alt+A"; onActivated: { rail.current = "chat"; chatList.setChip(window.slackShortcuts ? "unread" : "channels") } }
@@ -1657,7 +1691,9 @@ Window {
             window.muteOnJoin = !micOn
             window.noAudioOnJoin = !withAudio
             window.cameraOnJoin = !!cameraOn
-            window.roomOnJoin = audio === "room" && !!room
+            window.roomOnJoin = audio === "room" && !!room && !!room.speaker
+            // A tenant room (Teams' roomParticipantToAdd): added once in.
+            window.tenantRoomOnJoin = audio === "room" && !!room && !!room.mri ? room : null
             window.phoneOnJoin = audio === "phone"
             if (meetNow) backend.channelMeetNow(meetChannel, subject.trim() || "Meeting")
             // Teams' Join now on the call its pre-join preheated.
@@ -1678,6 +1714,9 @@ Window {
     // (a second display; with one display it opens nothing) and says
     // "Connected to a room device".
     property bool roomOnJoin: false
+    // Room audio with one of the tenant's rooms (Teams' join with a room):
+    // once in the meeting, Teams adds the room (its audio system joins).
+    property var tenantRoomOnJoin: null
     // Joining with the mic off (pre-join switch): mute once connected.
     property bool muteOnJoin: false
     // "Don't use audio": no sound either way once connected.
@@ -1705,7 +1744,14 @@ Window {
                 callWindow.showRoomNotice()
                 if (Qt.application.screens.length > 1) callWindow.roomMode = true
             }
+            if (backend.callState === "connected" && window.tenantRoomOnJoin) {
+                const r = window.tenantRoomOnJoin
+                window.tenantRoomOnJoin = null
+                console.warn("ROOM adding", r.mri, r.label, "code", r.code)
+                backend.addRoomToMeeting(r.mri, r.label, r.code === undefined ? -1 : r.code)
+            }
             if (backend.callState === "ended" || backend.callState === "") {
+                window.tenantRoomOnJoin = null
                 callWindow.roomDeviceJoined = false
                 callWindow.roomNoticeCounted = false
             }
@@ -5575,6 +5621,90 @@ Window {
             }
             else if (st > 6) Qt.quit()
         }
+    }
+    // --rooms-test: Teams' tenant rooms in Room audio (TASK-0161). Opens a
+    // pre-join screen (Meet now, not joined, `--rooms-join=<channel id>`
+    // to join one in that channel), picks Room audio and logs ROOMS lines
+    // (Other Suggestions, Nearby and the Bluetooth hint) with the picker
+    // open (/tmp/act/rooms-picker.png), searches "--rooms-query=<text>"
+    // (default "OST") (/tmp/act/rooms-search.png), picks the first result
+    // (/tmp/act/rooms-picked.png); with --rooms-join it joins, logs the
+    // room being added (ROOM lines), stays --rooms-stay=<s> (default 40)
+    // and leaves.
+    Timer {
+        id: roomsTest
+        readonly property bool on: Qt.application.arguments.indexOf("--rooms-test") >= 0
+        readonly property string joinChannel: (Qt.application.arguments.find(a => a.startsWith("--rooms-join=")) || "").slice(13)
+        readonly property string query: (Qt.application.arguments.find(a => a.startsWith("--rooms-query=")) || "--rooms-query=OST").slice(14)
+        readonly property int stay: parseInt((Qt.application.arguments.find(a => a.startsWith("--rooms-stay=")) || "=40").split("=")[1])
+        running: on && backend.signedIn
+        interval: 2500; repeat: true
+        property int step: 0
+        property int joinedAt: -1
+        function shot(n) { preJoin.contentItem.grabToImage(r => r.saveToFile("/tmp/act/rooms-" + n + ".png")) }
+        onTriggered: {
+            const st = step++
+            const log = () => console.warn("ROOMS", st, "suggested", JSON.stringify(preJoin.suggestedRooms), "nearby", JSON.stringify(preJoin.nearby), "query", JSON.stringify(preJoin.roomQuery), "searched", JSON.stringify(preJoin.searchedRooms), "room", JSON.stringify(preJoin.room), "canJoin", preJoin.canJoin)
+            if (st === 0) preJoin.openMeetNow(joinChannel, "OST rooms test")
+            else if (st === 1) preJoin.audio = "room"
+            else if (st === 4) { log(); preJoin.roomPickerForTest() }
+            else if (st === 5) shot("picker")
+            else if (st === 6) preJoin.searchRooms(query)
+            else if (st === 8) { log(); preJoin.roomPickerForTest() }
+            else if (st === 9) shot("search")
+            else if (st === 10) { const r = preJoin.searchedRooms[0] || preJoin.suggestedRooms[0]; if (r) preJoin.pickTenantRoom(r, false); log() }
+            else if (st === 11) shot("picked")
+            else if (st === 12 && !joinChannel) Qt.quit()
+            else if (st === 12) { preJoin.close(); preJoin.join(false, false, false); interval = 4000 }
+            else if (st > 12) {
+                console.warn("ROOM call", backend.callState, "muted", backend.callMuted)
+                if (backend.callState === "connected" && joinedAt < 0) joinedAt = st
+                if (joinedAt >= 0 && (st - joinedAt) * 4 >= stay && backend.callState === "connected") { console.warn("ROOM leaving"); backend.hangUp() }
+                if (joinedAt >= 0 && backend.callState !== "connected") { console.warn("ROOM left", backend.callState); Qt.quit() }
+                if (st > 200) Qt.quit()
+            }
+        }
+    }
+    Connections {
+        target: backend
+        enabled: roomsTest.on
+        function onRoomAddResult(ok, text) { console.warn("ROOM added", ok, text) }
+    }
+    // --headset-test: Teams' headset call controls (TASK-0156). Opens
+    // Settings ▸ Devices (picture /tmp/act/headset-devices.png), then keeps
+    // logging HEADSET lines (the headset service's status, the call's
+    // state and mute, the pre-join mic) every 2 s, so a script can press
+    // the emulated headset's buttons and watch; it never answers, mutes or
+    // hangs up by itself. `--headset-test=prejoin` opens a pre-join screen
+    // (Meet now, not joined) for its mic. Quits 10 s after a call ends, or
+    // after `--headset-stay=<s>` (default 600).
+    Timer {
+        id: headsetTest
+        readonly property string mode: (Qt.application.arguments.find(a => a.startsWith("--headset-test")) || "").replace("--headset-test", "").replace("=", "")
+        readonly property bool on: Qt.application.arguments.some(a => a.startsWith("--headset-test"))
+        readonly property int stay: parseInt((Qt.application.arguments.find(a => a.startsWith("--headset-stay=")) || "=600").split("=")[1])
+        running: on && backend.signedIn
+        interval: 2000; repeat: true
+        property int step: 0
+        property int ended: -1
+        property bool hadCall: false
+        onTriggered: {
+            const st = step++
+            if (st === 0) { rail.current = "settings"; settingsView.pageForTest("devices") }
+            else if (st === 2) window.contentItem.grabToImage(r => r.saveToFile("/tmp/act/headset-devices.png"))
+            else if (st === 3 && mode === "prejoin") preJoin.openMeetNow("", "OST headset test")
+            console.warn("HEADSET", st, backend.headsetStatus(), "call", JSON.stringify(backend.callState), "muted", backend.callMuted, "held", backend.callHeld, "prejoin", preJoin.visible, "prejoinMic", preJoin.micOn)
+            if (backend.callState !== "" && backend.callState !== "ended") hadCall = true
+            if (hadCall && ended < 0 && (backend.callState === "ended" || backend.callState === "")) ended = st
+            if ((ended >= 0 && st > ended + 5) || st * 2 > stay) { console.warn("HEADSET done"); Qt.quit() }
+        }
+    }
+    Connections {
+        target: backend
+        enabled: headsetTest.on
+        function onCallStateChanged() { console.warn("HEADSET-CALL", backend.callState, "muted", backend.callMuted) }
+        function onCallMutedChanged() { console.warn("HEADSET-MUTE", backend.callMuted) }
+        function onHeadsetTeamsButton(what) { console.warn("HEADSET-TEAMS-BUTTON", what, "rail", rail.current) }
     }
     Timer {
         running: Qt.application.arguments.indexOf("--about-test") >= 0 && backend.signedIn

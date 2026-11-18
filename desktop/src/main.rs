@@ -9,6 +9,7 @@ mod key_typer;
 mod launcher_badge;
 mod lock_watch;
 mod rich_text;
+mod room_ble;
 mod tray;
 mod video_effects;
 mod video_item;

@@ -2058,8 +2058,8 @@ Rectangle {
             // Teams shows it disabled), a divider and Secondary Ringer.
             // "Make a test call" places Teams' test call
             // (call-and-meeting-window.md §12a), and Spatial audio follows
-            // (calling::spatial). Teams' "Sync device buttons" (headset HID
-            // buttons) isn't offered.
+            // (calling::spatial). Teams' headset button rows (calling::
+            // hid_telephony) sit between the test call and Noise suppression.
             Text {
                 visible: root.page === "devices" && !root.subPage
                 width: parent.width; height: 44
@@ -2118,7 +2118,61 @@ Rectangle {
                 }
                 SettingsParts.Gap { size: 30 }
                 Rectangle { x: -44.3; width: devices.width - 25.4; height: 0.67; color: theme.pick("#F0F0F0", "#3D3D3D", "#000000") }
+                // Teams' headset call controls (HID telephony; measured on
+                // winpc 2026-11-17): "Audio device button controls" with
+                // its headset glyph, 30.6 under the divider, and "Transfer
+                // controls to this app" (disabled, with Teams' tooltip,
+                // while this OST already answers the buttons; another OST
+                // may hold them), then "Sync audio device buttons when in
+                // use on this app" 30 under it, its switch centred on its
+                // two lines, 30 over the next divider. The switch is Teams'
+                // audioDeviceSyncEnabled, kept on this device (on unless
+                // turned off): off, the headset's call buttons do nothing
+                // and its lights stay as they are; the Teams button still
+                // works.
+                SettingsParts.Gap { size: 30.6 }
+                Item {
+                    id: hidRow
+                    property var status: ({})
+                    function refresh() { try { status = JSON.parse(backend.headsetStatus()) } catch (e) { status = {} } }
+                    Component.onCompleted: refresh()
+                    Timer { running: devices.visible; interval: 1000; repeat: true; onTriggered: hidRow.refresh() }
+                    readonly property bool hasControl: !!status.has_control
+                    width: parent.width; height: 36
+                    FluentIcon { x: -38; y: 8; name: "headset-20"; size: 20; color: theme.text }
+                    Column {
+                        width: parent.width - transferBtn.width - 28 - 24
+                        Text { width: parent.width; text: "Audio device button controls"; wrapMode: Text.Wrap; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
+                        Text { width: parent.width; text: "Choose whether this OST app responds to buttons on connected audio devices."; wrapMode: Text.Wrap; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textSecondary }
+                    }
+                    Rectangle {
+                        id: transferBtn
+                        readonly property bool usable: !hidRow.hasControl
+                        anchors.right: parent.right; anchors.rightMargin: 28
+                        y: 2.4; width: transferText.implicitWidth + 25.4; height: 31.3; radius: 4
+                        color: !usable ? theme.bgDisabled : tbh.pressed ? theme.menuHover : tbHover.hovered ? theme.pick("#F5F5F5", "#3D3D3D", "#1AEBFF") : theme.surface
+                        border.color: !usable ? theme.pick("#E0E0E0", "#424242", "#3FF23F") : theme.pick("#D1D1D1", "#5C5C5C", "#FFFFFF"); border.width: 0.67
+                        Text { id: transferText; anchors.centerIn: parent; text: "Transfer controls to this app"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: transferBtn.usable ? theme.onFill(transferBtn, theme.text) : theme.disabled }
+                        HoverHandler { id: tbHover; cursorShape: transferBtn.usable ? Qt.PointingHandCursor : Qt.ArrowCursor }
+                        TapHandler { id: tbh; enabled: transferBtn.usable; onTapped: { backend.headsetTakeControl(); hidRow.refresh() } }
+                        ArrowTip { visible: tbHover.hovered && !transferBtn.usable; tipText: "This app already responds to buttons on your audio device." }
+                        Accessible.role: Accessible.Button
+                        Accessible.name: transferBtn.usable ? "Transfer controls to this app" : "This app already responds to buttons on your audio device."
+                    }
+                }
                 SettingsParts.Gap { size: 22 }
+                SettingsParts.SwitchRow {
+                    id: syncRow
+                    label: "Sync audio device buttons when in use on this app"
+                    sublabel: "The Teams buttons will always work when this app is in use. (Recommended)"
+                    centred: true
+                    on: root.local("audioDeviceSyncEnabled", "true") !== "false"
+                    onToggled: v => { backend.setSetting("audioDeviceSyncEnabled", v ? "true" : "false"); syncRow.on = v }
+                }
+                SettingsParts.Gap { size: 23 }
+                Rectangle { x: -44.3; width: devices.width - 25.4; height: 0.67; color: theme.pick("#F0F0F0", "#3D3D3D", "#000000") }
+                // Noise suppression: its title 38.7 under the divider (winpc 2026-11-17).
+                SettingsParts.Gap { size: 30 }
                 SettingsParts.SwitchRow {
                     label: "Noise suppression"
                     on: devices.noise

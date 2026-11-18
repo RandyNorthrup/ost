@@ -59,6 +59,7 @@ pub mod editor;
 pub mod compose_copilot;
 pub mod meeting_copilot;
 pub mod regional;
+pub mod rooms;
 pub mod tab_add;
 pub mod tabs;
 pub mod translation;

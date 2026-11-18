@@ -4503,6 +4503,7 @@ dependencies = [
  "home",
  "iana-time-zone",
  "keyring",
+ "libc",
  "md-5",
  "openh264",
  "openh264-sys2",

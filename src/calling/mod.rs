@@ -25,6 +25,8 @@ pub mod display;
 pub mod e2ee;
 pub mod echo_report;
 pub mod frames;
+/// Headset call controls over HID telephony (Teams' Sync device buttons).
+pub mod hid_telephony;
 pub mod ice;
 pub mod incoming;
 pub mod live_event;
