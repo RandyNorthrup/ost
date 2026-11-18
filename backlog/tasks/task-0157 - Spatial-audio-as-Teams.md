@@ -1,11 +1,11 @@
 ---
 id: TASK-0157
 title: Spatial audio as Teams
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-15T09:37:00Z'
-updated_date: '2026-11-18T00:51:00Z'
+updated_date: '2026-11-18T02:05:00Z'
 labels:
   - calling
   - devices
@@ -22,7 +22,7 @@ Settings > Devices > Audio settings > 'Spatial audio' (Available with Together m
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 Devices shows 'Spatial audio' with Teams' text and link, kept as Teams keeps it
-- [ ] #2 With it on and a stereo output, each participant's voice comes from their tile's side in Gallery, Speaker and Together mode, as in Teams
+- [x] #2 With it on and a stereo output, each participant's voice comes from their tile's side in Gallery, Speaker and Together mode, as in Teams
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -50,4 +50,28 @@ Settings > Devices > Audio settings > 'Spatial audio' (Available with Together m
 - 2026-11-17 (3945f7a): x-much2 is Opus in a simple container: a speaker count, then per speaker a kind byte (0x44 Opus), the 4-byte roster id, a 2-byte length and a 20 ms mono Opus frame, as PT 113. It is offered while spatial audio is on. OST decodes each speaker on its own and places them at their tiles.
 - Live: with two guests talking at once, left/right correlation fell from 0.88 to 0.43, and the right channel transcribes as one guest alone.
 - Left: switching mid-call, as Teams does (in progress).
+
+- 2026-11-17 (f8c39a5): mid-meeting switch, as Teams. Turning the setting on or off re-offers to the call leg's mediaRenegotiation link, with x-much2 added or removed; the answer switches decoding at once. Live: spatial off at join, on at 30 s (renegotiated in 0.45 s, correlation 0.44), off at 90 s (back to 1.0).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Spatial audio works as in Teams: each speaker's voice comes from their own tile, including when several talk at once, and the setting takes effect mid-meeting.
+
+Changes:
+- Settings > Devices > Spatial audio row as Teams: off by default; disabled for non-stereo, Bluetooth and 1:1.
+- Teams' per-speaker meeting audio (x-much2) recovered and decoded natively. It is Opus frames in a simple container: a speaker count, then per speaker a kind byte (0x44), the 4-byte roster id, a 2-byte length and a 20 ms frame. OST offers it while spatial audio is on.
+- Each speaker gets its own decoder and is placed at their tile; mixed audio falls back to talker-based placement. Call audio plays in stereo (src/calling/much.rs, spatial.rs).
+- Turning it on or off mid-meeting re-offers through mediaRenegotiation, as Teams.
+- Harness: --spatial-audio-toggle; diagnostics OST_DUMP_RTP and OST_OFFER_MUCH.
+
+Tests:
+- 711 lib tests, including a real two-speaker packet.
+- Live with two guests in Gallery and Speaker view:
+  - one speaker comes out 6 to 8 dB louder on their tile's side;
+  - with two talking at once, left/right correlation is 0.44 (0.88 before), and each channel transcribes as its own guest;
+  - the mid-meeting on and off switch worked.
+
+Together mode is retired in Teams, so it isn't built.
+<!-- SECTION:FINAL_SUMMARY:END -->
