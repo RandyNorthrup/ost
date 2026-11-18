@@ -244,9 +244,10 @@ Popup {
     }
     function toggleEdges() {
         const on = !quadOn
+        const c = cleanupOn
         if (on) {
             apply(off())
-            apply({ quadEnabled: true, cleanupEnabled: cleanupOn, zoomEnabled: true, normalizedQuad: noQuad })
+            apply({ quadEnabled: true, cleanupEnabled: c, zoomEnabled: true, normalizedQuad: noQuad })
         } else {
             stopDetection(); hideToast()
             apply({ quadEnabled: false, cleanupEnabled: cleanupOn, zoomEnabled: cleanupOn, normalizedQuad: fullFrame })
@@ -560,7 +561,7 @@ Popup {
                                 horizontalAlignment: Text.AlignHCenter
                                 wrapMode: Text.Wrap
                                 text: root.type === "document" ? "Put the document in view of your document camera or webcam." : "Point your camera at a nearby whiteboard to detect it."
-                                font.family: theme.font; font.pixelSize: 15.6
+                                font.family: theme.font; font.pixelSize: 16  // Teams: 15.6 (pixel sizes are whole here)
                                 lineHeight: 20; lineHeightMode: Text.FixedHeight
                                 color: theme.text
                             }
@@ -653,8 +654,8 @@ Popup {
         id: toastBox
         visible: root.toast && !root.infoView
         x: (root.width - width) / 2; y: root.height / 2
-        width: Math.min(toastText.implicitWidth + 20, root.width - 2 * root.pad)
-        height: toastText.height + 12
+        width: Math.min(toastLabel.implicitWidth + 20, root.width - 2 * root.pad)
+        height: toastLabel.height + 12
         radius: 3
         color: theme.surface
         border.color: theme.transparentStroke; border.width: theme.highContrast ? 1 : 0
@@ -662,7 +663,7 @@ Popup {
         onVisibleChanged: { if (visible) { opacity = 0; fadeIn.restart() } }
         NumberAnimation { id: fadeIn; target: toastBox; property: "opacity"; from: 0; to: 0.75; duration: 800; easing.type: Easing.Bezier; easing.bezierCurve: [0.33, 0, 0.67, 1, 1, 1] }
         Text {
-            id: toastText
+            id: toastLabel
             x: 10; y: 6
             width: Math.min(implicitWidth, root.width - 2 * root.pad - 20)
             wrapMode: Text.Wrap

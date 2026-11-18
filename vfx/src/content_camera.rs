@@ -118,6 +118,10 @@ pub fn rotate_quad(q: &[f32; 8]) -> [f32; 8] {
 const STABLE_AFTER: u32 = 10;
 /// A corner moving less than this (of the diagonal) is still.
 const STILL: f32 = 0.01;
+/// A stable quad ignores detections closer than this (of the diagonal)…
+const LOCK: f32 = 0.03;
+/// …and gives way to a different one seen this many times in a row.
+const REACQUIRE: u32 = 15;
 /// Detect every this many frames (15 fps → 5 a second).
 const DETECT_EVERY: u64 = 3;
 /// Clean-up's cell size (output pixels).
@@ -156,6 +160,8 @@ pub struct Processor {
     stable: bool,
     still: u32,
     misses: u32,
+    drift: u32,
+    candidate: [f32; 8],
     rotation: u32,
     frame_size: (u32, u32),
     count: u64,
@@ -183,6 +189,8 @@ impl Processor {
             stable: false,
             still: 0,
             misses: 0,
+            drift: 0,
+            candidate: NO_QUAD,
             rotation: 0,
             frame_size: (0, 0),
             count: 0,
@@ -309,12 +317,12 @@ impl Processor {
     }
 
     fn track(&mut self, found: Option<[f32; 8]>, sw: usize, sh: usize) {
+        // A stable quad holds while the board is hidden (someone in front
+        // of it) and against odd detections; only a different board seen
+        // for 3 s in a row replaces it.
         let Some(raw) = found else {
             self.misses += 1;
             self.still = 0;
-            if self.misses >= 5 {
-                self.stable = false;
-            }
             return;
         };
         self.misses = 0;
@@ -324,25 +332,47 @@ impl Processor {
             return;
         }
         let diag = ((sw * sw + sh * sh) as f32).sqrt();
-        let mut moved = 0f32;
-        for c in 0..4 {
-            let dx = (raw[c * 2] - self.quad[c * 2]) * sw as f32;
-            let dy = (raw[c * 2 + 1] - self.quad[c * 2 + 1]) * sh as f32;
-            moved = moved.max((dx * dx + dy * dy).sqrt() / diag);
+        let moved = |a: &[f32; 8], b: &[f32; 8]| {
+            let mut m = 0f32;
+            for c in 0..4 {
+                let dx = (a[c * 2] - b[c * 2]) * sw as f32;
+                let dy = (a[c * 2 + 1] - b[c * 2 + 1]) * sh as f32;
+                m = m.max((dx * dx + dy * dy).sqrt() / diag);
+            }
+            m
+        };
+        let m = moved(&raw, &self.quad);
+        if self.stable {
+            if m < LOCK {
+                self.drift = 0;
+                return;
+            }
+            // Another board: the same one seen again and again.
+            if self.drift > 0 && moved(&raw, &self.candidate) < LOCK {
+                self.drift += 1;
+            } else {
+                self.drift = 1;
+            }
+            self.candidate = raw;
+            if self.drift >= REACQUIRE {
+                self.stable = false;
+                self.quad = raw;
+                self.still = 0;
+                self.drift = 0;
+            }
+            return;
         }
         for i in 0..8 {
             self.quad[i] += 0.3 * (raw[i] - self.quad[i]);
         }
-        if moved < STILL {
+        if m < STILL {
             self.still += 1;
             if self.still >= STABLE_AFTER {
                 self.stable = true;
+                self.drift = 0;
             }
         } else {
             self.still = 0;
-            if moved > 5.0 * STILL {
-                self.stable = false;
-            }
         }
     }
 }
@@ -485,7 +515,10 @@ fn rectify(
             if let Some(mk) = mask {
                 let ix = ((px * mx) as usize).min(MASK - 1);
                 let iy = ((py * my) as usize).min(MASK - 1);
-                out_mask[row + x] = (mk[iy * MASK + ix] * 255.0) as u8;
+                // The model's softmax sits near 0.3 / 0.7: the same
+                // smoothstep as the background effects.
+                let t = ((mk[iy * MASK + ix] - 0.3) / 0.4).clamp(0.0, 1.0);
+                out_mask[row + x] = (t * t * (3.0 - 2.0 * t) * 255.0) as u8;
             }
             nx += sx;
             ny += sy_;
@@ -1236,6 +1269,32 @@ mod tests {
         assert_eq!((rw, rh), (36, 64));
         // Top left goes to top right.
         assert_eq!(r[rw - 1], 250);
+    }
+
+    #[test]
+    fn a_stable_quad_holds_then_gives_way() {
+        let q = [0.1, 0.1, 0.9, 0.1, 0.9, 0.9, 0.1, 0.9];
+        let mut p = Processor::new();
+        p.apply(Options::defaults(Kind::Document));
+        for _ in 0..12 {
+            p.track(Some(q), 640, 360);
+        }
+        assert!(p.state().quad_stable);
+        // Someone hides the bottom right corner: the quad stays.
+        let hidden = [0.1, 0.1, 0.9, 0.1, 0.7, 0.75, 0.1, 0.9];
+        for _ in 0..5 {
+            p.track(Some(hidden), 640, 360);
+            p.track(None, 640, 360);
+        }
+        assert_eq!(p.state().normalized_quad, q);
+        assert!(p.state().quad_stable);
+        // The camera turned to another board: after 3 s it's that one.
+        let other = [0.3, 0.2, 0.8, 0.25, 0.75, 0.8, 0.25, 0.7];
+        for _ in 0..REACQUIRE {
+            p.track(Some(other), 640, 360);
+        }
+        assert!(!p.state().quad_stable);
+        assert_eq!(p.state().normalized_quad, other);
     }
 
     #[test]
