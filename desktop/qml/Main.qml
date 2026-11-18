@@ -2406,8 +2406,12 @@ Window {
         callWindow.nextConnectedAt = Date.now() - (callWindow.heldElapsedBase + callWindow.mainHeldSeconds) * 1000
         backend.leaveRoom(true)
     }
+    // Going back while the main meeting's lobby holds us (we stay in the
+    // room until let in, as Teams).
+    property bool breakoutReturnWaiting: false
     function goBackToMainMeeting() {
         breakoutReturn.stop()
+        if (window.breakoutReturnWaiting) return
         // A room joined over the held main meeting: resume it.
         if (callWindow.heldMeeting) { window.resumeHeldMeeting(); return }
         const main = window.breakoutMain
@@ -2524,7 +2528,20 @@ Window {
             window.breakoutUndo = null
             callWindow.retryReason = "notAllowedToJoinBreakoutRoom"
         }
+        function onBreakoutReturnWaiting() {
+            console.warn("BREAKOUT back to the main meeting: in its lobby; staying in the room until let in")
+            window.breakoutReturnWaiting = true
+            window.breakoutMain = window.breakoutUndo ? window.breakoutUndo.main : window.breakoutMain
+        }
+        function onBreakoutReturned() {
+            console.warn("BREAKOUT let in: back in the main meeting")
+            window.breakoutReturnWaiting = false
+            window.breakoutMain = null
+            window.breakoutUndo = null
+            breakoutReturn.stop()
+        }
         function onMeetingMoveFailed(title, text) {
+            window.breakoutReturnWaiting = false
             console.warn("BREAKOUT move failed:", title, text)
             breakoutReturn.stop()
             // A participant's failed move shows nothing (Teams).

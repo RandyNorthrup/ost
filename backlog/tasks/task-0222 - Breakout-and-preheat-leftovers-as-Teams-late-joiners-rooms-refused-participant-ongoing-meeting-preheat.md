@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-11-17T20:43:00Z'
-updated_date: '2026-11-18T09:05:00Z'
+updated_date: '2026-11-18T09:54:00Z'
 labels:
   - calls
 dependencies: []
@@ -40,4 +40,7 @@ What TASK-0218/0219 left: a participant who joins after rooms are open isn't off
 - Live OST runs on linuxlt in /tmp/brk: late3 (late joiner: assigned when connected Room 1 open, no alert, Join room on bar; late3-watch-3.png), late2 (direct join, same), try2 (refused participant: retried, stayed, nothing shown; try2-watch-*.png). Lib tests: 724 passed.
 
 - Merged 8eca4e7 (2026-11-18): build OK, 724 lib tests passed. AC1 and AC2 verified live against Teams. AC3 open: Teams' direct join of an ongoing call is traced in its bundle and seen at a logpoint, but not yet watched end to end on winpc.
+
+- 2026-11-18 lobby on return (winpc, meeting3 lobby OrganizerOnly): Teams' Leave room put the main meeting's new call InLobby while the room's call stayed Connected and its window kept showing Room 1, with no lobby screen; once admitted, the main call connected and the room was left. OST now matches (CallSlot::lobby_return: stay in the room until let in, then leave it). Verified live in run lr1: held in the lobby, stayed in Room 1, let in 1.6 s later, room left, back in the main meeting.
+- 2026-11-18 AC3 re-check: OST Test 2 re-added ost-test1 to meeting3's chat, and OST Test 3 held a call in meeting1. Teams desktop's active calls still had only expired entries for both chats, so the preheat found no running call (flag-on branch, existing false); meeting1's pre-join wasn't preheated at all. Teams' join-the-running-call branch was not observed end to end.
 <!-- SECTION:NOTES:END -->
