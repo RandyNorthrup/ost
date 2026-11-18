@@ -109,6 +109,25 @@ Window {
     /// its "More video effects" pane at the right (instead of the lobby's).
     property bool effectsOpen: false
     property bool effectsPaneOpen: false
+    /// The pane's kind: "effects" (More video effects) or "avatars"
+    /// (Teams' pre-join "Avatars" pane, from More avatar settings).
+    property string effectsPaneKind: "effects"
+    // Teams' avatars (TASK-0140): with its Avatars app the effects button
+    // is "Effects and avatars" and the picker has the tabs Video effects |
+    // Avatars (Video effects while your camera is on, else Avatars; it
+    // follows the camera). On the Avatars tab with your camera off the
+    // avatar is the camera: the panel previews your avatar ("Select an
+    // avatar" until you choose one), and you join with it as your video.
+    readonly property bool avatarsOffered: !!avatarHost.app.url
+    property string pickerTab: "effects"
+    readonly property bool avatarsShown: visible && effectsOpen && avatarsOffered && pickerTab === "avatars"
+    onAvatarsShownChanged: {
+        videoEffects.avatarViews += avatarsShown ? 1 : -1
+        if (avatarsShown && !cameraOn && !videoEffects.avatarCamera) videoEffects.setAvatarCamera(true)
+    }
+    /// The avatar is previewed in the camera panel.
+    readonly property bool avatarPreview: visible && !cameraOn && avatarsOffered && videoEffects.avatarCamera && !!videoEffects.avatarId
+    onAvatarPreviewChanged: if (!cameraOn) backend.setCameraPreview(avatarPreview)
     onEffectsPaneOpenChanged: if (effectsPaneOpen) lobbyPaneOpen = false
     onLobbyPaneOpenChanged: if (lobbyPaneOpen) effectsPaneOpen = false
     readonly property real sidePaneW: lobbyPaneW > 0 ? lobbyPaneW : effectsPaneOpen ? 360 : 0
@@ -170,13 +189,31 @@ Window {
     readonly property string speaker: { const v = backend.setting("speakerDevice"); return v && v !== "default" ? v : "Default speaker" }
 
     Shortcut { sequence: "Escape"; onActivated: win.cancel() }
+    /// Join now.
+    function joinNow() {
+        if (win.audio === "computer" || win.audio === "phone") backend.setSetting("prejoinAudio", win.audio)
+        win.close()
+        const computer = win.audio !== "none" && win.audio !== "phone"
+        // An avatar chosen: you join with it as your video (Teams); none:
+        // your camera stays the camera.
+        const avatar = win.avatarsOffered && videoEffects.avatarCamera && !!videoEffects.avatarId
+        if (videoEffects.avatarCamera && !videoEffects.avatarId) videoEffects.setAvatarCamera(false)
+        win.join(computer && win.micOn, computer, win.cameraOn || avatar)
+    }
     function cancel() {
         win.close()
         if (win.lobby) win.leaveLobby(); else win.cancelled()
     }
-    onCameraOnChanged: if (cameraOn && !backend.setCameraPreview(true)) cameraOn = false; else if (!cameraOn) backend.setCameraPreview(false)
+    onCameraOnChanged: {
+        // Your camera on: your camera again, not the avatar ("To enable
+        // avatars, turn off camera").
+        if (cameraOn && videoEffects.avatarCamera) { backend.setCameraPreview(false); videoEffects.setAvatarCamera(false) }
+        pickerTab = cameraOn || !avatarsOffered ? "effects" : "avatars"
+        if (cameraOn && !backend.setCameraPreview(true)) cameraOn = false
+        else if (!cameraOn) backend.setCameraPreview(avatarPreview)
+    }
     // The camera is free again for the call (or for nobody) once we go.
-    onVisibleChanged: if (!visible && cameraOn) backend.setCameraPreview(false)
+    onVisibleChanged: if (!visible && (cameraOn || avatarPreview)) backend.setCameraPreview(false)
     Rectangle { anchors.fill: parent; color: theme.pane }
 
     Column {
@@ -248,15 +285,30 @@ Window {
             color: theme.surface; border.color: theme.dividerSoft
             VideoFrame {
                 id: preview
-                visible: win.cameraOn && hasFrame
-                source: win.cameraOn ? "self" : ""
+                visible: (win.cameraOn || win.avatarPreview) && hasFrame
+                source: win.cameraOn || win.avatarPreview ? "self" : ""
                 x: 1; y: 1; width: parent.width - 2; height: 329 - 45
                 radius: 3
                 transform: Scale { origin.x: preview.width / 2; xScale: videoEffects.mirror ? -1 : 1 }
-                Timer { interval: 33; repeat: true; running: win.visible && win.cameraOn; onTriggered: preview.refresh() }
+                Timer { interval: 33; repeat: true; running: win.visible && (win.cameraOn || win.avatarPreview); onTriggered: preview.refresh() }
+            }
+            // Avatars: "Select an avatar", or the avatar loading.
+            Text {
+                visible: !preview.visible && !win.cameraOn && win.avatarsOffered && videoEffects.avatarCamera && !videoEffects.avatarId
+                anchors.horizontalCenter: parent.horizontalCenter
+                y: (329 - 44 - height) / 2
+                text: "Select an avatar"
+                font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold
+                color: theme.textSecondary
+            }
+            QC.BusyIndicator {
+                visible: !preview.visible && win.avatarPreview
+                running: visible
+                anchors.horizontalCenter: parent.horizontalCenter
+                y: (329 - 44 - height) / 2
             }
             Column {
-                visible: !preview.visible
+                visible: !preview.visible && !(!win.cameraOn && win.avatarsOffered && videoEffects.avatarCamera)
                 anchors.horizontalCenter: parent.horizontalCenter
                 y: (329 - 44 - height) / 2
                 spacing: 8
@@ -276,10 +328,10 @@ Window {
                 }
                 // Teams' divider (18 x 32) and its effects button (14/600,
                 // brand while the picker is open). Teams calls it "Effects
-                // and avatars" only where it can render Microsoft's avatars
-                // (its desktop app on WebView2); elsewhere, as here, it is
-                // "Video effects" (docs/spec/call-and-meeting-window.md,
-                // Avatars).
+                // and avatars" where it can run Microsoft's Avatars app (its
+                // desktop app, and OST once it has the app's definition);
+                // elsewhere "Video effects" (docs/spec/call-and-meeting-
+                // window.md, Avatars).
                 Item {
                     width: 18; height: 32
                     anchors.verticalCenter: parent.verticalCenter
@@ -297,15 +349,22 @@ Window {
                         FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "video-background-effect-20"; size: 20; color: theme.onFill(hcFill1, win.effectsOpen ? theme.brand : theme.textStrong) }
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
-                            text: "Video effects"
+                            text: win.avatarsOffered ? "Effects and avatars" : "Video effects"
                             font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
                             color: theme.onFill(hcFill1, win.effectsOpen ? theme.brand : theme.textStrong)
                         }
                     }
                     HoverHandler { id: fxHover; cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: { win.effectsOpen = !win.effectsOpen; if (win.effectsOpen) videoEffects.load() } }
+                    TapHandler {
+                        onTapped: {
+                            win.effectsOpen = !win.effectsOpen
+                            if (win.effectsOpen) { win.effectsPaneOpen = false; win.pickerTab = win.cameraOn || !win.avatarsOffered ? "effects" : "avatars"; videoEffects.load() }
+                        }
+                    }
                     Accessible.role: Accessible.Button
-                    Accessible.name: win.effectsOpen ? "Hide video effects" : "Show video effects"
+                    Accessible.name: win.avatarsOffered
+                        ? (win.effectsOpen ? "Hide effects and avatars options" : win.cameraOn ? "Camera is on, show effects and avatars options" : "Camera is off, show effects and avatars options")
+                        : (win.effectsOpen ? "Hide video effects" : "Show video effects")
                 }
             }
             // Teams' quick picker (video-effects-quick-picker): "Backgrounds"
@@ -317,20 +376,94 @@ Window {
             Rectangle {
                 id: picker
                 visible: win.effectsOpen
-                x: 1; y: 329; width: parent.width - 2; height: win.cameraOn && videoEffects.quickFilters.length > 0 ? 194 : 114
+                x: 1; y: 329; width: parent.width - 2
+                readonly property real tabsH: win.avatarsOffered ? 46 : 0
+                height: tabsH + (win.pickerTab === "avatars" ? avatarsPart.height : win.cameraOn && videoEffects.quickFilters.length > 0 ? 194 : 114)
                 color: theme.inputFilledDark; border.color: theme.transparentStroke
                 radius: 3
                 Rectangle { width: parent.width; height: 4; color: parent.color }
+                // Teams' tabs (two equal halves, 44 high, a hairline under).
+                Row {
+                    visible: win.avatarsOffered
+                    width: parent.width; height: 46
+                    Repeater {
+                        model: [{ k: "effects", t: "Video effects" }, { k: "avatars", t: "Avatars" }]
+                        Item {
+                            id: ptb
+                            required property var modelData
+                            readonly property bool chosen: win.pickerTab === modelData.k
+                            width: picker.width / 2; height: 44
+                            Text {
+                                id: ptbText
+                                anchors.centerIn: parent
+                                text: ptb.modelData.t
+                                font.family: theme.font; font.pixelSize: 14; font.weight: ptb.chosen ? Font.DemiBold : Font.Normal
+                                color: ptb.chosen || ptbHover.hovered ? theme.text : theme.textStrong
+                            }
+                            Rectangle {
+                                visible: ptb.chosen || ptbHover.hovered
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                y: 40; width: ptbText.implicitWidth; height: 3; radius: 1.5
+                                color: ptb.chosen ? theme.brand : theme.strokeHover
+                            }
+                            HoverHandler { id: ptbHover; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: win.pickerTab = ptb.modelData.k }
+                            Accessible.role: Accessible.PageTab
+                            Accessible.name: ptb.modelData.t
+                            Accessible.selected: ptb.chosen
+                        }
+                    }
+                }
+                Rectangle { visible: win.avatarsOffered; y: 45.3; width: parent.width; height: 0.67; color: theme.pick(Qt.rgba(0, 0, 0, 0.12), Qt.rgba(0, 0, 0, 0.24)) }
+                // Avatars: the notice, then your avatars (or Teams' "create
+                // your avatar"); with your camera on, Teams' tip.
+                Column {
+                    id: avatarsPart
+                    visible: win.pickerTab === "avatars"
+                    y: picker.tabsH; width: parent.width
+                    height: visible ? implicitHeight : 0
+                    Item {
+                        visible: win.cameraOn
+                        width: parent.width; height: visible ? 192 : 0
+                        Text {
+                            anchors.centerIn: parent
+                            text: "To enable avatars, turn off camera"
+                            font.family: theme.font; font.pixelSize: 14
+                            color: theme.text
+                        }
+                    }
+                    AvatarNotice { visible: !win.cameraOn && !dismissed; width: parent.width }
+                    Item {
+                        visible: !win.cameraOn && !avatarHost.listed
+                        width: parent.width; height: visible ? 192 : 0
+                        QC.BusyIndicator { anchors.centerIn: parent; running: parent.visible }
+                    }
+                    Item {
+                        visible: !win.cameraOn && avatarHost.listed && avatarHost.avatars.length > 0
+                        width: parent.width; height: visible ? 192 : 0
+                        AvatarPicker {
+                            y: 12; width: parent.width
+                            onCreateMore: window.openAvatarBuilder("AvatarStudioNewPersonaCreation")
+                            onMoreSettings: { win.effectsPaneKind = "avatars"; win.effectsPaneOpen = true }
+                        }
+                    }
+                    AvatarCreate {
+                        visible: !win.cameraOn && avatarHost.listed && avatarHost.avatars.length === 0
+                        width: parent.width; height: visible ? 179 : 0
+                        onCreate: window.openAvatarBuilder("AvatarStudioNewPersonaCreation")
+                    }
+                }
                 Text {
-                    visible: !win.cameraOn
-                    anchors.centerIn: parent
+                    visible: !win.cameraOn && win.pickerTab === "effects"
+                    y: picker.tabsH + (114 - height) / 2
+                    anchors.horizontalCenter: parent.horizontalCenter
                     text: "To enable video effects, turn on camera"
                     font.family: theme.font; font.pixelSize: 14
                     color: theme.text
                 }
                 Column {
-                    visible: win.cameraOn
-                    y: 12; width: parent.width
+                    visible: win.cameraOn && win.pickerTab === "effects"
+                    y: picker.tabsH + 12; width: parent.width
                     Text {
                         x: 12; height: 18; verticalAlignment: Text.AlignVCenter
                         text: "Backgrounds"
@@ -414,7 +547,7 @@ Window {
                             font.underline: mveHover.hovered
                             color: theme.brand
                             HoverHandler { id: mveHover; cursorShape: Qt.PointingHandCursor }
-                            TapHandler { onTapped: win.effectsPaneOpen = true }
+                            TapHandler { onTapped: { win.effectsPaneKind = "effects"; win.effectsPaneOpen = true } }
                             Accessible.role: Accessible.Button
                             Accessible.name: "More video effects"
                         }
@@ -626,12 +759,7 @@ Window {
             // keeps the choice, except Room audio and Don't use audio.
             TapHandler {
                 enabled: win.canJoin
-                onTapped: {
-                    if (win.audio === "computer" || win.audio === "phone") backend.setSetting("prejoinAudio", win.audio)
-                    win.close()
-                    const computer = win.audio !== "none" && win.audio !== "phone"
-                    win.join(computer && win.micOn, computer, win.cameraOn)
-                }
+                onTapped: win.joinNow()
             }
             Accessible.role: Accessible.Button
             Accessible.name: "Join now"
@@ -835,6 +963,7 @@ Window {
         anchors { top: parent.top; bottom: parent.bottom; right: parent.right }
         width: 360
         inCall: false
+        avatarsOnly: win.effectsPaneKind === "avatars"
         cameraOn: win.cameraOn
         onClosed: win.effectsPaneOpen = false
         onGreenScreenSettings: win.greenScreenSettings()

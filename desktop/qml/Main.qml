@@ -89,6 +89,41 @@ Window {
         effectId: videoEffects.filter
         appUrl: videoEffects.filters.url || ""
     }
+    // Teams' avatars: its Avatars app, hosted out of sight.
+    AvatarHost {
+        id: avatarHost
+        z: -100
+        Connections {
+            target: backend
+            function onAvatarsAppReady() { avatarHost.app = JSON.parse(backend.avatarsApp()) }
+            // Teams offers avatars once it has the app's definition.
+            function onSignedInChanged() { if (backend.signedIn && !avatarHost.app.url) avatarHost.app = JSON.parse(backend.avatarsApp()) }
+        }
+        Component.onCompleted: if (backend.signedIn) app = JSON.parse(backend.avatarsApp())
+        onWantedChanged: if (wanted && !app.url) app = JSON.parse(backend.avatarsApp())
+        // Teams runs it while avatars are shown or the avatar is the
+        // camera, and lets it go 10 s after that ends.
+        readonly property bool inUse: videoEffects.avatarViews > 0 || videoEffects.avatarCamera
+        onInUseChanged: if (inUse) { avatarRelease.stop(); wanted = true } else avatarRelease.restart()
+        Timer { id: avatarRelease; interval: 10000; onTriggered: avatarHost.wanted = false }
+        // The chosen avatar once the app runs.
+        onRunningChanged: if (running) select(videoEffects.avatarId, videoEffects.avatarBackground)
+        // Muted (in a call, or before joining with the mic off): Teams drops
+        // the lip sync.
+        muted: callWindow.visible ? callWindow.muted : !preJoin.micOn
+        thread: callWindow.visible && backend.callMeeting ? backend.callThreadId : ""
+    }
+    /// Teams' "Customize Avatar" deep link (Create More, Create your
+    /// avatar, Edit my avatar): the Avatars app's builder from the app bar,
+    /// or the app in the Store until it's added.
+    property string avatarBuilderSubEntity: ""
+    function openAvatarBuilder(subEntity) {
+        avatarBuilderSubEntity = subEntity || ""
+        if (avatarHost.listed || avatarHost.app.url) {
+            rail.openApp("avatars")
+            window.show(); window.raise(); window.requestActivate()
+        } else appDetails.show("96a116ab-6847-4d22-90f3-f4dd6af74938")
+    }
     // Teams desktop's shortcuts: Ctrl+E search, Ctrl+G go to a chat.
     Shortcut { sequence: "Ctrl+E"; onActivated: titleBar.focusSearch() }
     Shortcut { sequence: "Ctrl+G"; onActivated: titleBar.focusSearch() }
@@ -1429,7 +1464,7 @@ Window {
     Timer {
         id: shotTimer
         interval: 15000
-        running: window.shotPath.length > 0 && Qt.application.arguments.indexOf("--draft-format-test") < 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--table-test") < 0 && Qt.application.arguments.indexOf("--hovercard-test") < 0 && Qt.application.arguments.indexOf("--chat-shot") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--pause-test")) && Qt.application.arguments.indexOf("--settings-test") < 0 && Qt.application.arguments.indexOf("--settings-pages-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--meet-now-test") < 0 && Qt.application.arguments.indexOf("--mute-test") < 0 && Qt.application.arguments.indexOf("--video-call-test") < 0 && Qt.application.arguments.indexOf("--meeting-chat-test") < 0 && Qt.application.arguments.indexOf("--breakpoints-test") < 0 && Qt.application.arguments.indexOf("--fun-picker-test") < 0 && Qt.application.arguments.indexOf("--attach-test") < 0 && Qt.application.arguments.indexOf("--copilot-test") < 0 && Qt.application.arguments.indexOf("--attach-link-test") < 0 && Qt.application.arguments.indexOf("--thread-attach-test") < 0 && Qt.application.arguments.indexOf("--picker-bar-test") < 0 && Qt.application.arguments.indexOf("--filecard-test") < 0 && Qt.application.arguments.indexOf("--videoclip-test") < 0 && Qt.application.arguments.indexOf("--recorder-test") < 0 && Qt.application.arguments.indexOf("--recorder-edit-test") < 0 && Qt.application.arguments.indexOf("--teleprompter-test") < 0 && Qt.application.arguments.indexOf("--video-effects-test") < 0 && Qt.application.arguments.indexOf("--video-filters-test") < 0 && Qt.application.arguments.indexOf("--green-screen-test") < 0 && Qt.application.arguments.indexOf("--leave-confirm-test") < 0 && Qt.application.arguments.indexOf("--shortcut-profile-test") < 0 && Qt.application.arguments.indexOf("--new-chat-window-test") < 0 && Qt.application.arguments.indexOf("--chatlist-keys-test") < 0 && Qt.application.arguments.indexOf("--translation-test") < 0 && Qt.application.arguments.indexOf("--regional-test") < 0 && Qt.application.arguments.indexOf("--editor-test") < 0 && Qt.application.arguments.indexOf("--appearance-test") < 0 && Qt.application.arguments.indexOf("--collab-test") < 0 && Qt.application.arguments.indexOf("--notif-test") < 0 && Qt.application.arguments.indexOf("--accounts-test") < 0 && Qt.application.arguments.indexOf("--privacy-test") < 0 && Qt.application.arguments.indexOf("--calls-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--cards-test")) && !Qt.application.arguments.some(a => a.startsWith("--recognition-test=")) && Qt.application.arguments.indexOf("--recognition-states") < 0 && Qt.application.arguments.indexOf("--about-test") < 0 && Qt.application.arguments.indexOf("--room-audio-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--link-preview-test")) && Qt.application.arguments.indexOf("--fileviewer-test") < 0 && Qt.application.arguments.indexOf("--poll-test") < 0 && Qt.application.arguments.indexOf("--media-order-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--custom-emoji")) && Qt.application.arguments.indexOf("--onedrive-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--onedrive-rows-test")) && !Qt.application.arguments.some(a => a.startsWith("--version-history-test")) && !Qt.application.arguments.some(a => a.startsWith("--details-test")) && Qt.application.arguments.indexOf("--preview-test") < 0 && Qt.application.arguments.indexOf("--sortview-test") < 0 && Qt.application.arguments.indexOf("--zip-test") < 0 && Qt.application.arguments.indexOf("--files-links-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--picker-test")) && Qt.application.arguments.indexOf("--folder-bar-test") < 0 && Qt.application.arguments.indexOf("--quick-access-test") < 0 && Qt.application.arguments.indexOf("--picker-views-test") < 0 && Qt.application.arguments.indexOf("--comments-test") < 0 && Qt.application.arguments.indexOf("--bell-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--folder-extras-test")) && Qt.application.arguments.indexOf("--planner-test") < 0 && Qt.application.arguments.indexOf("--apps-test") < 0 && Qt.application.arguments.indexOf("--channel-files-test") < 0 && Qt.application.arguments.indexOf("--store-test") < 0 && Qt.application.arguments.indexOf("--webapp-test") < 0 && Qt.application.arguments.indexOf("--loop-test") < 0 && Qt.application.arguments.indexOf("--tab-menu-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--tab-drag-test=")) && Qt.application.arguments.indexOf("--delete-undo-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat=")) && window.appDetailsTest.length === 0 && Qt.application.arguments.indexOf("--chatlist-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--share-test")) && !Qt.application.arguments.some(a => a.startsWith("--file-actions-test")) && Qt.application.arguments.indexOf("--open-file-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--sharefile-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-grid-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-communities-test")) && Qt.application.arguments.indexOf("--meeting-details-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--attendance-test=")) && !Qt.application.arguments.some(a => a.startsWith("--remove-history-")) && !Qt.application.arguments.some(a => a.startsWith("--embedded-apps-test")) && Qt.application.arguments.indexOf("--test-call-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--events-test")) && Qt.application.arguments.indexOf("--call-notes-test") < 0 && Qt.application.arguments.indexOf("--phone-audio-test") < 0 && Qt.application.arguments.indexOf("--preheat-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--e2ee-setting-test")) && !Qt.application.arguments.some(a => /^--(voicemail-greeting|camera-controls|spatial-audio|tty)-test/.test(a))
+        running: window.shotPath.length > 0 && Qt.application.arguments.indexOf("--draft-format-test") < 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--table-test") < 0 && Qt.application.arguments.indexOf("--hovercard-test") < 0 && Qt.application.arguments.indexOf("--chat-shot") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--pause-test")) && Qt.application.arguments.indexOf("--settings-test") < 0 && Qt.application.arguments.indexOf("--settings-pages-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--meet-now-test") < 0 && Qt.application.arguments.indexOf("--mute-test") < 0 && Qt.application.arguments.indexOf("--video-call-test") < 0 && Qt.application.arguments.indexOf("--meeting-chat-test") < 0 && Qt.application.arguments.indexOf("--breakpoints-test") < 0 && Qt.application.arguments.indexOf("--fun-picker-test") < 0 && Qt.application.arguments.indexOf("--attach-test") < 0 && Qt.application.arguments.indexOf("--copilot-test") < 0 && Qt.application.arguments.indexOf("--attach-link-test") < 0 && Qt.application.arguments.indexOf("--thread-attach-test") < 0 && Qt.application.arguments.indexOf("--picker-bar-test") < 0 && Qt.application.arguments.indexOf("--filecard-test") < 0 && Qt.application.arguments.indexOf("--videoclip-test") < 0 && Qt.application.arguments.indexOf("--recorder-test") < 0 && Qt.application.arguments.indexOf("--recorder-edit-test") < 0 && Qt.application.arguments.indexOf("--teleprompter-test") < 0 && Qt.application.arguments.indexOf("--video-effects-test") < 0 && Qt.application.arguments.indexOf("--video-filters-test") < 0 && Qt.application.arguments.indexOf("--green-screen-test") < 0 && Qt.application.arguments.indexOf("--leave-confirm-test") < 0 && Qt.application.arguments.indexOf("--shortcut-profile-test") < 0 && Qt.application.arguments.indexOf("--new-chat-window-test") < 0 && Qt.application.arguments.indexOf("--chatlist-keys-test") < 0 && Qt.application.arguments.indexOf("--translation-test") < 0 && Qt.application.arguments.indexOf("--regional-test") < 0 && Qt.application.arguments.indexOf("--editor-test") < 0 && Qt.application.arguments.indexOf("--appearance-test") < 0 && Qt.application.arguments.indexOf("--collab-test") < 0 && Qt.application.arguments.indexOf("--notif-test") < 0 && Qt.application.arguments.indexOf("--accounts-test") < 0 && Qt.application.arguments.indexOf("--privacy-test") < 0 && Qt.application.arguments.indexOf("--calls-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--cards-test")) && !Qt.application.arguments.some(a => a.startsWith("--recognition-test=")) && Qt.application.arguments.indexOf("--recognition-states") < 0 && Qt.application.arguments.indexOf("--about-test") < 0 && Qt.application.arguments.indexOf("--room-audio-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--link-preview-test")) && Qt.application.arguments.indexOf("--fileviewer-test") < 0 && Qt.application.arguments.indexOf("--poll-test") < 0 && Qt.application.arguments.indexOf("--media-order-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--custom-emoji")) && Qt.application.arguments.indexOf("--onedrive-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--onedrive-rows-test")) && !Qt.application.arguments.some(a => a.startsWith("--version-history-test")) && !Qt.application.arguments.some(a => a.startsWith("--details-test")) && Qt.application.arguments.indexOf("--preview-test") < 0 && Qt.application.arguments.indexOf("--sortview-test") < 0 && Qt.application.arguments.indexOf("--zip-test") < 0 && Qt.application.arguments.indexOf("--files-links-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--picker-test")) && Qt.application.arguments.indexOf("--folder-bar-test") < 0 && Qt.application.arguments.indexOf("--quick-access-test") < 0 && Qt.application.arguments.indexOf("--picker-views-test") < 0 && Qt.application.arguments.indexOf("--comments-test") < 0 && Qt.application.arguments.indexOf("--bell-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--folder-extras-test")) && Qt.application.arguments.indexOf("--planner-test") < 0 && Qt.application.arguments.indexOf("--apps-test") < 0 && Qt.application.arguments.indexOf("--channel-files-test") < 0 && Qt.application.arguments.indexOf("--store-test") < 0 && Qt.application.arguments.indexOf("--webapp-test") < 0 && Qt.application.arguments.indexOf("--loop-test") < 0 && Qt.application.arguments.indexOf("--tab-menu-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--tab-drag-test=")) && Qt.application.arguments.indexOf("--delete-undo-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat=")) && window.appDetailsTest.length === 0 && Qt.application.arguments.indexOf("--chatlist-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--share-test")) && !Qt.application.arguments.some(a => a.startsWith("--file-actions-test")) && Qt.application.arguments.indexOf("--open-file-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--sharefile-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-grid-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-communities-test")) && Qt.application.arguments.indexOf("--meeting-details-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--attendance-test=")) && !Qt.application.arguments.some(a => a.startsWith("--remove-history-")) && !Qt.application.arguments.some(a => a.startsWith("--embedded-apps-test")) && Qt.application.arguments.indexOf("--test-call-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--events-test")) && Qt.application.arguments.indexOf("--call-notes-test") < 0 && Qt.application.arguments.indexOf("--phone-audio-test") < 0 && Qt.application.arguments.indexOf("--preheat-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--e2ee-setting-test")) && !Qt.application.arguments.some(a => /^--(voicemail-greeting|camera-controls|spatial-audio|tty)-test/.test(a)) && Qt.application.arguments.indexOf("--avatar-test") < 0
         onTriggered: {
             if (!backend.hasCredentials) {
                 if (!backend.signInPage) {
@@ -1854,7 +1889,9 @@ Window {
         onSetAttendeeRestrictions: bits => backend.setAttendeeRestrictions(bits)
         onDownloadAttendance: backend.downloadAttendanceList()
         onMuteAll: backend.muteAll()
-        onSendReaction: name => backend.sendReaction(name)
+        // Your own reaction plays as your avatar's emote (Teams passes your
+        // reactions to the Avatars app: meeting.meetingReactionReceived).
+        onSendReaction: name => { backend.sendReaction(name); if (videoEffects.avatarCamera && callWindow.cameraOn) avatarHost.reaction(name) }
         inviteUrl: backend.callInviteUrl
         selfId: backend.userMri
         // Chat: the 1:1 chat with the person in the call, or the meeting chat.
@@ -6291,6 +6328,101 @@ Window {
         }
     }
 
+    // --avatar-test: Teams' avatars (its Avatars app, hosted by
+    // AvatarHost) before joining (a Meet now's pre-join, never joined):
+    // the app signed in and listing your avatars, the pre-join picker on
+    // its Avatars tab with your first avatar chosen and previewed, the
+    // pre-join Avatars pane, then the Avatars app's builder from the app
+    // bar. With --avatar-call it then joins a Meet now (nobody else in
+    // it) with the avatar as your video, opens Camera ▾ and the Video
+    // effects and settings pane's Avatars tab, sends a Like (the avatar's
+    // emote) and hangs up. Logs AVATAR lines.
+    Timer {
+        running: Qt.application.arguments.indexOf("--avatar-test") >= 0 && backend.signedIn
+        interval: 2000; repeat: true
+        property int step: 0
+        property int waited: 0
+        readonly property bool inCall: Qt.application.arguments.indexOf("--avatar-call") >= 0
+        onTriggered: {
+            // (Never a picture of your camera: only while the avatar is the
+            // camera.)
+            const capPre = tag => { if (!backend.avatarCamera() || preJoin.cameraOn) { console.warn("AVATAR skipped capture", tag); return }
+                preJoin.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-" + tag + ".png"))) }
+            const capMain = tag => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-" + tag + ".png")))
+            const capCall = tag => { if (!backend.avatarCamera()) { console.warn("AVATAR skipped capture", tag); return }
+                callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-" + tag + ".png"))) }
+            const log = (...a) => console.warn("AVATAR", ...a.map(x => typeof x === "string" ? x : JSON.stringify(x)))
+            switch (step) {
+            case 0:
+                log("app", avatarHost.app.url || "none", avatarHost.app.studio || "")
+                if (!avatarHost.app.url && ++waited < 30) return
+                waited = 0
+                // In a call: Calendar's Meet now (a meeting of your own,
+                // nobody invited); else a pre-join that is never joined.
+                if (inCall) backend.calendarAction("meetNow", JSON.stringify({ subject: "OST avatar test" }))
+                else preJoin.openMeetNow("", "OST avatar test")
+                break
+            case 1:
+                if (!preJoin.visible && ++waited < 15) return
+                waited = 0
+                // Tall enough to show the whole picker.
+                preJoin.height = 1060
+                preJoin.effectsOpen = true; preJoin.pickerTab = "avatars"
+                break
+            case 2:
+                if (!avatarHost.listed && ++waited < 60) return
+                waited = 0
+                log("listed", avatarHost.listed, avatarHost.avatars.map(a => a.name), avatarHost.backgrounds.length, "avatar camera", videoEffects.avatarCamera)
+                capPre("picker-none")
+                if (avatarHost.avatars.length === 0) { log("no avatars"); step = 20; return }
+                videoEffects.selectAvatarBackground("")
+                videoEffects.selectAvatar(avatarHost.avatars[0].id)
+                break
+            case 3:
+                if (!backend.avatarDrawing() && ++waited < 90) return
+                waited = 0
+                log("drawing", backend.avatarDrawing(), "registered", avatarHost.registered, "applied", avatarHost.applied, "preview", preJoin.avatarPreview)
+                break
+            case 5: capPre("prejoin"); break
+            case 6: preJoin.effectsPaneKind = "avatars"; preJoin.effectsPaneOpen = true; break
+            case 12: capPre("prejoin-pane"); break
+            case 13:
+                preJoin.effectsPaneOpen = false
+                if (inCall) { log("joining"); preJoin.joinNow(); step = 30; return }
+                preJoin.cancel()
+                break
+            case 14: window.openAvatarBuilder(""); break
+            case 26: capMain("builder"); break
+            case 27: rail.current = "chat"; videoEffects.setAvatarCamera(false); log("done"); Qt.quit(); return
+            // In the call.
+            case 30:
+                if (backend.callState !== "connected" && ++waited < 30) return
+                waited = 0
+                log("call", backend.callState, "camera", callWindow.cameraOn, "avatar camera", videoEffects.avatarCamera)
+                // --avatar-guest: the meeting's link for a second account
+                // (--join-test --join-url=…), and wait for it to join.
+                if (Qt.application.arguments.indexOf("--avatar-guest") >= 0) log("join url", preJoin.joinUrl)
+                break
+            case 31:
+                if (Qt.application.arguments.indexOf("--avatar-guest") >= 0 && callWindow.roster.length < 2 && ++waited < 120) return
+                waited = 0
+                log("roster", callWindow.roster.length)
+                break
+            case 34: log("drawing in call", backend.avatarDrawing()); capCall("call"); break
+            case 35: callWindow.videoOptionsForTest(); break
+            case 36: capCall("flyout"); break
+            case 37: callWindow.videoFlyoutForTest().close(); callWindow.videoEffectsPaneForTest().tab = "avatars"; callWindow.side = "video"; break
+            case 44: capCall("pane"); break
+            case 45: callWindow.reactForTest("like"); log("reacted like"); break
+            case 47: capCall("reaction"); break
+            case 48: callWindow.side = ""; break
+            case 49: log("hanging up"); backend.hangUp(); break
+            case 52: log("call state", backend.callState); videoEffects.setAvatarCamera(false); log("done"); Qt.quit(); return
+            }
+            step++
+        }
+    }
+
     // --video-filters-test: Teams' Filters (its Custom Filters app, hosted
     // by VideoFilterHost) in a Meet now's pre-join (never joined): the
     // camera on, the Sweet style, then the Crystal frame, then None. Logs
@@ -10695,7 +10827,7 @@ Window {
 
     // Apps not built yet: an honest placeholder instead of the chat.
     Rectangle {
-        visible: ["chat", "calls", "calendar", "activity", "settings", "onedrive", "planner", "people", "onenote", "add", "whiteboard", "clipchamp", "shifts", "office", "help", "communities", "search", "events"].indexOf(rail.current) < 0
+        visible: ["chat", "calls", "calendar", "activity", "settings", "onedrive", "planner", "people", "onenote", "add", "whiteboard", "clipchamp", "shifts", "avatars", "office", "help", "communities", "search", "events"].indexOf(rail.current) < 0
         anchors { top: appBanner.bottom; bottom: parent.bottom; left: rail.right; right: parent.right }
         color: theme.surface
         Text {
@@ -10717,6 +10849,8 @@ Window {
             { key: "whiteboard", name: "Whiteboard", icon: "board-20", color: "#0F6CBD", appId: "95de633a-083e-42f5-b444-a4295d8e9314" },
             { key: "clipchamp", name: "Clipchamp", icon: "video", color: "#8764B8", appId: "com.microsoftstream.embed.skypeteamstab" },
             { key: "shifts", name: "Shifts", icon: "calendar-clock-20", color: "#5B5FC7", appId: "42f6c1da-a241-483a-a3cc-4f5be9185951" },
+            // Avatars (Microsoft Mesh): its personal tab, Teams' "Avatar builder".
+            { key: "avatars", name: "Avatars", icon: "person-20", color: "#1D1F4E", appId: "96a116ab-6847-4d22-90f3-f4dd6af74938" },
             // Communities (Viva Engage), as Teams embeds it.
             { key: "communities", name: "Communities", icon: "people-community-20", color: "#0F6CBD", url: "https://engage.cloud.microsoft/main/discover" }
         ]
@@ -10729,7 +10863,7 @@ Window {
             anchors { top: appBanner.bottom; bottom: statusBar.top; left: rail.right; right: parent.right }
             sourceComponent: modelData.appId ? personalAppComp : webAppComp
             Component { id: webAppComp; WebApp { appName: modelData.name; appIcon: modelData.icon; appColor: modelData.color; home: modelData.url } }
-            Component { id: personalAppComp; WebApp { appName: modelData.name; appId: modelData.appId; teamsHost: true; personalApp: true } }
+            Component { id: personalAppComp; WebApp { appName: modelData.name; appId: modelData.appId; teamsHost: true; personalApp: true; personalSubEntity: modelData.key === "avatars" ? window.avatarBuilderSubEntity : "" } }
         }
     }
     // A Word, Excel or PowerPoint file in Office for the web, as Teams'

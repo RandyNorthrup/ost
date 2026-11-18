@@ -53,6 +53,8 @@ pub struct YuvFrame {
 /// Camera capture handle. Keeps the capture thread alive.
 pub struct CameraCapture {
     _handle: std::thread::JoinHandle<()>,
+    /// Stops a capture that has no device to lose (the avatar camera).
+    stop: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
 }
 
 impl CameraCapture {
@@ -67,6 +69,9 @@ impl CameraCapture {
         height: u32,
         fps: u32,
     ) -> Result<(Self, mpsc::Receiver<YuvFrame>)> {
+        if device_path == Some(AVATAR_DEVICE) {
+            return Ok(Self::avatar(width, height, fps));
+        }
         let path = device_path.unwrap_or("/dev/video0");
         let dev = Device::with_path(path)
             .with_context(|| format!("Failed to open camera at {}", path))?;
@@ -117,7 +122,55 @@ impl CameraCapture {
             }
         });
 
-        Ok((CameraCapture { _handle: handle }, rx))
+        Ok((CameraCapture { _handle: handle, stop: None }, rx))
+    }
+}
+
+/// Your avatar as the camera (Teams' avatar mode selects the avatar as
+/// its camera device): nothing is captured; each tick asks the Avatars
+/// app for a frame and passes on the newest one it drew.
+pub const AVATAR_DEVICE: &str = "ost-avatar";
+
+impl CameraCapture {
+    fn avatar(width: u32, height: u32, fps: u32) -> (Self, mpsc::Receiver<YuvFrame>) {
+        let (tx, rx) = mpsc::sync_channel::<YuvFrame>(2);
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let stop2 = stop.clone();
+        let every = std::time::Duration::from_millis(1000 / u64::from(fps.max(1)));
+        let handle = std::thread::spawn(move || {
+            tracing::info!("Avatar camera: {width}x{height} at {fps} fps");
+            let mut next = std::time::Instant::now();
+            loop {
+                if let Some(f) = ost_vfx::avatar::tick(width, height) {
+                    let mut data = vec![0u8; (width * height * 3 / 2) as usize];
+                    ost_vfx::filter::nv12_to_i420(&f.data, width as usize, height as usize, &mut data);
+                    match tx.try_send(YuvFrame { width, height, data }) {
+                        Ok(()) | Err(mpsc::TrySendError::Full(_)) => {}
+                        Err(mpsc::TrySendError::Disconnected(_)) => break,
+                    }
+                }
+                if stop2.load(std::sync::atomic::Ordering::Relaxed) {
+                    break;
+                }
+                next += every;
+                let now = std::time::Instant::now();
+                if next > now {
+                    std::thread::sleep(next - now);
+                } else {
+                    next = now;
+                }
+            }
+            tracing::info!("Avatar camera stopped");
+        });
+        (CameraCapture { _handle: handle, stop: Some(stop) }, rx)
+    }
+}
+
+impl Drop for CameraCapture {
+    fn drop(&mut self) {
+        if let Some(s) = &self.stop {
+            s.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
     }
 }
 

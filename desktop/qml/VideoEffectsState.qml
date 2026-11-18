@@ -81,4 +81,48 @@ QtObject {
         return "Background removed."
     }
     readonly property string blurLabel: blurKind === "portrait" ? "Portrait blur" : "Standard blur"
+
+    // Teams' avatars (its Avatars app, hosted by AvatarHost): the avatar
+    // and background chosen, kept as Teams keeps your last used one
+    // (lastUsedAvatarFilter {appId, filterId, imageId}); whether the avatar
+    // is the camera (Teams' avatar mode, its virtual camera).
+    readonly property var lastAvatar: { try { return JSON.parse(backend.setting("avatarLastUsed") || "{}") } catch (e) { return {} } }
+    property string avatarId: lastAvatar.filterId || ""
+    property string avatarBackground: lastAvatar.imageId || ""
+    property bool avatarCamera: false
+    /// Somewhere shows avatars (a picker, Camera ▾'s Avatars tab, the
+    /// pane): Teams then runs the app.
+    property int avatarViews: 0
+    function selectAvatar(id) {
+        avatarId = id || ""
+        avatarHost.select(avatarId, avatarBackground)
+        saveAvatar()
+    }
+    function selectAvatarBackground(id) {
+        avatarBackground = id || ""
+        avatarHost.select(avatarId, avatarBackground)
+        saveAvatar()
+    }
+    function saveAvatar() {
+        backend.setSetting("avatarLastUsed", JSON.stringify({ appId: avatarHost.app.appId || "96a116ab-6847-4d22-90f3-f4dd6af74938", filterId: avatarId, imageId: avatarBackground }))
+    }
+    /// Teams' setAvatarModeState: the avatar becomes the camera (or your
+    /// camera comes back).
+    function setAvatarCamera(on) {
+        // The backend first: views that start a preview on this change
+        // must get the avatar (never your camera) as the camera.
+        backend.setAvatarCamera(on)
+        avatarCamera = on
+        if (on) avatarHost.select(avatarId, avatarBackground)
+    }
+    // An avatar that's gone from the app's list (deleted) is cleared.
+    property Connections avatarList: Connections {
+        target: avatarHost
+        function onItemsChanged() {
+            if (fx.avatarId && avatarHost.listed && !avatarHost.avatars.some(a => a.id === fx.avatarId)) {
+                fx.avatarId = ""
+                fx.saveAvatar()
+            }
+        }
+    }
 }

@@ -525,6 +525,10 @@ fn open_capture(frame_tx: mpsc::SyncSender<Vec<i16>>, target: u32) -> Option<cpa
                 {
                     p.lock().unwrap_or_else(|e| e.into_inner()).capture(&mut frame, APM_DELAY_MS);
                 }
+                // An avatar's lip sync: the Avatars app's viseme model on
+                // the processed microphone, as Teams runs it.
+                #[cfg(feature = "video")]
+                ost_vfx::avatar::feed(&frame, target);
                 let out_peak = frame.iter().map(|s| s.unsigned_abs() as u32).max().unwrap_or(0);
                 note_mic_frame(out_peak);
                 MIC_OUT_PEAK.fetch_max(out_peak * 100 / 32768, std::sync::atomic::Ordering::Relaxed);

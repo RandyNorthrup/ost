@@ -8,6 +8,8 @@ use std::sync::{Arc, Mutex, mpsc};
 
 use tract_onnx::prelude::*;
 
+pub mod avatar;
+
 /// The model's input and mask size.
 pub const MASK: usize = 192;
 
@@ -411,6 +413,11 @@ impl Processor {
         if PICKING.load(std::sync::atomic::Ordering::Relaxed) {
             return;
         }
+        // An avatar is drawn with its own background; Teams' video effects
+        // are the camera's.
+        if avatar::active() {
+            return;
+        }
         self.own_effects(width, height, data);
         filter::apply(width, height, data);
     }
@@ -553,7 +560,7 @@ pub mod filter {
 
     /// A frame in NV12 (Y plane, then interleaved UV), as Teams' video apps
     /// take them.
-    #[derive(Clone)]
+    #[derive(Clone, Debug, PartialEq)]
     pub struct Frame {
         pub width: u32,
         pub height: u32,

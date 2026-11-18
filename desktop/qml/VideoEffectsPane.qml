@@ -29,9 +29,13 @@ import com.ost.desktop
 // footer and becomes "Stop preview" — and "Apply and turn on video"
 // (brand). The Filters accordion holds Teams' Custom Filters app's Frames
 // and Styles (the app runs in VideoFilterHost.qml); Teams' Snapchat and
-// Maybelline categories are third-party apps and aren't offered, nor is
-// the Avatars tab (TASK-0140). "Green screen settings" opens Settings ▸
-// Devices at Green Screen.
+// Maybelline categories are third-party apps and aren't offered.
+// "Green screen settings" opens Settings ▸ Devices at Green Screen.
+// Avatars (TASK-0140): with Teams' Avatars app the tabs are Video effects
+// | Avatars | Settings (AvatarPanel); "More avatar settings" opens the pane
+// on Avatars. Before joining, Teams' "More avatar settings" opens the
+// "Avatars" pane (avatarsOnly): that tab's content without Preview and
+// Apply.
 Rectangle {
     id: root
     /// In a call (tabs and the footer) or before joining.
@@ -40,6 +44,11 @@ Rectangle {
     signal closed()
     /// Apply and turn on video.
     signal turnOnVideo()
+    /// Apply avatars with none, or preview an avatar while your video is on.
+    signal turnOffVideo()
+    /// Teams' pre-join "Avatars" pane.
+    property bool avatarsOnly: false
+    readonly property bool avatarsOffered: !!avatarHost.app.url
     /// Teams' "Green screen settings": Settings ▸ Devices at Green Screen.
     signal greenScreenSettings()
     color: theme.pane
@@ -76,7 +85,7 @@ Rectangle {
     onCameraOnChanged: if (cameraOn) setPreview(false)
     Component.onDestruction: if (previewing) backend.setCameraPreview(false)
 
-    readonly property bool footer: inCall && !cameraOn
+    readonly property bool footer: inCall && !cameraOn && !avatarPanel.visible
 
     Item {
         id: header
@@ -84,7 +93,7 @@ Rectangle {
         Text {
             x: 20.67; y: 17.67; height: 22
             verticalAlignment: Text.AlignVCenter
-            text: root.inCall ? "Video effects and settings" : "Video effects"
+            text: root.avatarsOnly ? "Avatars" : root.inCall ? "Video effects and settings" : "Video effects"
             font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold
             color: theme.text
             Accessible.role: Accessible.Heading
@@ -110,11 +119,11 @@ Rectangle {
     // 600 over a 3 px brand bar the text's width.
     Row {
         id: tabs
-        visible: root.inCall
+        visible: root.inCall && !root.avatarsOnly
         x: 8.67; y: header.y + header.height + 2
         height: visible ? 44 : 0
         Repeater {
-            model: [{ k: "effects", t: "Video effects" }, { k: "settings", t: "Settings" }]
+            model: [{ k: "effects", t: "Video effects" }].concat(root.avatarsOffered ? [{ k: "avatars", t: "Avatars" }] : []).concat([{ k: "settings", t: "Settings" }])
             Item {
                 id: tb
                 required property var modelData
@@ -141,8 +150,18 @@ Rectangle {
         }
     }
 
+    AvatarPanel {
+        id: avatarPanel
+        visible: root.visible && (root.avatarsOnly || (root.inCall && root.tab === "avatars"))
+        anchors { top: tabs.visible ? tabs.bottom : header.bottom; left: parent.left; right: parent.right; bottom: parent.bottom }
+        inCall: root.inCall
+        cameraOn: root.cameraOn
+        onTurnOnVideo: root.turnOnVideo()
+        onTurnOffVideo: root.turnOffVideo()
+    }
     Flickable {
         id: flick
+        visible: !avatarPanel.visible
         anchors { top: tabs.visible ? tabs.bottom : header.bottom; topMargin: 10; left: parent.left; right: parent.right; bottom: foot.top }
         contentHeight: (root.tab === "effects" || !root.inCall ? effectsCol.implicitHeight : settingsCol.implicitHeight) + 10
         clip: true

@@ -10,15 +10,33 @@ import com.ost.desktop
 // divider; "Backgrounds" (12 px) over a row of 77 x 48 tiles 6 apart
 // (None, the blur tile, Teams' first two catalog backgrounds); a divider;
 // Adjust brightness and Soft focus (14 px #424242 labels, Fluent switches,
-// 36 px rows); a divider and "More video effects and settings". Teams'
-// Avatars tab isn't offered: OST has no avatars (TASK-0140), so the tab
-// strip above "Camera" is left out. Picking a camera moves a running
-// call's video to it at once.
+// 36 px rows); a divider and "More video effects and settings". Picking a
+// camera moves a running call's video to it at once.
+// Avatars (module 686534, measured 2026-11-17; TASK-0140): with Teams'
+// Avatars app the tabs "Effects and settings" | "Avatars" (14 px, 32 high)
+// sit under the preview (shown while your video is off); the Avatars tab
+// shows the retirement notice, the avatar quick picker ("Avatars" and
+// "Backgrounds" 12 px over rows of 77 x 48 tiles 6 apart, 12 above and
+// below), a divider, "More avatar settings" and "Turn on avatars" (brand,
+// 320 x 32). With your avatar on as your video, the
+// flyout is only a 326 x 180 #F0F0F0 box — "Turn off Avatars" (25 high,
+// 14/600) over "This removes your avatars from view, and starts video
+// preview. Your video preview is only visible to you." (12/600 #616161,
+// 240 wide) — and "More avatar settings" (14 px, a 32 px row).
 Popup {
     id: root
     /// The call's camera is on (the preview is then the call's own video).
     property bool cameraOn: false
     signal moreVideoSettings()
+    /// "More avatar settings": the pane on its Avatars tab.
+    signal moreAvatarSettings()
+    signal turnOnVideo()
+    signal turnOffVideo()
+    readonly property bool avatarsOffered: !!avatarHost.app.url
+    /// Your avatar is your video (Teams' box instead of the tabs).
+    readonly property bool avatarOn: avatarsOffered && cameraOn && videoEffects.avatarCamera && !!videoEffects.avatarId
+    /// "effects" or "avatars".
+    property string tab: "effects"
     width: 359.3
     height: col.implicitHeight + 27.4
     padding: 0
@@ -29,19 +47,82 @@ Popup {
     property bool previewing: false
     onOpened: {
         const d = JSON.parse(backend.videoDevices())
+        // Teams opens on Avatars when your avatar is your video, or when
+        // there's no camera to show.
+        tab = avatarsOffered && ((videoEffects.avatarCamera && cameraOn) || (d.devices || []).length === 0) ? "avatars" : "effects"
         cameras = d.devices || []
         current = d.current || ""
         videoEffects.load()
         // Teams previews the camera in the flyout while video is off.
-        previewing = !cameraOn && cameras.length > 0 && backend.setCameraPreview(true)
+        previewing = !cameraOn && (cameras.length > 0 || videoEffects.avatarCamera) && backend.setCameraPreview(true)
+        if (tab === "avatars") enterAvatars()
     }
     onClosed: if (previewing) { previewing = false; backend.setCameraPreview(false) }
+    readonly property bool avatarsShown: opened && tab === "avatars" && avatarsOffered
+    onAvatarsShownChanged: videoEffects.avatarViews += avatarsShown ? 1 : -1
+    // Teams: the Avatars tab with your video off makes the avatar the
+    // camera (the preview is then your avatar); the Effects tab with your
+    // video off brings your camera back.
+    function enterAvatars() {
+        if (cameraOn || videoEffects.avatarCamera) return
+        if (previewing) backend.setCameraPreview(false)
+        videoEffects.setAvatarCamera(true)
+        previewing = backend.setCameraPreview(true)
+    }
+    function enterEffects() {
+        if (cameraOn || !videoEffects.avatarCamera) return
+        if (previewing) backend.setCameraPreview(false)
+        videoEffects.setAvatarCamera(false)
+        previewing = cameras.length > 0 && backend.setCameraPreview(true)
+    }
+    onTabChanged: if (opened) { if (tab === "avatars") enterAvatars(); else enterEffects() }
 
     Column {
         id: col
         x: 16.7; y: 16.7; width: 326
+        // Your avatar is your video: Teams' box with Turn off Avatars.
         Rectangle {
-            width: 326; height: 180; radius: 4
+            visible: root.avatarOn
+            width: 326; height: visible ? 180 : 0; topLeftRadius: 4; topRightRadius: 4
+            color: theme.pick("#F0F0F0", "#1F1F1F", "#000000")
+            Rectangle {
+                id: offButton
+                anchors.horizontalCenter: parent.horizontalCenter; y: 42.5
+                width: offText.implicitWidth + 24; height: 25; radius: 4
+                color: offHover.hovered ? theme.rowHover : parent.color; border.color: theme.stroke
+                Text { id: offText; anchors.centerIn: parent; text: "Turn off Avatars"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(offButton, theme.text) }
+                HoverHandler { id: offHover; cursorShape: Qt.PointingHandCursor }
+                // Teams: your video off, then your camera back.
+                TapHandler { onTapped: { root.turnOffVideo(); videoEffects.setAvatarCamera(false); root.close() } }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Turn off Avatars"
+            }
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter; y: 77.5
+                width: 240; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
+                lineHeight: 20; lineHeightMode: Text.FixedHeight
+                text: "This removes your avatars from view, and starts video preview. \u2060Your video preview is only visible to you."
+                font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold
+                color: theme.textSecondary
+            }
+        }
+        Item {
+            visible: root.avatarOn
+            width: 326; height: visible ? 40 : 0
+            Text {
+                y: 8; height: 32; verticalAlignment: Text.AlignVCenter
+                text: "More avatar settings"
+                font.family: theme.font; font.pixelSize: 14
+                color: masHover.hovered ? theme.text : theme.textStrong
+                HoverHandler { id: masHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: { root.close(); root.moreAvatarSettings() } }
+                Accessible.role: Accessible.Button
+                Accessible.name: "More avatar settings"
+            }
+        }
+        Rectangle {
+            visible: !root.avatarOn
+            width: 326; height: visible ? 180 : 0; radius: 4
             color: theme.pane
             clip: true
             VideoFrame {
@@ -56,11 +137,102 @@ Popup {
             Text {
                 visible: !preview.visible
                 anchors.centerIn: parent
-                text: root.cameras.length === 0 ? "No camera is connected" : "Starting your camera…"
+                text: root.tab === "avatars" ? (videoEffects.avatarId ? "" : "Select an avatar") : root.cameras.length === 0 ? "No camera is connected" : "Starting your camera…"
                 font.family: theme.font; font.pixelSize: 14
                 color: theme.textSecondary
             }
         }
+        // Teams' tabs (32 high) when it has avatars.
+        Row {
+            visible: root.avatarsOffered && !root.avatarOn
+            x: -8; height: visible ? 42 : 0
+            Repeater {
+                model: [{ k: "effects", t: "Effects and settings" }, { k: "avatars", t: "Avatars" }]
+                Item {
+                    id: ftb
+                    required property var modelData
+                    readonly property bool chosen: root.tab === modelData.k
+                    width: ftbText.implicitWidth + 12; height: 42
+                    Text {
+                        id: ftbText
+                        x: 6; y: 6; height: 20; verticalAlignment: Text.AlignVCenter
+                        text: ftb.modelData.t
+                        font.family: theme.font; font.pixelSize: 14; font.weight: ftb.chosen ? Font.DemiBold : Font.Normal
+                        color: ftb.chosen || ftbHover.hovered ? theme.text : theme.textStrong
+                    }
+                    Rectangle {
+                        visible: ftb.chosen || ftbHover.hovered
+                        x: 6; y: 28; width: ftbText.implicitWidth; height: 3; radius: 1.5
+                        color: ftb.chosen ? theme.brand : theme.strokeHover
+                    }
+                    HoverHandler { id: ftbHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: root.tab = ftb.modelData.k }
+                    Accessible.role: Accessible.PageTab
+                    Accessible.name: ftb.modelData.t
+                    Accessible.selected: ftb.chosen
+                }
+            }
+        }
+        // Avatars: the quick picker and Turn on avatars.
+        Column {
+            visible: root.avatarsShown && !root.avatarOn
+            width: 326
+            AvatarNotice { width: 326 + 32; x: -16; height: visible ? implicitHeight - 6 : 0 }
+            AvatarPicker {
+                visible: avatarHost.avatars.length > 0
+                width: 326
+                inFlyout: true
+                showMore: false
+                onCreateMore: { root.close(); window.openAvatarBuilder("AvatarStudioNewPersonaCreation") }
+            }
+            AvatarCreate {
+                visible: avatarHost.listed && avatarHost.avatars.length === 0
+                width: 326; height: visible ? implicitHeight : 0
+                onCreate: { root.close(); window.openAvatarBuilder("AvatarStudioNewPersonaCreation") }
+            }
+            BusyIndicator { visible: !avatarHost.listed; running: visible; anchors.horizontalCenter: parent.horizontalCenter; height: visible ? 40 : 0 }
+            Item { width: 326; height: 10 }
+            Rectangle { width: 326; height: 1 / Screen.devicePixelRatio; color: theme.divider }
+            Item {
+                width: 326; height: 32
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "More avatar settings"
+                    font.family: theme.font; font.pixelSize: 14
+                    color: mas2Hover.hovered ? theme.text : theme.textStrong
+                    HoverHandler { id: mas2Hover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: { root.close(); root.moreAvatarSettings() } }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: "More avatar settings"
+                }
+            }
+            Item { width: 326; height: 8 }
+            Rectangle {
+                id: turnOn
+                x: 3; width: 320; height: 32; radius: 4
+                color: onHover.hovered ? theme.brandHover : theme.brandFill
+                opacity: videoEffects.avatarId ? 1 : 0.5
+                Text { anchors.centerIn: parent; text: "Turn on avatars"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(turnOn, "white") }
+                HoverHandler { id: onHover; cursorShape: Qt.PointingHandCursor }
+                // Teams: the avatar becomes the camera, your video goes on
+                // with it, and the flyout closes.
+                TapHandler {
+                    onTapped: {
+                        if (root.previewing) { root.previewing = false; backend.setCameraPreview(false) }
+                        videoEffects.setAvatarCamera(true)
+                        videoEffects.saveAvatar()
+                        if (!root.cameraOn && videoEffects.avatarId) root.turnOnVideo()
+                        root.close()
+                    }
+                }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Turn on avatars"
+            }
+        }
+        Column {
+            id: effectsPart
+            visible: !root.avatarOn && !root.avatarsShown
+            width: 326
         Item { width: 326; height: 10 }
         Text {
             width: 326; height: 16; verticalAlignment: Text.AlignVCenter
@@ -165,6 +337,7 @@ Popup {
             TapHandler { onTapped: { root.close(); root.moreVideoSettings() } }
             Accessible.role: Accessible.Button
             Accessible.name: "More video effects and settings"
+        }
         }
     }
 

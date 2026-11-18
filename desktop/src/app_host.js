@@ -119,6 +119,91 @@
         };
         const context = () => Object.assign({}, ctx, { frameContext: cfg.frameContext });
 
+        // A video app (Teams' video extensibility: Avatars), on the path
+        // Teams desktop gives it, WebView2's texture streams: Teams starts a
+        // stream for the app, whose frames carry a header and the app's
+        // audio inference result in rows above the picture
+        // (metadataInTexture); the app's frames come back on the stream it
+        // registers. Here the app frame's chrome.webview (video_app_frame.js)
+        // makes and reads those streams, and OST asks for and takes the
+        // frames over its socket (src/avatars.rs).
+        const video = cfg.video ? (() => {
+            const streamId = "ost-video-" + cfg.hostId;
+            // TeamsJS' one-texture layout: rows 0–1 the header, rows 2–3
+            // the streams (audio inference result), the picture below.
+            const LAYOUT_ID = 1869900081, AUDIO_INFERENCE_RESULT = 828664161, HEADER_ROWS = 4;
+            let ws = null, started = false, inFlight = 0;
+            const seqs = new Map();
+            const connect = () => {
+                ws = new WebSocket(cfg.video.socket);
+                ws.binaryType = "arraybuffer";
+                ws.onmessage = ev => {
+                    const b = ev.data;
+                    if (!(b instanceof ArrayBuffer) || b.byteLength < 24) return;
+                    const v = new DataView(b);
+                    if (v.getUint32(0, true) !== 1 || !frame || !frame.contentWindow) return;
+                    // One frame drawing at a time, one waiting.
+                    if (inFlight >= 2) return;
+                    const w = v.getUint32(4, true), h = v.getUint32(8, true), seq = Number(v.getBigUint64(12, true));
+                    const n = v.getUint32(20, true);
+                    const visemes = new Uint8Array(b, 24, Math.min(n, b.byteLength - 24));
+                    const codedH = h + HEADER_ROWS;
+                    const data = new ArrayBuffer(w * codedH * 3 / 2);
+                    const px = new Uint8Array(data);
+                    px.fill(16, 0, w * codedH);
+                    px.fill(128, w * codedH);
+                    const head = new DataView(data, 0, 32);
+                    [LAYOUT_ID, 1, HEADER_ROWS, 0, w, h, 2, visemes.length ? 1 : 0].forEach((x, i) => head.setUint32(i * 4, x, true));
+                    if (visemes.length) {
+                        const meta = new DataView(data, 2 * w, 12);
+                        meta.setUint32(0, AUDIO_INFERENCE_RESULT, true);
+                        meta.setUint32(4, 12, true);
+                        meta.setUint32(8, visemes.length, true);
+                        px.set(visemes, 2 * w + 12);
+                    }
+                    const timestamp = Math.round(seq * 1e6 / 15);
+                    seqs.set(timestamp, seq);
+                    if (seqs.size > 16) seqs.delete(seqs.keys().next().value);
+                    inFlight++;
+                    setTimeout(() => { if (seqs.has(timestamp)) { seqs.delete(timestamp); inFlight = Math.max(0, inFlight - 1) } }, 2000);
+                    frame.contentWindow.postMessage({ ostTexture: "in", streamId, width: w, height: codedH, timestamp, data }, cfg.video.appOrigin, [data]);
+                };
+                ws.onclose = () => setTimeout(connect, 500);
+            };
+            return {
+                // The app asked for frames (video.mediaStream.registerForVideoFrame).
+                register(config) {
+                    const model = config && config.audioInferenceModel;
+                    ost.event("videoRegistered", JSON.stringify({ format: String((config && config.format) || ""), requireCameraStream: !!(config && config.requireCameraStream),
+                        model: model && model.byteLength ? model.byteLength : 0 }));
+                    if (!ws) connect();
+                    const sendModel = () => {
+                        if (ws.readyState !== WebSocket.OPEN) { setTimeout(sendModel, 100); return; }
+                        const bytes = model && model.byteLength ? new Uint8Array(model) : new Uint8Array(0);
+                        const msg = new Uint8Array(4 + bytes.length);
+                        new DataView(msg.buffer).setUint32(0, 2, true);
+                        msg.set(bytes, 4);
+                        ws.send(msg.buffer);
+                    };
+                    sendModel();
+                    if (!started) { started = true; send("video.startVideoExtensibilityVideoStream", [{ streamId, metadataInTexture: true }]) }
+                },
+                // A frame the app drew, from its frame's stream.
+                drawn(d) {
+                    if (!ws || ws.readyState !== WebSocket.OPEN || !(d.data instanceof ArrayBuffer)) return;
+                    const seq = seqs.get(d.timestamp);
+                    if (seq === undefined) return;
+                    seqs.delete(d.timestamp);
+                    inFlight = Math.max(0, inFlight - 1);
+                    const msg = new Uint8Array(20 + d.data.byteLength);
+                    const v = new DataView(msg.buffer);
+                    v.setUint32(0, 1, true); v.setUint32(4, d.width, true); v.setUint32(8, d.height, true); v.setBigUint64(12, BigInt(seq), true);
+                    msg.set(new Uint8Array(d.data), 20);
+                    ws.send(msg.buffer);
+                }
+            };
+        })() : null;
+
         // Load another address in the frame as Teams does for its cached
         // app frames: beforeUnload, then (after readyToUnload) load with
         // the new entity and address; an app that handles neither is
@@ -345,6 +430,34 @@
                 respond(source, from, d, []);
                 ost.event("ChatReady", "{}");
                 return;
+            case "video.mediaStream.registerForVideoFrame":
+                if (video) video.register(args[0]);
+                return;
+            case "video.registerForVideoEffect":
+                ost.event("videoEffectRegistered", "{}");
+                return;
+            case "video.personalizedEffectsChanged":
+                // The app's own effects (Avatars: your avatars and their
+                // backgrounds), as Teams lists them.
+                ost.event("personalizedEffects", JSON.stringify(Array.isArray(args[0]) ? args[0] : []));
+                return;
+            case "video.videoEffectChanged":
+                // The effect chosen in the app's own page (Avatars' side
+                // panel): [changeType, effectId, effectParameter].
+                ost.event("videoEffectChanged", JSON.stringify(args));
+                return;
+            case "video.videoEffectReadiness":
+                ost.event("videoEffectReadiness", JSON.stringify(args.map(a => typeof a === "string" ? a.slice(0, 200) : a)));
+                return;
+            case "video.notifyError":
+                ost.log("video app error " + String(args[1] || "") + ": " + String(args[0] || "").slice(0, 200));
+                return;
+            case "video.setFrameProcessTimeLimit":
+            case "video.performance.performanceDataGenerated":
+            case "video.performance.firstFrameProcessed":
+            case "video.performance.textureStreamAcquired":
+                if (f === "video.performance.firstFrameProcessed") ost.event("firstFrameProcessed", "{}");
+                return;
             default:
                 // Not answered, as Teams leaves what it doesn't handle; the
                 // name only, never the arguments.
@@ -354,6 +467,8 @@
 
         addEventListener("message", e => {
             const d = e.data;
+            // A frame a video app drew (from its frame's texture stream).
+            if (video && d && d.ostTexture === "out" && frame && e.source === frame.contentWindow) { video.drawn(d); return; }
             if (!d || typeof d !== "object" || typeof d.func !== "string" || !frame) return;
             const fromFrame = e.source === frame.contentWindow;
             let nested = false;

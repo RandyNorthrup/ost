@@ -41,6 +41,7 @@ Rectangle {
         { key: "whiteboard", icon: "board-20", label: "Whiteboard", keys: "" },
         { key: "clipchamp", icon: "video", label: "Clipchamp", keys: "" },
         { key: "shifts", icon: "calendar-clock-20", label: "Shifts", keys: "" },
+        { key: "avatars", icon: "person-20", label: "Avatars", keys: "" },
         { key: "help", icon: "question-circle-20", label: "Help", keys: "" },
         { key: "events", icon: "ticket-diagonal-20", label: "Events", keys: "" },
         // A Word, Excel or PowerPoint file open in Office for the web takes
@@ -175,7 +176,8 @@ Rectangle {
             { key: "clipchamp", label: "Clipchamp", icon: "video", color: "#8764B8" },
             { key: "whiteboard", label: "Whiteboard", icon: "board-20", color: "#0F6CBD" },
             { key: "events", label: "Events", icon: "ticket-diagonal-20", color: theme.textStrong },
-            { key: "people", label: "People", icon: "people-20", color: theme.textStrong }
+            { key: "people", label: "People", icon: "people-20", color: theme.textStrong },
+            { key: "avatars", label: "Avatars", icon: "person-20", color: "#1D1F4E" }
         ]
         contentItem: Column {
             spacing: 2

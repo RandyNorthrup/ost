@@ -1118,6 +1118,32 @@ pub mod qobject {
         /// WebSocket with a secret path).
         #[qinvokable]
         fn video_filter_socket(self: Pin<&mut Backend>) -> QString;
+        /// Microsoft's Avatars app (Teams' avatarAppId) from its definition:
+        /// {appId, url (videoAppContentUrl), studio (the Avatar builder
+        /// tab's address), name}, empty until loaded (avatars_app_ready
+        /// follows the first call).
+        #[qinvokable]
+        fn avatars_app(self: Pin<&mut Backend>) -> QString;
+        /// Where the Avatars app's host page asks for and hands back
+        /// frames (a localhost WebSocket with a secret path).
+        #[qinvokable]
+        fn avatar_socket(self: Pin<&mut Backend>) -> QString;
+        /// The script for a video app's frames (WebView2's texture
+        /// streams, as Teams desktop gives them).
+        #[qinvokable]
+        fn video_app_frame_script(self: &Backend) -> QString;
+        /// Your avatar is the camera (Teams' avatar mode with an avatar
+        /// applied) or not; a camera that is on switches over.
+        #[qinvokable]
+        fn set_avatar_camera(self: Pin<&mut Backend>, on: bool);
+        #[qinvokable]
+        fn avatar_camera(self: &Backend) -> bool;
+        /// Muted: the avatar's lip sync rests.
+        #[qinvokable]
+        fn set_avatar_muted(self: Pin<&mut Backend>, on: bool);
+        /// Whether the Avatars app has drawn a frame lately.
+        #[qinvokable]
+        fn avatar_drawing(self: &Backend) -> bool;
         /// The system's time zone (IANA name, "America/Los_Angeles").
         #[qinvokable]
         fn time_zone_name(self: Pin<&mut Backend>) -> QString;
@@ -1523,6 +1549,9 @@ pub mod qobject {
         /// The Custom Filters app's definition loaded (video_filters).
         #[qsignal]
         fn video_filters_ready(self: Pin<&mut Backend>);
+        /// The Avatars app's definition loaded (avatars_app).
+        #[qsignal]
+        fn avatars_app_ready(self: Pin<&mut Backend>);
         /// Teams' translation languages arrived.
         #[qsignal]
         fn translation_languages_ready(self: Pin<&mut Backend>);
@@ -4224,8 +4253,12 @@ fn test_camera() -> Option<(String, String)> {
     }
 }
 
-/// The camera chosen in Settings > Devices (a V4L2 path), else the default.
+/// The camera chosen in Settings > Devices (a V4L2 path), else the default;
+/// your avatar while it is on (Teams selects the avatar as the camera).
 fn camera_device() -> Option<String> {
+    if ost_vfx::avatar::active() {
+        return Some(teams_cli::calling::camera::AVATAR_DEVICE.to_string());
+    }
     load_settings()
         .get("cameraDevice")
         .and_then(|v| v.as_str())
@@ -8050,6 +8083,76 @@ impl qobject::Backend {
 
     pub fn set_video_filter_active(self: Pin<&mut Self>, on: bool) {
         ost_vfx::filter::set_active(on);
+    }
+
+    pub fn avatars_app(self: Pin<&mut Self>) -> QString {
+        static CACHE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+        static LOADING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        if let Some(json) = CACHE.lock().unwrap().clone() {
+            return QString::from(json.as_str());
+        }
+        if !LOADING.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            let qt = self.qt_thread();
+            runtime().spawn(async move {
+                let result = async {
+                    let client = TeamsClient::new().await?;
+                    teams_cli::api::app_details::definition(&client, crate::avatars::AVATARS_APP).await
+                }
+                .await;
+                match result {
+                    Ok(def) => *CACHE.lock().unwrap() = Some(crate::avatars::app_info(&def).to_string()),
+                    Err(e) => tracing::warn!("Avatars app: {}", short_error(&e)),
+                }
+                LOADING.store(false, std::sync::atomic::Ordering::SeqCst);
+                let _ = qt.queue(|this| this.avatars_app_ready());
+            });
+        }
+        QString::from("{}")
+    }
+
+    pub fn avatar_socket(self: Pin<&mut Self>) -> QString {
+        QString::from(crate::avatars::socket().as_str())
+    }
+
+    pub fn video_app_frame_script(&self) -> QString {
+        QString::from(include_str!("video_app_frame.js"))
+    }
+
+    pub fn set_avatar_camera(self: Pin<&mut Self>, on: bool) {
+        if ost_vfx::avatar::active() == on {
+            return;
+        }
+        ost_vfx::avatar::set_active(on);
+        tracing::info!(on, "avatar camera");
+        if !self.rust().call_camera_on {
+            return;
+        }
+        // The camera is on: the avatar (or your camera) takes its place,
+        // the line unchanged, as choosing another camera does.
+        let device = camera_device();
+        runtime().spawn(async move {
+            let mut guard = call_slot().lock().await;
+            let Some(mut call) = MediaCall::of(&mut guard) else {
+                return;
+            };
+            let switched = either!(&mut call, c => c.set_camera(false, None))
+                .and_then(|()| either!(&mut call, c => c.set_camera(true, device.clone())));
+            if let Err(e) = switched {
+                tracing::info!("switching to the avatar: {}", short_error(&e));
+            }
+        });
+    }
+
+    pub fn avatar_camera(&self) -> bool {
+        ost_vfx::avatar::active()
+    }
+
+    pub fn set_avatar_muted(self: Pin<&mut Self>, on: bool) {
+        ost_vfx::avatar::set_muted(on);
+    }
+
+    pub fn avatar_drawing(&self) -> bool {
+        ost_vfx::avatar::drawing()
     }
 
     pub fn time_zone_name(self: Pin<&mut Self>) -> QString {

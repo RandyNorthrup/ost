@@ -2339,6 +2339,7 @@ Window {
             cameraOn: win.cameraOn
             onClosed: win.side = ""
             onTurnOnVideo: if (!win.cameraOn) win.runControl("VideoButton")
+            onTurnOffVideo: if (win.cameraOn) win.runControl("VideoButton")
             onGreenScreenSettings: win.greenScreenSettings()
         }
         // Copilot (Teams' copilot side pane: 320 wide; a 44 tall header
@@ -3161,7 +3162,10 @@ Window {
         x: !parent ? 0 : parent.mapToItem(null, parent.width - width, 0).x < 0 ? 0 : parent.width - width
         y: parent ? parent.height : 60
         // Teams opens its Video effects and settings pane.
-        onMoreVideoSettings: win.side = "video"
+        onMoreVideoSettings: { videoEffectsPane.tab = "effects"; win.side = "video" }
+        onMoreAvatarSettings: { videoEffectsPane.tab = "avatars"; win.side = "video" }
+        onTurnOnVideo: if (!win.cameraOn) win.runControl("VideoButton")
+        onTurnOffVideo: if (win.cameraOn) win.runControl("VideoButton")
     }
     function videoOptionsForTest() { videoFlyout.parent = barItem("VideoButton"); videoFlyout.open() }
     function videoFlyoutForTest() { return videoFlyout }

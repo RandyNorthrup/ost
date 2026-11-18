@@ -31,6 +31,8 @@ Item {
     property bool personalApp: false
     /// The personal tab to open (else the app's first).
     property string personalEntity: ""
+    /// The personal tab's subEntityId (a deep link's context).
+    property string personalSubEntity: ""
     /// The tab Teams opens (from the definition): entity_id, content_url…
     property var personalTab: null
     property bool personalFullScreen: false
@@ -106,6 +108,10 @@ Item {
     /// the meeting's own board (its fluidboard address, with Teams'
     /// parameters) and keeps the board Whiteboard reports.
     property var meetingBoard: null
+    /// A video app (Avatars): its frames' socket and origin (app_host.js).
+    property var videoApp: null
+    /// A script for the app's own frames (in their world, from the start).
+    property string frameScript: ""
     /// Ask the hosted configuration page to save (Teams' Save).
     function requestSave() { hostBridge.saveRequested() }
     /// Answer a dialog this app opened (tasks.startTask): `error` (null, or
@@ -174,7 +180,7 @@ Item {
     function loadHostPage(ctx) {
         // A personal app's context: its tab's entity, full screen or not;
         // the server-rendering host feature for Copilot (measured).
-        const personal = root.personalTab ? { entityId: root.personalTab.entity_id, subEntityId: "", isFullScreen: root.personalFullScreen } : {}
+        const personal = root.personalTab ? { entityId: root.personalTab.entity_id, subEntityId: root.personalSubEntity, isFullScreen: root.personalFullScreen } : {}
         const c = Object.assign({}, ctx, personal, root.hostContext, {
             appSessionId: root.appSessionId, appLaunchId: newGuid(), theme: hostBridge.theme,
             appId: root.appId, hostClientType: root.hostClientType })
@@ -188,7 +194,8 @@ Item {
         hostBridge.config = JSON.stringify({ hostId: root.hostId, url: url, appId: root.appId, title: root.appName,
                                              frameContext: root.frameContext, hostClientType: root.hostClientType, deepNaa: root.deepNaa, context: c,
                                              ssr: root.ssr, allow: root.frameAllow, supports: root.runtimeSupports,
-                                             meetingBoard: root.meetingBoard ? { organizer: root.meetingBoard.organizer || "" } : null })
+                                             meetingBoard: root.meetingBoard ? { organizer: root.meetingBoard.organizer || "" } : null,
+                                             video: root.videoApp })
         root.hostLoading = true
         web.loadHtml(backend.appHostPage(root.appName), "https://teams.cloud.microsoft/")
     }
@@ -418,6 +425,15 @@ Item {
     property string location: ""
     Component.onCompleted: {
         web.profile = webAppsProfile.instance()
+        if (root.frameScript) {
+            const script = WebEngine.script()
+            script.name = "ost-app-frame"
+            script.sourceCode = root.frameScript
+            script.injectionPoint = WebEngineScript.DocumentCreation
+            script.worldId = WebEngineScript.MainWorld
+            script.runsOnSubFrames = true
+            web.userScripts.insert(script)
+        }
         if (root.teamsHost) {
             // Qt's web channel client, from Qt's own resources.
             const x = new XMLHttpRequest()

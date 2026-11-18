@@ -574,6 +574,32 @@ docs/spec/events.md.
   rendered and connected in the Notes panel ("Just start typing…", the
   insert row). The meeting and its notes file were deleted afterwards.
 
+## Video apps (Avatars, TASK-0140)
+- Teams desktop gives video apps WebView2's texture streams (runtime
+  `supports.video.mediaStream`): the app sends
+  `video.mediaStream.registerForVideoFrame [config]`, Teams posts
+  `video.startVideoExtensibilityVideoStream [{streamId, metadataInTexture}]`,
+  and the app reads `chrome.webview.getTextureStream(streamId)` and
+  registers its output with `registerTextureStream(streamId, track)`.
+- OST's host does the same with `cfg.video` (`{socket, appOrigin}`):
+  `video_app_frame.js` (in the app's frames of that origin under the host
+  page, their own world, from document creation) implements
+  `chrome.webview` with MediaStreamTrackGenerator /
+  MediaStreamTrackProcessor; the frames cross between the host page and
+  the app frame by postMessage (transferred buffers) and between the host
+  page and OST over a localhost WebSocket with a secret path
+  (`desktop/src/avatars.rs`). Other video funcs: `registerForVideoEffect`,
+  `personalizedEffectsChanged`, `videoEffectChanged`,
+  `videoEffectReadiness`, `notifyError`, `performance.*` (events to QML);
+  Teams' events `video.effectParameterChange`,
+  `video.mediaStream.audioInferenceDiscardStatusChange` and
+  `meeting.meetingReactionReceived` go through `sendFrameMessage`.
+- Live (2026-11-17, ost-test1 on linuxlt): the Avatars renderer signed in
+  by NAA, listed the account's avatar and 70 backgrounds, applied the
+  avatar, registered for frames with its 153 kB viseme model and drew
+  640 x 360 frames; its `uiOnly` side panel and its builder (personal tab
+  "Customize Avatar") ran in the host as in Teams.
+
 ## OST's host (why this design)
 Options weighed:
 - **Inject a native interface into a top-level page** (TeamsJS'
