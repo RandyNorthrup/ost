@@ -232,8 +232,14 @@ Everything below is in userPersonalSettings unless marked local.
   it, a meeting offers x-much2; each speaker gets their own Opus decoder and their own placer
   (equal-power pan over ±60° with the interaural time difference) at their tile, and the
   placed voices are summed in stereo. Without x-much2 (spatial audio off at join, or a mix) the
-  mix is placed at its CSRCs' mean place. Turning spatial audio on mid-meeting takes effect
-  at the next meeting (Teams renegotiates the codec mid-call).
+  mix is placed at its CSRCs' mean place.
+- Mid-meeting: Teams' audio codec manager raises `negotiationNeeded` when spatial audio is
+  turned on or off (`configureSpatialAudio` → `triggerRenegotiation`), and the call re-offers
+  through the leg's `mediaRenegotiation` link (`renegotiateOutgoing`). OST does the same
+  (`Reoffer::Unmixed`): its current description re-offered with x-much2 added first on the
+  audio line or taken off it; the media processor's answer keeps or drops it and its packets
+  switch to per-speaker or the mix (measured 2026-11-17: the answer arrived in ~0.45 s both
+  ways).
 
 ## Devices ▸ Automatically adjust camera controls (read 2026-11-17, row measured 2026-11-14)
 

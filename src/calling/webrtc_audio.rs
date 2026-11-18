@@ -699,6 +699,10 @@ pub enum Reoffer {
     Camera(bool),
     /// Our screen on (the sharing line sends) or off.
     Share(bool),
+    /// Each speaker's own audio (x-much2, spatial audio) asked for or
+    /// given up, as Teams renegotiates when spatial audio is turned on or
+    /// off mid-meeting (its audio codec manager's negotiationNeeded).
+    Unmixed(bool),
 }
 
 impl Reoffer {
@@ -707,8 +711,47 @@ impl Reoffer {
         match self {
             Reoffer::Camera(on) => (on, share),
             Reoffer::Share(on) => (camera, on),
+            Reoffer::Unmixed(_) => (camera, share),
         }
     }
+}
+
+/// `sdp` with x-much2 offered first on its audio line (`on`) or not at all.
+pub fn with_unmixed(sdp: &str, on: bool) -> String {
+    let pt = super::much::PAYLOAD_TYPE.to_string();
+    let rtpmap = format!("a=rtpmap:{pt} {}", super::much::RTPMAP);
+    let mut out = String::new();
+    let mut in_audio = false;
+    let mut added = false;
+    for l in sdp.split_inclusive('\n') {
+        let line = l.trim_end();
+        if line.starts_with("m=") {
+            in_audio = line.starts_with("m=audio");
+            if in_audio {
+                // m=audio <port> <proto> <formats…>
+                let mut f: Vec<&str> = line.split(' ').collect();
+                let formats: Vec<&str> = f.split_off(3.min(f.len())).into_iter().filter(|x| *x != pt).collect();
+                let mut all: Vec<&str> = f;
+                if on {
+                    all.push(&pt);
+                }
+                all.extend(formats);
+                out.push_str(&all.join(" "));
+                out.push_str("\r\n");
+                continue;
+            }
+        }
+        if in_audio && line.starts_with(&format!("a=rtpmap:{pt} ")) {
+            continue;
+        }
+        if in_audio && on && !added && line.starts_with("a=rtpmap:") {
+            out.push_str(&rtpmap);
+            out.push_str("\r\n");
+            added = true;
+        }
+        out.push_str(l);
+    }
+    out
 }
 
 /// What differs between our video m-lines.
@@ -1382,6 +1425,11 @@ pub struct WebRtcAudioSession {
     pending_offer: std::sync::Mutex<Option<(String, u64, Reoffer)>>,
     /// What's negotiated as sending: (our camera, our screen).
     negotiated: std::sync::Mutex<(bool, bool)>,
+    /// The x-much2 payload type the meeting sends each speaker's audio
+    /// with (0: the mix); renegotiated as spatial audio is turned on or off.
+    much_pt: Arc<std::sync::atomic::AtomicU8>,
+    /// A meeting's call (x-much2 applies).
+    meeting: bool,
     /// The mid of our camera's video line.
     #[cfg(feature = "video")]
     video_mid: Option<String>,
@@ -1739,6 +1787,7 @@ impl WebRtcAudioSession {
                     bail!("This call has no screen-sharing line")
                 }
                 Reoffer::Camera(_) if self.video_mid.is_none() => bail!("This call has no video"),
+                Reoffer::Unmixed(_) if !self.meeting => bail!("Only meetings send each speaker's own audio"),
                 _ => {}
             }
             let (camera, share) =
@@ -1762,7 +1811,10 @@ impl WebRtcAudioSession {
             if current.is_empty() {
                 bail!("No earlier SDP to re-offer");
             }
-            let sdp = media_offer(&current, &base, &lines, version);
+            let mut sdp = media_offer(&current, &base, &lines, version);
+            if let Reoffer::Unmixed(on) = change {
+                sdp = with_unmixed(&sdp, on);
+            }
             *pending = Some((sdp.clone(), version, change));
             Ok(sdp)
         }
@@ -1793,6 +1845,14 @@ impl WebRtcAudioSession {
                 .video_mid
                 .as_deref()
                 .is_some_and(|mid| answer_receives(answer, mid)),
+            Reoffer::Unmixed(on) => {
+                // The media processor sends per speaker from now on when
+                // its answer keeps x-much2, and the mix when it doesn't.
+                let pt = audio_section(answer).as_deref().and_then(super::much::payload_type);
+                self.much_pt.store(pt.unwrap_or(0), Ordering::Relaxed);
+                tracing::info!(asked = on, per_speaker = pt.is_some(), "meeting audio renegotiated");
+                pt.is_some() == on
+            }
             _ => true,
         };
         #[cfg(not(feature = "video"))]
@@ -1814,6 +1874,11 @@ impl WebRtcAudioSession {
     /// Drop our re-offer (the other side refused it); nothing changes.
     pub fn cancel_reoffer(&self) {
         *self.pending_offer.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
+
+    /// Whether the meeting sends each speaker's own audio (x-much2).
+    pub fn unmixed(&self) -> bool {
+        self.much_pt.load(Ordering::Relaxed) != 0
     }
 
     /// Whether a re-offer of ours is waiting for its answer.
@@ -1992,6 +2057,10 @@ impl WebRtcAudioSession {
 
         let mut tasks = Vec::new();
         let held = Arc::new(AtomicBool::new(false));
+        // Each speaker's own audio (x-much2), when the meeting took it.
+        let much_pt = Arc::new(std::sync::atomic::AtomicU8::new(
+            offer.much_pt.filter(|_| local.meeting).unwrap_or(0),
+        ));
         // Teams' network strength, from this call's measurements each second.
         let strength = Arc::new(std::sync::atomic::AtomicU8::new(0));
         {
@@ -2153,7 +2222,7 @@ impl WebRtcAudioSession {
                 super::audio_codec::Codec::Opus(pt) => Some(pt),
                 super::audio_codec::Codec::Pcmu => None,
             },
-            much_pt: offer.much_pt.filter(|_| local.meeting),
+            much_pt: much_pt.clone(),
             held: held.clone(),
             twcc: twcc.clone(),
             bwe: bwe.clone(),
@@ -2461,6 +2530,8 @@ impl WebRtcAudioSession {
             share: None,
             pending_offer: std::sync::Mutex::new(None),
             negotiated: std::sync::Mutex::new((local.camera_on, false)),
+            much_pt,
+            meeting: local.meeting,
             #[cfg(feature = "video")]
             video_mid: offer.video.as_ref().map(|v| v.mid.clone()),
             #[cfg(feature = "video")]
@@ -2528,8 +2599,9 @@ struct RecvCtx {
     spk_tx: Option<std::sync::mpsc::SyncSender<Vec<[i16; 2]>>>,
     /// The peer's Opus payload type (else only PCMU is played).
     opus_pt: Option<u8>,
-    /// The peer's x-much2 payload type (each speaker's own audio).
-    much_pt: Option<u8>,
+    /// The peer's x-much2 payload type (each speaker's own audio; 0: the
+    /// mix), changed when a re-offer asks for it or gives it up.
+    much_pt: Arc<std::sync::atomic::AtomicU8>,
     /// Our audio SSRC (the peer's receiver reports on it) and its RTP
     /// clock rate.
     audio_ssrc: u32,
@@ -2573,7 +2645,8 @@ async fn recv_loop(ctx: RecvCtx) {
     let mut noted = std::collections::HashSet::<(u32, u8)>::new();
     let mut spatializer = super::spatial::Spatializer::new(super::audio_codec::CALL_RATE);
     let mut much = super::much::MuchMixer::new(super::audio_codec::CALL_RATE);
-    if let Some(pt) = ctx.much_pt {
+    let pt = ctx.much_pt.load(Ordering::Relaxed);
+    if pt != 0 {
         tracing::info!(pt, "meeting audio per speaker (x-much2)");
     }
     loop {
@@ -2752,7 +2825,7 @@ async fn recv_loop(ctx: RecvCtx) {
                     }
                 }
                 // Meeting audio: the mix, or each speaker's own (x-much2).
-                let much_packet = ctx.much_pt == Some(pt);
+                let much_packet = pt != 0 && ctx.much_pt.load(Ordering::Relaxed) == pt;
                 let is_audio = decoder.handles(pt) || much_packet;
                 if !is_audio
                     && let Ok(pkt) = rtp::decode(&plain)
@@ -3638,6 +3711,20 @@ m=x-data 59842 RTP/SAVP 127 126\r\na=mid:2\r\n";
         let ours = local.offer_sdp_with_video();
         let off = media_offer(&ours, &ours, &[("1", "recvonly")], 3);
         assert!(off.contains("a=mid:1\r\na=recvonly") && off.contains("a=mid:2\r\na=inactive"));
+    }
+
+    /// Spatial audio turned on mid-meeting re-offers the audio line with
+    /// x-much2 first; turned off, without it; the rest stays as it was.
+    #[test]
+    fn a_reoffer_asks_for_or_gives_up_per_speaker_audio() {
+        let sdp = "v=0\r\nm=audio 9 RTP/SAVP 111 0\r\na=mid:0\r\na=rtpmap:111 opus/48000/2\r\na=rtpmap:0 PCMU/8000\r\nm=video 9 RTP/SAVP 107\r\na=rtpmap:107 H264/90000\r\n";
+        let on = with_unmixed(sdp, true);
+        assert!(on.contains("m=audio 9 RTP/SAVP 113 111 0\r\n"));
+        assert!(on.contains("a=rtpmap:113 x-much2/48000/2\r\na=rtpmap:111 opus/48000/2"));
+        assert!(on.contains("m=video 9 RTP/SAVP 107\r\n"));
+        assert_eq!(with_unmixed(&on, true), on);
+        assert_eq!(with_unmixed(&on, false), sdp);
+        assert_eq!(Reoffer::Unmixed(true).apply((true, false)), (true, false));
     }
 
     #[test]

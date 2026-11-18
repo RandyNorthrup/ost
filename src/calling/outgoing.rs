@@ -1511,6 +1511,23 @@ impl OutgoingCall {
         self.media.as_ref().is_some_and(|m| m.reoffer_pending())
     }
 
+    /// Whether the meeting sends each speaker's own audio (x-much2).
+    pub fn unmixed(&self) -> bool {
+        self.media.as_ref().is_some_and(|m| m.unmixed())
+    }
+
+    /// Whether spatial audio wants the other way than what's negotiated
+    /// (Teams renegotiates its audio codec when spatial audio is turned on
+    /// or off mid-meeting): the change to re-offer, if any.
+    pub fn unmixed_change(&self) -> Option<super::webrtc_audio::Reoffer> {
+        let m = self.media.as_ref()?;
+        if !m.is_meeting() || self.renegotiation_link.is_none() {
+            return None;
+        }
+        let want = super::spatial::wants_unmixed();
+        (want != m.unmixed()).then_some(super::webrtc_audio::Reoffer::Unmixed(want))
+    }
+
     /// The answer to our re-offer: what it was for, and whether it was
     /// taken.
     pub fn take_reoffer_answer(

@@ -3192,6 +3192,23 @@ async fn offer_capture(
     Ok(false)
 }
 
+/// Re-offer the meeting's audio when spatial audio wants it the other way
+/// (Teams' audio codec manager raising negotiationNeeded): x-much2 asked
+/// for or given up; the answer comes back through [`reoffer_reply`].
+async fn sync_unmixed_audio() {
+    let mut guard = call_slot().lock().await;
+    let Some(call) = guard.outgoing.as_mut() else { return };
+    let Some(change) = call.unmixed_change() else { return };
+    if call.reoffer_pending() {
+        tracing::info!("spatial audio: a re-offer is pending; renegotiating later");
+        return;
+    }
+    tracing::info!(?change, "spatial audio: renegotiating the meeting's audio");
+    if let Err(e) = call.offer_media(change).await {
+        tracing::warn!("spatial audio re-offer: {}", short_error(&e));
+    }
+}
+
 /// Stop sending our screen and tell the call.
 async fn stop_screen() -> anyhow::Result<()> {
     let mut guard = call_slot().lock().await;
@@ -3249,6 +3266,10 @@ async fn reoffer_reply(
             Err(anyhow::anyhow!("The call didn't take your camera"))
         }
         (Ok((Reoffer::Camera(false), _)), _) => Ok((Some(false), None)),
+        (Ok((Reoffer::Unmixed(on), taken)), _) => {
+            tracing::info!(asked = on, taken, "spatial audio: meeting audio renegotiated");
+            Ok((None, None))
+        }
         (Err(e), _) => Err(e),
     };
     // A meeting is told what our camera and sharing lines now do, as Teams
@@ -15715,6 +15736,13 @@ impl qobject::Backend {
         }
         if ["micDevice", "speakerDevice", "secondaryRinger", "autoGainControl", "efficiencyMode", "ttyMode", "spatialAudio"].contains(&name.as_str()) {
             apply_audio_devices(&map);
+        }
+        // Spatial audio turned on or off (or a speaker chosen that can or
+        // can't play it) mid-meeting: renegotiate the meeting's audio, as
+        // Teams does, so each speaker comes on their own (x-much2) or as
+        // the mix again.
+        if ["spatialAudio", "speakerDevice"].contains(&name.as_str()) {
+            runtime().spawn(sync_unmixed_audio());
         }
         if ["videoBackground", "videoBlur", "adjustBrightness", "softFocus", "greenScreen", "greenScreenColor"].contains(&name.as_str()) {
             crate::video_effects::apply(&map);

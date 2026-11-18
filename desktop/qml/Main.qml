@@ -5825,6 +5825,8 @@ Window {
         running: Qt.application.arguments.some(a => a.startsWith("--spatial-audio-test")) && backend.signedIn
         interval: 2000; repeat: true
         property int step: 0
+        /// 2 s steps since the meeting connected.
+        property int callStep: 0
         function shot(n) { window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-" + n + ".png"))) }
         onTriggered: {
             const inCall = backend.callState === "connected"
@@ -5841,18 +5843,31 @@ Window {
                 if (Qt.application.arguments.indexOf("--spatial-audio-hide-me") >= 0) callWindow.hideMe = true
                 const lay = (Qt.application.arguments.find(a => a.startsWith("--spatial-audio-layout=")) || "").slice(23)
                 if (lay) callWindow.layout = lay
-                console.warn("SPATIAL tiles", JSON.stringify(callWindow.spatialForTest()), "speaking", backend.callSpeakingJson)
+                // --spatial-audio-toggle=on@<step>,off@<step>: turn Spatial
+                // audio on or off mid-meeting at those 2 s steps (as its
+                // switch in Settings ▸ Devices does).
+                const toggles = (Qt.application.arguments.find(a => a.startsWith("--spatial-audio-toggle=")) || "").slice(23)
+                toggles.split(",").filter(x => x.indexOf("@") > 0).forEach(x => {
+                    if (parseInt(x.split("@")[1]) === callStep) {
+                        console.warn("SPATIAL toggle", x.split("@")[0], "at call step", callStep)
+                        backend.setSetting("spatialAudio", x.split("@")[0] === "on" ? "true" : "false")
+                    }
+                })
+                console.warn("SPATIAL tiles", callStep, JSON.stringify(callWindow.spatialForTest()), "speaking", backend.callSpeakingJson)
                 if (step % 10 === 0) callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-spatial-call.png")))
-                step++; return
+                step++; callStep++; return
             }
-            if (step === 0) { rail.current = "settings"; settingsView.pageForTest("devices") }
+            // Joining a meeting, Settings stays closed (Devices shows the
+            // camera's preview).
+            const joining = Qt.application.arguments.indexOf("--join-test") >= 0
+            if (step === 0) { if (!joining) { rail.current = "settings"; settingsView.pageForTest("devices") } }
             else if (step === 1) {
                 if (Qt.application.arguments.indexOf("--spatial-audio-on") >= 0) settingsView.toggleSpatialForTest(true)
                 if (Qt.application.arguments.indexOf("--spatial-audio-off") >= 0) settingsView.toggleSpatialForTest(false)
             }
             else if (step === 2) { settingsView.scrollToCardForTest("audio"); console.warn("SPATIAL row", JSON.stringify(settingsView.spatialRowForTest()), "setting", JSON.stringify(backend.setting("spatialAudio"))) }
-            else if (step === 3) { settingsView.scrollToForTest(330) }
-            else if (step === 4) shot("spatial-devices")
+            else if (step === 3) { if (!joining) settingsView.scrollToForTest(330) }
+            else if (step === 4) { if (!joining) shot("spatial-devices") }
             else if (step === 5 && Qt.application.arguments.indexOf("--join-test") < 0) { Qt.quit(); return }
             step++
         }
