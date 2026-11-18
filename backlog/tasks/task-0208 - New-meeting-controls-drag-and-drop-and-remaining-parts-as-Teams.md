@@ -1,11 +1,11 @@
 ---
 id: TASK-0208
 title: 'New meeting controls: drag and drop and remaining parts as Teams'
-status: To Do
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-16T21:56:00Z'
-updated_date: '2026-11-18T23:06:00Z'
+updated_date: '2026-11-18T23:54:00Z'
 labels:
   - desktop
 dependencies: []
@@ -21,7 +21,7 @@ What TASK-0155 left of Teams' New meeting controls (docs/spec/new-meeting-contro
 <!-- AC:BEGIN -->
 - [x] #1 Controls can be dragged between the bar and More as in Teams
 - [x] #2 Dark and High contrast with the setting on match Teams on winpc
-- [ ] #3 The controls shown in Meet now and group calls match Teams with the setting on and off
+- [x] #3 The controls shown in Meet now and group calls match Teams with the setting on and off
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -37,3 +37,15 @@ What TASK-0155 left of Teams' New meeting controls (docs/spec/new-meeting-contro
 - 2026-11-18 (evening) recheck, OST Test 2 answering Teams' Audio call in "OST TEST group call": Teams' unanswered-invitation end (untagged call/end 408 "Call timed out without any signaling after attach from callee endpoints", ~58 s in) no longer ends OST's group call (CallSlot::group_invite_at); OST stayed connected until it left at ~2 min 45 s. The group call's dial-in from its join is now published, so Join info ▸ shows Call me and Call health, as Teams for an Audio Conferencing user.
 - Interpreter / Call me requirements (Teams' code + live licence check): Interpreter needs ECS enableAiInterpretation and meetingPolicy.aiInterpreter "Enabled" (it is, for the test accounts) plus a Microsoft 365 Copilot licence (only ost-test1 has one; 24 trial seats unassigned), or the organizer turning interpretation on for everyone. Call me needs the call's isDialInEnabled + isPSTNEnabled and dial-in details for the meeting (organizer with Audio Conferencing: ost-test1 and OST Test 2 have it; OST Test 3 has not). docs/spec/new-meeting-controls.md §8.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Teams' New meeting controls leftovers are done.
+
+- Controls drag between the bar and More; dark and High contrast match Teams on winpc (earlier rounds).
+- Meet now and group calls show Teams' set with the setting on and off (measured on winpc in a test-only group chat): Record/Transcribe, Captions, RTT, Timer, Help, accessibility settings; no Meeting info, Notes, Rooms, Facilitator or Report a concern. A ringing group call is joined as the chat's group call; an answered group call stays up (the unanswered invitation's id-less end is ignored); Join info shows Call me and Call health for Audio Conferencing users.
+- Verified live as OST Test 2 against Teams' group Meet now and Audio call, setting off and on.
+- Interpreter needs a Copilot licence and AI interpretation: follow-up TASK-0225.
+- Tests: 748 lib, 29 desktop crate tests pass.
+<!-- SECTION:FINAL_SUMMARY:END -->

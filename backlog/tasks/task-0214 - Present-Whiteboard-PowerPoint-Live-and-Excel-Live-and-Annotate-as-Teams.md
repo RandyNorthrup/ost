@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-17T02:43:00Z'
-updated_date: '2026-11-18T23:06:00Z'
+updated_date: '2026-11-18T23:54:00Z'
 labels:
   - desktop
 dependencies: []
@@ -45,4 +45,6 @@ What TASK-0210 left (docs/spec/call-and-meeting-window.md §9c): starting a Micr
   - Keys while Teams controls OST's screen: typed through SendInput in winpc's interactive session (scheduled task, no VNC). Teams forwards the move, the press and four modifier key-ups, then nothing; Teams' own log shows its control capturer saw the mouse (Mouse entering render region, Synced Key states, Mouse clicked) but no keys — Teams appears to ignore injected keystrokes, so this needs a real key press on winpc's keyboard.
 
 - Cameo recheck (default profile, --join-content-cameo): frames reach OST's own slide show over the loopback feed, but PowerPoint doesn't draw them in OST's cameo yet (open). Annotate with screenSharerAttributes sent: Teams still shows no annotation layer (open). Test files, boards and the test camera cleaned up.
+
+- Merged 067b8cd (2026-11-18): build OK, 748 lib and 29 desktop tests passed. Open: keys during give control, Annotate seen by Teams, Cameo in OST's own presenter view, Excel from Teams with access.
 <!-- SECTION:NOTES:END -->
