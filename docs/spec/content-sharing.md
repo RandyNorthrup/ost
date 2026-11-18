@@ -204,6 +204,37 @@ Captured (presenter "OST TEST 214 deck.pptx", 2026-11-18):
     a device code), so Whiteboard and Excel are checked with ost-test1.
   - Your own sessions from your other devices are viewed (Teams on another
     device presenting); only the one this device presents is left out.
+  - Whiteboard, OST (ost-test1) presenting in a meeting that had a board:
+    the session carried the meeting's board (its fluidboard address with
+    `encodedShareLink`), Teams joined it and showed the same board; text
+    Teams wrote on it ("OST TEST 214 from Teams") appeared on OST's stage
+    through Whiteboard's own sync. Teams presenting: OST found and joined
+    the session and hosted the board; a viewer now waits for the
+    presenter's board in the state (with the session's parameters added,
+    Teams' appendSearchParams) and is sent `whiteboardUrlChanged [url,
+    passThrough]` after its `readyForUrl` (the pass-through carries
+    Whiteboard's proof token).
+  - Excel Live, OST Test 2 presenting "OST TEST 214 workbook.xlsx": the
+    extensible_app session started; Teams joined it and opened the
+    workbook in Excel for the web (`m365.cloud.microsoft/launch/excel/
+    officeunihost/teams…`, "Welcome to Excel Live", OST Test 2's cursor in
+    it). OST presenting as ost-test1 hosted Excel's page with the workbook
+    (Excel's own "Resume following presenter"); the bar shows Stop sharing
+    (Teams' whiteboard-sharing-controls also serve Excel Live). A Teams
+    presenter of Excel Live couldn't be tried: Teams' tray lists only
+    Office's recent workbooks and the test workbook had none.
+  - Annotate, OST (ost-test1) sharing linuxlt's screen: the annotation
+    session started, the overlay window showed Whiteboard's annotation
+    toolbar (pen, highlighter, laser, eraser, shapes, "Interacting with
+    background" tip) over the screen and Whiteboard created the meeting's
+    annotation board (OneDrive `Whiteboards/Annotations/Annotations -
+    Meeting.whiteboard`); once KWin's excludeFromCapture was set the
+    toolbar disappeared from what Teams received (set after the window is
+    mapped: 1.5 s and 3 s after it shows).
+  - With the same account on both ends Teams treats a session as its own
+    (it showed Stop sharing and "This may take a few seconds..." for OST's
+    Excel Live, and no annotation layer), so Teams-as-viewer checks of
+    Whiteboard and Annotate need a second browser-signed-in account.
 - Not built: the attendee's PowerPoint "Take control" (Teams'
   takeControlPptBtn: the attendee takes the presentation over), private
   viewing's toggle from OST's own bar (PowerPoint's own frame has it),

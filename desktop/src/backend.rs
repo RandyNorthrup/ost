@@ -22073,6 +22073,16 @@ mod mark_all_tests {
 /// `excludeFromCapture` (Plasma 6), set by a KWin script for OST's own
 /// window, as Teams' annotation window uses WDA_EXCLUDEFROMCAPTURE.
 async fn exclude_from_capture(title: &str) -> anyhow::Result<()> {
+    // KWin knows the window only once it is mapped (a moment after Qt
+    // shows it): set it then, and once more in case it was slow.
+    for wait in [1500u64, 3000] {
+        tokio::time::sleep(std::time::Duration::from_millis(wait)).await;
+        exclude_from_capture_once(title).await?;
+    }
+    Ok(())
+}
+
+async fn exclude_from_capture_once(title: &str) -> anyhow::Result<()> {
     let pid = std::process::id();
     let esc = title.replace('\\', "\\\\").replace('"', "\\\"");
     let script = format!(

@@ -803,7 +803,7 @@ Window {
         greenRoom: !!liveEvent.staging && myRole !== "attendee" && live && liveEvent.eventPhase === "prelive",
         eventPhase: liveEvent.eventPhase || "", qna: !!liveEvent.qna && scheduled,
         e2ee: e2ee, canPark: canPark, voicemail: voicemail,
-        whiteboardSharing: !!contentState.mine && !!contentState.mine.content && contentState.mine.content.type === "whiteboard",
+        whiteboardSharing: !!contentState.mine && !!contentState.mine.content && ["whiteboard", "extensible_app"].indexOf(contentState.mine.content.type) >= 0,
         pptSharing: !!contentState.mine && !!contentState.mine.content && contentState.mine.content.type === "ppt"
     })
     /// A town hall or webinar (Backend call_event_json): its green room,
