@@ -1,10 +1,11 @@
 ---
 id: TASK-0223
 title: Bluetooth headset buttons and unknown-vendor headsets as Teams
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-18T04:41:00Z'
-updated_date: '2026-11-19T02:20:00Z'
+updated_date: '2026-11-19T02:47:00Z'
 labels:
   - calls
 dependencies: []
@@ -19,8 +20,8 @@ What TASK-0156 left: Bluetooth (HFP) headset call buttons aren't handled; a head
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 A Bluetooth headset's answer, hang-up and mute buttons control OST's calls as in Teams, verified live
-- [ ] #2 An unknown-vendor USB headset whose UCQ string says it's a headset gets full call controls, as Teams
-- [ ] #3 'Transfer controls to this app' and Teams' transfer prompt work between two OST instances, verified live
+- [x] #2 An unknown-vendor USB headset whose UCQ string says it's a headset gets full call controls, as Teams
+- [x] #3 'Transfer controls to this app' and Teams' transfer prompt work between two OST instances, verified live
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -31,4 +32,6 @@ What TASK-0156 left: Bluetooth (HFP) headset call buttons aren't handled; a head
 - OST: PipeWire's native HFP gateway takes ATA/AT+CHUP to a ModemManager modem; desktop/src/hfp_calls.rs offers OST's calls as one on the session bus (contrib/pipewire: bluez5 option bluez5.hfphsp-backend-native-modem-bus=session, a ~20-line patch, plus the WirePlumber setting). src/calling/hfp.rs watches the BT mic's volume (AT+VGM) and sets its route volume for OST's mute. Only the OST holding the headset buttons owns the name.
 - UCQ: Teams reads USB string 0x21 (HidD_GetIndexedString(0x21) in SlimCoreWebview2.dll) and, with prod consolidateDrivers, any text there gives Standard Hook Protect USB. OST reads it with HIDIOCGSTRING on the hiddev node (usbfs fallback); Teams' prod driver table (blacklist, vendor groups, named PIDs), hook protection 1100 ms.
 - Live: emulated HFP headset (btvirt pair + Bumble HF, ~/hf-emu.py): OST Test 2 rang, ATA answered, AT+VGM=0/15 muted/unmuted, AT+CHUP hung up, AT+CHUP while ringing rejected, Sync off refused (ERROR). Unknown-vendor gadget 16c0:0ab1 with UCQ at 0x21: HookProtect, hook 1 answered, mute toggled, hook 0 hung up; without string 0x21: MuteOnly. Transfer: spatest + default (same user): default showed Teams' prompt, Transfer controls moved the buttons (mute then acted on default's pre-join), Devices' Transfer controls to this app took them back.
+
+- Merged e384d3c/aa012a8 (2026-11-18): build OK, 752 lib tests passed. AC2 and AC3 verified live. AC1: mute works on stock PipeWire; answer/hang-up need the contrib/pipewire patch (stock PipeWire's HFP gateway only talks to ModemManager on the system bus; org.pipewire.Telephony only covers the hands-free role). Patch being prepared for an upstream MR (user approved).
 <!-- SECTION:NOTES:END -->
