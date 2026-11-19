@@ -1,11 +1,11 @@
 ---
 id: TASK-0217
 title: Town hall attendees, webinars and event extras as Teams
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-17T06:06:00Z'
-updated_date: '2026-11-19T13:46:00Z'
+updated_date: '2026-11-19T14:09:00Z'
 labels:
   - desktop
 dependencies: []
@@ -23,8 +23,8 @@ What TASK-0184 left (docs/spec/town-halls-and-webinars.md):
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 Town hall attendees watch the event in OST as in Teams, and the service bot is hidden as Teams hides it
-- [ ] #2 Webinars are scheduled, joined and run in OST, checked live
-- [ ] #3 The event extras listed above work and look as in Teams
+- [x] #2 Webinars are scheduled, joined and run in OST, checked live
+- [x] #3 The event extras listed above work and look as in Teams
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -98,3 +98,16 @@ What TASK-0184 left (docs/spec/town-halls-and-webinars.md):
   - Cleanup: OST TEST 217 r3 town hall, town hall B, webinar and webinar reg cancelled; their calendar entries purged for ost-test1, OST Test 2 and OST Test 3.
   - Open: the green room's recording alert for auto-recorded events ("Recording and transcription will begin when the meeting starts."); registration forms with questions (OST sends no answers); Discover's attendee card lacks "By <presenter>" (pre-existing).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Town halls, webinars and event extras as Teams desktop, verified live against Teams on winpc.
+
+- Town hall attendees: streaming mode, the composition bot's HLS stream played natively (local proxy + Qt Multimedia) with Teams' bar and pills; the service bot hidden by Teams' service-bot list; an OST organizer joins through its preheated call so attendees aren't dropped (subCode 5020).
+- Webinars: scheduled, joined and run (organizer, presenter, Teams attendee); waiting screen as Teams; registration (Register dialog, Registered ▾ / Unregister, attendee/register and cancel) with discoverability sent under access like Teams.
+- Production: Meeting options ▸ Production tools; Bring on screen (spotlight) both ways, side by side; "On with preview" Preview/Live stages, Send live via setMeetingLayout both ways; Manage screen panel.
+- Extras: Start/End event and Live pill, Join as / Preview menu, Calendar ▸ New ▸ Webinar / Town hall / Virtual appointment / Live Event, published Share dialog with Copy embed code and Show in Events, card badges.
+- Harness: --join-event-spotlight and others in docs/desktop.md; spec §7–§9. 777 lib tests pass.
+- Follow-up TASK-0227: green-room recording notice, registration questions, "By <presenter>" on attendee cards.
+<!-- SECTION:FINAL_SUMMARY:END -->
