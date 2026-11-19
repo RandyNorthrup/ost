@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-16T04:53:00Z'
+updated_date: '2026-11-19T14:18:00Z'
 labels:
   - desktop
 dependencies: []
@@ -22,3 +23,34 @@ OST lacks these two shortcuts and has the profile choice only in Settings ▸ Ge
 - [ ] #1 Both shortcuts work as Teams'
 - [ ] #2 The Keyboard shortcuts dialog offers the profile choice as Teams'
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+- 2026-11-19 research (async-entry keymaps; 74041 ca; calling-app nz):
+  - ReactToLastMessage is Ctrl+Alt+R (Slack: Ctrl+Shift+\). It focuses the message pane's latest message, then that message's firstReactionItem-<mid> (the first quick reaction in its hover bar).
+  - AnnounceActiveSpeaker is Ctrl+Alt+Shift+S (Zoom: Ctrl+2). It announces aria-live, assertive: "Latest speaker: {{speakerOrStatus}}", where the status is the name, "Unknown", or "Nobody is speaking" when there is no dominant speaker or they are missing from the roster. When a paired signer's interpreter speaks: "{{signerDisplayName}} voiced by {{interpreterDisplayName}}".
+  - Profiles for Windows desktop (Z: chats_alt L, meetings_alt N, chats_meetings_alt V). The dialog's "N available changes" counts the profile's entries that change a listed row (21 / 11 / 40 in Teams).
+- Dialog measured on winpc (dialog-relative):
+  - Title 16/700 at (25,28); Close 32x31 at (851,28).
+  - "Use shortcuts from other apps" 14/400 at (23,66), height 24.
+  - Profile dropdown 224x30 at (23,90): "Teams only (default)". Options are 48 tall: label plus "Default" / "21 available changes", with 2 px gaps.
+  - Apply 62x31 at (258,90): disabled until the pick differs from the saved profile.
+  - View options 32x31 at (328,90), shown only for a non-default pick. Its menu is 300x115 at the button's bottom right, with two menuitemcheckbox rows of 52: "Highlight shortcuts from other apps" (on) and "Bring shortcuts from other apps to top" (off).
+  - Filter 280x31 at (597,90). Sections start at y 131.
+  - A previewed change highlights its label and key tokens: #DCE0FA (colorBrandBackground2Hover), weight 600.
+  - The winpc profile was never applied; it is back to Teams only.
+- Built:
+  - KeyboardShortcuts.qml: profile dropdown, Apply, View options, highlight / bring to top, the two new rows.
+  - Main.qml: Ctrl+Alt+R / Ctrl+Shift+\ call conversation.reactToLatest().
+  - HoverBar: keyboard focus on the quick reactions.
+  - CallWindow: announceActiveSpeaker with Ctrl+Alt+Shift+S / Ctrl+2.
+  - OutlineDropdown: sublabel, display, 2 px gaps, wrapping.
+  - Harness --kb-dialog-test (KbDialogTest.qml).
+
+- Status 2026-11-19, verified on linuxlt (--kb-dialog-test, real key events):
+  - Ctrl+. opens the dialog. Previews: Slack 12 changes, Zoom 6, combined 18 (OST's listed rows, counted by Teams' rule). Changed rows are highlighted. Closes without Apply.
+  - Ctrl+Alt+R in a chat shows the newest message's hover bar with the first quick reaction focused (outlined); Right moves; Escape returns to compose.
+  - Teams' Zoom preview shows only the first key of a multi-key command (Alt + A), as OST does.
+  - Open: Announce active speaker is not yet pressed in a live call (the ANNOUNCE line via --kb-dialog-call).
+<!-- SECTION:NOTES:END -->

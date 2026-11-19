@@ -495,7 +495,7 @@ Window {
     readonly property var people: meeting
         ? [{ name: selfName || "You", id: "me", you: true, mutedNow: muted || !hasAudio, hand: handRaised,
              role: (roster.find(p => p.id === selfId) || {}).role || "" }]
-          .concat(others.map(p => ({ name: p.name, id: p.id, you: false, mutedNow: p.muted, role: p.role, hand: !!p.hand, guest: !!p.guest, suspected: !!p.suspected, spotlight: p.spotlight || "" })))
+          .concat(others.map(p => ({ name: p.name, id: p.id, you: false, mutedNow: p.muted, role: p.role, hand: !!p.hand, guest: !!p.guest, suspected: !!p.suspected, spotlight: p.spotlight || "", signLine: signLine(p), signFirst: signMode && (iSign ? p.sign_role === "signLanguageInterpreter" : p.sign_role === "dhhSigner") })))
         : [{ name: selfName || "You", id: "me", you: true, mutedNow: muted || !hasAudio },
            { name: peer, id: backend.callPeerId, you: false, mutedNow: false }]
     /// Hold: you put the call on hold, or the other person did.
@@ -541,8 +541,64 @@ Window {
     property real galleryTileWidth: 0
     /// Someone has video on (or it's you with the camera on).
     function hasVideo(p) { return p.self ? cameraOn : !!videoKeys[p.id] }
-    /// The others in gallery order (videos first, when asked).
-    readonly property var othersOrdered: videosFirst ? others.filter(p => hasVideo(p)).concat(others.filter(p => !hasVideo(p))) : others
+    // ---- Sign language mode (Teams' SignerMixin, 813237, calling-roster;
+    // TASK-0182): your role from Settings ▸ Accessibility, published in
+    // the meeting; the people your role signs with come first on the stage
+    // (with video), get their tile icon and their People line. ----
+    readonly property var a11y: { let v = window.syncedProps.callAccessibilitySettings; if (typeof v === "string") { try { v = JSON.parse(v) } catch (e) { v = null } } return v || ({}) }
+    readonly property bool signMode: a11y.accessibilityModeEnabledV2 === true
+    readonly property bool iSign: signMode && a11y.signLanguageModeSelection !== "INTERPRETER"
+    readonly property bool iInterpret: signMode && a11y.signLanguageModeSelection === "INTERPRETER"
+    readonly property var myInterpreters: Array.isArray(a11y.selectedDHHInterpreters) ? a11y.selectedDHHInterpreters : []
+    function signContentOf(p) { try { return JSON.parse(p.sign_content || "{}") } catch (e) { return ({}) } }
+    // A signer who named you as their interpreter.
+    function pairedSigner(p) { return p.sign_role === "dhhSigner" && (signContentOf(p).interpreterIds || "").split(",").indexOf(selfId) >= 0 }
+    function myInterpreter(p) { return p.sign_role === "signLanguageInterpreter" && myInterpreters.indexOf(p.id) >= 0 }
+    // Teams' signer icon shows when they share their status or you're
+    // their interpreter (and you're in the mode).
+    function signerShown(p) { return signMode && p.sign_role === "dhhSigner" && (signContentOf(p).showSignerIdentificationToOthers !== false || pairedSigner(p)) }
+    // Their People line (calling-roster): an interpreter is "Sign Language
+    // Interpreter" (yours: "Your Sign Language Interpreter"), a signer who
+    // chose you "Paired to you".
+    function signLine(p) {
+        if (!signMode) return ""
+        if (p.sign_role === "signLanguageInterpreter") return myInterpreter(p) ? "Your Sign Language Interpreter" : "Sign Language Interpreter"
+        if (pairedSigner(p)) return "Paired to you"
+        return ""
+    }
+    // Role 3 (paired): a partner with video on; then only partners count.
+    readonly property bool signPaired: signMode && others.some(p => hasVideo(p) && (iSign ? myInterpreter(p) : pairedSigner(p)))
+    function signPriority(p) {
+        if (!signMode || !hasVideo(p)) return false
+        if (signPaired) return iSign ? myInterpreter(p) : pairedSigner(p)
+        return iSign ? p.sign_role === "signLanguageInterpreter" : p.sign_role === "dhhSigner"
+    }
+    readonly property var signFirst: others.filter(p => signPriority(p))
+    // What we publish, kept in step with the settings while in the meeting.
+    readonly property string signKind: !signMode ? "" : iInterpret ? "signLanguageInterpreter" : "dhhSigner"
+    readonly property string signContent: signKind === "dhhSigner" ? JSON.stringify({ interpreterIds: myInterpreters.join(","), showSignerIdentificationToOthers: a11y.showSignerIdentificationToOthers !== false }) : "{}"
+    readonly property string signWanted: live && meeting ? signKind + "|" + signContent : ""
+    property string signPublished: ""
+    onSignWantedChanged: Qt.callLater(syncSignState)
+    function syncSignState() {
+        if (!live || !meeting) { signPublished = ""; return }
+        if (signWanted === signPublished) return
+        if (!signKind && !signPublished) return
+        console.warn("SIGN publish", signKind, signContent)
+        backend.setSignLanguageState(signKind, signContent)
+        signPublished = signWanted
+    }
+    // Teams: a Signer joining with no interpreters chosen is reminded.
+    property bool signAlertShown: false
+    onLiveChanged: if (live && meeting && iSign && myInterpreters.length === 0 && !signAlertShown) { signAlertShown = true; signAlert.show() }
+    // Leaving the mode leaves its view.
+    onSignModeChanged: if (!signMode && layout === "accessibility") layout = "gallery"
+    /// The others in gallery order (Sign language mode's people first,
+    /// then videos first, when asked).
+    readonly property var othersOrdered: {
+        const rest = others.filter(p => signFirst.indexOf(p) < 0)
+        return signFirst.concat(videosFirst ? rest.filter(p => hasVideo(p)).concat(rest.filter(p => !hasVideo(p))) : rest)
+    }
     /// Meetings: Teams' meeting options page (Controls) and the meeting
     /// chat on the web (Notes), and opening an app from Apps.
     property string optionsUrl: ""
@@ -2496,7 +2552,10 @@ Window {
                 if (win.stageOnly) return null
                 const sp = win.spotlighted.length ? win.spotlighted[0] : null
                 if (sp) return sp.id === win.selfId ? win.selfEntry : sp
-                return win.others.find(p => p.id === win.pinnedId) || null
+                const pin = win.others.find(p => p.id === win.pinnedId)
+                if (pin) return pin
+                // Sign language view: the first person your role signs with.
+                return win.layout === "accessibility" && win.signFirst.length ? win.signFirst[0] : null
             }
             readonly property bool speakerView: !win.stageOnly && (win.layout === "speaker" || !!featured)
             readonly property var speaker: {
@@ -3465,6 +3524,21 @@ Window {
         onAction: { win.pptTakenDismissed = takenBy; backend.contentTakeControl(win.contentSession.correlationId) }
         onDismissed: win.pptTakenDismissed = takenBy
     }
+    // Teams' "Add interpreters for your meetings" (a Signer with none
+    // chosen; dismissable, 8 s).
+    CallAlert {
+        id: signAlert
+        function show() { visible = true; signAlertTimer.restart(); console.warn("SIGN alert shown") }
+        visible: false
+        x: stage.x + (stage.width - width) / 2
+        y: win.belowBar + 10.7
+        z: 6
+        icon: "warning-20-filled"
+        title: "Add interpreters for your meetings"
+        text: "Select interpreters in your Accessibility settings for Sign language mode to work correctly. Learn more"
+        onDismissed: visible = false
+        Timer { id: signAlertTimer; interval: 8000; onTriggered: signAlert.visible = false }
+    }
     CallAlert {
         visible: !!win.breakoutAlert
         x: stage.x + (stage.width - width) / 2
@@ -4068,9 +4142,9 @@ Window {
             { label: "Full screen", keys: "F11", checked: win.visibility === Window.FullScreen }]
         items: win.meeting
             ? [{ label: "Gallery", icon: "view-gallery-20", checked: win.layout === "gallery" },
-               { label: "Speaker", icon: "view-speaker-20", checked: win.layout === "speaker" },
+               { label: "Speaker", icon: "view-speaker-20", checked: win.layout === "speaker" }].concat(win.signMode ? [{ label: "Sign language", icon: "hand-wave-20", checked: win.layout === "accessibility" }] : []).concat([
                { label: "Focus on content", icon: "view-focus-20", checked: win.layout === "focus", enabled: win.shareShown || win.layout === "focus" },
-               { separator: true }]
+               { separator: true }])
               .concat(win.layout === "gallery" ? [
                { label: "Gallery size", icon: "view-gallery-size-20", submenu: [4, 9, 16, 49].map(n => ({ label: n + " people", checked: win.gallerySize === n })) },
                { label: "Show videos first", icon: "view-videos-first-20", checked: win.videosFirst }] : [])
@@ -4081,6 +4155,7 @@ Window {
             const l = items[i].label
             if (l === "Gallery") win.layout = "gallery"
             else if (l === "Speaker") win.layout = "speaker"
+            else if (l === "Sign language") { win.layout = "accessibility"; win.contentItem.Accessible.announce("Accessibility mode was set") }
             else if (l === "Focus on content") win.layout = win.layout === "focus" ? "gallery" : "focus"
             else if (l === "Show videos first") win.videosFirst = !win.videosFirst
             else if (l.indexOf("ull screen") >= 0) win.toggleFullScreen()
@@ -4141,6 +4216,19 @@ Window {
         enabled: lobbyToast.visible && win.lobby.length === 1 && !win.lobby[0].suspected
         onActivated: win.admitLobby(win.lobby[0].id, win.lobby[0].name, false)
     }
+    // Teams' "Announce active speaker (screen reader)" (calling-app nz):
+    // Ctrl+Alt+Shift+S, Ctrl+2 with Zoom's shortcuts; the screen reader
+    // says "Latest speaker: <name>" (Unknown with no name), or "Nobody is
+    // speaking" when the meeting names no dominant speaker in the call.
+    function announceActiveSpeaker() {
+        const id = win.speakerId
+        const p = !id ? null : (id === win.selfId ? { name: win.selfName } : win.others.find(o => o.id === id))
+        const text = "Latest speaker: " + (!p ? "Nobody is speaking" : ((p.name || "").trim() || "Unknown"))
+        console.warn("ANNOUNCE", JSON.stringify({ speaker: id, text: text }))
+        win.contentItem.Accessible.announce(text, Accessible.Assertive)
+        return text
+    }
+    Shortcut { sequences: window.zoomShortcuts ? ["Ctrl+2"] : ["Ctrl+Alt+Shift+S"]; enabled: win.live; onActivated: win.announceActiveSpeaker() }
     // Ctrl+Space: talk while held when muted (Teams' temporary unmute).
     property bool talkHeld: false
     Item {
@@ -4297,11 +4385,11 @@ Window {
     // videos, Show videos first.
     readonly property var newViewItems: [
         { action: "gallery", label: "Gallery", icon: "nmc-view", checked: layout === "gallery" },
-        { action: "speaker", label: "Speaker", icon: "nmc-speaker", checked: layout === "speaker" },
+        { action: "speaker", label: "Speaker", icon: "nmc-speaker", checked: layout === "speaker" }].concat(signMode ? [{ action: "signLanguage", label: "Sign language", icon: "hand-wave-20", checked: layout === "accessibility" }] : []).concat([
         { separator: true },
         { action: "fullscreen", label: "Full screen", icon: "nmc-fullscreen", keys: "F11", checked: visibility === Window.FullScreen },
         { action: "focus", label: "Focus on content", icon: "nmc-focus", checked: layout === "focus", enabled: shareShown || layout === "focus" },
-        { action: "galleryTop", label: galleryAtTop ? "Show gallery on right" : "Show gallery at top", icon: "nmc-gallery-right" }]
+        { action: "galleryTop", label: galleryAtTop ? "Show gallery on right" : "Show gallery at top", icon: "nmc-gallery-right" }])
         .concat(layout === "gallery" ? [{ action: "gallerySize", label: "Gallery size", icon: "nmc-gallery-size",
                                           submenu: [4, 9, 16, 49].map(n => ({ label: n + " people", checked: gallerySize === n })) }] : [])
         .concat([{ separator: true },
@@ -4309,6 +4397,7 @@ Window {
         .concat(layout === "gallery" ? [{ action: "videosFirst", label: "Show videos first", icon: "view-videos-first-20", checked: videosFirst }] : [])
     function runViewAction(a) {
         if (a === "gallery") layout = "gallery"
+        else if (a === "signLanguage") { layout = "accessibility"; contentItem.Accessible.announce("Accessibility mode was set") }
         else if (a === "speaker") layout = "speaker"
         else if (a === "focus") layout = layout === "focus" ? "gallery" : "focus"
         else if (a === "fullscreen") toggleFullScreen()

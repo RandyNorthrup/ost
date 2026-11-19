@@ -3,6 +3,7 @@
 //! `cargo run --example biometric -- face-sign <photo.jpg>` (signature only, nothing stored)
 //! `cargo run --example biometric -- face-enroll <photo.jpg>` (sign and store)
 //! `cargo run --example biometric -- voice-enroll <16k-mono.wav> [--store]`
+//! `cargo run --example biometric -- export voice|face <out.zip>`
 //! `cargo run --example biometric -- remove-face | remove-voice | passive-off`
 use teams_cli::api::biometric::{Biometric, FaceOutcome, HeadPose, VOICE_TEXT, face_signature, voice_signature};
 use teams_cli::api::client::TeamsClient;
@@ -38,6 +39,13 @@ async fn main() -> anyhow::Result<()> {
                 bio.store_voice("en-us", &wav, s).await?;
                 println!("stored; status {:?}", bio.status().await?);
             }
+        }
+        Some("export") => {
+            // `export voice|face <out>`: the profile's data as the service
+            // exports it (Recognition's Export).
+            let data = bio.export(&args[1]).await?;
+            std::fs::write(&args[2], &data)?;
+            println!("{} bytes", data.len());
         }
         Some("remove-face") => { bio.remove_face().await?; println!("removed; status {:?}", bio.status().await?) }
         Some("remove-voice") => { bio.remove_voice().await?; println!("removed; status {:?}", bio.status().await?) }

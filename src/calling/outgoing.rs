@@ -61,6 +61,8 @@ pub struct OutgoingCall {
     /// (Raise hand), and the id of our raised hand.
     state_links: (Option<String>, Option<String>),
     hand: Option<String>,
+    /// Our published Sign language mode state (sign_language_state).
+    sign_state_id: Option<String>,
     state_seq: u64,
     /// The conversation's getAllParticipants link (who's already here).
     all_participants: Option<String>,
@@ -634,6 +636,38 @@ impl OutgoingCall {
                 });
                 cc_post(&self.http, &self.skype_token, &link, &body, "Content only").await?;
             }
+        }
+        Ok(())
+    }
+
+    /// Sign language mode in this meeting (527114 SignerMixin): publish your
+    /// role, "dhhSigner" (content `{interpreterIds, showSignerIdentification
+    /// ToOthers}`) or "signLanguageInterpreter" (`{}`), at user level with no
+    /// scope; the earlier state is removed first (scope "specified", its
+    /// id), and `None` only removes it.
+    pub async fn sign_language_state(&mut self, state: Option<(&str, serde_json::Value)>) -> Result<()> {
+        let from = self.me.0.clone();
+        if let Some(id) = self.sign_state_id.take() {
+            self.state_seq += 1;
+            let link = self.state_links.1.clone().context("This meeting doesn't take sign language states")?;
+            let body = serde_json::json!({ "from": from, "sequenceNumber": self.state_seq, "scope": "specified", "stateIds": [id] });
+            cc_post(&self.http, &self.skype_token, &link, &body, "Sign language state off").await?;
+        }
+        if let Some((kind, content)) = state {
+            self.state_seq += 1;
+            let link = self.state_links.0.clone().context("This meeting doesn't take sign language states")?;
+            let body = serde_json::json!({
+                "from": from,
+                "publishedState": { "content": content, "level": "user", "stateType": kind, "sequenceNumber": self.state_seq },
+            });
+            let reply = cc_post(&self.http, &self.skype_token, &link, &body, "Sign language state").await?;
+            self.sign_state_id = reply
+                .pointer("/publishStateResponse/stateId")
+                .or_else(|| reply.pointer("/publishStateResponse/publishedState/stateId"))
+                .or_else(|| reply.pointer("/stateId"))
+                .and_then(|v| v.as_str())
+                .map(str::to_string);
+            tracing::info!(kind, has_id = self.sign_state_id.is_some(), "sign language state published");
         }
         Ok(())
     }
@@ -3920,6 +3954,7 @@ async fn start_tagged(
         remote_legs: std::collections::HashMap::new(),
         state_links,
         hand: None,
+        sign_state_id: None,
         state_seq: 0,
         all_participants,
         admit_links,

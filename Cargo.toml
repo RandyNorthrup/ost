@@ -121,6 +121,15 @@ opt-level = 3
 opt-level = 3
 [profile.dev.package.ndarray]
 opt-level = 3
+# Voice isolation's speaker model (TASK-0181) runs on these too.
+[profile.dev.package.tract-extra]
+opt-level = 3
+[profile.dev.package.tract-onnx-opl]
+opt-level = 3
+[profile.dev.package.tract-nnef]
+opt-level = 3
+[profile.dev.package.rustfft]
+opt-level = 3
 
 [build-dependencies]
 cc = "1"

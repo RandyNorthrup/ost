@@ -356,6 +356,16 @@ pub mod qobject {
         /// Names of people known only by MRI ({mri: name}), resolved on
         /// request (resolve_names), as Teams resolves a call event's author.
         #[qproperty(QString, people_names_json)]
+        /// Presence of people asked for by MRI ({mri: availability}),
+        /// fetched on request (load_presences).
+        #[qproperty(QString, people_presence_json)]
+        /// Settings ▸ Privacy ▸ Diagnostic data viewer: {enabled,
+        /// connectionString, state, connectedAt, events} (api::ddv).
+        #[qproperty(QString, ddv_json)]
+        /// Voice isolation: {profile (a voice profile is loaded), on, mode
+        /// ("Pns" or "Auto"), ready (its model loaded: until then calls get
+        /// standard noise suppression)}.
+        #[qproperty(QString, voice_isolation_json)]
         /// Teams' Transcript pane: [{id, kind (speech, started,
         /// stopped), userId, name, text, atMs}], oldest first.
         #[qproperty(QString, call_transcript_json)]
@@ -989,6 +999,27 @@ pub mod qobject {
         /// Resolve these MRIs' names (a JSON list) into people_names_json.
         #[qinvokable]
         fn resolve_names(self: Pin<&mut Backend>, mris_json: &QString);
+        /// Fetch these MRIs' presence (a JSON list) into
+        /// people_presence_json.
+        #[qinvokable]
+        fn load_presences(self: Pin<&mut Backend>, mris_json: &QString);
+        /// The Diagnostic data viewer page: read its state, turn data
+        /// viewing on or off, Connect.
+        #[qinvokable]
+        fn load_ddv(self: Pin<&mut Backend>);
+        /// Voice isolation: load the voice profile's recording, and apply
+        /// the noise suppression choice (getting its model ready).
+        #[qinvokable]
+        fn load_voice_isolation(self: Pin<&mut Backend>);
+        #[qinvokable]
+        fn apply_voice_isolation(self: Pin<&mut Backend>);
+        /// The isolator's state now, as JSON ("" when it isn't running).
+        #[qinvokable]
+        fn voice_isolation_stats(self: &Backend) -> QString;
+        #[qinvokable]
+        fn set_ddv_enabled(self: Pin<&mut Backend>, on: bool);
+        #[qinvokable]
+        fn connect_ddv(self: Pin<&mut Backend>, connection: &QString);
         /// Teams' Rejoin on its retry screen: join the meeting last joined
         /// again.
         #[qinvokable]
@@ -1589,6 +1620,10 @@ pub mod qobject {
         /// Raise or lower your hand in the meeting.
         #[qinvokable]
         fn toggle_hand(self: Pin<&mut Backend>);
+        /// Sign language mode's published state in the meeting ("" takes
+        /// it back).
+        #[qinvokable]
+        fn set_sign_language_state(self: Pin<&mut Backend>, kind: &QString, content_json: &QString);
 
         /// Teams' headset call controls: what the app is doing now, for
         /// the headset's lights (the call from the call state; `prejoin`:
@@ -3043,6 +3078,9 @@ pub struct BackendRust {
     call_end_reason: QString,
     call_controls_json: QString,
     people_names_json: QString,
+    people_presence_json: QString,
+    ddv_json: QString,
+    voice_isolation_json: QString,
     call_transcript_json: QString,
     call_captions_json: QString,
     call_captions_on: bool,
@@ -7625,7 +7663,11 @@ fn apply_audio_devices(map: &serde_json::Map<String, serde_json::Value>) {
             .filter(|v| !v.is_empty() && *v != "default")
             .map(str::to_string)
     };
-    teams_cli::calling::audio::set_preferred_devices(get("micDevice"), get("speakerDevice"));
+    // OST_MIC_DEVICE=<name>: this instance's microphone (tests on a machine
+    // whose settings file other instances share, e.g. a PipeWire null sink's
+    // monitor playing test speech).
+    let mic = std::env::var("OST_MIC_DEVICE").ok().filter(|d| !d.is_empty()).or_else(|| get("micDevice"));
+    teams_cli::calling::audio::set_preferred_devices(mic, get("speakerDevice"));
     // Teams' "Sync device buttons" (on unless turned off, kept on this
     // device as Teams' audioDeviceSyncEnabled) and the microphone whose
     // headset's buttons count.
@@ -9746,6 +9788,55 @@ impl qobject::Backend {
                 }
                 Ok(_) => {}
                 Err(e) => tracing::warn!("names: {}", short_error(&e)),
+            }
+        });
+    }
+
+    pub fn load_ddv(mut self: Pin<&mut Self>) {
+        let mut v = serde_json::to_value(api::ddv::state()).unwrap_or_else(|_| json!({}));
+        v["events"] = json!(api::ddv::events());
+        self.as_mut().set_ddv_json(QString::from(v.to_string().as_str()));
+    }
+
+    pub fn set_ddv_enabled(mut self: Pin<&mut Self>, on: bool) {
+        api::ddv::set_enabled(on);
+        self.as_mut().load_ddv();
+    }
+
+    pub fn connect_ddv(mut self: Pin<&mut Self>, connection: &QString) {
+        let conn = connection.to_string();
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let _ = api::ddv::connect(&conn).await;
+            let _ = qt.queue(|mut this| this.as_mut().load_ddv());
+        });
+        // Teams shows "Attempting to establish connection..." meanwhile.
+        let mut v = serde_json::to_value(api::ddv::state()).unwrap_or_else(|_| json!({}));
+        v["state"] = json!("connecting");
+        v["connectionString"] = json!(connection.to_string().trim());
+        self.as_mut().set_ddv_json(QString::from(v.to_string().as_str()));
+    }
+
+    pub fn load_presences(self: Pin<&mut Self>, mris_json: &QString) {
+        let mris: Vec<String> = serde_json::from_str(&mris_json.to_string()).unwrap_or_default();
+        if mris.is_empty() {
+            return;
+        }
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            match teams_cli::api::presence::get_presences(&reqwest::Client::new(), &mris).await {
+                Ok(found) => {
+                    let _ = qt.queue(move |mut this| {
+                        let mut map: serde_json::Map<String, serde_json::Value> =
+                            serde_json::from_str(&this.rust().people_presence_json.to_string()).unwrap_or_default();
+                        for p in found {
+                            map.insert(p.mri.clone(), json!(p.availability));
+                        }
+                        let text = serde_json::Value::Object(map).to_string();
+                        this.as_mut().set_people_presence_json(QString::from(text.as_str()));
+                    });
+                }
+                Err(e) => tracing::warn!("presence: {}", short_error(&e)),
             }
         });
     }
@@ -12096,6 +12187,23 @@ impl qobject::Backend {
         });
     }
 
+    /// Sign language mode in the meeting: publish `kind` ("dhhSigner" or
+    /// "signLanguageInterpreter") with its content, or take it back ("").
+    pub fn set_sign_language_state(self: Pin<&mut Self>, kind: &QString, content_json: &QString) {
+        let kind = kind.to_string();
+        let content: serde_json::Value = serde_json::from_str(&content_json.to_string()).unwrap_or_else(|_| json!({}));
+        runtime().spawn(async move {
+            let mut slot = call_slot().lock().await;
+            let result = match slot.outgoing.as_mut() {
+                Some(call) => call.sign_language_state((!kind.is_empty()).then_some((kind.as_str(), content))).await,
+                None => Ok(()),
+            };
+            if let Err(e) = result {
+                tracing::warn!("sign language state: {}", short_error(&e));
+            }
+        });
+    }
+
     pub fn transfer_call(self: Pin<&mut Self>, oid: &QString) {
         let target = format!("8:orgid:{}", oid.to_string().trim());
         let qt = self.qt_thread();
@@ -13999,6 +14107,12 @@ impl qobject::Backend {
         };
         let version = format!("OST desktop {}", env!("CARGO_PKG_VERSION"));
         let url = teams_cli::feedback::issue_url(&report, &version, &teams_cli::feedback::os_name(), &logs);
+        // The diagnostic data a report carries (View Diagnostic Data).
+        api::ddv::record("Ost.Feedback.Report", json!({
+            "kind": report.kind, "area": report.area, "version": version, "os": teams_cli::feedback::os_name(),
+            "logsIncluded": !logs.is_empty(), "contact": report.contact, "files": report.files.len(),
+            "destination": teams_cli::feedback::repo(), "url": url,
+        }));
         // GitHub takes pictures by paste: the first one goes on the clipboard.
         let picture = report.files.iter().find(|f| {
             let f = f.to_ascii_lowercase();
@@ -14035,7 +14149,12 @@ impl qobject::Backend {
             attach.then_some((suggestions.as_slice(), last.as_str())),
         );
         let version = format!("OST desktop {}", env!("CARGO_PKG_VERSION"));
-        QString::from(teams_cli::feedback::issue_url(&report, &version, &teams_cli::feedback::os_name(), "").as_str())
+        let url = teams_cli::feedback::issue_url(&report, &version, &teams_cli::feedback::os_name(), "");
+        api::ddv::record("Ost.Feedback.SuggestedReplies", json!({
+            "categories": list("categories"), "kinds": list("kinds"), "messageAttached": attach,
+            "version": version, "os": teams_cli::feedback::os_name(), "destination": teams_cli::feedback::repo(), "url": url,
+        }));
+        QString::from(url.as_str())
     }
 
     pub fn feedback_link(&self, which: &QString) -> QString {
@@ -16195,13 +16314,14 @@ impl qobject::Backend {
         QString::default()
     }
 
-    pub fn set_noise_suppression(self: Pin<&mut Self>, on: bool) {
-        self.set_setting(&QString::from("noiseSuppression"), &QString::from(if on { "on" } else { "off" }));
+    pub fn set_noise_suppression(mut self: Pin<&mut Self>, on: bool) {
+        self.as_mut().set_setting(&QString::from("noiseSuppression"), &QString::from(if on { "on" } else { "off" }));
         teams_cli::calling::apm::set_noise_level(if on {
             teams_cli::calling::apm::NoiseLevel::High
         } else {
             teams_cli::calling::apm::NoiseLevel::Off
         });
+        self.apply_voice_isolation();
     }
 
     pub fn set_taskbar_badge(&self, count: i32, kind: &QString) {
@@ -21748,6 +21868,84 @@ impl qobject::Backend {
         });
     }
 
+    /// Voice isolation's voice profile (TASK-0181): with a voice profile in
+    /// Teams' Recognition service, its recording (the service's voice
+    /// export) becomes the embedding OST's isolator holds the mic to; the
+    /// choice (Teams' device-local noiseSuppressionMode: "Pns" for Voice
+    /// isolation, "Auto" for Background noise only; unset means Voice
+    /// isolation once there is a profile) applies with noise suppression on.
+    /// OST_VOICE_PROFILE_WAV=<file> uses that recording as the profile
+    /// instead (tests).
+    pub fn load_voice_isolation(self: Pin<&mut Self>) {
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                if let Some(path) = std::env::var_os("OST_VOICE_PROFILE_WAV").filter(|p| !p.is_empty()) {
+                    return anyhow::Ok(Some(std::fs::read(path)?));
+                }
+                let client = TeamsClient::new().await?;
+                let bio = api::biometric::Biometric::new(&client).await?;
+                if !bio.status().await?.voice {
+                    return anyhow::Ok(None);
+                }
+                let zip = bio.export("voice").await?;
+                let wav = teams_cli::calling::voice_isolation::profile_recording_from_export(&zip)?;
+                anyhow::Ok(Some(wav))
+            }
+            .await;
+            let profile = match result {
+                Ok(p) => p,
+                Err(e) => {
+                    tracing::warn!("voice isolation profile: {}", short_error(&e));
+                    None
+                }
+            };
+            tracing::info!(profile = profile.is_some(), "voice isolation profile");
+            teams_cli::calling::voice_isolation::set_profile_recording(profile);
+            let _ = qt.queue(|mut this| this.as_mut().apply_voice_isolation());
+        });
+    }
+
+    pub fn voice_isolation_stats(&self) -> QString {
+        match teams_cli::calling::voice_isolation::stats() {
+            Some(s) => QString::from(format!("{s:?}").as_str()),
+            None => QString::default(),
+        }
+    }
+
+    /// Settings' noise suppression choice → the isolator. Voice isolation
+    /// chosen with a profile gets its model ready first (downloaded on
+    /// first need, as Teams downloads its own); meanwhile calls get
+    /// standard noise suppression.
+    pub fn apply_voice_isolation(mut self: Pin<&mut Self>) {
+        use teams_cli::calling::voice_isolation as vi;
+        let has = vi::has_profile();
+        let noise = self.as_mut().setting(&QString::from("noiseSuppression")).to_string() != "off";
+        let mode = self.as_mut().setting(&QString::from("noiseSuppressionMode")).to_string();
+        let on = has && noise && (mode == "Pns" || mode.is_empty());
+        vi::set_enabled(on);
+        let ready = vi::ready();
+        if on && !ready {
+            let qt = self.qt_thread();
+            runtime().spawn(async move {
+                match vi::prepare(&cache_base()).await {
+                    Ok(()) => {
+                        let _ = qt.queue(|mut this| this.as_mut().apply_voice_isolation());
+                    }
+                    Err(e) => {
+                        tracing::warn!("voice isolation not ready, standard noise suppression: {}", short_error(&e));
+                        // A recording the model can't use is no profile.
+                        if !vi::has_profile() {
+                            let _ = qt.queue(|mut this| this.as_mut().apply_voice_isolation());
+                        }
+                    }
+                }
+            });
+        }
+        let v = json!({ "profile": has, "on": on, "ready": ready, "mode": if mode.is_empty() { if has { "Pns" } else { "Auto" } } else { mode.as_str() } });
+        self.as_mut().set_voice_isolation_json(QString::from(v.to_string().as_str()));
+    }
+
     pub fn recognition_passive_voice(self: Pin<&mut Self>, on: bool) {
         let qt = self.qt_thread();
         runtime().spawn(async move {
@@ -22357,8 +22555,11 @@ impl qobject::Backend {
                 if let Ok(voice) = api::preferences::voice_settings(&client).await {
                     mt["voice"] = voice;
                 }
-                if let Ok(rt) = api::preferences::ringtone_settings(&client).await {
-                    mt["voice"]["ringtoneSettings"] = rt;
+                // Teams' voice settings store: the ringtone and the
+                // voicemail settings (electedSettings).
+                if let Ok(admin) = api::preferences::voice_admin_settings(&client).await {
+                    mt["voice"]["ringtoneSettings"] = admin["ringtoneSettings"].clone();
+                    mt["vm"] = api::preferences::voicemail_settings_of(&admin);
                 }
                 anyhow::Ok(json!({ "props": props, "mt": mt, "loaded": true }))
             }
@@ -22383,6 +22584,11 @@ impl qobject::Backend {
             // Kept with the rest of the calling settings, as Teams reads it.
             let body = api::preferences::ringtone_body(&all["mt"]["voice"]["ringtoneSettings"], value.as_str().unwrap_or("Ring"));
             all["mt"]["voice"]["ringtoneSettings"] = body;
+        } else if kind == "mt" && name == "voicemail" {
+            // Teams' voicemail mutation sends the whole settings with the
+            // change (settings-app $a / bA / rg), and shows them at once.
+            let base = all["mt"]["vm"].clone();
+            all["mt"]["vm"] = api::preferences::merged(if base.is_object() { base } else { json!({}) }, &value);
         } else if kind == "mt" {
             all["mt"][&name] = value.clone();
         } else if value.is_object() {
@@ -22414,7 +22620,10 @@ impl qobject::Backend {
                     api::preferences::set_voice_setting(&client, "ringtone", &body).await?;
                     anyhow::Ok(None)
                 } else if kind == "mt" && name == "voicemail" {
-                    api::preferences::set_voice_setting(&client, "voicemail", &value).await?;
+                    let current: serde_json::Value = serde_json::from_str(&before).unwrap_or_default();
+                    let base = current["mt"]["vm"].clone();
+                    let body = api::preferences::merged(if base.is_object() { base } else { json!({}) }, &value);
+                    api::preferences::set_voice_setting(&client, "voicemail", &body).await?;
                     anyhow::Ok(None)
                 } else if kind == "mt" {
                     api::preferences::set_middle_tier_setting(&client, &name, value.as_bool().unwrap_or(false)).await?;

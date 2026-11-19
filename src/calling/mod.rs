@@ -47,6 +47,7 @@ pub mod meeting_notes;
 pub mod meeting_options;
 pub mod meeting_timer;
 pub mod much;
+pub mod voice_isolation;
 pub mod muted_speech;
 pub mod outgoing;
 pub mod phone_audio;

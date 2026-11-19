@@ -186,6 +186,21 @@ Item {
                     text: mt.person.name || ""; color: theme.onFill(hcFill2, "white")
                     font.family: theme.font; font.pixelSize: 12
                 }
+                // Sign language mode (Teams' tile icons): a signer's
+                // HandMultipleStack (when they share their status or you're
+                // their interpreter) or an interpreter's icon, for people
+                // in the mode.
+                readonly property string signIcon: !mt.call || !mt.call.signMode || mt.self ? ""
+                    : mt.call.signerShown(mt.person) ? "hand-multiple-16-filled"
+                    : mt.person.sign_role === "signLanguageInterpreter" ? "hand-wave-16" : ""
+                Item { visible: !!tagRow.signIcon; width: 4; height: 1 }
+                FluentIcon {
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: !!tagRow.signIcon
+                    name: tagRow.signIcon; size: 16; color: theme.onFill(hcFill2, "white")
+                    Accessible.role: Accessible.Graphic
+                    Accessible.name: mt.person.sign_role === "dhhSigner" ? "Signer participant" : "Sign language interpreter participant"
+                }
                 Item { visible: !!mt.person.guest; width: 4; height: 1 }
                 FluentIcon {
                     anchors.verticalCenter: parent.verticalCenter

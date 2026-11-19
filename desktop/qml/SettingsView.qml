@@ -412,7 +412,7 @@ Rectangle {
             }
             FluentIcon { visible: !!root.subPage; anchors.verticalCenter: parent.verticalCenter; name: "chevron-right-16"; size: 16; color: theme.textStrong }
             Text {
-                text: root.subPage === "oof" ? "Out of office" : root.subPage === "priority" ? "Manage priority access" : root.subPage === "blocked" ? "Manage blocked people" : root.subPage === "spellcheck" ? "Manage spellcheck languages" : root.subPage === "status" ? "Manage status notifications" : root.subPage === "connected" ? "Manage devices" : root.subPage === "stationary" ? "Stationary device location" : root.page === "about" ? "About OST" : (root.pages.find(p => p.key === root.page) || {}).label || ""
+                text: root.subPage === "oof" ? "Out of office" : root.subPage === "priority" ? "Manage priority access" : root.subPage === "blocked" ? "Manage blocked people" : root.subPage === "spellcheck" ? "Manage spellcheck languages" : root.subPage === "status" ? "Manage status notifications" : root.subPage === "connected" ? "Manage devices" : root.subPage === "stationary" ? "Stationary device location" : root.subPage === "ddv" ? "Diagnostic data viewer" : root.subPage === "interpreters" ? "Manage interpreters" : root.page === "about" ? "About OST" : (root.pages.find(p => p.key === root.page) || {}).label || ""
                 font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; lineHeight: 25.7; lineHeightMode: Text.FixedHeight
                 color: theme.text
                 Accessible.role: Accessible.Heading
@@ -1949,6 +1949,105 @@ Rectangle {
                 subtitle: "If your screen locks due to inactivity while you're in a meeting, your camera, mic, and screensharing will automatically turn off. Restart OST to apply this setting."
                 trailing: Component { SettingsParts.Toggle { on: backend.setting("turnOffMediaOnDeviceLock") === "true"; accessibleName: "Turn off my camera and mic when my screen locks"; onToggled: v => { backend.setSetting("turnOffMediaOnDeviceLock", v ? "true" : "false"); on = v } } }
             }
+            // Teams' "View Diagnostic Data" (settings-app FF/RF, measured on
+            // winpc 2026-11-19): Manage opens Privacy › Diagnostic data
+            // viewer.
+            SettingsParts.Card {
+                visible: root.page === "privacy" && !root.subPage
+                icon: "data-area-20"; title: "View Diagnostic Data"
+                trailing: Component { SettingsParts.Button { label: "Manage"; onClicked: root.subPage = "ddv" } }
+            }
+            // Teams' diagnostic data viewer (its trusted-UI page, measured
+            // on winpc 2026-11-19): at 20, 21 in the pane, 790 wide. With
+            // "Enable data viewing" on, OST streams the diagnostic data it
+            // sends to the Diagnostic Data Viewer of the Windows device at
+            // the connection string, as Teams does (api::ddv).
+            Column {
+                id: ddvPage
+                visible: root.page === "privacy" && root.subPage === "ddv"
+                x: 0; topPadding: 0
+                width: 790
+                spacing: 0
+                readonly property var st: backend.ddvJson ? JSON.parse(backend.ddvJson) : ({})
+                onVisibleChanged: if (visible) backend.loadDdv()
+                Text { width: parent.width; text: "View Diagnostic Data"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold; lineHeight: 22; lineHeightMode: Text.FixedHeight; color: theme.text; Accessible.role: Accessible.Heading; Accessible.name: text }
+                Item { width: 1; height: 15 }
+                Text { width: parent.width; wrapMode: Text.Wrap; text: "To view diagnostic data associated with this app, connect to a Windows device running Diagnostic Data Viewer and enter the connection string below. The app will disconnect after 24 hours."; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
+                Item { width: 1; height: 8 }
+                Text { width: parent.width; wrapMode: Text.Wrap; text: "Note: When you enable data viewing the data sent to the device running Diagnostic Data Viewer (at the connection string you enter) will use HTTP instead of HTTPS so that it can properly display. However, diagnostic data sent to Microsoft will still use HTTPS to encrypt and protect your data."; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
+                Item { width: 1; height: 8 }
+                Text {
+                    text: "Learn More"
+                    font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
+                    font.underline: ddvLink.hovered
+                    color: theme.brandForeground1
+                    HoverHandler { id: ddvLink; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: Qt.openUrlExternally("https://support.microsoft.com/office/using-the-diagnostic-data-viewer-with-office-cf761ce9-d805-4c60-a339-4e07f3182855") }
+                    Accessible.role: Accessible.Link
+                    Accessible.name: text
+                }
+                Item { width: 1; height: 15 }
+                // The switch (Fluent's, in its 56 x 36 hit area) with its label.
+                Item {
+                    width: parent.width; height: 36
+                    SettingsParts.Toggle {
+                        x: 8; anchors.verticalCenter: parent.verticalCenter
+                        stateLabel: false
+                        on: ddvPage.st.enabled === true
+                        accessibleName: "Enable data viewing"
+                        onToggled: v => backend.setDdvEnabled(v)
+                    }
+                    Text { x: 56; anchors.verticalCenter: parent.verticalCenter; text: "Enable data viewing"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold; lineHeight: 22; lineHeightMode: Text.FixedHeight; color: theme.text }
+                }
+                Item { visible: ddvPage.st.enabled === true; width: 1; height: 15 }
+                Text {
+                    visible: ddvPage.st.enabled === true
+                    text: "Diagnostic data viewer connection string"
+                    font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text
+                }
+                Item { visible: ddvPage.st.enabled === true; width: 1; height: 8 }
+                Row {
+                    visible: ddvPage.st.enabled === true
+                    spacing: 10
+                    Rectangle {
+                        width: 325; height: 31.33; radius: 4
+                        color: theme.pick("#F0F0F0", "#0A0A0A", "#000000")
+                        border.color: theme.highContrast ? "#FFFFFF" : "transparent"; border.width: 0.67
+                        Rectangle { visible: ddvField.activeFocus; anchors.bottom: parent.bottom; x: 1; width: parent.width - 2; height: 2; color: theme.brand }
+                        TextInput {
+                            id: ddvField
+                            x: 12; width: parent.width - 44; anchors.verticalCenter: parent.verticalCenter
+                            text: ddvPage.st.connectionString || ""
+                            font.family: theme.font; font.pixelSize: 14; color: theme.text; clip: true
+                            selectByMouse: true
+                            onAccepted: backend.connectDdv(text.trim())
+                            Accessible.role: Accessible.EditableText
+                            Accessible.name: "Diagnostic data viewer connection string"
+                        }
+                        // After a try: Teams' CheckmarkCircleRegular (green)
+                        // or ErrorCircleRegular (red) at the end.
+                        FluentIcon {
+                            visible: ddvPage.st.state === "connected" || ddvPage.st.state === "failed"
+                            anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter
+                            name: ddvPage.st.state === "connected" ? "checkmark-circle-20" : "error-circle-20"; size: 20
+                            color: ddvPage.st.state === "connected" ? theme.pick("#107C10", "#54B054", "#3FF23F") : theme.pick("#BC2F32", "#E37D80", "#FFFF00")
+                        }
+                    }
+                    SettingsParts.Button { primary: true; label: "Connect"; height: 32; onClicked: backend.connectDdv(ddvField.text.trim()) }
+                }
+                Item { visible: ddvPage.st.enabled === true && !!ddvPage.st.state && ddvPage.st.state !== "idle"; width: 1; height: 8 }
+                Text {
+                    visible: ddvPage.st.enabled === true && !!ddvPage.st.state && ddvPage.st.state !== "idle"
+                    width: 325; wrapMode: Text.Wrap
+                    text: ddvPage.st.state === "connecting" ? "Attempting to establish connection..."
+                        : ddvPage.st.state === "connected" ? "Connection established"
+                        : "Couldn't connect. Double check the connection string is correct and that Diagnostic Data Viewer is running on the Windows device you're connecting to, then try again."
+                    font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
+                    color: ddvPage.st.state === "failed" ? theme.pick("#BC2F32", "#E37D80", "#FFFF00") : theme.text
+                    Accessible.role: ddvPage.st.state === "failed" ? Accessible.AlertMessage : Accessible.StaticText
+                    Accessible.name: text
+                }
+            }
             SettingsParts.Card {
                 visible: root.page === "privacy" && !root.subPage
                 icon: "data-area-20"; title: "Extended diagnostics data"
@@ -1985,13 +2084,108 @@ Rectangle {
             }
 
             // ---- Accessibility ----
+            // Teams' Sign language mode (settings-app, measured on winpc
+            // 2026-11-19): with it on, "I am a Signer" (with "Show my signer
+            // status…" and Manage interpreters) or "I am a Sign Language
+            // Interpreter", kept in the callAccessibilitySettings property
+            // (signLanguageModeSelection, showSignerIdentificationToOthers,
+            // selectedDHHInterpreters) and acted on in meetings.
             SettingsParts.Card {
-                visible: root.page === "accessibility"
+                id: signCard
+                visible: root.page === "accessibility" && !root.subPage
+                readonly property bool on: root.prop("callAccessibilitySettings", ["accessibilityModeEnabledV2"], false) === true
+                readonly property bool signer: root.prop("callAccessibilitySettings", ["signLanguageModeSelection"], "SIGNER") !== "INTERPRETER"
                 icon: "hand-wave-20"; title: "Sign language mode"; subtitle: "Enable features that provide an enhanced experience for sign language users."
-                trailing: Component { SettingsParts.Toggle { on: root.prop("callAccessibilitySettings", ["accessibilityModeEnabledV2"], false) === true; accessibleName: "Sign language mode"; onToggled: v => root.setProp("callAccessibilitySettings", "accessibilityModeEnabledV2", v) } }
+                bodyGap: 30.3
+                trailing: Component { SettingsParts.Toggle { on: signCard.on; accessibleName: "Sign language mode"; onToggled: v => root.setProp("callAccessibilitySettings", "accessibilityModeEnabledV2", v) } }
+                SettingsParts.RadioRow {
+                    visible: signCard.on
+                    height: 46
+                    label: "I am a Signer"
+                    sublabel: "I am a Deaf/Hard-of-hearing meeting participant who uses sign language to communicate."
+                    checked: signCard.signer
+                    onPicked: root.setProp("callAccessibilitySettings", "signLanguageModeSelection", "SIGNER")
+                }
+                Item {
+                    visible: signCard.on
+                    width: parent.width; height: 42
+                    SettingsParts.CheckRow {
+                        x: 49; width: parent.width - 49; rowHeight: 32
+                        label: "Show my signer status to others using Sign language mode"
+                        usable: signCard.signer
+                        checked: root.prop("callAccessibilitySettings", ["showSignerIdentificationToOthers"], true) !== false
+                        onToggled: v => root.setProp("callAccessibilitySettings", "showSignerIdentificationToOthers", v)
+                    }
+                }
+                Item {
+                    visible: signCard.on
+                    width: parent.width; height: 37
+                    SettingsParts.Button { x: 28; label: "Manage interpreters"; enabled: signCard.signer; opacity: enabled ? 1 : 0.4; onClicked: root.subPage = "interpreters" }
+                }
+                SettingsParts.RadioRow {
+                    visible: signCard.on
+                    label: "I am a Sign Language Interpreter"
+                    sublabel: "I provide sign language interpretation for Deaf/Hard-of-hearing meeting participants."
+                    checked: !signCard.signer
+                    onPicked: root.setProp("callAccessibilitySettings", "signLanguageModeSelection", "INTERPRETER")
+                }
+            }
+            // Teams' Manage interpreters page: the people you sign with, in
+            // selectedDHHInterpreters (MRIs), each with Remove as signer.
+            Column {
+                id: interpretersPage
+                visible: root.page === "accessibility" && root.subPage === "interpreters"
+                width: 600
+                readonly property var mris: { const v = root.prop("callAccessibilitySettings", ["selectedDHHInterpreters"], []); return Array.isArray(v) ? v : [] }
+                readonly property var names: backend.peopleNamesJson ? JSON.parse(backend.peopleNamesJson) : ({})
+                onVisibleChanged: if (visible && mris.length) backend.resolveNames(JSON.stringify(mris))
+                function save(list) { root.setProp("callAccessibilitySettings", "selectedDHHInterpreters", list) }
+                Text { height: 26; text: "Add someone as an interpreter"; font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; lineHeight: 26; lineHeightMode: Text.FixedHeight; color: theme.text; Accessible.role: Accessible.Heading; Accessible.name: text }
+                Item { width: 1; height: 10 }
+                Text { height: 17; text: "Please choose the interpreters for your meetings."; font.family: theme.font; font.pointSize: 8.75 /* Teams: 11.67 px */; color: theme.text }
+                Item { width: 1; height: 9.3 }
+                VoicemailTransferPicker {
+                    width: 600
+                    placeholder: "Add someone as an interpreter"
+                    accessibleName: "Type a name or email address to add someone as an interpreter"
+                    phoneSuggestions: false
+                    exclude: interpretersPage.mris
+                    people: { const v = backend.newChatPeopleJson ? JSON.parse(backend.newChatPeopleJson) : ({}); return v.items || [] }
+                    peopleQuery: { const v = backend.newChatPeopleJson ? JSON.parse(backend.newChatPeopleJson) : ({}); return v.query || "" }
+                    onSearch: q => backend.newChatPeople(q)
+                    onPicked: (mri, oid, name) => { if (interpretersPage.mris.indexOf(mri) < 0) interpretersPage.save(interpretersPage.mris.concat([mri])) }
+                }
+                Repeater {
+                    model: interpretersPage.mris
+                    Item {
+                        id: irow
+                        required property string modelData
+                        width: 600; height: 48
+                        readonly property string name: interpretersPage.names[modelData] || ""
+                        Avatar { x: 12; anchors.verticalCenter: parent.verticalCenter; size: 32; name: irow.name || "?"; photoId: irow.modelData.replace(/^8:orgid:/, "") }
+                        Text { x: 52; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 100; elide: Text.ElideRight; text: irow.name || irow.modelData; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                        Rectangle {
+                            id: irm
+                            anchors.right: parent.right; anchors.rightMargin: 7; anchors.verticalCenter: parent.verticalCenter
+                            width: 32; height: 32; radius: 4
+                            color: irmHover.hovered ? theme.menuHover : "transparent"
+                            FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(irm, theme.textStrong) }
+                            HoverHandler { id: irmHover; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: interpretersPage.save(interpretersPage.mris.filter(m => m !== irow.modelData)) }
+                            ToolTip {
+                                visible: irmHover.hovered; delay: 500
+                                y: -height - 4; padding: 8
+                                background: FluentSurface { depth: 16; radius: 4 }
+                                contentItem: Text { text: "Remove as signer"; font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
+                            }
+                            Accessible.role: Accessible.Button
+                            Accessible.name: "Remove " + (irow.name || irow.modelData) + " from signers list"
+                        }
+                    }
+                }
             }
             SettingsParts.Card {
-                visible: root.page === "accessibility"
+                visible: root.page === "accessibility" && !root.subPage
                 icon: "closed-caption-20"; title: "Captions and transcripts"
                 SettingsParts.SwitchRow {
                     label: "Always show captions in my calls and meetings"
@@ -2013,7 +2207,7 @@ Rectangle {
             // on this device): the same setting as the call's Accessibility
             // pane, so a call in progress follows it at once.
             SettingsParts.Card {
-                visible: root.page === "accessibility"
+                visible: root.page === "accessibility" && !root.subPage
                 icon: "mic-off-20"; title: "Muted notification"
                 subtitle: "Show the 'You're muted' notification when audio is detected while your microphone is off."
                 trailing: Component { SettingsParts.Toggle { on: backend.setting("showMutedNotice") !== "false"; accessibleName: "Muted notification"; onToggled: v => { backend.setSetting("showMutedNotice", v ? "true" : "false"); on = v; callWindow.showMutedNotice = v } } }
@@ -2024,7 +2218,7 @@ Rectangle {
             // device): the chat list's item and section menus then offer
             // Start reordering (ChatList.reorderMode).
             SettingsParts.Card {
-                visible: root.page === "accessibility"
+                visible: root.page === "accessibility" && !root.subPage
                 icon: "hand-point-20"; title: "Turn on single pointer controls"
                 subtitle: "Available: Start reordering, an alternate to drag and drop in the chats and channels list."
                 trailing: Component { SettingsParts.Toggle { on: backend.setting("singlePointReordering") === "true"; accessibleName: "Turn on single pointer controls"; onToggled: v => { backend.setSetting("singlePointReordering", v ? "true" : "false"); on = v; window.singlePointReordering = v } } }
@@ -2038,7 +2232,7 @@ Rectangle {
             // info glyph under the header (and announces it).
             SettingsParts.Card {
                 id: ttyCard
-                visible: root.page === "accessibility"
+                visible: root.page === "accessibility" && !root.subPage
                 property bool changed: false
                 icon: "accessibility-20"; title: "Teletypewriter (TTY) mode"
                 subtitle: "Use the TTY mode to communicate using text over the phone. For this to work, you’ll need to connect a TTY device."
@@ -2191,18 +2385,26 @@ Rectangle {
                     on: devices.noise
                     onToggled: v => { devices.noise = v; backend.setNoiseSuppression(v) }
                 }
+                // Teams' choice (358966 re): Voice isolation needs a voice
+                // profile (Recognition); the choice is kept on the device
+                // (noiseSuppressionMode Pns / Auto) and acted on by OST's
+                // own isolator (calling::voice_isolation, TASK-0181).
+                readonly property var vi: backend.voiceIsolationJson ? JSON.parse(backend.voiceIsolationJson) : ({})
+                readonly property bool isolation: vi.profile === true && vi.mode === "Pns"
                 SettingsParts.RadioRow {
                     label: "Background noise only"
                     sublabel: "Enable this to enhance your microphone audio quality by removing background noise."
-                    checked: true
+                    checked: !devices.isolation
                     usable: devices.noise
+                    onPicked: { backend.setSetting("noiseSuppressionMode", "Auto"); backend.applyVoiceIsolation() }
                 }
                 SettingsParts.Gap { size: 4 }
                 SettingsParts.RadioRow {
                     label: "Voice isolation"
                     sublabel: "Isolate your voice from background noise and other voices while speaking. Only your voice will be audible."
-                    checked: false
-                    usable: false
+                    checked: devices.isolation
+                    usable: devices.noise && devices.vi.profile === true
+                    onPicked: { backend.setSetting("noiseSuppressionMode", "Pns"); backend.applyVoiceIsolation() }
                 }
                 SettingsParts.Gap { size: 24 }
                 Rectangle { x: -44.3; width: devices.width - 25.4; height: 0.67; color: theme.pick("#F0F0F0", "#3D3D3D", "#000000") }
@@ -2521,7 +2723,43 @@ Rectangle {
                 readonly property bool toVoicemail: pending ? pending.unansweredToVoicemail : (redir.unansweredCallSettings || {}).isEnabled !== false
                 readonly property int delay: pending ? pending.delay : ((redir.unansweredCallSettings || {}).delaySeconds || 20)
                 function save(fa, vm, d) { root.setMt("redirection", { forwardAll: fa, unansweredToVoicemail: vm, delay: d }) }
-                property var vm: ({ vmUseOof: false, vmUseAutoRepliesForOof: false, vmCallAnswerRule: "", vmAudioLang: "", vmDefaultGreetingPromptOverwrite: "", vmDefaultOofGreetingPromptOverwrite: "" })
+                // Teams' voicemail settings (the voice admin settings'
+                // electedSettings), with each change shown at once.
+                readonly property var vm: Object.assign({ vmUseOof: false, vmUseAutoRepliesForOof: false, vmCallAnswerRule: "", vmAudioLang: "", vmDefaultGreetingPromptOverwrite: "", vmDefaultOofGreetingPromptOverwrite: "", vmTransferTarget: null }, root.mt.vm || {})
+                // Teams' five answer rules (settings-app bA), in its order.
+                readonly property var rules: ["RegularVoicemail", "VoicemailWithTransferOption", "PromptOnly", "PromptOnlyWithTransfer", "DeclineCall"]
+                // A transfer rule picked with no target yet: shown, with the
+                // people picker, but saved only once someone is picked.
+                property string pendingRule: ""
+                // Delete clears the shown target only (Teams saves nothing
+                // until someone else is picked).
+                property bool targetCleared: false
+                readonly property string rule: pendingRule || vm.vmCallAnswerRule || ""
+                readonly property bool transferRule: rule === "VoicemailWithTransferOption" || rule === "PromptOnlyWithTransfer"
+                readonly property string targetMri: {
+                    const t = vm.vmTransferTarget
+                    if (!t || !t.type) return ""
+                    if (t.type === "Pstn" || t.type === "Unspecified") return "4:" + (t.telUri || "")
+                    if (t.type === "ApplicationEndpoint") return "28:orgid:" + (t.objectId || "")
+                    if (t.type === "User") return "8:orgid:" + (t.objectId || "")
+                    return t.objectId || ""
+                }
+                onTargetMriChanged: if (targetMri && !targetMri.startsWith("4:")) { backend.resolveNames(JSON.stringify([targetMri])); backend.loadPresences(JSON.stringify([targetMri])) }
+                function pickRule(r) {
+                    if ((r === "VoicemailWithTransferOption" || r === "PromptOnlyWithTransfer") && !vm.vmTransferTarget) { pendingRule = r; return }
+                    pendingRule = ""
+                    root.setMt("voicemail", { vmCallAnswerRule: r, vmEnabled: true })
+                }
+                // Teams' rg: the picked person or number becomes the target,
+                // saved with the transfer rule.
+                function pickTarget(mri, oid) {
+                    root.setMt("voicemail", { vmTransferTarget: {
+                        objectId: oid || null, tenantId: oid ? backend.tenantId() : null,
+                        type: oid ? (mri.startsWith("8:") ? "User" : "ApplicationEndpoint") : "Pstn",
+                        sipUri: null, telUri: mri.replace("4:", "") }, vmCallAnswerRule: rule })
+                    pendingRule = ""
+                    targetCleared = false
+                }
                 // Teams' voicemail greeting languages (measured on winpc
                 // 2026-11-14, in its order): [native, English, code].
                 readonly property var greetingLanguages: [
@@ -2545,7 +2783,7 @@ Rectangle {
                     ["中文(台灣)", "Chinese (Taiwan)", "zh-tw"], ["中文(香港特別行政區)", "Chinese (Hong Kong SAR)", "zh-hk"],
                     ["日本語 (日本)", "Japanese (Japan)", "ja-jp"]
                 ]
-                function setVm(k, v) { const o = Object.assign({}, vm); o[k] = v; vm = o; const b = {}; b[k] = v; root.setMt("voicemail", b) }
+                function setVm(k, v) { const b = {}; b[k] = v; root.setMt("voicemail", b) }
             }
             Text {
                 visible: root.page === "calls"
@@ -2652,12 +2890,32 @@ Rectangle {
                 SettingsParts.Gap { size: 10.7 }
                 OutlineDropdown {
                     width: 293.3; height: 30
-                    readonly property var rules: ["RegularVoicemail", "PromptOnly", "DeclineCall"]
-                    options: [{ label: "Let the caller record a message" }, { label: "Play your greeting and end the call" }, { label: "End the call without playing your greeting" }]
-                    current: rules.indexOf(calls.vm.vmCallAnswerRule)
+                    options: [{ label: "Let the caller record a message" }, { label: "Let the caller record a message or be transferred to someone else" }, { label: "Play your greeting and end the call" }, { label: "Play greeting then transfer the call to someone else" }, { label: "End the call without playing your greeting" }]
+                    current: calls.rules.indexOf(calls.rule)
                     placeholder: "Choose what happens when the call is redirected to voicemail"
                     accessibleName: "Choose what happens when the call is redirected to voicemail"
-                    onPicked: i => calls.setVm("vmCallAnswerRule", rules[i])
+                    onPicked: i => calls.pickRule(calls.rules[i])
+                }
+                // The transfer rules' target (Teams' rg, measured on winpc
+                // 2026-11-19): 15.6 under the dropdown, at the body's right.
+                SettingsParts.Gap { visible: calls.transferRule; size: 15.6 }
+                Item {
+                    visible: calls.transferRule
+                    width: parent.width; height: transferPicker.height
+                    VoicemailTransferPicker {
+                        id: transferPicker
+                        anchors.right: parent.right
+                        targetMri: calls.targetCleared ? "" : calls.targetMri
+                        targetName: { const n = backend.peopleNamesJson ? JSON.parse(backend.peopleNamesJson) : ({}); return n[calls.targetMri] || "" }
+                        targetPresence: { const n = backend.peoplePresenceJson ? JSON.parse(backend.peoplePresenceJson) : ({}); return n[calls.targetMri] || "" }
+                        people: { const v = backend.newChatPeopleJson ? JSON.parse(backend.newChatPeopleJson) : ({}); return v.items || [] }
+                        peopleQuery: { const v = backend.newChatPeopleJson ? JSON.parse(backend.newChatPeopleJson) : ({}); return v.query || "" }
+                        onSearch: q => backend.newChatPeople(q)
+                        onPicked: (mri, oid, name) => calls.pickTarget(mri, oid)
+                        // Teams' Delete only clears the box (nothing is saved
+                        // until someone else is picked).
+                        onRemoved: calls.targetCleared = true
+                    }
                 }
                 SettingsParts.Gap { size: 15.6 }
                 SettingsParts.Divider {}
@@ -3135,6 +3393,20 @@ Rectangle {
         return out.sort((a, b) => a[0] - b[0])
     }
     function scrollToForTest(y) { content.contentY = y }
+    /// --vm-transfer-test (TASK-0180): the voicemail answer rule and its
+    /// transfer target: "state", "rule" <rule>, "type" <text>, "pick"
+    /// <mri> <oid>, "remove", "raw" <settings JSON> (a whole voicemail
+    /// settings save, to put settings back).
+    function vmTransferForTest(what, a, b) {
+        if (what === "rule") calls.pickRule(a)
+        else if (what === "type") transferPicker.typeForTest(a)
+        else if (what === "pick") calls.pickTarget(a, b)
+        else if (what === "remove") transferPicker.removed()
+        else if (what === "raw") setMt("voicemail", JSON.parse(a))
+        const at = it => { const p = it.mapToItem(null, 0, 0); return [Math.round(p.x * 10) / 10, Math.round(p.y * 10) / 10, Math.round(it.width * 10) / 10, Math.round(it.height * 10) / 10] }
+        return JSON.stringify({ rule: calls.rule, pending: calls.pendingRule, saved: calls.vm, targetMri: calls.targetMri, cleared: calls.targetCleared,
+            picker: transferPicker.visible ? at(transferPicker) : null, rows: transferPicker.visible ? transferPicker.rowsForTest() : [] })
+    }
     // Settings ▸ Devices' camera controls and spatial audio, and
     // Accessibility's TTY card (TASK-0158, 0157, 0151 harnesses).
     function scrollToCardForTest(card) { const c = card === "video" ? videoCard : card === "tty" ? ttyCard : devices; content.contentY = Math.max(0, Math.min(pageCol.y + c.y - 12, content.contentHeight - content.height)) }

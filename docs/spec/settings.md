@@ -101,12 +101,37 @@ Middle tier (`{mt}`):
     callGroupDetails {simultaneous, 0, []} and favoriteTargets {[]}.
   - "When you can't answer a call" offers "Do not redirect calls" and "Redirect to
     voicemail".
-- **Voicemail:** `POST …/voicemailsettings` with nine keys, only the changed one set and the
-  rest null (vmUseOof, vmUseAutoRepliesForOof, vmCallAnswerRule, …). There is no GET for it.
-  - vmCallAnswerRule values: RegularVoicemail (record a message), VoicemailWithTransferOption
-    (record, or be transferred), PromptOnly (greeting, then end), PromptOnlyWithTransfer
-    (greeting, then transfer), DeclineCall (end without the greeting).
-  - The two transfer rules first ask for a transfer target in a people picker.
+- **Voicemail** (settings-app `$a`/`bA`/`rg`, 527114 getVoicemailSettings; read 2026-11-19):
+  - Read: the voice admin settings' `electedSettings` (`POST {mt}/beta/users/useraggregatesettings
+    {"voiceAdminSettings": true}` → voiceAdminSettings.value.electedSettings).
+  - Save: `POST …/voicemailsettings` with the nine VoicemailSettingsInput keys (vmEnabled, vmUseOof,
+    vmUseAutoRepliesForOof, vmUseCalForOof, vmCallAnswerRule, vmAudioLang, vmTransferTarget,
+    vmDefaultGreetingPromptOverwrite, vmDefaultOofGreetingPromptOverwrite). It sends the current
+    settings with the change; keys never read go as null, which is what the 2026-11-10 capture
+    showed. A rule change also sets vmEnabled true.
+  - vmCallAnswerRule values, in Teams' order: RegularVoicemail ("Let the caller record a message"),
+    VoicemailWithTransferOption ("Let the caller record a message or be transferred to someone
+    else"), PromptOnly ("Play your greeting and end the call"), PromptOnlyWithTransfer ("Play
+    greeting then transfer the call to someone else"), DeclineCall ("End the call without
+    playing your greeting"). Long options wrap: 32 or 52 tall, 2 px apart.
+  - A transfer rule picked with no target is held on the page, with its people picker, until
+    someone is picked.
+    - Then `vmTransferTarget {objectId, tenantId (only with an object id), type User (8:orgid) |
+      ApplicationEndpoint (28:orgid, call queues and auto attendants) | Pstn, sipUri null,
+      telUri: the MRI minus its first "4:"}` is saved with vmCallAnswerRule.
+    - The saved target shows as `8:orgid:` / `28:orgid:` + objectId, or `4:` + telUri.
+    - Delete only clears the box; nothing is saved.
+  - Picker (measured on winpc 2026-11-19), 15.6 under the dropdown, at the body's right:
+    - Box: 294 x 33.3, filled #F0F0F0, radius 4, text 12 in, "Type a name or number" #424242.
+    - Suggestions (filter voicemailTransferTarget: AADTenant, Guest, B2BMembers, Bot,
+      DisabledUser, ModernGroup, UserDefinedGroup, Pstn, CallQandAA, SkypeConsumer; not you)
+      appear right under the box: Fluent surface, padding 4. Rows are 50 tall: picture 32 at
+      12, 9; the name 14/20 at 60, with the typed part bold; a second line 12/16 #616161 at 27.5.
+    - Typed text with three or more letters is read as a phone keypad number and offered first
+      ("+1 6788378" for "OST Test"), with a #48D1CC person picture and an External badge
+      (12/600 white on #616161, radius 4, 24 tall).
+    - The chosen target: a 294 x 48 box of the same fill; picture 32 (with presence) at 12, 8;
+      the name 14 at 52; Delete (32 x 31.3, delete-20 #424242, tooltip "Delete") at 255, 8.3.
 - **Ringtone:** `POST …/ringtonesettings {"assignments":{"ringToneAssignments":[{type
   Regular, value "Beep", associatedEntityId ""}]}}`, with [] for Default.
   - Choices: Default, Beep, Bop, Bounce, Bubbles, Bubbles (Loud), Drip Drop, Eureka, Flutter,
@@ -365,14 +390,13 @@ How OST does it:
   shortcuts), Appearance (theme, skin tone), Chats and channels, Privacy (auto DND, block
   anonymous calls, surveys, attendance reports, unmute shortcut), Accessibility (sign
   language mode, captions settings) and Devices.
-- Calls: forwarding, unanswered calls, ring delay, the voicemail answer rule (no transfer
-  rules) and out-of-office voicemail.
+- Calls: forwarding, unanswered calls, ring delay, the voicemail answer rules (all five; the
+  transfer rules with Teams' people picker, TASK-0180) and out-of-office voicemail.
   - Choose a ringtone for you (TASK-0144): Teams' 18 ringtones (assets/sounds, Teams' own
     files), saved with `POST {mt}/beta/usersettings/{mri}/ringtonesettings` and read with
     `POST {mt}/beta/users/useraggregatesettings {"voiceAdminSettings": true}`; incoming calls
     ring with it on the speaker and the secondary ringer.
   - Record a greeting (TASK-0152): Teams' call to your own voicemail.
-  - Not built: the transfer rules (they need the people picker).
 - Files and links: the download location (OST's downloads use it), the file-open choice,
   file previews, "Always ask where to save downloaded file" and "Always open web links in:"
   (TASK-0119; docs/spec/file-actions.md).

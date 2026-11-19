@@ -10,6 +10,7 @@ use tract_onnx::prelude::*;
 
 pub mod avatar;
 pub mod content_camera;
+pub mod voice_isolation;
 
 /// The model's input and mask size.
 pub const MASK: usize = 192;

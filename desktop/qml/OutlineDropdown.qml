@@ -9,7 +9,7 @@ import QtQuick.Controls.Basic
 // check (16) 6 in and the text at 30; disabled options greyed and inert.
 Item {
     id: root
-    /// [{label, disabled?}]
+    /// [{label, sublabel?, display? (the button's text), disabled?}]
     property var options: []
     property int current: 0
     property string accessibleName: ""
@@ -38,7 +38,7 @@ Item {
         Text {
             x: 12; anchors.verticalCenter: parent.verticalCenter
             width: parent.width - 52; elide: Text.ElideRight
-            text: root.options.length && root.current >= 0 ? root.options[root.current].label : root.placeholder
+            text: root.options.length && root.current >= 0 ? (root.options[root.current].display || root.options[root.current].label) : root.placeholder
             font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill1, !root.enabled ? theme.disabled : root.current >= 0 ? theme.text : theme.textSecondary)
         }
         FluentIcon { anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-20"; size: 20; color: theme.onFill(hcFill1, root.enabled ? theme.textSecondary : theme.disabled) }
@@ -58,6 +58,9 @@ Item {
             id: view
             clip: true
             model: root.options
+            // Fluent's listbox: 2 px between options (measured on winpc
+            // 2026-11-19: voicemail rules and shortcut profiles).
+            spacing: 2
             boundsBehavior: Flickable.StopAtBounds
             ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
             delegate: Rectangle {
@@ -65,10 +68,20 @@ Item {
                 required property var modelData
                 required property int index
                 readonly property bool usable: !modelData.disabled
-                width: view.width; height: 32; radius: 4
+                // A long label wraps onto 20 px lines, 6 above and below
+                // (Teams' voicemail rules: 32 or 52 tall, measured
+                // 2026-11-19).
+                // A sublabel (12/16 #616161) goes under the label (Teams'
+                // shortcut profiles: 48 tall).
+                width: view.width; height: Math.max(32, optCol.height + 12); radius: 4
                 color: optHover.hovered && usable ? theme.menuHover : "transparent"
                 FluentIcon { visible: opt.index === root.current; x: 6; anchors.verticalCenter: parent.verticalCenter; name: "checkmark-16"; size: 16; color: theme.onFill(opt, theme.text) }
-                Text { x: 30; anchors.verticalCenter: parent.verticalCenter; text: opt.modelData.label; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(opt, opt.usable ? theme.text : theme.disabled) }
+                Column {
+                    id: optCol
+                    x: 30; width: opt.width - 38; anchors.verticalCenter: parent.verticalCenter
+                    Text { width: parent.width; wrapMode: Text.Wrap; lineHeight: 20; lineHeightMode: Text.FixedHeight; text: opt.modelData.label; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(opt, opt.usable ? theme.text : theme.disabled) }
+                    Text { visible: !!opt.modelData.sublabel; width: parent.width; wrapMode: Text.Wrap; lineHeight: 16; lineHeightMode: Text.FixedHeight; text: opt.modelData.sublabel || ""; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(opt, theme.textSecondary) }
+                }
                 HoverHandler { id: optHover; cursorShape: opt.usable ? Qt.PointingHandCursor : Qt.ArrowCursor }
                 TapHandler { enabled: opt.usable; onTapped: { root.picked(opt.index); list.close() } }
                 Accessible.role: Accessible.ListItem

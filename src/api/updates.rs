@@ -23,6 +23,15 @@ pub async fn latest_release(http: &reqwest::Client) -> Result<Option<Release>> {
         .send()
         .await
         .context("update check")?;
+    // What the check tells GitHub about this copy (View Diagnostic Data).
+    super::ddv::record(
+        "Ost.UpdateCheck",
+        serde_json::json!({
+            "url": format!("https://api.github.com/repos/{REPOSITORY}/releases/latest"),
+            "userAgent": concat!("ost/", env!("CARGO_PKG_VERSION")),
+            "status": r.status().as_u16(),
+        }),
+    );
     if r.status() == reqwest::StatusCode::NOT_FOUND {
         return Ok(None);
     }

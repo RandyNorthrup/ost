@@ -525,6 +525,17 @@ fn open_capture(frame_tx: mpsc::SyncSender<Vec<i16>>, target: u32) -> Option<cpa
                     && let Some(p) = super::apm::current()
                 {
                     p.lock().unwrap_or_else(|e| e.into_inner()).capture(&mut frame, APM_DELAY_MS);
+                    // Voice isolation: only your voice goes on.
+                    super::voice_isolation::process(&mut frame);
+                }
+                // OST_DUMP_MIC=<file>: the processed microphone, as sent
+                // (raw 16-bit mono at the call's rate; for tests).
+                if let Some(path) = std::env::var_os("OST_DUMP_MIC") {
+                    use std::io::Write;
+                    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+                        let bytes: Vec<u8> = frame.iter().flat_map(|s| s.to_le_bytes()).collect();
+                        let _ = f.write_all(&bytes);
+                    }
                 }
                 // An avatar's lip sync: the Avatars app's viseme model on
                 // the processed microphone, as Teams runs it.

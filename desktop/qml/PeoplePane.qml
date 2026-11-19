@@ -84,6 +84,8 @@ Rectangle {
                 if (ra !== rb) return ra - rb
             }
             if (a.you !== b.you) return a.you ? -1 : 1
+            // Sign language mode: the people your role signs with first.
+            if (!!a.signFirst !== !!b.signFirst) return a.signFirst ? -1 : 1
             return (a.name || "").localeCompare(b.name || "")
         })
     }
@@ -386,11 +388,13 @@ Rectangle {
                     }
                     FluentIcon { id: trust; visible: !!p.guest; anchors.verticalCenter: parent.verticalCenter; name: "person-unverified-16"; size: 16; color: theme.text }
                 }
-                // Teams names only the organizer here.
+                // Teams names only the organizer here, and in Sign language
+                // mode the interpreters ("{{rosterItemMessage}}, …").
                 Text {
-                    visible: (p.role || "").toLowerCase() === "organizer"
+                    readonly property bool organizer: (p.role || "").toLowerCase() === "organizer"
+                    visible: organizer || !!p.signLine
                     height: 16; verticalAlignment: Text.AlignVCenter
-                    text: "Organizer"
+                    text: organizer && p.signLine ? "Organizer, " + p.signLine : organizer ? "Organizer" : (p.signLine || "")
                     font.family: theme.font; font.pixelSize: 12
                     color: theme.textStrong
                 }

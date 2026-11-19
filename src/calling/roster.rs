@@ -12,6 +12,23 @@ fn lobby_only(p: &serde_json::Value) -> bool {
     !eps.is_empty() && eps.iter().all(|ep| ep.get("call").is_none() && ep.get("lobby").is_some())
 }
 
+/// A participant's Sign language mode state (527114 SignerMixin): the
+/// first published "dhhSigner" or "signLanguageInterpreter" state, with its
+/// content as JSON (a person is never both).
+pub fn sign_state(p: &serde_json::Value) -> Option<(String, String)> {
+    p.get("publishedStates")?.as_array()?.iter().find_map(|s| {
+        let t = s.get("stateType")?.as_str()?;
+        (t == "dhhSigner" || t == "signLanguageInterpreter").then(|| {
+            let c = match s.get("content") {
+                Some(serde_json::Value::String(c)) => c.clone(),
+                Some(c) => c.to_string(),
+                None => "{}".to_string(),
+            };
+            (t.to_string(), c)
+        })
+    })
+}
+
 /// One person in the meeting.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Participant {
@@ -43,6 +60,11 @@ pub struct Participant {
     /// published state): its content, the layout JSON (`{mode, x, y,
     /// width, height, zOrder, background?}`).
     pub weather_person: Option<String>,
+    /// Their sign language role in Sign language mode (Teams' published
+    /// "dhhSigner" or "signLanguageInterpreter" state), and its content
+    /// (a signer's `{interpreterIds, showSignerIdentificationToOthers}`).
+    pub sign_role: Option<String>,
+    pub sign_content: Option<String>,
     /// An anonymous guest (Teams shows its Unverified trust icon).
     pub guest: bool,
     /// A Teams Rooms device: an endpoint with `deviceType: "room"` (Teams'
@@ -300,6 +322,8 @@ fn delta_on(json: &str, prefix: &str) -> Option<Vec<Participant>> {
                             Some(c) => c.to_string(),
                             None => "{}".to_string(),
                         }),
+                    sign_role: sign_state(p).map(|(t, _)| t),
+                    sign_content: sign_state(p).map(|(_, c)| c),
                     share_data_source: p
                         .get("endpoints")
                         .and_then(|e| e.as_object())

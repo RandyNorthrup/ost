@@ -181,7 +181,9 @@ Window {
     }
     readonly property bool slackShortcuts: shortcutProfile === "chats_alt" || shortcutProfile === "chats_meetings_alt"
     readonly property bool zoomShortcuts: shortcutProfile === "meetings_alt" || shortcutProfile === "chats_meetings_alt"
-    Connections { target: backend; function onSignedInChanged() { if (backend.signedIn) { backend.loadSettings(); backend.loadUrlPreviewPolicy(); backend.loadWorkLocationPolicy(); backend.loadPremium() } } }
+    Connections { target: backend; function onSignedInChanged() { if (backend.signedIn) { backend.loadSettings(); backend.loadUrlPreviewPolicy(); backend.loadWorkLocationPolicy(); backend.loadPremium(); backend.loadVoiceIsolation() } } }
+    // A voice profile made or removed (Recognition) changes Voice isolation.
+    Connections { target: backend; function onRecognitionJsonChanged() { if (backend.signedIn) backend.loadVoiceIsolation() } }
     // Settings ▸ General ▸ Starting chats (Teams' synced
     // userPersonalSettings.messagingSettings.alwaysPopOutNewChat): a new
     // chat in the main window, or in Teams' "New Message" window; once
@@ -304,6 +306,9 @@ Window {
         function onFeedbackRequested(kind, area, context) { window.openFeedback(kind, area, context) }
     }
     Shortcut { sequence: "Ctrl+J"; onActivated: if (conversation.visible) conversation.jumpToNewest() }
+    // Teams' React to the last message: Ctrl+Alt+R, Ctrl+Shift+\ with
+    // Slack's shortcuts.
+    Shortcut { sequences: window.slackShortcuts ? ["Ctrl+Shift+\\", "Ctrl+|"] : ["Ctrl+Alt+R"]; onActivated: if (conversation.visible) conversation.reactToLatest() }
     Shortcut { sequence: "Alt+P"; onActivated: if (conversation.visible) conversation.toggleDetails() }
     Shortcut { sequence: "Alt+Shift+O"; onActivated: if (conversation.visible) conversation.attachFile() }
     // Teams' Mark all as read (Shift+Esc) and Collapse all sections (Alt+Q)
@@ -387,7 +392,7 @@ Window {
     Shortcut { sequence: "Ctrl+Shift+A"; context: Qt.ApplicationShortcut; onActivated: if (backend.callState === "ringing") backend.acceptCall(backend.callVideoOffered) }
     Shortcut { sequence: "Ctrl+Shift+D"; context: Qt.ApplicationShortcut; onActivated: if (backend.callState === "ringing") backend.declineCall() }
     Shortcut { sequence: "Ctrl+Shift+O"; context: Qt.ApplicationShortcut; onActivated: if (backend.callState === "connected" && backend.callCanVideo) backend.toggleCamera() }
-    KeyboardShortcuts { id: shortcutsDialog }
+    KeyboardShortcuts { id: shortcutsDialog; onApplyProfile: p => settingsView.setProp("keyboardShortcutsSettings", "shortcutProfile", p) }
     // For --keys-test (needs access to these by name).
     property alias kShortcuts: shortcutsDialog
     property alias kRail: rail
@@ -398,6 +403,12 @@ Window {
     Loader {
         active: Qt.application.arguments.indexOf("--keys-test") >= 0
         source: "KeysTest.qml"
+        onLoaded: item.win = window
+    }
+    property alias kCallWindow: callWindow
+    Loader {
+        active: Qt.application.arguments.indexOf("--kb-dialog-test") >= 0
+        source: "KbDialogTest.qml"
         onLoaded: item.win = window
     }
     // Pin window on top.
@@ -1562,7 +1573,7 @@ Window {
     Timer {
         id: shotTimer
         interval: 15000
-        running: window.shotPath.length > 0 && Qt.application.arguments.indexOf("--draft-format-test") < 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--table-test") < 0 && Qt.application.arguments.indexOf("--hovercard-test") < 0 && Qt.application.arguments.indexOf("--chat-shot") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--pause-test")) && Qt.application.arguments.indexOf("--settings-test") < 0 && Qt.application.arguments.indexOf("--settings-pages-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--meet-now-test") < 0 && Qt.application.arguments.indexOf("--mute-test") < 0 && Qt.application.arguments.indexOf("--video-call-test") < 0 && Qt.application.arguments.indexOf("--meeting-chat-test") < 0 && Qt.application.arguments.indexOf("--breakpoints-test") < 0 && Qt.application.arguments.indexOf("--fun-picker-test") < 0 && Qt.application.arguments.indexOf("--attach-test") < 0 && Qt.application.arguments.indexOf("--copilot-test") < 0 && Qt.application.arguments.indexOf("--attach-link-test") < 0 && Qt.application.arguments.indexOf("--thread-attach-test") < 0 && Qt.application.arguments.indexOf("--picker-bar-test") < 0 && Qt.application.arguments.indexOf("--filecard-test") < 0 && Qt.application.arguments.indexOf("--videoclip-test") < 0 && Qt.application.arguments.indexOf("--recorder-test") < 0 && Qt.application.arguments.indexOf("--recorder-edit-test") < 0 && Qt.application.arguments.indexOf("--teleprompter-test") < 0 && Qt.application.arguments.indexOf("--video-effects-test") < 0 && Qt.application.arguments.indexOf("--video-filters-test") < 0 && Qt.application.arguments.indexOf("--green-screen-test") < 0 && Qt.application.arguments.indexOf("--leave-confirm-test") < 0 && Qt.application.arguments.indexOf("--shortcut-profile-test") < 0 && Qt.application.arguments.indexOf("--new-chat-window-test") < 0 && Qt.application.arguments.indexOf("--chatlist-keys-test") < 0 && Qt.application.arguments.indexOf("--translation-test") < 0 && Qt.application.arguments.indexOf("--regional-test") < 0 && Qt.application.arguments.indexOf("--editor-test") < 0 && Qt.application.arguments.indexOf("--appearance-test") < 0 && Qt.application.arguments.indexOf("--collab-test") < 0 && Qt.application.arguments.indexOf("--notif-test") < 0 && Qt.application.arguments.indexOf("--accounts-test") < 0 && Qt.application.arguments.indexOf("--privacy-test") < 0 && Qt.application.arguments.indexOf("--calls-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--cards-test")) && !Qt.application.arguments.some(a => a.startsWith("--recognition-test=")) && Qt.application.arguments.indexOf("--recognition-states") < 0 && Qt.application.arguments.indexOf("--about-test") < 0 && Qt.application.arguments.indexOf("--room-audio-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--link-preview-test")) && Qt.application.arguments.indexOf("--fileviewer-test") < 0 && Qt.application.arguments.indexOf("--poll-test") < 0 && Qt.application.arguments.indexOf("--media-order-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--custom-emoji")) && Qt.application.arguments.indexOf("--onedrive-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--onedrive-rows-test")) && !Qt.application.arguments.some(a => a.startsWith("--version-history-test")) && !Qt.application.arguments.some(a => a.startsWith("--details-test")) && Qt.application.arguments.indexOf("--preview-test") < 0 && Qt.application.arguments.indexOf("--sortview-test") < 0 && Qt.application.arguments.indexOf("--zip-test") < 0 && Qt.application.arguments.indexOf("--files-links-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--picker-test")) && Qt.application.arguments.indexOf("--folder-bar-test") < 0 && Qt.application.arguments.indexOf("--quick-access-test") < 0 && Qt.application.arguments.indexOf("--picker-views-test") < 0 && Qt.application.arguments.indexOf("--comments-test") < 0 && Qt.application.arguments.indexOf("--bell-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--folder-extras-test")) && Qt.application.arguments.indexOf("--planner-test") < 0 && Qt.application.arguments.indexOf("--apps-test") < 0 && Qt.application.arguments.indexOf("--channel-files-test") < 0 && Qt.application.arguments.indexOf("--store-test") < 0 && Qt.application.arguments.indexOf("--webapp-test") < 0 && Qt.application.arguments.indexOf("--loop-test") < 0 && Qt.application.arguments.indexOf("--tab-menu-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--tab-drag-test=")) && Qt.application.arguments.indexOf("--delete-undo-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat=")) && window.appDetailsTest.length === 0 && Qt.application.arguments.indexOf("--chatlist-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--share-test")) && !Qt.application.arguments.some(a => a.startsWith("--file-actions-test")) && Qt.application.arguments.indexOf("--open-file-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--sharefile-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-grid-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-communities-test")) && Qt.application.arguments.indexOf("--meeting-details-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--attendance-test=")) && !Qt.application.arguments.some(a => a.startsWith("--remove-history-")) && !Qt.application.arguments.some(a => a.startsWith("--embedded-apps-test")) && Qt.application.arguments.indexOf("--test-call-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--events-test")) && Qt.application.arguments.indexOf("--call-notes-test") < 0 && Qt.application.arguments.indexOf("--recaps-test") < 0 && Qt.application.arguments.indexOf("--phone-audio-test") < 0 && Qt.application.arguments.indexOf("--preheat-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--e2ee-setting-test")) && !Qt.application.arguments.some(a => /^--(voicemail-greeting|camera-controls|spatial-audio|tty)-test/.test(a)) && Qt.application.arguments.indexOf("--avatar-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--content-camera-test")) && !Qt.application.arguments.some(a => a.startsWith("--group-call-nmc=")) && Qt.application.arguments.indexOf("--va-test") < 0
+        running: window.shotPath.length > 0 && Qt.application.arguments.indexOf("--draft-format-test") < 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--table-test") < 0 && Qt.application.arguments.indexOf("--hovercard-test") < 0 && Qt.application.arguments.indexOf("--chat-shot") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--pause-test")) && Qt.application.arguments.indexOf("--settings-test") < 0 && Qt.application.arguments.indexOf("--settings-pages-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--meet-now-test") < 0 && Qt.application.arguments.indexOf("--mute-test") < 0 && Qt.application.arguments.indexOf("--video-call-test") < 0 && Qt.application.arguments.indexOf("--meeting-chat-test") < 0 && Qt.application.arguments.indexOf("--breakpoints-test") < 0 && Qt.application.arguments.indexOf("--fun-picker-test") < 0 && Qt.application.arguments.indexOf("--attach-test") < 0 && Qt.application.arguments.indexOf("--copilot-test") < 0 && Qt.application.arguments.indexOf("--attach-link-test") < 0 && Qt.application.arguments.indexOf("--thread-attach-test") < 0 && Qt.application.arguments.indexOf("--picker-bar-test") < 0 && Qt.application.arguments.indexOf("--filecard-test") < 0 && Qt.application.arguments.indexOf("--videoclip-test") < 0 && Qt.application.arguments.indexOf("--recorder-test") < 0 && Qt.application.arguments.indexOf("--recorder-edit-test") < 0 && Qt.application.arguments.indexOf("--teleprompter-test") < 0 && Qt.application.arguments.indexOf("--video-effects-test") < 0 && Qt.application.arguments.indexOf("--video-filters-test") < 0 && Qt.application.arguments.indexOf("--green-screen-test") < 0 && Qt.application.arguments.indexOf("--leave-confirm-test") < 0 && Qt.application.arguments.indexOf("--shortcut-profile-test") < 0 && Qt.application.arguments.indexOf("--new-chat-window-test") < 0 && Qt.application.arguments.indexOf("--chatlist-keys-test") < 0 && Qt.application.arguments.indexOf("--translation-test") < 0 && Qt.application.arguments.indexOf("--regional-test") < 0 && Qt.application.arguments.indexOf("--editor-test") < 0 && Qt.application.arguments.indexOf("--appearance-test") < 0 && Qt.application.arguments.indexOf("--collab-test") < 0 && Qt.application.arguments.indexOf("--notif-test") < 0 && Qt.application.arguments.indexOf("--accounts-test") < 0 && Qt.application.arguments.indexOf("--privacy-test") < 0 && Qt.application.arguments.indexOf("--calls-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--cards-test")) && !Qt.application.arguments.some(a => a.startsWith("--recognition-test=")) && Qt.application.arguments.indexOf("--recognition-states") < 0 && Qt.application.arguments.indexOf("--about-test") < 0 && Qt.application.arguments.indexOf("--room-audio-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--link-preview-test")) && Qt.application.arguments.indexOf("--fileviewer-test") < 0 && Qt.application.arguments.indexOf("--poll-test") < 0 && Qt.application.arguments.indexOf("--media-order-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--custom-emoji")) && Qt.application.arguments.indexOf("--onedrive-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--onedrive-rows-test")) && !Qt.application.arguments.some(a => a.startsWith("--version-history-test")) && !Qt.application.arguments.some(a => a.startsWith("--details-test")) && Qt.application.arguments.indexOf("--preview-test") < 0 && Qt.application.arguments.indexOf("--sortview-test") < 0 && Qt.application.arguments.indexOf("--zip-test") < 0 && Qt.application.arguments.indexOf("--files-links-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--picker-test")) && Qt.application.arguments.indexOf("--folder-bar-test") < 0 && Qt.application.arguments.indexOf("--quick-access-test") < 0 && Qt.application.arguments.indexOf("--picker-views-test") < 0 && Qt.application.arguments.indexOf("--comments-test") < 0 && Qt.application.arguments.indexOf("--bell-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--folder-extras-test")) && Qt.application.arguments.indexOf("--planner-test") < 0 && Qt.application.arguments.indexOf("--apps-test") < 0 && Qt.application.arguments.indexOf("--channel-files-test") < 0 && Qt.application.arguments.indexOf("--store-test") < 0 && Qt.application.arguments.indexOf("--webapp-test") < 0 && Qt.application.arguments.indexOf("--loop-test") < 0 && Qt.application.arguments.indexOf("--tab-menu-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--tab-drag-test=")) && Qt.application.arguments.indexOf("--delete-undo-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat=")) && window.appDetailsTest.length === 0 && Qt.application.arguments.indexOf("--chatlist-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--share-test")) && !Qt.application.arguments.some(a => a.startsWith("--file-actions-test")) && Qt.application.arguments.indexOf("--open-file-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--sharefile-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-grid-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-communities-test")) && Qt.application.arguments.indexOf("--meeting-details-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--attendance-test=")) && !Qt.application.arguments.some(a => a.startsWith("--remove-history-")) && !Qt.application.arguments.some(a => a.startsWith("--embedded-apps-test")) && Qt.application.arguments.indexOf("--test-call-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--events-test")) && Qt.application.arguments.indexOf("--call-notes-test") < 0 && Qt.application.arguments.indexOf("--recaps-test") < 0 && Qt.application.arguments.indexOf("--phone-audio-test") < 0 && Qt.application.arguments.indexOf("--preheat-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--e2ee-setting-test")) && !Qt.application.arguments.some(a => /^--(voicemail-greeting|camera-controls|spatial-audio|tty)-test/.test(a)) && Qt.application.arguments.indexOf("--avatar-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--content-camera-test")) && !Qt.application.arguments.some(a => a.startsWith("--group-call-nmc=")) && Qt.application.arguments.indexOf("--va-test") < 0 && !Qt.application.arguments.some(a => /^--(vm-transfer|kb-dialog|ddv|sign-language|voice-isolation)-test/.test(a))
         onTriggered: {
             if (!backend.hasCredentials) {
                 if (!backend.signInPage) {
@@ -6493,7 +6504,7 @@ Window {
         function shot(n) { window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-" + n + ".png"))) }
         function callShot(n) { callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-" + n + ".png"))) }
         onTriggered: {
-            console.warn("TESTCALL", step, "state", backend.callState, "test", backend.callTest, "muted", backend.callMuted, "camera", backend.callCameraOn, "report", backend.callTestReport)
+            console.warn("TESTCALL", step, "state", backend.callState, "test", backend.callTest, "muted", backend.callMuted, "camera", backend.callCameraOn, "report", backend.callTestReport, "vi", backend.voiceIsolationJson, backend.voiceIsolationStats())
             if (step === 0) { rail.current = "settings"; settingsView.pageForTest("devices") }
             else if (step === 1) shot("devices")
             else if (step === 2) backend.makeTestCall()
@@ -6641,6 +6652,110 @@ Window {
             else if (step === 2) { if (arg.endsWith("=on")) settingsView.toggleTtyForTest(true); else if (arg.endsWith("=off")) settingsView.toggleTtyForTest(false) }
             else if (step === 3) { console.warn("TTY after", JSON.stringify(settingsView.ttyForTest()), "cards", JSON.stringify(settingsView.cardsForTest())); shot("tty-after") }
             else { Qt.quit(); return }
+            step++
+        }
+    }
+
+    // --sign-language-test=<SIGNER|INTERPRETER|off>[,<interpreter MRI>…]
+    // (TASK-0182): Settings ▸ Accessibility's Sign language mode set that
+    // way (captured), then, with --join-test, SIGN lines every 4 s in the
+    // meeting: your role, the roster's sign states, who comes first, the
+    // featured tile in the Sign language view (picked at the third line),
+    // People lines. `off` puts the mode back off with no interpreters.
+    Timer {
+        readonly property var arg: ((Qt.application.arguments.find(a => a.startsWith("--sign-language-test=")) || "").slice(21)).split(",").filter(s => s)
+        running: arg.length > 0 && backend.signedIn
+        interval: 4000; repeat: true
+        property int step: 0
+        property int inCall: 0
+        function shot(n) { window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-sl-" + n + ".png"))) }
+        function callShot(n) { callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-sl-" + n + ".png"))) }
+        onTriggered: {
+            const role = arg[0]
+            if (step === 0) {
+                if (role === "off") settingsView.setPropForTest("callAccessibilitySettings", "", { accessibilityModeEnabledV2: false, signLanguageModeSelection: "SIGNER", selectedDHHInterpreters: [] })
+                else settingsView.setPropForTest("callAccessibilitySettings", "", { accessibilityModeEnabledV2: true, signLanguageModeSelection: role, showSignerIdentificationToOthers: true, selectedDHHInterpreters: arg.slice(1) })
+            } else if (step === 1) { rail.current = "settings"; settingsView.pageForTest("accessibility") }
+            else if (step === 2) { console.warn("SIGN settings", JSON.stringify(syncedProps.callAccessibilitySettings), "cards", JSON.stringify(settingsView.cardsForTest())); shot("settings") }
+            else if (step === 3 && arg.length > 1) { settingsView.pageForTest("accessibility", "interpreters"); backend.resolveNames(JSON.stringify(arg.slice(1))) }
+            else if (step === 4 && arg.length > 1) { shot("interpreters"); settingsView.pageForTest("accessibility") }
+            if (callWindow.live) {
+                inCall++
+                const w = callWindow
+                // --sign-language-admit: let in whoever waits (the other
+                // test account).
+                const lobby = JSON.parse(backend.callLobbyJson || "[]")
+                if (Qt.application.arguments.indexOf("--sign-language-admit") >= 0 && lobby.length) {
+                    console.warn("SIGN admitting", JSON.stringify(lobby.map(p => p.name)))
+                    lobby.forEach(p => backend.admitFromLobby(p.id, p.name, true))
+                }
+                console.warn("SIGN call", JSON.stringify({ mode: w.signMode, iSign: w.iSign, published: w.signPublished, layout: w.layout,
+                    roster: w.others.map(p => [p.name, p.sign_role || "", p.sign_content || "", w.hasVideo(p)]),
+                    first: w.signFirst.map(p => p.name), people: w.people.map(p => [p.name, p.signLine || "", !!p.signFirst]),
+                    menu: w.signMode }))
+                if (inCall === 3) { w.layout = "accessibility"; w.contentItem.Accessible.announce("Accessibility mode was set") }
+                if (inCall === 5) callShot("call-" + w.layout)
+            }
+            step++
+        }
+    }
+
+    // --ddv-test=<connection string> (TASK-0147): Settings ▸ Privacy ▸ View
+    // Diagnostic Data ▸ Manage: data viewing on, Connect to that viewer,
+    // then after the update check (sent 20 s after start) data viewing off
+    // again. DDV lines; -ddv-*.png.
+    Timer {
+        readonly property string conn: (Qt.application.arguments.find(a => a.startsWith("--ddv-test=")) || "").slice(11)
+        running: conn !== "" && backend.signedIn
+        interval: 2000; repeat: true
+        property int step: 0
+        function shot(n) { window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-ddv-" + n + ".png"))) }
+        onTriggered: {
+            if (step === 0) { rail.current = "settings"; settingsView.pageForTest("privacy") }
+            else if (step === 1) { console.warn("DDV cards", JSON.stringify(settingsView.cardsForTest().filter(c => /Diagnostic|screen locks/.test(c[2])))); shot("privacy") }
+            else if (step === 2) { settingsView.pageForTest("privacy", "ddv"); backend.loadDdv() }
+            else if (step === 3) { console.warn("DDV page", backend.ddvJson); shot("page-off"); backend.setDdvEnabled(true) }
+            else if (step === 4) { shot("page-on"); backend.connectDdv(conn) }
+            else if (step === 7) { backend.loadDdv(); console.warn("DDV connected", backend.ddvJson); shot("connected") }
+            else if (step === 20) { backend.loadDdv(); console.warn("DDV later", backend.ddvJson); shot("later") }
+            else if (step === 21) { backend.setDdvEnabled(false); console.warn("DDV off", backend.ddvJson) }
+            else if (step > 22) { Qt.quit(); return }
+            step++
+        }
+    }
+
+    // --vm-transfer-test (TASK-0180): Settings ▸ Calls ▸ Voicemail's answer
+    // rule and transfer target. --vm-transfer-rule=<rule> picks a rule,
+    // --vm-transfer-type=<text> types into the people picker (~ for a
+    // space), --vm-transfer-pick=<row> picks that suggestion,
+    // --vm-transfer-remove presses Delete, --vm-transfer-raw=<JSON> saves
+    // those voicemail settings as they are; then the settings are read back
+    // from the service. VMTRANSFER lines; -vmt-*.png.
+    Timer {
+        running: Qt.application.arguments.indexOf("--vm-transfer-test") >= 0 && backend.signedIn
+        interval: 2000; repeat: true
+        property int step: 0
+        function opt(n) { const a = Qt.application.arguments.find(x => x.startsWith("--vm-transfer-" + n + "=")); return a ? a.slice(("--vm-transfer-" + n + "=").length).replace(/~/g, " ") : "" }
+        function shot(n) { window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-vmt-" + n + ".png"))) }
+        function log(tag, what, a, b) { console.warn("VMTRANSFER", tag, settingsView.vmTransferForTest(what || "state", a, b)) }
+        function toCard() { const c = settingsView.cardsForTest().find(x => x[2] === "Voicemail"); if (c) settingsView.scrollByForTest(c[0] - 120) }
+        onTriggered: {
+            if (step === 0) { rail.current = "settings"; settingsView.pageForTest("calls") }
+            else if (step === 2) { toCard(); log("before") }
+            else if (step === 3) { shot("before"); console.warn("VMTRANSFER rows", JSON.stringify(settingsView.cardRowsForTest("Voicemail"))) }
+            else if (step === 4) { if (opt("rule")) log("rule", "rule", opt("rule")) }
+            else if (step === 5) { shot("rule"); if (opt("type")) log("type", "type", opt("type")) }
+            else if (step === 7) { log("typed"); shot("typed") }
+            else if (step === 8) {
+                const n = opt("pick")
+                if (n !== "") { const st = JSON.parse(settingsView.vmTransferForTest("state")); const r = st.rows.rows[parseInt(n)]; if (r) log("pick", "pick", r[3], r[3].startsWith("8:orgid:") ? r[3].slice(8) : "") }
+                if (Qt.application.arguments.indexOf("--vm-transfer-remove") >= 0) log("remove", "remove")
+                if (opt("raw")) log("raw", "raw", opt("raw"))
+            }
+            else if (step === 10) { log("after"); shot("after"); backend.loadSettings() }
+            else if (step === 13) { toCard(); log("readback"); console.warn("VMTRANSFER rows", JSON.stringify(settingsView.cardRowsForTest("Voicemail"))) }
+            else if (step === 14) { shot("readback") }
+            else if (step > 14) { Qt.quit(); return }
             step++
         }
     }

@@ -154,6 +154,19 @@ Rectangle {
     function focusCompose() { if (compose.visible) input.forceActiveFocus() }
     function openFind() { finding = true; tab = "" }
     function jumpToNewest() { tab = ""; list.positionViewAtBeginning(); channelPosts.toEnd() }
+    // Teams' "React to the last message" (Ctrl+Alt+R; 74041 ca): the
+    // newest message is focused and its hover bar shown with the first
+    // quick reaction focused. Returns the message's id ("" for none).
+    function reactToLatest() {
+        if (!list.visible || !list.model || !list.model.findIndex) return ""
+        const i = list.model.findIndex(m => m.kind !== "call" && m.kind !== "event" && !m.deleted && !m.scheduled_at)
+        if (i < 0) return ""
+        list.positionViewAtIndex(i, ListView.Contain)
+        const id = list.model[i].id
+        forceBarId = id
+        Qt.callLater(() => { const it = list.itemAtIndex(i); if (it && it.focusReactions) it.focusReactions() })
+        return id
+    }
     function toggleDetails() { participants.visible = !participants.visible }
     // A channel's tabs, as Teams lists them: Posts, Shared (its Files
     // tab), then the channel's own tabs in order (Page, Notes, apps).
@@ -1891,6 +1904,8 @@ Rectangle {
         delegate: Item {
             id: msg
             required property var modelData
+            function focusReactions() { actions.focusReactions() }
+            readonly property bool reactionsFocused: actions.activeFocus
             // In channels every post is a left-aligned card, yours included.
             readonly property bool mine: modelData.mine && !root.postsLayout
             readonly property bool isCall: modelData.kind === "call"
@@ -2976,6 +2991,8 @@ Rectangle {
                     ? [{ key: "edit", icon: "edit-20", tip: "Edit" }]
                     : [{ key: "reply", icon: "quote-reply-20", tip: "Reply with quote" }])
                 onThreadRequested: m => root.openThread(m.root_id || m.id)
+                onKeyboardDone: root.focusCompose()
+                onActiveFocusChanged: if (!activeFocus && root.forceBarId === msg.modelData.id) root.forceBarId = ""
                 visible: can && (msgHover.hovered || actions.hovered || (msgHost.messageMenu.opened && !msgHost.messageMenu.rightClick && msgHost.messageMenu.message && msgHost.messageMenu.message.id === msg.modelData.id) || root.forceBarId === msg.modelData.id)
                 z: 5
                 y: bubble.y - height

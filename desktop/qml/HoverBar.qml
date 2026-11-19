@@ -25,6 +25,25 @@ Item {
     readonly property var quick: host.quickReactions
     height: 32
     width: 7 + (reactionsShown ? (quick.length + 1) * 32 + 8 : 0) + acts.length * 32 + 32 + 6
+    // Keyboard focus on the quick reactions (Teams' React to the last
+    // message focuses the first, `firstReactionItem-<id>`): Left / Right
+    // move, Enter or Space reacts, Escape leaves.
+    property int kbIndex: -1
+    signal keyboardDone()
+    function focusReactions() { if (!reactionsShown || !quick.length) return; kbIndex = 0; bar.forceActiveFocus() }
+    onActiveFocusChanged: if (!activeFocus) kbIndex = -1
+    function kbReact() {
+        const key = quick[kbIndex]
+        const mine = reactions.find(r => r.mine && r.my_key === key)
+        if (!mine && reactions.filter(r => r.mine).length >= host.reactionLimit) return
+        host.react(message.id, mine ? mine.my_key : key, !mine)
+    }
+    Keys.onLeftPressed: kbIndex = Math.max(0, kbIndex - 1)
+    Keys.onRightPressed: kbIndex = Math.min(quick.length - 1, kbIndex + 1)
+    Keys.onReturnPressed: kbReact()
+    Keys.onEnterPressed: kbReact()
+    Keys.onSpacePressed: kbReact()
+    Keys.onEscapePressed: keyboardDone()
     FluentSurface { anchors.fill: parent; depth: 16; radius: 4 }
     HoverHandler { id: barHover }
     Accessible.role: Accessible.ToolBar
@@ -36,6 +55,13 @@ Item {
             Item {
                 id: quickBtn
                 required property string modelData
+                required property int index
+                // Fluent's keyboard focus outline (colorStrokeFocus2, 2 px).
+                Rectangle {
+                    visible: bar.activeFocus && bar.kbIndex === quickBtn.index
+                    anchors.fill: parent; radius: 4; color: "transparent"
+                    border.width: 2; border.color: theme.pick("#000000", "#FFFFFF", "#FFFFFF")
+                }
                 // Pressed when we reacted with exactly this id
                 // (Teams: aria-pressed, a 14 x 2 underline).
                 readonly property var mineAlready: bar.reactions.find(r => r.mine && r.my_key === modelData)

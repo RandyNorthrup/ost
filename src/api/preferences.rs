@@ -100,12 +100,13 @@ pub fn call_accessibility_defaults() -> serde_json::Value {
 /// Your calling accessibility settings (Teams' defaults where unsaved).
 pub async fn call_accessibility_settings(client: &TeamsClient) -> Result<serde_json::Value> {
     let url = format!("{}/v1/users/ME/properties", client.chat_service_url());
-    let v: serde_json::Value = client
-        .chat_get(&url)
-        .await?
-        .json()
-        .await
-        .context("User properties reply")?;
+    let v: serde_json::Value = match client.chat_get(&url).await {
+        Ok(r) => r.json().await.context("User properties reply")?,
+        // An account that never saved a property has none yet: Teams'
+        // defaults (as all_properties).
+        Err(e) if format!("{e:#}").contains("UserProperties not found") => serde_json::json!({}),
+        Err(e) => return Err(e),
+    };
     Ok(call_accessibility_from_properties(&v))
 }
 
@@ -347,11 +348,11 @@ pub async fn voice_settings(client: &TeamsClient) -> Result<serde_json::Value> {
     resp.json().await.context("Voice settings reply")
 }
 
-/// Your ringtone settings as Teams reads them (`POST {mt}/beta/users/
-/// useraggregatesettings {"voiceAdminSettings": true}` →
-/// voiceAdminSettings.value.ringtoneSettings): {assignments:
-/// {ringToneAssignments: [{type, value, associatedEntityId}]}}.
-pub async fn ringtone_settings(client: &TeamsClient) -> Result<serde_json::Value> {
+/// Your voice admin settings as Teams' voice settings store reads them
+/// (`POST {mt}/beta/users/useraggregatesettings {"voiceAdminSettings":
+/// true}` → voiceAdminSettings.value): ringtoneSettings, electedSettings
+/// (the voicemail settings), isEvEnabled, ….
+pub async fn voice_admin_settings(client: &TeamsClient) -> Result<serde_json::Value> {
     let mt = client.middle_tier_url().context("No middle-tier address")?;
     let token = super::directory::middle_tier_token().await?;
     let resp = client
@@ -361,12 +362,63 @@ pub async fn ringtone_settings(client: &TeamsClient) -> Result<serde_json::Value
         .json(&serde_json::json!({ "voiceAdminSettings": true }))
         .send()
         .await
-        .context("Ringtone settings request")?;
+        .context("Voice admin settings request")?;
     if !resp.status().is_success() {
-        anyhow::bail!("HTTP {} reading ringtone settings", resp.status().as_u16());
+        anyhow::bail!("HTTP {} reading voice admin settings", resp.status().as_u16());
     }
-    let v: serde_json::Value = resp.json().await.context("Ringtone settings reply")?;
-    Ok(v["voiceAdminSettings"]["value"]["ringtoneSettings"].clone())
+    let v: serde_json::Value = resp.json().await.context("Voice admin settings reply")?;
+    Ok(v["voiceAdminSettings"]["value"].clone())
+}
+
+/// Your ringtone settings as Teams reads them (the voice admin settings'
+/// ringtoneSettings): {assignments: {ringToneAssignments: [{type, value,
+/// associatedEntityId}]}}.
+pub async fn ringtone_settings(client: &TeamsClient) -> Result<serde_json::Value> {
+    Ok(voice_admin_settings(client).await?["ringtoneSettings"].clone())
+}
+
+/// Your voicemail settings as Teams reads them (`getVoicemailSettings`:
+/// the voice admin settings' electedSettings): vmCallAnswerRule,
+/// vmTransferTarget {objectId, tenantId, type, sipUri, telUri}, ….
+pub fn voicemail_settings_of(voice_admin: &serde_json::Value) -> serde_json::Value {
+    match voice_admin.get("electedSettings") {
+        Some(v) if v.is_object() => v.clone(),
+        _ => serde_json::json!({}),
+    }
+}
+
+/// Teams' voicemail transfer target for a picked person or number
+/// (settings-app `rg`): a user (8:orgid:), a call queue or auto attendant
+/// (28:) or a phone number (4:); the tenant only when there is an object id.
+pub fn voicemail_transfer_target(mri: &str, object_id: &str, tenant_id: &str) -> serde_json::Value {
+    let has_oid = !object_id.is_empty();
+    let kind = if !has_oid {
+        "Pstn"
+    } else if mri.starts_with("8:") {
+        "User"
+    } else {
+        "ApplicationEndpoint"
+    };
+    let opt = |s: &str| if has_oid { serde_json::Value::from(s) } else { serde_json::Value::Null };
+    serde_json::json!({
+        "objectId": opt(object_id),
+        "tenantId": opt(tenant_id),
+        "type": kind,
+        "sipUri": null,
+        // Teams strips the first "4:" (so a user's telUri is its MRI).
+        "telUri": mri.replacen("4:", "", 1),
+    })
+}
+
+/// The MRI Teams shows for a saved transfer target.
+pub fn voicemail_target_mri(target: &serde_json::Value) -> Option<String> {
+    let s = |k: &str| target.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string();
+    Some(match target.get("type").and_then(|v| v.as_str())? {
+        "Unspecified" | "Pstn" => format!("4:{}", s("telUri")),
+        "ApplicationEndpoint" => format!("28:orgid:{}", s("objectId")),
+        "User" => format!("8:orgid:{}", s("objectId")),
+        _ => s("objectId"),
+    })
 }
 
 /// Teams' call redirection body (captured 2026-11-10) from the page's
@@ -401,8 +453,12 @@ pub async fn set_voice_setting(client: &TeamsClient, which: &str, body: &serde_j
                 "vmCallAnswerRule": null, "vmAudioLang": null, "vmTransferTarget": null,
                 "vmDefaultGreetingPromptOverwrite": null, "vmDefaultOofGreetingPromptOverwrite": null,
             });
+            // Only Teams' VoicemailSettingsInput fields go (the read has
+            // more, such as blockOutgoingCallerId).
             for (k, v) in body.as_object().into_iter().flatten() {
-                all[k] = v.clone();
+                if all.get(k).is_some() {
+                    all[k] = v.clone();
+                }
             }
             ("voicemailsettings", all)
         }

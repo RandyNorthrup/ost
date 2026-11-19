@@ -94,11 +94,15 @@ Rectangle {
     }
     SettingsParts.RadioRow {
         x: 22.7; y: 294.3; width: 308.1
-        label: "Background noise only"; checked: true; usable: pane.noise
+        readonly property var vi: backend.voiceIsolationJson ? JSON.parse(backend.voiceIsolationJson) : ({})
+        label: "Background noise only"; checked: !(vi.profile === true && vi.mode === "Pns"); usable: pane.noise
+        onPicked: { backend.setSetting("noiseSuppressionMode", "Auto"); backend.applyVoiceIsolation() }
     }
     SettingsParts.RadioRow {
         x: 22.7; y: 326.3; width: 308.1
-        label: "Voice isolation"; checked: false; usable: false
+        readonly property var vi: backend.voiceIsolationJson ? JSON.parse(backend.voiceIsolationJson) : ({})
+        label: "Voice isolation"; checked: vi.profile === true && vi.mode === "Pns"; usable: pane.noise && vi.profile === true
+        onPicked: { backend.setSetting("noiseSuppressionMode", "Pns"); backend.applyVoiceIsolation() }
     }
 
     Heading { y: 383.2; text: "Video Settings" }

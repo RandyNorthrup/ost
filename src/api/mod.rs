@@ -12,6 +12,7 @@ pub mod chat_notes;
 pub mod client;
 pub mod contacts;
 pub mod custom_emoji;
+pub mod ddv;
 pub mod directory;
 pub mod drafts;
 pub mod drive;
