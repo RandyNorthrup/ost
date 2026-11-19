@@ -31,7 +31,9 @@ Rectangle {
     /// Mute, Spotlight, roles and Remove; everyone can Pin for themselves.
     property bool canManage: false
     /// Who you pinned (Pin for me), if anyone.
-    property string pinnedId: ""
+    /// Whom you pinned, and whether the pin area is full (Teams' 9).
+    property var pinnedIds: []
+    property bool pinningFull: false
     /// A participant ··· menu choice: "mute", "pin", "unpin", "spotlight",
     /// "unspotlight", "attendee", "presenter" or "remove".
     signal participantAction(string action, string id, string name, string stateId)
@@ -422,7 +424,7 @@ Rectangle {
             // Pinned (Pin for me): Teams' 20 px pin, 8 before the mic, or
             // 12 before a raised hand's rank.
             FluentIcon {
-                visible: !p.chatOnly && !p.you && p.id === root.pinnedId
+                visible: !p.chatOnly && !p.you && root.pinnedIds.indexOf(p.id) >= 0
                 x: p.hand ? (handRankText.visible ? handRankText.x : parent.width - 77) - 37 : parent.width - 68
                 anchors.verticalCenter: parent.verticalCenter
                 name: "pin-20"; size: 20; color: theme.textStrong
@@ -475,7 +477,8 @@ Rectangle {
             const w = who
             const out = []
             if (root.canManage) out.push({ k: "mute", t: "Mute participant", icon: "mic-off-20", off: !!w.mutedNow })
-            out.push(w.id === root.pinnedId ? { k: "unpin", t: "Unpin for me", icon: "pin-off-20" } : { k: "pin", t: "Pin for me", icon: "pin-20" })
+            out.push(root.pinnedIds.indexOf(w.id) >= 0 ? { k: "unpin", t: "Unpin for me", icon: "pin-off-20" }
+                     : { k: "pin", t: "Pin for me", icon: "pin-20", off: root.pinningFull, tip: root.pinningFull ? "You reached the maximum number of pins" : "" })
             if (root.canManage) {
                 // Manage what attendees see: Teams' spotlight becomes "Bring on
                 // screen" / "Take off screen" (calling:bring_on_stage_label).
@@ -518,6 +521,9 @@ Rectangle {
                             color: theme.onFill(hcFill3, mi.off ? theme.disabled : pmHover.hovered ? theme.text : theme.textStrong)
                         }
                         HoverHandler { id: pmHover; cursorShape: mi.off ? Qt.ArrowCursor : Qt.PointingHandCursor }
+                        // Teams' title on a disabled item (why it is).
+                        ToolTip.visible: pmHover.hovered && !!mi.modelData.tip
+                        ToolTip.text: mi.modelData.tip || ""
                         TapHandler {
                             enabled: !mi.sep && !mi.off
                             onTapped: {

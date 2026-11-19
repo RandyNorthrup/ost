@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-16T04:53:00Z'
-updated_date: '2026-11-19T15:45:00Z'
+updated_date: '2026-11-19T17:41:00Z'
 labels:
   - desktop
 dependencies: []
@@ -59,4 +59,15 @@ Teams' noise suppression offers Voice isolation using your voice profile; OST sh
   - Live on linuxlt (spatest, empty cache): download 5.4 s, hash verified, loaded, isolator on in a Make a test call run (decisions 10, frames_suppressed 101); a cached run verified; a corrupted cache file was replaced; an unwritable cache folder left standard noise suppression, no crash.
 
 - Merged c4696d0 (2026-11-19) into desktop/foundation; 787 lib, 28 vfx, 29 desktop tests passed. See the notes above for what is verified and open. (Voice isolation model is downloaded on first need with a pinned SHA-256, not committed.)
+
+- 2026-11-19 (set2): Teams' in-call choice (358966 module 327752 `be`, FLYOUT and SETTINGS_PANEL): with voice isolation supported, the Noise suppression switch row loses its info icon and a Fluent RadioGroup follows: "Background noise only" / "Voice isolation"; both disabled with the switch off; Voice isolation also without a profile and with Room audio (forced back to Background noise only); info tooltips only in the panes. Built NoiseSuppressionChoice.qml in AudioFlyout and AudioSettingsPane (Fluent v9 radio geometry: 16 px indicator 8 in, label 32 in, 36 rows) - winpc measurement still to do (needs the user's OK for winpc GUI).
+- Virtual mic: a pactl null-sink with media.class=Audio/Source gets no ports from wireplumber, and remap-sources have no factory so audio.rs filters them; OST_MIC_DEVICE / OST_SPEAKER_DEVICE (new) now also take a PipeWire node name for an unlisted device. Rig on linuxlt: null sink ost_set2_feed + remap-source ost_set2_mic (OST_MIC_DEVICE=ost_set2_mic), null sink ost_set2_spk (record its monitor). Harness --voice-isolation-test (--vi-off-at, --vi-on-at, --vi-announce, --vi-admit).
+
+- 2026-11-19 live two-voice check, a real 1:1 call ost-test1 -> OST Test 2 on linuxlt (--call-person / --call-test --remote-hangup, both --voice-isolation-test):
+  - ost-test1's mic = ost_set2_mic fed with vi-ab.wav looped (A lessac = the profile, OST_VOICE_PROFILE_WAV=enroll16.wav; B ryan); OST Test 2's speaker = null sink ost_set2_spk, recorded from its monitor (parecord), analysed with vianalyze.py.
+  - Voice isolation on (mode Pns, isolator running): received A1/A2 -0.8..+0.4 dB (kept), B1/B2 -54..-60 dB after the first second (whole-segment -2..-5 dB: the ~0.6 s onset leak), over 3 loops.
+  - Control, no profile (Background noise only): B1/B2 +0.1..+1.0 dB, passed.
+  - Both calls ended from the caller (hung up 202 / call ended by the other side in both logs).
+
+- 2026-11-19 the choice in a live meeting (linuxlt, OST_VOICE_PROFILE_WAV, --vi-audio-ui): Audio settings pane: Noise suppression switch (no info), Background noise only (i) / Voice isolation (i), Voice isolation picked; Mic flyout: the same radios without info buttons. Geometry is Fluent v9's; winpc measurement pending the user's OK.
 <!-- SECTION:NOTES:END -->

@@ -240,6 +240,9 @@ fn capture_loop(
             // If format is already I420/YU12, use as-is
             buf.to_vec()
         };
+        // Sign language mode's detection sees the real camera (Teams never
+        // runs it on the avatar camera); a no-op unless it's on.
+        super::sign_detection::push_frame(&yuv_data, width, height, super::sign_detection::now_ms());
 
         let frame = YuvFrame {
             width,

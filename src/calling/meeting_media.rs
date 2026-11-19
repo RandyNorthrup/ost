@@ -188,6 +188,8 @@ enum Command {
     Resend,
     /// Send what we typed for real-time text since the last.
     RealTimeText(String),
+    /// Send whether we are signing (and for how long, ms).
+    SignLanguage { detected: bool, duration_ms: u64 },
     /// Give / take control.
     Control(ControlCommand),
 }
@@ -346,6 +348,11 @@ impl MeetingVideo {
     /// `{s}`: characters, backspaces, a newline ending the line).
     pub fn send_real_time_text(&self, text: &str) {
         let _ = self.commands.send(Command::RealTimeText(text.to_string()));
+    }
+
+    /// Sign language mode: tell the meeting whether we are signing.
+    pub fn send_sign_language(&self, detected: bool, duration_ms: u64) {
+        let _ = self.commands.send(Command::SignLanguage { detected, duration_ms });
     }
 
     /// Give / take control: what the call window did.
@@ -604,6 +611,17 @@ async fn run(
                                     .to_string(),
                                 );
                             }
+                            Incoming::SignLanguage { source, detected } => {
+                                tracing::debug!(source, detected, "sign language event");
+                                crate::event_hub::publish(
+                                    crate::event_hub::EventKind::Call,
+                                    serde_json::json!({
+                                        "callAgentPath": "ost/signLanguage/",
+                                        "body": {"sourceId": source, "signDetected": detected},
+                                    })
+                                    .to_string(),
+                                );
+                            }
                             Incoming::ScreenControl { source, message } => {
                                 tracing::info!(source, action = message.action, reason = message.terminated_reason, "screen control received");
                                 let outs = control.receive(source, &message, std::time::Instant::now());
@@ -663,6 +681,14 @@ async fn run(
                     }
                     None => tracing::warn!("real-time text before the data channel is up: dropped"),
                 },
+                Some(Command::SignLanguage { detected, duration_ms }) => {
+                    match session.sign_language(detected, duration_ms, chrono::Utc::now().timestamp_millis()) {
+                        Some(packet) => {
+                            sender.send(packet);
+                        }
+                        None => tracing::debug!("sign language event before the data channel is up: dropped"),
+                    }
+                }
                 Some(Command::Control(c)) => {
                     let now = std::time::Instant::now();
                     let outs = match c {

@@ -112,6 +112,10 @@ Window {
     property string speakerId: ""
     // Who is speaking now (Teams' voice-level outline).
     property var speakingIds: []
+    /// Sign language mode: who is actively signing (their detection
+    /// events on the data channel; you, as you send yours): [mri].
+    property var signingIds: []
+    function isSigning(id) { return signMode && signingIds.indexOf(id) >= 0 }
     // The meeting muted us while we talked: Teams' "You've been muted",
     // for 30 s, until dismissed, or until we're unmuted.
     property int mutedRemotely: 0
@@ -241,9 +245,16 @@ Window {
         && others.some(p => p.active !== false && !p.muted)
     /// Your own MRI, to tell you apart in the roster.
     property string selfId: ""
-    // Pin for me: who you pinned (yours only); Spotlight for everyone: who
-    // the meeting spotlights. Either takes the stage as in Speaker view.
-    property string pinnedId: ""
+    // Pin for me: whom you pinned (yours only), in pin order; Spotlight for
+    // everyone: who the meeting spotlights. Both go to Teams' pin area
+    // (813237 PinStage), which holds 9 (maxItemsOnStage); once 9 are
+    // pinned, Pin for me is disabled ("You reached the maximum number of
+    // pins", isPinningDisabled).
+    property var pinnedIds: []
+    readonly property int maxPins: 9
+    readonly property bool pinningFull: pinnedIds.length >= maxPins
+    function pinPerson(id) { if (id && pinnedIds.indexOf(id) < 0 && !pinningFull) pinnedIds = pinnedIds.concat([id]) }
+    function unpinPerson(id) { pinnedIds = pinnedIds.filter(x => x !== id) }
     readonly property var spotlighted: roster.filter(p => p.active !== false && !!p.spotlight)
     /// A participant menu action for the meeting (mute, roles, spotlight,
     /// remove).
@@ -532,13 +543,19 @@ Window {
         if (!meeting) return out
         const sideSlot = tiles.atTop ? tiles.sideH * 16 / 9 : tiles.sideW
         for (const p of tiles.side) out[p.id] = sideSlot
-        if (layout === "speaker" && !presenting && tiles.speaker)
+        if (tiles.featured && !presenting)
+            for (const p of tiles.featuredList) out[p.id] = pinGrid.tileW
+        else if (layout === "speaker" && !presenting && tiles.speaker)
             out[tiles.speaker.id] = Math.min(tiles.mainW, tiles.mainH * 16 / 9)
         if (layout !== "speaker" && !presenting)
             for (const p of tiles.gallery) out[p.id] = galleryTileWidth
         return out
     }
     property real galleryTileWidth: 0
+    /// Whose video Teams focuses (879019 shouldFocusMainStream: pinned,
+    /// spotlighted, sign language people on the focused or pin area): they
+    /// get the main stream at its best, and slots first.
+    readonly property var videoFocus: !meeting ? [] : tiles.featuredList.filter(p => !p.self).map(p => p.id)
     /// Someone has video on (or it's you with the camera on).
     function hasVideo(p) { return p.self ? cameraOn : !!videoKeys[p.id] }
     // ---- Sign language mode (Teams' SignerMixin, 813237, calling-roster;
@@ -574,6 +591,33 @@ Window {
         return iSign ? p.sign_role === "signLanguageInterpreter" : p.sign_role === "dhhSigner"
     }
     readonly property var signFirst: others.filter(p => signPriority(p))
+    // Teams' tethering (937485, 813237): a signer and an interpreter they
+    // named who is in the call as an interpreter hold each other in
+    // tetheredInCallDHHParticipants (you included, by your own role).
+    function tetheredOf(p) {
+        if (!signMode || !p) return []
+        const me = Object.assign({}, selfEntry, { sign_role: iInterpret ? "signLanguageInterpreter" : iSign ? "dhhSigner" : "",
+                                                  sign_content: iSign ? signContent : "{}" })
+        const all = others.concat([me])
+        const subject = p.self ? me : p
+        const names = q => (signContentOf(q).interpreterIds || "").split(",").filter(s => s)
+        if (subject.sign_role === "dhhSigner")
+            return all.filter(q => q.id !== subject.id && q.sign_role === "signLanguageInterpreter" && names(subject).indexOf(q.id) >= 0)
+        if (subject.sign_role === "signLanguageInterpreter")
+            return all.filter(q => q.id !== subject.id && q.sign_role === "dhhSigner" && names(q).indexOf(subject.id) >= 0)
+        return []
+    }
+    // The badge's tooltip (293537): "<interpreter> is voice interpreting"
+    // with one tethered interpreter (with several, the first among the
+    // dominant speakers), else when you are one of them or the name is
+    // unknown "Voice interpretation in progress".
+    function signingTooltip(tethered) {
+        const ids = (tethered || []).map(q => q.id)
+        if (!ids.length || ids.indexOf(selfId) >= 0) return "Voice interpretation in progress"
+        const pick = ids.length === 1 ? tethered[0] : (tethered.find(q => q.id === speakerId) || null)
+        const name = pick ? (pick.name || "").trim() : ""
+        return name ? name + " is voice interpreting" : "Voice interpretation in progress"
+    }
     // What we publish, kept in step with the settings while in the meeting.
     readonly property string signKind: !signMode ? "" : iInterpret ? "signLanguageInterpreter" : "dhhSigner"
     readonly property string signContent: signKind === "dhhSigner" ? JSON.stringify({ interpreterIds: myInterpreters.join(","), showSignerIdentificationToOthers: a11y.showSignerIdentificationToOthers !== false }) : "{}"
@@ -2546,22 +2590,36 @@ Window {
             // Managing the screen: the stage right of the Manage screen
             // panel shows only who is on screen.
             anchors { fill: parent; margins: 2.67; leftMargin: win.manageScreen ? 240 : 2.67 }
-            // Spotlight (for everyone) and Pin for me put that person on
-            // the stage, everyone else in the side gallery.
-            readonly property var featured: {
-                if (win.stageOnly) return null
-                const sp = win.spotlighted.length ? win.spotlighted[0] : null
-                if (sp) return sp.id === win.selfId ? win.selfEntry : sp
-                const pin = win.others.find(p => p.id === win.pinnedId)
-                if (pin) return pin
-                // Sign language view: the first person your role signs with.
-                return win.layout === "accessibility" && win.signFirst.length ? win.signFirst[0] : null
+            // Teams' stage buckets (813237 fillBucketForItem, 303772):
+            // in Gallery and Speaker view the pin area (PinStage, up to 9)
+            // takes the people your sign language role signs with (with
+            // video), then the spotlighted, then your pins in pin order
+            // (leanCompare); in the Sign language view the focused area
+            // (FocusedStage, 2) takes the people your role signs with, and
+            // the spotlighted and pinned go to the side. The centre shows
+            // the focused area, else the pin area, as a 16:9 grid (Teams'
+            // fixed aspect strategy); everyone else is in the side gallery.
+            readonly property var focusedArea: win.stageOnly || win.layout !== "accessibility" ? [] : win.signFirst.slice(0, 2)
+            readonly property var pinArea: {
+                if (win.stageOnly) return []
+                const out = []
+                const add = p => { if (p && out.indexOf(p) < 0 && focusedArea.indexOf(p) < 0 && out.length < win.maxPins) out.push(p) }
+                if (win.layout !== "accessibility") win.signFirst.forEach(add)
+                win.spotlighted.forEach(sp => add(sp.id === win.selfId ? win.selfEntry : sp))
+                win.pinnedIds.forEach(id => add(win.others.find(p => p.id === id)))
+                return out
             }
+            readonly property var featuredList: focusedArea.length ? focusedArea : pinArea
+            readonly property var featured: featuredList.length ? featuredList[0] : null
+            function isFeatured(p) { return featuredList.some(f => f.id === p.id) }
             readonly property bool speakerView: !win.stageOnly && (win.layout === "speaker" || !!featured)
             readonly property var speaker: {
                 if (featured) return featured
                 const pool = win.speakerMeInGallery && !win.hideMe ? win.others.concat([win.selfEntry]) : win.others
-                return pool.find(p => p.id === win.speakerId) || win.othersOrdered[0]
+                // Teams (813237 onActiveSignerChanged, 937485 xB): people
+                // actively signing come before the dominant speakers.
+                const signer = win.signMode ? win.others.find(p => win.signingIds.indexOf(p.id) >= 0) : null
+                return signer || pool.find(p => p.id === win.speakerId) || win.othersOrdered[0]
             }
             // Presenting: the content on stage, everyone in the side gallery
             // (no one in Focus on content).
@@ -2572,12 +2630,14 @@ Window {
             // people tiles, the other person fills the stage and you float
             // over it, bottom right.
             readonly property bool meOverlay: !content && win.others.length === 1 && !win.hideMe && !win.stageOnly
+            // (With content on the stage, the side lists the focused and
+            // pinned people first.)
             readonly property var side: win.stageOnly ? (content && win.layout !== "focus" ? win.shownOnly : [])
                 : content
-                ? (win.layout === "focus" ? [] : win.othersOrdered.concat(win.hideMe ? [] : [win.selfEntry]))
+                ? (win.layout === "focus" ? [] : featuredList.filter(p => !p.self).concat(win.othersOrdered.filter(p => !isFeatured(p))).concat(win.hideMe ? [] : [win.selfEntry]))
                 : meOverlay ? []
                 : speakerView
-                ? win.othersOrdered.filter(p => p !== speaker).concat(win.hideMe || speaker.self ? [] : [win.selfEntry])
+                ? win.othersOrdered.filter(p => !isFeatured(p) && p !== speaker).concat(win.hideMe || speaker.self || isFeatured(win.selfEntry) ? [] : [win.selfEntry])
                 : (win.hideMe || win.meInGallery ? [] : [win.selfEntry])
             // Everyone in the gallery, in pages of the gallery size.
             readonly property var galleryAll: win.stageOnly ? win.shownOnly
@@ -2599,11 +2659,19 @@ Window {
             readonly property real mainH: atTop ? height - sideH : height
             // Speaker: one 16:9 tile, centred.
             MeetingTile {
-                visible: tiles.speakerView && !tiles.content && !tiles.meOverlay
+                visible: tiles.speakerView && !tiles.featured && !tiles.content && !tiles.meOverlay
                 call: win
                 person: tiles.speaker || ({})
                 width: Math.min(tiles.mainW, tiles.mainH * 16 / 9); height: width * 9 / 16
                 x: tiles.mainX + (tiles.mainW - width) / 2; y: tiles.mainY + (tiles.mainH - height) / 2
+            }
+            // The focused or pin area: its people in a 16:9 grid.
+            GalleryGrid {
+                id: pinGrid
+                visible: !!tiles.featured && !tiles.content && !tiles.meOverlay
+                x: tiles.mainX; y: tiles.mainY; width: tiles.mainW; height: tiles.mainH
+                call: win
+                people: tiles.featuredList
             }
             // Gallery.
             GalleryGrid {
@@ -3167,6 +3235,7 @@ Window {
         AudioSettingsPane {
             id: audioSettingsPane
             visible: win.side === "audio"
+            roomAudio: win.roomDeviceJoined
             anchors.fill: parent
             muted: win.muted || !win.hasAudio
             onToggleMute: win.toggleMute()
@@ -3288,10 +3357,11 @@ Window {
             onMuteAll: muteAllAsk.open()
             canManage: win.organizer
             canReport: win.scheduled || win.adhocMeeting
-            pinnedId: win.pinnedId
+            pinnedIds: win.pinnedIds
+            pinningFull: win.pinningFull
             onParticipantAction: (action, id, name, stateId) => {
-                if (action === "pin") win.pinnedId = id
-                else if (action === "unpin") win.pinnedId = ""
+                if (action === "pin") win.pinPerson(id)
+                else if (action === "unpin") win.unpinPerson(id)
                 // Teams asks "Change role?" first.
                 else if (action === "attendee" || action === "presenter") roleAsk.ask(action, id, name)
                 // Report this person: Teams' report dialog for them.
@@ -3524,8 +3594,12 @@ Window {
         onAction: { win.pptTakenDismissed = takenBy; backend.contentTakeControl(win.contentSession.correlationId) }
         onDismissed: win.pptTakenDismissed = takenBy
     }
-    // Teams' "Add interpreters for your meetings" (a Signer with none
-    // chosen; dismissable, 8 s).
+    // Teams' "Add interpreters for your meetings" (SignerMixin's
+    // openInterpretersNotSelectedUfd: INTERPRETERS_NOT_SELECTED, a
+    // dismissable Warning for 8 s). Its type has no entry in Teams' alert
+    // icon map (263640) and it passes none, so it shows no glyph; its text
+    // is calling's interpreters_not_selected_text, with "Accessibility" at
+    // 600 and the Learn more link.
     CallAlert {
         id: signAlert
         function show() { visible = true; signAlertTimer.restart(); console.warn("SIGN alert shown") }
@@ -3533,9 +3607,9 @@ Window {
         x: stage.x + (stage.width - width) / 2
         y: win.belowBar + 10.7
         z: 6
-        icon: "warning-20-filled"
         title: "Add interpreters for your meetings"
-        text: "Select interpreters in your Accessibility settings for Sign language mode to work correctly. Learn more"
+        richText: true
+        text: "Select interpreters in your <span style=\"font-weight: 600;\">Accessibility</span> settings for Sign language mode to work correctly. <a href=\"https://go.microsoft.com/fwlink/?linkid=2330204\">Learn more</a>"
         onDismissed: visible = false
         Timer { id: signAlertTimer; interval: 8000; onTriggered: signAlert.visible = false }
     }
@@ -3871,6 +3945,7 @@ Window {
     AudioFlyout {
         id: audioFlyout
         muted: win.muted || !win.hasAudio
+        roomAudio: win.roomDeviceJoined
         onToggleMute: win.toggleMute()
         // Teams opens its Audio settings pane (TASK-0062); OST's device settings for now.
         onMoreAudioSettings: win.side = "audio"
@@ -3881,6 +3956,8 @@ Window {
         maxHeight: win.height - 60 - 5
     }
     function openAudioOptions(button) { audioFlyout.parent = button; audioFlyout.open() }
+    /// The Mic flyout opened at the top right (harness pictures).
+    function openAudioOptionsForTest() { audioFlyout.parent = contentItem; audioFlyout.open(); audioFlyout.x = contentItem.width - audioFlyout.width - 8; audioFlyout.y = 60 }
     AiPopover {
         id: aiPopover
         aiOn: win.aiOn && win.aiAvailable
@@ -4220,11 +4297,35 @@ Window {
     // Ctrl+Alt+Shift+S, Ctrl+2 with Zoom's shortcuts; the screen reader
     // says "Latest speaker: <name>" (Unknown with no name), or "Nobody is
     // speaking" when the meeting names no dominant speaker in the call.
+    // Teams' AnnounceActiveSpeaker (calling-app nz): "Latest speaker: " the
+    // dominant speaker's name ("Unknown" without one), "Nobody is speaking"
+    // with none or one missing from the roster. When the speaker is a sign
+    // language interpreter tethered to a signer (Teams' tethering: the
+    // signer's interpreterIds), it is "<signer> voiced by <interpreter>",
+    // with "You" when you are that signer.
+    /// The stage as laid out (harness lines): the speaker tile, the
+    /// focused or pin area, whose video is focused.
+    function stageForTest() {
+        return { speaker: tiles.speaker ? tiles.speaker.name || "" : "", featured: tiles.featuredList.map(p => p.name || ""),
+                 focus: videoFocus, pins: pinnedIds, layout: layout }
+    }
     function announceActiveSpeaker() {
         const id = win.speakerId
         const p = !id ? null : (id === win.selfId ? { name: win.selfName } : win.others.find(o => o.id === id))
-        const text = "Latest speaker: " + (!p ? "Nobody is speaking" : ((p.name || "").trim() || "Unknown"))
-        console.warn("ANNOUNCE", JSON.stringify({ speaker: id, text: text }))
+        const named = n => (n || "").trim() || "Unknown"
+        let who = p ? (p.name || "").trim() : ""
+        let kase = !p ? "nobody_speaking" : who ? "known_speaker" : "unknown_speaker"
+        if (p && p.sign_role === "signLanguageInterpreter") {
+            let signer = ""
+            if (win.iSign && win.myInterpreters.indexOf(id) >= 0) signer = "You"
+            else {
+                const s = win.others.filter(o => o.sign_role === "dhhSigner" && (win.signContentOf(o).interpreterIds || "").split(",").indexOf(id) >= 0)
+                if (s.length === 1) signer = named(s[0].name)
+            }
+            if (signer) { who = signer + " voiced by " + named(p.name); kase = "paired_signer" }
+        }
+        const text = "Latest speaker: " + (!p ? "Nobody is speaking" : who || "Unknown")
+        console.warn("ANNOUNCE", JSON.stringify({ speaker: id, case: kase, text: text }))
         win.contentItem.Accessible.announce(text, Accessible.Assertive)
         return text
     }

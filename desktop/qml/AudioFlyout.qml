@@ -10,8 +10,9 @@ import QtQuick.Controls
 // shows them with working audio devices (measured in Teams in a call,
 // 2026-11-08): a divider, "Noise suppression" with its switch (a 36 px row,
 // the 40 x 20 switch at the right edge), a divider and "More audio
-// settings". Teams' "Isolate your voice" needs Microsoft's voice profile,
-// which other clients can't use, so it isn't offered.
+// settings". Where voice isolation is supported (OST has its own,
+// TASK-0181), Teams' Background noise only / Voice isolation radios follow
+// the switch (NoiseSuppressionChoice).
 Popup {
     id: root
     property bool muted: false
@@ -29,6 +30,8 @@ Popup {
     property int volume: 100
     property int level: 0
     property bool noiseSuppression: true
+    /// Joined with Room audio (voice isolation is then unavailable).
+    property bool roomAudio: false
     property bool musicMode: false
     property bool musicInFlyout: false
     onOpened: {
@@ -178,6 +181,12 @@ Popup {
                 Accessible.role: Accessible.CheckBox
                 Accessible.name: "Noise suppression"
                 Accessible.checked: root.noiseSuppression
+            }
+            // Teams' choice under the switch (no info buttons in the flyout).
+            NoiseSuppressionChoice {
+                width: 268
+                noiseOn: root.noiseSuppression
+                roomAudio: root.roomAudio
             }
             // High fidelity music mode, when "Display in the microphone
             // dropdown menu" is on (Teams: right after noise suppression,

@@ -104,6 +104,7 @@ fn main() {
         "qml/MeetingFileShareDialog.qml",
         "qml/LiveMeetingsDialog.qml",
         "qml/AudioFlyout.qml",
+        "qml/NoiseSuppressionChoice.qml",
         "qml/InviteDialog.qml",
         "qml/LockMeetingDialog.qml",
         "qml/RoleChangeDialog.qml",

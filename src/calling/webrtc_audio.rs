@@ -1657,6 +1657,14 @@ impl WebRtcAudioSession {
             .is_some()
     }
 
+    /// In a meeting: whether we are signing (Sign language mode).
+    pub fn send_sign_language(&self, detected: bool, duration_ms: u64) -> bool {
+        self.meeting_video
+            .as_ref()
+            .map(|v| v.send_sign_language(detected, duration_ms))
+            .is_some()
+    }
+
     /// Our data source id in a meeting, once the processor named it.
     pub fn data_source_id(&self) -> Option<u32> {
         self.meeting_video.as_ref().and_then(|v| v.source_id())

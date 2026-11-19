@@ -16,6 +16,8 @@ Item {
     property string title: ""
     /// An action button under the text ("Take back").
     property string actionText: ""
+    /// The text is Teams' HTML (rich text: styled spans, <a href>).
+    property bool richText: false
     signal dismissed()
     signal action()
     width: 320
@@ -51,7 +53,11 @@ Item {
         width: root.width - x - 44
         wrapMode: Text.Wrap
         lineHeight: 20; lineHeightMode: Text.FixedHeight
-        text: root.text
+        // Alerts whose text Teams gives as HTML (a span at 600, a link).
+        text: root.richText ? "<style>a { color: " + theme.brandLink + "; text-decoration: none; }</style>" + root.text : root.text
+        textFormat: root.richText ? Text.RichText : Text.PlainText
+        onLinkActivated: link => Qt.openUrlExternally(link)
+        HoverHandler { enabled: root.richText; cursorShape: body.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
         font.family: theme.font; font.pixelSize: 14
         color: root.icon.length > 0 ? theme.textSecondary : theme.text
     }

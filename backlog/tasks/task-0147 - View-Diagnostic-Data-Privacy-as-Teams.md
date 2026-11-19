@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-15T04:40:00Z'
-updated_date: '2026-11-19T15:45:00Z'
+updated_date: '2026-11-19T16:14:00Z'
 labels:
   - settings
 dependencies: []
@@ -54,4 +54,6 @@ Teams' Settings > Privacy > View Diagnostic Data > Manage opens its diagnostic d
   - Open: Microsoft's Windows Diagnostic Data Viewer was not used: it may need the Windows Diagnostics setting, which must not be changed.
 
 - Merged c4696d0 (2026-11-19) into desktop/foundation; 787 lib, 28 vfx, 29 desktop tests passed. See the notes above for what is verified and open. (Voice isolation model is downloaded on first need with a pinned SHA-256, not committed.)
+
+- 2026-11-19 (set2): Microsoft's doc (support.microsoft.com cf761ce9) says Office/Teams data viewing needs DDV v3+ on Windows 10 1803+ and only DDV's own "Office diagnostic data viewing" setting; no Windows privacy setting is mentioned. DDV 4.2209.62104.0 installed on winpc with winget (msstore 9N8WTRRSQ8F7) over ssh. It doesn't run on Linux (UWP). Running it needs winpc's GUI (asked).
 <!-- SECTION:NOTES:END -->

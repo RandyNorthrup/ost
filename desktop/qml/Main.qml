@@ -1964,9 +1964,11 @@ Window {
         onIncomingVideoOffChanged: backend.setIncomingVideo(!incomingVideoOff)
         shareId: backend.callShareMri
         onVideoWidthsChanged: backend.setVideoWidths(JSON.stringify(videoWidths))
+        onVideoFocusChanged: backend.setVideoFocus(JSON.stringify(videoFocus))
         chatMembers: backend.callChatMembersJson ? JSON.parse(backend.callChatMembersJson) : []
         speakerId: backend.callSpeakerMri
         speakingIds: JSON.parse(backend.callSpeakingJson || "[]")
+        signingIds: JSON.parse(backend.callSigningJson || "[]")
         mutedRemotely: backend.callMutedRemotely
         lobby: backend.callLobbyJson ? JSON.parse(backend.callLobbyJson) : []
         onAdmitLobby: (id, name, notBot) => backend.admitFromLobby(id, name, notBot)
@@ -3366,9 +3368,9 @@ Window {
                 else if (step === 8) callWindow.side = "people"
                 else if (step === 9) callWindow.participantMenuForTest(g.id)
                 else if (step === 10) { shot("menu"); console.warn("JOIN people menu for", g.name) }
-                else if (step === 11) { callWindow.closeMenusForTest(); callWindow.pinnedId = g.id }
+                else if (step === 11) { callWindow.closeMenusForTest(); callWindow.pinPerson(g.id) }
                 else if (step === 12) shot("pinned")
-                else if (step === 13) { callWindow.pinnedId = ""; callWindow.participantAction("spotlight", g.id, g.name, "") }
+                else if (step === 13) { callWindow.unpinPerson(g.id); callWindow.participantAction("spotlight", g.id, g.name, "") }
                 else if (step === 16) { shot("spotlight"); console.warn("JOIN people spotlight", JSON.stringify(callWindow.spotlighted.map(p => [p.name, p.spotlight]))) }
                 else if (step === 17) callWindow.participantAction("unspotlight", g.id, g.name, (callWindow.roster.find(p => p.id === g.id) || {}).spotlight || "")
                 else if (step === 19) { console.warn("JOIN people after unspotlight", callWindow.spotlighted.length); callWindow.participantAction("attendee", g.id, g.name, "") }
@@ -6697,6 +6699,53 @@ Window {
                 if (inCall === 5) callShot("call-" + w.layout)
             }
             step++
+        }
+    }
+
+    // --voice-isolation-test (TASK-0181, TASK-0183): in a call (with
+    // --join-test or a 1:1 call harness), VITEST lines every 5 s: the
+    // noise suppression choice, the isolator's counters, the dominant
+    // speaker. --vi-off-at=<s> switches to Background noise only that many
+    // seconds after the call goes live (--vi-on-at=<s> back to Voice
+    // isolation). --vi-announce presses Announce active speaker
+    // (Ctrl+Alt+Shift+S, a real key event) in the call window at each line
+    // (ANNOUNCE lines). --vi-admit lets in whoever waits in the lobby.
+    Timer {
+        running: Qt.application.arguments.indexOf("--voice-isolation-test") >= 0 && backend.signedIn
+        interval: 5000; repeat: true
+        property int live: 0
+        property var keys: null
+        function num(n) { return parseInt((Qt.application.arguments.find(a => a.startsWith("--vi-" + n + "-at=")) || "=0").split("=")[1]) || 0 }
+        onTriggered: {
+            if (!callWindow.live) { if (live > 0) console.warn("VITEST call", backend.callState); return }
+            live++
+            const w = callWindow, secs = live * 5
+            const lobby = JSON.parse(backend.callLobbyJson || "[]")
+            if (Qt.application.arguments.indexOf("--vi-admit") >= 0 && lobby.length) {
+                console.warn("VITEST admitting", JSON.stringify(lobby.map(p => p.name)))
+                lobby.forEach(p => backend.admitFromLobby(p.id, p.name, true))
+            }
+            if (num("off") && secs === num("off")) { backend.setSetting("noiseSuppressionMode", "Auto"); backend.applyVoiceIsolation(); console.warn("VITEST switched Background noise only") }
+            if (num("on") && secs === num("on")) { backend.setSetting("noiseSuppressionMode", "Pns"); backend.applyVoiceIsolation(); console.warn("VITEST switched Voice isolation") }
+            // --vi-camera: the camera on once in the call (a Signer's
+            // sign language detection needs it).
+            if (Qt.application.arguments.indexOf("--vi-camera") >= 0 && live === 1 && backend.callCanVideo && !backend.callCameraOn) backend.toggleCamera()
+            console.warn("VITEST", secs, JSON.stringify({ vi: backend.voiceIsolationJson, stats: backend.voiceIsolationStats(), speaker: w.speakerId, others: w.others.map(p => [p.name, p.id]),
+                signing: w.signingIds, camera: backend.callCameraOn,
+                badges: w.others.concat([w.selfEntry]).filter(p => w.isSigning(p.self ? w.selfId : p.id)).map(p => [p.name, w.tetheredOf(p).map(q => q.name), w.signingTooltip(w.tetheredOf(p))]),
+                stage: w.stageForTest() }))
+            // --vi-audio-ui: the Audio settings pane (10 s), then the Mic
+            // flyout (20 s), with their noise suppression choice.
+            if (Qt.application.arguments.indexOf("--vi-audio-ui") >= 0) {
+                if (secs === 10) w.side = "audio"
+                else if (secs === 20) { w.side = ""; w.openAudioOptionsForTest() }
+            }
+            if (Qt.application.arguments.indexOf("--vi-shots") >= 0) callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-vi-" + secs + ".png")))
+            if (Qt.application.arguments.indexOf("--vi-announce") >= 0) {
+                if (!keys) keys = Qt.createQmlObject('import QtTest; TestCase { when: false; name: "viannounce" }', w.contentItem)
+                w.requestActivate()
+                keys.keyClick(Qt.Key_S, Qt.ControlModifier | Qt.AltModifier | Qt.ShiftModifier)
+            }
         }
     }
 

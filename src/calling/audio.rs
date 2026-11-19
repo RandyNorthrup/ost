@@ -210,6 +210,21 @@ fn pick_device(host: &cpal::Host, input: bool) -> Option<Device> {
         if found.is_some() {
             return found;
         }
+        // A name given outside the settings (OST_MIC_DEVICE /
+        // OST_SPEAKER_DEVICE) may be a virtual endpoint the list leaves out,
+        // such as PulseAudio's remap-source (an Audio/Source node with no
+        // factory), named by its node name (its description is shared with
+        // the loopback stream feeding it): use it when it exists.
+        let named = if input { host.input_devices() } else { host.output_devices() }
+            .ok()
+            .and_then(|mut it| {
+                use cpal::traits::DeviceTrait;
+                it.find(|d| d.id().is_ok_and(|id| id.id() == name.as_str()))
+            });
+        if named.is_some() {
+            tracing::info!("Using an unlisted audio device chosen by name");
+            return named;
+        }
         tracing::info!("Chosen audio device is gone; using the default");
     }
     if input {

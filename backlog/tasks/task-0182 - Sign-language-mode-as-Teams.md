@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-16T04:53:00Z'
-updated_date: '2026-11-19T15:45:00Z'
+updated_date: '2026-11-19T17:27:00Z'
 labels:
   - desktop
 dependencies: []
@@ -53,4 +53,14 @@ OST saves Teams' sign language setting but doesn't act on it.
 - 2026-11-19 two-account run (OST calendar test meeting): ost-test1 as Signer and OST Test 2 as Interpreter (in-call camera). Each published its role and read the other's. With the interpreter's video on, ost-test1's signFirst is [OST Test 2] and the Sign language view features them. People lines: 'Your Sign Language Interpreter' (signer side) and 'Paired to you' (interpreter side). The signer icon shows on OST Test 1's tile in OST Test 2's window. Both accounts were then put back to mode off with no interpreters.
 
 - Merged c4696d0 (2026-11-19) into desktop/foundation; 787 lib, 28 vfx, 29 desktop tests passed. See the notes above for what is verified and open. (Voice isolation model is downloaded on first need with a pinned SHA-256, not committed.)
+
+- 2026-11-19 (set2) research + build, uncommitted in worktree agent-a2f35e8cd5b26c3af:
+  - Icons from the bundles: interpreter = M.Pc7 = bundleIcon(PersonSupportFilled, PersonSupportRegular) (module 698714/364739) -> assets person-support-20-filled.svg; signer = Teams' own HandMultipleStack (783885, filled `u`) -> hand-multiple-stack-20-filled.svg. Both filled at 16 px on the name tag.
+  - "Add interpreters" alert: INTERPRETERS_NOT_SELECTED has no entry in Teams' UFD icon map (263640 `i` Map) and passes no icon, so Teams shows no glyph. OST's alert now has none; its text is interpreters_not_selected_text with Accessibility at 600 and the Learn more link (CallAlert richText).
+  - Pin area: PinStage max 9 (303772 g3 / MAX_ITEMS_ON_STAGE_3x3); isPinningDisabled = pinned >= maxItemsOnStage, tooltip "You reached the maximum number of pins". Sign language view: FocusedStage 2. Order: role-matched signers, spotlights, pins in pin order. Built: CallWindow pinnedIds (9), pinArea/focusedArea in a GalleryGrid, side lists the rest.
+  - HQ: 879019 shouldFocusMainStream (pinned/spotlighted/focused signer/sign people in pin or focused area) -> focus flag. Built: CallWindow videoFocus -> backend set_video_focus: focused people take video slots first and ask at 1920 (max-fs 8160).
+  - Signing badge (agent research, ~/set2-research/signing-badge.md on linuxlt): detection in SlimCore (desktop) / websld ONNX worker (web); events are JSON {timestamp,duration,signDetected} on data channel data id 25 to everyone, stop after timeoutOfSigningSignal 3 s; badge = 5-bar waveform pill at the tile's top-left when actively signing and tethered; outline as speaking; active signers ahead of dominant speakers. Built: mcp SIGN_LANGUAGE_DATA_ID send/receive, meeting_media/outgoing send_sign_language, backend call_signing_json, MeetingTile badge + outline, CallWindow tetheredOf/signingTooltip. Native detector being built (vfx sign_detection).
+
+- 2026-11-19 sign detection (native): MoveNet SinglePose Lightning (Apache-2.0, Xenova ONNX on Hugging Face pinned to commit ed0f314, SHA-256 1ad4f8d6...a464ad, 9.4 MB) downloaded on first need to <cache>/models/, run with tract ~10/s on a worker (vfx sign_detection + calling::sign_detection); signing = a wrist in the signing space that moves (>= 0.3 shoulder widths over 800 ms) or changes shape (fingerspelling); Teams' aggregator rules (start after 500 ms, still-signing from 2 s on 500 ms ticks, stop on a quiet tick or 3 s). Clips: ASL/NGT signers 0.83-0.90 of frames, talking heads 0.00-0.02, a gesturing speaker 0.20 (known false positive).
+- 2026-11-19 live two-account run (OST calendar test meeting, linuxlt): OST Test 2 = Signer naming OST Test 1, camera a v4l2loopback device (/dev/video22, removed after) playing the CC BY-SA ASL demo clip; OST Test 1 = Interpreter. OST Test 2 detected signing and sent 259 data id 25 events (start / still signing / stop); OST Test 1 received them (active signers 1), showed the waveform badge (tethered: OST Test 1; tooltip "Voice interpretation in progress" as the interpreter) and the speaking outline, with OST Test 2 featured in the Sign language view and their video focused (HQ). On the signer's side the badge tooltip read "OST Test 1 is voice interpreting". Both left (hung up 202); both accounts put back to mode off with no interpreters.
 <!-- SECTION:NOTES:END -->

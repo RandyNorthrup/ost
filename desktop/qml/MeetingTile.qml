@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import com.ost.desktop
 
 // One person's meeting tile, as Teams draws it: a 2 px inset, rounded
@@ -25,6 +26,10 @@ Item {
         : self ? (call.cameraOn ? "self" : "")
         : call.incomingVideoOff ? "" : (call.videoKeys[person.id] || "")
     readonly property int handAt: call ? call.hands.indexOf(person.id) : -1
+    /// Sign language mode: they are actively signing (their detection
+    /// events), and Teams' badge for it (with a tethered interpreter).
+    readonly property bool signing: !!call && call.isSigning(self ? call.selfId : person.id)
+    readonly property var tethered: !call || !signing ? [] : call.tetheredOf(self ? call.selfEntry : person)
     readonly property string reaction: { if (!call) return ""; call.reactions; return call.reactionOf(person.id || "") }
 
     Rectangle {
@@ -96,10 +101,57 @@ Item {
                 onTriggered: video.refresh()
             }
         }
-        // Speaking: Teams' voice-level outline.
+        // Teams' actively signing badge (293537; on video tiles only):
+        // the 5-bar waveform in a pill at the tile's top-left indicator
+        // slot (10, 10): 3.5 padding, NeutralBackground2 with a 1 px
+        // NeutralStroke1 border, radius 20, the bars in brand. Its tooltip
+        // names the voice interpreter.
+        Rectangle {
+            id: signingBadge
+            visible: mt.signing && mt.tethered.length > 0 && video.visible
+            x: 10; y: 10; z: 2
+            width: 18 + 7 + 2; height: 18 + 7 + 2; radius: 20
+            color: theme.quoteFill
+            border.width: 1; border.color: theme.stroke
+            Row {
+                anchors.centerIn: parent
+                spacing: 2
+                Repeater {
+                    model: [1.0, 1.4, 1.8, 1.4, 1.0]
+                    Rectangle {
+                        required property real modelData
+                        width: 2; height: 10; radius: 1.5
+                        anchors.verticalCenter: parent ? parent.verticalCenter : undefined
+                        color: theme.brand
+                        // Teams' keyframes: scaleY .5 (opacity .8) to the
+                        // bar's peak (opacity 1) and back, each bar 0.30 to
+                        // 0.55 s, ease-in-out, forever.
+                        property real level: 0.5
+                        opacity: 0.8 + 0.2 * (level - 0.5) / Math.max(0.01, modelData - 0.5)
+                        transform: Scale { origin.y: 5; yScale: level }
+                        readonly property int half: Math.round((300 + Math.random() * 250) / 2)
+                        SequentialAnimation on level {
+                            running: signingBadge.visible
+                            loops: Animation.Infinite
+                            NumberAnimation { to: modelData; duration: half; easing.type: Easing.InOutQuad }
+                            NumberAnimation { to: 0.5; duration: half; easing.type: Easing.InOutQuad }
+                        }
+                    }
+                }
+            }
+            HoverHandler { id: badgeHover }
+            ToolTip.visible: badgeHover.hovered
+            ToolTip.text: mt.call ? mt.call.signingTooltip(mt.tethered) : ""
+            Accessible.role: Accessible.Graphic
+            Accessible.name: ToolTip.text
+        }
+        // Speaking: Teams' voice-level outline; a signer actively signing
+        // gets it too (Teams' isActivelySigning; on your own tile,
+        // signingParticipantStreamOutline, with your video on).
         Rectangle {
             anchors.fill: parent
-            visible: !mt.self && !!mt.call && mt.call.speakingIds.indexOf(mt.person.id) >= 0
+            visible: !!mt.call && (!mt.self && mt.call.speakingIds.indexOf(mt.person.id) >= 0
+                                   || mt.signing && (!mt.self || video.visible))
             radius: 6; color: "transparent"
             border.width: 4; border.color: theme.hc("#5B5FC7", "#FFFFFF")
             Rectangle {
@@ -153,7 +205,7 @@ Item {
             Row {
                 id: tagRow
                 anchors { left: parent.left; leftMargin: 6; verticalCenter: parent.verticalCenter }
-                readonly property bool pinned: !!mt.call && !mt.self && !!mt.call.pinnedId && mt.person.id === mt.call.pinnedId
+                readonly property bool pinned: !!mt.call && !mt.self && !!mt.call.pinnedIds && mt.call.pinnedIds.indexOf(mt.person.id) >= 0
                 readonly property bool micOff: mt.self ? (!!mt.call && (mt.call.muted || !mt.call.hasAudio)) : !!mt.person.muted
                 // Your network strength (Teams' local-nsi): three 2 px bars
                 // at 4/8/12 in an 18 px glyph, unlit ones at 30 %, then 3 px.
@@ -186,13 +238,15 @@ Item {
                     text: mt.person.name || ""; color: theme.onFill(hcFill2, "white")
                     font.family: theme.font; font.pixelSize: 12
                 }
-                // Sign language mode (Teams' tile icons): a signer's
-                // HandMultipleStack (when they share their status or you're
-                // their interpreter) or an interpreter's icon, for people
-                // in the mode.
+                // Sign language mode (Teams' tile icons, 119108 Fa, filled
+                // at 16 px): a signer's HandMultipleStack ("sign-language-
+                // icon", Teams' own glyph, when they share their status or
+                // you're their interpreter) or an interpreter's
+                // PersonSupport ("equitable-presence-interpreter-icon"),
+                // for people in the mode.
                 readonly property string signIcon: !mt.call || !mt.call.signMode || mt.self ? ""
-                    : mt.call.signerShown(mt.person) ? "hand-multiple-16-filled"
-                    : mt.person.sign_role === "signLanguageInterpreter" ? "hand-wave-16" : ""
+                    : mt.call.signerShown(mt.person) ? "hand-multiple-stack-20-filled"
+                    : mt.person.sign_role === "signLanguageInterpreter" ? "person-support-20-filled" : ""
                 Item { visible: !!tagRow.signIcon; width: 4; height: 1 }
                 FluentIcon {
                     anchors.verticalCenter: parent.verticalCenter

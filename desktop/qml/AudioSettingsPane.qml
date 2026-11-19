@@ -16,9 +16,10 @@ import QtQuick.Controls
 //   studio environment." and its two checkboxes.
 // Teams leaves out Spatial audio where the media stack can't render it
 // (isSpatialAudioAvailable) and the Background noise only / Voice
-// isolation choice where voice isolation isn't supported (it needs
-// Microsoft's voice profile); Noise suppression then carries the info
-// button. OST is both, so it shows them the same way.
+// isolation choice where voice isolation isn't supported; Noise
+// suppression then carries the info button. OST renders spatial audio and
+// has its own voice isolation (TASK-0181), so it shows both, and the info
+// sits on the choice's radios (NoiseSuppressionChoice).
 // Each section's content sits 20.67 in, 305.33 wide.
 Rectangle {
     id: root
@@ -33,6 +34,8 @@ Rectangle {
     property int volume: 100
     property int level: 0
     property bool noiseSuppression: true
+    /// Joined with Room audio (voice isolation is then unavailable).
+    property bool roomAudio: false
     property bool musicMode: false
     property bool musicInFlyout: false
     property bool musicEcho: true
@@ -217,11 +220,20 @@ Rectangle {
                 x: 20.67; width: 305.33
                 // Noise suppression: its label with the info button, the
                 // switch at the end (36 px row).
+                // With voice isolation supported (OST's own isolator),
+                // Teams moves its info to Background noise only: the
+                // switch row has none, and the choice follows it.
                 SwitchRow {
                     label: "Noise suppression"
-                    info: "Enable this to enhance your microphone audio quality by removing background noise. <a href=\"https://aka.ms/noisesuppression\">Learn more</a>"
                     checked: root.noiseSuppression
                     onToggled: root.setNoise(!root.noiseSuppression)
+                }
+                NoiseSuppressionChoice {
+                    width: 305.33
+                    noiseOn: root.noiseSuppression
+                    roomAudio: root.roomAudio
+                    showInfo: true
+                    infoButton: Component { InfoButton {} }
                 }
                 SwitchRow {
                     label: "High fidelity music mode"

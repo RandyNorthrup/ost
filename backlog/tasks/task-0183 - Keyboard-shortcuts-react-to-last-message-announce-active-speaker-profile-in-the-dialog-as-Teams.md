@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-16T04:53:00Z'
-updated_date: '2026-11-19T15:45:00Z'
+updated_date: '2026-11-19T17:27:00Z'
 labels:
   - desktop
 dependencies: []
@@ -56,4 +56,8 @@ OST lacks these two shortcuts and has the profile choice only in Settings ▸ Ge
   - Open: Announce active speaker is not yet pressed in a live call (the ANNOUNCE line via --kb-dialog-call).
 
 - Merged c4696d0 (2026-11-19) into desktop/foundation; 787 lib, 28 vfx, 29 desktop tests passed. See the notes above for what is verified and open. (Voice isolation model is downloaded on first need with a pinned SHA-256, not committed.)
+
+- 2026-11-19 (set2): Teams' rule (calling-app nz/_5/K5/ez, 256699 N): the dominant speaker unless missing from the roster; their name, "Unknown" if empty; an interpreter tethered to a signer: "<signer> voiced by <interpreter>", "You" when you are that signer (q5 on your tetheredSignerInterpreters), the signer only when exactly one names them. Built in announceActiveSpeaker (case logged). Live press via --voice-isolation-test --vi-announce.
+
+- 2026-11-19 live (linuxlt, real key events via --voice-isolation-test --vi-announce): in the OST calendar test meeting Ctrl+Alt+Shift+S announced "Latest speaker: OST Test 1" (known_speaker) every 5 s; with sign language mode (OST Test 2 Signer, OST Test 1 Interpreter speaking through a virtual mic) OST Test 2's press announced "Latest speaker: You voiced by OST Test 1" (paired_signer), Teams' tethered case. Not yet compared side by side with Teams on winpc (needs the user's OK for winpc GUI/CDP).
 <!-- SECTION:NOTES:END -->

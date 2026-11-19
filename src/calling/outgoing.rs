@@ -1912,6 +1912,12 @@ impl OutgoingCall {
         self.media.as_ref().is_some_and(|m| m.send_real_time_text(text))
     }
 
+    /// Sign language mode: whether we are signing; false when the call
+    /// has no meeting data channel.
+    pub fn send_sign_language(&self, detected: bool, duration_ms: u64) -> bool {
+        self.media.as_ref().is_some_and(|m| m.send_sign_language(detected, duration_ms))
+    }
+
     /// Our data source id in the meeting (whose real-time text is ours).
     pub fn data_source_id(&self) -> Option<u32> {
         self.media.as_ref().and_then(|m| m.data_source_id())

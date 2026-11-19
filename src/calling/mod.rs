@@ -75,6 +75,7 @@ pub mod system_sound;
 pub mod sdp;
 pub mod spatial;
 pub mod sdp_compress;
+pub mod sign_detection;
 pub mod signaling;
 pub mod srtp;
 pub mod test_tone;

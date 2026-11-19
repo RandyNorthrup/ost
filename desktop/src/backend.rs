@@ -251,6 +251,9 @@ pub mod qobject {
         #[qproperty(QString, call_speaker_mri)]
         /// Who is speaking now (Teams' voice-level outline): [mri].
         #[qproperty(QString, call_speaking_json)]
+        /// Sign language mode: who is actively signing now (their data
+        /// channel events, and ours as we send them): [mri].
+        #[qproperty(QString, call_signing_json)]
         /// The meeting has muted us.
         #[qproperty(bool, call_muted_by_meeting)]
         /// You're talking with the mic off (Teams' DeviceSpeakWhileMuted:
@@ -1379,6 +1382,11 @@ pub mod qobject {
         /// fit its tiles).
         #[qinvokable]
         fn set_video_widths(self: Pin<&mut Backend>, json: &QString);
+        /// Who gets the main (high-quality) video first: ["mri", ...]
+        /// (Teams' shouldFocusMainStream: pinned, spotlighted, sign language
+        /// priority people on the stage).
+        #[qinvokable]
+        fn set_video_focus(self: Pin<&mut Backend>, json: &QString);
         /// Send a meeting reaction: like, heart, applause, laugh, surprised.
         #[qinvokable]
         fn send_reaction(self: Pin<&mut Backend>, name: &QString);
@@ -3033,6 +3041,15 @@ pub struct BackendRust {
     call_video_json: QString,
     call_speaker_mri: QString,
     call_speaking_json: QString,
+    call_signing_json: QString,
+    /// Who is actively signing (call_signing_json's set).
+    active_signers: Vec<String>,
+    /// We are a Signer in this meeting (we published dhhSigner).
+    sign_signer: bool,
+    /// The sign detection model is being fetched.
+    sign_model_loading: bool,
+    /// The 500 ms sign detection ticker runs.
+    sign_ticker: bool,
     call_muted_by_meeting: bool,
     chat_live_roster_json: QString,
     call_muted_remotely: i32,
@@ -3126,6 +3143,9 @@ pub struct BackendRust {
     /// How wide each person's tile is drawn ({mri: px}), for the size of
     /// video to ask for.
     video_widths: std::collections::HashMap<String, f64>,
+    /// Whose video is focused (Teams' focus flag): they take slots first
+    /// and the high-quality stream.
+    video_focus: Vec<String>,
     call_lobby_json: QString,
     call_thread_id: QString,
     user_mri: QString,
@@ -6263,6 +6283,29 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         }
         return;
     }
+    // A signer's "actively signing" event (Sign language mode).
+    if json.contains("\"callAgentPath\":\"ost/signLanguage/\"") {
+        let body = serde_json::from_str::<serde_json::Value>(json)
+            .ok()
+            .and_then(|v| v.get("body").cloned());
+        let source = body.as_ref().and_then(|b| b.get("sourceId")?.as_u64()).and_then(|s| u32::try_from(s).ok());
+        let detected = body.as_ref().and_then(|b| b.get("signDetected")?.as_bool());
+        if let (Some(source), Some(detected)) = (source, detected) {
+            let _ = qt.queue(move |mut this| {
+                let mri = this
+                    .rust()
+                    .roster
+                    .iter()
+                    .find(|p| p.data_sources.contains(&i64::from(source)))
+                    .map(|p| p.id.clone());
+                match mri {
+                    Some(mri) => this.as_mut().set_signing(&mri, detected),
+                    None => tracing::debug!(source, "sign language event from a source not in the roster"),
+                }
+            });
+        }
+        return;
+    }
     // Someone's real-time text (Teams' RTT on the data channel).
     if json.contains("\"callAgentPath\":\"ost/rtt/\"") {
         let body = serde_json::from_str::<serde_json::Value>(json)
@@ -7655,6 +7698,10 @@ async fn rooms_json(client: &TeamsClient, rooms: Vec<(String, String, String)>) 
     serde_json::Value::Array(out).to_string()
 }
 
+/// The width a focused tile's video is asked for: the main stream at
+/// 1080p (meeting_media's largest request).
+const FOCUS_VIDEO_WIDTH: u32 = 1920;
+
 /// Hand the chosen microphone and speaker to the call engine.
 fn apply_audio_devices(map: &serde_json::Map<String, serde_json::Value>) {
     let get = |k: &str| {
@@ -7667,7 +7714,10 @@ fn apply_audio_devices(map: &serde_json::Map<String, serde_json::Value>) {
     // whose settings file other instances share, e.g. a PipeWire null sink's
     // monitor playing test speech).
     let mic = std::env::var("OST_MIC_DEVICE").ok().filter(|d| !d.is_empty()).or_else(|| get("micDevice"));
-    teams_cli::calling::audio::set_preferred_devices(mic, get("speakerDevice"));
+    // OST_SPEAKER_DEVICE=<name>: the same for its speaker (e.g. a null
+    // sink whose monitor records what the call plays).
+    let speaker = std::env::var("OST_SPEAKER_DEVICE").ok().filter(|d| !d.is_empty()).or_else(|| get("speakerDevice"));
+    teams_cli::calling::audio::set_preferred_devices(mic, speaker);
     // Teams' "Sync device buttons" (on unless turned off, kept on this
     // device as Teams' audioDeviceSyncEnabled) and the microphone whose
     // headset's buttons count.
@@ -8748,6 +8798,8 @@ impl qobject::Backend {
         self.as_mut().set_call_video_json(QString::from("{}"));
         self.as_mut().set_call_speaker_mri(QString::default());
         self.as_mut().set_call_speaking_json(QString::from("[]"));
+        self.as_mut().rust_mut().active_signers.clear();
+        self.as_mut().set_call_signing_json(QString::from("[]"));
         self.as_mut().set_call_muted_by_meeting(false);
         self.as_mut().set_call_share_mri(QString::default());
         self.as_mut().set_call_lobby_json(QString::from("[]"));
@@ -10261,6 +10313,16 @@ impl qobject::Backend {
         let _ = self.qt_thread().queue(|this| this.apply_roster(Vec::new()));
     }
 
+    pub fn set_video_focus(mut self: Pin<&mut Self>, json: &QString) {
+        let focus: Vec<String> = serde_json::from_str(&json.to_string()).unwrap_or_default();
+        if focus == self.rust().video_focus {
+            return;
+        }
+        tracing::info!(count = focus.len(), "video focus");
+        self.as_mut().rust_mut().video_focus = focus;
+        let _ = self.qt_thread().queue(|this| this.apply_roster(Vec::new()));
+    }
+
     pub fn set_incoming_video(mut self: Pin<&mut Self>, on: bool) {
         if self.rust().incoming_video_off != on {
             return;
@@ -10351,6 +10413,8 @@ impl qobject::Backend {
         self.as_mut().set_call_video_json(QString::from("{}"));
         self.as_mut().set_call_speaker_mri(QString::default());
         self.as_mut().set_call_speaking_json(QString::from("[]"));
+        self.as_mut().rust_mut().active_signers.clear();
+        self.as_mut().set_call_signing_json(QString::from("[]"));
         self.as_mut().set_call_muted_by_meeting(false);
         self.as_mut().set_call_share_mri(QString::default());
         self.as_mut().set_call_lobby_json(QString::from("[]"));
@@ -10924,6 +10988,67 @@ impl qobject::Backend {
         self.as_mut().rust_mut().rtt_typing = typing;
         self.as_mut().rust_mut().captions = window;
         self.publish_captions();
+    }
+
+    /// Every 500 ms: Teams' sign language detection runs while we are a
+    /// Signer in a meeting with the camera on (its model fetched on first
+    /// need); its start / still signing / stop events go to the meeting on
+    /// the data channel, and to our own tile (Teams' local echo).
+    fn sign_detection_tick(mut self: Pin<&mut Self>) {
+        use teams_cli::calling::sign_detection as sd;
+        let on = self.rust().sign_signer
+            && self.rust().call_camera_on
+            && self.rust().call_meeting
+            && self.rust().call_state.to_string() == "connected";
+        if on != sd::enabled() {
+            tracing::info!(on, ready = sd::ready(), "sign language detection");
+            sd::set_enabled(on);
+        }
+        if on && !sd::ready() && !self.rust().sign_model_loading {
+            self.as_mut().rust_mut().sign_model_loading = true;
+            let qt = self.qt_thread();
+            runtime().spawn(async move {
+                if let Err(e) = sd::prepare(&cache_base()).await {
+                    tracing::warn!("sign language detection unavailable: {}", short_error(&e));
+                }
+                let _ = qt.queue(|mut this| this.as_mut().rust_mut().sign_model_loading = false);
+            });
+        }
+        let messages = sd::tick(sd::now_ms());
+        if messages.is_empty() {
+            return;
+        }
+        let me = self.rust().user_mri.to_string();
+        for m in &messages {
+            tracing::info!(signed = m.signed, duration_ms = m.duration_ms, "sign language event sent");
+            self.as_mut().set_signing(&me, m.signed);
+        }
+        runtime().spawn(async move {
+            if let Some(call) = call_slot().lock().await.outgoing.as_ref() {
+                for m in messages {
+                    call.send_sign_language(m.signed, m.duration_ms);
+                }
+            }
+        });
+    }
+
+    /// Teams' updateActiveSigners: `mri` is (or no longer is) actively
+    /// signing.
+    fn set_signing(mut self: Pin<&mut Self>, mri: &str, detected: bool) {
+        let mut set = self.rust().active_signers.clone();
+        let had = set.iter().any(|m| m == mri);
+        if detected == had {
+            return;
+        }
+        if detected {
+            set.push(mri.to_string());
+        } else {
+            set.retain(|m| m != mri);
+        }
+        tracing::info!(detected, signers = set.len(), "active signers");
+        let json = serde_json::to_string(&set).unwrap_or_else(|_| "[]".into());
+        self.as_mut().rust_mut().active_signers = set;
+        self.as_mut().set_call_signing_json(QString::from(json.as_str()));
     }
 
     /// Someone's real-time text arrived from data source `source`.
@@ -12189,8 +12314,23 @@ impl qobject::Backend {
 
     /// Sign language mode in the meeting: publish `kind` ("dhhSigner" or
     /// "signLanguageInterpreter") with its content, or take it back ("").
-    pub fn set_sign_language_state(self: Pin<&mut Self>, kind: &QString, content_json: &QString) {
+    pub fn set_sign_language_state(mut self: Pin<&mut Self>, kind: &QString, content_json: &QString) {
         let kind = kind.to_string();
+        // Teams detects signing only for a Signer (isVideoDHHSigner).
+        self.as_mut().rust_mut().sign_signer = kind == "dhhSigner";
+        if !self.rust().sign_ticker {
+            self.as_mut().rust_mut().sign_ticker = true;
+            let qt = self.qt_thread();
+            runtime().spawn(async move {
+                let mut every = tokio::time::interval(std::time::Duration::from_millis(500));
+                loop {
+                    every.tick().await;
+                    if qt.queue(|this| this.sign_detection_tick()).is_err() {
+                        break;
+                    }
+                }
+            });
+        }
         let content: serde_json::Value = serde_json::from_str(&content_json.to_string()).unwrap_or_else(|_| json!({}));
         runtime().spawn(async move {
             let mut slot = call_slot().lock().await;
@@ -12506,14 +12646,22 @@ impl qobject::Backend {
         }
         let off = self.rust().incoming_video_off;
         let widths = self.rust().video_widths.clone();
-        let cameras: Vec<(String, i64, u32)> = roster
+        let focus = self.rust().video_focus.clone();
+        let mut cameras: Vec<(String, i64, u32)> = roster
             .iter()
             .filter(|p| p.id != me && !off)
             .filter_map(|p| {
-                let w = widths.get(&p.id).copied().unwrap_or(1280.0).round() as u32;
+                let mut w = widths.get(&p.id).copied().unwrap_or(1280.0).round() as u32;
+                // Teams' focused tiles (pinned, spotlighted, sign language
+                // priority) ask for the main stream at its best.
+                if focus.contains(&p.id) {
+                    w = w.max(FOCUS_VIDEO_WIDTH);
+                }
                 p.video_source.map(|s| (p.id.clone(), s, w))
             })
             .collect();
+        // They take the video slots first (the rest in roster order).
+        cameras.sort_by_key(|c| focus.iter().position(|f| *f == c.0).unwrap_or(usize::MAX));
         // The presenter: whoever else shares their screen.
         let presenter = roster
             .iter()
