@@ -80,7 +80,7 @@ Popup {
     readonly property var gridItems: {
         const a = installed
         if (!tabs || a.length - 1 <= gridFirst) return a
-        return gridAll ? a.concat([{ seeLess: true, name: "See less" }]) : a.slice(0, gridFirst).concat([{ seeAll: true, name: "See all" }])
+        return gridAll ? a.concat([{ seeLess: true, name: qsTr("See less") }]) : a.slice(0, gridFirst).concat([{ seeAll: true, name: qsTr("See all") }])
     }
 
     function show(id, isChannel) {
@@ -127,7 +127,7 @@ Popup {
                 visible: !!card.app.agent
                 width: 20; height: 20
                 FluentIcon { anchors.centerIn: parent; name: "sparkle-20"; size: 12; color: theme.textSecondary }
-                Accessible.role: Accessible.Graphic; Accessible.name: "Includes an agent and uses AI"
+                Accessible.role: Accessible.Graphic; Accessible.name: qsTr("Includes an agent and uses AI")
             }
         }
         Text { visible: card.full; x: 61; y: 33; height: 16; verticalAlignment: Text.AlignVCenter; width: card.width - 80; elide: Text.ElideRight; text: card.app.developer || ""; font.family: theme.font; font.pixelSize: 12; color: theme.text }
@@ -157,7 +157,7 @@ Popup {
             id: search
             anchors { left: parent.left; right: searchIcon.left; top: parent.top; bottom: parent.bottom }
             leftPadding: 12; rightPadding: 2
-            placeholderText: root.tabs ? "Search for apps" : "Search for agents and bots"
+            placeholderText: root.tabs ? qsTr("Search for apps") : qsTr("Search for agents and bots")
             placeholderTextColor: theme.textTertiary
             background: null
             font.family: theme.font; font.pixelSize: 14; color: theme.text
@@ -175,7 +175,7 @@ Popup {
             HoverHandler { id: clearHover; enabled: !!root.query; cursorShape: Qt.PointingHandCursor }
             TapHandler { enabled: !!root.query; onTapped: { search.text = ""; search.forceActiveFocus() } }
             Accessible.role: root.query ? Accessible.Button : Accessible.Graphic
-            Accessible.name: root.query ? "Clear search" : "Search"
+            Accessible.name: root.query ? qsTr("Clear search") : qsTr("Search")
         }
     }
 
@@ -200,7 +200,7 @@ Popup {
                     Text {
                         id: resultsTitle
                         anchors.horizontalCenter: parent.horizontalCenter; y: -2.7; height: 21.3; verticalAlignment: Text.AlignVCenter
-                        text: root.found && root.found.results ? "Search results for \"" + root.query + "\" (" + root.found.results.length + ")" : "Search results for \"" + root.query + "\""
+                        text: root.found && root.found.results ? qsTr("Search results for \"%1\" %2").arg(root.query).arg("(" + root.found.results.length + ")") : qsTr("Search results for \"%1\"").arg(root.query)
                         font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.textSecondary
                     }
                     Rectangle { y: 9; x: 0; width: resultsTitle.x - 12; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D", "#000000") }
@@ -280,19 +280,19 @@ Popup {
                 // "Add a new agent or bot" ("Add a new app" for tabs)
                 Item {
                     width: parent.width - 18; height: 18
-                    Text { id: addNew; anchors.centerIn: parent; text: root.tabs ? "Add a new app" : "Add a new agent or bot"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.textSecondary }
+                    Text { id: addNew; anchors.centerIn: parent; text: root.tabs ? qsTr("Add a new app") : qsTr("Add a new agent or bot"); font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.textSecondary }
                     Rectangle { anchors.verticalCenter: parent.verticalCenter; x: 0; width: addNew.x - 12; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D", "#000000") }
                     Rectangle { anchors.verticalCenter: parent.verticalCenter; x: addNew.x + addNew.width + 12; width: parent.width - x; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D", "#000000") }
                 }
                 Text {
                     visible: !!root.store && !!root.store.loading
                     topPadding: 24; width: parent.width; horizontalAlignment: Text.AlignHCenter
-                    text: "Loading…"; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
+                    text: qsTr("Loading…"); font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
                 }
                 Text {
                     visible: !!root.store && !!root.store.error
                     topPadding: 24; width: parent.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
-                    text: "Something went wrong. Try again later."; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
+                    text: qsTr("Something went wrong. Try again later."); font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
                 }
                 Repeater {
                     model: root.collections
@@ -305,10 +305,10 @@ Popup {
                             Text { y: 32; height: 16; verticalAlignment: Text.AlignVCenter; text: col.modelData.title; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.text; Accessible.role: Accessible.Heading; Accessible.name: text }
                             Text {
                                 anchors.right: parent.right; anchors.rightMargin: 14; y: 26; height: 16; verticalAlignment: Text.AlignVCenter
-                                text: "See all"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.brandForeground1
+                                text: qsTr("See all"); font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.brandForeground1
                                 HoverHandler { cursorShape: Qt.PointingHandCursor }
                                 TapHandler { onTapped: { root.seeAll = col.modelData; flick.contentY = 0 } }
-                                Accessible.role: Accessible.Button; Accessible.name: "See all " + col.modelData.title
+                                Accessible.role: Accessible.Button; Accessible.name: qsTr("See all") + " " + col.modelData.title
                             }
                         }
                         Repeater {
@@ -350,8 +350,8 @@ Popup {
         FluentIcon { anchors.centerIn: parent; name: "apps-list-20"; size: 20; color: theme.onFill(hcFill6, theme.textStrong) }
         HoverHandler { id: manageHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: { root.close(); root.manageApps() } }
-        ToolTip.visible: manageHover.hovered; ToolTip.delay: 500; ToolTip.text: "Manage your apps"
-        Accessible.role: Accessible.Button; Accessible.name: "Manage your apps"
+        ToolTip.visible: manageHover.hovered; ToolTip.delay: 500; ToolTip.text: qsTr("Manage your apps")
+        Accessible.role: Accessible.Button; Accessible.name: qsTr("Manage your apps")
     }
     Rectangle {
         id: hcFill3
@@ -361,11 +361,11 @@ Popup {
         Row {
             anchors.centerIn: parent; spacing: 6
             FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "chevron-left-20"; size: 20; color: theme.onFill(hcFill3, theme.text) }
-            Text { anchors.verticalCenter: parent.verticalCenter; text: "Back"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, theme.text) }
+            Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Back"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, theme.text) }
         }
         HoverHandler { id: backHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: { root.seeAll = null; flick.contentY = 0 } }
-        Accessible.role: Accessible.Button; Accessible.name: "Back"
+        Accessible.role: Accessible.Button; Accessible.name: qsTr("Back")
     }
     Row {
         anchors.right: parent.right; anchors.rightMargin: 32
@@ -375,19 +375,19 @@ Popup {
             width: 96; height: 31.3; radius: 4
             color: closeHover.hovered ? theme.menuHover : theme.surface
             border.width: 0.67; border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF")
-            Text { anchors.centerIn: parent; text: "Close"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, theme.text) }
+            Text { anchors.centerIn: parent; text: qsTr("Close"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, theme.text) }
             HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.close() }
-            Accessible.role: Accessible.Button; Accessible.name: "Close"
+            Accessible.role: Accessible.Button; Accessible.name: qsTr("Close")
         }
         Rectangle {
             id: hcFill5
             width: 118.8; height: 31.3; radius: 4
             color: moreHover.hovered ? theme.brandHover : theme.brandFill
-            Text { anchors.centerIn: parent; text: "Get more apps"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill5, theme.textOnBrand) }
+            Text { anchors.centerIn: parent; text: qsTr("Get more apps"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill5, theme.textOnBrand) }
             HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: { root.close(); root.getMoreApps() } }
-            Accessible.role: Accessible.Button; Accessible.name: "Get more apps"
+            Accessible.role: Accessible.Button; Accessible.name: qsTr("Get more apps")
         }
     }
 

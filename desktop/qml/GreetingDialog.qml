@@ -25,7 +25,7 @@ Popup {
     Text {
         x: 24.67; y: 24.67; width: root.width - 49.33; height: 28
         verticalAlignment: Text.AlignVCenter
-        text: "Your custom greeting"
+        text: qsTr("Your custom greeting")
         font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold
         color: theme.text
         Accessible.role: Accessible.Heading
@@ -56,10 +56,10 @@ Popup {
                     else if (cursorRectangle.y + cursorRectangle.height > flick.contentY + flick.height) flick.contentY = cursorRectangle.y + cursorRectangle.height - flick.height
                 }
                 Accessible.role: Accessible.EditableText
-                Accessible.name: "Type your custom greeting message here"
+                Accessible.name: qsTr("Type your custom greeting message here")
                 Text {
                     visible: !area.text.length
-                    text: "Type your custom greeting message here"
+                    text: qsTr("Type your custom greeting message here")
                     font: area.font; color: theme.textSecondary
                 }
             }
@@ -72,21 +72,21 @@ Popup {
             width: 96; height: 31.33; radius: 4
             color: cancelHover.hovered ? theme.menuHover : theme.surface
             border.color: theme.stroke; border.width: 0.67
-            Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.text) }
+            Text { anchors.centerIn: parent; text: qsTr("Cancel"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.text) }
             HoverHandler { id: cancelHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.close() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Cancel"
+            Accessible.name: qsTr("Cancel")
         }
         Rectangle {
             id: hcFill2
             width: 96; height: 31.33; radius: 4
             color: !root.ready ? theme.pick("#F0F0F0", "#141414", "#000000") : saveHover.hovered ? theme.brandHover : theme.brandFill
-            Text { anchors.centerIn: parent; text: "Save"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, root.ready ? "#FFFFFF" : theme.pick("#BDBDBD", "#5C5C5C", "#3FF23F")) }
+            Text { anchors.centerIn: parent; text: qsTr("Save"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, root.ready ? "#FFFFFF" : theme.pick("#BDBDBD", "#5C5C5C", "#3FF23F")) }
             HoverHandler { id: saveHover; cursorShape: root.ready ? Qt.PointingHandCursor : Qt.ArrowCursor }
             TapHandler { onTapped: if (root.ready) { root.close(); root.saved(area.text) } }
             Accessible.role: Accessible.Button
-            Accessible.name: "Save"
+            Accessible.name: qsTr("Save")
         }
     }
 }

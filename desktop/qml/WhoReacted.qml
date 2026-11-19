@@ -27,7 +27,7 @@ Popup {
     // The overflow list can remove our own reactions (a Dismiss16 button at
     // the row's end, the emoji 14.7 before it; measured).
     readonly property bool removable: !reaction
-    readonly property string title: reaction ? backend.emoticonName(reaction.key) : "More reactions"
+    readonly property string title: reaction ? backend.emoticonName(reaction.key) : qsTr("More reactions")
     // Rows size to the longest name, within Fluent's limits.
     property real nameWidth: 0
     width: Math.min(290, Math.max(189.7, 38 + nameWidth + 4 + (diverse ? 26 : 0) + 15.7)) + 8 + 1.3
@@ -89,13 +89,13 @@ Popup {
                 HoverHandler { id: removeHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: { root.removeMine(root.messageId, row.modelData.key); root.close() } }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Remove reaction"
+                Accessible.name: qsTr("Remove reaction")
             }
             HoverHandler { id: rowHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: (point) => { if (!(root.removable && row.own && point.position.x > row.width - 28)) root.chatWith(row.modelData) } }
             Accessible.role: Accessible.MenuItem
-            Accessible.name: root.diverse ? "Chat with " + modelData.name + ", " + backend.emoticonName(modelData.key) + "." : "Chat with " + modelData.name
-            Accessible.description: own ? "Delete your reaction (Delete)" : ""
+            Accessible.name: root.diverse ? qsTr("Chat with %1, %2.").arg(modelData.name).arg(backend.emoticonName(modelData.key)) : qsTr("Chat with %1").arg(modelData.name)
+            Accessible.description: own ? qsTr("Delete your reaction (Delete)") : ""
         }
         Keys.onReturnPressed: root.chatWith(root.users[currentIndex])
         Keys.onEnterPressed: root.chatWith(root.users[currentIndex])

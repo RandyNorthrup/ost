@@ -15,7 +15,7 @@ Window {
     id: win
     property bool pinned: false
     property bool searching: true
-    title: "Cast"
+    title: qsTr("Cast")
     width: 626; height: 713
     minimumWidth: 400; minimumHeight: 400
     color: theme.hc("#1F1F1F", "#000000")
@@ -26,7 +26,7 @@ Window {
 
     ChildWindowTitleBar {
         id: titleRow
-        title: "Cast"
+        title: qsTr("Cast")
         pinned: win.pinned
         onTogglePin: win.pinned = !win.pinned
     }
@@ -41,7 +41,7 @@ Window {
         }
         Text {
             x: 64; y: 18.31
-            text: "Cast"
+            text: qsTr("Cast")
             font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold; lineHeight: 23.4; lineHeightMode: Text.FixedHeight
             color: "#FFFFFF"
             Accessible.role: Accessible.Heading
@@ -50,7 +50,7 @@ Window {
     }
     Text {
         anchors.horizontalCenter: parent.horizontalCenter; y: 104
-        text: "Select a nearby Teams Room"
+        text: qsTr("Select a nearby Teams Room")
         font.family: theme.font; font.pixelSize: 16; lineHeight: 22; lineHeightMode: Text.FixedHeight
         color: "#FFFFFF"
     }
@@ -59,7 +59,7 @@ Window {
         width: Math.min(implicitWidth, parent.width - 40)
         horizontalAlignment: Text.AlignHCenter
         wrapMode: Text.Wrap
-        text: win.searching ? "Searching for nearby Teams Rooms..." : "Didn't find any Teams Rooms nearby that we can cast to."
+        text: win.searching ? qsTr("Searching for nearby Teams Rooms...") : qsTr("Didn't find any Teams Rooms nearby that we can cast to.")
         font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
         color: "#FFFFFF"
         Accessible.role: Accessible.StaticText
@@ -69,8 +69,8 @@ Window {
         x: parent.width - 52 - width; y: parent.height - 20.33 - height
         width: 96; height: 32; radius: 4
         color: theme.hc("#1F1F1F", "#000000")
-        Text { anchors.centerIn: parent; text: "Next"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.hc("#5C5C5C", "#3FF23F") }
+        Text { anchors.centerIn: parent; text: qsTr("Next"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.hc("#5C5C5C", "#3FF23F") }
         Accessible.role: Accessible.Button
-        Accessible.name: "Next"
+        Accessible.name: qsTr("Next")
     }
 }

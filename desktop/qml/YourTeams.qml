@@ -40,7 +40,7 @@ Rectangle {
     readonly property var allTeams: backend.teamsJson ? JSON.parse(backend.teamsJson) : []
     onVisibleChanged: if (visible) { filter = ""; sort = "az"; search.text = ""; query = "" }
 
-    readonly property var tabs: [["teams", "Teams"], ["pending", "Pending invites"], ["analytics", "Analytics"]]
+    readonly property var tabs: [["teams", qsTr("Teams")], ["pending", qsTr("Pending invites")], ["analytics", qsTr("Analytics")]]
 
     // Header.
     Item {
@@ -49,7 +49,7 @@ Rectangle {
         Text {
             id: title
             x: 20; y: 15.5
-            text: "Your teams and channels"
+            text: qsTr("Your teams and channels")
             font.family: theme.font; font.pixelSize: 20; font.weight: Font.Bold
             lineHeight: 28; lineHeightMode: Text.FixedHeight
             color: theme.text
@@ -96,12 +96,12 @@ Rectangle {
             Row {
                 anchors.centerIn: parent; spacing: 6
                 FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "people-team-add-20"; size: 20; color: theme.onFill(createMain, theme.textStrong) }
-                Text { anchors.verticalCenter: parent.verticalCenter; text: "Create team"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(createMain, theme.textStrong) }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Create team"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(createMain, theme.textStrong) }
             }
             HoverHandler { id: createHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: page.createTeam() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Create team"
+            Accessible.name: qsTr("Create team")
         }
         Rectangle {
             id: createMore
@@ -112,12 +112,12 @@ Rectangle {
             HoverHandler { id: createMoreHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: createMenu.open() }
             Accessible.role: Accessible.Button
-            Accessible.name: "More create team options"
+            Accessible.name: qsTr("More create team options")
             MenuPopup {
                 id: createMenu
                 x: parent.width - implicitWidth - 4.3; y: parent.height + 4
                 minRowWidth: 128.7
-                items: [{ key: "create", label: "Create team" }, { key: "join", label: "Join Team" }]
+                items: [{ key: "create", label: qsTr("Create team") }, { key: "join", label: qsTr("Join Team") }]
                 onPicked: i => items[i].key === "create" ? page.createTeam() : page.joinTeam()
             }
         }
@@ -128,10 +128,10 @@ Rectangle {
     property string filter: ""
     property string sort: "az"
     property string query: ""
-    readonly property var filterNames: ({ "": "All", OWNED: "Teams you own", HIDDEN: "Teams with channels hidden", SHOWN: "Teams with channels shown", ARCHIVED: "Archived Teams" })
-    readonly property var sortNames: ({ az: "A-Z", za: "Z-A", type: "Team type", membership: "Membership Type", visibility: "Visibility Type" })
+    readonly property var filterNames: ({ "": qsTr("All"), OWNED: qsTr("Teams you own"), HIDDEN: qsTr("Teams with channels hidden"), SHOWN: qsTr("Teams with channels shown"), ARCHIVED: qsTr("Archived Teams") })
+    readonly property var sortNames: ({ az: "A-Z", za: "Z-A", type: qsTr("Team type"), membership: qsTr("Membership Type"), visibility: qsTr("Visibility Type") })
     function anyShown(t) { return (t.channels || []).some(c => c.shown !== false) }
-    function roleName(r) { return r === "admin" ? "Owner" : r === "guest" ? "Guest" : "Member" }
+    function roleName(r) { return r === "admin" ? qsTr("Owner") : r === "guest" ? qsTr("Guest") : qsTr("Member") }
     readonly property var rows: {
         let out = page.allTeams.filter(t => {
             switch (page.filter) {
@@ -181,7 +181,7 @@ Rectangle {
         HoverHandler { id: pillHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: pill.clicked() }
         Accessible.role: Accessible.Button
-        Accessible.name: chosen ? label + ", Selected" : label
+        Accessible.name: chosen ? qsTr("%1, Selected").arg(label) : label
     }
     Item {
         id: teamsTab
@@ -190,7 +190,7 @@ Rectangle {
         Row {
             id: pills
             x: 48; y: 24.3; spacing: 12
-            Pill { label: "All"; chosen: page.filter === ""; onClicked: page.filter = "" }
+            Pill { label: qsTr("All"); chosen: page.filter === ""; onClicked: page.filter = "" }
             // Teams you own until another filter is chosen; then that one.
             Pill {
                 readonly property string key: page.filter === "" ? "OWNED" : page.filter
@@ -199,7 +199,7 @@ Rectangle {
                 onClicked: page.filter = key
             }
             Pill {
-                label: "3 more"; chevron: true
+                label: qsTr("3 more"); chevron: true
                 menuOpen: moreMenu.opened
                 onClicked: moreMenu.open()
                 MenuPopup {
@@ -218,18 +218,18 @@ Rectangle {
                 Row {
                     id: sortRow
                     anchors.centerIn: parent; spacing: 4
-                    Text { anchors.verticalCenter: parent.verticalCenter; text: "Sort: " + page.sortNames[page.sort]; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(sortButton, sortMenu.opened ? theme.brandForeground1 : theme.textStrong) }
+                    Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Sort: %1").arg(page.sortNames[page.sort]); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(sortButton, sortMenu.opened ? theme.brandForeground1 : theme.textStrong) }
                     FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-12"; size: 12; color: theme.onFill(sortButton, sortMenu.opened ? theme.brandForeground1 : theme.textStrong) }
                 }
                 HoverHandler { id: sortHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: sortMenu.open() }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Sort: " + page.sortNames[page.sort] + " is selected"
+                Accessible.name: qsTr("Sort: %1 is selected").arg(page.sortNames[page.sort])
                 MenuPopup {
                     id: sortMenu
                     x: 4.8; y: parent.height + 4
                     minRowWidth: 128.7
-                    items: [{ key: "az", label: "A-Z" }, { key: "za", label: "Z-A" }, { key: "type", label: "Team type" }, { key: "membership", label: "Membership Type" }, { key: "visibility", label: "Visibility Type" }]
+                    items: [{ key: "az", label: qsTr("A-Z") }, { key: "za", label: qsTr("Z-A") }, { key: "type", label: qsTr("Team type") }, { key: "membership", label: qsTr("Membership Type") }, { key: "visibility", label: qsTr("Visibility Type") }]
                     onPicked: i => page.sort = items[i].key
                 }
             }
@@ -246,9 +246,9 @@ Rectangle {
                 font.family: theme.font; font.pixelSize: 14; color: theme.text; clip: true
                 selectByMouse: true
                 onTextChanged: searchTimer.restart()
-                Text { visible: !search.text; text: "Search teams"; font: search.font; color: theme.pick("#707070", "#ADADAD", "#FFFFFF") }
+                Text { visible: !search.text; text: qsTr("Search teams"); font: search.font; color: theme.pick("#707070", "#ADADAD", "#FFFFFF") }
                 Accessible.role: Accessible.EditableText
-                Accessible.name: "Search teams"
+                Accessible.name: qsTr("Search teams")
             }
             Timer { id: searchTimer; interval: 250; onTriggered: page.query = search.text }
         }
@@ -266,7 +266,7 @@ Rectangle {
             visible: page.rows.length === 0
             x: 20; width: parent.width - 40; y: 430.1
             horizontalAlignment: Text.AlignHCenter
-            text: "We didn't find any matches"
+            text: qsTr("We didn't find any matches")
             font.family: theme.font; font.pixelSize: 18; font.weight: Font.DemiBold
             lineHeight: 25.7; lineHeightMode: Text.FixedHeight
             color: theme.text
@@ -305,7 +305,7 @@ Rectangle {
                         lineHeight: 20; lineHeightMode: Text.FixedHeight
                         color: theme.onFill(row, theme.text)
                         Accessible.role: Accessible.Button
-                        Accessible.name: "Team " + text + ", Go to Manage team channels"
+                        Accessible.name: qsTr("Team %1, Go to Manage team channels").arg(text)
                     }
                     FluentIcon { visible: !!row.modelData.archived; anchors.verticalCenter: parent.verticalCenter; name: "archive-20"; size: 16; color: theme.onFill(row, theme.text) }
                 }
@@ -318,11 +318,11 @@ Rectangle {
                         color: theme.onFill(row, theme.text)
                     }
                     component Bar: Rectangle { width: 0.67; height: 20; color: theme.divider }
-                    Fact { text: row.modelData["public"] ? "Public" : "Private" }
+                    Fact { text: row.modelData["public"] ? qsTr("Public") : qsTr("Private") }
                     Bar {}
-                    Fact { text: (row.modelData.people || 0) + " people" }
+                    Fact { text: qsTr("%1 people").arg(row.modelData.people || 0) }
                     Bar {}
-                    Fact { text: (row.modelData.channels || []).length + " channels" }
+                    Fact { text: qsTr("%1 channels").arg((row.modelData.channels || []).length) }
                     Bar {}
                     Fact {
                         width: Math.min(implicitWidth, row.width - 46 - facts.x - 300)
@@ -338,7 +338,7 @@ Rectangle {
                     FluentIcon { name: "eye-off-20"; size: 20; color: theme.onFill(row, theme.text) }
                     Rectangle { width: 0.67; height: 20; color: theme.divider }
                     Accessible.role: Accessible.StaticText
-                    Accessible.name: "All channels are hidden"
+                    Accessible.name: qsTr("All channels are hidden")
                 }
                 Text {
                     id: role
@@ -362,7 +362,7 @@ Rectangle {
                         }
                     }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Team " + (row.modelData.name || "") + ", More Options"
+                    Accessible.name: qsTr("Team %1, More Options").arg(row.modelData.name || "")
                 }
             }
         }
@@ -402,7 +402,7 @@ Rectangle {
             visible: page.invitations.length === 0
             x: 20; width: parent.width - 40; y: 345.6
             horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
-            text: "When people invite your team to a shared channel, the invite will show up here."
+            text: qsTr("When people invite your team to a shared channel, the invite will show up here.")
             font.family: theme.font; font.pixelSize: 18; font.weight: Font.DemiBold
             lineHeight: 25.7; lineHeightMode: Text.FixedHeight
             color: theme.text
@@ -422,8 +422,8 @@ Rectangle {
                 spacing: 8
                 Repeater {
                     model: [
-                        ["Needs action", page.invitations.filter(i => ["Validating", "Sent", "Revoked"].indexOf(i.state) >= 0)],
-                        ["Pending owner approval", page.invitations.filter(i => ["Validating", "Sent", "Revoked"].indexOf(i.state) < 0)]
+                        [qsTr("Needs action"), page.invitations.filter(i => ["Validating", "Sent", "Revoked"].indexOf(i.state) >= 0)],
+                        [qsTr("Pending owner approval"), page.invitations.filter(i => ["Validating", "Sent", "Revoked"].indexOf(i.state) < 0)]
                     ]
                     Column {
                         id: sectionCol
@@ -431,7 +431,7 @@ Rectangle {
                         width: invCol.width
                         Text {
                             height: 44; verticalAlignment: Text.AlignVCenter; leftPadding: 12
-                            text: sectionCol.modelData[0] + " (" + sectionCol.modelData[1].length + ")"
+                            text: qsTr("%1 (%2)").arg(sectionCol.modelData[0]).arg(sectionCol.modelData[1].length)
                             font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
                             color: theme.text
                         }
@@ -441,7 +441,7 @@ Rectangle {
                             Row {
                                 x: 12; anchors.verticalCenter: parent.verticalCenter; spacing: 16
                                 Repeater {
-                                    model: [["Shared channel", 220], ["Sent by", 180], ["Organization", 160], ["Expires in", 120]]
+                                    model: [[qsTr("Shared channel"), 220], [qsTr("Sent by"), 180], [qsTr("Organization"), 160], [qsTr("Expires in"), 120]]
                                     Text { required property var modelData; width: modelData[1]; text: modelData[0]; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
                                 }
                             }
@@ -455,7 +455,7 @@ Rectangle {
                                 Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.divider }
                                 Row {
                                     x: 12; anchors.verticalCenter: parent.verticalCenter; spacing: 16
-                                    Text { width: 220; elide: Text.ElideRight; text: inv.modelData.channel + (inv.modelData.channel_tenant && inv.modelData.channel_tenant !== backend.tenantId() ? " (External)" : ""); font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                                    Text { width: 220; elide: Text.ElideRight; text: inv.modelData.channel + (inv.modelData.channel_tenant && inv.modelData.channel_tenant !== backend.tenantId() ? qsTr(" (External)") : ""); font.family: theme.font; font.pixelSize: 14; color: theme.text }
                                     Text { width: 180; elide: Text.ElideRight; text: inv.modelData.inviter; font.family: theme.font; font.pixelSize: 14; color: theme.text }
                                     Text { width: 160; elide: Text.ElideRight; text: inv.modelData.organization; font.family: theme.font; font.pixelSize: 14; color: theme.text }
                                     Text { width: 120; text: page.expiresIn(inv.modelData.expires); font.family: theme.font; font.pixelSize: 14; color: theme.text }
@@ -469,7 +469,8 @@ Rectangle {
     }
     function expiresIn(iso) {
         const d = Math.ceil(((Date.parse(iso) || Date.now()) - Date.now()) / 86400000)
-        return d <= 0 ? "" : d === 1 ? "1 day" : d + " days"
+        return d <= 0 ? "" : qsTr("%n days", "", d)
+
     }
 
     // ---- Analytics ----

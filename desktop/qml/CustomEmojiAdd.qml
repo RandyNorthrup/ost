@@ -29,8 +29,8 @@ Item {
 
     FileDialog {
         id: chooser
-        title: "Add emoji"
-        nameFilters: ["Images (*.png *.jpeg *.gif)"]
+        title: qsTr("Add emoji")
+        nameFilters: [qsTr("Images (*.png *.jpeg *.gif)")]
         onAccepted: root.prepare(String(selectedFile))
     }
 
@@ -82,9 +82,9 @@ Item {
         const list = cat ? JSON.parse(cat) : []
         return list.some(c => c.emoticons.some(e => (e.shortcuts || []).indexOf("(" + name + ")") >= 0 || e.id === name))
     }
-    readonly property string error: badName ? "Names must be lowercase and can’t contain special characters or spaces."
-        : (taken || backend.customEmojiResult === "duplicate") ? "An emoji with that name already exists. Try another name."
-        : backend.customEmojiResult === "error" ? "Something went wrong. Please try again." : ""
+    readonly property string error: badName ? qsTr("Names must be lowercase and can’t contain special characters or spaces.")
+        : (taken || backend.customEmojiResult === "duplicate") ? qsTr("An emoji with that name already exists. Try another name.")
+        : backend.customEmojiResult === "error" ? qsTr("Something went wrong. Please try again.") : ""
     readonly property bool adding: backend.customEmojiResult === "adding"
 
     Connections {
@@ -108,7 +108,7 @@ Item {
 
         Text {
             x: 24.7; y: 24.7; height: 28; verticalAlignment: Text.AlignVCenter
-            text: "Name your emoji"
+            text: qsTr("Name your emoji")
             font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text
             Accessible.role: Accessible.Heading
         }
@@ -119,13 +119,13 @@ Item {
             Text {
                 x: 40.6; y: 10.6; width: 495.3
                 wrapMode: Text.Wrap; lineHeight: 20; lineHeightMode: Text.FixedHeight
-                text: "Emoji you add will be available to everyone in your org. Your identity is linked to your emoji and visible to everyone."
+                text: qsTr("Emoji you add will be available to everyone in your org. Your identity is linked to your emoji and visible to everyone.")
                 font.family: theme.font; font.pixelSize: theme.base; color: theme.text
             }
         }
         Row {
             x: 24.7; y: 156.7
-            Text { y: 2.6; height: 16; text: "Name"; font.family: theme.font; font.pixelSize: 12; color: theme.textStrong }
+            Text { y: 2.6; height: 16; text: qsTr("Name"); font.family: theme.font; font.pixelSize: 12; color: theme.textStrong }
             Text { leftPadding: 2; text: "*"; font.family: theme.font; font.pixelSize: 14; color: theme.hc("#D13438", "#FFFFFF") }
         }
         Rectangle {
@@ -138,9 +138,9 @@ Item {
                 maximumLength: 60; clip: true; selectByMouse: true
                 onTextChanged: if (backend.customEmojiResult === "duplicate" || backend.customEmojiResult === "error") backend.customEmojiResult = ""
                 Keys.onReturnPressed: if (addButton.can) addButton.add()
-                Text { visible: !nameField.text; text: "(Enter a name for your emoji)"; font: nameField.font; color: theme.textSecondary }
+                Text { visible: !nameField.text; text: qsTr("(Enter a name for your emoji)"); font: nameField.font; color: theme.textSecondary }
                 Accessible.role: Accessible.EditableText
-                Accessible.name: "Name"
+                Accessible.name: qsTr("Name")
             }
             Rectangle {
                 visible: nameField.activeFocus || root.error.length > 0
@@ -155,24 +155,24 @@ Item {
             font.family: theme.font; font.pixelSize: 12; color: theme.hc("#C50F1F", "#FFFFFF")
             Accessible.role: Accessible.AlertMessage
         }
-        Text { x: 24.7; y: 273.3; height: 16; text: "Preview"; font.family: theme.font; font.pixelSize: 12; color: theme.textStrong }
+        Text { x: 24.7; y: 273.3; height: 16; text: qsTr("Preview"); font.family: theme.font; font.pixelSize: 12; color: theme.textStrong }
         // Teams' mock chat with the new emoji.
         Item {
             x: 24.7; y: 292; width: 536.7; height: 185
             Accessible.role: Accessible.Grouping
-            Accessible.name: "Emoji preview"
+            Accessible.name: qsTr("Emoji preview")
             Rectangle {
                 x: 32; y: 42; width: 28; height: 28; radius: 14
                 color: theme.pick("#E6E6E6", "#3D3D3D", "#000000")
                 Image { anchors.fill: parent; source: "https://teams.public.onecdn.static.microsoft/evergreen-assets/personal-expressions/v2/assets/emoticons/1f4ce_paperclip/default/50_f.png"; fillMode: Image.PreserveAspectFit; asynchronous: true }
                 Rectangle { x: 18; y: 18; width: 10; height: 10; radius: 5; color: theme.hc("#6BB700", "#000000"); border.color: theme.surface; border.width: 1.5 }
             }
-            Text { x: 72; y: 22; height: 16; text: "Clippy"; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+            Text { x: 72; y: 22; height: 16; text: qsTr("Clippy"); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
             Text { x: 113.1; y: 22; height: 16; text: "10:23 AM"; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
             Rectangle {
                 x: 72; y: 40; width: msg1.implicitWidth + 24 + 4 + 20; height: 36; radius: 6
                 color: theme.pick("#F5F5F5", "#292929", "#000000")
-                Text { id: msg1; x: 12; anchors.verticalCenter: parent.verticalCenter; text: "Great choice on the new emoji."; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
+                Text { id: msg1; x: 12; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Great choice on the new emoji."); font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
                 Image { x: msg1.x + msg1.implicitWidth + 4; anchors.verticalCenter: parent.verticalCenter; width: 20; height: 20; source: root.picture; fillMode: Image.PreserveAspectFit }
             }
             Rectangle {
@@ -186,7 +186,7 @@ Item {
                 anchors.right: parent.right; anchors.rightMargin: 58.6
                 y: 127; width: msg2.implicitWidth + 24 + 4 + 20; height: 36; radius: 6
                 color: theme.pick("#E8EBFA", "#2F2F4A", "#000000")
-                Text { id: msg2; x: 12; anchors.verticalCenter: parent.verticalCenter; text: "Thanks! I thought you’d like it."; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
+                Text { id: msg2; x: 12; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Thanks! I thought you’d like it."); font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
                 Image { x: msg2.x + msg2.implicitWidth + 4; anchors.verticalCenter: parent.verticalCenter; width: 20; height: 20; source: root.picture; fillMode: Image.PreserveAspectFit }
             }
         }
@@ -194,11 +194,11 @@ Item {
             id: hcFill1
             x: 375.3; y: 577.3; width: 96; height: 31.3; radius: 4
             color: cancelHover.hovered ? theme.menuHover : theme.surface; border.color: theme.stroke
-            Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.text) }
+            Text { anchors.centerIn: parent; text: qsTr("Cancel"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.text) }
             HoverHandler { id: cancelHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: dialog.close() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Cancel"
+            Accessible.name: qsTr("Cancel")
         }
         Rectangle {
             id: addButton
@@ -206,12 +206,12 @@ Item {
             function add() { backend.addCustomEmoji(root.name, root.picture) }
             x: 479.3; y: 577.3; width: 96; height: 31.3; radius: 4
             color: !can && !root.adding ? theme.bgDisabled : addHover.hovered ? theme.brandHover : theme.brandFill
-            Text { visible: !root.adding; anchors.centerIn: parent; text: "Add emoji"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(addButton, addButton.can ? "white" : theme.disabledStrong) }
+            Text { visible: !root.adding; anchors.centerIn: parent; text: qsTr("Add emoji"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(addButton, addButton.can ? "white" : theme.disabledStrong) }
             BusyIndicator { visible: root.adding; running: root.adding; anchors.centerIn: parent; width: 16; height: 16 }
             HoverHandler { id: addHover; cursorShape: addButton.can ? Qt.PointingHandCursor : Qt.ArrowCursor }
             TapHandler { enabled: addButton.can; onTapped: addButton.add() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Add emoji"
+            Accessible.name: qsTr("Add emoji")
         }
     }
 
@@ -226,16 +226,16 @@ Item {
         background: FluentSurface { depth: 64; radius: 4; color: theme.surface }
         contentItem: Column {
             spacing: 24
-            Text { width: 392; wrapMode: Text.Wrap; text: "Your org has hit the " + limitDialog.limit + " emoji limit."; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
+            Text { width: 392; wrapMode: Text.Wrap; text: qsTr("Your org has hit the %1 emoji limit.").arg(limitDialog.limit); font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
             Rectangle {
                 id: hcFill2
                 anchors.right: parent.right; width: 96; height: 31.3; radius: 4
                 color: okHover.hovered ? theme.brandHover : theme.brandFill
-                Text { anchors.centerIn: parent; text: "OK"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, "white") }
+                Text { anchors.centerIn: parent; text: qsTr("OK"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, "white") }
                 HoverHandler { id: okHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: { limitDialog.close(); dialog.close() } }
                 Accessible.role: Accessible.Button
-                Accessible.name: "OK"
+                Accessible.name: qsTr("OK")
             }
         }
     }

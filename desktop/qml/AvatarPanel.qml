@@ -106,7 +106,7 @@ Item {
                 Text {
                     visible: !preview.visible && !videoEffects.avatarId
                     anchors.centerIn: parent
-                    text: "Select an avatar"
+                    text: qsTr("Select an avatar")
                     font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold
                     color: theme.textSecondary
                 }
@@ -118,7 +118,7 @@ Item {
             FluentIcon { x: 10; y: 0; name: "info-16"; size: 16; color: theme.text }
             Text {
                 x: 41; y: 0; height: 16; verticalAlignment: Text.AlignVCenter
-                text: "Others won't see your avatar while you preview."
+                text: qsTr("Others won't see your avatar while you preview.")
                 font.family: theme.font; font.pixelSize: 12
                 color: theme.pick("#252423", "#FFFFFF", "#FFFFFF")
             }
@@ -127,7 +127,7 @@ Item {
             id: previewButton
             x: 10; width: root.width - 20; height: 32; radius: 4
             color: pvHover.hovered ? theme.rowHover : theme.input; border.color: theme.stroke
-            Text { anchors.centerIn: parent; text: root.previewing ? "Stop preview" : "Preview"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(previewButton, theme.text) }
+            Text { anchors.centerIn: parent; text: root.previewing ? qsTr("Stop preview") : qsTr("Preview"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(previewButton, theme.text) }
             HoverHandler { id: pvHover; cursorShape: Qt.PointingHandCursor }
             TapHandler {
                 onTapped: {
@@ -139,7 +139,7 @@ Item {
                 }
             }
             Accessible.role: Accessible.Button
-            Accessible.name: root.previewing ? "Stop preview" : "Preview"
+            Accessible.name: root.previewing ? qsTr("Stop preview") : qsTr("Preview")
         }
         Item { width: 1; height: 10 }
         Rectangle {
@@ -150,7 +150,7 @@ Item {
                 anchors.centerIn: parent
                 spacing: 8
                 BusyIndicator { width: 16; height: 16; running: !!videoEffects.avatarId && videoEffects.avatarCamera && root.applying && !backend.avatarDrawing(); visible: running }
-                Text { text: "Apply avatars"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(applyButton, "white") }
+                Text { text: qsTr("Apply avatars"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(applyButton, "white") }
             }
             HoverHandler { id: apHover; cursorShape: Qt.PointingHandCursor }
             TapHandler {
@@ -163,7 +163,7 @@ Item {
                 }
             }
             Accessible.role: Accessible.Button
-            Accessible.name: "Apply avatars"
+            Accessible.name: qsTr("Apply avatars")
         }
     }
     property bool applying: false

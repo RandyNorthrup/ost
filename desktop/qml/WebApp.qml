@@ -310,8 +310,8 @@ Item {
             visible: root.appId.length === 0
             anchors { right: parent.right; rightMargin: 16; verticalCenter: parent.verticalCenter }
             spacing: 4
-            HeaderButton { icon: "arrow-clockwise-20"; label: "Reload"; onClicked: web.reload() }
-            HeaderButton { icon: "open-20"; label: "Open in browser"; onClicked: Qt.openUrlExternally(web.url) }
+            HeaderButton { icon: "arrow-clockwise-20"; label: qsTr("Reload"); onClicked: web.reload() }
+            HeaderButton { icon: "open-20"; label: qsTr("Open in browser"); onClicked: Qt.openUrlExternally(web.url) }
         }
         // Teams' app header (entity-header, measured on winpc for Help,
         // 2026-11-09): 61 tall with a 0.67 #E0E0E0 line; the app's tile
@@ -367,14 +367,14 @@ Item {
                 FluentIcon { x: 6; anchors.verticalCenter: parent.verticalCenter; name: "share-screen-start-20"; size: 20; color: theme.onFill(presentButton, presentHover.hovered ? theme.brand : theme.textStrong) }
                 Text {
                     x: 32; anchors.verticalCenter: parent.verticalCenter
-                    text: "Present now"
+                    text: qsTr("Present now")
                     font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
                     color: theme.onFill(presentButton, presentHover.hovered ? theme.brand : theme.textStrong)
                 }
                 HoverHandler { id: presentHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: root.presentRequested() }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Present now"
+                Accessible.name: qsTr("Present now")
             }
             Rectangle {
                 id: teamsMore
@@ -391,12 +391,12 @@ Item {
                 HoverHandler { id: tmHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: teamsMore.openMenu() }
                 Accessible.role: Accessible.Button
-                Accessible.name: "More " + root.appName + " actions"
+                Accessible.name: qsTr("More %1 actions").arg(root.appName)
                 // Teams' order: Reload app, a divider, About, Share app.
                 MenuPopup {
                     id: appMenu
-                    items: [{ label: "Reload app", icon: "arrow-clockwise-20" }, { separator: true },
-                            { label: "About", icon: "info-20" }, { label: "Share app", icon: "share-20" }]
+                    items: [{ label: qsTr("Reload app"), icon: "arrow-clockwise-20" }, { separator: true },
+                            { label: qsTr("About"), icon: "info-20" }, { label: qsTr("Share app"), icon: "share-20" }]
                     onPicked: i => {
                         if (i === 0) root.reload()
                         else if (i === 2) aboutDialog.show(root.appId)
@@ -568,9 +568,9 @@ Item {
         Row {
             anchors { right: parent.right; rightMargin: 16; verticalCenter: parent.verticalCenter }
             spacing: 4
-            PageButton { icon: "apps"; tip: "Shared locations"; onClicked: locations.open() }
-            PageButton { icon: "select-object-20"; tip: "Copy component"; onClicked: { copier.text = root.home; copier.selectAll(); copier.copy() } }
-            PageButton { icon: "people-checkmark-20"; tip: "See who has access"
+            PageButton { icon: "apps"; tip: qsTr("Shared locations"); onClicked: locations.open() }
+            PageButton { icon: "select-object-20"; tip: qsTr("Copy component"); onClicked: { copier.text = root.home; copier.selectAll(); copier.copy() } }
+            PageButton { icon: "people-checkmark-20"; tip: qsTr("See who has access")
                 onClicked: web.runJavaScript("[...document.querySelectorAll('button')].find(b => b.getAttribute('aria-label') === 'Share' || b.textContent.trim() === 'Share')?.click()") }
         }
         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: theme.dividerSoft }
@@ -582,7 +582,7 @@ Item {
             background: Rectangle { radius: 8; color: theme.menu; border.color: theme.dividerSoft }
             contentItem: Column {
                 spacing: 6
-                Text { text: "Shared locations"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
+                Text { text: qsTr("Shared locations"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
                 Text { text: root.location; font.family: theme.font; font.pixelSize: theme.base; color: theme.textStrong }
             }
         }
@@ -593,11 +593,11 @@ Item {
         z: 2
         anchors { left: parent.left; leftMargin: 40; bottom: parent.bottom; bottomMargin: 24 }
         spacing: 12
-        InsertButton { icon: "table-20"; label: "Table"; onClicked: root.insertOnPage("table") }
-        InsertButton { icon: "text-bullets-20"; label: "Bulleted list"; onClicked: root.insertOnPage("bulleted list") }
-        InsertButton { icon: "task-list-square-20"; label: "Checklist"; onClicked: root.insertOnPage("checklist") }
-        InsertButton { icon: "checkmark-circle-20"; label: "Task list"; onClicked: root.insertOnPage("task list") }
-        InsertButton { icon: "vote-20"; label: "Voting table"; onClicked: root.insertOnPage("voting table") }
+        InsertButton { icon: "table-20"; label: qsTr("Table"); onClicked: root.insertOnPage("table") }
+        InsertButton { icon: "text-bullets-20"; label: qsTr("Bulleted list"); onClicked: root.insertOnPage("bulleted list") }
+        InsertButton { icon: "task-list-square-20"; label: qsTr("Checklist"); onClicked: root.insertOnPage("checklist") }
+        InsertButton { icon: "checkmark-circle-20"; label: qsTr("Task list"); onClicked: root.insertOnPage("task list") }
+        InsertButton { icon: "vote-20"; label: qsTr("Voting table"); onClicked: root.insertOnPage("voting table") }
         InsertButton { icon: "more-20"; label: ""; onClicked: root.insertOnPage("") }
     }
     WebEngineView {
@@ -714,7 +714,7 @@ Item {
         HoverHandler { id: ibh; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: ib.clicked() }
         Accessible.role: Accessible.Button
-        Accessible.name: label || "More"
+        Accessible.name: label || qsTr("More")
     }
     component HeaderButton: Rectangle {
         id: hb

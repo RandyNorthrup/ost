@@ -51,10 +51,54 @@ pub fn app_languages() -> &'static [AppLanguage] {
     L.get_or_init(|| serde_json::from_str(include_str!("regional_languages.json")).expect("regional_languages.json"))
 }
 
-/// The app languages OST's own text is written in (its strings are
-/// English): the ones its language picker offers.
+/// The app languages the language picker offers: all of Teams'. OST's
+/// text in each is Teams' own (desktop/i18n's catalogues, one per string
+/// locale; see `string_locale`).
 pub fn available_app_languages() -> Vec<&'static AppLanguage> {
-    app_languages().iter().filter(|l| l.code.starts_with("en-")).collect()
+    app_languages().iter().collect()
+}
+
+/// The locales Teams ships its UI strings in (its `*-locale-<locale>-*`
+/// string resources); OST has a catalogue for each.
+pub const STRING_LOCALES: [&str; 63] = [
+    "af-za", "ar-sa", "az-latn-az", "bg-bg", "bs-latn-ba", "ca-es", "ca-es-valencia", "cs-cz", "cy-gb", "da-dk", "de-de", "el-gr", "en-gb",
+    "en-us", "es-es", "es-mx", "et-ee", "eu-es", "fa-ir", "fi-fi", "fil-ph", "fr-ca", "fr-fr", "gl-es", "he-il", "hi-in", "hr-hr", "hu-hu",
+    "id-id", "is-is", "it-it", "ja-jp", "ka-ge", "kk-kz", "km-kh", "ko-kr", "lo-la", "lt-lt", "lv-lv", "mk-mk", "ms-my", "mt-mt", "nb-no",
+    "nl-nl", "nn-no", "pl-pl", "pt-br", "pt-pt", "ro-ro", "ru-ru", "sk-sk", "sl-si", "sq-al", "sr-cyrl-rs", "sr-latn-rs", "sv-se", "th-th",
+    "tr-tr", "uk-ua", "uz-latn-uz", "vi-vn", "zh-cn", "zh-tw",
+];
+
+/// The string locale Teams shows a language in, as its loader picks it:
+/// the language itself if Teams has its strings, else its table's
+/// fallback for the language ("de-at" -> "de-de", "es-ar" -> "es-mx",
+/// "zh-sg" -> "zh-cn"), else the fallback for its base language, else
+/// en-us.
+pub fn string_locale(code: &str) -> &'static str {
+    static MAP: std::sync::OnceLock<std::collections::HashMap<String, String>> = std::sync::OnceLock::new();
+    let map = MAP.get_or_init(|| serde_json::from_str(include_str!("regional_locale_map.json")).expect("regional_locale_map.json"));
+    let c = code.trim().replace('_', "-").to_lowercase();
+    let known = |l: &str| STRING_LOCALES.iter().copied().find(|s| *s == l);
+    if let Some(l) = known(&c) {
+        return l;
+    }
+    if let Some(l) = map.get(&c).and_then(|l| known(l)) {
+        return l;
+    }
+    let base = c.split('-').next().unwrap_or_default();
+    map.get(base).and_then(|l| known(l)).unwrap_or("en-us")
+}
+
+/// Whether Teams lays a language out right to left (its loader's list of
+/// right-to-left languages, by base language).
+pub fn is_rtl(code: &str) -> bool {
+    const RTL: [&str; 70] = [
+        "aao", "abh", "abv", "acm", "acq", "acw", "acx", "acy", "adf", "ads", "ae", "aeb", "aec", "afb", "ajp", "apc", "apd", "ar", "arb",
+        "arc", "arq", "ars", "ary", "arz", "auz", "avl", "ayh", "ayl", "ayn", "ayp", "bbz", "bcc", "bqi", "ckb", "dv", "fa", "glk", "hbo",
+        "he", "jpr", "ku", "men", "mzn", "nqo", "pbt", "pbu", "peo", "pes", "pga", "pnb", "prd", "prp", "prs", "ps", "pst", "sam", "sd",
+        "shu", "sqr", "ssh", "ug", "ur", "xaa", "xmn", "ydd", "yhd", "yi", "yih", "yud", "pseudo_rtl",
+    ];
+    let base = code.trim().split(['-', '_']).next().unwrap_or_default().to_lowercase();
+    RTL.contains(&base.as_str())
 }
 
 /// Teams' default formats (en-US, Windows).
@@ -329,6 +373,27 @@ mod tests {
     }
 
     #[test]
+    fn languages_map_to_teams_string_locales() {
+        assert_eq!(string_locale("de-at"), "de-de");
+        assert_eq!(string_locale("es-AR"), "es-mx");
+        assert_eq!(string_locale("zh-sg"), "zh-cn");
+        assert_eq!(string_locale("zh_HK"), "zh-tw");
+        assert_eq!(string_locale("en-029"), "en-us");
+        assert_eq!(string_locale("en-au"), "en-gb");
+        assert_eq!(string_locale("sv-fi"), "sv-se");
+        assert_eq!(string_locale("ca-es-valencia"), "ca-es-valencia");
+        assert_eq!(string_locale("pt"), "pt-br");
+        assert_eq!(string_locale("xx-yy"), "en-us");
+        // Every app language has Teams' strings: its own or a fallback's.
+        for l in app_languages() {
+            let s = string_locale(&l.code);
+            assert!(s != "en-us" || l.code.starts_with("en-"), "{} has no strings", l.code);
+        }
+        assert!(is_rtl("ar-sa") && is_rtl("he-IL") && is_rtl("fa_IR") && is_rtl("ur") && !is_rtl("en-us"));
+        assert_eq!(app_languages().iter().filter(|l| is_rtl(&l.code)).count(), 3);
+    }
+
+    #[test]
     fn year_goes_as_teams_strips_it() {
         assert_eq!(without_year("M/d/yyyy", "en-US"), "M/d");
         assert_eq!(without_year("dd/MM/yyyy", "en-GB"), "dd/MM");
@@ -353,7 +418,7 @@ mod tests {
         let t = chrono::Utc.with_ymd_and_hms(2026, 1, 31, 16, 9, 5).unwrap();
         assert_eq!(fmt(&t, "M/d/yyyy h:mm tt"), "1/31/2026 4:09 PM");
         assert_eq!(fmt(&t, "dd/MM/yyyy HH:mm"), "31/01/2026 16:09");
-        assert_eq!(available_app_languages().len(), 16);
+        assert_eq!(available_app_languages().len(), 109);
         assert!(available_app_languages().iter().any(|l| l.code == "en-us"));
     }
 }

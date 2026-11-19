@@ -42,7 +42,7 @@ Rectangle {
 
     Text {
         x: 20; y: 17
-        text: "Activity"
+        text: qsTr("Activity")
         font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold
         color: theme.text
     }
@@ -51,7 +51,7 @@ Rectangle {
         y: 14
         spacing: 0
         Repeater {
-            model: [{ icon: "more-20", label: "More options" }, { icon: "search-20", label: "Filter" }]
+            model: [{ icon: "more-20", label: qsTr("More options") }, { icon: "search-20", label: qsTr("Filter") }]
             Rectangle {
                 id: hcFill1
                 required property var modelData
@@ -71,7 +71,7 @@ Rectangle {
                 MenuPopup {
                     id: actMenu
                     x: -200; y: parent.height + 4
-                    items: [{ label: "Mark all as read", icon: "checkmark-12" }]
+                    items: [{ label: qsTr("Mark all as read"), icon: "checkmark-12" }]
                     onPicked: root.markAllRead()
                 }
             }
@@ -82,7 +82,7 @@ Rectangle {
         x: 16; y: 78
         spacing: 8
         Repeater {
-            model: [{ l: "Unread", k: "unread" }, { l: "@Mentions", k: "mentions" }, { l: "Tag mentions", k: "tags" }]
+            model: [{ l: qsTr("Unread"), k: "unread" }, { l: qsTr("@Mentions"), k: "mentions" }, { l: qsTr("Tag mentions"), k: "tags" }]
             delegate: Rectangle {
                 id: chipRect
                 required property var modelData
@@ -121,8 +121,8 @@ Rectangle {
             clip: true
             onTextChanged: root.nameFilter = text.trim().toLowerCase()
             Keys.onEscapePressed: { text = ""; root.filtering = false }
-            Text { visible: !actFilter.text; text: "Filter"; color: theme.textTertiary; font: actFilter.font }
-            Accessible.name: "Filter activity"
+            Text { visible: !actFilter.text; text: qsTr("Filter"); color: theme.textTertiary; font: actFilter.font }
+            Accessible.name: qsTr("Filter activity")
         }
     }
 
@@ -247,7 +247,7 @@ Rectangle {
                 x: 72.7; y: body.y + body.height + 8
                 spacing: 8
                 Repeater {
-                    model: ["Call", "Chat"]
+                    model: [qsTr("Call"), qsTr("Chat")]
                     Rectangle {
                         id: hcFill3
                         required property string modelData
@@ -261,7 +261,7 @@ Rectangle {
                             color: theme.onFill(hcFill3, theme.text)
                         }
                         HoverHandler { id: bh; cursorShape: Qt.PointingHandCursor }
-                        TapHandler { onTapped: modelData === "Call" ? root.callBack(it.modelData) : root.chatWith(it.modelData) }
+                        TapHandler { onTapped: modelData === qsTr("Call") ? root.callBack(it.modelData) : root.chatWith(it.modelData) }
                         Accessible.role: Accessible.Button
                         Accessible.name: modelData
                     }
@@ -275,7 +275,7 @@ Rectangle {
         Text {
             visible: root.shown.length === 0
             x: 20; y: 8
-            text: root.items.length === 0 ? "Nothing new yet" : "Nothing matches"
+            text: root.items.length === 0 ? qsTr("Nothing new yet") : qsTr("Nothing matches")
             font.family: theme.font; font.pixelSize: theme.base
             color: theme.textSecondary
         }

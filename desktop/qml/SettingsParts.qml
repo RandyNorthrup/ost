@@ -141,7 +141,7 @@ Item {
             id: stateText
             visible: tg.stateLabel
             anchors.verticalCenter: parent.verticalCenter
-            text: tg.on ? "On" : "Off"
+            text: tg.on ? qsTr("On", "settings:kbps2mjy6") : qsTr("Off", "settings:k5gb53hl4")
             font.family: theme.font; font.pixelSize: 14
             color: tg.usable ? theme.text : theme.disabled
         }

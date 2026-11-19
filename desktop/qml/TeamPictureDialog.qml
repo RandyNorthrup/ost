@@ -33,13 +33,13 @@ Popup {
             if (r.op !== "team-picture" || r.channel !== dlg.teamThread || !dlg.saving) return
             dlg.saving = false
             if (r.ok) dlg.close()
-            else backend.toast("Something went wrong on our end. Please try again.", "error")
+            else backend.toast(qsTr("Something went wrong on our end. Please try again."), "error")
         }
     }
     FileDialog {
         id: files
-        title: "Upload"
-        nameFilters: ["Images (*.png *.jpg *.jpeg *.gif *.bmp)"]
+        title: qsTr("Upload")
+        nameFilters: [qsTr("Images (*.png *.jpg *.jpeg *.gif *.bmp)")]
         onAccepted: dlg.pending = selectedFile.toString()
     }
 
@@ -53,7 +53,7 @@ Popup {
     Item {
         anchors.fill: parent
         Text {
-            text: "Change team picture"
+            text: qsTr("Change team picture")
             font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold
             lineHeight: 25.7; lineHeightMode: Text.FixedHeight
             color: theme.text
@@ -81,14 +81,14 @@ Popup {
         Row {
             x: (parent.width - width) / 2; y: 309.7
             spacing: 15.3
-            Plain { icon: "arrow-upload-20"; text: "Upload"; onClicked: files.open() }
-            Plain { icon: "delete-20"; text: "Remove"; onClicked: dlg.pending = "remove" }
+            Plain { icon: "arrow-upload-20"; text: qsTr("Upload"); onClicked: files.open() }
+            Plain { icon: "delete-20"; text: qsTr("Remove"); onClicked: dlg.pending = "remove" }
         }
         Row {
             x: 20; y: 405
             spacing: 18
-            Btn { text: "Close"; onClicked: dlg.close() }
-            Btn { text: "Save"; primary: true; enabled: dlg.pending !== "" && !dlg.saving; onClicked: dlg.save() }
+            Btn { text: qsTr("Close"); onClicked: dlg.close() }
+            Btn { text: qsTr("Save"); primary: true; enabled: dlg.pending !== "" && !dlg.saving; onClicked: dlg.save() }
         }
     }
 

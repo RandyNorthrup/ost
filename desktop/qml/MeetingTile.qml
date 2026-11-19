@@ -180,7 +180,7 @@ Item {
                 Text { anchors.verticalCenter: parent.verticalCenter; text: "\u270B"; font.pixelSize: 16 }
             }
             Accessible.role: Accessible.StaticText
-            Accessible.name: "Hand raised"
+            Accessible.name: qsTr("Hand raised")
         }
         // A reaction: Teams' 84 px picture, centred, its top at the middle.
         Image {
@@ -253,7 +253,7 @@ Item {
                     visible: !!tagRow.signIcon
                     name: tagRow.signIcon; size: 16; color: theme.onFill(hcFill2, "white")
                     Accessible.role: Accessible.Graphic
-                    Accessible.name: mt.person.sign_role === "dhhSigner" ? "Signer participant" : "Sign language interpreter participant"
+                    Accessible.name: mt.person.sign_role === "dhhSigner" ? qsTr("Signer participant") : qsTr("Sign language interpreter participant")
                 }
                 Item { visible: !!mt.person.guest; width: 4; height: 1 }
                 FluentIcon {
@@ -261,7 +261,7 @@ Item {
                     visible: !!mt.person.guest
                     name: "person-unverified-16-filled"; size: 16; color: theme.onFill(hcFill2, "white")
                     Accessible.role: Accessible.Graphic
-                    Accessible.name: "Unverified"
+                    Accessible.name: qsTr("Unverified")
                 }
                 // Compact (no name): Teams' measured gaps are 8 after a
                 // guest's glyph and 6 before your own mic.

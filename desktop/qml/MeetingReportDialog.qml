@@ -63,7 +63,7 @@ Popup {
         }
     }
 
-    Text { x: 24.67; y: 24.67; height: 31.33; verticalAlignment: Text.AlignVCenter; text: root.personMode ? "Report this person" : "Report a security concern"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+    Text { x: 24.67; y: 24.67; height: 31.33; verticalAlignment: Text.AlignVCenter; text: root.personMode ? qsTr("Report this person") : qsTr("Report a security concern"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
     Rectangle {
         id: hcFill1
         x: 543.33; y: 24.67; width: 32; height: 31.33; radius: 4
@@ -72,7 +72,7 @@ Popup {
         HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.close() }
         Accessible.role: Accessible.Button
-        Accessible.name: "Close"
+        Accessible.name: qsTr("Close")
     }
     // The cards carry Fluent's shadow2 (measured from Teams' styles).
     FluentSurface {
@@ -117,7 +117,7 @@ Popup {
         visible: root.failed
         x: 24.67; y: (root.personMode ? 112 : 140) + 16; height: 20; width: 550.67
         verticalAlignment: Text.AlignVCenter
-        text: "Failed to submit report. Please try again."
+        text: qsTr("Failed to submit report. Please try again.")
         font.family: theme.font; font.pixelSize: 14
         color: theme.redForeground1
     }
@@ -133,14 +133,14 @@ Popup {
             font.family: theme.font; font.pixelSize: 14; color: theme.text
             selectByMouse: true
             onTextChanged: if (length > 250) remove(250, length)
-            Text { visible: !why.text; text: "Enter an explanation (optional)"; font: why.font; color: theme.textSecondary }
+            Text { visible: !why.text; text: qsTr("Enter an explanation (optional)"); font: why.font; color: theme.textSecondary }
             Accessible.role: Accessible.EditableText
-            Accessible.name: "Enter an explanation (optional)"
+            Accessible.name: qsTr("Enter an explanation (optional)")
         }
         Rectangle { visible: why.activeFocus; anchors.bottom: parent.bottom; width: parent.width; height: 2; color: theme.brand }
     }
-    Text { x: 24.67; y: root.counterTop; height: 20; verticalAlignment: Text.AlignVCenter; text: why.length + "/250 maximum characters"; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
-    Text { visible: !root.personMode; x: 24.67; y: root.counterTop + 36; height: 20; verticalAlignment: Text.AlignVCenter; text: "Report participants (optional)"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+    Text { x: 24.67; y: root.counterTop; height: 20; verticalAlignment: Text.AlignVCenter; text: qsTr("%1/%2 maximum characters").arg(why.length).arg(250); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+    Text { visible: !root.personMode; x: 24.67; y: root.counterTop + 36; height: 20; verticalAlignment: Text.AlignVCenter; text: qsTr("Report participants (optional)"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
     // The participant picker.
     Rectangle {
         id: picker
@@ -169,7 +169,7 @@ Popup {
                     }
                     TapHandler { onTapped: root.chosen = root.chosen.filter(p => p.id !== modelData.id) }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Remove " + modelData.name
+                    Accessible.name: qsTr("Remove %1").arg(modelData.name)
                 }
             }
             TextInput {
@@ -180,9 +180,9 @@ Popup {
                 clip: true
                 onTextChanged: if (activeFocus) list.open()
                 onActiveFocusChanged: if (activeFocus) list.open()
-                Text { visible: !search.text; text: "Search participants"; font: search.font; color: theme.textSecondary }
+                Text { visible: !search.text; text: qsTr("Search participants"); font: search.font; color: theme.textSecondary }
                 Accessible.role: Accessible.ComboBox
-                Accessible.name: "Search participants"
+                Accessible.name: qsTr("Search participants")
             }
         }
         FluentIcon { x: parent.width - 28; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-20"; size: 16; color: theme.textSecondary }
@@ -225,7 +225,7 @@ Popup {
         x: 24.67; y: root.disclaimerTop; width: 550.67
         wrapMode: Text.Wrap
         lineHeight: 16; lineHeightMode: Text.FixedHeight
-        text: "This message will be shared for review. The review process is fully determined by your organization."
+        text: qsTr("This message will be shared for review. The review process is fully determined by your organization.")
         font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary
     }
     Row {
@@ -234,21 +234,21 @@ Popup {
             id: hcFill3
             width: 96; height: 31.33; radius: 4
             color: cancelHover.hovered && !root.sending ? theme.menuHover : theme.surface; border.color: theme.stroke; border.width: 0.67
-            Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, root.sending ? theme.disabled : theme.text) }
+            Text { anchors.centerIn: parent; text: qsTr("Cancel"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, root.sending ? theme.disabled : theme.text) }
             HoverHandler { id: cancelHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { enabled: !root.sending; onTapped: root.close() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Cancel"
+            Accessible.name: qsTr("Cancel")
         }
         Rectangle {
             id: hcFill4
             width: 96; height: 31.33; radius: 4
             color: root.sending ? theme.bgDisabled : reportHover.hovered ? theme.brandHover : theme.brandFill
-            Text { anchors.centerIn: parent; text: "Report"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, root.sending ? theme.disabled : "white") }
+            Text { anchors.centerIn: parent; text: qsTr("Report"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, root.sending ? theme.disabled : "white") }
             HoverHandler { id: reportHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { enabled: !root.sending; onTapped: root.chatThread ? backend.reportMeetingChat(root.chatThread, root.chatIcal, why.text, JSON.stringify(root.chosen.map(p => p.id))) : backend.reportMeeting(why.text, JSON.stringify(root.chosen.map(p => p.id))) }
             Accessible.role: Accessible.Button
-            Accessible.name: "Report"
+            Accessible.name: qsTr("Report")
         }
     }
 }

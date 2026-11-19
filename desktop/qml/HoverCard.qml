@@ -86,21 +86,21 @@ Popup {
     Timer { id: openTimer; interval: 640; onTriggered: if (root.pendingItem) root.showFor(root.pendingWho, root.pendingItem) }
     Timer { id: closeTimer; interval: 500; onTriggered: if (!cardHover.hovered) root.close() }
 
-    readonly property var statusLabels: ({ Available: "Available", Busy: "Busy", DoNotDisturb: "Do not disturb", BeRightBack: "Be right back", Away: "Away", Offline: "Offline", OffWork: "Offline" })
+    readonly property var statusLabels: ({ Available: qsTr("Available"), Busy: qsTr("Busy"), DoNotDisturb: qsTr("Do not disturb"), BeRightBack: qsTr("Be right back"), Away: qsTr("Away"), Offline: qsTr("Offline"), OffWork: qsTr("Offline") })
     function relative(iso) {
         const t = Date.parse(iso || ""); if (!t) return ""
         const m = Math.round((Date.now() - t) / 60000)
-        if (m < 60) return m <= 1 ? "1 min" : m + " min"
-        const h = Math.round(m / 60); if (h < 24) return h + " h"
-        const d = Math.round(h / 24); return d === 1 ? "1 day" : d + " days"
+        if (m < 60) return m <= 1 ? qsTr("1 min") : qsTr("%1 min").arg(m)
+        const h = Math.round(m / 60); if (h < 24) return qsTr("%1 h").arg(h)
+        const d = Math.round(h / 24); return qsTr("%n days", "", d)
     }
     // Teams' compact card: "Last seen 22 h ago" (the full card says "22
     // hours").
     readonly property string availability: {
         const a = p.availability || ""
         const offline = !a || a === "Offline" || a === "PresenceUnknown"
-        let s = offline ? (p.lastActive ? "Last seen " + relative(p.lastActive) + " ago" : "Offline") : (statusLabels[a] || a)
-        if (p.outOfOffice) s = "Out of office"
+        let s = offline ? (p.lastActive ? qsTr("Last seen %1").arg(qsTr("%1 ago").arg(relative(p.lastActive))) : qsTr("Offline")) : (statusLabels[a] || a)
+        if (p.outOfOffice) s = qsTr("Out of office")
         return s
     }
 
@@ -131,12 +131,12 @@ Popup {
                 x: 24; y: 106; spacing: 8
                 Repeater {
                     model: [
-                        { icon: "chat-20", label: "Start a chat with ", act: "chat" },
-                        { icon: "org-20", label: "Navigate to the org chart of ", act: "org" },
-                        { icon: "video-20", label: "Start a video call with ", act: "video" },
-                        { icon: "call-20", label: "Start an audio call with ", act: "call" },
+                        { icon: "chat-20", label: qsTr("Start a chat with %1"), act: "chat" },
+                        { icon: "org-20", label: qsTr("Navigate to the org chart of %1"), act: "org" },
+                        { icon: "video-20", label: qsTr("Start a video call with %1"), act: "video" },
+                        { icon: "call-20", label: qsTr("Start an audio call with %1"), act: "call" },
                         // LinkedIn's logo, as the full card's: its people search.
-                        { icon: "linkedin-logo", label: "Find LinkedIn profile for ", act: "linkedin" }
+                        { icon: "linkedin-logo", label: qsTr("Find LinkedIn profile for %1"), act: "linkedin" }
                     ]
                     Rectangle {
                         id: hcFill1
@@ -154,9 +154,9 @@ Popup {
                                 else { root.close(); root.startCall(root.mri, n, modelData.act === "video") }
                             }
                         }
-                        ToolTip.visible: hah.hovered; ToolTip.delay: 500; ToolTip.text: modelData.label + (root.displayName)
+                        ToolTip.visible: hah.hovered; ToolTip.delay: 500; ToolTip.text: modelData.label.arg(root.displayName)
                         Accessible.role: Accessible.Button
-                        Accessible.name: modelData.label + (root.displayName)
+                        Accessible.name: modelData.label.arg(root.displayName)
                     }
                 }
             }
@@ -167,10 +167,10 @@ Popup {
                     id: quick
                     x: 10; width: parent.width - 20; anchors.verticalCenter: parent.verticalCenter
                     clip: true; font.family: theme.font; font.pixelSize: 14; color: theme.text
-                    Text { visible: !quick.text; text: "Send a quick message"; font: quick.font; color: theme.textSecondary }
+                    Text { visible: !quick.text; text: qsTr("Send a quick message"); font: quick.font; color: theme.textSecondary }
                     Keys.onReturnPressed: send.go()
                     Accessible.role: Accessible.EditableText
-                    Accessible.name: "Send a quick message"
+                    Accessible.name: qsTr("Send a quick message")
                 }
             }
             Rectangle {
@@ -182,7 +182,7 @@ Popup {
                 HoverHandler { id: sh; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: send.go() }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Send"
+                Accessible.name: qsTr("Send")
             }
             Rectangle {
                 x: 14; y: 208; width: 304; height: 38; radius: 4
@@ -196,12 +196,12 @@ Popup {
             }
             Row {
                 x: 25; y: 262; height: 22; spacing: 6
-                Text { anchors.verticalCenter: parent.verticalCenter; text: "Profile"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.Bold; color: theme.text }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Profile"); font.family: theme.font; font.pixelSize: 12; font.weight: Font.Bold; color: theme.text }
                 FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "chevron-right-12"; size: 12; color: theme.text }
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: root.full("profile") }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Profile"
+                Accessible.name: qsTr("Profile")
             }
             Rectangle {
                 id: hcFill2
@@ -221,7 +221,7 @@ Popup {
                     HoverHandler { id: ch; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: backend.copyText(parent.parent.mail) }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Copy email"
+                    Accessible.name: qsTr("Copy email")
                 }
                 Accessible.role: Accessible.Link
                 Accessible.name: mail
@@ -230,11 +230,11 @@ Popup {
                 id: hcFill4
                 x: 9; y: 328; width: 92; height: 32; radius: 4
                 color: smh.hovered ? theme.menuHover : "transparent"
-                Text { x: 16; anchors.verticalCenter: parent.verticalCenter; text: "Show more"; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(hcFill4, theme.brand) }
+                Text { x: 16; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Show more"); font.family: theme.font; font.pixelSize: 12; color: theme.onFill(hcFill4, theme.brand) }
                 HoverHandler { id: smh; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: root.full("profile") }
                 Accessible.role: Accessible.Link
-                Accessible.name: "Show more"
+                Accessible.name: qsTr("Show more")
             }
         }
     }

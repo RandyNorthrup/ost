@@ -63,9 +63,9 @@ Popup {
     property bool loading: false
     property var hits: []
     readonly property var items: [
-        { key: "cloud", label: "Attach cloud files", icon: "teams-attach-cloud-20", size: 14 },
-        { key: "browse", label: "Browse Teams and Channels", icon: "people-team-20", size: 16, hidden: !channel },
-        { key: "upload", label: "Upload from this device", icon: "arrow-upload-20", size: 16 }
+        { key: "cloud", label: qsTr("Attach cloud files"), icon: "teams-attach-cloud-20", size: 14 },
+        { key: "browse", label: qsTr("Browse Teams and Channels"), icon: "people-team-20", size: 16, hidden: !channel },
+        { key: "upload", label: qsTr("Upload from this device"), icon: "arrow-upload-20", size: 16 }
     ].filter(i => !i.hidden)
     readonly property bool noResults: !!query && !loading && hits.length === 0
     readonly property real firstRowY: 399.6 - (items.length - 1) * 32
@@ -111,9 +111,9 @@ Popup {
             font.family: theme.font; font.pixelSize: 14; color: theme.text; clip: true
             selectByMouse: true
             onTextChanged: typing.restart()
-            Text { visible: !field.text; text: "Search cloud files"; font: field.font; color: theme.textSecondary }
+            Text { visible: !field.text; text: qsTr("Search cloud files"); font: field.font; color: theme.textSecondary }
             Accessible.role: Accessible.EditableText
-            Accessible.name: "Search cloud files"
+            Accessible.name: qsTr("Search cloud files")
         }
         Rectangle {
             id: clear
@@ -124,7 +124,7 @@ Popup {
             HoverHandler { id: clearHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: { field.text = ""; field.forceActiveFocus() } }
             Accessible.role: Accessible.Button
-            Accessible.name: "Clear search"
+            Accessible.name: qsTr("Clear search")
         }
     }
 
@@ -132,7 +132,7 @@ Popup {
     Text {
         visible: pop.hits.length > 0 && !pop.query
         x: 8.2; y: 44.7; height: 25; verticalAlignment: Text.AlignVCenter
-        text: "Recent cloud files"
+        text: qsTr("Recent cloud files")
         font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text
         Accessible.role: Accessible.Heading
         Accessible.name: text
@@ -191,7 +191,7 @@ Popup {
             Text {
                 width: 200; anchors.horizontalCenter: parent.horizontalCenter
                 horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
-                text: "Your recent files suggestions will show up here soon."
+                text: qsTr("Your recent files suggestions will show up here soon.")
                 lineHeight: 20; lineHeightMode: Text.FixedHeight
                 font.family: theme.font; font.pixelSize: 14; color: theme.pick("#424242", "#D6D6D6", "#FFFFFF")
             }
@@ -208,13 +208,13 @@ Popup {
         }
         Text {
             y: 244.2; width: parent.width; horizontalAlignment: Text.AlignHCenter
-            text: "We couldn't find any results"
+            text: qsTr("We couldn't find any results")
             lineHeight: 22; lineHeightMode: Text.FixedHeight
             font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text
         }
         Text {
             y: 274.2; width: parent.width; horizontalAlignment: Text.AlignHCenter
-            text: "Check for spelling or try another search keyword"
+            text: qsTr("Check for spelling or try another search keyword")
             lineHeight: 16; lineHeightMode: Text.FixedHeight
             font.family: theme.font; font.pixelSize: 12; color: theme.pick("#424242", "#D6D6D6", "#FFFFFF")
         }
@@ -222,8 +222,8 @@ Popup {
             y: 306.2; width: parent.width
             spacing: 12
             Repeater {
-                model: [{ key: "upload", label: "Upload from this device", icon: "arrow-upload-16" },
-                        { key: "cloud", label: "Attach cloud files", icon: "cloud-16" }]
+                model: [{ key: "upload", label: qsTr("Upload from this device"), icon: "arrow-upload-16" },
+                        { key: "cloud", label: qsTr("Attach cloud files"), icon: "cloud-16" }]
                 Rectangle {
                     id: nb
                     required property var modelData

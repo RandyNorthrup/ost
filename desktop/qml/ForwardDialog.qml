@@ -59,11 +59,11 @@ Popup {
         return i < 0 || !q ? esc(name) : esc(name.slice(0, i)) + "<b>" + esc(name.slice(i, i + q.length)) + "</b>" + esc(name.slice(i + q.length))
     }
 
-    Text { x: 33; y: 33; height: 28; verticalAlignment: Text.AlignVCenter; text: "Forward this message"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
-    Text { x: 33; y: 61; height: 28; verticalAlignment: Text.AlignVCenter; text: "You can forward to any chat or channel."; font.family: theme.font; font.pixelSize: theme.base; color: theme.textSecondary }
+    Text { x: 33; y: 33; height: 28; verticalAlignment: Text.AlignVCenter; text: qsTr("Forward this message"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+    Text { x: 33; y: 61; height: 28; verticalAlignment: Text.AlignVCenter; text: qsTr("You can forward to any chat or channel."); font.family: theme.font; font.pixelSize: theme.base; color: theme.textSecondary }
     Row {
         x: 33; y: 110; height: 25; spacing: 4
-        Text { anchors.verticalCenter: parent.verticalCenter; text: "Add recipients"; font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
+        Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Add recipients"); font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
         Text { anchors.verticalCenter: parent.verticalCenter; text: "*"; font.family: theme.font; font.pixelSize: theme.small; color: theme.redForeground3 }
     }
     // Recipient picker
@@ -89,7 +89,7 @@ Popup {
                         TapHandler { onTapped: { const p = root.picked.slice(); p.splice(chip.index, 1); root.picked = p; search.forceActiveFocus() } }
                     }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Remove " + modelData.name
+                    Accessible.name: qsTr("Remove %1").arg(modelData.name)
                 }
             }
             TextInput {
@@ -101,9 +101,9 @@ Popup {
                 font.family: theme.font; font.pixelSize: theme.base; color: theme.text
                 onTextChanged: { root.query = text; if (text.trim().length) backend.shareAction("fw:recipients", "{}", JSON.stringify({ query: text.trim() })); else root.remote = [] }
                 Keys.onPressed: e => { if (e.key === Qt.Key_Backspace && text.length === 0 && root.picked.length > 0) { root.picked = root.picked.slice(0, -1); e.accepted = true } }
-                Text { visible: !search.text && root.picked.length === 0; anchors.verticalCenter: parent.verticalCenter; text: "Enter name, email, group or tag"; font: search.font; color: theme.textSecondary }
+                Text { visible: !search.text && root.picked.length === 0; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Enter name, email, group or tag"); font: search.font; color: theme.textSecondary }
                 Accessible.role: Accessible.EditableText
-                Accessible.name: "Add recipients"
+                Accessible.name: qsTr("Add recipients")
             }
         }
     }
@@ -111,9 +111,9 @@ Popup {
         visible: root.multiPeople
         x: 33; y: pickerBox.y + pickerBox.height + 6; spacing: 6
         FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "info-16"; size: 16; color: theme.textSecondary }
-        Text { anchors.verticalCenter: parent.verticalCenter; text: "Message will be forwarded to a group chat"; font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
+        Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Message will be forwarded to a group chat"); font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
     }
-    Text { x: 33; y: 206 + (root.multiPeople ? 24 : 0) + (root.picked.length > 0 ? 6 : 0); height: 25; verticalAlignment: Text.AlignVCenter; text: "Message preview"; font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
+    Text { x: 33; y: 206 + (root.multiPeople ? 24 : 0) + (root.picked.length > 0 ? 6 : 0); height: 25; verticalAlignment: Text.AlignVCenter; text: qsTr("Message preview"); font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
     // Preview: the note, the card, Emoji
     Rectangle {
         id: previewBox
@@ -126,7 +126,7 @@ Popup {
             background: null
             wrapMode: TextArea.Wrap
             font.family: theme.font; font.pixelSize: theme.base; color: theme.text
-            placeholderText: "Add a message (optional)"; placeholderTextColor: theme.textSecondary
+            placeholderText: qsTr("Add a message (optional)"); placeholderTextColor: theme.textSecondary
         }
         ForwardCard { x: 11; y: 47; maxWidth: 535 - 22; forward: root.message ? { sender_mri: root.message.sender_mri, sender_name: root.message.sender, arrival_ms: parseInt(root.message.id), html: root.message.html, text: root.message.text } : null }
         Rectangle {
@@ -137,7 +137,7 @@ Popup {
             HoverHandler { id: emojiHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: noteEmoji.open() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Emoji"
+            Accessible.name: qsTr("Emoji")
             EmojiPicker { id: noteEmoji; y: -height - 4; x: parent.width - width; onPicked: e => { note.insert(note.cursorPosition, e); close(); note.forceActiveFocus() } }
         }
     }
@@ -148,22 +148,22 @@ Popup {
             id: hcFill2
             width: 96; height: 32; radius: 4
             color: cancelHover.hovered ? theme.menuHover : theme.surface; border.color: theme.stroke
-            Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.text) }
+            Text { anchors.centerIn: parent; text: qsTr("Cancel"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.text) }
             HoverHandler { id: cancelHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.close() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Cancel"
+            Accessible.name: qsTr("Cancel")
         }
         Rectangle {
             id: hcFill3
             readonly property bool on: root.picked.length > 0
             width: 96; height: 32; radius: 4
             color: !on ? theme.hc(theme.bgDisabled, theme.hcHighlight) : fwdHover.hovered ? theme.brandHover : theme.checkedFill
-            Text { anchors.centerIn: parent; text: "Forward"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, parent.on ? "white" : theme.disabledStrong) }
+            Text { anchors.centerIn: parent; text: qsTr("Forward"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, parent.on ? "white" : theme.disabledStrong) }
             HoverHandler { id: fwdHover; cursorShape: parent.on ? Qt.PointingHandCursor : Qt.ArrowCursor }
             TapHandler { enabled: parent.on; onTapped: { root.forwardTo(root.picked, note.text); root.close() } }
             Accessible.role: Accessible.Button
-            Accessible.name: "Forward"
+            Accessible.name: qsTr("Forward")
         }
     }
     // Suggestions under the picker

@@ -48,12 +48,12 @@ Rectangle {
         HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.settingsMenuForTest() }
         Accessible.role: Accessible.Button
-        Accessible.name: "Settings and more"
+        Accessible.name: qsTr("Settings and more")
     }
     MenuPopup {
         id: menu
-        items: [{ label: root.pinned ? "Unpin window" : "Pin window on top", icon: "pin-20", keys: "Ctrl+Shift+T" },
-                { label: "Report a problem", icon: "bug-20", keys: "Ctrl+Alt+Shift+R" }]
+        items: [{ label: root.pinned ? qsTr("Unpin window") : qsTr("Pin window on top"), icon: "pin-20", keys: "Ctrl+Shift+T" },
+                { label: qsTr("Report a problem"), icon: "bug-20", keys: "Ctrl+Alt+Shift+R" }]
         onPicked: i => i === 0 ? root.togglePin() : backend.requestFeedback("problem", root.title, "")
     }
     Shortcut { sequence: "Ctrl+Shift+T"; onActivated: root.togglePin() }

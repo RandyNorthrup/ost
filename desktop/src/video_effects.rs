@@ -159,11 +159,11 @@ pub enum AddError {
 }
 
 impl AddError {
-    pub fn message(&self) -> &'static str {
+    pub fn message(&self) -> String {
         match self {
-            AddError::InvalidType => "Couldn't add background: Invalid image type.",
-            AddError::InvalidSize => "Couldn't add background: Invalid image size.",
-            AddError::Failed => "Couldn't add background.",
+            AddError::InvalidType => crate::backend::tr("Couldn't add background: Invalid image type."),
+            AddError::InvalidSize => crate::backend::tr("Couldn't add background: Invalid image size."),
+            AddError::Failed => crate::backend::tr("Couldn't add background."),
         }
     }
 }

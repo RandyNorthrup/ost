@@ -71,8 +71,8 @@ Rectangle {
         visible: !root.meeting
         anchors { fill: parent; leftMargin: 12; rightMargin: 12; bottomMargin: 12 }
         picture: "meeting-notes"; pictureSize: 256
-        title: "No recap in this chat"
-        body: "Turn on transcription during a call to get a recap with notes and follow-up tasks."
+        title: qsTr("No recap in this chat")
+        body: qsTr("Turn on transcription during a call to get a recap with notes and follow-up tasks.")
     }
 
     // A meeting's recap.
@@ -93,13 +93,13 @@ Rectangle {
                 FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: theme.onFill(more, theme.textStrong) }
                 HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: more.openMenu() }
-                Accessible.role: Accessible.Button; Accessible.name: "More options"
+                Accessible.role: Accessible.Button; Accessible.name: qsTr("More options")
                 // Teams' items; what they open isn't in OST yet (TASK-0171
                 // notes), so they're shown off.
                 MenuPopup {
                     id: moreMenu
-                    items: [{ label: "Go to Meeting Recaps", icon: "arrow-counterclockwise-20", enabled: false },
-                            { label: "Delete recap content", icon: "delete-20", enabled: false }]
+                    items: [{ label: qsTr("Go to Meeting Recaps"), icon: "arrow-counterclockwise-20", enabled: false },
+                            { label: qsTr("Delete recap content"), icon: "delete-20", enabled: false }]
                 }
             }
         }
@@ -115,7 +115,7 @@ Rectangle {
                 Text {
                     x: 17; y: 13; height: 20
                     verticalAlignment: Text.AlignVCenter
-                    text: "Shared files"
+                    text: qsTr("Shared files")
                     font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text
                     Accessible.role: Accessible.Heading; Accessible.name: text
                 }
@@ -132,12 +132,12 @@ Rectangle {
                     }
                     Text {
                         x: 45; anchors.verticalCenter: parent.verticalCenter
-                        text: "Attendance"
+                        text: qsTr("Attendance")
                         font.family: theme.font; font.pixelSize: 12; color: theme.text
                     }
                     HoverHandler { id: attHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.openAttendance() }
-                    Accessible.role: Accessible.Button; Accessible.name: "Attendance"
+                    Accessible.role: Accessible.Button; Accessible.name: qsTr("Attendance")
                 }
             }
             // The recap's pages.
@@ -153,23 +153,24 @@ Rectangle {
                         Rectangle {
                             id: pillItem
                             required property string modelData
+                            readonly property string label: ({ "AI summary": qsTr("AI summary"), Mentions: qsTr("Mentions"), Transcript: qsTr("Transcript") })[modelData] || modelData
                             readonly property bool sel: root.pill === modelData
                             // Its width holds the semibold name (Teams keeps
                             // a hidden bold copy).
                             width: boldWidth.advanceWidth + 22; height: 32; radius: 15
-                            TextMetrics { id: boldWidth; text: pillItem.modelData; font.family: theme.font; font.pixelSize: 13; font.weight: Font.DemiBold }
+                            TextMetrics { id: boldWidth; text: pillItem.label; font.family: theme.font; font.pixelSize: 13; font.weight: Font.DemiBold }
                             color: sel ? theme.brandTint : pillHover.hovered ? theme.menuHover : theme.surface
                             border.width: 1; border.color: sel ? theme.pick("#444791", "#7F85F5", "#1AEBFF") : theme.stroke
                             Text {
                                 id: pillText
                                 anchors.centerIn: parent
-                                text: pillItem.modelData
+                                text: pillItem.label
                                 font.family: theme.font; font.pixelSize: 13; font.weight: pillItem.sel ? Font.DemiBold : Font.Normal
                                 color: theme.onFill(pillItem, pillItem.sel ? theme.brandForeground1 : theme.textStrong)
                             }
                             HoverHandler { id: pillHover; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: root.pill = pillItem.modelData }
-                            Accessible.role: Accessible.PageTab; Accessible.name: modelData
+                            Accessible.role: Accessible.PageTab; Accessible.name: label
                             Accessible.selected: sel
                         }
                     }
@@ -178,11 +179,11 @@ Rectangle {
                 EmptyState {
                     anchors { top: parent.top; topMargin: 58; left: parent.left; right: parent.right; bottom: parent.bottom }
                     picture: root.pill === "Mentions" ? "tag" : "meeting-notes"
-                    title: root.pill === "AI summary" ? "Get AI-powered meeting summary"
-                        : root.pill === "Mentions" ? "Know if your name came up" : "No transcript available"
-                    body: root.pill === "AI summary" ? "When Intelligent recap is turned on, AI can generate notes and suggest tasks to follow up on."
-                        : root.pill === "Mentions" ? "Turn on transcription, and AI will find mentions of you in the transcript."
-                        : "The transcript for this meeting was never created, has expired, or has been deleted."
+                    title: root.pill === "AI summary" ? qsTr("Get AI-powered meeting summary")
+                        : root.pill === "Mentions" ? qsTr("Know if your name came up") : qsTr("No transcript available")
+                    body: root.pill === "AI summary" ? qsTr("When Intelligent recap is turned on, AI can generate notes and suggest tasks to follow up on.")
+                        : root.pill === "Mentions" ? qsTr("Turn on transcription, and AI will find mentions of you in the transcript.")
+                        : qsTr("The transcript for this meeting was never created, has expired, or has been deleted.")
                 }
             }
         }

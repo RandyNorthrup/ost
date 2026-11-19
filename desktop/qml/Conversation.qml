@@ -44,7 +44,7 @@ Rectangle {
     signal getMoreApps()
     /// The side pane's title ("Chat"; a tab's conversation says
     /// "Conversation").
-    property string paneTitle: "Chat"
+    property string paneTitle: qsTr("Chat")
     /// The pane header's measures: the call window's chat (title 16 bold at
     /// 16, close 44 from the end) or a tab's conversation (16/22 semibold
     /// at 20, close 32 x 21.3 at 20 from the end).
@@ -123,8 +123,8 @@ Rectangle {
     readonly property string peerNoteText: {
         const n = peerNote
         if (!n || isGroup || isChannel || isSelf) return ""
-        if (n.pinned && n.text) return "Status of " + chatName + ": " + n.text
-        if (n.ooo) return chatName + " is out of office and may not respond"
+        if (n.pinned && n.text) return qsTr("Status of %1: %2").arg(chatName).arg(n.text)
+        if (n.ooo) return qsTr("%1 is out of office and may not respond").arg(chatName)
         return ""
     }
     readonly property bool peerNoteShown: peerNoteText !== "" && compose.visible && !dismissedPeerNotes[chatId + "|" + peerNoteText]
@@ -231,9 +231,9 @@ Rectangle {
         const it = tabRepeater.itemAt(i)
         tabDragX = it.x; tabDragY = 0
         const movable = tabNames.map((n, k) => k).filter(k => tabIsDraggable(k))
-        const name = tabNames[i]
-        tabAnnounce(i === 0 || movable.indexOf(i) === 0 ? "Grabbed " + name + ". First draggable tab."
-            : i === tabNames.length - 1 ? "Grabbed " + name + ". Last draggable tab." : "Grabbed " + name)
+        const name = tabLabel(i)
+        tabAnnounce(i === 0 || movable.indexOf(i) === 0 ? qsTr("Grabbed %1. First draggable tab.").arg(name)
+            : i === tabNames.length - 1 ? qsTr("Grabbed %1. Last draggable tab.").arg(name) : qsTr("Grabbed %1").arg(name))
     }
     function tabDragMove(i, t) {
         if (tabDragCancelled || tabDragFrom < 0) return
@@ -250,11 +250,11 @@ Rectangle {
         tabDragOver = over
         if (over < 0) return
         const n = tabNames.length
-        if (over === 0) tabAnnounce("Moved to beginning of draggable tabs")
-        else if (over === n - 1) tabAnnounce("Moved to end of draggable tabs")
+        if (over === 0) tabAnnounce(qsTr("Moved to beginning of draggable tabs"))
+        else if (over === n - 1) tabAnnounce(qsTr("Moved to end of draggable tabs"))
         else {
-            const rest = tabNames.filter((x, k) => k !== over), right = i < over
-            tabAnnounce("Moved after " + (right ? rest[i] : rest[over - 1]) + " and before " + (right ? rest[i + 1] : rest[over]))
+            const rest = tabNames.map((x, k) => tabLabel(k)).filter((x, k) => k !== over), right = i < over
+            tabAnnounce(qsTr("Moved after %1 and before %2").arg(right ? rest[i] : rest[over - 1]).arg(right ? rest[i + 1] : rest[over]))
         }
     }
     function tabDragEnd() {
@@ -270,15 +270,27 @@ Rectangle {
             backend.channelTabChange("to", teamId, chatId, moved, String(movable.indexOf(o)))
         }
         tabDragFrom = -1; tabDragOver = -1
-        tabAnnounce("Tab dropped")
+        tabAnnounce(qsTr("Tab dropped"))
     }
     function tabDragCancel() {
         tabDragCancelled = true
         tabDragAnimate = false
         tabDragFrom = -1; tabDragOver = -1
-        tabAnnounce("Cancelled")
+        tabAnnounce(qsTr("Cancelled", "framework:k6wkmzkga"))
     }
     Shortcut { sequence: "Escape"; enabled: root.tabDragFrom >= 0; onActivated: root.tabDragCancel() }
+    // The tabs' names are keys (`tab` holds one, and tests and the tab
+    // checks compare them); OST's own tabs show in the app language, a
+    // channel's or chat's own tabs by their name.
+    readonly property int builtInTabCount: isChannel ? (channelTabs.length ? (threadsLayout ? 1 : 0) : 2) : tabNames.length - channelTabs.length
+    function tabLabel(i) {
+        const n = tabNames[i] || ""
+        if (i < 0 || i >= builtInTabCount) return n
+        return ({ Conversation: qsTr("Conversation"), Posts: qsTr("Posts"), Shared: qsTr("Shared"), Chat: qsTr("Chat"), Notes: qsTr("Notes"),
+                  Recap: qsTr("Recap"), Storyline: qsTr("Storyline"), Attendance: qsTr("Attendance"), "Breakout Rooms": qsTr("Breakout Rooms"),
+                  "Q&A": qsTr("Q&A"), "Meeting Whiteboard": qsTr("Meeting Whiteboard") })[n] || n
+    }
+    function tabLabelOf(name) { const i = tabNames.indexOf(name); return i >= 0 ? tabLabel(i) : name }
     readonly property var tabNames: isChannel ? (channelTabs.length ? channelTabs.map((t, i) => i === 0 && threadsLayout ? "Conversation" : t.name) : [threadsLayout ? "Conversation" : "Posts", "Shared"])
         // Teams (worker Ct): Storyline only in 1:1 chats (and your own
         // notes chat, which has Notes but no Recap; Teams on the web,
@@ -404,7 +416,7 @@ Rectangle {
         const out = folderList.filter(f => (f.kind === "Favorites" || f.kind === "UserCreated" || f.kind === "UserDefined") && f.id !== sectionHolder)
             .map(f => ({ label: f.title, to: f.id }))
         if (out.length) out.push({ separator: true })
-        out.push({ label: "New section", icon: "folder-add-20", newSection: true })
+        out.push({ label: qsTr("New section"), icon: "folder-add-20", newSection: true })
         return out
     }
     SectionDialog { id: headerSectionDialog; existing: root.folderList.map(f => f.title) }
@@ -587,9 +599,9 @@ Rectangle {
     ConfirmDialog {
         id: removeHistoryAsk
         width: 600
-        title: "Remove chat history?"
-        body: "This will remove the chat from your list and search. It affects you only."
-        confirmText: "Remove"
+        title: qsTr("Remove chat history?")
+        body: qsTr("This will remove the chat from your list and search. It affects you only.")
+        confirmText: qsTr("Remove")
         onConfirmed: backend.removeChatHistory(root.chatId)
     }
     // Go to a message (a quote card's target), if it is loaded.
@@ -808,8 +820,8 @@ Rectangle {
     function stamp(t) {
         const d = new Date(t), n = daysAgo(d), time = theme.time(d)
         if (n === 0) return time
-        if (n === 1) return "Yesterday " + time
-        if (n > 1 && n < 7) return Qt.formatDate(d, "dddd") + " " + time
+        if (n === 1) return qsTr("Yesterday %1").arg(time)
+        if (n > 1 && n < 7) return theme.fmtDate(d, "dddd") + " " + time
         if (d.getFullYear() === new Date().getFullYear()) return theme.dateNoYear(d) + " " + time
         return theme.date(d) + " " + time
     }
@@ -896,7 +908,7 @@ Rectangle {
                 color: theme.text
             }
             HeaderAction {
-                x: parent.width - root.paneCloseRight; icon: "dismiss-20"; Accessible.name: "Close " + root.paneTitle.toLowerCase()
+                x: parent.width - root.paneCloseRight; icon: "dismiss-20"; Accessible.name: qsTr("Close %1").arg(root.paneTitle.toLowerCase())
                 onClicked: root.closePane()
             }
         }
@@ -1022,10 +1034,10 @@ Rectangle {
                 visible: renameHover.hovered; delay: 500
                 y: parent.height + 4; padding: 8
                 background: FluentSurface { depth: 16; radius: 4 }
-                contentItem: Text { text: "Name group chat"; font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
+                contentItem: Text { text: qsTr("Name group chat"); font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
             }
             Accessible.role: Accessible.Button
-            Accessible.name: "Name group chat"
+            Accessible.name: qsTr("Name group chat")
             // The rename popover (Teams: below the title, 40rem, "Group
             // name", Cancel / Save, Teams' two validation messages).
             Popup {
@@ -1036,9 +1048,9 @@ Rectangle {
                 focus: true
                 background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
                 onOpened: { nameField.text = root.chatName; nameField.selectAll(); nameField.forceActiveFocus() }
-                readonly property string error: nameField.text.length > 250 ? "Your group name can't be longer than 250 characters."
-                    : nameField.text.indexOf(":") >= 0 ? "':' is not a valid character in group names." : ""
-                Text { x: 16; y: 16; height: 20; verticalAlignment: Text.AlignVCenter; text: "Group name"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                readonly property string error: nameField.text.length > 250 ? qsTr("Your group name can't be longer than %1 characters.").arg(250)
+                    : nameField.text.indexOf(":") >= 0 ? qsTr("'%1' is not a valid character in group names.").arg(":") : ""
+                Text { x: 16; y: 16; height: 20; verticalAlignment: Text.AlignVCenter; text: qsTr("Group name"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
                 Rectangle {
                     x: 16; y: 40; width: parent.width - 32; height: 32; radius: 4
                     color: theme.surface
@@ -1048,10 +1060,10 @@ Rectangle {
                         id: nameField
                         x: 12; width: parent.width - 24; anchors.verticalCenter: parent.verticalCenter
                         font.family: theme.font; font.pixelSize: 14; color: theme.text; clip: true
-                        Text { visible: !nameField.text; text: "Type a group name"; font: nameField.font; color: theme.textSecondary }
+                        Text { visible: !nameField.text; text: qsTr("Type a group name"); font: nameField.font; color: theme.textSecondary }
                         Keys.onReturnPressed: if (!renamePopup.error && nameField.text.trim()) { backend.renameChat(nameField.text); renamePopup.close() }
                         Accessible.role: Accessible.EditableText
-                        Accessible.name: "Group name"
+                        Accessible.name: qsTr("Group name")
                     }
                 }
                 Text { id: renameError; visible: !!renamePopup.error; x: 16; y: 76; text: renamePopup.error; font.family: theme.font; font.pixelSize: 12; color: theme.redForeground1 }
@@ -1063,22 +1075,22 @@ Rectangle {
                         id: hcFill2
                         width: 96; height: 32; radius: 4
                         color: rcHover.hovered ? theme.menuHover : theme.surface; border.color: theme.stroke
-                        Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.text) }
+                        Text { anchors.centerIn: parent; text: qsTr("Cancel"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.text) }
                         HoverHandler { id: rcHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: renamePopup.close() }
                         Accessible.role: Accessible.Button
-                        Accessible.name: "Cancel"
+                        Accessible.name: qsTr("Cancel")
                     }
                     Rectangle {
                         id: hcFill3
                         readonly property bool can: !renamePopup.error && nameField.text.trim().length > 0
                         width: 96; height: 32; radius: 4
                         color: !can ? theme.bgDisabled : rsHover.hovered ? theme.brandHover : theme.brandFill
-                        Text { anchors.centerIn: parent; text: "Save"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, parent.can ? "white" : theme.disabledStrong) }
+                        Text { anchors.centerIn: parent; text: qsTr("Save"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, parent.can ? "white" : theme.disabledStrong) }
                         HoverHandler { id: rsHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { enabled: parent.can; onTapped: { backend.renameChat(nameField.text); renamePopup.close() } }
                         Accessible.role: Accessible.Button
-                        Accessible.name: "Save"
+                        Accessible.name: qsTr("Save")
                     }
                 }
             }
@@ -1093,7 +1105,7 @@ Rectangle {
           readonly property var shown: {
             const names = root.tabNames
             const selIdx = Math.max(0, names.indexOf(root.tab))
-            const w = names.map((n, i) => (i === selIdx ? tabFontSel : tabFont).advanceWidth(n) + 12 + 20 * (i === selIdx && !!root.channelTabs.find(t => t.name === n && t.menu.length > 0)))
+            const w = names.map((n, i) => (i === selIdx ? tabFontSel : tabFont).advanceWidth(root.tabLabel(i)) + 12 + 20 * (i === selIdx && !!root.channelTabs.find(t => t.name === n && t.menu.length > 0)))
             // The "+" (Add a tab, 32 wide) follows the tabs and "+N".
             const avail = (root.isChannel ? header.width - 160 : root.pane ? header.width - 48 : header.toolbarLeft) - tabs.x - 2 - 10 - (root.canAddTab ? 32 : 0)
             if (w.reduce((a, b) => a + b, 0) <= avail) return names.map((n, i) => i)
@@ -1146,7 +1158,7 @@ Rectangle {
                     Text {
                         id: tabText
                         x: 6; anchors.verticalCenter: parent.verticalCenter
-                        text: modelData
+                        text: root.tabLabel(tabItem.index)
                         font.family: theme.font; font.pixelSize: theme.base
                         font.weight: tabItem.sel ? Font.DemiBold : Font.Normal
                         color: tabItem.sel ? root.hdrText : root.liveBand ? root.hdrSoft : theme.textStrong
@@ -1193,7 +1205,7 @@ Rectangle {
                         onTapped: (ev) => tabMenu.show(tabItem.channelTab, tabItem.channelTab.context_menu, tabItem, ev.position.x, ev.position.y)
                     }
                     Accessible.role: Accessible.PageTab
-                    Accessible.name: modelData
+                    Accessible.name: tabText.text
                     Accessible.selected: sel
                 }
             }
@@ -1209,7 +1221,7 @@ Rectangle {
                 Text {
                     id: tabDragText
                     x: 10; width: parent.width - 20; anchors.verticalCenter: parent.verticalCenter
-                    text: root.tabDragFrom >= 0 ? root.tabNames[root.tabDragFrom] || "" : ""
+                    text: root.tabDragFrom >= 0 ? root.tabLabel(root.tabDragFrom) : ""
                     elide: Text.ElideRight
                     font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
                     color: theme.text
@@ -1230,7 +1242,7 @@ Rectangle {
                 HoverHandler { id: plusHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: tabOverflowMenu.open() }
                 Accessible.role: Accessible.Button
-                Accessible.name: tabsFit.hidden.length + " more tabs."
+                Accessible.name: qsTr("%1 more tabs.").arg(tabsFit.hidden.length)
                 // A tab with a menu has it beside its row (Teams'
                 // tab-item-with-submenu: the name, then a chevron).
                 function ownTab(i) { return root.channelTabs.find(t => t.name === root.tabNames[i]) || null }
@@ -1240,7 +1252,7 @@ Rectangle {
                     items: tabsFit.hidden.map(i => {
                         const t = tabOverflow.ownTab(i)
                         const m = t && t.context_menu.length ? t.context_menu.map(e => e.key === "divider" ? { separator: true } : { label: e.label, icon: tabMenu.icons[e.key] || "", enabled: e.enabled }) : null
-                        return m ? { label: root.tabNames[i], submenu: m } : { label: root.tabNames[i] }
+                        return m ? { label: root.tabLabel(i), submenu: m } : { label: root.tabLabel(i) }
                     })
                     onPicked: k => root.openTabAt(tabsFit.hidden[k])
                     onSubPicked: (k, s) => { const t = tabOverflow.ownTab(tabsFit.hidden[k]); if (t) root.tabAction(t.context_menu[s].key, t) }
@@ -1265,9 +1277,9 @@ Rectangle {
                 TapHandler { onTapped: root.addTab() }
                 ToolTip.visible: addTabHover.hovered && !addTabMenu.opened
                 ToolTip.delay: 500
-                ToolTip.text: "Add a tab"
+                ToolTip.text: qsTr("Add a tab")
                 Accessible.role: Accessible.PageTab
-                Accessible.name: "Add a tab"
+                Accessible.name: qsTr("Add a tab")
                 // A channel's Add a tab menu (add-tab-menu-item-*): New page,
                 // Existing page, New list, Existing list, Apps; 1 below the
                 // button, 128.7 wide.
@@ -1275,11 +1287,11 @@ Rectangle {
                     id: addTabMenu
                     x: 0; y: parent.height + 1
                     items: [
-                        { label: "New page", icon: "loop-page-20" },
-                        { label: "Existing page", icon: "link-20" },
-                        { label: "New list", icon: "lists-new-20" },
-                        { label: "Existing list", icon: "table-link-20" },
-                        { label: "Apps", icon: "apps-20" }
+                        { label: qsTr("New page"), icon: "loop-page-20" },
+                        { label: qsTr("Existing page"), icon: "link-20" },
+                        { label: qsTr("New list"), icon: "lists-new-20" },
+                        { label: qsTr("Existing list"), icon: "table-link-20" },
+                        { label: qsTr("Apps"), icon: "apps-20" }
                     ]
                     onPicked: i => root.addTabChoice(["newPage", "existingPage", "newList", "existingList", "apps"][i])
                 }
@@ -1301,13 +1313,13 @@ Rectangle {
             Row {
                 id: ddRow
                 anchors.verticalCenter: parent.verticalCenter; spacing: 4
-                Text { anchors.verticalCenter: parent.verticalCenter; text: root.tab === "" ? (root.tabNames[0] || "") : root.tab; font.family: theme.font; font.pixelSize: 12; color: tabDropdownMenu.opened ? theme.brand : theme.textStrong }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: root.tab === "" ? root.tabLabel(0) : root.tabLabelOf(root.tab); font.family: theme.font; font.pixelSize: 12; color: tabDropdownMenu.opened ? theme.brand : theme.textStrong }
                 FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-12"; size: 12; color: tabDropdownMenu.opened ? theme.brand : theme.textStrong }
             }
             HoverHandler { cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: tabDropdownMenu.open() }
             Accessible.role: Accessible.Button
-            Accessible.name: root.tab === "" ? (root.tabNames[0] || "") : root.tab
+            Accessible.name: root.tab === "" ? root.tabLabel(0) : root.tabLabelOf(root.tab)
             function ownTab(i) { return root.channelTabs.find(t => t.name === root.tabNames[i]) || null }
             readonly property var entries: {
                 const sel = root.tab === "" ? 0 : root.tabNames.indexOf(root.tab)
@@ -1319,10 +1331,10 @@ Rectangle {
                     // right-click menu (Teams web: Shared, a fixed tab, has
                     // none in the dropdown).
                     const m = !t ? [] : i === sel && t.menu && t.menu.length ? t.menu : draggable ? (t.context_menu || []) : []
-                    const e = { kind: "tab", index: i, tab: t, menu: m, item: { label: root.tabNames[i], checked: i === sel } }
+                    const e = { kind: "tab", index: i, tab: t, menu: m, item: { label: root.tabLabel(i), checked: i === sel } }
                     if (m.length) {
                         e.item.split = true
-                        e.item.splitLabel = "More menu"
+                        e.item.splitLabel = qsTr("More menu")
                         e.item.submenu = m.map(x => x.key === "divider" ? { separator: true } : { label: x.label, icon: tabMenu.icons[x.key] || "", enabled: x.enabled })
                     }
                     (draggable ? movable : fixed).push(e)
@@ -1330,17 +1342,17 @@ Rectangle {
                 const out = []
                 const choices = root.canAddTab && root.isChannel
                 if (choices) {
-                    out.push({ kind: "add", key: "newPage", item: { label: "New page", icon: "loop-page-20" } },
-                             { kind: "add", key: "existingPage", item: { label: "Existing page", icon: "link-20" } },
-                             { kind: "add", key: "newList", item: { label: "New list", icon: "lists-new-20" } },
-                             { kind: "add", key: "existingList", item: { label: "Existing list", icon: "table-link-20" } },
-                             { kind: "add", key: "apps", item: { label: "Apps", icon: "apps-20" } },
+                    out.push({ kind: "add", key: "newPage", item: { label: qsTr("New page"), icon: "loop-page-20" } },
+                             { kind: "add", key: "existingPage", item: { label: qsTr("Existing page"), icon: "link-20" } },
+                             { kind: "add", key: "newList", item: { label: qsTr("New list"), icon: "lists-new-20" } },
+                             { kind: "add", key: "existingList", item: { label: qsTr("Existing list"), icon: "table-link-20" } },
+                             { kind: "add", key: "apps", item: { label: qsTr("Apps"), icon: "apps-20" } },
                              { kind: "sep", item: { separator: true } })
                 }
                 out.push(...fixed)
                 if (fixed.length && (movable.length || root.canAddTab) && !choices) out.push({ kind: "sep", item: { separator: true } })
                 out.push(...movable)
-                if (root.canAddTab && !choices) out.push({ kind: "add", key: "addTab", item: { label: "Add a tab", icon: "add-20" } })
+                if (root.canAddTab && !choices) out.push({ kind: "add", key: "addTab", item: { label: qsTr("Add a tab"), icon: "add-20" } })
                 return out
             }
             MenuPopup {
@@ -1385,18 +1397,18 @@ Rectangle {
             x: oneToOnePeople.x - 48; width: 24; height: 31.3
             icon: backend.headerCallVideo ? "video-20" : "call-20"
             onClicked: backend.headerCallVideo ? root.videoCall() : root.call()
-            Accessible.name: backend.headerCallVideo ? "Video call" : "Audio call"
+            Accessible.name: backend.headerCallVideo ? qsTr("Video call") : qsTr("Audio call")
         }
         HeaderAction {
             visible: callPrimary.visible
             x: oneToOnePeople.x - 24; width: 24; height: 31.3
             icon: "chevron-down-16"; iconSize: 16
-            Accessible.name: "More call options"
+            Accessible.name: qsTr("More call options")
             onClicked: callMenu.open()
             MenuPopup {
                 id: callMenu
                 x: parent.width - 4.6 - width; y: parent.height + 4.9
-                items: [{ label: "Video call", icon: "video-20", keys: "Alt+Shift+V" }, { label: "Audio call", icon: "call-20", keys: "Alt+Shift+A" }]
+                items: [{ label: qsTr("Video call"), icon: "video-20", keys: "Alt+Shift+V" }, { label: qsTr("Audio call"), icon: "call-20", keys: "Alt+Shift+A" }]
                 onPicked: i => i === 0 ? root.videoCall() : root.call()
             }
         }
@@ -1406,7 +1418,7 @@ Rectangle {
             visible: !root.isSelf && !root.isGroup && !root.isChannel
             x: root.isChannel ? parent.width - 151 : root.actionRight - 28; width: 28
             icon: "people-add-20"
-            Accessible.name: root.isChannel ? "View participants" : "Start a group chat"
+            Accessible.name: root.isChannel ? qsTr("View participants") : qsTr("Start a group chat")
             onClicked: participants.visible = !participants.visible
         }
         // Group chats' call control (Teams 944031 `Ln`): Meet now (a huddle;
@@ -1488,10 +1500,10 @@ Rectangle {
                         visible: rosterPillHover.hovered; delay: 500
                         y: parent.height + 4; padding: 8
                         background: FluentSurface { depth: 16; radius: 4 }
-                        contentItem: Text { text: "View participants"; font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
+                        contentItem: Text { text: qsTr("View participants"); font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
                     }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "View participants"
+                    Accessible.name: qsTr("View participants")
                 }
                 Rectangle { visible: !root.inThisCall; width: 0.67; height: 32; color: theme.stroke }
                 Rectangle {
@@ -1500,11 +1512,11 @@ Rectangle {
                     width: joinText.implicitWidth + 20; height: 32
                     topRightRadius: 4; bottomRightRadius: 4
                     color: joinHover.hovered ? theme.hover : theme.surface
-                    Text { id: joinText; anchors.centerIn: parent; text: "Join"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, joinHover.hovered ? theme.brand : theme.textStrong) }
+                    Text { id: joinText; anchors.centerIn: parent; text: qsTr("Join"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, joinHover.hovered ? theme.brand : theme.textStrong) }
                     HoverHandler { id: joinHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { enabled: backend.callState === ""; onTapped: backend.joinGroupCall() }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Join"
+                    Accessible.name: qsTr("Join")
                 }
             }
         }
@@ -1518,7 +1530,7 @@ Rectangle {
             Row {
                 anchors.centerIn: parent; spacing: 6
                 FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: meetHover.hovered && !root.callsDisabled ? "video-20-filled" : "video-20"; size: 20; color: theme.onFill(meetNow, root.callsDisabled ? theme.disabled : meetHover.hovered ? theme.brand : theme.textStrong) }
-                Text { visible: meetNow.wide; anchors.verticalCenter: parent.verticalCenter; text: "Meet now"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(meetNow, root.callsDisabled ? theme.disabled : meetHover.hovered ? theme.brand : theme.textStrong) }
+                Text { visible: meetNow.wide; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Meet now"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(meetNow, root.callsDisabled ? theme.disabled : meetHover.hovered ? theme.brand : theme.textStrong) }
             }
             HoverHandler { id: meetHover; cursorShape: root.callsDisabled ? Qt.ArrowCursor : Qt.PointingHandCursor }
             TapHandler { enabled: !root.callsDisabled && backend.callState === ""; onTapped: backend.meetNow() }
@@ -1526,10 +1538,10 @@ Rectangle {
                 visible: meetHover.hovered && (!meetNow.wide || root.callsDisabled); delay: 500
                 y: parent.height + 4; padding: 8
                 background: FluentSurface { depth: 16; radius: 4 }
-                contentItem: Text { text: root.callsDisabled ? "Calls aren't available in chats with more than 20 people" : "Meet now"; font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
+                contentItem: Text { text: root.callsDisabled ? qsTr("Calls aren't available in chats with more than %1 people").arg(20) : qsTr("Meet now"); font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
             }
             Accessible.role: Accessible.Button
-            Accessible.name: "Meet now"
+            Accessible.name: qsTr("Meet now")
         }
         Rectangle {
             id: hcFill5
@@ -1544,14 +1556,14 @@ Rectangle {
                 visible: chevHover.hovered; delay: 500
                 y: parent.height + 4; padding: 8
                 background: FluentSurface { depth: 16; radius: 4 }
-                contentItem: Text { text: "More call options"; font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
+                contentItem: Text { text: qsTr("More call options"); font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
             }
             Accessible.role: Accessible.Button
-            Accessible.name: "More call options"
+            Accessible.name: qsTr("More call options")
             MenuPopup {
                 id: groupCallMenu
                 x: parent.width - width; y: parent.height + 4
-                items: [{ label: "Audio call", icon: "call-20", enabled: !root.callsDisabled }]
+                items: [{ label: qsTr("Audio call"), icon: "call-20", enabled: !root.callsDisabled }]
                 onPicked: root.call()
             }
         }
@@ -1575,7 +1587,7 @@ Rectangle {
             }
             font.family: theme.font; font.pixelSize: 12
             color: "#FFFFFF"
-            Accessible.name: "Meeting duration " + text
+            Accessible.name: qsTr("Meeting duration %1").arg(text)
         }
         // The live roster in a meeting's band (chat-live-roster, measured on
         // winpc): who is in the meeting besides you, 32 px avatars 22 apart
@@ -1610,11 +1622,11 @@ Rectangle {
             x: rosterCount.leftEdge - 8 - width; anchors.verticalCenter: parent.verticalCenter
             width: meetingJoinText.implicitWidth + 16; height: 31.3; radius: 4
             color: !can ? theme.bgDisabled : meetingJoinHover.hovered ? theme.brandHover : theme.brandFill
-            Text { id: meetingJoinText; anchors.centerIn: parent; text: "Join"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(meetingJoin, meetingJoin.can ? "white" : theme.disabledStrong) }
+            Text { id: meetingJoinText; anchors.centerIn: parent; text: qsTr("Join"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(meetingJoin, meetingJoin.can ? "white" : theme.disabledStrong) }
             HoverHandler { id: meetingJoinHover; cursorShape: meetingJoin.can ? Qt.PointingHandCursor : Qt.ArrowCursor }
             TapHandler { enabled: meetingJoin.can; onTapped: backend.joinMeeting(root.meeting.join_url, root.meeting.subject || root.chatName) }
             Accessible.role: Accessible.Button
-            Accessible.name: "Join"
+            Accessible.name: qsTr("Join")
         }
         // Group chats: the roster count (chat-header-participant-count):
         // PeopleAdd and the bold 12 px member count.
@@ -1639,10 +1651,10 @@ Rectangle {
                 visible: rosterHover.hovered; delay: 500
                 y: parent.height + 4; padding: 8
                 background: FluentSurface { depth: 16; radius: 4 }
-                contentItem: Text { text: "View and add participants"; font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
+                contentItem: Text { text: qsTr("View and add participants"); font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
             }
             Accessible.role: Accessible.Button
-            Accessible.name: "View and add participants, " + count + " participants"
+            Accessible.name: qsTr("View and add participants") + ", " + qsTr("%1 participants").arg(count)
         }
         Rectangle {
             id: channelMeet
@@ -1654,12 +1666,12 @@ Rectangle {
             Row {
                 anchors.centerIn: parent; spacing: 6
                 FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: channelMeetHover.hovered && !channelMeet.blocked ? "video-20-filled" : "video-20"; size: 20; color: theme.onFill(channelMeet, channelMeet.blocked ? theme.disabled : channelMeetHover.hovered ? theme.brand : root.hdrStrong) }
-                Text { visible: root.channelMeetWide; anchors.verticalCenter: parent.verticalCenter; text: "Meet now"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(channelMeet, channelMeet.blocked ? theme.disabled : channelMeetHover.hovered ? theme.brand : root.hdrStrong) }
+                Text { visible: root.channelMeetWide; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Meet now"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(channelMeet, channelMeet.blocked ? theme.disabled : channelMeetHover.hovered ? theme.brand : root.hdrStrong) }
             }
             HoverHandler { id: channelMeetHover; cursorShape: channelMeet.blocked ? Qt.ArrowCursor : Qt.PointingHandCursor }
             TapHandler { enabled: !channelMeet.blocked; onTapped: root.channelMeetNow() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Meet now"
+            Accessible.name: qsTr("Meet now")
         }
         HeaderAction {
             id: channelMeetMore
@@ -1668,15 +1680,15 @@ Rectangle {
             icon: "chevron-down-16"; iconSize: 16
             iconColor: channelMeetMenu.opened ? theme.brand : root.hdrStrong
             onClicked: channelMeetMenu.open()
-            Accessible.name: "More channel meeting options"
+            Accessible.name: qsTr("More channel meeting options")
             // Meet now / Schedule a meeting (161.8 wide, its end 4.5 inside
             // the chevron's, 4.5 below it).
             MenuPopup {
                 id: channelMeetMenu
                 x: parent.width - 4.5 - width; y: parent.height + 4.5
                 items: [
-                    { key: "meet", label: "Meet now", icon: "video-20", enabled: !channelMeet.blocked },
-                    { key: "schedule", label: "Schedule a meeting", icon: "calendar-add-20" }
+                    { key: "meet", label: qsTr("Meet now"), icon: "video-20", enabled: !channelMeet.blocked },
+                    { key: "schedule", label: qsTr("Schedule a meeting"), icon: "calendar-add-20" }
                 ]
                 onPicked: i => items[i].key === "meet" ? root.channelMeetNow() : root.scheduleMeeting()
             }
@@ -1690,15 +1702,15 @@ Rectangle {
             iconColor: open ? theme.brand : root.hdrStrong
             onClicked: root.tabConversationTab = open ? null : root.currentTab
             ToolTip.visible: tabConvHover.hovered; ToolTip.delay: 500
-            ToolTip.text: open ? "Hide tab conversation" : "Show tab conversation"
+            ToolTip.text: open ? qsTr("Hide tab conversation") : qsTr("Show tab conversation")
             HoverHandler { id: tabConvHover }
-            Accessible.name: open ? "Hide tab conversation" : "Show tab conversation"
+            Accessible.name: open ? qsTr("Hide tab conversation") : qsTr("Show tab conversation")
         }
         // Meeting details (chat-meeting-details): 32 x 31.3, TextBulletList,
         // after the roster count (measured on winpc).
         HeaderAction {
             visible: root.meetingDetailsInline
-            x: root.contextLeft - 16 - 32; icon: "text-bullet-list-20"; Accessible.name: "Meeting details"
+            x: root.contextLeft - 16 - 32; icon: "text-bullet-list-20"; Accessible.name: qsTr("Meeting details")
             onClicked: root.openMeetingDetails(root.meeting.join_url, root.meeting.ical_uid, root.meeting.start || "")
         }
         Rectangle {
@@ -1718,20 +1730,20 @@ Rectangle {
             iconColor: root.threadsOpen ? theme.brand : root.hdrStrong
             onClicked: root.toggleThreads()
             ToolTip.visible: threadsHover.hovered; ToolTip.delay: 500
-            ToolTip.text: root.threadsOpen ? "Close threads" : "Open threads"
+            ToolTip.text: root.threadsOpen ? qsTr("Close threads") : qsTr("Open threads")
             HoverHandler { id: threadsHover }
-            Accessible.name: root.threadsOpen ? "Close threads" : "Open threads"
+            Accessible.name: root.threadsOpen ? qsTr("Close threads") : qsTr("Open threads")
         }
         // In a channel, Find and Channel details show only on Posts (Teams).
         HeaderAction {
             visible: root.contextInline >= 1 && !(root.isChannel && root.tab !== "")
-            x: root.contextLeft + 32 * root.threadsButton; icon: "search-20"; Accessible.name: root.isChannel ? "Find in channel" : "Find in chat"
+            x: root.contextLeft + 32 * root.threadsButton; icon: "search-20"; Accessible.name: root.isChannel ? qsTr("Find in channel") : qsTr("Find in chat")
             iconColor: root.finding ? theme.brand : root.hdrStrong
             onClicked: root.toggleFind()
         }
         HeaderAction {
             visible: root.contextInline >= 2 && !(root.isChannel && root.tab !== "")
-            x: root.contextLeft + 32 * (1 + root.threadsButton); icon: root.isChannel ? "panel-right-expand-20" : "panel-left-20"; Accessible.name: root.isChannel ? "Open channel details" : "Open chat details"
+            x: root.contextLeft + 32 * (1 + root.threadsButton); icon: root.isChannel ? "panel-right-expand-20" : "panel-left-20"; Accessible.name: root.isChannel ? qsTr("Open channel details") : qsTr("Open chat details")
             onClicked: participants.visible = !participants.visible
         }
         // More channel options (more-apps-button-tid, 32 x 31.3, ··· at the
@@ -1743,7 +1755,7 @@ Rectangle {
             x: parent.width - 43; height: 31.3
             icon: "more-horizontal-20"
             iconColor: channelMenu.menu.opened ? theme.brand : root.hdrStrong
-            Accessible.name: "More channel options"
+            Accessible.name: qsTr("More channel options")
             onClicked: channelMenu.show(channelMore, channelMore.width + 6.3 - channelMenu.menu.implicitWidth, channelMore.height + 4.9)
         }
         // More chat options (chat-header-more-menu-trigger), as Teams
@@ -1756,7 +1768,7 @@ Rectangle {
         HeaderAction {
             id: chatMore
             visible: !root.isChannel && !root.pane
-            x: parent.width - 43; icon: "more-horizontal-20"; Accessible.name: "More chat options"
+            x: parent.width - 43; icon: "more-horizontal-20"; Accessible.name: qsTr("More chat options")
             onClicked: chatMenu.open()
             MenuPopup {
                 id: chatMenu
@@ -1767,25 +1779,25 @@ Rectangle {
                 // the action items that moved (Participants), a divider, and
                 // the chat's own items.
                 readonly property var moved: [
-                    root.contextInline < 1 ? { key: "find", label: "Find in chat", icon: "search-20" } : null,
-                    root.contextInline < 2 ? { key: "details", label: "In this chat", icon: "panel-left-20", keys: "Alt+P" } : null,
-                    root.rosterInMenu ? { key: "participants", label: "Participants", icon: "people-add-20" } : null,
-                    root.meetingDetailsShown && !root.meetingDetailsInline ? { key: "meetingDetails", label: "Meeting details", icon: "text-bullet-list-20" } : null
+                    root.contextInline < 1 ? { key: "find", label: qsTr("Find in chat"), icon: "search-20" } : null,
+                    root.contextInline < 2 ? { key: "details", label: qsTr("In this chat"), icon: "panel-left-20", keys: "Alt+P" } : null,
+                    root.rosterInMenu ? { key: "participants", label: qsTr("Participants"), icon: "people-add-20" } : null,
+                    root.meetingDetailsShown && !root.meetingDetailsInline ? { key: "meetingDetails", label: qsTr("Meeting details"), icon: "text-bullet-list-20" } : null
                 ].filter(i => i !== null)
                 readonly property bool calls: !root.isSelf && !root.isMeetingChat
                 items: (moved.length ? moved.concat([{ separator: true }]) : []).concat([
-                    root.popout ? null : { key: "window", label: "Open in new window", icon: "open-window-20", keys: "Ctrl+O" },
+                    root.popout ? null : { key: "window", label: qsTr("Open in new window"), icon: "open-window-20", keys: "Ctrl+O" },
                     root.popout ? null : { separator: true },
-                    calls ? { key: "meeting", label: "Schedule meeting", icon: "calendar-add-20" } : null,
-                    calls ? { key: "share", label: "Share screen", icon: "share-screen-start-20", keys: "Ctrl+Shift+E" } : null,
+                    calls ? { key: "meeting", label: qsTr("Schedule meeting"), icon: "calendar-add-20" } : null,
+                    calls ? { key: "share", label: qsTr("Share screen"), icon: "share-screen-start-20", keys: "Ctrl+Shift+E" } : null,
                     calls ? { separator: true } : null,
-                    { key: "unread", label: "Mark as unread", icon: "glasses-off-20" },
-                    { key: "move", label: "Move to section", icon: "star-20", submenu: root.moveTargets() },
-                    root.sectionHolder ? { key: "removeFrom", label: "Remove from section", icon: "star-off-20" } : null,
-                    root.isSelf ? null : { key: "mute", label: root.chatMuted ? "Unmute" : "Mute", icon: root.chatMuted ? "alert-20" : "alert-off-20" },
-                    { key: "link", label: "Copy link", icon: "link-20" },
+                    { key: "unread", label: qsTr("Mark as unread"), icon: "glasses-off-20" },
+                    { key: "move", label: qsTr("Move to section"), icon: "star-20", submenu: root.moveTargets() },
+                    root.sectionHolder ? { key: "removeFrom", label: qsTr("Remove from section"), icon: "star-off-20" } : null,
+                    root.isSelf ? null : { key: "mute", label: root.chatMuted ? qsTr("Unmute") : qsTr("Mute"), icon: root.chatMuted ? "alert-20" : "alert-off-20" },
+                    { key: "link", label: qsTr("Copy link"), icon: "link-20" },
                     root.isSelf ? null : { separator: true },
-                    root.isSelf ? null : root.isMeetingChat ? { key: "report", label: "Report a concern", icon: "shield-error-20" } : { key: "removeHistory", label: "Remove chat history", icon: "delete-20" }
+                    root.isSelf ? null : root.isMeetingChat ? { key: "report", label: qsTr("Report a concern"), icon: "shield-error-20" } : { key: "removeHistory", label: qsTr("Remove chat history"), icon: "delete-20" }
                 ]).filter(i => i !== null)
                 onPicked: i => {
                     const k = items[i].key
@@ -1816,7 +1828,7 @@ Rectangle {
     Text {
         anchors.centerIn: parent
         visible: root.chatName.length === 0
-        text: "Select a chat to start messaging"
+        text: qsTr("Select a chat to start messaging")
         font.family: theme.font; font.pixelSize: theme.base
         color: theme.textSecondary
     }
@@ -1982,7 +1994,7 @@ Rectangle {
                 Text {
                     id: lastReadText
                     anchors.centerIn: parent
-                    text: "Last read"
+                    text: qsTr("Last read")
                     font.family: theme.font; font.pixelSize: 12; font.weight: Font.Bold
                     lineHeight: 16; lineHeightMode: Text.FixedHeight
                     color: theme.brand
@@ -1993,7 +2005,7 @@ Rectangle {
                     width: parent.width - x; height: 0.67; color: theme.brand
                 }
                 Accessible.role: Accessible.Separator
-                Accessible.name: "Last read"
+                Accessible.name: qsTr("Last read")
             }
 
             // Call events: an icon, the time and "Call ended 3m 9s" / "Call missed".
@@ -2044,7 +2056,7 @@ Rectangle {
                         if (msg.recordingRow) {
                             const e = msg.modelData.event
                             const t = root.escapeHtml(msg.modelData.text)
-                            return e.kind === "RecordingSaved" && e.value && e.link ? t + " <a href=\"" + e.link.replace(/"/g, "&quot;") + "\" style=\"text-decoration: none; color: " + theme.brandForeground1 + "\">Remove expiration</a>" : t
+                            return e.kind === "RecordingSaved" && e.value && e.link ? t + " <a href=\"" + e.link.replace(/"/g, "&quot;") + "\" style=\"text-decoration: none; color: " + theme.brandForeground1 + "\">" + qsTr("Remove expiration") + "</a>" : t
                         }
                         // "{name} added <b>{app}</b> here." (Teams bolds the app).
                         if (msg.appAdded) {
@@ -2057,14 +2069,14 @@ Rectangle {
                             for (const n of unverified) { const e = root.escapeHtml(n), i = t.indexOf(e); if (i >= 0) t = t.slice(0, i + e.length) + badge + t.slice(i + e.length) }
                             return t
                         }
-                        if (notesRow) return "<a href=\"ost:notes-tab\" style=\"text-decoration: none; color: " + theme.textSecondary + "\">Notes</a> have been created in this chat."
+                        if (notesRow) return qsTr("<0><0></0></0> have been created in this chat.").replace("<0><0></0></0>", "<a href=\"ost:notes-tab\" style=\"text-decoration: none; color: " + theme.textSecondary + "\">" + qsTr("Notes") + "</a>")
                         if (msg.isEvent) return msg.modelData.text
                         // Meet now (Teams: "You started a meeting." /
                         // "{{initiator}} started a meeting.", then
                         // "Meeting ended" with the duration).
                         if (msg.modelData.call_state === "started")
-                            return msg.mine ? "You started a meeting." : root.escapeHtml(msg.modelData.sender || root.memberName(msg.modelData.sender_mri) || "Someone") + " started a meeting."
-                        if (msg.modelData.call_state === "missed") return "Call missed"
+                            return msg.mine ? qsTr("You started a meeting.") : qsTr("%1 started a meeting.").arg(root.escapeHtml(msg.modelData.sender || root.memberName(msg.modelData.sender_mri) || qsTr("Someone")))
+                        if (msg.modelData.call_state === "missed") return qsTr("Call missed")
                         const s = msg.modelData.call_seconds
                         // Teams leaves out whole days ("d.hh:mm:ss" reads as
                         // its hours): a 25h 28m meeting shows "1h 28m 28s".
@@ -2072,8 +2084,8 @@ Rectangle {
                             .filter(p => p[0] > 0).map(p => p[0] + p[1]).join(" ")
                         // A meeting chat says "Meeting ended: {duration}" (seen in OST
                         // calendar test on winpc, 2026-11-10).
-                        if (root.isMeetingChat) return "Meeting ended:&nbsp;<b>" + parts + "</b>"
-                        return (msg.modelData.call_huddle ? "Meeting ended" : "Call ended") + "&nbsp;<b>" + parts + "</b>"
+                        if (root.isMeetingChat) return qsTr("Meeting ended:") + "&nbsp;<b>" + parts + "</b>"
+                        return (msg.modelData.call_huddle ? qsTr("Meeting ended") : qsTr("Call ended")) + "&nbsp;<b>" + parts + "</b>"
                     }
                     font.family: theme.font; font.pixelSize: theme.small
                     color: theme.textSecondary
@@ -2106,7 +2118,7 @@ Rectangle {
                 visible: msg.groupedEdited
                 x: msg.mine ? bubble.x + bubble.width - width : bubble.x
                 y: msg.topPad + 2; height: 16
-                text: "Edited"
+                text: qsTr("Edited")
                 font.family: theme.font; font.pixelSize: theme.small
                 color: theme.textSecondary
             }
@@ -2131,7 +2143,7 @@ Rectangle {
                 // feedback window, sent to OST's GitHub.
                 Text {
                     visible: msg.sendFailed && (msg.modelData.send_note || "").indexOf("Message didn't send.") === 0
-                    text: "Report a problem"
+                    text: qsTr("Report a problem")
                     font.family: theme.font; font.pixelSize: theme.small
                     font.underline: reportHover.hovered
                     color: theme.brandLink
@@ -2145,10 +2157,10 @@ Rectangle {
                     // Compact: the name semibold in NeutralForeground1, as Teams.
                     textFormat: root.compact ? Text.StyledText : Text.PlainText
                     text: root.compact
-                        ? "<b><font color=\"" + theme.text + "\">" + root.senderLabel(msg.modelData).replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</font></b>&nbsp;&nbsp;" + root.stamp(msg.modelData.time) + (msg.modelData.edited && !msg.sendFailed ? "&nbsp;&nbsp;&nbsp;Edited" : "") + (root.cardUpdated(msg.modelData.id) ? "&nbsp;&nbsp;&nbsp;Updated" : "")
+                        ? "<b><font color=\"" + theme.text + "\">" + root.senderLabel(msg.modelData).replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</font></b>&nbsp;&nbsp;" + root.stamp(msg.modelData.time) + (msg.modelData.edited && !msg.sendFailed ? "&nbsp;&nbsp;&nbsp;" + qsTr("Edited") : "") + (root.cardUpdated(msg.modelData.id) ? "&nbsp;&nbsp;&nbsp;" + qsTr("Updated") : "")
                         : (msg.mine ? "" : root.senderLabel(msg.modelData) + "  ") + root.stamp(msg.modelData.time)
-                        + (msg.modelData.edited && !msg.sendFailed ? "   Edited" : "")
-                        + (root.cardUpdated(msg.modelData.id) ? "   Updated" : "")
+                        + (msg.modelData.edited && !msg.sendFailed ? "   " + qsTr("Edited") : "")
+                        + (root.cardUpdated(msg.modelData.id) ? "   " + qsTr("Updated") : "")
                     font.family: theme.font; font.pixelSize: theme.small
                     color: theme.textSecondary
                     // The sender's name opens their profile card, as in Teams.
@@ -2170,11 +2182,11 @@ Rectangle {
                 // semibold, RedForeground3, 8 after the time (measured).
                 Text {
                     visible: msg.modelData.importance === "high" || msg.modelData.importance === "urgent"
-                    text: msg.modelData.importance === "urgent" ? "URGENT" : "IMPORTANT"
+                    text: msg.modelData.importance === "urgent" ? qsTr("Urgent").toUpperCase() : qsTr("IMPORTANT")
                     font.family: theme.font; font.pixelSize: theme.small; font.weight: Font.DemiBold
                     color: theme.redForeground3
                     Accessible.role: Accessible.StaticText
-                    Accessible.name: msg.modelData.importance === "urgent" ? "Urgent message." : "Important message."
+                    Accessible.name: msg.modelData.importance === "urgent" ? qsTr("Urgent message.") : qsTr("Important message.")
                 }
                 // Teams' translation suggestion (Ask me before translating, or
                 // the original of a message it auto-translated): "Translate |
@@ -2185,19 +2197,19 @@ Rectangle {
                     spacing: 8
                     Text {
                         id: suggestTranslate
-                        text: "Translate"
+                        text: qsTr("Translate")
                         font.family: theme.font; font.pixelSize: theme.small
                         font.underline: suggestTrHover.hovered
                         color: theme.brand
                         HoverHandler { id: suggestTrHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: backend.translateMessage(msg.modelData.id, true) }
                         Accessible.role: Accessible.Button
-                        Accessible.name: "Translate"
+                        Accessible.name: qsTr("Translate")
                         Accessible.onPressAction: backend.translateMessage(msg.modelData.id, true)
                     }
                     Rectangle { width: 1; height: 20; y: suggestTranslate.y + 3.3; color: theme.quoteBorder }
                     Text {
-                        text: "Never translate " + (msg.modelData.suggest_translation_name || "")
+                        text: qsTr("Never translate %1").arg(msg.modelData.suggest_translation_name || "")
                         font.family: theme.font; font.pixelSize: theme.small
                         font.underline: neverTrHover.hovered
                         color: theme.brand
@@ -2220,17 +2232,17 @@ Rectangle {
                         visible: trHover.hovered; delay: 500
                         y: -height - 4; padding: 8
                         background: FluentSurface { depth: 16; radius: 4 }
-                        contentItem: Text { text: msg.modelData.translated_from ? "Translated from " + msg.modelData.translated_from : "Translated"; font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
+                        contentItem: Text { text: msg.modelData.translated_from ? qsTr("Translated from %1").arg(msg.modelData.translated_from) : qsTr("Translated"); font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
                     }
                     Accessible.role: Accessible.Button
-                    Accessible.name: msg.modelData.translated_from ? "Translated from " + msg.modelData.translated_from : "Translated"
+                    Accessible.name: msg.modelData.translated_from ? qsTr("Translated from %1").arg(msg.modelData.translated_from) : qsTr("Translated")
                 }
                 Row {
                     visible: msg.modelData.translation_failed === true
                     spacing: 4
                     anchors.verticalCenter: parent.verticalCenter
                     FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "error-circle-20-filled"; size: 16; color: theme.redForeground1 }
-                    Text { anchors.verticalCenter: parent.verticalCenter; text: "Failed to translate"; font.family: theme.font; font.pixelSize: theme.small; color: theme.redForeground1 }
+                    Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Failed to translate"); font.family: theme.font; font.pixelSize: theme.small; color: theme.redForeground1 }
                 }
                 // Saved by you: Teams' magenta bookmark at the line's end.
                 FluentIcon {
@@ -2242,9 +2254,9 @@ Rectangle {
                         visible: savedHover.hovered; delay: 500
                         y: -height - 4; padding: 8
                         background: FluentSurface { depth: 16; radius: 4 }
-                        contentItem: Text { text: "Saved by you. Others won't see that it was saved."; font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
+                        contentItem: Text { text: qsTr("Saved by you. Others won't see that it was saved."); font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
                     }
-                    Accessible.name: "Saved by you. Others won't see that it was saved."
+                    Accessible.name: qsTr("Saved by you. Others won't see that it was saved.")
                 }
             }
             function editBoxForTest() { return editLoader.item }
@@ -2356,7 +2368,7 @@ Rectangle {
                     : cards.length > 0 ? Math.max(cardCol.width + 2 * (linkCardFirst ? 15.67 : 17.3), showBody ? Math.min(msg.maxBubble, body.implicitWidth + 2 * pad) : 0)
                     : hasCode ? msg.maxBubble
                     : Math.min(msg.maxBubble, Math.max(urlPreview ? 460 + 2 * pad : 0, msg.sharedHead ? sharedRow.implicitWidth : 0, msg.scheduledMsg ? scheduleLine.implicitWidth : 0, subjectLine.visible ? subjectLine.implicitWidth : 0, showBody ? body.implicitWidth + (msg.modelData.deleted && msg.mine ? 12 + undoMetrics.advanceWidth : 0) : 0, pics.implicitWidth, files.length > 0 ? fileCol.implicitWidth : 0, msg.modelData.quote ? quoteCard.width : 0, msg.modelData.forward ? fwdCard.width : 0) + 2 * pad)
-                TextMetrics { id: undoMetrics; text: "Undo"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
+                TextMetrics { id: undoMetrics; text: qsTr("Undo"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
                 height: botCard ? cardCol.height
                     : cards.length > 0 ? cardsTop + cardCol.height + (linkCardFirst ? 8.67 : 10.7)
                     : bare && files.length === 0 ? (bigEmoticons ? bodyH : picsH)
@@ -2385,7 +2397,7 @@ Rectangle {
                     visible: msg.scheduledMsg
                     x: bubble.pad; y: 6.6 + bubble.subjectH; height: 17.1
                     verticalAlignment: Text.AlignVCenter
-                    text: "Sending on " + (msg.scheduledMsg ? Qt.formatDate(new Date(msg.modelData.scheduled_at), "dddd, MMM d") + " at " + theme.time(new Date(msg.modelData.scheduled_at)) : "")
+                    text: msg.scheduledMsg ? qsTr("Sending on %1 at %2").arg(theme.fmtDate(new Date(msg.modelData.scheduled_at), "dddd, MMM d")).arg(theme.time(new Date(msg.modelData.scheduled_at))) : ""
                     font.family: theme.font; font.pixelSize: 12; color: theme.onFill(bubble, theme.textSecondary)
                 }
                 Text {
@@ -2411,8 +2423,8 @@ Rectangle {
                         height: 16; verticalAlignment: Text.AlignVCenter
                         textFormat: Text.RichText
                         text: msg.sharedHead === "thread"
-                            ? "Replied in thread: <a href=\"thread\" style=\"text-decoration: none; color: " + theme.brandForeground1 + "\">" + root.escapeHtml(msg.modelData.thread_title || "") + "</a>"
-                            : "Also sent to channel"
+                            ? qsTr("Replied in thread: <0>%1</0>").replace("<0>", "<a href=\"thread\" style=\"text-decoration: none; color: " + theme.brandForeground1 + "\">").replace("</0>", "</a>").arg(root.escapeHtml(msg.modelData.thread_title || ""))
+                            : qsTr("Also sent to channel")
                         font.family: theme.font; font.pixelSize: 12; color: theme.onFill(bubble, theme.textSecondary)
                         onLinkActivated: root.openThread(msg.modelData.root_id)
                         HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
@@ -2622,7 +2634,7 @@ Rectangle {
                                     FluentIcon { x: 10.7; y: 6; name: "code-block-20"; size: 20; color: theme.textSecondary }
                                     Text {
                                         x: 36.7; y: 8.7; height: 16; verticalAlignment: Text.AlignVCenter
-                                        text: codeCard.code.name || "Plain Text"
+                                        text: codeCard.code.name || qsTr("Plain Text")
                                         font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary
                                     }
                                     Rectangle {
@@ -2633,9 +2645,9 @@ Rectangle {
                                         HoverHandler { id: copyHover; cursorShape: Qt.PointingHandCursor }
                                         TapHandler { onTapped: backend.copyText(codeCard.code.text || "") }
                                         ToolTip.visible: copyHover.hovered
-                                        ToolTip.text: "Copy"
+                                        ToolTip.text: qsTr("Copy")
                                         Accessible.role: Accessible.Button
-                                        Accessible.name: "Copy code"
+                                        Accessible.name: qsTr("Copy code")
                                     }
                                 }
                                 Rectangle {
@@ -2748,7 +2760,7 @@ Rectangle {
                             TapHandler { enabled: pic.fun; onTapped: pic.playing = !pic.playing }
                             HoverHandler { enabled: pic.fun; cursorShape: Qt.PointingHandCursor }
                             Accessible.role: pic.fun ? Accessible.Button : Accessible.Graphic
-                            Accessible.name: pic.fun ? (pic.modelData.alt || "") : "Image"
+                            Accessible.name: pic.fun ? (pic.modelData.alt || "") : qsTr("Image")
                         }
                         }
                     }
@@ -2799,7 +2811,7 @@ Rectangle {
                     selectedTextColor: theme.text
                     // Teams' 14/20 text (a fixed 20 px line).
                     // Sanitised by the engine to a safe subset.
-                    text: msg.modelData.deleted ? "This message has been deleted."
+                    text: msg.modelData.deleted ? qsTr("This message has been deleted.")
                         : bubble.textStyle + root.marked(msg.modelData.id, msg.modelData.html ? theme.messageHtml(msg.modelData.html) : msg.modelData.text)
                     textFormat: msg.modelData.deleted ? TextEdit.PlainText : TextEdit.RichText
                     wrapMode: TextEdit.Wrap
@@ -2823,13 +2835,13 @@ Rectangle {
                 Text {
                     visible: msg.modelData.deleted === true && msg.mine && msg.modelData.importance !== "urgent"
                     x: body.x + body.contentWidth + 12; y: body.y
-                    text: "Undo"
+                    text: qsTr("Undo")
                     font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold
                     color: theme.onFill(bubble, theme.brandLink)
                     HoverHandler { cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: backend.undoDeleteMessage(msg.modelData.id) }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Undo"
+                    Accessible.name: qsTr("Undo")
                 }
                 UrlPreviewCard {
                     visible: !!bubble.urlPreview
@@ -2913,7 +2925,7 @@ Rectangle {
                                 ToolTip.delay: 500
                                 ToolTip.text: fc.modelData.name
                                 Accessible.role: Accessible.Link
-                                Accessible.name: "Tab " + fc.modelData.name
+                                Accessible.name: qsTr("Tab %1").arg(fc.modelData.name)
                             }
                         }
                     }
@@ -2927,7 +2939,7 @@ Rectangle {
                 text: "@"
                 font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold
                 color: theme.mentionMe
-                Accessible.name: "Mentions you"
+                Accessible.name: qsTr("Mentions you")
             }
             // Teams' reaction summary: overlapping the bubble's bottom edge by
             // 4, 15.7 in from its start (at its end on your messages).
@@ -2976,9 +2988,9 @@ Rectangle {
                     HoverHandler { cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.openThread(msg.modelData.id) }
                     Accessible.role: Accessible.Button
-                    Accessible.name: text + ", open thread"
+                    Accessible.name: qsTr("%1, open thread").arg(text)
                 }
-                Text { anchors.verticalCenter: parent.verticalCenter; text: "Last reply " + root.stamp(msg.modelData.thread_last); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Last reply %1").arg(root.stamp(msg.modelData.thread_last)); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
             }
             HoverBar {
                 id: actions
@@ -2987,9 +2999,9 @@ Rectangle {
                 message: msg.modelData
                 // A reply also sent to the channel: Reply in thread (its
                 // thread), no Edit (Teams).
-                acts: msg.scheduledMsg ? [{ key: "edit", icon: "edit-20", tip: "Edit" }] : (root.threadsLayout ? [{ key: "thread", icon: "chat-multiple-20", tip: "Reply in thread" }] : []).concat(msg.sharedHead === "thread" ? [] : msg.mine
-                    ? [{ key: "edit", icon: "edit-20", tip: "Edit" }]
-                    : [{ key: "reply", icon: "quote-reply-20", tip: "Reply with quote" }])
+                acts: msg.scheduledMsg ? [{ key: "edit", icon: "edit-20", tip: qsTr("Edit") }] : (root.threadsLayout ? [{ key: "thread", icon: "chat-multiple-20", tip: qsTr("Reply in thread") }] : []).concat(msg.sharedHead === "thread" ? [] : msg.mine
+                    ? [{ key: "edit", icon: "edit-20", tip: qsTr("Edit") }]
+                    : [{ key: "reply", icon: "quote-reply-20", tip: qsTr("Reply with quote") }])
                 onThreadRequested: m => root.openThread(m.root_id || m.id)
                 onKeyboardDone: root.focusCompose()
                 onActiveFocusChanged: if (!activeFocus && root.forceBarId === msg.modelData.id) root.forceBarId = ""
@@ -3006,7 +3018,7 @@ Rectangle {
                 size: 16; color: theme.redForeground3
                 x: msg.mine ? bubble.x - 4 - 16 : bubble.x + bubble.width + 4
                 y: bubble.y + 12
-                Accessible.name: msg.modelData.importance === "urgent" ? "Urgent badge" : "Important badge"
+                Accessible.name: msg.modelData.importance === "urgent" ? qsTr("Urgent badge") : qsTr("Important badge")
             }
             // Sent tick on your newest message, "Seen" eye on the newest one
             // the other person has read.
@@ -3016,9 +3028,9 @@ Rectangle {
             FluentIcon {
                 id: statusIcon
                 readonly property bool seen: msg.modelData.latestSeen === true
-                readonly property string tip: msg.scheduledMsg ? "Scheduled" : msg.sendPending ? (msg.modelData.send_note || "")
-                    : msg.sendFailed ? "Failed"
-                    : seen ? (root.isGroup ? "Seen by everyone" : "Seen") : "Sent"
+                readonly property string tip: msg.scheduledMsg ? qsTr("Scheduled") : msg.sendPending ? (msg.modelData.send_note || "")
+                    : msg.sendFailed ? qsTr("Failed")
+                    : seen ? (root.isGroup ? qsTr("Seen by everyone") : qsTr("Seen")) : qsTr("Sent")
                 visible: msg.mine && !msg.isRow && !msg.editingThis && (msg.scheduledMsg || msg.sendPending || msg.sendFailed || seen || (msg.modelData.latestMine === true && !msg.modelData.seen))
                 name: msg.scheduledMsg ? "clock-12" : msg.sendPending ? "circle-12" : msg.sendFailed ? "warning-12-filled" : seen ? "seen-12" : "sent-12"
                 size: 12; color: msg.sendFailed ? theme.redForeground1 : theme.brand
@@ -3043,8 +3055,8 @@ Rectangle {
                 y: bubble.y + Math.max(0, (Math.min(bubble.height, 36) - 24) / 2)
                 Repeater {
                     model: [
-                        { key: "retry", icon: "arrow-clockwise-16", tip: "Retry", name: "Retry", show: msg.modelData.can_retry === true },
-                        { key: "delete", icon: "delete-16", tip: "Delete", name: "Delete this message", show: true }
+                        { key: "retry", icon: "arrow-clockwise-16", tip: qsTr("Retry"), name: qsTr("Retry"), show: msg.modelData.can_retry === true },
+                        { key: "delete", icon: "delete-16", tip: qsTr("Delete"), name: qsTr("Delete this message"), show: true }
                     ].filter(b => b.show)
                     Rectangle {
                         id: failBtn
@@ -3207,16 +3219,16 @@ Rectangle {
         y: compose.y - 8 - height
         height: 24
         Accessible.role: Accessible.ToolBar
-        Accessible.name: "Suggested reply"
+        Accessible.name: qsTr("Suggested reply")
         Repeater {
             model: root.smartReplyItems.special
             SuggestionChip {
                 id: special
                 required property var modelData
                 readonly property var wf: modelData.workflow || null
-                label: modelData.kind === "file_sharing" ? "Share a file"
-                    : wf ? (wf.recommendedToolName === "schedule_meeting" ? "Would you like to schedule a meeting?"
-                        : wf.recommendedToolName === "create_planner_task" ? "Would you like to create a Planner task?" : "Would you like a reminder to follow up?")
+                label: modelData.kind === "file_sharing" ? qsTr("Share a file")
+                    : wf ? (wf.recommendedToolName === "schedule_meeting" ? qsTr("Would you like to schedule a meeting?")
+                        : wf.recommendedToolName === "create_planner_task" ? qsTr("Would you like to create a Planner task?") : qsTr("Would you like a reminder to follow up?"))
                     : modelData.value
                 icon: modelData.kind === "file_sharing" ? "document-20" : modelData.kind === "meeting" ? "calendar-add-20" : ""
                 iconSource: wf ? backend.cardImage("https://res.cdn.office.net/teamsappdata/app-assets/ring0/c3a1996d-db0f-4857-a6ea-7aabf0266b00/c3a1996d-db0f-4857-a6ea-7aabf0266b00_largeImage.png?v=2.1.5") : ""
@@ -3256,11 +3268,11 @@ Rectangle {
                 background: FluentSurface { depth: 16; radius: 4 }
                 contentItem: Text {
                     leftPadding: 12; rightPadding: 12; topPadding: 6; bottomPadding: 6
-                    text: "Suggested reply feedback"; font.family: theme.font; font.pixelSize: 12; color: theme.text
+                    text: qsTr("Suggested reply feedback"); font.family: theme.font; font.pixelSize: 12; color: theme.text
                 }
             }
             Accessible.role: Accessible.Button
-            Accessible.name: "Suggested reply feedback"
+            Accessible.name: qsTr("Suggested reply feedback")
         }
     }
     SmartReplyFeedback {
@@ -3272,7 +3284,7 @@ Rectangle {
             const url = backend.smartReplyFeedbackUrl(JSON.stringify({ categories: categories, comment: comment, kinds: kinds,
                 attach: attach, suggestions: set.replies.map(r => r.title || r.value), last_message: m ? (m.html || m.text || "") : "" }))
             if (url) Qt.openUrlExternally(url)
-            root.toastRequested({ text: "Finish on GitHub: select Create to send your feedback." })
+            root.toastRequested({ text: qsTr("Finish on GitHub: select Create to send your feedback.") })
         }
     }
     /// A file, meeting or workflow suggestion was chosen (Teams' To / Mo / Us).
@@ -3448,7 +3460,7 @@ Rectangle {
         teamId: root.teamId; teamName: root.teamName
         newestPost: { const posts = root.messages.filter(m => m.kind === "message" && (!m.root_id || m.root_id === m.id)); return posts.length ? posts[posts.length - 1].id : "" }
         postsAtBottom: !backend.channelPostsAtTop
-        movedItems: root.contextInline < 2 && root.threadsButton ? [{ key: "details", label: "Open channel details", icon: "panel-right-expand-20", keys: "Alt+P" }] : []
+        movedItems: root.contextInline < 2 && root.threadsButton ? [{ key: "details", label: qsTr("Open channel details"), icon: "panel-right-expand-20", keys: "Alt+P" }] : []
         onOpenDetails: participants.visible = !participants.visible
         onOpenInNewWindow: root.openChannelWindow(root.chatId)
         onManageChannel: root.manageChannel(root.chatId)
@@ -3501,9 +3513,9 @@ Rectangle {
             TapHandler { onTapped: root.tabExpanded = false }
             ToolTip.visible: collapseHover.hovered
             ToolTip.delay: 500
-            ToolTip.text: "Collapse tab"
+            ToolTip.text: qsTr("Collapse tab")
             Accessible.role: Accessible.Button
-            Accessible.name: "Collapse tab"
+            Accessible.name: qsTr("Collapse tab")
         }
         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.divider }
     }
@@ -3555,10 +3567,10 @@ Rectangle {
                 id: sharedCol
                 x: 32; y: 20; width: parent.width - 64
                 spacing: 8
-                Text { text: "Files"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
+                Text { text: qsTr("Files"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
                 Text {
                     visible: sharedPane.files.length === 0
-                    text: "Files shared in this chat appear here."
+                    text: qsTr("Files shared in this chat appear here.")
                     font.family: theme.font; font.pixelSize: theme.base; color: theme.textSecondary
                 }
                 Repeater {
@@ -3583,17 +3595,17 @@ Rectangle {
                             HoverHandler { id: sdh; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: backend.downloadFile(JSON.stringify(parent.parent.modelData)) }
                             Accessible.role: Accessible.Button
-                            Accessible.name: "Download " + parent.modelData.name
+                            Accessible.name: qsTr("Download %1").arg(parent.modelData.name)
                         }
                         HoverHandler { id: sfh; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: backend.openFile(modelData.share_url || modelData.object_url, modelData.name, "") }
                     }
                 }
                 Item { width: 1; height: 16 }
-                Text { text: "Links"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
+                Text { text: qsTr("Links"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
                 Text {
                     visible: sharedPane.links.length === 0
-                    text: "Links shared in this chat appear here."
+                    text: qsTr("Links shared in this chat appear here.")
                     font.family: theme.font; font.pixelSize: theme.base; color: theme.textSecondary
                 }
                 Repeater {
@@ -3821,10 +3833,10 @@ Rectangle {
                         id: hcFill11
                         width: 96; height: 31.3; radius: 4
                         color: aboutHover.hovered ? theme.menuHover : "transparent"
-                        Text { anchors.centerIn: parent; text: "About"; font.family: theme.font; font.pixelSize: theme.base; color: theme.onFill(hcFill11, theme.brandLink) }
+                        Text { anchors.centerIn: parent; text: qsTr("About"); font.family: theme.font; font.pixelSize: theme.base; color: theme.onFill(hcFill11, theme.brandLink) }
                         HoverHandler { id: aboutHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: root.tabAction("aboutTab", renameDialog.visible ? renameDialog.tab : removeDialog.tab) }
-                        Accessible.role: Accessible.Button; Accessible.name: "About"
+                        Accessible.role: Accessible.Button; Accessible.name: qsTr("About")
                     }
                     Rectangle {
                         id: hcFill12
@@ -3833,7 +3845,7 @@ Rectangle {
                         FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(hcFill12, theme.textStrong) }
                         HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: td.close() }
-                        Accessible.role: Accessible.Button; Accessible.name: "Close " + td.title
+                        Accessible.role: Accessible.Button; Accessible.name: qsTr("Close %1").arg(td.title)
                     }
                 }
             }
@@ -3861,13 +3873,13 @@ Rectangle {
         property string failure: ""
         readonly property string error: {
             const v = renameField.text, t = v.trim()
-            if (t === "") return "Name is required"
-            if (v.length > 128) return "Tab name cannot exceed 128 characters."
+            if (t === "") return qsTr("Name is required")
+            if (v.length > 128) return qsTr("Tab name cannot exceed %1 characters.").arg(128)
             const others = root.channelTabs.filter(x => tab && x.id !== tab.id).map(x => x.name.trim().toLowerCase())
-            if (others.indexOf(t.toLowerCase()) >= 0) return "You already have a tab with that name. Try a different one."
+            if (others.indexOf(t.toLowerCase()) >= 0) return qsTr("You already have a tab with that name. Try a different one.")
             return ""
         }
-        title: "Rename " + (tab ? tab.name : "")
+        title: qsTr("Rename %1").arg(tab ? tab.name : "")
         function start(t) { tab = t; saving = false; failure = ""; renameField.text = t.name; open() }
         function save() {
             if (error || saving) return
@@ -3878,7 +3890,7 @@ Rectangle {
         Item { width: 1; height: 20 }
         Item {
             width: parent.width; height: 20
-            Text { text: "Tab name"; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
+            Text { text: qsTr("Tab name"); font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
             Text { anchors.right: parent.right; text: renameDialog.error; font.family: theme.font; font.pixelSize: theme.base; color: theme.danger; Accessible.role: Accessible.AlertMessage }
         }
         Item { width: 1; height: 10 }
@@ -3891,7 +3903,7 @@ Rectangle {
                 selectByMouse: true
                 Keys.onReturnPressed: renameDialog.save()
                 Keys.onEnterPressed: renameDialog.save()
-                Accessible.name: "Tab name"
+                Accessible.name: qsTr("Tab name")
             }
             // Fluent's focus indicator: a 2 px brand line along the bottom.
             Rectangle {
@@ -3914,7 +3926,7 @@ Rectangle {
         Item { width: 1; height: 20 }
         Item {
             width: parent.width; height: 31.3
-            PrimaryButton { anchors.right: parent.right; label: "Save"; enabled: !renameDialog.error && !renameDialog.saving; onClicked: renameDialog.save() }
+            PrimaryButton { anchors.right: parent.right; label: qsTr("Save"); enabled: !renameDialog.error && !renameDialog.saving; onClicked: renameDialog.save() }
         }
     }
     // Remove: "Want to remove this tab?" (a Page: "...this page?"), Remove
@@ -3925,13 +3937,13 @@ Rectangle {
         property bool removing: false
         property string failure: ""
         readonly property bool page: !!tab && tab.kind === "ChannelPage"
-        title: page ? "Want to remove this page?" : "Want to remove this tab?"
+        title: page ? qsTr("Want to remove this page?") : qsTr("Want to remove this tab?")
         function start(t) { tab = t; removing = false; failure = ""; open() }
         Item { width: 1; height: 20 }
         Text {
             width: parent.width; wrapMode: Text.Wrap
-            text: removeDialog.page ? "The page will be removed, not deleted. You can still access it from Microsoft Loop."
-                : "The " + (removeDialog.tab ? removeDialog.tab.name : "") + " tab will be permanently removed."
+            text: removeDialog.page ? qsTr("The page will be removed, not deleted. You can still access it from Microsoft Loop.")
+                : qsTr("The %1 tab will be permanently removed.").arg(removeDialog.tab ? removeDialog.tab.name : "")
             font.family: theme.font; font.pixelSize: theme.base; color: theme.text
         }
         Text {
@@ -3945,7 +3957,7 @@ Rectangle {
             width: parent.width; height: 31.3
             PrimaryButton {
                 anchors.right: parent.right
-                label: removeDialog.removing ? "Removing" : "Remove"
+                label: removeDialog.removing ? qsTr("Removing") : qsTr("Remove")
                 enabled: !removeDialog.removing
                 onClicked: { removeDialog.removing = true; backend.channelTabChange("remove", root.teamId, root.chatId, removeDialog.tab.id, "") }
             }
@@ -3963,14 +3975,14 @@ Rectangle {
             const r = JSON.parse(backend.channelTabResult || "{}")
             if (r.op === "rename" && renameDialog.tab && r.tab === renameDialog.tab.id) {
                 if (r.ok) { if (root.tab === renameDialog.tab.name) root.tab = renameField.text.trim(); renameDialog.close() }
-                else { renameDialog.saving = false; renameDialog.failure = "Unable to save " + renameDialog.tab.name + " tab configuration." }
+                else { renameDialog.saving = false; renameDialog.failure = qsTr("Unable to save %1 tab configuration.").arg(renameDialog.tab.name) }
             } else if (r.op === "add" && r.ok && r.conversation === root.chatId && r.tab && root.visible) {
                 // A New page's tab: its page is made when it opens.
                 if (root.pendingNewPage) { root.newPageTabs = root.newPageTabs.concat([r.tab]); root.pendingNewPage = false }
                 root.pendingOpenTab = r.tab
             } else if (r.op === "remove" && removeDialog.tab && r.tab === removeDialog.tab.id) {
                 if (r.ok) { if (root.tab === removeDialog.tab.name) root.tab = ""; removeDialog.close() }
-                else { removeDialog.removing = false; removeDialog.failure = "We couldn't remove your tab. Please try later." }
+                else { removeDialog.removing = false; removeDialog.failure = qsTr("We couldn't remove your tab. Please try later.") }
             }
         }
     }
@@ -4049,7 +4061,7 @@ Rectangle {
         }
         Text {
             x: 15.7; y: 17.7; height: 16; verticalAlignment: Text.AlignVCenter
-            text: root.isChannel ? "People in this channel" : "People (" + participants.members.length + ")"
+            text: root.isChannel ? qsTr("People in this channel") : qsTr("People (%1)").arg(participants.members.length)
             font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.textSecondary
         }
         Column {
@@ -4078,7 +4090,7 @@ Rectangle {
                     Text {
                         visible: !!prow.modelData.me
                         x: 54; y: 25; height: 16; verticalAlignment: Text.AlignVCenter
-                        text: "You"
+                        text: qsTr("You")
                         font.family: theme.font; font.pixelSize: 12; color: theme.onFill(prow, theme.text)
                     }
                     HoverHandler { id: prowHover }
@@ -4094,15 +4106,15 @@ Rectangle {
                         HoverHandler { id: removeHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: { participants.visible = false; memberRemoveDialog.start(prow.modelData) } }
                         ToolTip.visible: removeHover.hovered
-                        ToolTip.text: "Remove"
+                        ToolTip.text: qsTr("Remove")
                         Accessible.role: Accessible.Button
-                        Accessible.name: "Remove " + prow.modelData.name
+                        Accessible.name: qsTr("Remove %1").arg(prow.modelData.name)
                     }
                     ToolTip.visible: prowHover.hovered && !removeHover.hovered && !prow.modelData.me
                     ToolTip.text: prow.modelData.name
                     ToolTip.delay: 600
                     Accessible.role: Accessible.MenuItem
-                    Accessible.name: prow.modelData.name + (prow.modelData.me ? ", You" : "")
+                    Accessible.name: prow.modelData.name + (prow.modelData.me ? ", " + qsTr("You") : "")
                 }
             }
         }
@@ -4119,11 +4131,11 @@ Rectangle {
             width: 246; height: 31.3; radius: 4
             color: addHover.hovered ? theme.pick("#F5F5F5", "#2E2E2E", "#1AEBFF") : "transparent"
             FluentIcon { x: 21.6; anchors.verticalCenter: parent.verticalCenter; name: "people-add-20"; size: 20; color: theme.onFill(addRow, theme.textStrong) }
-            Text { x: 57.6; anchors.verticalCenter: parent.verticalCenter; text: "Add people"; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(addRow, theme.text) }
+            Text { x: 57.6; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Add people"); font.family: theme.font; font.pixelSize: 14; color: theme.onFill(addRow, theme.text) }
             HoverHandler { id: addHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: { participants.visible = false; root.openAddPeople() } }
             Accessible.role: Accessible.Button
-            Accessible.name: "Add people"
+            Accessible.name: qsTr("Add people")
         }
     }
     // Leave (leave-chat-btn): person-arrow-left at 24.3, 32 tall.
@@ -4135,11 +4147,11 @@ Rectangle {
         width: 246; height: 32; radius: 4
         color: leaveHover.hovered ? theme.pick("#F5F5F5", "#2E2E2E", "#1AEBFF") : "transparent"
         FluentIcon { x: 21.6; anchors.verticalCenter: parent.verticalCenter; name: "person-arrow-left-20"; size: 20; color: theme.onFill(leaveRow, theme.textStrong) }
-        Text { x: 57.6; anchors.verticalCenter: parent.verticalCenter; text: "Leave"; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(leaveRow, theme.text) }
+        Text { x: 57.6; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Leave"); font.family: theme.font; font.pixelSize: 14; color: theme.onFill(leaveRow, theme.text) }
         HoverHandler { id: leaveHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: { participants.visible = false; memberRemoveDialog.startLeave(participants.members.find(m => m.me)) } }
         Accessible.role: Accessible.Button
-        Accessible.name: "Leave"
+        Accessible.name: qsTr("Leave")
     }
     function openAddPeople() {
         addPeople.members = participants.members.map(m => m.mri)
@@ -4168,12 +4180,12 @@ Rectangle {
         Overlay.modal: Rectangle { color: theme.hc("#66000000", "#000000") }
         Text {
             x: 24.7; y: 24.7; width: 550; height: 28; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight
-            text: memberRemoveDialog.leaving ? "Leave the conversation?" : "Remove " + (memberRemoveDialog.member ? memberRemoveDialog.member.name : "") + " from the conversation?"
+            text: memberRemoveDialog.leaving ? qsTr("Leave the conversation?") : qsTr("Remove %1 from the conversation?").arg(memberRemoveDialog.member ? memberRemoveDialog.member.name : "")
             font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text
         }
         Text {
             x: 24.7; y: 59.3; height: 20; verticalAlignment: Text.AlignVCenter
-            text: memberRemoveDialog.leaving ? "You'll still have access to the chat history." : "They'll still have access to the chat history."
+            text: memberRemoveDialog.leaving ? qsTr("You'll still have access to the chat history.") : qsTr("They'll still have access to the chat history.")
             font.family: theme.font; font.pixelSize: theme.base; color: theme.text
         }
         Row {
@@ -4182,21 +4194,21 @@ Rectangle {
                 id: hcFill13
                 width: 96; height: 31.3; radius: 4
                 color: rCancelHover.hovered ? theme.menuHover : theme.surface; border.color: theme.stroke
-                Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill13, theme.text) }
+                Text { anchors.centerIn: parent; text: qsTr("Cancel"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill13, theme.text) }
                 HoverHandler { id: rCancelHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: memberRemoveDialog.close() }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Cancel"
+                Accessible.name: qsTr("Cancel")
             }
             Rectangle {
                 id: hcFill14
                 width: 96; height: 31.3; radius: 4
                 color: rOkHover.hovered ? theme.brandHover : theme.brandFill
-                Text { anchors.centerIn: parent; text: memberRemoveDialog.leaving ? "Leave" : "Remove"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill14, "white") }
+                Text { anchors.centerIn: parent; text: memberRemoveDialog.leaving ? qsTr("Leave") : qsTr("Remove"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill14, "white") }
                 HoverHandler { id: rOkHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: memberRemoveDialog.confirm() }
                 Accessible.role: Accessible.Button
-                Accessible.name: memberRemoveDialog.leaving ? "Leave" : "Remove"
+                Accessible.name: memberRemoveDialog.leaving ? qsTr("Leave") : qsTr("Remove")
             }
         }
         function confirm() {
@@ -4302,10 +4314,10 @@ Rectangle {
                 return
             }
             if (refresh) return
-            if (error) root.setCardFooter(key, { error: true, text: "Something went wrong. Please try again." })
+            if (error) root.setCardFooter(key, { error: true, text: qsTr("Something went wrong. Please try again.") })
             else if (v && v.kind === "message") root.setCardFooter(key, { text: v.message })
             else if (v && v.kind === "error") root.setCardFooter(key, { error: true, text: v.message })
-            else root.setCardFooter(key, { text: "Your response was sent to the app" })
+            else root.setCardFooter(key, { text: qsTr("Your response was sent to the app") })
         }
     }
     /// Run a card's action by its title, with the given inputs (tests).
@@ -4347,7 +4359,7 @@ Rectangle {
             const v = result ? JSON.parse(result) : null
             if (kind === "card_item") {
                 if (error || !v) {
-                    if (root.cardPending) root.toastRequested({ text: "Something went wrong. Try again.", intent: "error" })
+                    if (root.cardPending) root.toastRequested({ text: qsTr("Something went wrong. Try again."), intent: "error" })
                     root.cardPending = null
                     return
                 }
@@ -4356,12 +4368,12 @@ Rectangle {
                 const p = root.cardPending
                 if (p && p.file.object_url === v.url) { root.cardPending = null; root.fileCardAct(p.file, p.label) }
             } else if (kind === "card_favorite") {
-                if (error || !v) { root.toastRequested({ text: "Something went wrong. Try again.", intent: "error" }); return }
+                if (error || !v) { root.toastRequested({ text: qsTr("Something went wrong. Try again."), intent: "error" }); return }
                 const m = Object.assign({}, root.cardItems)
                 if (m[v.url]) { m[v.url] = Object.assign({}, m[v.url], { favorite: v.on }); root.cardItems = m }
                 const file = root.cardFileFor(v.url)
-                root.toastRequested(v.on ? { text: "Added \"" + v.name + "\" to OneDrive Favorites", intent: "success" }
-                    : { text: "Removed from OneDrive Favorites", intent: "success", action: "Undo",
+                root.toastRequested(v.on ? { text: qsTr("Added \"%1\" to OneDrive Favorites").arg(v.name), intent: "success" }
+                    : { text: qsTr("Removed from OneDrive Favorites"), intent: "success", action: qsTr("Undo"),
                         onAction: () => { if (file) root.setCardFavorite(file, true) } })
             }
         }
@@ -4373,9 +4385,9 @@ Rectangle {
     function cardMenuItems(file) {
         const known = root.cardItems[file.object_url]
         const fav = !!known && known.favorite
-        return [{ label: "Open in Browser", icon: "globe-20" }, { label: "Download", icon: "arrow-download-20" },
-                { label: "Share", icon: "share-20" }, { label: "Copy link", icon: "link-20" },
-                fav ? { label: "Unfavorite", icon: "star-20-filled" } : { label: "Favorite", icon: "star-20" }]
+        return [{ act: "Open in Browser", label: qsTr("Open in Browser"), icon: "globe-20" }, { act: "Download", label: qsTr("Download"), icon: "arrow-download-20" },
+                { act: "Share", label: qsTr("Share"), icon: "share-20" }, { act: "Copy link", label: qsTr("Copy link"), icon: "link-20" },
+                fav ? { act: "Unfavorite", label: qsTr("Unfavorite"), icon: "star-20-filled" } : { act: "Favorite", label: qsTr("Favorite"), icon: "star-20" }]
     }
     function lookUpCard(file) {
         if (file.object_url) backend.driveAction(root.cardTag + "card_item", "{}", JSON.stringify({ url: file.object_url }))
@@ -4410,7 +4422,7 @@ Rectangle {
     MenuPopup {
         id: cardMenu
         minRowWidth: 172
-        onPicked: i => { if (root.cardMenuFile) root.fileCardAct(root.cardMenuFile, items[i].label) }
+        onPicked: i => { if (root.cardMenuFile) root.fileCardAct(root.cardMenuFile, items[i].act) }
     }
     ShareFileDialog { id: cardShare }
     FileActions { id: cardActions; anchors.fill: parent; z: -1 }
@@ -4559,18 +4571,18 @@ Rectangle {
             HoverHandler { cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.jumpToMessage(root.pinnedBanner.id) }
             Accessible.role: Accessible.Button
-            Accessible.name: root.pinnedBanner ? "Pinned message banner. Message from " + root.pinnedBanner.sender + " sent on " + root.pinnedStamp(root.pinnedBanner.time) + ", " + root.pinnedBanner.text : ""
+            Accessible.name: root.pinnedBanner ? qsTr("Pinned message banner. Message from %1 sent on %2, %3").arg(root.pinnedBanner.sender).arg(root.pinnedStamp(root.pinnedBanner.time)).arg(root.pinnedBanner.text) : ""
         }
         BarButton {
             id: pinMore
             x: parent.width - 32 - 2; y: 4; height: 31.3
-            icon: "more-horizontal-20"; tip: "Pinned options"
+            icon: "more-horizontal-20"; tip: qsTr("Pinned options")
             onClicked: { pinMenu.parent = pinMore; pinMenu.x = pinMore.width - pinMenu.implicitWidth; pinMenu.y = pinMore.height; pinMenu.open() }
         }
         MenuPopup {
             id: pinMenu
             margins: 8
-            items: [{ key: "view", label: "View in chat", icon: "open-20" }, { key: "unpin", label: "Unpin for everyone", icon: "pin-off-20" }]
+            items: [{ key: "view", label: qsTr("View in chat"), icon: "open-20" }, { key: "unpin", label: qsTr("Unpin for everyone"), icon: "pin-off-20" }]
             onPicked: i => {
                 if (items[i].key === "view") root.jumpToMessage(root.pinnedBanner.id)
                 else backend.setMessagePinned(root.pinnedBanner.id, false)
@@ -4583,12 +4595,12 @@ Rectangle {
         property var target: null
         function popup(anchor, px, py) { parent = anchor; x = px; y = py; open() }
         margins: 8
-        items: [{ key: "copy", label: "Copy", keys: "Ctrl+C" }, { key: "all", label: "Select all", keys: "Ctrl+A" }]
+        items: [{ key: "copy", label: qsTr("Copy"), keys: "Ctrl+C" }, { key: "all", label: qsTr("Select all"), keys: "Ctrl+A" }]
         onPicked: i => { if (!target) return; if (items[i].key === "copy") target.copy(); else target.selectAll() }
     }
     FileDialog {
         id: filePicker
-        title: "Upload from this device"
+        title: qsTr("Upload from this device")
         fileMode: FileDialog.OpenFiles
         onAccepted: root.addFiles(selectedFiles)
     }
@@ -4656,7 +4668,7 @@ Rectangle {
                 }
             }
             Accessible.role: Accessible.Button
-            Accessible.name: "Close notification"
+            Accessible.name: qsTr("Close notification")
         }
     }
     // The chat's compose (Teams' simplified compose; ComposeBox). It sits
@@ -4696,7 +4708,7 @@ Rectangle {
         // Teams offers it in chats and channels, not in your own chat or a
         // thread's reply box.
         scheduleAllowed: !root.isSelf && !root.threadRoot && !root.pane
-        placeholder: root.composeDisabled ? root.composeDisabledText : root.threadRoot ? "Reply in thread" : root.threadsLayout ? "Message in " + root.chatName : "Type a message"
+        placeholder: root.composeDisabled ? root.composeDisabledText : root.threadRoot ? qsTr("Reply in thread") : root.threadsLayout ? qsTr("Message in %1").arg(root.chatName) : qsTr("Type a message")
         noteText: root.composeNote
         textOnly: root.composeTextOnly
         noteMuted: root.composeNoteMuted

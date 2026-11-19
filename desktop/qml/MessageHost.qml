@@ -70,7 +70,7 @@ Item {
     }
     // Teams' per-user reaction limit (217146, enableMultipleReactionsPerUser).
     readonly property int reactionLimit: 20
-    readonly property string limitText: "You\u2019ve reached the " + reactionLimit + "-reaction limit. Remove one to add another."
+    readonly property string limitText: qsTr("You’ve reached the %1-reaction limit. Remove one to add another.").arg(reactionLimit)
     // Teams' reaction overflow (`Ze`): five pills' worth of room (36 each)
     // when the window is at least 480 wide, else three, one fewer under 360
     // when there are more; pills estimated as Teams does (`xe`).
@@ -96,15 +96,15 @@ Item {
         return { main: list.slice(0, n), overflow: list.slice(n) }
     }
     // A pill's name, with its skin tones when it has them (Teams' `Fe`).
-    readonly property var toneWords: ["", "light", "medium light", "medium", "medium dark", "dark"]
+    readonly property var toneWords: ["", qsTr("light"), qsTr("medium light"), qsTr("medium"), qsTr("medium dark"), qsTr("dark")]
     function pillLabel(r) {
         const name = backend.emoticonName(r.key)
-        const n = r.count, s = n === 1 ? "" : "s"
+        const n = r.count
         const tones = (r.variants || [r.key]).map(k => { const m = /-tone(\d)$/.exec(k); return m ? Number(m[1]) : 0 })
-        if (tones.length === 1 && tones[0] === 0) return n + " " + name + " reaction" + s + "."
-        if (tones.length === 1) return n + " " + name + " reaction" + s + " with " + toneWords[tones[0]] + " skin tone."
-        const words = tones.map(t => t === 0 ? "no" : toneWords[t])
-        return n + " " + name + " reaction" + s + " with " + words.slice(0, -1).join(", ") + " and " + words[words.length - 1] + " skin tones."
+        if (tones.length === 1 && tones[0] === 0) return qsTr("%n %1 reactions.", "", n).arg(name)
+        if (tones.length === 1) return qsTr("%n %1 reactions with %2 skin tone.", "", n).arg(name).arg(toneWords[tones[0]])
+        const words = tones.map(t => t === 0 ? qsTr("no") : toneWords[t])
+        return qsTr("%n %1 reactions with %2 and %3 skin tones.", "", n).arg(name).arg(words.slice(0, -1).join(", ")).arg(words[words.length - 1])
     }
     // Teams' common key: the id without its skin tone.
     function commonKey(id) { const m = /^(.{1,40})-tone\d$/.exec(id); return m ? m[1] : id }
@@ -118,71 +118,71 @@ Item {
     function messageMenuItems(m, rightClick, context) {
         // A scheduled message (Teams: Delete, which cancels it, and
         // Translation; translating it before it's sent isn't built).
-        if (m.scheduled_at) return [{ key: "delete-scheduled", label: "Delete", icon: "delete-menu-20", keys: "Del" }]
+        if (m.scheduled_at) return [{ key: "delete-scheduled", label: qsTr("Delete"), icon: "delete-menu-20", keys: "Del" }]
         const own = m.mine === true
         const out = []
         const save = m.saved
-            ? { key: "unsave", label: "Unsave this message", icon: "bookmark-20-filled", keys: "S" }
-            : { key: "save", label: "Save this message", icon: "bookmark-20", keys: "S" }
+            ? { key: "unsave", label: qsTr("Unsave this message"), icon: "bookmark-20-filled", keys: "S" }
+            : { key: "save", label: qsTr("Save this message"), icon: "bookmark-20", keys: "S" }
         const translate = m.translated
-            ? { key: "original", label: m.translated_from ? "See original message (" + m.translated_from + ")" : "See original message", icon: "translate-20" }
-            : { key: "translate", label: "Translate", icon: "translate-20" }
+            ? { key: "original", label: m.translated_from ? qsTr("See original message (%1)").arg(m.translated_from) : qsTr("See original message"), icon: "translate-20" }
+            : { key: "translate", label: qsTr("Translate"), icon: "translate-20" }
         // Channel posts and replies (measured in a classic channel; Edit and
         // Reply with quote are on the hover bar). Share to Outlook and
         // Immersive Reader are not built yet.
         if (context === "post" || context === "reply") {
-            if (rightClick && own) out.push({ key: "edit", label: "Edit", icon: "edit-20", keys: "E" })
-            if (rightClick && !own) out.push({ key: "reply", label: "Reply with quote", icon: "quote-reply-20", keys: "Q" })
-            out.push({ key: "forward", label: "Forward", icon: "share-forward-20", keys: "F" })
+            if (rightClick && own) out.push({ key: "edit", label: qsTr("Edit"), icon: "edit-20", keys: "E" })
+            if (rightClick && !own) out.push({ key: "reply", label: qsTr("Reply with quote"), icon: "quote-reply-20", keys: "Q" })
+            out.push({ key: "forward", label: qsTr("Forward"), icon: "share-forward-20", keys: "F" })
             if (context === "post") out.push(m.following
-                ? { key: "unfollow", label: "Unfollow thread", icon: "chat-multiple-minus-20" }
-                : { key: "follow", label: "Follow thread", icon: "chat-multiple-20" })
-            out.push({ key: "copy-link", label: "Copy link", icon: "link-20" })
+                ? { key: "unfollow", label: qsTr("Unfollow thread"), icon: "chat-multiple-minus-20" }
+                : { key: "follow", label: qsTr("Follow thread"), icon: "chat-multiple-20" })
+            out.push({ key: "copy-link", label: qsTr("Copy link"), icon: "link-20" })
             out.push(save)
-            if (own) out.push({ key: "delete", label: "Delete", icon: "delete-menu-20", keys: "Del" })
+            if (own) out.push({ key: "delete", label: qsTr("Delete"), icon: "delete-menu-20", keys: "Del" })
             if (context === "post") out.push(m.pinned
-                ? { key: "unpin", label: "Unpin for everyone", icon: "pin-off-20", keys: "P" }
-                : { key: "pin", label: "Pin for everyone", icon: "pin-20", keys: "P" })
-            if (context === "post" && root.canPopOut) out.push({ key: "popout", label: "Open conversation in new window", icon: "window-new-20" })
+                ? { key: "unpin", label: qsTr("Unpin for everyone"), icon: "pin-off-20", keys: "P" }
+                : { key: "pin", label: qsTr("Pin for everyone"), icon: "pin-20", keys: "P" })
+            if (context === "post" && root.canPopOut) out.push({ key: "popout", label: qsTr("Open conversation in new window"), icon: "window-new-20" })
             out.push({ separator: true })
-            if (context === "post") out.push({ key: "unread", label: "Mark as unread", icon: "mail-unread-20", keys: "U" })
+            if (context === "post") out.push({ key: "unread", label: qsTr("Mark as unread"), icon: "mail-unread-20", keys: "U" })
             out.push(translate)
             out.push({ separator: true })
-            out.push({ key: "more", label: "More actions", chevron: true })
+            out.push({ key: "more", label: qsTr("More actions"), chevron: true })
             return out
         }
         // Core items, in Teams' registry order.
-        if (rightClick || own) out.push({ key: "reply", label: "Reply with quote", icon: "quote-reply-20", keys: "Q" })
-        if (rightClick && own) out.push({ key: "edit", label: "Edit", icon: "edit-20", keys: "E" })
-        out.push({ key: "forward", label: "Forward", icon: "share-forward-20", keys: "F" })
-        out.push({ key: "copy-link", label: "Copy link", icon: "link-20" })
+        if (rightClick || own) out.push({ key: "reply", label: qsTr("Reply with quote"), icon: "quote-reply-20", keys: "Q" })
+        if (rightClick && own) out.push({ key: "edit", label: qsTr("Edit"), icon: "edit-20", keys: "E" })
+        out.push({ key: "forward", label: qsTr("Forward"), icon: "share-forward-20", keys: "F" })
+        out.push({ key: "copy-link", label: qsTr("Copy link"), icon: "link-20" })
         out.push(save)
-        if (own) out.push({ key: "delete", label: "Delete", icon: "delete-menu-20", keys: "Del" })
+        if (own) out.push({ key: "delete", label: qsTr("Delete"), icon: "delete-menu-20", keys: "Del" })
         out.push(m.pinned
-            ? { key: "unpin", label: "Unpin for everyone", icon: "pin-off-20", keys: "P" }
-            : { key: "pin", label: "Pin for everyone", icon: "pin-20", keys: "P" })
+            ? { key: "unpin", label: qsTr("Unpin for everyone"), icon: "pin-off-20", keys: "P" }
+            : { key: "pin", label: qsTr("Pin for everyone"), icon: "pin-20", keys: "P" })
         // Read by N of M: your messages in group chats, once the readers
         // are known; disabled when nobody has read it.
         const r = root.readersFor(m.id)
         if (own && root.isGroup && r) out.push(r.total === 0
-            ? { key: "read", label: "No receipt info available", icon: "read-receipt-20", enabled: false }
-            : { key: "read", label: "Read by " + r.readers.length + " of " + r.total, icon: "read-receipt-20", chevron: r.readers.length > 0, enabled: r.readers.length > 0 })
+            ? { key: "read", label: qsTr("No receipt info available"), icon: "read-receipt-20", enabled: false }
+            : { key: "read", label: qsTr("Read by %1 of %2").arg(r.readers.length).arg(r.total), icon: "read-receipt-20", chevron: r.readers.length > 0, enabled: r.readers.length > 0 })
         // Secondary items.
         out.push({ separator: true })
-        out.push({ key: "unread", label: "Mark as unread", icon: "mail-unread-20", keys: "U" })
+        out.push({ key: "unread", label: qsTr("Mark as unread"), icon: "mail-unread-20", keys: "U" })
         // Share to Outlook (measured on Teams on the web: after Mark as
         // unread; not in your notes-to-self chat, where Teams cancels it).
-        if (!root.isSelfChat) out.push({ key: "share-outlook", label: "Share to Outlook", icon: "mail-20" })
+        if (!root.isSelfChat) out.push({ key: "share-outlook", label: qsTr("Share to Outlook"), icon: "mail-20" })
         // Chats: the Translation submenu.
-        out.push({ key: "translation", label: "Translation", icon: "translate-20", chevron: true })
+        out.push({ key: "translation", label: qsTr("Translation"), icon: "translate-20", chevron: true })
         // Report this message: someone else's, with its own divider.
         if (!own) {
             out.push({ separator: true })
-            out.push({ key: "report", label: "Report this message", icon: "report-message-20" })
+            out.push({ key: "report", label: qsTr("Report this message"), icon: "report-message-20" })
         }
         // More actions ▸: Immersive Reader (then apps' actions, not built).
         out.push({ separator: true })
-        out.push({ key: "more", label: "More actions", chevron: true })
+        out.push({ key: "more", label: qsTr("More actions"), chevron: true })
         return out
     }
     function readersFor(id) {
@@ -236,14 +236,14 @@ Item {
             else if (it.key === "translation") {
                 translationMenu.message = m
                 translationMenu.items = [m.translated
-                    ? { key: "original", label: m.translated_from ? "See original message (" + m.translated_from + ")" : "See original message", icon: "translate-20" }
-                    : { key: "translate", label: "Translate", icon: "translate-20" }]
+                    ? { key: "original", label: m.translated_from ? qsTr("See original message (%1)").arg(m.translated_from) : qsTr("See original message"), icon: "translate-20" }
+                    : { key: "translate", label: qsTr("Translate"), icon: "translate-20" }]
                 translationMenu.parent = messageMenu.parent; translationMenu.x = messageMenu.x + messageMenu.width; translationMenu.y = messageMenu.y; translationMenu.open()
             }
             else if (it.key === "share-outlook") shareToOutlook.start(m)
             else if (it.key === "more") {
                 moreActionsMenu.message = m
-                moreActionsMenu.items = [{ key: "immersive-reader", label: "Immersive Reader", icon: "immersive-reader-20" }]
+                moreActionsMenu.items = [{ key: "immersive-reader", label: qsTr("Immersive Reader"), icon: "immersive-reader-20" }]
                 moreActionsMenu.parent = messageMenu.parent; moreActionsMenu.x = messageMenu.x - moreActionsMenu.implicitWidth; moreActionsMenu.y = messageMenu.y + messageMenu.height - 40; moreActionsMenu.open()
             }
             else if (it.key === "read") { readersMenu.items = root.readersFor(m.id).readers.map(x => ({ key: x.mri, label: x.name })); readersMenu.parent = messageMenu.parent; readersMenu.x = messageMenu.x + messageMenu.width; readersMenu.y = messageMenu.y; readersMenu.open() }
@@ -327,7 +327,7 @@ Item {
                     Accessible.name: backend.emoticonName(modelData)
                 }
             }
-            BarButton { icon: "emoji-add-20"; tip: "More reactions"; onClicked: { const m = messageMenu.message; const a = messageMenu.parent; messageMenu.close(); root.openReactionPicker(m.id, a) } }
+            BarButton { icon: "emoji-add-20"; tip: qsTr("More reactions"); onClicked: { const m = messageMenu.message; const a = messageMenu.parent; messageMenu.close(); root.openReactionPicker(m.id, a) } }
         }
     }
     // Teams' reaction picker, opened from the hover bar or a message's
@@ -422,16 +422,16 @@ Item {
     function highlight(m) {
         if (!m || m.deleted) return null
         const orange = theme.mentionMe, red = theme.danger
-        const important = { color: red, icon: "badge-important-16", tip: "Important" }
-        const urgent = { color: red, icon: "badge-urgent-16", tip: "Urgent" }
-        if (m.pinned) return { color: theme.pick("#237B4B", "#92C353"), icon: "badge-pin-16", tip: "Pinned" }
+        const important = { color: red, icon: "badge-important-16", tip: qsTr("Important") }
+        const urgent = { color: red, icon: "badge-urgent-16", tip: qsTr("Urgent") }
+        if (m.pinned) return { color: theme.pick("#237B4B", "#92C353"), icon: "badge-pin-16", tip: qsTr("Pinned") }
         const k = m.mention_kind || ""
-        if (k === "me") return m.importance === "high" ? important : m.importance === "urgent" ? urgent : { color: orange, icon: "badge-mention-16", tip: "Mentions you" }
-        if (k === "everyone") return { color: orange, icon: "badge-everyone-16", tip: "Mentions everyone" }
+        if (k === "me") return m.importance === "high" ? important : m.importance === "urgent" ? urgent : { color: orange, icon: "badge-mention-16", tip: qsTr("Mentions you") }
+        if (k === "everyone") return { color: orange, icon: "badge-everyone-16", tip: qsTr("Mentions everyone") }
         if (m.importance === "high") return important
         if (m.importance === "urgent") return urgent
-        if (k === "channel") return { color: orange, icon: "badge-channel-16", tip: "Channel message" }
-        if (k === "team") return { color: orange, icon: "badge-team-16", tip: "Team message" }
+        if (k === "channel") return { color: orange, icon: "badge-channel-16", tip: qsTr("Channel message") }
+        if (k === "team") return { color: orange, icon: "badge-team-16", tip: qsTr("Team message") }
         if (m.mine) return { color: theme.brand, icon: "", tip: "" }
         return null
     }
@@ -441,8 +441,8 @@ Item {
         const days = Math.round((new Date(now.getFullYear(), now.getMonth(), now.getDate()) - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 86400000)
         const time = theme.time(d)
         if (days === 0) return time
-        if (days === 1) return "Yesterday " + time
-        if (days > 1 && days < 7) return Qt.formatDate(d, "dddd") + " " + time
+        if (days === 1) return qsTr("Yesterday") + " " + time
+        if (days > 1 && days < 7) return theme.fmtDate(d, "dddd") + " " + time
         if (d.getFullYear() === now.getFullYear()) return theme.dateNoYear(d) + " " + time
         return theme.date(d) + " " + time
     }
@@ -456,10 +456,10 @@ Item {
     // A day divider's label (Today, Yesterday, the weekday, the date).
     function dayLabel(t) {
         const d = new Date(t), n = daysAgo(d)
-        if (n === 0) return "Today"
-        if (n === 1) return "Yesterday"
-        if (n > 1 && n < 7) return Qt.formatDate(d, "dddd")
-        if (d.getFullYear() === new Date().getFullYear()) return Qt.formatDate(d, "MMMM d")
-        return Qt.formatDate(d, "MMMM d, yyyy")
+        if (n === 0) return qsTr("Today")
+        if (n === 1) return qsTr("Yesterday")
+        if (n > 1 && n < 7) return theme.fmtDate(d, "dddd")
+        if (d.getFullYear() === new Date().getFullYear()) return theme.fmtDate(d, "MMMM d")
+        return theme.fmtDate(d, "MMMM d, yyyy")
     }
 }

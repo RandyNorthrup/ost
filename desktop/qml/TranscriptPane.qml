@@ -83,7 +83,7 @@ Rectangle {
         Text {
             x: 20.67; y: 16.67; height: 22
             verticalAlignment: Text.AlignVCenter
-            text: "Transcript"
+            text: qsTr("Transcript")
             font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold
             color: theme.text
             Accessible.role: Accessible.Heading
@@ -99,9 +99,9 @@ Rectangle {
             TapHandler { onTapped: root.languageSettings() }
             ToolTip.visible: langHover.hovered
             ToolTip.delay: 250
-            ToolTip.text: "Language settings"
+            ToolTip.text: qsTr("Language settings")
             Accessible.role: Accessible.Button
-            Accessible.name: "Language settings"
+            Accessible.name: qsTr("Language settings")
         }
         Rectangle {
             id: hcFill2
@@ -112,9 +112,9 @@ Rectangle {
             TapHandler { onTapped: root.closed() }
             ToolTip.visible: closeHover.hovered
             ToolTip.delay: 250
-            ToolTip.text: "Close"
+            ToolTip.text: qsTr("Close")
             Accessible.role: Accessible.Button
-            Accessible.name: "Close"
+            Accessible.name: qsTr("Close")
         }
         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.divider }
     }
@@ -130,7 +130,7 @@ Rectangle {
         FluentIcon { x: 12.67; y: 10; name: "info-20-filled"; size: 20; color: theme.textSecondary }
         Text {
             x: 40.67; y: 10; width: 283.33
-            text: "Follow the conversation better in real time by using live captions."
+            text: qsTr("Follow the conversation better in real time by using live captions.")
             wrapMode: Text.Wrap
             font.family: theme.font; font.pixelSize: 14
             lineHeight: 20; lineHeightMode: Text.FixedHeight
@@ -144,7 +144,7 @@ Rectangle {
             HoverHandler { id: dismissHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.barDismissed = true }
             Accessible.role: Accessible.Button
-            Accessible.name: "Dismiss"
+            Accessible.name: qsTr("Dismiss")
         }
         Rectangle {
             id: hcFill4
@@ -155,7 +155,7 @@ Rectangle {
             Text {
                 id: switchText
                 anchors.centerIn: parent
-                text: "Switch to live captions"
+                text: qsTr("Switch to live captions")
                 font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
                 color: theme.onFill(hcFill4, theme.text)
             }
@@ -174,7 +174,7 @@ Rectangle {
         model: root.entries
         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
         Accessible.role: Accessible.List
-        Accessible.name: "Transcript"
+        Accessible.name: qsTr("Transcript")
 
         // Teams follows the newest row while you're at the bottom (rows
         // settle their height after they're added, so follow the content).
@@ -192,7 +192,7 @@ Rectangle {
             Text {
                 x: 47.67; y: 12; height: 20
                 verticalAlignment: Text.AlignVCenter
-                text: "AI-generated content may be incorrect"
+                text: qsTr("AI-generated content may be incorrect")
                 font.family: theme.font; font.pixelSize: 14
                 color: theme.text
             }
@@ -221,8 +221,8 @@ Rectangle {
                 x: 47.67; y: 9; height: 20
                 verticalAlignment: Text.AlignVCenter
                 text: row.modelData.kind === "started"
-                    ? root.nameOf(row.modelData) + " started transcription"
-                    : root.nameOf(row.modelData) + " stopped transcription"
+                    ? qsTr("%1 started transcription").arg(root.nameOf(row.modelData))
+                    : qsTr("%1 stopped transcription").arg(root.nameOf(row.modelData))
                 font.family: theme.font; font.pixelSize: 14
                 color: theme.text
             }
@@ -252,7 +252,7 @@ Rectangle {
                     anchors.verticalCenter: parent.verticalCenter
                     name: "person-unverified-16-filled"; size: 16; color: theme.text
                     Accessible.role: Accessible.Graphic
-                    Accessible.name: "Unverified"
+                    Accessible.name: qsTr("Unverified")
                 }
                 Item { width: 8; height: 1 }
                 Text {
@@ -304,7 +304,7 @@ Rectangle {
             FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "arrow-down-20-filled"; size: 20; color: theme.onFill(hcFill5, theme.textOnBrand) }
             Text {
                 anchors.verticalCenter: parent.verticalCenter
-                text: "Go to current"
+                text: qsTr("Go to current")
                 font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
                 color: theme.onFill(hcFill5, theme.textOnBrand)
             }
@@ -317,6 +317,6 @@ Rectangle {
             }
         }
         Accessible.role: Accessible.Button
-        Accessible.name: "Go to current"
+        Accessible.name: qsTr("Go to current")
     }
 }

@@ -47,7 +47,7 @@ Item {
     FluentSurface { anchors.fill: parent; depth: 16; radius: 4 }
     HoverHandler { id: barHover }
     Accessible.role: Accessible.ToolBar
-    Accessible.name: "Reactions and message actions"
+    Accessible.name: qsTr("Reactions and message actions")
     Row {
         x: 7
         Repeater {
@@ -91,7 +91,7 @@ Item {
         }
         BarButton {
             visible: bar.reactionsShown
-            icon: "emoji-add-20"; tip: "More reactions"
+            icon: "emoji-add-20"; tip: qsTr("More reactions")
             // Pressed when we reacted with something not offered
             // above.
             pressed: bar.reactions.some(r => r.mine && host.quickReactions.indexOf(r.my_key) < 0)
@@ -110,6 +110,6 @@ Item {
                 onClicked: modelData.key === "edit" ? host.startEdit(bar.message) : modelData.key === "thread" ? bar.threadRequested(bar.message) : host.replyWithQuote(bar.message)
             }
         }
-        BarButton { id: moreButton; icon: "more-horizontal-20"; tip: "More options"; height: 32; onClicked: host.openMessageMenu(bar.message, moreButton, false, 0, moreButton.height, bar.context) }
+        BarButton { id: moreButton; icon: "more-horizontal-20"; tip: qsTr("More options"); height: 32; onClicked: host.openMessageMenu(bar.message, moreButton, false, 0, moreButton.height, bar.context) }
     }
 }

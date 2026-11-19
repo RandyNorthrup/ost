@@ -99,7 +99,16 @@ Popup {
     property var reportReview: null
     property string reportReason: "OffensiveContent"
     function showReport(r) { reportReview = r; reportReason = "OffensiveContent"; reportComment.text = ""; view = "report" }
-    function stars(n) { return n === 1 ? "1 star" : n + " stars" }
+    function stars(n) { return [qsTr("1 star"), qsTr("2 stars"), qsTr("3 stars"), qsTr("4 stars"), qsTr("5 stars")][n - 1] || qsTr("%1 stars").arg(n) }
+    // Teams' "By using <app>, you agree to the privacy policy, terms of use,
+    // and permissions." with the parts that are links.
+    function agreement(permissionsLink) {
+        const p = root.d && root.d.privacy_url ? root.d.privacy_url : "", t = root.d && root.d.terms_url ? root.d.terms_url : ""
+        return qsTr("By using %1, you agree to the <1>%2</1>, <2>%3</2>, and <3>%4</3>.").arg(root.name).arg(qsTr("privacy policy")).arg(qsTr("terms of use")).arg(qsTr("permissions"))
+            .replace("<1>", p ? '<a href="' + p + '">' : "").replace("</1>", p ? "</a>" : "")
+            .replace("<2>", t ? '<a href="' + t + '">' : "").replace("</2>", t ? "</a>" : "")
+            .replace("<3>", permissionsLink ? '<a href="#permissions">' : "").replace("</3>", permissionsLink ? "</a>" : "")
+    }
     // Test hooks.
     function viewForTest(v) { if (v === "reviews") showReviews(); else if (v === "write") showWrite(); else view = v }
     function scrollForTest(y) { mainFlick.contentY = Math.min(y, Math.max(0, mainFlick.contentHeight - mainFlick.height)) }
@@ -181,7 +190,7 @@ Popup {
             FluentIcon { required property int index; size: sr.size; name: index < sr.value ? "star-16-filled" : "star-16"; color: theme.brand }
         }
         Accessible.role: Accessible.StaticText
-        Accessible.name: "Rating " + sr.value + " out of 5"
+        Accessible.name: qsTr("Rating %1 out of 5").arg(sr.value)
     }
     // The rating summary: big average, counts and the 5..1 histogram.
     component RatingSummary: Item {
@@ -196,7 +205,7 @@ Popup {
             Text { text: rs.r ? rs.r.average : ""; font.family: theme.font; font.pixelSize: 28; font.weight: Font.DemiBold; color: theme.textStrong; height: 36; verticalAlignment: Text.AlignVCenter }
         }
         Text { y: 40; anchors.horizontalCenter: parent.horizontalCenter; text: rs.r ? rs.r.count_text + " ratings" : ""; font.family: theme.font; font.pixelSize: 10; color: theme.textStrong }
-        Text { y: 56; anchors.horizontalCenter: parent.horizontalCenter; text: (root.d ? root.d.installs_text : "0") + " installs in the last month"; font.family: theme.font; font.pixelSize: 10; color: theme.textStrong }
+        Text { y: 56; anchors.horizontalCenter: parent.horizontalCenter; text: qsTr("%1 installs in the last month").arg(root.d ? root.d.installs_text : "0"); font.family: theme.font; font.pixelSize: 10; color: theme.textStrong }
         Repeater {
             model: 5
             Item {
@@ -252,7 +261,7 @@ Popup {
             visible: !!ri.review.developer_reply
             width: parent.width
             topPadding: 8
-            Text { text: "Developer Response"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.textSecondary }
+            Text { text: qsTr("Developer Response"); font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.textSecondary }
             Text { width: parent.width; text: ri.review.developer_reply || ""; wrapMode: Text.Wrap; font.family: theme.font; font.pixelSize: 14; color: theme.text }
         }
         Item { width: 1; height: ri.reportable ? 10 : 0 }
@@ -264,12 +273,12 @@ Popup {
             Row {
                 x: 3; anchors.verticalCenter: parent.verticalCenter; spacing: 4
                 FluentIcon { name: "flag-16"; size: 16; color: theme.onFill(hcFill1, theme.textStrong) }
-                Text { text: "Report review"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.textStrong) }
+                Text { text: qsTr("Report review"); font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.textStrong) }
             }
             HoverHandler { id: rpHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.showReport(ri.review) }
             Accessible.role: Accessible.Button
-            Accessible.name: "Report review"
+            Accessible.name: qsTr("Report review")
         }
     }
     // A sub-view's header: Back, the tile, the app's name and the view.
@@ -278,20 +287,20 @@ Popup {
         property string subtitle
         width: parent.width; height: 80
         color: theme.surface
-        IconButton { x: 14; y: 24; icon: "chevron-left-20"; tip: "Back"; onClicked: root.back() }
+        IconButton { x: 14; y: 24; icon: "chevron-left-20"; tip: qsTr("Back"); onClicked: root.back() }
         AppTile { x: 56; y: 20; width: 40; height: 40; src: root.d ? root.d.icon : "" }
         Text { x: 106; y: 21; height: 22; verticalAlignment: Text.AlignVCenter; text: root.name; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
         Text { x: 106; y: 43; text: vh.subtitle; font.family: theme.font; font.pixelSize: 12; color: theme.textStrong }
-        IconButton { x: 811; y: 24; icon: "dismiss-20"; tip: "Close"; onClicked: root.close() }
+        IconButton { x: 811; y: 24; icon: "dismiss-20"; tip: qsTr("Close"); onClicked: root.close() }
         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.divider }
     }
     // "Powered by Microsoft AppSource | View Terms".
     component PoweredBy: Row {
         spacing: 0
-        Text { text: "Powered by "; font.family: theme.font; font.pixelSize: 14; color: theme.textStrong }
-        LinkText { text: "Microsoft AppSource"; url: "https://appsource.microsoft.com/en-us/?exp=ubp8" }
+        Text { text: qsTr("Powered by "); font.family: theme.font; font.pixelSize: 14; color: theme.textStrong }
+        LinkText { text: qsTr("Microsoft AppSource"); url: "https://appsource.microsoft.com/en-us/?exp=ubp8" }
         Text { text: " | "; font.family: theme.font; font.pixelSize: 14; color: theme.textStrong }
-        LinkText { text: "View Terms"; url: "https://learn.microsoft.com/en-us/legal/marketplace/marketplace-terms" }
+        LinkText { text: qsTr("View Terms"); url: "https://learn.microsoft.com/en-us/legal/marketplace/marketplace-terms" }
     }
 
     contentItem: Item {
@@ -319,7 +328,7 @@ Popup {
                     readonly property bool canAdd: !!root.d && (!root.d.installed || root.offerOpen || !!root.addTo)
                     readonly property real heroX: root.history.length > 0 || root.addTo ? 88 : 56
 
-                    IconButton { visible: root.history.length > 0 || !!root.addTo; x: 56; y: 24; icon: "chevron-left-20"; tip: "Back"; onClicked: root.history.length > 0 ? root.back() : root.leaveToStore() }
+                    IconButton { visible: root.history.length > 0 || !!root.addTo; x: 56; y: 24; icon: "chevron-left-20"; tip: qsTr("Back"); onClicked: root.history.length > 0 ? root.back() : root.leaveToStore() }
                     AppTile { id: heroTile; x: page.heroX; y: root.history.length > 0 || root.addTo ? 24 : 29; width: 64; height: 64; src: root.d ? root.d.icon : "" }
                     Text {
                         x: page.heroX + 86; y: heroTile.y + 4; height: 29
@@ -336,14 +345,14 @@ Popup {
                             id: hcFill2
                             width: 96; height: 32; radius: 4
                             color: addHover.hovered ? theme.brandHover : theme.brandFill
-                            Text { anchors.centerIn: parent; text: root.d && root.d.installed && !root.addTo ? "Open" : "Add"; opacity: root.adding && root.adding.busy ? 0.6 : 1; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.textOnBrand) }
+                            Text { anchors.centerIn: parent; text: root.d && root.d.installed && !root.addTo ? qsTr("Open") : qsTr("Add"); opacity: root.adding && root.adding.busy ? 0.6 : 1; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.textOnBrand) }
                             HoverHandler { id: addHover; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: root.addOrOpen() }
-                            Accessible.role: Accessible.Button; Accessible.name: root.d && root.d.installed ? "Open" : "Add"
+                            Accessible.role: Accessible.Button; Accessible.name: root.d && root.d.installed ? qsTr("Open") : qsTr("Add")
                         }
-                        IconButton { width: 32; height: 32; icon: "share-20"; tip: "Share"; onClicked: root.shareApp(root.appId) }
+                        IconButton { width: 32; height: 32; icon: "share-20"; tip: qsTr("Share"); onClicked: root.shareApp(root.appId) }
                     }
-                    IconButton { x: 811; y: 24; icon: "dismiss-20"; tip: "Close"; onClicked: root.close() }
+                    IconButton { x: 811; y: 24; icon: "dismiss-20"; tip: qsTr("Close"); onClicked: root.close() }
 
                     Rectangle { id: heroRule; x: 56; y: page.canAdd ? 180 : 148; width: 771; height: 1; color: theme.quoteBorder }
 
@@ -354,9 +363,9 @@ Popup {
                         readonly property var items: {
                             if (!root.d) return []
                             const out = []
-                            if (root.d.rating.count > 0) out.push({ kind: "rating", value: root.d.rating.average, lines: [root.d.rating.count_text + " ratings"].concat(root.d.reviews_count > 1 ? [root.d.reviews_count_text + " reviews"] : []) })
-                            out.push({ kind: "installs", value: root.d.installs_text, lines: ["Installs in the last month"] })
-                            out.push({ kind: "works", value: "Works in", lines: [root.d.works_in] })
+                            if (root.d.rating.count > 0) out.push({ kind: "rating", value: root.d.rating.average, lines: [qsTr("%1 ratings").arg(root.d.rating.count_text)].concat(root.d.reviews_count > 1 ? [qsTr("%1 reviews").arg(root.d.reviews_count_text)] : []) })
+                            out.push({ kind: "installs", value: root.d.installs_text, lines: [qsTr("Installs in the last month")] })
+                            out.push({ kind: "works", value: qsTr("Works in"), lines: [root.d.works_in] })
                             out.push({ kind: "pricing", value: root.d.pricing_label, lines: [root.d.pricing_sublabel] })
                             return out
                         }
@@ -423,7 +432,7 @@ Popup {
                         x: 56; y: longDesc.y + longDesc.height + 48; width: 771
                         height: visible ? 62 + 1 + capList.height + 16 : 0
                         radius: 12; color: theme.quoteFill
-                        Text { x: 16; height: 62; verticalAlignment: Text.AlignVCenter; text: "Capabilities in Teams"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
+                        Text { x: 16; height: 62; verticalAlignment: Text.AlignVCenter; text: qsTr("Capabilities in Teams"); font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
                         Rectangle { x: 16; y: 62; width: parent.width - 32; height: 1; color: theme.divider }
                         Column {
                             id: capList
@@ -449,7 +458,7 @@ Popup {
                         x: 56; y: caps.y + caps.height + 13; width: 771
                         height: shown ? Math.max(rightCol.y + rightCol.height, 302) : 0
                         visible: shown
-                        Text { height: 22; text: "Reviews"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
+                        Text { height: 22; text: qsTr("Reviews"); font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
                         PoweredBy { y: 42 }
                         RatingSummary { x: 32; y: 114 }
                         Column {
@@ -466,16 +475,16 @@ Popup {
                                 visible: rightCol.list.length === 0
                                 width: rightCol.width
                                 spacing: 4
-                                Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Be the first to write a review"; font.family: theme.font; font.pixelSize: 14; font.bold: true; color: theme.text }
-                                Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Share your experience to help others learn about this app."; font.family: theme.font; font.pixelSize: 12; color: theme.text }
+                                Text { anchors.horizontalCenter: parent.horizontalCenter; text: qsTr("Be the first to write a review"); font.family: theme.font; font.pixelSize: 14; font.bold: true; color: theme.text }
+                                Text { anchors.horizontalCenter: parent.horizontalCenter; text: qsTr("Share your experience to help others learn about this app."); font.family: theme.font; font.pixelSize: 12; color: theme.text }
                                 Item { width: 1; height: 8 }
-                                OutlineButton { anchors.horizontalCenter: parent.horizontalCenter; label: "Write a review"; onClicked: root.showWrite() }
+                                OutlineButton { anchors.horizontalCenter: parent.horizontalCenter; label: qsTr("Write a review"); onClicked: root.showWrite() }
                             }
                             Row {
                                 visible: rightCol.list.length > 0
                                 spacing: 10
-                                OutlineButton { label: "Write a review"; onClicked: root.showWrite() }
-                                OutlineButton { label: "See all reviews"; onClicked: root.showReviews() }
+                                OutlineButton { label: qsTr("Write a review"); onClicked: root.showWrite() }
+                                OutlineButton { label: qsTr("See all reviews"); onClicked: root.showReviews() }
                             }
                         }
                     }
@@ -486,8 +495,8 @@ Popup {
                         x: 56; y: reviewsHead.y + reviewsHead.height + (reviewsHead.shown ? 49 : 13); width: 771
                         visible: !!root.d && root.d.permissions.length > 0
                         height: visible ? 46 + permCards.height : 0
-                        Text { height: 26; verticalAlignment: Text.AlignVCenter; text: "Permissions overview"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
-                        LinkText { anchors.right: parent.right; height: 20; y: 3; text: "View detailed permissions"; color: theme.brand; onActivated: root.view = "permissions" }
+                        Text { height: 26; verticalAlignment: Text.AlignVCenter; text: qsTr("Permissions overview"); font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
+                        LinkText { anchors.right: parent.right; height: 20; y: 3; text: qsTr("View detailed permissions"); color: theme.brand; onActivated: root.view = "permissions" }
                         Row {
                             id: permCards
                             y: 46; spacing: 20
@@ -531,21 +540,21 @@ Popup {
                         id: detailsSec
                         x: 56; y: perms.y + perms.height + 60; width: 771
                         height: langCell.y + langCell.height
-                        Text { height: 22; text: "Details"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
+                        Text { height: 22; text: qsTr("Details"); font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
                         Column {
                             y: 42; width: 244; spacing: 8
                             visible: !!root.d && !!root.d.developer && !!root.d.developer_url
-                            Text { text: "Created by"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                            Text { text: qsTr("Created by"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
                             LinkText { text: root.d ? root.d.developer : ""; url: root.d ? root.d.developer_url : "" }
                         }
                         Column {
                             x: 263; y: 42; width: 244; spacing: 8
-                            Text { text: "Version"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                            Text { text: qsTr("Version"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
                             Text { text: root.d ? root.d.version : ""; font.family: theme.font; font.pixelSize: 14; color: theme.text }
                         }
                         Column {
                             x: 527; y: 42; width: 244; spacing: 8
-                            Text { text: "Pricing"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                            Text { text: qsTr("Pricing"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
                             Text { text: root.d ? root.d.pricing_details : ""; font.family: theme.font; font.pixelSize: 14; color: theme.text }
                         }
                         Column {
@@ -553,14 +562,14 @@ Popup {
                             y: 113; width: 244; spacing: 8
                             visible: !!root.d && root.d.languages.length > 0
                             readonly property var all: root.d ? root.d.languages : []
-                            Text { text: "Languages"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                            Text { text: qsTr("Languages"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
                             Text {
                                 width: 244; wrapMode: Text.Wrap
                                 text: {
                                     const a = langCell.all
                                     if (a.length <= 1) return a[0] || ""
-                                    if (root.languagesOpen) return a.length === 2 ? a[0] + " and " + a[1] : a.slice(0, -1).join(", ") + ", and " + a[a.length - 1]
-                                    return root.d.language_first + " and"
+                                    if (root.languagesOpen) return a.length === 2 ? qsTr("%1 and %2").arg(a[0]).arg(a[1]) : qsTr("%1, and %2").arg(a.slice(0, -1).join(", ")).arg(a[a.length - 1])
+                                    return qsTr("%1 and").arg(root.d.language_first)
                                 }
                                 font.family: theme.font; font.pixelSize: 14; color: theme.text
                                 lineHeight: 20; lineHeightMode: Text.FixedHeight
@@ -568,7 +577,7 @@ Popup {
                             Row {
                                 visible: langCell.all.length > 1
                                 spacing: 0
-                                LinkText { text: root.languagesOpen ? "See less" : (langCell.all.length - 1) + " more"; onActivated: root.languagesOpen = !root.languagesOpen }
+                                LinkText { text: root.languagesOpen ? qsTr("See less") : qsTr("%1 more").arg(langCell.all.length - 1); onActivated: root.languagesOpen = !root.languagesOpen }
                                 FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: root.languagesOpen ? "chevron-up-16" : "chevron-down-16"; size: 14; color: theme.brandLink }
                             }
                         }
@@ -580,7 +589,7 @@ Popup {
                         x: 56; y: detailsSec.y + detailsSec.height + 52; width: 771
                         visible: root.similar.length > 0
                         height: visible ? 42 + Math.ceil(root.similar.length / 2) * 100 - 16 : 0
-                        Text { height: 22; text: "More like this"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
+                        Text { height: 22; text: qsTr("More like this"); font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
                         Grid {
                             y: 42; columns: 2; columnSpacing: 16; rowSpacing: 16
                             Repeater {
@@ -609,7 +618,7 @@ Popup {
                 width: parent.width; height: 80
                 color: theme.surface
                 visible: mainFlick.contentY > 100
-                IconButton { visible: root.history.length > 0 || !!root.addTo; x: 56; y: 24; icon: "chevron-left-20"; tip: "Back"; onClicked: root.history.length > 0 ? root.back() : root.leaveToStore() }
+                IconButton { visible: root.history.length > 0 || !!root.addTo; x: 56; y: 24; icon: "chevron-left-20"; tip: qsTr("Back"); onClicked: root.history.length > 0 ? root.back() : root.leaveToStore() }
                 AppTile { x: root.history.length > 0 || root.addTo ? 98 : 56; y: 20; width: 40; height: 40; src: root.d ? root.d.icon : "" }
                 Text { x: root.history.length > 0 || root.addTo ? 148 : 106; y: 29; height: 22; text: root.name; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
                 Rectangle {
@@ -617,11 +626,11 @@ Popup {
                     visible: page.canAdd
                     x: 707; y: 24; width: 96; height: 32; radius: 4
                     color: addHover2.hovered ? theme.brandHover : theme.brandFill
-                    Text { anchors.centerIn: parent; text: root.d && root.d.installed && !root.addTo ? "Open" : "Add"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill5, theme.textOnBrand) }
+                    Text { anchors.centerIn: parent; text: root.d && root.d.installed && !root.addTo ? qsTr("Open") : qsTr("Add"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill5, theme.textOnBrand) }
                     HoverHandler { id: addHover2; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.addOrOpen() }
                 }
-                IconButton { x: 811; y: 24; icon: "dismiss-20"; tip: "Close"; onClicked: root.close() }
+                IconButton { x: 811; y: 24; icon: "dismiss-20"; tip: qsTr("Close"); onClicked: root.close() }
                 Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.divider }
                 // Teams' scroll progress.
                 Rectangle {
@@ -639,10 +648,7 @@ Popup {
                     x: 56; y: 20; width: parent.width - 112
                     textFormat: Text.StyledText
                     linkColor: theme.brandLink
-                    text: "By using " + root.name + ", you agree to the "
-                          + (root.d && root.d.privacy_url ? '<a href="' + root.d.privacy_url + '">privacy policy</a>' : "privacy policy") + ", "
-                          + (root.d && root.d.terms_url ? '<a href="' + root.d.terms_url + '">terms of use</a>' : "terms of use")
-                          + ', and <a href="#permissions">permissions</a>.'
+                    text: root.agreement(true)
                     font.family: theme.font; font.pixelSize: 14; color: theme.text
                     onLinkActivated: link => {
                         if (link === "#permissions") mainFlick.contentY = Math.min(perms.y - 24, mainFlick.contentHeight - mainFlick.height)
@@ -656,7 +662,7 @@ Popup {
             Text {
                 anchors.centerIn: parent
                 visible: !root.d
-                text: root.info && root.info.error ? "You can't view this app right now." : ""
+                text: root.info && root.info.error ? qsTr("You can't view this app right now.") : ""
                 font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
             }
             BusyIndicator { anchors.centerIn: parent; running: !root.d && !(root.info && root.info.error); visible: running }
@@ -667,12 +673,12 @@ Popup {
             id: reviewsView
             anchors.fill: parent
             visible: root.view === "reviews"
-            ViewHeader { subtitle: "Reviews" }
+            ViewHeader { subtitle: qsTr("Reviews") }
             RatingSummary { x: 56; y: 122; barWidth: 221 }
-            OutlineButton { x: 122; y: 379; label: "Write a review"; onClicked: root.showWrite() }
+            OutlineButton { x: 122; y: 379; label: qsTr("Write a review"); onClicked: root.showWrite() }
             Text {
                 x: 325; y: 102; height: 20
-                text: root.revs && root.revs.count !== undefined ? (root.revs.count === 1 ? "1 review" : root.revs.count + " reviews") : ""
+                text: root.revs && root.revs.count !== undefined ? qsTr("%n reviews", "", root.revs.count) : ""
                 font.family: theme.font; font.pixelSize: 14; font.bold: true; color: theme.text
             }
             Rectangle {
@@ -682,19 +688,19 @@ Popup {
                 Row {
                     anchors.centerIn: parent; spacing: 6
                     FluentIcon { name: "arrow-sort-20"; size: 20; color: theme.onFill(sortButton, theme.textStrong) }
-                    Text { anchors.verticalCenter: parent.verticalCenter; text: "Sort"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(sortButton, theme.textStrong) }
+                    Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Sort"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(sortButton, theme.textStrong) }
                 }
                 HoverHandler { id: sbHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: sortMenu.open() }
-                Accessible.role: Accessible.Button; Accessible.name: "Sort"
+                Accessible.role: Accessible.Button; Accessible.name: qsTr("Sort")
                 MenuPopup {
                     id: sortMenu
                     x: sortButton.width - implicitWidth; y: sortButton.height + 20
                     readonly property var keys: ["recent", "highest", "lowest"]
                     items: [
-                        { label: "Most recent", icon: "calendar-ltr-20", endCheck: root.sort === "recent" },
-                        { label: "Highest rating", icon: "star-20", endCheck: root.sort === "highest" },
-                        { label: "Lowest rating", icon: "star-20", endCheck: root.sort === "lowest" }
+                        { label: qsTr("Most recent"), icon: "calendar-ltr-20", endCheck: root.sort === "recent" },
+                        { label: qsTr("Highest rating"), icon: "star-20", endCheck: root.sort === "highest" },
+                        { label: qsTr("Lowest rating"), icon: "star-20", endCheck: root.sort === "lowest" }
                     ]
                     onPicked: i => root.sortReviews(keys[i])
                 }
@@ -720,7 +726,7 @@ Popup {
                     }
                     Text {
                         visible: !!root.revs && root.revs.count === 0
-                        text: "No results found"; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
+                        text: qsTr("No results found"); font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
                     }
                 }
             }
@@ -736,7 +742,7 @@ Popup {
         Item {
             anchors.fill: parent
             visible: root.view === "permissions"
-            ViewHeader { subtitle: "Permissions" }
+            ViewHeader { subtitle: qsTr("Permissions") }
             Flickable {
                 y: 80; width: parent.width; height: parent.height - 80 - 60
                 contentHeight: permL2.height + 24
@@ -791,9 +797,7 @@ Popup {
                 Text {
                     x: 56; y: 20
                     textFormat: Text.StyledText; linkColor: theme.brandLink
-                    text: "By using " + root.name + ", you agree to the "
-                          + (root.d && root.d.privacy_url ? '<a href="' + root.d.privacy_url + '">privacy policy</a>' : "privacy policy") + ", "
-                          + (root.d && root.d.terms_url ? '<a href="' + root.d.terms_url + '">terms of use</a>' : "terms of use") + ", and permissions."
+                    text: root.agreement(false)
                     font.family: theme.font; font.pixelSize: 14; color: theme.text
                     onLinkActivated: link => Qt.openUrlExternally(link)
                 }
@@ -804,13 +808,13 @@ Popup {
         Item {
             anchors.fill: parent
             visible: root.view === "report"
-            ViewHeader { subtitle: "Report review" }
+            ViewHeader { subtitle: qsTr("Report review") }
             Column {
                 x: 56; y: 104; width: 787
-                Text { height: 22; text: "Provide a reason for reporting this review"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                Text { height: 22; text: qsTr("Provide a reason for reporting this review"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
                 Item { width: 1; height: 18 }
                 Repeater {
-                    model: [["OffensiveContent", "Offensive content"], ["SpamAndAdvertising", "Spam or advertising"], ["InvalidReview", "Invalid review"], ["Other", "Other"]]
+                    model: [["OffensiveContent", qsTr("Offensive content")], ["SpamAndAdvertising", qsTr("Spam or advertising")], ["InvalidReview", qsTr("Invalid review")], ["Other", qsTr("Other")]]
                     Column {
                         required property var modelData
                         readonly property bool on: root.reportReason === modelData[0]
@@ -836,7 +840,7 @@ Popup {
                             width: 787; height: visible ? 120 : 0; radius: 4; color: theme.inputFilled; border.color: theme.transparentStroke
                             TextArea {
                                 anchors.fill: parent
-                                placeholderText: "Add a comment"; placeholderTextColor: theme.textTertiary
+                                placeholderText: qsTr("Add a comment"); placeholderTextColor: theme.textTertiary
                                 wrapMode: TextArea.Wrap; background: null
                                 font.family: theme.font; font.pixelSize: 14; color: theme.text
                                 text: reportComment.text
@@ -851,7 +855,7 @@ Popup {
                     id: hcFill6
                     width: 124; height: 31.33; radius: 4
                     color: rsHover.hovered ? theme.brandHover : theme.brandFill
-                    Text { anchors.centerIn: parent; text: "Submit"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill6, theme.textOnBrand) }
+                    Text { anchors.centerIn: parent; text: qsTr("Submit"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill6, theme.textOnBrand) }
                     HoverHandler { id: rsHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler {
                         onTapped: {
@@ -859,7 +863,7 @@ Popup {
                             root.view = "reviews"
                         }
                     }
-                    Accessible.role: Accessible.Button; Accessible.name: "Submit"
+                    Accessible.role: Accessible.Button; Accessible.name: qsTr("Submit")
                 }
             }
             // The comment, kept while the reason changes.
@@ -876,7 +880,7 @@ Popup {
         Item {
             anchors.fill: parent
             visible: root.view === "write"
-            ViewHeader { subtitle: "Write a review" }
+            ViewHeader { subtitle: qsTr("Write a review") }
             Flickable {
                 y: 80; width: parent.width; height: parent.height - 80 - 61
                 contentHeight: 600
@@ -887,7 +891,7 @@ Popup {
                     width: 899; height: 600
                     Row {
                         x: 56; y: 24; spacing: 0
-                        Text { text: "Rating"; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+                        Text { text: qsTr("Rating"); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
                         Text { text: " *"; font.family: theme.font; font.pixelSize: 12; color: theme.redForeground3 }
                     }
                     Row {
@@ -907,19 +911,19 @@ Popup {
                             }
                         }
                     }
-                    Text { x: 56; y: 96; text: "Title"; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+                    Text { x: 56; y: 96; text: qsTr("Title"); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
                     Rectangle {
                         x: 56; y: 120; width: 773; height: 32; radius: 4; color: theme.inputFilled; border.color: theme.transparentStroke
                         TextField {
                             id: reviewTitle
                             anchors.fill: parent; leftPadding: 10
-                            placeholderText: "Give your review a title (optional)"
+                            placeholderText: qsTr("Give your review a title (optional)")
                             placeholderTextColor: theme.textTertiary
                             background: null
                             font.family: theme.font; font.pixelSize: 14; color: theme.text
                         }
                     }
-                    Text { x: 56; y: 172; text: "Description"; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+                    Text { x: 56; y: 172; text: qsTr("Description"); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
                     Rectangle {
                         x: 56; y: 196; width: 773; height: 200; radius: 4; color: theme.inputFilled; border.color: theme.transparentStroke
                         ScrollView {
@@ -927,7 +931,7 @@ Popup {
                             TextArea {
                                 id: reviewBody
                                 leftPadding: 10; topPadding: 6
-                                placeholderText: "Share your experience with this app (optional)"
+                                placeholderText: qsTr("Share your experience with this app (optional)")
                                 placeholderTextColor: theme.textTertiary
                                 wrapMode: TextArea.Wrap
                                 background: null
@@ -947,8 +951,8 @@ Popup {
                         }
                         contentItem: Column {
                             leftPadding: 32
-                            Text { text: "Post my review publicly as " + (backend.userMail || backend.userName) + "."; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
-                            Text { leftPadding: 4; text: "(If unchecked, the review will be posted as Anonymous.)"; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
+                            Text { text: qsTr("Post my review publicly as %1.").arg(backend.userMail || backend.userName); font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
+                            Text { leftPadding: 4; text: qsTr("(If unchecked, the review will be posted as Anonymous.)"); font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
                         }
                     }
                     Rectangle {
@@ -956,7 +960,7 @@ Popup {
                         x: 56; y: 476; width: 124; height: 31.33; radius: 4
                         readonly property bool on: root.rating > 0
                         color: !on ? theme.hc(theme.bgDisabled, theme.hcHighlight) : submitHover.hovered ? theme.brandHover : theme.checkedFill
-                        Text { anchors.centerIn: parent; text: "Submit"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill8, parent.on ? theme.textOnBrand : theme.disabled) }
+                        Text { anchors.centerIn: parent; text: qsTr("Submit"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill8, parent.on ? theme.textOnBrand : theme.disabled) }
                         HoverHandler { id: submitHover; cursorShape: parent.on ? Qt.PointingHandCursor : Qt.ArrowCursor }
                         TapHandler {
                             enabled: parent.on
@@ -965,7 +969,7 @@ Popup {
                                 root.view = "main"
                             }
                         }
-                        Accessible.role: Accessible.Button; Accessible.name: "Submit"
+                        Accessible.role: Accessible.Button; Accessible.name: qsTr("Submit")
                     }
                 }
             }

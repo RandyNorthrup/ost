@@ -83,7 +83,7 @@ Popup {
         width: pop.availableWidth
         Text {
             width: parent.width
-            text: "Help us improve our suggestions"
+            text: qsTr("Help us improve our suggestions")
             wrapMode: Text.Wrap
             font.family: theme.font; font.pixelSize: 14
             lineHeight: 20; lineHeightMode: Text.FixedHeight
@@ -92,7 +92,7 @@ Popup {
         Item { width: 1; height: 8 }
         Text {
             width: Math.min(250, parent.width)
-            text: "How would you describe the suggestions we provided?"
+            text: qsTr("How would you describe the suggestions we provided?")
             wrapMode: Text.Wrap
             font.family: theme.font; font.pixelSize: 12
             lineHeight: 16; lineHeightMode: Text.FixedHeight
@@ -102,7 +102,7 @@ Popup {
         Column {
             width: parent.width
             Accessible.role: Accessible.Grouping
-            Accessible.name: "How would you describe the suggestions we provided?"
+            Accessible.name: qsTr("How would you describe the suggestions we provided?")
             Repeater {
                 model: pop.categories
                 RoundCheck {
@@ -129,18 +129,18 @@ Popup {
                 selectByMouse: true
                 Text {
                     visible: !comment.text && !comment.preeditText
-                    text: "What else can you tell us?"
+                    text: qsTr("What else can you tell us?")
                     font: comment.font
                     color: theme.textSecondary
                 }
                 Accessible.role: Accessible.EditableText
-                Accessible.name: "What else can you tell us?"
+                Accessible.name: qsTr("What else can you tell us?")
             }
         }
         Item { width: 1; height: 14 }
         Text {
             width: parent.width
-            text: "Your feedback opens as a public issue on GitHub (" + backend.feedbackRepo() + ")."
+            text: qsTr("Your feedback opens as a public issue on GitHub (%1).").arg(backend.feedbackRepo())
             wrapMode: Text.Wrap
             font.family: theme.font; font.pixelSize: 12
             lineHeight: 16; lineHeightMode: Text.FixedHeight
@@ -150,7 +150,7 @@ Popup {
             id: attachBox
             round: false
             fontSize: 12
-            label: "Attach my last message to help OST analyze my feedback. It will be public."
+            label: qsTr("Attach my last message to help OST analyze my feedback. It will be public.")
         }
         Item { width: 1; height: 16 }
         Item {
@@ -164,7 +164,7 @@ Popup {
                 Text {
                     id: sendText
                     anchors.centerIn: parent
-                    text: "Send"
+                    text: qsTr("Send")
                     font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold
                     color: !pop.canSend ? theme.pick("#BDBDBD", "#5C5C5C", "#3FF23F") : theme.onFill(sendBtn, theme.textOnBrand)
                 }
@@ -174,7 +174,7 @@ Popup {
                     onTapped: { pop.submitted(pop.picked, comment.text, attachBox.checked); pop.close() }
                 }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Send"
+                Accessible.name: qsTr("Send")
             }
         }
     }

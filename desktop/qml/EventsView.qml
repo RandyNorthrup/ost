@@ -92,18 +92,18 @@ Rectangle {
     /// Copy join details: the title, time and join link (Teams' own text
     /// wasn't captured).
     function joinDetails(ev) {
-        return (ev.title || "") + "\n" + whenText(ev.start, ev.end, true) + "\n\nJoin: " + (ev.join_url || "")
+        return (ev.title || "") + "\n" + whenText(ev.start, ev.end, true) + "\n\n" + qsTr("Join: %1").arg(ev.join_url || "")
     }
 
     readonly property string cdn: "https://teams.public.onecdn.static.microsoft/evergreen-assets/illustrations/"
     readonly property var templates: [
-        { key: "scratch", title: "Create from scratch", text: "Mix and match capabilities as you go", img: "webp/192/design-l-standard-192x192.webp", chips: [], type: "Webinar", formTitle: "New event", access: "Organization", registration: false, greenRoom: false, chatLabel: "Chat" },
-        { key: "webinar", title: "Webinar", text: "Best for interactive trainings, product demos, or thought leadership sessions", img: "webp/192/person-presentation-l-standard-192x192.webp", chips: ["Registration", "Video on demand", "Waitlist", "Green room"], type: "Webinar", formTitle: "New webinar", access: "Public", registration: true, greenRoom: true, chatLabel: "During event" },
-        { key: "townhall", title: "Town hall", text: "Reach a large audience with a professional produced broadcast", img: "v2/person-video-live-l-standard.svg", chips: ["Up to 10K attendees", "Green room", "Video on demand", "HD video stream"], type: "Townhall", formTitle: "New town hall", access: "Organization", registration: false, greenRoom: true, large: true, chatLabel: "During event" },
-        { key: "allhands", title: "All hands", text: "Share organization updates and engage employees at scale", img: "v2/web-meet-l-standard.svg", chips: ["Moderated Q&A", "Real-time reactions", "Green room", "Video on demand"], type: "Webinar", formTitle: "New all hands", access: "Organization", registration: false, greenRoom: true, chatLabel: "Chat" },
-        { key: "training", title: "Training", text: "Teach, onboard, or upskill with an interactive session", img: "v2/book-pencil-l-standard.svg", chips: ["Breakout rooms", "Polls", "Live captions", "Registration", "Video on demand"], type: "Webinar", formTitle: "New training", access: "Public", registration: true, greenRoom: false, chatLabel: "Chat" },
-        { key: "ama", title: "Ask me anything", text: "Open Q&A sessions with moderated audience questions", img: "v2/chat-multiple-l-standard.svg", chips: ["Moderated Q&A", "Polls", "Green room", "Producer controls"], type: "Townhall", formTitle: "New ask me anything", access: "Organization", registration: false, greenRoom: false, large: true, chatLabel: "During event" },
-        { key: "community", title: "Community event", text: "Bring a community together for virtual experiences", img: "webp/192/people-house-l-standard-192x192.webp", chips: ["Registration", "Event chat", "Highlights", "Green room", "Waitlist"], type: "Webinar", formTitle: "New community event", access: "Public", registration: true, greenRoom: true, chatLabel: "During event" }
+        { key: "scratch", title: qsTr("Create from scratch"), text: qsTr("Mix and match capabilities as you go"), img: "webp/192/design-l-standard-192x192.webp", chips: [], type: "Webinar", formTitle: qsTr("New event"), access: "Organization", registration: false, greenRoom: false, chatLabel: qsTr("Chat") },
+        { key: "webinar", title: qsTr("Webinar"), text: qsTr("Best for interactive trainings, product demos, or thought leadership sessions"), img: "webp/192/person-presentation-l-standard-192x192.webp", chips: [qsTr("Registration"), qsTr("Video on demand"), qsTr("Waitlist"), qsTr("Green room")], type: "Webinar", formTitle: qsTr("New webinar"), access: "Public", registration: true, greenRoom: true, chatLabel: qsTr("During event") },
+        { key: "townhall", title: qsTr("Town hall"), text: qsTr("Reach a large audience with a professional produced broadcast"), img: "v2/person-video-live-l-standard.svg", chips: [qsTr("Up to 10K attendees"), qsTr("Green room"), qsTr("Video on demand"), qsTr("HD video stream")], type: "Townhall", formTitle: qsTr("New town hall"), access: "Organization", registration: false, greenRoom: true, large: true, chatLabel: qsTr("During event") },
+        { key: "allhands", title: qsTr("All hands"), text: qsTr("Share organization updates and engage employees at scale"), img: "v2/web-meet-l-standard.svg", chips: [qsTr("Moderated Q&A"), qsTr("Real-time reactions"), qsTr("Green room"), qsTr("Video on demand")], type: "Webinar", formTitle: qsTr("New all hands"), access: "Organization", registration: false, greenRoom: true, chatLabel: qsTr("Chat") },
+        { key: "training", title: qsTr("Training"), text: qsTr("Teach, onboard, or upskill with an interactive session"), img: "v2/book-pencil-l-standard.svg", chips: [qsTr("Breakout rooms"), qsTr("Polls"), qsTr("Live captions"), qsTr("Registration"), qsTr("Video on demand")], type: "Webinar", formTitle: qsTr("New training"), access: "Public", registration: true, greenRoom: false, chatLabel: qsTr("Chat") },
+        { key: "ama", title: qsTr("Ask me anything"), text: qsTr("Open Q&A sessions with moderated audience questions"), img: "v2/chat-multiple-l-standard.svg", chips: [qsTr("Moderated Q&A"), qsTr("Polls"), qsTr("Green room"), qsTr("Producer controls")], type: "Townhall", formTitle: qsTr("New ask me anything"), access: "Organization", registration: false, greenRoom: false, large: true, chatLabel: qsTr("During event") },
+        { key: "community", title: qsTr("Community event"), text: qsTr("Bring a community together for virtual experiences"), img: "webp/192/people-house-l-standard-192x192.webp", chips: [qsTr("Registration"), qsTr("Event chat"), qsTr("Highlights"), qsTr("Green room"), qsTr("Waitlist")], type: "Webinar", formTitle: qsTr("New community event"), access: "Public", registration: true, greenRoom: true, chatLabel: qsTr("During event") }
     ]
 
     // Requests to the events service, answered by events_reply.
@@ -143,15 +143,15 @@ Rectangle {
     }
     // The filter chip's text: "November 18 - 30, 2026", "Today", …
     function rangeText() {
-        if (dateRange === "today") return "Today"
-        if (dateRange === "thisWeek") return "This week"
-        if (dateRange === "thisMonth") return "This month"
+        if (dateRange === "today") return qsTr("Today")
+        if (dateRange === "thisWeek") return qsTr("This week")
+        if (dateRange === "thisMonth") return qsTr("This month")
         if (dateRange !== "custom" || !customFrom || !customTo) return ""
         const a = customFrom, b = customTo
         if (a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth())
-            return Qt.formatDate(a, "MMMM d") + " - " + b.getDate() + ", " + b.getFullYear()
-        if (a.getFullYear() === b.getFullYear()) return Qt.formatDate(a, "MMMM d") + " - " + Qt.formatDate(b, "MMMM d, yyyy")
-        return Qt.formatDate(a, "MMMM d, yyyy") + " - " + Qt.formatDate(b, "MMMM d, yyyy")
+            return theme.fmtDate(a, "MMMM d") + " - " + b.getDate() + ", " + b.getFullYear()
+        if (a.getFullYear() === b.getFullYear()) return theme.fmtDate(a, "MMMM d") + " - " + theme.fmtDate(b, "MMMM d, yyyy")
+        return theme.fmtDate(a, "MMMM d, yyyy") + " - " + theme.fmtDate(b, "MMMM d, yyyy")
     }
     function clearFilters() { myEvents = false; dateRange = ""; customFrom = null; customTo = null; discoverData = null; reload() }
     // Pin app: Teams' pinned apps (and the toast "The Events app has been
@@ -159,9 +159,9 @@ Rectangle {
     // app bar's Unpin).
     function setPinned(on) {
         call("pin", { on: on }, v => {
-            if (v.error) { toast({ text: "Couldn't pin the app. " + v.error, intent: "error" }); return }
+            if (v.error) { toast({ text: qsTr("Couldn't pin the app.") + " " + v.error, intent: "error" }); return }
             pinned = on; pinToggled(on)
-            if (on) toast({ text: "The Events app has been pinned.", intent: "success" })
+            if (on) toast({ text: qsTr("The Events app has been pinned."), intent: "success" })
         })
     }
     function openSeeMore(section, title) {
@@ -180,7 +180,7 @@ Rectangle {
     // at least 5; measured 2026-11-18).
     function soonText(start) {
         const m = Math.floor((new Date(start) - new Date()) / 60000)
-        return m >= 0 && m <= 59 ? "in " + Math.max(5, Math.floor(m / 5) * 5) + " mins" : ""
+        return m >= 0 && m <= 59 ? qsTr("in %n mins", "", Math.max(5, Math.floor(m / 5) * 5)) : ""
     }
     // The event's two chats.
     function openChat(ev, crew) {
@@ -190,7 +190,7 @@ Rectangle {
     function copyJoinDetails(ev) {
         call("joinDetails", { link: ev.update_link || "" }, v => {
             if (v.error || !v.html) backend.copyText(joinDetails(ev)); else backend.copyHtml(v.html, joinDetails(ev))
-            toast({ text: "Join details copied successfully", intent: "success" })
+            toast({ text: qsTr("Join details copied successfully"), intent: "success" })
         })
     }
     function reload() {
@@ -220,7 +220,7 @@ Rectangle {
     function editEvent(card) {
         current = current && current.id === card.id ? current : card
         call("event", { id: card.id }, v => {
-            if (v.error) { toast({ text: "Couldn't open the event. " + v.error, intent: "error" }); return }
+            if (v.error) { toast({ text: qsTr("Couldn't open the event.") + " " + v.error, intent: "error" }); return }
             form.fill(v); form.mode = "edit"; form.sourceId = card.id; page = "form"
             if (!features) call("features", {}, f => { if (!f.error) features = f })
         })
@@ -228,7 +228,7 @@ Rectangle {
     // Duplicate: the event's details in a new event's form, today's slot.
     function duplicateEvent(card) {
         call("event", { id: card.id }, v => {
-            if (v.error) { toast({ text: "Couldn't open the event. " + v.error, intent: "error" }); return }
+            if (v.error) { toast({ text: qsTr("Couldn't open the event.") + " " + v.error, intent: "error" }); return }
             form.fill(v); form.mode = "duplicate"; form.sourceId = card.id; page = "form"
         })
     }
@@ -250,7 +250,7 @@ Rectangle {
     // options dialog; Apply keeps them for the save.
     function openAllOptions() {
         call("options", { townHall: form.townHall }, v => {
-            if (v.error) { toast({ text: "Couldn't load the meeting options. " + v.error, intent: "error" }); return }
+            if (v.error) { toast({ text: qsTr("Couldn't load the meeting options.") + " " + v.error, intent: "error" }); return }
             // A new event's options as the form sends them (api::events'
             // defaults), then the event's own, then All options' changes.
             const defaults = { autoAdmittedUsers: "EveryoneInCompany", usersCanAdmitFromLobby: "OrganizersAndPresentersOnly", allowedUsersForMeetingDetails: "UsersAllowedToByPassTheLobby",
@@ -420,7 +420,7 @@ Rectangle {
         HoverHandler { cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: tc.picked() }
         Accessible.role: Accessible.Button
-        Accessible.name: tc.modelData.key === "scratch" ? tc.modelData.title : tc.modelData.title + " template, " + tc.modelData.text
+        Accessible.name: tc.modelData.key === "scratch" ? tc.modelData.title : qsTr("%1 template, %2").arg(tc.modelData.title).arg(tc.modelData.text)
     }
     // An event card (Manage's and Discover's lists).
     component EventCard: Item {
@@ -463,7 +463,7 @@ Rectangle {
                 x: ec.live ? 4 : 2; anchors.verticalCenter: parent.verticalCenter; spacing: 2
                 FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: ec.live ? "record-20" : "clock-12-filled"; size: ec.live ? 10 : 12
                              color: ec.live ? "#FFFFFF" : theme.brand }
-                Text { anchors.verticalCenter: parent.verticalCenter; text: ec.live ? "Live" : "in " + Math.max(5, Math.floor(ec.soonMinutes / 5) * 5) + " mins"
+                Text { anchors.verticalCenter: parent.verticalCenter; text: ec.live ? qsTr("Live") : qsTr("in %n mins", "", Math.max(5, Math.floor(ec.soonMinutes / 5) * 5))
                        font.family: theme.font; font.pixelSize: 10; font.weight: Font.DemiBold; color: ec.live ? "#FFFFFF" : theme.brand }
             }
         }
@@ -473,10 +473,10 @@ Rectangle {
             // Your role ("Organizer"), else the presenter ("By OST Test 3").
             Row { spacing: 4; visible: !!ec.modelData.role || !!ec.modelData.by
                 FluentIcon { name: "person-16"; size: 16; color: theme.textSecondary }
-                Text { text: ec.modelData.role === "Organizer" || !ec.modelData.by ? (ec.modelData.role || "") : "By " + ec.modelData.by; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } }
+                Text { text: ec.modelData.role === "Organizer" ? qsTr("Organizer") : !ec.modelData.by ? (ec.modelData.role || "") : qsTr("By %1").arg(ec.modelData.by); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } }
             Row { spacing: 4
                 FluentIcon { name: "location-20"; size: 16; color: theme.textSecondary }
-                Text { text: ec.modelData.location || "Online"; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } }
+                Text { text: ec.modelData.location || qsTr("Online"); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } }
         }
         // Not joinable: Edit (64 x 24, outlined), Share (published), ···
         // (Chat with participants, Chat with event group, Duplicate).
@@ -484,12 +484,12 @@ Rectangle {
             visible: !ec.joinable
             x: 20; y: 259; spacing: 8
             readonly property bool organizer: ec.modelData.role === "Organizer" || ec.modelData.role === "CoOrganizer"
-            Btn { visible: parent.organizer && ec.modelData.state !== "Canceled"; height: 24; text: "Edit"; icon: "edit-16"; outlined: true; fontSize: 12; pad: 8; onClicked: root.editEvent(ec.modelData) }
-            Btn { visible: parent.organizer && ec.modelData.state === "Published"; width: 24; height: 24; icon: "share-16"; text: ""; outlined: true; pad: 4; Accessible.name: "Share event"; onClicked: shareDialog.openFor(ec.modelData, false) }
+            Btn { visible: parent.organizer && ec.modelData.state !== "Canceled"; height: 24; text: qsTr("Edit"); icon: "edit-16"; outlined: true; fontSize: 12; pad: 8; onClicked: root.editEvent(ec.modelData) }
+            Btn { visible: parent.organizer && ec.modelData.state === "Published"; width: 24; height: 24; icon: "share-16"; text: ""; outlined: true; pad: 4; Accessible.name: qsTr("Share event"); onClicked: shareDialog.openFor(ec.modelData, false) }
             Btn {
                 id: cardMore
                 visible: parent.organizer
-                width: 24; height: 24; icon: "more-horizontal-20"; text: ""; pad: 2; Accessible.name: "More actions"
+                width: 24; height: 24; icon: "more-horizontal-20"; text: ""; pad: 2; Accessible.name: qsTr("More actions")
                 onClicked: { cardMenu.ev = ec.modelData; cardMenu.parent = cardMore; cardMenu.x = 0; cardMenu.y = cardMore.height + 4; cardMenu.open() }
             }
         }
@@ -506,7 +506,7 @@ Rectangle {
             Btn {
                 id: regBtn
                 visible: !parent.registered
-                height: 23.3; width: 84; outlined: true; icon: "calendar-ltr-16"; text: "Register"; fontSize: 12; pad: 8
+                height: 23.3; width: 84; outlined: true; icon: "calendar-ltr-16"; text: qsTr("Register"); fontSize: 12; pad: 8
                 onClicked: registerDialog.openFor(ec.modelData)
             }
             Rectangle {
@@ -518,42 +518,42 @@ Rectangle {
                 Row {
                     anchors.centerIn: parent; spacing: 6
                     FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "calendar-checkmark-16"; size: 16; color: theme.textStrong }
-                    Text { anchors.verticalCenter: parent.verticalCenter; text: "Registered"; font.family: theme.font; font.pixelSize: 12; color: theme.text }
+                    Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Registered"); font.family: theme.font; font.pixelSize: 12; color: theme.text }
                     FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-12"; size: 12; color: theme.textStrong }
                 }
                 HoverHandler { id: rbh; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: { unregisterMenu.ev = ec.modelData; unregisterMenu.parent = registeredBtn; unregisterMenu.x = 5; unregisterMenu.y = registeredBtn.height + 4.4; unregisterMenu.open() } }
-                Accessible.role: Accessible.Button; Accessible.name: "Registered"
+                Accessible.role: Accessible.Button; Accessible.name: qsTr("Registered")
             }
             Btn { height: 23.3; width: 24; outlined: true; icon: "link-16"; text: ""; pad: 2
-                  onClicked: { backend.copyText(ec.modelData.site_url || ec.modelData.join_url); root.toast({ text: "Copied", intent: "success" }) }
-                  Accessible.name: "Copy event page link" }
+                  onClicked: { backend.copyText(ec.modelData.site_url || ec.modelData.join_url); root.toast({ text: qsTr("Copied"), intent: "success" }) }
+                  Accessible.name: qsTr("Copy event page link") }
         }
         // Joinable (5 minutes before the start to the end): Join (64 x 23,
         // brand, the video glyph), Copy event page link and More (24 x 23).
         Row {
             visible: ec.joinable
             x: 20; y: 261; spacing: 8
-            Btn { height: 23; width: 64; primary: true; icon: "video-16"; text: "Join"; fontSize: 12; pad: 8; onClicked: root.joinEvent(ec.modelData.join_url, ec.modelData.title, ec.modelData.start, ec.modelData.end) }
-            Btn { height: 23; width: 24; outlined: true; icon: "link-16"; text: ""; pad: 2; onClicked: { backend.copyText(ec.modelData.site_url || ec.modelData.join_url); root.toast({ text: "Copied", intent: "success" }) }
-                  Accessible.name: "Copy event page link" }
+            Btn { height: 23; width: 64; primary: true; icon: "video-16"; text: qsTr("Join"); fontSize: 12; pad: 8; onClicked: root.joinEvent(ec.modelData.join_url, ec.modelData.title, ec.modelData.start, ec.modelData.end) }
+            Btn { height: 23; width: 24; outlined: true; icon: "link-16"; text: ""; pad: 2; onClicked: { backend.copyText(ec.modelData.site_url || ec.modelData.join_url); root.toast({ text: qsTr("Copied"), intent: "success" }) }
+                  Accessible.name: qsTr("Copy event page link") }
             Btn {
                 id: cardJoinMore
                 visible: ec.modelData.role === "Organizer" || ec.modelData.role === "CoOrganizer"
-                width: 24; height: 23; icon: "more-horizontal-20"; text: ""; pad: 2; Accessible.name: "More actions"
+                width: 24; height: 23; icon: "more-horizontal-20"; text: ""; pad: 2; Accessible.name: qsTr("More actions")
                 onClicked: { cardMenu.ev = ec.modelData; cardMenu.parent = cardJoinMore; cardMenu.x = 0; cardMenu.y = cardJoinMore.height + 4; cardMenu.open() }
             }
         }
         HoverHandler { cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.openEvent(ec.modelData) }
         Accessible.role: Accessible.Button
-        Accessible.name: "Event, " + ec.modelData.title + ", " + root.whenText(ec.modelData.start, ec.modelData.end, false)
+        Accessible.name: qsTr("Event, %1, %2").arg(ec.modelData.title).arg(root.whenText(ec.modelData.start, ec.modelData.end, false))
     }
     // "Monday, Nov 16, 3:30 PM - 4:00 PM" (long: "Monday, November 16, …").
     function whenText(s, e, full) {
         if (!s) return ""
         const a = new Date(s), b = new Date(e || s)
-        return Qt.formatDate(a, full ? "dddd, MMMM d" : "dddd, MMM d") + ", " + theme.time(a) + " - " + theme.time(b)
+        return theme.fmtDate(a, full ? "dddd, MMMM d" : "dddd, MMM d") + ", " + theme.time(a) + " - " + theme.time(b)
     }
 
     // An event card's ··· (Teams: Chat with participants, Chat with event
@@ -561,9 +561,9 @@ Rectangle {
     MenuPopup {
         id: cardMenu
         property var ev: ({})
-        items: [{ key: "chat", label: "Chat with participants", icon: "chat-20" },
-                { key: "crew", label: "Chat with event group", icon: "people-team-20" },
-                { key: "dup", label: "Duplicate", icon: "copy-20" }]
+        items: [{ key: "chat", label: qsTr("Chat with participants"), icon: "chat-20" },
+                { key: "crew", label: qsTr("Chat with event group"), icon: "people-team-20" },
+                { key: "dup", label: qsTr("Duplicate"), icon: "copy-20" }]
         onPicked: i => { const k = items[i].key; if (k === "dup") root.duplicateEvent(ev); else root.openChat(ev, k === "crew") }
     }
     /// Registrations made or cancelled here ({event id: "Registered" | ""})
@@ -574,7 +574,7 @@ Rectangle {
     MenuPopup {
         id: unregisterMenu
         property var ev: ({})
-        items: [{ key: "unregister", label: "Unregister", icon: "calendar-cancel-20" }]
+        items: [{ key: "unregister", label: qsTr("Unregister"), icon: "calendar-cancel-20" }]
         onPicked: i => unregisterDialog.openFor(ev)
     }
     // "Cancel your registration?" (Teams, 600 x 168: the title 20/600, the
@@ -592,21 +592,21 @@ Rectangle {
         contentItem: Column {
             spacing: 6
             Item { width: parent.width; height: 31.3
-                Text { anchors.verticalCenter: parent.verticalCenter; text: "Cancel your registration?"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
-                Btn { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; width: 32; height: 31.3; icon: "dismiss-20"; text: ""; pad: 6; onClicked: unregisterDialog.close(); Accessible.name: "Close" } }
-            Text { width: parent.width; wrapMode: Text.Wrap; text: "You'll be removed from the event if you cancel. You can register again later if you change your mind."
+                Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Cancel your registration?"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+                Btn { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; width: 32; height: 31.3; icon: "dismiss-20"; text: ""; pad: 6; onClicked: unregisterDialog.close(); Accessible.name: qsTr("Close") } }
+            Text { width: parent.width; wrapMode: Text.Wrap; text: qsTr("You'll be removed from the event if you cancel. You can register again later if you change your mind.")
                    font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
             Row {
                 anchors.right: parent.right; spacing: 8
-                Btn { height: 31.3; outlined: true; text: "Stay registered"; onClicked: unregisterDialog.close() }
+                Btn { height: 31.3; outlined: true; text: qsTr("Stay registered"); onClicked: unregisterDialog.close() }
                 Btn {
-                    height: 31.3; primary: true; text: "Cancel registration"; usable: !unregisterDialog.busy
+                    height: 31.3; primary: true; text: qsTr("Cancel registration"); usable: !unregisterDialog.busy
                     onClicked: {
                         unregisterDialog.busy = true
                         const e = unregisterDialog.ev
                         root.call("unregister", { id: e.id }, v => {
                             unregisterDialog.busy = false; unregisterDialog.close()
-                            if (v.error) { root.toast({ text: "Couldn't cancel your registration. " + v.error, intent: "error" }); return }
+                            if (v.error) { root.toast({ text: qsTr("Couldn't cancel your registration.") + " " + v.error, intent: "error" }); return }
                             root.setRegState(e.id, "")
                         })
                     }
@@ -642,10 +642,10 @@ Rectangle {
             const e = ev, m = me
             root.call("register", { id: e.id, firstName: m.firstName || "", lastName: m.lastName || "", email: m.email || "" }, v => {
                 registerDialog.busy = false
-                if (v.error) { root.toast({ text: "Couldn't register. " + v.error, intent: "error" }); return }
+                if (v.error) { root.toast({ text: qsTr("Couldn't register.") + " " + v.error, intent: "error" }); return }
                 root.setRegState(e.id, v.status || "Registered")
                 registerDialog.done = true
-                root.toast({ text: "Event Registered", intent: "success" })
+                root.toast({ text: qsTr("Event Registered"), intent: "success" })
             })
         }
         function openFor(e) {
@@ -675,14 +675,14 @@ Rectangle {
                 anchors.fill: parent
                 visible: !registerDialog.done
                 Text { y: 0; width: parent.width - 40; elide: Text.ElideRight; text: registerDialog.ev.title || ""; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; lineHeight: 28; lineHeightMode: Text.FixedHeight; color: theme.text }
-                Btn { x: parent.width - 32; y: 0; width: 32; height: 31.3; icon: "dismiss-20"; text: ""; pad: 6; onClicked: registerDialog.close(); Accessible.name: "Close" }
-                Text { y: 36; text: registerDialog.ev.start ? Qt.formatDate(new Date(registerDialog.ev.start), "dddd, MMMM d, yyyy") + ", " + theme.time(new Date(registerDialog.ev.start)) + " - " + theme.time(new Date(registerDialog.ev.end || registerDialog.ev.start)) : ""
+                Btn { x: parent.width - 32; y: 0; width: 32; height: 31.3; icon: "dismiss-20"; text: ""; pad: 6; onClicked: registerDialog.close(); Accessible.name: qsTr("Close") }
+                Text { y: 36; text: registerDialog.ev.start ? theme.fmtDate(new Date(registerDialog.ev.start), "dddd, MMMM d, yyyy") + ", " + theme.time(new Date(registerDialog.ev.start)) + " - " + theme.time(new Date(registerDialog.ev.end || registerDialog.ev.start)) : ""
                        font.family: theme.font; font.pixelSize: 14; color: theme.text }
                 Rectangle { y: 64; width: parent.width; height: 1; color: theme.dividerSoft }
-                Text { y: 76.6; text: "Registration Information"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; lineHeight: 22; lineHeightMode: Text.FixedHeight; color: theme.text }
-                Field { y: 110.6; label: "First name"; value: registerDialog.me.firstName || "" }
-                Field { x: 200; y: 110.6; label: "Last name"; value: registerDialog.me.lastName || "" }
-                Field { y: 180.6; label: "Email"; value: registerDialog.me.email || ""; fieldWidth: 549.3 }
+                Text { y: 76.6; text: qsTr("Registration Information"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; lineHeight: 22; lineHeightMode: Text.FixedHeight; color: theme.text }
+                Field { y: 110.6; label: qsTr("First name"); value: registerDialog.me.firstName || "" }
+                Field { x: 200; y: 110.6; label: qsTr("Last name"); value: registerDialog.me.lastName || "" }
+                Field { y: 180.6; label: qsTr("Email"); value: registerDialog.me.email || ""; fieldWidth: 549.3 }
                 Rectangle { y: 251; width: parent.width; height: 1; color: theme.dividerSoft }
                 Row {
                     y: 261.3; spacing: 0
@@ -695,12 +695,12 @@ Rectangle {
                         }
                         TapHandler { onTapped: { registerDialog.agreed = !registerDialog.agreed; registerDialog.nag = false } }
                         Accessible.role: Accessible.CheckBox; Accessible.checked: registerDialog.agreed
-                        Accessible.name: "I have read and agree to the Microsoft Event Terms and Conditions"
+                        Accessible.name: qsTr("I have read and agree to the Microsoft Event Terms and Conditions")
                     }
-                    Text { anchors.verticalCenter: parent.verticalCenter; text: "I have read and agree to the "; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
+                    Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("I have read and agree to the "); font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
-                        text: "Microsoft Event Terms and Conditions"; font.underline: termsHover.hovered
+                        text: qsTr("Microsoft Event Terms and Conditions"); font.underline: termsHover.hovered
                         font.family: theme.font; font.pixelSize: 14; color: theme.pick("#4F52B2", "#7F85F5", "#FFFF00")
                         HoverHandler { id: termsHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: Qt.openUrlExternally("https://go.microsoft.com/fwlink/?linkid=2210903") }
@@ -710,9 +710,9 @@ Rectangle {
                 }
                 Row {
                     anchors.right: parent.right; y: 304; spacing: 8
-                    Btn { width: 96; height: 31.3; outlined: true; text: "Cancel"; onClicked: registerDialog.close() }
+                    Btn { width: 96; height: 31.3; outlined: true; text: qsTr("Cancel"); onClicked: registerDialog.close() }
                     Btn {
-                        width: 96; height: 31.3; primary: true; text: "Register"; usable: !registerDialog.busy && !!registerDialog.me.email
+                        width: 96; height: 31.3; primary: true; text: qsTr("Register"); usable: !registerDialog.busy && !!registerDialog.me.email
                         onClicked: registerDialog.submit()
                     }
                 }
@@ -721,14 +721,14 @@ Rectangle {
             Item {
                 anchors.fill: parent
                 visible: registerDialog.done
-                Btn { x: parent.width - 32; y: 0.7; width: 32; height: 31.3; icon: "dismiss-20"; text: ""; pad: 6; onClicked: registerDialog.close(); Accessible.name: "Close" }
+                Btn { x: parent.width - 32; y: 0.7; width: 32; height: 31.3; icon: "dismiss-20"; text: ""; pad: 6; onClicked: registerDialog.close(); Accessible.name: qsTr("Close") }
                 Image {
                     x: (parent.width - 192) / 2; y: 40; width: 192; height: 192; asynchronous: true
                     sourceSize: Qt.size(384, 384); fillMode: Image.PreserveAspectFit
                     source: "https://teams.public.onecdn.static.microsoft/teams-modular-packages/hashed-assets/7f12bffeb0847f995f97e987b0aa6ee1.png"
                 }
-                Text { anchors.horizontalCenter: parent.horizontalCenter; y: 248; text: "You're registered!"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; lineHeight: 28; lineHeightMode: Text.FixedHeight; color: theme.text }
-                Text { anchors.horizontalCenter: parent.horizontalCenter; y: 292; text: "We sent a confirmation email to " + (registerDialog.me.email || "") + "."
+                Text { anchors.horizontalCenter: parent.horizontalCenter; y: 248; text: qsTr("You're registered!"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; lineHeight: 28; lineHeightMode: Text.FixedHeight; color: theme.text }
+                Text { anchors.horizontalCenter: parent.horizontalCenter; y: 292; text: qsTr("We sent a confirmation email to %1.").arg(registerDialog.me.email || "")
                        font.family: theme.font; font.pixelSize: 14; color: theme.text }
             }
         }
@@ -743,11 +743,11 @@ Rectangle {
             x: 20; y: 14; width: 32; height: 32; radius: 4; color: "#5B5FC7"
             FluentIcon { anchors.centerIn: parent; name: "ticket-diagonal-20"; size: 20; color: "white" }
         }
-        Text { x: 60; y: 15.7; text: "Events"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.textSecondary }
+        Text { x: 60; y: 15.7; text: qsTr("Events"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.textSecondary }
         Row {
             x: 136; y: 8
             Repeater {
-                model: [["discover", "Discover"], ["manage", "Manage"]]
+                model: [["discover", qsTr("Discover")], ["manage", qsTr("Manage")]]
                 Item {
                     required property var modelData
                     readonly property bool chosen: root.tab === modelData[0] && root.page === ""
@@ -770,9 +770,9 @@ Rectangle {
         }
         Row {
             anchors.right: parent.right; anchors.rightMargin: 20; y: 14; spacing: 8
-            Btn { visible: !root.pinned; icon: "pin-20"; text: "Pin app"; onClicked: root.setPinned(true) }
-            Btn { visible: root.tab === "discover" && root.page === ""; icon: "filter-20"; text: "Filters"; onClicked: root.filtersOpen = !root.filtersOpen }
-            Btn { icon: "calendar-add-20"; text: "Create event"; outlined: true; onClicked: root.startCreate() }
+            Btn { visible: !root.pinned; icon: "pin-20"; text: qsTr("Pin app"); onClicked: root.setPinned(true) }
+            Btn { visible: root.tab === "discover" && root.page === ""; icon: "filter-20"; text: qsTr("Filters"); onClicked: root.filtersOpen = !root.filtersOpen }
+            Btn { icon: "calendar-add-20"; text: qsTr("Create event"); outlined: true; onClicked: root.startCreate() }
         }
     }
 
@@ -791,8 +791,8 @@ Rectangle {
         readonly property bool filtered: root.tab === "discover" && (root.myEvents || root.dateRange !== "")
         readonly property var lists: root.tab === "discover"
             ? (root.discoverData ? (root.discoverData.filtered !== undefined ? [["", root.discoverData.filtered, ""]]
-                : [["Happening now", root.discoverData.now || [], "now"], ["Upcoming events in your org", root.discoverData.upcoming || [], "upcoming"], ["Catch up on past events", root.discoverData.past || [], "past"]]) : [])
-            : (root.manageData ? [["Drafts", root.manageData.drafts, "Draft"], ["Published", root.manageData.published, "Published"], ["Past", root.manageData.past, "Past"]] : [])
+                : [[qsTr("Happening now"), root.discoverData.now || [], "now"], [qsTr("Upcoming events in your org"), root.discoverData.upcoming || [], "upcoming"], [qsTr("Catch up on past events"), root.discoverData.past || [], "past"]]) : [])
+            : (root.manageData ? [[qsTr("Drafts"), root.manageData.drafts, "Draft"], [qsTr("Published"), root.manageData.published, "Published"], [qsTr("Past"), root.manageData.past, "Past"]] : [])
         readonly property bool empty: root.tab === "discover"
             ? !filtered && lists.every(l => l[1].length === 0)
             : !!root.manageData && (root.manageData.drafts.total + root.manageData.published.total + root.manageData.past.total) === 0
@@ -805,7 +805,7 @@ Rectangle {
             Item {
                 visible: root.tab === "manage"
                 width: parent.width; height: 64
-                Btn { anchors.right: parent.right; y: 0; outlined: true; icon: "plug-connected-20"; text: "Connect apps"; onClicked: connectApps.openNow() }
+                Btn { anchors.right: parent.right; y: 0; outlined: true; icon: "plug-connected-20"; text: qsTr("Connect apps"); onClicked: connectApps.openNow() }
             }
             // Discover's filters as chips (24 tall, #D1D1D1, radius 4, 12/16
             // #424242, a dismiss) and Clear all (brand).
@@ -814,7 +814,7 @@ Rectangle {
                 height: visible ? 56 : 0; spacing: 8
                 topPadding: 0
                 Repeater {
-                    model: [root.myEvents ? ["mine", "My events", ""] : null, root.dateRange ? ["range", root.rangeText(), "calendar-20"] : null].filter(x => !!x)
+                    model: [root.myEvents ? ["mine", qsTr("My events"), ""] : null, root.dateRange ? ["range", root.rangeText(), "calendar-20"] : null].filter(x => !!x)
                     Rectangle {
                         required property var modelData
                         height: 24; radius: 4; width: chipRow.implicitWidth + 16; color: "transparent"; border.color: theme.stroke; border.width: 1
@@ -825,11 +825,11 @@ Rectangle {
                             FluentIcon { name: "dismiss-12"; size: 12; color: theme.textStrong; anchors.verticalCenter: parent.verticalCenter }
                         }
                         TapHandler { onTapped: { if (modelData[0] === "mine") root.myEvents = false; else { root.dateRange = ""; root.customFrom = null; root.customTo = null } root.discoverData = null; root.reload() } }
-                        Accessible.role: Accessible.Button; Accessible.name: "Remove " + modelData[1]
+                        Accessible.role: Accessible.Button; Accessible.name: qsTr("Remove %1").arg(modelData[1])
                     }
                 }
                 Text {
-                    y: 2; text: "Clear all"; font.family: theme.font; font.pixelSize: 14; color: theme.brand
+                    y: 2; text: qsTr("Clear all"); font.family: theme.font; font.pixelSize: 14; color: theme.brand
                     TapHandler { onTapped: root.clearFilters() }
                     Accessible.role: Accessible.Button; Accessible.name: text
                 }
@@ -840,14 +840,14 @@ Rectangle {
                 anchors.horizontalCenter: parent.horizontalCenter
                 height: visible ? 60 : 0; spacing: 8
                 FluentIcon { name: "calendar-clock-20"; size: 20; color: theme.text; y: 20 }
-                Text { y: 20; text: "No events match your filters."; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                Text { y: 20; text: qsTr("No events match your filters."); font.family: theme.font; font.pixelSize: 14; color: theme.text }
                 Text {
-                    y: 20; text: "Clear all filters"; font.family: theme.font; font.pixelSize: 14; color: theme.brandForeground1; font.underline: true
+                    y: 20; text: qsTr("Clear all filters"); font.family: theme.font; font.pixelSize: 14; color: theme.brandForeground1; font.underline: true
                     TapHandler { onTapped: root.clearFilters() }
                     Accessible.role: Accessible.Button; Accessible.name: text
                 }
             }
-            Text { visible: !!root.loadError; text: "Couldn't load events. " + root.loadError; font.family: theme.font; font.pixelSize: 14; color: theme.danger; width: parent.width; wrapMode: Text.Wrap }
+            Text { visible: !!root.loadError; text: qsTr("Couldn't load events.") + " " + root.loadError; font.family: theme.font; font.pixelSize: 14; color: theme.danger; width: parent.width; wrapMode: Text.Wrap }
             // The empty state.
             Column {
                 visible: tabPage.empty && (root.tab === "manage" ? !!root.manageData : !!root.discoverData)
@@ -855,13 +855,13 @@ Rectangle {
                 Item { width: 1; height: root.tab === "discover" ? 24 : 0 }
                 Image { anchors.horizontalCenter: parent.horizontalCenter; width: 128; height: 128; source: root.cdn + "v2/calendar-add-l-standard.svg"; sourceSize: Qt.size(256, 256); asynchronous: true }
                 Item { width: 1; height: 16 }
-                Text { anchors.horizontalCenter: parent.horizontalCenter; text: "No events have been scheduled yet"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold; color: theme.text }
+                Text { anchors.horizontalCenter: parent.horizontalCenter; text: qsTr("No events have been scheduled yet"); font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold; color: theme.text }
                 Item { width: 1; height: 16 }
                 Text { anchors.horizontalCenter: parent.horizontalCenter; width: 450; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
-                       text: "Customize everything from registration to how you want attendees to interact. We’ll walk you through each step."
+                       text: qsTr("Customize everything from registration to how you want attendees to interact. We’ll walk you through each step.")
                        font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
                 Item { width: 1; height: 16 }
-                Btn { anchors.horizontalCenter: parent.horizontalCenter; width: 155; height: 38; primary: true; text: "Create event"; onClicked: root.startCreate() }
+                Btn { anchors.horizontalCenter: parent.horizontalCenter; width: 155; height: 38; primary: true; text: qsTr("Create event"); onClicked: root.startCreate() }
                 Item { width: 1; height: 32 }
             }
             // The lists.
@@ -896,10 +896,10 @@ Rectangle {
                         Text {
                             visible: !manage || total > 0
                             anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
-                            text: "See more"; font.family: theme.font; font.pixelSize: 14; color: theme.brandForeground1
+                            text: qsTr("See more"); font.family: theme.font; font.pixelSize: 14; color: theme.brandForeground1
                             HoverHandler { cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: root.openSeeMore(modelData[2], modelData[0]) }
-                            Accessible.role: Accessible.Link; Accessible.name: "See more " + modelData[0] + " events"
+                            Accessible.role: Accessible.Link; Accessible.name: qsTr("See more %1 events").arg(modelData[0])
                         }
                     }
                     Item { width: 1; height: modelData[0] ? 16 : 0 }
@@ -907,7 +907,7 @@ Rectangle {
                         visible: manage && items.length === 0
                         spacing: 12; leftPadding: 0; height: 47
                         FluentIcon { name: "calendar-clock-20"; size: 20; color: theme.textSecondary; anchors.verticalCenter: parent.verticalCenter }
-                        Text { anchors.verticalCenter: parent.verticalCenter; text: modelData[2] === "Draft" ? "Events you haven’t published yet will show up here." : modelData[0] + " events will show up here."; font.family: theme.font; font.pixelSize: 16; color: theme.textSecondary }
+                        Text { anchors.verticalCenter: parent.verticalCenter; text: modelData[2] === "Draft" ? qsTr("Events you haven’t published yet will show up here.") : modelData[2] === "Published" ? qsTr("Published events will show up here.") : qsTr("Past events will show up here."); font.family: theme.font; font.pixelSize: 16; color: theme.textSecondary }
                     }
                     Flow {
                         visible: items.length > 0
@@ -921,7 +921,7 @@ Rectangle {
             Column {
                 visible: tabPage.empty
                 width: parent.width
-                Text { x: 8; text: "Get started with a template"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text; height: 22 }
+                Text { x: 8; text: qsTr("Get started with a template"); font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text; height: 22 }
                 Item { width: 1; height: 8 }
                 Flow {
                     x: 8; width: parent.width - 16; spacing: 16
@@ -944,11 +944,11 @@ Rectangle {
                     Image { x: 24; anchors.verticalCenter: parent.verticalCenter; width: 128; height: 128; asynchronous: true
                             source: root.cdn + "webp/128/archive-" + (theme.dark || theme.highContrast ? "d" : "l") + "-standard-128x128.webp" }
                     Column { x: 24 + 128 + 30; anchors.verticalCenter: parent.verticalCenter; width: parent.width - x - 24; spacing: 0
-                        Text { text: "Manage immersive collections"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
+                        Text { text: qsTr("Manage immersive collections"); font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
                         Item { width: 1; height: 4 }
-                        Text { width: parent.width; wrapMode: Text.Wrap; text: "Use immersive collections to save and manage templates for immersive events."; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                        Text { width: parent.width; wrapMode: Text.Wrap; text: qsTr("Use immersive collections to save and manage templates for immersive events."); font.family: theme.font; font.pixelSize: 14; color: theme.text }
                         Item { width: 1; height: 16 }
-                        Btn { outlined: true; text: "View immersive collections"; onClicked: root.openCollections() } }
+                        Btn { outlined: true; text: qsTr("View immersive collections"); onClicked: root.openCollections() } }
                 }
             }
         }
@@ -962,14 +962,14 @@ Rectangle {
             z: 2; radius: 16
             color: theme.pick("#F5F5F5", "#292929", "#000000")
             border.color: theme.stroke; border.width: 1
-            Text { x: 17; y: 13; text: "Introducing an app for all things events!"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
+            Text { x: 17; y: 13; text: qsTr("Introducing an app for all things events!"); font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
             Text { x: 17; y: 39; width: parent.width - 34; wrapMode: Text.Wrap; maximumLineCount: 2
-                   text: "Discover what's happening in your org and plan your own professional events, all in one place. You can still access your meetings and audio recaps."
+                   text: qsTr("Discover what's happening in your org and plan your own professional events, all in one place. You can still access your meetings and audio recaps.")
                    font.family: theme.font; font.pixelSize: 16; lineHeight: 22; lineHeightMode: Text.FixedHeight; color: theme.text }
             Row {
                 x: 17; y: 99; spacing: 10
-                Btn { height: 24; fontSize: 12; pad: 8; outlined: true; text: "View meetings"; onClicked: root.viewMeetings() }
-                Btn { height: 24; fontSize: 12; pad: 8; outlined: true; text: "View audio recaps"; onClicked: root.viewAudioRecaps() }
+                Btn { height: 24; fontSize: 12; pad: 8; outlined: true; text: qsTr("View meetings"); onClicked: root.viewMeetings() }
+                Btn { height: 24; fontSize: 12; pad: 8; outlined: true; text: qsTr("View audio recaps"); onClicked: root.viewAudioRecaps() }
             }
         }
     }
@@ -1037,28 +1037,28 @@ Rectangle {
                 color: theme.pick("#FFF9F5", "#411200", "#000000"); border.color: theme.pick("#FDCFB4", "#8A3200", "#FFFFFF"); border.width: 1
                 FluentIcon { x: 12; y: 14; name: "warning-20"; size: 20; color: theme.pick("#BC4B09", "#FAB28C", "#FFFFFF") }
                 Column { id: retCol; x: 40; y: 12; width: parent.width - 96; spacing: 2
-                    Text { width: parent.width; wrapMode: Text.Wrap; text: "Changes are coming to Immersive Events in Teams."; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
-                    Text { width: parent.width; wrapMode: Text.Wrap; text: "Immersive Events will remain available and supported through April 2027. If your organization uses Immersive Events, please review future event plans and watch for additional guidance."; font.family: theme.font; font.pixelSize: 14; color: theme.text }
-                    Text { text: "Learn more"; font.family: theme.font; font.pixelSize: 14; color: theme.brandForeground1; font.underline: true
+                    Text { width: parent.width; wrapMode: Text.Wrap; text: qsTr("Changes are coming to Immersive Events in Teams."); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                    Text { width: parent.width; wrapMode: Text.Wrap; text: qsTr("Immersive Events will remain available and supported through April 2027. If your organization uses Immersive Events, please review future event plans and watch for additional guidance."); font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    Text { text: qsTr("Learn more"); font.family: theme.font; font.pixelSize: 14; color: theme.brandForeground1; font.underline: true
                            HoverHandler { cursorShape: Qt.PointingHandCursor }
                            TapHandler { onTapped: Qt.openUrlExternally("https://aka.ms/ImmersiveUpdate") }
-                           Accessible.role: Accessible.Link; Accessible.name: "Learn more about the Immersive Events update (opens in new tab)" } }
-                Btn { anchors.right: parent.right; anchors.rightMargin: 8; y: 8; icon: "dismiss-20"; text: ""; pad: 6; Accessible.name: "Dismiss"; onClicked: root.retirementDismissed = true }
+                           Accessible.role: Accessible.Link; Accessible.name: qsTr("Learn more about the Immersive Events update (opens in new tab)") } }
+                Btn { anchors.right: parent.right; anchors.rightMargin: 8; y: 8; icon: "dismiss-20"; text: ""; pad: 6; Accessible.name: qsTr("Dismiss"); onClicked: root.retirementDismissed = true }
             }
             Item { width: 1; height: root.page === "collections" && !root.retirementDismissed ? 8 : 0 }
             // The header.
             Item {
                 width: parent.width; height: 32
-                Btn { icon: "arrow-left-20"; text: ""; pad: 6; Accessible.name: root.page === "collection" ? "Back to collections" : "Go back"
+                Btn { icon: "arrow-left-20"; text: ""; pad: 6; Accessible.name: root.page === "collection" ? qsTr("Back to collections") : qsTr("Go back")
                       onClicked: { if (root.page === "collection") root.openCollections(); else { root.page = ""; root.openTab("manage") } } }
                 Text { x: 44; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 260; elide: Text.ElideRight
                        text: root.page === "collection" ? (root.collection && root.collection.collection ? root.collection.collection.displayName : "")
-                             : (root.collections && root.collections.length ? "Immersive collections (" + root.collections.length + ")" : "Immersive collections")
+                             : (root.collections && root.collections.length ? qsTr("Immersive collections (%1)").arg(root.collections.length) : qsTr("Immersive collections"))
                        font.family: theme.font; font.pixelSize: root.page === "collection" ? 16 : 20; font.weight: Font.DemiBold; color: theme.text }
-                Btn { visible: root.page === "collections"; anchors.right: parent.right; outlined: true; icon: "add-20"; text: "Create collection"; onClicked: collDialog.openFor(null) }
+                Btn { visible: root.page === "collections"; anchors.right: parent.right; outlined: true; icon: "add-20"; text: qsTr("Create collection"); onClicked: collDialog.openFor(null) }
             }
             // ---- the list ----
-            Text { visible: root.page === "collections" && root.collections === null; text: "Loading..."; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary; height: 400; width: parent.width; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+            Text { visible: root.page === "collections" && root.collections === null; text: qsTr("Loading..."); font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary; height: 400; width: parent.width; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
             Column {
                 visible: root.page === "collections" && !!root.collections && root.collections.length === 0
                 width: parent.width; spacing: 8
@@ -1067,9 +1067,9 @@ Rectangle {
                         source: root.cdn + "webp/128/folder-favorite-" + (theme.dark || theme.highContrast ? "d" : "l") + "-standard-128x128.webp" }
                 Item { width: 1; height: 8 }
                 Text { anchors.horizontalCenter: parent.horizontalCenter; width: Math.min(600, parent.width); horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
-                       text: "You don’t have any immersive collections"; font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text }
+                       text: qsTr("You don’t have any immersive collections"); font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text }
                 Text { anchors.horizontalCenter: parent.horizontalCenter; width: Math.min(600, parent.width); horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; maximumLineCount: 2
-                       text: "Immersive collections allow you to share custom environments and templates. Create a collection when the time’s right!"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                       text: qsTr("Immersive collections allow you to share custom environments and templates. Create a collection when the time’s right!"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
             }
             Flow {
                 visible: root.page === "collections" && !!root.collections && root.collections.length > 0
@@ -1084,18 +1084,18 @@ Rectangle {
                         Column { x: 12; y: 12; width: parent.width - 24; spacing: 4
                             Text { width: parent.width; elide: Text.ElideRight; text: modelData.displayName; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
                             Text { visible: !!modelData.description; width: parent.width; wrapMode: Text.Wrap; maximumLineCount: 2; elide: Text.ElideRight; text: modelData.description || ""; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } }
-                        Btn { anchors.right: parent.right; anchors.rightMargin: 12; y: 150 - 44; outlined: true; icon: "calendar-add-20"; text: "View details"; onClicked: root.openCollection(modelData) }
+                        Btn { anchors.right: parent.right; anchors.rightMargin: 12; y: 150 - 44; outlined: true; icon: "calendar-add-20"; text: qsTr("View details"); onClicked: root.openCollection(modelData) }
                         TapHandler { onTapped: root.openCollection(modelData) }
-                        Accessible.role: Accessible.ListItem; Accessible.name: "Immersive collection, " + modelData.displayName + ", " + (modelData.description || "")
+                        Accessible.role: Accessible.ListItem; Accessible.name: qsTr("Immersive collection, %1, %2").arg(modelData.displayName).arg(modelData.description || "")
                     }
                 }
             }
             // ---- a collection ----
-            Text { visible: root.page === "collection" && !!root.collection && !!root.collection.error; text: "Error loading collection details"; font.family: theme.font; font.pixelSize: 14; color: theme.danger }
+            Text { visible: root.page === "collection" && !!root.collection && !!root.collection.error; text: qsTr("Error loading collection details"); font.family: theme.font; font.pixelSize: 14; color: theme.danger }
             Row {
                 visible: root.page === "collection" && !!root.collection && !root.collection.error
                 height: 44; spacing: 4
-                Repeater { model: [["templates", "Templates"], ["members", "Members"], ["settings", "Settings"]]
+                Repeater { model: [["templates", qsTr("Templates")], ["members", qsTr("Members")], ["settings", qsTr("Settings")]]
                     Item {
                         required property var modelData
                         width: tabT.implicitWidth + 20; height: 44
@@ -1110,9 +1110,9 @@ Rectangle {
             Column {
                 visible: root.page === "collection" && root.collectionTab === "templates" && !!root.collection && !root.collection.error
                 width: parent.width; spacing: 16
-                Text { text: "Immersive templates (0)"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
+                Text { text: qsTr("Immersive templates (%1)").arg(0); font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
                 Text { visible: collCol.provisioning; width: parent.width; height: 400; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; wrapMode: Text.Wrap
-                       text: "Your collection is being created! It can take up to 15 minutes before storage is set up and you can upload environments and edit templates."; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                       text: qsTr("Your collection is being created! It can take up to 15 minutes before storage is set up and you can upload environments and edit templates."); font.family: theme.font; font.pixelSize: 14; color: theme.text }
                 Column {
                     visible: !collCol.provisioning
                     width: parent.width; spacing: 16
@@ -1120,7 +1120,7 @@ Rectangle {
                     Image { anchors.horizontalCenter: parent.horizontalCenter; width: 128; height: 128; asynchronous: true
                             source: root.cdn + "webp/128/design-from-scratch-" + (theme.dark || theme.highContrast ? "d" : "l") + "-standard-128x128.webp" }
                     Text { anchors.horizontalCenter: parent.horizontalCenter; width: Math.min(600, parent.width); horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
-                           text: "You don't have any immersive templates in this collection yet. You can create a template from any immersive event."; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                           text: qsTr("You don't have any immersive templates in this collection yet. You can create a template from any immersive event."); font.family: theme.font; font.pixelSize: 14; color: theme.text }
                 }
             }
             // Members.
@@ -1128,10 +1128,10 @@ Rectangle {
                 visible: root.page === "collection" && root.collectionTab === "members"
                 width: parent.width; spacing: 12
                 Item { width: parent.width; height: 32
-                    Text { anchors.verticalCenter: parent.verticalCenter; text: "Owners (" + ((root.collectionPeople || {}).owners || []).length + ")"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
-                    Btn { anchors.right: parent.right; outlined: true; icon: "person-add-20"; text: "Add people"; usable: root.imOwner; onClicked: collAdd.openNow() } }
+                    Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Owners (%1)").arg(((root.collectionPeople || {}).owners || []).length); font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
+                    Btn { anchors.right: parent.right; outlined: true; icon: "person-add-20"; text: qsTr("Add people"); usable: root.imOwner; onClicked: collAdd.openNow() } }
                 CollTable { people: (root.collectionPeople || {}).owners || []; owners: true }
-                Text { text: "Members (" + ((root.collectionPeople || {}).members || []).length + ")"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text; height: 32; verticalAlignment: Text.AlignVCenter }
+                Text { text: qsTr("Members (%1)").arg(((root.collectionPeople || {}).members || []).length); font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text; height: 32; verticalAlignment: Text.AlignVCenter }
                 CollTable { people: (root.collectionPeople || {}).members || []; owners: false }
             }
             // Settings.
@@ -1139,30 +1139,30 @@ Rectangle {
                 visible: root.page === "collection" && root.collectionTab === "settings" && !!root.collection && !!root.collection.collection
                 width: parent.width; spacing: 20
                 Item { width: parent.width; height: 32
-                    Text { anchors.verticalCenter: parent.verticalCenter; text: "Collection details"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
-                    Btn { anchors.right: parent.right; outlined: true; icon: "settings-20"; text: "Edit details"; onClicked: collDialog.openFor(root.collection.collection) } }
+                    Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Collection details"); font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
+                    Btn { anchors.right: parent.right; outlined: true; icon: "settings-20"; text: qsTr("Edit details"); onClicked: collDialog.openFor(root.collection.collection) } }
                 Item {
                     width: parent.width; height: detailsCol.height
                     FluentSurface { anchors.fill: parent; depth: 8; radius: 8; color: theme.surface }
                     Column { id: detailsCol; width: parent.width
-                        Repeater { model: root.collection && root.collection.collection ? [["Collection name", root.collection.collection.displayName], ["Description", root.collection.collection.description || "—"],
-                                                                                         ["Sensitivity", "—"], ["Privacy", "Private"]] : []
+                        Repeater { model: root.collection && root.collection.collection ? [[qsTr("Collection name"), root.collection.collection.displayName], [qsTr("Description"), root.collection.collection.description || "—"],
+                                                                                         [qsTr("Sensitivity"), "—"], [qsTr("Privacy"), qsTr("Private")]] : []
                             Item { required property var modelData; width: detailsCol.width; height: 40
                                 Text { x: 16; anchors.verticalCenter: parent.verticalCenter; text: modelData[0]; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
                                 Text { x: 200; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 216; elide: Text.ElideRight; text: modelData[1]; font.family: theme.font; font.pixelSize: 14; color: theme.text } } } }
                 }
-                Text { text: "Manage"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
+                Text { text: qsTr("Manage"); font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
                 Item {
                     width: parent.width; height: 56
                     FluentSurface { anchors.fill: parent; depth: 8; radius: 8; color: theme.surface }
-                    Text { x: 16; anchors.verticalCenter: parent.verticalCenter; text: "Delete collection"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
-                    Text { x: 176; anchors.verticalCenter: parent.verticalCenter; text: "Deleting a collection is permanent and cannot be undone"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    Text { x: 16; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Delete collection"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                    Text { x: 176; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Deleting a collection is permanent and cannot be undone"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
                     Rectangle { anchors.right: parent.right; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter; width: delT.implicitWidth + 24; height: 32; radius: 4
                         color: delH.hovered ? theme.pick("#B10E1C", "#D13438", "#FFFFFF") : theme.pick("#C50F1F", "#C50F1F", "#FFFFFF")
-                        Text { id: delT; anchors.centerIn: parent; text: "Delete collection"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: "white" }
+                        Text { id: delT; anchors.centerIn: parent; text: qsTr("Delete collection"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: "white" }
                         HoverHandler { id: delH; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: collDelete.open() }
-                        Accessible.role: Accessible.Button; Accessible.name: "Delete collection" }
+                        Accessible.role: Accessible.Button; Accessible.name: qsTr("Delete collection") }
                 }
             }
         }
@@ -1175,9 +1175,9 @@ Rectangle {
         property bool owners: false
         width: collCol.width
         Item { width: parent.width; height: 40
-            Text { x: 16; anchors.verticalCenter: parent.verticalCenter; text: "Name and email"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
-            Text { x: 516; anchors.verticalCenter: parent.verticalCenter; text: "Title"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
-            Text { x: 716; anchors.verticalCenter: parent.verticalCenter; text: "Role"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text } }
+            Text { x: 16; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Name and email"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+            Text { x: 516; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Title"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+            Text { x: 716; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Role"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text } }
         Rectangle { width: parent.width; height: 1; color: theme.divider }
         Repeater { model: ct.people
             Column { required property var modelData; required property int index
@@ -1190,14 +1190,14 @@ Rectangle {
                     Text { x: 516; anchors.verticalCenter: parent.verticalCenter; text: modelData.jobTitle || ""; font.family: theme.font; font.pixelSize: 14; color: theme.text }
                     ComboBox {
                         x: 716; anchors.verticalCenter: parent.verticalCenter; width: 120
-                        model: ["Owner", "Member"]; currentIndex: ct.owners ? 0 : 1
+                        model: [qsTr("Owner"), qsTr("Member")]; currentIndex: ct.owners ? 0 : 1
                         enabled: root.imOwner && !(ct.owners && ct.people.length <= 1)
                         onActivated: i => root.call("changeCollectionPerson", { id: root.collection.collection.id, user: modelData.id, what: i === 0 ? "owner" : "member" },
                                                     v => { if (!v.error) root.call("collectionPeople", { id: root.collection.collection.id }, p => { if (!p.error) root.collectionPeople = p }) })
-                        Accessible.name: "Role"
+                        Accessible.name: qsTr("Role")
                     }
                     Btn { visible: !ct.owners && (root.imOwner || modelData.id === backend.userMri.replace("8:orgid:", "")); anchors.right: parent.right; anchors.rightMargin: 16; anchors.verticalCenter: parent.verticalCenter
-                          icon: "dismiss-20"; text: ""; pad: 6; Accessible.name: "Remove " + modelData.displayName; onClicked: collRemove.openFor(modelData) }
+                          icon: "dismiss-20"; text: ""; pad: 6; Accessible.name: qsTr("Remove %1").arg(modelData.displayName); onClicked: collRemove.openFor(modelData) }
                 }
                 Rectangle { visible: index < ct.people.length - 1; width: parent.width; height: 1; color: theme.divider } } }
     }
@@ -1219,7 +1219,7 @@ Rectangle {
             busy = true
             const done = v => {
                 busy = false
-                if (v.error) { error = /403/.test(v.error) ? "Your organization doesn't allow you to create Microsoft 365 groups, which are required for collections. Contact your IT administrator, or ask to be added to an existing collection." : "Something went wrong. Please try again."; return }
+                if (v.error) { error = /403/.test(v.error) ? qsTr("Your organization doesn't allow you to create Microsoft 365 groups, which are required for collections. Contact your IT administrator, or ask to be added to an existing collection.") : qsTr("Something went wrong. Please try again."); return }
                 close()
                 if (editing) root.pollCollection(editing.id, 0)
                 else { root.call("collections", {}, l => { if (!l.error) root.collections = l }); root.openCollection({ id: v.id, displayName: collName.text.trim(), description: collDesc.text.trim() }) }
@@ -1230,38 +1230,38 @@ Rectangle {
         contentItem: Column {
             spacing: 15
             Item { width: parent.width; height: 28
-                Text { text: collDialog.editing ? "Edit immersive collection" : "Create an immersive collection"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
-                Btn { anchors.right: parent.right; icon: "dismiss-20"; text: ""; pad: 6; onClicked: collDialog.close(); Accessible.name: "Close dialog" } }
+                Text { text: collDialog.editing ? qsTr("Edit immersive collection") : qsTr("Create an immersive collection"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+                Btn { anchors.right: parent.right; icon: "dismiss-20"; text: ""; pad: 6; onClicked: collDialog.close(); Accessible.name: qsTr("Close dialog") } }
             Rectangle { visible: !!collDialog.error; width: parent.width; height: visible ? errT.implicitHeight + 16 : 0; radius: 4; color: theme.pick("#FDF3F4", "#3B2326", "#000000")
                         Text { id: errT; x: 12; y: 8; width: parent.width - 24; wrapMode: Text.Wrap; text: collDialog.error; font.family: theme.font; font.pixelSize: 14; color: theme.text } }
             Column { width: parent.width; spacing: 4
-                Label { text: "Collection name *" }
+                Label { text: qsTr("Collection name") + " *" }
                 Rectangle { width: parent.width; height: 32; radius: 4; color: theme.input; border.color: collName.activeFocus ? theme.brand : theme.stroke; border.width: 1
-                    TextInput { id: collName; x: 10; width: parent.width - 20; anchors.verticalCenter: parent.verticalCenter; clip: true; selectByMouse: true; font.family: theme.font; font.pixelSize: 14; color: theme.text; Accessible.name: "Collection name"
-                                Text { visible: !parent.text && !parent.activeFocus; text: "Enter a name for your collection"; font: parent.font; color: theme.textSecondary } } }
-                Text { visible: collDialog.touched && collName.text.length > 0 && !collName.text.trim() || (collDialog.touched && !collName.text.trim()); text: "Collection name is required"; font.family: theme.font; font.pixelSize: 12; color: theme.danger } }
+                    TextInput { id: collName; x: 10; width: parent.width - 20; anchors.verticalCenter: parent.verticalCenter; clip: true; selectByMouse: true; font.family: theme.font; font.pixelSize: 14; color: theme.text; Accessible.name: qsTr("Collection name")
+                                Text { visible: !parent.text && !parent.activeFocus; text: qsTr("Enter a name for your collection"); font: parent.font; color: theme.textSecondary } } }
+                Text { visible: collDialog.touched && collName.text.length > 0 && !collName.text.trim() || (collDialog.touched && !collName.text.trim()); text: qsTr("Collection name is required"); font.family: theme.font; font.pixelSize: 12; color: theme.danger } }
             Column { width: parent.width; spacing: 4
-                Label { text: "Collection description" }
+                Label { text: qsTr("Collection description") }
                 Rectangle { width: parent.width; height: collDialog.editing ? 72 : 32; radius: 4; color: theme.input; border.color: collDesc.activeFocus ? theme.brand : theme.stroke; border.width: 1
-                    TextEdit { id: collDesc; x: 10; y: 6; width: parent.width - 20; height: parent.height - 12; wrapMode: TextEdit.Wrap; clip: true; selectByMouse: true; font.family: theme.font; font.pixelSize: 14; color: theme.text; Accessible.name: "Collection description"
-                               Text { visible: !parent.text && !parent.activeFocus; text: "Enter a short description for your collection"; font: parent.font; color: theme.textSecondary } } } }
+                    TextEdit { id: collDesc; x: 10; y: 6; width: parent.width - 20; height: parent.height - 12; wrapMode: TextEdit.Wrap; clip: true; selectByMouse: true; font.family: theme.font; font.pixelSize: 14; color: theme.text; Accessible.name: qsTr("Collection description")
+                               Text { visible: !parent.text && !parent.activeFocus; text: qsTr("Enter a short description for your collection"); font: parent.font; color: theme.textSecondary } } } }
             Column { width: parent.width; spacing: 4
-                Label { text: collDialog.editing ? "Privacy" : "Privacy *" }
+                Label { text: collDialog.editing ? qsTr("Privacy") : qsTr("Privacy") + " *" }
                 Row { spacing: 15
-                    Repeater { model: [["Private", "People need permission to join", "lock-closed-20", true], ["Public", "Anyone can join", "globe-20", false]]
+                    Repeater { model: [[qsTr("Private"), qsTr("People need permission to join"), "lock-closed-20", true], [qsTr("Public"), qsTr("Anyone can join"), "globe-20", false]]
                         Rectangle { required property var modelData
                             width: (collDialog.availableWidth - 15) / 2; height: 80; radius: 8; opacity: modelData[3] ? 1 : 0.6
                             color: theme.surface; border.color: modelData[3] ? theme.brand : theme.stroke; border.width: modelData[3] ? 2 : 1
                             FluentIcon { x: 12; y: 12; name: modelData[2]; size: 20; color: theme.textStrong }
                             Text { x: 40; y: 12; text: modelData[0]; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
                             Text { x: 40; y: 34; width: parent.width - 52; wrapMode: Text.Wrap; text: modelData[1]; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
-                            ToolTip.visible: !modelData[3] && pubH.hovered; ToolTip.text: "Public immersive collections are not supported yet."
+                            ToolTip.visible: !modelData[3] && pubH.hovered; ToolTip.text: qsTr("Public immersive collections are not supported yet.")
                             HoverHandler { id: pubH }
                             Accessible.role: Accessible.RadioButton; Accessible.name: modelData[0]; Accessible.checked: modelData[3] } } } }
             Row { anchors.right: parent.right; spacing: 8
-                Btn { outlined: true; text: "Cancel"; usable: !collDialog.busy; onClicked: collDialog.close() }
+                Btn { outlined: true; text: qsTr("Cancel"); usable: !collDialog.busy; onClicked: collDialog.close() }
                 Btn { primary: true; usable: !collDialog.busy && !!collName.text.trim()
-                      text: collDialog.editing ? (collDialog.busy ? "Saving..." : "Save") : (collDialog.busy ? "Creating..." : "Create collection"); onClicked: collDialog.submit() } }
+                      text: collDialog.editing ? (collDialog.busy ? qsTr("Saving...") : qsTr("Save")) : (collDialog.busy ? qsTr("Creating...") : qsTr("Create collection")); onClicked: collDialog.submit() } }
         }
     }
     // Add people to this collection: Owners and Members pickers.
@@ -1279,19 +1279,19 @@ Rectangle {
         contentItem: Column {
             spacing: 30
             Item { width: parent.width; height: 28
-                Text { text: "Add people to this collection"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
-                Btn { anchors.right: parent.right; icon: "dismiss-20"; text: ""; pad: 6; onClicked: collAdd.close(); Accessible.name: "Close dialog" } }
+                Text { text: qsTr("Add people to this collection"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+                Btn { anchors.right: parent.right; icon: "dismiss-20"; text: ""; pad: 6; onClicked: collAdd.close(); Accessible.name: qsTr("Close dialog") } }
             Column { width: parent.width; spacing: 10
-                Label { text: "Owners" }
-                EventPeoplePicker { id: collOwnersPicker; width: parent.width; kind: "team"; placeholder: "Enter a name or distribution list to add to your collection"; picked: collAdd.owners; onChanged: list => collAdd.owners = list }
-                Text { width: parent.width; wrapMode: Text.Wrap; text: "Those who have admin privileges and can edit templates and environments"; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } }
+                Label { text: qsTr("Owners") }
+                EventPeoplePicker { id: collOwnersPicker; width: parent.width; kind: "team"; placeholder: qsTr("Enter a name or distribution list to add to your collection"); picked: collAdd.owners; onChanged: list => collAdd.owners = list }
+                Text { width: parent.width; wrapMode: Text.Wrap; text: qsTr("Those who have admin privileges and can edit templates and environments"); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } }
             Column { width: parent.width; spacing: 10
-                Label { text: "Members" }
-                EventPeoplePicker { id: collMembersPicker; width: parent.width; kind: "team"; placeholder: "Enter a name or distribution list to add to your collection"; picked: collAdd.members; onChanged: list => collAdd.members = list }
-                Text { width: parent.width; wrapMode: Text.Wrap; text: "Those who can access and edit event templates and environments"; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } }
+                Label { text: qsTr("Members") }
+                EventPeoplePicker { id: collMembersPicker; width: parent.width; kind: "team"; placeholder: qsTr("Enter a name or distribution list to add to your collection"); picked: collAdd.members; onChanged: list => collAdd.members = list }
+                Text { width: parent.width; wrapMode: Text.Wrap; text: qsTr("Those who can access and edit event templates and environments"); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } }
             Row { anchors.right: parent.right; spacing: 8
-                Btn { outlined: true; text: "Cancel"; onClicked: collAdd.close() }
-                Btn { primary: true; usable: !collAdd.busy && collAdd.owners.length + collAdd.members.length > 0; text: "Add people"
+                Btn { outlined: true; text: qsTr("Cancel"); onClicked: collAdd.close() }
+                Btn { primary: true; usable: !collAdd.busy && collAdd.owners.length + collAdd.members.length > 0; text: qsTr("Add people")
                       onClicked: {
                           collAdd.busy = true
                           const id = root.collection.collection.id
@@ -1323,11 +1323,11 @@ Rectangle {
         function openFor(p) { person = p; open() }
         contentItem: Column {
             spacing: 16
-            Text { text: "Remove person from this collection?"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
-            Text { width: parent.width; wrapMode: Text.Wrap; text: "This person will no longer have access to the collection or its contents."; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+            Text { text: qsTr("Remove person from this collection?"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+            Text { width: parent.width; wrapMode: Text.Wrap; text: qsTr("This person will no longer have access to the collection or its contents."); font.family: theme.font; font.pixelSize: 14; color: theme.text }
             Row { anchors.right: parent.right; spacing: 8
-                Btn { outlined: true; text: "Cancel"; onClicked: collRemove.close() }
-                Btn { primary: true; text: "Remove person"
+                Btn { outlined: true; text: qsTr("Cancel"); onClicked: collRemove.close() }
+                Btn { primary: true; text: qsTr("Remove person")
                       onClicked: { const id = root.collection.collection.id
                           root.call("changeCollectionPerson", { id: id, user: collRemove.person.id, what: "remove" }, v => {
                               collRemove.close(); root.call("collectionPeople", { id: id }, p => { if (!p.error) root.collectionPeople = p }) }) } } }
@@ -1344,11 +1344,11 @@ Rectangle {
         property bool busy: false
         contentItem: Column {
             spacing: 16
-            Text { text: "Delete this collection?"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
-            Text { width: parent.width; wrapMode: Text.Wrap; text: "This action cannot be undone and you will lose all associated content within."; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+            Text { text: qsTr("Delete this collection?"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+            Text { width: parent.width; wrapMode: Text.Wrap; text: qsTr("This action cannot be undone and you will lose all associated content within."); font.family: theme.font; font.pixelSize: 14; color: theme.text }
             Row { anchors.right: parent.right; spacing: 8
-                Btn { outlined: true; text: "Cancel"; onClicked: collDelete.close() }
-                Btn { primary: true; usable: !collDelete.busy; text: "Delete collection"
+                Btn { outlined: true; text: qsTr("Cancel"); onClicked: collDelete.close() }
+                Btn { primary: true; usable: !collDelete.busy; text: qsTr("Delete collection")
                       onClicked: { collDelete.busy = true
                           root.call("deleteCollection", { id: root.collection.collection.id }, v => {
                               collDelete.busy = false; console.warn("EVENTS collection deleted", JSON.stringify(v)); collDelete.close()
@@ -1380,18 +1380,18 @@ Rectangle {
         onVisibleChanged: if (visible) { mine = root.myEvents; range = root.dateRange; from = root.customFrom; to = root.customTo; tried = false }
         // Custom range needs both dates ("Select a date." under an empty one).
         readonly property bool rangeOk: range !== "custom" || (!!from && !!to && to >= from)
-        Text { x: 25; y: 22; text: "Filters"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
-        Btn { x: parent.width - 56; y: 20; icon: "dismiss-20"; text: ""; pad: 6; onClicked: root.filtersOpen = false; Accessible.name: "Close filters" }
+        Text { x: 25; y: 22; text: qsTr("Filters"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+        Btn { x: parent.width - 56; y: 20; icon: "dismiss-20"; text: ""; pad: 6; onClicked: root.filtersOpen = false; Accessible.name: qsTr("Close filters") }
         Rectangle { x: 1; y: 72; width: parent.width - 1; height: 1; color: theme.divider }
-        Text { x: 25; y: 93; text: "My events"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
-        Text { x: 25; y: 119; text: "Events you're invited to or registered for"; font.family: theme.font; font.pixelSize: 12; color: theme.textStrong }
-        SettingsParts.Toggle { x: parent.width - 72; y: 101; stateLabel: false; on: filters.mine; accessibleName: "My events"; onToggled: v => filters.mine = v }
+        Text { x: 25; y: 93; text: qsTr("My events"); font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
+        Text { x: 25; y: 119; text: qsTr("Events you're invited to or registered for"); font.family: theme.font; font.pixelSize: 12; color: theme.textStrong }
+        SettingsParts.Toggle { x: parent.width - 72; y: 101; stateLabel: false; on: filters.mine; accessibleName: qsTr("My events"); onToggled: v => filters.mine = v }
         Rectangle { x: 1; y: 155; width: parent.width - 1; height: 1; color: theme.divider }
-        Text { x: 25; y: 176; text: "Date range"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
+        Text { x: 25; y: 176; text: qsTr("Date range"); font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
         Grid {
             x: 25; y: 204; columns: 2; columnSpacing: 0; rowSpacing: 0
             Repeater {
-                model: [["today", "Today"], ["thisWeek", "This week"], ["thisMonth", "This month"], ["custom", "Custom range"]]
+                model: [["today", qsTr("Today")], ["thisWeek", qsTr("This week")], ["thisMonth", qsTr("This month")], ["custom", qsTr("Custom range")]]
                 Item {
                     required property var modelData
                     width: 141; height: 36
@@ -1410,7 +1410,7 @@ Rectangle {
             visible: filters.range === "custom"
             x: 25; y: 280; spacing: 13
             Repeater {
-                model: [["From", "from"], ["To", "to"]]
+                model: [[qsTr("From"), "from"], [qsTr("To"), "to"]]
                 Column {
                     required property var modelData
                     spacing: 8
@@ -1423,17 +1423,17 @@ Rectangle {
                         filled: true
                         onPicked: d => filters[modelData[1]] = d
                     }
-                    Text { visible: filters.tried && !filters[modelData[1]]; text: "Select a date."; font.family: theme.font; font.pixelSize: 12; color: theme.danger }
+                    Text { visible: filters.tried && !filters[modelData[1]]; text: qsTr("Select a date."); font.family: theme.font; font.pixelSize: 12; color: theme.danger }
                 }
             }
         }
         Rectangle { x: 1; y: parent.height - 57; width: parent.width - 1; height: 1; color: theme.divider }
         Text {
-            x: 17; y: parent.height - 38; text: "Clear all"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.brand
+            x: 17; y: parent.height - 38; text: qsTr("Clear all"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.brand
             TapHandler { onTapped: { filters.mine = false; filters.range = ""; filters.from = null; filters.to = null } }
         }
-        Btn { x: parent.width - 216; y: parent.height - 44; width: 96; outlined: true; text: "Cancel"; onClicked: root.filtersOpen = false }
-        Btn { x: parent.width - 112; y: parent.height - 44; width: 96; primary: true; text: "Apply"
+        Btn { x: parent.width - 216; y: parent.height - 44; width: 96; outlined: true; text: qsTr("Cancel"); onClicked: root.filtersOpen = false }
+        Btn { x: parent.width - 112; y: parent.height - 44; width: 96; primary: true; text: qsTr("Apply")
               onClicked: {
                   filters.tried = true
                   if (!filters.rangeOk) return
@@ -1456,9 +1456,9 @@ Rectangle {
         boundsBehavior: Flickable.StopAtBounds
         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
         onAtYEndChanged: if (atYEnd && visible) root.moreOfSeeMore()
-        Btn { x: 20; y: 32; icon: "arrow-left-20"; text: ""; pad: 6; onClicked: root.openTab(root.tab); Accessible.name: "Go back" }
+        Btn { x: 20; y: 32; icon: "arrow-left-20"; text: ""; pad: 6; onClicked: root.openTab(root.tab); Accessible.name: qsTr("Go back") }
         Text { x: 64; y: 34; text: root.seeMore ? root.seeMore.title : ""; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
-        Text { x: 20; y: 84; text: root.seeMore && !root.seeMore.loading ? (root.seeMore.total === 1 ? "Showing 1 event" : "Showing " + root.seeMore.total + " events") : ""; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+        Text { x: 20; y: 84; text: root.seeMore && !root.seeMore.loading ? qsTr("Showing %n events", "", root.seeMore.total) : ""; font.family: theme.font; font.pixelSize: 14; color: theme.text }
         Flow {
             id: seeFlow
             x: 22; y: 124; width: seeMorePage.width - 44; spacing: 16
@@ -1475,9 +1475,9 @@ Rectangle {
         clip: true
         boundsBehavior: Flickable.StopAtBounds
         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-        Btn { x: 24; y: 32; icon: "arrow-left-20"; text: ""; pad: 6; onClicked: root.page = ""; Accessible.name: "Go back" }
-        Text { x: 71; y: 34; text: "Create"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
-        Text { x: 24; y: 90; text: "Choose what you're organizing"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+        Btn { x: 24; y: 32; icon: "arrow-left-20"; text: ""; pad: 6; onClicked: root.page = ""; Accessible.name: qsTr("Go back") }
+        Text { x: 71; y: 34; text: qsTr("Create"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+        Text { x: 24; y: 90; text: qsTr("Choose what you're organizing"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
         Flow {
             id: createGrid
             x: 24; y: 134; width: createPage.width - 24 - 38; spacing: 20
@@ -1494,13 +1494,13 @@ Rectangle {
             id: savedCol
             x: 24; y: createGrid.y + createGrid.height + 40; width: createGrid.width
             spacing: 0
-            Text { text: "Your saved templates"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text; height: 28 }
+            Text { text: qsTr("Your saved templates"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text; height: 28 }
             Item { width: 1; height: 28 }
             Column {
                 visible: !!root.savedTemplates && root.savedTemplates.length === 0
                 width: parent.width; spacing: 16
                 Image { anchors.horizontalCenter: parent.horizontalCenter; width: 128; height: 128; source: root.cdn + "v2/document-add-l-standard.svg"; sourceSize: Qt.size(256, 256); asynchronous: true }
-                Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Save an event as a template and it will show up here."; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                Text { anchors.horizontalCenter: parent.horizontalCenter; text: qsTr("Save an event as a template and it will show up here."); font.family: theme.font; font.pixelSize: 14; color: theme.text }
             }
             Flow {
                 width: parent.width; spacing: 20
@@ -1520,9 +1520,9 @@ Rectangle {
                         Text { x: 20; y: 158; width: parent.width - 40; wrapMode: Text.Wrap; maximumLineCount: 3; elide: Text.ElideRight; text: tcard.modelData.description || ""; font.family: theme.font; font.pixelSize: 14; color: theme.text }
                         Row {
                             x: 20; y: 259; spacing: 8
-                            Btn { height: 24; outlined: true; fontSize: 12; pad: 8; icon: "calendar-add-20"; text: "Schedule"; onClicked: root.scheduleFromTemplate(tcard.modelData) }
+                            Btn { height: 24; outlined: true; fontSize: 12; pad: 8; icon: "calendar-add-20"; text: qsTr("Schedule"); onClicked: root.scheduleFromTemplate(tcard.modelData) }
                             Btn {
-                                id: tmore; width: 24; height: 24; icon: "more-horizontal-20"; text: ""; pad: 2; Accessible.name: "More actions"
+                                id: tmore; width: 24; height: 24; icon: "more-horizontal-20"; text: ""; pad: 2; Accessible.name: qsTr("More actions")
                                 onClicked: { templateMenu.t = tcard.modelData; templateMenu.parent = tmore; templateMenu.x = 0; templateMenu.y = tmore.height + 4; templateMenu.open() }
                             }
                         }
@@ -1533,12 +1533,12 @@ Rectangle {
         MenuPopup {
             id: templateMenu
             property var t: ({})
-            items: [{ key: "edit", label: "Edit template", icon: "edit-20" }, { key: "delete", label: "Delete", icon: "delete-20" }]
+            items: [{ key: "edit", label: qsTr("Edit template"), icon: "edit-20" }, { key: "delete", label: qsTr("Delete"), icon: "delete-20" }]
             onPicked: i => {
                 if (items[i].key === "edit") root.editTemplate(t)
                 else root.call("deleteTemplate", { id: t.id }, v => {
-                    if (v.error) { root.toast({ text: "Couldn't delete the template. " + v.error, intent: "error" }); return }
-                    root.toast({ text: "Template deleted", intent: "success" }); root.loadTemplates()
+                    if (v.error) { root.toast({ text: qsTr("Couldn't delete the template.") + " " + v.error, intent: "error" }); return }
+                    root.toast({ text: qsTr("Template deleted"), intent: "success" }); root.loadTemplates()
                 })
             }
         }
@@ -1601,7 +1601,7 @@ Rectangle {
             const big = th && t.large !== false
             template = t; start = s; end = e; access = t.access || "Organization"; registration = !!t.registration; greenRoom = t.greenRoom !== undefined ? t.greenRoom : th
             mic = !big; camera = !big; react = true; chat = true; qna = true; capacity = big ? 3000 : th ? 1000 : 0; large = big; attendeeView = "Off"
-            open = [true, false, false, false]; nameField.text = "New event"; description.text = ""; contentY = 0
+            open = [true, false, false, false]; nameField.text = qsTr("New event"); description.text = ""; contentY = 0
             mode = "new"; sourceId = ""; sessionId = ""; promo = ""; discoverable = false; zone = root.localZone; zoneOpen = false
             team = []; presenters = []; attendees = []; rooms = []; optionChanges = ({}); eventOptions = null
         }
@@ -1630,8 +1630,8 @@ Rectangle {
             }
             if (d.capacity) capacity = d.capacity
         }
-        readonly property string title: mode === "edit" ? (nameField.text.trim() || "Edit event") : mode === "template" ? "Edit template"
-            : mode === "duplicate" ? (nameField.text.trim() || "New event") : (template.formTitle || "New event")
+        readonly property string title: mode === "edit" ? (nameField.text.trim() || qsTr("Edit event")) : mode === "template" ? qsTr("Edit template")
+            : mode === "duplicate" ? (nameField.text.trim() || qsTr("New event")) : (template.formTitle || qsTr("New event"))
         // The room search's slot: "yyyy-MM-dd HH:mm:ss" in the zone (Teams
         // sends the form's times in its Windows zone name).
         readonly property string windowsZone: {
@@ -1660,15 +1660,15 @@ Rectangle {
             if (mode === "template") {
                 root.call("updateTemplate", { id: sourceId, name: templateName, templateDescription: templateDescription, event: payload() }, v => {
                     saving = false
-                    if (v.error) { root.toast({ text: "Couldn't save the template. " + v.error, intent: "error" }); return }
-                    root.toast({ text: "Template saved", intent: "success" }); root.page = "create"; root.loadTemplates()
+                    if (v.error) { root.toast({ text: qsTr("Couldn't save the template.") + " " + v.error, intent: "error" }); return }
+                    root.toast({ text: qsTr("Template saved"), intent: "success" }); root.page = "create"; root.loadTemplates()
                 })
                 return
             }
             root.call("update", Object.assign({ id: sourceId }, payload()), v => {
                 saving = false
-                if (v.error) { root.toast({ text: "Couldn't save the event. " + v.error, intent: "error" }); return }
-                root.toast({ text: "Event updated", intent: "success" })
+                if (v.error) { root.toast({ text: qsTr("Couldn't save the event.") + " " + v.error, intent: "error" }); return }
+                root.toast({ text: qsTr("Event updated"), intent: "success" })
                 root.manageData = null
                 root.openEvent(Object.assign({}, root.current || {}, { id: sourceId, title: nameField.text.trim() }))
             })
@@ -1679,10 +1679,10 @@ Rectangle {
             return out
         }
         function timeLabel(hm) { const d = new Date(2000, 0, 1, hm[0], hm[1]); return theme.time(d) }
-        Btn { x: 24; y: 32; icon: "arrow-left-20"; text: ""; pad: 6; onClicked: root.page = form.mode === "edit" ? "event" : "create"; Accessible.name: "Go back" }
+        Btn { x: 24; y: 32; icon: "arrow-left-20"; text: ""; pad: 6; onClicked: root.page = form.mode === "edit" ? "event" : "create"; Accessible.name: qsTr("Go back") }
         Text { x: 64; y: 34; text: form.title; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
         Btn { anchors.right: parent.right; anchors.rightMargin: 22; y: 32; primary: true; icon: "save-20"
-              text: form.mode === "edit" ? "Save changes" : form.mode === "template" ? "Save" : "Save and continue"
+              text: form.mode === "edit" ? qsTr("Save changes") : form.mode === "template" ? qsTr("Save") : qsTr("Save and continue")
               usable: nameField.text.trim().length > 0 && !form.saving
               onClicked: form.mode === "edit" || form.mode === "template" ? form.saveChanges() : saveDialog.open() }
         Column {
@@ -1694,14 +1694,14 @@ Rectangle {
                 visible: root.welcome && form.mode === "new"
                 x: 2; width: parent.width; height: 162; radius: 16
                 color: theme.pick("#F5F5F5", "#292929", "#000000"); border.color: theme.divider; border.width: 1
-                Text { x: 25; y: 30; text: "Welcome! Let's walk through creating your first event."; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
-                Btn { x: parent.width - 57; y: 25; icon: "dismiss-20"; text: ""; pad: 6; onClicked: root.welcome = false; Accessible.name: "Dismiss welcome banner" }
+                Text { x: 25; y: 30; text: qsTr("Welcome! Let's walk through creating your first event."); font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
+                Btn { x: parent.width - 57; y: 25; icon: "dismiss-20"; text: ""; pad: 6; onClicked: root.welcome = false; Accessible.name: qsTr("Dismiss welcome banner") }
                 Row {
                     x: 25; y: 73; spacing: 16
                     Repeater {
-                        model: [["webp/128/editor-l-standard-128x128.webp", "1. Fill out details", "Add the who, where, when and decide on the kind of experience you want."],
-                                ["webp/128/expressions-l-standard-128x128.webp", "2. Personalize event page", "Add branding and get a preview of exactly what attendees will see."],
-                                ["webp/128/share-l-standard-128x128.webp", "3. Spread the word", "Help people discover your event by sharing to the Events app and more."]]
+                        model: [["webp/128/editor-l-standard-128x128.webp", qsTr("1. Fill out details"), qsTr("Add the who, where, when and decide on the kind of experience you want.")],
+                                ["webp/128/expressions-l-standard-128x128.webp", qsTr("2. Personalize event page"), qsTr("Add branding and get a preview of exactly what attendees will see.")],
+                                ["webp/128/share-l-standard-128x128.webp", qsTr("3. Spread the word"), qsTr("Help people discover your event by sharing to the Events app and more.")]]
                         Item {
                             required property var modelData
                             width: (formCol.width - 50 - 32) / 3; height: 64
@@ -1714,17 +1714,17 @@ Rectangle {
             }
             // 1. Add event details.
             Section {
-                index: 0; title: "Add event details"
+                index: 0; title: qsTr("Add event details")
                 Column {
                     width: parent.width; spacing: 0
                     Item { width: 1; height: 22 }
                     Row { spacing: 2
-                        Label { text: "Name" }
+                        Label { text: qsTr("Name") }
                         Text { text: "*"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.redForeground3 } }
                     Item { width: 1; height: 12 }
                     Rectangle {
                         width: parent.width; height: 40; radius: 4; color: theme.input; border.color: nameField.activeFocus ? theme.brand : theme.stroke; border.width: 1
-                        TextInput { id: nameField; x: 19; width: parent.width - 38; anchors.verticalCenter: parent.verticalCenter; font.family: theme.font; font.pixelSize: 16; color: theme.text; clip: true; selectByMouse: true; Accessible.name: "Name" }
+                        TextInput { id: nameField; x: 19; width: parent.width - 38; anchors.verticalCenter: parent.verticalCenter; font.family: theme.font; font.pixelSize: 16; color: theme.text; clip: true; selectByMouse: true; Accessible.name: qsTr("Name") }
                     }
                     Item { width: 1; height: 24 }
                     Row {
@@ -1733,19 +1733,19 @@ Rectangle {
                         enabled: form.mode !== "template"
                         opacity: enabled ? 1 : 0.5
                         Column { spacing: 12
-                            Label { text: "Start date" }
+                            Label { text: qsTr("Start date") }
                             DatePickerField { width: parent.parent.w; height: 32; format: theme.regional.shortDate; date: form.start; onPicked: d => { const len = form.end - form.start; const s = new Date(d); s.setHours(form.start.getHours(), form.start.getMinutes()); form.start = s; form.end = new Date(s.getTime() + len) } } }
                         Column { spacing: 12
-                            Label { text: "Start time" }
-                            Dropdown { width: parent.parent.w; height: 32; label: theme.time(form.start); accessibleName: "Start time"
+                            Label { text: qsTr("Start time") }
+                            Dropdown { width: parent.parent.w; height: 32; label: theme.time(form.start); accessibleName: qsTr("Start time")
                                        options: form.times.map(t => [t[0] + ":" + t[1], form.timeLabel(t)])
                                        onPicked: c => { const len = form.end - form.start; form.start = form.setTime(form.start, c.split(":").map(Number)); form.end = new Date(form.start.getTime() + len) } } }
                         Column { spacing: 12
-                            Label { text: "End date" }
+                            Label { text: qsTr("End date") }
                             DatePickerField { width: parent.parent.w; height: 32; format: theme.regional.shortDate; date: form.end; minDate: form.start; onPicked: d => { const e = new Date(d); e.setHours(form.end.getHours(), form.end.getMinutes()); form.end = e } } }
                         Column { spacing: 12
-                            Label { text: "End time" }
-                            Dropdown { width: parent.parent.w; height: 32; label: theme.time(form.end); accessibleName: "End time"
+                            Label { text: qsTr("End time") }
+                            Dropdown { width: parent.parent.w; height: 32; label: theme.time(form.end); accessibleName: qsTr("End time")
                                        options: form.times.map(t => [t[0] + ":" + t[1], form.timeLabel(t)])
                                        onPicked: c => form.end = form.setTime(form.end, c.split(":").map(Number)) } }
                         // The time zone toggle (32 x 32, a 20 px globe in brand,
@@ -1756,10 +1756,10 @@ Rectangle {
                                 y: 32; width: 32; height: 32; radius: 4
                                 color: form.zoneOpen ? theme.pick("#F0F0F0", "#3D3D3D", "#000000") : hovered2.hovered ? theme.hover : "transparent"
                                 FluentIcon { anchors.centerIn: parent; name: "globe-20"; size: 20; color: theme.brand }
-                                ToolTip.visible: hovered2.hovered; ToolTip.text: "Time zone"
+                                ToolTip.visible: hovered2.hovered; ToolTip.text: qsTr("Time zone")
                                 HoverHandler { id: hovered2; cursorShape: Qt.PointingHandCursor }
                                 TapHandler { onTapped: form.zoneOpen = !form.zoneOpen }
-                                Accessible.role: Accessible.Button; Accessible.name: "Time zone"
+                                Accessible.role: Accessible.Button; Accessible.name: qsTr("Time zone")
                             }
                         }
                     }
@@ -1769,16 +1769,16 @@ Rectangle {
                         visible: form.zoneOpen
                         width: parent.width; spacing: 8
                         Item { width: 1; height: 4 }
-                        Label { text: "Time zone" }
+                        Label { text: qsTr("Time zone") }
                         Dropdown {
-                            width: parent.width; height: 32; accessibleName: "Time zone"
+                            width: parent.width; height: 32; accessibleName: qsTr("Time zone")
                             options: root.zones
                             label: (root.zones.find(z => z[0] === (form.zone || root.localZone)) || ["", form.zone])[1]
                             onPicked: k => form.zone = k
                         }
                     }
                     Item { width: 1; height: 22 }
-                    Label { text: "Location" }
+                    Label { text: qsTr("Location") }
                     Item { width: 1; height: 8 }
                     // Location: the Teams Online Meeting chip, the rooms' chips (a
                     // 20 px initials disc, the name, a dismiss) and Add a room
@@ -1798,7 +1798,7 @@ Rectangle {
                                     Row { id: chipRow; x: 2; anchors.verticalCenter: parent.verticalCenter; spacing: 8
                                         Rectangle { width: 20; height: 20; radius: 10; color: theme.brandFill
                                             FluentIcon { anchors.centerIn: parent; name: "video-16"; size: 12; color: theme.textOnBrand } }
-                                        Text { anchors.verticalCenter: parent.verticalCenter; text: "Teams Online Meeting"; font.family: theme.font; font.pixelSize: 14; color: theme.brandForeground1 } }
+                                        Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Teams Online Meeting"); font.family: theme.font; font.pixelSize: 14; color: theme.brandForeground1 } }
                                 }
                                 Repeater {
                                     model: form.rooms
@@ -1812,7 +1812,7 @@ Rectangle {
                                             Text { anchors.verticalCenter: parent.verticalCenter; text: roomChip.modelData.name; font.family: theme.font; font.pixelSize: 14; color: theme.text }
                                             FluentIcon { name: "dismiss-12"; size: 12; color: theme.textStrong; anchors.verticalCenter: parent.verticalCenter
                                                 TapHandler { onTapped: { const a = form.rooms.slice(); a.splice(roomChip.index, 1); form.rooms = a } }
-                                                Accessible.role: Accessible.Button; Accessible.name: "Remove " + roomChip.modelData.name } }
+                                                Accessible.role: Accessible.Button; Accessible.name: qsTr("Remove %1").arg(roomChip.modelData.name) } }
                                     }
                                 }
                             }
@@ -1821,7 +1821,7 @@ Rectangle {
                                 kind: "rooms"; chips: false; filled: false; bare: true
                                 x: locRow.x + locRow.width + 4; width: locBox.width - x - 4; height: 30
                                 anchors.verticalCenter: parent.verticalCenter
-                                placeholder: "Add a room"
+                                placeholder: qsTr("Add a room")
                                 picked: form.rooms
                                 start: form.slot(form.start); end: form.slot(form.end); zone: form.windowsZone
                                 onChanged: list => form.rooms = list
@@ -1830,11 +1830,11 @@ Rectangle {
                         Btn {
                             visible: form.rooms.length > 0
                             anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
-                            icon: "door-20"; text: "Room options"; onClicked: roomOptions.open()
+                            icon: "door-20"; text: qsTr("Room options"); onClicked: roomOptions.open()
                         }
                     }
                     Item { width: 1; height: 18 }
-                    Label { text: "Description" }
+                    Label { text: qsTr("Description") }
                     Item { width: 1; height: 12 }
                     // The description editor (Teams' Formatting toolbar: Bold, Italic,
                     // Underline | Text highlight color, Font color, Font size, Clear
@@ -1846,17 +1846,17 @@ Rectangle {
                             id: descBar
                             x: -6; y: -9; width: parent.width + 6; tierWidth: 640
                             discard: false
-                            custom: [[{ k: "bold", icon: "fmt-bold", label: "Bold", on: !!form.richState.bold }, { k: "italic", icon: "fmt-italic", label: "Italic", on: !!form.richState.italic },
-                                      { k: "underline", icon: "fmt-underline", label: "Underline", on: !!form.richState.underline }],
-                                     [{ k: "highlight", icon: "fmt-highlight", label: "Text highlight color", popup: true }, { k: "color", icon: "fmt-font-color", label: "Font color", popup: true },
-                                      { k: "size", icon: "fmt-font-size", label: "Font size", popup: true }, { k: "clear", icon: "fmt-clear-format", label: "Clear all formatting" }],
-                                     [{ k: "outdent", icon: "fmt-outdent", label: "Decrease indent" }, { k: "indent", icon: "fmt-indent", label: "Increase indent" },
-                                      { k: "ul", icon: "fmt-bullets", label: "Bulleted list", on: form.richState.list === "ul" }, { k: "ol", icon: "fmt-numbers", label: "Numbered list", on: form.richState.list === "ol" }],
-                                     [{ k: "link", icon: "fmt-link", label: "Insert link", popup: true }]]
+                            custom: [[{ k: "bold", icon: "fmt-bold", label: qsTr("Bold"), on: !!form.richState.bold }, { k: "italic", icon: "fmt-italic", label: qsTr("Italic"), on: !!form.richState.italic },
+                                      { k: "underline", icon: "fmt-underline", label: qsTr("Underline"), on: !!form.richState.underline }],
+                                     [{ k: "highlight", icon: "fmt-highlight", label: qsTr("Text highlight color"), popup: true }, { k: "color", icon: "fmt-font-color", label: qsTr("Font color"), popup: true },
+                                      { k: "size", icon: "fmt-font-size", label: qsTr("Font size"), popup: true }, { k: "clear", icon: "fmt-clear-format", label: qsTr("Clear all formatting") }],
+                                     [{ k: "outdent", icon: "fmt-outdent", label: qsTr("Decrease indent") }, { k: "indent", icon: "fmt-indent", label: qsTr("Increase indent") },
+                                      { k: "ul", icon: "fmt-bullets", label: qsTr("Bulleted list"), on: form.richState.list === "ul" }, { k: "ol", icon: "fmt-numbers", label: qsTr("Numbered list"), on: form.richState.list === "ol" }],
+                                     [{ k: "link", icon: "fmt-link", label: qsTr("Insert link"), popup: true }]]
                             st: form.richState
                             selectedText: description.selectedText
                             onCommand: (op, arg) => { rich.apply(description.selectionStart, description.selectionEnd, op, arg || ""); description.forceActiveFocus(); form.refreshRich() }
-                            Accessible.name: "Formatting"
+                            Accessible.name: qsTr("Formatting")
                         }
                         Flickable {
                             x: 13; y: 40; width: parent.width - 26; height: parent.height - 46
@@ -1870,9 +1870,9 @@ Rectangle {
                                 selectionColor: theme.selectionFill; selectedTextColor: theme.text
                                 onCursorPositionChanged: form.refreshRich()
                                 RichText { id: rich }
-                                Text { visible: description.length === 0 && !description.activeFocus; text: "Add a description to share with attendees"; font: description.font; color: theme.textSecondary }
+                                Text { visible: description.length === 0 && !description.activeFocus; text: qsTr("Add a description to share with attendees"); font: description.font; color: theme.textSecondary }
                                 Accessible.role: Accessible.EditableText
-                                Accessible.name: "Description"
+                                Accessible.name: qsTr("Description")
                             }
                         }
                     }
@@ -1880,17 +1880,17 @@ Rectangle {
             }
             // 2. Who's planning the event?
             Section {
-                index: 1; title: "Who's planning the event?"
+                index: 1; title: qsTr("Who's planning the event?")
                 Column {
                     width: parent.width
                     Item { width: 1; height: 16 }
-                    Label { text: "Send invites as" }
+                    Label { text: qsTr("Send invites as") }
                     Item { width: 1; height: 12 }
                     Rectangle { width: parent.width; height: 32; radius: 4; color: theme.input; border.color: theme.stroke; border.width: 1
-                        Text { x: 12; anchors.verticalCenter: parent.verticalCenter; text: backend.userName + " on behalf of " + (nameField.text.trim() || "New event"); font.family: theme.font; font.pixelSize: 14; color: theme.text } }
-                    Text { text: "Invites sent from Event mailbox. Co-organizers have full access to manage the event."; font.family: theme.font; font.pixelSize: 12; color: theme.text; height: 16 }
+                        Text { x: 12; anchors.verticalCenter: parent.verticalCenter; text: qsTr("%1 on behalf of %2").arg(backend.userName).arg(nameField.text.trim() || qsTr("New event")); font.family: theme.font; font.pixelSize: 14; color: theme.text } }
+                    Text { text: qsTr("Invites sent from Event mailbox. Co-organizers have full access to manage the event."); font.family: theme.font; font.pixelSize: 12; color: theme.text; height: 16 }
                     Item { width: 1; height: 16 }
-                    Label { text: "Organizers" }
+                    Label { text: qsTr("Organizers") }
                     Item { width: 1; height: 10 }
                     Rectangle {
                         height: 32; radius: 16; width: orgRow.implicitWidth + 10; color: theme.pick("#F5F5F5", "#292929", "#000000")
@@ -1899,39 +1899,39 @@ Rectangle {
                             Text { anchors.verticalCenter: parent.verticalCenter; text: backend.userName; font.family: theme.font; font.pixelSize: 14; color: theme.textStrong } }
                     }
                     Item { width: 1; height: 16 }
-                    Label { text: "Co-organizers" }
+                    Label { text: qsTr("Co-organizers") }
                     Item { width: 1; height: 10 }
                     EventPeoplePicker {
                         id: teamPicker
-                        width: parent.width; kind: "team"; placeholder: "Add people to help organize the event"
+                        width: parent.width; kind: "team"; placeholder: qsTr("Add people to help organize the event")
                         picked: form.team; onChanged: list => form.team = list
                     }
-                    Text { text: "They'll receive invites when you save the event."; font.family: theme.font; font.pixelSize: 12; color: theme.text; height: 18; verticalAlignment: Text.AlignBottom }
+                    Text { text: qsTr("They'll receive invites when you save the event."); font.family: theme.font; font.pixelSize: 12; color: theme.text; height: 18; verticalAlignment: Text.AlignBottom }
                     Item { width: 1; height: 16 }
-                    Label { text: "Presenters" }
+                    Label { text: qsTr("Presenters") }
                     Item { width: 1; height: 10 }
                     EventPeoplePicker {
                         id: presenterPicker
-                        width: parent.width; kind: "presenters"; placeholder: "Add people to speak at the event"
+                        width: parent.width; kind: "presenters"; placeholder: qsTr("Add people to speak at the event")
                         picked: form.presenters; onChanged: list => form.presenters = list
                     }
-                    Text { text: "They'll receive invites when you save the event."; font.family: theme.font; font.pixelSize: 12; color: theme.text; height: 18; verticalAlignment: Text.AlignBottom }
+                    Text { text: qsTr("They'll receive invites when you save the event."); font.family: theme.font; font.pixelSize: 12; color: theme.text; height: 18; verticalAlignment: Text.AlignBottom }
                     Item { width: 1; height: 16 }
                 }
             }
             // 3. Who can attend?
             Section {
-                index: 2; title: "Who can attend?"
-                summary: (form.access === "Public" ? "Public" : form.access === "Private" ? "Specific people and groups" : "Your organization") + "     Registration " + (form.registration ? "On" : "Off")
+                index: 2; title: qsTr("Who can attend?")
+                summary: (form.access === "Public" ? qsTr("Public") : form.access === "Private" ? qsTr("Specific people and groups") : qsTr("Your organization")) + "     " + qsTr("Registration") + " " + (form.registration ? qsTr("On") : qsTr("Off"))
                 Column {
                     width: parent.width
                     Item { width: 1; height: 26 }
                     Row {
                         spacing: 16
                         Repeater {
-                            model: [["Public", "Public", "Anyone can view the event page, register, or join the event.", "globe-20"],
-                                    ["Organization", "Your organization", "Anyone in your org can view the event page, register, or join the event.", "building-20"],
-                                    ["Private", "Specific people and groups", "Only people and groups you choose from your org can view the event page and join the event.", "people-20"]]
+                            model: [["Public", qsTr("Public"), qsTr("Anyone can view the event page, register, or join the event."), "globe-20"],
+                                    ["Organization", qsTr("Your organization"), qsTr("Anyone in your org can view the event page, register, or join the event."), "building-20"],
+                                    ["Private", qsTr("Specific people and groups"), qsTr("Only people and groups you choose from your org can view the event page and join the event."), "people-20"]]
                             Item {
                                 id: opt
                                 required property var modelData
@@ -1953,62 +1953,62 @@ Rectangle {
                     Item { width: 1; height: 24 }
                     // Invite people to attend (Optional): people and groups who get
                     // the invitation when the event is published.
-                    Label { text: "Invite people to attend (Optional)" }
+                    Label { text: qsTr("Invite people to attend (Optional)") }
                     Item { width: 1; height: 16 }
                     EventPeoplePicker {
                         id: attendeePicker
                         width: parent.width; kind: "attendees"
-                        placeholder: form.access === "Private" ? "Add people and groups who can attend" : "Add people and groups who will receive email invites"
+                        placeholder: form.access === "Private" ? qsTr("Add people and groups who can attend") : qsTr("Add people and groups who will receive email invites")
                         picked: form.attendees; onChanged: list => form.attendees = list
                     }
                     Text {
                         height: 18; verticalAlignment: Text.AlignBottom; textFormat: Text.StyledText
-                        text: "They'll be invited when the event is published. Customize your invite preferences in the <b>People &amp; emails</b> tab."
+                        text: qsTr("They'll be invited when the event is published. Customize your invite preferences in the %1 tab.").arg("<b>" + qsTr("People & emails").replace("&", "&amp;") + "</b>")
                         font.family: theme.font; font.pixelSize: 12; color: theme.text
                     }
                     Item { width: 1; height: 28 }
                     Item {
                         width: parent.width; height: 40
-                        Text { text: "Turn on registration?"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
-                        Text { y: 24; width: parent.width - 80; elide: Text.ElideRight; text: "Attendees will need to register before they can view all event details."; font.family: theme.font; font.pixelSize: 12; color: theme.textStrong }
-                        SettingsParts.Toggle { anchors.right: parent.right; anchors.rightMargin: 8; y: 8; stateLabel: false; on: form.registration; accessibleName: "Turn on registration?"; onToggled: v => form.registration = v }
+                        Text { text: qsTr("Turn on registration?"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                        Text { y: 24; width: parent.width - 80; elide: Text.ElideRight; text: qsTr("Attendees will need to register before they can view all event details."); font.family: theme.font; font.pixelSize: 12; color: theme.textStrong }
+                        SettingsParts.Toggle { anchors.right: parent.right; anchors.rightMargin: 8; y: 8; stateLabel: false; on: form.registration; accessibleName: qsTr("Turn on registration?"); onToggled: v => form.registration = v }
                     }
                     Item { width: 1; height: 12 }
                 }
             }
             // 4. Set up experience and options.
             Section {
-                index: 3; title: "Set up experience and options"
-                summary: form.townHall ? (form.large ? "Optimize for large audience · " : "") + Number(form.capacity).toLocaleString(Qt.locale("en_US"), "f", 0) + " attendees"
-                    : (form.large ? "10,000" : form.capacity ? Number(form.capacity).toLocaleString(Qt.locale("en_US"), "f", 0) : "1,000") + " attendees"
+                index: 3; title: qsTr("Set up experience and options")
+                summary: form.townHall ? (form.large ? qsTr("Optimize for large audience") + " · " : "") + qsTr("%1 attendees").arg(Number(form.capacity).toLocaleString(Qt.locale("en_US"), "f", 0))
+                    : qsTr("%1 attendees").arg(form.large ? "10,000" : form.capacity ? Number(form.capacity).toLocaleString(Qt.locale("en_US"), "f", 0) : "1,000")
                 Column {
                     width: parent.width
                     Item { width: 1; height: 16 }
-                    Label { text: "Set your max event capacity" }
-                    Text { y: 4; text: "We'll use this info to suggest the best settings for your audience"; font.family: theme.font; font.pixelSize: 12; color: theme.textStrong; height: 18 }
+                    Label { text: qsTr("Set your max event capacity") }
+                    Text { y: 4; text: qsTr("We'll use this info to suggest the best settings for your audience"); font.family: theme.font; font.pixelSize: 12; color: theme.textStrong; height: 18 }
                     Item { width: 1; height: 12 }
                     Row {
                         spacing: 24; height: 36
                         Dropdown {
-                            width: 250; height: 32; anchors.verticalCenter: parent.verticalCenter; accessibleName: "Set your max event capacity"
+                            width: 250; height: 32; anchors.verticalCenter: parent.verticalCenter; accessibleName: qsTr("Set your max event capacity")
                             label: form.townHall ? (options.find(o => o[0] === String(form.capacity)) || options[1])[1]
-                                : (form.large ? "10,000" : form.capacity ? Number(form.capacity).toLocaleString(Qt.locale("en_US"), "f", 0) : "1,000") + " attendees"
+                                : qsTr("%1 attendees").arg(form.large ? "10,000" : form.capacity ? Number(form.capacity).toLocaleString(Qt.locale("en_US"), "f", 0) : "1,000")
                             // A town hall offers 1,000, 3,000 and the view-only 10,000
                             // (measured 2026-11-17).
-                            options: form.townHall ? [["1000", "1,000 attendees"], ["3000", "3,000 attendees"], ["10000", "10,000 attendees (View only, with Q&A)"]]
-                                : [["0", "1,000 attendees"]].concat(((root.features || {}).eventCapacity || { eventCapacityOptions: [] }).eventCapacityOptions
-                                .filter(o => o.isAvailableForUserLicense && !o.isBaseEventExperience).map(o => [String(o.capacity), Number(o.capacity).toLocaleString(Qt.locale("en_US"), "f", 0) + " attendees"]))
+                            options: form.townHall ? [["1000", qsTr("%1 attendees").arg("1,000")], ["3000", qsTr("%1 attendees").arg("3,000")], ["10000", qsTr("%1 attendees (View only, with Q&A)").arg("10,000")]]
+                                : [["0", qsTr("%1 attendees").arg("1,000")]].concat(((root.features || {}).eventCapacity || { eventCapacityOptions: [] }).eventCapacityOptions
+                                .filter(o => o.isAvailableForUserLicense && !o.isBaseEventExperience).map(o => [String(o.capacity), qsTr("%1 attendees").arg(Number(o.capacity).toLocaleString(Qt.locale("en_US"), "f", 0))]))
                             onPicked: c => { form.capacity = Number(c); if (!form.townHall) form.large = false }
                         }
                         Row {
                             spacing: 8; anchors.verticalCenter: parent.verticalCenter
-                            SettingsParts.Toggle { stateLabel: false; on: form.large; accessibleName: "Optimize for large audience"
+                            SettingsParts.Toggle { stateLabel: false; on: form.large; accessibleName: qsTr("Optimize for large audience")
                                 onToggled: v => { form.large = v; if (form.townHall) { form.capacity = v ? 3000 : 1000; form.mic = !v; form.camera = !v } } }
-                            Text { text: "Optimize for large audience"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                            Text { text: qsTr("Optimize for large audience"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
                         }
                     }
                     Item { width: 1; height: 16 }
-                    Label { text: "Attendee participation" }
+                    Label { text: qsTr("Attendee participation") }
                     Item { width: 1; height: 16 }
                     Grid {
                         columns: 3; spacing: 8
@@ -2016,9 +2016,9 @@ Rectangle {
                             // A streaming town hall: Mic and Camera unavailable, then Q&A;
                             // an interactive one: Mic, Camera, React, "During event" (chat), Q&A.
                             model: form.townHall && form.large
-                                ? [["mic", "Mic", "mic-20", "mic-off-20", true], ["camera", "Camera", "video-20", "video-off-20", true], ["qna", "Q&A", "chat-bubbles-question-20", "chat-bubbles-question-20"]]
-                                : [["mic", "Mic", "mic-20", "mic-off-20"], ["camera", "Camera", "video-20", "video-off-20"], ["react", "React", "emoji-20", "emoji-20"],
-                                   ["chat", form.template.chatLabel || (form.townHall ? "During event" : "Chat"), "chat-20", "chat-bubbles-off-20"], ["qna", "Q&A", "chat-bubbles-question-20", "chat-bubbles-question-20"]]
+                                ? [["mic", qsTr("Mic"), "mic-20", "mic-off-20", true], ["camera", qsTr("Camera"), "video-20", "video-off-20", true], ["qna", qsTr("Q&A"), "chat-bubbles-question-20", "chat-bubbles-question-20"]]
+                                : [["mic", qsTr("Mic"), "mic-20", "mic-off-20"], ["camera", qsTr("Camera"), "video-20", "video-off-20"], ["react", qsTr("React"), "emoji-20", "emoji-20"],
+                                   ["chat", form.template.chatLabel || (form.townHall ? qsTr("During event") : qsTr("Chat")), "chat-20", "chat-bubbles-off-20"], ["qna", qsTr("Q&A"), "chat-bubbles-question-20", "chat-bubbles-question-20"]]
                             Rectangle {
                                 id: tile
                                 required property var modelData
@@ -2027,7 +2027,7 @@ Rectangle {
                                 // does not support this engagement feature.").
                                 readonly property bool unavailable: !!modelData[4]
                                 opacity: unavailable ? 0.3 : 1
-                                ToolTip.visible: unavailable && tileHover.hovered; ToolTip.text: "Selected capacity does not support this engagement feature."
+                                ToolTip.visible: unavailable && tileHover.hovered; ToolTip.text: qsTr("Selected capacity does not support this engagement feature.")
                                 width: 132; height: 75; radius: 12; color: theme.surface; border.color: theme.divider; border.width: 1
                                 FluentIcon { anchors.horizontalCenter: parent.horizontalCenter; y: 16; name: tile.on ? tile.modelData[2] : tile.modelData[3]; size: 20; color: tile.on ? theme.brand : theme.textSecondary }
                                 Text { anchors.horizontalCenter: parent.horizontalCenter; y: 41.5; text: tile.modelData[1]; font.family: theme.font; font.pixelSize: 14; color: tile.on ? theme.text : theme.textSecondary }
@@ -2042,11 +2042,11 @@ Rectangle {
                     // preview): who and what attendees see is brought on screen.
                     Item {
                         visible: form.townHall; width: 412; height: visible ? 80 : 0
-                        Text { text: "Manage what attendees see"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
-                        Text { y: 26; text: "Control the layout, content, and people seen on screen."; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                        Text { text: qsTr("Manage what attendees see"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                        Text { y: 26; text: qsTr("Control the layout, content, and people seen on screen."); font.family: theme.font; font.pixelSize: 14; color: theme.text }
                         Dropdown {
-                            x: 1; y: 49; width: 410; height: 30; accessibleName: "Manage what attendees see"
-                            options: [["Off", "Off"], ["On", "On"], ["Preview", "On with preview"]]
+                            x: 1; y: 49; width: 410; height: 30; accessibleName: qsTr("Manage what attendees see")
+                            options: [["Off", qsTr("Off")], ["On", qsTr("On")], ["Preview", qsTr("On with preview")]]
                             label: (options.find(o => o[0] === form.attendeeView) || options[0])[1]
                             onPicked: v => form.attendeeView = v
                         }
@@ -2054,9 +2054,9 @@ Rectangle {
                     Item { visible: form.townHall; width: 1; height: visible ? 16 : 0 }
                     Item {
                         width: 412; height: 68
-                        Text { text: "Enable green room"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
-                        Text { y: 28; width: 334; wrapMode: Text.Wrap; text: "Check audio, video, and screen setup before event starts."; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
-                        SettingsParts.Toggle { x: 352; y: 8; stateLabel: false; on: form.greenRoom; accessibleName: "Enable green room"; onToggled: v => form.greenRoom = v }
+                        Text { text: qsTr("Enable green room"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                        Text { y: 28; width: 334; wrapMode: Text.Wrap; text: qsTr("Check audio, video, and screen setup before event starts."); font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
+                        SettingsParts.Toggle { x: 352; y: 8; stateLabel: false; on: form.greenRoom; accessibleName: qsTr("Enable green room"); onToggled: v => form.greenRoom = v }
                     }
                     // Room under the preview, then All options (the event's
                     // meeting options dialog) and Manage apps (the event meeting's
@@ -2064,11 +2064,11 @@ Rectangle {
                     Item { width: 1; height: Math.max(16, 520 - 330 - (form.townHall ? 96 : 0)) }
                     Row {
                         spacing: 12
-                        Btn { outlined: true; text: "All options"; onClicked: root.openAllOptions() }
+                        Btn { outlined: true; text: qsTr("All options"); onClicked: root.openAllOptions() }
                         Btn {
-                            outlined: true; text: "Manage apps"
+                            outlined: true; text: qsTr("Manage apps")
                             usable: form.mode === "edit" && !!(root.current && root.current.thread_id)
-                            ToolTip.visible: !usable && maHover.hovered; ToolTip.text: "Available after you save."
+                            ToolTip.visible: !usable && maHover.hovered; ToolTip.text: qsTr("Available after you save.")
                             HoverHandler { id: maHover }
                             onClicked: root.openMeetingDetails(root.current.thread_id, root.current.title)
                         }
@@ -2122,9 +2122,9 @@ Rectangle {
         onOpened: pin = !root.pinned
         contentItem: Column {
             spacing: 0
-            Text { text: "Save as a draft and continue?"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text; height: 28 }
+            Text { text: qsTr("Save as a draft and continue?"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text; height: 28 }
             Item { width: 1; height: 8 }
-            Text { text: "Attendees can't view the event until after you publish it."; font.family: theme.font; font.pixelSize: 14; color: theme.text; height: 20 }
+            Text { text: qsTr("Attendees can't view the event until after you publish it."); font.family: theme.font; font.pixelSize: 14; color: theme.text; height: 20 }
             Item { width: 1; height: 15 }
             // "Invites will be sent to": Organizers n (Can view and edit) and
             // Presenters n (Can view), 268 x 111 #FAFAFA radius 8 cards, 15
@@ -2132,11 +2132,11 @@ Rectangle {
             Column {
                 visible: form.team.length + form.presenters.length > 0
                 spacing: 10; height: visible ? implicitHeight + 15 : 0
-                Text { text: "Invites will be sent to"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text; height: 22 }
+                Text { text: qsTr("Invites will be sent to"); font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text; height: 22 }
                 Row {
                     spacing: 15
                     Repeater {
-                        model: [["Organizers", form.team, "Can view and edit", "edit-16"], ["Presenters", form.presenters, "Can view", "eye-16"]].filter(m => m[1].length > 0)
+                        model: [[qsTr("Organizers"), form.team, qsTr("Can view and edit"), "edit-16"], [qsTr("Presenters"), form.presenters, qsTr("Can view"), "eye-16"]].filter(m => m[1].length > 0)
                         Rectangle {
                             required property var modelData
                             width: 268; height: 111; radius: 8; color: theme.pick("#FAFAFA", "#1F1F1F", "#000000")
@@ -2150,12 +2150,12 @@ Rectangle {
                     }
                 }
             }
-            Text { text: "These settings will be locked after saving"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text; height: 22 }
+            Text { text: qsTr("These settings will be locked after saving"); font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text; height: 22 }
             Item { width: 1; height: 8 }
             Row {
                 spacing: 8
                 Repeater {
-                    model: [["people-20", "Invites from:", "Event mailbox"], ["filter-20", "Optimize for large audience:", form.large ? "On" : "Off"]]
+                    model: [["people-20", qsTr("Invites from:"), qsTr("Event mailbox")], ["filter-20", qsTr("Optimize for large audience:"), form.large ? qsTr("On") : qsTr("Off")]]
                     Rectangle {
                         required property var modelData
                         height: 32; radius: 16; width: pr.implicitWidth + 24; color: theme.surface; border.color: theme.divider; border.width: 1
@@ -2172,21 +2172,21 @@ Rectangle {
                 width: 550; height: 42; radius: 4; color: theme.pick("#FAFAFA", "#1F1F1F", "#000000"); border.color: theme.divider; border.width: 1
                 Rectangle { x: 9; anchors.verticalCenter: parent.verticalCenter; width: 20; height: 20; radius: 2; color: "#5B5FC7"
                     FluentIcon { anchors.centerIn: parent; name: "calendar-add-20"; size: 14; color: "white" } }
-                Text { x: 37; anchors.verticalCenter: parent.verticalCenter; text: "Get back to events you're organizing faster"; font.family: theme.font; font.pixelSize: 12; color: theme.text }
+                Text { x: 37; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Get back to events you're organizing faster"); font.family: theme.font; font.pixelSize: 12; color: theme.text }
                 Row {
                     anchors.right: parent.right; anchors.rightMargin: 9; anchors.verticalCenter: parent.verticalCenter; spacing: 8
                     Rectangle { width: 16; height: 16; radius: 2; anchors.verticalCenter: parent.verticalCenter
                         color: saveDialog.pin ? theme.brandFill : "transparent"; border.width: 1; border.color: saveDialog.pin ? theme.brandFill : theme.textSecondary
                         FluentIcon { visible: saveDialog.pin; anchors.centerIn: parent; name: "checkmark-12"; size: 12; color: theme.textOnBrand } }
-                    Text { anchors.verticalCenter: parent.verticalCenter; text: "Pin the Events app"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Pin the Events app"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
                     TapHandler { onTapped: saveDialog.pin = !saveDialog.pin }
                 }
             }
             Item { width: 1; height: 8 }
             Row {
                 anchors.right: parent.right; spacing: 13
-                Btn { width: 96; outlined: true; text: "Cancel"; onClicked: saveDialog.close() }
-                Btn { primary: true; text: "Save and continue"; usable: !form.saving
+                Btn { width: 96; outlined: true; text: qsTr("Cancel"); onClicked: saveDialog.close() }
+                Btn { primary: true; text: qsTr("Save and continue"); usable: !form.saving
                       onClicked: {
                           form.saving = true
                           const pinIt = !root.pinned && saveDialog.pin
@@ -2194,9 +2194,9 @@ Rectangle {
                           root.call(dup ? "duplicate" : "create", Object.assign({ sourceId: form.sourceId }, form.payload()), v => {
                               form.saving = false
                               saveDialog.close()
-                              if (v.error) { root.toast({ text: "Couldn't save the event. " + v.error, intent: "error" }); return }
+                              if (v.error) { root.toast({ text: qsTr("Couldn't save the event.") + " " + v.error, intent: "error" }); return }
                               if (pinIt) root.setPinned(true)
-                              root.toast({ text: "Draft event created", intent: "success" })
+                              root.toast({ text: qsTr("Draft event created"), intent: "success" })
                               root.manageData = null
                               if (v.card) root.openEvent(v.card); else root.openTab("manage")
                           })
@@ -2246,38 +2246,38 @@ Rectangle {
             x: eventPage.x0; y: 16; width: eventPage.w; height: visible ? 119 : 0; radius: 16
             color: theme.pick("#F5F5F5", "#292929", "#000000"); border.color: theme.divider; border.width: 1
             Image { x: 28; anchors.verticalCenter: parent.verticalCenter; width: 52; height: 52; source: root.cdn + "webp/128/editor-l-standard-128x128.webp"; sourceSize: Qt.size(104, 104) }
-            Text { x: 85; y: 24; width: parent.width - 120; text: "This event is a draft. Publish when you’re ready to share with attendees."; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text; elide: Text.ElideRight }
-            Text { x: 85; y: 50; width: parent.width - 300; wrapMode: Text.Wrap; text: "Only organizers and presenters you’ve invited can view this event. Organizers have permission to make edits."; font.family: theme.font; font.pixelSize: 16; lineHeight: 22; lineHeightMode: Text.FixedHeight; color: theme.text }
+            Text { x: 85; y: 24; width: parent.width - 120; text: qsTr("This event is a draft. Publish when you’re ready to share with attendees."); font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text; elide: Text.ElideRight }
+            Text { x: 85; y: 50; width: parent.width - 300; wrapMode: Text.Wrap; text: qsTr("Only organizers and presenters you’ve invited can view this event. Organizers have permission to make edits."); font.family: theme.font; font.pixelSize: 16; lineHeight: 22; lineHeightMode: Text.FixedHeight; color: theme.text }
             Btn { anchors.right: parent.right; anchors.rightMargin: 24; anchors.verticalCenter: parent.verticalCenter; height: 40; fontSize: 16
-                  primary: true; icon: "rocket-20"; text: "Publish event"; onClicked: publishDialog.openFor(root.current) }
+                  primary: true; icon: "rocket-20"; text: qsTr("Publish event"); onClicked: publishDialog.openFor(root.current) }
         }
         Item {
             id: evHead
             x: eventPage.x0; y: eventPage.draft ? 162 : 32; width: eventPage.w; height: 32
-            Btn { icon: "arrow-left-20"; text: ""; pad: 6; onClicked: root.openTab(root.tab); Accessible.name: "Go back" }
+            Btn { icon: "arrow-left-20"; text: ""; pad: 6; onClicked: root.openTab(root.tab); Accessible.name: qsTr("Go back") }
             Text { x: 42; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 420; elide: Text.ElideRight; text: eventPage.ev.title || ""; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
             Row {
                 anchors.right: parent.right; spacing: 8
-                Btn { visible: eventPage.organizer && !eventPage.canceled; outlined: true; icon: "edit-20"; text: "Edit details"; onClicked: root.editEvent(eventPage.ev) }
+                Btn { visible: eventPage.organizer && !eventPage.canceled; outlined: true; icon: "edit-20"; text: qsTr("Edit details"); onClicked: root.editEvent(eventPage.ev) }
                 Btn {
                     visible: eventPage.organizer && !eventPage.canceled
                     width: 32; outlined: true; icon: "share-20"; text: ""; pad: 6; usable: !eventPage.draft
-                    Accessible.name: "Share"
-                    ToolTip.visible: shareHover.hovered && eventPage.draft; ToolTip.text: "Event sharing is available after publishing."
+                    Accessible.name: qsTr("Share")
+                    ToolTip.visible: shareHover.hovered && eventPage.draft; ToolTip.text: qsTr("Event sharing is available after publishing.")
                     HoverHandler { id: shareHover }
                     onClicked: shareDialog.openFor(eventPage.ev, false)
                 }
                 Btn {
                     id: evMore; visible: eventPage.organizer && !eventPage.canceled
-                    icon: "more-horizontal-20"; text: ""; pad: 6; Accessible.name: "More options"
+                    icon: "more-horizontal-20"; text: ""; pad: 6; Accessible.name: qsTr("More options")
                     onClicked: { evMenu.parent = evMore; evMenu.x = 0; evMenu.y = evMore.height + 4; evMenu.open() }
                 }
                 Rectangle { visible: root.eventTab === "overview" || root.eventTab === "highlights"; width: 1; height: 24; anchors.verticalCenter: parent.verticalCenter; color: theme.divider }
                 Row {
                     visible: root.eventTab === "overview" || root.eventTab === "highlights"
                     spacing: 8; anchors.verticalCenter: parent.verticalCenter
-                    Text { anchors.verticalCenter: parent.verticalCenter; text: root.eventTab === "highlights" ? "Preview as published" : "Preview"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
-                    SettingsParts.Toggle { stateLabel: false; on: root.previewOn; accessibleName: "Preview"; onToggled: v => root.previewOn = v }
+                    Text { anchors.verticalCenter: parent.verticalCenter; text: root.eventTab === "highlights" ? qsTr("Preview as published") : qsTr("Preview"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    SettingsParts.Toggle { stateLabel: false; on: root.previewOn; accessibleName: qsTr("Preview"); onToggled: v => root.previewOn = v }
                 }
             }
         }
@@ -2287,7 +2287,7 @@ Rectangle {
             visible: !root.previewOn
             x: eventPage.x0; y: evHead.y + 55; height: 40
             Repeater {
-                model: [["overview", "Overview"], ["people", "People & emails"], ["insights", "Insights"], ["highlights", "Highlights"]]
+                model: [["overview", qsTr("Overview")], ["people", qsTr("People & emails")], ["insights", qsTr("Insights")], ["highlights", qsTr("Highlights")]]
                 Item {
                     required property var modelData
                     readonly property bool chosen: root.eventTab === modelData[0]
@@ -2301,7 +2301,7 @@ Rectangle {
             }
         }
         Text { visible: root.previewOn; x: eventPage.x0; y: evHead.y + 62; width: eventPage.w; horizontalAlignment: Text.AlignHCenter
-               text: "This is a preview of what attendees will see."; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+               text: qsTr("This is a preview of what attendees will see."); font.family: theme.font; font.pixelSize: 14; color: theme.text }
         Column {
             id: pageCol
             x: eventPage.x0; y: evHead.y + 105; width: eventPage.w
@@ -2328,7 +2328,7 @@ Rectangle {
                             FluentIcon { anchors.centerIn: parent; name: "edit-20"; size: 24; color: theme.textStrong }
                             HoverHandler { id: bannerHover; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: branding.openNow() }
-                            Accessible.role: Accessible.Button; Accessible.name: "Edit event banner"
+                            Accessible.role: Accessible.Button; Accessible.name: qsTr("Edit event banner")
                         }
                     }
                     Item {
@@ -2349,7 +2349,7 @@ Rectangle {
                         Column {
                             id: presCol
                             x: 20; y: 20; width: parent.width - 40; spacing: 20
-                            Text { text: eventPage.speakers.length === 1 ? "Presenter" : "Presenters"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+                            Text { text: eventPage.speakers.length === 1 ? qsTr("Presenter") : qsTr("Presenters"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
                             Flow {
                                 width: parent.width; spacing: 12
                                 Repeater {
@@ -2376,20 +2376,20 @@ Rectangle {
                             x: 21; y: 21; width: parent.width - 42; spacing: 18
                             Rectangle { visible: eventPage.ev.state === "Published" && new Date(eventPage.ev.start) > new Date(); height: 22; radius: 11; width: upc.implicitWidth + 16
                                 color: theme.pick("#E8EBFA", "#2F2F4A", "#000000"); border.color: theme.pick("#C5CBFA", "#444791", "#FFFFFF"); border.width: 1
-                                Text { id: upc; anchors.centerIn: parent; text: "Upcoming"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.brand } }
+                                Text { id: upc; anchors.centerIn: parent; text: qsTr("Upcoming"); font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.brand } }
                             Rectangle { visible: eventPage.canceled; height: 24; radius: 12; width: cxl.implicitWidth + 20; color: "transparent"; border.color: theme.danger
-                                Text { id: cxl; anchors.centerIn: parent; text: "Canceled"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.danger } }
+                                Text { id: cxl; anchors.centerIn: parent; text: qsTr("Canceled"); font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.danger } }
                             Row { spacing: 8; width: parent.width
                                 FluentIcon { name: "clock-20"; size: 20; color: theme.brand }
                                 Text { width: parent.width - 28; wrapMode: Text.Wrap; text: root.whenText(eventPage.ev.start, eventPage.ev.end, true); font.family: theme.font; font.pixelSize: 14; color: theme.text } }
                             Row { spacing: 8
                                 FluentIcon { name: "location-20"; size: 20; color: theme.brand }
-                                Text { text: (eventPage.ev.rooms || []).length ? eventPage.ev.rooms.join(", ") + " • Online" : "Online"; font.family: theme.font; font.pixelSize: 14; color: theme.text } }
+                                Text { text: (eventPage.ev.rooms || []).length ? eventPage.ev.rooms.join(", ") + " • " + qsTr("Online") : qsTr("Online"); font.family: theme.font; font.pixelSize: 14; color: theme.text } }
                             Row { spacing: 8
                                 FluentIcon { name: "people-20"; size: 20; color: theme.brand }
-                                Text { text: eventPage.ev.access === "Public" ? "Anyone can view and join." : eventPage.ev.inviteOnly ? "Only invited attendees can view and join." : "Anyone in your org can view and join."; font.family: theme.font; font.pixelSize: 14; color: theme.text } }
+                                Text { text: eventPage.ev.access === "Public" ? qsTr("Anyone can view and join.") : eventPage.ev.inviteOnly ? qsTr("Only invited attendees can view and join.") : qsTr("Anyone in your org can view and join."); font.family: theme.font; font.pixelSize: 14; color: theme.text } }
                             // Preview: attendees' Add to calendar.
-                            Btn { visible: root.previewOn; width: parent.width; icon: "calendar-add-20"; text: "Add to calendar"; usable: false }
+                            Btn { visible: root.previewOn; width: parent.width; icon: "calendar-add-20"; text: qsTr("Add to calendar"); usable: false }
                             // Join (split) and the chat button.
                             Row {
                                 visible: !root.previewOn
@@ -2400,15 +2400,15 @@ Rectangle {
                                     width: parent.width - (parent.webinar ? 64 : 40); height: 32; radius: 4; color: parent.can ? (joinHover.hovered ? theme.brandHover : theme.brandFill) : theme.pick("#F0F0F0", "#333333", "#000000")
                                     Row { anchors.centerIn: parent; anchors.horizontalCenterOffset: -12; spacing: 6
                                         FluentIcon { name: "video-20"; size: 20; color: parent.parent.parent.can ? theme.textOnBrand : theme.disabled }
-                                        Text { anchors.verticalCenter: parent.verticalCenter; text: "Join"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: parent.parent.parent.can ? theme.textOnBrand : theme.disabled } }
+                                        Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Join"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: parent.parent.parent.can ? theme.textOnBrand : theme.disabled } }
                                     Rectangle { x: parent.width - 25; y: 0; width: 1; height: 32; color: theme.pick("#FFFFFF", "#141414", "#000000"); opacity: 0.5 }
                                     FluentIcon { x: parent.width - 20; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-16"; size: 16; color: parent.parent.can ? theme.textOnBrand : theme.disabled }
                                     HoverHandler { id: joinHover; cursorShape: Qt.PointingHandCursor }
-                                    ToolTip.visible: joinHover.hovered && eventPage.draft; ToolTip.text: "Event isn't published yet."
+                                    ToolTip.visible: joinHover.hovered && eventPage.draft; ToolTip.text: qsTr("Event isn't published yet.")
                                     TapHandler { enabled: parent.parent.can; onTapped: (e) => {
                                         if (e.position.x > parent.width - 25) { joinMenu.parent = parent; joinMenu.x = parent.width - joinMenu.implicitWidth; joinMenu.y = 36; joinMenu.open() }
                                         else root.joinEvent(eventPage.ev.join_url, eventPage.ev.title, eventPage.ev.start, eventPage.ev.end) } }
-                                    Accessible.role: Accessible.Button; Accessible.name: eventPage.draft ? "Join - Event isn't published yet." : "Join"
+                                    Accessible.role: Accessible.Button; Accessible.name: eventPage.draft ? qsTr("Join") + " - " + qsTr("Event isn't published yet.") : qsTr("Join")
                                 }
                                 Rectangle {
                                     id: chatSplit
@@ -2419,7 +2419,7 @@ Rectangle {
                                     TapHandler { onTapped: (e) => {
                                         if (chatSplit.parent.webinar && e.position.x > 32) { chatMenu.parent = chatSplit; chatMenu.x = 0; chatMenu.y = 36; chatMenu.open() }
                                         else root.openChat(eventPage.ev, false) } }
-                                    Accessible.role: Accessible.Button; Accessible.name: "Chat with participants"
+                                    Accessible.role: Accessible.Button; Accessible.name: qsTr("Chat with participants")
                                 }
                             }
                         }
@@ -2429,10 +2429,10 @@ Rectangle {
                         visible: !root.previewOn && eventPage.organizer
                         width: parent.width; height: visible ? 104 : 0
                         Rectangle { anchors.fill: parent; radius: 16; color: theme.pick("#F5F5F5", "#292929", "#000000") }
-                        Text { x: 21; y: 20; text: "Manage apps"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
+                        Text { x: 21; y: 20; text: qsTr("Manage apps"); font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
                         Text {
                             x: 21; y: 54; width: parent.width - 42; wrapMode: Text.Wrap; textFormat: Text.StyledText
-                            text: "Manage or add apps for your session <a href='here'>here</a>."; linkColor: theme.brandForeground1
+                            text: qsTr("Manage or add apps for your session ") + "<a href='here'>" + qsTr("here", "virtualEvents:k1sgy2k0q") + "</a>."; linkColor: theme.brandForeground1
                             font.family: theme.font; font.pixelSize: 14; color: theme.text
                             onLinkActivated: root.openMeetingDetails(eventPage.ev.join_url || "", eventPage.ev.start || "")
                         }
@@ -2444,69 +2444,69 @@ Rectangle {
                 visible: root.eventTab === "people" && !root.previewOn
                 width: parent.width; spacing: 16
                 PeopleSection {
-                    title: "Email notifications"; key: "emails"
+                    title: qsTr("Email notifications"); key: "emails"
                     Column {
                         width: parent.width; spacing: 0
                         Item {
                             width: parent.width; height: 40
-                            Text { anchors.verticalCenter: parent.verticalCenter; text: "Attendees"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                            Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Attendees"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
                             Row { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; spacing: 8
                                 SettingsParts.Toggle { stateLabel: false; on: !eventPage.pd.disableAttendeeEmails; enabled: eventPage.draft; opacity: enabled ? 1 : 0.5
-                                    accessibleName: eventPage.pd.disableAttendeeEmails ? "Turn on all attendee notifications" : "Turn off all attendee notifications"
+                                    accessibleName: eventPage.pd.disableAttendeeEmails ? qsTr("Turn on all attendee notifications") : qsTr("Turn off all attendee notifications")
                                     onToggled: v => root.call("theme", { id: eventPage.ev.id }, th => {
                                         const cp = Object.assign({}, th.communicationProperties || {}, { disableAttendeeEmails: !v })
                                         root.call("patch", { id: eventPage.ev.id, body: { communicationProperties: cp } }, r => { if (!r.error) root.peopleData = Object.assign({}, root.peopleData, { disableAttendeeEmails: !v }) }) }) }
-                                Text { anchors.verticalCenter: parent.verticalCenter; text: "Send attendee emails"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text } }
+                                Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Send attendee emails"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text } }
                         }
                         // Teams' rows: the event's templates (GET emailtemplates)
                         // of these types in this order; Edit only with your
                         // events policy's email editing; the reminder's
                         // timing opens Send event reminder; the switch
                         // changes only a draft, and off greys the table.
-                        Text { visible: !!eventPage.emailError; text: "Error loading email templates"; font.family: theme.font; font.pixelSize: 14; color: theme.danger; height: 32; verticalAlignment: Text.AlignVCenter }
+                        Text { visible: !!eventPage.emailError; text: qsTr("Error loading email templates"); font.family: theme.font; font.pixelSize: 14; color: theme.danger; height: 32; verticalAlignment: Text.AlignVCenter }
                         PeopleTable {
                             visible: !eventPage.emailError
                             enabled: !eventPage.pd.disableAttendeeEmails
                             opacity: enabled ? 1 : 0.5
-                            headers: ["Email", "When it's sent", "Actions"]
+                            headers: [qsTr("Email"), qsTr("When it's sent"), qsTr("Actions")]
                             rows: (root.emailTemplateList || []).map(t => [root.emailLabel(t.templateType), root.emailTiming(t), t.templateId, t.templateType])
                             actions: true
                         }
-                        Text { visible: !eventPage.emailError && !!root.emailTemplateList && root.emailTemplateList.length === 0; text: "No attendee notifications configured"; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary; height: 44; verticalAlignment: Text.AlignVCenter }
+                        Text { visible: !eventPage.emailError && !!root.emailTemplateList && root.emailTemplateList.length === 0; text: qsTr("No attendee notifications configured"); font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary; height: 44; verticalAlignment: Text.AlignVCenter }
                     }
                 }
                 PeopleSection {
-                    title: "Organizers (" + (eventPage.pd.organizerList || []).length + ")"; key: "organizers"
+                    title: qsTr("Organizers (%1)").arg((eventPage.pd.organizerList || []).length); key: "organizers"
                     Column {
                         width: parent.width; spacing: 12
-                        PeopleTable { headers: ["Name", "Email"]; people: eventPage.pd.organizerList || [] }
-                        Btn { outlined: true; text: "Manage organizers"; onClicked: root.editEvent(eventPage.ev) }
+                        PeopleTable { headers: [qsTr("Name"), qsTr("Email")]; people: eventPage.pd.organizerList || [] }
+                        Btn { outlined: true; text: qsTr("Manage organizers"); onClicked: root.editEvent(eventPage.ev) }
                     }
                 }
                 PeopleSection {
-                    title: "Presenters (" + eventPage.speakers.length + ")"; key: "presenters"
+                    title: qsTr("Presenters (%1)").arg(eventPage.speakers.length); key: "presenters"
                     Column {
                         width: parent.width; spacing: 12
-                        Text { visible: eventPage.speakers.length === 0; text: "No presenters added yet"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
-                        PeopleTable { visible: eventPage.speakers.length > 0; headers: ["Name", "Email"]; people: eventPage.speakers }
-                        Btn { outlined: true; text: "Manage presenters"; onClicked: root.editEvent(eventPage.ev) }
+                        Text { visible: eventPage.speakers.length === 0; text: qsTr("No presenters added yet"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                        PeopleTable { visible: eventPage.speakers.length > 0; headers: [qsTr("Name"), qsTr("Email")]; people: eventPage.speakers }
+                        Btn { outlined: true; text: qsTr("Manage presenters"); onClicked: root.editEvent(eventPage.ev) }
                     }
                 }
                 PeopleSection {
                     visible: (eventPage.pd.roomList || []).length > 0
-                    title: "Location (" + (eventPage.pd.roomList || []).length + ")"; key: "location"
-                    PeopleTable { headers: ["Name", "Email"]; people: eventPage.pd.roomList || [] }
+                    title: qsTr("Location (%1)").arg((eventPage.pd.roomList || []).length); key: "location"
+                    PeopleTable { headers: [qsTr("Name"), qsTr("Email")]; people: eventPage.pd.roomList || [] }
                 }
                 PeopleSection {
-                    title: "Attendees"; key: "attendees"
+                    title: qsTr("Attendees"); key: "attendees"
                     Column {
                         width: parent.width; spacing: 16
-                        PeopleTable { visible: (eventPage.pd.attendeeList || []).length > 0; headers: ["Name", "Email"]; people: eventPage.pd.attendeeList || [] }
+                        PeopleTable { visible: (eventPage.pd.attendeeList || []).length > 0; headers: [qsTr("Name"), qsTr("Email")]; people: eventPage.pd.attendeeList || [] }
                         Column {
                             visible: (eventPage.pd.attendeeList || []).length === 0
                             width: parent.width; spacing: 16
                             Item { width: 1; height: 40 }
-                            Text { anchors.horizontalCenter: parent.horizontalCenter; text: "When attendees RSVP or register, they'll show up here."; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                            Text { anchors.horizontalCenter: parent.horizontalCenter; text: qsTr("When attendees RSVP or register, they'll show up here."); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
                             Image { anchors.horizontalCenter: parent.horizontalCenter; width: 128; height: 128; source: root.cdn + (theme.dark || theme.highContrast ? "v2/people-d-standard.svg" : "v2/people-l-standard.svg"); sourceSize: Qt.size(256, 256); asynchronous: true }
                             Item { width: 1; height: 40 }
                         }
@@ -2519,8 +2519,8 @@ Rectangle {
                 width: parent.width; spacing: 8
                 Image { anchors.horizontalCenter: parent.horizontalCenter; width: 537; height: 200; source: "../assets/illustrations/events-insights-empty.svg"; sourceSize: Qt.size(1074, 400) }
                 Item { width: 1; height: 22 }
-                Text { anchors.horizontalCenter: parent.horizontalCenter; text: "No reports yet"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
-                Text { anchors.horizontalCenter: parent.horizontalCenter; text: "You'll get a set of reports after the event ends."; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                Text { anchors.horizontalCenter: parent.horizontalCenter; text: qsTr("No reports yet"); font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
+                Text { anchors.horizontalCenter: parent.horizontalCenter; text: qsTr("You'll get a set of reports after the event ends."); font.family: theme.font; font.pixelSize: 14; color: theme.text }
             }
             // Highlights: the recording bar (Recording used for highlights,
             // Download, View recap, Included content, Publish; off until the
@@ -2530,42 +2530,42 @@ Rectangle {
                 width: parent.width; spacing: 0
                 Item {
                     width: parent.width; height: 40
-                    Text { x: 0; anchors.verticalCenter: parent.verticalCenter; text: "Recording used for highlights:"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                    Text { x: 0; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Recording used for highlights:"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
                     Rectangle { x: 200; anchors.verticalCenter: parent.verticalCenter; width: 311; height: 30; radius: 4; color: theme.bgDisabled
-                        Text { x: 12; anchors.verticalCenter: parent.verticalCenter; text: "No video is selected"; font.family: theme.font; font.pixelSize: 14; color: theme.disabledStrong } }
-                    Btn { x: 519; anchors.verticalCenter: parent.verticalCenter; width: 64; icon: "arrow-download-20"; text: ""; usable: false; Accessible.name: "Download" }
+                        Text { x: 12; anchors.verticalCenter: parent.verticalCenter; text: qsTr("No video is selected"); font.family: theme.font; font.pixelSize: 14; color: theme.disabledStrong } }
+                    Btn { x: 519; anchors.verticalCenter: parent.verticalCenter; width: 64; icon: "arrow-download-20"; text: ""; usable: false; Accessible.name: qsTr("Download") }
                     Row { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; spacing: 8
-                        Btn { width: 32; icon: "video-clip-20"; text: ""; usable: false; Accessible.name: "View recap" }
-                        Btn { text: "Included content"; usable: false }
-                        Btn { width: 96; text: "Publish"; usable: false } }
+                        Btn { width: 32; icon: "video-clip-20"; text: ""; usable: false; Accessible.name: qsTr("View recap") }
+                        Btn { text: qsTr("Included content"); usable: false }
+                        Btn { width: 96; text: qsTr("Publish"); usable: false } }
                 }
                 Rectangle { width: parent.width; height: 1; color: theme.divider }
                 Item { width: 1; height: 32 }
                 Image { anchors.horizontalCenter: parent.horizontalCenter; width: 157; height: 128; source: root.cdn + "v2/ai-video-record-l-standard.svg"; sourceSize: Qt.size(314, 256); asynchronous: true }
                 Item { width: 1; height: 24 }
-                Text { anchors.horizontalCenter: parent.horizontalCenter; text: "No AI highlights yet"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold; color: theme.text }
+                Text { anchors.horizontalCenter: parent.horizontalCenter; text: qsTr("No AI highlights yet"); font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold; color: theme.text }
                 Item { width: 1; height: 8 }
                 Text { anchors.horizontalCenter: parent.horizontalCenter; width: 400; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
-                       text: "Check back after the event has ended to generate them and share with attendees."; font.family: theme.font; font.pixelSize: 14; color: theme.textStrong }
+                       text: qsTr("Check back after the event has ended to generate them and share with attendees."); font.family: theme.font; font.pixelSize: 14; color: theme.textStrong }
             }
         }
         MenuPopup {
             id: joinMenu
-            items: [{ key: "link", label: "Copy join link", icon: "copy-20" }, { key: "details", label: "Copy join details", icon: "text-align-justify-20" }]
+            items: [{ key: "link", label: qsTr("Copy join link"), icon: "copy-20" }, { key: "details", label: qsTr("Copy join details"), icon: "text-align-justify-20" }]
             onPicked: i => {
-                if (items[i].key === "link") { backend.copyText(eventPage.ev.join_url); root.toast({ text: "Join link copied successfully", intent: "success" }) }
+                if (items[i].key === "link") { backend.copyText(eventPage.ev.join_url); root.toast({ text: qsTr("Join link copied successfully"), intent: "success" }) }
                 else root.copyJoinDetails(eventPage.ev)
             }
         }
         MenuPopup {
             id: chatMenu
-            items: [{ key: "chat", label: "Chat with participants", icon: "chat-20" }, { key: "crew", label: "Chat with event group", icon: "people-team-20" }]
+            items: [{ key: "chat", label: qsTr("Chat with participants"), icon: "chat-20" }, { key: "crew", label: qsTr("Chat with event group"), icon: "people-team-20" }]
             onPicked: i => root.openChat(eventPage.ev, items[i].key === "crew")
         }
         // ···: Duplicate, Save as template, Cancel.
         MenuPopup {
             id: evMenu
-            items: [{ key: "dup", label: "Duplicate", icon: "copy-20" }, { key: "template", label: "Save as template", icon: "save-20" }, { key: "cancel", label: "Cancel", icon: "calendar-cancel-20" }]
+            items: [{ key: "dup", label: qsTr("Duplicate"), icon: "copy-20" }, { key: "template", label: qsTr("Save as template"), icon: "save-20" }, { key: "cancel", label: qsTr("Cancel"), icon: "calendar-cancel-20" }]
             onPicked: i => {
                 const k = items[i].key
                 if (k === "dup") root.duplicateEvent(eventPage.ev)
@@ -2592,26 +2592,26 @@ Rectangle {
     readonly property var emailOrder: ["AttendeeRegistration", "AttendeePendingApproval", "AttendeeCancellation", "AttendeeCancellationRequest",
         "AttendeeRegisterAfterWaitlist", "AttendeeWaitlisting", "AttendeeRejection", "EventDateTimeUpdate", "EventCancellation",
         "EventAttendeeReminder", "EventInvite", "AttendeesEventInvite", "EventRecording"]
-    readonly property var emailLabels: ({ AttendeeRegistration: ["Registration confirmation", "Attendee registers"],
-        AttendeePendingApproval: ["Registration pending", "Attendee registration is pending"],
-        AttendeeCancellation: ["Registration cancellation", "Attendee cancels registration"],
-        AttendeeCancellationRequest: ["Cancellation request", "Attendee requests cancellation"],
-        AttendeeRegisterAfterWaitlist: ["Registration after waitlist", "Attendee registers after waitlist"],
-        AttendeeWaitlisting: ["Waitlist confirmation", "Attendee joins waitlist for full event"],
-        AttendeeRejection: ["Registration rejected", "Pending registration is rejected"],
-        EventDateTimeUpdate: ["Date and time update", "Immediately"], EventCancellation: ["Event cancellation", "Immediately"],
-        EventAttendeeReminder: ["Event reminder", ""], EventInvite: ["Event invite", "Event is published or updated"],
-        AttendeesEventInvite: ["Attendees event invitation", "Event is published or updated"],
-        EventRecording: ["Event recording available", "As soon as recording is published"] })
-    function emailLabel(type) { return (emailLabels[type] || ["Email notification"])[0] }
+    readonly property var emailLabels: ({ AttendeeRegistration: [qsTr("Registration confirmation"), qsTr("Attendee registers")],
+        AttendeePendingApproval: [qsTr("Registration pending"), qsTr("Attendee registration is pending")],
+        AttendeeCancellation: [qsTr("Registration cancellation"), qsTr("Attendee cancels registration")],
+        AttendeeCancellationRequest: [qsTr("Cancellation request"), qsTr("Attendee requests cancellation")],
+        AttendeeRegisterAfterWaitlist: [qsTr("Registration after waitlist"), qsTr("Attendee registers after waitlist")],
+        AttendeeWaitlisting: [qsTr("Waitlist confirmation"), qsTr("Attendee joins waitlist for full event")],
+        AttendeeRejection: [qsTr("Registration rejected"), qsTr("Pending registration is rejected")],
+        EventDateTimeUpdate: [qsTr("Date and time update"), qsTr("Immediately")], EventCancellation: [qsTr("Event cancellation"), qsTr("Immediately")],
+        EventAttendeeReminder: [qsTr("Event reminder"), ""], EventInvite: [qsTr("Event invite"), qsTr("Event is published or updated")],
+        AttendeesEventInvite: [qsTr("Attendees event invitation"), qsTr("Event is published or updated")],
+        EventRecording: [qsTr("Event recording available"), qsTr("As soon as recording is published")] })
+    function emailLabel(type) { return (emailLabels[type] || [qsTr("Email notification")])[0] }
     function emailTiming(t) {
-        if (t.templateType !== "EventAttendeeReminder") return (emailLabels[t.templateType] || ["", "Unknown timing"])[1]
+        if (t.templateType !== "EventAttendeeReminder") return (emailLabels[t.templateType] || ["", qsTr("Unknown timing")])[1]
         const d = (t.sendTimeInterval || {}).days || 0, h = (t.sendTimeInterval || {}).hours || 0
-        if (d === 1) return "1 day before event"
-        if (d > 1) return d + " days before event"
-        if (h === 1) return "1 hour before event starts"
-        if (h > 1) return h + " hours before event"
-        return "Unknown timing"
+        if (d === 1) return qsTr("1 day before event")
+        if (d > 1) return qsTr("%1 days before event").arg(d)
+        if (h === 1) return qsTr("1 hour before event starts")
+        if (h > 1) return qsTr("%1 hours before event").arg(h)
+        return qsTr("Unknown timing")
     }
     // A People & emails card (white, radius 16, its title 20/28 semibold
     // with a chevron; open by default).
@@ -2677,13 +2677,13 @@ Rectangle {
                         Text { text: parent.parent.parent.modelData[1]; font.family: theme.font; font.pixelSize: 14; color: theme.brandForeground1; anchors.verticalCenter: parent.verticalCenter }
                         HoverHandler { cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: emailTiming.openFor(parent.parent.parent.modelData[2]) }
-                        Accessible.role: Accessible.Button; Accessible.name: "Edit timing"
+                        Accessible.role: Accessible.Button; Accessible.name: qsTr("Edit timing")
                     }
                     Row {
                         visible: pt.actions
                         anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; spacing: 16
-                        Btn { icon: "eye-20"; text: "Preview"; Accessible.name: "Preview email"; onClicked: emailEditor.openFor(parent.parent.parent.modelData[2], parent.parent.parent.modelData[3], true) }
-                        Btn { visible: !!root.eventsPolicy.emailEditing; outlined: true; icon: "edit-20"; text: "Edit"; Accessible.name: "Edit email"; onClicked: emailEditor.openFor(parent.parent.parent.modelData[2], parent.parent.parent.modelData[3], false) }
+                        Btn { icon: "eye-20"; text: qsTr("Preview"); Accessible.name: qsTr("Preview email"); onClicked: emailEditor.openFor(parent.parent.parent.modelData[2], parent.parent.parent.modelData[3], true) }
+                        Btn { visible: !!root.eventsPolicy.emailEditing; outlined: true; icon: "edit-20"; text: qsTr("Edit"); Accessible.name: qsTr("Edit email"); onClicked: emailEditor.openFor(parent.parent.parent.modelData[2], parent.parent.parent.modelData[3], false) }
                     }
                 }
                 Rectangle { width: parent.width; height: 1; color: theme.divider }
@@ -2718,9 +2718,9 @@ Rectangle {
         readonly property string status: t ? (t.adO4867893_IsBodyEditableStatusCode || "None") : "None"
         readonly property bool bodyEditable: status !== "BodyNotEditable" && status !== "Indeterminate"
         readonly property bool senderEditable: !!(root.current && root.current.registration) && ((root.features && root.features.eventCapacity && root.features.eventCapacity.allowedAttendeeCount) || 0) > 3000
-        readonly property var labels: ({ eventName: "Event Name", dateTime: "Event Date Time", eventDateTimeRange: "Event Date Time", eventDescription: "Event Description",
-                                         eventOrganization: "Organization Name", eventOrganizationName: "Organization Name", eventOrganizerName: "Organizer Name",
-                                         firstName: "Attendee First Name", lastName: "Attendee Last Name", eventInviteCard: "Event Invite Card" })
+        readonly property var labels: ({ eventName: qsTr("Event Name"), dateTime: qsTr("Event Date Time"), eventDateTimeRange: qsTr("Event Date Time"), eventDescription: qsTr("Event Description"),
+                                         eventOrganization: qsTr("Organization Name"), eventOrganizationName: qsTr("Organization Name"), eventOrganizerName: qsTr("Organizer Name"),
+                                         firstName: qsTr("Attendee First Name"), lastName: qsTr("Attendee Last Name"), eventInviteCard: qsTr("Event Invite Card") })
         readonly property var tokenMenu: (type === "EventInvite" || type === "AttendeesEventInvite") ? ["eventName", "dateTime", "eventDescription", "eventOrganization", "eventInviteCard"]
                                        : type === "EventRecording" ? ["eventName", "eventOrganization", "eventInviteCard"]
                                        : ["eventName", "dateTime", "eventOrganizerName", "firstName", "lastName", "eventInviteCard"]
@@ -2742,7 +2742,7 @@ Rectangle {
             const when = ev.start ? new Date(Date.parse(ev.start)).toLocaleString(Qt.locale(), "dddd, MMMM d, yyyy h:mm AP") + " - " + new Date(Date.parse(ev.end)).toLocaleTimeString(Qt.locale(), "h:mm AP") : ""
             const tenant = ((t && t.footer) || "").replace(/<[^>]*>/g, " ").trim().split(/ This event| This /)[0]
             const v = { eventName: ev.title || "", dateTime: when, eventDateTimeRange: when, eventDescription: (ev.description || "").replace(/<[^>]*>/g, ""),
-                        eventOrganizerName: org.name || "", eventOrganization: tenant, eventOrganizationName: tenant, firstName: "Attendee First Name", lastName: "Attendee Last Name", eventInviteCard: "" }
+                        eventOrganizerName: org.name || "", eventOrganization: tenant, eventOrganizationName: tenant, firstName: qsTr("Attendee First Name"), lastName: qsTr("Attendee Last Name"), eventInviteCard: "" }
             return (html || "").replace(/\{\{\s*([A-Za-z]+)\s*\}\}/g, (m, k) => "<span style=\"background-color:#FDF6E3;\">" + (v[k] !== undefined ? v[k] : k) + "</span>")
         }
         function openFor(id, kind, asPreview) {
@@ -2791,18 +2791,18 @@ Rectangle {
                 id: edCol
                 x: 24; y: 24; width: parent.width - 48; spacing: 12
                 Item { width: parent.width; height: 28
-                    Text { text: emailEditor.preview ? "Preview" : "Edit email template"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
-                    Btn { anchors.right: parent.right; icon: "dismiss-20"; text: ""; pad: 6; onClicked: emailEditor.close(); Accessible.name: "Close" } }
+                    Text { text: emailEditor.preview ? qsTr("Preview") : qsTr("Edit email template"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+                    Btn { anchors.right: parent.right; icon: "dismiss-20"; text: ""; pad: 6; onClicked: emailEditor.close(); Accessible.name: qsTr("Close") } }
                 // Teams' domain banners.
                 Rectangle {
                     visible: emailEditor.status === "BodyNotEditable" || emailEditor.status === "Indeterminate"
                     width: parent.width; height: visible ? bannerText.implicitHeight + 16 : 0; radius: 4
                     color: emailEditor.status === "Indeterminate" ? theme.pick("#FDF3F4", "#3B2326", "#000000") : theme.pick("#F5F5F5", "#292929", "#000000")
                     Text { id: bannerText; x: 12; y: 8; width: parent.width - 24; wrapMode: Text.Wrap; font.family: theme.font; font.pixelSize: 14; color: theme.text
-                           text: emailEditor.status === "Indeterminate" ? "Editing isn't available because we couldn't fetch your org's email domain for M365 notifications. Try again or check back later."
-                                                                       : "Editing isn't available because your org hasn't finished setting up your email domain for M365 notifications yet. Contact your admin for help." }
+                           text: emailEditor.status === "Indeterminate" ? qsTr("Editing isn't available because we couldn't fetch your org's email domain for M365 notifications. Try again or check back later.")
+                                                                       : qsTr("Editing isn't available because your org hasn't finished setting up your email domain for M365 notifications yet. Contact your admin for help.") }
                 }
-                Text { visible: !emailEditor.t; text: "Loading..."; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
+                Text { visible: !emailEditor.t; text: qsTr("Loading..."); font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
                 // ---- Edit ----
                 Column {
                     visible: !emailEditor.preview && !!emailEditor.t
@@ -2810,35 +2810,35 @@ Rectangle {
                     Row {
                         spacing: 12
                         Column { spacing: 4; width: (edCol.width - 12) / 2
-                            EdLabel { text: "Sender's name *" }
-                            EdField { id: edSender; width: parent.width; usable: emailEditor.senderEditable && emailEditor.editable; input.Accessible.name: "Sender's name" } }
+                            EdLabel { text: qsTr("Sender's name") + " *" }
+                            EdField { id: edSender; width: parent.width; usable: emailEditor.senderEditable && emailEditor.editable; input.Accessible.name: qsTr("Sender's name") } }
                         Column { spacing: 4; width: (edCol.width - 12) / 2
-                            EdLabel { text: "Sender's email" }
-                            EdField { width: parent.width; usable: false; text: emailEditor.t ? (emailEditor.t.senderEmail || "") : ""; input.Accessible.name: "Sender's email" } }
+                            EdLabel { text: qsTr("Sender's email") }
+                            EdField { width: parent.width; usable: false; text: emailEditor.t ? (emailEditor.t.senderEmail || "") : ""; input.Accessible.name: qsTr("Sender's email") } }
                     }
                     Column { width: parent.width; spacing: 4
-                        EdLabel { text: "Email subject *" }
-                        EdField { id: edSubject; width: parent.width; placeholder: "Enter subject"; usable: emailEditor.editable; input.Accessible.name: "Email subject"
+                        EdLabel { text: qsTr("Email subject") + " *" }
+                        EdField { id: edSubject; width: parent.width; placeholder: qsTr("Enter subject"); usable: emailEditor.editable; input.Accessible.name: qsTr("Email subject")
                                   input.onActiveFocusChanged: if (!input.activeFocus) emailEditor.subjectTouched = true }
-                        Text { visible: emailEditor.subjectTouched && !edSubject.text.trim(); text: "Email subject is required"; font.family: theme.font; font.pixelSize: 12; color: theme.danger } }
+                        Text { visible: emailEditor.subjectTouched && !edSubject.text.trim(); text: qsTr("Email subject is required"); font.family: theme.font; font.pixelSize: 12; color: theme.danger } }
                     Column { width: parent.width; spacing: 4
-                        EdLabel { text: "Cover image" }
+                        EdLabel { text: qsTr("Cover image") }
                         Rectangle {
                             width: parent.width; height: Math.round(width * 0.25); radius: 4; clip: true
                             color: theme.pick("#F0F0F0", "#1F1F1F", "#000000"); border.color: theme.divider; border.width: 1
                             Image { anchors.fill: parent; anchors.margins: 1; fillMode: Image.PreserveAspectCrop; source: emailEditor.th.promoImage ? backend.cardImage(emailEditor.th.promoImage) : ""; asynchronous: true; visible: status === Image.Ready }
-                            Text { anchors.centerIn: parent; visible: !emailEditor.th.promoImage; text: "No banner image"; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+                            Text { anchors.centerIn: parent; visible: !emailEditor.th.promoImage; text: qsTr("No banner image"); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
                         } }
                     Column { spacing: 4
-                        EdLabel { text: "Logo" }
+                        EdLabel { text: qsTr("Logo") }
                         Rectangle {
                             width: 50; height: 50; radius: 4; clip: true
                             color: theme.pick("#F0F0F0", "#1F1F1F", "#000000"); border.color: theme.divider; border.width: 1
                             Image { anchors.fill: parent; anchors.margins: 1; fillMode: Image.PreserveAspectFit; source: emailEditor.th.logoImage ? backend.cardImage(emailEditor.th.logoImage) : ""; asynchronous: true; visible: status === Image.Ready }
-                            Text { anchors.centerIn: parent; visible: !emailEditor.th.logoImage; text: "No logo"; font.family: theme.font; font.pixelSize: 10; color: theme.textSecondary }
+                            Text { anchors.centerIn: parent; visible: !emailEditor.th.logoImage; text: qsTr("No logo"); font.family: theme.font; font.pixelSize: 10; color: theme.textSecondary }
                         } }
                     Column { width: parent.width; spacing: 4
-                        EdLabel { text: "Email body *" }
+                        EdLabel { text: qsTr("Email body") + " *" }
                         Rectangle {
                             width: parent.width; height: 260; radius: 4; color: theme.input; border.color: theme.stroke; border.width: 1
                             enabled: emailEditor.editable && emailEditor.bodyEditable; opacity: enabled ? 1 : 0.6
@@ -2847,22 +2847,22 @@ Rectangle {
                                 id: edBar
                                 x: -6; y: -9; width: parent.width - 120; tierWidth: 640
                                 discard: false
-                                custom: [[{ k: "bold", icon: "fmt-bold", label: "Bold", on: !!parent.rs.bold }, { k: "italic", icon: "fmt-italic", label: "Italic", on: !!parent.rs.italic },
-                                          { k: "underline", icon: "fmt-underline", label: "Underline", on: !!parent.rs.underline }],
-                                         [{ k: "highlight", icon: "fmt-highlight", label: "Text highlight color", popup: true }, { k: "color", icon: "fmt-font-color", label: "Font color", popup: true },
-                                          { k: "size", icon: "fmt-font-size", label: "Font size", popup: true }, { k: "clear", icon: "fmt-clear-format", label: "Clear all formatting" }],
-                                         [{ k: "outdent", icon: "fmt-outdent", label: "Decrease indent" }, { k: "indent", icon: "fmt-indent", label: "Increase indent" },
-                                          { k: "ul", icon: "fmt-bullets", label: "Bulleted list", on: parent.rs.list === "ul" }, { k: "ol", icon: "fmt-numbers", label: "Numbered list", on: parent.rs.list === "ol" }],
-                                         [{ k: "link", icon: "fmt-link", label: "Insert link", popup: true }]]
+                                custom: [[{ k: "bold", icon: "fmt-bold", label: qsTr("Bold"), on: !!parent.rs.bold }, { k: "italic", icon: "fmt-italic", label: qsTr("Italic"), on: !!parent.rs.italic },
+                                          { k: "underline", icon: "fmt-underline", label: qsTr("Underline"), on: !!parent.rs.underline }],
+                                         [{ k: "highlight", icon: "fmt-highlight", label: qsTr("Text highlight color"), popup: true }, { k: "color", icon: "fmt-font-color", label: qsTr("Font color"), popup: true },
+                                          { k: "size", icon: "fmt-font-size", label: qsTr("Font size"), popup: true }, { k: "clear", icon: "fmt-clear-format", label: qsTr("Clear all formatting") }],
+                                         [{ k: "outdent", icon: "fmt-outdent", label: qsTr("Decrease indent") }, { k: "indent", icon: "fmt-indent", label: qsTr("Increase indent") },
+                                          { k: "ul", icon: "fmt-bullets", label: qsTr("Bulleted list"), on: parent.rs.list === "ul" }, { k: "ol", icon: "fmt-numbers", label: qsTr("Numbered list"), on: parent.rs.list === "ol" }],
+                                         [{ k: "link", icon: "fmt-link", label: qsTr("Insert link"), popup: true }]]
                                 st: parent.rs
                                 selectedText: edBody.selectedText
                                 onCommand: (op, arg) => { edRich.apply(edBody.selectionStart, edBody.selectionEnd, op, arg || ""); edBody.forceActiveFocus(); parent.rs = JSON.parse(edRich.state(edBody.cursorPosition) || "{}") }
-                                Accessible.name: "Email body formatting"
+                                Accessible.name: qsTr("Email body formatting")
                             }
                             Btn {
                                 id: persBtn
                                 anchors.right: parent.right; anchors.rightMargin: 4; y: 4
-                                text: "Personalization"; icon: "chevron-down-20"
+                                text: qsTr("Personalization"); icon: "chevron-down-20"
                                 onClicked: { persMenu.parent = persBtn; persMenu.x = persBtn.width - persMenu.width; persMenu.y = persBtn.height + 4; persMenu.open() }
                             }
                             MenuPopup {
@@ -2882,17 +2882,17 @@ Rectangle {
                                     selectionColor: theme.selectionFill; selectedTextColor: theme.text
                                     onCursorPositionChanged: parent.parent.rs = JSON.parse(edRich.state(cursorPosition) || "{}")
                                     RichText { id: edRich }
-                                    Text { visible: edBody.length === 0 && !edBody.activeFocus; text: "Enter email body"; font: edBody.font; color: theme.textSecondary }
+                                    Text { visible: edBody.length === 0 && !edBody.activeFocus; text: qsTr("Enter email body"); font: edBody.font; color: theme.textSecondary }
                                     Accessible.role: Accessible.EditableText
-                                    Accessible.name: "Email body"
+                                    Accessible.name: qsTr("Email body")
                                 }
                             }
                         }
-                        Text { visible: emailEditor.subjectTouched && emailEditor.bodyEmpty; text: "Email body is required"; font.family: theme.font; font.pixelSize: 12; color: theme.danger } }
+                        Text { visible: emailEditor.subjectTouched && emailEditor.bodyEmpty; text: qsTr("Email body is required"); font.family: theme.font; font.pixelSize: 12; color: theme.danger } }
                     Column { width: parent.width; spacing: 4
-                        EdLabel { text: "Email footer" }
+                        EdLabel { text: qsTr("Email footer") }
                         EdField { width: parent.width; usable: false; text: emailEditor.t ? (emailEditor.t.footer || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim() : "" }
-                        Text { text: "This is set by your IT admin."; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } }
+                        Text { text: qsTr("This is set by your IT admin."); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } }
                 }
                 // ---- Preview ----
                 Column {
@@ -2901,16 +2901,16 @@ Rectangle {
                     Text { width: parent.width; wrapMode: Text.Wrap; text: (emailEditor.t && emailEditor.t.subject) ? emailEditor.sample(emailEditor.t.subject).replace(/<[^>]*>/g, "") : root.emailLabel(emailEditor.type)
                            font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
                     Row { spacing: 8
-                        Avatar { size: 32; name: (emailEditor.t && emailEditor.t.senderName) || "Event Organizer" }
+                        Avatar { size: 32; name: (emailEditor.t && emailEditor.t.senderName) || qsTr("Event Organizer") }
                         Column { anchors.verticalCenter: parent.verticalCenter
-                            Row { Text { text: (emailEditor.t && emailEditor.t.senderName) || "Event Organizer"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                            Row { Text { text: (emailEditor.t && emailEditor.t.senderName) || qsTr("Event Organizer"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
                                   Text { text: " <" + ((emailEditor.t && emailEditor.t.senderEmail) || "noreply@microsoft.com") + ">"; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary } }
-                            Text { text: "To: Recipient"; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } } }
+                            Text { text: qsTr("To: Recipient"); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } } }
                     Rectangle {
                         width: parent.width; height: Math.round(width / 3); radius: 4; clip: true
                         color: "transparent"; border.color: emailEditor.th.promoImage ? "transparent" : theme.stroke; border.width: 1
                         Image { anchors.fill: parent; fillMode: Image.PreserveAspectCrop; source: emailEditor.th.promoImage ? backend.cardImage(emailEditor.th.promoImage) : ""; asynchronous: true }
-                        Text { anchors.centerIn: parent; visible: !emailEditor.th.promoImage; horizontalAlignment: Text.AlignHCenter; text: "Event Banner Image\n(Appears here in actual email)"; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+                        Text { anchors.centerIn: parent; visible: !emailEditor.th.promoImage; horizontalAlignment: Text.AlignHCenter; text: qsTr("Event Banner Image\n(Appears here in actual email)"); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
                     }
                     Image { visible: !!emailEditor.th.logoImage; width: 50; height: 50; fillMode: Image.PreserveAspectFit; source: emailEditor.th.logoImage ? backend.cardImage(emailEditor.th.logoImage) : "" }
                     Text { width: parent.width; wrapMode: Text.Wrap; textFormat: Text.RichText; text: emailEditor.sample(emailEditor.t ? emailEditor.t.body : "")
@@ -2918,7 +2918,7 @@ Rectangle {
                     Text { width: parent.width; wrapMode: Text.Wrap; textFormat: Text.RichText; text: emailEditor.t ? (emailEditor.t.footer || "") : ""; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
                     Row { spacing: 6
                         FluentIcon { name: "info-16"; size: 16; color: theme.textSecondary }
-                        Text { width: edCol.width - 30; wrapMode: Text.Wrap; text: "The design seen by your recipients may not look like this preview, depending on their email service and device."; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } }
+                        Text { width: edCol.width - 30; wrapMode: Text.Wrap; text: qsTr("The design seen by your recipients may not look like this preview, depending on their email service and device."); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } }
                 }
                 // The buttons.
                 Item {
@@ -2926,14 +2926,14 @@ Rectangle {
                     Row { visible: emailEditor.editable
                         spacing: 4; anchors.verticalCenter: parent.verticalCenter
                         FluentIcon { name: emailEditor.preview ? "edit-20" : "eye-20"; size: 20; color: theme.brandForeground1; anchors.verticalCenter: parent.verticalCenter }
-                        Text { text: emailEditor.preview ? "Edit email" : "Preview"; font.family: theme.font; font.pixelSize: 14; color: theme.brandForeground1; anchors.verticalCenter: parent.verticalCenter }
+                        Text { text: emailEditor.preview ? qsTr("Edit email") : qsTr("Preview"); font.family: theme.font; font.pixelSize: 14; color: theme.brandForeground1; anchors.verticalCenter: parent.verticalCenter }
                         HoverHandler { cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: { if (!emailEditor.preview && emailEditor.t) emailEditor.t = Object.assign({}, emailEditor.t, { subject: edSubject.text, body: emailEditor.bodyHtml(), senderName: edSender.text }); emailEditor.preview = !emailEditor.preview } } }
                     Row {
                         anchors.right: parent.right; spacing: 8
-                        Btn { visible: emailEditor.editable; outlined: true; text: "Cancel"; onClicked: emailEditor.close() }
-                        Btn { visible: emailEditor.editable; primary: true; usable: !emailEditor.saving && !!emailEditor.t && !emailEditor.t.error; text: emailEditor.saving ? "Saving" : "Save"; onClicked: emailEditor.save() }
-                        Btn { visible: !emailEditor.editable; outlined: true; text: "Close"; onClicked: emailEditor.close() }
+                        Btn { visible: emailEditor.editable; outlined: true; text: qsTr("Cancel"); onClicked: emailEditor.close() }
+                        Btn { visible: emailEditor.editable; primary: true; usable: !emailEditor.saving && !!emailEditor.t && !emailEditor.t.error; text: emailEditor.saving ? qsTr("Saving") : qsTr("Save"); onClicked: emailEditor.save() }
+                        Btn { visible: !emailEditor.editable; outlined: true; text: qsTr("Close"); onClicked: emailEditor.close() }
                     }
                 }
             }
@@ -2966,21 +2966,21 @@ Rectangle {
         contentItem: Column {
             spacing: 16
             Item { width: parent.width; height: 28
-                Text { text: "Send event reminder"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
-                Btn { anchors.right: parent.right; icon: "dismiss-20"; text: ""; pad: 6; onClicked: emailTiming.close(); Accessible.name: "Close" } }
-            Text { visible: emailTiming.locked; width: parent.width; wrapMode: Text.Wrap; text: "Reminder timing cannot be changed because the event starts in less than an hour."; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                Text { text: qsTr("Send event reminder"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+                Btn { anchors.right: parent.right; icon: "dismiss-20"; text: ""; pad: 6; onClicked: emailTiming.close(); Accessible.name: qsTr("Close") } }
+            Text { visible: emailTiming.locked; width: parent.width; wrapMode: Text.Wrap; text: qsTr("Reminder timing cannot be changed because the event starts in less than an hour."); font.family: theme.font; font.pixelSize: 14; color: theme.text }
             Row {
                 spacing: 8; enabled: !emailTiming.locked; opacity: enabled ? 1 : 0.5
                 ComboBox { width: 80; model: emailTiming.unit === "days" ? [1] : Array.from({ length: 23 }, (x, i) => i + 1); currentIndex: Math.max(0, emailTiming.amount - 1)
-                           onActivated: i => emailTiming.amount = i + 1; Accessible.name: "Reminder amount" }
-                ComboBox { width: 100; model: ["Hours", "Days"]; currentIndex: emailTiming.unit === "days" ? 1 : 0
-                           onActivated: i => { emailTiming.unit = i === 1 ? "days" : "hours"; emailTiming.amount = 1 }; Accessible.name: "Reminder unit" }
-                Text { anchors.verticalCenter: parent.verticalCenter; text: "before the event starts."; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                           onActivated: i => emailTiming.amount = i + 1; Accessible.name: qsTr("Reminder amount") }
+                ComboBox { width: 100; model: [qsTr("Hours"), qsTr("Days")]; currentIndex: emailTiming.unit === "days" ? 1 : 0
+                           onActivated: i => { emailTiming.unit = i === 1 ? "days" : "hours"; emailTiming.amount = 1 }; Accessible.name: qsTr("Reminder unit") }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("before the event starts."); font.family: theme.font; font.pixelSize: 14; color: theme.text }
             }
             Row {
                 anchors.right: parent.right; spacing: 8
-                Btn { outlined: true; text: "Cancel"; onClicked: emailTiming.close() }
-                Btn { primary: true; usable: !emailTiming.saving && !emailTiming.locked && !!emailTiming.t; text: emailTiming.saving ? "Saving" : "Save"
+                Btn { outlined: true; text: qsTr("Cancel"); onClicked: emailTiming.close() }
+                Btn { primary: true; usable: !emailTiming.saving && !emailTiming.locked && !!emailTiming.t; text: emailTiming.saving ? qsTr("Saving") : qsTr("Save")
                       onClicked: {
                           emailTiming.saving = true
                           const iv = emailTiming.unit === "days" ? { hours: 0, days: emailTiming.amount } : { hours: emailTiming.amount, days: 0 }
@@ -3011,7 +3011,7 @@ Rectangle {
     // "Theme color successfully updated.".
     FileDialog {
         id: brandFile
-        title: "Choose an image"
+        title: qsTr("Choose an image")
         nameFilters: ["Images (*.png *.jpg *.jpeg)"]
         onAccepted: branding.picked(selectedFile.toString())
     }
@@ -3022,8 +3022,8 @@ Rectangle {
         x: (parent.width - width) / 2; y: Math.max(16, (parent.height - height) / 2)
         width: 722
         background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
-        readonly property var swatches: [["Default", "#5B5FC7"], ["Red", "#B82F41"], ["Orange", "#FFA08F"], ["Yellow", "#FFBA82"], ["Green", "#9DE3CB"],
-                                         ["Teal", "#9EE5DE"], ["Blue", "#257ACC"], ["Pink", "#D13B6D"], ["Grey", "#F0F0F0"]]
+        readonly property var swatches: [[qsTr("Default"), "#5B5FC7"], [qsTr("Red"), "#B82F41"], [qsTr("Orange"), "#FFA08F"], [qsTr("Yellow"), "#FFBA82"], [qsTr("Green"), "#9DE3CB"],
+                                         [qsTr("Teal"), "#9EE5DE"], [qsTr("Blue"), "#257ACC"], [qsTr("Pink"), "#D13B6D"], [qsTr("Grey"), "#F0F0F0"]]
         property var th: ({})
         property string color: ""
         property string coverFile: ""
@@ -3045,9 +3045,9 @@ Rectangle {
         property string pickFor: ""
         function pick(which) { pickFor = which; brandFile.open() }
         function picked(url) {
-            if (!/\.(png|jpe?g)$/i.test(url)) { error = "Choose a PNG or JPG file."; return }
+            if (!/\.(png|jpe?g)$/i.test(url)) { error = qsTr("Choose a PNG or JPG file."); return }
             const size = backend.fileSize(url.replace(/^file:\/\//, ""))
-            if (size > 5 * 1024 * 1024) { error = "Choose a file smaller than 5 MB. "; return }
+            if (size > 5 * 1024 * 1024) { error = qsTr("Choose a file smaller than 5 MB. "); return }
             error = ""
             cropSource = url; view = pickFor
         }
@@ -3069,9 +3069,9 @@ Rectangle {
             saving = true; error = ""
             const id = root.current.id, etag = th.eTag || "*"
             const steps = []
-            if (color && color !== (th.primaryColor || "#8C5BD2")) steps.push(["color", "Theme color successfully updated."])
-            if (coverFile) steps.push(["promo", "Cover image successfully updated."])
-            if (logoFile) steps.push(["logo", "Logo successfully updated."])
+            if (color && color !== (th.primaryColor || "#8C5BD2")) steps.push(["color", qsTr("Theme color successfully updated.")])
+            if (coverFile) steps.push(["promo", qsTr("Cover image successfully updated.")])
+            if (logoFile) steps.push(["logo", qsTr("Logo successfully updated.")])
             const done = []
             const next = () => {
                 const s = steps.shift()
@@ -3083,7 +3083,7 @@ Rectangle {
                 }
                 const cb = v => {
                     console.warn("EVENTS branding", s[0], JSON.stringify(v).slice(0, 200))
-                    if (v.error) { saving = false; error = "Something went wrong. Please try again."; return }
+                    if (v.error) { saving = false; error = qsTr("Something went wrong. Please try again."); return }
                     done.push(s[1]); next()
                 }
                 if (s[0] === "color") root.call("setThemeColor", { id: id, eTag: etag, color: color }, cb)
@@ -3110,40 +3110,40 @@ Rectangle {
             spacing: 0
             width: branding.availableWidth
             Item { width: parent.width; height: 44
-                Text { y: 12; text: branding.view === "main" ? "Branding" : "Edit image"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
-                Btn { anchors.right: parent.right; y: 6; icon: "dismiss-20"; text: ""; pad: 6; onClicked: branding.close(); Accessible.name: "Close dialog" } }
+                Text { y: 12; text: branding.view === "main" ? qsTr("Branding") : qsTr("Edit image"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+                Btn { anchors.right: parent.right; y: 6; icon: "dismiss-20"; text: ""; pad: 6; onClicked: branding.close(); Accessible.name: qsTr("Close dialog") } }
             // ---- main ----
             Column {
                 visible: branding.view === "main"
                 width: parent.width; spacing: 16
                 Row { spacing: 6
-                    Text { width: Math.min(implicitWidth, branding.availableWidth - 30); wrapMode: Text.Wrap; text: "Choose a PNG or JPG file (max 5 MB). For best results, image ratio should be at least 796 x 265 pixels."; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    Text { width: Math.min(implicitWidth, branding.availableWidth - 30); wrapMode: Text.Wrap; text: qsTr("Choose a PNG or JPG file (max 5 MB). For best results, image ratio should be at least 796 x 265 pixels."); font.family: theme.font; font.pixelSize: 14; color: theme.text }
                     FluentIcon { name: "info-16"; size: 16; color: theme.textStrong
-                        ToolTip.visible: infoHover.hovered; ToolTip.text: "The images you upload will be hosted in a publicly available CDN."
+                        ToolTip.visible: infoHover.hovered; ToolTip.text: qsTr("The images you upload will be hosted in a publicly available CDN.")
                         HoverHandler { id: infoHover }
-                        Accessible.role: Accessible.Button; Accessible.name: "Public CDN hosting more information" } }
+                        Accessible.role: Accessible.Button; Accessible.name: qsTr("Public CDN hosting more information") } }
                 Column { width: parent.width; spacing: 8
-                    Text { text: "Cover image"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                    Text { text: qsTr("Cover image"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
                     Rectangle {
                         width: parent.width; height: Math.round(width / 3); radius: 8; clip: true
                         color: theme.pick("#F0F0F0", "#1F1F1F", "#000000")
                         Image { anchors.fill: parent; fillMode: Image.PreserveAspectFit; source: branding.coverSource; asynchronous: true; cache: false }
-                        RoundBtn { visible: !!branding.coverSource; anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.margins: 8; icon: "image-edit-20"; text: "Edit image"; onClicked: branding.editCurrent("cover") }
-                        Btn { visible: !branding.coverSource; anchors.centerIn: parent; opacity: 0.7; icon: "arrow-upload-20"; text: "Upload image"; onClicked: branding.pick("cover") }
+                        RoundBtn { visible: !!branding.coverSource; anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.margins: 8; icon: "image-edit-20"; text: qsTr("Edit image"); onClicked: branding.editCurrent("cover") }
+                        Btn { visible: !branding.coverSource; anchors.centerIn: parent; opacity: 0.7; icon: "arrow-upload-20"; text: qsTr("Upload image"); onClicked: branding.pick("cover") }
                     } }
                 Row {
                     spacing: 24
                     Column { spacing: 8
-                        Text { text: "Logo"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                        Text { text: qsTr("Logo"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
                         Rectangle {
                             width: 90; height: 90; radius: 4; clip: true
                             color: theme.pick("#F0F0F0", "#1F1F1F", "#000000"); border.color: theme.divider; border.width: 1
                             Image { anchors.fill: parent; anchors.margins: 1; fillMode: Image.PreserveAspectFit; source: branding.logoSource; asynchronous: true; cache: false }
-                            RoundBtn { visible: !!branding.logoSource; anchors.right: parent.right; anchors.top: parent.top; anchors.margins: 4; icon: "image-edit-20"; onClicked: branding.editCurrent("logo"); Accessible.name: "Edit image" }
-                            RoundBtn { visible: !branding.logoSource; anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.margins: 6; icon: "arrow-upload-20"; onClicked: branding.pick("logo"); Accessible.name: "Upload logo" }
+                            RoundBtn { visible: !!branding.logoSource; anchors.right: parent.right; anchors.top: parent.top; anchors.margins: 4; icon: "image-edit-20"; onClicked: branding.editCurrent("logo"); Accessible.name: qsTr("Edit image") }
+                            RoundBtn { visible: !branding.logoSource; anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.margins: 6; icon: "arrow-upload-20"; onClicked: branding.pick("logo"); Accessible.name: qsTr("Upload logo") }
                         } }
                     Column { spacing: 8
-                        Text { text: "Theme color"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                        Text { text: qsTr("Theme color"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
                         Row { spacing: 18
                             Repeater { model: branding.swatches
                                 Item {
@@ -3155,7 +3155,7 @@ Rectangle {
                                             GradientStop { position: 0; color: Qt.lighter(modelData[1], 1.25) }
                                             GradientStop { position: 1; color: Qt.darker(modelData[1], 1.1) }
                                         }
-                                        border.color: theme.dividerSoft; border.width: modelData[0] === "Grey" ? 1 : 0
+                                        border.color: theme.dividerSoft; border.width: modelData[0] === qsTr("Grey") ? 1 : 0
                                     }
                                     Rectangle { visible: branding.color.toUpperCase() === modelData[1].toUpperCase(); y: 44; width: 40; height: 4; radius: 2; color: theme.brand }
                                     HoverHandler { cursorShape: Qt.PointingHandCursor }
@@ -3168,16 +3168,16 @@ Rectangle {
                 Item { width: parent.width; height: 40
                     Text { visible: !!branding.error; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 260; elide: Text.ElideRight; text: branding.error; font.family: theme.font; font.pixelSize: 12; color: theme.danger }
                     Row { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; spacing: 8
-                        Btn { outlined: true; text: "Cancel"; onClicked: branding.close() }
-                        Btn { primary: true; usable: !branding.saving; text: branding.saving ? "Saving..." : "Save"; onClicked: branding.save() } } }
+                        Btn { outlined: true; text: qsTr("Cancel"); onClicked: branding.close() }
+                        Btn { primary: true; usable: !branding.saving; text: branding.saving ? qsTr("Saving...") : qsTr("Save"); onClicked: branding.save() } } }
             }
             // ---- Edit image (crop) ----
             Column {
                 visible: branding.view !== "main"
                 width: parent.width; spacing: 12
-                Text { text: branding.view === "logo" ? "Logo image" : "Cover image"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                Text { text: branding.view === "logo" ? qsTr("Logo image") : qsTr("Cover image"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
                 Text { width: parent.width; wrapMode: Text.Wrap; font.family: theme.font; font.pixelSize: 14; color: theme.text
-                       text: branding.view === "logo" ? "PNG or JPG (max 5 MB). For best results, use a 1:1 image (at least 280×280 px)." : "PNG or JPG (max 5 MB). For best results, use a 3:1 image (at least 796 × 265 px)." }
+                       text: branding.view === "logo" ? qsTr("PNG or JPG (max 5 MB). For best results, use a 1:1 image (at least 280×280 px).") : qsTr("PNG or JPG (max 5 MB). For best results, use a 3:1 image (at least 796 × 265 px).") }
                 Rectangle {
                     width: parent.width; height: branding.view === "logo" ? 300 : 287
                     color: theme.pick("#F0F0F0", "#1F1F1F", "#000000"); clip: true
@@ -3204,16 +3204,16 @@ Rectangle {
                 }
                 Row {
                     spacing: 12
-                    RoundBtn { icon: "arrow-upload-20"; text: "Upload image"; onClicked: branding.pick(branding.view) }
-                    Btn { icon: "zoom-out-20"; text: ""; pad: 6; Accessible.name: "Zoom out"; onClicked: branding.zoom = Math.max(branding.minZoom, branding.zoom - 0.1) }
+                    RoundBtn { icon: "arrow-upload-20"; text: qsTr("Upload image"); onClicked: branding.pick(branding.view) }
+                    Btn { icon: "zoom-out-20"; text: ""; pad: 6; Accessible.name: qsTr("Zoom out"); onClicked: branding.zoom = Math.max(branding.minZoom, branding.zoom - 0.1) }
                     Slider { id: zoomSlider; width: 200; from: branding.minZoom; to: branding.minZoom + 5; stepSize: 0.1; value: branding.zoom; onMoved: branding.zoom = value
-                             Accessible.name: "Zoom level"; Accessible.description: "Zoom " + Math.round(branding.zoom * 100) + "%" }
-                    Btn { icon: "zoom-in-20"; text: ""; pad: 6; Accessible.name: "Zoom in"; onClicked: branding.zoom = Math.min(branding.minZoom + 5, branding.zoom + 0.1) }
+                             Accessible.name: qsTr("Zoom level"); Accessible.description: qsTr("Zoom %1%").arg(Math.round(branding.zoom * 100)) }
+                    Btn { icon: "zoom-in-20"; text: ""; pad: 6; Accessible.name: qsTr("Zoom in"); onClicked: branding.zoom = Math.min(branding.minZoom + 5, branding.zoom + 0.1) }
                 }
                 Item { width: parent.width; height: 40
                     Row { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; spacing: 8
-                        Btn { outlined: true; text: "Back"; Accessible.name: "Go back"; onClicked: branding.view = "main" }
-                        Btn { primary: true; text: "Save"; onClicked: branding.saveCrop() } } }
+                        Btn { outlined: true; text: qsTr("Back"); Accessible.name: qsTr("Go back"); onClicked: branding.view = "main" }
+                        Btn { primary: true; text: qsTr("Save"); onClicked: branding.saveCrop() } } }
             }
         }
         onViewChanged: { zoom = 1; cropImg.dragX = 0; cropImg.dragY = 0 }
@@ -3239,10 +3239,10 @@ Rectangle {
         contentItem: Column {
             spacing: 0
             Item { width: parent.width; height: 31
-                Text { anchors.verticalCenter: parent.verticalCenter; text: "Save this event as a template?"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
-                Btn { anchors.right: parent.right; icon: "dismiss-20"; text: ""; pad: 6; onClicked: templateDialog.close(); Accessible.name: "Close dialog" } }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Save this event as a template?"); font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
+                Btn { anchors.right: parent.right; icon: "dismiss-20"; text: ""; pad: 6; onClicked: templateDialog.close(); Accessible.name: qsTr("Close dialog") } }
             Item { width: 1; height: 16 }
-            Text { text: "We'll save everything except the date and time for you to use again."; font.family: theme.font; font.pixelSize: 12; color: theme.textStrong }
+            Text { text: qsTr("We'll save everything except the date and time for you to use again."); font.family: theme.font; font.pixelSize: 12; color: theme.textStrong }
             Item { width: 1; height: 24 }
             Rectangle {
                 width: parent.width; height: 219; radius: 8; clip: true; color: templateDialog.ev.primary_color || "#5B5FC7"
@@ -3251,21 +3251,21 @@ Rectangle {
             }
             Item { width: 1; height: 20 }
             Row { spacing: 2
-                Text { text: "Name"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                Text { text: qsTr("Name"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
                 Text { text: "*"; font.family: theme.font; font.pixelSize: 14; color: theme.redForeground3 } }
             Item { width: 1; height: 4 }
             Rectangle { width: parent.width; height: 32; radius: 4; color: theme.inputFilled
-                TextInput { id: tName; x: 12; width: parent.width - 24; anchors.verticalCenter: parent.verticalCenter; font.family: theme.font; font.pixelSize: 14; color: theme.text; clip: true; selectByMouse: true; Accessible.name: "Name" } }
+                TextInput { id: tName; x: 12; width: parent.width - 24; anchors.verticalCenter: parent.verticalCenter; font.family: theme.font; font.pixelSize: 14; color: theme.text; clip: true; selectByMouse: true; Accessible.name: qsTr("Name") } }
             Item { width: 1; height: 12 }
-            Text { text: "Description"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+            Text { text: qsTr("Description"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
             Item { width: 1; height: 4 }
             Rectangle { width: parent.width; height: 80; radius: 4; color: theme.inputFilled
                 TextEdit { id: tDesc; x: 12; y: 8; width: parent.width - 24; height: parent.height - 16; wrapMode: TextEdit.Wrap; font.family: theme.font; font.pixelSize: 14; color: theme.text; selectByMouse: true
-                    Text { visible: !tDesc.text; text: "Type some details about this template"; font: tDesc.font; color: theme.textSecondary }
-                    Accessible.name: "Description" } }
+                    Text { visible: !tDesc.text; text: qsTr("Type some details about this template"); font: tDesc.font; color: theme.textSecondary }
+                    Accessible.name: qsTr("Description") } }
             Item { width: 1; height: 30 }
             Btn {
-                anchors.right: parent.right; primary: true; text: "Save template"; usable: tName.text.trim().length > 0 && !templateDialog.busy
+                anchors.right: parent.right; primary: true; text: qsTr("Save template"); usable: tName.text.trim().length > 0 && !templateDialog.busy
                 onClicked: templateDialog.save()
             }
         }
@@ -3274,12 +3274,12 @@ Rectangle {
                 {
                     templateDialog.busy = true
                     root.call("event", { id: templateDialog.ev.id }, d => {
-                        if (d.error) { templateDialog.busy = false; root.toast({ text: "Couldn't save the template. " + d.error, intent: "error" }); return }
+                        if (d.error) { templateDialog.busy = false; root.toast({ text: qsTr("Couldn't save the template.") + " " + d.error, intent: "error" }); return }
                         form.fill(d)
                         root.call("saveTemplate", { id: templateDialog.ev.id, name: tName.text.trim(), templateDescription: tDesc.text, event: form.payload() }, v => {
                             templateDialog.busy = false; templateDialog.close()
-                            if (v.error) { root.toast({ text: "Couldn't save the template. " + v.error, intent: "error" }); return }
-                            root.toast({ text: "Template saved", intent: "success", action: "View your templates", onAction: () => root.startCreate() })
+                            if (v.error) { root.toast({ text: qsTr("Couldn't save the template.") + " " + v.error, intent: "error" }); return }
+                            root.toast({ text: qsTr("Template saved"), intent: "success", action: qsTr("View your templates"), onAction: () => root.startCreate() })
                         })
                     })
                 }
@@ -3299,16 +3299,16 @@ Rectangle {
             Item { width: parent.width; height: 32
                 Row { anchors.verticalCenter: parent.verticalCenter; spacing: 8
                     FluentIcon { name: "door-20"; size: 20; color: theme.text; anchors.verticalCenter: parent.verticalCenter }
-                    Text { text: "Teams rooms options"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text } }
-                Btn { anchors.right: parent.right; icon: "dismiss-20"; text: ""; pad: 6; onClicked: roomOptions.close(); Accessible.name: "Close" } }
+                    Text { text: qsTr("Teams rooms options"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text } }
+                Btn { anchors.right: parent.right; icon: "dismiss-20"; text: ""; pad: 6; onClicked: roomOptions.close(); Accessible.name: qsTr("Close") } }
             Item { width: 1; height: 24 }
             Item { width: parent.width; height: 32
                 Row { x: 8; anchors.verticalCenter: parent.verticalCenter; spacing: 8
                     FluentIcon { name: "video-person-20"; size: 16; color: theme.textStrong; anchors.verticalCenter: parent.verticalCenter }
-                    Text { text: "Teams Rooms"; font.family: theme.font; font.pixelSize: 14; color: theme.text } }
+                    Text { text: qsTr("Teams Rooms"); font.family: theme.font; font.pixelSize: 14; color: theme.text } }
                 Row { x: 336; anchors.verticalCenter: parent.verticalCenter; spacing: 8
                     FluentIcon { name: "people-20"; size: 16; color: theme.textStrong; anchors.verticalCenter: parent.verticalCenter }
-                    Text { text: "Set up room for"; font.family: theme.font; font.pixelSize: 14; color: theme.text } } }
+                    Text { text: qsTr("Set up room for"); font.family: theme.font; font.pixelSize: 14; color: theme.text } } }
             Rectangle { width: parent.width; height: 1; color: theme.divider }
             Repeater {
                 model: form.rooms
@@ -3317,15 +3317,15 @@ Rectangle {
                     width: roomOptions.width - 48
                     Item { width: parent.width; height: 44
                         Text { x: 8; anchors.verticalCenter: parent.verticalCenter; text: parent.parent.modelData.name; font.family: theme.font; font.pixelSize: 14; color: theme.text }
-                        Dropdown { x: 336; anchors.verticalCenter: parent.verticalCenter; width: 206; height: 30; accessibleName: "Set up room for"
-                                   options: [["Presenting", "Presenting"], ["AttendeeViewing", "Attendee viewing"]]
-                                   label: parent.parent.modelData.roomRole === "AttendeeViewing" ? "Attendee viewing" : "Presenting"
+                        Dropdown { x: 336; anchors.verticalCenter: parent.verticalCenter; width: 206; height: 30; accessibleName: qsTr("Set up room for")
+                                   options: [["Presenting", qsTr("Presenting")], ["AttendeeViewing", qsTr("Attendee viewing")]]
+                                   label: parent.parent.modelData.roomRole === "AttendeeViewing" ? qsTr("Attendee viewing") : qsTr("Presenting")
                                    onPicked: v => { const a = form.rooms.map(r => r.email === parent.parent.modelData.email ? Object.assign({}, r, { roomRole: v }) : r); form.rooms = a } } }
                     Rectangle { width: parent.width; height: 1; color: theme.divider }
                 }
             }
             Item { width: 1; height: 12 }
-            Btn { anchors.right: parent.right; primary: true; width: 96; text: "Save"; onClicked: roomOptions.close() }
+            Btn { anchors.right: parent.right; primary: true; width: 96; text: qsTr("Save"); onClicked: roomOptions.close() }
         }
     }
     // Connect apps ("Connect apps and workflows", 900 wide): Teams'
@@ -3344,10 +3344,10 @@ Rectangle {
         contentItem: Column {
             spacing: 0
             Item { width: parent.width; height: 34
-                Text { anchors.verticalCenter: parent.verticalCenter; text: "Connect apps and workflows"; font.family: theme.font; font.pixelSize: 28; font.weight: Font.DemiBold; color: theme.text }
-                Btn { anchors.right: parent.right; y: -16; icon: "dismiss-20"; text: ""; pad: 6; onClicked: connectApps.close(); Accessible.name: "Close" } }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Connect apps and workflows"); font.family: theme.font; font.pixelSize: 28; font.weight: Font.DemiBold; color: theme.text }
+                Btn { anchors.right: parent.right; y: -16; icon: "dismiss-20"; text: ""; pad: 6; onClicked: connectApps.close(); Accessible.name: qsTr("Close") } }
             Item { width: 1; height: 15 }
-            Text { text: "Save time by sharing event data with your favorite apps."; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+            Text { text: qsTr("Save time by sharing event data with your favorite apps."); font.family: theme.font; font.pixelSize: 14; color: theme.text }
             Item { width: 1; height: 16 }
             Flow {
                 width: parent.width; spacing: 17
@@ -3408,17 +3408,17 @@ Rectangle {
         function openFor(e) { ev = e || {}; people = null; open(); root.call("people", { id: ev.id }, v => { if (!v.error) people = v }) }
         contentItem: Column {
             spacing: 0
-            Text { text: "Ready to publish your event?"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text; height: 28 }
+            Text { text: qsTr("Ready to publish your event?"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text; height: 28 }
             Item { width: 1; height: 13 }
-            Text { width: 752; wrapMode: Text.Wrap; text: "Invites will be sent to attendees. You can add more attendees and share the event after it's published."; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+            Text { width: 752; wrapMode: Text.Wrap; text: qsTr("Invites will be sent to attendees. You can add more attendees and share the event after it's published."); font.family: theme.font; font.pixelSize: 14; color: theme.text }
             Item { width: 1; height: 15 }
-            Text { text: "These settings can’t be changed after publishing"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text; height: 22 }
+            Text { text: qsTr("These settings can’t be changed after publishing"); font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text; height: 22 }
             Item { width: 1; height: 8 }
             Row {
                 spacing: 8
                 Repeater {
-                    model: [["people-community-20", "Who can view and join:", publishDialog.ev.access === "Public" ? "Public" : publishDialog.ev.inviteOnly ? "Specific people" : "Your organization"],
-                            ["clipboard-20", "Registration:", publishDialog.ev.registration ? "On" : "Off"]]
+                    model: [["people-community-20", qsTr("Who can view and join:"), publishDialog.ev.access === "Public" ? qsTr("Public") : publishDialog.ev.inviteOnly ? qsTr("Specific people") : qsTr("Your organization")],
+                            ["clipboard-20", qsTr("Registration:"), publishDialog.ev.registration ? qsTr("On") : qsTr("Off")]]
                     Rectangle {
                         required property var modelData
                         height: 32; radius: 16; width: pubr.implicitWidth + 24; color: theme.surface; border.color: theme.divider; border.width: 1
@@ -3432,13 +3432,13 @@ Rectangle {
             Item { width: 1; height: 16 }
             Row {
                 anchors.right: parent.right; spacing: 8
-                Btn { width: 96; outlined: true; text: "Cancel"; onClicked: publishDialog.close() }
-                Btn { primary: true; icon: "rocket-20"; text: "Publish event"; usable: !publishDialog.busy
+                Btn { width: 96; outlined: true; text: qsTr("Cancel"); onClicked: publishDialog.close() }
+                Btn { primary: true; icon: "rocket-20"; text: qsTr("Publish event"); usable: !publishDialog.busy
                       onClicked: {
                           publishDialog.busy = true
                           root.call("publish", { id: publishDialog.ev.id }, v => {
                               publishDialog.busy = false; publishDialog.close()
-                              if (v.error) { root.toast({ text: "Couldn't publish the event. " + v.error, intent: "error" }); return }
+                              if (v.error) { root.toast({ text: qsTr("Couldn't publish the event.") + " " + v.error, intent: "error" }); return }
                               root.current = Object.assign({}, root.current, { state: v.state || "Published" })
                               root.manageData = null
                               shareDialog.openFor(root.current, true, v)
@@ -3493,11 +3493,11 @@ Rectangle {
                 Column {
                     visible: shareDialog.success
                     anchors.horizontalCenter: parent.horizontalCenter
-                    Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Success! Your event has been published"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
-                    Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Help your attendees discover it:"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    Text { anchors.horizontalCenter: parent.horizontalCenter; text: qsTr("Success! Your event has been published"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+                    Text { anchors.horizontalCenter: parent.horizontalCenter; text: qsTr("Help your attendees discover it:"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
                 }
-                Text { visible: !shareDialog.success; y: 8; text: "Help attendees discover this event"; font.family: theme.font; font.pixelSize: 24; font.weight: Font.Bold; color: theme.text }
-                Btn { anchors.right: parent.right; y: shareDialog.success ? 0 : 8; icon: "dismiss-20"; text: ""; pad: 6; onClicked: shareDialog.close(); Accessible.name: "Close" }
+                Text { visible: !shareDialog.success; y: 8; text: qsTr("Help attendees discover this event"); font.family: theme.font; font.pixelSize: 24; font.weight: Font.Bold; color: theme.text }
+                Btn { anchors.right: parent.right; y: shareDialog.success ? 0 : 8; icon: "dismiss-20"; text: ""; pad: 6; onClicked: shareDialog.close(); Accessible.name: qsTr("Close") }
             }
             // The attendee card.
             Item {
@@ -3512,7 +3512,7 @@ Rectangle {
                 Text { x: 20; y: 137; width: parent.width - 40; elide: Text.ElideRight; text: shareDialog.ev.title || ""; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
                 Row {
                     x: 20; y: 163; spacing: 6; height: 20
-                    readonly property string soon: shareDialog.live ? "Live" : root.soonText(shareDialog.ev.start)
+                    readonly property string soon: shareDialog.live ? qsTr("Live") : root.soonText(shareDialog.ev.start)
                     Rectangle { visible: !!parent.soon; anchors.verticalCenter: parent.verticalCenter; height: 16; radius: 8; width: sRow.implicitWidth + (shareDialog.live ? 10 : 8)
                         color: shareDialog.live ? "#D13438" : theme.pick("#E8EBFA", "#2F2F4A", "#000000")
                         border.width: theme.highContrast ? 1 : 0; border.color: theme.text
@@ -3525,38 +3525,38 @@ Rectangle {
                     x: 20; y: 193; spacing: 4
                     Row { visible: !!shareDialog.ev.by; spacing: 4
                         FluentIcon { name: "person-16"; size: 16; color: theme.textSecondary }
-                        Text { text: "By " + (shareDialog.ev.by || ""); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } }
+                        Text { text: qsTr("By %1").arg(shareDialog.ev.by || ""); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } }
                     Row { spacing: 4
                         FluentIcon { name: "location-20"; size: 16; color: theme.textSecondary }
-                        Text { text: shareDialog.ev.location || "Online"; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } }
+                        Text { text: shareDialog.ev.location || qsTr("Online"); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } }
                 }
                 Row {
                     x: 20; y: 265; spacing: 8
-                    Btn { visible: shareDialog.joinable; height: 23; width: 64; primary: true; icon: "video-16"; text: "Join"; fontSize: 12; pad: 8; usable: false }
-                    Btn { visible: !shareDialog.joinable; height: 24; outlined: true; fontSize: 12; pad: 8; icon: "calendar-add-20"; text: "Add to calendar"; usable: false }
-                    Btn { width: 24; height: 24; outlined: true; icon: "link-20"; text: ""; pad: 2; Accessible.name: "Copy event page link"
-                          onClicked: { backend.copyText(shareDialog.ev.site_url || ""); root.toast({ text: "Event page link copied successfully", intent: "success" }) } }
+                    Btn { visible: shareDialog.joinable; height: 23; width: 64; primary: true; icon: "video-16"; text: qsTr("Join"); fontSize: 12; pad: 8; usable: false }
+                    Btn { visible: !shareDialog.joinable; height: 24; outlined: true; fontSize: 12; pad: 8; icon: "calendar-add-20"; text: qsTr("Add to calendar"); usable: false }
+                    Btn { width: 24; height: 24; outlined: true; icon: "link-20"; text: ""; pad: 2; Accessible.name: qsTr("Copy event page link")
+                          onClicked: { backend.copyText(shareDialog.ev.site_url || ""); root.toast({ text: qsTr("Event page link copied successfully"), intent: "success" }) } }
                 }
             }
-            Text { x: 0; y: aCard.y + aCard.height + 12; width: 369; horizontalAlignment: Text.AlignHCenter; text: "Here’s what attendees will see."; font.family: theme.font; font.pixelSize: 10; color: theme.text }
+            Text { x: 0; y: aCard.y + aCard.height + 12; width: 369; horizontalAlignment: Text.AlignHCenter; text: qsTr("Here’s what attendees will see."); font.family: theme.font; font.pixelSize: 10; color: theme.text }
             // Show event in Events app.
             Item {
                 x: 381; y: aCard.y; width: 369; height: 36
                 Rectangle { x: 0; y: 4; width: 28; height: 28; radius: 4; color: theme.brandFill
                     FluentIcon { anchors.centerIn: parent; name: "people-community-20"; size: 20; color: theme.textOnBrand } }
                 Column { x: 38; y: 0
-                    Text { text: "Show event in Events app"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.text }
-                    Text { text: "Attendees with access can view"; font.family: theme.font; font.pixelSize: 12; color: theme.text } }
+                    Text { text: qsTr("Show event in Events app"); font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.text }
+                    Text { text: qsTr("Attendees with access can view"); font.family: theme.font; font.pixelSize: 12; color: theme.text } }
                 SettingsParts.Toggle {
                     anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter
-                    stateLabel: false; on: shareDialog.discoverable; accessibleName: "Show event in Events app"
+                    stateLabel: false; on: shareDialog.discoverable; accessibleName: qsTr("Show event in Events app")
                     onToggled: v => {
                         if (shareDialog.toggling) return
                         shareDialog.toggling = true
                         shareDialog.discoverable = v
                         root.call("discoverable", { id: shareDialog.ev.id, on: v }, r => {
                             shareDialog.toggling = false
-                            if (r.error) { root.toast({ text: "Couldn't change it. " + r.error, intent: "error" }); shareDialog.discoverable = !v; return }
+                            if (r.error) { root.toast({ text: qsTr("Couldn't change it.") + " " + r.error, intent: "error" }); shareDialog.discoverable = !v; return }
                             const now = !!r.isDiscoverable
                             shareDialog.discoverable = now
                             shareDialog.ev = Object.assign({}, shareDialog.ev, { discoverable: now })
@@ -3567,11 +3567,11 @@ Rectangle {
             }
             Column {
                 x: 381; y: aCard.y + aCard.height - (shareDialog.embedCode ? 113 : 72); width: 369; spacing: 10
-                Btn { width: 369; height: 31; outlined: true; icon: "document-20"; text: "Copy join details"; onClicked: root.copyJoinDetails(shareDialog.ev) }
-                Btn { width: 369; height: 31; outlined: true; icon: "link-20"; text: "Copy event page link"
-                      onClicked: { backend.copyText(shareDialog.ev.site_url || ""); root.toast({ text: "Event page link copied successfully", intent: "success" }) } }
-                Btn { visible: !!shareDialog.embedCode; width: 369; height: 31; outlined: true; icon: "code-20"; text: "Copy embed code"
-                      onClicked: { backend.copyText(shareDialog.embedCode); root.toast({ text: "Copied", intent: "success" }) } }
+                Btn { width: 369; height: 31; outlined: true; icon: "document-20"; text: qsTr("Copy join details"); onClicked: root.copyJoinDetails(shareDialog.ev) }
+                Btn { width: 369; height: 31; outlined: true; icon: "link-20"; text: qsTr("Copy event page link")
+                      onClicked: { backend.copyText(shareDialog.ev.site_url || ""); root.toast({ text: qsTr("Event page link copied successfully"), intent: "success" }) } }
+                Btn { visible: !!shareDialog.embedCode; width: 369; height: 31; outlined: true; icon: "code-20"; text: qsTr("Copy embed code")
+                      onClicked: { backend.copyText(shareDialog.embedCode); root.toast({ text: qsTr("Copied"), intent: "success" }) } }
             }
         }
     }
@@ -3587,15 +3587,15 @@ Rectangle {
         property bool busy: false
         contentItem: Column {
             spacing: 8
-            Text { text: "Cancel event?"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
-            Text { width: 432; wrapMode: Text.Wrap; text: "Once canceled, you cannot uncancel. Attendees will be notified by email."; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+            Text { text: qsTr("Cancel event?"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+            Text { width: 432; wrapMode: Text.Wrap; text: qsTr("Once canceled, you cannot uncancel. Attendees will be notified by email."); font.family: theme.font; font.pixelSize: 14; color: theme.text }
             Item { width: 1; height: 12 }
-            Btn { anchors.right: parent.right; primary: true; text: "Cancel event"; usable: !cancelDialog.busy
+            Btn { anchors.right: parent.right; primary: true; text: qsTr("Cancel event"); usable: !cancelDialog.busy
                   onClicked: {
                       cancelDialog.busy = true
                       root.call("cancel", { id: root.current.id }, v => {
                           cancelDialog.busy = false; cancelDialog.close()
-                          if (v.error) { root.toast({ text: "Couldn't cancel the event. " + v.error, intent: "error" }); return }
+                          if (v.error) { root.toast({ text: qsTr("Couldn't cancel the event.") + " " + v.error, intent: "error" }); return }
                           root.current = Object.assign({}, root.current, { state: "Canceled" })
                           root.manageData = null
                       })

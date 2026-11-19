@@ -119,7 +119,7 @@ Window {
         Action {
             id: meetButton
             x: parent.width - 138.3; y: 14.2; width: 27.3
-            icon: "video-20"; tip: "Meet now"
+            icon: "video-20"; tip: qsTr("Meet now")
             enabled: backend.callState === ""
             ink: enabled ? theme.textStrong : theme.disabled
             onClicked: win.meetNow(win.channelId, win.channelName)
@@ -127,29 +127,29 @@ Window {
         Action {
             id: meetMore
             x: parent.width - 111; y: 14.2; width: 20
-            icon: "chevron-down-16"; iconSize: 16; tip: "More channel meeting options"
+            icon: "chevron-down-16"; iconSize: 16; tip: qsTr("More channel meeting options")
             ink: meetMenu.opened ? theme.brand : theme.textStrong
             onClicked: meetMenu.open()
             MenuPopup {
                 id: meetMenu
                 x: parent.width - 4.5 - width; y: parent.height + 4.5
                 items: [
-                    { key: "meet", label: "Meet now", icon: "video-20", enabled: backend.callState === "" },
-                    { key: "schedule", label: "Schedule a meeting", icon: "calendar-add-20" }
+                    { key: "meet", label: qsTr("Meet now"), icon: "video-20", enabled: backend.callState === "" },
+                    { key: "schedule", label: qsTr("Schedule a meeting"), icon: "calendar-add-20" }
                 ]
                 onPicked: i => items[i].key === "meet" ? win.meetNow(win.channelId, win.channelName) : win.scheduleMeeting()
             }
         }
         Action {
             x: parent.width - 75; y: 14.2
-            icon: "search-20"; tip: "Find in channel"
+            icon: "search-20"; tip: qsTr("Find in channel")
             ink: win.finding ? theme.brand : theme.textStrong
             onClicked: win.toggleFind()
         }
         Action {
             id: moreButton
             x: parent.width - 43; y: 14.5; height: 31.3
-            icon: "more-horizontal-20"; tip: "More channel options"
+            icon: "more-horizontal-20"; tip: qsTr("More channel options")
             ink: channelMenu.menu.opened ? theme.brand : theme.textStrong
             onClicked: channelMenu.show(moreButton, moreButton.width + 6.3 - channelMenu.menu.implicitWidth, moreButton.height + 4.9)
         }
@@ -213,7 +213,7 @@ Window {
         anchors { left: parent.left; right: parent.right }
         y: atTop ? posts.y + posts.composerY : parent.height - height - 8.7
         anchors.leftMargin: 28; anchors.rightMargin: 30
-        placeholder: "Type a message"
+        placeholder: qsTr("Type a message")
         post: true
         deliveryOptions: false
         mentionDirectory: false

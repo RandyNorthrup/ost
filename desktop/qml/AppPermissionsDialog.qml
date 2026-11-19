@@ -37,7 +37,7 @@ Popup {
                 FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(hcFill1, theme.textSecondary) }
                 HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: root.close() }
-                Accessible.role: Accessible.Button; Accessible.name: "Close"
+                Accessible.role: Accessible.Button; Accessible.name: qsTr("Close")
             }
         }
         Item { width: 1; height: 18 }
@@ -45,7 +45,7 @@ Popup {
             visible: !!root.info && !!root.info.preapproved
             width: parent.width; wrapMode: Text.Wrap
             textFormat: Text.RichText
-            text: "<style>a { color: " + theme.brandForeground1 + "; text-decoration: none; }</style>This app has permissions enabled by default for your convenience. Adjust these permissions at any time. <a href=\"https://go.microsoft.com/fwlink/?linkid=2166702&clcid=0x409\">Learn more</a>"
+            text: "<style>a { color: " + theme.brandForeground1 + "; text-decoration: none; }</style>" + qsTr("This app has permissions enabled by default for your convenience. Adjust these permissions at any time. <0>%1</0>").arg(qsTr("Learn more")).replace("<0>", "<a href=\"https://go.microsoft.com/fwlink/?linkid=2166702&clcid=0x409\">").replace("</0>", "</a>")
             linkColor: theme.brandForeground1
             onLinkActivated: link => Qt.openUrlExternally(link)
             lineHeight: 16; lineHeightMode: Text.FixedHeight
@@ -53,7 +53,7 @@ Popup {
             HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
         }
         Item { width: 1; height: 30 }
-        Text { visible: !!root.info && !!root.info.loading; text: "Loading…"; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
+        Text { visible: !!root.info && !!root.info.loading; text: qsTr("Loading…"); font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
         Repeater {
             model: root.info && root.info.items ? root.info.items : []
             Item {

@@ -80,9 +80,9 @@ Item {
         HoverHandler { id: arh; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.step(ar.next ? 1 : -1) }
         ToolTip.visible: arh.hovered
-        ToolTip.text: next ? "Next" : "Previous"
+        ToolTip.text: next ? qsTr("Next") : qsTr("Previous")
         Accessible.role: Accessible.Button
-        Accessible.name: next ? "Next" : "Previous"
+        Accessible.name: next ? qsTr("Next") : qsTr("Previous")
     }
     Arrow { visible: root.at > 0; x: 12; y: parent.height / 2 - 20 }
     Arrow { visible: root.at >= 0 && root.at < root.files.length - 1; next: true; x: parent.width - 52; y: parent.height / 2 - 20 }
@@ -124,19 +124,19 @@ Item {
         width: parent.width; height: 48
         Row {
             x: 10; y: 4; spacing: 4
-            BarIcon { icon: "arrow-download-20"; tip: "Download this file to your device"; onClicked: root.download(root.item) }
-            BarIcon { icon: root.fav ? "star-20-filled" : "star-20"; tip: root.fav ? "Unfavorite this file" : "Favorite this file"; onClicked: root.favorite(root.item, !root.fav) }
+            BarIcon { icon: "arrow-download-20"; tip: qsTr("Download this file to your device"); onClicked: root.download(root.item) }
+            BarIcon { icon: root.fav ? "star-20-filled" : "star-20"; tip: root.fav ? qsTr("Unfavorite this file") : qsTr("Favorite this file"); onClicked: root.favorite(root.item, !root.fav) }
             BarIcon {
-                icon: "delete-20"; tip: "Delete this file"
+                icon: "delete-20"; tip: qsTr("Delete this file")
                 visible: !!root.actions && root.actions.canWrite
                 onClicked: { const it = root.item; root.close(); root.actions.item = it; root.actions.act("Delete") }
             }
             Rectangle { width: 1; height: 20; y: 10; color: theme.hc("#808080", "#000000") }
             Item { width: 18; height: 40 }
-            BarIcon { icon: "info-20"; tip: "Info, View file details"; onClicked: { const it = root.item; root.close(); root.details(it) } }
+            BarIcon { icon: "info-20"; tip: qsTr("Info, View file details"); onClicked: { const it = root.item; root.close(); root.details(it) } }
             BarIcon {
                 id: moreIcon
-                icon: "more-horizontal-20"; tip: "More"
+                icon: "more-horizontal-20"; tip: qsTr("More")
                 onClicked: if (root.actions) root.actions.popup(root.item, moreIcon, 0, moreIcon.height)
             }
         }
@@ -156,7 +156,7 @@ Item {
             Avatar { size: 32; photoId: "me"; name: backend.userName }
             BarButton {
                 id: openButton
-                label: "Open"; icon: root.appIcon() || "open-16"
+                label: qsTr("Open"); icon: root.appIcon() || "open-16"
                 onClicked: openMenu.open()
                 MenuPopup {
                     id: openMenu
@@ -166,18 +166,18 @@ Item {
                 }
             }
             BarButton {
-                label: "Share"; icon: "share-16"
+                label: qsTr("Share"); icon: "share-16"
                 onClicked: shareMenu.open()
                 MenuPopup {
                     id: shareMenu
                     fabric: true; y: parent.height + 4
-                    items: [{ label: "Share", icon: "share-16" }, { label: "Copy link", icon: "link-16" }, { label: "Manage access", icon: "person-16" }]
+                    items: [{ label: qsTr("Share"), icon: "share-16" }, { label: qsTr("Copy link"), icon: "link-16" }, { label: qsTr("Manage access"), icon: "person-16" }]
                     onPicked: i => { root.actions.item = root.item; root.actions.act(items[i].label) }
                 }
             }
             Item {
                 width: 32; height: 32
-                BarIcon { y: -4; icon: "dismiss-20"; tip: "Close"; onClicked: root.close() }
+                BarIcon { y: -4; icon: "dismiss-20"; tip: qsTr("Close"); onClicked: root.close() }
             }
         }
     }

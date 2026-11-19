@@ -160,6 +160,8 @@ fn main() {
         app.as_mut()
             .set_application_version(&QString::from(env!("CARGO_PKG_VERSION")));
     }
+    // Teams' App language: its text, direction and culture, before any QML.
+    backend::install_app_language();
     let mut engine = QQmlApplicationEngine::new();
     if let Some(engine) = engine.as_mut() {
         engine.load(&QUrl::from("qrc:/qt/qml/com/ost/desktop/qml/Main.qml"));

@@ -39,20 +39,20 @@ Item {
     MenuPopup {
         id: menu
         margins: 8
-        items: (root.anyShown ? [{ key: "hide-all", label: "Hide all channels", icon: "eye-off-20" }, { separator: true }] : [])
+        items: (root.anyShown ? [{ key: "hide-all", label: qsTr("Hide all channels"), icon: "eye-off-20" }, { separator: true }] : [])
             // Single pointer controls on (Settings ▸ Accessibility): Teams'
             // Start reordering, after the divider (winpc 2026-11-16).
-            .concat(root.canReorder ? [{ key: "reorder", label: "Start reordering", icon: "arrow-sort-20", endIcon: "accessibility-20" }] : [])
-            .concat(root.team.archived ? [] : [{ key: "add-member", label: "Add member", icon: "person-add-20" }]).concat([
-            { key: "add-channel", label: "Add channel", icon: "channel-add-20" },
-            { key: "manage", label: "Manage team", icon: "settings-20" },
-            { key: "tags", label: "Manage tags", icon: "tag-20" },
-            { key: "link", label: "Copy link", icon: "link-20" }
+            .concat(root.canReorder ? [{ key: "reorder", label: qsTr("Start reordering"), icon: "arrow-sort-20", endIcon: "accessibility-20" }] : [])
+            .concat(root.team.archived ? [] : [{ key: "add-member", label: qsTr("Add member"), icon: "person-add-20" }]).concat([
+            { key: "add-channel", label: qsTr("Add channel"), icon: "channel-add-20" },
+            { key: "manage", label: qsTr("Manage team"), icon: "settings-20" },
+            { key: "tags", label: qsTr("Manage tags"), icon: "tag-20" },
+            { key: "link", label: qsTr("Copy link"), icon: "link-20" }
         ]).concat(!root.team.owner ? [] : root.team.archived
-            ? [{ key: "restore", label: "Restore team", icon: "archive-arrow-back-20" }]
-            : [{ key: "archive", label: "Archive", icon: "archive-20" }]
-        ).concat(root.team.archived ? [] : [{ separator: true }, { key: "leave", label: "Leave", icon: "person-arrow-left-20" }]
-        ).concat(root.team.owner && !root.team.archived ? [{ key: "delete", label: "Delete", icon: "delete-20" }] : [])
+            ? [{ key: "restore", label: qsTr("Restore team"), icon: "archive-arrow-back-20" }]
+            : [{ key: "archive", label: qsTr("Archive"), icon: "archive-20" }]
+        ).concat(root.team.archived ? [] : [{ separator: true }, { key: "leave", label: qsTr("Leave"), icon: "person-arrow-left-20" }]
+        ).concat(root.team.owner && !root.team.archived ? [{ key: "delete", label: qsTr("Delete"), icon: "delete-20" }] : [])
         onPicked: i => {
             const k = items[i].key
             if (k === "hide-all") hideAll.open()
@@ -73,9 +73,9 @@ Item {
     ConfirmDialog {
         id: hideAll
         width: 600
-        title: "Hide all channels in " + (root.team.name || "") + "?"
-        body: "Channels will be removed from custom sections they're in, and if they're shared channels, hidden from teams they're shared with."
-        confirmText: "Hide"
+        title: qsTr("Hide all channels in %1?").arg(root.team.name || "")
+        body: qsTr("Channels will be removed from custom sections they're in, and if they're shared channels, hidden from teams they're shared with.")
+        confirmText: qsTr("Hide")
         onConfirmed: root.act("hide-all")
     }
 
@@ -97,9 +97,9 @@ Item {
             if (r.op === "team-leave") {
                 const code = r.ok ? r.data.code : "failed"
                 if (code === "OperationDeniedAsMemberIsLastAdminInTeam") teamAction.start("lastOwner", root.team.name)
-                else if (code) backend.toast("Leaving the team failed", "error")
+                else if (code) backend.toast(qsTr("Leaving the team failed"), "error")
             } else if ((r.op === "team-archive" || r.op === "team-restore" || r.op === "team-delete") && !r.ok) {
-                backend.toast("Something went wrong on our end. Please try again.", "error")
+                backend.toast(qsTr("Something went wrong on our end. Please try again."), "error")
             } else if (r.op === "team-delete" && r.ok) {
                 // Teams takes the team out of the list at once.
                 backend.reloadTeams()

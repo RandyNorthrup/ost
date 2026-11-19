@@ -35,12 +35,12 @@ Rectangle {
     color: theme.pane
 
     readonly property var spec: ({
-        deniedFromLobby: { icon: "prohibited-20", title: "Sorry, but you were denied access to the meeting.", description: "", retry: "" },
-        notAdmittedForLongTime: { icon: "", title: "Sorry, no one has responded to your request to join. Please try again.", description: "", retry: "Rejoin" },
-        removed: { icon: "", title: "Removed from the meeting", description: "Someone just removed you from the meeting. You can try to rejoin.", retry: "Rejoin" },
+        deniedFromLobby: { icon: "prohibited-20", title: qsTr("Sorry, but you were denied access to the meeting."), description: "", retry: "" },
+        notAdmittedForLongTime: { icon: "", title: qsTr("Sorry, no one has responded to your request to join. Please try again."), description: "", retry: qsTr("Rejoin") },
+        removed: { icon: "", title: qsTr("Removed from the meeting"), description: qsTr("Someone just removed you from the meeting. You can try to rejoin."), retry: qsTr("Rejoin") },
         // A breakout room that refused us (403 / 5745): no icon, and not
         // rejoinable (Teams' checkBreakoutRoomsConditions), so Dismiss only.
-        notAllowedToJoinBreakoutRoom: { icon: "", title: "You don't have access to this room", description: "The room isn't open yet, or you might have been assigned to a different one.", retry: "" }
+        notAllowedToJoinBreakoutRoom: { icon: "", title: qsTr("You don't have access to this room"), description: qsTr("The room isn't open yet, or you might have been assigned to a different one."), retry: "" }
     })[reason] || { icon: "", title: "", description: "", retry: "" }
 
     Column {
@@ -83,7 +83,7 @@ Rectangle {
         Row {
             anchors.horizontalCenter: parent.horizontalCenter
             spacing: 8
-            RetryButton { text: "Dismiss"; onClicked: rs.dismiss() }
+            RetryButton { text: qsTr("Dismiss"); onClicked: rs.dismiss() }
             RetryButton { visible: rs.spec.retry !== ""; text: rs.spec.retry; primary: true; onClicked: rs.retry() }
         }
     }

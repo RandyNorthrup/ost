@@ -32,7 +32,7 @@ Item {
             if (id !== root.requestId + ":create") return
             root.busy = false
             const r = JSON.parse(json)
-            if (!r.url) { root.events = root.events.concat(["error"]); window.showToast({ text: "Couldn't share to Outlook. " + (r.error || ""), intent: "error" }); return }
+            if (!r.url) { root.events = root.events.concat(["error"]); window.showToast({ text: qsTr("Couldn't share to Outlook.") + " " + (r.error || ""), intent: "error" }); return }
             root.emailId = r.emailId
             root.events = root.events.concat(["created"])
             const c = Qt.createComponent("TaskModuleDialog.qml")
@@ -41,7 +41,7 @@ Item {
                 appId: "40517485-2262-4135-b174-401da4aa6f0f", appName: "Outlook", subtitleHeader: true,
                 appIcon: "https://statics.teams.cdn.office.net/evergreen-assets/apps/outlook_largeimage.png",
                 hostThread: root.threadId,
-                taskInfo: { url: r.url, title: "Share conversation over email", width: 800, height: 600 }
+                taskInfo: { url: r.url, title: qsTr("Share conversation over email"), width: 800, height: 600 }
             })
             root.dialog.finished.connect(() => {
                 // Closed without sending: Teams discards the draft

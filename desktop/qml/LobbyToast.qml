@@ -60,12 +60,12 @@ Item {
         FluentIcon { x: 12; y: 12; name: "people-team-20-filled"; size: 16; color: theme.text }
         Text {
             x: 36; y: 12; height: 20; verticalAlignment: Text.AlignVCenter
-            text: "Waiting in the lobby"
+            text: qsTr("Waiting in the lobby")
             font.family: theme.font; font.pixelSize: 12
             color: theme.text
         }
-        ToastButton { x: 263.1; y: 14; icon: "alert-snooze-20"; label: "Mute lobby notifications"; onClicked: root.mute() }
-        ToastButton { x: 290.6; y: 14; icon: "dismiss-20"; label: "Dismiss"; onClicked: root.dismissedFor = root.signature }
+        ToastButton { x: 263.1; y: 14; icon: "alert-snooze-20"; label: qsTr("Mute lobby notifications"); onClicked: root.mute() }
+        ToastButton { x: 290.6; y: 14; icon: "dismiss-20"; label: qsTr("Dismiss"); onClicked: root.dismissedFor = root.signature }
 
         // Who: the first name, their badge, and " +n" for the others.
         Row {
@@ -98,10 +98,10 @@ Item {
             x: 12; y: 76.5
             spacing: 8
             readonly property var buttons: root.lobby.length > 1
-                ? [{ t: "View Lobby", primary: true, act: "view" }]
+                ? [{ t: qsTr("View Lobby"), primary: true, act: "view" }]
                 : root.first.suspected
-                    ? [{ t: "Deny", primary: false, act: "deny" }, { t: "View Lobby", primary: true, act: "view" }]
-                    : [{ t: "Deny", primary: false, act: "deny" }, { t: "Admit", primary: true, act: "admit" }]
+                    ? [{ t: qsTr("Deny"), primary: false, act: "deny" }, { t: qsTr("View Lobby"), primary: true, act: "view" }]
+                    : [{ t: qsTr("Deny"), primary: false, act: "deny" }, { t: qsTr("Admit"), primary: true, act: "admit" }]
             // "Send message to lobby participants" (measured on winpc
             // 2026-11-11): 32 x 31.3, white, a NeutralStroke1 edge, radius
             // 4, the chat glyph (20, filled on hover).
@@ -115,7 +115,7 @@ Item {
                 HoverHandler { id: ch; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: root.chatLobby() }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Send message to lobby participants"
+                Accessible.name: qsTr("Send message to lobby participants")
             }
             Repeater {
                 model: actions.buttons
@@ -157,14 +157,14 @@ Item {
             x: 40; y: 11.7; width: 252.7 - 2
             wrapMode: Text.Wrap
             textFormat: Text.StyledText
-            text: "Lobby notifications are muted for the rest of the meeting. <a href=\"undo\" style=\"color:" + theme.brandLink + "\">Undo</a>"
+            text: qsTr("Lobby notifications are muted for the rest of the meeting.") + " <a href=\"undo\" style=\"color:" + theme.brandLink + "\">" + qsTr("Undo") + "</a>"
             linkColor: theme.brandLink
             font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
             color: theme.textSecondary
             onLinkActivated: root.undoMute()
             HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
         }
-        ToastButton { x: 290.6; y: 15; icon: "dismiss-20"; label: "Dismiss"; onClicked: muteTimer.stop() }
+        ToastButton { x: 290.6; y: 15; icon: "dismiss-20"; label: qsTr("Dismiss"); onClicked: muteTimer.stop() }
     }
 
     // Teams' alert buttons: a 16 px target with a 20 px glyph in #616161.

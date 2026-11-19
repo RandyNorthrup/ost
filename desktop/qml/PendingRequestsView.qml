@@ -36,11 +36,11 @@ Item {
             if (r.channel !== view.teamThread) return
             if (r.op === "join-requests") { view.loaded = true; if (r.ok) view.requests = r.data.requests || [] }
             else if (r.op === "join-answer") {
-                if (!r.ok) { backend.toast("We couldn't update pending member status, please try again later.", "error"); return }
+                if (!r.ok) { backend.toast(qsTr("We couldn't update pending member status, please try again later."), "error"); return }
                 const a = Object.assign({}, view.answered)
                 r.data.mris.forEach(m => a[m] = r.data.accept)
                 view.answered = a
-                if (r.data.mris.length > 1) backend.toast(r.data.accept ? "You have accepted all pending requests." : "You have denied all pending requests.", "success")
+                if (r.data.mris.length > 1) backend.toast(r.data.accept ? qsTr("You have accepted all pending requests.") : qsTr("You have denied all pending requests."), "success")
             }
         }
     }
@@ -60,7 +60,7 @@ Item {
             x: 20; width: parent.width - 40; y: 343.7
             horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.Wrap
-            text: "No requests right now. When people ask to join your team, they'll show up here."
+            text: qsTr("No requests right now. When people ask to join your team, they'll show up here.")
             font.family: theme.font; font.pixelSize: 18; font.weight: Font.DemiBold
             lineHeight: 25.7; lineHeightMode: Text.FixedHeight
             color: theme.text
@@ -84,17 +84,17 @@ Item {
                 color: theme.text
                 clip: true
                 selectByMouse: true
-                Text { visible: !search.text; anchors.verticalCenter: parent.verticalCenter; text: "Search for members"; font: search.font; color: theme.textSecondary }
+                Text { visible: !search.text; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Search for members"); font: search.font; color: theme.textSecondary }
                 Accessible.role: Accessible.EditableText
-                Accessible.name: "Search for members"
+                Accessible.name: qsTr("Search for members")
             }
             FluentIcon { x: parent.width - 30; anchors.verticalCenter: parent.verticalCenter; name: "search-20"; size: 20; color: theme.textSecondary }
         }
         Row {
             x: 20 + 278.7 + 16; y: 20.6
             spacing: 8
-            Btn { text: "Accept all"; primary: true; enabled: !view.allAnswered; onClicked: view.answer(view.requests.filter(r => view.answered[r.mri] === undefined).map(r => r.mri), true) }
-            Btn { text: "Deny all"; enabled: !view.allAnswered; onClicked: denyAll.start("denyAll", view.teamName) }
+            Btn { text: qsTr("Accept all"); primary: true; enabled: !view.allAnswered; onClicked: view.answer(view.requests.filter(r => view.answered[r.mri] === undefined).map(r => r.mri), true) }
+            Btn { text: qsTr("Deny all", "teamsAndChannels:k2fxqsqeo"); enabled: !view.allAnswered; onClicked: denyAll.start("denyAll", view.teamName) }
         }
         Flickable {
             x: 20; y: 72; width: parent.width - 60; height: parent.height - y
@@ -103,7 +103,7 @@ Item {
             boundsBehavior: Flickable.StopAtBounds
             readonly property real col: (width - 220) / 4
             Repeater {
-                model: ["Name", "Title", "Location", "Requested by"]
+                model: [qsTr("Name"), qsTr("Title", "teamsAndChannels:kdeyny7h8"), qsTr("Location"), qsTr("Requested by")]
                 Text {
                     required property string modelData
                     required property int index
@@ -143,13 +143,13 @@ Item {
                             visible: row.state_ === undefined
                             anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter
                             spacing: 8
-                            Btn { text: "Accept"; primary: true; onClicked: view.answer([row.modelData.mri], true) }
-                            Btn { text: "Deny"; onClicked: view.answer([row.modelData.mri], false) }
+                            Btn { text: qsTr("Accept"); primary: true; onClicked: view.answer([row.modelData.mri], true) }
+                            Btn { text: qsTr("Deny"); onClicked: view.answer([row.modelData.mri], false) }
                         }
                         Text {
                             visible: row.state_ !== undefined
                             anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter
-                            text: row.state_ ? "You accepted the request." : "You denied the request."
+                            text: row.state_ ? qsTr("You accepted the request.") : qsTr("You denied the request.")
                             font.family: theme.font; font.pixelSize: 12
                             color: theme.onFill(row, theme.text)
                         }

@@ -59,35 +59,51 @@ Item {
         const L = []
         if (!it.is_folder) {
             const text = textKinds.indexOf(it.kind) >= 0
-            L.push({ label: "Open", icon: "open-16", submenu: [
-                text ? { label: "Open in Text Editor", icon: "edit-16" } : { label: "Open in browser", icon: "globe-16" },
-                { label: "Open in app", icon: "open-16" }] })
-            L.push({ label: "Preview", icon: "full-screen-maximize-16" })
+            L.push({ label: qsTr("Open"), icon: "open-16", submenu: [
+                text ? { label: qsTr("Open in Text Editor"), icon: "edit-16" } : { label: qsTr("Open in browser"), icon: "globe-16" },
+                { label: qsTr("Open in app"), icon: "open-16" }] })
+            L.push({ label: qsTr("Preview"), icon: "full-screen-maximize-16" })
         }
-        if (sp) L.push({ label: "Share", icon: "share-16" })
-        if (sp || it.web_url) L.push({ label: "Copy link", icon: "link-16" })
-        if (sp && it.is_folder && canWrite) L.push({ label: "Request files", icon: "folder-arrow-up-16" })
-        if (sp) L.push({ label: "Manage access", icon: "person-16" })
+        if (sp) L.push({ label: qsTr("Share"), icon: "share-16" })
+        if (sp || it.web_url) L.push({ label: qsTr("Copy link"), icon: "link-16" })
+        if (sp && it.is_folder && canWrite) L.push({ label: qsTr("Request files"), icon: "folder-arrow-up-16" })
+        if (sp) L.push({ label: qsTr("Manage access"), icon: "person-16" })
         L.push({ separator: true })
-        if (canWrite) L.push({ label: "Delete", icon: "delete-16" })
+        if (canWrite) L.push({ label: qsTr("Delete"), icon: "delete-16" })
         // Graph's favorites (followed items) hold files, not folders.
-        if (!it.is_folder) L.push({ label: fav ? "Remove from favorites" : "Add to favorites", icon: "star-16" })
-        if (!it.is_folder && sp) L.push({ label: "Add shortcut", icon: "link-square-16", submenu: [{ label: "Shortcuts" }, { label: "My files" }, { label: "Other locations" }] })
-        L.push({ label: "Download", icon: "arrow-download-16" })
-        if (canWrite) L.push({ label: "Rename", icon: "rename-16" })
+        if (!it.is_folder) L.push({ label: fav ? qsTr("Remove from favorites") : qsTr("Add to favorites"), icon: "star-16" })
+        if (!it.is_folder && sp) L.push({ label: qsTr("Add shortcut"), icon: "link-square-16", submenu: [{ label: qsTr("Shortcuts") }, { label: qsTr("My files") }, { label: qsTr("Other locations") }] })
+        L.push({ label: qsTr("Download"), icon: "arrow-download-16" })
+        if (canWrite) L.push({ label: qsTr("Rename"), icon: "rename-16" })
         // A team site's file opens in SharePoint (not yet seen in Teams).
-        if (it.web_url) L.push({ label: /-my\.sharepoint\.com/.test(it.sp_site || it.web_url) ? "Open in OneDrive" : "Open in SharePoint", icon: "cloud-16" })
-        if (canWrite && sp) L.push({ label: "Move to", icon: "folder-arrow-right-16" })
-        if (sp) L.push({ label: "Copy to", icon: "copy-16" })
-        if (canWrite && sp) L.push({ label: "Duplicate", icon: "add-square-16" })
-        if (canWrite && sp && it.is_folder) L.push({ label: "Folder color", icon: "paint-bucket-16", flyout: true, dot: colorFor(it.folder_color).hex })
-        if (!it.is_folder && sp) { L.push({ separator: true }); L.push({ label: "Version history", icon: "history-16" }) }
-        if (sp) { L.push({ separator: true }); L.push({ label: "Details", icon: "info-16" }) }
+        if (it.web_url) L.push({ label: /-my\.sharepoint\.com/.test(it.sp_site || it.web_url) ? qsTr("Open in OneDrive") : qsTr("Open in SharePoint"), icon: "cloud-16" })
+        if (canWrite && sp) L.push({ label: qsTr("Move to"), icon: "folder-arrow-right-16" })
+        if (sp) L.push({ label: qsTr("Copy to"), icon: "copy-16" })
+        if (canWrite && sp) L.push({ label: qsTr("Duplicate"), icon: "add-square-16" })
+        if (canWrite && sp && it.is_folder) L.push({ label: qsTr("Folder color"), icon: "paint-bucket-16", flyout: true, dot: colorFor(it.folder_color).hex })
+        if (!it.is_folder && sp) { L.push({ separator: true }); L.push({ label: qsTr("Version history"), icon: "history-16" }) }
+        if (sp) { L.push({ separator: true }); L.push({ label: qsTr("Details"), icon: "info-16" }) }
         while (L.length && L[L.length - 1].separator) L.pop()
         return L
     }
-    /// OneDrive's counted wording: "{0} item||{0} items".
-    function count(n, one, many) { return (n === 1 ? one : many).replace("{0}", n) }
+    /// The action a menu label stands for: its English name. The menu's
+    /// labels are translated; callers pass either (act("Delete")).
+    function keyOf(label) {
+        const names = { "Open": qsTr("Open"), "Open in Text Editor": qsTr("Open in Text Editor"), "Open in browser": qsTr("Open in browser"),
+                        "Open in app": qsTr("Open in app"), "Preview": qsTr("Preview"), "Share": qsTr("Share"), "Copy link": qsTr("Copy link"),
+                        "Request files": qsTr("Request files"), "Manage access": qsTr("Manage access"), "Delete": qsTr("Delete"),
+                        "Remove from favorites": qsTr("Remove from favorites"), "Add to favorites": qsTr("Add to favorites"),
+                        "Add shortcut": qsTr("Add shortcut"), "Shortcuts": qsTr("Shortcuts"), "My files": qsTr("My files"),
+                        "Other locations": qsTr("Other locations"), "Download": qsTr("Download"), "Rename": qsTr("Rename"),
+                        "Open in OneDrive": qsTr("Open in OneDrive"), "Open in SharePoint": qsTr("Open in SharePoint"),
+                        "Move to": qsTr("Move to"), "Copy to": qsTr("Copy to"), "Duplicate": qsTr("Duplicate"),
+                        "Folder color": qsTr("Folder color"), "Version history": qsTr("Version history"), "Details": qsTr("Details") }
+        if (names[label] !== undefined) return label
+        for (const k in names) if (names[k] === label) return k
+        return label
+    }
+    /// OneDrive's counted wording: "{0} item||{0} items" (%1 here).
+    function count(n, one, many) { return (n === 1 ? one : many).arg(n) }
     /// Items acted on together (the selection), besides `item`.
     property var others: []
     /// How many the running job covers, for its notice.
@@ -95,7 +111,7 @@ Item {
     /// The selection toolbar's actions on several items (Teams: Delete, Add
     /// to favorites, Download, then Duplicate, Move to and Copy to).
     function actMany(list, label) {
-        if (!list.length) return
+        label = keyOf(label); if (!list.length) return
         if (list.length === 1) { item = list[0]; others = []; act(label); return }
         item = list[0]; others = list.slice(1)
         if (label === "Delete") deleteDialog.openForMany(list)
@@ -105,7 +121,7 @@ Item {
         else if (label === "Copy to") { picker.shortcut = false; picker.openFor(item, false) }
         else if (label === "Duplicate") {
             jobCount = list.length
-            notice("progress", count(jobCount, "Copying {0} item", "Copying {0} items"))
+            notice("progress", count(jobCount, qsTr("Copying %1 item"), qsTr("Copying %1 items")))
             backend.driveAction(tag + "duplicate", JSON.stringify(item), JSON.stringify({ more: others }))
         }
     }
@@ -118,7 +134,7 @@ Item {
     function loadQuickAccess() { backend.driveAction(tag + "quick_access", "{}", "{}") }
     function pinLibrary(lib, pin) {
         pendingPin = { title: lib.title || lib.label, pin: pin }
-        notice("progress", "Updating " + (lib.title || lib.label))
+        notice("progress", qsTr("Updating %1").arg(lib.title || lib.label))
         backend.driveAction(tag + "quick_pin", "{}", JSON.stringify({ lib: lib, pin: pin }))
     }
     // Add shortcut: OneDrive's "Added {0} as a shortcut to {1}."
@@ -134,7 +150,7 @@ Item {
         const d = new Date()
         const name = list.length === 1 ? list[0].name + ".zip" : "OneDrive_" + (++zipCount) + "_" + (d.getMonth() + 1) + "-" + d.getDate() + "-" + d.getFullYear() + ".zip"
         lastZip = name
-        notice("progress", "Preparing " + name + " for download. This can take a moment.")
+        notice("progress", qsTr("Preparing %1 for download. This can take a moment.").arg(name))
         backend.driveAction(tag + "zip", JSON.stringify(list[0]), JSON.stringify({ more: list.slice(1), name: name }))
     }
     // Folder color ▸: OneDrive's 4 x 4 grid of 24 px colours (40 apart, in
@@ -164,17 +180,17 @@ Item {
                         }
                     }
                     Accessible.role: Accessible.Button
-                    Accessible.name: modelData.name + (current ? " selected" : "")
+                    Accessible.name: current ? qsTr("%1 selected").arg(modelData.name) : modelData.name
                 }
             }
         }
     }
 
     function act(label) {
-        const it = root.item
+        label = keyOf(label); const it = root.item
         if (!it) return
         if (label === "Open in Text Editor" || label === "Open in browser" || label === "Open in OneDrive" || label === "Open in SharePoint") Qt.openUrlExternally(it.web_url)
-        else if (label === "Open in app") { notice("progress", "Opening " + it.name); backend.driveAction(tag + "open_app", JSON.stringify(it), "{}") }
+        else if (label === "Open in app") { notice("progress", qsTr("Opening %1").arg(it.name)); backend.driveAction(tag + "open_app", JSON.stringify(it), "{}") }
         else if (label === "Share") share.openFor(ref(it), it.name, it.kind)
         else if (label === "Manage access") share.openManage(ref(it), it.name, it.kind)
         else if (label === "Copy link") { copyLink.auto = false; copyLink.start(it) }
@@ -187,12 +203,12 @@ Item {
         else if (label === "Copy to") { picker.shortcut = false; picker.openFor(it, false) }
         else if (label === "Version history") versions.openFor(it)
         else if (label === "Request files") fileRequest.openFor(it)
-        else if (label === "Shortcuts") addShortcut(it, "shortcuts", "Shortcuts", {})
-        else if (label === "My files") addShortcut(it, "myfiles", "My files", {})
+        else if (label === "Shortcuts") addShortcut(it, "shortcuts", qsTr("Shortcuts"), {})
+        else if (label === "My files") addShortcut(it, "myfiles", qsTr("My files"), {})
         else if (label === "Other locations") { picker.shortcut = true; picker.openFor(it, false) }
         else if (label === "Details") detailsItem(it)
         else if (label === "Preview") previewItem(it)
-        else if (label === "Duplicate") { jobCount = 1; notice("progress", "Copying 1 item"); backend.driveAction(tag + "duplicate", JSON.stringify(it), "{}") }
+        else if (label === "Duplicate") { jobCount = 1; notice("progress", qsTr("Copying 1 item")); backend.driveAction(tag + "duplicate", JSON.stringify(it), "{}") }
     }
 
     // The clipboard, without OST's own "Copied to clipboard" notice
@@ -208,7 +224,7 @@ Item {
         id: menu
         fabric: true
         onFlyoutRequested: (i, row) => {
-            if (i < 0 || !row || items[i].label !== "Folder color") { colorPicker.close(); return }
+            if (i < 0 || !row || items[i].label !== qsTr("Folder color")) { colorPicker.close(); return }
             const p = row.mapToItem(root, 0, 0)
             colorPicker.x = Math.max(0, p.x - 4 - 164)
             colorPicker.y = Math.max(0, Math.min(p.y + row.height - 160 + 2, root.height - 160))
@@ -233,40 +249,40 @@ Item {
             if (kind === "quick_access") { if (!error) root.quickAccess = v || []; return }
             if (kind === "quick_pin") {
                 const p = root.pendingPin || { title: "", pin: true }
-                if (error) root.notice("error", p.title + (p.pin ? " wasn't pinned" : " wasn't unpinned"), error)
-                else { root.quickAccess = v.items || root.quickAccess; root.notice("done", (p.pin ? "Pinned " : "Unpinned ") + p.title + (p.pin ? " to " : " from ") + "Quick access") }
+                if (error) root.notice("error", (p.pin ? qsTr("%1 wasn't pinned") : qsTr("%1 wasn't unpinned")).arg(p.title), error)
+                else { root.quickAccess = v.items || root.quickAccess; root.notice("done", (p.pin ? qsTr("Pinned %1 to Quick access") : qsTr("Unpinned %1 from Quick access")).arg(p.title)) }
                 return
             }
             if (kind === "versions" || kind === "restore_version" || kind === "delete_version") { versions.reply(kind, v, error); return }
             if (kind === "shortcut") {
                 const p = root.pendingShortcut || { name: "", place: "" }
-                if (error) root.notice("error", "Something went wrong so we couldn't add " + p.name + " as a shortcut to " + p.place + ".", error)
-                else root.notice("done", "Added " + p.name + " as a shortcut to " + p.place + ".")
+                if (error) root.notice("error", qsTr("Something went wrong so we couldn't add %1 as a shortcut to %2.").arg(p.name).arg(p.place), error)
+                else root.notice("done", qsTr("Added %1 as a shortcut to %2.").arg(p.name).arg(p.place))
                 return
             }
             if (kind === "folder_color") {
-                if (error) root.notice("error", "The folder color wasn't changed", error)
+                if (error) root.notice("error", qsTr("The folder color wasn't changed"), error)
                 else root.changed()
                 return
             }
             if (kind === "file_request") { fileRequest.reply(kind, v, error); return }
             if (kind === "zip") {
-                if (error) root.notice("error", "Couldn't download " + root.lastZip + ". Try again.", error)
-                else root.notice("done", v.name + " was downloaded.")
+                if (error) root.notice("error", qsTr("Couldn't download %1. Try again.").arg(root.lastZip), error)
+                else root.notice("done", qsTr("%1 was downloaded.").arg(v.name))
                 return
             }
             if (kind === "open_app") {
-                if (error) root.notice("error", "The file couldn't be opened", error)
+                if (error) root.notice("error", qsTr("The file couldn't be opened"), error)
                 else { toast.visible = false; Qt.openUrlExternally("file://" + v.path) }
                 return
             }
             // OneDrive's strings: "Moved {0} item||Moved {0} items", "{0} item
             // wasn't moved||{0} items weren't moved", and so on.
             const n = kind === "rename" ? 1 : root.jobCount
-            const words = { rename: ["Renamed {0} item", "Renamed {0} items", "{0} item wasn't renamed", "{0} items weren't renamed"],
-                            move: ["Moved {0} item", "Moved {0} items", "{0} item wasn't moved", "{0} items weren't moved"],
-                            copy: ["Copied {0} item", "Copied {0} items", "{0} item wasn't copied", "{0} items weren't copied"],
-                            duplicate: ["Copied {0} item", "Copied {0} items", "{0} item wasn't copied", "{0} items weren't copied"] }[kind]
+            const words = { rename: [qsTr("Renamed %1 item"), qsTr("Renamed %1 items"), qsTr("%1 item wasn't renamed"), qsTr("%1 items weren't renamed")],
+                            move: [qsTr("Moved %1 item"), qsTr("Moved %1 items"), qsTr("%1 item wasn't moved"), qsTr("%1 items weren't moved")],
+                            copy: [qsTr("Copied %1 item"), qsTr("Copied %1 items"), qsTr("%1 item wasn't copied"), qsTr("%1 items weren't copied")],
+                            duplicate: [qsTr("Copied %1 item"), qsTr("Copied %1 items"), qsTr("%1 item wasn't copied"), qsTr("%1 items weren't copied")] }[kind]
             if (!words) return
             if (error) root.notice("error", root.count(n, words[2], words[3]), error)
             else { root.notice("done", root.count(n, words[0], words[1])); root.changed() }
@@ -313,7 +329,7 @@ Item {
             HoverHandler { id: dth; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: toast.visible = false }
             Accessible.role: Accessible.Button
-            Accessible.name: "Dismiss notification"
+            Accessible.name: qsTr("Dismiss notification")
         }
         Accessible.role: Accessible.AlertMessage
         Accessible.name: title + (detail ? ". " + detail : "")
@@ -357,7 +373,7 @@ Item {
             HoverHandler { id: dch; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: dlg.close() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Close"
+            Accessible.name: qsTr("Close")
         }
         Item { id: bodyArea; x: 24; y: 24 + 31.33; width: 392; height: dlg.bodyHeight }
         Row {
@@ -365,7 +381,7 @@ Item {
             y: parent.height - 24 - 32
             spacing: 8
             OdspButton { label: dlg.okText; enabled2: dlg.okEnabled; onClicked: dlg.accepted() }
-            OdspButton { label: "Cancel"; onClicked: dlg.close() }
+            OdspButton { label: qsTr("Cancel"); onClicked: dlg.close() }
         }
         }
     }
@@ -394,7 +410,7 @@ Item {
         function load() { loading = true; backend.driveAction(root.tag + "versions", JSON.stringify(target), "{}") }
         function reply(kind, v, err) {
             if (kind === "versions") { loading = false; error = err || ""; list = err ? [] : (v || []); return }
-            if (err) { root.notice("error", kind === "restore_version" ? "The version wasn't restored" : "The version wasn't deleted", err); return }
+            if (err) { root.notice("error", kind === "restore_version" ? qsTr("The version wasn't restored") : qsTr("The version wasn't deleted"), err); return }
             load(); root.changed()
         }
         function run(ver, label) {
@@ -405,7 +421,7 @@ Item {
         contentItem: Item {
             Text {
                 x: 24; y: 24; width: parent.width - 48 - 40; height: 31.33
-                text: "Version history"
+                text: qsTr("Version history")
                 font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold
                 lineHeight: 28; lineHeightMode: Text.FixedHeight
                 color: root.ink
@@ -420,7 +436,7 @@ Item {
                 HoverHandler { id: vch; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: versions.close() }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Close"
+                Accessible.name: qsTr("Close")
             }
             FluentSurface {
                 id: vcard
@@ -433,7 +449,7 @@ Item {
                     Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 2; color: theme.pick("#F0F0F0", "#3D3D3D", "#000000") }
                     Row {
                         Repeater {
-                            model: ["Version", "Modified", "Size", "Modified By"]
+                            model: [qsTr("Version"), qsTr("Modified"), qsTr("Size"), qsTr("Modified By")]
                             Item {
                                 required property string modelData
                                 required property int index
@@ -466,7 +482,7 @@ Item {
                             HoverHandler { id: vlh; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: versions.run(vrow.modelData, "Open File") }
                             Accessible.role: Accessible.Link
-                            Accessible.name: "Version " + vrow.modelData.label
+                            Accessible.name: qsTr("Version %1").arg(vrow.modelData.label)
                         }
                         Rectangle {
                             id: vmore
@@ -477,14 +493,14 @@ Item {
                             HoverHandler { id: vmh; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: vmenu.open() }
                             Accessible.role: Accessible.Button
-                            Accessible.name: "Show more actions for this item"
+                            Accessible.name: qsTr("Show more actions for this item")
                             MenuPopup {
                                 id: vmenu
                                 fabric: true; fabricWidth: 232
                                 x: 3.5; y: parent.height + 4
-                                items: vrow.modelData.current ? [{ label: "Open File", icon: "open-16" }]
-                                    : [{ label: "Open File", icon: "open-16" }, { label: "Restore", icon: "arrow-undo-16" }, { label: "Delete Version", icon: "delete-16" }]
-                                onPicked: i => versions.run(vrow.modelData, items[i].label)
+                                items: vrow.modelData.current ? [{ key: "Open File", label: qsTr("Open File"), icon: "open-16" }]
+                                    : [{ key: "Open File", label: qsTr("Open File"), icon: "open-16" }, { key: "Restore", label: qsTr("Restore"), icon: "arrow-undo-16" }, { key: "Delete Version", label: qsTr("Delete Version"), icon: "delete-16" }]
+                                onPicked: i => versions.run(vrow.modelData, items[i].key)
                             }
                         }
                         Row {
@@ -499,7 +515,7 @@ Item {
                         }
                         HoverHandler { id: vrh }
                         Accessible.role: Accessible.Row
-                        Accessible.name: "Version " + modelData.label + ", " + modelData.modified + ", " + modelData.size + ", " + modelData.by
+                        Accessible.name: qsTr("Version %1").arg(modelData.label) + ", " + modelData.modified + ", " + modelData.size + ", " + modelData.by
                     }
                 }
                 BusyIndicator { anchors.centerIn: parent; running: versions.loading; visible: versions.loading }
@@ -555,7 +571,7 @@ Item {
         }
         function reply(kind, v, error) {
             busy = false
-            if (error) { root.notice("error", step === 1 ? "Something went wrong, please try again" : "Send file request email failed.", error); return }
+            if (error) { root.notice("error", step === 1 ? qsTr("Something went wrong, please try again") : qsTr("Send file request email failed."), error); return }
             if (v.sent) { close(); frDone.show(true); return }
             url = v.url; shareId = v.share_id; step = 2
         }
@@ -576,7 +592,7 @@ Item {
             spacing: 0
             Text {
                 width: parent.width; height: 28
-                text: fileRequest.step === 1 ? "Request files for this folder" : "Send file request"
+                text: fileRequest.step === 1 ? qsTr("Request files for this folder") : qsTr("Send file request")
                 font.family: theme.font; font.pixelSize: 24; font.weight: Font.Medium; color: root.ink
                 Accessible.role: Accessible.Heading
                 Accessible.name: text
@@ -588,7 +604,7 @@ Item {
                 Row {
                     spacing: 9; height: 23
                     FluentIcon { y: 3; size: 14; name: "folder-arrow-up-16"; color: root.ink }
-                    Text { text: "Let the recipients know which files you're requesting."; font.family: theme.font; font.pixelSize: 14; color: root.ink }
+                    Text { text: qsTr("Let the recipients know which files you're requesting."); font.family: theme.font; font.pixelSize: 14; color: root.ink }
                 }
                 Item { width: 1; height: 9 }
                 Rectangle {
@@ -600,30 +616,30 @@ Item {
                         x: 8; width: parent.width - 16; anchors.verticalCenter: parent.verticalCenter
                         font.family: theme.font; font.pixelSize: 14; color: root.ink; clip: true
                         Keys.onReturnPressed: fileRequest.next()
-                        Text { visible: !frName.text; text: "Enter a description"; color: theme.textTertiary; font: frName.font }
-                        Accessible.name: "Let the recipients know which files you're requesting."
+                        Text { visible: !frName.text; text: qsTr("Enter a description"); color: theme.textTertiary; font: frName.font }
+                        Accessible.name: qsTr("Let the recipients know which files you're requesting.")
                     }
                 }
                 Row {
                     visible: fileRequest.tried && !frName.text.trim()
                     spacing: 4; height: 18
                     FluentIcon { y: 2; size: 12; name: "error-circle-12"; color: theme.hc("#BC2F32", "#FFFFFF") }
-                    Text { text: "Please type a name for the request."; font.family: theme.font; font.pixelSize: 12; color: theme.hc("#BC2F32", "#FFFFFF") }
+                    Text { text: qsTr("Please type a name for the request."); font.family: theme.font; font.pixelSize: 12; color: theme.hc("#BC2F32", "#FFFFFF") }
                 }
                 Item { width: 1; height: 12 }
-                Text { width: parent.width; wrapMode: Text.Wrap; text: "Recipients will only see the file description you've entered and can only upload files to this folder."; font.family: theme.font; font.pixelSize: 12; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: root.strong }
+                Text { width: parent.width; wrapMode: Text.Wrap; text: qsTr("Recipients will only see the file description you've entered and can only upload files to this folder."); font.family: theme.font; font.pixelSize: 12; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: root.strong }
                 Item { width: 1; height: 80 }
                 Row {
                     anchors.right: parent.right; spacing: 8
-                    OdspButton { label: fileRequest.busy ? "…" : "Next"; onClicked: fileRequest.next() }
-                    OdspButton { label: "Cancel"; onClicked: fileRequest.close() }
+                    OdspButton { label: fileRequest.busy ? "…" : qsTr("Next"); onClicked: fileRequest.next() }
+                    OdspButton { label: qsTr("Cancel"); onClicked: fileRequest.close() }
                 }
             }
             // Step 2: the link, and sending it.
             Column {
                 visible: fileRequest.step === 2
                 width: parent.width; topPadding: 18; spacing: 0
-                Text { height: 30; verticalAlignment: Text.AlignVCenter; text: "Here's the link people can use to upload files"; font.family: theme.font; font.pixelSize: 15; font.weight: Font.DemiBold; color: root.ink }
+                Text { height: 30; verticalAlignment: Text.AlignVCenter; text: qsTr("Here's the link people can use to upload files"); font.family: theme.font; font.pixelSize: 15; font.weight: Font.DemiBold; color: root.ink }
                 Item { width: 1; height: 5 }
                 Rectangle {
                     width: 418; height: 34; color: theme.surface
@@ -633,27 +649,27 @@ Item {
                         readOnly: true; selectByMouse: true; clip: true
                         text: fileRequest.url
                         font.family: theme.font; font.pixelSize: 12; color: root.ink
-                        Accessible.name: "Link"
+                        Accessible.name: qsTr("Link")
                     }
                     Rectangle {
                         id: hcFill4
                         anchors.right: parent.right; anchors.rightMargin: 0.67; y: 0.67; width: 98.75; height: 32.67
                         color: crh.hovered ? theme.pick("#F5F5F5", "#3D3D3D", "#1AEBFF") : theme.surface
                         Rectangle { width: 1; height: parent.height; color: theme.pick("#A19F9D", "#666666", "#000000") }
-                        Text { anchors.centerIn: parent; text: fileRequest.copied ? "Copied" : "Copy link"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, theme.hc("#7F85F5", "#FFFF00")) }
+                        Text { anchors.centerIn: parent; text: fileRequest.copied ? qsTr("Copied") : qsTr("Copy link"); font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, theme.hc("#7F85F5", "#FFFF00")) }
                         HoverHandler { id: crh; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: { root.copy(fileRequest.url); fileRequest.copied = true } }
                         Accessible.role: Accessible.Button
-                        Accessible.name: fileRequest.copied ? "Link copied" : "Copy link"
+                        Accessible.name: fileRequest.copied ? qsTr("Link copied") : qsTr("Copy link")
                     }
                 }
                 Row {
                     topPadding: 8; spacing: 5; height: 30
                     FluentIcon { y: 10; size: 14; name: "folder-arrow-up-16"; color: root.strong }
-                    Text { y: 8; text: "Anyone with the link can upload files"; font.family: theme.font; font.pixelSize: 12; color: root.strong }
+                    Text { y: 8; text: qsTr("Anyone with the link can upload files"); font.family: theme.font; font.pixelSize: 12; color: root.strong }
                 }
                 Item { width: 1; height: 32 }
-                Text { text: "Or you can send it via email"; font.family: theme.font; font.pixelSize: 15; color: root.ink }
+                Text { text: qsTr("Or you can send it via email"); font.family: theme.font; font.pixelSize: 15; color: root.ink }
                 Item { width: 1; height: 8 }
                 // To: picked people as pills, then the search box.
                 Rectangle {
@@ -673,7 +689,7 @@ Item {
                                 FluentIcon { x: pn.x + pn.implicitWidth + 8; anchors.verticalCenter: parent.verticalCenter; size: 12; name: "dismiss-12"; color: root.ink }
                                 TapHandler { onTapped: fileRequest.picked = fileRequest.picked.filter((p, i) => i !== parent.index) }
                                 Accessible.role: Accessible.Button
-                                Accessible.name: "Remove " + modelData.DisplayText
+                                Accessible.name: qsTr("Remove %1").arg(modelData.DisplayText)
                             }
                         }
                         TextInput {
@@ -682,8 +698,8 @@ Item {
                             verticalAlignment: TextInput.AlignVCenter
                             font.family: theme.font; font.pixelSize: 14; color: root.ink; clip: true
                             onTextChanged: fileRequest.search(text)
-                            Text { visible: !frTo.text && !fileRequest.picked.length; anchors.verticalCenter: parent.verticalCenter; text: "To: Name, group, or email"; color: root.ink; font: frTo.font }
-                            Accessible.name: "To: Name, group, or email"
+                            Text { visible: !frTo.text && !fileRequest.picked.length; anchors.verticalCenter: parent.verticalCenter; text: qsTr("To: Name, group, or email"); color: root.ink; font: frTo.font }
+                            Accessible.name: qsTr("To: Name, group, or email")
                         }
                     }
                 }
@@ -714,15 +730,15 @@ Item {
                         anchors.fill: parent; anchors.margins: 6
                         wrapMode: TextEdit.Wrap
                         font.family: theme.font; font.pixelSize: 12; color: root.ink
-                        Text { visible: !frMessage.text; text: "Message..."; color: root.ink; font: frMessage.font }
-                        Accessible.name: "Add message"
+                        Text { visible: !frMessage.text; text: qsTr("Message..."); color: root.ink; font: frMessage.font }
+                        Accessible.name: qsTr("Add message")
                     }
                 }
                 Item { width: 1; height: 47 }
                 Row {
                     anchors.right: parent.right
                     OdspButton {
-                        label: fileRequest.busy ? "…" : fileRequest.picked.length ? "Send" : "Done"
+                        label: fileRequest.busy ? "…" : fileRequest.picked.length ? qsTr("Send") : qsTr("Done")
                         onClicked: if (fileRequest.picked.length) fileRequest.send(); else { fileRequest.close(); frDone.show(false) }
                     }
                 }
@@ -752,7 +768,7 @@ Item {
                 HoverHandler { id: fdh; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: frDone.close() }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Close"
+                Accessible.name: qsTr("Close")
             }
             Column {
                 y: 39.33; width: parent.width; spacing: 0
@@ -765,7 +781,7 @@ Item {
                 Item { width: 1; height: 16 }
                 Text {
                     anchors.horizontalCenter: parent.horizontalCenter
-                    text: frDone.sent ? "Your file request was sent!" : "Your file request was created!"
+                    text: frDone.sent ? qsTr("Your file request was sent!") : qsTr("Your file request was created!")
                     font.family: theme.font; font.pixelSize: 21; color: root.ink
                     Accessible.role: Accessible.AlertMessage
                     Accessible.name: text
@@ -773,7 +789,7 @@ Item {
                 Item { width: 1; height: 11 }
                 Text {
                     anchors.horizontalCenter: parent.horizontalCenter
-                    text: "We will notify you when someone uploads files."
+                    text: qsTr("We will notify you when someone uploads files.")
                     font.family: theme.font; font.pixelSize: 12; color: root.strong
                 }
             }
@@ -806,7 +822,7 @@ Item {
         id: renameDialog
         property var target: null
         property string ext: ""
-        title: "Rename"; okText: "Update"
+        title: qsTr("Rename"); okText: qsTr("Update")
         // 240 tall, as Teams' Rename without Copilot's Suggested names.
         bodyHeight: 128.67
         okEnabled: nameInput.text.trim().length > 0
@@ -836,7 +852,7 @@ Item {
                 font.family: theme.font; font.pixelSize: 14; color: root.ink; clip: true
                 selectByMouse: true
                 Keys.onReturnPressed: renameDialog.accepted()
-                Accessible.name: "Name"
+                Accessible.name: qsTr("Name")
             }
         }
         Text {
@@ -854,7 +870,7 @@ Item {
         id: deleteDialog
         property var target: null
         property var targets: []
-        title: "Delete?"; okText: "Delete"
+        title: qsTr("Delete?"); okText: qsTr("Delete")
         bodyHeight: 128.67
         function openFor(it) { target = it; targets = [it]; open() }
         function openForMany(list) { target = list[0]; targets = list; open() }
@@ -862,8 +878,8 @@ Item {
         Text {
             y: 22.67; width: parent.width
             wrapMode: Text.Wrap
-            text: deleteDialog.targets.length > 1 ? "Are you sure you want to send these items to the recycle bin?"
-                : "Are you sure you want to send this item to the recycle bin?"
+            text: deleteDialog.targets.length > 1 ? qsTr("Are you sure you want to send these items to the recycle bin?")
+                : qsTr("Are you sure you want to send this item to the recycle bin?")
             font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
             color: root.ink
         }
@@ -894,7 +910,7 @@ Item {
         background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
         function start(it) {
             target = it; url = ""; copied = false; busy = true
-            if (!it.sp_item) { url = it.web_url; sentence = "People with existing access can use the link"; busy = false; show(); return }
+            if (!it.sp_item) { url = it.web_url; sentence = qsTr("People with existing access can use the link"); busy = false; show(); return }
             backend.shareAction(root.tag + "info", JSON.stringify(root.ref(it)), "{}")
         }
         Connections {
@@ -903,18 +919,18 @@ Item {
                 if (!op.startsWith(root.tag) || !copyLink.target) return
                 const kind = op.slice(root.tag.length)
                 const v = result ? JSON.parse(result) : null
-                if (error) { copyLink.busy = false; root.notice("error", "The link wasn't created", error); return }
+                if (error) { copyLink.busy = false; root.notice("error", qsTr("The link wasn't created"), error); return }
                 if (kind === "info") {
-                    const can = v.default_edit ? "edit" : "view"
+                    const edit = !!v.default_edit
                     if (v.default_existing) {
                         copyLink.url = v.direct_url
-                        copyLink.sentence = "People with existing access can use the link"
+                        copyLink.sentence = qsTr("People with existing access can use the link")
                         copyLink.busy = false; copyLink.show()
                         return
                     }
-                    copyLink.sentence = v.default_scope === 0 ? "Anyone with the link can " + can
-                        : v.default_scope === 1 ? "People in " + v.tenant + " with the link can " + can
-                        : "Only the people you specified can " + can
+                    copyLink.sentence = v.default_scope === 0 ? (edit ? qsTr("Anyone with the link can edit") : qsTr("Anyone with the link can view"))
+                        : v.default_scope === 1 ? (edit ? qsTr("People in %1 with the link can edit") : qsTr("People in %1 with the link can view")).arg(v.tenant)
+                        : (edit ? qsTr("Only the people you specified can edit") : qsTr("Only the people you specified can view"))
                     copyLink.kind = v.default_scope === 0 ? (v.default_edit ? 5 : 4) : v.default_scope === 1 ? (v.default_edit ? 3 : 2) : 6
                     backend.shareAction(root.tag + "link", JSON.stringify(root.ref(copyLink.target)), JSON.stringify({ scope: v.default_scope, edit: v.default_edit }))
                 } else if (kind === "link") {
@@ -931,7 +947,7 @@ Item {
             FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "checkmark-circle-16"; size: 16; color: theme.pick("#107C10", "#54B054", "#FFFFFF") }
             Text {
                 anchors.verticalCenter: parent.verticalCenter
-                text: copyLink.copied ? "Link copied" : "Link created"
+                text: copyLink.copied ? qsTr("Link copied") : qsTr("Link created")
                 font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: root.ink
                 Accessible.role: Accessible.Heading
                 Accessible.name: text
@@ -945,7 +961,7 @@ Item {
             HoverHandler { id: clch; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: copyLink.close() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Close"
+            Accessible.name: qsTr("Close")
         }
         Item {
             visible: !copyLink.copied
@@ -960,7 +976,7 @@ Item {
                     text: copyLink.url; elide: Text.ElideRight
                     font.family: theme.font; font.pixelSize: 14; color: root.ink
                     Accessible.role: Accessible.EditableText
-                    Accessible.name: "Link created"
+                    Accessible.name: qsTr("Link created")
                 }
             }
             Rectangle {
@@ -968,11 +984,11 @@ Item {
                 x: 358.05; width: 73.95; height: 32; radius: 2
                 color: cpb.hovered ? theme.menuHover : theme.surface
                 border.width: 0.67; border.color: theme.pick("#7A7A7A", "#ADADAD", "#FFFFFF")
-                Text { anchors.centerIn: parent; text: "Copy"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill9, root.ink) }
+                Text { anchors.centerIn: parent; text: qsTr("Copy"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill9, root.ink) }
                 HoverHandler { id: cpb; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: { root.copy(copyLink.url); copyLink.copied = true } }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Copy"
+                Accessible.name: qsTr("Copy")
             }
         }
         Item {
@@ -981,11 +997,11 @@ Item {
             Row {
                 anchors.right: parent.right; anchors.rightMargin: 4; spacing: 4
                 FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "settings-16"; size: 14; color: root.accent }
-                Text { anchors.verticalCenter: parent.verticalCenter; text: "Settings"; font.family: theme.font; font.pixelSize: 14; color: root.accent }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Settings"); font.family: theme.font; font.pixelSize: 14; color: root.accent }
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: { copyLink.close(); share.openLinkSettingsFor(root.ref(copyLink.target), copyLink.target.name, copyLink.target.kind) } }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Sharing settings"
+                Accessible.name: qsTr("Sharing settings")
             }
         }
     }
@@ -1021,7 +1037,7 @@ Item {
         function openFor(it, move) {
             target = it; moving = move; place = "mine"; shown = null
             root.jobCount = 1 + root.others.length
-            trail = [{ name: "My files", drive_id: "", item_id: "" }]
+            trail = [{ name: qsTr("My files"), drive_id: "", item_id: "" }]
             open()
             load("", "")
             backend.driveAction(root.tag + "libraries", "{}", "{}")
@@ -1034,9 +1050,9 @@ Item {
         /// The view switch: List, Compact List or Tiles (Teams' picker keeps
         /// it while it's open).
         property string view: "list"
-        readonly property var viewItems: [{ label: "List", icon: "list-16", checked: view === "list" },
-                                          { label: "Compact List", icon: "text-align-left-16", checked: view === "compact" },
-                                          { label: "Tiles", icon: "grid-16", checked: view === "tiles" }]
+        readonly property var viewItems: [{ label: qsTr("List"), icon: "list-16", checked: view === "list" },
+                                          { label: qsTr("Compact List"), icon: "text-align-left-16", checked: view === "compact" },
+                                          { label: qsTr("Tiles"), icon: "grid-16", checked: view === "tiles" }]
         property var thumbs: ({})
         property var thumbAsked: ({})
         function wantThumb(it, size) {
@@ -1055,12 +1071,12 @@ Item {
         /// The date filter: all, today, last7Days, last30Days, last3Months,
         /// lastYear (OneDrive's keys).
         property string dates: "all"
-        readonly property var dateFilters: [["all", "All dates"], ["today", "Today"], ["last7Days", "Last 7 days"], ["last30Days", "Last 30 days"], ["last3Months", "Last 3 months"], ["lastYear", "In the last year"]]
+        readonly property var dateFilters: [["all", qsTr("All dates")], ["today", qsTr("Today")], ["last7Days", qsTr("Last 7 days")], ["last30Days", qsTr("Last 30 days")], ["last3Months", qsTr("Last 3 months")], ["lastYear", qsTr("In the last year")]]
         readonly property string datesLabel: (dateFilters.find(d => d[0] === dates) || dateFilters[0])[1]
         property bool newFolder: false
         /// People: the person picked.
         property string person: ""
-        readonly property var placeTitles: ({ shared: "Shared with you", favorites: "Favorites", people: "People", meetings: "Meetings", more: "Shared libraries" })
+        readonly property var placeTitles: ({ shared: qsTr("Shared with you"), favorites: qsTr("Favorites"), people: qsTr("People"), meetings: qsTr("Meetings"), more: qsTr("Shared libraries") })
         readonly property bool inPlaceList: ["shared", "favorites", "people", "meetings", "more"].indexOf(place) >= 0 && trail.length <= 1
         function search(q, all) {
             if (!searching) dates = "all"
@@ -1085,10 +1101,10 @@ Item {
         function reply(kind, v, error) {
             if (kind === "libraries") { libraries = v || []; return }
             loading = false
-            if (kind === "picker_new_folder") { if (error) root.notice("error", "The folder wasn't created", error); else into(v); return }
+            if (kind === "picker_new_folder") { if (error) root.notice("error", qsTr("The folder wasn't created"), error); else into(v); return }
             // The service's own text (an HTTP status and address) is in the
             // log; the list says what OneDrive says.
-            if (error) { shown = { drive_id: "", item_id: "", items: [], error: "Sorry, something went wrong." }; return }
+            if (error) { shown = { drive_id: "", item_id: "", items: [], error: qsTr("Sorry, something went wrong.") }; return }
             if (kind === "picker_search") { if (v.query === query && v.dates === dates) shown = { drive_id: "", item_id: "", items: v.items, search: true }; return }
             if (kind === "picker_place") { shown = { drive_id: "", item_id: "", items: v.items || [], people: v.people || null }; return }
             shown = v
@@ -1111,19 +1127,19 @@ Item {
                 ask("picker_place", { place: key })
                 return
             }
-            trail = [{ name: lib ? lib.name : "My files", drive_id: lib ? lib.drive_id : "", item_id: "" }]
+            trail = [{ name: lib ? lib.name : qsTr("My files"), drive_id: lib ? lib.drive_id : "", item_id: "" }]
             load(lib ? lib.drive_id : "", "")
         }
         function done() {
             if (!shown || !shown.here || sameFolder) return
             if (shortcut) {
-                const place = trail.length ? trail[trail.length - 1].name : "My files"
+                const place = trail.length ? trail[trail.length - 1].name : qsTr("My files")
                 close()
                 root.addShortcut(target, "folder", place, { site: shown.here.sp_site, drive_id: shown.drive_id || shown.here.drive_id, folder: shown.item_id ? shown.here.sp_item : "" })
                 return
             }
             const op = moving ? "move" : "copy"
-            root.notice("progress", root.count(root.jobCount, moving ? "Moving {0} item" : "Copying {0} item", moving ? "Moving {0} items" : "Copying {0} items"))
+            root.notice("progress", root.count(root.jobCount, moving ? qsTr("Moving %1 item") : qsTr("Copying %1 item"), moving ? qsTr("Moving %1 items") : qsTr("Copying %1 items")))
             backend.driveAction(root.tag + op, JSON.stringify(target), JSON.stringify({ dest: shown.here.web_url, more: root.jobCount > 1 ? root.others : [] }))
             close()
         }
@@ -1141,7 +1157,7 @@ Item {
                 Text {
                     visible: !pk.navCollapsed
                     x: 8; anchors.verticalCenter: parent.verticalCenter
-                    text: pk.shortcut ? "Pick a folder" : pk.moving ? "Move to" : "Copy to"
+                    text: pk.shortcut ? qsTr("Pick a folder") : pk.moving ? qsTr("Move to") : qsTr("Copy to")
                     font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.onFill(hcFill10, theme.text)
                     Accessible.role: Accessible.Heading
                     Accessible.name: text
@@ -1154,13 +1170,13 @@ Item {
                 HoverHandler { id: nph; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: pk.navCollapsed = !pk.navCollapsed }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Navigation Pane"
+                Accessible.name: qsTr("Navigation Pane")
             }
             Column {
                 y: 58; width: parent.width
-                PlaceRow { label: "My files"; icon: "folder-16"; on: pk.place === "mine"; onPicked: pk.openPlace("mine", null) }
-                PlaceRow { label: "Shared"; icon: "people-16"; on: pk.place === "shared"; onPicked: pk.openPlace("shared", null) }
-                PlaceRow { label: "Favorites"; icon: "star-16"; on: pk.place === "favorites"; onPicked: pk.openPlace("favorites", null) }
+                PlaceRow { label: qsTr("My files"); icon: "folder-16"; on: pk.place === "mine"; onPicked: pk.openPlace("mine", null) }
+                PlaceRow { label: qsTr("Shared"); icon: "people-16"; on: pk.place === "shared"; onPicked: pk.openPlace("shared", null) }
+                PlaceRow { label: qsTr("Favorites"); icon: "star-16"; on: pk.place === "favorites"; onPicked: pk.openPlace("favorites", null) }
                 Item { width: 1; height: 8 }
                 // "Browse by" (36 tall) folds People and Meetings; its
                 // chevron shows on hover (down while open, up while folded),
@@ -1169,7 +1185,7 @@ Item {
                     id: hcFill11
                     x: 16; width: pk.navCollapsed ? 36 : 190; height: 36; radius: 4
                     color: pk.navCollapsed && bbh.hovered ? theme.menuHover : "transparent"
-                    Text { visible: !pk.navCollapsed; x: 8; anchors.verticalCenter: parent.verticalCenter; text: "Browse by"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill11, theme.text) }
+                    Text { visible: !pk.navCollapsed; x: 8; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Browse by"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill11, theme.text) }
                     FluentIcon {
                         visible: pk.navCollapsed || bbh.hovered
                         x: pk.navCollapsed ? 10 : parent.width - 28; anchors.verticalCenter: parent.verticalCenter
@@ -1177,19 +1193,19 @@ Item {
                     }
                     HoverHandler { id: bbh; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: pk.browseOpen = !pk.browseOpen }
-                    ToolTip.visible: bbh.hovered; ToolTip.delay: 300; ToolTip.text: "Browse by"
+                    ToolTip.visible: bbh.hovered; ToolTip.delay: 300; ToolTip.text: qsTr("Browse by")
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Browse by"
+                    Accessible.name: qsTr("Browse by")
                 }
-                PlaceRow { visible: pk.browseOpen; label: "People"; icon: "person-16"; on: pk.place === "people"; onPicked: pk.openPlace("people", null) }
-                PlaceRow { visible: pk.browseOpen; label: "Meetings"; icon: "calendar-ltr-16"; on: pk.place === "meetings"; onPicked: pk.openPlace("meetings", null) }
+                PlaceRow { visible: pk.browseOpen; label: qsTr("People"); icon: "person-16"; on: pk.place === "people"; onPicked: pk.openPlace("people", null) }
+                PlaceRow { visible: pk.browseOpen; label: qsTr("Meetings"); icon: "calendar-ltr-16"; on: pk.place === "meetings"; onPicked: pk.openPlace("meetings", null) }
                 Item { width: 1; height: 16 }
                 // "Quick access" with its (i): "Frequently used team
                 // locations, …"; each library has a pin on hover (solid and
                 // always shown once pinned). Folded, a 36-wide line.
                 Row {
                     x: 24; height: 18.67; spacing: 8; visible: root.quickAccess.length > 0 && !pk.navCollapsed
-                    Text { anchors.verticalCenter: parent.verticalCenter; text: "Quick access"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                    Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Quick access"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
                     InfoTip { anchors.verticalCenter: parent.verticalCenter }
                 }
                 Item {
@@ -1216,14 +1232,14 @@ Item {
                     FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: theme.onFill(hcFill12, root.accent) }
                     HoverHandler { id: mph2; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: pk.openPlace("more", null) }
-                    ToolTip.visible: mph2.hovered; ToolTip.delay: 300; ToolTip.text: "More places..."
+                    ToolTip.visible: mph2.hovered; ToolTip.delay: 300; ToolTip.text: qsTr("More places...")
                     Accessible.role: Accessible.Link
-                    Accessible.name: "More places..."
+                    Accessible.name: qsTr("More places...")
                 }
                 Text {
                     visible: !pk.navCollapsed
                     x: 32; height: 24; verticalAlignment: Text.AlignVCenter
-                    text: "More places..."
+                    text: qsTr("More places...")
                     font.family: theme.font; font.pixelSize: 14; color: root.accent; font.underline: mph.hovered || pk.place === "more"
                     HoverHandler { id: mph; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: pk.openPlace("more", null) }
@@ -1248,9 +1264,9 @@ Item {
                     TapHandler { onTapped: { pk.searching = false; pk.back(pk.trail.length - 1) } }
                     HoverHandler { cursorShape: Qt.PointingHandCursor }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Back"
+                    Accessible.name: qsTr("Back")
                 }
-                Text { anchors.verticalCenter: parent.verticalCenter; text: "Search results"; font.family: theme.font; font.pixelSize: 18; font.weight: Font.DemiBold; color: root.ink }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Search results"); font.family: theme.font; font.pixelSize: 18; font.weight: Font.DemiBold; color: root.ink }
             }
             // "Search in …" and New folder at the top right.
             Row {
@@ -1266,17 +1282,17 @@ Item {
                         Keys.onReturnPressed: if (text.trim()) pk.search(text.trim(), pk.place !== "mine" || pk.searchAll)
                         Text {
                             visible: !pkSearch.text
-                            text: pk.place === "mine" || !pk.inPlaceList ? "Search in " + (pk.trail.length ? pk.trail[pk.trail.length - 1].name : "My files") : "Search in all files"
+                            text: pk.place === "mine" || !pk.inPlaceList ? qsTr("Search in %1").arg(pk.trail.length ? pk.trail[pk.trail.length - 1].name : qsTr("My files")) : qsTr("Search in all files")
                             color: theme.textTertiary; font: pkSearch.font; elide: Text.ElideRight; width: parent.width
                         }
-                        Accessible.name: "Search"
+                        Accessible.name: qsTr("Search")
                     }
                     FluentIcon {
                         visible: !!pkSearch.text
                         anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter; name: "dismiss-12"; size: 12; color: root.strong
                         TapHandler { onTapped: { pkSearch.text = ""; if (pk.searching) { pk.searching = false; pk.back(pk.trail.length - 1) } } }
                         Accessible.role: Accessible.Button
-                        Accessible.name: "Clear search"
+                        Accessible.name: qsTr("Clear search")
                     }
                 }
                 Rectangle {
@@ -1287,11 +1303,11 @@ Item {
                     border.width: 0.67; border.color: root.line
                     Row { id: nfRow; anchors.centerIn: parent; spacing: 6
                         FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "folder-add-20"; size: 16; color: theme.onFill(hcFill13, root.strong) }
-                        Text { anchors.verticalCenter: parent.verticalCenter; text: "New folder"; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill13, root.ink) } }
+                        Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("New folder"); font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill13, root.ink) } }
                     HoverHandler { id: nfh; cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: { pk.newFolder = true; nfName.text = "New folder"; nfName.selectAll(); nfName.forceActiveFocus() } }
+                    TapHandler { onTapped: { pk.newFolder = true; nfName.text = qsTr("New folder"); nfName.selectAll(); nfName.forceActiveFocus() } }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "New folder"
+                    Accessible.name: qsTr("New folder")
                 }
                 // The view switch (48 x 40): the view's glyph and a chevron;
                 // its menu (172 wide) ticks List, Compact List or Tiles.
@@ -1307,9 +1323,9 @@ Item {
                     }
                     HoverHandler { id: vsh; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: vsMenu.open() }
-                    ToolTip.visible: vsh.hovered && !vsMenu.opened; ToolTip.delay: 300; ToolTip.text: "View options"
+                    ToolTip.visible: vsh.hovered && !vsMenu.opened; ToolTip.delay: 300; ToolTip.text: qsTr("View options")
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Switch view options"
+                    Accessible.name: qsTr("Switch view options")
                     MenuPopup {
                         id: vsMenu; fabric: true; fabricWidth: 172
                         x: parent.width - 172; y: parent.height + 4
@@ -1329,7 +1345,7 @@ Item {
                 Row {
                 spacing: 12
                 Repeater {
-                    model: [{ label: "All files", all: true }, { label: "My files", all: false }]
+                    model: [{ label: qsTr("All files"), all: true }, { label: qsTr("My files"), all: false }]
                     Item {
                         id: tabItem
                         required property var modelData
@@ -1344,7 +1360,7 @@ Item {
                         TapHandler { onTapped: pk.search(pk.query, tabItem.modelData.all) }
                         HoverHandler { cursorShape: Qt.PointingHandCursor }
                         Accessible.role: Accessible.PageTab
-                        Accessible.name: tabItem.modelData.all ? "Search results in files across your organization" : "Search results in your files"
+                        Accessible.name: tabItem.modelData.all ? qsTr("Search results in files across your organization") : qsTr("Search results in your files")
                         Accessible.selected: pk.searchAll === tabItem.modelData.all
                     }
                 }
@@ -1359,7 +1375,7 @@ Item {
                     HoverHandler { id: dbh; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: datesMenu.open() }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Filter files by " + pk.datesLabel.toLowerCase()
+                    Accessible.name: qsTr("Filter files by %1").arg(pk.datesLabel.toLowerCase())
                     MenuPopup {
                         id: datesMenu
                         padding: 0; minRowWidth: 170.67
@@ -1400,12 +1416,12 @@ Item {
                     visible: !pkMore.visible && pk.view !== "tiles" && !pk.searching
                     height: 48
                     Item { width: 55; height: 48; FluentIcon { x: 22; anchors.verticalCenter: parent.verticalCenter; name: "document-16"; size: 16; color: theme.onFill(hcFill15, root.strong) } }
-                    PickHead { width: pk.view === "compact" ? 300 : 270; label: "Name" }
-                    PickHead { width: pk.view === "compact" ? 150 : 170; label: "Modified" }
-                    PickHead { width: 150; label: "Modified By" }
-                    PickHead { visible: pk.view === "compact"; width: 150; label: "File Size" }
-                    PickHead { visible: pk.view === "compact"; width: 170; label: "Sharing" }
-                    PickHead { visible: pk.view === "list" && !pk.searching; width: 200; label: "Activity" }
+                    PickHead { width: pk.view === "compact" ? 300 : 270; label: qsTr("Name") }
+                    PickHead { width: pk.view === "compact" ? 150 : 170; label: qsTr("Modified") }
+                    PickHead { width: 150; label: qsTr("Modified By") }
+                    PickHead { visible: pk.view === "compact"; width: 150; label: qsTr("File Size") }
+                    PickHead { visible: pk.view === "compact"; width: 170; label: qsTr("Sharing") }
+                    PickHead { visible: pk.view === "list" && !pk.searching; width: 200; label: qsTr("Activity") }
                 }
                 Rectangle { visible: pkHead.visible; y: 48.67; width: parent.width; height: 0.67; color: theme.pick("#F0F0F0", "#333333", "#000000") }
                 // New folder: a name row at the top (Enter creates it, Esc drops it).
@@ -1424,7 +1440,7 @@ Item {
                             font.family: theme.font; font.pixelSize: 14; color: root.ink; clip: true
                             Keys.onReturnPressed: pk.createFolder(text)
                             Keys.onEscapePressed: pk.newFolder = false
-                            Accessible.name: "New folder name"
+                            Accessible.name: qsTr("New folder name")
                         }
                     }
                 }
@@ -1448,7 +1464,7 @@ Item {
                         HoverHandler { id: pph2; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: { pk.person = parent.modelData.name; pk.trail = pk.trail.slice(0, 1).concat([{ name: parent.modelData.name, place: true }]) } }
                         Accessible.role: Accessible.Button
-                        Accessible.name: "Folders from " + modelData.name
+                        Accessible.name: qsTr("Folders from %1").arg(modelData.name)
                     }
                 }
                 // More places…: "Shared libraries", Recent and Your Teams.
@@ -1461,7 +1477,7 @@ Item {
                         id: moreCol
                         x: 16; y: 24; width: parent.width - 32; spacing: 12
                         Repeater {
-                            model: ["Recent", "Your Teams"]
+                            model: [qsTr("Recent"), qsTr("Your Teams")]
                             // Recent: Quick access's libraries; Your Teams:
                             // your teams' default libraries.
                             Column {
@@ -1471,7 +1487,7 @@ Item {
                                 Flow {
                                     width: parent.width; spacing: 16
                                     Repeater {
-                                        model: parent.parent.modelData === "Recent"
+                                        model: parent.parent.modelData === qsTr("Recent")
                                             ? root.quickAccess.map(q => ({ site: q.site_title, name: q.title, drive_id: q.drive_id, acronym: q.acronym, color: q.color }))
                                             : pk.libraries
                                         Rectangle {
@@ -1511,9 +1527,9 @@ Item {
                     Row {
                         id: foundHead
                         height: 48
-                        Item { width: pkFound.nameW; height: 48; Text { x: 20.6; anchors.verticalCenter: parent.verticalCenter; text: "Name"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill15, root.ink) } }
+                        Item { width: pkFound.nameW; height: 48; Text { x: 20.6; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Name"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill15, root.ink) } }
                         Repeater {
-                            model: [["Modified", 200], ["Modified by", 215.9], ["Location", 198.9]]
+                            model: [[qsTr("Modified"), 200], [qsTr("Modified by"), 215.9], [qsTr("Location"), 198.9]]
                             Item {
                                 required property var modelData
                                 width: modelData[1]; height: 48
@@ -1531,7 +1547,7 @@ Item {
                         boundsBehavior: Flickable.StopAtBounds
                         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
                         Accessible.role: Accessible.Table
-                        Accessible.name: "List of search result folders"
+                        Accessible.name: qsTr("List of search result folders")
                         delegate: Rectangle {
                             id: frow
                             required property var modelData
@@ -1552,7 +1568,7 @@ Item {
                             opacity: pickable ? 1 : 0.45
                             FluentIcon { x: 20; anchors.verticalCenter: parent.verticalCenter; size: 32; name: "ft-folder-32" }
                             Text { x: 68; y: 9.8; width: pkFound.nameW - 68 - 8; elide: Text.ElideRight; text: frow.modelData.name; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(frow, root.ink) }
-                            Text { x: 68; y: 29.5; width: pkFound.nameW - 68 - 8; elide: Text.ElideRight; visible: !!frow.modelData.created_by; text: "Created by: " + frow.modelData.created_by; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(frow, root.strong) }
+                            Text { x: 68; y: 29.5; width: pkFound.nameW - 68 - 8; elide: Text.ElideRight; visible: !!frow.modelData.created_by; text: qsTr("Created by: ") + frow.modelData.created_by; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(frow, root.strong) }
                             Text { x: pkFound.nameW + 8.6; width: 200 - 16; anchors.verticalCenter: parent.verticalCenter; elide: Text.ElideRight; text: frow.modelData.modified_text || ""; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(frow, root.strong) }
                             Text { x: pkFound.nameW + 200 + 8; width: 215.9 - 16; anchors.verticalCenter: parent.verticalCenter; elide: Text.ElideRight; text: frow.modelData.modified_by || ""; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(frow, root.strong) }
                             Row {
@@ -1584,7 +1600,7 @@ Item {
                             HoverHandler { id: frh; cursorShape: frow.pickable ? Qt.PointingHandCursor : Qt.ArrowCursor }
                             TapHandler { enabled: frow.pickable; onTapped: pk.into(frow.modelData) }
                             Accessible.role: Accessible.Row
-                            Accessible.name: "Folder " + modelData.name
+                            Accessible.name: qsTr("Folder %1").arg(modelData.name)
                         }
                     }
                 }
@@ -1604,7 +1620,7 @@ Item {
                         // Compact List: 32 tall, a 20 px icon, plus File Size
                         // and Sharing columns.
                         readonly property bool compact: pk.view === "compact"
-                        readonly property string sizeLine: modelData.is_folder ? (modelData.child_count === 1 ? "1 item" : (modelData.child_count || 0) + " items") : root.sizeText(modelData.size)
+                        readonly property string sizeLine: modelData.is_folder ? (modelData.child_count === 1 ? qsTr("1 item") : qsTr("%1 items").arg(modelData.child_count || 0)) : root.sizeText(modelData.size)
                         width: ListView.view.width; height: compact ? 32 : 59
                         color: folder && prh2.hovered ? theme.menuHover : "transparent"
                         opacity: folder ? 1 : 0.45
@@ -1645,7 +1661,7 @@ Item {
                         HoverHandler { id: prh2; cursorShape: prow.folder ? Qt.PointingHandCursor : Qt.ArrowCursor }
                         TapHandler { enabled: prow.folder; onTapped: pk.into(prow.modelData) }
                         Accessible.role: Accessible.Button
-                        Accessible.name: (modelData.is_folder ? "Folder " : "File ") + modelData.name
+                        Accessible.name: (modelData.is_folder ? qsTr("Folder %1") : qsTr("File %1")).arg(modelData.name)
                     }
                 }
                 // Tiles: folders as in the OneDrive app's Tiles (176 x 171,
@@ -1671,7 +1687,7 @@ Item {
                 Text {
                     visible: !!pk.shown && !pk.loading && pk.place !== "more" && (pk.shown.people ? (pk.person ? false : !pk.shown.people.some(p => p.items.length)) : (pk.shown.items || []).length === 0)
                     anchors.centerIn: parent
-                    text: pk.shown && pk.shown.error ? pk.shown.error : pk.searching ? "We couldn't find any results" : pk.place === "favorites" && pk.inPlaceList ? "Items you favorite will show up here" : "This folder is empty"
+                    text: pk.shown && pk.shown.error ? pk.shown.error : pk.searching ? qsTr("We couldn't find any results") : pk.place === "favorites" && pk.inPlaceList ? qsTr("Items you favorite will show up here") : qsTr("This folder is empty")
                     font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill15, pk.shown && pk.shown.error ? theme.danger : root.ink)
                 }
                 BusyIndicator { anchors.centerIn: parent; running: pk.loading; visible: pk.loading }
@@ -1685,7 +1701,7 @@ Item {
                     width: hereText.implicitWidth + 24; height: 32; radius: 4
                     color: !ok ? theme.surface : hh.hovered ? theme.brandHover : theme.brandFill
                     border.width: ok ? 0 : 0.67; border.color: theme.pick("#EBEBEB", "#3D3D3D", "#FFFFFF")
-                    Text { id: hereText; anchors.centerIn: parent; text: pk.shortcut ? "Select" : pk.moving ? "Move here" : "Copy here"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill18, parent.ok ? "white" : root.line) }
+                    Text { id: hereText; anchors.centerIn: parent; text: pk.shortcut ? qsTr("Select") : pk.moving ? qsTr("Move here") : qsTr("Copy here"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill18, parent.ok ? "white" : root.line) }
                     HoverHandler { id: hh; cursorShape: parent.ok ? Qt.PointingHandCursor : Qt.ArrowCursor }
                     TapHandler { enabled: parent.ok; onTapped: pk.done() }
                     Accessible.role: Accessible.Button
@@ -1696,11 +1712,11 @@ Item {
                     width: 80; height: 32; radius: 4
                     color: ch2.hovered ? theme.menuHover : theme.surface
                     border.width: 0.67; border.color: theme.pick("#7A7A7A", "#ADADAD", "#FFFFFF")
-                    Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill19, root.ink) }
+                    Text { anchors.centerIn: parent; text: qsTr("Cancel"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill19, root.ink) }
                     HoverHandler { id: ch2; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: pk.close() }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Cancel"
+                    Accessible.name: qsTr("Cancel")
                 }
             }
         }
@@ -1712,7 +1728,7 @@ Item {
         name: "info-16-regular"; size: 16; color: root.ink
         HoverHandler { id: ith }
         ToolTip.visible: ith.hovered; ToolTip.delay: 300
-        ToolTip.text: "Frequently used team locations, including shared libraries and Teams channels."
+        ToolTip.text: qsTr("Frequently used team locations, including shared libraries and Teams channels.")
         Accessible.name: ToolTip.text
     }
 
@@ -1760,9 +1776,9 @@ Item {
         HoverHandler { id: pbh; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.pinLibrary(pb.lib, !pb.pinned) }
         ToolTip.visible: pbh.hovered; ToolTip.delay: 300
-        ToolTip.text: lib ? (pinned ? "Unpin " + lib.label + " from Quick access" : "Pin " + lib.label + " to Quick access") : ""
+        ToolTip.text: lib ? (pinned ? qsTr("Unpin %1 from Quick access") : qsTr("Pin %1 to Quick access")).arg(lib.label) : ""
         Accessible.role: Accessible.Button
-        Accessible.name: "Pin to Quick access"
+        Accessible.name: qsTr("Pin to Quick access")
     }
 
     component PickTile: Item {
@@ -1817,7 +1833,7 @@ Item {
         HoverHandler { id: pth; cursorShape: pt.folder ? Qt.PointingHandCursor : Qt.ArrowCursor }
         TapHandler { enabled: pt.folder; onTapped: picker.into(pt.modelData) }
         Accessible.role: Accessible.Button
-        Accessible.name: (modelData.is_folder ? "Folder " : "File ") + modelData.name
+        Accessible.name: (modelData.is_folder ? qsTr("Folder %1") : qsTr("File %1")).arg(modelData.name)
     }
 
     component PickHead: Item {
@@ -1830,13 +1846,13 @@ Item {
     // "7.66 MB" (two decimals under 10, one under 100, none above).
     function sizeText(n) {
         if (typeof n !== "number" || isNaN(n) || n < 0) return ""
-        if (n === 1) return "1 byte"
+        if (n === 1) return qsTr("1 byte")
         const f = v => v >= 100 || v === Math.floor(v) ? v.toFixed(0) : v.toFixed(v >= 10 ? 1 : 2)
-        if (n < 1024) return n + " bytes"
-        if (n < 1024e3) return f(n / 1024) + " KB"
-        if (n < 1048576e3) return f(n / 1048576) + " MB"
-        if (n < 1073741824e3) return f(n / 1073741824) + " GB"
-        return f(n / 1099511627776) + " TB"
+        if (n < 1024) return qsTr("%1 bytes").arg(n)
+        if (n < 1024e3) return qsTr("%1 KB").arg(f(n / 1024))
+        if (n < 1048576e3) return qsTr("%1 MB").arg(f(n / 1048576))
+        if (n < 1073741824e3) return qsTr("%1 GB").arg(f(n / 1073741824))
+        return qsTr("%1 TB").arg(f(n / 1099511627776))
     }
     /// OneDrive's file-type icon (32 px drawings).
     function fileIcon(kind) {
@@ -1858,12 +1874,12 @@ Item {
     function ago(t) {
         if (!t) return ""
         const d = new Date(t), s = (Date.now() - d) / 1000
-        if (s < 60) return "A few seconds ago"
-        if (s < 3600) return Math.floor(s / 60) + (Math.floor(s / 60) === 1 ? " minute ago" : " minutes ago")
-        if (s < 86400) return Math.floor(s / 3600) + (Math.floor(s / 3600) === 1 ? " hour ago" : " hours ago")
+        if (s < 60) return qsTr("A few seconds ago")
+        if (s < 3600) return qsTr("%n minutes ago", "", Math.floor(s / 60))
+        if (s < 86400) return qsTr("%n hours ago", "", Math.floor(s / 3600))
         const days = Math.floor(s / 86400)
-        if (days < 7) return days === 1 ? "Yesterday" : days + " days ago"
-        return Qt.formatDate(d, "MMMM d")
+        if (days < 7) return days === 1 ? qsTr("Yesterday") : qsTr("%n days ago", "", days)
+        return theme.fmtDate(d, "MMMM d")
     }
 
     // OneDrive's share dialog (Share, Manage access, Copy link's Settings).

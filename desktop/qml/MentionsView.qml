@@ -38,8 +38,8 @@ Rectangle {
         const d = new Date(t), now = new Date()
         const days = Math.round((new Date(now.getFullYear(), now.getMonth(), now.getDate()) - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 86400000)
         if (days === 0) return theme.time(d)
-        if (days === 1) return "Yesterday"
-        if (days > 1 && days < 7) return Qt.formatDate(d, "dddd")
+        if (days === 1) return qsTr("Yesterday")
+        if (days > 1 && days < 7) return theme.fmtDate(d, "dddd")
         return theme.dateNoYear(d)
     }
     function esc(t) { return (t || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") }
@@ -58,7 +58,7 @@ Rectangle {
 
         Text {
             x: 32; y: 19
-            text: "Mentions"
+            text: qsTr("Mentions")
             font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold
             color: theme.text
         }
@@ -66,26 +66,26 @@ Rectangle {
             x: 32; y: 69
             spacing: 4
             Repeater {
-                model: ["Unread", "Channels", "Chats"]
+                model: [{ key: "unread", label: qsTr("Unread") }, { key: "channels", label: qsTr("Channels") }, { key: "chats", label: qsTr("Chats") }]
                 delegate: Rectangle {
                     id: mchip
-                    required property string modelData
-                    readonly property bool on: root.chip === modelData.toLowerCase()
+                    required property var modelData
+                    readonly property bool on: root.chip === modelData.key
                     height: 24; radius: 12
                     width: chipText.implicitWidth + 16
                     color: on ? theme.hc(theme.brandTint, theme.hcHighlight) : (mch.hovered ? theme.rowHover : "transparent")
                     border.color: on ? theme.brand : theme.stroke
                     HoverHandler { id: mch; cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: root.chip = mchip.on ? "" : mchip.modelData.toLowerCase() }
+                    TapHandler { onTapped: root.chip = mchip.on ? "" : mchip.modelData.key }
                     Text {
                         id: chipText
                         anchors.centerIn: parent
-                        text: modelData
+                        text: modelData.label
                         font.family: theme.font; font.pixelSize: theme.small
                         color: theme.onFill(mchip, mchip.on ? theme.brand : theme.textStrong)
                     }
                     Accessible.role: Accessible.CheckBox
-                    Accessible.name: modelData
+                    Accessible.name: modelData.label
                     Accessible.checked: on
                 }
             }
@@ -127,7 +127,7 @@ Rectangle {
                 }
                 Text {
                     x: 72; y: 10; width: parent.width - 72 - 80
-                    text: row.modelData.actor_name || "Someone"
+                    text: row.modelData.actor_name || qsTr("Someone")
                     elide: Text.ElideRight
                     font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold
                     color: theme.onFill(hcFill1, theme.text)
@@ -149,12 +149,12 @@ Rectangle {
                 HoverHandler { id: rh; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: { keys.clicked(row.modelData); root.openMention(row.modelData) } }
                 Accessible.role: Accessible.Button
-                Accessible.name: (row.modelData.unread ? "Unread, " : "") + (row.modelData.actor_name || "Someone") + " mentioned you: " + row.modelData.preview
+                Accessible.name: (row.modelData.unread ? qsTr("Unread") + ", " : "") + qsTr("%1 mentioned you: %2").arg(row.modelData.actor_name || qsTr("Someone")).arg(row.modelData.preview)
             }
             Text {
                 visible: root.shown.length === 0
                 x: 32; y: 8
-                text: root.mentions.length === 0 ? "No mentions yet" : "No mentions match"
+                text: root.mentions.length === 0 ? qsTr("No mentions yet") : qsTr("No mentions match")
                 font.family: theme.font; font.pixelSize: theme.base
                 color: theme.textSecondary
             }
@@ -166,7 +166,7 @@ Rectangle {
         spacing: 16
         FluentIcon { anchors.horizontalCenter: parent.horizontalCenter; name: "mention-20"; size: 64; color: theme.brand }
         Text {
-            text: "When you select an @mention, it'll show up here"
+            text: qsTr("When you select an @mention, it'll show up here")
             font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold
             color: theme.text
         }

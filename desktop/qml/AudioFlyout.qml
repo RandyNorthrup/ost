@@ -58,7 +58,7 @@ Popup {
             id: col
             x: 16.7; y: 16.7; width: 268
 
-            Label12 { text: "Speaker" }
+            Label12 { text: qsTr("Speaker", "calling:kp3u3qpn") }
             Repeater {
                 // Each speaker; with none chosen, the system's default is.
                 model: root.devices.outputs || []
@@ -80,7 +80,7 @@ Popup {
                     HoverHandler { id: spkHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: { root.volume = root.volume > 0 ? 0 : 100; backend.setSpeakerVolume(root.volume) } }
                     Accessible.role: Accessible.Button
-                    Accessible.name: root.volume > 0 ? "Mute speaker" : "Unmute speaker"
+                    Accessible.name: root.volume > 0 ? qsTr("Mute speaker") : qsTr("Unmute speaker")
                 }
                 Item {
                     id: slider
@@ -105,14 +105,14 @@ Popup {
                         onPositionChanged: m => { if (pressed) setFrom(m.x) }
                     }
                     Accessible.role: Accessible.Slider
-                    Accessible.name: "Speaker Volume control"
+                    Accessible.name: qsTr("Speaker Volume control")
                 }
             }
             Item { width: 268; height: 10 }
             Rectangle { width: 268; height: 1 / Screen.devicePixelRatio; color: theme.divider }
             Item { width: 268; height: 14.7 }
 
-            Label12 { text: "Microphone" }
+            Label12 { text: qsTr("Microphone") }
             Repeater {
                 model: root.devices.inputs || []
                 DeviceRow {
@@ -133,7 +133,7 @@ Popup {
                     HoverHandler { id: micHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.toggleMute() }
                     Accessible.role: Accessible.Button
-                    Accessible.name: root.muted ? "Unmute" : "Mute"
+                    Accessible.name: root.muted ? qsTr("Unmute") : qsTr("Mute")
                 }
                 Repeater {
                     model: 17
@@ -154,7 +154,7 @@ Popup {
                 width: 268; height: 36
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
-                    text: "Noise suppression"
+                    text: qsTr("Noise suppression")
                     font.family: theme.font; font.pixelSize: 14
                     color: theme.text
                 }
@@ -179,7 +179,7 @@ Popup {
                     }
                 }
                 Accessible.role: Accessible.CheckBox
-                Accessible.name: "Noise suppression"
+                Accessible.name: qsTr("Noise suppression")
                 Accessible.checked: root.noiseSuppression
             }
             // Teams' choice under the switch (no info buttons in the flyout).
@@ -198,7 +198,7 @@ Popup {
                 Text {
                     y: 8.67; height: 18.67
                     verticalAlignment: Text.AlignVCenter
-                    text: "High fidelity music mode"
+                    text: qsTr("High fidelity music mode")
                     font.family: theme.font; font.pixelSize: 14
                     color: theme.text
                 }
@@ -225,12 +225,12 @@ Popup {
                         }
                     }
                     Accessible.role: Accessible.CheckBox
-                    Accessible.name: "High fidelity music mode"
+                    Accessible.name: qsTr("High fidelity music mode")
                     Accessible.checked: root.musicMode
                 }
                 Text {
                     y: 30; width: 268; height: 16
-                    text: "Recommended for studio environment."
+                    text: qsTr("Recommended for studio environment.")
                     font.family: theme.font; font.pixelSize: 12
                     color: theme.textStrong
                 }
@@ -243,14 +243,14 @@ Popup {
                 width: 268; height: 31
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
-                    text: "More audio settings"
+                    text: qsTr("More audio settings")
                     font.family: theme.font; font.pixelSize: 14
                     color: masHover.hovered ? theme.text : theme.textStrong
                 }
                 HoverHandler { id: masHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: { root.close(); root.moreAudioSettings() } }
                 Accessible.role: Accessible.Button
-                Accessible.name: "More audio settings"
+                Accessible.name: qsTr("More audio settings")
             }
         }
     }

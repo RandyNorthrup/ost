@@ -46,7 +46,7 @@ Item {
     function open(v) {
         view = v; trail = []; person = ""; selectedIds = []
         load(v === "myfiles" ? "folder" : v, "", "")
-        if (v === "myfiles") { view = "folder"; trail = [{ name: "My files", drive_id: "", item_id: "" }] }
+        if (v === "myfiles") { view = "folder"; trail = [{ name: qsTr("My files"), drive_id: "", item_id: "" }] }
     }
     function openFolder(name, driveId, itemId) {
         view = "folder"
@@ -57,9 +57,9 @@ Item {
         trail = trail.slice(0, i + 1)
         load("folder", here.drive_id, here.item_id)
     }
-    readonly property string title: ({ recent: "Home", shared: "Shared", libraries: "Libraries", favorites: "Favorites",
-        recycle: "Recycle bin", meetings: "Meetings", media: "Media", people: person || "People" })[view]
-        || (trail.length ? trail[0].name : "My files")
+    readonly property string title: ({ recent: qsTr("Home"), shared: qsTr("Shared"), libraries: qsTr("Libraries"), favorites: qsTr("Favorites"),
+        recycle: qsTr("Recycle bin"), meetings: qsTr("Meetings"), media: qsTr("Media"), people: person || qsTr("People") })[view]
+        || (trail.length ? trail[0].name : qsTr("My files"))
     Component.onCompleted: { open("recent"); actions.loadQuickAccess() }
 
     // Teams' OneDrive list colours.
@@ -89,21 +89,21 @@ Item {
         })
         return out
     }
-    readonly property var sortFields: [{ key: "kind", label: "Type" }, { key: "name", label: "Name" }, { key: "modified", label: "Modified" },
-                                       { key: "modified_by", label: "Modified By" }, { key: "size", label: "File size" }]
+    readonly property var sortFields: [{ key: "kind", label: qsTr("Type") }, { key: "name", label: qsTr("Name") }, { key: "modified", label: qsTr("Modified") },
+                                       { key: "modified_by", label: qsTr("Modified By") }, { key: "size", label: qsTr("File size") }]
     function sortMenuItems() {
         return sortFields.map(f => ({ label: f.label, checked: sortField === f.key })).concat([{ separator: true },
-            { label: "Ascending", checked: !!sortField && sortAsc }, { label: "Descending", checked: !!sortField && !sortAsc }])
+            { label: qsTr("Ascending"), checked: !!sortField && sortAsc }, { label: qsTr("Descending"), checked: !!sortField && !sortAsc }])
     }
     function pickSort(label) {
         const f = sortFields.find(x => x.label === label)
         if (f) { sortField = f.key; return }
         if (!sortField) sortField = "name"
-        sortAsc = label === "Ascending"
+        sortAsc = label === qsTr("Ascending")
     }
-    readonly property var viewItems: [{ label: "List", icon: "list-16", checked: listView === "list" },
-                                      { label: "Compact List", icon: "text-align-left-16", checked: listView === "compact" },
-                                      { label: "Tiles", icon: "grid-16", checked: listView === "tiles" }]
+    readonly property var viewItems: [{ label: qsTr("List"), icon: "list-16", checked: listView === "list" },
+                                      { label: qsTr("Compact List"), icon: "text-align-left-16", checked: listView === "compact" },
+                                      { label: qsTr("Tiles"), icon: "grid-16", checked: listView === "tiles" }]
     function toggleDetails(it) {
         if (details.visible) { details.item = null; details.folder = null; return }
         if (it) details.item = it
@@ -153,7 +153,7 @@ Item {
     }
     // OneDrive's file size wording (FileActions.sizeText).
     function size(n) { return actions.sizeText(n) }
-    function itemCount(n) { return n === 1 ? "1 item" : (n || 0) + " items" }
+    function itemCount(n) { return n === 1 ? qsTr("1 item") : qsTr("%1 items").arg(n || 0) }
     function fileIcon(kind) { return actions.fileIcon(kind) }
     // The selection bar's Open: the file's app icon for Office files,
     // OneDrive's OpenFile glyph otherwise.
@@ -168,11 +168,11 @@ Item {
     function ago(t) {
         if (!t) return ""
         const d = new Date(t), s = (Date.now() - d) / 1000
-        if (s < 60) return "Just now"
-        if (s < 3600) return Math.floor(s / 60) + " minutes ago"
-        if (s < 86400) return Math.floor(s / 3600) + " hours ago"
-        if (s < 172800) return "Yesterday"
-        return Qt.formatDate(d, "MMMM d")
+        if (s < 60) return qsTr("Just now")
+        if (s < 3600) return qsTr("%1 minutes ago").arg(Math.floor(s / 60))
+        if (s < 86400) return qsTr("%1 hours ago").arg(Math.floor(s / 3600))
+        if (s < 172800) return qsTr("Yesterday")
+        return theme.fmtDate(d, "MMMM d")
     }
     function iconFor(it) {
         if (it.is_folder) return "folder-20-filled"
@@ -188,7 +188,7 @@ Item {
         width: 280; height: parent.height
         Text {
             x: 24; y: 31
-            text: "OneDrive"
+            text: qsTr("OneDrive")
             font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold
             color: theme.text
         }
@@ -199,16 +199,16 @@ Item {
             Row {
                 anchors.centerIn: parent; spacing: 8
                 FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "add-20"; size: 20; color: theme.onFill(createButton, "white") }
-                Text { anchors.verticalCenter: parent.verticalCenter; text: "Create or upload"; color: theme.onFill(createButton, "white"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Create or upload"); color: theme.onFill(createButton, "white"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
             }
             HoverHandler { id: cbh; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: createMenu.open() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Create or upload"
+            Accessible.name: qsTr("Create or upload")
             MenuPopup {
                 id: createMenu
                 y: parent.height + 4; width: 220
-                items: [{ label: "Folder", icon: "folder-add-20" }, { separator: true }, { label: "Files upload", icon: "arrow-upload-20" }]
+                items: [{ label: qsTr("Folder"), icon: "folder-add-20" }, { separator: true }, { label: qsTr("Files upload"), icon: "arrow-upload-20" }]
                 // Outside a folder (Home, Shared, ...) it goes into My files, as in Teams.
                 onPicked: i => {
                     if (!root.canWrite) root.open("myfiles")
@@ -220,34 +220,34 @@ Item {
             x: 8; y: 137; width: parent.width - 32
             Repeater {
                 model: [
-                    { key: "recent", label: "Home", icon: "home-20" },
-                    { key: "myfiles", label: "My files", icon: "folder-20" },
-                    { key: "shared", label: "Shared", icon: "people-20" },
-                    { key: "favorites", label: "Favorites", icon: "star-20" },
-                    { key: "libraries", label: "Libraries", icon: "library-20" },
-                    { key: "recycle", label: "Recycle bin", icon: "delete-20" }
+                    { key: "recent", label: qsTr("Home"), icon: "home-20" },
+                    { key: "myfiles", label: qsTr("My files"), icon: "folder-20" },
+                    { key: "shared", label: qsTr("Shared"), icon: "people-20" },
+                    { key: "favorites", label: qsTr("Favorites"), icon: "star-20" },
+                    { key: "libraries", label: qsTr("Libraries"), icon: "library-20" },
+                    { key: "recycle", label: qsTr("Recycle bin"), icon: "delete-20" }
                 ]
                 NavRow {}
             }
             Item { width: 1; height: 16 }
-            Text { x: 16; height: 36; verticalAlignment: Text.AlignVCenter; text: "Browse files by"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
+            Text { x: 16; height: 36; verticalAlignment: Text.AlignVCenter; text: qsTr("Browse files by"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
             Repeater {
                 model: [
-                    { key: "people", label: "People", icon: "people-20" },
-                    { key: "meetings", label: "Meetings", icon: "calendar-ltr-20" },
-                    { key: "media", label: "Media", icon: "image-20" }
+                    { key: "people", label: qsTr("People"), icon: "people-20" },
+                    { key: "meetings", label: qsTr("Meetings"), icon: "calendar-ltr-20" },
+                    { key: "media", label: qsTr("Media"), icon: "image-20" }
                 ]
                 NavRow {}
             }
             Item { width: 1; height: 16 }
-            Text { x: 16; text: "Quick access"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
+            Text { x: 16; text: qsTr("Quick access"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
             Item { width: 1; height: 6 }
             // Teams' Quick access: pinned libraries, then the ones used
             // lately; the text only while there are none.
             Text {
                 visible: actions.quickAccess.length === 0
                 x: 16; width: parent.width - 16; wrapMode: Text.Wrap
-                text: "As you open files from shared libraries, they'll appear in this Quick access list."
+                text: qsTr("As you open files from shared libraries, they'll appear in this Quick access list.")
                 font.family: theme.font; font.pixelSize: theme.small; color: theme.textStrong
             }
             Repeater {
@@ -284,17 +284,17 @@ Item {
             HoverHandler { id: qph; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: actions.pinLibrary(qr.modelData, !qr.modelData.pinned) }
             ToolTip.visible: qph.hovered; ToolTip.delay: 300
-            ToolTip.text: qr.modelData.pinned ? "Unpin " + qr.modelData.label + " from Quick access" : "Pin " + qr.modelData.label + " to Quick access"
+            ToolTip.text: (qr.modelData.pinned ? qsTr("Unpin %1 from Quick access") : qsTr("Pin %1 to Quick access")).arg(qr.modelData.label)
             Accessible.role: Accessible.Button
-            Accessible.name: "Pin to Quick access"
+            Accessible.name: qsTr("Pin to Quick access")
         }
     }
 
     component NavRow: Rectangle {
         id: nr
         required property var modelData
-        readonly property bool sel: root.view === modelData.key || (modelData.key === "myfiles" && root.view === "folder" && root.trail.length && root.trail[0].name === "My files")
-            || (modelData.key === "libraries" && root.view === "folder" && root.trail.length && root.trail[0].name !== "My files"
+        readonly property bool sel: root.view === modelData.key || (modelData.key === "myfiles" && root.view === "folder" && root.trail.length && root.trail[0].name === qsTr("My files"))
+            || (modelData.key === "libraries" && root.view === "folder" && root.trail.length && root.trail[0].name !== qsTr("My files")
                 && !actions.quickAccess.some(q => q.drive_id && q.drive_id === root.trail[0].drive_id))
         width: parent.width + 16; height: 36; radius: theme.radius
         color: sel ? theme.selected : nh.hovered && !modelData.off ? theme.rowHover : "transparent"
@@ -305,7 +305,7 @@ Item {
         HoverHandler { id: nh; cursorShape: nr.modelData.off ? Qt.ArrowCursor : Qt.PointingHandCursor }
         TapHandler { enabled: !nr.modelData.off; onTapped: root.open(nr.modelData.key) }
         Accessible.role: Accessible.Button
-        Accessible.name: modelData.label + (modelData.off ? " (not available in OST yet)" : "")
+        Accessible.name: modelData.off ? qsTr("%1 (not available in OST yet)").arg(modelData.label) : modelData.label
     }
 
     // Content
@@ -345,10 +345,10 @@ Item {
             readonly property var commands: {
                 const it = root.hereItem, L = []
                 if (!it) return L
-                if (it.sp_item) L.push({ label: "Share", icon: "share-16" })
-                if (it.sp_item || it.web_url) L.push({ label: "Copy link", icon: "link-16" })
-                if (it.sp_item) L.push({ label: "Download", icon: "arrow-download-16" })
-                if (it.web_url) L.push({ label: /-my\.sharepoint\.com/.test(it.sp_site || it.web_url) ? "Open in OneDrive" : "Open in SharePoint", icon: "cloud-16" })
+                if (it.sp_item) L.push({ label: qsTr("Share"), icon: "share-16" })
+                if (it.sp_item || it.web_url) L.push({ label: qsTr("Copy link"), icon: "link-16" })
+                if (it.sp_item) L.push({ label: qsTr("Download"), icon: "arrow-download-16" })
+                if (it.web_url) L.push({ label: /-my\.sharepoint\.com/.test(it.sp_site || it.web_url) ? qsTr("Open in OneDrive") : qsTr("Open in SharePoint"), icon: "cloud-16" })
                 return L
             }
             Repeater {
@@ -392,16 +392,16 @@ Item {
             readonly property var commands: {
                 const it = one, L = []
                 if (it) {
-                    if (!it.is_folder) L.push({ label: "Open", icon: root.openIcon(it.kind), chevron: true })
-                    if (it.sp_item) L.push({ label: "Share", icon: "share-16" })
-                    if (it.sp_item || it.web_url) L.push({ label: "Copy link", icon: "link-16" })
-                    if (root.canWrite) L.push({ label: "Delete", icon: "delete-16" })
+                    if (!it.is_folder) L.push({ label: qsTr("Open"), icon: root.openIcon(it.kind), chevron: true })
+                    if (it.sp_item) L.push({ label: qsTr("Share"), icon: "share-16" })
+                    if (it.sp_item || it.web_url) L.push({ label: qsTr("Copy link"), icon: "link-16" })
+                    if (root.canWrite) L.push({ label: qsTr("Delete"), icon: "delete-16" })
                 } else {
-                    if (root.canWrite) L.push({ label: "Delete", icon: "delete-16" })
-                    if (root.selection.some(i => !i.is_folder)) L.push({ label: "Add to favorites", icon: "star-16" })
-                    L.push({ label: "Download", icon: "arrow-download-16" })
+                    if (root.canWrite) L.push({ label: qsTr("Delete"), icon: "delete-16" })
+                    if (root.selection.some(i => !i.is_folder)) L.push({ label: qsTr("Add to favorites"), icon: "star-16" })
+                    L.push({ label: qsTr("Download"), icon: "arrow-download-16" })
                 }
-                if (more.length) L.push({ label: "", tip: "More", icon: "more-horizontal-16" })
+                if (more.length) L.push({ label: "", tip: qsTr("More"), icon: "more-horizontal-16" })
                 return L
             }
             // ···: the rest of the item's menu (Teams: Add to favorites, Add
@@ -411,23 +411,23 @@ Item {
                 const it = one, L = []
                 const sp = root.selection.every(i => !!i.sp_item)
                 if (it) {
-                    if (!it.is_folder) L.push({ label: fav ? "Remove from favorites" : "Add to favorites", icon: "star-16" })
-                    L.push({ label: "Download", icon: "arrow-download-16" })
+                    if (!it.is_folder) L.push({ label: fav ? qsTr("Remove from favorites") : qsTr("Add to favorites"), icon: "star-16" })
+                    L.push({ label: qsTr("Download"), icon: "arrow-download-16" })
                 }
-                if (root.canWrite && sp) L.push({ label: "Duplicate", icon: "add-square-16" })
-                if (root.canWrite && sp) L.push({ label: "Move to", icon: "folder-arrow-right-16" })
-                if (sp) L.push({ label: "Copy to", icon: "copy-16" })
-                if (it && root.canWrite) L.push({ label: "Rename", icon: "rename-16" })
-                if (it && it.web_url) L.push({ label: /-my\.sharepoint\.com/.test(it.sp_site || it.web_url) ? "Open in OneDrive" : "Open in SharePoint", icon: "cloud-16" })
-                if (it && !it.is_folder && it.sp_item) L.push({ label: "Version history", icon: "history-16" })
+                if (root.canWrite && sp) L.push({ label: qsTr("Duplicate"), icon: "add-square-16" })
+                if (root.canWrite && sp) L.push({ label: qsTr("Move to"), icon: "folder-arrow-right-16" })
+                if (sp) L.push({ label: qsTr("Copy to"), icon: "copy-16" })
+                if (it && root.canWrite) L.push({ label: qsTr("Rename"), icon: "rename-16" })
+                if (it && it.web_url) L.push({ label: /-my\.sharepoint\.com/.test(it.sp_site || it.web_url) ? qsTr("Open in OneDrive") : qsTr("Open in SharePoint"), icon: "cloud-16" })
+                if (it && !it.is_folder && it.sp_item) L.push({ label: qsTr("Version history"), icon: "history-16" })
                 return L
             }
             function run(label) {
                 openMenu.close(); moreMenu.close()
                 // The menus hang under their buttons: Open's from its left
                 // (+4), ···'s right edge 4 inside its own.
-                if (label === "Open" && !one) return
-                if (label === "Open") { openMenu.x = cmdRow.x + cmds.itemAt(0).x + 4; openMenu.items = actions.itemsFor(one)[0].submenu; openMenu.open(); return }
+                if (label === qsTr("Open") && !one) return
+                if (label === qsTr("Open")) { openMenu.x = cmdRow.x + cmds.itemAt(0).x + 4; openMenu.items = actions.itemsFor(one)[0].submenu; openMenu.open(); return }
                 if (label === "") {
                     const b = cmds.itemAt(commands.length - 1)
                     moreMenu.x = Math.max(0, Math.min(cmdRow.x + b.x + b.width - 4 - 232, width - 232)); moreMenu.open(); return
@@ -467,7 +467,7 @@ Item {
                 anchors.right: parent.right; anchors.rightMargin: 6
                 y: 10; spacing: 4
                 BarCommand {
-                    label: "Sort"; icon: "arrow-sort-down-lines-16"; chevron: true; tip: "Sort all items by"
+                    label: qsTr("Sort"); icon: "arrow-sort-down-lines-16"; chevron: true; tip: qsTr("Sort all items by")
                     onClicked: { sortMenu2.items = root.sortMenuItems(); sortMenu2.open() }
                     MenuPopup { id: sortMenu2; fabric: true; fabricWidth: 232; y: parent.height + 10; onPicked: i => root.pickSort(items[i].label) }
                 }
@@ -480,11 +480,11 @@ Item {
                 color: cph.hovered ? theme.pick("#F5F5F5", "#3D3D3D", "#1AEBFF") : "transparent"
                 border.width: 0.67; border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF")
                 FluentIcon { x: 12.67; y: 10; name: "dismiss-12"; size: 12; color: theme.onFill(countPill, root.ink) }
-                Text { id: countText; x: 36.67; y: 9; text: root.selection.length + " selected"; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(countPill, root.ink) }
+                Text { id: countText; x: 36.67; y: 9; text: qsTr("%1 selected").arg(root.selection.length); font.family: theme.font; font.pixelSize: 14; color: theme.onFill(countPill, root.ink) }
                 HoverHandler { id: cph; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: root.selectedIds = [] }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Clear selection, " + root.selection.length + " selected"
+                Accessible.name: qsTr("Clear selection") + ", " + qsTr("%1 selected").arg(root.selection.length)
             }
                 }
                 Item { width: 25; height: 32; Rectangle { x: 12; y: 6; width: 1; height: 20; color: theme.pick("#E0E0E0", "#3D3D3D", "#000000") } }
@@ -512,12 +512,12 @@ Item {
                     Column {
                         x: 56; anchors.verticalCenter: parent.verticalCenter
                         Text { text: modelData.name; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.text) }
-                        Text { text: modelData.items.length + (modelData.items.length === 1 ? " file" : " files"); font.family: theme.font; font.pixelSize: theme.small; color: theme.onFill(hcFill2, theme.textSecondary) }
+                        Text { text: qsTr("%n files", "", modelData.items.length); font.family: theme.font; font.pixelSize: theme.small; color: theme.onFill(hcFill2, theme.textSecondary) }
                     }
                     HoverHandler { id: pph; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.person = modelData.name }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Files from " + modelData.name
+                    Accessible.name: qsTr("Files from %1").arg(modelData.name)
                 }
             }
             // Recycle bin: Name, Date deleted, Deleted by, Original location.
@@ -528,10 +528,10 @@ Item {
                     id: rhead
                     x: 0; y: 13; height: 36
                     Item { width: 77; height: 36 }
-                    HeadCell { label: "Name"; width: Math.max(200, parent.parent.width * 0.3) }
-                    HeadCell { label: "Date deleted"; width: 150 }
-                    HeadCell { label: "Deleted by"; width: 150 }
-                    HeadCell { label: "Original location"; width: 220 }
+                    HeadCell { label: qsTr("Name"); width: Math.max(200, parent.parent.width * 0.3) }
+                    HeadCell { label: qsTr("Date deleted"); width: 150 }
+                    HeadCell { label: qsTr("Deleted by"); width: 150 }
+                    HeadCell { label: qsTr("Original location"); width: 220 }
                 }
                 ListView {
                     anchors { top: rhead.bottom; left: parent.left; right: parent.right; bottom: parent.bottom }
@@ -561,17 +561,17 @@ Item {
                             HoverHandler { id: dmh; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: dmenu.open() }
                             Accessible.role: Accessible.Button
-                            Accessible.name: "More options for " + drow.modelData.name
+                            Accessible.name: qsTr("More options for %1").arg(drow.modelData.name)
                             MenuPopup {
                                 id: dmenu
                                 x: -200; y: parent.height; width: 220
-                                items: [{ label: "Restore", icon: "arrow-upload-20" }, { label: "Delete permanently", icon: "delete-20" }]
+                                items: [{ label: qsTr("Restore"), icon: "arrow-upload-20" }, { label: qsTr("Delete permanently"), icon: "delete-20" }]
                                 onPicked: i => i === 0 ? root.restore(drow.modelData.id) : root.purge(drow.modelData.id)
                             }
                         }
                         HoverHandler { id: dh }
                         Accessible.role: Accessible.ListItem
-                        Accessible.name: "Deleted " + modelData.name
+                        Accessible.name: qsTr("Deleted %1").arg(modelData.name)
                     }
                 }
             }
@@ -628,19 +628,19 @@ Item {
                         FluentIcon { visible: parent.all; anchors.centerIn: parent; name: "checkmark-12"; size: 12; color: theme.onFill(hcFill5, "white") }
                         TapHandler { onTapped: root.selectedIds = parent.all ? [] : root.items.map(i => i.id) }
                         Accessible.role: Accessible.CheckBox
-                        Accessible.name: "Select all rows"
+                        Accessible.name: qsTr("Select all rows")
                         Accessible.checked: all
                     }
                     Row {
                         height: parent.height
                         Item { width: 56; height: 49 }
                         Item { width: 40; height: 49; FluentIcon { x: 13.5; y: 16.17; name: "document-16"; size: 16; color: theme.onFill(card, root.ink) } }
-                        ListHead { label: "Name"; field: root.view === "folder" ? "name" : ""; width: table.wName }
-                        ListHead { label: root.view === "recent" ? "Opened" : "Modified"; field: root.view === "folder" ? "modified" : ""; width: table.narrow ? 189.33 : 136 }
-                        ListHead { visible: !table.narrow; label: root.view === "shared" ? "Shared by" : "Modified By"; field: root.view === "folder" ? "modified_by" : ""; width: 136 }
-                        ListHead { visible: !table.narrow; label: "File size"; field: root.view === "folder" ? "size" : ""; width: 91 }
-                        ListHead { visible: !table.narrow; label: "Sharing"; width: 81 }
-                        ListHead { visible: !table.narrow; label: "Activity"; width: 119 }
+                        ListHead { label: qsTr("Name"); field: root.view === "folder" ? "name" : ""; width: table.wName }
+                        ListHead { label: root.view === "recent" ? qsTr("Opened") : qsTr("Modified"); field: root.view === "folder" ? "modified" : ""; width: table.narrow ? 189.33 : 136 }
+                        ListHead { visible: !table.narrow; label: root.view === "shared" ? qsTr("Shared by") : qsTr("Modified By"); field: root.view === "folder" ? "modified_by" : ""; width: 136 }
+                        ListHead { visible: !table.narrow; label: qsTr("File size"); field: root.view === "folder" ? "size" : ""; width: 91 }
+                        ListHead { visible: !table.narrow; label: qsTr("Sharing"); width: 81 }
+                        ListHead { visible: !table.narrow; label: qsTr("Activity"); width: 119 }
                     }
                 }
                 ListView {
@@ -712,7 +712,7 @@ Item {
                                 visible: table.narrow
                                 x: 12; y: 35.33; width: nameCell.width - 20
                                 elide: Text.ElideRight
-                                text: "Modified by " + (frow.modelData.modified_by || root.userName) + " · " + (frow.modelData.is_folder ? root.itemCount(frow.modelData.child_count) : root.size(frow.modelData.size))
+                                text: qsTr("Modified by %1").arg(frow.modelData.modified_by || root.userName) + " · " + (frow.modelData.is_folder ? root.itemCount(frow.modelData.child_count) : root.size(frow.modelData.size))
                                 font.family: theme.font; font.pixelSize: 12; color: theme.onFill([hcFill6, card], theme.pick("#5E5E5D", "#ADADAD", "#FFFFFF"))
                             }
                             Row {
@@ -720,14 +720,14 @@ Item {
                                 x: nameText.x + nameText.width + 8; y: frow.ty - 5; spacing: 4.5
                                 RowTool {
                                     id: moreButton
-                                    icon: "more-horizontal-16"; tip: "More Actions"
+                                    icon: "more-horizontal-16"; tip: qsTr("More Actions")
                                     onClicked: actions.popup(frow.modelData, moreButton, 0, moreButton.height)
                                 }
-                                RowTool { visible: !!frow.modelData.sp_item; icon: "share-16"; tip: "Share"; onClicked: { actions.item = frow.modelData; actions.act("Share") } }
+                                RowTool { visible: !!frow.modelData.sp_item; icon: "share-16"; tip: qsTr("Share"); onClicked: { actions.item = frow.modelData; actions.act("Share") } }
                                 RowTool {
                                     visible: !frow.modelData.is_folder
                                     icon: frow.fav ? "star-16-filled" : "star-16"
-                                    tip: frow.fav ? "Remove this item from Favorites" : "Add this item to Favorites"
+                                    tip: frow.fav ? qsTr("Remove this item from Favorites") : qsTr("Add this item to Favorites")
                                     onClicked: root.favorite(frow.modelData.drive_id, frow.modelData.id, !frow.fav)
                                 }
                             }
@@ -782,7 +782,7 @@ Item {
                             onDoubleTapped: frow.activate()
                         }
                         Accessible.role: Accessible.Row
-                        Accessible.name: (modelData.is_folder ? "Folder " : "File ") + modelData.name
+                        Accessible.name: (modelData.is_folder ? qsTr("Folder %1") : qsTr("File %1")).arg(modelData.name)
                         Accessible.selected: sel
                     }
                 }
@@ -823,10 +823,10 @@ Item {
                 visible: !root.busy && !root.driveData.error && root.view !== "libraries"
                     && (root.view === "recycle" ? root.deleted.length === 0 : root.view === "people" && !root.person ? root.people.length === 0 : root.items.length === 0)
                 anchors.centerIn: parent
-                text: ({ recent: "Your recent files will show up here", shared: "Files shared with you will show up here",
-                         favorites: "Your favorite files will show up here", recycle: "Your recycle bin is empty",
-                         meetings: "Files from your meetings will show up here", media: "Your photos and videos will show up here",
-                         people: "Files people share with you will show up here" })[root.view] || "This folder is empty"
+                text: ({ recent: qsTr("Your recent files will show up here"), shared: qsTr("Files shared with you will show up here"),
+                         favorites: qsTr("Your favorite files will show up here"), recycle: qsTr("Your recycle bin is empty"),
+                         meetings: qsTr("Files from your meetings will show up here"), media: qsTr("Your photos and videos will show up here"),
+                         people: qsTr("Files people share with you will show up here") })[root.view] || qsTr("This folder is empty")
                 font.family: theme.font; font.pixelSize: 18; font.weight: Font.DemiBold
                 color: theme.onFill(card, theme.text)
             }
@@ -847,13 +847,13 @@ Item {
         spacing: 4
         BarCommand {
             visible: !parent.inBar
-            label: "Sort"; icon: "arrow-sort-down-lines-16"; chevron: true; tip: "Sort all items by"
+            label: qsTr("Sort"); icon: "arrow-sort-down-lines-16"; chevron: true; tip: qsTr("Sort all items by")
             onClicked: { sortMenu.items = root.sortMenuItems(); sortMenu.open() }
             MenuPopup { id: sortMenu; fabric: true; fabricWidth: 232; y: parent.height + 10; onPicked: i => root.pickSort(items[i].label) }
         }
         BarCommand {
             icon: root.listView === "tiles" ? "grid-16" : root.listView === "compact" ? "text-align-left-16" : "list-16"
-            chevron: true; tip: "Switch view options"
+            chevron: true; tip: qsTr("Switch view options")
             onClicked: viewMenu.open()
             MenuPopup {
                 id: viewMenu; fabric: true; fabricWidth: 232; y: parent.height + 10
@@ -862,7 +862,7 @@ Item {
             }
         }
         BarCommand {
-            label: "Details"; icon: "panel-right-16"; tip: "Open the details pane"
+            label: qsTr("Details"); icon: "panel-right-16"; tip: qsTr("Open the details pane")
             pressed: details.visible
             onClicked: root.toggleDetails(root.selection.length === 1 ? root.selection[0] : null)
         }
@@ -942,7 +942,7 @@ Item {
         }
         TapHandler { acceptedButtons: Qt.RightButton; onTapped: (ev) => actions.popup(tile.modelData, tile, ev.position.x, ev.position.y) }
         Accessible.role: Accessible.ListItem
-        Accessible.name: (modelData.is_folder ? "Folder " : "File ") + modelData.name
+        Accessible.name: (modelData.is_folder ? qsTr("Folder %1") : qsTr("File %1")).arg(modelData.name)
         Accessible.selected: sel
     }
     // The table's header cell: 14/600 #616161 at 10.67, 49 tall. A sortable
@@ -965,11 +965,11 @@ Item {
             id: headMenu
             fabric: true; fabricWidth: 232
             x: 2; y: 46
-            items: [{ label: "Ascending", checked: root.sortField === lh.field && root.sortAsc }, { label: "Descending", checked: root.sortField === lh.field && !root.sortAsc }]
+            items: [{ label: qsTr("Ascending"), checked: root.sortField === lh.field && root.sortAsc }, { label: qsTr("Descending"), checked: root.sortField === lh.field && !root.sortAsc }]
             onPicked: i => { root.sortField = lh.field; root.sortAsc = i === 0 }
         }
         Accessible.role: lh.field ? Accessible.Button : Accessible.ColumnHeader
-        Accessible.name: label + (root.sortField === field && field ? (root.sortAsc ? ", sorted ascending" : ", sorted descending") : "")
+        Accessible.name: root.sortField === field && field ? (root.sortAsc ? qsTr("%1, sorted ascending") : qsTr("%1, sorted descending")).arg(label) : label
     }
     // A row's text cell: 14 px at 12, 14 down; `tip` shows on hover (the
     // Modified column's full date).
@@ -1050,7 +1050,7 @@ Item {
 
     FileDialog {
         id: uploadPicker
-        title: "Upload files"
+        title: qsTr("Upload files")
         fileMode: FileDialog.OpenFiles
         onAccepted: root.upload(root.here.drive_id, root.here.item_id,
             selectedFiles.map(u => decodeURIComponent(u.toString().replace(/^file:\/\//, ""))).join("\n"))
@@ -1063,7 +1063,7 @@ Item {
         background: Rectangle { radius: 8; color: theme.menu; border.color: theme.dividerSoft }
         contentItem: Column {
             spacing: 14
-            Text { text: "Create a folder"; font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text }
+            Text { text: qsTr("Create a folder"); font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text }
             Rectangle {
                 width: 340; height: 32; radius: theme.radius
                 color: theme.input; border.color: folderName.activeFocus ? theme.brand : theme.stroke
@@ -1076,8 +1076,8 @@ Item {
                         if (!text.trim()) return
                         root.newFolder(root.here.drive_id, root.here.item_id, text.trim()); folderDialog.close()
                     }
-                    Text { visible: !folderName.text; text: "Enter your folder name"; color: theme.textTertiary; font: folderName.font }
-                    Accessible.name: "Folder name"
+                    Text { visible: !folderName.text; text: qsTr("Enter your folder name"); color: theme.textTertiary; font: folderName.font }
+                    Accessible.name: qsTr("Folder name")
                 }
             }
             Row {
@@ -1086,18 +1086,18 @@ Item {
                     id: hcFill8
                     width: 90; height: 32; radius: theme.radius
                     color: theme.brandFill
-                    Text { anchors.centerIn: parent; text: "Create"; color: theme.onFill(hcFill8, "white"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
+                    Text { anchors.centerIn: parent; text: qsTr("Create"); color: theme.onFill(hcFill8, "white"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
                     TapHandler { onTapped: folderName.createFolder() }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Create"
+                    Accessible.name: qsTr("Create")
                 }
                 Rectangle {
                     width: 90; height: 32; radius: theme.radius
                     color: theme.input; border.color: theme.stroke
-                    Text { anchors.centerIn: parent; text: "Cancel"; color: theme.text; font.family: theme.font; font.pixelSize: theme.base }
+                    Text { anchors.centerIn: parent; text: qsTr("Cancel"); color: theme.text; font.family: theme.font; font.pixelSize: theme.base }
                     TapHandler { onTapped: folderDialog.close() }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Cancel"
+                    Accessible.name: qsTr("Cancel")
                 }
             }
         }

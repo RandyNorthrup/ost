@@ -37,7 +37,7 @@ Item {
             const kind = op.slice(root.tag.length)
             const v = result ? JSON.parse(result) : null
             if (kind === "card_item") {
-                if (err || !v || v.url !== root.file.object_url) { root.loading = false; root.error = err || "This file can't be opened"; return }
+                if (err || !v || v.url !== root.file.object_url) { root.loading = false; root.error = err || qsTr("This file can't be opened"); return }
                 root.item = v.item
                 backend.driveAction(root.tag + "preview", JSON.stringify(v.item), "{}")
             } else if (kind === "preview") {
@@ -87,11 +87,11 @@ Item {
             x: parent.width - 39 - 96; y: 14.17; width: 96; height: 32; radius: 4
             color: closeHover.pressed ? theme.pick("#E0E0E0", "#3D3D3D", "#1AEBFF") : closeHover.hovered ? theme.menuHover : theme.surface
             border.width: 0.67; border.color: closeHover.hovered ? theme.pick("#C7C7C7", "#757575", "#1AEBFF") : theme.pick("#D1D1D1", "#666666", "#FFFFFF")
-            Text { anchors.centerIn: parent; text: "Close"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(closeButton, theme.text) }
+            Text { anchors.centerIn: parent; text: qsTr("Close"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(closeButton, theme.text) }
             HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.close() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Close"
+            Accessible.name: qsTr("Close")
         }
         Rectangle {
             id: moreButton
@@ -102,9 +102,9 @@ Item {
             TapHandler { onTapped: if (root.file) root.menuRequested(root.file, moreButton) }
             ToolTip.visible: moreHover.hovered
             ToolTip.delay: 500
-            ToolTip.text: "More attachment options"
+            ToolTip.text: qsTr("More attachment options")
             Accessible.role: Accessible.Button
-            Accessible.name: "More attachment options"
+            Accessible.name: qsTr("More attachment options")
         }
     }
     Rectangle {

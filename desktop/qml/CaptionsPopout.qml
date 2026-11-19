@@ -65,7 +65,7 @@ Window {
         pinned: win.pinned
         onTogglePin: win.pinned = !win.pinned
         leading: [
-            TitleButton { width: 32; height: 31.33; icon: "window-pop-in-20"; tip: "Pop in"; onClicked: win.popIn() }
+            TitleButton { width: 32; height: 31.33; icon: "window-pop-in-20"; tip: qsTr("Pop in"); onClicked: win.popIn() }
         ]
         // Kept on top until unpinned; once unpinned Teams no longer shows
         // the pin (as measured).
@@ -74,7 +74,7 @@ Window {
                 visible: win.pinned
                 width: 24; height: 23.33
                 icon: "pin-20"; glyph: 20
-                tip: "Unpin window"
+                tip: qsTr("Unpin window")
                 onClicked: win.pinned = false
             }
         ]
@@ -85,7 +85,7 @@ Window {
         Text {
             x: 20; y: 13.4; height: 28.57
             verticalAlignment: Text.AlignVCenter
-            text: win.rttOn ? "RTT" : "Live Captions"
+            text: win.rttOn ? qsTr("RTT") : qsTr("Live Captions")
             font.family: theme.font; font.pixelSize: 20; font.weight: Font.Bold
             color: theme.pick("#000000", "#FFFFFF", "#FFFFFF")
             Accessible.role: Accessible.Heading
@@ -112,14 +112,14 @@ Window {
             Text {
                 x: 60; y: 8; height: 20
                 verticalAlignment: Text.AlignVCenter
-                text: "Live Captions"
+                text: qsTr("Live Captions")
                 font.family: theme.font; font.pixelSize: 14
                 color: theme.pick("#000000", "#FFFFFF", "#FFFFFF")
             }
             HoverHandler { id: sw; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: win.setCaptions(!win.captionsOn) }
             Accessible.role: Accessible.CheckBox
-            Accessible.name: "Live Captions"
+            Accessible.name: qsTr("Live Captions")
             Accessible.checkable: true
             Accessible.checked: win.captionsOn
         }
@@ -127,7 +127,7 @@ Window {
             id: settingsButton
             anchors.right: parent.right; anchors.rightMargin: 18; y: 11.68
             width: 32; height: 32
-            icon: "settings-20"; tip: "Open caption settings"
+            icon: "settings-20"; tip: qsTr("Open caption settings")
             onClicked: win.settingsRequested(settingsButton)
         }
     }

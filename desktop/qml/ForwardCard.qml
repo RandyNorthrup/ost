@@ -43,18 +43,18 @@ Rectangle {
         HoverHandler { id: timeHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.openOriginal() }
         Accessible.role: Accessible.Link
-        Accessible.name: "Go to original message"
+        Accessible.name: qsTr("Go to original message")
     }
     Text {
         id: bodyText
         x: 16; y: 40
         width: Math.min(implicitWidth, root.maxWidth - 32)
-        text: !root.forward ? "" : root.forward.deleted ? "<i>This message was deleted.</i>" : (root.forward.html || root.forward.text)
+        text: !root.forward ? "" : root.forward.deleted ? "<i>" + qsTr("This message was deleted.") + "</i>" : (root.forward.html || root.forward.text)
         textFormat: Text.RichText
         wrapMode: Text.Wrap
         lineHeight: 20; lineHeightMode: Text.FixedHeight
         font.family: theme.font; font.pixelSize: theme.base; color: theme.text
     }
     Accessible.role: Accessible.Grouping
-    Accessible.name: "Begin Reference, " + (forward ? forward.text : "") + ", " + (forward ? forward.sender_name : "") + ", " + stamp + ", End reference"
+    Accessible.name: qsTr("Begin Reference, %1, %2, %3, End reference").arg(forward ? forward.text : "").arg(forward ? forward.sender_name : "").arg(stamp)
 }

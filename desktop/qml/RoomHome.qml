@@ -121,7 +121,7 @@ Rectangle {
         Text {
             width: 320
             wrapMode: Text.Wrap
-            text: "Add this room to a meeting with your personal device"
+            text: qsTr("Add this room to a meeting with your personal device")
             font.family: theme.font; font.pixelSize: 16
             color: theme.textSecondary
         }
@@ -134,7 +134,7 @@ Rectangle {
         width: parent.width / 2 - 64; height: parent.height - 128
         Text {
             visible: root.today.length === 0
-            text: "Available"
+            text: qsTr("Available")
             font.family: theme.font; font.pixelSize: 24; font.weight: Font.DemiBold
             color: theme.text
         }
@@ -161,14 +161,14 @@ Rectangle {
                         objectName: "calendar-meeting-card-details-title"
                         width: parent.width
                         elide: Text.ElideRight
-                        text: cardItem.isPrivate ? "Private Meeting"
-                            : (cardItem.modelData.subject || ("Meeting with " + (cardItem.modelData.organizer || "")))
+                        text: cardItem.isPrivate ? qsTr("Private Meeting")
+                            : (cardItem.modelData.subject || qsTr("Meeting with %1").arg(cardItem.modelData.organizer || ""))
                         font.family: theme.font; font.pixelSize: 18; font.weight: Font.DemiBold
                         color: theme.text
                     }
                     Text {
                         objectName: "calendar-meeting-card-details-time"
-                        text: (cardItem.live ? "Now · " : "") + (cardItem.modelData.is_all_day ? "All day"
+                        text: (cardItem.live ? qsTr("Now") + " · " : "") + (cardItem.modelData.is_all_day ? qsTr("All day")
                             : root.time(cardItem.modelData.start_utc) + " - " + root.time(cardItem.modelData.end_utc))
                         font.family: theme.font; font.pixelSize: 14
                         color: theme.textSecondary
@@ -191,14 +191,14 @@ Rectangle {
                     color: joinHover.hovered ? theme.brandHover : theme.brandFill
                     Text {
                         anchors.centerIn: parent
-                        text: "Join"
+                        text: qsTr("Join")
                         font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
                         color: theme.textOnBrand
                     }
                     HoverHandler { id: joinHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.join(cardItem.modelData.join_url, cardItem.modelData.subject || "") }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Join"
+                    Accessible.name: qsTr("Join")
                     Accessible.onPressAction: root.join(cardItem.modelData.join_url, cardItem.modelData.subject || "")
                 }
             }
@@ -230,7 +230,7 @@ Rectangle {
                 objectName: "meeting-room-ring-indicator-text"
                 width: parent.width
                 wrapMode: Text.Wrap
-                text: root.meeting ? "Inviting this room to a meeting" : "Incoming call"
+                text: root.meeting ? qsTr("Inviting this room to a meeting") : qsTr("Incoming call")
                 font.family: theme.font; font.pixelSize: 14
                 color: theme.textSecondary
             }
@@ -257,8 +257,8 @@ Rectangle {
                     Accessible.name: rb.label
                     Accessible.onPressAction: rb.clicked()
                 }
-                RingButton { label: "Decline"; onClicked: root.decline() }
-                RingButton { label: "Accept"; primary: true; onClicked: root.accept() }
+                RingButton { label: qsTr("Decline"); onClicked: root.decline() }
+                RingButton { label: qsTr("Accept"); primary: true; onClicked: root.accept() }
             }
         }
     }

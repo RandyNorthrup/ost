@@ -6,7 +6,7 @@ import QtQuick.Window
 // Help app), with OST's help (HelpView).
 Window {
     id: win
-    title: "Help"
+    title: qsTr("Help")
     width: 946; height: 593
     minimumWidth: 480; minimumHeight: 360
     color: theme.surface

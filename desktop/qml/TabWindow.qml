@@ -98,12 +98,12 @@ Window {
             Repeater {
                 id: headerActions
                 model: [
-                    { key: "conversation", icon: win.conversationOpen ? "chat-20-filled" : "chat-20", tip: win.conversationOpen ? "Hide tab conversation" : "Show tab conversation", show: win.tab.can_converse === true, w: 32, h: 20 },
-                    { key: "reloadTab", icon: "arrow-clockwise-20", tip: "Reload tab" },
-                    { key: "goToWebsite", icon: "globe-20", tip: "Go to website", show: !!win.tab.website_url },
+                    { key: "conversation", icon: win.conversationOpen ? "chat-20-filled" : "chat-20", tip: win.conversationOpen ? qsTr("Hide tab conversation") : qsTr("Show tab conversation"), show: win.tab.can_converse === true, w: 32, h: 20 },
+                    { key: "reloadTab", icon: "arrow-clockwise-20", tip: qsTr("Reload tab") },
+                    { key: "goToWebsite", icon: "globe-20", tip: qsTr("Go to website"), show: !!win.tab.website_url },
                     { key: "copyLink", icon: "link-20", tip: "" },
-                    { key: "aboutTab", icon: "info-20", tip: "About this tab" },
-                    { key: "devicePermissions", icon: "shield-keyhole-20", tip: "App permissions", show: win.keys.indexOf("devicePermissions") >= 0 }
+                    { key: "aboutTab", icon: "info-20", tip: qsTr("About this tab") },
+                    { key: "devicePermissions", icon: "shield-keyhole-20", tip: qsTr("App permissions"), show: win.keys.indexOf("devicePermissions") >= 0 }
                 ].filter(a => a.show !== false)
                 Rectangle {
                     id: hcFill1
@@ -118,7 +118,7 @@ Window {
                     ToolTip.delay: 500
                     ToolTip.text: modelData.tip
                     Accessible.role: Accessible.Button
-                    Accessible.name: modelData.tip || "Copy link"
+                    Accessible.name: modelData.tip || qsTr("Copy link")
                 }
             }
         }
@@ -158,7 +158,7 @@ Window {
         FluentIcon { anchors.horizontalCenter: parent.horizontalCenter; name: "info-16"; size: 32; color: theme.textSecondary }
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
-            text: (win.tab.name || "") + " isn't available in OST yet."
+            text: qsTr("%1 isn't available in OST yet.").arg(win.tab.name || "")
             font.family: theme.font; font.pixelSize: theme.base; color: theme.textSecondary
         }
     }

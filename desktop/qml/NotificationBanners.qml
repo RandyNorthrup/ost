@@ -30,7 +30,7 @@ import QtMultimedia
 //   pointer was there when it appeared) holds it only 2 s.
 Window {
     id: root
-    title: "OST notifications"
+    title: qsTr("OST notifications")
     flags: Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
     color: "transparent"
     width: 372
@@ -309,7 +309,7 @@ Window {
     // More options ▸ Go to Notification settings.
     component MoreButton: HeadButton {
         id: mb
-        icon: "more-horizontal-20"; label: "More options"
+        icon: "more-horizontal-20"; label: qsTr("More options")
         open: moreMenu.opened
         onClicked: moreMenu.opened ? moreMenu.close() : moreMenu.open()
         Popup {
@@ -327,7 +327,7 @@ Window {
                 Text {
                     id: settingsText
                     x: 36; anchors.verticalCenter: parent.verticalCenter
-                    text: "Go to Notification settings"
+                    text: qsTr("Go to Notification settings")
                     font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill2, theme.text)
                 }
                 HoverHandler { id: settingsHover; cursorShape: Qt.PointingHandCursor }
@@ -344,7 +344,7 @@ Window {
         id: rb
         property var toast
         signal reacted(string key)
-        icon: "emoji-20"; label: "Send reaction"
+        icon: "emoji-20"; label: qsTr("Send reaction")
         open: reactMenu.opened
         onClicked: reactMenu.open()
         HoverHandler { onHoveredChanged: if (hovered) reactMenu.open() }
@@ -373,7 +373,7 @@ Window {
                         HoverHandler { id: emoHover; cursorShape: Qt.PointingHandCursor }
                         MouseArea { anchors.fill: parent; onClicked: { reactMenu.close(); rb.reacted(parent.key) } }
                         Accessible.role: Accessible.Button
-                        Accessible.name: "React with " + parent.key
+                        Accessible.name: qsTr("React with %1").arg(parent.key)
                     }
                 }
             }
@@ -421,11 +421,11 @@ Window {
             Text {
                 visible: !field.text.length
                 anchors.verticalCenter: parent.verticalCenter
-                text: "Send a quick reply"
+                text: qsTr("Send a quick reply")
                 font: field.font; color: theme.onFill(qr, "white")
             }
             Accessible.role: Accessible.EditableText
-            Accessible.name: "Send a quick reply"
+            Accessible.name: qsTr("Send a quick reply")
         }
         MouseArea {
             anchors.fill: field; cursorShape: Qt.IBeamCursor
@@ -434,7 +434,7 @@ Window {
         HeadButton {
             small: true
             anchors.right: parent.right; anchors.rightMargin: 6.67; anchors.verticalCenter: parent.verticalCenter
-            icon: "send-20"; iconSize: 20; label: "Reply"
+            icon: "send-20"; iconSize: 20; label: qsTr("Reply")
             onClicked: qr.send()
         }
         function send() {
@@ -470,7 +470,7 @@ Window {
                 urgent: !!sc.toast && !!sc.toast.urgent
                 MoreButton {}
                 ReactButton { visible: sc.quick && !!sc.toast.messageId; toast: sc.toast; onReacted: key => sc.react(key) }
-                HeadButton { icon: "dismiss-20"; label: "Dismiss notification"; onClicked: root.dismiss(sc.toast.id) }
+                HeadButton { icon: "dismiss-20"; label: qsTr("Dismiss notification"); onClicked: root.dismiss(sc.toast.id) }
             }
             Picture { visible: !root.compact; x: 16; y: 44; toast: sc.toast }
             Column {
@@ -534,7 +534,7 @@ Window {
                     anchors.right: parent.right; height: parent.height
                     MoreButton { small: true }
                     ReactButton { small: true; visible: sc.quick && !!sc.toast.messageId; toast: sc.toast; onReacted: key => sc.react(key) }
-                    HeadButton { small: true; icon: "dismiss-20"; label: "Dismiss notification"; onClicked: root.dismiss(sc.toast.id) }
+                    HeadButton { small: true; icon: "dismiss-20"; label: qsTr("Dismiss notification"); onClicked: root.dismiss(sc.toast.id) }
                 }
             }
             Item {
@@ -561,12 +561,12 @@ Window {
                         id: replyRow
                         anchors.centerIn: parent; spacing: 4
                         FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "arrow-reply-20"; size: 20; color: "white" }
-                        Text { anchors.verticalCenter: parent.verticalCenter; text: "Reply"; font.family: theme.font; font.pixelSize: 12; color: "white" }
+                        Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Reply"); font.family: theme.font; font.pixelSize: 12; color: "white" }
                     }
                     HoverHandler { id: replyHover; cursorShape: Qt.PointingHandCursor }
                     MouseArea { anchors.fill: parent; onClicked: { sc.replying = true; compactReply.input.forceActiveFocus() } }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Reply"
+                    Accessible.name: qsTr("Reply")
                 }
             }
             QuickReply {
@@ -622,7 +622,7 @@ Window {
             Header {
                 visible: !root.compact
                 MoreButton {}
-                HeadButton { icon: "dismiss-20"; label: "Dismiss notification"; onClicked: root.dismiss(mc.toast.id) }
+                HeadButton { icon: "dismiss-20"; label: qsTr("Dismiss notification"); onClicked: root.dismiss(mc.toast.id) }
             }
             // Comfy: centred picture (80), title, two lines, the actions.
             Picture { visible: !root.compact; x: 140; y: 46; size: 80; toast: mc.toast }
@@ -664,7 +664,7 @@ Window {
                     id: msnButtons
                     anchors.right: parent.right; height: parent.height
                     MoreButton { small: true }
-                    HeadButton { small: true; icon: "dismiss-20"; label: "Dismiss notification"; onClicked: root.dismiss(mc.toast.id) }
+                    HeadButton { small: true; icon: "dismiss-20"; label: qsTr("Dismiss notification"); onClicked: root.dismiss(mc.toast.id) }
                 }
             }
             Text {
@@ -782,7 +782,7 @@ Window {
             Header {
                 visible: !root.compact
                 MoreButton {}
-                HeadButton { icon: "dismiss-20"; label: "Dismiss notification"; onClicked: cc.ignore() }
+                HeadButton { icon: "dismiss-20"; label: qsTr("Dismiss notification"); onClicked: cc.ignore() }
             }
             Picture { visible: !root.compact; x: 140; y: 50; size: 80; toast: cc.toast }
             Text {
@@ -797,7 +797,7 @@ Window {
                 visible: !root.compact
                 x: 16; y: 158; width: 328; height: 16
                 horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
-                text: cc.toast && cc.toast.video ? "is video calling you" : "is calling you"
+                text: cc.toast && cc.toast.video ? qsTr("is video calling you") : qsTr("is calling you")
                 font.family: theme.font; font.pixelSize: 14
                 color: "white"
             }
@@ -817,14 +817,14 @@ Window {
                     id: callButtons
                     anchors.right: parent.right; height: parent.height
                     MoreButton { small: true }
-                    HeadButton { small: true; icon: "dismiss-20"; label: "Dismiss notification"; onClicked: cc.ignore() }
+                    HeadButton { small: true; icon: "dismiss-20"; label: qsTr("Dismiss notification"); onClicked: cc.ignore() }
                 }
             }
             Text {
                 visible: root.compact
                 x: 74; y: 37.33; width: 274; height: 16
                 verticalAlignment: Text.AlignVCenter
-                text: cc.toast && cc.toast.video ? "is video calling you" : "is calling you"
+                text: cc.toast && cc.toast.video ? qsTr("is video calling you") : qsTr("is calling you")
                 font.family: theme.font; font.pixelSize: 14
                 color: "white"
             }
@@ -832,9 +832,9 @@ Window {
             Row {
                 x: 16; y: root.compact ? 70 : 192
                 spacing: 8
-                CallButton { icon: "video-filled"; label: "Accept with video"; onClicked: root.acceptCall(true) }
-                CallButton { icon: "call-filled-24"; label: "Accept with audio"; onClicked: root.acceptCall(false) }
-                CallButton { icon: "call-end-filled"; label: "Decline call"; decline: true; onClicked: root.declineCall() }
+                CallButton { icon: "video-filled"; label: qsTr("Accept with video"); onClicked: root.acceptCall(true) }
+                CallButton { icon: "call-filled-24"; label: qsTr("Accept with audio"); onClicked: root.acceptCall(false) }
+                CallButton { icon: "call-end-filled"; label: qsTr("Decline call"); decline: true; onClicked: root.declineCall() }
             }
             function ignore() { root.dismiss(toast.id); root.ignoreCall() }
         }

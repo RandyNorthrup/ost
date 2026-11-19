@@ -32,11 +32,11 @@ Item {
     }
     Row {
         y: 10; height: 14; spacing: 8
-        SmallLink { visible: !!root.links && !!root.links.privacy; text: "Privacy"; url: root.links ? root.links.privacy : "" }
+        SmallLink { visible: !!root.links && !!root.links.privacy; text: qsTr("Privacy"); url: root.links ? root.links.privacy : "" }
         Rectangle { visible: !!root.links && !!root.links.privacy; y: 2; width: 1; height: 10; color: theme.stroke }
-        SmallLink { visible: !!root.links && !!root.links.terms; text: "Terms of use"; url: root.links ? root.links.terms : "" }
+        SmallLink { visible: !!root.links && !!root.links.terms; text: qsTr("Terms of use"); url: root.links ? root.links.terms : "" }
         Rectangle { visible: !!root.links && !!root.links.terms; y: 2; width: 1; height: 10; color: theme.stroke }
-        SmallLink { text: "Permissions"; onActivated: root.permissions() }
+        SmallLink { text: qsTr("Permissions"); onActivated: root.permissions() }
     }
     Row {
         y: 41; spacing: 8
@@ -44,10 +44,10 @@ Item {
             id: hcFill1
             width: 60; height: 31.33; radius: 4
             color: openHover.hovered ? theme.brandHover : theme.brandFill
-            Text { anchors.centerIn: parent; text: "Open"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.textOnBrand) }
+            Text { anchors.centerIn: parent; text: qsTr("Open"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.textOnBrand) }
             HoverHandler { id: openHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.openApp() }
-            Accessible.role: Accessible.Button; Accessible.name: "Open"
+            Accessible.role: Accessible.Button; Accessible.name: qsTr("Open")
         }
         Row {
             spacing: 0
@@ -56,10 +56,10 @@ Item {
                 width: 101; height: 31.33; radius: 4
                 color: vdHover.hovered ? theme.menuHover : "transparent"
                 border.width: 0.67; border.color: vdHover.hovered ? theme.strokeHover : theme.stroke
-                Text { anchors.centerIn: parent; text: "View details"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.text) }
+                Text { anchors.centerIn: parent; text: qsTr("View details"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.text) }
                 HoverHandler { id: vdHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: root.details() }
-                Accessible.role: Accessible.Button; Accessible.name: "View details"
+                Accessible.role: Accessible.Button; Accessible.name: qsTr("View details")
             }
             Rectangle {
                 id: hcFill3
@@ -68,7 +68,7 @@ Item {
                 FluentIcon { anchors.centerIn: parent; name: "share-20"; size: 20; color: theme.onFill(hcFill3, theme.textStrong) }
                 HoverHandler { id: shHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: root.share() }
-                Accessible.role: Accessible.Button; Accessible.name: "Share"
+                Accessible.role: Accessible.Button; Accessible.name: qsTr("Share")
             }
         }
     }

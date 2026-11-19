@@ -30,7 +30,7 @@ Popup {
         x: 24.67; y: 24.67; width: 520.67; height: 31.33
         verticalAlignment: Text.AlignVCenter
         elide: Text.ElideRight
-        text: "Import CSV file to assign participants to breakout rooms"
+        text: qsTr("Import CSV file to assign participants to breakout rooms")
         font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold
         color: theme.text
     }
@@ -42,7 +42,7 @@ Popup {
         HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.close() }
         Accessible.role: Accessible.Button
-        Accessible.name: "Close"
+        Accessible.name: qsTr("Close")
     }
     Text {
         x: 24.67; y: 64; width: 560.67
@@ -50,7 +50,7 @@ Popup {
         lineHeight: 20; lineHeightMode: Text.FixedHeight
         // Teams' link isn't underlined.
         textFormat: Text.RichText
-        text: "Your CSV should include one column for breakout room names and one column for participant email addresses. <a href=\"template\" style=\"text-decoration:none; color:" + theme.brandForeground1 + "\">Download CSV template</a>"
+        text: qsTr("Your CSV should include one column for breakout room names and one column for participant email addresses.") + " <a href=\"template\" style=\"text-decoration:none; color:" + theme.brandForeground1 + "\">" + qsTr("Download CSV template") + "</a>"
         font.family: theme.font; font.pixelSize: 14
         color: theme.text
         onLinkActivated: root.downloadTemplate()
@@ -76,11 +76,11 @@ Popup {
             x: 216.33; y: 32; width: 128; height: 128
             FluentIcon { anchors.centerIn: parent; name: "arrow-upload-20"; size: 48; color: theme.onFill(zone, theme.textSecondary) }
             Accessible.role: Accessible.Graphic
-            Accessible.name: "Upload icon"
+            Accessible.name: qsTr("Upload icon")
         }
         Text {
             anchors.horizontalCenter: parent.horizontalCenter; y: 190
-            text: drop.containsDrag ? "Drop your file here" : "Drag and drop a CSV file here, or select one to import"
+            text: drop.containsDrag ? qsTr("Drop your file here") : qsTr("Drag and drop a CSV file here, or select one to import")
             font.family: theme.font; font.pixelSize: 14
             color: theme.onFill(zone, theme.text)
         }
@@ -88,11 +88,11 @@ Popup {
             id: hcFill2
             x: 180.33; y: 240; width: 200; height: 31.33; radius: 4
             color: importHover.hovered ? theme.brandHover : theme.brandFill
-            Text { anchors.centerIn: parent; text: "Import"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.textOnBrand) }
+            Text { anchors.centerIn: parent; text: qsTr("Import"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.textOnBrand) }
             HoverHandler { id: importHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: fileDialog.open() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Import"
+            Accessible.name: qsTr("Import")
         }
         DropArea {
             id: drop
@@ -106,7 +106,7 @@ Popup {
     }
     Text {
         x: 24.67; y: 476; height: 16
-        text: "Tips:"
+        text: qsTr("Tips:")
         font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold
         color: theme.textSecondary
     }
@@ -114,9 +114,9 @@ Popup {
         x: 34.67; y: 492
         Repeater {
             model: [
-                "Email addresses must match what participants use to join the meeting, no distribution lists.",
-                "You can create up to 100 breakout rooms with a maximum of 1000 participants.",
-                "Participants not listed in the CSV will remain in the main meeting."
+                qsTr("Email addresses must match what participants use to join the meeting, no distribution lists."),
+                qsTr("You can create up to 100 breakout rooms with a maximum of 1000 participants."),
+                qsTr("Participants not listed in the CSV will remain in the main meeting.")
             ]
             Text {
                 required property string modelData
@@ -129,8 +129,8 @@ Popup {
     }
     FileDialog {
         id: fileDialog
-        title: "Import"
-        nameFilters: ["CSV files (*.csv)"]
+        title: qsTr("Import")
+        nameFilters: [qsTr("CSV files (*.csv)")]
         onAccepted: { root.close(); root.picked(selectedFile.toString().replace(/^file:\/\//, "")) }
     }
 }

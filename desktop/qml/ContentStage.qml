@@ -158,7 +158,7 @@ Item {
     Text {
         visible: !boardLoader.active && !pptLoader.active
         anchors.centerIn: parent
-        text: root.session ? "Loading…" : ""
+        text: root.session ? qsTr("Loading…") : ""
         color: theme.textSecondary
         font.family: theme.font; font.pixelSize: 14
     }

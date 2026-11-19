@@ -319,7 +319,8 @@ Source: https://td.usnh.edu/TDClient/60/Portal/KB/ArticleDet?ID=2192 ; https://s
   - Time format choices: HH:mm, H:mm, hh:mm tt, h:mm tt.
   - Dates in the current year drop the year using Teams' year-stripping regex.
   - In OST every date and time goes through theme.time/date/… (QML) and api::regional (engine).
-  - OST's text is English, so its App language list has the 16 English locales of Teams' 109.
+  - App language offers all of Teams' 109 languages (TASK-0142). OST's text is keyed to Teams' string ids and shown in Teams' own wording for the chosen language (OST keeps only the ids, desktop/i18n/ids.json; on first use of a language it downloads that locale's `*-locale-<locale>-*` resources from Teams' CDN, pinned to one Teams build in desktop/i18n/teams_resources.json, and builds the catalogue in ~/.cache/ost/i18n; "Teams" reads "OST"; offline it stays English). Teams has strings for 63 locales and maps the other app languages to one of them (its loader's table, `src/api/regional_locale_map.json`: de-AT → de-de, es-AR → es-mx, zh-SG → zh-cn…).
+  - Right-to-left languages (Arabic, Hebrew, Persian) mirror the whole window as Teams' dir="rtl" does: text aligned to the right, message bodies by their own direction, and the icons Teams' library marks flipInRtl mirrored (send, reply, forward…). Verified against Teams on winpc in ar-sa and de-de, 2026-11-19.
   - The Windows link is not shown.
 - [ ] Time zone section with a "Manage Windows settings" link.
   Source: same

@@ -14,7 +14,7 @@ Popup {
 
     // [emoji, search words] by category, in Teams' order.
     readonly property var categories: [
-        { name: "Smilies", icon: "😀", items: [
+        { name: qsTr("Smilies"), icon: "😀", items: [
             ["😀","grin smile happy"],["😃","smile happy"],["😄","laugh smile"],["😁","grin beam"],["😆","laugh"],["😅","sweat laugh"],["🤣","rofl laugh"],["😂","joy tears laugh"],
             ["🙂","slight smile"],["🙃","upside down"],["😉","wink"],["😊","blush smile"],["😇","angel halo"],["🥰","love hearts"],["😍","heart eyes love"],["🤩","star struck"],
             ["😘","kiss"],["😗","kiss"],["😚","kiss"],["😋","yum tasty"],["😛","tongue"],["😜","wink tongue"],["🤪","zany crazy"],["😝","tongue"],
@@ -26,37 +26,37 @@ Popup {
             ["😧","anguished"],["😨","fearful"],["😰","anxious sweat"],["😥","sad relieved"],["😢","cry sad"],["😭","sob cry"],["😱","scream"],["😖","confounded"],
             ["😣","persevere"],["😞","disappointed"],["😓","sweat"],["😩","weary"],["😫","tired"],["🥱","yawn"],["😤","triumph"],["😡","angry pout"],
             ["😠","angry"],["🤬","cursing"],["😈","devil"],["💀","skull"],["💩","poo"],["🤡","clown"],["👻","ghost"],["👽","alien"]] },
-        { name: "People", icon: "👍", items: [
+        { name: qsTr("People"), icon: "👍", items: [
             ["👍","thumbs up like yes"],["👎","thumbs down no"],["👌","ok"],["🤌","pinched"],["✌️","victory peace"],["🤞","fingers crossed"],["🤟","love you"],["🤘","rock"],
             ["🤙","call me"],["👈","left"],["👉","right"],["👆","up"],["👇","down"],["☝️","point up"],["✋","hand raised"],["🤚","back hand"],
             ["🖐️","hand"],["🖖","vulcan"],["👋","wave hello bye"],["👏","clap"],["🙌","raised hands celebrate"],["👐","open hands"],["🤲","palms"],["🤝","handshake"],
             ["🙏","pray thanks please"],["✍️","writing"],["💪","muscle strong"],["🧠","brain"],["👀","eyes look"],["👁️","eye"],["👄","mouth"],["🧑‍💻","technologist computer"],
             ["🙋","raising hand"],["🤷","shrug"],["🤦","facepalm"],["🙇","bow"],["💁","info"],["🙅","no gesture"],["🙆","ok gesture"],["🧑‍🤝‍🧑","people holding hands"]] },
-        { name: "Animals", icon: "🐶", items: [
+        { name: qsTr("Animals"), icon: "🐶", items: [
             ["🐶","dog"],["🐱","cat"],["🐭","mouse"],["🐹","hamster"],["🐰","rabbit"],["🦊","fox"],["🐻","bear"],["🐼","panda"],
             ["🐨","koala"],["🐯","tiger"],["🦁","lion"],["🐮","cow"],["🐷","pig"],["🐸","frog"],["🐵","monkey"],["🐔","chicken"],
             ["🐧","penguin"],["🐦","bird"],["🦄","unicorn"],["🐝","bee"],["🦋","butterfly"],["🐢","turtle"],["🐙","octopus"],["🐬","dolphin"],
             ["🌸","blossom flower"],["🌹","rose"],["🌻","sunflower"],["🌲","tree"],["🌵","cactus"],["🍀","clover luck"],["🌈","rainbow"],["☀️","sun"],
             ["🌙","moon"],["⭐","star"],["⚡","lightning"],["🔥","fire hot lit"],["❄️","snow"],["🌊","wave ocean"],["☔","rain umbrella"],["🌍","earth world"]] },
-        { name: "Food", icon: "🍕", items: [
+        { name: qsTr("Food"), icon: "🍕", items: [
             ["🍎","apple"],["🍌","banana"],["🍇","grapes"],["🍓","strawberry"],["🍉","watermelon"],["🍑","peach"],["🍍","pineapple"],["🥑","avocado"],
             ["🍕","pizza"],["🍔","burger"],["🍟","fries"],["🌭","hot dog"],["🌮","taco"],["🌯","burrito"],["🍣","sushi"],["🍜","noodles ramen"],
             ["🍩","donut"],["🍪","cookie"],["🎂","cake birthday"],["🍰","cake"],["🍫","chocolate"],["🍿","popcorn"],["☕","coffee"],["🍵","tea"],
             ["🍺","beer"],["🍻","cheers beers"],["🍷","wine"],["🥂","cheers toast"],["🍹","cocktail"],["🥤","drink"],["🧃","juice"],["🍦","ice cream"]] },
-        { name: "Travel", icon: "✈️", items: [
+        { name: qsTr("Travel"), icon: "✈️", items: [
             ["🚗","car"],["🚕","taxi"],["🚌","bus"],["🚲","bike"],["🚀","rocket launch"],["✈️","plane travel"],["🚢","ship"],["🚆","train"],
             ["🏠","home house"],["🏢","office building"],["🏖️","beach"],["🏔️","mountain"],["🗽","statue"],["🗼","tower"],["🎡","ferris wheel"],["⛺","camping tent"],
             ["🗺️","map"],["🧭","compass"],["⏰","alarm clock"],["⌛","hourglass"],["📍","pin location"],["🚦","traffic light"],["🛑","stop"],["🚧","construction"]] },
-        { name: "Activities", icon: "⚽", items: [
+        { name: qsTr("Activities"), icon: "⚽", items: [
             ["⚽","soccer football"],["🏀","basketball"],["🏈","football"],["⚾","baseball"],["🎾","tennis"],["🏐","volleyball"],["🎳","bowling"],["⛳","golf"],
             ["🎮","game controller"],["🎲","dice"],["♟️","chess"],["🎯","target bullseye"],["🎨","art palette"],["🎬","movie"],["🎤","microphone sing"],["🎧","headphones"],
             ["🎸","guitar"],["🎹","piano"],["🎉","party tada celebrate"],["🎊","confetti"],["🎈","balloon"],["🎁","gift present"],["🏆","trophy win"],["🥇","gold medal first"]] },
-        { name: "Objects", icon: "💡", items: [
+        { name: qsTr("Objects"), icon: "💡", items: [
             ["💡","idea bulb"],["💻","laptop computer"],["🖥️","desktop computer"],["⌨️","keyboard"],["🖱️","mouse"],["📱","phone mobile"],["☎️","telephone"],["📞","call phone"],
             ["📷","camera"],["🎥","video camera"],["📺","tv"],["🔋","battery"],["🔌","plug"],["💾","save disk"],["📁","folder"],["📄","document page"],
             ["📅","calendar"],["📌","pushpin"],["📎","paperclip"],["✂️","scissors"],["🔒","lock"],["🔑","key"],["🔨","hammer"],["🛠️","tools"],
             ["📦","package box"],["✉️","envelope mail"],["📧","email"],["📝","memo note"],["📊","chart bar"],["📈","chart up"],["📉","chart down"],["💰","money bag"]] },
-        { name: "Symbols", icon: "❤️", items: [
+        { name: qsTr("Symbols"), icon: "❤️", items: [
             ["❤️","heart love red"],["🧡","orange heart"],["💛","yellow heart"],["💚","green heart"],["💙","blue heart"],["💜","purple heart"],["🖤","black heart"],["🤍","white heart"],
             ["💔","broken heart"],["💯","hundred"],["✅","check done yes"],["☑️","check box"],["✔️","check"],["❌","cross no"],["❎","cross"],["➕","plus"],
             ["➖","minus"],["❓","question"],["❗","exclamation"],["‼️","double exclamation"],["⚠️","warning"],["🚫","prohibited"],["🔴","red circle"],["🟢","green circle"],
@@ -86,8 +86,8 @@ Popup {
                 color: theme.text
                 clip: true
                 onTextChanged: root.query = text.trim().toLowerCase()
-                Text { visible: !search.text; text: "Search emoji"; color: theme.textTertiary; font: search.font }
-                Accessible.name: "Search emoji"
+                Text { visible: !search.text; text: qsTr("Search emoji"); color: theme.textTertiary; font: search.font }
+                Accessible.name: qsTr("Search emoji")
             }
         }
         // Category bar: jump to a section.
@@ -119,8 +119,8 @@ Popup {
             spacing: 8
             boundsBehavior: Flickable.StopAtBounds
             ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-            model: root.query ? [{ name: "Results", items: root.shown }]
-                : (root.recent.length ? [{ name: "Recent", items: root.recent.map(e => [e, ""]) }] : []).concat(root.categories)
+            model: root.query ? [{ name: qsTr("Results"), items: root.shown }]
+                : (root.recent.length ? [{ name: qsTr("Recent"), items: root.recent.map(e => [e, ""]) }] : []).concat(root.categories)
             delegate: Column {
                 required property var modelData
                 width: grid.width

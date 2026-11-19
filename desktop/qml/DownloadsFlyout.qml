@@ -68,13 +68,13 @@ Popup {
                 Text {
                     visible: !root.searching
                     x: 16; y: 8; height: 33.33; verticalAlignment: Text.AlignVCenter
-                    text: "Downloads"
+                    text: qsTr("Downloads")
                     font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold
                     color: root.ink
                     Accessible.role: Accessible.Heading
                     Accessible.name: text
                 }
-                HubButton { visible: root.searching; x: 4; y: 8.67; icon: "arrow-left-20"; label: "Back"; onClicked: { root.searching = false; root.query = "" } }
+                HubButton { visible: root.searching; x: 4; y: 8.67; icon: "arrow-left-20"; label: qsTr("Back"); onClicked: { root.searching = false; root.query = "" } }
                 Rectangle {
                     visible: root.searching
                     x: 40; y: 9.33; width: 316; height: 30.67; radius: 7.2
@@ -87,19 +87,19 @@ Popup {
                         x: 32; width: parent.width - 40; anchors.verticalCenter: parent.verticalCenter
                         font.family: theme.font; font.pixelSize: 14; color: root.ink; clip: true
                         onTextEdited: root.query = text
-                        Text { visible: !searchField.text; text: "Search all files"; font: searchField.font; color: root.ink2 }
+                        Text { visible: !searchField.text; text: qsTr("Search all files"); font: searchField.font; color: root.ink2 }
                         Keys.onEscapePressed: { root.searching = false; root.query = "" }
                         Accessible.role: Accessible.EditableText
-                        Accessible.name: "Search all files"
+                        Accessible.name: qsTr("Search all files")
                     }
                 }
                 Row {
                     visible: !root.searching
                     x: 216; y: 9; spacing: 4
-                    HubButton { icon: "folder-20"; label: "Open downloads folder"; onClicked: backend.downloadsAction("folder", "") }
-                    HubButton { icon: "search-20"; label: "Search downloads"; onClicked: { root.searching = true; searchField.text = ""; searchField.forceActiveFocus() } }
-                    HubButton { id: moreBtn; icon: "more-horizontal-20"; label: "More options"; onClicked: hubMenu.open() }
-                    HubButton { icon: "dismiss-20"; label: "Close"; onClicked: root.close() }
+                    HubButton { icon: "folder-20"; label: qsTr("Open downloads folder"); onClicked: backend.downloadsAction("folder", "") }
+                    HubButton { icon: "search-20"; label: qsTr("Search downloads"); onClicked: { root.searching = true; searchField.text = ""; searchField.forceActiveFocus() } }
+                    HubButton { id: moreBtn; icon: "more-horizontal-20"; label: qsTr("More options"); onClicked: hubMenu.open() }
+                    HubButton { icon: "dismiss-20"; label: qsTr("Close"); onClicked: root.close() }
                 }
                 // More options: Clear all download history.
                 Popup {
@@ -111,18 +111,18 @@ Popup {
                         implicitHeight: 36; radius: 4
                         color: clearHover.hovered ? theme.rowHover : "transparent"
                         FluentIcon { x: 10; anchors.verticalCenter: parent.verticalCenter; name: "delete-20"; size: 20; color: theme.onFill(hcFill1, root.ink) }
-                        Text { x: 40; anchors.verticalCenter: parent.verticalCenter; text: "Clear all download history"; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill1, root.ink) }
+                        Text { x: 40; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Clear all download history"); font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill1, root.ink) }
                         HoverHandler { id: clearHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: { hubMenu.close(); clearConfirm.open() } }
                         Accessible.role: Accessible.MenuItem
-                        Accessible.name: "Clear all download history"
+                        Accessible.name: qsTr("Clear all download history")
                     }
                 }
             }
             Text {
                 visible: root.items.length === 0
                 x: 20; width: 320
-                text: "When you download files from the web, they'll show up here."
+                text: qsTr("When you download files from the web, they'll show up here.")
                 wrapMode: Text.Wrap
                 font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
                 color: theme.text
@@ -155,7 +155,7 @@ Popup {
                         }
                         Text {
                             x: 32; y: nameText.y + nameText.height + 4
-                            text: row.modelData.exists ? "Open file" : "Removed"
+                            text: row.modelData.exists ? qsTr("Open file") : qsTr("Removed")
                             font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight
                             font.underline: row.modelData.exists && openHover.hovered
                             color: theme.onFill(card, row.modelData.exists ? root.linkInk : root.ink2)
@@ -168,12 +168,12 @@ Popup {
                             visible: card.actions
                             x: 272; anchors.verticalCenter: parent.verticalCenter
                             spacing: 12
-                            HubButton { width: 24; height: 24; radius: 4; icon: "folder-20"; label: "Open containing folder"; onClicked: backend.downloadsAction("folder", row.modelData.path) }
-                            HubButton { width: 24; height: 24; radius: 4; icon: "delete-20"; label: "Delete file"; onClicked: backend.downloadsAction("delete", row.modelData.path) }
+                            HubButton { width: 24; height: 24; radius: 4; icon: "folder-20"; label: qsTr("Open containing folder"); onClicked: backend.downloadsAction("folder", row.modelData.path) }
+                            HubButton { width: 24; height: 24; radius: 4; icon: "delete-20"; label: qsTr("Delete file"); onClicked: backend.downloadsAction("delete", row.modelData.path) }
                         }
                         HoverHandler { id: rowHover }
                         Accessible.role: Accessible.ListItem
-                        Accessible.name: row.modelData.name + (row.modelData.exists ? "" : ", removed")
+                        Accessible.name: row.modelData.exists ? row.modelData.name : qsTr("%1, removed").arg(row.modelData.name)
                     }
                 }
             }
@@ -190,10 +190,10 @@ Popup {
         x: 1; y: 40; width: 358; height: 200; padding: 0
         modal: true
         background: FluentSurface { depth: 28; radius: 8; color: theme.surface }
-        HubButton { x: 318; y: 6; icon: "dismiss-20"; label: "Close"; onClicked: clearConfirm.close() }
+        HubButton { x: 318; y: 6; icon: "dismiss-20"; label: qsTr("Close"); onClicked: clearConfirm.close() }
         Text {
             x: 22; y: 46; width: 314
-            text: "Remove all download history?"
+            text: qsTr("Remove all download history?")
             font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; lineHeight: 28; lineHeightMode: Text.FixedHeight
             color: root.ink
             Accessible.role: Accessible.Heading
@@ -201,7 +201,7 @@ Popup {
         }
         Text {
             x: 22; y: 82; width: 322
-            text: "You can still get to the files from the downloads folder."
+            text: qsTr("You can still get to the files from the downloads folder.")
             wrapMode: Text.Wrap
             font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
             color: root.ink2
@@ -212,21 +212,21 @@ Popup {
             Rectangle {
                 id: hcFill2
                 width: 88.7; height: 32; radius: 4; color: removeHover.hovered ? theme.hc("#1D5FD6", "#1AEBFF") : theme.hc("#2169EB", "#FFFFFF")
-                Text { anchors.centerIn: parent; text: "Remove all"; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill2, "#FFFFFF") }
+                Text { anchors.centerIn: parent; text: qsTr("Remove all"); font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill2, "#FFFFFF") }
                 HoverHandler { id: removeHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: { clearConfirm.close(); backend.downloadsAction("clear", "") } }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Remove all"
+                Accessible.name: qsTr("Remove all")
             }
             Rectangle {
                 id: hcFill3
                 width: 66; height: 32; radius: 4; color: cancelHover.hovered ? theme.rowHover : theme.surface
                 border.color: theme.stroke; border.width: 0.67
-                Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill3, root.ink) }
+                Text { anchors.centerIn: parent; text: qsTr("Cancel"); font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill3, root.ink) }
                 HoverHandler { id: cancelHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: clearConfirm.close() }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Cancel"
+                Accessible.name: qsTr("Cancel")
             }
         }
     }

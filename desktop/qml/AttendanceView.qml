@@ -75,9 +75,9 @@ Rectangle {
         const rows = []
         let day = ""
         for (const r of reports) {
-            const d = Qt.formatDate(new Date(r.startTimeUtc), "MMMM d")
+            const d = theme.fmtDate(new Date(r.startTimeUtc), "MMMM d")
             if (d !== day) { if (day) rows.push({ kind: "line" }); rows.push({ kind: "day", text: d }); day = d }
-            rows.push({ kind: "meeting", report: r, text: time(r.startTimeUtc) + " - " + r.attendeeCount + " attendees" })
+            rows.push({ kind: "meeting", report: r, text: time(r.startTimeUtc) + " - " + qsTr("%1 attendees").arg(r.attendeeCount) })
         }
         return rows
     }
@@ -118,12 +118,12 @@ Rectangle {
                 anchors.centerIn: parent
                 spacing: 6
                 FluentIcon { name: "filter-20"; size: 20; color: moreBtn.lit ? theme.brand : theme.textStrong; anchors.verticalCenter: parent.verticalCenter }
-                Text { text: "More"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: moreBtn.lit ? theme.brand : theme.textStrong; anchors.verticalCenter: parent.verticalCenter }
+                Text { text: qsTr("More"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: moreBtn.lit ? theme.brand : theme.textStrong; anchors.verticalCenter: parent.verticalCenter }
             }
             HoverHandler { id: moreH; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: { filterBox.text = String(root.minAttendees); filterPop.open() } }
             Accessible.role: Accessible.Button
-            Accessible.name: "More"
+            Accessible.name: qsTr("More")
         }
         Rectangle {
             id: dl
@@ -134,12 +134,12 @@ Rectangle {
             Row {
                 x: 4; spacing: 0
                 FluentIcon { name: "arrow-download-20"; size: 20; color: dlH.hovered ? theme.brand : theme.text }
-                Text { leftPadding: 5; text: "Download"; font.family: theme.font; font.pixelSize: 14; color: dlH.hovered ? theme.brand : theme.text; height: 20; verticalAlignment: Text.AlignVCenter }
+                Text { leftPadding: 5; text: qsTr("Download"); font.family: theme.font; font.pixelSize: 14; color: dlH.hovered ? theme.brand : theme.text; height: 20; verticalAlignment: Text.AlignVCenter }
             }
             HoverHandler { id: dlH; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: backend.downloadAttendanceReport(root.thread, root.organizer, root.callId) }
             Accessible.role: Accessible.Button
-            Accessible.name: "Download"
+            Accessible.name: qsTr("Download")
         }
     }
 
@@ -158,7 +158,7 @@ Rectangle {
             spacing: 0
             Text {
                 visible: root.mine && !!root.att.error
-                text: "The attendance report isn't available right now."
+                text: qsTr("The attendance report isn't available right now.")
                 font.family: theme.font; font.pixelSize: 14
                 color: theme.textSecondary
             }
@@ -169,10 +169,10 @@ Rectangle {
                 readonly property real cardW: (body.width - 10) / 2
                 Repeater {
                     model: root.report ? [
-                        { value: "<span style=\"font-size:32px\">" + (root.report.summary.attendeeCount || 0) + "</span>", label: "Attended" },
-                        { value: root.bigTime(root.report.summary.startTime) + "<span style=\"font-size:32px\">&nbsp;-&nbsp;</span>" + root.bigTime(root.report.summary.endTime), label: "Start and end time" },
-                        { value: root.big(root.duration(root.report.summary.duration)), label: "Meeting duration" },
-                        { value: root.big(root.duration(root.report.summary.averageAttendeeDuration)), label: "Average attendance time" }
+                        { value: "<span style=\"font-size:32px\">" + (root.report.summary.attendeeCount || 0) + "</span>", label: qsTr("Attended") },
+                        { value: root.bigTime(root.report.summary.startTime) + "<span style=\"font-size:32px\">&nbsp;-&nbsp;</span>" + root.bigTime(root.report.summary.endTime), label: qsTr("Start and end time") },
+                        { value: root.big(root.duration(root.report.summary.duration)), label: qsTr("Meeting duration") },
+                        { value: root.big(root.duration(root.report.summary.averageAttendeeDuration)), label: qsTr("Average attendance time") }
                     ] : []
                     Rectangle {
                         required property var modelData
@@ -198,7 +198,7 @@ Rectangle {
             Item { visible: root.report !== null; width: 1; height: 24 + 24 }
             Text {
                 visible: root.report !== null
-                text: "Participants"
+                text: qsTr("Participants")
                 font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold
                 lineHeight: 22; lineHeightMode: Text.FixedHeight
                 color: theme.text
@@ -221,7 +221,7 @@ Rectangle {
                 readonly property real colW: (inner - nameW) / 4
                 function colX(i) { return 24 + (i === 0 ? 0 : nameW + (i - 1) * colW) }
                 Repeater {
-                    model: ["Name", "First join", "Last leave", "In-meeting duration", "Role"]
+                    model: [qsTr("Name"), qsTr("First join"), qsTr("Last leave"), qsTr("In-meeting duration"), qsTr("Role")]
                     Text {
                         required property string modelData
                         required property int index
@@ -343,11 +343,11 @@ Rectangle {
         Column {
             width: parent.width
             spacing: 8
-            Text { text: "Number of participants"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.text }
+            Text { text: qsTr("Number of participants"); font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.text }
             Row {
                 spacing: 9.9
                 height: 24
-                Text { anchors.verticalCenter: parent.verticalCenter; text: "Show greater than"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Show greater than"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
                 Rectangle {
                     width: 91; height: 24; radius: 4
                     color: theme.pick("#F5F5F5", "#292929", "#000000")
@@ -361,7 +361,7 @@ Rectangle {
                         Keys.onUpPressed: text = String(Math.min(100000, (parseInt(text) || 0) + 1))
                         Keys.onDownPressed: text = String(Math.max(0, (parseInt(text) || 0) - 1))
                         Keys.onReturnPressed: applyFilter()
-                        Accessible.name: "Show greater than"
+                        Accessible.name: qsTr("Show greater than")
                     }
                 }
             }
@@ -370,11 +370,11 @@ Rectangle {
                 width: parent.width; height: 31.3; radius: 4
                 color: applyH.hovered ? theme.menuHover : theme.surface
                 border.color: theme.stroke; border.width: 0.67
-                Text { anchors.centerIn: parent; text: "Apply"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.text) }
+                Text { anchors.centerIn: parent; text: qsTr("Apply"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.text) }
                 HoverHandler { id: applyH; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: root.applyFilter() }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Apply"
+                Accessible.name: qsTr("Apply")
             }
         }
     }

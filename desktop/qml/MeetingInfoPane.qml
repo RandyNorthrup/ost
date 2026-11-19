@@ -30,7 +30,7 @@ Rectangle {
         Text {
             x: 20.67; y: 17.67; height: 22
             verticalAlignment: Text.AlignVCenter
-            text: "Meeting info"
+            text: qsTr("Meeting info")
             font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold
             color: theme.text
             Accessible.role: Accessible.Heading
@@ -45,9 +45,9 @@ Rectangle {
             TapHandler { onTapped: root.closed() }
             ToolTip.visible: closeHover.hovered
             ToolTip.delay: 250
-            ToolTip.text: "Hide meeting info pane"
+            ToolTip.text: qsTr("Hide meeting info pane")
             Accessible.role: Accessible.Button
-            Accessible.name: "Hide meeting info pane"
+            Accessible.name: qsTr("Hide meeting info pane")
         }
         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.divider }
     }
@@ -100,16 +100,16 @@ Rectangle {
                     id: dialCol
                     x: 30; width: parent.width - 30
                     Text {
-                        text: "Dial in manually"
+                        text: qsTr("Dial in manually")
                         font.family: theme.font; font.pixelSize: 14
                         lineHeight: 20; lineHeightMode: Text.FixedHeight
                         color: theme.text
                     }
-                    DialLink { visible: !!dialBlock.dial; number: dialBlock.dial ? dialBlock.dial.toll : ""; kind: " (Toll)"; aria: dialBlock.dial ? dialBlock.dial.tollAria : "" }
-                    DialLink { visible: !!dialBlock.dial && dialBlock.dial.tollFree.length > 0; number: dialBlock.dial ? dialBlock.dial.tollFree : ""; kind: " (Toll-Free)"; aria: dialBlock.dial ? dialBlock.dial.tollFreeAria : "" }
+                    DialLink { visible: !!dialBlock.dial; number: dialBlock.dial ? dialBlock.dial.toll : ""; kind: qsTr(" (Toll)"); aria: dialBlock.dial ? dialBlock.dial.tollAria : "" }
+                    DialLink { visible: !!dialBlock.dial && dialBlock.dial.tollFree.length > 0; number: dialBlock.dial ? dialBlock.dial.tollFree : ""; kind: qsTr(" (Toll-Free)"); aria: dialBlock.dial ? dialBlock.dial.tollFreeAria : "" }
                     Text {
                         visible: !!dialBlock.dial && dialBlock.dial.localNumbersUrl.length > 0
-                        text: "Get local numbers"
+                        text: qsTr("Get local numbers")
                         font.family: theme.font; font.pixelSize: 14
                         lineHeight: 20; lineHeightMode: Text.FixedHeight
                         font.underline: localHover.hovered
@@ -141,7 +141,7 @@ Rectangle {
                     border.width: 0.67
                     Text {
                         anchors.centerIn: parent
-                        text: root.copied ? "Copied to clipboard" : "Copy join info"
+                        text: root.copied ? qsTr("Copied to clipboard") : qsTr("Copy join info")
                         font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
                         color: theme.onFill(hcFill2, theme.text)
                     }
@@ -154,7 +154,7 @@ Rectangle {
                         }
                     }
                     Accessible.role: Accessible.Button
-                    Accessible.name: root.copied ? "Copied to clipboard" : "Copy join info"
+                    Accessible.name: root.copied ? qsTr("Copied to clipboard") : qsTr("Copy join info")
                 }
             }
             Item { visible: !!root.info && root.info.body.length > 0; width: 1; height: 30 }

@@ -28,33 +28,33 @@ Item {
     signal undoRequested()
     signal redoRequested()
 
-    readonly property string styleName: st.heading === 1 ? "Heading 1" : st.heading === 2 ? "Heading 2" : st.heading === 3 ? "Heading 3" : "Paragraph"
+    readonly property string styleName: st.heading === 1 ? qsTr("Heading 1") : st.heading === 2 ? qsTr("Heading 2") : st.heading === 3 ? qsTr("Heading 3") : qsTr("Paragraph")
     /// Another bar's groups (the Events form's description: Bold, Italic,
     /// Underline | highlight, colour, size, clear | indents, lists | link).
     property var custom: null
     readonly property var groups: {
         if (custom) return custom
         const g = baseGroups.slice()
-        if (post) g.splice(4, 0, [{ k: "announcement", icon: "fmt-announcement", label: "Announcement" }])
+        if (post) g.splice(4, 0, [{ k: "announcement", icon: "fmt-announcement", label: qsTr("Announcement") }])
         return g
     }
     readonly property var baseGroups: [
-        [{ k: "bold", icon: "fmt-bold", label: "Bold", on: !!st.bold }, { k: "italic", icon: "fmt-italic", label: "Italic", on: !!st.italic },
-         { k: "underline", icon: "fmt-underline", label: "Underline", on: !!st.underline }, { k: "strike", icon: "fmt-strike", label: "Strikethrough", on: !!st.strike }],
-        [{ k: "ul", icon: "fmt-bullets", label: "Bulleted list", on: st.list === "ul" }, { k: "ol", icon: "fmt-numbers", label: "Numbered list", on: st.list === "ol" }],
-        [{ k: "highlight", icon: "fmt-highlight", label: "Text highlight color", popup: true }, { k: "color", icon: "fmt-font-color", label: "Font color", popup: true },
-         { k: "size", icon: "fmt-font-size", label: "Font size", popup: true }],
-        [{ k: "quote", icon: "fmt-quote", label: "Quote", on: !!st.quote }, { k: "link", icon: "fmt-link", label: "Insert link", popup: true },
-         { k: "codeblock", icon: "fmt-code-block", label: "Code block", on: !!st.codeBlock }],
+        [{ k: "bold", icon: "fmt-bold", label: qsTr("Bold"), on: !!st.bold }, { k: "italic", icon: "fmt-italic", label: qsTr("Italic"), on: !!st.italic },
+         { k: "underline", icon: "fmt-underline", label: qsTr("Underline"), on: !!st.underline }, { k: "strike", icon: "fmt-strike", label: qsTr("Strikethrough"), on: !!st.strike }],
+        [{ k: "ul", icon: "fmt-bullets", label: qsTr("Bulleted list"), on: st.list === "ul" }, { k: "ol", icon: "fmt-numbers", label: qsTr("Numbered list"), on: st.list === "ol" }],
+        [{ k: "highlight", icon: "fmt-highlight", label: qsTr("Text highlight color"), popup: true }, { k: "color", icon: "fmt-font-color", label: qsTr("Font color"), popup: true },
+         { k: "size", icon: "fmt-font-size", label: qsTr("Font size"), popup: true }],
+        [{ k: "quote", icon: "fmt-quote", label: qsTr("Quote"), on: !!st.quote }, { k: "link", icon: "fmt-link", label: qsTr("Insert link"), popup: true },
+         { k: "codeblock", icon: "fmt-code-block", label: qsTr("Code block"), on: !!st.codeBlock }],
         [{ k: "rich", icon: "fmt-rich-style", label: root.styleName, wide: true, popup: true, menuLabel: root.styleName },
-         { k: "code", icon: "fmt-inline-code", label: "Code", menuLabel: "Code (Ctrl+Shift+C)", on: !!st.code },
-         { k: "clear", icon: "fmt-clear-format", label: "Clear all formatting" }],
-        [{ k: "outdent", icon: "fmt-outdent", label: "Decrease indent" }, { k: "indent", icon: "fmt-indent", label: "Increase indent" }],
-        [{ k: "hr", icon: "fmt-rule", label: "Insert horizontal rule" }],
-        [{ k: "table", icon: "fmt-table", label: "Insert table", popup: true },
-         { k: "tableInsert", icon: "fmt-table-insert", label: "Insert column or row", popup: true },
-         { k: "tableDelete", icon: "fmt-table-delete", label: "Delete column, row, or table", popup: true }],
-        [{ k: "undo", icon: "fmt-undo", label: "Undo typing" }, { k: "redo", icon: "fmt-redo", label: "Repeat typing" }]
+         { k: "code", icon: "fmt-inline-code", label: qsTr("Code"), menuLabel: qsTr("Code (Ctrl+Shift+C)"), on: !!st.code },
+         { k: "clear", icon: "fmt-clear-format", label: qsTr("Clear all formatting") }],
+        [{ k: "outdent", icon: "fmt-outdent", label: qsTr("Decrease indent") }, { k: "indent", icon: "fmt-indent", label: qsTr("Increase indent") }],
+        [{ k: "hr", icon: "fmt-rule", label: qsTr("Insert horizontal rule") }],
+        [{ k: "table", icon: "fmt-table", label: qsTr("Insert table"), popup: true },
+         { k: "tableInsert", icon: "fmt-table-insert", label: qsTr("Insert column or row"), popup: true },
+         { k: "tableDelete", icon: "fmt-table-delete", label: qsTr("Delete column, row, or table"), popup: true }],
+        [{ k: "undo", icon: "fmt-undo", label: qsTr("Undo typing") }, { k: "redo", icon: "fmt-redo", label: qsTr("Repeat typing") }]
     ]
     // Teams' toolbar slot: the bar is a flex row whose column gap is
     // calc(100% − 49rem) from 640 wide (38.5rem from 480, 28rem from 240;
@@ -158,7 +158,7 @@ Item {
         HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: overflow.show() }
         Accessible.role: Accessible.Button
-        Accessible.name: "More options"
+        Accessible.name: qsTr("More options")
     }
     // Discard draft (Cancel when editing).
     Rectangle {
@@ -169,7 +169,7 @@ Item {
         HoverHandler { id: discardHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.discardRequested() }
         Accessible.role: Accessible.Button
-        Accessible.name: root.editing ? "Cancel" : "Discard"
+        Accessible.name: root.editing ? qsTr("Cancel") : qsTr("Discard")
     }
 
     // The overflow menu: 247 wide, 8 above and below; 32 px rows (Rich
@@ -254,8 +254,8 @@ Item {
         const insert = k === "tableInsert"
         tableMenu.op = insert ? ["table-col-right", "table-col-left", "table-row-above", "table-row-below"] : ["table-del-col", "table-del-row", "table-del"]
         tableMenu.items = insert
-            ? [{ label: "Insert column to the right" }, { label: "Insert column to the left" }, { label: "Insert row above" }, { label: "Insert row below" }]
-            : [{ label: "Delete column" }, { label: "Delete row" }, { label: "Delete table" }]
+            ? [{ label: qsTr("Insert column to the right") }, { label: qsTr("Insert column to the left") }, { label: qsTr("Insert row above") }, { label: qsTr("Insert row below") }]
+            : [{ label: qsTr("Delete column") }, { label: qsTr("Delete row") }, { label: qsTr("Delete table") }]
         tableMenu.open()
         tableMenu.x = p.x + anchor.width / 2 - tableMenu.width / 2
         tableMenu.y = Math.max(8, p.y - 9 - tableMenu.height)
@@ -288,7 +288,7 @@ Item {
         background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
         Text {
             x: 31.67; y: 16.67 - 2
-            text: "Insert " + tableGrid.cols + "x" + tableGrid.rows + " table"
+            text: qsTr("Insert %1x%2 table").arg(tableGrid.cols).arg(tableGrid.rows)
             font.family: theme.font; font.pixelSize: 14; color: theme.text
         }
         Grid {
@@ -306,7 +306,7 @@ Item {
                     HoverHandler { cursorShape: Qt.PointingHandCursor; onHoveredChanged: if (hovered) { tableGrid.cols = parent.c; tableGrid.rows = parent.r } }
                     TapHandler { onTapped: { tableGrid.close(); overflow.close(); root.command("table", parent.c + "x" + parent.r) } }
                     Accessible.role: Accessible.MenuItem
-                    Accessible.name: "Insert " + c + " by " + r + " table"
+                    Accessible.name: qsTr("Insert %1 by %2 table").arg(c).arg(r)
                 }
             }
         }
@@ -320,10 +320,10 @@ Item {
         property bool highlight: true
         width: 125.3; height: 101.7; padding: 0
         readonly property var swatches: highlight
-            ? [["#DF9299", "Kobi red"], ["#F4A593", "Rose bud"], ["#FDD472", "Goldenrod"], ["#E5F18F", "Primrose"],
-               ["#82CDA8", "Mantis"], ["#9DD9DB", "Regent St. blue"], ["#C7D4E8", "Periwinkle gray"], ["#EBD3E1", "Pale rose"]]
-            : [["#B6424C", "Red"], ["#CD5937", "Tuscan orange"], ["#FDC030", "Sunglow"], ["#BDCB4C", "Pear"],
-               ["#2B9B62", "Eucalyptus"], ["#37797B", "Faded jade"], ["#1E53A3", "Fun blue"], ["#A5397A", "Tyrian purple"]]
+            ? [["#DF9299", qsTr("Kobi red")], ["#F4A593", qsTr("Rose bud")], ["#FDD472", qsTr("Goldenrod")], ["#E5F18F", qsTr("Primrose")],
+               ["#82CDA8", qsTr("Mantis")], ["#9DD9DB", qsTr("Regent St. blue")], ["#C7D4E8", qsTr("Periwinkle gray")], ["#EBD3E1", qsTr("Pale rose")]]
+            : [["#B6424C", qsTr("Red")], ["#CD5937", qsTr("Tuscan orange")], ["#FDC030", qsTr("Sunglow")], ["#BDCB4C", qsTr("Pear")],
+               ["#2B9B62", qsTr("Eucalyptus")], ["#37797B", qsTr("Faded jade")], ["#1E53A3", qsTr("Fun blue")], ["#A5397A", qsTr("Tyrian purple")]]
         function show(button, hl) {
             highlight = hl
             const p = button.mapToItem(Overlay.overlay, button.width / 2, 0)
@@ -336,11 +336,11 @@ Item {
             x: 12.7; y: 8.7; width: 100; height: 24.3; radius: 4
             color: noneHover.hovered ? theme.menuHover : theme.surface
             border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF"); border.width: 0.67
-            Text { anchors.centerIn: parent; text: colors.highlight ? "No highlight" : "Automatic"; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill1, theme.text) }
+            Text { anchors.centerIn: parent; text: colors.highlight ? qsTr("No highlight") : qsTr("Automatic"); font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill1, theme.text) }
             HoverHandler { id: noneHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: { colors.close(); root.command(colors.highlight ? "bg" : "fg", "") } }
             Accessible.role: Accessible.Button
-            Accessible.name: colors.highlight ? "No highlight" : "Automatic"
+            Accessible.name: colors.highlight ? qsTr("No highlight") : qsTr("Automatic")
         }
         Repeater {
             model: colors.swatches
@@ -374,7 +374,7 @@ Item {
         }
         background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
         Repeater {
-            model: [["Large", "24"], ["Medium", ""], ["Small", "13"]]
+            model: [[qsTr("Large"), "24"], [qsTr("Medium"), ""], [qsTr("Small"), "13"]]
             Rectangle {
                 id: hcFill2
                 required property var modelData
@@ -406,8 +406,8 @@ Item {
         }
         background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
         Repeater {
-            model: [{ t: "Heading 1", l: 1, s: 18, w: Font.Light, y: 10.7, h: 33 }, { t: "Heading 2", l: 2, s: 14, w: Font.Bold, y: 47.7, h: 28 },
-                    { t: "Heading 3", l: 3, s: 12, w: Font.Bold, y: 79.7, h: 28 }, { t: "Paragraph", l: 0, s: 14, w: Font.Normal, y: 111.7, h: 28 }]
+            model: [{ t: qsTr("Heading 1"), l: 1, s: 18, w: Font.Light, y: 10.7, h: 33 }, { t: qsTr("Heading 2"), l: 2, s: 14, w: Font.Bold, y: 47.7, h: 28 },
+                    { t: qsTr("Heading 3"), l: 3, s: 12, w: Font.Bold, y: 79.7, h: 28 }, { t: qsTr("Paragraph"), l: 0, s: 14, w: Font.Normal, y: 111.7, h: 28 }]
             Rectangle {
                 id: hcFill3
                 required property var modelData
@@ -445,8 +445,8 @@ Item {
             target.forceActiveFocus()
         }
         background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
-        Text { x: 16.7; y: 17.3; text: "Insert link"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
-        Text { x: 16.7; y: 44.7; height: 20; verticalAlignment: Text.AlignVCenter; text: "Text to display"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+        Text { x: 16.7; y: 17.3; text: qsTr("Insert link"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
+        Text { x: 16.7; y: 44.7; height: 20; verticalAlignment: Text.AlignVCenter; text: qsTr("Text to display"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
         Rectangle {
             x: 16.7; y: 68.7; width: 270; height: 32; radius: 4
             color: theme.pick("#F5F5F5", "#1F1F1F", "#000000")
@@ -454,11 +454,11 @@ Item {
                 id: shown
                 x: 10; width: parent.width - 20; anchors.verticalCenter: parent.verticalCenter
                 font.family: theme.font; font.pixelSize: 14; color: theme.text; clip: true; selectByMouse: true
-                Text { visible: !shown.text; text: "Text to display"; font: shown.font; color: theme.textSecondary }
+                Text { visible: !shown.text; text: qsTr("Text to display"); font: shown.font; color: theme.textSecondary }
             }
             Rectangle { visible: shown.activeFocus; anchors.bottom: parent.bottom; width: parent.width; height: 2; color: theme.brand }
         }
-        Text { x: 16.7; y: 120.7; height: 20; verticalAlignment: Text.AlignVCenter; text: "Address"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+        Text { x: 16.7; y: 120.7; height: 20; verticalAlignment: Text.AlignVCenter; text: qsTr("Address"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
         Rectangle {
             x: 16.7; y: 144.7; width: 270; height: 32; radius: 4
             color: theme.pick("#F5F5F5", "#1F1F1F", "#000000")
@@ -466,7 +466,7 @@ Item {
                 id: address
                 x: 10; width: parent.width - 20; anchors.verticalCenter: parent.verticalCenter
                 font.family: theme.font; font.pixelSize: 14; color: theme.text; clip: true; selectByMouse: true
-                Text { visible: !address.text; text: "Link to an existing file or web page"; font: address.font; color: theme.textSecondary }
+                Text { visible: !address.text; text: qsTr("Link to an existing file or web page"); font: address.font; color: theme.textSecondary }
                 Keys.onReturnPressed: link.insert()
             }
             Rectangle { visible: address.activeFocus; anchors.bottom: parent.bottom; width: parent.width; height: 2; color: theme.brand }
@@ -488,22 +488,22 @@ Item {
                 id: hcFill4
                 width: 96; height: 31.3; radius: 4
                 color: lcHover.hovered ? theme.menuHover : theme.surface; border.color: theme.stroke
-                Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, theme.text) }
+                Text { anchors.centerIn: parent; text: qsTr("Cancel"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, theme.text) }
                 HoverHandler { id: lcHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: link.close() }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Cancel"
+                Accessible.name: qsTr("Cancel")
             }
             Rectangle {
                 id: hcFill5
                 readonly property bool can: link.href !== ""
                 width: 96; height: 31.3; radius: 4
                 color: !can ? theme.pick("#F0F0F0", "#141414", "#000000") : liHover.hovered ? theme.brandHover : theme.brandFill
-                Text { anchors.centerIn: parent; text: "Insert"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill5, parent.can ? "white" : theme.pick("#BDBDBD", "#5C5C5C", "#3FF23F")) }
+                Text { anchors.centerIn: parent; text: qsTr("Insert"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill5, parent.can ? "white" : theme.pick("#BDBDBD", "#5C5C5C", "#3FF23F")) }
                 HoverHandler { id: liHover; cursorShape: parent.can ? Qt.PointingHandCursor : Qt.ArrowCursor }
                 TapHandler { enabled: parent.can; onTapped: link.insert() }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Insert"
+                Accessible.name: qsTr("Insert")
             }
         }
     }

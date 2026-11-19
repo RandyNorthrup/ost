@@ -24,7 +24,7 @@ Item {
     readonly property var shown: view === "favorites" ? all.filter(c => c.favorite)
         : view.indexOf("cat:") === 0 ? all.filter(c => (c.categories || []).indexOf(view.slice(4)) >= 0)
         : all
-    readonly property string title: view === "favorites" ? "Favorites" : view.indexOf("cat:") === 0 ? view.slice(4) : "All contacts"
+    readonly property string title: view === "favorites" ? qsTr("Favorites") : view.indexOf("cat:") === 0 ? view.slice(4) : qsTr("All contacts")
     Component.onCompleted: load()
 
     // Outlook's category presets as colours.
@@ -42,7 +42,7 @@ Item {
         width: 320; height: parent.height
         color: theme.pane
         Rectangle { anchors.right: parent.right; width: 1; height: parent.height; color: theme.dividerSoft }
-        Text { x: 20; y: 18; text: "People"; font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text }
+        Text { x: 20; y: 18; text: qsTr("People"); font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text }
         Rectangle {
             id: hcFill1
             x: parent.width - 48; y: 12; width: 32; height: 32; radius: theme.radius
@@ -51,15 +51,15 @@ Item {
             HoverHandler { id: ah; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: addDialog.open() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Add contact"
+            Accessible.name: qsTr("Add contact")
         }
         Rectangle { y: 59; width: parent.width; height: 1; color: theme.dividerSoft }
         Column {
             x: 4; y: 72; width: parent.width - 8
             Repeater {
                 model: [
-                    { key: "all", label: "All contacts", icon: "people-20", iconOn: "people-20-filled" },
-                    { key: "favorites", label: "Favorites", icon: "star-20", iconOn: "star-20" }
+                    { key: "all", label: qsTr("All contacts"), icon: "people-20", iconOn: "people-20-filled" },
+                    { key: "favorites", label: qsTr("Favorites"), icon: "star-20", iconOn: "star-20" }
                 ]
                 NavRow {
                     required property var modelData
@@ -70,7 +70,7 @@ Item {
                 }
             }
             NavRow {
-                label: "Categories"; icon: "tag-20"; selected: false
+                label: qsTr("Categories"); icon: "tag-20"; selected: false
                 chevron: root.categoriesOpen ? "down" : "right"
                 onClicked: root.categoriesOpen = !root.categoriesOpen
             }
@@ -78,7 +78,7 @@ Item {
                 visible: root.categoriesOpen && root.categories.length === 0
                 x: 28; width: parent.width - 40; wrapMode: Text.Wrap
                 topPadding: 4
-                text: "When you create categories, they will appear here."
+                text: qsTr("When you create categories, they will appear here.")
                 font.family: theme.font; font.pixelSize: theme.base; color: theme.text
             }
             Repeater {
@@ -109,10 +109,10 @@ Item {
             Row {
                 id: head
                 x: 20; height: 40
-                HeadCell { width: table.wName; label: "Name" }
-                HeadCell { width: Math.max(200, table.width * 0.28); label: "Email" }
-                HeadCell { width: 160; label: "Phone" }
-                HeadCell { width: 180; label: "Company" }
+                HeadCell { width: table.wName; label: qsTr("Name") }
+                HeadCell { width: Math.max(200, table.width * 0.28); label: qsTr("Email") }
+                HeadCell { width: 160; label: qsTr("Phone") }
+                HeadCell { width: 180; label: qsTr("Company") }
             }
             ListView {
                 anchors { top: head.bottom; left: parent.left; right: parent.right; bottom: parent.bottom }
@@ -155,20 +155,20 @@ Item {
                         HoverHandler { id: mh; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: rowMenu.open() }
                         Accessible.role: Accessible.Button
-                        Accessible.name: "More options for " + crow.modelData.name
+                        Accessible.name: qsTr("More options for %1").arg(crow.modelData.name)
                         MenuPopup {
                             id: rowMenu
                             x: -200; y: parent.height; width: 230
-                            items: (crow.modelData.email ? [{ label: "Send email", icon: "mail-20" }, { label: "Copy email", icon: "copy-20" }] : [])
-                                .concat([{ label: crow.modelData.favorite ? "Remove from favorites" : "Add to favorites", icon: "star-20" },
-                                         { separator: true }, { label: "Delete", icon: "delete-20" }])
+                            items: (crow.modelData.email ? [{ key: "send", label: qsTr("Send email"), icon: "mail-20" }, { key: "copy", label: qsTr("Copy email"), icon: "copy-20" }] : [])
+                                .concat([{ key: crow.modelData.favorite ? "unfavorite" : "favorite", label: crow.modelData.favorite ? qsTr("Remove from favorites") : qsTr("Add to favorites"), icon: "star-20" },
+                                         { separator: true }, { key: "delete", label: qsTr("Delete"), icon: "delete-20" }])
                             onPicked: i => {
-                                const l = items[i].label
-                                if (l === "Send email") Qt.openUrlExternally("mailto:" + encodeURIComponent(crow.modelData.email))
-                                else if (l === "Copy email") { copier.text = crow.modelData.email; copier.selectAll(); copier.copy() }
-                                else if (l === "Add to favorites") root.favorite(crow.modelData.id, true)
-                                else if (l === "Remove from favorites") root.favorite(crow.modelData.id, false)
-                                else if (l === "Delete") { deleteDialog.contact = crow.modelData; deleteDialog.open() }
+                                const l = items[i].key
+                                if (l === "send") Qt.openUrlExternally("mailto:" + encodeURIComponent(crow.modelData.email))
+                                else if (l === "copy") { copier.text = crow.modelData.email; copier.selectAll(); copier.copy() }
+                                else if (l === "favorite") root.favorite(crow.modelData.id, true)
+                                else if (l === "unfavorite") root.favorite(crow.modelData.id, false)
+                                else if (l === "delete") { deleteDialog.contact = crow.modelData; deleteDialog.open() }
                             }
                         }
                     }
@@ -192,8 +192,8 @@ Item {
             }
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
-                text: root.view === "favorites" ? "Your favorite contacts will show up here"
-                    : root.view === "all" ? "You haven't added any contacts yet" : "No contacts in this category"
+                text: root.view === "favorites" ? qsTr("Your favorite contacts will show up here")
+                    : root.view === "all" ? qsTr("You haven't added any contacts yet") : qsTr("No contacts in this category")
                 font.family: theme.font; font.pixelSize: theme.base + 1; font.weight: Font.DemiBold; color: theme.text
             }
             Rectangle {
@@ -206,12 +206,12 @@ Item {
                     id: addRow
                     anchors.centerIn: parent; spacing: 8
                     FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "person-add-20"; size: 20; color: theme.onFill(hcFill3, theme.textStrong) }
-                    Text { anchors.verticalCenter: parent.verticalCenter; text: "Add new contact"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, theme.text) }
+                    Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Add new contact"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, theme.text) }
                 }
                 HoverHandler { id: anh; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: addDialog.open() }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Add new contact"
+                Accessible.name: qsTr("Add new contact")
             }
         }
         Text {
@@ -234,16 +234,16 @@ Item {
         background: Rectangle { radius: 8; color: theme.menu; border.color: theme.dividerSoft }
         contentItem: Column {
             spacing: 12
-            Text { text: "Add new contact"; font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text }
+            Text { text: qsTr("Add new contact"); font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text }
             Row {
                 spacing: 12
-                Field { id: first; width: 190; hint: "First name" }
-                Field { id: last; width: 190; hint: "Last name" }
+                Field { id: first; width: 190; hint: qsTr("First name") }
+                Field { id: last; width: 190; hint: qsTr("Last name") }
             }
-            Field { id: email; width: 392; hint: "Email" }
-            Field { id: mobile; width: 392; hint: "Mobile phone" }
-            Field { id: company; width: 392; hint: "Company" }
-            Field { id: job; width: 392; hint: "Job title" }
+            Field { id: email; width: 392; hint: qsTr("Email") }
+            Field { id: mobile; width: 392; hint: qsTr("Mobile phone") }
+            Field { id: company; width: 392; hint: qsTr("Company") }
+            Field { id: job; width: 392; hint: qsTr("Job title") }
             Row {
                 spacing: 8
                 layoutDirection: Qt.RightToLeft
@@ -252,7 +252,7 @@ Item {
                     id: hcFill4
                     width: 90; height: 32; radius: theme.radius; color: theme.brandFill
                     opacity: (first.text + last.text + email.text).trim() ? 1 : 0.5
-                    Text { anchors.centerIn: parent; text: "Save"; color: theme.onFill(hcFill4, "white"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
+                    Text { anchors.centerIn: parent; text: qsTr("Save"); color: theme.onFill(hcFill4, "white"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
                     TapHandler {
                         onTapped: {
                             if (!(first.text + last.text + email.text).trim()) return
@@ -261,14 +261,14 @@ Item {
                         }
                     }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Save"
+                    Accessible.name: qsTr("Save")
                 }
                 Rectangle {
                     width: 90; height: 32; radius: theme.radius; color: theme.input; border.color: theme.stroke
-                    Text { anchors.centerIn: parent; text: "Cancel"; color: theme.text; font.family: theme.font; font.pixelSize: theme.base }
+                    Text { anchors.centerIn: parent; text: qsTr("Cancel"); color: theme.text; font.family: theme.font; font.pixelSize: theme.base }
                     TapHandler { onTapped: addDialog.close() }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Cancel"
+                    Accessible.name: qsTr("Cancel")
                 }
             }
         }
@@ -282,24 +282,24 @@ Item {
         background: Rectangle { radius: 8; color: theme.menu; border.color: theme.dividerSoft }
         contentItem: Column {
             spacing: 16
-            Text { text: "Delete contact?"; font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text }
-            Text { width: 352; wrapMode: Text.Wrap; text: (deleteDialog.contact ? deleteDialog.contact.name : "") + " will be removed from your contacts."; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
+            Text { text: qsTr("Delete contact?"); font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text }
+            Text { width: 352; wrapMode: Text.Wrap; text: qsTr("%1 will be removed from your contacts.").arg(deleteDialog.contact ? deleteDialog.contact.name : ""); font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
             Row {
                 spacing: 8; layoutDirection: Qt.RightToLeft; width: 352
                 Rectangle {
                     id: hcFill5
                     width: 90; height: 32; radius: theme.radius; color: theme.brandFill
-                    Text { anchors.centerIn: parent; text: "Delete"; color: theme.onFill(hcFill5, "white"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
+                    Text { anchors.centerIn: parent; text: qsTr("Delete"); color: theme.onFill(hcFill5, "white"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
                     TapHandler { onTapped: { root.remove(deleteDialog.contact.id); deleteDialog.close() } }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Delete"
+                    Accessible.name: qsTr("Delete")
                 }
                 Rectangle {
                     width: 90; height: 32; radius: theme.radius; color: theme.input; border.color: theme.stroke
-                    Text { anchors.centerIn: parent; text: "Cancel"; color: theme.text; font.family: theme.font; font.pixelSize: theme.base }
+                    Text { anchors.centerIn: parent; text: qsTr("Cancel"); color: theme.text; font.family: theme.font; font.pixelSize: theme.base }
                     TapHandler { onTapped: deleteDialog.close() }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Cancel"
+                    Accessible.name: qsTr("Cancel")
                 }
             }
         }

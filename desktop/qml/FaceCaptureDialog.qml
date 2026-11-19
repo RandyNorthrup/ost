@@ -56,11 +56,11 @@ Popup {
     Keys.onEscapePressed: close()
 
     readonly property var errors: ({
-        MultipleFaces: "Make sure your face is the only one in the frame, then try again.",
-        NoFaces: "We can’t seem to see your face. Make sure that your face matches the target lines in the frame and then try again",
-        FaceTooSmall: "Your face is too far away from the camera. Move a little closer, then try again",
-        UnexpectedHeadPose: "It looks like your face isn’t pointing in the same direction as the target line. Move your head around until it matches the line, then try again. Hint: make sure you’re moving your whole head, not just your eyes.",
-        BadLighting: "Make sure you’re in a well-lit room and try again."
+        MultipleFaces: qsTr("Make sure your face is the only one in the frame, then try again."),
+        NoFaces: qsTr("We can’t seem to see your face. Make sure that your face matches the target lines in the frame and then try again"),
+        FaceTooSmall: qsTr("Your face is too far away from the camera. Move a little closer, then try again"),
+        UnexpectedHeadPose: qsTr("It looks like your face isn’t pointing in the same direction as the target line. Move your head around until it matches the line, then try again. Hint: make sure you’re moving your whole head, not just your eyes."),
+        BadLighting: qsTr("Make sure you’re in a well-lit room and try again.")
     })
 
     MediaDevices { id: devices }
@@ -139,7 +139,7 @@ Popup {
         Text {
             x: 42; y: 20.6; height: 21.43
             verticalAlignment: Text.AlignVCenter
-            text: "Create your face profile"
+            text: qsTr("Create your face profile")
             font.family: theme.font; font.pixelSize: 15; font.weight: Font.Bold
             color: theme.text
             Accessible.role: Accessible.Heading
@@ -148,8 +148,8 @@ Popup {
         OutlineDropdown {
             x: 42.7; y: 52.1; width: 278.7; height: 30
             enabled: !root.started
-            accessibleName: "Choose camera"
-            placeholder: "Choose camera"
+            accessibleName: qsTr("Choose camera")
+            placeholder: qsTr("Choose camera")
             // Teams drops what follows " (" in a camera's name.
             options: root.cameras.map(c => ({ label: String(c.description).split(" (")[0] }))
             current: root.cameraIndex
@@ -210,7 +210,7 @@ Popup {
                 text: root.count
                 font.family: theme.font; font.pixelSize: 40
                 color: "white"
-                Accessible.name: ["", "One", "Two", "Three"][root.count]
+                Accessible.name: ["", qsTr("One"), qsTr("Two"), qsTr("Three")][root.count]
             }
             // Teams' guide picture; for a side pose the turned one fades in
             // and out (1.5 s).
@@ -249,7 +249,7 @@ Popup {
         Text {
             x: 32; y: 520.7; width: 522; height: 32
             horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
-            text: root.pose === "Center" ? "Look straight ahead" : root.pose === "Left" ? "Look to the left" : "Look to the right"
+            text: root.pose === "Center" ? qsTr("Look straight ahead") : root.pose === "Left" ? qsTr("Look to the left") : qsTr("Look to the right")
             font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold
             color: theme.text
             Accessible.role: Accessible.Heading
@@ -261,8 +261,8 @@ Popup {
                 width: parent.width
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.Wrap
-                text: root.pose === "Center" ? "Make sure your face is centered in the circle. Photos are automatically captured when the countdown reaches its end."
-                                             : "The photo is automatically captured when the countdown reaches its end."
+                text: root.pose === "Center" ? qsTr("Make sure your face is centered in the circle. Photos are automatically captured when the countdown reaches its end.<br>Click start when ready.").split("<br>")[0]
+                                             : qsTr("The photo is automatically captured when the countdown reaches its end.")
                 font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
                 color: theme.text
             }
@@ -270,7 +270,7 @@ Popup {
                 visible: root.pose === "Center"
                 width: parent.width
                 horizontalAlignment: Text.AlignHCenter
-                text: "Click start when ready."
+                text: qsTr("Make sure your face is centered in the circle. Photos are automatically captured when the countdown reaches its end.<br>Click start when ready.").split("<br>")[1]
                 font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
                 color: theme.text
             }
@@ -278,8 +278,8 @@ Popup {
         // Teams' error row: why the photo was refused, or no camera.
         Row {
             readonly property string message: root.cameras.length === 0 && !camera.active
-                ? "We couldn't detect a camera. Close any other apps that might be using it and try again."
-                : root.error ? (root.errors[root.error] || "Something went wrong. Please try again.") : ""
+                ? qsTr("We couldn't detect a camera. Close any other apps that might be using it and try again.")
+                : root.error ? (root.errors[root.error] || qsTr("Something went wrong. Please try again.")) : ""
             visible: message !== ""
             x: 32; y: 662; width: 522; spacing: 8
             FluentIcon { name: "error-circle-20-filled"; size: 16; color: theme.pick("#C50F1F", "#DC626D", "#FFFFFF") }
@@ -294,13 +294,13 @@ Popup {
         Row {
             x: 364; y: 710.2; spacing: 15
             SettingsParts.Button {
-                label: "Cancel"
+                label: qsTr("Cancel")
                 onClicked: root.close()
             }
             SettingsParts.Button {
                 visible: !root.started
                 enabled: camera.active || root.testPhoto !== ""
-                label: "Start"
+                label: qsTr("Start")
                 onClicked: { root.started = true; root.error = ""; countdown.restartPose() }
             }
         }

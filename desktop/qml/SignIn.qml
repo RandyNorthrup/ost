@@ -56,7 +56,7 @@ Rectangle {
                 smooth: true
             }
             Text {
-                text: root.busy ? "Signing in…" : "Sign in to OST"
+                text: root.busy ? qsTr("Signing in…") : qsTr("Sign in to OST")
                 font.family: theme.font; font.pixelSize: 24; font.weight: Font.DemiBold
                 color: theme.text
             }
@@ -72,11 +72,11 @@ Rectangle {
                 visible: !root.busy
                 width: parent.width; height: 32; radius: theme.radius
                 color: tryHover.hovered ? theme.brandHover : theme.brandFill
-                Text { anchors.centerIn: parent; text: "Sign in"; color: theme.onFill(parent, theme.textOnBrand); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
+                Text { anchors.centerIn: parent; text: qsTr("Sign in"); color: theme.onFill(parent, theme.textOnBrand); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
                 HoverHandler { id: tryHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: root.signIn() }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Sign in"
+                Accessible.name: qsTr("Sign in")
             }
         }
     }

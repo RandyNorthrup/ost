@@ -55,7 +55,7 @@ Popup {
     Text {
         x: 24; y: 24; height: 31.33; width: root.width - 24 - 24 - 40
         verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight
-        text: "Live meetings"
+        text: qsTr("Live meetings")
         font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text
         Accessible.role: Accessible.Heading
     }
@@ -67,7 +67,7 @@ Popup {
         HoverHandler { id: dismissHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.close() }
         Accessible.role: Accessible.Button
-        Accessible.name: "Dismiss"
+        Accessible.name: qsTr("Dismiss")
     }
 
     ListView {
@@ -79,7 +79,7 @@ Popup {
         boundsBehavior: Flickable.StopAtBounds
         model: root.meetings
         Accessible.role: Accessible.List
-        Accessible.name: "Live meetings"
+        Accessible.name: qsTr("Live meetings")
         delegate: Item {
             id: card
             required property var modelData
@@ -121,7 +121,7 @@ Popup {
                     x: 126; y: 16; width: chatBtn.x - 8 - x
                     Text {
                         width: parent.width; height: 22; elide: Text.ElideRight
-                        text: card.modelData.subject || "(No title)"
+                        text: card.modelData.subject || qsTr("(No title)")
                         font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.onFill(fill, "white")
                     }
                     Text {
@@ -132,7 +132,7 @@ Popup {
                     Text {
                         width: parent.width; height: 18; topPadding: 2; elide: Text.ElideRight
                         visible: !card.modelData.isOrganizer && !!card.modelData.organizer
-                        text: (card.modelData.organizer || "") + " invited you"
+                        text: qsTr("%1 invited you").arg(card.modelData.organizer || "")
                         font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.onFill(fill, "white")
                     }
                 }
@@ -143,11 +143,11 @@ Popup {
                     color: chatHover.hovered ? theme.menuHover : theme.surface
                     border.width: 0.67; border.color: theme.stroke
                     FluentIcon { x: 8.67; anchors.verticalCenter: parent.verticalCenter; name: "chat-20"; size: 20; color: theme.onFill(chatBtn, theme.text) }
-                    Text { x: 32.67; anchors.verticalCenter: parent.verticalCenter; text: "Chat"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.onFill(chatBtn, theme.text) }
+                    Text { x: 32.67; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Chat"); font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.onFill(chatBtn, theme.text) }
                     HoverHandler { id: chatHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: { root.openChat(card.modelData); root.close() } }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Chat with participants"
+                    Accessible.name: qsTr("Chat with participants")
                 }
                 Rectangle {
                     id: joinBtn
@@ -155,11 +155,11 @@ Popup {
                     color: joinHover.hovered ? theme.menuHover : theme.surface
                     border.width: 0.67; border.color: theme.stroke
                     FluentIcon { x: 8.67; anchors.verticalCenter: parent.verticalCenter; name: "video-16"; size: 16; color: theme.onFill(joinBtn, theme.text) }
-                    Text { x: 34.67; anchors.verticalCenter: parent.verticalCenter; text: "Join"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.onFill(joinBtn, theme.text) }
+                    Text { x: 34.67; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Join"); font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.onFill(joinBtn, theme.text) }
                     HoverHandler { id: joinHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: { root.joinMeeting(card.modelData); root.close() } }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Join " + (card.modelData.subject || "(No title)")
+                    Accessible.name: qsTr("Join %1").arg(card.modelData.subject || qsTr("(No title)"))
                 }
                 // How long the call has run, and who started it.
                 Text {

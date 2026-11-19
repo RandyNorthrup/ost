@@ -44,22 +44,22 @@ QtObject {
     // codes and the shades its folder drawing uses (main, background,
     // accent, gradient start, gradient stop, count).
     readonly property var folderColors: [
-        { code: "0", name: "Yellow", hex: "#FFCE3C", shades: ["#FFCE3C", "#F5B800", "#B64D07", "#FFE561", "#FFB515", "#8F3900"] },
-        { code: "8", name: "Grey", hex: "#B0B7BA", shades: ["#B0B7BA", "#96A3A7", "#575757", "#BDBFBF", "#A0ADB2", "#361500"] },
-        { code: "1", name: "Dark red", hex: "#E73E29", shades: ["#E73E29", "#D62E1F", "#590700", "#FF5028", "#C92828", "#000000"] },
-        { code: "9", name: "Light red", hex: "#FFBCB2", shades: ["#FFBCB2", "#F58076", "#BD2113", "#FFC7BA", "#FF9191", "#910C00"] },
-        { code: "2", name: "Dark orange", hex: "#EE7110", shades: ["#EE7110", "#E56000", "#6B2500", "#FF8E1D", "#DB5101", "#361500"] },
-        { code: "10", name: "Light orange", hex: "#FFBF84", shades: ["#FFBF84", "#FF8E3D", "#A14200", "#FFC48A", "#FF8C4A", "#782E00"] },
-        { code: "3", name: "Dark green", hex: "#3F9F4A", shades: ["#3F9F4A", "#33852C", "#053B00", "#5EB75A", "#1D8539", "#001404"] },
-        { code: "11", name: "Light green", hex: "#8ED290", shades: ["#8ED290", "#5BC26B", "#0B6E1A", "#B6E6AC", "#62BD71", "#00520A"] },
-        { code: "4", name: "Dark teal", hex: "#27938E", shades: ["#27938E", "#037D81", "#003133", "#3DB7AB", "#106E70", "#000000"] },
-        { code: "12", name: "Light teal", hex: "#7AD1CD", shades: ["#7AD1CD", "#5DC6C9", "#07676B", "#94EBE2", "#5DB4B6", "#0E4E4E"] },
-        { code: "5", name: "Dark blue", hex: "#1E84D0", shades: ["#1E84D0", "#036DC9", "#032F54", "#2F9ADE", "#0E6EC2", "#000000"] },
-        { code: "13", name: "Light blue", hex: "#86C8F7", shades: ["#86C8F7", "#73B3EB", "#1F64A1", "#9FDAFF", "#6EB6F0", "#004881"] },
-        { code: "6", name: "Dark purple", hex: "#9A61C7", shades: ["#9A61C7", "#7E54B8", "#370086", "#BC7ADD", "#7342AD", "#000000"] },
-        { code: "14", name: "Light purple", hex: "#D4AFF6", shades: ["#D4AFF6", "#BA90F5", "#7A2AD2", "#E2BFFA", "#BD94EF", "#5915A1"] },
-        { code: "7", name: "Dark pink", hex: "#CC53B4", shades: ["#CC53B4", "#BC4293", "#5C003D", "#E36DE3", "#BA3E91", "#000000"] },
-        { code: "15", name: "Light pink", hex: "#F7AAE7", shades: ["#F7AAE7", "#ED87CB", "#B8148C", "#FFBEFF", "#F097D2", "#8F0069"] }
+        { code: "0", name: qsTr("Yellow"), hex: "#FFCE3C", shades: ["#FFCE3C", "#F5B800", "#B64D07", "#FFE561", "#FFB515", "#8F3900"] },
+        { code: "8", name: qsTr("Grey"), hex: "#B0B7BA", shades: ["#B0B7BA", "#96A3A7", "#575757", "#BDBFBF", "#A0ADB2", "#361500"] },
+        { code: "1", name: qsTr("Dark red"), hex: "#E73E29", shades: ["#E73E29", "#D62E1F", "#590700", "#FF5028", "#C92828", "#000000"] },
+        { code: "9", name: qsTr("Light red"), hex: "#FFBCB2", shades: ["#FFBCB2", "#F58076", "#BD2113", "#FFC7BA", "#FF9191", "#910C00"] },
+        { code: "2", name: qsTr("Dark orange"), hex: "#EE7110", shades: ["#EE7110", "#E56000", "#6B2500", "#FF8E1D", "#DB5101", "#361500"] },
+        { code: "10", name: qsTr("Light orange"), hex: "#FFBF84", shades: ["#FFBF84", "#FF8E3D", "#A14200", "#FFC48A", "#FF8C4A", "#782E00"] },
+        { code: "3", name: qsTr("Dark green"), hex: "#3F9F4A", shades: ["#3F9F4A", "#33852C", "#053B00", "#5EB75A", "#1D8539", "#001404"] },
+        { code: "11", name: qsTr("Light green"), hex: "#8ED290", shades: ["#8ED290", "#5BC26B", "#0B6E1A", "#B6E6AC", "#62BD71", "#00520A"] },
+        { code: "4", name: qsTr("Dark teal"), hex: "#27938E", shades: ["#27938E", "#037D81", "#003133", "#3DB7AB", "#106E70", "#000000"] },
+        { code: "12", name: qsTr("Light teal"), hex: "#7AD1CD", shades: ["#7AD1CD", "#5DC6C9", "#07676B", "#94EBE2", "#5DB4B6", "#0E4E4E"] },
+        { code: "5", name: qsTr("Dark blue"), hex: "#1E84D0", shades: ["#1E84D0", "#036DC9", "#032F54", "#2F9ADE", "#0E6EC2", "#000000"] },
+        { code: "13", name: qsTr("Light blue"), hex: "#86C8F7", shades: ["#86C8F7", "#73B3EB", "#1F64A1", "#9FDAFF", "#6EB6F0", "#004881"] },
+        { code: "6", name: qsTr("Dark purple"), hex: "#9A61C7", shades: ["#9A61C7", "#7E54B8", "#370086", "#BC7ADD", "#7342AD", "#000000"] },
+        { code: "14", name: qsTr("Light purple"), hex: "#D4AFF6", shades: ["#D4AFF6", "#BA90F5", "#7A2AD2", "#E2BFFA", "#BD94EF", "#5915A1"] },
+        { code: "7", name: qsTr("Dark pink"), hex: "#CC53B4", shades: ["#CC53B4", "#BC4293", "#5C003D", "#E36DE3", "#BA3E91", "#000000"] },
+        { code: "15", name: qsTr("Light pink"), hex: "#F7AAE7", shades: ["#F7AAE7", "#ED87CB", "#B8148C", "#FFBEFF", "#F097D2", "#8F0069"] }
     ]
     /// A coloured folder: OneDrive's shades in place of the yellow folder
     /// drawing's (front gradient, back, its dark stop), for FluentIcon swaps.
@@ -97,19 +97,37 @@ QtObject {
     /// formats; read once, as a change applies after a restart). Every
     /// date and time OST shows goes through these.
     readonly property var regional: JSON.parse(backend.regionalFormatsJson())
-    function time(d) { return Qt.formatTime(new Date(d), regional.shortTime) }
-    function longTime(d) { return Qt.formatTime(new Date(d), regional.longTime) }
-    function date(d) { return Qt.formatDate(new Date(d), regional.shortDate) }
+    /// Teams' App language reads right to left (Arabic, Hebrew, Persian):
+    /// it then mirrors its whole layout (dir="rtl"); src/i18n.cpp mirrors
+    /// OST's windows the same way.
+    readonly property bool rtl: Qt.application.layoutDirection === Qt.RightToLeft
+    /// The icons Teams mirrors then (its Fluent icons' flipInRtl), by stem.
+    readonly property var rtlFlips: {
+        const m = ({})
+        if (rtl) JSON.parse(backend.rtlFlipIconsJson()).forEach(n => m[n] = true)
+        return m
+    }
+    /// Whether a Fluent icon ("arrow-reply-20-filled") is drawn mirrored.
+    function iconFlips(name) { return rtl && rtlFlips[String(name).replace(/(-\d+)?(-filled)?$/, "")] === true }
+    /// A date or time in a Qt pattern, in the app language's culture (its
+    /// month and day names, AM/PM and digits: Arabic-Indic in ar-SA, as
+    /// Teams' Intl formatting shows them).
+    function fmtTime(d, f) { return new Date(d).toLocaleTimeString(Qt.locale(), f) }
+    function fmtDate(d, f) { return new Date(d).toLocaleDateString(Qt.locale(), f) }
+    function fmtDateTime(d, f) { return new Date(d).toLocaleString(Qt.locale(), f) }
+    function time(d) { return fmtTime(d, regional.shortTime) }
+    function longTime(d) { return fmtTime(d, regional.longTime) }
+    function date(d) { return fmtDate(d, regional.shortDate) }
     /// This year's dates leave the year out, as Teams.
-    function dateNoYear(d) { return Qt.formatDate(new Date(d), regional.shortDateNoYear) }
+    function dateNoYear(d) { return fmtDate(d, regional.shortDateNoYear) }
     function dateMaybeYear(d) { const x = new Date(d); return x.getFullYear() === new Date().getFullYear() ? dateNoYear(x) : date(x) }
-    function longDate(d) { return Qt.formatDate(new Date(d), regional.longDate) }
-    function longDateNoYear(d) { return Qt.formatDate(new Date(d), regional.longDateNoYear) }
+    function longDate(d) { return fmtDate(d, regional.longDate) }
+    function longDateNoYear(d) { return fmtDate(d, regional.longDateNoYear) }
     function dateTime(d) { return date(d) + " " + time(d) }
     /// The short date with a two-digit year (the chat list's older dates,
     /// date fields).
     readonly property string shortYearPattern: regional.shortDate.replace("yyyy", "yy")
-    function dateShortYear(d) { return Qt.formatDate(new Date(d), shortYearPattern) }
+    function dateShortYear(d) { return fmtDate(d, shortYearPattern) }
     // Message HTML as shown: a shared contact's card icon in brand colour.
     // Headings as paragraphs of class h1-h3: Qt adds its own heading size on
     // top of a stylesheet's, so only Teams' measured sizes apply this way.
@@ -166,8 +184,8 @@ QtObject {
     readonly property var bannerPalette: [["#A9D3F2", "#004377"], ["#D2CCF8", "#3F3682"], ["#F7C0E3", "#80215D"],
                                           ["#F4BFAB", "#7A2101"], ["#ECDFA5", "#6C5700"], ["#BDD99B", "#294903"]]
     readonly property var bannerNames: dark
-        ? ["Aegean blue", "Midnight purple", "Sangria", "Espresso", "Gothic gold", "Space green", "Cornflower blue", "Thistle purple", "Pink", "Coral", "Mellow yellow", "Jade"]
-        : ["Periwinkle Blue", "Lavender", "Rose", "Orange sherbet", "Flax yellow", "Teal", "Navy blue", "Indigo", "Mulberry red", "Fire orange", "Raw umber", "Ocean green"]
+        ? [qsTr("Aegean blue"), qsTr("Midnight purple"), qsTr("Sangria"), qsTr("Espresso"), qsTr("Gothic gold"), qsTr("Space green"), qsTr("Cornflower blue"), qsTr("Thistle purple"), qsTr("Pink"), qsTr("Coral"), qsTr("Mellow yellow"), qsTr("Jade")]
+        : [qsTr("Periwinkle Blue"), qsTr("Lavender"), qsTr("Rose"), qsTr("Orange sherbet"), qsTr("Flax yellow"), qsTr("Teal"), qsTr("Navy blue"), qsTr("Indigo"), qsTr("Mulberry red"), qsTr("Fire orange"), qsTr("Raw umber"), qsTr("Ocean green")]
     // [background, text] of scheme `t`.
     function banner(t) {
         let i = parseInt(t, 10); if (isNaN(i) || i < 0 || i > 11) i = 0

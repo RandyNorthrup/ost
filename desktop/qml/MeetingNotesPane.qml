@@ -59,11 +59,11 @@ Rectangle {
         id: header
         y: 3; width: parent.width; height: 58
         color: theme.surface
-        Text { x: 22; anchors.verticalCenter: parent.verticalCenter; text: "Notes"; font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.pick("#252423", "#FFFFFF") }
+        Text { x: 22; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Notes"); font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.pick("#252423", "#FFFFFF") }
         Row {
             anchors.right: parent.right; anchors.rightMargin: 16; anchors.verticalCenter: parent.verticalCenter
             Repeater {
-                model: [["more-horizontal-20", "More actions"], ["dismiss-20", "Close"]]
+                model: [["more-horizontal-20", qsTr("More actions")], ["dismiss-20", qsTr("Close")]]
                 Rectangle {
                     id: hb
                     required property var modelData
@@ -71,7 +71,7 @@ Rectangle {
                     color: hh.hovered ? theme.hover : "transparent"
                     FluentIcon { anchors.centerIn: parent; name: hb.modelData[0]; size: 20; color: theme.icon }
                     HoverHandler { id: hh; cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: hb.modelData[1] === "Close" ? root.closed() : moreMenu.open() }
+                    TapHandler { onTapped: hb.modelData[0] === "dismiss-20" ? root.closed() : moreMenu.open() }
                     Accessible.role: Accessible.Button; Accessible.name: hb.modelData[1]
                 }
             }
@@ -88,11 +88,11 @@ Rectangle {
         id: moreMenu
         parent: header
         x: header.width - 16 - 64 - implicitWidth + 32; y: 50
-        items: [{ key: "locations", label: "Shared locations", icon: "apps-20" },
-                { key: "copy", label: "Copy component", icon: "select-object-20" },
-                { key: "access", label: "See who has access", icon: "people-checkmark-20" },
-                { key: "loop", label: "Open in Loop", icon: "open-20" },
-                { key: "workspace", label: "Add to Loop workspace", icon: "add-square-20" }]
+        items: [{ key: "locations", label: qsTr("Shared locations"), icon: "apps-20" },
+                { key: "copy", label: qsTr("Copy component"), icon: "select-object-20" },
+                { key: "access", label: qsTr("See who has access"), icon: "people-checkmark-20" },
+                { key: "loop", label: qsTr("Open in Loop"), icon: "open-20" },
+                { key: "workspace", label: qsTr("Add to Loop workspace"), icon: "add-square-20" }]
         onPicked: i => {
             const link = root.url || root.sharedUrl
             if (!link) return
@@ -128,13 +128,13 @@ Rectangle {
         background: FluentSurface { depth: 16; radius: 8; color: theme.menu }
         contentItem: Column {
             spacing: 8
-            Text { text: "Shared locations"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
-            Text { width: 256; elide: Text.ElideRight; text: (root.title || root.meetingTitle || "Meeting notes") + ".loop"; font.family: theme.font; font.pixelSize: 14; color: theme.brandForeground1
+            Text { text: qsTr("Shared locations"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+            Text { width: 256; elide: Text.ElideRight; text: (root.title || root.meetingTitle || qsTr("Meeting notes")) + ".loop"; font.family: theme.font; font.pixelSize: 14; color: theme.brandForeground1
                    TapHandler { onTapped: Qt.openUrlExternally(root.url || root.sharedUrl) } }
-            Text { text: "Open component in"; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+            Text { text: qsTr("Open component in"); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
             Row { spacing: 8
                 FluentIcon { name: "chat-20"; size: 16; color: theme.textStrong }
-                Text { text: "Teams / Chat · " + (root.meetingTitle || root.title || "Meeting chat"); font.family: theme.font; font.pixelSize: 14; color: theme.text } }
+                Text { text: qsTr("Teams / Chat") + " · " + (root.meetingTitle || root.title || qsTr("Meeting chat")); font.family: theme.font; font.pixelSize: 14; color: theme.text } }
         }
     }
     function menuForTest() { return moreMenu.items.map(i => i.label) }
@@ -170,13 +170,13 @@ Rectangle {
         Text {
             visible: root.state_ === "error"
             width: 300; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
-            text: "Couldn't open the meeting's notes. " + root.error
+            text: qsTr("Couldn't open the meeting's notes.") + " " + root.error
             font.family: theme.font; font.pixelSize: 14; color: theme.text
         }
         Text {
             visible: root.state_ === "error"
             anchors.horizontalCenter: parent.horizontalCenter
-            text: "Try again"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.brand
+            text: qsTr("Try again"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.brand
             TapHandler { onTapped: root.resolve(false) }
             Accessible.role: Accessible.Button; Accessible.name: text
         }

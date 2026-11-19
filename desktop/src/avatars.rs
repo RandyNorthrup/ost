@@ -23,7 +23,7 @@ pub fn app_info(def: &serde_json::Value) -> serde_json::Value {
     let studio = facts.static_tabs.iter().find(|t| t.content_url.starts_with("https://"));
     serde_json::json!({
         "appId": AVATARS_APP,
-        "name": def["name"].as_str().unwrap_or("Avatars"),
+        "name": def["name"].as_str().map(str::to_string).unwrap_or_else(|| crate::backend::tr("Avatars")),
         "url": def["meetingExtensionDefinition"]["videoAppContentUrl"].as_str().unwrap_or_default(),
         "studio": studio.map(|t| t.content_url.clone()).unwrap_or_default(),
         "studioName": studio.map(|t| t.name.clone()).unwrap_or_default(),

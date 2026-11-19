@@ -14,7 +14,7 @@ Window {
     signal chosen(string oid, string name, string text)
     signal group(string oids, string topic, string text)
     signal scheduleMeetingWith(string attendees)
-    title: "New Message"
+    title: qsTr("New Message")
     width: 588; height: 493
     color: theme.surface
     flags: Qt.Window | (pinned ? Qt.WindowStaysOnTopHint : 0)

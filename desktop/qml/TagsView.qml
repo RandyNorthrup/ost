@@ -69,10 +69,10 @@ Item {
                 view.peopleLoaded = true
             } else if (["tag-create", "tag-update", "tag-delete", "tag-restore", "tag-add-members", "tag-remove-members"].indexOf(r.op) >= 0) {
                 if (!r.ok) {
-                    const msg = r.op === "tag-delete" ? "We're having trouble deleting the tag. Please try again later."
-                        : r.op === "tag-restore" ? "We're having trouble restoring the tag. Please try again later."
-                        : r.op === "tag-create" ? "We couldn't create the tag"
-                        : /already|duplicate|409/i.test(r.error || "") ? "This tag name is already taken." : "We ran into a problem"
+                    const msg = r.op === "tag-delete" ? qsTr("We're having trouble deleting the tag. Please try again later.")
+                        : r.op === "tag-restore" ? qsTr("We're having trouble restoring the tag. Please try again later.")
+                        : r.op === "tag-create" ? qsTr("We couldn't create the tag")
+                        : /already|duplicate|409/i.test(r.error || "") ? qsTr("This tag name is already taken.") : qsTr("We ran into a problem")
                     backend.toast(msg, "error")
                 }
                 if (r.op === "tag-delete" && r.ok) view.open = null
@@ -99,12 +99,12 @@ Item {
                 Text {
                     visible: !search.text
                     anchors.verticalCenter: parent.verticalCenter
-                    text: "Search for tags"
+                    text: qsTr("Search for tags")
                     font: search.font
                     color: theme.textSecondary
                 }
                 Accessible.role: Accessible.EditableText
-                Accessible.name: "Search for tags"
+                Accessible.name: qsTr("Search for tags")
             }
             FluentIcon { x: 176; anchors.verticalCenter: parent.verticalCenter; name: "search-20"; size: 20; color: theme.textSecondary }
             Rectangle { visible: search.activeFocus; anchors.bottom: parent.bottom; width: parent.width + 30; height: 2; radius: 1; color: theme.brand }
@@ -120,12 +120,12 @@ Item {
                 anchors.centerIn: parent
                 spacing: 6
                 FluentIcon { name: "tag-20"; size: 20; color: theme.onFill(hcFill1, theme.textOnBrand) }
-                Text { text: "Create tag"; anchors.verticalCenter: parent.verticalCenter; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.textOnBrand) }
+                Text { text: qsTr("Create tag"); anchors.verticalCenter: parent.verticalCenter; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.textOnBrand) }
             }
             HoverHandler { id: createHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: dialog.startCreate([]) }
             Accessible.role: Accessible.Button
-            Accessible.name: "Create tag"
+            Accessible.name: qsTr("Create tag")
         }
 
         Flickable {
@@ -138,17 +138,17 @@ Item {
                 id: sections
                 width: parent.width
                 Section {
-                    label: "Tags assigned to you (" + view.mine.length + ")"
+                    label: qsTr("Tags assigned to you (%1)").arg(view.mine.length)
                     open: view.mineOpen; onToggled: view.mineOpen = !view.mineOpen
-                    TagTable { tags: view.mine; emptyText: view.list ? "No tags are currently assigned to you" : "" }
+                    TagTable { tags: view.mine; emptyText: view.list ? qsTr("No tags are currently assigned to you") : "" }
                 }
                 Section {
-                    label: "Other tags (" + view.others.length + ")"
+                    label: qsTr("Other tags (%1)").arg(view.others.length)
                     open: view.otherOpen; onToggled: view.otherOpen = !view.otherOpen
                     TagTable { tags: view.others }
                 }
                 Section {
-                    label: "Deleted (" + view.deleted.length + ")"
+                    label: qsTr("Deleted (%1)").arg(view.deleted.length)
                     open: view.deletedOpen; onToggled: view.deletedOpen = !view.deletedOpen
                     TagTable { tags: view.deleted; deletedRows: true }
                 }
@@ -168,22 +168,22 @@ Item {
                 x: 9.3; anchors.verticalCenter: parent.verticalCenter
                 spacing: 8
                 FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "chevron-left-12"; size: 12; color: theme.onFill(hcFill2, theme.textStrong) }
-                Text { text: "All tags"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.textStrong) }
+                Text { text: qsTr("All tags"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.textStrong) }
             }
             HoverHandler { id: backHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: view.open = null }
             Accessible.role: Accessible.Button
-            Accessible.name: "All tags"
+            Accessible.name: qsTr("All tags")
         }
         Row {
             visible: view.canChange
             x: parent.width - 84 - width; y: 32.6
             spacing: 10
-            IconButton { icon: "person-add-20"; label: "Add people"; onClicked: dialog.startAdd(view.open, view.people) }
-            IconButton { icon: "edit-20"; label: "Edit tag details"; onClicked: dialog.startEdit(view.open) }
-            IconButton { icon: "copy-20"; label: "Create a copy"; onClicked: dialog.startCopy(view.open, view.people) }
+            IconButton { icon: "person-add-20"; label: qsTr("Add people"); onClicked: dialog.startAdd(view.open, view.people) }
+            IconButton { icon: "edit-20"; label: qsTr("Edit tag details"); onClicked: dialog.startEdit(view.open) }
+            IconButton { icon: "copy-20"; label: qsTr("Create a copy"); onClicked: dialog.startCopy(view.open, view.people) }
             Rectangle { width: 0.67; height: 32; color: theme.divider }
-            IconButton { icon: "delete-20"; label: "Delete tag"; onClicked: dialog.startDelete(view.open) }
+            IconButton { icon: "delete-20"; label: qsTr("Delete tag"); onClicked: dialog.startDelete(view.open) }
         }
         Badge { x: 76; y: 100.3; size: 42 }
         Text {
@@ -203,7 +203,7 @@ Item {
         }
         Text {
             x: 52; y: 190.3
-            text: "Members (" + (view.peopleLoaded ? view.people.length : (view.open ? view.open.count : 0)) + ")"
+            text: qsTr("Members (%1)").arg(view.peopleLoaded ? view.people.length : (view.open ? view.open.count : 0))
             font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold
             lineHeight: 20; lineHeightMode: Text.FixedHeight
             color: theme.text
@@ -213,7 +213,7 @@ Item {
             x: 52; y: 210.3; width: parent.width - 120; height: parent.height - y
             readonly property real col: width / 5
             Repeater {
-                model: ["Name", "Title", "Location", "Organization"]
+                model: [qsTr("Name"), qsTr("Title"), qsTr("Location"), qsTr("Organization")]
                 Text {
                     required property string modelData
                     required property int index
@@ -261,7 +261,7 @@ Item {
                             IconButton {
                                 visible: view.canChange
                                 x: parent.width - 40; y: 6.3
-                                icon: "dismiss-20"; label: "Remove " + (personRow.modelData.name || "")
+                                icon: "dismiss-20"; label: qsTr("Remove %1").arg(personRow.modelData.name || "")
                                 onClicked: view.act("tag-remove-members", { id: view.open.id, name: view.open.name, members: [personRow.modelData.mri] })
                             }
                             Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.pick("#FAFAFA", "#2E2E2E", "#000000") }
@@ -282,10 +282,10 @@ Item {
         property var tag: null
         margins: 8
         items: [
-            { key: "chat", label: "Chat with group", icon: "chat-20" },
-            { key: "copy", label: "Create a copy", icon: "copy-20" },
+            { key: "chat", label: qsTr("Chat with group"), icon: "chat-20" },
+            { key: "copy", label: qsTr("Create a copy"), icon: "copy-20" },
             { separator: true },
-            { key: "delete", label: "Delete", icon: "delete-20" }
+            { key: "delete", label: qsTr("Delete"), icon: "delete-20" }
         ].filter(i => view.canChange || i.key === "chat")
         onPicked: i => {
             const k = items[i].key, t = rowMenu.tag
@@ -326,7 +326,7 @@ Item {
         x: 12; width: parent ? parent.width - 24 : 0
         height: tags.length ? 34 + tags.length * 44 : (emptyText ? 44 : 0)
         Repeater {
-            model: table.tags.length ? ["Name", "Members", "Description", "Imported from"] : []
+            model: table.tags.length ? [qsTr("Name"), qsTr("Members"), qsTr("Description"), qsTr("Imported from")] : []
             Text {
                 required property string modelData
                 required property int index
@@ -390,17 +390,17 @@ Item {
                         width: restoreText.implicitWidth + 24; height: 31.3; radius: 4
                         color: restoreHover.hovered ? theme.menuHover : theme.surface
                         border.color: theme.stroke; border.width: 0.67
-                        Text { id: restoreText; anchors.centerIn: parent; text: "Restore"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, theme.text) }
+                        Text { id: restoreText; anchors.centerIn: parent; text: qsTr("Restore"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, theme.text) }
                         HoverHandler { id: restoreHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: view.act("tag-restore", tagRow.modelData.id) }
                         Accessible.role: Accessible.Button
-                        Accessible.name: "Restore"
+                        Accessible.name: qsTr("Restore")
                     }
                     IconButton {
                         id: more
                         visible: !table.deletedRows
                         x: parent.width - 40; y: 6.3
-                        icon: "more-horizontal-20"; label: "More options"
+                        icon: "more-horizontal-20"; label: qsTr("More options")
                         onClicked: { rowMenu.tag = tagRow.modelData; rowMenu.parent = more; rowMenu.x = more.width - rowMenu.implicitWidth; rowMenu.y = more.height + 4; rowMenu.open() }
                     }
                     Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.pick("#FAFAFA", "#2E2E2E", "#000000") }

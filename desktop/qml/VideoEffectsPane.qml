@@ -93,7 +93,7 @@ Rectangle {
         Text {
             x: 20.67; y: 17.67; height: 22
             verticalAlignment: Text.AlignVCenter
-            text: root.avatarsOnly ? "Avatars" : root.inCall ? "Video effects and settings" : "Video effects"
+            text: root.avatarsOnly ? qsTr("Avatars") : root.inCall ? qsTr("Video effects and settings") : qsTr("Video effects")
             font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold
             color: theme.text
             Accessible.role: Accessible.Heading
@@ -108,9 +108,9 @@ Rectangle {
             TapHandler { onTapped: root.closed() }
             ToolTip.visible: closeHover.hovered
             ToolTip.delay: 250
-            ToolTip.text: "Close video effects and settings pane"
+            ToolTip.text: qsTr("Close video effects and settings pane")
             Accessible.role: Accessible.Button
-            Accessible.name: "Close video effects and settings pane"
+            Accessible.name: qsTr("Close video effects and settings pane")
         }
         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.divider }
     }
@@ -123,7 +123,7 @@ Rectangle {
         x: 8.67; y: header.y + header.height + 2
         height: visible ? 44 : 0
         Repeater {
-            model: [{ k: "effects", t: "Video effects" }].concat(root.avatarsOffered ? [{ k: "avatars", t: "Avatars" }] : []).concat([{ k: "settings", t: "Settings" }])
+            model: [{ k: "effects", t: qsTr("Video effects") }].concat(root.avatarsOffered ? [{ k: "avatars", t: qsTr("Avatars") }] : []).concat([{ k: "settings", t: qsTr("Settings") }])
             Item {
                 id: tb
                 required property var modelData
@@ -187,16 +187,16 @@ Rectangle {
                     HoverHandler { id: backHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: { root.showAll = false; flick.contentY = 0 } }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Back to all video effects"
+                    Accessible.name: qsTr("Back to all video effects")
                 }
                 Text {
                     x: 35; y: 2.5; height: 20; verticalAlignment: Text.AlignVCenter
-                    text: "Backgrounds"
+                    text: qsTr("Backgrounds")
                     font.family: theme.font; font.pixelSize: 14
                     color: theme.text
                 }
             }
-            SectionHeader { visible: !root.showAll; key: "backgrounds"; title: "Backgrounds" }
+            SectionHeader { visible: !root.showAll; key: "backgrounds"; title: qsTr("Backgrounds") }
             // Teams' info bar (Fluent MessageBar).
             Item {
                 visible: root.notice.length > 0 && (root.expanded.backgrounds || root.showAll)
@@ -224,7 +224,7 @@ Rectangle {
                         HoverHandler { id: nxHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: root.notice = "" }
                         Accessible.role: Accessible.Button
-                        Accessible.name: "Dismiss"
+                        Accessible.name: qsTr("Dismiss")
                     }
                     Accessible.role: Accessible.AlertMessage
                     Accessible.name: root.notice
@@ -237,7 +237,7 @@ Rectangle {
                 Cell {
                     EffectTile {
                         x: 4; y: 4
-                        kind: "none"; label: "None"; accessibleName: "No background effect"
+                        kind: "none"; label: qsTr("None"); accessibleName: qsTr("No background effect")
                         selected: videoEffects.background === "none"
                         onPicked: videoEffects.setBackground("none")
                     }
@@ -255,8 +255,8 @@ Rectangle {
                 Cell {
                     EffectTile {
                         x: 4; y: 4
-                        kind: "add"; label: "Add new"
-                        accessibleName: "Add new background. Image requirements: Minimal size: 360 × 360 pixels; Maximal size: 2048 × 2048 pixels; File type: jpeg, jpg, png, bmp; Aspect ratio: Less than 4."
+                        kind: "add"; label: qsTr("Add new")
+                        accessibleName: qsTr("Add new background. Image requirements: Minimal size: 360 × 360 pixels; Maximal size: 2048 × 2048 pixels; File type: jpeg, jpg, png, bmp; Aspect ratio: Less than 4.")
                         onPicked: chooser.open()
                     }
                 }
@@ -268,7 +268,7 @@ Rectangle {
                         EffectTile {
                             x: 4; y: 4
                             thumb: parent.modelData.thumb
-                            label: parent.modelData.id; accessibleName: parent.modelData.id + " background effect"
+                            label: parent.modelData.id; accessibleName: qsTr("%1 background effect").arg(parent.modelData.id)
                             removable: true
                             selected: videoEffects.background === parent.modelData.id
                             onPicked: videoEffects.setBackground(parent.modelData.id)
@@ -283,7 +283,7 @@ Rectangle {
                         EffectTile {
                             x: 4; y: 4
                             thumb: parent.modelData.thumb; animated: parent.modelData.animated
-                            label: parent.modelData.name; accessibleName: parent.modelData.name + " background effect"
+                            label: parent.modelData.name; accessibleName: qsTr("%1 background effect").arg(parent.modelData.name)
                             selected: videoEffects.background === parent.modelData.id
                             onPicked: videoEffects.setBackground(parent.modelData.id)
                         }
@@ -293,7 +293,7 @@ Rectangle {
                     visible: !root.showAll && videoEffects.catalog.length > 14
                     EffectTile {
                         x: 4; y: 4
-                        kind: "showall"; label: "Show all"; accessibleName: "Show all background effects"
+                        kind: "showall"; label: qsTr("Show all"); accessibleName: qsTr("Show all background effects")
                         onPicked: { root.showAll = true; flick.contentY = 0 }
                     }
                 }
@@ -307,7 +307,7 @@ Rectangle {
                     x: 18.7; y: -8
                     Text {
                         height: 24; verticalAlignment: Text.AlignVCenter
-                        text: "Green screen settings"
+                        text: qsTr("Green screen settings")
                         font.family: theme.font; font.pixelSize: 14; font.weight: Font.Medium
                         font.underline: gsHover.hovered
                         color: theme.brand
@@ -316,14 +316,14 @@ Rectangle {
                         Accessible.role: Accessible.Link
                         Accessible.name: text
                     }
-                    InfoButton { info: "Turn on Green screen for a better look when you're using a virtual background." }
+                    InfoButton { info: qsTr("Turn on Green screen for a better look when you're using a virtual background.") }
                 }
             }
             // Teams' Filters (its Custom Filters app): None, the category
             // chips (24 px pills, 12 px/500, brand when chosen, #E6E6E6
             // not; 20 in, 13 below) and the category's filters in the
             // same 88 x 50 grid.
-            SectionHeader { visible: !root.showAll && (videoEffects.filters.filters || []).length > 0; key: "filters"; title: "Filters" }
+            SectionHeader { visible: !root.showAll && (videoEffects.filters.filters || []).length > 0; key: "filters"; title: qsTr("Filters") }
             Column {
                 visible: !root.showAll && root.expanded.filters && (videoEffects.filters.filters || []).length > 0
                 width: 341.3
@@ -331,7 +331,7 @@ Rectangle {
                     width: 341.3; height: 54
                     EffectTile {
                         x: 18.7; y: 4
-                        kind: "none"; label: "None"; accessibleName: "No video effect selected"
+                        kind: "none"; label: qsTr("None"); accessibleName: qsTr("No video effect selected")
                         selected: videoEffects.filter === ""
                         onPicked: videoEffects.setFilter("")
                     }
@@ -350,14 +350,14 @@ Rectangle {
                             Text {
                                 id: chipText
                                 anchors.centerIn: parent
-                                text: chip.modelData
+                                text: chip.modelData === "Frames" ? qsTr("Frames") : qsTr("Styles")
                                 font.family: theme.font; font.pixelSize: 12; font.weight: Font.Medium
                                 color: theme.onFill(chip, chip.chosen ? theme.pick("#FAFAFA", "#FFFFFF", "#FFFFFF") : theme.textStrong)
                             }
                             HoverHandler { id: chipHover; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: root.filterCategory = chip.modelData }
                             Accessible.role: Accessible.RadioButton
-                            Accessible.name: chip.modelData
+                            Accessible.name: chip.modelData === "Frames" ? qsTr("Frames") : qsTr("Styles")
                             Accessible.checked: chip.chosen
                         }
                     }
@@ -387,7 +387,7 @@ Rectangle {
             id: settingsCol
             visible: root.inCall && root.tab === "settings"
             x: 4; width: 337.3
-            SectionHeader { key: "camera"; title: "Camera" }
+            SectionHeader { key: "camera"; title: qsTr("Camera") }
             Column {
                 visible: root.expanded.camera
                 x: 16.7; width: 321.3
@@ -422,32 +422,32 @@ Rectangle {
                 }
                 Item { width: 1; height: 16 }
             }
-            SectionHeader { key: "appearance"; title: "Appearance" }
+            SectionHeader { key: "appearance"; title: qsTr("Appearance") }
             Column {
                 visible: root.expanded.appearance
                 x: 16.7; width: 321.3
                 spacing: 8
                 SettingSwitch {
-                    label: "Adjust brightness"
-                    info: "Enhance the quality of your video in low light conditions."
+                    label: qsTr("Adjust brightness")
+                    info: qsTr("Enhance the quality of your video in low light conditions.")
                     checked: videoEffects.brightness
                     onToggled: videoEffects.setBrightness(!checked)
                 }
                 SettingSwitch {
-                    label: "Soft focus"
-                    info: "Smoothen your appearance for a polished look."
+                    label: qsTr("Soft focus")
+                    info: qsTr("Smoothen your appearance for a polished look.")
                     checked: videoEffects.softFocus
                     onToggled: videoEffects.setSoftFocus(!checked)
                 }
                 Item { width: 1; height: 0 }
             }
-            SectionHeader { key: "advanced"; title: "Advanced settings" }
+            SectionHeader { key: "advanced"; title: qsTr("Advanced settings") }
             Column {
                 visible: root.expanded.advanced
                 x: 16.7; width: 321.3
                 SettingSwitch {
-                    label: "Mirror my video"
-                    info: "Changing this setting will only change the view for you. This setting doesn’t currently work in Together mode."
+                    label: qsTr("Mirror my video")
+                    info: qsTr("Changing this setting will only change the view for you. This setting doesn’t currently work in Together mode.")
                     checked: videoEffects.mirror
                     onToggled: videoEffects.setMirror(!checked)
                 }
@@ -484,7 +484,7 @@ Rectangle {
             FluentIcon { y: 0; name: "info-16-regular"; size: 16; color: theme.text }
             Text {
                 x: 24; y: 0; height: 16; verticalAlignment: Text.AlignVCenter
-                text: root.previewing && videoEffects.mirror ? "Others will see this image reversed." : "Others won't see your video while you preview."
+                text: root.previewing && videoEffects.mirror ? qsTr("Others will see this image reversed.") : qsTr("Others won't see your video while you preview.")
                 font.family: theme.font; font.pixelSize: 12
                 color: theme.text
             }
@@ -496,14 +496,14 @@ Rectangle {
             border.color: pvHover.hovered ? theme.strokeHover : theme.stroke; border.width: 0.67
             Text {
                 anchors.centerIn: parent
-                text: root.previewing ? "Stop preview" : "Preview"
+                text: root.previewing ? qsTr("Stop preview") : qsTr("Preview")
                 font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
                 color: theme.onFill(hcFill4, theme.text)
             }
             HoverHandler { id: pvHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.setPreview(!root.previewing) }
             Accessible.role: Accessible.Button
-            Accessible.name: root.previewing ? "Stop preview" : "Preview"
+            Accessible.name: root.previewing ? qsTr("Stop preview") : qsTr("Preview")
         }
         Item { width: 1; height: 10 }
         Rectangle {
@@ -512,22 +512,22 @@ Rectangle {
             color: apHover.hovered ? theme.brandHover : theme.brandFill
             Text {
                 anchors.centerIn: parent
-                text: "Apply and turn on video"
+                text: qsTr("Apply and turn on video")
                 font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
                 color: theme.onFill(hcFill5, theme.textOnBrand)
             }
             HoverHandler { id: apHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: { root.setPreview(false); root.turnOnVideo() } }
             Accessible.role: Accessible.Button
-            Accessible.name: "Apply and turn on video"
+            Accessible.name: qsTr("Apply and turn on video")
         }
     }
 
     // Teams' Add new picker ("Open", its "Custom files" filter).
     FileDialog {
         id: chooser
-        title: "Open"
-        nameFilters: ["Custom files (*.png *.jpeg *.jpg *.bmp)"]
+        title: qsTr("Open")
+        nameFilters: [qsTr("Custom files (*.png *.jpeg *.jpg *.bmp)")]
         onAccepted: root.notice = videoEffects.addUpload(selectedFile)
     }
     /// Test hook: Add new with `path`, as if picked.

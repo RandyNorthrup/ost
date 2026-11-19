@@ -49,6 +49,12 @@ Rectangle {
     /// Wide (Find in post's window): the pills show their names.
     readonly property bool wide: width >= 480
     readonly property string place: postRoot ? "post" : isChannel ? "channel" : "chat"
+    // Teams' per-place wording of the pane's texts.
+    readonly property string findTitle: place === "post" ? qsTr("Find in post") : place === "channel" ? qsTr("Find in channel") : qsTr("Find in chat")
+    readonly property string noResultsTitle: place === "post" ? qsTr("We couldn't find any results in this post") : place === "channel" ? qsTr("We couldn't find any results in this channel") : qsTr("We couldn't find any results in this chat")
+    readonly property string idleTitle: place === "post" ? qsTr("Search in this post") : place === "channel" ? qsTr("Search in this channel") : qsTr("Search in this chat")
+    readonly property string noResultsHint: place === "post" ? qsTr("Check for spelling, try another search keyword, or search in another post.") : place === "channel" ? qsTr("Check for spelling, try another search keyword, or search in another channel.") : qsTr("Check for spelling, try another search keyword, or search in another chat.")
+    readonly property string idleHint: place === "post" ? qsTr("Find messages, files, and URLs shared in this post.") : place === "channel" ? qsTr("Find messages, files, and URLs shared in this channel.") : qsTr("Find messages, files, and URLs shared in this chat.")
     readonly property real headerHeight: 61
     readonly property real boxY: headerHeight + 8
     readonly property real listY: boxY + 44 + 40.4
@@ -143,13 +149,13 @@ Rectangle {
         const days = Math.round((dayStart(new Date()) - dayStart(d)) / 86400000)
         const time = theme.time(d)
         if (days === 0) return time
-        if (days === 1) return "Yesterday, " + time
+        if (days === 1) return qsTr("Yesterday, %1").arg(time)
         return d.getFullYear() === new Date().getFullYear() ? theme.dateNoYear(d) : theme.date(d)
     }
     function group(iso) {
         const d = new Date(iso), n = new Date()
         const months = (n.getFullYear() - d.getFullYear()) * 12 + n.getMonth() - d.getMonth()
-        return months <= 0 ? "This month" : months === 1 ? "Last month" : "Older"
+        return months <= 0 ? qsTr("This month") : months === 1 ? qsTr("Last month") : qsTr("Older")
     }
     function escaped(t) { return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") }
     // Two lines of `text` at `width`, ellipsised, with the terms marked.
@@ -209,13 +215,13 @@ Rectangle {
         x: 0.67; width: parent.width - 0.67; height: pane.headerHeight
         Text {
             x: 20.7 - 0.67; anchors.verticalCenter: parent.verticalCenter
-            text: "Find in " + pane.place
+            text: pane.findTitle
             font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text
             Accessible.role: Accessible.Heading
         }
         PaneAction {
             x: pane.width - 48 - (pane.windowed ? 14 : 0) - 0.67; anchors.verticalCenter: parent.verticalCenter
-            icon: "dismiss-20"; Accessible.name: "Close Find in " + pane.place
+            icon: "dismiss-20"; Accessible.name: qsTr("Close %1").arg(pane.findTitle)
             onClicked: pane.closed()
         }
     }
@@ -247,11 +253,11 @@ Rectangle {
             Keys.onDownPressed: if (list.count) { list.currentIndex = 0; list.forceActiveFocus() }
             Text {
                 visible: !field.text
-                text: "Enter a search keyword..."
+                text: qsTr("Enter a search keyword...")
                 font: field.font; color: theme.textSecondary
             }
             Accessible.role: Accessible.EditableText
-            Accessible.name: "Find in " + pane.place
+            Accessible.name: pane.findTitle
         }
         // Teams searches as you type, a moment after the last key.
         Timer { id: typing; interval: 400; onTriggered: pane.run() }
@@ -263,12 +269,12 @@ Rectangle {
         Text {
             visible: !!field.text
             anchors.right: parent.right; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter
-            text: "Clear"
+            text: qsTr("Clear")
             font.family: theme.font; font.pixelSize: 14; color: theme.brand
             HoverHandler { cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: { field.text = ""; typing.stop(); pane.run(); field.forceActiveFocus() } }
             Accessible.role: Accessible.Button
-            Accessible.name: "Clear"
+            Accessible.name: qsTr("Clear")
         }
     }
 
@@ -348,21 +354,21 @@ Rectangle {
             TapHandler { onTapped: chip.cleared() }
             FluentIcon { x: 0; anchors.verticalCenter: parent.verticalCenter; name: "dismiss-20"; size: 12; color: theme.onFill(chip, "#FFFFFF") }
             Accessible.role: Accessible.Button
-            Accessible.name: "Clear"
+            Accessible.name: qsTr("Clear")
         }
         Accessible.role: Accessible.Button
         Accessible.name: chip.name
     }
 
-    readonly property var typeNames: ({ excel: "Excel", images: "Images", loop: "Loop", onenote: "OneNote", pdf: "PDF", powerpoint: "PowerPoint", text: "Text file", word: "Word" })
+    readonly property var typeNames: ({ excel: qsTr("Excel"), images: qsTr("Images"), loop: qsTr("Loop"), onenote: qsTr("OneNote"), pdf: qsTr("PDF"), powerpoint: qsTr("PowerPoint"), text: qsTr("Text file"), word: qsTr("Word") })
     readonly property var typeKeys: ["excel", "images", "loop", "onenote", "pdf", "powerpoint", "text", "word"]
     readonly property var typeIcons: ({ excel: "ft-xlsx-20", images: "ft-photo-20", loop: "ft-loop-20", onenote: "ft-one-20", pdf: "ft-pdf-20", powerpoint: "ft-pptx-20", text: "ft-txt-20", word: "ft-docx-20" })
     function dateLabel() {
         switch (dateKey) {
-        case "today": return "Today"
-        case "yesterday": return "Yesterday"
-        case "week": return "This week"
-        case "month": return "This month"
+        case "today": return qsTr("Today")
+        case "yesterday": return qsTr("Yesterday")
+        case "week": return qsTr("This week")
+        case "month": return qsTr("This month")
         case "custom": return theme.date(customFrom) + " - " + theme.date(customTo)
         }
         return ""
@@ -393,13 +399,13 @@ Rectangle {
             id: modeChip
             mode: true; on: true; wide: pane.wide
             icon: pane.files ? "document-20" : "chat-bubbles-20"
-            text: pane.files ? "Files" : "Messages"
-            name: pane.files ? "Files" : "Messages"
+            text: pane.files ? qsTr("Files") : qsTr("Messages")
+            name: pane.files ? qsTr("Files") : qsTr("Messages")
             onClicked: modeMenu.open()
             RadioMenu {
                 id: modeMenu
                 y: parent.height + 4
-                items: [{ label: "Messages", checked: !pane.files }, { label: "Files", checked: pane.files }]
+                items: [{ label: qsTr("Messages"), checked: !pane.files }, { label: qsTr("Files"), checked: pane.files }]
                 onPicked: i => {
                     close()
                     if ((i === 1) === pane.files) return
@@ -419,14 +425,14 @@ Rectangle {
                 on: pane.isOn(modelData)
                 wide: pane.wide
                 chevron: modelData !== "attachment" && modelData !== "mentions"
-                text: ({ date: "Date", from: "From", attachment: "Attachment", mentions: "Mentions", type: "Type" })[modelData]
+                text: ({ date: qsTr("Date"), from: qsTr("From"), attachment: qsTr("Attachment"), mentions: qsTr("Mentions"), type: qsTr("Type") })[modelData]
                 icon: ({ date: "calendar-ltr-20", from: "person-20", attachment: "attach-20", mentions: "mention-20", type: "" })[modelData]
                 label: modelData === "date" ? (on ? pane.dateLabel() : "")
                      : modelData === "from" ? (on && pane.person ? pane.person.name : "")
                      : pane.wide && on && (modelData === "attachment" || modelData === "mentions") ? text : ""
                 typeIcon: modelData === "type" && on ? pane.typeIcons[pane.fileType] : ""
-                name: ({ date: on ? "Date " + pane.dateLabel() : "Date filter", from: on && pane.person ? "From " + pane.person.name : "From filter",
-                         attachment: "Attachment", mentions: "Mentions", type: on ? "File type " + pane.typeNames[pane.fileType] + " selected" : "File type" })[modelData]
+                name: ({ date: on ? qsTr("Date %1").arg(pane.dateLabel()) : qsTr("Date filter"), from: on && pane.person ? qsTr("From %1").arg(pane.person.name) : qsTr("From filter"),
+                         attachment: qsTr("Attachment"), mentions: qsTr("Mentions"), type: on ? qsTr("File type %1 selected").arg(pane.typeNames[pane.fileType]) : qsTr("File type") })[modelData]
                 onClicked: {
                     if (modelData === "attachment") { pane.attachment = !pane.attachment; pane.setActive("attachment", pane.attachment); pane.run() }
                     else if (modelData === "mentions") { pane.mentions = !pane.mentions; pane.setActive("mentions", pane.mentions); pane.run() }
@@ -468,7 +474,7 @@ Rectangle {
         Column {
             x: 0.67; y: 6.7; width: parent.width - 1.33
             Repeater {
-                model: [{ k: "today", l: "Today" }, { k: "yesterday", l: "Yesterday" }, { k: "week", l: "This week" }, { k: "month", l: "This month" }]
+                model: [{ k: "today", l: qsTr("Today") }, { k: "yesterday", l: qsTr("Yesterday") }, { k: "week", l: qsTr("This week") }, { k: "month", l: qsTr("This month") }]
                 Rectangle {
                     id: hcFill1
                     required property var modelData
@@ -483,15 +489,15 @@ Rectangle {
             }
         }
         Rectangle { x: 0.67; y: 144.7; width: parent.width - 1.33; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D", "#000000") }
-        Text { x: 15.7; y: 161.7; text: "From"; font.family: theme.font; font.pixelSize: 12; color: theme.text }
+        Text { x: 15.7; y: 161.7; text: qsTr("From"); font.family: theme.font; font.pixelSize: 12; color: theme.text }
         DatePickerField {
             x: 15.7; y: 181.7; width: 222.7
             filled: true; format: "dddd, MMMM d, yyyy"; iconSize: 16; iconRight: 6
-            empty: !datePop.fromSet; placeholder: "Select a date"
+            empty: !datePop.fromSet; placeholder: qsTr("Select a date")
             date: datePop.fromDate; maxDate: datePop.toDate
             onPicked: d => { datePop.fromDate = d; datePop.fromSet = true }
         }
-        Text { x: 15.7; y: 225; text: "To"; font.family: theme.font; font.pixelSize: 12; color: theme.text }
+        Text { x: 15.7; y: 225; text: qsTr("To"); font.family: theme.font; font.pixelSize: 12; color: theme.text }
         DatePickerField {
             x: 15.7; y: 245; width: 222.7
             filled: true; format: "dddd, MMMM d, yyyy"; iconSize: 16; iconRight: 6
@@ -503,25 +509,25 @@ Rectangle {
             x: 79.6; y: 289; width: 54.7; height: 32; radius: 4
             readonly property bool usable: datePop.fromSet || !!pane.dateKey
             color: usable && clh.hovered ? theme.hover : "transparent"
-            Text { anchors.centerIn: parent; text: "Clear"; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill2, parent.usable ? theme.text : theme.pick("#BDBDBD", "#5C5C5C", "#3FF23F")) }
+            Text { anchors.centerIn: parent; text: qsTr("Clear"); font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill2, parent.usable ? theme.text : theme.pick("#BDBDBD", "#5C5C5C", "#3FF23F")) }
             HoverHandler { id: clh; cursorShape: parent.usable ? Qt.PointingHandCursor : Qt.ArrowCursor }
             TapHandler { enabled: parent.usable; onTapped: { datePop.fromSet = false; datePop.toDate = new Date(); if (pane.dateKey) { datePop.close(); pane.clear("date") } } }
             Accessible.role: Accessible.Button
-            Accessible.name: "Clear the Selected Date Range"
+            Accessible.name: qsTr("Clear the Selected Date Range")
         }
         Rectangle {
             id: hcFill3
             x: 142.3; y: 289; width: 96; height: 32; radius: 4
             readonly property bool usable: datePop.fromSet
             color: usable ? (aph.hovered ? theme.brandHover : theme.brandFill) : theme.pick("#F0F0F0", "#2E2E2E", "#000000")
-            Text { anchors.centerIn: parent; text: "Apply"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, parent.usable ? "#FFFFFF" : theme.pick("#BDBDBD", "#5C5C5C", "#3FF23F")) }
+            Text { anchors.centerIn: parent; text: qsTr("Apply"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, parent.usable ? "#FFFFFF" : theme.pick("#BDBDBD", "#5C5C5C", "#3FF23F")) }
             HoverHandler { id: aph; cursorShape: parent.usable ? Qt.PointingHandCursor : Qt.ArrowCursor }
             TapHandler {
                 enabled: parent.usable
                 onTapped: { pane.customFrom = datePop.fromDate; pane.customTo = datePop.toDate; pane.dateKey = "custom"; pane.setActive("date", true); datePop.close(); pane.run() }
             }
             Accessible.role: Accessible.Button
-            Accessible.name: "Apply the Selected Date Range"
+            Accessible.name: qsTr("Apply the Selected Date Range")
         }
     }
 
@@ -560,9 +566,9 @@ Rectangle {
                 onTextChanged: if (pane.isChannel) peopleTimer.restart()
                 Keys.onReturnPressed: if (fromPop.people.length) fromPop.pick(fromPop.people[0])
                 Keys.onEscapePressed: fromPop.close()
-                Text { visible: !who.text; text: "Filter by person"; font: who.font; color: theme.textSecondary }
+                Text { visible: !who.text; text: qsTr("Filter by person"); font: who.font; color: theme.textSecondary }
                 Accessible.role: Accessible.EditableText
-                Accessible.name: "Filter by person"
+                Accessible.name: qsTr("Filter by person")
             }
             Timer { id: peopleTimer; interval: 250; onTriggered: backend.findPeople(pane.chatId, who.text) }
         }
@@ -581,7 +587,7 @@ Rectangle {
                     Text {
                         x: 60; y: 7; width: parent.width - 68
                         textFormat: Text.StyledText; elide: Text.ElideRight
-                        text: pane.boldPrefix(prow.modelData.name || "", who.text) + (prow.me ? " (You)" : "")
+                        text: prow.me ? qsTr("%1 (You)").arg(pane.boldPrefix(prow.modelData.name || "", who.text)) : pane.boldPrefix(prow.modelData.name || "", who.text)
                         font.family: theme.font; font.pixelSize: 14; color: theme.onFill(prow, theme.textStrong)
                     }
                     Text {
@@ -674,7 +680,7 @@ Rectangle {
                     }
                     Text {
                         x: hitRow.posted ? 59.1 : 40; width: parent.width - x - timeText.width - 8; height: 16
-                        text: (hitRow.me ? "You" : hitRow.modelData.sender_name || "") + (hitRow.posted ? " posted" : "")
+                        text: hitRow.posted ? qsTr("%1 posted").arg(hitRow.me ? qsTr("You") : hitRow.modelData.sender_name || "") : (hitRow.me ? qsTr("You") : hitRow.modelData.sender_name || "")
                         elide: Text.ElideRight
                         font.family: theme.font; font.pixelSize: 12; color: theme.onFill(hcFill4, theme.textSecondary)
                     }
@@ -732,20 +738,20 @@ Rectangle {
                         HoverHandler { id: mh; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: fileMenu.open() }
                         Accessible.role: Accessible.Button
-                        Accessible.name: "More options"
+                        Accessible.name: qsTr("More options")
                         MenuPopup {
                             id: fileMenu
                             x: parent.width - width; y: parent.height + 4; width: 180
                             readonly property bool loop: /\.(loop|fluid)$/i.test(hitRow.modelData.file_name || "")
-                            items: [{ label: "Open in Browser", icon: "globe-20" }]
-                                .concat(loop ? [] : [{ label: "Download", icon: "arrow-download-20" }])
-                                .concat([{ label: "Copy link", icon: "link-20" }, { label: "Favorite", icon: "star-20" }])
+                            items: [{ key: "browser", label: qsTr("Open in Browser"), icon: "globe-20" }]
+                                .concat(loop ? [] : [{ key: "download", label: qsTr("Download"), icon: "arrow-download-20" }])
+                                .concat([{ key: "link", label: qsTr("Copy link"), icon: "link-20" }, { key: "favorite", label: qsTr("Favorite"), icon: "star-20" }])
                             onPicked: i => {
                                 close()
-                                const label = items[i].label
-                                if (label === "Open in Browser") Qt.openUrlExternally(hitRow.modelData.url)
-                                else if (label === "Download") backend.findFileAction("download", hitRow.modelData.file_url || hitRow.modelData.url)
-                                else if (label === "Copy link") { backend.copyText(hitRow.modelData.url); backend.statusText = "Link copied" }
+                                const key = items[i].key
+                                if (key === "browser") Qt.openUrlExternally(hitRow.modelData.url)
+                                else if (key === "download") backend.findFileAction("download", hitRow.modelData.file_url || hitRow.modelData.url)
+                                else if (key === "link") { backend.copyText(hitRow.modelData.url); backend.statusText = qsTr("Link copied") }
                                 else backend.findFileAction("favorite", hitRow.modelData.file_url || hitRow.modelData.url)
                             }
                         }
@@ -753,9 +759,9 @@ Rectangle {
                 }
             }
             Accessible.role: heading ? Accessible.Heading : Accessible.ListItem
-            Accessible.name: heading ? modelData.heading : isFile ? (modelData.file_name || "") + " by " + (modelData.sender_name || "")
-                                    : (me ? "You" : modelData.sender_name || "") + ", " + pane.when(modelData.time) + ", " + (modelData.text || "")
-            Accessible.description: "Press enter to open message, then Escape to return"
+            Accessible.name: heading ? modelData.heading : isFile ? qsTr("%1 by %2").arg(modelData.file_name || "").arg(modelData.sender_name || "")
+                                    : (me ? qsTr("You") : modelData.sender_name || "") + ", " + pane.when(modelData.time) + ", " + (modelData.text || "")
+            Accessible.description: qsTr("Press enter to open message, then Escape to return")
         }
         footer: Item {
             width: list.width; height: pane.result && pane.result.loading && pane.hits.length ? 40 : 8
@@ -786,15 +792,15 @@ Rectangle {
             anchors.horizontalCenter: parent.horizontalCenter; y: art.y + art.height + 10; width: 220
             horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
             lineHeight: 25.7; lineHeightMode: Text.FixedHeight
-            text: emptyState.none ? (pane.result && pane.result.error ? "Something went wrong" : "We couldn't find any results in this " + pane.place) : "Search in this " + pane.place
+            text: emptyState.none ? (pane.result && pane.result.error ? qsTr("Something went wrong") : pane.noResultsTitle) : pane.idleTitle
             font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text
         }
         Text {
             anchors.horizontalCenter: parent.horizontalCenter; y: emptyTitle.y + emptyTitle.height + 10; width: 228
             horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
             lineHeight: 16; lineHeightMode: Text.FixedHeight
-            text: emptyState.none ? (pane.result && pane.result.error ? pane.result.error : "Check for spelling, try another search keyword, or search in another " + pane.place + ".")
-                                  : "Find messages, files, and URLs shared in this " + pane.place + "."
+            text: emptyState.none ? (pane.result && pane.result.error ? pane.result.error : pane.noResultsHint)
+                                  : pane.idleHint
             font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary
         }
     }
@@ -821,10 +827,11 @@ Rectangle {
         Row {
             anchors.right: parent.right; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter
             spacing: 8
-            Text { height: 20; verticalAlignment: Text.AlignVCenter; text: "Send feedback"; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+            Text { height: 20; verticalAlignment: Text.AlignVCenter; text: qsTr("Send feedback"); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
             Repeater {
-                model: [{ icon: "thumb-like-20", name: "This was helpful", kind: "compliment", ink: theme.pick("#BDBDBD", "#5C5C5C") },
-                        { icon: "thumb-dislike-20", name: "Didn't help", kind: "problem", ink: theme.textStrong }]
+                model: [{ icon: "thumb-like-20", name: qsTr("This was helpful"), kind: "compliment", ink: theme.pick("#BDBDBD", "#5C5C5C") },
+                        { icon: "thumb-dislike-20", name: qsTr("Didn't help"), kind: "problem"
+, ink: theme.textStrong }]
                 Item {
                     required property var modelData
                     width: 16; height: 20

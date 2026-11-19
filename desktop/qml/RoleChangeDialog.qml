@@ -24,7 +24,7 @@ Popup {
 
     Text {
         x: 32; y: 27; height: 25.71; verticalAlignment: Text.AlignVCenter
-        text: "Change role?"
+        text: qsTr("Change role?")
         font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold
         color: theme.text
     }
@@ -34,8 +34,8 @@ Popup {
         wrapMode: Text.Wrap
         lineHeight: 20; lineHeightMode: Text.FixedHeight
         text: root.presenting
-            ? "The person sharing now will be able to continue, but they won't be able to start again"
-            : "A participant's role determines whether they can share content, mute others, and more."
+            ? qsTr("The person sharing now will be able to continue, but they won't be able to start again")
+            : qsTr("A participant's role determines whether they can share content, mute others, and more.")
         font.family: theme.font; font.pixelSize: 14
         color: theme.pick("#0F0F0F", theme.text)
     }
@@ -47,21 +47,21 @@ Popup {
             width: 96; height: 31.33; radius: 4
             color: cancelHover.hovered ? theme.menuHover : theme.surface
             border.color: theme.stroke; border.width: 0.67
-            Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.text) }
+            Text { anchors.centerIn: parent; text: qsTr("Cancel"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.text) }
             HoverHandler { id: cancelHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.close() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Cancel"
+            Accessible.name: qsTr("Cancel")
         }
         Rectangle {
             id: hcFill2
             width: 96; height: 31.33; radius: 4
             color: okHover.hovered ? theme.brandHover : theme.brandFill
-            Text { anchors.centerIn: parent; text: "Change"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.textOnBrand) }
+            Text { anchors.centerIn: parent; text: qsTr("Change"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.textOnBrand) }
             HoverHandler { id: okHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: { root.close(); root.confirmed() } }
             Accessible.role: Accessible.Button
-            Accessible.name: "Change"
+            Accessible.name: qsTr("Change")
         }
     }
 }

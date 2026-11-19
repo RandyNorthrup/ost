@@ -141,7 +141,7 @@ Rectangle {
             HoverHandler { id: backHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: hd.backClicked() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Back to breakout rooms panel"
+            Accessible.name: qsTr("Back to breakout rooms panel")
         }
         Text {
             x: hd.back ? 47.67 : 20.67; y: 17.67; height: 22
@@ -161,7 +161,7 @@ Rectangle {
             HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.closed() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Close"
+            Accessible.name: qsTr("Close")
         }
         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.divider }
     }
@@ -177,7 +177,7 @@ Rectangle {
         readonly property int assignable: root.people.length
         readonly property int minPer: Math.floor(assignable / Math.max(1, count))
         readonly property int maxPer: Math.ceil(assignable / Math.max(1, count))
-        Header { title: "Create breakout rooms" }
+        Header { title: qsTr("Create breakout rooms") }
         Flickable {
             y: 61; width: parent.width; height: parent.height - y
             contentHeight: 640; clip: true
@@ -185,7 +185,7 @@ Rectangle {
             Text {
                 x: 28.9; y: 20; width: 288.8; height: 20
                 verticalAlignment: Text.AlignVCenter
-                text: "Choose the number of rooms you want to create."
+                text: qsTr("Choose the number of rooms you want to create.")
                 font.family: theme.font; font.pixelSize: 14; font.weight: Font.Light
                 color: theme.text
             }
@@ -204,12 +204,12 @@ Rectangle {
                     selectByMouse: true
                     onTextEdited: { const n = parseInt(text); if (n >= 1 && n <= 50) createView.count = n }
                     Accessible.role: Accessible.SpinBox
-                    Accessible.name: "Choose the number of rooms you want to create."
+                    Accessible.name: qsTr("Choose the number of rooms you want to create.")
                 }
                 Column {
                     x: 264.8; y: 0
                     Repeater {
-                        model: [{ icon: "chevron-up-16", step: 1, name: "Increment value" }, { icon: "chevron-down-16", step: -1, name: "Decrement value" }]
+                        model: [{ icon: "chevron-up-16", step: 1, name: qsTr("Increment value") }, { icon: "chevron-down-16", step: -1, name: qsTr("Decrement value") }]
                         Rectangle {
                             id: hcFill3
                             required property var modelData
@@ -227,17 +227,17 @@ Rectangle {
             Text {
                 x: 20.67; y: 110; height: 20
                 verticalAlignment: Text.AlignVCenter
-                text: "Assign participants"
+                text: qsTr("Assign participants")
                 font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
                 color: theme.text
             }
             Repeater {
                 model: [
                     { key: "automatic", label: createView.minPer === createView.maxPer
-                        ? "Automatically assign " + createView.minPer + (createView.minPer === 1 ? " person" : " people") + " to each room"
-                        : "Automatically assign " + createView.minPer + " - " + createView.maxPer + " people to each room" },
-                    { key: "manual", label: "Manually assign people to rooms" },
-                    { key: "selfselect", label: "Let people choose their rooms" }
+                        ? qsTr("Automatically assign %n people to each room", "", createView.minPer)
+                        : qsTr("Automatically assign %1 - %2 people to each room").arg(createView.minPer).arg(createView.maxPer) },
+                    { key: "manual", label: qsTr("Manually assign people to rooms") },
+                    { key: "selfselect", label: qsTr("Let people choose their rooms") }
                 ]
                 Item {
                     required property var modelData
@@ -274,7 +274,7 @@ Rectangle {
                 x: 20.67; y: 432; width: 305.33
                 primary: true
                 enabled: !root.busy
-                label: "Create rooms"
+                label: qsTr("Create rooms")
                 onClicked: root.createRooms(createView.count, createView.mode)
             }
             Item {
@@ -288,7 +288,7 @@ Rectangle {
             PlainButton {
                 x: 20.67; y: 499.3; width: 305.33
                 enabled: !root.busy
-                label: "Import from CSV"
+                label: qsTr("Import from CSV")
                 onClicked: root.importCsv()
             }
         }
@@ -300,7 +300,7 @@ Rectangle {
         visible: root.view === "manage"
         anchors.fill: parent
         property var expanded: ({})
-        Header { title: "Breakout rooms" }
+        Header { title: qsTr("Breakout rooms") }
         Flickable {
             y: 61; width: parent.width; height: parent.height - y
             contentHeight: roomsColumn.y + roomsColumn.height + 20; clip: true
@@ -320,7 +320,7 @@ Rectangle {
                     visible: !root.unassigned.length
                     x: 52.67; y: 36.67; height: 16
                     verticalAlignment: Text.AlignVCenter
-                    text: "All participants have been assigned"
+                    text: qsTr("All participants have been assigned")
                     font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold
                     color: theme.textTertiary
                 }
@@ -329,7 +329,7 @@ Rectangle {
                     visible: root.unassigned.length > 0
                     x: 16.67; y: 16.67; height: 22
                     verticalAlignment: Text.AlignVCenter
-                    text: "Unassigned (" + root.unassigned.length + ")"
+                    text: qsTr("Unassigned (%1)").arg(root.unassigned.length)
                     font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold
                     color: theme.text
                 }
@@ -344,7 +344,7 @@ Rectangle {
                 PlainButton {
                     x: 24.67; y: root.unassigned.length ? 108 : 88.67; width: 270
                     primary: root.unassigned.length > 0
-                    label: "Assign participants"
+                    label: qsTr("Assign participants")
                     onClicked: root.assignParticipants()
                 }
             }
@@ -352,7 +352,7 @@ Rectangle {
                 id: openClose
                 x: 20.67; y: assignCard.y + assignCard.height + 17; width: openCloseText.advanceWidth + 25.33
                 small: true
-                label: root.anyOpen ? "Close rooms" : "Open rooms"
+                label: root.anyOpen ? qsTr("Close rooms") : qsTr("Open rooms")
                 // Teams opens only rooms with people in them.
                 enabled: !root.busy && (root.anyOpen || root.anyAssigned)
                 onClicked: root.anyOpen ? root.closeRooms() : root.openRooms()
@@ -361,19 +361,19 @@ Rectangle {
             Row {
                 x: 188; y: openClose.y; spacing: 8
                 Accessible.role: Accessible.ToolBar
-                Accessible.name: "Room action buttons"
-                ToolButton24 { icon: "add-16"; tip: "Add room"; enabled: !root.busy; onClicked: root.addRoom() }
-                ToolButton24 { icon: "arrow-upload-16"; tip: "Import from CSV"; enabled: !root.busy && !root.anyOpen; onClicked: root.importCsv() }
-                ToolButton24 { icon: "megaphone-16"; tip: "Make an announcement"; enabled: root.anyOpen; onClicked: root.announce() }
-                ToolButton24 { icon: "delete-16"; tip: "Remove rooms"; enabled: !root.busy && !root.anyOpen; onClicked: root.removeRooms() }
-                ToolButton24 { icon: "settings-16"; tip: "Rooms settings"; enabled: !root.anyOpen; onClicked: root.settingsOpen = true }
+                Accessible.name: qsTr("Room action buttons")
+                ToolButton24 { icon: "add-16"; tip: qsTr("Add room"); enabled: !root.busy; onClicked: root.addRoom() }
+                ToolButton24 { icon: "arrow-upload-16"; tip: qsTr("Import from CSV"); enabled: !root.busy && !root.anyOpen; onClicked: root.importCsv() }
+                ToolButton24 { icon: "megaphone-16"; tip: qsTr("Make an announcement"); enabled: root.anyOpen; onClicked: root.announce() }
+                ToolButton24 { icon: "delete-16"; tip: qsTr("Remove rooms"); enabled: !root.busy && !root.anyOpen; onClicked: root.removeRooms() }
+                ToolButton24 { icon: "settings-16"; tip: qsTr("Rooms settings"); enabled: !root.anyOpen; onClicked: root.settingsOpen = true }
             }
             Column {
                 id: roomsColumn
                 y: openClose.y + 34
                 width: root.width
                 Accessible.role: Accessible.Tree
-                Accessible.name: "Breakout rooms"
+                Accessible.name: qsTr("Breakout rooms")
                 Repeater {
                     model: root.rooms
                     Column {
@@ -404,15 +404,15 @@ Rectangle {
                                 Text {
                                     text: "(" + roomBlock.invitees.length + ")"
                                     font.family: theme.font; font.pixelSize: 14; color: theme.textStrong
-                                    Accessible.name: roomBlock.invitees.length === 1 ? "1 participant." : roomBlock.invitees.length + " participants."
+                                    Accessible.name: qsTr("%n participants.", "", roomBlock.invitees.length)
                                 }
                             }
                             Text {
                                 x: 46.67; y: 30
-                                text: roomBlock.modelData.open ? "Open" : "Closed"
+                                text: roomBlock.modelData.open ? qsTr("Open", "calling:kbtd234mg") : qsTr("Closed")
                                 font.family: theme.font; font.pixelSize: 14
                                 color: roomBlock.modelData.open ? theme.greenForeground2 : theme.textSecondary
-                                Accessible.name: roomBlock.modelData.open ? "Room is Open." : "Room is Closed."
+                                Accessible.name: qsTr("Room is %1.").arg(roomBlock.modelData.open ? qsTr("Open", "calling:kbtd234mg") : qsTr("Closed"))
                             }
                             Rectangle {
                                 id: hcFill4
@@ -423,18 +423,18 @@ Rectangle {
                                 HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
                                 TapHandler { onTapped: roomMenu.open() }
                                 Accessible.role: Accessible.Button
-                                Accessible.name: "Open room options"
+                                Accessible.name: qsTr("Open room options")
                                 MenuPopup {
                                     id: roomMenu
                                     x: -96; y: parent.height + 4
                                     items: [
-                                        { label: "Join", enabled: roomBlock.modelData.open },
+                                        { label: qsTr("Join"), enabled: roomBlock.modelData.open },
                                         { separator: true },
-                                        { label: "Open", enabled: !roomBlock.modelData.open && roomBlock.invitees.length > 0 },
-                                        { label: "Rename" },
-                                        { label: "Close", enabled: roomBlock.modelData.open },
+                                        { label: qsTr("Open", "breakoutRooms:kcwpizpgj"), enabled: !roomBlock.modelData.open && roomBlock.invitees.length > 0 },
+                                        { label: qsTr("Rename") },
+                                        { label: qsTr("Close"), enabled: roomBlock.modelData.open },
                                         { separator: true },
-                                        { label: "Delete", enabled: !roomBlock.modelData.open }
+                                        { label: qsTr("Delete"), enabled: !roomBlock.modelData.open }
                                     ]
                                     onPicked: i => root.roomAction(["join", "", "open", "rename", "close", "", "delete"][i], roomBlock.modelData)
                                 }
@@ -458,7 +458,7 @@ Rectangle {
                                     // In the room: no longer in the main meeting.
                                     visible: roomBlock.modelData.open && !root.inMain(parent.modelData)
                                     anchors { right: parent.right; rightMargin: 24; verticalCenter: parent.verticalCenter }
-                                    text: "In room"
+                                    text: qsTr("In room")
                                     font.family: theme.font; font.pixelSize: 12; color: theme.textStrong
                                 }
                             }
@@ -494,7 +494,7 @@ Rectangle {
             allowReturn = !!s.allow_return
         }
         readonly property var presenters: root.people.filter(p => ["presenter", "organizer", "coorganizer"].indexOf((p.role || "").toLowerCase()) >= 0)
-        Header { title: "Settings"; back: true; onBackClicked: root.settingsOpen = false }
+        Header { title: qsTr("Settings"); back: true; onBackClicked: root.settingsOpen = false }
         Flickable {
             y: 61; width: parent.width; height: parent.height - y
             contentHeight: 500; clip: true
@@ -507,13 +507,13 @@ Rectangle {
                     x: 16.67; y: 16.67; width: 230; height: 56
                     verticalAlignment: Text.AlignVCenter; wrapMode: Text.Wrap
                     lineHeight: 20; lineHeightMode: Text.FixedHeight
-                    text: "Assign presenters to manage rooms"
+                    text: qsTr("Assign presenters to manage rooms")
                     font.family: theme.font; font.pixelSize: 14; color: theme.text
                 }
                 Switch40 {
                     x: 254.67; y: 34.67
                     checked: settingsForm.managersOn
-                    Accessible.name: "Assign presenters to manage rooms"
+                    Accessible.name: qsTr("Assign presenters to manage rooms")
                     onToggled: on => { settingsForm.managersOn = on; if (!on) settingsForm.managers = [] }
                 }
                 Rectangle {
@@ -523,20 +523,20 @@ Rectangle {
                     border.color: settingsForm.managersOn ? theme.stroke : theme.divider; border.width: 0.67
                     Text {
                         x: 12; anchors.verticalCenter: parent.verticalCenter; width: 240; elide: Text.ElideRight
-                        text: settingsForm.managers.length ? settingsForm.managers.map(m => root.nameOf(m.mri)).join(", ") : "Search for presenters"
+                        text: settingsForm.managers.length ? settingsForm.managers.map(m => root.nameOf(m.mri)).join(", ") : qsTr("Search for presenters")
                         font.family: theme.font; font.pixelSize: 14
                         color: theme.onFill(hcFill5, settingsForm.managersOn && settingsForm.managers.length ? theme.text : theme.disabled)
                     }
                     FluentIcon { x: 260; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-16"; size: 16; color: theme.onFill(hcFill5, settingsForm.managersOn ? theme.textSecondary : theme.disabled) }
                     TapHandler { enabled: settingsForm.managersOn; onTapped: presenterMenu.open() }
                     Accessible.role: Accessible.ComboBox
-                    Accessible.name: "Search for presenters"
+                    Accessible.name: qsTr("Search for presenters")
                     MenuPopup {
                         id: presenterMenu
                         y: parent.height + 4
                         items: settingsForm.presenters.length
                             ? settingsForm.presenters.map(p => ({ label: p.name, checked: settingsForm.managers.some(m => m.mri === p.id) }))
-                            : [{ label: "There are no assigned presenters to select from in the meeting at the moment.", enabled: false }]
+                            : [{ label: qsTr("There are no assigned presenters to select from in the meeting at the moment."), enabled: false }]
                         onPicked: i => {
                             const p = settingsForm.presenters[i]
                             if (!p) return
@@ -555,7 +555,7 @@ Rectangle {
                     id: limitLabel
                     x: 24.67; y: 24.33; height: 18.67
                     verticalAlignment: Text.AlignVCenter
-                    text: "Set a time limit"
+                    text: qsTr("Set a time limit")
                     font.family: theme.font; font.pixelSize: 14; color: theme.text
                 }
                 Item {
@@ -563,14 +563,14 @@ Rectangle {
                     FluentIcon { anchors.centerIn: parent; name: "info-16"; size: 16; color: theme.textStrong }
                     HoverHandler { id: infoHover }
                     ToolTip.visible: infoHover.hovered
-                    ToolTip.text: "We'll move everyone back to the main meeting when the time expires."
+                    ToolTip.text: qsTr("We'll move everyone back to the main meeting when the time expires.")
                     Accessible.role: Accessible.Button
                     Accessible.name: "information"
                 }
                 Switch40 {
                     x: 254.67; y: 24.33
                     checked: settingsForm.limitOn
-                    Accessible.name: "Set a time limit"
+                    Accessible.name: qsTr("Set a time limit")
                     onToggled: on => { settingsForm.limitOn = on; if (on && !settingsForm.hours && !settingsForm.minutes) settingsForm.minutes = 30 }
                 }
                 Repeater {
@@ -591,7 +591,7 @@ Rectangle {
                         FluentIcon { x: 258; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-16"; size: 16; color: theme.onFill(hcFill6, settingsForm.limitOn ? theme.textSecondary : theme.disabled) }
                         TapHandler { enabled: settingsForm.limitOn; onTapped: unitMenu.open() }
                         Accessible.role: Accessible.ComboBox
-                        Accessible.name: modelData.unit === "hours" ? "Set hours limit" : "Set minutes limit"
+                        Accessible.name: modelData.unit === "hours" ? qsTr("Set hours limit") : qsTr("Set minutes limit")
                         MenuPopup {
                             id: unitMenu
                             y: parent.height + 4
@@ -607,9 +607,9 @@ Rectangle {
             }
             Repeater {
                 model: [
-                    { key: "autoMove", label: "Automatically move people to rooms", y: 320.67 },
-                    { key: "allowSelect", label: "Let people choose their own rooms", y: 356.67 },
-                    { key: "allowReturn", label: "Let people return to the main meeting", y: 402.67 }
+                    { key: "autoMove", label: qsTr("Automatically move people to rooms"), y: 320.67 },
+                    { key: "allowSelect", label: qsTr("Let people choose their own rooms"), y: 356.67 },
+                    { key: "allowReturn", label: qsTr("Let people return to the main meeting"), y: 402.67 }
                 ]
                 Item {
                     required property var modelData
@@ -632,7 +632,7 @@ Rectangle {
                 x: 244; y: 448.67; width: 96
                 primary: true
                 enabled: !root.busy
-                label: "Save"
+                label: qsTr("Save")
                 onClicked: {
                     root.saveSettings({
                         allow_select: settingsForm.allowSelect,

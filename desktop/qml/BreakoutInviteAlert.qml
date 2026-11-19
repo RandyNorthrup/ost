@@ -34,7 +34,7 @@ Item {
         x: 12.67; y: 12.67; width: root.width - 25.33; height: 20
         verticalAlignment: Text.AlignVCenter
         elide: Text.ElideRight
-        text: "Join breakout room?"
+        text: qsTr("Join breakout room?")
         font.family: theme.font; font.pixelSize: 12
         color: theme.text
     }
@@ -43,7 +43,7 @@ Item {
         x: 12.67; y: 40.67; width: 296.67
         wrapMode: Text.Wrap
         lineHeight: 20; lineHeightMode: Text.FixedHeight
-        text: "You've been assigned to \"" + root.roomName + "\"."
+        text: qsTr("You've been assigned to \"%1\".").arg(root.roomName)
         font.family: theme.font; font.pixelSize: 14
         color: theme.textSecondary
     }
@@ -72,8 +72,8 @@ Item {
             Accessible.name: ib.label
             Accessible.onPressAction: ib.clicked()
         }
-        InviteButton { label: "Later"; onClicked: root.later() }
-        InviteButton { label: "Join room"; primary: true; onClicked: root.join() }
+        InviteButton { label: qsTr("Later"); onClicked: root.later() }
+        InviteButton { label: qsTr("Join room"); primary: true; onClicked: root.join() }
     }
     Accessible.role: Accessible.AlertMessage
     Accessible.name: title.text + " " + body.text

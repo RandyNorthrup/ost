@@ -57,19 +57,19 @@ Popup {
     // BackgroundAPL), default first, with their names.
     readonly property string cdn: "https://statics.teams.cdn.office.net"
     readonly property var backgrounds: [
-        { id: "aplBackground_003", name: "Futuristic room", isDefault: true },
-        { id: "aplBackground_001", name: "Wavy pink and blue" },
-        { id: "aplBackground_002", name: "Paper rectangles" },
-        { id: "aplBackground_004", name: "Floating shapes" },
-        { id: "aplBackground_005", name: "Glowing light" },
-        { id: "aplBackground_006", name: "Pink cubes" },
-        { id: "aplBackground_007", name: "Circles and squares" },
-        { id: "aplBackground_008", name: "Stacked blocks" },
-        { id: "aplBackground_009", name: "Green fabric" },
-        { id: "aplBackground_010", name: "Colorful bubbles" },
-        { id: "aplBackground_011", name: "Skylight" },
-        { id: "aplBackground_012", name: "Garden" },
-        { id: "aplBackground_013", name: "Green chalkboard" }
+        { id: "aplBackground_003", name: qsTr("Futuristic room"), isDefault: true },
+        { id: "aplBackground_001", name: qsTr("Wavy pink and blue") },
+        { id: "aplBackground_002", name: qsTr("Paper rectangles") },
+        { id: "aplBackground_004", name: qsTr("Floating shapes") },
+        { id: "aplBackground_005", name: qsTr("Glowing light") },
+        { id: "aplBackground_006", name: qsTr("Pink cubes") },
+        { id: "aplBackground_007", name: qsTr("Circles and squares") },
+        { id: "aplBackground_008", name: qsTr("Stacked blocks") },
+        { id: "aplBackground_009", name: qsTr("Green fabric") },
+        { id: "aplBackground_010", name: qsTr("Colorful bubbles") },
+        { id: "aplBackground_011", name: qsTr("Skylight") },
+        { id: "aplBackground_012", name: qsTr("Garden") },
+        { id: "aplBackground_013", name: qsTr("Green chalkboard") }
     ]
     function backgroundUrl(id, thumb) {
         return "/evergreen-assets/backgroundimages/" + id + (thumb ? "_thumb" : "") + ".jpg?v=0.1"
@@ -96,11 +96,11 @@ Popup {
                 HoverHandler { id: backHover }
                 TapHandler { onTapped: tray.drill = "" }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Back to share tray main content"
+                Accessible.name: qsTr("Back to share tray main content")
             }
             Text {
                 x: tray.drill !== "" ? 55 : 23.7; y: tray.drill !== "" ? 23 : 34.7; height: 20; verticalAlignment: Text.AlignVCenter
-                text: tray.drill === "backgrounds" ? "Add a background" : tray.drill === "camera" ? "Content from camera" : "Share content"
+                text: tray.drill === "backgrounds" ? qsTr("Add a background") : tray.drill === "camera" ? qsTr("Content from camera") : qsTr("Share content")
                 font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold; color: theme.text
                 Accessible.role: Accessible.Heading; Accessible.name: text
             }
@@ -108,7 +108,7 @@ Popup {
                 id: soundLabel
                 visible: tray.drill === ""
                 x: 198.7; y: 29.7; height: 36; verticalAlignment: Text.AlignVCenter
-                text: "Include sound"
+                text: qsTr("Include sound")
                 font.family: theme.font; font.pixelSize: 12; color: theme.text
             }
             SettingsParts.Toggle {
@@ -116,7 +116,7 @@ Popup {
                 x: 293.3; y: 37.7
                 stateLabel: false
                 on: tray.includeSound
-                accessibleName: "Include sound"
+                accessibleName: qsTr("Include sound")
                 onToggled: v => tray.includeSound = v
             }
         }
@@ -135,7 +135,7 @@ Popup {
                 implicitHeight: 622
                 Text {
                     x: 23.7; y: 10; height: 20; verticalAlignment: Text.AlignVCenter
-                    text: "Presenter mode"
+                    text: qsTr("Presenter mode")
                     font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text
                     Accessible.role: Accessible.Heading; Accessible.name: text
                 }
@@ -147,10 +147,10 @@ Popup {
                     spacing: 10
                     Repeater {
                         model: [
-                            { key: "ContentOnly", label: "Content only", icon: "share-layout-content", camera: false },
-                            { key: "Weatherperson", label: "Standout", icon: "share-layout-standout", camera: true },
-                            { key: "SideBySide", label: "Side-by-side", icon: "share-layout-sidebyside", camera: true },
-                            { key: "NewsAnchor", label: "Reporter", icon: "share-layout-reporter", camera: true }
+                            { key: "ContentOnly", label: qsTr("Content only"), icon: "share-layout-content", camera: false },
+                            { key: "Weatherperson", label: qsTr("Standout"), icon: "share-layout-standout", camera: true },
+                            { key: "SideBySide", label: qsTr("Side-by-side"), icon: "share-layout-sidebyside", camera: true },
+                            { key: "NewsAnchor", label: qsTr("Reporter"), icon: "share-layout-reporter", camera: true }
                         ]
                         delegate: Rectangle {
                             id: mode
@@ -165,33 +165,33 @@ Popup {
                             HoverHandler { id: mh }
                             TapHandler { enabled: mode.usable; onTapped: tray.pickMode(mode.modelData.key) }
                             ToolTip.visible: mh.hovered
-                            ToolTip.text: mode.usable ? mode.modelData.label : "Turn on your camera to select this layout"
+                            ToolTip.text: mode.usable ? mode.modelData.label : qsTr("Turn on your camera to select this layout")
                             Accessible.role: Accessible.RadioButton
                             Accessible.name: modelData.label
-                            Accessible.description: usable ? "" : "Turn on your camera to select this layout"
+                            Accessible.description: usable ? "" : qsTr("Turn on your camera to select this layout")
                             Accessible.checked: checked
                             Accessible.onPressAction: if (usable) tray.pickMode(modelData.key)
                         }
                     }
                 }
                 SettingsParts.Button {
-                    x: 204.3; y: 42; label: "Add background"
+                    x: 204.3; y: 42; label: qsTr("Add background")
                     onClicked: tray.drill = "backgrounds"
                 }
                 // Screen and Window.
                 Text {
                     x: 23.7; y: 100.3; height: 20; verticalAlignment: Text.AlignVCenter
-                    text: "Screen"
+                    text: qsTr("Screen")
                     font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text
                 }
                 Text {
                     x: 191.7; y: 100.3; height: 20; verticalAlignment: Text.AlignVCenter
-                    text: "Window"
+                    text: qsTr("Window")
                     font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text
                 }
                 Tile {
                     x: 18.7; y: 124.3
-                    accessibleName: "Screen 1"
+                    accessibleName: qsTr("Screen %1").arg(1)
                     onPicked: tray.share("screen")
                     Rectangle {
                         anchors.fill: parent; anchors.margins: 4.67; radius: 4
@@ -199,14 +199,14 @@ Popup {
                         border.width: 0.67; border.color: theme.stroke
                         Text {
                             anchors.centerIn: parent
-                            text: "Screen 1"
+                            text: qsTr("Screen %1").arg(1)
                             font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.textStrong
                         }
                     }
                 }
                 Tile {
                     x: 186.7; y: 124.3
-                    accessibleName: "Opens list of active windows"
+                    accessibleName: qsTr("Opens list of active windows")
                     onPicked: tray.share("window")
                     Rectangle {
                         anchors.fill: parent; anchors.margins: 4.67; radius: 4
@@ -223,9 +223,9 @@ Popup {
                 // (#0027B4, radius 2) and two lines.
                 RowButton {
                     x: 23.7; y: 238.3; height: 36
-                    accessibleName: "Share Microsoft Whiteboard Start Whiteboard"
-                    title: "Microsoft Whiteboard"
-                    subtitle: "Start Whiteboard"
+                    accessibleName: qsTr("Share %1").arg(qsTr("Microsoft Whiteboard")) + " " + qsTr("Start Whiteboard")
+                    title: qsTr("Microsoft Whiteboard")
+                    subtitle: qsTr("Start Whiteboard")
                     subtitleColor: theme.textSecondary
                     onPicked: tray.whiteboard()
                     Rectangle {
@@ -237,9 +237,9 @@ Popup {
                 // Content from camera (content-camera-button).
                 RowButton {
                     x: 23.7; y: 298.3; height: 37.3
-                    accessibleName: "Content from camera Share a document, a whiteboard, and more"
-                    title: "Content from camera"
-                    subtitle: "Share a document, a whiteboard, and more"
+                    accessibleName: qsTr("Content from camera") + " " + qsTr("Share a document, a whiteboard, and more")
+                    title: qsTr("Content from camera")
+                    subtitle: qsTr("Share a document, a whiteboard, and more")
                     subtitleColor: theme.text
                     textX: 42.6
                     onPicked: tray.drill = "camera"
@@ -252,23 +252,23 @@ Popup {
                 // PowerPoint Live and Excel Live.
                 OfficeSection {
                     y: 359.7
-                    title: "PowerPoint Live"
-                    subtitle: "See your notes, slides, and audience while you present."
+                    title: qsTr("PowerPoint Live")
+                    subtitle: qsTr("See your notes, slides, and audience while you present.")
                     files: tray.pptFiles
                     onPicked: f => tray.officeFile("ppt", f)
                 }
                 OfficeSection {
                     y: 451.7
-                    title: "Excel Live"
-                    subtitle: "Share a workbook for everyone to work on together."
+                    title: qsTr("Excel Live")
+                    subtitle: qsTr("Share a workbook for everyone to work on together.")
                     files: tray.excelFiles
                     onPicked: f => tray.officeFile("excel", f)
                 }
                 Column {
                     x: 23.7; y: 555.7
                     spacing: 2
-                    BrowseRow { icon: "onedrive-color"; colour: true; label: "Browse OneDrive"; onPicked: tray.browse("onedrive") }
-                    BrowseRow { icon: "share-browse-computer"; label: "Browse my computer"; onPicked: tray.browse("computer") }
+                    BrowseRow { icon: "onedrive-color"; colour: true; label: qsTr("Browse OneDrive"); onPicked: tray.browse("onedrive") }
+                    BrowseRow { icon: "share-browse-computer"; label: qsTr("Browse my computer"); onPicked: tray.browse("computer") }
                 }
             }
         }
@@ -331,9 +331,9 @@ Popup {
         x: 18; y: 59
         Repeater {
             model: [
-                { type: "whiteboard", title: "Whiteboard", text: "Use your device's camera to share a nearby whiteboard.", h: 65.33 },
-                { type: "document", title: "Document", text: "Use an external camera to share a document.", h: 61.33 },
-                { type: "video", title: "Video", text: "Share live video in real time.", h: 61.33 }
+                { type: "whiteboard", title: qsTr("Whiteboard"), text: qsTr("Use your device's camera to share a nearby whiteboard."), h: 65.33 },
+                { type: "document", title: qsTr("Document"), text: qsTr("Use an external camera to share a document."), h: 61.33 },
+                { type: "video", title: qsTr("Video"), text: qsTr("Share live video in real time."), h: 61.33 }
             ]
             Rectangle {
                 id: cc
@@ -432,7 +432,7 @@ Popup {
         Text {
             visible: os.files.length === 0
             y: 62; height: 20; verticalAlignment: Text.AlignVCenter
-            text: "No files available"
+            text: qsTr("No files available")
             font.family: theme.font; font.pixelSize: 14; color: theme.text
             Accessible.name: text
         }
@@ -446,7 +446,7 @@ Popup {
                     required property var modelData
                     width: 312; height: 32; radius: 4
                     color: frHover.hovered ? theme.menuHover : "transparent"
-                    Image { x: 6; y: 6; width: 20; height: 20; sourceSize: Qt.size(40, 40); source: "../assets/icons/" + (os.title === "Excel Live" ? "ft-xlsx-20" : "ft-pptx-20") + ".svg" }
+                    Image { x: 6; y: 6; width: 20; height: 20; sourceSize: Qt.size(40, 40); source: "../assets/icons/" + (os.title === qsTr("Excel Live") ? "ft-xlsx-20" : "ft-pptx-20") + ".svg" }
                     Text {
                         x: 32; anchors.verticalCenter: parent.verticalCenter
                         width: parent.width - 38; elide: Text.ElideRight

@@ -90,18 +90,18 @@ Popup {
                 anchors.horizontalCenter: parent.horizontalCenter; y: 42.5
                 width: offText.implicitWidth + 24; height: 25; radius: 4
                 color: offHover.hovered ? theme.rowHover : parent.color; border.color: theme.stroke
-                Text { id: offText; anchors.centerIn: parent; text: "Turn off Avatars"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(offButton, theme.text) }
+                Text { id: offText; anchors.centerIn: parent; text: qsTr("Turn off Avatars"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(offButton, theme.text) }
                 HoverHandler { id: offHover; cursorShape: Qt.PointingHandCursor }
                 // Teams: your video off, then your camera back.
                 TapHandler { onTapped: { root.turnOffVideo(); videoEffects.setAvatarCamera(false); root.close() } }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Turn off Avatars"
+                Accessible.name: qsTr("Turn off Avatars")
             }
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter; y: 77.5
                 width: 240; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
                 lineHeight: 20; lineHeightMode: Text.FixedHeight
-                text: "This removes your avatars from view, and starts video preview. \u2060Your video preview is only visible to you."
+                text: qsTr("This removes your avatars from view, and starts video preview. \u2060Your video preview is only visible to you.")
                 font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold
                 color: theme.textSecondary
             }
@@ -111,13 +111,13 @@ Popup {
             width: 326; height: visible ? 40 : 0
             Text {
                 y: 8; height: 32; verticalAlignment: Text.AlignVCenter
-                text: "More avatar settings"
+                text: qsTr("More avatar settings")
                 font.family: theme.font; font.pixelSize: 14
                 color: masHover.hovered ? theme.text : theme.textStrong
                 HoverHandler { id: masHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: { root.close(); root.moreAvatarSettings() } }
                 Accessible.role: Accessible.Button
-                Accessible.name: "More avatar settings"
+                Accessible.name: qsTr("More avatar settings")
             }
         }
         Rectangle {
@@ -137,7 +137,7 @@ Popup {
             Text {
                 visible: !preview.visible
                 anchors.centerIn: parent
-                text: root.tab === "avatars" ? (videoEffects.avatarId ? "" : "Select an avatar") : root.cameras.length === 0 ? "No camera is connected" : "Starting your camera…"
+                text: root.tab === "avatars" ? (videoEffects.avatarId ? "" : qsTr("Select an avatar")) : root.cameras.length === 0 ? qsTr("No camera is connected") : qsTr("Starting your camera…")
                 font.family: theme.font; font.pixelSize: 14
                 color: theme.textSecondary
             }
@@ -147,7 +147,7 @@ Popup {
             visible: root.avatarsOffered && !root.avatarOn
             x: -8; height: visible ? 42 : 0
             Repeater {
-                model: [{ k: "effects", t: "Effects and settings" }, { k: "avatars", t: "Avatars" }]
+                model: [{ k: "effects", t: qsTr("Effects and settings") }, { k: "avatars", t: qsTr("Avatars") }]
                 Item {
                     id: ftb
                     required property var modelData
@@ -197,13 +197,13 @@ Popup {
                 width: 326; height: 32
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
-                    text: "More avatar settings"
+                    text: qsTr("More avatar settings")
                     font.family: theme.font; font.pixelSize: 14
                     color: mas2Hover.hovered ? theme.text : theme.textStrong
                     HoverHandler { id: mas2Hover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: { root.close(); root.moreAvatarSettings() } }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "More avatar settings"
+                    Accessible.name: qsTr("More avatar settings")
                 }
             }
             Item { width: 326; height: 8 }
@@ -212,7 +212,7 @@ Popup {
                 x: 3; width: 320; height: 32; radius: 4
                 color: onHover.hovered ? theme.brandHover : theme.brandFill
                 opacity: videoEffects.avatarId ? 1 : 0.5
-                Text { anchors.centerIn: parent; text: "Turn on avatars"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(turnOn, "white") }
+                Text { anchors.centerIn: parent; text: qsTr("Turn on avatars"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(turnOn, "white") }
                 HoverHandler { id: onHover; cursorShape: Qt.PointingHandCursor }
                 // Teams: the avatar becomes the camera, your video goes on
                 // with it, and the flyout closes.
@@ -226,7 +226,7 @@ Popup {
                     }
                 }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Turn on avatars"
+                Accessible.name: qsTr("Turn on avatars")
             }
         }
         Column {
@@ -236,7 +236,7 @@ Popup {
         Item { width: 326; height: 10 }
         Text {
             width: 326; height: 16; verticalAlignment: Text.AlignVCenter
-            text: "Camera"
+            text: qsTr("Camera")
             font.family: theme.font; font.pixelSize: 12
             color: theme.text
         }
@@ -275,7 +275,7 @@ Popup {
         Item { width: 326; height: 10 }
         Text {
             width: 326; height: 16; verticalAlignment: Text.AlignVCenter
-            text: "Backgrounds"
+            text: qsTr("Backgrounds")
             font.family: theme.font; font.pixelSize: 12
             color: theme.text
         }
@@ -285,7 +285,7 @@ Popup {
             height: 50
             EffectTile {
                 width: 77; height: 48
-                kind: "none"; label: "None"; accessibleName: "No background effect"
+                kind: "none"; label: qsTr("None"); accessibleName: qsTr("No background effect")
                 selected: videoEffects.background === "none"
                 onPicked: videoEffects.setBackground("none")
             }
@@ -303,7 +303,7 @@ Popup {
                     required property var modelData
                     width: 77; height: 48
                     thumb: modelData.thumb; animated: modelData.animated
-                    label: modelData.name; accessibleName: modelData.name + " background effect"
+                    label: modelData.name; accessibleName: qsTr("%1 background effect").arg(modelData.name)
                     selected: videoEffects.background === modelData.id
                     onPicked: videoEffects.setBackground(modelData.id)
                 }
@@ -313,12 +313,12 @@ Popup {
         Rectangle { width: 326; height: 1 / Screen.devicePixelRatio; color: theme.divider }
         Item { width: 326; height: 10.6 }
         FlyoutSwitch {
-            label: "Adjust brightness"
+            label: qsTr("Adjust brightness")
             checked: videoEffects.brightness
             onToggled: videoEffects.setBrightness(!checked)
         }
         FlyoutSwitch {
-            label: "Soft focus"
+            label: qsTr("Soft focus")
             checked: videoEffects.softFocus
             onToggled: videoEffects.setSoftFocus(!checked)
         }
@@ -329,14 +329,14 @@ Popup {
             width: 326; height: 32
             Text {
                 anchors.verticalCenter: parent.verticalCenter
-                text: "More video effects and settings"
+                text: qsTr("More video effects and settings")
                 font.family: theme.font; font.pixelSize: 14
                 color: mvHover.hovered ? theme.text : theme.textStrong
             }
             HoverHandler { id: mvHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: { root.close(); root.moreVideoSettings() } }
             Accessible.role: Accessible.Button
-            Accessible.name: "More video effects and settings"
+            Accessible.name: qsTr("More video effects and settings")
         }
         }
     }

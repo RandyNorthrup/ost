@@ -45,7 +45,7 @@ Popup {
         .sort((a, b) => a.name.localeCompare(b.name))
     readonly property int unassignedCount: people.filter(p => !assignment[p.id]).length
     readonly property bool changed: people.some(p => (assignment[p.id] || "") !== (original[p.id] || ""))
-    function roomName(thread) { const r = rooms.find(x => x.thread === thread); return r ? r.name : "Unassigned" }
+    function roomName(thread) { const r = rooms.find(x => x.thread === thread); return r ? r.name : qsTr("Unassigned") }
     function place(ids, thread) {
         const a = Object.assign({}, assignment)
         for (const id of ids) { if (thread) a[id] = thread; else delete a[id] }
@@ -119,14 +119,14 @@ Popup {
     Text {
         x: 24.67; y: 24.67; width: 650.67; height: 28
         verticalAlignment: Text.AlignVCenter
-        text: "Assign participants to breakout rooms"
+        text: qsTr("Assign participants to breakout rooms")
         font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold
         color: theme.text
     }
     Text {
         x: 24.67; y: 60.67; width: 650.67
         textFormat: Text.StyledText
-        text: "Manually assign each person to a room, or choose <b>Shuffle</b> to assign everyone randomly."
+        text: qsTr("Manually assign each person to a room, or choose<b> Shuffle </b>to assign everyone randomly.")
         font.family: theme.font; font.pixelSize: 14
         color: theme.text
     }
@@ -142,11 +142,11 @@ Popup {
             selectByMouse: true
             onTextEdited: root.query = text
             Accessible.role: Accessible.EditableText
-            Accessible.name: "Find participants"
+            Accessible.name: qsTr("Find participants")
             Text {
                 visible: !search.text.length
                 anchors.verticalCenter: parent.verticalCenter
-                text: "Find participants"
+                text: qsTr("Find participants")
                 font: search.font; color: theme.textSecondary
             }
         }
@@ -154,25 +154,25 @@ Popup {
     DropButton {
         id: selectRoom
         x: 24.67; y: 128; bordered: false
-        label: "Select a room"
+        label: qsTr("Select a room")
         enabled: root.ticked.length > 0
         onClicked: selectRoomMenu.open()
         MenuPopup {
             id: selectRoomMenu
             y: parent.height + 4
-            items: [{ label: "Unassigned" }].concat(root.rooms.map(r => ({ label: r.name })))
+            items: [{ label: qsTr("Unassigned") }].concat(root.rooms.map(r => ({ label: r.name })))
             onPicked: i => { root.place(root.ticked, i === 0 ? "" : root.rooms[i - 1].thread); root.ticked = [] }
         }
     }
     DropButton {
         x: 675.33 - width; y: 128
-        icon: "arrow-shuffle-20"; label: "Shuffle"; strong: true
+        icon: "arrow-shuffle-20"; label: qsTr("Shuffle"); strong: true
         enabled: root.rooms.length > 0 && root.people.length > 0
         onClicked: shuffleMenu.open()
         MenuPopup {
             id: shuffleMenu
             y: parent.height + 4
-            items: [{ label: "Everyone" }, { label: "Only unassigned people", enabled: root.unassignedCount > 0 }]
+            items: [{ label: qsTr("Everyone") }, { label: qsTr("Only unassigned people"), enabled: root.unassignedCount > 0 }]
             onPicked: i => root.shuffle(i === 1)
         }
     }
@@ -187,17 +187,17 @@ Popup {
                 checked: root.shown.length > 0 && root.shown.every(p => root.ticked.indexOf(p.id) >= 0)
                 mixed: root.ticked.length > 0
                 onToggled: root.ticked = checked ? [] : root.shown.map(p => p.id)
-                Accessible.name: "Select all"
+                Accessible.name: qsTr("Select all")
             }
             Row {
                 x: 52; anchors.verticalCenter: parent.verticalCenter; spacing: 4
-                Text { text: "Name"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                Text { text: qsTr("Name"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
                 FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "arrow-up-12"; size: 12; color: theme.text }
             }
             Row {
                 x: 357.33; anchors.verticalCenter: parent.verticalCenter; spacing: 8
                 FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "call-rooms"; size: 20; color: theme.textStrong }
-                Text { text: "Room"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                Text { text: qsTr("Room"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
             }
             Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.divider }
         }
@@ -230,7 +230,7 @@ Popup {
                     MenuPopup {
                         id: personMenu
                         y: parent.height + 4
-                        items: [{ label: "Unassigned" }].concat(root.rooms.map(r => ({ label: r.name })))
+                        items: [{ label: qsTr("Unassigned") }].concat(root.rooms.map(r => ({ label: r.name })))
                         onPicked: i => root.place([parent.parent.modelData.id], i === 0 ? "" : root.rooms[i - 1].thread)
                     }
                 }
@@ -255,21 +255,21 @@ Popup {
             width: 96; height: 31.33; radius: 4
             color: cancelHover.hovered ? theme.menuHover : theme.surface
             border.color: theme.stroke; border.width: 0.67
-            Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.text) }
+            Text { anchors.centerIn: parent; text: qsTr("Cancel"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.text) }
             HoverHandler { id: cancelHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.close() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Cancel"
+            Accessible.name: qsTr("Cancel")
         }
         Rectangle {
             id: hcFill3
             width: 96; height: 31.33; radius: 4
             color: !root.changed ? theme.bgDisabled : saveHover.hovered ? theme.brandHover : theme.brandFill
-            Text { anchors.centerIn: parent; text: "Save"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, root.changed ? theme.textOnBrand : theme.disabled) }
+            Text { anchors.centerIn: parent; text: qsTr("Save"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, root.changed ? theme.textOnBrand : theme.disabled) }
             HoverHandler { id: saveHover; cursorShape: root.changed ? Qt.PointingHandCursor : Qt.ArrowCursor }
             TapHandler { enabled: root.changed; onTapped: root.save() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Save"
+            Accessible.name: qsTr("Save")
         }
     }
 }

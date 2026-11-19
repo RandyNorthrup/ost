@@ -131,7 +131,7 @@ Rectangle {
         // The RTT box's message bar takes room from the list.
         onHeightChanged: if (following) Qt.callLater(positionViewAtEnd)
         Accessible.role: Accessible.List
-        Accessible.name: "Live captions"
+        Accessible.name: qsTr("Live captions")
         delegate: Item {
             id: cap
             required property var modelData
@@ -159,7 +159,7 @@ Rectangle {
                 Text {
                     x: 12; y: 12; height: 20
                     verticalAlignment: Text.AlignVCenter
-                    text: "RTT"
+                    text: qsTr("RTT")
                     font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold
                     color: theme.onFill(root, theme.text)
                 }
@@ -170,16 +170,19 @@ Rectangle {
                     textFormat: Text.StyledText
                     lineHeight: 20; lineHeightMode: Text.FixedHeight
                     linkColor: theme.brandLink
-                    text: "RTT (Real-time text) has been enabled " + (root.rttInitiator ? "by you " : "")
-                        + "for all participants throughout this " + (root.isMeeting ? "meeting" : "call")
-                        + ". All typed conversations in the RTT text box will be recorded, transcribed, and included in the transcript, in accordance with the <a href=\"" + root.privacyUrl + "\">Microsoft Privacy Statement</a>."
+                    text: (root.isMeeting
+                        ? (root.rttInitiator ? qsTr("RTT (Real-time text) has been enabled by you for all participants throughout this meeting. All typed conversations in the RTT text box will be recorded, transcribed, and included in the transcript, in accordance with the <0>%1</0>.")
+                                             : qsTr("RTT (Real-time text) has been enabled for all participants throughout this meeting. All typed conversations in the RTT text box will be recorded, transcribed, and included in the transcript, in accordance with the <0>%1</0>."))
+                        : (root.rttInitiator ? qsTr("RTT (Real-time text) has been enabled by you for all participants throughout this call. All typed conversations in the RTT text box will be recorded, transcribed, and included in the transcript, in accordance with the <0>%1</0>.")
+                                             : qsTr("RTT (Real-time text) has been enabled for all participants throughout this call. All typed conversations in the RTT text box will be recorded, transcribed, and included in the transcript, in accordance with the <0>%1</0>.")))
+                        .arg(qsTr("Microsoft Privacy Statement")).replace("<0>", "<a href=\"" + root.privacyUrl + "\">").replace("</0>", "</a>")
                     font.family: theme.font; font.pixelSize: 14
                     color: theme.onFill(root, theme.text)
                     onLinkActivated: link => { if (link) Qt.openUrlExternally(link) }
                     HoverHandler { cursorShape: notice.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
                 }
                 Accessible.role: Accessible.StaticText
-                Accessible.name: "RTT. " + notice.text.replace(/<[^>]*>/g, "")
+                Accessible.name: qsTr("RTT") + ". " + notice.text.replace(/<[^>]*>/g, "")
             }
             Avatar {
                 visible: cap.header && !cap.intro
@@ -203,13 +206,13 @@ Rectangle {
                     anchors.verticalCenter: parent.verticalCenter
                     name: "person-unverified-16-filled"; size: 16; color: theme.onFill(root, root.ink)
                     Accessible.role: Accessible.Graphic
-                    Accessible.name: "Unverified"
+                    Accessible.name: qsTr("Unverified")
                 }
                 Text {
                     visible: cap.typing
                     leftPadding: 4
                     anchors.verticalCenter: parent.verticalCenter
-                    text: "RTT Typing"
+                    text: qsTr("RTT Typing")
                     font.family: theme.font; font.pixelSize: root.size.author; font.weight: Font.DemiBold
                     color: theme.onFill(root, root.ink)
                 }
@@ -226,7 +229,7 @@ Rectangle {
             }
             Accessible.role: Accessible.ListItem
             Accessible.name: cap.intro ? card.Accessible.name
-                : root.nameOf(modelData) + (cap.typing ? ", RTT Typing" : "") + ": " + root.wordsOf(modelData)
+                : root.nameOf(modelData) + (cap.typing ? ", " + qsTr("RTT Typing") : "") + ": " + root.wordsOf(modelData)
         }
     }
 
@@ -242,7 +245,7 @@ Rectangle {
         id: placeholder
         visible: list.count === 0
         anchors.centerIn: parent
-        text: "Captions will be shown in " + root.languageName + "."
+        text: qsTr("Captions will be shown in <0>%1</0>.").replace("<0>", "").replace("</0>", "").arg(root.languageName)
         font.family: theme.font; font.pixelSize: 16
         color: theme.onFill(root, root.ink)
     }
@@ -272,10 +275,10 @@ Rectangle {
         CapButton {
             id: settingsButton
             icon: root.overflow ? "more-horizontal-20" : "settings-20"
-            tip: root.overflow ? "Closed captions overflow menu" : "Open caption settings"
+            tip: root.overflow ? qsTr("Closed captions overflow menu") : qsTr("Open caption settings")
             onClicked: root.settingsRequested(settingsButton)
         }
-        CapButton { visible: !root.overflow; icon: "captions-pop-out-20"; tip: "Open captions in new window"; onClicked: root.popOut() }
-        CapButton { visible: !root.rttOn; icon: "dismiss-20"; tip: "Hide live captions"; onClicked: root.closed() }
+        CapButton { visible: !root.overflow; icon: "captions-pop-out-20"; tip: qsTr("Open captions in new window"); onClicked: root.popOut() }
+        CapButton { visible: !root.rttOn; icon: "dismiss-20"; tip: qsTr("Hide live captions"); onClicked: root.closed() }
     }
 }

@@ -31,14 +31,14 @@ Popup {
     readonly property string nameError: {
         const n = name.trim()
         if (general || !n) return ""
-        if (n.startsWith("_") || n.startsWith(".")) return "Channel name cannot start with an underscore (_) or a period (.)"
-        if (/[~#%&*{}+\/\\:<>?|'"]/.test(n) || n.indexOf("..") >= 0) return "We don't support these characters: ~#%&*{}+/\\:<>?|'\".."
-        if (n.endsWith(".")) return "Channel name cannot end with a period (.)"
-        if (/https?:\/\/|www\./i.test(n)) return "Links are not allowed in the channel name"
-        if (n.toLowerCase() === "general") return "General can only be used for the first-created channel in a team. Try another name."
+        if (n.startsWith("_") || n.startsWith(".")) return qsTr("Channel name cannot start with an underscore (_) or a period (.)")
+        if (/[~#%&*{}+\/\\:<>?|'"]/.test(n) || n.indexOf("..") >= 0) return qsTr("We don't support these characters: ~#%&*{}+/\\:<>?|'\"..")
+        if (n.endsWith(".")) return qsTr("Channel name cannot end with a period (.)")
+        if (/https?:\/\/|www\./i.test(n)) return qsTr("Links are not allowed in the channel name")
+        if (n.toLowerCase() === "general") return qsTr("General can only be used for the first-created channel in a team. Try another name.")
         return ""
     }
-    readonly property string descriptionError: /https?:\/\/|www\./i.test(description) ? "Links are not allowed in the channel description" : ""
+    readonly property string descriptionError: /https?:\/\/|www\./i.test(description) ? qsTr("Links are not allowed in the channel description") : ""
     readonly property bool changed: (!general && name.trim() !== (channel.name || ""))
         || (!general && description !== (channel.description || ""))
         || layout !== (channel.layout || "PostReply")
@@ -64,7 +64,7 @@ Popup {
             if (r.op !== "edit" || r.channel !== dlg.channel.id) return
             dlg.saving = false
             if (r.ok) dlg.close()
-            else dlg.failure = /409|conflict|already/i.test(r.error || "") ? "Channel name is already taken." : "Something went wrong on our end. Please try again."
+            else dlg.failure = /409|conflict|already/i.test(r.error || "") ? qsTr("Channel name is already taken.") : qsTr("Something went wrong on our end. Please try again.")
         }
     }
 
@@ -95,7 +95,7 @@ Popup {
             x: 17; y: 2; height: 20; radius: 10
             width: newText.implicitWidth + 12
             color: theme.brandFill
-            Text { id: newText; anchors.centerIn: parent; text: "New"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, "white") }
+            Text { id: newText; anchors.centerIn: parent; text: qsTr("New"); font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, "white") }
         }
         Text { x: 8.6; y: 92.6; text: lc.label; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: lc.chosen ? theme.text : theme.textSecondary }
         Rectangle {
@@ -122,7 +122,7 @@ Popup {
         Text {
             width: parent.width
             textFormat: Text.StyledText
-            text: "Edit the <b>" + (dlg.channel.name || "").replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</b> channel"
+            text: qsTr("Edit the <b>%1</b> channel").arg((dlg.channel.name || "").replace(/&/g, "&amp;").replace(/</g, "&lt;"))
             font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold
             lineHeight: 28; lineHeightMode: Text.FixedHeight
             color: theme.text
@@ -132,7 +132,7 @@ Popup {
             visible: dlg.general
             width: parent.width - 30; wrapMode: Text.Wrap
             textFormat: Text.StyledText
-            text: "This is the first-created channel in the team. It uses the team description, and it’s automatically shown for all members in their lists <a href=\"https://go.microsoft.com/fwlink/?linkid=2275168\">Learn about first-created channels</a>"
+            text: qsTr("This is the first-created channel in the team. It uses the team description, and it’s automatically shown for all members in their lists") + " <a href=\"https://go.microsoft.com/fwlink/?linkid=2275168\">" + qsTr("Learn about first-created channels") + "</a>"
             font.family: theme.font; font.pixelSize: 14; color: theme.text
             linkColor: theme.brandForeground1
             onLinkActivated: link => Qt.openUrlExternally(link)
@@ -140,7 +140,7 @@ Popup {
         Item { width: 1; height: 4 }
         Row {
             spacing: 0
-            Text { text: "Channel name"; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.text }
+            Text { text: qsTr("Channel name"); font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.text }
             Text { leftPadding: 4; text: "*"; font.family: theme.font; font.pixelSize: 12; color: theme.pick("#D13438", "#DC626D", "#FFFFFF") }
         }
         Item { width: 1; height: 3 }
@@ -158,8 +158,8 @@ Popup {
                 font.family: theme.font; font.pixelSize: 14
                 color: theme.text
                 clip: true
-                Text { visible: !nameField.text; x: 12; anchors.verticalCenter: parent.verticalCenter; text: "Letters, numbers, and spaces are allowed"; font: nameField.font; color: theme.textTertiary }
-                Accessible.name: "Channel name"
+                Text { visible: !nameField.text; x: 12; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Letters, numbers, and spaces are allowed"); font: nameField.font; color: theme.textTertiary }
+                Accessible.name: qsTr("Channel name")
             }
             Rectangle {
                 anchors.bottom: parent.bottom; x: 1; width: parent.width - 2; height: nameField.activeFocus ? 2 : 0
@@ -169,7 +169,7 @@ Popup {
         Text {
             width: parent.width; wrapMode: Text.Wrap
             visible: text.length > 0
-            text: dlg.nameError || (dlg.general ? "Using General will display the channel at the top of the team instead of alphabetically." : "")
+            text: dlg.nameError || (dlg.general ? qsTr("Using General will display the channel at the top of the team instead of alphabetically.") : "")
             font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight
             color: dlg.nameError ? theme.danger : theme.text
         }
@@ -178,7 +178,7 @@ Popup {
             visible: !dlg.general
             width: parent.width
             Item { width: 1; height: 20 }
-            Text { text: "Description"; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.text }
+            Text { text: qsTr("Description"); font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.text }
             Item { width: 1; height: 3 }
             Rectangle {
                 width: parent.width; height: Math.max(64, descField.contentHeight + 12); radius: 4
@@ -191,8 +191,8 @@ Popup {
                     wrapMode: TextEdit.Wrap
                     font.family: theme.font; font.pixelSize: 14
                     color: theme.text
-                    Text { visible: !descField.text; text: "Help others find the right channel by providing a description"; font: descField.font; color: theme.textTertiary }
-                    Accessible.name: "Description"
+                    Text { visible: !descField.text; text: qsTr("Help others find the right channel by providing a description"); font: descField.font; color: theme.textTertiary }
+                    Accessible.name: qsTr("Description")
                 }
             }
             Text {
@@ -202,13 +202,13 @@ Popup {
             }
         }
         Item { width: 1; height: 24 }
-        Text { text: "Layout"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.Bold; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.text }
-        Text { text: "Channel owners can change this at any time"; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.text }
+        Text { text: qsTr("Layout"); font.family: theme.font; font.pixelSize: 12; font.weight: Font.Bold; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.text }
+        Text { text: qsTr("Channel owners can change this at any time"); font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.text }
         Item { width: 1; height: 10 }
         Row {
             x: 2; spacing: 12
-            LayoutCard { key: "Conversational"; picture: "conversational"; label: "Threads"; hint: "Looks like chat with replies on the side in threads. Good for back-and-forth discussions."; isNew: true }
-            LayoutCard { key: "PostReply"; picture: "post-reply"; label: "Posts"; hint: "Posts reorder by most recent reply. Good for forums and announcements." }
+            LayoutCard { key: "Conversational"; picture: "conversational"; label: qsTr("Threads"); hint: qsTr("Looks like chat with replies on the side in threads. Good for back-and-forth discussions."); isNew: true }
+            LayoutCard { key: "PostReply"; picture: "post-reply"; label: qsTr("Posts"); hint: qsTr("Posts reorder by most recent reply. Good for forums and announcements.") }
         }
         Text {
             visible: !!dlg.failure
@@ -225,19 +225,19 @@ Popup {
                 width: 96; height: 31.3; radius: 4
                 color: cancelHover.hovered ? theme.rowHover : theme.surface
                 border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF"); border.width: 0.67
-                Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.text) }
+                Text { anchors.centerIn: parent; text: qsTr("Cancel"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.text) }
                 HoverHandler { id: cancelHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: dlg.close() }
-                Accessible.role: Accessible.Button; Accessible.name: "Cancel"
+                Accessible.role: Accessible.Button; Accessible.name: qsTr("Cancel")
             }
             Rectangle {
                 id: hcFill3
                 width: 96; height: 31.3; radius: 4
                 color: !dlg.canSave ? theme.pick("#F0F0F0", "#141414", "#000000") : saveHover.hovered ? theme.brandHover : theme.brandFill
-                Text { anchors.centerIn: parent; text: "Save"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, dlg.canSave ? "white" : theme.disabled) }
+                Text { anchors.centerIn: parent; text: qsTr("Save"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, dlg.canSave ? "white" : theme.disabled) }
                 HoverHandler { id: saveHover; cursorShape: dlg.canSave ? Qt.PointingHandCursor : Qt.ArrowCursor }
                 TapHandler { enabled: dlg.canSave; onTapped: dlg.save() }
-                Accessible.role: Accessible.Button; Accessible.name: "Save"
+                Accessible.role: Accessible.Button; Accessible.name: qsTr("Save")
             }
         }
     }

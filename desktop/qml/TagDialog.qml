@@ -27,7 +27,7 @@ Popup {
     property var picked: []
     property var results: []
     property string searched: ""
-    readonly property string title: mode === "edit" ? "Edit tag" : mode === "add" ? "Add people" : mode === "delete" ? "Are you sure?" : "Create a new tag"
+    readonly property string title: mode === "edit" ? qsTr("Edit tag") : mode === "add" ? qsTr("Add people") : mode === "delete" ? qsTr("Are you sure?") : qsTr("Create a new tag")
     readonly property bool hasName: mode === "create" || mode === "edit"
     readonly property bool hasPicker: mode === "create" || mode === "add"
     readonly property bool valid: {
@@ -108,14 +108,14 @@ Popup {
         Text {
             visible: dlg.mode === "delete"
             y: 33.8; width: parent.width; wrapMode: Text.Wrap
-            text: "You're about to delete the \"" + (dlg.tag ? dlg.tag.name : "") + "\" tag."
+            text: qsTr("You're about to delete the \"%1\" tag.").arg(dlg.tag ? dlg.tag.name : "")
             font.family: theme.font; font.pixelSize: 14
             lineHeight: 20; lineHeightMode: Text.FixedHeight
             color: theme.pick("#0F0F0F", "#FFFFFF", "#FFFFFF")
         }
 
         // Name and description.
-        Label { visible: dlg.hasName; y: 33.8; text: "Tag name"; mandatory: true }
+        Label { visible: dlg.hasName; y: 33.8; text: qsTr("Tag name"); mandatory: true }
         // Counters show while their field has focus.
         Text {
             visible: dlg.hasName && nameField.activeFocus
@@ -137,13 +137,13 @@ Popup {
                 clip: true
                 selectByMouse: true
                 Keys.onReturnPressed: dlg.submit()
-                Text { visible: !nameField.text; anchors.verticalCenter: parent.verticalCenter; text: "Letters, numbers, spaces and emojis are allowed"; font: nameField.font; color: theme.textSecondary }
+                Text { visible: !nameField.text; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Letters, numbers, spaces and emojis are allowed"); font: nameField.font; color: theme.textSecondary }
                 Accessible.role: Accessible.EditableText
-                Accessible.name: "Tag name"
+                Accessible.name: qsTr("Tag name")
             }
             Rectangle { visible: nameField.activeFocus; anchors.bottom: parent.bottom; width: parent.width; height: 2; radius: 1; color: theme.brand }
         }
-        Label { visible: dlg.hasName; y: dlg.mode === "edit" ? 109.8 : 101.8; text: "Tag description" }
+        Label { visible: dlg.hasName; y: dlg.mode === "edit" ? 109.8 : 101.8; text: qsTr("Tag description") }
         Text {
             visible: dlg.hasName && descField.activeFocus
             anchors.right: parent.right; y: dlg.mode === "edit" ? 109.8 : 101.8
@@ -164,15 +164,15 @@ Popup {
                 color: theme.text
                 clip: true
                 selectByMouse: true
-                Text { visible: !descField.text; text: "Let people know what this tag is all about"; font: descField.font; color: theme.textSecondary }
+                Text { visible: !descField.text; text: qsTr("Let people know what this tag is all about"); font: descField.font; color: theme.textSecondary }
                 Accessible.role: Accessible.EditableText
-                Accessible.name: "Tag description"
+                Accessible.name: qsTr("Tag description")
             }
             Rectangle { visible: descField.activeFocus; anchors.bottom: parent.bottom; width: parent.width; height: 2; radius: 1; color: theme.brand }
         }
 
         // Members.
-        Label { visible: dlg.hasPicker; y: dlg.mode === "add" ? 33.8 : 193.1; text: "Enter name of a member"; mandatory: true }
+        Label { visible: dlg.hasPicker; y: dlg.mode === "add" ? 33.8 : 193.1; text: qsTr("Enter name of a member"); mandatory: true }
         Item {
             id: pickerBox
             visible: dlg.hasPicker
@@ -185,9 +185,9 @@ Popup {
                 clip: true
                 onTextChanged: { dlg.results = []; dlg.searched = ""; if (text.trim()) debounce.restart(); else debounce.stop() }
                 Keys.onReturnPressed: if (dlg.results.length) dlg.pickPerson(dlg.results[0])
-                Text { visible: !picker.text; text: "Enter name"; font: picker.font; color: theme.textSecondary }
+                Text { visible: !picker.text; text: qsTr("Enter name"); font: picker.font; color: theme.textSecondary }
                 Accessible.role: Accessible.ComboBox
-                Accessible.name: "Enter name of a member"
+                Accessible.name: qsTr("Enter name of a member")
             }
             Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: picker.activeFocus ? 2 : 0.67; color: picker.activeFocus ? theme.brand : theme.textSecondary }
         }
@@ -217,7 +217,7 @@ Popup {
                             HoverHandler { id: rmHover; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: dlg.picked = dlg.picked.filter(p => p.mri !== pickedRow.modelData.mri) }
                             Accessible.role: Accessible.Button
-                            Accessible.name: "Remove " + pickedRow.modelData.name
+                            Accessible.name: qsTr("Remove %1").arg(pickedRow.modelData.name)
                         }
                     }
                 }
@@ -235,7 +235,7 @@ Popup {
                 Text {
                     visible: dlg.results.length === 0
                     x: 12.3; height: 30.7; verticalAlignment: Text.AlignVCenter
-                    text: "We couldn't find any matches."
+                    text: qsTr("We couldn't find any matches.")
                     font.family: theme.font; font.pixelSize: 14
                     color: theme.textSecondary
                 }
@@ -261,9 +261,9 @@ Popup {
         Row {
             anchors.right: parent.right; anchors.bottom: parent.bottom
             spacing: 8
-            DialogButton { text: "Cancel"; onClicked: dlg.close() }
+            DialogButton { text: qsTr("Cancel"); onClicked: dlg.close() }
             DialogButton {
-                text: dlg.mode === "edit" ? "Save" : dlg.mode === "add" ? "Add" : dlg.mode === "delete" ? "Delete tag" : "Create"
+                text: dlg.mode === "edit" ? qsTr("Save") : dlg.mode === "add" ? qsTr("Add") : dlg.mode === "delete" ? qsTr("Delete tag") : qsTr("Create")
                 primary: true; enabled: dlg.valid
                 onClicked: dlg.submit()
             }

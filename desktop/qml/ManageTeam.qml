@@ -38,7 +38,7 @@ Rectangle {
     color: theme.pick("#FFFFFF", "#292929", "#000000")
     onTeamIdChanged: { tab = "channels"; filter = "all"; sort = "az"; search.text = "" }
 
-    readonly property var tabs: [["channels", "Channels"], ["members", "Members"], ["pending", "Pending requests"], ["settings", "Settings"], ["analytics", "Analytics"], ["apps", "Apps"], ["tags", "Tags"]]
+    readonly property var tabs: [["channels", qsTr("Channels")], ["members", qsTr("Members")], ["pending", qsTr("Pending requests")], ["settings", qsTr("Settings")], ["analytics", qsTr("Analytics")], ["apps", qsTr("Apps")], ["tags", qsTr("Tags")]]
 
     // Header.
     Rectangle {
@@ -100,7 +100,7 @@ Rectangle {
             HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: teamMenu.show(moreButton, moreButton.width - teamMenu.menu.implicitWidth, moreButton.height) }
             Accessible.role: Accessible.Button
-            Accessible.name: "More options"
+            Accessible.name: qsTr("More options")
         }
         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.divider }
     }
@@ -116,8 +116,8 @@ Rectangle {
     // ---- Channels ----
     property string filter: "all"
     property string sort: "az"
-    readonly property var filterNames: ({ all: "All", shown: "Shown for you", hidden: "Hidden", shared: "Shared from other teams", archived: "Archived", deleted: "Deleted" })
-    readonly property var sortNames: ({ az: "A-Z", za: "Z-A", recommended: "Recommended first", activity: "By activity", type: "Channel type" })
+    readonly property var filterNames: ({ all: qsTr("All"), shown: qsTr("Shown for you"), hidden: qsTr("Hidden"), shared: qsTr("Shared from other teams"), archived: qsTr("Archived"), deleted: qsTr("Deleted") })
+    readonly property var sortNames: ({ az: qsTr("A-Z"), za: qsTr("Z-A"), recommended: qsTr("Recommended first"), activity: qsTr("By activity"), type: qsTr("Channel type") })
     readonly property var rows: {
         const all = (team.channels || []).concat(filter === "deleted" ? (team.deleted_channels || []) : [])
         let out = all.filter(c => {
@@ -150,21 +150,23 @@ Rectangle {
     function distance(iso) {
         const ms = Date.now() - (Date.parse(iso) || Date.now())
         const s = Math.round(Math.abs(ms) / 1000), m = Math.round(s / 60)
-        const word = (n, w) => n + " " + w + (n === 1 ? "" : "s")
+        const minutes = n => qsTr("%n minutes", "", n), hours = n => qsTr("%n hours", "", n), days = n => qsTr("%n days", "", n)
+        const months = n => n === 1 ? qsTr("1 month") : qsTr("%1 months").arg(n)
+        const years = n => n === 1 ? qsTr("1 year") : qsTr("%1 years").arg(n)
         let txt
-        if (m < 1) txt = "less than a minute"
-        else if (m < 45) txt = word(m, "minute")
-        else if (m < 90) txt = "about 1 hour"
-        else if (m < 1440) txt = "about " + word(Math.round(m / 60), "hour")
-        else if (m < 2520) txt = "1 day"
-        else if (m < 43200) txt = word(Math.round(m / 1440), "day")
-        else if (m < 86400) txt = "about " + word(Math.round(m / 43200), "month")
-        else if (m < 525600) txt = word(Math.round(m / 43200), "month")
+        if (m < 1) txt = qsTr("less than a minute")
+        else if (m < 45) txt = minutes(m)
+        else if (m < 90) txt = qsTr("about 1 hour")
+        else if (m < 1440) txt = qsTr("about %1").arg(hours(Math.round(m / 60)))
+        else if (m < 2520) txt = qsTr("1 day")
+        else if (m < 43200) txt = days(Math.round(m / 1440))
+        else if (m < 86400) txt = qsTr("about %1").arg(months(Math.round(m / 43200)))
+        else if (m < 525600) txt = months(Math.round(m / 43200))
         else {
             const y = Math.floor(m / 525600), rest = m % 525600
-            txt = rest < 131400 ? "about " + word(y, "year") : rest < 394200 ? "over " + word(y, "year") : "almost " + word(y + 1, "year")
+            txt = rest < 131400 ? qsTr("about %1").arg(years(y)) : rest < 394200 ? qsTr("over %1").arg(years(y)) : qsTr("almost %1").arg(years(y + 1))
         }
-        return txt + " ago"
+        return qsTr("%1 ago").arg(txt)
     }
 
     component Pill: Rectangle {
@@ -195,18 +197,18 @@ Rectangle {
         anchors { top: header.bottom; left: parent.left; right: parent.right; bottom: parent.bottom }
         Row {
             x: 28; y: 24; spacing: 12
-            Pill { label: "All"; chosen: page.filter === "all"; width: 96; onClicked: page.filter = "all" }
-            Pill { label: "Shown for you"; chosen: page.filter === "shown"; onClicked: page.filter = "shown" }
+            Pill { label: qsTr("All"); chosen: page.filter === "all"; width: 96; onClicked: page.filter = "all" }
+            Pill { label: qsTr("Shown for you"); chosen: page.filter === "shown"; onClicked: page.filter = "shown" }
             Pill {
                 id: morePill
                 readonly property bool inMore: ["hidden", "shared", "archived", "deleted"].indexOf(page.filter) >= 0
-                label: inMore ? page.filterNames[page.filter] : "4 more"; chevron: true; chosen: inMore
+                label: inMore ? page.filterNames[page.filter] : qsTr("%1 more").arg(4); chevron: true; chosen: inMore
                 width: Math.max(96, implicitWidth)
                 onClicked: moreMenu.open()
                 MenuPopup {
                     id: moreMenu
                     y: parent.height + 5
-                    items: [{ key: "hidden", label: "Hidden" }, { key: "shared", label: "Shared from other teams" }, { key: "archived", label: "Archived" }, { key: "deleted", label: "Deleted" }]
+                    items: [{ key: "hidden", label: qsTr("Hidden") }, { key: "shared", label: qsTr("Shared from other teams") }, { key: "archived", label: qsTr("Archived") }, { key: "deleted", label: qsTr("Deleted") }]
                     onPicked: i => page.filter = items[i].key
                 }
             }
@@ -219,17 +221,17 @@ Rectangle {
             Row {
                 id: sortRow
                 anchors.centerIn: parent; spacing: 4
-                Text { anchors.verticalCenter: parent.verticalCenter; text: "Sort: " + page.sortNames[page.sort]; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(sortButton, theme.textStrong) }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Sort: %1").arg(page.sortNames[page.sort]); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(sortButton, theme.textStrong) }
                 FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-12"; size: 12; color: theme.onFill(sortButton, theme.textStrong) }
             }
             HoverHandler { id: sortHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: sortMenu.open() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Sort: " + page.sortNames[page.sort] + " is selected"
+            Accessible.name: qsTr("Sort: %1 is selected").arg(page.sortNames[page.sort])
             MenuPopup {
                 id: sortMenu
                 y: parent.height + 5
-                items: [{ key: "az", label: "A-Z" }, { key: "za", label: "Z-A" }, { key: "recommended", label: "Recommended first" }, { key: "activity", label: "By activity" }, { key: "type", label: "Channel type" }]
+                items: [{ key: "az", label: qsTr("A-Z") }, { key: "za", label: qsTr("Z-A") }, { key: "recommended", label: qsTr("Recommended first") }, { key: "activity", label: qsTr("By activity") }, { key: "type", label: qsTr("Channel type") }]
                     .map(i => Object.assign({}, i, { checked: i.key === page.sort }))
                 onPicked: i => page.sort = items[i].key
             }
@@ -243,12 +245,12 @@ Rectangle {
                 id: addRow
                 anchors.centerIn: parent; spacing: 6
                 FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: addHover.hovered ? "add-20-filled" : "add-20"; size: 20; color: theme.onFill(hcFill1, addHover.hovered ? theme.brand : theme.textStrong) }
-                Text { anchors.verticalCenter: parent.verticalCenter; text: "Add channel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.textStrong) }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Add channel"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.textStrong) }
             }
             HoverHandler { id: addHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: createChannel.start(page.teamId, page.team.name || "") }
             Accessible.role: Accessible.Button
-            Accessible.name: "Add channel"
+            Accessible.name: qsTr("Add channel")
         }
         // Search channels.
         Rectangle {
@@ -259,9 +261,9 @@ Rectangle {
                 id: search
                 x: 12; width: parent.width - 24; anchors.verticalCenter: parent.verticalCenter
                 font.family: theme.font; font.pixelSize: 14; color: theme.text; clip: true
-                Text { visible: !search.text; text: "Search channels"; font: search.font; color: theme.pick("#707070", "#ADADAD", "#FFFFFF") }
+                Text { visible: !search.text; text: qsTr("Search channels"); font: search.font; color: theme.pick("#707070", "#ADADAD", "#FFFFFF") }
                 Accessible.role: Accessible.EditableText
-                Accessible.name: "Search channels"
+                Accessible.name: qsTr("Search channels")
             }
         }
         // The channels.
@@ -283,14 +285,14 @@ Rectangle {
                 Row {
                     x: 20; y: 12; spacing: 14
                     Text {
-                        text: row.modelData.general ? "General" : row.modelData.name
+                        text: row.modelData.general ? qsTr("General") : row.modelData.name
                         font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
                         lineHeight: 20; lineHeightMode: Text.FixedHeight
                         color: theme.onFill(row, theme.text)
                         HoverHandler { cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: page.openChannel(row.modelData.id, row.modelData.name) }
                         Accessible.role: Accessible.Button
-                        Accessible.name: "Go to channel"
+                        Accessible.name: qsTr("Go to channel")
                     }
                     FluentIcon { visible: !!row.modelData.general; anchors.verticalCenter: parent.verticalCenter; name: "home-20"; size: 16; color: theme.onFill(row, theme.text) }
                     // Recommended (14 after the name): #F5F5F5, a #E0E0E0
@@ -301,7 +303,7 @@ Rectangle {
                         width: recText.implicitWidth + 14; height: 20; radius: 4
                         color: theme.pick("#F5F5F5", "#333333", "#000000")
                         border.color: theme.divider; border.width: 0.67
-                        Text { id: recText; x: 7; y: 1; text: "Recommended"; font.family: theme.font; font.pixelSize: 10; font.weight: Font.DemiBold; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textSecondary }
+                        Text { id: recText; x: 7; y: 1; text: qsTr("Recommended"); font.family: theme.font; font.pixelSize: 10; font.weight: Font.DemiBold; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textSecondary }
                     }
                     FluentIcon { visible: row.modelData.channel_type === 1; anchors.verticalCenter: parent.verticalCenter; name: "lock-closed-20"; size: 16; color: theme.onFill(row, theme.textSecondary) }
                 }
@@ -310,7 +312,7 @@ Rectangle {
                     Text {
                         id: lastActive
                         visible: !!row.modelData.last_active
-                        text: "Last active: " + page.distance(row.modelData.last_active)
+                        text: qsTr("Last active: %1").arg(page.distance(row.modelData.last_active))
                         font.family: theme.font; font.pixelSize: 10; lineHeight: 14; lineHeightMode: Text.FixedHeight
                         color: theme.onFill(row, theme.textSecondary)
                     }
@@ -332,7 +334,7 @@ Rectangle {
                     width: Math.max(64, hideText.implicitWidth + 16); height: 24; radius: 4
                     color: hideHover.hovered ? theme.rowHover : theme.surface
                     border.color: theme.stroke; border.width: 0.67
-                    Text { id: hideText; anchors.centerIn: parent; text: row.modelData.shown === false ? "Show" : "Hide"; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(hcFill2, theme.text) }
+                    Text { id: hideText; anchors.centerIn: parent; text: row.modelData.shown === false ? qsTr("Show") : qsTr("Hide"); font.family: theme.font; font.pixelSize: 12; color: theme.onFill(hcFill2, theme.text) }
                     HoverHandler { id: hideHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: backend.channelAction(row.modelData.shown === false ? "show" : "hide", page.teamId, row.modelData.id, "") }
                     Accessible.role: Accessible.Button
@@ -352,7 +354,7 @@ Rectangle {
                         }
                     }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "More section options"
+                    Accessible.name: qsTr("More section options")
                 }
             }
         }

@@ -31,7 +31,7 @@ Item {
     Text {
         visible: root.card
         x: 12; y: 6; width: 256; height: 16; verticalAlignment: Text.AlignVCenter
-        text: "Presenter mode"
+        text: qsTr("Presenter mode")
         font.family: theme.font; font.pixelSize: 12; color: theme.text
     }
     Text {
@@ -45,9 +45,9 @@ Item {
         visible: root.card
         x: 12; y: 56
         spacing: 8
-        CardButton { visible: !!root.alert && root.alert.kind === "request"; label: "Deny"; onClicked: root.deny() }
-        CardButton { visible: !!root.alert && root.alert.kind === "request"; label: "Give control"; primary: true; onClicked: root.give() }
-        CardButton { visible: !!root.alert && root.alert.kind === "has"; label: "Take control"; primary: true; onClicked: root.takeBack() }
+        CardButton { visible: !!root.alert && root.alert.kind === "request"; label: qsTr("Deny"); onClicked: root.deny() }
+        CardButton { visible: !!root.alert && root.alert.kind === "request"; label: qsTr("Give control"); primary: true; onClicked: root.give() }
+        CardButton { visible: !!root.alert && root.alert.kind === "has"; label: qsTr("Take control"); primary: true; onClicked: root.takeBack() }
     }
     // The viewer's notice.
     Text {
@@ -70,7 +70,7 @@ Item {
         HoverHandler { id: dismissHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.dismissed() }
         Accessible.role: Accessible.Button
-        Accessible.name: "Dismiss"
+        Accessible.name: qsTr("Dismiss")
     }
     Accessible.role: Accessible.AlertMessage
     Accessible.name: root.alert ? root.alert.text : ""

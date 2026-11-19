@@ -58,9 +58,9 @@ Rectangle {
         return (neg ? "-" : "") + (m < 10 ? "0" : "") + m + ":" + (s < 10 ? "0" : "") + s
     }
     function spoken(ms) {
-        if (ms <= 0) return "0 sec"
+        if (ms <= 0) return qsTr("%1 sec").arg(0)
         const ts = Math.ceil(ms / 1000), m = Math.floor(ts / 60), s = ts % 60
-        return m === 0 ? s + " sec" : s === 0 ? m + " min" : m + " min, " + s + " sec"
+        return m === 0 ? qsTr("%1 sec").arg(s) : s === 0 ? qsTr("%1 min").arg(m) : qsTr("%1 min, %2 sec").arg(m).arg(s)
     }
     readonly property string display: cancelled ? clock(total) : clock(remaining)
 
@@ -69,14 +69,14 @@ Rectangle {
     onRemainingChanged: {
         if (timerState !== "InProgress") return
         if (remaining > 610000) { spokenMarks = ({}); return }
-        const marks = [[600000, "10 minutes remaining."], [300000, "5 minutes remaining."],
-                       [60000, "1 minute remaining."], [10000, "10 seconds remaining."]]
+        const marks = [[600000, qsTr("10 minutes remaining.")], [300000, qsTr("5 minutes remaining.")],
+                       [60000, qsTr("1 minute remaining.")], [10000, qsTr("10 seconds remaining.")]]
         for (const [at, text] of marks)
             if (remaining <= at && remaining > at - 1000 && !spokenMarks[at]) { spokenMarks[at] = true; announce(text) }
     }
     onTimerStateChanged: if (timerState !== "InProgress") spokenMarks = ({})
     // Out of time: Teams plays its chime and says so, once.
-    onOverTimeChanged: if (overTime) { announce("Timer has run out of time."); timeUp(); timeUpPulse.restart() }
+    onOverTimeChanged: if (overTime) { announce(qsTr("Timer has run out of time.")); timeUp(); timeUpPulse.restart() }
 
     component ActionButton: Rectangle {
         id: ab
@@ -123,10 +123,10 @@ Rectangle {
             TapHandler { enabled: !root.viewOnly; onTapped: popover.opened ? popover.close() : popover.open() }
             ToolTip.visible: th.hovered && !popover.opened
             ToolTip.delay: 250
-            ToolTip.text: "Timer controls"
+            ToolTip.text: qsTr("Timer controls")
             Accessible.role: root.viewOnly ? Accessible.StaticText : Accessible.Button
             Accessible.name: root.viewOnly ? root.display
-                : root.cancelled ? "Timer controls" : "Timer controls, " + root.spoken(root.remaining) + " remaining"
+                : root.cancelled ? qsTr("Timer controls") : qsTr("Timer controls, %1 remaining").arg(root.spoken(root.remaining))
         }
         Item {
             visible: !root.viewOnly
@@ -134,8 +134,8 @@ Rectangle {
             ActionButton {
                 y: 6.83
                 icon: root.overTime ? "dismiss-square-20" : root.timerState === "InProgress" ? "pause-20" : "play-20"
-                tip: root.overTime ? "Cancel timer for everyone" : root.timerState === "InProgress" ? "Pause timer"
-                    : root.timerState === "Paused" ? "Resume timer" : "Start new timer"
+                tip: root.overTime ? qsTr("Cancel timer for everyone") : root.timerState === "InProgress" ? qsTr("Pause timer")
+                    : root.timerState === "Paused" ? qsTr("Resume timer") : qsTr("Start new timer")
                 onClicked: {
                     if (root.overTime) root.action("cancelOverTime", 0)
                     else if (root.timerState === "InProgress") root.action("pause", 0)
@@ -145,7 +145,7 @@ Rectangle {
             }
             ActionButton {
                 x: 31.34; y: 6.83
-                icon: "arrow-clockwise-20"; tip: "Reset timer"
+                icon: "arrow-clockwise-20"; tip: qsTr("Reset timer")
                 on: !root.cancelled
                 onClicked: root.action("reset", 0)
             }
@@ -202,7 +202,7 @@ Rectangle {
             color: theme.pick(Qt.rgba(0, 0, 0, 0.4), Qt.rgba(0, 0, 0, 0.5))
             Text {
                 anchors.centerIn: parent
-                text: "Paused"
+                text: qsTr("Paused")
                 font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
                 color: theme.onFill(hcFill1, "white")
             }
@@ -210,7 +210,7 @@ Rectangle {
         Text {
             visible: root.overTime
             anchors.centerIn: parent
-            text: "Time's up!"
+            text: qsTr("Time's up!")
             font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
             color: theme.onFill(hcFill1, theme.pick("#960B18", theme.text))
         }
@@ -219,7 +219,7 @@ Rectangle {
         ToolTip.delay: 500
         ToolTip.text: {
             const m = Math.round(root.total / 60000)
-            return (root.total < 60000 ? "<1" : Math.min(999, m)) + " min"
+            return qsTr("%1 min").arg(root.total < 60000 ? "<1" : Math.min(999, m))
         }
     }
 
@@ -244,7 +244,7 @@ Rectangle {
         function enterEdit() {
             fill(root.overTime ? root.total : root.remaining)
             editing = true
-            root.announce("You are now in edit mode. You can modify the timer settings.")
+            root.announce(qsTr("You are now in edit mode. You can modify the timer settings."))
         }
         // Cancelled: set a new one (last length, else 5:00); running or
         // paused: show the time left.
@@ -264,11 +264,11 @@ Rectangle {
             if (editing) {
                 const ms = Math.min(5999000, inputMs + n * 60000)
                 fill(ms)
-                root.announce("Timer set to " + root.spoken(ms))
+                root.announce(qsTr("Timer set to %1").arg(root.spoken(ms)))
                 return
             }
             root.action("add", n)
-            root.announce(n === 1 ? "Added 1 minute to the timer." : "Added " + n + " minutes to the timer.")
+            root.announce(n === 1 ? qsTr("Added 1 minute to the timer.") : qsTr("Added %1 minutes to the timer.").arg(n))
             close()
         }
         function canAdd(n) {
@@ -300,14 +300,14 @@ Rectangle {
                 Row {
                     visible: popover.editing
                     x: 14.13; y: 1.16
-                    TimerSpin { id: minutesSpin; value: popover.minutes; max: 99; label: "Minutes"; tip: "Adjust minutes for new timer"
-                                onEdited: v => { popover.minutes = v; root.announce("Timer set to " + root.spoken(popover.inputMs)) } }
+                    TimerSpin { id: minutesSpin; value: popover.minutes; max: 99; label: qsTr("Minutes"); tip: qsTr("Adjust minutes for new timer")
+                                onEdited: v => { popover.minutes = v; root.announce(qsTr("Timer set to %1").arg(root.spoken(popover.inputMs))) } }
                     Text {
                         width: 11.72; height: 42.67; verticalAlignment: Text.AlignVCenter; horizontalAlignment: Text.AlignHCenter
                         text: ":"; font.family: theme.font; font.pixelSize: 32; font.weight: Font.DemiBold; color: theme.text
                     }
-                    TimerSpin { value: popover.seconds; max: 59; label: "Seconds"; tip: "Adjust seconds for new timer"
-                                onEdited: v => { popover.seconds = v; root.announce("Timer set to " + root.spoken(popover.inputMs)) } }
+                    TimerSpin { value: popover.seconds; max: 59; label: qsTr("Seconds"); tip: qsTr("Adjust seconds for new timer")
+                                onEdited: v => { popover.seconds = v; root.announce(qsTr("Timer set to %1").arg(root.spoken(popover.inputMs))) } }
                 }
             }
             // Add time.
@@ -326,14 +326,14 @@ Rectangle {
                         Text {
                             id: addText
                             anchors.centerIn: parent
-                            text: "+" + addBtn.modelData + " min"
+                            text: qsTr("+%1 min").arg(addBtn.modelData)
                             font.family: theme.font; font.pixelSize: 12
                             color: theme.onFill(addBtn, addBtn.on ? theme.textStrong : theme.disabled)
                         }
                         HoverHandler { id: addHover; cursorShape: addBtn.on ? Qt.PointingHandCursor : Qt.ArrowCursor }
                         TapHandler { enabled: addBtn.on; onTapped: popover.addMinutes(addBtn.modelData) }
                         Accessible.role: Accessible.Button
-                        Accessible.name: "+" + addBtn.modelData + " min"
+                        Accessible.name: qsTr("+%1 min").arg(addBtn.modelData)
                     }
                 }
             }
@@ -363,15 +363,15 @@ Rectangle {
                     Accessible.name: fb.label
                 }
                 FooterButton {
-                    label: root.cancelled || !popover.editing ? "Cancel timer" : "Undo"
+                    label: root.cancelled || !popover.editing ? qsTr("Cancel timer") : qsTr("Undo")
                     on: !root.cancelled
                     onClicked: {
                         if (popover.editing) {
                             popover.editing = false
-                            root.announce("You have exited edit mode.")
+                            root.announce(qsTr("You have exited edit mode."))
                         } else {
                             root.action("cancel", 0)
-                            root.announce("Timer has been ended.")
+                            root.announce(qsTr("Timer has been ended."))
                             popover.close()
                         }
                     }
@@ -379,13 +379,14 @@ Rectangle {
                 FooterButton {
                     anchors.right: parent.right
                     primary: true
-                    label: popover.editing || root.cancelled ? "Start" : "Edit"
+                    label: popover.editing || root.cancelled ? qsTr("Start") : qsTr("Edit")
                     on: !(popover.editing && popover.inputMs === 0)
                     onClicked: {
                         if (popover.editing || root.cancelled) {
                             root.action("startWith", popover.inputMs)
                             popover.editing = false
-                            root.announce("You have exited edit mode.")
+                            root.announce(qsTr("You have exited edit mode."))
+
                         } else popover.enterEdit()
                     }
                 }

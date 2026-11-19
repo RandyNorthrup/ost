@@ -263,7 +263,7 @@ Rectangle {
             } else if ((r.op === "notify-on" || r.op === "notify-off") && r.ok) {
                 backend.channelAction("notify-tagged", "", "", "")
             } else if ((r.op === "notify-on" || r.op === "notify-off") && !r.ok) {
-                backend.toast("Something went wrong on our end. Please try again.", "error")
+                backend.toast(qsTr("Something went wrong on our end. Please try again."), "error")
             }
         }
     }
@@ -324,10 +324,10 @@ Rectangle {
     // ---- Server sections ----
     readonly property var folderData: backend.foldersJson ? JSON.parse(backend.foldersJson) : null
     readonly property var folders: folderData && folderData.folders && folderData.folders.length ? folderData.folders
-        : [{ id: "", kind: "QuickViews", title: "Quick views", expanded: true, items: [] },
-           { id: "", kind: "Favorites", title: "Favorites", expanded: true, items: [] },
-           { id: "", kind: "RecentChats", title: "Chats", expanded: true, items: [] },
-           { id: "", kind: "TeamsAndChannels", title: "Teams and channels", expanded: true, items: [] }]
+        : [{ id: "", kind: "QuickViews", title: qsTr("Quick views"), expanded: true, items: [] },
+           { id: "", kind: "Favorites", title: qsTr("Favorites"), expanded: true, items: [] },
+           { id: "", kind: "RecentChats", title: qsTr("Chats"), expanded: true, items: [] },
+           { id: "", kind: "TeamsAndChannels", title: qsTr("Teams and channels"), expanded: true, items: [] }]
     readonly property bool hasCommunities: folders.some(f => f.kind === "EngageCommunities")
     /// Conversations in Favorites or your own sections (not listed in Chats).
     readonly property var sectioned: {
@@ -337,6 +337,18 @@ Rectangle {
     }
     readonly property var userSections: folders.filter(f => root.isUsers(f))
     function isUsers(f) { return f.kind === "UserCreated" || f.kind === "UserDefined" }
+    /// A section's name: Teams' own sections (whose names come from the
+    /// server in English) in the app language; yours as you named them.
+    function folderTitle(f) {
+        switch (f.kind) {
+        case "QuickViews": return qsTr("Quick views")
+        case "Favorites": return qsTr("Favorites")
+        case "RecentChats": return qsTr("Chats")
+        case "TeamsAndChannels": return qsTr("Teams and channels")
+        case "EngageCommunities": return qsTr("Communities")
+        default: return f.title
+        }
+    }
     readonly property var favoritesFolder: folders.find(f => f.kind === "Favorites") || null
     // Before the server answers, Favorites come from the chat list.
     function inFavorites(c) { return favoritesFolder && favoritesFolder.id ? favoritesFolder.items.indexOf(c.id) >= 0 : !!c.favorite }
@@ -393,10 +405,10 @@ Rectangle {
         if (f.kind === "QuickViews") {
             if (category || unreadOn || nameFilter) rows = []
             else {
-                if (root.hasMentions) rows.push({ type: "slice", key: "mentions", label: "Mentions", icon: "mention-20" })
-                rows.push({ type: "slice", key: "followed", label: "Followed threads", icon: "followed-threads-20" })
-                if (root.draftIds.length > 0) rows.push({ type: "slice", key: "drafts", label: "Drafts", icon: "drafts-20" })
-                rows.push({ type: "slice", key: "saved", label: "Saved", icon: "bookmark-20" })
+                if (root.hasMentions) rows.push({ type: "slice", key: "mentions", label: qsTr("Mentions"), icon: "mention-20" })
+                rows.push({ type: "slice", key: "followed", label: qsTr("Followed threads"), icon: "followed-threads-20" })
+                if (root.draftIds.length > 0) rows.push({ type: "slice", key: "drafts", label: qsTr("Drafts"), icon: "drafts-20" })
+                rows.push({ type: "slice", key: "saved", label: qsTr("Saved"), icon: "bookmark-20" })
             }
         } else if (f.kind === "Favorites") {
             rows = f.id ? heldRows(f) : root.favorites.map(c => ({ type: "chat", chat: c }))
@@ -426,21 +438,21 @@ Rectangle {
     // (split view).
     readonly property string appMode: pane === "chats" ? "chat" : pane === "teams" ? "channel" : "unified"
     readonly property var markAllSubmenu: appMode === "unified"
-        ? [{ label: "All", appType: "unified" }, { label: "All chats", appType: "chat" }, { label: "All channels", appType: "channel" }]
-            .concat(hasCommunities ? [{ label: "All communities", appType: "engage_community" }] : [])
+        ? [{ label: qsTr("All"), appType: "unified" }, { label: qsTr("All chats"), appType: "chat" }, { label: qsTr("All channels"), appType: "channel" }]
+            .concat(hasCommunities ? [{ label: qsTr("All communities"), appType: "engage_community" }] : [])
         : appMode === "channel" && hasCommunities
-        ? [{ label: "All", appType: "split_channel" }, { label: "All channels", appType: "channel" }, { label: "All communities", appType: "engage_community" }]
+        ? [{ label: qsTr("All"), appType: "split_channel" }, { label: qsTr("All channels"), appType: "channel" }, { label: qsTr("All communities"), appType: "engage_community" }]
         : []
     readonly property var listMenuItems: {
-        const mark = { key: "markAll", label: "Mark all as read", icon: "glasses-20", keys: "Shift+Esc" }
-        if (markAllSubmenu.length) { mark.split = true; mark.submenu = markAllSubmenu; mark.splitLabel = "Mark all as read options" }
+        const mark = { key: "markAll", label: qsTr("Mark all as read"), icon: "glasses-20", keys: "Shift+Esc" }
+        if (markAllSubmenu.length) { mark.split = true; mark.submenu = markAllSubmenu; mark.splitLabel = qsTr("Mark all as read options") }
         const out = [mark,
-            { key: "collapseAll", label: "Collapse all sections", icon: "arrow-collapse-all-20", keys: "Alt+Q" },
+            { key: "collapseAll", label: qsTr("Collapse all sections"), icon: "arrow-collapse-all-20", keys: "Alt+Q" },
             { separator: true },
-            { key: "customize", label: "Customize view", icon: "settings-20" }]
+            { key: "customize", label: qsTr("Customize view"), icon: "settings-20" }]
         if (appMode !== "chat") {
-            out.push({ separator: true }, { key: "yourTeams", label: "Your teams and channels", icon: "people-team-20" })
-            if (hasCommunities) out.push({ key: "yourCommunities", label: "Your communities", icon: "people-community-20" })
+            out.push({ separator: true }, { key: "yourTeams", label: qsTr("Your teams and channels"), icon: "people-team-20" })
+            if (hasCommunities) out.push({ key: "yourCommunities", label: qsTr("Your communities"), icon: "people-community-20" })
         }
         return out
     }
@@ -463,8 +475,8 @@ Rectangle {
     /// Shift+Esc's confirmation: what it marks, by the selected filter
     /// (Teams' tR: the Chats pill or the Chat app "chats", the Channels
     /// pill or the Teams app "channels", otherwise all three).
-    readonly property string markAllEntities: category === "chats" || appMode === "chat" ? "chats"
-        : category === "channels" || appMode === "channel" ? "channels" : "chats, channels, and communities"
+    readonly property string markAllEntities: category === "chats" || appMode === "chat" ? qsTr("chats")
+        : category === "channels" || appMode === "channel" ? qsTr("channels") : qsTr("chats, channels, and communities")
 
     // ---- The divider (Teams' resize handle, role slider "Resize left
     // panel", 280-400) ----
@@ -491,7 +503,7 @@ Rectangle {
         Keys.onRightPressed: root.setWidthPx(root.width + 20)
         Rectangle { anchors.fill: parent; visible: resizeHandle.activeFocus || resizeDrag.active; color: theme.brand; opacity: 0.6 }
         Accessible.role: Accessible.Slider
-        Accessible.name: "Resize left panel"
+        Accessible.name: qsTr("Resize left panel")
         Accessible.description: Math.round(root.width) + "px"
     }
 
@@ -514,13 +526,13 @@ Rectangle {
         width: parent.width; height: 61
         Text {
             x: 32; y: 19
-            text: root.pane === "teams" ? "Teams" : "Chat"
+            text: root.pane === "teams" ? qsTr("Teams") : qsTr("Chat")
             font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold
             color: theme.text
         }
         HeaderButton {
             id: moreList
-            x: root.width - 126; y: 15; icon: "more-20"; Accessible.name: "More list options"
+            x: root.width - 126; y: 15; icon: "more-20"; Accessible.name: qsTr("More list options")
             onClicked: listMenu.open()
             // Teams' ··· More list options ($L, measured on Teams web
             // 2026-11-16): below-start, 248 wide; Mark all as read (a split
@@ -540,21 +552,21 @@ Rectangle {
             }
         }
         HeaderButton {
-            x: root.width - 94; y: 15; icon: "search-20"; Accessible.name: "Show filter text box"
+            x: root.width - 94; y: 15; icon: "search-20"; Accessible.name: qsTr("Show filter text box")
             onClicked: { root.filtering = !root.filtering; if (root.filtering) filterField.forceActiveFocus(); else { filterField.text = "" } }
         }
         HeaderButton {
             x: root.width - 62; y: 14; width: 26; icon: "compose-20"
-            Accessible.name: "New message"
+            Accessible.name: qsTr("New message")
             onClicked: root.newChat()
         }
         HeaderButton {
-            x: root.width - 36; y: 14; width: 20; icon: "chevron-down-12"; iconSize: 12; Accessible.name: "New items"
+            x: root.width - 36; y: 14; width: 20; icon: "chevron-down-12"; iconSize: 12; Accessible.name: qsTr("New items")
             onClicked: newMenu.open()
             MenuPopup {
                 id: newMenu
                 x: -200; y: parent.height + 4
-                items: [{ label: "New chat", icon: "compose-20", keys: "Ctrl+N" }]
+                items: [{ label: qsTr("New chat"), icon: "compose-20", keys: "Ctrl+N" }]
                 onPicked: root.newChat()
             }
         }
@@ -566,11 +578,11 @@ Rectangle {
     // Separate view: Chat has Unread / Chats / Meeting chats, the Teams app
     // Unread / Channels / Communities (Teams, measured).
     readonly property var pillDefs: [
-        { key: "unread", label: "Unread", keys: "Ctrl+Alt+U" },
-        { key: "channels", label: "Channels", keys: "Ctrl+Alt+A" },
-        { key: "chats", label: "Chats", keys: "Ctrl+Alt+C" },
-        { key: "meetings", label: "Meeting chats", keys: "Ctrl+Alt+B" }
-    ].concat(hasCommunities ? [{ key: "communities", label: "Communities", keys: "" }] : [])
+        { key: "unread", label: qsTr("Unread"), keys: "Ctrl+Alt+U" },
+        { key: "channels", label: qsTr("Channels"), keys: "Ctrl+Alt+A" },
+        { key: "chats", label: qsTr("Chats"), keys: "Ctrl+Alt+C" },
+        { key: "meetings", label: qsTr("Meeting chats"), keys: "Ctrl+Alt+B" }
+    ].concat(hasCommunities ? [{ key: "communities", label: qsTr("Communities"), keys: "" }] : [])
      .filter(p => pane === "chats" ? ["unread", "chats", "meetings"].indexOf(p.key) >= 0
                 : pane === "teams" ? ["unread", "channels", "communities"].indexOf(p.key) >= 0 : true)
     onPaneChanged: { category = ""; unreadOn = false }
@@ -633,7 +645,7 @@ Rectangle {
         iconColor: root.moreFiltersOpen ? theme.brand : theme.textStrong
         onClicked: root.moreFiltersOpen = !root.moreFiltersOpen
         ToolTip.visible: false
-        Accessible.name: root.moreFiltersOpen ? "Fewer filters" : "More filters"
+        Accessible.name: root.moreFiltersOpen ? qsTr("Fewer filters") : qsTr("More filters")
     }
     // "Show filter text box": filter the list by name.
     Rectangle {
@@ -651,8 +663,8 @@ Rectangle {
             clip: true
             onTextChanged: root.nameFilter = text.trim().toLowerCase()
             Keys.onEscapePressed: { text = ""; root.filtering = false }
-            Text { visible: !filterField.text; text: "Filter by name"; color: theme.textTertiary; font: filterField.font }
-            Accessible.name: "Filter by name"
+            Text { visible: !filterField.text; text: qsTr("Filter by name"); color: theme.textTertiary; font: filterField.font }
+            Accessible.name: qsTr("Filter by name")
         }
         Rectangle {
             id: hcFill1
@@ -664,7 +676,7 @@ Rectangle {
             HoverHandler { id: clh; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: { filterField.text = ""; root.filtering = false } }
             Accessible.role: Accessible.Button
-            Accessible.name: "Close filter"
+            Accessible.name: qsTr("Close filter")
         }
     }
 
@@ -687,7 +699,7 @@ Rectangle {
             ListRow {
                 visible: !root.filtered && root.pane !== "teams"
                 height: visible ? 32 : 0
-                label: "Copilot"; icon: "mo-copilot"
+                label: qsTr("Copilot"); icon: "mo-copilot"
                 selected: root.copilotOpen
                 onClicked: root.openCopilot()
             }
@@ -703,7 +715,7 @@ Rectangle {
                     // Quick views end with a hairline (12 below, the next
                     // section 4 after it).
                     SectionHeader {
-                        label: sec.folder.title
+                        label: root.folderTitle(sec.folder)
                         open: sec.folder.expanded
                         userSection: root.isUsers(sec.folder)
                         onToggled: backend.folderAction(sec.folder.expanded ? "collapse" : "expand", JSON.stringify({ id: sec.folder.id }))
@@ -743,13 +755,13 @@ Rectangle {
                     sourceSize: Qt.size(400, 408)
                 }
                 Item { width: 1; height: 19 }
-                Text { anchors.horizontalCenter: parent.horizontalCenter; text: "You're all caught up!"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                Text { anchors.horizontalCenter: parent.horizontalCenter; text: qsTr("You're all caught up!"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
                 Text {
                     anchors.horizontalCenter: parent.horizontalCenter
-                    text: "Clear filters"; font.family: theme.font; font.pixelSize: 16; color: theme.brand
+                    text: qsTr("Clear filters"); font.family: theme.font; font.pixelSize: 16; color: theme.brand
                     HoverHandler { cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.clearFilters() }
-                    Accessible.role: Accessible.Link; Accessible.name: "Clear filters"
+                    Accessible.role: Accessible.Link; Accessible.name: qsTr("Clear filters")
                 }
             }
         }
@@ -777,7 +789,7 @@ Rectangle {
     }
     Component {
         id: newMessageComp
-        ListRow { label: "New message"; icon: "compose-20"; selected: root.composing; onClicked: root.openComposing() }
+        ListRow { label: qsTr("New message"); icon: "compose-20"; selected: root.composing; onClicked: root.openComposing() }
     }
     // See all your teams: Teams' Your teams and channels page (the row
     // shows as chosen while it's open).
@@ -790,10 +802,10 @@ Rectangle {
                 color: root.yourTeamsOpen ? theme.selected : "transparent"
             }
             Text {
-                x: 31; y: 4; text: "See all your teams"; font.family: theme.font; font.pixelSize: theme.base; color: theme.brand
+                x: 31; y: 4; text: qsTr("See all your teams"); font.family: theme.font; font.pixelSize: theme.base; color: theme.brand
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: root.openYourTeams() }
-                Accessible.role: Accessible.Link; Accessible.name: "See all your teams"
+                Accessible.role: Accessible.Link; Accessible.name: qsTr("See all your teams")
             }
         }
     }
@@ -802,10 +814,10 @@ Rectangle {
         Item {
             width: list.width; height: 28
             Text {
-                x: 31; y: 4; text: "Join communities"; font.family: theme.font; font.pixelSize: theme.base; color: theme.brand
+                x: 31; y: 4; text: qsTr("Join communities"); font.family: theme.font; font.pixelSize: theme.base; color: theme.brand
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: root.openCommunities() }
-                Accessible.role: Accessible.Link; Accessible.name: "Join communities"
+                Accessible.role: Accessible.Link; Accessible.name: qsTr("Join communities")
             }
         }
     }
@@ -822,7 +834,7 @@ Rectangle {
     }
     MenuPopup {
         id: sectionMenu
-        items: [{ label: "Rename section", icon: "rename-20" }, { label: "Remove section", icon: "delete-20" }]
+        items: [{ label: qsTr("Rename section"), icon: "rename-20" }, { label: qsTr("Remove section"), icon: "delete-20" }]
         onPicked: i => { if (i === 0) sectionDialog.rename(root.menuSection); else sectionDialog.remove(root.menuSection) }
     }
     SectionDialog { id: sectionDialog; existing: root.folders.map(f => f.title) }
@@ -862,7 +874,7 @@ Rectangle {
         if (!c.preview) return ""
         if (c.previewSystem) return c.preview
         const mine = !!c.sender && c.sender === backend.userName
-        return mine ? "You: " + c.preview : (c.isGroup && c.sender ? c.sender + ": " + c.preview : c.preview)
+        return mine ? qsTr("You: %1").arg(c.preview) : (c.isGroup && c.sender ? c.sender + ": " + c.preview : c.preview)
     }
 
     // One chat in a section: picture with presence, name, unread dot.
@@ -994,7 +1006,7 @@ Rectangle {
             HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: row.openMenu(parent.x, parent.y + parent.height) }
             Accessible.role: Accessible.Button
-            Accessible.name: "More chat options"
+            Accessible.name: qsTr("More chat options")
         }
         HoverHandler { id: hover }
         TapHandler { onTapped: if (!moreHover.hovered) { root.keyboardNav = false; root.chatSelected(row.chat.id, row.chat.name) } }
@@ -1012,7 +1024,7 @@ Rectangle {
         function destinations() {
             const out = []
             const fav = root.favoritesFolder
-            if (fav && fav.id && fav.id !== row.holder) out.push({ id: fav.id, label: "Favorites" })
+            if (fav && fav.id && fav.id !== row.holder) out.push({ id: fav.id, label: qsTr("Favorites") })
             for (const s of root.userSections) if (s.id !== row.holder) out.push({ id: s.id, label: s.title })
             return out
         }
@@ -1021,29 +1033,29 @@ Rectangle {
             const dest = destinations()
             const sub = dest.map(d => ({ label: d.label, to: d.id }))
             if (sub.length) sub.push({ separator: true })
-            sub.push({ label: "New section", icon: "folder-add-20", newSection: true })
+            sub.push({ label: qsTr("New section"), icon: "folder-add-20", newSection: true })
             const oneOnOne = !!row.chat.peerMri && !row.chat.isSelf
             const tagged = oneOnOne && root.notifyTagged[row.chat.peerMri.toLowerCase()]
             rowMenu.items = [
-                { key: "window", label: "Open in new window", icon: "open-window-20" },
+                { key: "window", label: qsTr("Open in new window"), icon: "open-window-20" },
                 // Teams: with single pointer controls on, in a section you
                 // can reorder.
-                root.singlePointReordering && row.dragGroup ? { key: "reorder", label: "Start reordering", icon: "arrow-sort-20", endIcon: "accessibility-20" } : null,
+                root.singlePointReordering && row.dragGroup ? { key: "reorder", label: qsTr("Start reordering"), icon: "arrow-sort-20", endIcon: "accessibility-20" } : null,
                 { separator: true },
-                { key: row.unread ? "read" : "unread", label: row.unread ? "Mark as read" : "Mark as unread", icon: row.unread ? "glasses-20" : "glasses-off-20" },
-                { key: "move", label: "Move to section", icon: "star-20", submenu: sub },
-                row.holder ? { key: "removeFrom", label: "Remove from section", icon: "star-off-20" } : null,
-                row.chat.isSelf ? null : { key: row.chat.muted ? "unmute" : "mute", label: row.chat.muted ? "Unmute" : "Mute", icon: row.chat.muted ? "alert-20" : "alert-off-20" },
-                oneOnOne ? { key: tagged ? "notifyOff" : "notifyOn", label: tagged ? "Turn off notifications" : "Notify when available", icon: "notify-available-20" } : null,
-                row.chat.isSelf ? null : { key: "apps", label: "Manage apps", icon: "manage-apps-20" },
-                row.chat.isSelf ? null : { key: "workflows", label: "Set workflows", icon: "workflows-20" },
-                { key: "link", label: "Copy link", icon: "link-20" },
+                { key: row.unread ? "read" : "unread", label: row.unread ? qsTr("Mark as read") : qsTr("Mark as unread"), icon: row.unread ? "glasses-20" : "glasses-off-20" },
+                { key: "move", label: qsTr("Move to section"), icon: "star-20", submenu: sub },
+                row.holder ? { key: "removeFrom", label: qsTr("Remove from section"), icon: "star-off-20" } : null,
+                row.chat.isSelf ? null : { key: row.chat.muted ? "unmute" : "mute", label: row.chat.muted ? qsTr("Unmute") : qsTr("Mute"), icon: row.chat.muted ? "alert-20" : "alert-off-20" },
+                oneOnOne ? { key: tagged ? "notifyOff" : "notifyOn", label: tagged ? qsTr("Turn off notifications") : qsTr("Notify when available"), icon: "notify-available-20" } : null,
+                row.chat.isSelf ? null : { key: "apps", label: qsTr("Manage apps"), icon: "manage-apps-20" },
+                row.chat.isSelf ? null : { key: "workflows", label: qsTr("Set workflows"), icon: "workflows-20" },
+                { key: "link", label: qsTr("Copy link"), icon: "link-20" },
                 { separator: true },
-                !row.chat.isSelf && !root.isMeeting(row.chat) && !row.canLeave ? { key: "removeHistory", label: "Remove chat history", icon: "delete-20" } : null,
-                row.canLeave ? { key: "leave", label: "Leave", icon: "door-arrow-left-20" } : null,
-                { key: row.chat.hidden ? "unhide" : "hide", label: row.chat.hidden ? "Unhide" : "Hide", icon: row.chat.hidden ? "eye-20" : "eye-off-20" },
+                !row.chat.isSelf && !root.isMeeting(row.chat) && !row.canLeave ? { key: "removeHistory", label: qsTr("Remove chat history"), icon: "delete-20" } : null,
+                row.canLeave ? { key: "leave", label: qsTr("Leave"), icon: "door-arrow-left-20" } : null,
+                { key: row.chat.hidden ? "unhide" : "hide", label: row.chat.hidden ? qsTr("Unhide") : qsTr("Hide"), icon: row.chat.hidden ? "eye-20" : "eye-off-20" },
                 root.isMeeting(row.chat) ? { separator: true } : null,
-                root.isMeeting(row.chat) ? { key: "report", label: "Report a concern", icon: "shield-error-20" } : null
+                root.isMeeting(row.chat) ? { key: "report", label: qsTr("Report a concern"), icon: "shield-error-20" } : null
             ].filter(i => i !== null)
             rowMenu.x = Math.min(px, row.width - rowMenu.implicitWidth - 8)
             rowMenu.y = py
@@ -1083,9 +1095,9 @@ Rectangle {
         ConfirmDialog {
             id: removeHistoryAsk
             width: 600
-            title: "Remove chat history?"
-            body: "This will remove the chat from your list and search. It affects you only."
-            confirmText: "Remove"
+            title: qsTr("Remove chat history?")
+            body: qsTr("This will remove the chat from your list and search. It affects you only.")
+            confirmText: qsTr("Remove")
             onConfirmed: backend.removeChatHistory(row.chat.id)
         }
         LeaveChatDialog {
@@ -1093,7 +1105,7 @@ Rectangle {
             onConfirmed: removeHistory => { backend.leaveChat(row.chat.id); if (removeHistory) backend.removeChatHistory(row.chat.id) }
         }
         Accessible.role: Accessible.Button
-        Accessible.name: (row.chat.name || "") + (row.unread ? ", unread" : "") + (row.chat.muted ? ", muted" : "") + (row.chat.liveCall ? ", call in progress" : "")
+        Accessible.name: (row.chat.name || "") + (row.unread ? qsTr(", unread") : "") + (row.chat.muted ? qsTr(", muted") : "") + (row.chat.liveCall ? qsTr(", call in progress") : "")
     }
 
     // A meeting chat's Report a concern: Teams' "Report a security concern"
@@ -1111,7 +1123,7 @@ Rectangle {
     MeetingReportDialog {
         id: chatReport
         person: null
-        onReported: backend.toastJson = JSON.stringify({ id: Date.now(), text: "Your report was sent", intent: "success" })
+        onReported: backend.toastJson = JSON.stringify({ id: Date.now(), text: qsTr("Your report was sent"), intent: "success" })
     }
     Connections {
         target: backend
@@ -1120,7 +1132,7 @@ Rectangle {
             if (r.op !== "meeting-chat-report-info" || !r.ok || !r.data || !chatReport.opened) return
             const d = r.data
             chatReport.chatIcal = d.ical || ""
-            chatReport.meeting = { title: d.title || chatReport.meeting.title, start: d.start ? Qt.formatDate(new Date(d.start), "MMM d") + ", " + theme.time(d.start) : "", organizer: d.organizer || "" }
+            chatReport.meeting = { title: d.title || chatReport.meeting.title, start: d.start ? theme.fmtDate(new Date(d.start), "MMM d") + ", " + theme.time(d.start) : "", organizer: d.organizer || "" }
             chatReport.people = d.people || []
         }
     }
@@ -1243,14 +1255,14 @@ Rectangle {
             HoverHandler { id: chMoreHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.openChannelMenu(chRow.channel, chRow.team, chMore, 0, chMore.height + 4, chRow.dragGroup) }
             Accessible.role: Accessible.Button
-            Accessible.name: "More options for " + chRow.channel.name
+            Accessible.name: qsTr("More options for %1").arg(chRow.channel.name)
         }
         TapHandler {
             acceptedButtons: Qt.RightButton
             onTapped: point => root.openChannelMenu(chRow.channel, chRow.team, chRow, point.position.x, point.position.y, chRow.dragGroup)
         }
         Accessible.role: Accessible.Button
-        Accessible.name: "Channel " + chRow.channel.name + " in " + chRow.team.name + (chRow.unread ? ", unread" : "")
+        Accessible.name: qsTr("Channel %1 in %2").arg(chRow.channel.name).arg(chRow.team.name) + (chRow.unread ? qsTr(", unread") : "")
     }
 
     // Start reordering's Move Up and Move Down (Teams' subtle 24 x 23.3
@@ -1284,7 +1296,7 @@ Rectangle {
         Keys.onReturnPressed: root.reorderStep(rbButton.up ? -1 : 1)
         Keys.onSpacePressed: root.reorderStep(rbButton.up ? -1 : 1)
         Accessible.role: Accessible.Button
-        Accessible.name: rbButton.up ? "Move Up" : "Move Down"
+        Accessible.name: rbButton.up ? qsTr("Move Up") : qsTr("Move Down")
     }
 
     // Teams' "New" badge: brand pill, 10/14 semibold.
@@ -1292,7 +1304,7 @@ Rectangle {
         id: hcFill3
         width: newText.implicitWidth + 12; height: 18; radius: 9
         color: theme.brandFill
-        Text { id: newText; anchors.centerIn: parent; text: "New"; font.family: theme.font; font.pixelSize: 10; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, "white") }
+        Text { id: newText; anchors.centerIn: parent; text: qsTr("New"); font.family: theme.font; font.pixelSize: 10; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, "white") }
     }
 
     // A team and its shown channels.
@@ -1367,14 +1379,14 @@ Rectangle {
                 HoverHandler { id: teamMoreHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: root.openTeamMenu(teamRows.team, teamMore, 0, -teamMenu.menu.implicitHeight - 3) }
                 Accessible.role: Accessible.Button
-                Accessible.name: "More team options"
+                Accessible.name: qsTr("More team options")
             }
             TapHandler {
                 acceptedButtons: Qt.RightButton
                 onTapped: point => root.openTeamMenu(teamRows.team, parent, point.position.x, point.position.y)
             }
             Accessible.role: Accessible.Button
-            Accessible.name: "Team " + teamRows.team.name + (teamRows.open ? ", expanded" : ", collapsed")
+            Accessible.name: qsTr("Team %1").arg(teamRows.team.name) + (teamRows.open ? qsTr(", expanded") : qsTr(", collapsed"))
         }
         Repeater {
             model: teamRows.open ? teamRows.team.channels : []
@@ -1437,12 +1449,13 @@ Rectangle {
             HoverHandler { id: smHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: sh.menuRequested(parent.x, parent.y + parent.height) }
             Accessible.role: Accessible.Button
-            Accessible.name: "More section options"
+            Accessible.name: qsTr("More section options")
         }
         HoverHandler { id: shHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: if (!smHover.hovered) sh.toggled() }
         TapHandler { acceptedButtons: Qt.RightButton; enabled: sh.userSection; onTapped: ev => sh.menuRequested(ev.position.x, ev.position.y) }
         Accessible.role: Accessible.Button
-        Accessible.name: sh.label + (sh.open ? ", expanded" : ", collapsed")
+        Accessible.name: sh.label + (sh.open ? qsTr(", expanded") : qsTr(", collapsed"))
+
     }
 }

@@ -73,7 +73,7 @@ Rectangle {
             width: parent.width; height: 61
             Text {
                 x: 20.7; anchors.verticalCenter: parent.verticalCenter
-                text: "Conversation"
+                text: qsTr("Conversation")
                 font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold
                 lineHeight: 22; lineHeightMode: Text.FixedHeight
                 color: theme.text
@@ -87,7 +87,7 @@ Rectangle {
                 FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(hcFill1, theme.textStrong) }
                 HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: pane.closed() }
-                Accessible.role: Accessible.Button; Accessible.name: "Close"
+                Accessible.role: Accessible.Button; Accessible.name: qsTr("Close")
             }
             Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.divider }
         }
@@ -100,7 +100,7 @@ Rectangle {
             Item { width: 1; height: 30 }
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
-                text: pane.failed ? "We couldn't start the conversation." : "Go ahead and start talking!"
+                text: pane.failed ? qsTr("We couldn't start the conversation.") : qsTr("Go ahead and start talking!")
                 font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold
                 lineHeight: 22; lineHeightMode: Text.FixedHeight
                 color: theme.text
@@ -110,7 +110,7 @@ Rectangle {
                 width: parent.width
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.Wrap
-                text: "Whatever you post here will also show up in the main channel."
+                text: qsTr("Whatever you post here will also show up in the main channel.")
                 font.family: theme.font; font.pixelSize: 14
                 lineHeight: 20; lineHeightMode: Text.FixedHeight
                 color: theme.text
@@ -124,13 +124,13 @@ Rectangle {
                 Text {
                     id: startLabel
                     anchors.centerIn: parent
-                    text: "Start conversation"
+                    text: qsTr("Start conversation")
                     font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
                     color: theme.onFill(hcFill2, pane.starting ? theme.disabled : "white")
                 }
                 HoverHandler { id: startHover; cursorShape: pane.starting ? Qt.ArrowCursor : Qt.PointingHandCursor }
                 TapHandler { enabled: !pane.starting; onTapped: pane.start() }
-                Accessible.role: Accessible.Button; Accessible.name: "Start conversation"
+                Accessible.role: Accessible.Button; Accessible.name: qsTr("Start conversation")
             }
         }
     }
@@ -142,7 +142,7 @@ Rectangle {
         anchors.fill: parent
         anchors.leftMargin: 0.67
         pane: true
-        paneTitle: "Conversation"; paneTitleSemibold: true; paneTitleX: 20; paneCloseRight: 52
+        paneTitle: qsTr("Conversation"); paneTitleSemibold: true; paneTitleX: 20; paneCloseRight: 52
         chatName: "Conversation"
         chatId: pane.threadKey
         threadRoot: pane.rootId

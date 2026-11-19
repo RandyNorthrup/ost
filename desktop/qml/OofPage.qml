@@ -71,25 +71,25 @@ Rectangle {
             width: parent.width; height: 52
             Column {
                 y: 6; width: parent.width - toggle.width - 40
-                Text { text: "Turn on automatic replies"; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
-                Text { width: parent.width; wrapMode: Text.Wrap; text: "Set up a message to let others know you're on vacation or not available to reply. Your out of office status will also sync with your Outlook calendar."; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textSecondary }
+                Text { text: qsTr("Turn on automatic replies"); font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
+                Text { width: parent.width; wrapMode: Text.Wrap; text: qsTr("Set up a message to let others know you're on vacation or not available to reply. Your out of office status will also sync with your Outlook calendar."); font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textSecondary }
             }
-            SettingsParts.Toggle { id: toggle; anchors.right: parent.right; anchors.rightMargin: 28; y: 14; on: root.on; accessibleName: "Turn on automatic replies"; onToggled: v => root.on = v }
+            SettingsParts.Toggle { id: toggle; anchors.right: parent.right; anchors.rightMargin: 28; y: 14; on: root.on; accessibleName: qsTr("Turn on automatic replies"); onToggled: v => root.on = v }
         }
         SettingsParts.Gap { size: 21 }
         Row {
             x: -16; spacing: 13
-            Text { anchors.verticalCenter: parent.verticalCenter; text: "Out of office message"; font.family: theme.font; font.pixelSize: 14; color: root.on ? theme.text : theme.disabled }
+            Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Out of office message"); font.family: theme.font; font.pixelSize: 14; color: root.on ? theme.text : theme.disabled }
             FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "info-20"; size: 20; color: root.on ? theme.textSecondary : theme.disabled
                 HoverHandler { id: infoHover }
-                ToolTip.visible: infoHover.hovered; ToolTip.text: "Your automatic reply is sent to people who message or mention you." }
+                ToolTip.visible: infoHover.hovered; ToolTip.text: qsTr("Your automatic reply is sent to people who message or mention you.") }
         }
         SettingsParts.Gap { size: 7 }
-        MessageArea { id: internal; x: -16; width: 649; usable: root.on; label: "Out of office message" }
+        MessageArea { id: internal; x: -16; width: 649; usable: root.on; label: qsTr("Out of office message") }
         SettingsParts.Gap { size: 21 }
         SettingsParts.CheckRow {
             x: -8; rowHeight: 42
-            label: "Send replies outside my organization"
+            label: qsTr("Send replies outside my organization")
             usable: root.on
             checked: root.external
             onToggled: v => root.external = v
@@ -97,15 +97,15 @@ Rectangle {
         Column {
             visible: root.external && root.on
             x: -6
-            SettingsParts.RadioRow { width: 300; label: "Only to my contacts"; checked: root.audience === "contactsOnly"; onPicked: root.audience = "contactsOnly" }
-            SettingsParts.RadioRow { width: 300; label: "All external senders"; checked: root.audience === "all"; onPicked: root.audience = "all" }
+            SettingsParts.RadioRow { width: 300; label: qsTr("Only to my contacts"); checked: root.audience === "contactsOnly"; onPicked: root.audience = "contactsOnly" }
+            SettingsParts.RadioRow { width: 300; label: qsTr("All external senders"); checked: root.audience === "all"; onPicked: root.audience = "all" }
             SettingsParts.Gap { size: 7 }
-            MessageArea { id: externalText; x: -12; width: 644; usable: root.on; label: "Out of office message to people outside my organization"; placeholder: "Message" }
+            MessageArea { id: externalText; x: -12; width: 644; usable: root.on; label: qsTr("Out of office message to people outside my organization"); placeholder: qsTr("Message") }
             SettingsParts.Gap { size: 21 }
         }
         SettingsParts.CheckRow {
             x: -8; rowHeight: 42
-            label: "Send replies only during a time period"
+            label: qsTr("Send replies only during a time period")
             usable: root.on
             checked: root.period
             onToggled: v => root.period = v
@@ -121,7 +121,7 @@ Rectangle {
                     readonly property date when: isStart ? root.start : root.end
                     function setWhen(d) { if (isStart) root.start = d; else root.end = d }
                     spacing: 1
-                    Text { text: modelData; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.text }
+                    Text { text: parent.isStart ? qsTr("Start") : qsTr("End"); font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.text }
                     Row {
                         spacing: 42
                         DatePickerField {
@@ -132,7 +132,7 @@ Rectangle {
                         }
                         OutlineDropdown {
                             width: 207; height: 30
-                            accessibleName: parent.parent.modelData + " time"
+                            accessibleName: parent.parent.isStart ? qsTr("Start time") : qsTr("End time")
                             readonly property date day: parent.parent.when
                             options: { const out = []; for (let i = 0; i < 48; i++) { const t = new Date(2000, 0, 1, 0, i * 30); out.push({ label: theme.time(t) }) } return out }
                             current: day.getHours() * 2 + Math.floor(day.getMinutes() / 30)
@@ -146,16 +146,16 @@ Rectangle {
         SettingsParts.Gap { size: 26 }
         Row {
             x: -16; spacing: 10
-            SettingsParts.Button { label: "Cancel"; onClicked: { root.load(); root.cancel() } }
+            SettingsParts.Button { label: qsTr("Cancel"); onClicked: { root.load(); root.cancel() } }
             Rectangle {
                 id: hcFill1
                 width: 96; height: 31.3; radius: 4
                 color: !root.canSave ? theme.bgDisabled : saveHover.hovered ? theme.brandHover : theme.brandFill
-                Text { anchors.centerIn: parent; text: "Save"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, root.canSave ? "white" : theme.disabled) }
+                Text { anchors.centerIn: parent; text: qsTr("Save"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, root.canSave ? "white" : theme.disabled) }
                 HoverHandler { id: saveHover; cursorShape: root.canSave ? Qt.PointingHandCursor : Qt.ArrowCursor }
                 TapHandler { enabled: root.canSave; onTapped: root.save(root.value()) }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Save"
+                Accessible.name: qsTr("Save")
             }
         }
     }

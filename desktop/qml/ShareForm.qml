@@ -56,10 +56,10 @@ Popup {
         if (single) return []
         const g = []
         const ppl = people.map(p => ({ kind: "person", oid: p.id, name: p.name }))
-        if (ppl.length) g.push({ title: "People", items: ppl })
+        if (ppl.length) g.push({ title: qsTr("People"), items: ppl })
         if (picked.length === 0) {
-            if (chats.length) g.push({ title: "Chats", items: chats.map(c => ({ kind: "chat", id: c.id, name: c.name })) })
-            if (channels.length) g.push({ title: "Channels", items: channels.map(c => ({ kind: "chat", id: c.id, name: c.name, channel: true })) })
+            if (chats.length) g.push({ title: qsTr("Chats"), items: chats.map(c => ({ kind: "chat", id: c.id, name: c.name })) })
+            if (channels.length) g.push({ title: qsTr("Channels"), items: channels.map(c => ({ kind: "chat", id: c.id, name: c.name, channel: true })) })
         }
         return g
     }
@@ -67,7 +67,7 @@ Popup {
     function start(id) {
         appId = id; done = false; picked = []; query = ""; search.text = ""; showCard = true
         backend.shareState = ""
-        note.text = "Take a look at this app."
+        note.text = qsTr("Take a look at this app.")
         if (!d) backend.appDetailsLoad(id)
         open()
         search.forceActiveFocus()
@@ -109,7 +109,7 @@ Popup {
     contentItem: Item {
         Text {
             x: 25; y: 25; width: 511; height: 31; verticalAlignment: Text.AlignVCenter
-            text: root.done ? "Your message has been shared." : "Share"
+            text: root.done ? qsTr("Your message has been shared.") : qsTr("Share")
             font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text
             Accessible.role: Accessible.Heading; Accessible.name: text
         }
@@ -120,7 +120,7 @@ Popup {
             FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(hcFill1, theme.textStrong) }
             HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.close() }
-            Accessible.role: Accessible.Button; Accessible.name: "Close"
+            Accessible.role: Accessible.Button; Accessible.name: qsTr("Close")
         }
 
         // ---- Shared ----
@@ -128,17 +128,17 @@ Popup {
             visible: root.done
             x: 375; y: 74; spacing: 8
             OutlineButton {
-                width: 96; label: "View"
+                width: 96; label: qsTr("View")
                 onClicked: { const c = backend.sharedConversation(); root.close(); if (c) backend.selectChat(c, "") }
             }
             Rectangle {
                 id: hcFill2
                 width: 96; height: 31.33; radius: 4
                 color: doneHover.hovered ? theme.brandHover : theme.brandFill
-                Text { anchors.centerIn: parent; text: "Done"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.textOnBrand) }
+                Text { anchors.centerIn: parent; text: qsTr("Done"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.textOnBrand) }
                 HoverHandler { id: doneHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: root.close() }
-                Accessible.role: Accessible.Button; Accessible.name: "Done"
+                Accessible.role: Accessible.Button; Accessible.name: qsTr("Done")
             }
         }
 
@@ -146,7 +146,7 @@ Popup {
         Item {
             visible: !root.done
             anchors.fill: parent
-            Text { x: 25; y: 64; height: 20; verticalAlignment: Text.AlignVCenter; text: "Share to"; font.family: theme.font; font.pixelSize: 12; color: theme.text }
+            Text { x: 25; y: 64; height: 20; verticalAlignment: Text.AlignVCenter; text: qsTr("Share to"); font.family: theme.font; font.pixelSize: 12; color: theme.text }
             Rectangle {
                 id: picker
                 x: 25; y: 86; width: 551; height: root.picked.length > 0 ? 41 : 32; radius: 4
@@ -170,7 +170,7 @@ Popup {
                                 x: tagName.x + tagName.implicitWidth + 4; anchors.verticalCenter: parent.verticalCenter; name: "dismiss-12"; size: 12; color: theme.textStrong
                                 TapHandler { onTapped: { const p = root.picked.slice(); p.splice(tag.index, 1); root.picked = p; search.forceActiveFocus() } }
                             }
-                            Accessible.role: Accessible.Button; Accessible.name: "Remove " + tag.modelData.name
+                            Accessible.role: Accessible.Button; Accessible.name: qsTr("Remove %1").arg(tag.modelData.name)
                         }
                     }
                     TextField {
@@ -179,19 +179,19 @@ Popup {
                         width: root.picked.length > 0 ? 160 : tags.width
                         height: root.picked.length > 0 ? 29 : 32
                         leftPadding: 0
-                        placeholderText: root.picked.length > 0 ? "" : "Type the name of a person, group, or channel"
+                        placeholderText: root.picked.length > 0 ? "" : qsTr("Type the name of a person, group, or channel")
                         placeholderTextColor: theme.textTertiary
                         background: null
                         font.family: theme.font; font.pixelSize: 14; color: theme.text
                         onTextChanged: { root.query = text; if (text.trim().length > 0) backend.searchPeople(text) }
                         Keys.onReturnPressed: if (root.groups.length > 0) root.pick(root.groups[0].items[0])
-                        Accessible.name: "Share to"
+                        Accessible.name: qsTr("Share to")
                     }
                 }
                 FluentIcon { x: 522; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-16"; size: 16; color: theme.textStrong }
             }
 
-            Text { x: 25; y: picker.y + picker.height + 15; height: 16; text: "Say something about this"; font.family: theme.font; font.pixelSize: 12; color: theme.text }
+            Text { x: 25; y: picker.y + picker.height + 15; height: 16; text: qsTr("Say something about this"); font.family: theme.font; font.pixelSize: 12; color: theme.text }
             Rectangle {
                 id: compose
                 x: 25; y: picker.y + picker.height + 39; width: 551; height: 276
@@ -210,7 +210,7 @@ Popup {
                             wrapMode: TextEdit.Wrap
                             font.family: theme.font; font.pixelSize: 14; color: theme.text
                             selectByMouse: true
-                            Accessible.role: Accessible.EditableText; Accessible.name: "Say something about this"
+                            Accessible.role: Accessible.EditableText; Accessible.name: qsTr("Say something about this")
                         }
                         Item { width: 1; height: 20 }
                         Text {
@@ -230,12 +230,12 @@ Popup {
                             Row {
                                 x: 16; y: 16; spacing: 12
                                 FluentIcon { name: "apps-20"; size: 20; color: theme.textStrong }
-                                Text { height: 20; verticalAlignment: Text.AlignVCenter; text: "App"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.text }
+                                Text { height: 20; verticalAlignment: Text.AlignVCenter; text: qsTr("App"); font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.text }
                             }
                             FluentIcon {
                                 x: 320; y: 18; name: "dismiss-20"; size: 20; color: theme.textStrong
                                 TapHandler { onTapped: root.showCard = false }
-                                Accessible.role: Accessible.Button; Accessible.name: "Remove the card"
+                                Accessible.role: Accessible.Button; Accessible.name: qsTr("Remove the card")
                             }
                             AdaptiveCard {
                                 id: previewCard
@@ -289,14 +289,14 @@ Popup {
             Text {
                 visible: backend.shareState === "error"
                 x: 25; y: compose.y + compose.height + 6
-                text: "Something went wrong while trying to share to Teams."
+                text: qsTr("Something went wrong while trying to share to Teams.")
                 font.family: theme.font; font.pixelSize: 12; color: theme.redForeground1
             }
             Row {
                 x: 576 - width; y: compose.y + compose.height + 22
                 spacing: 8
                 OutlineButton {
-                    label: copied.running ? "Link copied" : "Copy link"; icon: "link-20"
+                    label: copied.running ? qsTr("Link copied") : qsTr("Copy link"); icon: "link-20"
                     onClicked: { if (root.d) { backend.copyText(root.d.share_link); copied.restart() } }
                     Timer { id: copied; interval: 3000 }
                 }
@@ -305,10 +305,10 @@ Popup {
                     width: 96; height: 31.33; radius: 4
                     readonly property bool on: root.picked.length > 0 && backend.shareState !== "sharing" && !!root.d
                     color: !on ? theme.hc(theme.bgDisabled, theme.hcHighlight) : shareHover.hovered ? theme.brandHover : theme.checkedFill
-                    Text { anchors.centerIn: parent; text: backend.shareState === "sharing" ? "Sharing" : "Share"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, parent.on ? theme.textOnBrand : theme.disabled) }
+                    Text { anchors.centerIn: parent; text: backend.shareState === "sharing" ? qsTr("Sharing") : qsTr("Share"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, parent.on ? theme.textOnBrand : theme.disabled) }
                     HoverHandler { id: shareHover; cursorShape: parent.on ? Qt.PointingHandCursor : Qt.ArrowCursor }
                     TapHandler { enabled: parent.on; onTapped: root.share() }
-                    Accessible.role: Accessible.Button; Accessible.name: "Share"
+                    Accessible.role: Accessible.Button; Accessible.name: qsTr("Share")
                 }
             }
         }

@@ -21,7 +21,7 @@ Window {
     // (Window sizes are whole logical pixels: 521.33 rounds to 521.)
     width: 521; height: 248
     flags: Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
-    title: "Meeting compact view | " + (call ? call.peer : "") + " | OST"
+    title: qsTr("Meeting compact view | %1").arg(call ? call.peer : "") + " | OST"
     color: theme.hc("#FFFFFF", "#000000")
     x: screen ? screen.virtualX + screen.desktopAvailableWidth - width - 6.67 : 0
     y: screen ? screen.virtualY + screen.desktopAvailableHeight - height - 35 : 0
@@ -40,9 +40,9 @@ Window {
         DragHandler { target: null; onActiveChanged: if (active) cw.startSystemMove() }
         Repeater {
             model: [
-                { x: 434.33, icon: "subtract-20", tip: "Minimize", act: "min" },
-                { x: 464.33, icon: "rectangle-landscape-20", tip: "Show only active speaker", act: "speaker" },
-                { x: 494.33, icon: "picture-in-picture-exit-20", tip: "Maximize meeting window", act: "max" }
+                { x: 434.33, icon: "subtract-20", tip: qsTr("Minimize"), act: "min" },
+                { x: 464.33, icon: "rectangle-landscape-20", tip: qsTr("Show only active speaker"), act: "speaker" },
+                { x: 494.33, icon: "picture-in-picture-exit-20", tip: qsTr("Maximize meeting window"), act: "max" }
             ]
             Rectangle {
                 id: hcFill1
@@ -74,12 +74,12 @@ Window {
         y: 32; width: parent.width; height: 40
         Repeater {
             model: cw.call ? [
-                { icon: cw.call.cameraOn ? "call-camera-filled" : "call-camera-off-filled", tip: cw.call.cameraOn ? "Turn camera off" : "Turn camera on", strong: true, act: "camera" },
-                { icon: cw.call.muted || !cw.call.hasAudio ? "call-mic-off-filled" : "call-mic-filled", tip: cw.call.muted ? "Unmute mic" : "Mute mic", strong: true, act: "mic" },
-                { icon: cw.call.sharing ? "call-share-stop-filled" : "call-share-filled", tip: "Share", strong: true, act: "share" },
-                { icon: "call-raise", tip: cw.call.handRaised ? "Lower" : "Raise", act: "raise" },
-                { icon: "call-react", tip: "React", act: "react" },
-                { icon: "call-people", tip: "People", act: "people", count: cw.call.roster.filter(p => p.active !== false).length }
+                { icon: cw.call.cameraOn ? "call-camera-filled" : "call-camera-off-filled", tip: cw.call.cameraOn ? qsTr("Turn camera off") : qsTr("Turn camera on"), strong: true, act: "camera" },
+                { icon: cw.call.muted || !cw.call.hasAudio ? "call-mic-off-filled" : "call-mic-filled", tip: cw.call.muted ? qsTr("Unmute mic") : qsTr("Mute mic"), strong: true, act: "mic" },
+                { icon: cw.call.sharing ? "call-share-stop-filled" : "call-share-filled", tip: qsTr("Share"), strong: true, act: "share" },
+                { icon: "call-raise", tip: cw.call.handRaised ? qsTr("Lower") : qsTr("Raise"), act: "raise" },
+                { icon: "call-react", tip: qsTr("React"), act: "react" },
+                { icon: "call-people", tip: qsTr("People"), act: "people", count: cw.call.roster.filter(p => p.active !== false).length }
             ] : []
             Rectangle {
                 id: hcFill2
@@ -122,7 +122,7 @@ Window {
             HoverHandler { id: leaveHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: cw.call.leave() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Leave"
+            Accessible.name: qsTr("Leave")
         }
     }
 

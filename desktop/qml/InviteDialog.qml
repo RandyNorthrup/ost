@@ -22,13 +22,13 @@ Popup {
 
     Text {
         x: 24; y: 24; height: 22; verticalAlignment: Text.AlignVCenter
-        text: "Invite people to join you"
+        text: qsTr("Invite people to join you")
         font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold
         color: theme.text
     }
     Text {
         x: 24; y: 46; height: 20; verticalAlignment: Text.AlignVCenter
-        text: "Copy and share the link to invite someone."
+        text: qsTr("Copy and share the link to invite someone.")
         font.family: theme.font; font.pixelSize: 14
         color: theme.text
     }
@@ -40,12 +40,12 @@ Popup {
         HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.close() }
         Accessible.role: Accessible.Button
-        Accessible.name: "Close"
+        Accessible.name: qsTr("Close")
     }
     InviteButton {
         y: 90
         icon: root.copied ? "invite-check-16" : "invite-link-16"
-        label: root.copied ? "Copied to clipboard" : "Copy meeting link"
+        label: root.copied ? qsTr("Copied to clipboard") : qsTr("Copy meeting link")
         onClicked: {
             if (root.copied) return
             backend.copyText(root.link)
@@ -56,9 +56,9 @@ Popup {
     InviteButton {
         y: 146
         icon: "invite-mail-16"
-        label: "Share via default email"
-        onClicked: Qt.openUrlExternally("mailto:?subject=" + encodeURIComponent("Join Teams meeting in progress")
-            + "&body=" + encodeURIComponent("You're invited to join a Microsoft Teams meeting\r\n\r\nUse the link below to join\r\n" + root.link))
+        label: qsTr("Share via default email")
+        onClicked: Qt.openUrlExternally("mailto:?subject=" + encodeURIComponent(qsTr("Join Teams meeting in progress"))
+            + "&body=" + encodeURIComponent(qsTr("You're invited to join a Microsoft Teams meeting") + "\r\n\r\n" + qsTr("Use the link below to join") + "\r\n" + root.link))
     }
 
     // Teams' invite options: 352 x 48, white with a 0.67 NeutralStroke1

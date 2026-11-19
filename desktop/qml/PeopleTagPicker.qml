@@ -8,7 +8,7 @@ Item {
     id: root
     width: 368.7
     height: control.height
-    property string placeholder: "Enter name"
+    property string placeholder: qsTr("Enter name")
     /// The people picked: [{mri, name}].
     property var picked: []
     /// MRIs not to offer (already in the chat).
@@ -62,7 +62,7 @@ Item {
                     FluentIcon { x: nameText.x + nameText.implicitWidth + 4; anchors.verticalCenter: parent.verticalCenter; name: "dismiss-12"; size: 12; color: theme.textStrong }
                     TapHandler { onTapped: root.picked = root.picked.filter((_, i) => i !== index) }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Remove " + modelData.name
+                    Accessible.name: qsTr("Remove %1").arg(modelData.name)
                 }
             }
             TextInput {

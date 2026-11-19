@@ -102,18 +102,18 @@ Rectangle {
         const lobbyShown = waiting.length + threats.length
         if (lobbyShown > 0 && !display) {
             const split = threats.length > 0
-            out.push({ kind: "section", key: "lobby", title: "Waiting in lobby (" + lobbyShown + ")",
-                       action: !split && lobbyShown > 1 ? "Admit all" : root.lobbyChatAvailable && waiting.length === 1 && !split ? "Chat" : "",
+            out.push({ kind: "section", key: "lobby", title: qsTr("Waiting in lobby (%1)").arg(lobbyShown),
+                       action: !split && lobbyShown > 1 ? qsTr("Admit all") : root.lobbyChatAvailable && waiting.length === 1 && !split ? qsTr("Chat") : "",
                        actionIcon: !split && lobbyShown === 1 && root.lobbyChatAvailable ? "chat-20" : "", level: 0 })
             if (!collapsed.lobby) {
                 if (split) {
                     if (waiting.length > 0) {
-                        out.push({ kind: "section", key: "waiting", title: "Waiting (" + waiting.length + ")",
-                                   action: waiting.length > 1 ? "Admit (" + waiting.length + ")" : "", level: 1, list: waiting })
+                        out.push({ kind: "section", key: "waiting", title: qsTr("Waiting (%1)").arg(waiting.length),
+                                   action: waiting.length > 1 ? qsTr("Admit (%1)").arg(waiting.length) : "", level: 1, list: waiting })
                         if (!collapsed.waiting) waiting.forEach(p => out.push({ kind: "lobby", p: p, level: 2 }))
                     }
-                    out.push({ kind: "section", key: "threats", title: "Suspected threats (" + threats.length + ")",
-                               action: threats.length > 1 ? "Deny (" + threats.length + ")" : "", level: 1, list: threats })
+                    out.push({ kind: "section", key: "threats", title: qsTr("Suspected threats (%1)").arg(threats.length),
+                               action: threats.length > 1 ? qsTr("Deny (%1)").arg(threats.length) : "", level: 1, list: threats })
                     if (!collapsed.threats) threats.forEach(p => out.push({ kind: "lobby", p: p, level: 2 }))
                 } else {
                     waiting.forEach(p => out.push({ kind: "lobby", p: p, level: 1 }))
@@ -128,24 +128,24 @@ Rectangle {
         const attendees = here.filter(isAttendee)
         const presenters = here.filter(p => !isAttendee(p))
         const anyAttendees = meeting && people.some(isAttendee)
-        const muteAll = canMuteAll && !display ? "Mute all" : ""
+        const muteAll = canMuteAll && !display ? qsTr("Mute all") : ""
         if (anyAttendees) {
             if (presenters.length > 0) {
-                out.push({ kind: "section", key: "here", title: "Presenters (" + presenters.length + ")", action: muteAll, level: 0 })
+                out.push({ kind: "section", key: "here", title: qsTr("Presenters (%1)").arg(presenters.length), action: muteAll, level: 0 })
                 if (!collapsed.here) sorted(presenters).forEach(p => out.push({ kind: "person", p: p, level: 1 }))
             }
             if (attendees.length > 0) {
-                out.push({ kind: "section", key: "attendees", title: "Attendees (" + attendees.length + ")", action: "", level: 0 })
+                out.push({ kind: "section", key: "attendees", title: qsTr("Attendees (%1)").arg(attendees.length), action: "", level: 0 })
                 if (!collapsed.attendees) sorted(attendees).forEach(p => out.push({ kind: "person", p: p, level: 1 }))
             }
         } else {
-            out.push({ kind: "section", key: "here", title: (meeting ? "In this meeting (" : "In this call (") + here.length + ")", action: muteAll, level: 0 })
+            out.push({ kind: "section", key: "here", title: (meeting ? qsTr("In this meeting (%1)") : qsTr("In this call (%1)")).arg(here.length), action: muteAll, level: 0 })
             if (!collapsed.here) sorted(here).forEach(p => out.push({ kind: "person", p: p, level: 1 }))
         }
         const inCall = people.map(p => (p.id || "").toLowerCase())
         const away = chatMembers.filter(m => !m.me && inCall.indexOf((m.mri || "").toLowerCase()) < 0 && matches(m.name))
         if (meeting && away.length > 0) {
-            out.push({ kind: "section", key: "chat", title: "People added to the chat (" + away.length + ")", action: "", level: 0 })
+            out.push({ kind: "section", key: "chat", title: qsTr("People added to the chat (%1)").arg(away.length), action: "", level: 0 })
             if (!collapsed.chat) away.forEach(m => out.push({ kind: "person", p: { id: m.mri, name: m.name, presence: m.presence || "", chatOnly: true }, level: 1 }))
         }
         return out
@@ -158,7 +158,7 @@ Rectangle {
         Text {
             x: 20.7; y: 17.7; height: 22
             verticalAlignment: Text.AlignVCenter
-            text: "Participants"
+            text: qsTr("Participants")
             font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold
             color: theme.text
         }
@@ -178,7 +178,7 @@ Rectangle {
             HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: moreMenu.opened ? moreMenu.close() : moreMenu.openUnder(headerMore) }
             Accessible.role: Accessible.Button
-            Accessible.name: "More actions"
+            Accessible.name: qsTr("More actions")
         }
         Rectangle {
             id: hcFill1
@@ -189,7 +189,7 @@ Rectangle {
             HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.closed() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Close participants pane"
+            Accessible.name: qsTr("Close participants pane")
         }
         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.divider }
     }
@@ -209,12 +209,12 @@ Rectangle {
             selectByMouse: true
             onTextChanged: root.query = text.trim()
             Accessible.role: Accessible.EditableText
-            Accessible.name: "Type a name"
+            Accessible.name: qsTr("Type a name")
         }
         Text {
             visible: field.text.length === 0
             x: field.x; anchors.verticalCenter: parent.verticalCenter
-            text: "Type a name"
+            text: qsTr("Type a name")
             font.family: theme.font; font.pixelSize: 14
             color: theme.textTertiary
         }
@@ -235,12 +235,12 @@ Rectangle {
         Row {
             anchors.centerIn: parent; spacing: 6
             FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "share-invite-20"; size: 20; color: theme.onFill(shareInvite, theme.text) }
-            Text { anchors.verticalCenter: parent.verticalCenter; text: "Share invite"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(shareInvite, theme.text) }
+            Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Share invite"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(shareInvite, theme.text) }
         }
         HoverHandler { id: shareHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.shareInvite() }
         Accessible.role: Accessible.Button
-        Accessible.name: "Share invite"
+        Accessible.name: qsTr("Share invite")
     }
 
     Flickable {
@@ -314,7 +314,7 @@ Rectangle {
                 TapHandler {
                     onTapped: {
                         if (entry.key === "here") root.muteAll()
-                        else if (entry.key === "lobby" && entry.action === "Chat") root.chatLobby()
+                        else if (entry.key === "lobby" && entry.action === qsTr("Chat")) root.chatLobby()
                         else if (entry.key === "lobby") root.admitAll()
                         else if (entry.key === "waiting") root.admitEach(entry.list.map(p => ({ id: p.id, name: p.name })))
                         else if (entry.key === "threats") root.denyEach(entry.list.map(p => ({ id: p.id, name: p.name })))
@@ -351,16 +351,16 @@ Rectangle {
             }
             LobbyButton {
                 x: parent.width - 82; y: 12
-                icon: "checkmark-20"; tint: theme.pick("#107C10", "#54B054"); label: "Admit participant in lobby"
+                icon: "checkmark-20"; tint: theme.pick("#107C10", "#54B054"); label: qsTr("Admit participant in lobby")
                 onClicked: p.suspected ? root.admitSuspected(p.id, p.name) : root.admit(p.id, p.name)
             }
             LobbyButton {
                 x: parent.width - 50; y: 12
-                icon: "dismiss-20"; tint: theme.redForeground3; label: "Deny participant in lobby"
+                icon: "dismiss-20"; tint: theme.redForeground3; label: qsTr("Deny participant in lobby")
                 onClicked: root.deny(p.id, p.name)
             }
             Accessible.role: Accessible.ListItem
-            Accessible.name: (p.name || "") + (p.suspected ? " Unverified" : "")
+            Accessible.name: (p.name || "") + (p.suspected ? " " + qsTr("Unverified") : "")
         }
     }
 
@@ -396,7 +396,7 @@ Rectangle {
                     readonly property bool organizer: (p.role || "").toLowerCase() === "organizer"
                     visible: organizer || !!p.signLine
                     height: 16; verticalAlignment: Text.AlignVCenter
-                    text: organizer && p.signLine ? "Organizer, " + p.signLine : organizer ? "Organizer" : (p.signLine || "")
+                    text: organizer && p.signLine ? qsTr("Organizer") + ", " + p.signLine : organizer ? qsTr("Organizer") : (p.signLine || "")
                     font.family: theme.font; font.pixelSize: 12
                     color: theme.textStrong
                 }
@@ -448,10 +448,10 @@ Rectangle {
                 HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: participantMenu.openFor(moreButton, p) }
                 Accessible.role: Accessible.Button
-                Accessible.name: "More options"
+                Accessible.name: qsTr("More options")
             }
             Accessible.role: Accessible.ListItem
-            Accessible.name: (p.name || "") + (p.hand ? ", hand raised" : "") + (p.mutedNow ? ", muted" : "")
+            Accessible.name: (p.name || "") + (p.hand ? ", " + qsTr("hand raised") : "") + (p.mutedNow ? ", " + qsTr("muted") : "")
         }
     }
 
@@ -476,25 +476,25 @@ Rectangle {
         readonly property var items: {
             const w = who
             const out = []
-            if (root.canManage) out.push({ k: "mute", t: "Mute participant", icon: "mic-off-20", off: !!w.mutedNow })
-            out.push(root.pinnedIds.indexOf(w.id) >= 0 ? { k: "unpin", t: "Unpin for me", icon: "pin-off-20" }
-                     : { k: "pin", t: "Pin for me", icon: "pin-20", off: root.pinningFull, tip: root.pinningFull ? "You reached the maximum number of pins" : "" })
+            if (root.canManage) out.push({ k: "mute", t: qsTr("Mute participant"), icon: "mic-off-20", off: !!w.mutedNow })
+            out.push(root.pinnedIds.indexOf(w.id) >= 0 ? { k: "unpin", t: qsTr("Unpin for me"), icon: "pin-off-20" }
+                     : { k: "pin", t: qsTr("Pin for me"), icon: "pin-20", off: root.pinningFull, tip: root.pinningFull ? qsTr("You reached the maximum number of pins") : "" })
             if (root.canManage) {
                 // Manage what attendees see: Teams' spotlight becomes "Bring on
                 // screen" / "Take off screen" (calling:bring_on_stage_label).
                 if (root.managed)
-                    out.push(w.spotlight ? { k: "unspotlight", t: "Take off screen", icon: "spotlight-20" } : { k: "spotlight", t: "Bring on screen", icon: "spotlight-20" })
+                    out.push(w.spotlight ? { k: "unspotlight", t: qsTr("Take off screen"), icon: "spotlight-20" } : { k: "spotlight", t: qsTr("Bring on screen"), icon: "spotlight-20" })
                 else
-                    out.push(w.spotlight ? { k: "unspotlight", t: "Stop spotlighting", icon: "spotlight-20" } : { k: "spotlight", t: "Spotlight for everyone", icon: "spotlight-20" })
+                    out.push(w.spotlight ? { k: "unspotlight", t: qsTr("Stop spotlighting"), icon: "spotlight-20" } : { k: "spotlight", t: qsTr("Spotlight for everyone"), icon: "spotlight-20" })
                 if ((w.role || "").toLowerCase() !== "organizer")
                     out.push((w.role || "").toLowerCase() === "attendee"
-                        ? { k: "presenter", t: "Make a presenter", icon: "presenter-off-20" }
-                        : { k: "attendee", t: "Make an attendee", icon: "presenter-off-20" })
+                        ? { k: "presenter", t: qsTr("Make a presenter"), icon: "presenter-off-20" }
+                        : { k: "attendee", t: qsTr("Make an attendee"), icon: "presenter-off-20" })
                 out.push({ sep: true })
-                out.push({ k: "remove", t: "Remove from meeting", icon: "person-remove-20" })
+                out.push({ k: "remove", t: qsTr("Remove from meeting"), icon: "person-remove-20" })
             } else if (root.canReport) out.push({ sep: true })
             // Report this person (a security report, as Teams files it).
-            if (root.canReport) out.push({ k: "report", t: "Report", icon: "shield-error-20" })
+            if (root.canReport) out.push({ k: "report", t: qsTr("Report"), icon: "shield-error-20" })
             return out
         }
         contentItem: Column {

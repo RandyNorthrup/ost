@@ -78,7 +78,7 @@ Popup {
             width: 280; height: 32
             leftPadding: 8; rightPadding: 8
             verticalAlignment: Text.AlignVCenter
-            text: "Meeting AI"
+            text: qsTr("Meeting AI")
             font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold
             color: theme.textSecondary
             Accessible.role: Accessible.Heading
@@ -92,19 +92,19 @@ Popup {
                 x: 12.67; anchors.verticalCenter: parent.verticalCenter
                 width: 280 - 25.33
                 elide: Text.ElideRight
-                text: "You don't have access to AI in this meeting."
+                text: qsTr("You don't have access to AI in this meeting.")
                 font.family: theme.font; font.pixelSize: 12
                 lineHeight: 16; lineHeightMode: Text.FixedHeight
                 color: theme.text
             }
             Accessible.role: Accessible.StaticText
-            Accessible.name: "You don't have access to AI in this meeting."
+            Accessible.name: qsTr("You don't have access to AI in this meeting.")
         }
         Column {
             width: 280
-            SwitchRow { icon: "ai-copilot"; label: "Copilot"; checked: root.copilotChecked }
-            SwitchRow { icon: "ai-facilitator"; label: "Facilitator"; checked: root.facilitatorChecked }
-            SwitchRow { icon: "ai-recap"; label: "Intelligent recap"; checked: root.copilotChecked }
+            SwitchRow { icon: "ai-copilot"; label: qsTr("Copilot"); checked: root.copilotChecked }
+            SwitchRow { icon: "ai-facilitator"; label: qsTr("Facilitator"); checked: root.facilitatorChecked }
+            SwitchRow { icon: "ai-recap"; label: qsTr("Intelligent recap"); checked: root.copilotChecked }
         }
     }
 }

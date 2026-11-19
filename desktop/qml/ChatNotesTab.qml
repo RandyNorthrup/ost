@@ -54,7 +54,7 @@ Rectangle {
         Text {
             x: 28; y: 14; height: 20
             verticalAlignment: Text.AlignVCenter
-            text: "Notes"
+            text: qsTr("Notes")
             font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
             color: theme.text
             Accessible.role: Accessible.Heading; Accessible.name: text
@@ -65,9 +65,9 @@ Rectangle {
             name: "lock-closed-20"; size: 20; color: theme.textStrong
             HoverHandler { id: lockHover }
             ToolTip.visible: lockHover.hovered; ToolTip.delay: 300
-            ToolTip.text: "Only accessible to members of this chat"
+            ToolTip.text: qsTr("Only accessible to members of this chat")
             Accessible.role: Accessible.Graphic
-            Accessible.name: "Only accessible to members of this chat"
+            Accessible.name: qsTr("Only accessible to members of this chat")
         }
         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: theme.divider }
     }
@@ -100,9 +100,9 @@ Rectangle {
         Text {
             width: parent.width
             horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
-            text: root.state_ === "preparing" ? "Give us a moment while we get things ready for you..."
-                : root.state_ === "deleted" ? "Your notes have been deleted."
-                : "Your notes are temporarily not available."
+            text: root.state_ === "preparing" ? qsTr("Give us a moment while we get things ready for you...")
+                : root.state_ === "deleted" ? qsTr("Your notes have been deleted.")
+                : qsTr("Your notes are temporarily not available.")
             lineHeight: 22; lineHeightMode: Text.FixedHeight
             font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold; color: theme.text
             Accessible.role: Accessible.Heading; Accessible.name: text
@@ -115,7 +115,7 @@ Rectangle {
             width: actionText.implicitWidth + 24; height: 32; radius: 4
             color: !enabled ? theme.bgDisabled : actionHover.hovered ? theme.brandHover : theme.brandFill
             enabled: !root.busy
-            readonly property string label: root.state_ === "deleted" ? "Create new" : "Retry"
+            readonly property string label: root.state_ === "deleted" ? qsTr("Create new") : qsTr("Retry")
             Text {
                 id: actionText
                 anchors.centerIn: parent

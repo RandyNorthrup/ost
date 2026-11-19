@@ -42,7 +42,7 @@ Rectangle {
         Text {
             x: 20.67; y: 17.67; height: 22
             verticalAlignment: Text.AlignVCenter
-            text: "Caption styles"
+            text: qsTr("Caption styles")
             font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold
             color: theme.text
             Accessible.role: Accessible.Heading
@@ -57,9 +57,9 @@ Rectangle {
             TapHandler { onTapped: root.closed() }
             ToolTip.visible: closeHover.hovered
             ToolTip.delay: 250
-            ToolTip.text: "Hide caption styles panel"
+            ToolTip.text: qsTr("Hide caption styles panel")
             Accessible.role: Accessible.Button
-            Accessible.name: "Hide caption styles panel"
+            Accessible.name: qsTr("Hide caption styles panel")
         }
         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.divider }
     }
@@ -69,6 +69,10 @@ Rectangle {
         verticalAlignment: Text.AlignVCenter
         font.family: theme.font; font.pixelSize: 14
         color: theme.text
+    }
+    function colorName(n) {
+        return ({ White: qsTr("White"), Black: qsTr("Black"), Red: qsTr("Red"), Green: qsTr("Green"), Blue: qsTr("Blue"),
+                  Yellow: qsTr("Yellow"), Aqua: qsTr("Aqua") })[n] || n
     }
     component Swatches: Row {
         id: sw
@@ -89,45 +93,45 @@ Rectangle {
                 TapHandler { onTapped: sw.picked(modelData) }
                 ToolTip.visible: swh.hovered
                 ToolTip.delay: 250
-                ToolTip.text: modelData
+                ToolTip.text: root.colorName(modelData)
                 Accessible.role: Accessible.RadioButton
-                Accessible.name: sw.labelFormat.replace("%1", modelData)
+                Accessible.name: sw.labelFormat.arg(root.colorName(modelData))
                 Accessible.checked: modelData === sw.selected
             }
         }
     }
 
-    Label { y: 77; text: "Font color" }
+    Label { y: 77; text: qsTr("Font color") }
     Swatches {
         y: 106
         names: ["White", "Black", "Red", "Green", "Blue", "Yellow", "Aqua"]
         selected: root.fontColor
-        labelFormat: "Captions font color: %1"
+        labelFormat: qsTr("Captions font color: %1")
         onPicked: n => root.set("fontColor", n)
     }
-    Label { y: 168; text: "Background color" }
+    Label { y: 168; text: qsTr("Background color") }
     Swatches {
         y: 197
         names: ["Black", "White", "Red", "Green", "Blue", "Yellow", "Aqua"]
         selected: root.backgroundColor
-        labelFormat: "Background color: %1"
+        labelFormat: qsTr("Background color: %1")
         onPicked: n => root.set("backgroundColor", n)
     }
-    Label { y: 259; text: "Font size" }
+    Label { y: 259; text: qsTr("Font size") }
     Dropdown {
         x: 21.33; y: 284.67; width: 318
-        readonly property var names: ({ Small: "Small", Medium: "Medium", Large: "Large", Larger: "Extra large" })
-        options: [["Small", "Small"], ["Medium", "Medium"], ["Large", "Large"], ["Larger", "Extra large"]]
-        label: names[root.fontSize] || "Medium"
-        accessibleName: "Font size"
+        readonly property var names: ({ Small: qsTr("Small"), Medium: qsTr("Medium"), Large: qsTr("Large"), Larger: qsTr("Extra large") })
+        options: [["Small", qsTr("Small")], ["Medium", qsTr("Medium")], ["Large", qsTr("Large")], ["Larger", qsTr("Extra large")]]
+        label: names[root.fontSize] || qsTr("Medium")
+        accessibleName: qsTr("Font size")
         onPicked: v => root.set("fontSize", v)
     }
-    Label { y: 341.33; text: "Panel height" }
+    Label { y: 341.33; text: qsTr("Panel height") }
     Dropdown {
         x: 21.33; y: 367; width: 318
-        options: [["Small", "Small"], ["Medium", "Medium"], ["Large", "Large"]]
-        label: root.captionHeight
-        accessibleName: "Caption window height"
+        options: [["Small", qsTr("Small")], ["Medium", qsTr("Medium")], ["Large", qsTr("Large")]]
+        label: ({ Small: qsTr("Small"), Medium: qsTr("Medium"), Large: qsTr("Large") })[root.captionHeight] || root.captionHeight
+        accessibleName: qsTr("Caption window height")
         onPicked: v => root.set("captionHeight", v)
     }
 }

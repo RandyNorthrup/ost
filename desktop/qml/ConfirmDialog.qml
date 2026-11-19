@@ -30,9 +30,9 @@ Popup {
     closePolicy: Popup.CloseOnEscape
     background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
     Overlay.modal: Rectangle { color: Qt.rgba(0, 0, 0, 0.4) }
-    property string title: "End the meeting?"
-    property string body: "You'll end the meeting for everyone."
-    property string confirmText: "End"
+    property string title: qsTr("End the meeting?")
+    property string body: qsTr("You'll end the meeting for everyone.")
+    property string confirmText: qsTr("End")
     /// A glyph before the title ("alert-warning-16-filled").
     property string titleIcon: ""
     property bool fixedButtons: false
@@ -53,7 +53,7 @@ Popup {
         HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.close() }
         Accessible.role: Accessible.Button
-        Accessible.name: "Close"
+        Accessible.name: qsTr("Close")
     }
 
     FluentIcon {
@@ -142,7 +142,7 @@ Popup {
             Accessible.name: db.label
         }
         DialogButton {
-            label: "Cancel"
+            label: qsTr("Cancel")
             height: Math.max(31.33, confirmButton.height)
             onClicked: { root.close(); root.cancelled() }
         }

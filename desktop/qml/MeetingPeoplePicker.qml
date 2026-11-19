@@ -24,7 +24,7 @@ Item {
     id: root
     width: 498.7
     height: box.height
-    property string placeholder: "Search for participants"
+    property string placeholder: qsTr("Search for participants")
     /// Who's picked: [{mri, upn, objectId, tenantId}].
     property var picked: []
     /// Whom the picker offers (same shape).
@@ -109,7 +109,7 @@ Item {
                     HoverHandler { id: tagH; enabled: !root.disabled; cursorShape: Qt.PointingHandCursor }
                     TapHandler { enabled: !root.disabled; onTapped: root.unpick(tag.index) }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Remove " + root.nameOf(modelData)
+                    Accessible.name: qsTr("Remove %1").arg(root.nameOf(modelData))
                 }
             }
             TextInput {

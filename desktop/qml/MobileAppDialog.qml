@@ -21,7 +21,7 @@ Popup {
 
     Text {
         anchors.horizontalCenter: parent.horizontalCenter; y: 29.67
-        text: "Get the Teams mobile app"
+        text: qsTr("Get the Teams mobile app")
         font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold; lineHeight: 22; lineHeightMode: Text.FixedHeight
         color: theme.text
         Accessible.role: Accessible.Heading
@@ -35,12 +35,12 @@ Popup {
         HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.close() }
         Accessible.role: Accessible.Button
-        Accessible.name: "Close"
+        Accessible.name: qsTr("Close")
         Accessible.onPressAction: root.close()
     }
     Text {
         x: 24.67; y: 77.67; width: 550.67
-        text: "Scan the code below with your mobile camera or with a QR reader app."
+        text: qsTr("Scan the code below with your mobile camera or with a QR reader app.")
         wrapMode: Text.Wrap
         font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
         color: theme.text
@@ -54,15 +54,15 @@ Popup {
             fillMode: Image.PreserveAspectFit
             smooth: false
             Accessible.role: Accessible.Graphic
-            Accessible.name: "QR code to download teams app."
+            Accessible.name: qsTr("QR code to download teams app.")
         }
     }
     Row {
         anchors.horizontalCenter: parent.horizontalCenter; y: 296.67
         spacing: 8
         Repeater {
-            model: [{ label: "Download on the Apple App Store", image: "app-store-badge.png", url: "https://aka.ms/iosteams" },
-                    { label: "Get it on the Google Play", image: "google-play-badge.png", url: "https://aka.ms/androidteams" }]
+            model: [{ label: qsTr("Download on the Apple App Store"), image: "app-store-badge.png", url: "https://aka.ms/iosteams" },
+                    { label: qsTr("Get it on the Google Play"), image: "google-play-badge.png", url: "https://aka.ms/androidteams" }]
             Rectangle {
                 required property var modelData
                 width: 100; height: 30; radius: 5

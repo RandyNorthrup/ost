@@ -34,7 +34,7 @@ Item {
     implicitHeight: cards.y + cards.implicitHeight + 20
 
     readonly property real chartHeight: Math.min(Math.floor((Window.window ? Window.window.height : 700) * 0.4), 300)
-    readonly property var periods: [["last-seven-days", "Last Seven Days"], ["last-thirty-days", "Last Thirty Days"], ["last-ninety-days", "Last Ninety Days"]]
+    readonly property var periods: [["last-seven-days", qsTr("Last Seven Days")], ["last-thirty-days", qsTr("Last Thirty Days")], ["last-ninety-days", qsTr("Last Ninety Days")]]
 
     function load() {
         if (!teamId || !channelId) return
@@ -74,7 +74,7 @@ Item {
         color: theme.pick("#FDF3F4", "#3F1011", "#000000")
         border.color: theme.pick("#EEACB2", "#6E0811", "#FFFFFF"); border.width: 0.67
         FluentIcon { x: 12; anchors.verticalCenter: parent.verticalCenter; name: "dismiss-circle-20-filled"; size: 20; color: theme.pick("#BC2F32", "#DC626D", "#FFFFFF") }
-        Text { x: 40; anchors.verticalCenter: parent.verticalCenter; text: "We are sorry - We've run into an issue"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+        Text { x: 40; anchors.verticalCenter: parent.verticalCenter; text: qsTr("We are sorry - We've run into an issue"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
         Rectangle {
             id: hcFill1
             x: parent.width - 36; anchors.verticalCenter: parent.verticalCenter
@@ -83,7 +83,7 @@ Item {
             FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(hcFill1, theme.textStrong) }
             HoverHandler { id: dismissHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: av.failed = false }
-            Accessible.role: Accessible.Button; Accessible.name: "Dismiss"
+            Accessible.role: Accessible.Button; Accessible.name: qsTr("Dismiss")
         }
     }
 
@@ -93,20 +93,20 @@ Item {
     // Measured: the period's dates take 192.5 (channel) / 197.1 (team).
     readonly property real dateW: teamScope ? 197.1 : 192.5
     readonly property real dropW: Math.max(120, (controlsW - 20 - dateW) / 2)
-    Text { x: 30; y: 30; text: "Select a channel"; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
+    Text { x: 30; y: 30; text: qsTr("Select a channel"); font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
     Dropdown {
         x: 30; y: 50; width: av.dropW; height: 31.3
-        options: [["", "All Channels"]].concat(av.channels.map(c => [c.id, c.general ? "General" : c.name]))
+        options: [["", qsTr("All Channels")]].concat(av.channels.map(c => [c.id, c.general ? qsTr("General") : c.name]))
         label: { const o = options.find(o => o[0] === (av.teamScope ? "" : av.channelId)); return o ? o[1] : "" }
-        accessibleName: "Channel Dropdown"
+        accessibleName: qsTr("Channel Dropdown")
         onPicked: code => code === "" ? (av.teamScope ? null : av.teamAnalytics()) : (av.teamScope || code !== av.channelId ? av.pickChannel(code) : null)
     }
-    Text { x: 30 + av.dropW + 10; y: 30; text: "Time period"; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
+    Text { x: 30 + av.dropW + 10; y: 30; text: qsTr("Time period"); font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
     Dropdown {
         x: 30 + av.dropW + 10; y: 50; width: av.dropW; height: 31.3
         options: av.periods
         label: av.periods.find(p => p[0] === av.period)[1]
-        accessibleName: "Time period"
+        accessibleName: qsTr("Time period")
         onPicked: code => av.period = code
     }
     Text {
@@ -123,7 +123,7 @@ Item {
         x: 30 + av.controlsW - width; y: 91.3
         width: acrossText.implicitWidth + 24; height: 31.3; radius: 4
         color: acrossHover.hovered ? theme.brandHover : theme.brandFill
-        Text { id: acrossText; anchors.centerIn: parent; text: av.teamScope ? "Analytics across teams" : "Analytics across channels"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(acrossButton, "white") }
+        Text { id: acrossText; anchors.centerIn: parent; text: av.teamScope ? qsTr("Analytics across teams") : qsTr("Analytics across channels"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(acrossButton, "white") }
         HoverHandler { id: acrossHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: av.teamScope ? av.acrossTeams() : av.teamAnalytics() }
         Accessible.role: Accessible.Button; Accessible.name: acrossText.text
@@ -142,7 +142,7 @@ Item {
         Text {
             visible: card.empty && !(av.loading && !av.result)
             anchors.horizontalCenter: parent.horizontalCenter; y: 82
-            text: "No Data Available"
+            text: qsTr("No Data Available")
             font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
             color: theme.text
         }
@@ -186,10 +186,10 @@ Item {
             Card {
                 id: summary
                 width: (parent.width - 10) / 2
-                title: "Summary"
+                title: qsTr("Summary")
                 readonly property var items: (av.teamScope
-                    ? [[av.total("activeUsers"), "Active users"], [av.total("guests"), "Active guests"], [av.total("meetingsOrganized"), "Meetings"]]
-                    : [[av.total("activeUsers"), "Active users"], [av.total("meetingsOrganized"), "Meetings"]]).filter(i => i[0] !== undefined)
+                    ? [[av.total("activeUsers"), qsTr("Active users")], [av.total("guests"), qsTr("Active guests")], [av.total("meetingsOrganized"), qsTr("Meetings")]]
+                    : [[av.total("activeUsers"), qsTr("Active users")], [av.total("meetingsOrganized"), qsTr("Meetings")]]).filter(i => i[0] !== undefined)
                 empty: items.length === 0
                 bodyHeight: 56
                 height: Math.max(implicitHeightOf(summary), implicitHeightOf(engagement))
@@ -198,8 +198,8 @@ Item {
             Card {
                 id: engagement
                 width: (parent.width - 10) / 2
-                title: "Engagement"
-                readonly property var items: [[av.total("postMessages"), "Posts"], [av.total("replyMessages"), "Replies"], [av.total("reactions"), "Reactions"], [av.total("mentions"), "Mentions"]].filter(i => i[0] !== undefined)
+                title: qsTr("Engagement")
+                readonly property var items: [[av.total("postMessages"), qsTr("Posts")], [av.total("replyMessages"), qsTr("Replies")], [av.total("reactions"), qsTr("Reactions")], [av.total("mentions"), qsTr("Mentions")]].filter(i => i[0] !== undefined)
                 empty: items.length === 0
                 bodyHeight: 56
                 height: Math.max(implicitHeightOf(summary), implicitHeightOf(engagement))
@@ -209,29 +209,29 @@ Item {
         Card {
             id: activeCard
             width: parent.width
-            title: "Active users"
+            title: qsTr("Active users")
             readonly property var pts: av.points("activeUsers")
             empty: pts.length === 0
             bodyHeight: av.chartHeight
-            AnalyticsChart { y: 0.7; width: parent.width; height: av.chartHeight; kind: "spline"; series: [{ name: "Active users", points: activeCard.pts }]; description: "Chart Showing Timeseries of active users" }
+            AnalyticsChart { y: 0.7; width: parent.width; height: av.chartHeight; kind: "spline"; series: [{ name: qsTr("Active users"), points: activeCard.pts }]; description: qsTr("Chart Showing Timeseries of active users") }
         }
         Card {
             id: meetingsCard
             width: parent.width
-            title: "Meetings"
+            title: qsTr("Meetings")
             readonly property var pts: av.points("meetingsOrganized")
             empty: pts.length === 0
             bodyHeight: av.chartHeight
-            AnalyticsChart { y: 0.7; width: parent.width; height: av.chartHeight; kind: "column"; series: [{ name: "Meetings", points: meetingsCard.pts }]; description: "Chart Showing Timeseries of meeting" }
+            AnalyticsChart { y: 0.7; width: parent.width; height: av.chartHeight; kind: "column"; series: [{ name: qsTr("Meetings"), points: meetingsCard.pts }]; description: qsTr("Chart Showing Timeseries of meeting") }
         }
         Card {
             id: engagementCard
             width: parent.width
-            title: "Engagement"
-            readonly property var all: [["Posts", av.points("postMessages")], ["Replies", av.points("replyMessages")], ["Mentions", av.points("mentions")], ["Reactions", av.points("reactions")]]
+            title: qsTr("Engagement")
+            readonly property var all: [[qsTr("Posts"), av.points("postMessages")], [qsTr("Replies"), av.points("replyMessages")], [qsTr("Mentions"), av.points("mentions")], [qsTr("Reactions"), av.points("reactions")]]
             empty: all.every(s => s[1].length === 0)
             bodyHeight: av.chartHeight
-            AnalyticsChart { y: 0.7; width: parent.width; height: av.chartHeight; kind: "stacked"; series: engagementCard.all.map(s => ({ name: s[0], points: s[1] })); description: "Chart Showing Timeseries of Engagement like reactions, posts etc." }
+            AnalyticsChart { y: 0.7; width: parent.width; height: av.chartHeight; kind: "stacked"; series: engagementCard.all.map(s => ({ name: s[0], points: s[1] })); description: qsTr("Chart Showing Timeseries of Engagement like reactions, posts etc.") }
         }
     }
     // A summary card's own height (the two side by side share the taller).

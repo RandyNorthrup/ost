@@ -117,7 +117,7 @@ Rectangle {
     }
     FileDialog {
         id: filePicker
-        title: "Upload from this device"
+        title: qsTr("Upload from this device")
         fileMode: FileDialog.OpenFiles
         onAccepted: root.addFiles(selectedFiles)
     }
@@ -161,7 +161,7 @@ Rectangle {
             Text {
                 id: nameLabel
                 x: 32; anchors.verticalCenter: parent.verticalCenter
-                text: "Group name:"
+                text: qsTr("Group name:")
                 font.family: theme.font; font.pixelSize: theme.base
                 color: theme.text
             }
@@ -173,7 +173,7 @@ Rectangle {
                 color: theme.text
                 background: Item {}
                 Keys.onEscapePressed: root.cancelled()
-                Accessible.name: "Group name"
+                Accessible.name: qsTr("Group name")
             }
             Rectangle {
                 anchors.bottom: parent.bottom; x: 20; width: parent.width - 40
@@ -188,7 +188,7 @@ Rectangle {
             Text {
                 id: toLabel
                 x: 32; y: (61 - height) / 2
-                text: "To:"
+                text: qsTr("To:")
                 font.family: theme.font; font.pixelSize: theme.base
                 color: theme.text
             }
@@ -226,7 +226,7 @@ Rectangle {
                             HoverHandler { id: xh; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: root.unpick(chip.modelData.id) }
                             Accessible.role: Accessible.Button
-                            Accessible.name: "Remove " + chip.modelData.name
+                            Accessible.name: qsTr("Remove %1").arg(chip.modelData.name)
                         }
                     }
                 }
@@ -235,7 +235,7 @@ Rectangle {
                     width: root.picked.length ? Math.max(120, chips.width - root.chipsWidth - 9) : chips.width
                     height: 32
                     leftPadding: 0
-                    placeholderText: root.picked.length ? "" : "Enter name, chat, channel, email or tag"
+                    placeholderText: root.picked.length ? "" : qsTr("Enter name, chat, channel, email or tag")
                     placeholderTextColor: theme.textSecondary
                     font.family: theme.font; font.pixelSize: theme.base
                     color: theme.text
@@ -257,8 +257,8 @@ Rectangle {
                     }
                     TapHandler { onTapped: { root.suggestOpen = true; field.forceActiveFocus() } }
                     Component.onCompleted: forceActiveFocus()
-                    Accessible.name: "To"
-                    Accessible.description: "Enter name, chat, channel, email or tag"
+                    Accessible.name: qsTr("To")
+                    Accessible.description: qsTr("Enter name, chat, channel, email or tag")
                 }
             }
             Rectangle {
@@ -271,7 +271,7 @@ Rectangle {
                 HoverHandler { id: cvh; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: { root.naming = !root.naming; if (root.naming) nameField.forceActiveFocus(); else { nameField.text = ""; field.forceActiveFocus() } } }
                 Accessible.role: Accessible.Button
-                Accessible.name: root.naming ? "Collapse group name" : "Add group name and create a new group chat"
+                Accessible.name: root.naming ? qsTr("Collapse group name") : qsTr("Add group name and create a new group chat")
             }
             Timer { id: debounce; interval: 300; onTriggered: root.search(field.text) }
             Rectangle {
@@ -313,7 +313,7 @@ Rectangle {
         }
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
-            text: "You're starting a new conversation"
+            text: qsTr("You're starting a new conversation")
             font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold
             lineHeight: 22; lineHeightMode: Text.FixedHeight
             color: theme.text
@@ -322,7 +322,7 @@ Rectangle {
         }
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
-            text: "Type your first message below."
+            text: qsTr("Type your first message below.")
             font.family: theme.font; font.pixelSize: theme.base
             lineHeight: 20; lineHeightMode: Text.FixedHeight
             color: theme.text
@@ -340,7 +340,7 @@ Rectangle {
         tierWidth: root.width
         previewsAllowed: false
         scheduleAllowed: false
-        placeholder: "Type a message"
+        placeholder: qsTr("Type a message")
         newConversation: true
         files: root.pendingFiles
         cloudFiles: cloudAttach.pending
@@ -425,7 +425,7 @@ Rectangle {
                         Text {
                             id: guestText
                             x: 24; anchors.verticalCenter: parent.verticalCenter
-                            text: "Guest"
+                            text: qsTr("Guest")
                             font.family: theme.font; font.pixelSize: theme.small; font.weight: Font.DemiBold
                             color: theme.onFill(guestTag, theme.textSecondary)
                         }
@@ -441,7 +441,7 @@ Rectangle {
                     HoverHandler { id: hover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.pick(person.modelData) }
                     Accessible.role: Accessible.ListItem
-                    Accessible.name: person.modelData.name + (person.guest ? " Guest" : "") + (person.second ? ", " + person.second : "")
+                    Accessible.name: person.modelData.name + (person.guest ? " " + qsTr("Guest") : "") + (person.second ? ", " + person.second : "")
                 }
             }
         }
@@ -450,7 +450,7 @@ Rectangle {
     Text {
         visible: field.activeFocus && field.text.length >= 2 && root.typedItems !== null && root.typedItems.length === 0 && !debounce.running
         x: 52.67 + 16; y: rows.height + 18
-        text: "No people found"
+        text: qsTr("No people found")
         font.family: theme.font; font.pixelSize: theme.base
         color: theme.textSecondary
     }

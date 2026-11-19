@@ -52,11 +52,11 @@ Item {
     Item {
         id: header
         width: parent.width; height: 60
-        Text { x: 16; y: 17.7; height: 24; verticalAlignment: Text.AlignVCenter; text: "Store"; font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text; Accessible.role: Accessible.Heading; Accessible.name: text }
+        Text { x: 16; y: 17.7; height: 24; verticalAlignment: Text.AlignVCenter; text: qsTr("Store"); font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text; Accessible.role: Accessible.Heading; Accessible.name: text }
         Row {
             x: 72.4; y: 0; height: 59.3
             Repeater {
-                model: [{ k: "home", l: "Home" }, { k: "featured", l: "Featured", menu: true }, { k: "categories", l: "Categories", menu: true }]
+                model: [{ k: "home", l: qsTr("Home", "extensibility:k3y5ei9ay") }, { k: "featured", l: qsTr("Featured"), menu: true }, { k: "categories", l: qsTr("Categories"), menu: true }]
                 Item {
                     id: tabItem
                     required property var modelData
@@ -146,7 +146,7 @@ Item {
                 x: 29; y: 32; width: 24; height: 24; radius: 12; depth: 4
                 color: theme.surface
                 FluentIcon { anchors.centerIn: parent; name: "checkmark-16"; size: 16; color: theme.onFill(hcFill1, theme.text) }
-                Accessible.role: Accessible.Graphic; Accessible.name: "Added"
+                Accessible.role: Accessible.Graphic; Accessible.name: qsTr("Added")
             }
         }
         Text { x: 84; y: 21; width: card.width - 84 - 16; height: 20; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight; text: card.app.name; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.text) }
@@ -180,10 +180,10 @@ Item {
         Text { visible: !!sec.col.description; y: 54; height: 20; verticalAlignment: Text.AlignVCenter; width: parent.width - 120; elide: Text.ElideRight; text: sec.col.description || ""; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
         Text {
             anchors.right: parent.right; anchors.rightMargin: 14; y: 26; height: 16; verticalAlignment: Text.AlignVCenter
-            text: "See all"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.brandForeground1
+            text: qsTr("See all"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.brandForeground1
             HoverHandler { cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.openPage(sec.col.id) }
-            Accessible.role: Accessible.Button; Accessible.name: "See all " + sec.col.title
+            Accessible.role: Accessible.Button; Accessible.name: qsTr("See all %1").arg(sec.col.title)
         }
         Flow {
             id: appsFlow
@@ -211,8 +211,8 @@ Item {
                     GradientStop { position: 0.5; color: theme.dark ? theme.hc("#262636", "#000000") : theme.hc("#F3F2FA", "#000000") }
                     GradientStop { position: 1.0; color: theme.dark ? theme.hc("#2B2B40", "#000000") : theme.hc("#E8EBFA", "#000000") }
                 }
-                Text { anchors.horizontalCenter: parent.horizontalCenter; y: 60; height: 56; verticalAlignment: Text.AlignVCenter; text: "Do more in Teams"; font.family: theme.font; font.pixelSize: 40; font.weight: Font.DemiBold; color: theme.text }
-                Text { anchors.horizontalCenter: parent.horizontalCenter; y: 116; height: 20; verticalAlignment: Text.AlignVCenter; text: "Discover agents and apps that can help you tackle any task."; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                Text { anchors.horizontalCenter: parent.horizontalCenter; y: 60; height: 56; verticalAlignment: Text.AlignVCenter; text: qsTr("Do more in Teams"); font.family: theme.font; font.pixelSize: 40; font.weight: Font.DemiBold; color: theme.text }
+                Text { anchors.horizontalCenter: parent.horizontalCenter; y: 116; height: 20; verticalAlignment: Text.AlignVCenter; text: qsTr("Discover agents and apps that can help you tackle any task."); font.family: theme.font; font.pixelSize: 14; color: theme.text }
                 Rectangle {
                     anchors.horizontalCenter: parent.horizontalCenter
                     y: 168; width: Math.min(530, root.width - 80); height: 48; radius: 24
@@ -223,19 +223,19 @@ Item {
                     TextField {
                         id: search
                         x: 44; width: parent.width - 60; anchors.verticalCenter: parent.verticalCenter
-                        placeholderText: "Search agents and apps"; placeholderTextColor: theme.textSecondary
+                        placeholderText: qsTr("Search agents and apps"); placeholderTextColor: theme.textSecondary
                         background: null
                         font.family: theme.font; font.pixelSize: 14; color: theme.text
                         onTextChanged: searchDelay.restart()
                         Keys.onEscapePressed: text = ""
-                        Accessible.name: "Search agents and apps"
+                        Accessible.name: qsTr("Search agents and apps")
                     }
                 }
             }
             Text {
                 visible: !!root.reply.error
                 x: 90; topPadding: 24
-                text: "We couldn't load the Store. " + (root.reply.error || "")
+                text: qsTr("We couldn't load the Store. %1").arg(root.reply.error || "")
                 font.family: theme.font; font.pixelSize: 14; color: theme.danger
             }
             Repeater {
@@ -266,11 +266,11 @@ Item {
                     FluentIcon { anchors.centerIn: parent; name: "arrow-left-20"; size: 20; color: theme.onFill(hcFill2, theme.textSecondary) }
                     HoverHandler { id: backHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.home() }
-                    Accessible.role: Accessible.Button; Accessible.name: "Back"
+                    Accessible.role: Accessible.Button; Accessible.name: qsTr("Back")
                 }
                 Text {
                     x: 40; y: 61; height: 36; verticalAlignment: Text.AlignVCenter
-                    text: root.page === "search" ? "Search results for \"" + root.query + "\"" + (root.found && root.found.results ? " (" + root.found.results.length + ")" : "") : (root.pageData && root.pageData.title ? root.pageData.title : "")
+                    text: root.page === "search" ? qsTr("Search results for \"%1\"").arg(root.query) + (root.found && root.found.results ? " (" + root.found.results.length + ")" : "") : (root.pageData && root.pageData.title ? root.pageData.title : "")
                     font.family: theme.font; font.pixelSize: 30; font.weight: Font.DemiBold; color: theme.text
                     Accessible.role: Accessible.Heading; Accessible.name: text
                 }
@@ -278,7 +278,7 @@ Item {
             }
             Text {
                 visible: root.page === "search" ? !root.found || !!root.found.loading : !root.pageData || !!root.pageData.loading
-                x: 40; topPadding: 24; text: "Loading…"; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
+                x: 40; topPadding: 24; text: qsTr("Loading…"); font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
             }
             Flow {
                 x: 40; width: parent.width - 40; spacing: 10

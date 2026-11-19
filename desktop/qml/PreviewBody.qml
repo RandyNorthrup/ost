@@ -103,7 +103,7 @@ Item {
             }
         }
         Accessible.role: Accessible.EditableText
-        Accessible.name: "Editor content"
+        Accessible.name: qsTr("Editor content")
     }
     // A picture, fitted.
     Image {
@@ -148,7 +148,7 @@ Item {
         FluentIcon { x: 16; anchors.verticalCenter: parent.verticalCenter; size: 16; name: root.appIconName }
         Text {
             x: 46; anchors.verticalCenter: parent.verticalCenter
-            text: "PAGE " + (Math.min(pdf.pageCount, pages.indexAt(10, pages.contentY + 10) + 1) || 1) + " OF " + pdf.pageCount
+            text: qsTr("Page %1 of %2").arg(Math.min(pdf.pageCount, pages.indexAt(10, pages.contentY + 10) + 1) || 1).arg(pdf.pageCount).toUpperCase()
             font.family: theme.font; font.pixelSize: 11; color: "#FFFFFF"
         }
         Text {
@@ -162,7 +162,7 @@ Item {
         visible: !root.loading && (!!root.error || (!!root.preview && root.preview.kind === "none"))
         anchors.centerIn: parent; spacing: 12
         FluentIcon { anchors.horizontalCenter: parent.horizontalCenter; size: 32; name: root.iconName }
-        Text { anchors.horizontalCenter: parent.horizontalCenter; text: root.error || "No preview available"; font.family: theme.font; font.pixelSize: 16; color: root.embedded ? theme.hc("#323130", "#FFFFFF") : root.ink }
+        Text { anchors.horizontalCenter: parent.horizontalCenter; text: root.error || qsTr("No preview available"); font.family: theme.font; font.pixelSize: 16; color: root.embedded ? theme.hc("#323130", "#FFFFFF") : root.ink }
     }
     BusyIndicator { anchors.centerIn: parent; running: root.loading; visible: root.loading }
 }

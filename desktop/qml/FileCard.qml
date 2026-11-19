@@ -109,9 +109,9 @@ Item {
                     TapHandler { onTapped: root.shareRequested() }
                     ToolTip.visible: shareHover.hovered
                     ToolTip.delay: 500
-                    ToolTip.text: "Share"
+                    ToolTip.text: qsTr("Share")
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Share"
+                    Accessible.name: qsTr("Share")
                 }
                 Rectangle {
                     id: moreButton
@@ -122,9 +122,9 @@ Item {
                     TapHandler { onTapped: root.menuRequested(moreButton) }
                     ToolTip.visible: moreHover.hovered
                     ToolTip.delay: 500
-                    ToolTip.text: "More actions"
+                    ToolTip.text: qsTr("More actions")
                     Accessible.role: Accessible.Button
-                    Accessible.name: "More actions"
+                    Accessible.name: qsTr("More actions")
                 }
             }
         }
@@ -145,7 +145,7 @@ Item {
             HoverHandler { cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.openRequested() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Thumbnail Preview"
+            Accessible.name: qsTr("Thumbnail Preview")
         }
     }
 }

@@ -91,9 +91,9 @@ Rectangle {
             FluentIcon { anchors.centerIn: parent; name: "chevron-left-20"; size: 20; color: theme.onFill(hcFill1, theme.textStrong) }
             HoverHandler { id: backHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: page.back() }
-            Accessible.role: Accessible.Button; Accessible.name: "Back"
+            Accessible.role: Accessible.Button; Accessible.name: qsTr("Back")
         }
-        Text { x: 43; y: 14.8; text: "Join a team"; font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; lineHeight: 25.7; lineHeightMode: Text.FixedHeight; color: theme.text; Accessible.role: Accessible.Heading; Accessible.name: text }
+        Text { x: 43; y: 14.8; text: qsTr("Join a team"); font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; lineHeight: 25.7; lineHeightMode: Text.FixedHeight; color: theme.text; Accessible.role: Accessible.Heading; Accessible.name: text }
         Rectangle {
             id: hcFill2
             x: 328; y: 12; width: 32; height: 31.3; radius: 4
@@ -101,8 +101,8 @@ Rectangle {
             FluentIcon { anchors.centerIn: parent; name: "add-20"; size: 20; color: theme.onFill(hcFill2, theme.textStrong) }
             HoverHandler { id: newHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: page.createTeam() }
-            ToolTip.visible: newHover.hovered; ToolTip.delay: 600; ToolTip.text: "Create a new team"
-            Accessible.role: Accessible.Button; Accessible.name: "Create a new team"
+            ToolTip.visible: newHover.hovered; ToolTip.delay: 600; ToolTip.text: qsTr("Create a new team")
+            Accessible.role: Accessible.Button; Accessible.name: qsTr("Create a new team")
         }
         Rectangle {
             id: hcFill3
@@ -115,8 +115,8 @@ Rectangle {
                 font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill3, theme.text); clip: true
                 selectByMouse: true
                 onAccepted: page.runSearch()
-                Text { visible: !search.text; text: "Type to search"; font: search.font; color: theme.onFill(hcFill3, theme.textSecondary) }
-                Accessible.role: Accessible.EditableText; Accessible.name: "Type to search"
+                Text { visible: !search.text; text: qsTr("Type to search"); font: search.font; color: theme.onFill(hcFill3, theme.textSecondary) }
+                Accessible.role: Accessible.EditableText; Accessible.name: qsTr("Type to search")
             }
             FluentIcon {
                 x: parent.width - 36; anchors.verticalCenter: parent.verticalCenter
@@ -128,7 +128,7 @@ Rectangle {
         Column {
             x: 4; y: 99.3; spacing: 0
             Repeater {
-                model: (page.searched || page.searching ? [["results", "Search results"]] : []).concat([["suggested", "Teams for you"]])
+                model: (page.searched || page.searching ? [["results", qsTr("Search results")]] : []).concat([["suggested", qsTr("Teams for you")]])
                 Rectangle {
                     id: nav
                     required property var modelData
@@ -169,7 +169,7 @@ Rectangle {
     // Join a team with a code.
     component CodeCard: GalleryCard {
         Image { x: 87; y: 24.7; width: 64; height: 64; source: "../assets/illustrations/join-code.svg"; sourceSize: Qt.size(128, 128) }
-        Text { width: parent.width; y: 120.7; horizontalAlignment: Text.AlignHCenter; text: "Join a team with a code"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.Bold; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.text }
+        Text { width: parent.width; y: 120.7; horizontalAlignment: Text.AlignHCenter; text: qsTr("Join a team with a code"); font.family: theme.font; font.pixelSize: 12; font.weight: Font.Bold; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.text }
         Rectangle {
             x: 25; y: 144.7; width: 188; height: 32; radius: 4
             color: theme.surface
@@ -181,11 +181,11 @@ Rectangle {
                 font.family: theme.font; font.pixelSize: 14; color: theme.text; clip: true
                 selectByMouse: true
                 onAccepted: if (text.trim()) page.joinByCode(text.trim())
-                Text { visible: !codeField.text; text: "Enter join code."; font: codeField.font; color: theme.textSecondary }
-                Accessible.role: Accessible.EditableText; Accessible.name: "Enter join code."
+                Text { visible: !codeField.text; text: qsTr("Enter join code."); font: codeField.font; color: theme.textSecondary }
+                Accessible.role: Accessible.EditableText; Accessible.name: qsTr("Enter join code.")
             }
         }
-        PrimaryButton { x: 11.7; y: 216; width: 214.7; text: "Add team"; enabled: codeField.text.trim().length > 0 && !page.codeBusy; onClicked: page.joinByCode(codeField.text.trim()) }
+        PrimaryButton { x: 11.7; y: 216; width: 214.7; text: qsTr("Add team"); enabled: codeField.text.trim().length > 0 && !page.codeBusy; onClicked: page.joinByCode(codeField.text.trim()) }
     }
     component CreateCard: GalleryCard {
         Image { x: 87; y: 24.7; width: 64; height: 64; source: "../assets/illustrations/join-create.svg"; sourceSize: Qt.size(128, 128) }
@@ -196,7 +196,7 @@ Rectangle {
                 Rectangle { width: 32; height: 32; radius: 16; color: theme.pick("#E6E6E6", "#3D3D3D", "#000000"); FluentIcon { anchors.centerIn: parent; name: "person-20"; size: 20; color: theme.textSecondary } }
             }
         }
-        PrimaryButton { x: 11.7; y: 216; width: 214.7; text: "Create a new team"; onClicked: page.createTeam() }
+        PrimaryButton { x: 11.7; y: 216; width: 214.7; text: qsTr("Create a new team"); onClicked: page.createTeam() }
     }
     component TeamCard: GalleryCard {
         id: tc
@@ -213,7 +213,7 @@ Rectangle {
         Row {
             anchors.horizontalCenter: parent.horizontalCenter; y: 124.7; spacing: 4
             FluentIcon { visible: !!tc.team.private; anchors.verticalCenter: parent.verticalCenter; name: "lock-closed-20"; size: 16; color: theme.text }
-            Text { text: tc.team.private ? "Private" : "Public"; font.family: theme.font; font.pixelSize: 12; color: theme.text }
+            Text { text: tc.team.private ? qsTr("Private") : qsTr("Public"); font.family: theme.font; font.pixelSize: 12; color: theme.text }
         }
         Row {
             anchors.horizontalCenter: parent.horizontalCenter; y: 148.7; spacing: 4
@@ -225,7 +225,7 @@ Rectangle {
         Text {
             visible: !tcHover.hovered || tc.state === "Joined" || tc.state === "Pending"
             x: 11; width: parent.width - 22; y: 184.7; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; maximumLineCount: 3; elide: Text.ElideRight
-            text: tc.state === "Pending" ? "Request sent" : tc.state === "Joined" ? "Joined team" : (tc.team.description || "")
+            text: tc.state === "Pending" ? qsTr("Request sent") : tc.state === "Joined" ? qsTr("Joined team") : (tc.team.description || "")
             font.family: theme.font; font.pixelSize: tc.state === "Pending" || tc.state === "Joined" ? 14 : 12
             font.weight: tc.state === "Pending" || tc.state === "Joined" ? Font.DemiBold : Font.Normal
             color: theme.text
@@ -233,12 +233,12 @@ Rectangle {
         PrimaryButton {
             visible: tcHover.hovered && tc.state !== "Joined" && tc.state !== "Pending"
             x: 11.7; y: 216; width: 214.7
-            text: tc.state === "Joining" ? "Joining..." : "Join team"
+            text: tc.state === "Joining" ? qsTr("Joining...") : qsTr("Join team")
             enabled: tc.state !== "Joining"
             onClicked: page.join(tc.team)
         }
         Accessible.role: Accessible.Grouping
-        Accessible.name: (team.name || "") + ", " + (team.private ? "Private" : "Public")
+        Accessible.name: (team.name || "") + ", " + (team.private ? qsTr("Private") : qsTr("Public"))
     }
 
     // ---- Right side ----
@@ -254,16 +254,16 @@ Rectangle {
         Column {
             visible: page.view === "suggested" && right.empty
             y: 40; width: parent.width
-            Text { anchors.horizontalCenter: parent.horizontalCenter; text: "You don't have any teams discoverable"; font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; lineHeight: 25.7; lineHeightMode: Text.FixedHeight; color: theme.text }
-            Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Try searching, join with a code, or create one."; font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; lineHeight: 25.7; lineHeightMode: Text.FixedHeight; color: theme.text }
+            Text { anchors.horizontalCenter: parent.horizontalCenter; text: qsTr("You don't have any teams discoverable"); font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; lineHeight: 25.7; lineHeightMode: Text.FixedHeight; color: theme.text }
+            Text { anchors.horizontalCenter: parent.horizontalCenter; text: qsTr("Try searching, join with a code, or create one."); font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; lineHeight: 25.7; lineHeightMode: Text.FixedHeight; color: theme.text }
             Row {
                 anchors.horizontalCenter: parent.horizontalCenter
-                Text { text: "Not sure why you should create a team?"; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
+                Text { text: qsTr("Not sure why you should create a team?"); font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
                 Text {
-                    text: " Watch this"; font.family: theme.font; font.pixelSize: 14; font.underline: true; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.brandForeground1
+                    text: qsTr(" Watch this"); font.family: theme.font; font.pixelSize: 14; font.underline: true; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.brandForeground1
                     HoverHandler { cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: Qt.openUrlExternally("https://aka.ms/microsoftteams") }
-                    Accessible.role: Accessible.Link; Accessible.name: "Watch this"
+                    Accessible.role: Accessible.Link; Accessible.name: qsTr(" Watch this").trim()
                 }
             }
         }
@@ -273,20 +273,20 @@ Rectangle {
             y: 104; width: parent.width; spacing: 0
             Image { anchors.horizontalCenter: parent.horizontalCenter; width: 186; height: 186; source: "../assets/illustrations/no-matches.svg"; sourceSize: Qt.size(372, 372) }
             Item { width: 1; height: 69 }
-            Text { anchors.horizontalCenter: parent.horizontalCenter; text: "We didn't find any matches"; font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; lineHeight: 25.7; lineHeightMode: Text.FixedHeight; color: theme.text }
+            Text { anchors.horizontalCenter: parent.horizontalCenter; text: qsTr("We didn't find any matches"); font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; lineHeight: 25.7; lineHeightMode: Text.FixedHeight; color: theme.text }
             Item { width: 1; height: 27 }
-            Text { anchors.horizontalCenter: parent.horizontalCenter; text: "This could be a good time to create a new team."; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
+            Text { anchors.horizontalCenter: parent.horizontalCenter; text: qsTr("This could be a good time to create a new team."); font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
             Item { width: 1; height: 30 }
-            PrimaryButton { anchors.horizontalCenter: parent.horizontalCenter; width: 169; text: "Create a new team"; icon: "people-team-add-20"; onClicked: page.createTeam() }
+            PrimaryButton { anchors.horizontalCenter: parent.horizontalCenter; width: 169; text: qsTr("Create a new team"); icon: "people-team-add-20"; onClicked: page.createTeam() }
             Item { width: 1; height: 16 }
             Row {
                 anchors.horizontalCenter: parent.horizontalCenter
-                Text { text: "Not sure why you should create a team?"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                Text { text: qsTr("Not sure why you should create a team?"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
                 Text {
-                    text: " Watch this"; font.family: theme.font; font.pixelSize: 14; font.underline: true; color: theme.brandForeground1
+                    text: qsTr(" Watch this"); font.family: theme.font; font.pixelSize: 14; font.underline: true; color: theme.brandForeground1
                     HoverHandler { cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: Qt.openUrlExternally("https://aka.ms/microsoftteams") }
-                    Accessible.role: Accessible.Link; Accessible.name: "Watch this"
+                    Accessible.role: Accessible.Link; Accessible.name: qsTr(" Watch this").trim()
                 }
             }
         }
@@ -322,11 +322,11 @@ Rectangle {
         Text {
             id: errText
             width: parent.width; wrapMode: Text.Wrap
-            text: "Couldn't join this team with that code. Double-check the code or try another one."
+            text: qsTr("Couldn't join this team with that code. Double-check the code or try another one.")
             font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
             color: theme.text
         }
-        PrimaryButton { anchors.right: parent.right; anchors.bottom: parent.bottom; width: 96; text: "OK"; onClicked: codeError.close() }
+        PrimaryButton { anchors.right: parent.right; anchors.bottom: parent.bottom; width: 96; text: qsTr("OK"); onClicked: codeError.close() }
     }
 
     // Test hooks.

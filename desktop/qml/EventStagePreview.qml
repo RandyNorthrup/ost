@@ -48,20 +48,20 @@ Item {
         x: 10; y: 10; width: 598; height: 374; radius: 8; clip: true
         color: "#F5F5F5"; border.color: "#E0E0E0"; border.width: 1
         Text { x: 1; y: 1; width: parent.width - 2; height: 18; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
-               text: "Van Arsdel Product Demo"; font.family: theme.font; font.pixelSize: 7; font.weight: Font.DemiBold; color: "#424242" }
+               text: qsTr("Van Arsdel Product Demo"); font.family: theme.font; font.pixelSize: 7; font.weight: Font.DemiBold; color: "#424242" }
         Rectangle {
             x: 1; y: 19; width: parent.width - 2; height: 41; color: "#FFFFFF"
             FluentIcon { x: 6; y: 14; name: "shield-20"; size: 12; color: "#616161" }
             Rectangle { x: 21; y: 14; width: 21; height: 12; radius: 6; color: "#D13438"
-                Text { anchors.centerIn: parent; text: "LIVE"; font.family: theme.font; font.pixelSize: 6; font.weight: Font.Bold; color: "white" } }
+                Text { anchors.centerIn: parent; text: qsTr("LIVE"); font.family: theme.font; font.pixelSize: 6; font.weight: Font.Bold; color: "white" } }
             Text { x: 45; y: 10; height: 20; verticalAlignment: Text.AlignVCenter; text: root.clock(root.elapsed); font.family: theme.font; font.pixelSize: 8; color: "#242424" }
             Row {
                 x: 189; y: 4; spacing: 0
                 Repeater {
-                    model: [["chat-20", "Chat", !root.chat, false, root.sidebar === "Chat", true],
-                            ["chat-bubbles-question-20", "Q&A", false, false, root.sidebar === "Q&A", root.qna],
-                            ["hand", "Raise", true, false, false, true],
-                            ["emoji-20", "React", !root.react, false, false, true]]
+                    model: [["chat-20", qsTr("Chat"), !root.chat, false, root.sidebar === "Chat", true],
+                            ["chat-bubbles-question-20", qsTr("Q&A"), false, false, root.sidebar === "Q&A", root.qna],
+                            ["hand", qsTr("Raise"), true, false, false, true],
+                            ["emoji-20", qsTr("React"), !root.react, false, false, true]]
                     Item {
                         required property var modelData
                         visible: modelData[5]; width: visible ? 38 : 0; height: 32
@@ -71,8 +71,8 @@ Item {
                 }
                 Item { width: 7; height: 32; Rectangle { x: 3; y: 9; width: 1; height: 14; color: "#E0E0E0" } }
                 Repeater {
-                    model: [[root.camera && !root.broadcast ? "video-20" : "video-off-20", "Camera", root.camera && !root.broadcast],
-                            [root.mic && !root.broadcast ? "mic-20" : "mic-off-20", "Mic", root.mic && !root.broadcast]]
+                    model: [[root.camera && !root.broadcast ? "video-20" : "video-off-20", qsTr("Camera"), root.camera && !root.broadcast],
+                            [root.mic && !root.broadcast ? "mic-20" : "mic-off-20", qsTr("Mic"), root.mic && !root.broadcast]]
                     Item {
                         required property var modelData
                         width: 40; height: 32
@@ -86,7 +86,7 @@ Item {
             Item {
                 x: parent.width - 32; y: 4; width: 30; height: 32
                 FluentIcon { anchors.horizontalCenter: parent.horizontalCenter; name: "call-end-filled"; size: 14; color: "#BC2F32" }
-                Text { anchors.horizontalCenter: parent.horizontalCenter; y: 15; text: "Leave"; font.family: theme.font; font.pixelSize: 10; color: "#242424" }
+                Text { anchors.horizontalCenter: parent.horizontalCenter; y: 15; text: qsTr("Leave"); font.family: theme.font; font.pixelSize: 10; color: "#242424" }
             }
         }
         // The stage.
@@ -123,14 +123,14 @@ Item {
         Rectangle {
             visible: root.sidebar !== ""
             x: 468; y: 69; width: 140; height: 314; color: "#FFFFFF"
-            Text { x: 6; width: parent.width - 6; height: 17; verticalAlignment: Text.AlignVCenter; text: root.sidebar; font.family: theme.font; font.pixelSize: 6; font.weight: Font.DemiBold; color: "#242424" }
+            Text { x: 6; width: parent.width - 6; height: 17; verticalAlignment: Text.AlignVCenter; text: root.sidebar === "Chat" ? qsTr("Chat") : root.sidebar === "Q&A" ? qsTr("Q&A") : root.sidebar; font.family: theme.font; font.pixelSize: 6; font.weight: Font.DemiBold; color: "#242424" }
             Rectangle { x: 7; y: parent.height - 30; width: 126; height: 26; radius: 2; color: "transparent"; border.color: "#E0E0E0"; border.width: 1
-                Text { x: 5; anchors.verticalCenter: parent.verticalCenter; text: root.sidebar === "Q&A" ? "Ask a question" : "Type a message"; font.family: theme.font; font.pixelSize: 5; color: "#616161" } }
+                Text { x: 5; anchors.verticalCenter: parent.verticalCenter; text: root.sidebar === "Q&A" ? qsTr("Ask a question") : qsTr("Type a message"); font.family: theme.font; font.pixelSize: 5; color: "#616161" } }
         }
     }
     Text {
         x: 10; y: 392; width: 598; height: 16; horizontalAlignment: Text.AlignHCenter
-        text: "Approximate preview. Actual event experience may vary based on your set up."
+        text: qsTr("Approximate preview. Actual event experience may vary based on your set up.")
         font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary
     }
 }

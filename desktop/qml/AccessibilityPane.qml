@@ -31,7 +31,7 @@ Rectangle {
         Text {
             x: 20.67; y: 17.67; height: 22
             verticalAlignment: Text.AlignVCenter
-            text: "Accessibility"
+            text: qsTr("Accessibility")
             font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold
             color: theme.text
             Accessible.role: Accessible.Heading
@@ -45,7 +45,7 @@ Rectangle {
             HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.closed() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Close"
+            Accessible.name: qsTr("Close")
         }
         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.divider }
     }
@@ -61,7 +61,7 @@ Rectangle {
             anchors.right: track.left; anchors.rightMargin: 10.67
             y: 8; height: 20
             verticalAlignment: Text.AlignVCenter
-            text: tg.checked ? "On" : "Off"
+            text: tg.checked ? qsTr("On", "settings:kbps2mjy6") : qsTr("Off", "settings:k5gb53hl4")
             font.family: theme.font; font.pixelSize: 14
             color: theme.text
         }
@@ -123,14 +123,14 @@ Rectangle {
             // Captions (a group: its title beside the glyph, settings below).
             Card {
                 FluentIcon { x: 6; y: 6; size: 20; name: "closed-caption-card-20"; color: theme.text }
-                Text { x: 44; y: 6; height: 20; verticalAlignment: Text.AlignVCenter; text: "Captions"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
-                Setting { id: alwaysText; x: 44; y: 48; text: "Always show captions in my calls and meetings" }
+                Text { x: 44; y: 6; height: 20; verticalAlignment: Text.AlignVCenter; text: qsTr("Captions"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                Setting { id: alwaysText; x: 44; y: 48; text: qsTr("Always show captions in my calls and meetings") }
                 Toggle {
                     x: 182.67; y: 48; accessibleName: alwaysText.text
                     checked: root.accessibility.startCaptionsAutomatically === true
                     onToggled: on => root.updateAccessibility(JSON.stringify({ startCaptionsAutomatically: on }))
                 }
-                Setting { id: profaneText; x: 44; y: alwaysText.y + alwaysText.height + 15; text: "Filter out profane words in live captions" }
+                Setting { id: profaneText; x: 44; y: alwaysText.y + alwaysText.height + 15; text: qsTr("Filter out profane words in live captions") }
                 Toggle {
                     x: 182.67; y: profaneText.y; accessibleName: profaneText.text
                     checked: root.accessibility.profanityFilterEnabled === true
@@ -140,8 +140,8 @@ Rectangle {
             // Muted notification: Teams' 'You're muted' notice on or off.
             Card {
                 FluentIcon { x: 6; y: 6; size: 20; name: "mic-off-card-20"; color: theme.text }
-                Setting { id: mutedTitle; x: 44; y: 0; text: "Muted notification" }
-                Description { x: 44; y: 20; text: "Show the 'You're muted' notification when audio is detected while your microphone is off." }
+                Setting { id: mutedTitle; x: 44; y: 0; text: qsTr("Muted notification") }
+                Description { x: 44; y: 20; text: qsTr("Show the 'You're muted' notification when audio is detected while your microphone is off.") }
                 Toggle {
                     x: 182.67; y: 0; accessibleName: mutedTitle.text
                     checked: root.showMutedNotice
@@ -151,8 +151,8 @@ Rectangle {
             // Monitoring participants.
             Card {
                 FluentIcon { x: 6; y: 6; size: 20; name: "call-monitor-20"; color: theme.text }
-                Text { x: 44; y: 6; height: 20; verticalAlignment: Text.AlignVCenter; text: "Monitoring participants"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
-                Setting { id: monitorText; x: 44; y: 48; text: "Hide Call Monitor when minimizing meeting window" }
+                Text { x: 44; y: 6; height: 20; verticalAlignment: Text.AlignVCenter; text: qsTr("Monitoring participants"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                Setting { id: monitorText; x: 44; y: 48; text: qsTr("Hide Call Monitor when minimizing meeting window") }
                 Toggle {
                     x: 182.67; y: 48; accessibleName: monitorText.text
                     checked: root.accessibility.hideCallMonitorOnMinimize === true
@@ -160,7 +160,7 @@ Rectangle {
                 }
                 Description {
                     x: 44; y: monitorText.y + monitorText.height
-                    text: "The Call Monitor is the floating window that appears when the meeting window is minimized. When this toggle is enabled we won't display the floating window when you minimize the meeting window. This setting doesn't affect the experience when sharing a screen or window."
+                    text: qsTr("The Call Monitor is the floating window that appears when the meeting window is minimized. When this toggle is enabled we won't display the floating window when you minimize the meeting window. This setting doesn't affect the experience when sharing a screen or window.")
                 }
             }
         }

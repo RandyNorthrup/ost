@@ -36,7 +36,7 @@ Popup {
     property int picking: -1
     readonly property bool changed: tone !== startTone || JSON.stringify(slots) !== JSON.stringify(startSlots)
     readonly property bool saving: backend.reactionPrefsResult === "saving"
-    readonly property var toneNames: ["None", "Light", "Medium light", "Medium", "Medium dark", "Dark"]
+    readonly property var toneNames: [qsTr("None"), qsTr("Light"), qsTr("Medium light"), qsTr("Medium"), qsTr("Medium dark"), qsTr("Dark")]
     // Teams' tone circles: radial gradients lit from the lower left.
     readonly property var toneStops: [["#FCD53F", "#FFB02E"], ["#F4BFAA", "#B77C6C"], ["#E8B192", "#A0685B"], ["#B28876", "#794E54"], ["#875D59", "#4E2C32"], ["#26131B", "#503B3B"]]
 
@@ -68,13 +68,13 @@ Popup {
 
     Text {
         x: 24.7; y: 24.7; width: 550.7; height: 28; verticalAlignment: Text.AlignVCenter
-        text: "Customize your reactions & appearance in Teams"
+        text: qsTr("Customize your reactions & appearance in Teams")
         font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text
         Accessible.role: Accessible.Heading
     }
     Text {
         x: 24.7; y: 61.3; height: 18.7; verticalAlignment: Text.AlignVCenter
-        text: "Click on a reaction below, then choose an emoji to replace it with."
+        text: qsTr("Click on a reaction below, then choose an emoji to replace it with.")
         font.family: theme.font; font.pixelSize: theme.base; color: theme.text
     }
     Row {
@@ -101,8 +101,8 @@ Popup {
                     else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) { root.openPicker(slot, slot.index); event.accepted = true }
                 }
                 Accessible.role: Accessible.Button
-                Accessible.name: key ? backend.emoticonName(key) : "Choose an emoji"
-                Accessible.description: key ? "Use backspace or delete to remove reaction" : ""
+                Accessible.name: key ? backend.emoticonName(key) : qsTr("Choose an emoji")
+                Accessible.description: key ? qsTr("Use backspace or delete to remove reaction") : ""
             }
         }
     }
@@ -110,7 +110,7 @@ Popup {
         x: 24.7; y: 198.7; width: 470
         wrapMode: Text.Wrap
         lineHeight: 20; lineHeightMode: Text.FixedHeight
-        text: "Choose a skin tone. After selection, reactions and emoji will appear with this skin tone."
+        text: qsTr("Choose a skin tone. After selection, reactions and emoji will appear with this skin tone.")
         font.family: theme.font; font.pixelSize: theme.base; color: theme.text
     }
     Row {
@@ -167,22 +167,22 @@ Popup {
             id: hcFill1
             width: 96; height: 31.3; radius: 4
             color: cancelHover.hovered && !root.saving ? theme.menuHover : theme.surface; border.color: theme.stroke
-            Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, root.saving ? theme.disabled : theme.text) }
+            Text { anchors.centerIn: parent; text: qsTr("Cancel"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, root.saving ? theme.disabled : theme.text) }
             HoverHandler { id: cancelHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { enabled: !root.saving; onTapped: root.close() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Cancel"
+            Accessible.name: qsTr("Cancel")
         }
         Rectangle {
             id: hcFill2
             readonly property bool can: root.changed && !root.saving
             width: 96; height: 31.3; radius: 4
             color: !can ? theme.bgDisabled : saveHover.hovered ? theme.brandHover : theme.brandFill
-            Text { anchors.centerIn: parent; text: "Save"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, parent.can ? "white" : theme.disabledStrong) }
+            Text { anchors.centerIn: parent; text: qsTr("Save"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, parent.can ? "white" : theme.disabledStrong) }
             HoverHandler { id: saveHover; cursorShape: parent.can ? Qt.PointingHandCursor : Qt.ArrowCursor }
             TapHandler { enabled: parent.can; onTapped: backend.saveReactionPrefs(JSON.stringify(root.slots), root.tone) }
             Accessible.role: Accessible.Button
-            Accessible.name: "Save"
+            Accessible.name: qsTr("Save")
         }
     }
 

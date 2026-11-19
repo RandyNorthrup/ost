@@ -40,11 +40,11 @@ Item {
     function ago(t) {
         if (!t) return ""
         const d = new Date(t), s = (Date.now() - d) / 1000
-        if (s < 60) return "Just now"
-        if (s < 3600) return Math.floor(s / 60) + " minutes ago"
-        if (s < 86400) return Math.floor(s / 3600) + " hours ago"
-        if (s < 172800) return "Yesterday"
-        return Qt.formatDate(d, "MMMM d")
+        if (s < 60) return qsTr("Just now")
+        if (s < 3600) return qsTr("%n minutes ago", "", Math.floor(s / 60))
+        if (s < 86400) return qsTr("%n hours ago", "", Math.floor(s / 3600))
+        if (s < 172800) return qsTr("Yesterday")
+        return theme.fmtDate(d, "MMMM d")
     }
     function copy(text) { copier.text = text; copier.selectAll(); copier.copy() }
 
@@ -78,9 +78,9 @@ Item {
     Row {
         anchors { right: parent.right; rightMargin: 24 }
         y: 14; height: 36; spacing: 4
-        ToolButton2 { icon: "share-20"; label: "Share"; enabled: !!root.here && !!root.here.sp_item; onClicked: driveShare.openFor({ site: root.here.sp_site, list: root.here.sp_list, item: root.here.sp_item }, root.here.name, root.here.kind) }
-        ToolButton2 { icon: "link-20"; label: "Copy link"; enabled: !!root.here && !!root.here.web_url; onClicked: { root.copy(root.here.web_url); backend.statusText = "Link copied" } }
-        ToolButton2 { icon: "cloud-add-20"; label: "Add shortcut to OneDrive"; enabled: !!root.here; onClicked: root.change("shortcut", root.here.drive_id, root.here.id, root.here.name) }
+        ToolButton2 { icon: "share-20"; label: qsTr("Share"); enabled: !!root.here && !!root.here.sp_item; onClicked: driveShare.openFor({ site: root.here.sp_site, list: root.here.sp_list, item: root.here.sp_item }, root.here.name, root.here.kind) }
+        ToolButton2 { icon: "link-20"; label: qsTr("Copy link"); enabled: !!root.here && !!root.here.web_url; onClicked: { root.copy(root.here.web_url); backend.statusText = qsTr("Link copied") } }
+        ToolButton2 { icon: "cloud-add-20"; label: qsTr("Add shortcut to OneDrive"); enabled: !!root.here; onClicked: root.change("shortcut", root.here.drive_id, root.here.id, root.here.name) }
         Rectangle {
             id: hcFill1
             width: cuRow.implicitWidth + 24; height: 32; radius: theme.radius
@@ -89,16 +89,16 @@ Item {
             opacity: root.here ? 1 : 0.5
             Row { id: cuRow; anchors.centerIn: parent; spacing: 6
                 FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "add-20"; size: 18; color: theme.onFill(hcFill1, "white") }
-                Text { anchors.verticalCenter: parent.verticalCenter; text: "Create or upload"; color: theme.onFill(hcFill1, "white"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Create or upload"); color: theme.onFill(hcFill1, "white"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
             }
             HoverHandler { id: cuh; cursorShape: Qt.PointingHandCursor }
             TapHandler { enabled: !!root.here; onTapped: createMenu.open() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Create or upload"
+            Accessible.name: qsTr("Create or upload")
             MenuPopup {
                 id: createMenu
                 y: parent.height + 4; x: parent.width - width; width: 220
-                items: [{ label: "Folder", icon: "folder-add-20" }, { separator: true }, { label: "Files upload", icon: "arrow-upload-20" }]
+                items: [{ label: qsTr("Folder"), icon: "folder-add-20" }, { separator: true }, { label: qsTr("Files upload"), icon: "arrow-upload-20" }]
                 onPicked: i => i === 0 ? folderDialog.open() : uploadPicker.open()
             }
         }
@@ -114,9 +114,9 @@ Item {
             id: head
             x: 0; y: 6; height: 40
             Item { width: 64; height: 40; FluentIcon { anchors.centerIn: parent; name: "document-20"; size: 18; color: theme.textStrong } }
-            HeadCell { width: parent.parent.wName; label: "Name" }
-            HeadCell { width: 180; label: "Modified" }
-            HeadCell { width: 200; label: "Modified By" }
+            HeadCell { width: parent.parent.wName; label: qsTr("Name") }
+            HeadCell { width: 180; label: qsTr("Modified") }
+            HeadCell { width: 200; label: qsTr("Modified By") }
         }
         Rectangle { x: 16; y: head.y + head.height; width: parent.width - 32; height: 1; color: theme.dividerSoft }
         ListView {
@@ -147,7 +147,7 @@ Item {
                     HoverHandler { id: mh; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: actions.popup(frow.modelData, moreButton, 0, moreButton.height) }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "More options for " + frow.modelData.name
+                    Accessible.name: qsTr("More options for %1").arg(frow.modelData.name)
                 }
                 TapHandler {
                     acceptedButtons: Qt.RightButton
@@ -156,7 +156,7 @@ Item {
                 HoverHandler { id: fh; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onDoubleTapped: root.open(frow.modelData); onTapped: if (frow.modelData.is_folder) root.open(frow.modelData) }
                 Accessible.role: Accessible.Button
-                Accessible.name: (modelData.is_folder ? "Folder " : "File ") + modelData.name
+                Accessible.name: (modelData.is_folder ? qsTr("Folder %1") : qsTr("File %1")).arg(modelData.name)
             }
         }
         Column {
@@ -164,7 +164,7 @@ Item {
             visible: !root.busy && !root.error && root.items.length === 0 && !!root.here
             anchors.centerIn: parent
             spacing: 12
-            Text { anchors.horizontalCenter: parent.horizontalCenter; text: "This folder is empty"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+            Text { anchors.horizontalCenter: parent.horizontalCenter; text: qsTr("This folder is empty"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
             FluentIcon { anchors.horizontalCenter: parent.horizontalCenter; name: "folder-20"; size: 96; color: theme.brandTint }
         }
         Text {
@@ -178,7 +178,7 @@ Item {
 
     FileDialog {
         id: uploadPicker
-        title: "Upload files"
+        title: qsTr("Upload files")
         fileMode: FileDialog.OpenFiles
         onAccepted: root.change("upload", root.here.drive_id, root.here.id,
             selectedFiles.map(u => decodeURIComponent(u.toString().replace(/^file:\/\//, ""))).join("\n"))
@@ -191,7 +191,7 @@ Item {
         background: Rectangle { radius: 8; color: theme.menu; border.color: theme.dividerSoft }
         contentItem: Column {
             spacing: 14
-            Text { text: "Create a folder"; font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text }
+            Text { text: qsTr("Create a folder"); font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text }
             Rectangle {
                 width: 332; height: 32; radius: theme.radius
                 color: theme.input; border.color: folderName.activeFocus ? theme.brand : theme.stroke
@@ -199,9 +199,9 @@ Item {
                     id: folderName
                     x: 10; width: parent.width - 20; anchors.verticalCenter: parent.verticalCenter
                     font.family: theme.font; font.pixelSize: theme.base; color: theme.text; clip: true
-                    Text { visible: !folderName.text; text: "Folder name"; color: theme.textTertiary; font: folderName.font }
+                    Text { visible: !folderName.text; text: qsTr("Folder name"); color: theme.textTertiary; font: folderName.font }
                     Keys.onReturnPressed: folderDialog.done()
-                    Accessible.name: "Folder name"
+                    Accessible.name: qsTr("Folder name")
                 }
             }
             Row {
@@ -209,17 +209,17 @@ Item {
                 Rectangle {
                     id: hcFill2
                     width: 90; height: 32; radius: theme.radius; color: theme.brandFill
-                    Text { anchors.centerIn: parent; text: "Create"; color: theme.onFill(hcFill2, "white"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
+                    Text { anchors.centerIn: parent; text: qsTr("Create"); color: theme.onFill(hcFill2, "white"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
                     TapHandler { onTapped: folderDialog.done() }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Create"
+                    Accessible.name: qsTr("Create")
                 }
                 Rectangle {
                     width: 90; height: 32; radius: theme.radius; color: theme.input; border.color: theme.stroke
-                    Text { anchors.centerIn: parent; text: "Cancel"; color: theme.text; font.family: theme.font; font.pixelSize: theme.base }
+                    Text { anchors.centerIn: parent; text: qsTr("Cancel"); color: theme.text; font.family: theme.font; font.pixelSize: theme.base }
                     TapHandler { onTapped: folderDialog.close() }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Cancel"
+                    Accessible.name: qsTr("Cancel")
                 }
             }
         }

@@ -44,7 +44,7 @@ Popup {
         return out
     }
 
-    Text { x: 16.67; y: 16.67; height: 31.33; verticalAlignment: Text.AlignVCenter; text: "Pause notifications until"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+    Text { x: 16.67; y: 16.67; height: 31.33; verticalAlignment: Text.AlignVCenter; text: qsTr("Pause notifications until"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
     Rectangle {
         id: hcFill1
         x: 551.33; y: 16.67; width: 32; height: 31.33; radius: 4
@@ -53,9 +53,9 @@ Popup {
         HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.close() }
         Accessible.role: Accessible.Button
-        Accessible.name: "Close"
+        Accessible.name: qsTr("Close")
     }
-    Text { x: 16.67; y: 56; height: 24; verticalAlignment: Text.AlignVCenter; text: "Date"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+    Text { x: 16.67; y: 56; height: 24; verticalAlignment: Text.AlignVCenter; text: qsTr("Date"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
     DatePickerField {
         id: datePick
         x: 16.67; y: 82; width: 277.33
@@ -66,10 +66,10 @@ Popup {
             root.until = t.getTime() <= Date.now() ? root.nextSlot(new Date()) : t
         }
     }
-    Text { x: 306; y: 56; height: 24; verticalAlignment: Text.AlignVCenter; text: "Time"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+    Text { x: 306; y: 56; height: 24; verticalAlignment: Text.AlignVCenter; text: qsTr("Time"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
     OutlineDropdown {
         x: 306; y: 82.33; width: 277.33; height: 31.67
-        accessibleName: "Time"
+        accessibleName: qsTr("Time")
         options: root.slots
         current: root.until.getHours() * 2 + Math.floor(root.until.getMinutes() / 30)
         onPicked: i => root.until = root.slots[i].time
@@ -81,21 +81,21 @@ Popup {
             width: 96; height: 31.33; radius: 4
             color: cancelHover.hovered ? theme.menuHover : theme.surface
             border.color: theme.stroke; border.width: 0.67
-            Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.text) }
+            Text { anchors.centerIn: parent; text: qsTr("Cancel"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.text) }
             HoverHandler { id: cancelHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.close() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Cancel"
+            Accessible.name: qsTr("Cancel")
         }
         Rectangle {
             id: hcFill3
             width: 96; height: 31.33; radius: 4
             color: root.past ? theme.bgDisabled : saveHover.hovered ? theme.brandHover : theme.brandFill
-            Text { anchors.centerIn: parent; text: "Save"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, root.past ? theme.disabled : "white") }
+            Text { anchors.centerIn: parent; text: qsTr("Save"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, root.past ? theme.disabled : "white") }
             HoverHandler { id: saveHover; cursorShape: root.past ? Qt.ArrowCursor : Qt.PointingHandCursor }
             TapHandler { enabled: !root.past; onTapped: { root.close(); root.saved(root.until) } }
             Accessible.role: Accessible.Button
-            Accessible.name: "Save"
+            Accessible.name: qsTr("Save")
         }
     }
     function datePickerForTest() { return datePick }

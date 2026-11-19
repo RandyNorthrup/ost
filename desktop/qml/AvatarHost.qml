@@ -69,7 +69,7 @@ Item {
         active: host.running
         onActiveChanged: if (!active) { host.registered = false; host.effectRegistered = false; host.applied = false }
         sourceComponent: WebApp {
-            appName: host.app.name || "Avatars"
+            appName: host.app.name || qsTr("Avatars")
             appId: host.app.appId || ""
             teamsHost: true
             showHeader: false

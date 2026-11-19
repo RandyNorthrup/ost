@@ -38,67 +38,67 @@ Rectangle {
         return !v || v.enabled
     }
 
-    readonly property string micOff: "Turn on your microphone to get metrics"
-    readonly property string camOff: "Turn on your camera to get metrics"
-    readonly property string shareOff: "Start screensharing to get metrics"
-    readonly property string watchOff: "View metrics when participant starts screensharing"
-    readonly property string rttTip: "In group calls, it’s the response time between your system and the Teams Service. In one-on-one calls, it’s the response time between your system and the other participant’s. Lower is better."
-    readonly property string lossTip: "The result of a poor network connection. Lower is better."
-    readonly property string sentPacketsTip: "Data gets sent over the network in packets. This is the number of data packets during the call."
-    readonly property string recvPacketsTip: "The number of packets received."
-    readonly property string sendBitrateTip: "The amount of data your device sends. The higher the number, the better the quality."
-    readonly property string recvBitrateTip: "Bitrate depends on your network speed. Higher is better."
-    readonly property string sentFpsTip: "The number of video frames sent per second. Higher is better."
-    readonly property string sentResTip: "Video resolution sent. Higher is better."
-    readonly property string processingTip: "Indicates whether CPU or GPU is used for encoding."
+    readonly property string micOff: qsTr("Turn on your microphone to get metrics")
+    readonly property string camOff: qsTr("Turn on your camera to get metrics")
+    readonly property string shareOff: qsTr("Start screensharing to get metrics")
+    readonly property string watchOff: qsTr("View metrics when participant starts screensharing")
+    readonly property string rttTip: qsTr("In group calls, it’s the response time between your system and the Teams Service. In one-on-one calls, it’s the response time between your system and the other participant’s. Lower is better.")
+    readonly property string lossTip: qsTr("The result of a poor network connection. Lower is better.")
+    readonly property string sentPacketsTip: qsTr("Data gets sent over the network in packets. This is the number of data packets during the call.")
+    readonly property string recvPacketsTip: qsTr("The number of packets received.")
+    readonly property string sendBitrateTip: qsTr("The amount of data your device sends. The higher the number, the better the quality.")
+    readonly property string recvBitrateTip: qsTr("Bitrate depends on your network speed. Higher is better.")
+    readonly property string sentFpsTip: qsTr("The number of video frames sent per second. Higher is better.")
+    readonly property string sentResTip: qsTr("Video resolution sent. Higher is better.")
+    readonly property string processingTip: qsTr("Indicates whether CPU or GPU is used for encoding.")
 
     // [label, data-tid, help text, text when off]
     readonly property var categories: [
-        { name: "Network", title: "Network", off: "", root: [["Round trip time", "network-send-rtt-avg"], ["Received packet loss", "network-recv-loss-rate-avg"]],
-          detail: [["Teams send limit", "network-sent-bw-estimate", "The max limit Teams can send based on the current network conditions and how it’s used. This isn’t your ISP speed limit.", ""],
-                   ["Teams receive limit", "network-received-bw-estimate", "The max limit Teams can receive based on the current network conditions and how it’s used. This isn’t your ISP speed limit. For more details, see the admin article https://docs.microsoft.com/en-us/MicrosoftTeams/prepare-network#bandwidth-requirements.", ""],
-                   ["Round trip time", "network-send-rtt-avg", rttTip, ""],
-                   ["Received packet loss", "network-recv-loss-rate-avg", lossTip, ""]] },
-        { name: "Audio", title: "Audio", off: micOff, root: [["Sent bitrate", "audio-send-bps"], ["Received Jitter", "audio-nw-jitter-avg"]],
-          detail: [["Sent bitrate", "audio-send-bps", "The amount of audio data sent. Higher is better.", micOff],
-                   ["Sent packets", "audio-rtp-packets-sent", sentPacketsTip, micOff],
-                   ["Round trip time", "audio-send-rtt-avg", rttTip, micOff],
-                   ["Sent codec", "audio-send-codec", "Codec used for encoding audio sent.", micOff],
-                   ["Received Jitter", "audio-nw-jitter-avg", "Distortion in audio, caused by inconsistent audio packet arrival times. Lower is better.", ""],
-                   ["Received packet loss", "audio-recv-loss-rate-avg", lossTip, ""],
-                   ["Received packets", "audio-rtp-packets-received", recvPacketsTip, ""],
-                   ["Received codec", "audio-received-codec", "Codec used for encoding audio data received by your system.", ""]] },
-        { name: "Video", title: "Video", off: camOff,
-          root: [["Sent bitrate", "video-send-current-bitrate"], ["Received bitrate", "video-receive-current-bitrate"], ["Sent frame rate", "video-send-current-frame-rate"],
-                 ["Sent resolution", "video-send-resolution"], ["Sent codec", "video-sent-codec-name"], ["Video processing", "video-processing-type"]],
-          detail: [["Sent bitrate", "video-send-current-bitrate", sendBitrateTip, camOff],
-                   ["Received bitrate", "video-receive-current-bitrate", recvBitrateTip, ""],
-                   ["Sent frame rate", "video-send-current-frame-rate", sentFpsTip, camOff],
-                   ["Sent resolution", "video-send-resolution", sentResTip, camOff],
-                   ["Round trip time", "video-send-rtt-avg", rttTip, camOff],
-                   ["Sent packets", "video-rtp-packets-sent", sentPacketsTip, camOff],
-                   ["Sent codec", "video-sent-codec-name", "Codec used to encode your video data.", camOff],
-                   ["Video processing", "video-processing-type", "Resource used to encode video.", camOff]] },
-        { name: "ScreenSharing", title: "Screen Sharing", off: shareOff,
-          root: [["Sent bitrate", "screen-sharing-send-current-bitrate"], ["Sent frame rate", "screen-sharing-send-current-frame-rate"], ["Sent resolution", "screen-sharing-send-resolution"],
-                 ["Sent codec", "screen-sharing-sent-codec-name"], ["Screen share send processing", "screen-sharing-send-processing-type"],
-                 ["Received bitrate", "screen-sharing-receive-current-bitrate"], ["Received frame rate", "screen-sharing-receive-current-frame-rate"],
-                 ["Received resolution", "screen-sharing-received-resolution"], ["Received codec", "screen-sharing-received-codec"],
-                 ["Screen share received processing", "screen-sharing-received-processing-type"]],
-          detail: [["Sent bitrate", "screen-sharing-send-current-bitrate", sendBitrateTip, shareOff],
-                   ["Sent frame rate", "screen-sharing-send-current-frame-rate", sentFpsTip, shareOff],
-                   ["Sent resolution", "screen-sharing-send-resolution", sentResTip, shareOff],
-                   ["Round trip time", "screen-sharing-send-rtt-avg", rttTip, shareOff],
-                   ["Sent packets", "screen-sharing-rtp-packets-sent", sentPacketsTip, shareOff],
-                   ["Sent codec", "screen-sharing-sent-codec-name", "Used for encoding screen share data.", shareOff],
-                   ["Screen share send processing", "screen-sharing-send-processing-type", processingTip, shareOff],
-                   ["Received bitrate", "screen-sharing-receive-current-bitrate", recvBitrateTip, watchOff],
-                   ["Received frame rate", "screen-sharing-receive-current-frame-rate", "The number of video frames received per second. Higher is better.", watchOff],
-                   ["Received resolution", "screen-sharing-received-resolution", "Incoming screensharing resolution received. Higher is better.", watchOff],
-                   ["Received packet loss", "screen-sharing-recv-loss-rate-avg", lossTip, watchOff],
-                   ["Received packets", "screen-sharing-rtp-packets-received", recvPacketsTip, watchOff],
-                   ["Received codec", "screen-sharing-received-codec", "Used for processing and encoding incoming screen sharing.", watchOff],
-                   ["Screen share received processing", "screen-sharing-received-processing-type", processingTip, watchOff]] }
+        { name: "Network", title: qsTr("Network"), off: "", root: [[qsTr("Round trip time"), "network-send-rtt-avg"], [qsTr("Received packet loss"), "network-recv-loss-rate-avg"]],
+          detail: [[qsTr("Teams send limit"), "network-sent-bw-estimate", qsTr("The max limit Teams can send based on the current network conditions and how it’s used. This isn’t your ISP speed limit."), ""],
+                   [qsTr("Teams receive limit"), "network-received-bw-estimate", qsTr("The max limit Teams can receive based on the current network conditions and how it’s used. This isn’t your ISP speed limit. For more details, see the admin article https://docs.microsoft.com/en-us/MicrosoftTeams/prepare-network#bandwidth-requirements."), ""],
+                   [qsTr("Round trip time"), "network-send-rtt-avg", rttTip, ""],
+                   [qsTr("Received packet loss"), "network-recv-loss-rate-avg", lossTip, ""]] },
+        { name: "Audio", title: qsTr("Audio"), off: micOff, root: [[qsTr("Sent bitrate"), "audio-send-bps"], [qsTr("Received Jitter"), "audio-nw-jitter-avg"]],
+          detail: [[qsTr("Sent bitrate"), "audio-send-bps", qsTr("The amount of audio data sent. Higher is better."), micOff],
+                   [qsTr("Sent packets"), "audio-rtp-packets-sent", sentPacketsTip, micOff],
+                   [qsTr("Round trip time"), "audio-send-rtt-avg", rttTip, micOff],
+                   [qsTr("Sent codec"), "audio-send-codec", qsTr("Codec used for encoding audio sent."), micOff],
+                   [qsTr("Received Jitter"), "audio-nw-jitter-avg", qsTr("Distortion in audio, caused by inconsistent audio packet arrival times. Lower is better."), ""],
+                   [qsTr("Received packet loss"), "audio-recv-loss-rate-avg", lossTip, ""],
+                   [qsTr("Received packets"), "audio-rtp-packets-received", recvPacketsTip, ""],
+                   [qsTr("Received codec"), "audio-received-codec", qsTr("Codec used for encoding audio data received by your system."), ""]] },
+        { name: "Video", title: qsTr("Video"), off: camOff,
+          root: [[qsTr("Sent bitrate"), "video-send-current-bitrate"], [qsTr("Received bitrate"), "video-receive-current-bitrate"], [qsTr("Sent frame rate"), "video-send-current-frame-rate"],
+                 [qsTr("Sent resolution"), "video-send-resolution"], [qsTr("Sent codec"), "video-sent-codec-name"], [qsTr("Video processing"), "video-processing-type"]],
+          detail: [[qsTr("Sent bitrate"), "video-send-current-bitrate", sendBitrateTip, camOff],
+                   [qsTr("Received bitrate"), "video-receive-current-bitrate", recvBitrateTip, ""],
+                   [qsTr("Sent frame rate"), "video-send-current-frame-rate", sentFpsTip, camOff],
+                   [qsTr("Sent resolution"), "video-send-resolution", sentResTip, camOff],
+                   [qsTr("Round trip time"), "video-send-rtt-avg", rttTip, camOff],
+                   [qsTr("Sent packets"), "video-rtp-packets-sent", sentPacketsTip, camOff],
+                   [qsTr("Sent codec"), "video-sent-codec-name", qsTr("Codec used to encode your video data."), camOff],
+                   [qsTr("Video processing"), "video-processing-type", qsTr("Resource used to encode video."), camOff]] },
+        { name: "ScreenSharing", title: qsTr("Screen Sharing"), off: shareOff,
+          root: [[qsTr("Sent bitrate"), "screen-sharing-send-current-bitrate"], [qsTr("Sent frame rate"), "screen-sharing-send-current-frame-rate"], [qsTr("Sent resolution"), "screen-sharing-send-resolution"],
+                 [qsTr("Sent codec"), "screen-sharing-sent-codec-name"], [qsTr("Screen share send processing"), "screen-sharing-send-processing-type"],
+                 [qsTr("Received bitrate"), "screen-sharing-receive-current-bitrate"], [qsTr("Received frame rate"), "screen-sharing-receive-current-frame-rate"],
+                 [qsTr("Received resolution"), "screen-sharing-received-resolution"], [qsTr("Received codec"), "screen-sharing-received-codec"],
+                 [qsTr("Screen share received processing"), "screen-sharing-received-processing-type"]],
+          detail: [[qsTr("Sent bitrate"), "screen-sharing-send-current-bitrate", sendBitrateTip, shareOff],
+                   [qsTr("Sent frame rate"), "screen-sharing-send-current-frame-rate", sentFpsTip, shareOff],
+                   [qsTr("Sent resolution"), "screen-sharing-send-resolution", sentResTip, shareOff],
+                   [qsTr("Round trip time"), "screen-sharing-send-rtt-avg", rttTip, shareOff],
+                   [qsTr("Sent packets"), "screen-sharing-rtp-packets-sent", sentPacketsTip, shareOff],
+                   [qsTr("Sent codec"), "screen-sharing-sent-codec-name", qsTr("Used for encoding screen share data."), shareOff],
+                   [qsTr("Screen share send processing"), "screen-sharing-send-processing-type", processingTip, shareOff],
+                   [qsTr("Received bitrate"), "screen-sharing-receive-current-bitrate", recvBitrateTip, watchOff],
+                   [qsTr("Received frame rate"), "screen-sharing-receive-current-frame-rate", qsTr("The number of video frames received per second. Higher is better."), watchOff],
+                   [qsTr("Received resolution"), "screen-sharing-received-resolution", qsTr("Incoming screensharing resolution received. Higher is better."), watchOff],
+                   [qsTr("Received packet loss"), "screen-sharing-recv-loss-rate-avg", lossTip, watchOff],
+                   [qsTr("Received packets"), "screen-sharing-rtp-packets-received", recvPacketsTip, watchOff],
+                   [qsTr("Received codec"), "screen-sharing-received-codec", qsTr("Used for processing and encoding incoming screen sharing."), watchOff],
+                   [qsTr("Screen share received processing"), "screen-sharing-received-processing-type", processingTip, watchOff]] }
     ]
     readonly property var current: categories.find(c => c.name === page) || null
     // A card is off when its first metric (what you send) is.
@@ -129,13 +129,13 @@ Rectangle {
         IconButton {
             visible: root.page !== ""
             x: 15.67; y: 13.67; height: 30
-            icon: "arrow-left-20"; tip: "Go back to call health root panel"
+            icon: "arrow-left-20"; tip: qsTr("Go back to call health root panel")
             onClicked: root.page = ""
         }
         Text {
             x: root.page !== "" ? 47.67 : 20.67; y: 17.67; height: 22
             verticalAlignment: Text.AlignVCenter
-            text: root.current ? root.current.title : "Call health"
+            text: root.current ? root.current.title : qsTr("Call health")
             font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold
             color: theme.text
             Accessible.role: Accessible.Heading
@@ -143,7 +143,7 @@ Rectangle {
         }
         IconButton {
             x: parent.width - (root.page !== "" ? 47 : 52); y: 13.67; height: 30
-            icon: "dismiss-16"; glyph: 16; tip: "Close call health pane"
+            icon: "dismiss-16"; glyph: 16; tip: qsTr("Close call health pane")
             onClicked: root.closed()
         }
         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.divider }
@@ -170,7 +170,7 @@ Rectangle {
                 wrapMode: Text.Wrap
                 textFormat: Text.StyledText
                 linkColor: theme.brandLink
-                text: "Your call is receiving data. Most metrics refresh every 15 seconds. <a href=\"https://go.microsoft.com/fwlink/?linkid=2270219\">Learn more</a>"
+                text: qsTr("Your call is receiving data. Most metrics refresh every 15 seconds.") + " <a href=\"https://go.microsoft.com/fwlink/?linkid=2270219\">" + qsTr("Learn more") + "</a>"
                 font.family: theme.font; font.pixelSize: 12
                 lineHeight: 16; lineHeightMode: Text.FixedHeight
                 color: theme.text
@@ -180,7 +180,7 @@ Rectangle {
             Item { width: 1; height: 5 }
             Text {
                 x: 5; height: 16
-                text: "Last updated at: " + root.updatedAt
+                text: qsTr("Last updated at: %1").arg(root.updatedAt)
                 font.family: theme.font; font.pixelSize: 12
                 color: theme.text
             }
@@ -237,7 +237,7 @@ Rectangle {
                             color: vmh.hovered ? theme.menuHover : "transparent"
                             Text {
                                 anchors.verticalCenter: parent.verticalCenter
-                                text: "View more " + cat.modelData.title.toLowerCase() + " data"
+                                text: qsTr("View more %1 data").arg(cat.modelData.title.toLowerCase())
                                 font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
                                 color: theme.onFill(hcFill1, theme.textStrong)
                             }
@@ -245,7 +245,7 @@ Rectangle {
                             HoverHandler { id: vmh; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: { root.page = cat.modelData.name; flick.contentY = 0; root.refresh() } }
                             Accessible.role: Accessible.Button
-                            Accessible.name: "View more " + cat.modelData.title.toLowerCase() + " data"
+                            Accessible.name: qsTr("View more %1 data").arg(cat.modelData.title.toLowerCase())
                         }
                     }
                     Item { width: 1; height: 10 }

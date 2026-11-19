@@ -57,7 +57,7 @@ Popup {
             Row {
                 x: 8; y: 4
                 Repeater {
-                    model: [{ key: "ignore", icon: "prohibited-20", label: "Ignore all" }, { key: "dict", icon: "book-add-20", label: "Add to Dictionary" }, { key: "more", icon: "more-horizontal-20", label: "More options" }]
+                    model: [{ key: "ignore", icon: "prohibited-20", label: qsTr("Ignore all") }, { key: "dict", icon: "book-add-20", label: qsTr("Add to Dictionary") }, { key: "more", icon: "more-horizontal-20", label: qsTr("More options") }]
                     Rectangle {
                         id: footBtn
                         required property var modelData
@@ -95,7 +95,7 @@ Popup {
         background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
         contentItem: Column {
             Repeater {
-                model: [{ key: "settings", icon: "settings-20", label: "Editor settings..." }, { key: "languages", icon: "local-language-20", label: "Manage languages..." }]
+                model: [{ key: "settings", icon: "settings-20", label: qsTr("Editor settings...") }, { key: "languages", icon: "local-language-20", label: qsTr("Manage languages...") }]
                 Rectangle {
                     id: hcFill2
                     required property var modelData

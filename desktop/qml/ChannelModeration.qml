@@ -45,7 +45,7 @@ Item {
     readonly property bool loaded: settings !== null
     readonly property bool moderated: loaded && settings.post === 1
     readonly property bool privateLike: channelType === "Private" || channelType === "Shared"
-    readonly property string ownersLabel: privateLike ? "Channel owners" : "Team owners"
+    readonly property string ownersLabel: privateLike ? qsTr("Channel owners") : qsTr("Team owners")
     width: parent ? parent.width : 0
     height: !loaded ? 72 : moderated ? 358.7 : 169.4
 
@@ -78,7 +78,7 @@ Item {
                     root.moderators = r.data.moderators || []
                 } else {
                     root.load()
-                    backend.toast("Something went wrong on our end. Please try again.", "error")
+                    backend.toast(qsTr("Something went wrong on our end. Please try again."), "error")
                 }
             } else if (r.op === "moderators" && r.ok) {
                 root.moderators = r.data.moderators || []
@@ -102,7 +102,7 @@ Item {
         color: theme.text
     }
 
-    Caption { y: 0; text: "Channel moderation" }
+    Caption { y: 0; text: qsTr("Channel moderation") }
 
     // The dropdown (Fluent filled-darker).
     Rectangle {
@@ -111,7 +111,7 @@ Item {
         color: !root.canChange || !root.loaded ? theme.bgDisabled : theme.inputFilled
         Text {
             x: 12; anchors.verticalCenter: parent.verticalCenter
-            text: !root.loaded ? "" : root.moderated ? "On" : "Off"
+            text: !root.loaded ? "" : root.moderated ? qsTr("On") : qsTr("Off")
             font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
             color: theme.onFill(dropdown, root.canChange ? theme.text : theme.disabled)
         }
@@ -132,8 +132,8 @@ Item {
             onTapped: options.opened ? options.close() : options.open()
         }
         Accessible.role: Accessible.ComboBox
-        Accessible.name: "Channel moderation"
-        Accessible.description: !root.loaded ? "" : root.moderated ? "On" : "Off"
+        Accessible.name: qsTr("Channel moderation")
+        Accessible.description: !root.loaded ? "" : root.moderated ? qsTr("On") : qsTr("Off")
     }
     Popup {
         id: options
@@ -144,7 +144,7 @@ Item {
         Column {
             spacing: 2
             Repeater {
-                model: [["On", true], ["Off", false]]
+                model: [[qsTr("On"), true], [qsTr("Off"), false]]
                 Rectangle {
                     id: opt
                     required property var modelData
@@ -176,11 +176,11 @@ Item {
     Item {
         visible: root.loaded && !root.moderated
         width: parent.width; height: parent.height
-        Caption { y: 72.4; text: "Who can start a new post?" }
+        Caption { y: 72.4; text: qsTr("Who can start a new post?") }
         Column {
             x: 38; y: 98.4
-            Radio { label: "Everyone can start a new post"; chosen: root.loaded && root.settings.post === 0; onPicked: root.change({ post: 0 }) }
-            Radio { label: "Everyone except guests can start a new post"; chosen: root.loaded && root.settings.post === 2; onPicked: root.change({ post: 2 }) }
+            Radio { label: qsTr("Everyone can start a new post"); chosen: root.loaded && root.settings.post === 0; onPicked: root.change({ post: 0 }) }
+            Radio { label: qsTr("Everyone except guests can start a new post"); chosen: root.loaded && root.settings.post === 2; onPicked: root.change({ post: 2 }) }
         }
     }
 
@@ -188,7 +188,7 @@ Item {
     Item {
         visible: root.moderated
         width: parent.width; height: parent.height
-        Caption { y: 72.4; text: "Who are the moderators?" }
+        Caption { y: 72.4; text: qsTr("Who are the moderators?") }
         Text {
             id: who
             x: 38; y: 104.7
@@ -211,23 +211,23 @@ Item {
             visible: root.canChange
             x: 298; y: 98.4; width: 96; height: 31.3; radius: 4
             color: manageHover.hovered ? theme.brandHover : theme.brandFill
-            Text { anchors.centerIn: parent; text: "Manage"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.textOnBrand) }
+            Text { anchors.centerIn: parent; text: qsTr("Manage"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.textOnBrand) }
             HoverHandler { id: manageHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: moderatorsDialog.start() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Manage"
+            Accessible.name: qsTr("Manage")
         }
-        Caption { y: 144.7; text: "Who can start a new post?" }
+        Caption { y: 144.7; text: qsTr("Who can start a new post?") }
         Text {
             x: 38; y: 170.7
-            text: "Only moderators"
+            text: qsTr("Only moderators")
             font.family: theme.font; font.pixelSize: 14
             lineHeight: 20; lineHeightMode: Text.FixedHeight
             color: theme.text
         }
         Text {
             x: 38; y: 205.7
-            text: root.privateLike ? "Channel member permissions" : "Team member permissions"
+            text: root.privateLike ? qsTr("Channel member permissions") : qsTr("Team member permissions")
             font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
             lineHeight: 20; lineHeightMode: Text.FixedHeight
             color: theme.text
@@ -235,9 +235,9 @@ Item {
         Column {
             x: 38; y: 235.7
             spacing: 10
-            Check { label: "Allow members to reply to channel messages"; checked: root.moderated && root.settings.replies; onToggled: on => root.change({ replies: on }) }
-            Check { label: "Allow members to pin channel messages"; checked: root.moderated && root.settings.pins; onToggled: on => root.change({ pins: on }) }
-            Check { label: "Allow bots to submit channel messages"; checked: root.moderated && root.settings.bots; onToggled: on => root.change({ bots: on }) }
+            Check { label: qsTr("Allow members to reply to channel messages"); checked: root.moderated && root.settings.replies; onToggled: on => root.change({ replies: on }) }
+            Check { label: qsTr("Allow members to pin channel messages"); checked: root.moderated && root.settings.pins; onToggled: on => root.change({ pins: on }) }
+            Check { label: qsTr("Allow bots to submit channel messages"); checked: root.moderated && root.settings.bots; onToggled: on => root.change({ bots: on }) }
         }
     }
 
@@ -260,7 +260,7 @@ Item {
             y: 16
             spacing: 8
             Repeater {
-                model: [[root.ownersLabel, root.owners], ["Moderators", root.moderators]].filter(g => g[1].length > 0)
+                model: [[root.ownersLabel, root.owners], [qsTr("Moderators"), root.moderators]].filter(g => g[1].length > 0)
                 Column {
                     id: group
                     required property var modelData

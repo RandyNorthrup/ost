@@ -116,11 +116,11 @@ Rectangle {
                 visible: pane.channel
                 width: gtText.implicitWidth + 24; height: 32; radius: 4
                 color: gth.hovered ? theme.hover : "transparent"
-                Text { id: gtText; anchors.centerIn: parent; text: "Go to channel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.text) }
+                Text { id: gtText; anchors.centerIn: parent; text: qsTr("Go to channel"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.text) }
                 HoverHandler { id: gth; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: pane.goTo() }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Go to channel"
+                Accessible.name: qsTr("Go to channel")
             }
             component HeadButton: Rectangle {
                 id: hb
@@ -136,30 +136,30 @@ Rectangle {
                 Accessible.role: Accessible.Button
                 Accessible.name: hb.label
             }
-            HeadButton { visible: pane.channel; icon: "open-window-20"; label: "Open in new window"; onClicked: pane.popOut() }
+            HeadButton { visible: pane.channel; icon: "open-window-20"; label: qsTr("Open in new window"); onClicked: pane.popOut() }
             HeadButton {
                 id: moreButton
-                icon: "more-horizontal-20"; label: pane.channel ? "More options" : "More chat options"
+                icon: "more-horizontal-20"; label: pane.channel ? qsTr("More options") : qsTr("More chat options")
                 onClicked: moreMenu.open()
                 MenuPopup {
                     id: moreMenu
                     x: parent.width - width; y: parent.height + 4
                     items: pane.channel
-                        ? [{ label: "Go to channel", icon: "channel-20" }, { label: "Open in new window", icon: "open-window-20" }, { label: "Copy link", icon: "link-20" }]
-                        : [{ label: "Go to chat", icon: "chat-20" }, { label: "Open in new window", icon: "open-window-20", keys: "Ctrl+O" }, { label: "Mark as unread", icon: "mail-unread-20" }, { separator: true }, { label: "Copy link", icon: "link-20" }]
+                        ? [{ act: "goto", label: qsTr("Go to channel"), icon: "channel-20" }, { act: "popout", label: qsTr("Open in new window"), icon: "open-window-20" }, { act: "copy", label: qsTr("Copy link"), icon: "link-20" }]
+                        : [{ act: "goto", label: qsTr("Go to chat"), icon: "chat-20" }, { act: "popout", label: qsTr("Open in new window"), icon: "open-window-20", keys: "Ctrl+O" }, { act: "unread", label: qsTr("Mark as unread"), icon: "mail-unread-20" }, { separator: true }, { act: "copy", label: qsTr("Copy link"), icon: "link-20" }]
                     onPicked: i => {
                         close()
-                        const l = items[i].label
-                        if (l === "Go to chat" || l === "Go to channel") pane.goTo()
-                        else if (l === "Open in new window") pane.popOut()
-                        else if (l === "Mark as unread") backend.setChatUnread(pane.thread, true)
-                        else if (l === "Copy link") backend.copyText(pane.channel
+                        const l = items[i].act
+                        if (l === "goto") pane.goTo()
+                        else if (l === "popout") pane.popOut()
+                        else if (l === "unread") backend.setChatUnread(pane.thread, true)
+                        else if (l === "copy") backend.copyText(pane.channel
                             ? "https://teams.microsoft.com/l/message/" + encodeURIComponent(pane.thread) + "/" + pane.hit.id + "?parentMessageId=" + pane.rootId
                             : "https://teams.microsoft.com/l/message/" + encodeURIComponent(pane.thread) + "/" + pane.hit.id + "?context=%7B%22contextType%22%3A%22chat%22%7D")
                     }
                 }
             }
-            HeadButton { icon: "dismiss-20"; label: "Close"; onClicked: pane.closed() }
+            HeadButton { icon: "dismiss-20"; label: qsTr("Close"); onClicked: pane.closed() }
         }
     }
 }

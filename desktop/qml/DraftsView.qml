@@ -35,7 +35,7 @@ Rectangle {
 
         Text {
             x: 32; y: 19
-            text: "Drafts"
+            text: qsTr("Drafts")
             font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold
             color: theme.text
         }
@@ -43,26 +43,26 @@ Rectangle {
             x: 32; y: 69
             spacing: 4
             Repeater {
-                model: ["Channels", "Chats"]
+                model: [{ key: "channels", label: qsTr("Channels") }, { key: "chats", label: qsTr("Chats") }]
                 delegate: Rectangle {
                     id: dchip
-                    required property string modelData
-                    readonly property bool on: root.chip === modelData.toLowerCase()
+                    required property var modelData
+                    readonly property bool on: root.chip === modelData.key
                     height: 24; radius: 12
                     width: chipText.implicitWidth + 16
                     color: on ? theme.hc(theme.brandTint, theme.hcHighlight) : (dch.hovered ? theme.rowHover : "transparent")
                     border.color: on ? theme.brand : theme.stroke
                     HoverHandler { id: dch; cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: root.chip = dchip.on ? "" : dchip.modelData.toLowerCase() }
+                    TapHandler { onTapped: root.chip = dchip.on ? "" : dchip.modelData.key }
                     Text {
                         id: chipText
                         anchors.centerIn: parent
-                        text: modelData
+                        text: modelData.label
                         font.family: theme.font; font.pixelSize: theme.small
                         color: theme.onFill(dchip, dchip.on ? theme.brand : theme.textStrong)
                     }
                     Accessible.role: Accessible.CheckBox
-                    Accessible.name: modelData
+                    Accessible.name: modelData.label
                     Accessible.checked: on
                 }
             }
@@ -98,14 +98,14 @@ Rectangle {
                 }
                 Text {
                     x: 80; y: 13; width: parent.width - 80 - 56
-                    text: item.modelData.name || "Chat"
+                    text: item.modelData.name || qsTr("Chat")
                     elide: Text.ElideRight
                     font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold
                     color: theme.onFill(hcFill1, theme.text)
                 }
                 Text {
                     x: 80; y: 37; width: parent.width - 80 - 56
-                    text: "You: " + item.modelData.text.replace(/\s+/g, " ")
+                    text: qsTr("You: %1").arg(item.modelData.text.replace(/\s+/g, " "))
                     elide: Text.ElideRight
                     font.family: theme.font; font.pixelSize: theme.base; font.italic: true
                     color: theme.onFill(hcFill1, theme.text)
@@ -113,12 +113,12 @@ Rectangle {
                 HoverHandler { id: itemHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: { keys.clicked(item.modelData); root.openDraft(item.modelData.id, item.modelData.name) } }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Draft to " + item.modelData.name
+                Accessible.name: qsTr("Draft to %1").arg(item.modelData.name)
             }
             Text {
                 visible: root.drafts.length === 0
                 x: 32; y: 8
-                text: "No drafts"
+                text: qsTr("No drafts")
                 font.family: theme.font; font.pixelSize: theme.base
                 color: theme.textSecondary
             }
@@ -130,7 +130,7 @@ Rectangle {
         spacing: 16
         FluentIcon { anchors.horizontalCenter: parent.horizontalCenter; name: "drafts-20"; size: 64; color: theme.brand }
         Text {
-            text: "Select a draft to edit and send."
+            text: qsTr("Select a draft to edit and send.")
             font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold
             color: theme.text
         }

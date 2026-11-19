@@ -375,7 +375,7 @@ Popup {
     // ---- Header ----
     Text {
         x: 16; y: 17; height: 22; verticalAlignment: Text.AlignVCenter
-        text: rec.stage === "review" ? "Review your clips" : rec.stage === "recording" ? "Recording in progress" : rec.stage === "paused" ? "Recording paused" : rec.screenMode ? "Screen recording" : rec.audioMode ? "Record audio" : "Record a video clip"
+        text: rec.stage === "review" ? qsTr("Review your clips") : rec.stage === "recording" ? qsTr("Recording in progress") : rec.stage === "paused" ? qsTr("Recording paused") : rec.screenMode ? qsTr("Screen recording") : rec.audioMode ? qsTr("Record audio") : qsTr("Record a video clip")
         font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text
     }
     component HeadButton: Rectangle {
@@ -394,7 +394,7 @@ Popup {
     }
     HeadButton {
         visible: rec.stage === "review"
-        x: 696; icon: "arrow-download-20"; label: "Download recording"
+        x: 696; icon: "arrow-download-20"; label: qsTr("Download recording")
         onClicked: {
             if (rec.untouched) backend.saveRecording(rec.segments[0].path)
             else { rec.saveAfterRender = true; backend.renderClip(JSON.stringify(rec.editSpec())) }
@@ -402,7 +402,7 @@ Popup {
     }
     Rectangle { visible: rec.stage === "review"; x: 741.7; y: 18; width: 0.67; height: 20; color: theme.divider }
     HeadButton {
-        x: 756; icon: "dismiss-20"; label: "Close camera"
+        x: 756; icon: "dismiss-20"; label: qsTr("Close camera")
         onClicked: {
             if (rec.stage === "setup" && rec.segments.length === 0) { rec.reset(); rec.close() }
             else rec.confirmClose = true
@@ -450,7 +450,7 @@ Popup {
             Image { anchors.horizontalCenter: parent.horizontalCenter; width: 70; height: 73.3; source: "../assets/illustrations/screen-recording.svg"; fillMode: Image.PreserveAspectFit; sourceSize: Qt.size(140, 140) }
             Text {
                 width: 684.8; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
-                text: "You’ll pick a screen, window, or tab. Recording will start automatically. For optimal quality, ensure this tab is in view while recording."
+                text: qsTr("You’ll pick a screen, window, or tab. Recording will start automatically. For optimal quality, ensure this tab is in view while recording.")
                 font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.onFill(canvas, theme.hc("#242424", "#FFFFFF"))
             }
         }
@@ -496,13 +496,13 @@ Popup {
                 id: startRow
                 anchors.centerIn: parent; spacing: 8
                 FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "record-20"; size: 20; color: theme.onFill(hcFill1, "white") }
-                Text { anchors.verticalCenter: parent.verticalCenter; text: rec.screenMode ? "Start screen recording" : "Start recording"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, "white") }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: rec.screenMode ? qsTr("Start screen recording") : qsTr("Start recording"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, "white") }
             }
         }
         HoverHandler { id: startHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: rec.startRecording() }
         Accessible.role: Accessible.Button
-        Accessible.name: rec.screenMode ? "Start screen recording" : "Start recording"
+        Accessible.name: rec.screenMode ? qsTr("Start screen recording") : qsTr("Start recording")
     }
     // The recording pill.
     component PillButton: Rectangle {
@@ -529,14 +529,14 @@ Popup {
         PillButton {
             x: 309 - 294.3; y: 10
             primary: rec.stage === "recording"
-            icon: "stop-20-filled"; label: "Stop and review"
+            icon: "stop-20-filled"; label: qsTr("Stop and review")
             onClicked: rec.stopAndReview()
         }
         PillButton {
             x: 349 - 294.3; y: 10
             primary: rec.stage === "paused"
             icon: rec.stage === "paused" ? "record-20-filled" : "pause-20"
-            label: rec.stage === "paused" ? "Resume" : "Pause Video Recording"
+            label: rec.stage === "paused" ? qsTr("Resume") : qsTr("Pause Video Recording")
             onClicked: {
                 if (rec.stage === "paused") { rec.engineResume(); rec.stage = "recording"; frameTimer.start() }
                 else { rec.enginePause(); rec.stage = "paused"; frameTimer.stop() }
@@ -551,7 +551,7 @@ Popup {
         Rectangle { x: 442.3 - 294.3; y: 15; width: 0.67; height: 30; color: theme.pick("#8A8886", "#ADADAD", "#000000") }
         PillButton {
             x: 451 - 294.3; y: 10
-            icon: "arrow-counterclockwise-20"; label: "Record again"
+            icon: "arrow-counterclockwise-20"; label: qsTr("Record again")
             onClicked: rec.recordAgain()
         }
     }
@@ -601,40 +601,40 @@ Popup {
             id: camTool
             toolWidth: 59; leftHalf: true
             icon: rec.cameraOn ? "video-20" : "video-off-20"
-            label: "Camera"; spoken: rec.cameraOn ? "Camera is on" : "Camera is off"
+            label: qsTr("Camera"); spoken: rec.cameraOn ? qsTr("Camera is on") : qsTr("Camera is off")
             // (Teams marks it off only before recording.)
             off: !rec.cameraOn && !rec.live
             onClicked: rec.cameraOn = !rec.cameraOn
         }
         Chevron {
             id: camMenuBtn
-            label: "Change Camera settings"
+            label: qsTr("Change Camera settings")
             enabledTool: !rec.live
             onClicked: camMenu.popupAt(camMenuBtn)
         }
         Tool {
             toolWidth: 56; leftHalf: true
             icon: rec.micOn ? "mic-20" : "mic-off-20"
-            label: "Mic"; spoken: rec.micOn ? "Mic is on" : "Mic is off"
+            label: qsTr("Mic"); spoken: rec.micOn ? qsTr("Mic is on") : qsTr("Mic is off")
             enabledTool: !rec.live
             onClicked: rec.micOn = !rec.micOn
         }
         Chevron {
             id: micMenuBtn
-            label: "Change Mic settings"
+            label: qsTr("Change Mic settings")
             enabledTool: !rec.live
             onClicked: micMenu.popupAt(micMenuBtn)
         }
         Tool {
             icon: rec.screenMode ? "share-screen-stop-20-filled" : "share-screen-start-20"
-            label: "Screen"; spoken: "Share screen"
+            label: qsTr("Screen"); spoken: qsTr("Share screen")
             off: rec.screenMode
             enabledTool: !rec.live
             onClicked: rec.screenOn = !rec.screenMode
         }
         Item { width: 20; height: 51.3; Rectangle { anchors.centerIn: parent; width: 0.67; height: 32; color: theme.divider } }
         Tool {
-            icon: "slide-text-20"; label: "Script"
+            icon: "slide-text-20"; label: qsTr("Script")
             off: teleprompter.visible
             onClicked: teleprompter.visible = !teleprompter.visible
         }
@@ -643,7 +643,7 @@ Popup {
         id: camMenu
         function popupAt(btn) { const p = btn.mapToItem(rec.contentItem, 0, 0); x = p.x; y = p.y - height - 4; open() }
         readonly property var cams: devices.videoInputs
-        items: [{ label: "None", checked: !rec.cameraOn }].concat(cams.map(c => ({ label: c.description, checked: rec.cameraOn && (rec.cameraId ? c.id == rec.cameraId : c.isDefault) }))).concat([{ separator: true }, { label: "Mirror video", checked: rec.mirror }])
+        items: [{ label: qsTr("None"), checked: !rec.cameraOn }].concat(cams.map(c => ({ label: c.description, checked: rec.cameraOn && (rec.cameraId ? c.id == rec.cameraId : c.isDefault) }))).concat([{ separator: true }, { label: qsTr("Mirror video"), checked: rec.mirror }])
         onPicked: i => {
             if (i === 0) rec.cameraOn = false
             else if (i <= cams.length) { rec.cameraId = String(cams[i - 1].id); rec.cameraOn = true }
@@ -654,7 +654,7 @@ Popup {
         id: micMenu
         function popupAt(btn) { const p = btn.mapToItem(rec.contentItem, 0, 0); x = p.x; y = Math.max(8, p.y - height - 4); open() }
         readonly property var mics: devices.audioInputs
-        items: [{ label: "None", checked: !rec.micOn }].concat(mics.map(m => ({ label: m.description, checked: rec.micOn && (rec.micId ? m.id == rec.micId : m.isDefault) })))
+        items: [{ label: qsTr("None"), checked: !rec.micOn }].concat(mics.map(m => ({ label: m.description, checked: rec.micOn && (rec.micId ? m.id == rec.micId : m.isDefault) })))
         onPicked: i => {
             if (i === 0) rec.micOn = false
             else { rec.micId = String(mics[i - 1].id); rec.micOn = true }
@@ -677,8 +677,8 @@ Popup {
         Accessible.role: Accessible.Button
         Accessible.name: sq.label
     }
-    SquareButton { visible: rec.live; x: 16; y: 500.3; icon: "arrow-counterclockwise-20"; label: "Record again"; onClicked: rec.recordAgain() }
-    SquareButton { visible: rec.live; x: 752; y: 500.3; primary: true; icon: "chevron-right-20"; label: "Next. Continue to review step."; onClicked: rec.stopAndReview() }
+    SquareButton { visible: rec.live; x: 16; y: 500.3; icon: "arrow-counterclockwise-20"; label: qsTr("Record again"); onClicked: rec.recordAgain() }
+    SquareButton { visible: rec.live; x: 752; y: 500.3; primary: true; icon: "chevron-right-20"; label: qsTr("Next. Continue to review step."); onClicked: rec.stopAndReview() }
 
     // ---- Script: Teams' teleprompter (Stream's), over the picture and not
     // recorded. 701.3 x 345.3 at (49.3, 100), white at 80 %, a #D1D1D1
@@ -719,22 +719,22 @@ Popup {
                 DragHandler { target: teleprompter; xAxis.minimum: -40; xAxis.maximum: rec.width - 80; yAxis.minimum: 0; yAxis.maximum: rec.height - 80; cursorShape: Qt.ClosedHandCursor }
                 HoverHandler { cursorShape: Qt.OpenHandCursor }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Move the teleprompter using the keyboard arrow keys"
+                Accessible.name: qsTr("Move the teleprompter using the keyboard arrow keys")
             }
             Row {
                 anchors.right: parent.right; anchors.rightMargin: 0.7; y: 0.7
                 HeadButton {
                     y: 0; height: 32
                     icon: teleprompter.playing ? "pause-20" : "play-20"
-                    label: teleprompter.playing ? "Pause" : "Play"
+                    label: teleprompter.playing ? qsTr("Pause") : qsTr("Play")
                     opacity: rec.script.length ? 1 : 0.4
                     onClicked: if (rec.script.length) teleprompter.playing = !teleprompter.playing
                 }
-                HeadButton { y: 0; height: 32; icon: "font-decrease-20"; label: "Decrease font size"; opacity: promptSettings.fontSize > 24 ? 1 : 0.4; onClicked: promptSettings.fontSize = Math.max(24, promptSettings.fontSize - 2) }
-                HeadButton { y: 0; height: 32; icon: "font-increase-20"; label: "Increase font size"; opacity: promptSettings.fontSize < 64 ? 1 : 0.4; onClicked: promptSettings.fontSize = Math.min(64, promptSettings.fontSize + 2) }
-                HeadButton { id: speedBtn; y: 0; icon: "top-speed-20"; label: "Change scroll speed"; color: speedPop.visible ? Qt.rgba(1, 1, 1, 0.2) : "transparent"; onClicked: rec.toggleSpeed(!speedPop.visible) }
+                HeadButton { y: 0; height: 32; icon: "font-decrease-20"; label: qsTr("Decrease font size"); opacity: promptSettings.fontSize > 24 ? 1 : 0.4; onClicked: promptSettings.fontSize = Math.max(24, promptSettings.fontSize - 2) }
+                HeadButton { y: 0; height: 32; icon: "font-increase-20"; label: qsTr("Increase font size"); opacity: promptSettings.fontSize < 64 ? 1 : 0.4; onClicked: promptSettings.fontSize = Math.min(64, promptSettings.fontSize + 2) }
+                HeadButton { id: speedBtn; y: 0; icon: "top-speed-20"; label: qsTr("Change scroll speed"); color: speedPop.visible ? Qt.rgba(1, 1, 1, 0.2) : "transparent"; onClicked: rec.toggleSpeed(!speedPop.visible) }
                 Item { width: 0.67; height: 32; Rectangle { y: 6; width: 0.67; height: 20; color: theme.divider } }
-                HeadButton { y: 0; height: 32; icon: "dismiss-20"; label: "Close"; onClicked: teleprompter.visible = false }
+                HeadButton { y: 0; height: 32; icon: "dismiss-20"; label: qsTr("Close"); onClicked: teleprompter.visible = false }
             }
         }
         // Writing the script.
@@ -760,7 +760,7 @@ Popup {
                 }
                 Component.onCompleted: load(rec.script)
                 onTextChanged: if (!loading) rec.script = getText(0, length).replace(/\u2029/g, "\n")
-                placeholderText: "Type or paste your script here"
+                placeholderText: qsTr("Type or paste your script here")
                 placeholderTextColor: theme.hc("#707070", "#FFFFFF")
                 wrapMode: TextEdit.Wrap
                 padding: promptSettings.fontSize
@@ -842,7 +842,7 @@ Popup {
             }
             HoverHandler { cursorShape: Qt.SizeFDiagCursor }
             Accessible.role: Accessible.Grip
-            Accessible.name: "Resize the teleprompter container using the keyboard arrow keys while holding down ctrl"
+            Accessible.name: qsTr("Resize the teleprompter container using the keyboard arrow keys while holding down ctrl")
         }
         // The scroll speed.
         Rectangle {
@@ -858,7 +858,7 @@ Popup {
                 from: 50; to: 400
                 value: promptSettings.speed
                 onMoved: promptSettings.speed = Math.round(value)
-                Accessible.name: "Scroll speed"
+                Accessible.name: qsTr("Scroll speed")
             }
             FluentIcon { anchors.horizontalCenter: parent.horizontalCenter; y: parent.height - 24; name: "subtract-16"; size: 16; color: theme.onFill(speedPop, theme.text) }
         }
@@ -875,7 +875,7 @@ Popup {
             FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "info-16-regular"; size: 16; color: theme.textStrong }
             Text {
                 anchors.verticalCenter: parent.verticalCenter
-                text: "Only people in this chat can view your clip. By creating a clip, you’re consenting to be recorded. <a href=\"https://go.microsoft.com/fwlink/p/?linkid=857875\">Privacy statement</a>"
+                text: qsTr("Only people in this chat can view your clip. By creating a clip, you’re consenting to be recorded. ") + "<a href=\"https://go.microsoft.com/fwlink/p/?linkid=857875\">" + qsTr("Privacy statement") + "</a>"
                 textFormat: Text.StyledText; linkColor: theme.brandForeground1
                 font.family: theme.font; font.pixelSize: 12; color: theme.text
                 onLinkActivated: l => Qt.openUrlExternally(l)
@@ -930,7 +930,7 @@ Popup {
         SquareButton {
             x: 100.8; y: 442.9; height: 32
             icon: rec.playing ? "pause-20" : "play-20"
-            label: rec.playing ? "Pause" : "Play"
+            label: rec.playing ? qsTr("Pause") : qsTr("Play")
             onClicked: rec.togglePlay()
         }
         // The parts.
@@ -969,7 +969,7 @@ Popup {
                     }
                 }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Video segment"
+                Accessible.name: qsTr("Video segment")
             }
         }
         // Trim: brand handles at the kept part's ends.
@@ -994,7 +994,7 @@ Popup {
                 }
                 HoverHandler { cursorShape: Qt.SizeHorCursor }
                 Accessible.role: Accessible.Slider
-                Accessible.name: index === 0 ? "Start trim handle" : "End trim handle"
+                Accessible.name: index === 0 ? qsTr("Start trim handle") : qsTr("End trim handle")
             }
         }
         // The playhead and its time (m:ss:cc).
@@ -1022,7 +1022,7 @@ Popup {
         SquareButton {
             x: 16; y: 536.3
             icon: rec.trimming ? "delete-20" : "chevron-left-20"
-            label: rec.trimming ? "Delete this clip. Your recording will be lost." : "Back"
+            label: rec.trimming ? qsTr("Delete this clip. Your recording will be lost.") : qsTr("Back")
             onClicked: {
                 if (rec.trimming) { rec.trimming = false; rec.deleteSelected(); return }
                 player.stop(); rec.playing = false; rec.reset()
@@ -1032,17 +1032,17 @@ Popup {
             visible: !rec.trimming
             anchors.horizontalCenter: parent.horizontalCenter; y: 526
             Tool {
-                icon: "cut-20"; label: "Trim"
+                icon: "cut-20"; label: qsTr("Trim")
                 enabledTool: rec.selected >= 0
                 onClicked: { rec.playing = false; player.pause(); musicPlayer.pause(); const sg = rec.segments[rec.selected]; rec.trimStart = sg.start; rec.trimEnd = sg.end; player.source = sg.path; player.position = sg.start; rec.trimming = true }
             }
-            Tool { icon: "split-vertical-20"; label: "Split"; spoken: "Split Clip"; enabledTool: rec.canSplit; onClicked: rec.splitAtPlayhead() }
-            Tool { toolWidth: 71.9; icon: "delete-20"; label: "Delete clip"; spoken: "Delete this clip. Your recording will be lost."; onClicked: rec.deleteSelected() }
-            Tool { toolWidth: 82; icon: "video-add-20"; label: "Record more"; onClicked: { player.pause(); rec.playing = false; musicPlayer.pause(); rec.stage = "setup" } }
+            Tool { icon: "split-vertical-20"; label: qsTr("Split"); spoken: qsTr("Split Clip"); enabledTool: rec.canSplit; onClicked: rec.splitAtPlayhead() }
+            Tool { toolWidth: 71.9; icon: "delete-20"; label: qsTr("Delete clip"); spoken: qsTr("Delete this clip. Your recording will be lost."); onClicked: rec.deleteSelected() }
+            Tool { toolWidth: 82; icon: "video-add-20"; label: qsTr("Record more"); onClicked: { player.pause(); rec.playing = false; musicPlayer.pause(); rec.stage = "setup" } }
             Tool {
                 id: rearrangeTool
                 visible: rec.segments.length > 1
-                toolWidth: 70.2; icon: "arrow-swap-20"; label: "Rearrange"
+                toolWidth: 70.2; icon: "arrow-swap-20"; label: qsTr("Rearrange")
                 off: rearrangeMenu.opened
                 onClicked: { const p = rearrangeTool.mapToItem(rec.contentItem, 0, 0); rearrangeMenu.x = p.x; rearrangeMenu.y = p.y - rearrangeMenu.height - 1; rearrangeMenu.open() }
             }
@@ -1050,21 +1050,21 @@ Popup {
             Tool {
                 toolWidth: rec.music ? Math.max(56, musicLabel.implicitWidth + 25) : 56
                 icon: rec.music ? "data-bar-vertical-20" : "music-note-2-20"
-                label: rec.music ? rec.music.name : "Music"
-                spoken: rec.music ? "Add music Selected " + rec.music.name : "Add music"
+                label: rec.music ? rec.music.name : qsTr("Music")
+                spoken: rec.music ? qsTr("Add music Selected %1").arg(rec.music.name) : qsTr("Add music")
                 onClicked: { rec.playing = false; player.pause(); musicPlayer.pause(); musicPanel.visible = true }
                 Text { id: musicLabel; visible: false; text: rec.music ? rec.music.name : ""; font.family: theme.font; font.pixelSize: 10 }
             }
         }
         MenuPopup {
             id: rearrangeMenu
-            items: [{ label: "Move left", enabled: rec.selected > 0 }, { label: "Move right", enabled: rec.selected >= 0 && rec.selected < rec.segments.length - 1 }]
+            items: [{ label: qsTr("Move left"), enabled: rec.selected > 0 }, { label: qsTr("Move right"), enabled: rec.selected >= 0 && rec.selected < rec.segments.length - 1 }]
             onPicked: i => rec.moveSelected(i === 0 ? -1 : 1)
         }
         SquareButton {
             x: 752; y: 536.3; primary: true
             icon: rec.trimming ? "checkmark-20" : "chevron-right-20"
-            label: rec.trimming ? "Confirm trim" : "Continue"
+            label: rec.trimming ? qsTr("Confirm trim") : qsTr("Continue")
             onClicked: {
                 if (rec.trimming) {
                     const list = rec.segments.slice()
@@ -1097,11 +1097,11 @@ Popup {
     // ---- Music (Teams' Music panel: Microsoft Stream's library) ----
     readonly property string musicBase: "https://res.public.onecdn.static.microsoft/files/odsp-web-prod_2026-10-30.005/streamcameraembed/"
     readonly property var library: [
-        { name: "Chill", cover: "images/chill_bf376ec6.png", songs: [["In a dream", "Dario Comuzzi, Paolo Catoni", "in_a_dream_bebabb7f"], ["Open field", "Keir Schmidt", "open_field_ce1cac4e"], ["Rain in Japan", "Dario Comuzzi, Claudio Tristano", "rain_in_japan_1d666880"], ["Supernova", "Dario Comuzzi, Claudio Tristano", "supernova_026875ac"], ["Waves", "Keir Schmidt", "waves_49f1aea6"]] },
-        { name: "Energetic", cover: "images/energetic_64845ed2.png", songs: [["Bring up the energy", "Philip Anderson", "bring_up_the_energy_4ce0710c"], ["By the shoreline", "Dario Comuzzi, Claudio Tristano", "by_the_shoreline_1ded4322"], ["Feelin' fresh", "Nancy Louise Lee", "feelin_fresh_ac86f5f0"], ["Get excited", "Joseph Capalbo", "get_excited_abc9da1a"], ["Pump it up", "Prong Praison", "pump_it_up_8c1abf13"]] },
-        { name: "Fun", cover: "images/fun_8e188be4.png", songs: [["Block party", "Dario Comuzzi, Paolo Catoni", "block_party_14e4d31d"], ["Chill and wavey", "Dario Comuzzi, Paolo Catoni", "chill_and_wavey_a8d04d78"], ["Cloud walk", "Prong Praison", "cloud_walk_5d05ac98"], ["Fearless funk", "Nancy Louise Lee", "fearless_funk_e9c6e8e0"], ["Laid back vibe", "Philip Anderson", "laid_back_vibe_9c992a9d"], ["Liquid", "Philip Anderson", "liquid_afae8da8"], ["Spectra", "Joseph Capalbo", "spectra_83927b63"], ["The bounce", "Dario Comuzzi, Paolo Catoni", "the_bounce_df96a30f"]] },
-        { name: "High Tech", cover: "images/high_tech_b3672869.png", songs: [["Awakenings", "Dario Comuzzi, Paolo Catoni", "awakenings_8ad3f4ed"], ["Closed circuits", "Philip Anderson", "closed_circuits_68d3b36e"], ["Cutting edge", "Philip Anderson", "cutting_edge_0b882323"], ["Isotope", "Nancy Louise Lee", "isotope_671ef6b9"], ["Tinkering", "Keir Schmidt", "tinkering_f88de5a4"]] },
-        { name: "Inspiring", cover: "images/inspiring_b3672869.png", songs: [["Driving force", "Nancy Louise Lee", "driving_force_8c84bafa"], ["Morning coffee", "", "morning_coffee_91eed28f"]] }
+        { name: qsTr("Chill"), cover: "images/chill_bf376ec6.png", songs: [["In a dream", "Dario Comuzzi, Paolo Catoni", "in_a_dream_bebabb7f"], ["Open field", "Keir Schmidt", "open_field_ce1cac4e"], ["Rain in Japan", "Dario Comuzzi, Claudio Tristano", "rain_in_japan_1d666880"], ["Supernova", "Dario Comuzzi, Claudio Tristano", "supernova_026875ac"], ["Waves", "Keir Schmidt", "waves_49f1aea6"]] },
+        { name: qsTr("Energetic"), cover: "images/energetic_64845ed2.png", songs: [["Bring up the energy", "Philip Anderson", "bring_up_the_energy_4ce0710c"], ["By the shoreline", "Dario Comuzzi, Claudio Tristano", "by_the_shoreline_1ded4322"], ["Feelin' fresh", "Nancy Louise Lee", "feelin_fresh_ac86f5f0"], ["Get excited", "Joseph Capalbo", "get_excited_abc9da1a"], ["Pump it up", "Prong Praison", "pump_it_up_8c1abf13"]] },
+        { name: qsTr("Fun"), cover: "images/fun_8e188be4.png", songs: [["Block party", "Dario Comuzzi, Paolo Catoni", "block_party_14e4d31d"], ["Chill and wavey", "Dario Comuzzi, Paolo Catoni", "chill_and_wavey_a8d04d78"], ["Cloud walk", "Prong Praison", "cloud_walk_5d05ac98"], ["Fearless funk", "Nancy Louise Lee", "fearless_funk_e9c6e8e0"], ["Laid back vibe", "Philip Anderson", "laid_back_vibe_9c992a9d"], ["Liquid", "Philip Anderson", "liquid_afae8da8"], ["Spectra", "Joseph Capalbo", "spectra_83927b63"], ["The bounce", "Dario Comuzzi, Paolo Catoni", "the_bounce_df96a30f"]] },
+        { name: qsTr("High Tech"), cover: "images/high_tech_b3672869.png", songs: [["Awakenings", "Dario Comuzzi, Paolo Catoni", "awakenings_8ad3f4ed"], ["Closed circuits", "Philip Anderson", "closed_circuits_68d3b36e"], ["Cutting edge", "Philip Anderson", "cutting_edge_0b882323"], ["Isotope", "Nancy Louise Lee", "isotope_671ef6b9"], ["Tinkering", "Keir Schmidt", "tinkering_f88de5a4"]] },
+        { name: qsTr("Inspiring"), cover: "images/inspiring_b3672869.png", songs: [["Driving force", "Nancy Louise Lee", "driving_force_8c84bafa"], ["Morning coffee", "", "morning_coffee_91eed28f"]] }
     ]
     function pickSong(cat, song) {
         const url = musicBase + "audio/" + song[2] + ".aac"
@@ -1126,8 +1126,8 @@ Popup {
         color: theme.surface
         FluentSurface { z: -1; anchors.fill: parent; depth: 16; radius: 8 }
         MouseArea { anchors.fill: parent }
-        Text { x: 64.7; y: 24.6; width: 358.7; height: 20; horizontalAlignment: Text.AlignHCenter; text: "Music"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
-        HeadButton { x: 447.3; y: 14.6; height: 40; icon: "dismiss-20"; label: "Close Music"; onClicked: { songPreview.stop(); musicPanel.visible = false } }
+        Text { x: 64.7; y: 24.6; width: 358.7; height: 20; horizontalAlignment: Text.AlignHCenter; text: qsTr("Music"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+        HeadButton { x: 447.3; y: 14.6; height: 40; icon: "dismiss-20"; label: qsTr("Close Music"); onClicked: { songPreview.stop(); musicPanel.visible = false } }
         Row {
             x: 22.7; y: 65.6; spacing: 0
             Repeater {
@@ -1191,7 +1191,7 @@ Popup {
                                         }
                                         HoverHandler { cursorShape: Qt.PointingHandCursor }
                                         Accessible.role: Accessible.Button
-                                        Accessible.name: "Play " + song.modelData[0] + (song.modelData[1] ? " by " + song.modelData[1] : "")
+                                        Accessible.name: song.modelData[1] ? qsTr("Play %1 by %2").arg(song.modelData[0]).arg(song.modelData[1]) : qsTr("Play %1").arg(song.modelData[0])
                                     }
                                     Column {
                                         x: 65; anchors.verticalCenter: parent.verticalCenter; width: 86
@@ -1207,7 +1207,7 @@ Popup {
                                         HoverHandler { id: addHover; cursorShape: Qt.PointingHandCursor }
                                         TapHandler { enabled: !song.chosen; onTapped: rec.pickSong(catCol.modelData, song.modelData) }
                                         Accessible.role: Accessible.Button
-                                        Accessible.name: "Download " + song.modelData[0]
+                                        Accessible.name: qsTr("Download %1").arg(song.modelData[0])
                                     }
                                 }
                             }
@@ -1233,11 +1233,11 @@ Popup {
                     width: 110; from: 0; to: 100; stepSize: 1
                     value: rec.music ? rec.music.level : 15
                     onMoved: if (rec.music) rec.music = Object.assign({}, rec.music, { level: Math.round(value) })
-                    Accessible.name: "Active song volume"
+                    Accessible.name: qsTr("Active song volume")
                 }
                 Text { anchors.verticalCenter: parent.verticalCenter; text: rec.music ? rec.music.level : ""; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
             }
-            HeadButton { x: 433.3; y: 14.4; icon: "dismiss-20"; label: "Remove music"; onClicked: { rec.music = null; musicPlayer.stop() } }
+            HeadButton { x: 433.3; y: 14.4; icon: "dismiss-20"; label: qsTr("Remove music"); onClicked: { rec.music = null; musicPlayer.stop() } }
         }
     }
     // ---- Close your recording? ----
@@ -1249,9 +1249,9 @@ Popup {
         MouseArea { anchors.fill: parent }
         Column {
             x: 285.7; y: 243; spacing: 0
-            Text { height: 28; text: "Close your recording?"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, theme.text) }
+            Text { height: 28; text: qsTr("Close your recording?"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, theme.text) }
             Item { width: 1; height: 16 }
-            Text { height: 20; text: "This will delete your recording clips."; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill4, theme.text) }
+            Text { height: 20; text: qsTr("This will delete your recording clips."); font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill4, theme.text) }
             Item { width: 1; height: 16 }
             Row {
                 spacing: 8
@@ -1259,22 +1259,22 @@ Popup {
                     id: hcFill5
                     width: closeText.implicitWidth + 24; height: 31.3; radius: 4
                     color: closeRecHover.hovered ? theme.brandHover : theme.brand
-                    Text { id: closeText; anchors.centerIn: parent; text: "Close recording"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill5, "white") }
+                    Text { id: closeText; anchors.centerIn: parent; text: qsTr("Close recording"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill5, "white") }
                     HoverHandler { id: closeRecHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: { backend.removeRecorderFile(String(rec.clipPath)); rec.reset(); rec.close() } }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Close recording"
+                    Accessible.name: qsTr("Close recording")
                 }
                 Rectangle {
                     id: hcFill6
                     width: 96; height: 31.3; radius: 4
                     color: cancelRecHover.hovered ? theme.menuHover : theme.surface
                     border.color: theme.stroke; border.width: 0.67
-                    Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill6, theme.text) }
+                    Text { anchors.centerIn: parent; text: qsTr("Cancel"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill6, theme.text) }
                     HoverHandler { id: cancelRecHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: rec.confirmClose = false }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Cancel"
+                    Accessible.name: qsTr("Cancel")
                 }
             }
         }

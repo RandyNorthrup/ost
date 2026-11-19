@@ -61,11 +61,11 @@ Item {
         Row {
             x: 24; y: 18; spacing: 10
             FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "notebook-20"; size: 22; color: theme.hc("#7719AA", "#FFFFFF") }
-            Text { text: "OneNote"; font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text }
+            Text { text: qsTr("OneNote"); font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text }
         }
         Rectangle { y: 59; width: parent.width; height: 1; color: theme.dividerSoft }
-        Text { x: 24; y: 80; text: "Recent notebooks"; font.family: theme.font; font.pixelSize: theme.base + 2; font.weight: Font.DemiBold; color: theme.text }
-        AddButton { x: parent.width - width - 24; y: 74; label: "Create notebook"; onClicked: nameDialog.ask("notebook", "", "Create notebook", "Notebook name") }
+        Text { x: 24; y: 80; text: qsTr("Recent notebooks"); font.family: theme.font; font.pixelSize: theme.base + 2; font.weight: Font.DemiBold; color: theme.text }
+        AddButton { x: parent.width - width - 24; y: 74; label: qsTr("Create notebook"); onClicked: nameDialog.ask("notebook", "", qsTr("Create notebook"), qsTr("Notebook name")) }
         ListView {
             x: 16; y: 116; width: parent.width - 32; height: parent.height - y
             clip: true
@@ -82,12 +82,12 @@ Item {
                 Column {
                     x: 56; anchors.verticalCenter: parent.verticalCenter
                     Text { text: modelData.name; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.text) }
-                    Text { text: "Modified " + root.when(modelData.modified); font.family: theme.font; font.pixelSize: theme.small; color: theme.onFill(hcFill1, theme.textSecondary) }
+                    Text { text: qsTr("Modified %1").arg(root.when(modelData.modified)); font.family: theme.font; font.pixelSize: theme.small; color: theme.onFill(hcFill1, theme.textSecondary) }
                 }
                 HoverHandler { id: nbh; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: root.openNotebook(modelData) }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Notebook " + modelData.name
+                Accessible.name: qsTr("Notebook %1").arg(modelData.name)
             }
         }
         Column {
@@ -95,7 +95,7 @@ Item {
             anchors.centerIn: parent
             spacing: 12
             FluentIcon { anchors.horizontalCenter: parent.horizontalCenter; name: "notebook-20"; size: 64; color: theme.hc("#7719AA", "#FFFFFF") }
-            Text { anchors.horizontalCenter: parent.horizontalCenter; text: "You don't have any notebooks yet"; font.family: theme.font; font.pixelSize: theme.base + 1; font.weight: Font.DemiBold; color: theme.text }
+            Text { anchors.horizontalCenter: parent.horizontalCenter; text: qsTr("You don't have any notebooks yet"); font.family: theme.font; font.pixelSize: theme.base + 1; font.weight: Font.DemiBold; color: theme.text }
         }
     }
 
@@ -114,7 +114,7 @@ Item {
                 HoverHandler { id: bh; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: { root.notebook = null; root.load("notebooks", "") } }
                 Accessible.role: Accessible.Button
-                Accessible.name: "All notebooks"
+                Accessible.name: qsTr("All notebooks")
             }
             FluentIcon { x: 52; anchors.verticalCenter: parent.verticalCenter; name: "notebook-20"; size: 20; color: theme.hc("#7719AA", "#FFFFFF") }
             Text { x: 80; anchors.verticalCenter: parent.verticalCenter; text: root.notebook ? root.notebook.name : ""; font.family: theme.font; font.pixelSize: theme.base + 2; font.weight: Font.Bold; color: theme.text }
@@ -126,12 +126,12 @@ Item {
                 color: oh.hovered ? theme.rowHover : theme.input; border.color: theme.stroke
                 Row { id: openRow; anchors.centerIn: parent; spacing: 6
                     FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "open-20"; size: 16; color: theme.onFill(hcFill3, theme.textStrong) }
-                    Text { anchors.verticalCenter: parent.verticalCenter; text: "Open in OneNote"; font.family: theme.font; font.pixelSize: theme.base; color: theme.onFill(hcFill3, theme.text) }
+                    Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Open in OneNote"); font.family: theme.font; font.pixelSize: theme.base; color: theme.onFill(hcFill3, theme.text) }
                 }
                 HoverHandler { id: oh; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: Qt.openUrlExternally((root.page && root.page.web_url) || root.notebook.web_url) }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Open in OneNote"
+                Accessible.name: qsTr("Open in OneNote")
             }
             Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: theme.dividerSoft }
         }
@@ -151,7 +151,7 @@ Item {
                     onClicked: root.openSection(modelData)
                 }
             }
-            AddButton { x: 8; anchors.bottom: parent.bottom; anchors.bottomMargin: 8; label: "Add section"; onClicked: nameDialog.ask("section", root.notebook.id, "Add section", "Section name") }
+            AddButton { x: 8; anchors.bottom: parent.bottom; anchors.bottomMargin: 8; label: qsTr("Add section"); onClicked: nameDialog.ask("section", root.notebook.id, qsTr("Add section"), qsTr("Section name")) }
             Rectangle { anchors.right: parent.right; width: 1; height: parent.height; color: theme.dividerSoft }
         }
         // Pages
@@ -171,7 +171,7 @@ Item {
             }
             AddButton {
                 visible: !!root.section
-                x: 8; anchors.bottom: parent.bottom; anchors.bottomMargin: 8; label: "Add page"
+                x: 8; anchors.bottom: parent.bottom; anchors.bottomMargin: 8; label: qsTr("Add page")
                 onClicked: { root.page = null; root.html = ""; root.writing = true; newTitle.text = ""; newText.text = ""; newTitle.forceActiveFocus() }
             }
             Rectangle { anchors.right: parent.right; width: 1; height: parent.height; color: theme.dividerSoft }
@@ -197,7 +197,7 @@ Item {
                         HoverHandler { id: dh; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: root.removePage(root.page.id) }
                         Accessible.role: Accessible.Button
-                        Accessible.name: "Delete page"
+                        Accessible.name: qsTr("Delete page")
                     }
                 }
                 Text { text: root.page ? root.when(root.page.modified) : ""; font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
@@ -222,8 +222,8 @@ Item {
                 id: newTitle
                 width: parent.width
                 font.family: theme.font; font.pixelSize: 24; font.weight: Font.DemiBold; color: theme.text
-                Text { visible: !newTitle.text; text: "Page title"; color: theme.textTertiary; font: newTitle.font }
-                Accessible.name: "Page title"
+                Text { visible: !newTitle.text; text: qsTr("Page title"); color: theme.textTertiary; font: newTitle.font }
+                Accessible.name: qsTr("Page title")
             }
             Rectangle { width: parent.width; height: 1; color: theme.dividerSoft }
             Rectangle {
@@ -236,8 +236,8 @@ Item {
                         id: newText
                         width: parent.width; wrapMode: TextEdit.Wrap
                         font.family: theme.font; font.pixelSize: theme.base + 1; color: theme.text
-                        Text { visible: !newText.text; text: "Start typing"; color: theme.textTertiary; font: newText.font }
-                        Accessible.name: "Page text"
+                        Text { visible: !newText.text; text: qsTr("Start typing"); color: theme.textTertiary; font: newText.font }
+                        Accessible.name: qsTr("Page text")
                     }
                 }
             }
@@ -247,17 +247,17 @@ Item {
                     id: hcFill5
                     width: 90; height: 32; radius: theme.radius; color: theme.brandFill
                     opacity: newTitle.text.trim() ? 1 : 0.5
-                    Text { anchors.centerIn: parent; text: "Save"; color: theme.onFill(hcFill5, "white"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
+                    Text { anchors.centerIn: parent; text: qsTr("Save"); color: theme.onFill(hcFill5, "white"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
                     TapHandler { onTapped: if (newTitle.text.trim()) root.create("page", root.section.id, newTitle.text.trim(), newText.text) }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Save page"
+                    Accessible.name: qsTr("Save page")
                 }
                 Rectangle {
                     width: 90; height: 32; radius: theme.radius; color: theme.input; border.color: theme.stroke
-                    Text { anchors.centerIn: parent; text: "Cancel"; color: theme.text; font.family: theme.font; font.pixelSize: theme.base }
+                    Text { anchors.centerIn: parent; text: qsTr("Cancel"); color: theme.text; font.family: theme.font; font.pixelSize: theme.base }
                     TapHandler { onTapped: { root.writing = false; if (root.pages.length) root.openPage(root.pages[0]) } }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Cancel"
+                    Accessible.name: qsTr("Cancel")
                 }
             }
         }
@@ -265,7 +265,7 @@ Item {
             visible: !root.busy && !!root.section && root.pages.length === 0 && !root.writing
             anchors { left: pageCol.right; right: parent.right; verticalCenter: parent.verticalCenter }
             horizontalAlignment: Text.AlignHCenter
-            text: "This section is empty. Add a page to start."
+            text: qsTr("This section is empty. Add a page to start.")
             font.family: theme.font; font.pixelSize: theme.base; color: theme.textSecondary
         }
     }
@@ -309,17 +309,17 @@ Item {
                 Rectangle {
                     id: hcFill6
                     width: 90; height: 32; radius: theme.radius; color: theme.brandFill
-                    Text { anchors.centerIn: parent; text: "Create"; color: theme.onFill(hcFill6, "white"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
+                    Text { anchors.centerIn: parent; text: qsTr("Create"); color: theme.onFill(hcFill6, "white"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
                     TapHandler { onTapped: nameDialog.done() }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Create"
+                    Accessible.name: qsTr("Create")
                 }
                 Rectangle {
                     width: 90; height: 32; radius: theme.radius; color: theme.input; border.color: theme.stroke
-                    Text { anchors.centerIn: parent; text: "Cancel"; color: theme.text; font.family: theme.font; font.pixelSize: theme.base }
+                    Text { anchors.centerIn: parent; text: qsTr("Cancel"); color: theme.text; font.family: theme.font; font.pixelSize: theme.base }
                     TapHandler { onTapped: nameDialog.close() }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Cancel"
+                    Accessible.name: qsTr("Cancel")
                 }
             }
         }

@@ -22,7 +22,7 @@ Popup {
     property string title
     property string initial: ""
     property string placeholder: ""
-    property string confirmText: rename ? "Rename" : "Send"
+    property string confirmText: rename ? qsTr("Rename") : qsTr("Send")
     signal confirmed(string text)
     readonly property bool ready: field.text.trim().length > 0 && (!rename || field.text.trim() !== initial)
     function show() { field.text = initial; open(); field.forceActiveFocus(); field.selectAll() }
@@ -44,7 +44,7 @@ Popup {
         HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.close() }
         Accessible.role: Accessible.Button
-        Accessible.name: "Close"
+        Accessible.name: qsTr("Close")
     }
     Rectangle {
         id: hcFill2
@@ -64,7 +64,7 @@ Popup {
             selectByMouse: true; clip: true
             onAccepted: if (root.ready) { root.close(); root.confirmed(text.trim()) }
             Accessible.role: Accessible.EditableText
-            Accessible.name: root.rename ? root.title : "Make an announcement"
+            Accessible.name: root.rename ? root.title : qsTr("Make an announcement")
             Text {
                 visible: !field.text.length
                 anchors.verticalCenter: parent.verticalCenter
@@ -80,11 +80,11 @@ Popup {
             width: 96; height: 31.33; radius: 4
             color: cancelHover.hovered ? theme.menuHover : theme.surface
             border.color: theme.stroke; border.width: 0.67
-            Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, theme.text) }
+            Text { anchors.centerIn: parent; text: qsTr("Cancel"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, theme.text) }
             HoverHandler { id: cancelHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.close() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Cancel"
+            Accessible.name: qsTr("Cancel")
         }
         Rectangle {
             id: hcFill4

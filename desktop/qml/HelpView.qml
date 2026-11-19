@@ -42,9 +42,9 @@ Rectangle {
     // The three cards on Help's home (Teams' "Change your background",
     // "Grow your network", "Set up Teams on mobile"), with OST's own.
     readonly property var heroes: [
-        { title: "Find anything in a chat", link: "Learn how", image: "hero-find.png", article: "chat/find-in-a-chat" },
-        { title: "Tell us what you think", link: "Send feedback", image: "hero-feedback.png", article: "troubleshoot/report-a-problem" },
-        { title: "Find your way around OST", link: "Get started", image: "hero-tour.png", article: "get-started/find-your-way-around" }
+        { title: qsTr("Find anything in a chat"), link: qsTr("Learn how"), image: "hero-find.png", article: "chat/find-in-a-chat" },
+        { title: qsTr("Tell us what you think"), link: qsTr("Send feedback"), image: "hero-feedback.png", article: "troubleshoot/report-a-problem" },
+        { title: qsTr("Find your way around OST"), link: qsTr("Get started"), image: "hero-tour.png", article: "get-started/find-your-way-around" }
     ]
     readonly property var categoryIcons: ({ "get-started": "rocket-20", chat: "chat-20", meetings: "video-20", "teams-and-channels": "people-team-20",
                                             "notifications-and-settings": "alert-20", "calls-and-devices": "call-20", files: "document-20",
@@ -62,7 +62,7 @@ Rectangle {
         }
         Text {
             x: 72; anchors.verticalCenter: parent.verticalCenter
-            text: "Help"
+            text: qsTr("Help")
             font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text
             Accessible.role: Accessible.Heading
         }
@@ -75,12 +75,12 @@ Rectangle {
             HoverHandler { id: mhh; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: helpMenu.open() }
             Accessible.role: Accessible.Button
-            Accessible.name: "More Help actions"
+            Accessible.name: qsTr("More Help actions")
             MenuPopup {
                 id: helpMenu
                 x: parent.width - width; y: parent.height + 4
-                items: [{ label: "Reload app", icon: "arrow-clockwise-20" }, { separator: true },
-                        { label: "About", icon: "info-20" }, { label: "Share app", icon: "share-20" }]
+                items: [{ label: qsTr("Reload app"), icon: "arrow-clockwise-20" }, { separator: true },
+                        { label: qsTr("About"), icon: "info-20" }, { label: qsTr("Share app"), icon: "share-20" }]
                 onPicked: i => {
                     close()
                     if (i === 0) { root.load(); root.history = []; root.current = { page: "home" } }
@@ -120,8 +120,8 @@ Rectangle {
                     Accessible.role: Accessible.Button
                     Accessible.name: nb.label
                 }
-                NavButton { x: 5.5; y: 20; width: 34; height: 34; icon: "chevron-left-20"; label: "Previous page"; usable: root.history.length > 0; onClicked: root.back() }
-                NavButton { x: 39.5; y: 16; width: 42; height: 42; icon: "home-20-filled"; label: "Home"; onClicked: root.home() }
+                NavButton { x: 5.5; y: 20; width: 34; height: 34; icon: "chevron-left-20"; label: qsTr("Previous page"); usable: root.history.length > 0; onClicked: root.back() }
+                NavButton { x: 39.5; y: 16; width: 42; height: 42; icon: "home-20-filled"; label: qsTr("Home"); onClicked: root.home() }
                 Rectangle {
                     x: 81.5; y: 17; width: Math.min(660, parent.width - 81.5); height: 40; radius: 6
                     color: theme.surface
@@ -134,9 +134,9 @@ Rectangle {
                         clip: true
                         Keys.onReturnPressed: root.search(text)
                         Keys.onEnterPressed: root.search(text)
-                        Text { visible: !q.text; text: "Search help"; font: q.font; color: theme.textSecondary }
+                        Text { visible: !q.text; text: qsTr("Search help"); font: q.font; color: theme.textSecondary }
                         Accessible.role: Accessible.EditableText
-                        Accessible.name: "Search help"
+                        Accessible.name: qsTr("Search help")
                     }
                     Rectangle {
                         id: hcFill1
@@ -147,7 +147,7 @@ Rectangle {
                         HoverHandler { id: sbh; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: root.search(q.text) }
                         Accessible.role: Accessible.Button
-                        Accessible.name: "Search"
+                        Accessible.name: qsTr("Search")
                     }
                 }
             }
@@ -157,7 +157,7 @@ Rectangle {
                 visible: root.current.page === "home"
                 width: parent.width
                 Item { width: 1; height: 21 }
-                Text { text: "Help for OST"; font.family: theme.font; font.pixelSize: 22; font.weight: Font.Bold; color: theme.text; Accessible.role: Accessible.Heading }
+                Text { text: qsTr("Help for OST"); font.family: theme.font; font.pixelSize: 22; font.weight: Font.Bold; color: theme.text; Accessible.role: Accessible.Heading }
                 Item { width: 1; height: 50 }
                 Row {
                     spacing: 20
@@ -188,7 +188,7 @@ Rectangle {
                     }
                 }
                 Item { width: 1; height: 50 }
-                Text { text: "Browse all help"; font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text; Accessible.role: Accessible.Heading }
+                Text { text: qsTr("Browse all help"); font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text; Accessible.role: Accessible.Heading }
                 Item { width: 1; height: 28 }
                 Grid {
                     columns: 3; columnSpacing: 20; rowSpacing: 0
@@ -216,7 +216,7 @@ Rectangle {
                     }
                 }
                 Item { width: 1; height: 22 }
-                Text { text: "Featured topics"; font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text; Accessible.role: Accessible.Heading }
+                Text { text: qsTr("Featured topics"); font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text; Accessible.role: Accessible.Heading }
                 Item { width: 1; height: 28.6 }
                 Grid {
                     columns: 3; columnSpacing: 20; rowSpacing: 18
@@ -242,7 +242,7 @@ Rectangle {
                 Text {
                     width: parent.width; horizontalAlignment: Text.AlignHCenter
                     textFormat: Text.StyledText
-                    text: "<a href=\"licence\">Licence</a> &nbsp;|&nbsp; <a href=\"privacy\">Privacy</a>"
+                    text: "<a href=\"licence\">" + qsTr("Licence") + "</a> &nbsp;|&nbsp; <a href=\"privacy\">" + qsTr("Privacy") + "</a>"
                     linkColor: theme.brandLink
                     font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary
                     onLinkActivated: l => Qt.openUrlExternally(l === "privacy" ? backend.feedbackLink("privacy") : root.repoUrl + "/blob/main/LICENSE")
@@ -259,7 +259,7 @@ Rectangle {
                 Item { width: 1; height: 21 }
                 Text {
                     width: parent.width; wrapMode: Text.Wrap
-                    text: parent.cat ? parent.cat.title : "Results for “" + (root.current.q || "") + "”"
+                    text: parent.cat ? parent.cat.title : qsTr("Results for “%1”").arg(root.current.q || "")
                     font.family: theme.font; font.pixelSize: 22; font.weight: Font.Bold; color: theme.text
                     Accessible.role: Accessible.Heading
                 }
@@ -267,7 +267,7 @@ Rectangle {
                 Text {
                     visible: !!parent.cat || parent.items.length === 0
                     width: parent.width; wrapMode: Text.Wrap
-                    text: parent.cat ? parent.cat.description : "We couldn't find any help for “" + (root.current.q || "") + "”. Try other words, or browse all help."
+                    text: parent.cat ? parent.cat.description : qsTr("We couldn't find any help for “%1”. Try other words, or browse all help.").arg(root.current.q || "")
                     font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
                 }
                 Item { width: 1; height: 28 }
@@ -298,7 +298,7 @@ Rectangle {
                 Item { width: 1; height: 21 }
                 Text {
                     textFormat: Text.StyledText
-                    text: "<a href=\"home\">Help</a> &nbsp;›&nbsp; <a href=\"cat\">" + (parent.cat ? parent.cat.title : "") + "</a>"
+                    text: "<a href=\"home\">" + qsTr("Help") + "</a> &nbsp;›&nbsp; <a href=\"cat\">" + (parent.cat ? parent.cat.title : "") + "</a>"
                     linkColor: theme.brandLink
                     font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
                     onLinkActivated: l => l === "home" ? root.home() : root.go({ page: "category", id: parent.cat.id })
@@ -320,9 +320,9 @@ Rectangle {
                 Item { width: 1; height: 20 }
                 Row {
                     spacing: 12
-                    Text { anchors.verticalCenter: parent.verticalCenter; text: "Was this information helpful?"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                    Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Was this information helpful?"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
                     Repeater {
-                        model: [{ label: "Yes", kind: "compliment" }, { label: "No", kind: "problem" }]
+                        model: [{ label: qsTr("Yes"), kind: "compliment" }, { label: qsTr("No"), kind: "problem" }]
                         Rectangle {
                             id: hcFill2
                             required property var modelData
@@ -340,7 +340,7 @@ Rectangle {
                 Item { width: 1; height: 16 }
                 Text {
                     textFormat: Text.StyledText
-                    text: "<a href=\"edit\">Edit on GitHub</a>"
+                    text: "<a href=\"edit\">" + qsTr("Edit on GitHub") + "</a>"
                     linkColor: theme.brandLink
                     font.family: theme.font; font.pixelSize: 14
                     onLinkActivated: Qt.openUrlExternally(backend.feedbackLink("docs") + "/" + root.current.id + ".md")
@@ -359,13 +359,13 @@ Rectangle {
         background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
         contentItem: Column {
             spacing: 12
-            Text { text: "Help for OST"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+            Text { text: qsTr("Help for OST"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
             Text {
                 width: 372; wrapMode: Text.Wrap
                 textFormat: Text.StyledText
                 linkColor: theme.brandLink
-                text: "Help articles for OST, built into the app so they work offline. They're written by the OST project; "
-                      + "you can read and improve them on <a href=\"docs\">GitHub</a>."
+                text: qsTr("Help articles for OST, built into the app so they work offline. They're written by the OST project; you can read and improve them on %1.")
+                      .arg("<a href=\"docs\">GitHub</a>")
                 font.family: theme.font; font.pixelSize: 14; color: theme.text
                 onLinkActivated: Qt.openUrlExternally(backend.feedbackLink("docs"))
             }
@@ -374,11 +374,11 @@ Rectangle {
                 anchors.right: parent.right
                 width: 96; height: 32; radius: 4
                 color: abh.hovered ? theme.brandHover : theme.brandFill
-                Text { anchors.centerIn: parent; text: "Close"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, "#FFFFFF") }
+                Text { anchors.centerIn: parent; text: qsTr("Close"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, "#FFFFFF") }
                 HoverHandler { id: abh; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: about.close() }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Close"
+                Accessible.name: qsTr("Close")
             }
         }
     }

@@ -75,7 +75,7 @@ Rectangle {
         Text {
             x: 20.67; y: 16.67; height: 22
             verticalAlignment: Text.AlignVCenter
-            text: "Audio settings"
+            text: qsTr("Audio settings")
             font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold
             color: theme.text
             Accessible.role: Accessible.Heading
@@ -90,9 +90,9 @@ Rectangle {
             TapHandler { onTapped: root.closed() }
             ToolTip.visible: closeHover.hovered
             ToolTip.delay: 250
-            ToolTip.text: "Close audio pane"
+            ToolTip.text: qsTr("Close audio pane")
             Accessible.role: Accessible.Button
-            Accessible.name: "Close audio pane"
+            Accessible.name: qsTr("Close audio pane")
         }
         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.divider }
     }
@@ -110,14 +110,14 @@ Rectangle {
 
             Banner {
                 visible: (root.devices.outputs || []).length === 0
-                text: "Couldn't find a speaker. Connect one, or make sure the driver for an existing device is properly installed."
+                text: qsTr("Couldn't find a speaker. Connect one, or make sure the driver for an existing device is properly installed.")
             }
             Banner {
                 visible: (root.devices.inputs || []).length === 0
-                text: "No microphone was found, plug one in or enjoy just listening in."
+                text: qsTr("No microphone was found, plug one in or enjoy just listening in.")
             }
 
-            SectionHeader { key: "speaker"; title: "Speaker" }
+            SectionHeader { key: "speaker"; title: qsTr("Speaker") }
             Column {
                 visible: root.expanded.speaker
                 x: 20.67; width: 305.33
@@ -143,7 +143,7 @@ Rectangle {
                         HoverHandler { id: spkHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: { root.volume = root.volume > 0 ? 0 : 100; backend.setSpeakerVolume(root.volume) } }
                         Accessible.role: Accessible.Button
-                        Accessible.name: root.volume > 0 ? "Mute speaker" : "Unmute speaker"
+                        Accessible.name: root.volume > 0 ? qsTr("Mute speaker") : qsTr("Unmute speaker")
                     }
                     Item {
                         id: slider
@@ -168,13 +168,13 @@ Rectangle {
                             onPositionChanged: m => { if (pressed) setFrom(m.x) }
                         }
                         Accessible.role: Accessible.Slider
-                        Accessible.name: "Speaker Volume control"
+                        Accessible.name: qsTr("Speaker Volume control")
                     }
                 }
                 Item { width: 1; height: 16 }
             }
 
-            SectionHeader { key: "microphone"; title: "Microphone" }
+            SectionHeader { key: "microphone"; title: qsTr("Microphone") }
             Column {
                 visible: root.expanded.microphone
                 x: 20.67; width: 305.33
@@ -199,7 +199,7 @@ Rectangle {
                         HoverHandler { id: micHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: root.toggleMute() }
                         Accessible.role: Accessible.Button
-                        Accessible.name: root.muted ? "Unmute" : "Mute"
+                        Accessible.name: root.muted ? qsTr("Unmute") : qsTr("Mute")
                     }
                     Repeater {
                         model: 17
@@ -214,7 +214,7 @@ Rectangle {
                 Item { width: 1; height: 16 }
             }
 
-            SectionHeader { key: "advanced"; title: "Advanced settings" }
+            SectionHeader { key: "advanced"; title: qsTr("Advanced settings") }
             Column {
                 visible: root.expanded.advanced
                 x: 20.67; width: 305.33
@@ -224,7 +224,7 @@ Rectangle {
                 // Teams moves its info to Background noise only: the
                 // switch row has none, and the choice follows it.
                 SwitchRow {
-                    label: "Noise suppression"
+                    label: qsTr("Noise suppression")
                     checked: root.noiseSuppression
                     onToggled: root.setNoise(!root.noiseSuppression)
                 }
@@ -236,27 +236,27 @@ Rectangle {
                     infoButton: Component { InfoButton {} }
                 }
                 SwitchRow {
-                    label: "High fidelity music mode"
-                    info: "Recommended for when you play music in meetings. If enabled, this enhances the experience for the participants when they listen to shared music. <a href=\"https://go.microsoft.com/fwlink/?linkid=2168036\">Learn more</a>"
+                    label: qsTr("High fidelity music mode")
+                    info: qsTr("Recommended for when you play music in meetings. If enabled, this enhances the experience for the participants when they listen to shared music. <0>Learn more</0>").replace("<0>", "<a href=\"https://go.microsoft.com/fwlink/?linkid=2168036\">").replace("</0>", "</a>")
                     checked: root.musicMode
                     height: 30
                     onToggled: root.setMusic(!root.musicMode)
                 }
                 Text {
                     width: 305.33; height: 16
-                    text: "Recommended for studio environment."
+                    text: qsTr("Recommended for studio environment.")
                     font.family: theme.font; font.pixelSize: 12
                     lineHeight: 16; lineHeightMode: Text.FixedHeight
                     color: theme.textStrong
                 }
                 CheckRow {
-                    label: "Display in the microphone dropdown menu"
+                    label: qsTr("Display in the microphone dropdown menu")
                     checked: root.musicInFlyout
                     enabled: root.musicMode
                     onToggled: { root.musicInFlyout = !root.musicInFlyout; backend.setSetting("musicModeInFlyout", root.musicInFlyout ? "on" : "off") }
                 }
                 CheckRow {
-                    label: "Enable echo cancellation"
+                    label: qsTr("Enable echo cancellation")
                     checked: root.musicEcho
                     enabled: root.musicMode
                     onToggled: { root.musicEcho = !root.musicEcho; backend.setMusicMode(root.musicMode, root.musicEcho) }
@@ -409,7 +409,7 @@ Rectangle {
         HoverHandler { id: ibHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: pop.visible ? pop.close() : pop.open() }
         Accessible.role: Accessible.Button
-        Accessible.name: "Information"
+        Accessible.name: qsTr("Information")
         Popup {
             id: pop
             parent: Overlay.overlay

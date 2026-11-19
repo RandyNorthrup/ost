@@ -69,7 +69,7 @@ Item {
     readonly property bool meetingPost: !!post && post.kind === "call"
     readonly property bool meetingLive: meetingPost && thread.some(m => m.kind === "call" && m.call_state === "started" && m.call_active)
     readonly property string postSubject: !post ? "" : meetingPost
-        ? (post.meeting_title || "Meeting in \"" + channelName + "\"") + (meetingLive ? "" : " ended")
+        ? (meetingLive ? (post.meeting_title || qsTr("Meeting in \"%1\"").arg(channelName)) : qsTr("%1 ended").arg(post.meeting_title || qsTr("Meeting in \"%1\"").arg(channelName)))
         : (post.subject || "")
     // Call events name people only by MRI.
     readonly property var peopleNames: backend.peopleNamesJson ? JSON.parse(backend.peopleNamesJson) : ({})
@@ -151,7 +151,7 @@ Item {
         Text {
             x: 62; y: 31.7
             width: toolbar.x - x - 8; elide: Text.ElideRight
-            text: win.post ? "Post by " + win.senderOf(win.post) : ""
+            text: win.post ? qsTr("Post by %1").arg(win.senderOf(win.post)) : ""
             font.family: theme.font; font.pixelSize: 12
             lineHeight: 16; lineHeightMode: Text.FixedHeight
             color: theme.textSecondary
@@ -168,10 +168,10 @@ Item {
                 visible: win.inPane
                 width: goText.implicitWidth + 24; height: 31.3; radius: 4
                 color: goHover.hovered ? theme.hover : "transparent"
-                Text { id: goText; anchors.centerIn: parent; text: "Go to channel"; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill1, theme.textStrong) }
+                Text { id: goText; anchors.centerIn: parent; text: qsTr("Go to channel"); font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill1, theme.textStrong) }
                 HoverHandler { id: goHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: win.goToChannel() }
-                Accessible.role: Accessible.Button; Accessible.name: "Go to channel"
+                Accessible.role: Accessible.Button; Accessible.name: qsTr("Go to channel")
             }
             Rectangle {
                 id: hcFill2
@@ -181,8 +181,8 @@ Item {
                 FluentIcon { anchors.centerIn: parent; name: "open-window-20"; size: 20; color: theme.onFill(hcFill2, theme.textStrong) }
                 HoverHandler { id: popHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: win.popOut() }
-                ToolTip.visible: popHover.hovered; ToolTip.delay: 500; ToolTip.text: "Open in new window"
-                Accessible.role: Accessible.Button; Accessible.name: "Open in new window"
+                ToolTip.visible: popHover.hovered; ToolTip.delay: 500; ToolTip.text: qsTr("Open in new window")
+                Accessible.role: Accessible.Button; Accessible.name: qsTr("Open in new window")
             }
             Item { visible: win.inPane; width: 8; height: 1 }
             Rectangle {
@@ -200,8 +200,8 @@ Item {
                 FluentIcon { anchors.centerIn: parent; name: "search-20"; size: 20; color: theme.onFill(hcFill3, win.finding ? theme.brand : theme.textStrong) }
                 HoverHandler { id: findToggleHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: win.toggleFind() }
-                ToolTip.visible: findToggleHover.hovered; ToolTip.delay: 500; ToolTip.text: "Find in post"
-                Accessible.role: Accessible.Button; Accessible.name: "Find in post"
+                ToolTip.visible: findToggleHover.hovered; ToolTip.delay: 500; ToolTip.text: qsTr("Find in post")
+                Accessible.role: Accessible.Button; Accessible.name: qsTr("Find in post")
             }
             Rectangle {
                 id: moreButton
@@ -210,8 +210,8 @@ Item {
                 FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: theme.onFill(moreButton, moreMenu.opened ? theme.brand : theme.textStrong) }
                 HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: win.moreMenuForTest() }
-                ToolTip.visible: moreHover.hovered; ToolTip.delay: 500; ToolTip.text: "More channel options"
-                Accessible.role: Accessible.Button; Accessible.name: "More channel options"
+                ToolTip.visible: moreHover.hovered; ToolTip.delay: 500; ToolTip.text: qsTr("More channel options")
+                Accessible.role: Accessible.Button; Accessible.name: qsTr("More channel options")
             }
         }
         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.divider }
@@ -220,11 +220,11 @@ Item {
         id: moreMenu
         margins: 8
         items: [
-            { key: "find", label: "Find in post", icon: "search-20", keys: "Ctrl+F" },
+            { key: "find", label: qsTr("Find in post"), icon: "search-20", keys: "Ctrl+F" },
             { separator: true },
             win.post && win.post.following
-                ? { key: "unfollow", label: "Unfollow thread", icon: "chat-multiple-minus-20" }
-                : { key: "follow", label: "Follow thread", icon: "chat-multiple-20" }
+                ? { key: "unfollow", label: qsTr("Unfollow thread"), icon: "chat-multiple-minus-20" }
+                : { key: "follow", label: qsTr("Follow thread"), icon: "chat-multiple-20" }
         ]
         onPicked: i => {
             const k = items[i].key
@@ -303,7 +303,7 @@ Item {
                     Text {
                         visible: !postItem.editing
                         x: 60; y: 13.4
-                        text: postItem.m ? win.senderOf(postItem.m) : (win.thread.length ? "" : "Loading…")
+                        text: postItem.m ? win.senderOf(postItem.m) : (win.thread.length ? "" : qsTr("Loading…"))
                         font.family: theme.font; font.pixelSize: 14
                         lineHeight: 20; lineHeightMode: Text.FixedHeight
                         color: postItem.m ? theme.text : theme.textSecondary
@@ -321,7 +321,7 @@ Item {
                         Text {
                             visible: !!postItem.m && postItem.m.edited === true
                             y: 0.5
-                            text: "Edited"
+                            text: qsTr("Edited")
                             font.family: theme.font; font.pixelSize: 12
                             lineHeight: 16; lineHeightMode: Text.FixedHeight
                             color: theme.textSecondary
@@ -371,8 +371,8 @@ Item {
                         message: postItem.m || ({})
                         context: "post"
                         acts: postItem.m && postItem.m.mine
-                            ? [{ key: "edit", icon: "edit-20", tip: "Edit" }]
-                            : [{ key: "reply", icon: "quote-reply-20", tip: "Reply with quote" }]
+                            ? [{ key: "edit", icon: "edit-20", tip: qsTr("Edit") }]
+                            : [{ key: "reply", icon: "quote-reply-20", tip: qsTr("Reply with quote") }]
                         x: card.width - 10 - width; y: 11; z: 5
                     }
                     TapHandler {
@@ -439,7 +439,7 @@ Item {
                                 const m = rep.modelData, s = m.call_seconds || 0
                                 const parts = [[Math.floor(s / 3600) % 24, "h"], [Math.floor(s / 60) % 60, "m"], [s % 60, "s"]]
                                     .filter(p => p[0] > 0).map(p => p[0] + p[1]).join(" ")
-                                return theme.time(new Date(m.time)) + "&nbsp;&nbsp;&nbsp;" + (m.call_state === "missed" ? "Call missed" : "Meeting ended:&nbsp;<b>" + parts + "</b>")
+                                return theme.time(new Date(m.time)) + "&nbsp;&nbsp;&nbsp;" + (m.call_state === "missed" ? qsTr("Call missed") : qsTr("Meeting ended:") + "&nbsp;<b>" + parts + "</b>")
                             }
                             font.family: theme.font; font.pixelSize: 12
                             lineHeight: 16; lineHeightMode: Text.FixedHeight
@@ -482,7 +482,7 @@ Item {
                             Text {
                                 visible: rep.modelData.edited === true
                                 y: 0.5
-                                text: "Edited"
+                                text: qsTr("Edited")
                                 font.family: theme.font; font.pixelSize: 12
                                 lineHeight: 16; lineHeightMode: Text.FixedHeight
                                 color: theme.textSecondary
@@ -518,8 +518,8 @@ Item {
                             message: rep.modelData
                             context: "reply"
                             acts: rep.modelData.mine
-                                ? [{ key: "edit", icon: "edit-20", tip: "Edit" }]
-                                : [{ key: "reply", icon: "quote-reply-20", tip: "Reply with quote" }]
+                                ? [{ key: "edit", icon: "edit-20", tip: qsTr("Edit") }]
+                                : [{ key: "reply", icon: "quote-reply-20", tip: qsTr("Reply with quote") }]
                             // Flush with the card's end, 28 above the reply
                             // (its bottom 4 into it), as measured.
                             x: rep.width - width; y: -28; z: 5
@@ -533,7 +533,7 @@ Item {
                 }
             }
             Accessible.role: Accessible.Grouping
-            Accessible.name: win.post ? "Post by " + win.senderOf(win.post) : "Post"
+            Accessible.name: win.post ? qsTr("Post by %1").arg(win.senderOf(win.post)) : qsTr("Post")
         }
     }
 
@@ -558,7 +558,7 @@ Item {
         anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
         anchors.leftMargin: win.inPane ? Math.max(28, win.cardX - 12) : 28; anchors.rightMargin: win.inPane ? Math.max(30, win.cardX - 12) : 30
         anchors.bottomMargin: 8.7 // its box 26.7 above the bottom (the hint row is 18)
-        placeholder: "Reply in thread"
+        placeholder: qsTr("Reply in thread")
         deliveryOptions: false
         mentionDirectory: false
         channelMention: ({ id: win.channelId, name: win.channelName })
@@ -619,7 +619,7 @@ Item {
     }
     FileDialog {
         id: filePicker
-        title: "Upload from this device"
+        title: qsTr("Upload from this device")
         fileMode: FileDialog.OpenFiles
         onAccepted: win.pendingFiles = win.pendingFiles.concat(selectedFiles.map(u => decodeURIComponent(u.toString().replace(/^file:\/\//, ""))))
     }

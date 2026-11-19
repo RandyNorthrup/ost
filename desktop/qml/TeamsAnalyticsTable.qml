@@ -31,7 +31,7 @@ Item {
     property string next: ""
     property bool loading: false
     property bool failed: false
-    readonly property var periods: [["last-seven-days", "Last Seven Days"], ["last-thirty-days", "Last Thirty Days"], ["last-ninety-days", "Last Ninety Days"]]
+    readonly property var periods: [["last-seven-days", qsTr("Last Seven Days")], ["last-thirty-days", qsTr("Last Thirty Days")], ["last-ninety-days", qsTr("Last Ninety Days")]]
 
     function load(cursor) {
         loading = true; failed = false
@@ -57,12 +57,12 @@ Item {
     function teamOf(id) { return view.teams.find(t => t.id === id || t.thread_id === id) || null }
     function num(v) { return v === null || v === undefined ? "" : String(v) }
 
-    Text { x: 20; y: 20; text: "Time period"; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
+    Text { x: 20; y: 20; text: qsTr("Time period"); font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
     Dropdown {
         x: 20; y: 40; width: 250; height: 31.3
         options: view.periods
         label: view.periods.find(p => p[0] === view.period)[1]
-        accessibleName: "Time period"
+        accessibleName: qsTr("Time period")
         onPicked: code => view.period = code
     }
     Row {
@@ -76,11 +76,11 @@ Item {
     Text {
         visible: view.failed
         x: 20; y: 91.3
-        text: "We are sorry - We've run into an issue"
+        text: qsTr("We are sorry - We've run into an issue")
         font.family: theme.font; font.pixelSize: 14; color: theme.text
     }
 
-    readonly property var columns: [["Name", 150], ["People", 100], ["Active users", 150], ["Active guests", 100], ["Posts", 100], ["Replies", 100], ["Type", 200]]
+    readonly property var columns: [[qsTr("Name"), 150], [qsTr("People"), 100], [qsTr("Active users"), 150], [qsTr("Active guests"), 100], [qsTr("Posts"), 100], [qsTr("Replies"), 100], [qsTr("Type"), 200]]
     readonly property real tableWidth: 900
     FluentSurface {
         id: card
@@ -159,7 +159,7 @@ Item {
                         }
                         Cell {
                             y: 0
-                            text: ({ PRIVATE: "Private", PUBLIC: "Public", ORGWIDE: "Org-wide" })[row.modelData.privacy] || ""
+                            text: ({ PRIVATE: qsTr("Private"), PUBLIC: qsTr("Public"), ORGWIDE: qsTr("Org-wide") })[row.modelData.privacy] || ""
                         }
                     }
                 }

@@ -278,6 +278,12 @@ fn main() {
         }
     }
     resources.push("assets/logo.png".into());
+    // OST's strings keyed to Teams' string ids (i18n/l10n.py writes them;
+    // src/i18n.cpp reads them). The translations are built on the device
+    // from Teams' own resources (api::teams_strings).
+    resources.push("i18n/ids.json".into());
+    println!("cargo:rerun-if-changed=i18n/ids.json");
+    println!("cargo:rerun-if-changed=i18n/teams_resources.json");
     // Help (F1): the articles in docs/help, compiled in (Help works
     // offline); OUT_DIR/help_files.rs lists them for src/help_bundle.rs.
     {
@@ -338,6 +344,7 @@ fn main() {
         builder.cc_builder(|cc| {
             cc.file("src/webengine.cpp");
             cc.file("src/native.cpp");
+            cc.file("src/i18n.cpp");
             cc.file("src/richtext.cpp");
             cc.file("src/clipframes.cpp");
             cc.file("src/clipedit.cpp");
@@ -347,6 +354,7 @@ fn main() {
     };
     println!("cargo::rerun-if-changed=src/webengine.cpp");
     println!("cargo::rerun-if-changed=src/native.cpp");
+    println!("cargo::rerun-if-changed=src/i18n.cpp");
     println!("cargo::rerun-if-changed=src/richtext.cpp");
     println!("cargo::rerun-if-changed=src/clipframes.cpp");
     println!("cargo::rerun-if-changed=src/clipedit.cpp");

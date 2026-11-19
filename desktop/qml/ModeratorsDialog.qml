@@ -22,7 +22,7 @@ Popup {
     id: dlg
     property string teamId: ""
     property string channelId: ""
-    property string ownersLabel: "Team owners"
+    property string ownersLabel: qsTr("Team owners")
     property int ownersCount: 0
     property var owners: []
     property var moderators: []
@@ -89,7 +89,7 @@ Popup {
         anchors.fill: parent
         Text {
             x: 0.7; y: 0.7
-            text: "Add or remove moderators"
+            text: qsTr("Add or remove moderators")
             font.family: theme.font; font.pixelSize: 20; font.weight: Font.Bold
             lineHeight: 28; lineHeightMode: Text.FixedHeight
             color: theme.text
@@ -125,12 +125,12 @@ Popup {
                 Text {
                     visible: !search.text
                     anchors.verticalCenter: parent.verticalCenter
-                    text: "Type a name of a person"
+                    text: qsTr("Type a name of a person")
                     font: search.font
                     color: theme.textTertiary
                 }
                 Accessible.role: Accessible.EditableText
-                Accessible.name: "Type a name of a person"
+                Accessible.name: qsTr("Type a name of a person")
             }
             FluentIcon { x: parent.width - 30; anchors.verticalCenter: parent.verticalCenter; name: "search-20"; size: 20; color: theme.textSecondary }
         }
@@ -165,7 +165,7 @@ Popup {
                 }
             }
             Accessible.role: Accessible.Table
-            Accessible.name: "Moderator List"
+            Accessible.name: qsTr("Moderator List")
         }
 
         // The matches, over the list.
@@ -188,7 +188,7 @@ Popup {
                         color: "transparent"
                         Text {
                             x: 28; anchors.verticalCenter: parent.verticalCenter
-                            text: "We didn't find any matches"
+                            text: qsTr("We didn't find any matches")
                             font.family: theme.font; font.pixelSize: 14
                             color: theme.text
                         }
@@ -228,7 +228,7 @@ Popup {
         // Footer.
         Text {
             x: 0.7; y: 524.2
-            text: "Moderator capability is not audited."
+            text: qsTr("Moderator capability is not audited.")
             font.family: theme.font; font.pixelSize: 12
             lineHeight: 17.1; lineHeightMode: Text.FixedHeight
             color: theme.text
@@ -236,8 +236,8 @@ Popup {
         Row {
             x: 349.3; y: 520
             spacing: 10
-            DialogButton { text: "Cancel"; onClicked: dlg.close() }
-            DialogButton { text: "Done"; primary: true; onClicked: dlg.done() }
+            DialogButton { text: qsTr("Cancel"); onClicked: dlg.close() }
+            DialogButton { text: qsTr("Done"); primary: true; onClicked: dlg.done() }
         }
     }
 
@@ -280,7 +280,7 @@ Popup {
             HoverHandler { id: removeHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: row.remove() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Remove " + row.header
+            Accessible.name: qsTr("Remove %1").arg(row.header)
         }
         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.divider }
     }

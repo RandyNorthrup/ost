@@ -53,7 +53,7 @@ Rectangle {
         HoverHandler { id: sh; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.set(root.value + (st.up ? 1 : -1)) }
         Accessible.role: Accessible.Button
-        Accessible.name: st.up ? "Increment value" : "Decrement value"
+        Accessible.name: st.up ? qsTr("Increment value") : qsTr("Decrement value")
     }
     Step { up: true }
     Step { up: false }

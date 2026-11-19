@@ -22,38 +22,38 @@ Popup {
 
     // Each row: [action, keys, Teams' command id].
     readonly property var sections: [
-        { title: "General", items: [
-            ["Show keyboard shortcuts", "Ctrl+.", "ShowShortcuts"], ["Open Search", "Ctrl+E", "GoToPowerBar"],
-            ["Go to a specific chat or channel", "Ctrl+G", "SlashCommandGoto"], ["Start new chat", "Ctrl+N", "StartNewChat"],
-            ["Open filter", "Ctrl+Shift+F", "OpenFilter"], ["Open Settings", "Ctrl+,", "OpenSettings"],
-            ["Toggle pin window on top", "Ctrl+Shift+T", "TogglePinWindow"] ] },
-        { title: "Navigation", items: [
-            ["Go to compose box", "Ctrl+R", "Compose"], ["Go back", "Alt+Left", "GoBack"], ["Go forward", "Alt+Right", "GoForward"],
-            ["Open 1st app on app bar", "Ctrl+1", "AppbarShortcut0"], ["Open 2nd app on app bar", "Ctrl+2", "AppbarShortcut1"],
-            ["Open 3rd app on app bar", "Ctrl+3", "AppbarShortcut2"], ["Open 4th app on app bar", "Ctrl+4", "AppbarShortcut3"],
-            ["Open 5th app on app bar", "Ctrl+5", "AppbarShortcut4"] ] },
-        { title: "Compose", items: [
-            ["Start new line", "Shift+Enter", "NewLine"], ["Attach file", "Alt+Shift+O", "UploadFile"],
-            ["Apply bold style", "Ctrl+B", "Bold"], ["Apply italic style", "Ctrl+I", "Italic"],
-            ["Apply underline style", "Ctrl+U", "Underline"], ["Apply strikethrough style", "Ctrl+Alt+X", "Strikethrough"],
-            ["Undo", "Ctrl+Z", "Undo"], ["Redo", "Ctrl+Y", "Redo"], ["Cut", "Ctrl+X", "Cut"], ["Copy", "Ctrl+C", "CopyMessage"],
-            ["Paste", "Ctrl+V", "Paste"], ["Select all", "Ctrl+A", "SelectAll"] ] },
-        { title: "Messaging", items: [
-            ["Find in current chat or channel", "Ctrl+F", "SlashCommandSearchIn"], ["React to the last message", "Ctrl+Alt+R", "ReactToLastMessage"],
-            ["Jump to newest message", "Ctrl+J", "UnreadThreadNavigation"],
-            ["Mark all as read", "Shift+Esc", "MarkAllAsRead"], ["Clear all filters", "Ctrl+Alt+Z", "SimpleCollabClearAllFilters"],
-            ["See all chat conversations", "Ctrl+Alt+C", "SimpleCollabToggleChatsFilter"], ["See all channel conversations", "Ctrl+Alt+A", "SimpleCollabToggleChannelsFilter"],
-            ["See all unread items", "Ctrl+Alt+U", "SimpleCollabToggleUnreadFilter"], ["Toggle details pane", "Alt+P", "ToggleInfoPane"],
-            ["Open 1st tab on chat header", "Alt+1", "FocusChatHeaderTabOne"], ["Open 2nd tab on chat header", "Alt+2", "FocusChatHeaderTabTwo"],
-            ["Open 3rd tab on chat header", "Alt+3", "FocusChatHeaderTabThree"], ["Open 4th tab on chat header", "Alt+4", "FocusChatHeaderTabFour"],
-            ["Open 5th tab on chat header", "Alt+5", "FocusChatHeaderTabFive"] ] },
-        { title: "Meetings, Calls and Calendar", items: [
-            ["Toggle mute", "Ctrl+Shift+M", "ToggleMuteCurrentCall"], ["Toggle video", "Ctrl+Shift+O", "ToggleVideoCurrentCall"],
-            ["Leave meeting or call", "Ctrl+Shift+H", "LeaveCall"],
-            ["Announce active speaker (screen reader)", "Ctrl+Alt+Shift+S", "AnnounceActiveSpeaker"],
-            ["Start audio call", "Alt+Shift+A", "StartAudioCallInChat"], ["Accept audio call", "Ctrl+Shift+S", "AcceptIncomingCallWithAudio"],
-            ["Accept video call", "Ctrl+Shift+A", "AcceptIncomingCallWithVideo"], ["Decline call", "Ctrl+Shift+D", "RejectIncomingCall"],
-            ["Schedule a meeting", "Alt+N", "ScheduleMeeting"] ] }
+        { title: qsTr("General"), items: [
+            [qsTr("Show keyboard shortcuts"), "Ctrl+.", "ShowShortcuts"], [qsTr("Open Search"), "Ctrl+E", "GoToPowerBar"],
+            [qsTr("Go to a specific chat or channel"), "Ctrl+G", "SlashCommandGoto"], [qsTr("Start new chat"), "Ctrl+N", "StartNewChat"],
+            [qsTr("Open filter"), "Ctrl+Shift+F", "OpenFilter"], [qsTr("Open Settings"), "Ctrl+,", "OpenSettings"],
+            [qsTr("Toggle pin window on top"), "Ctrl+Shift+T", "TogglePinWindow"] ] },
+        { title: qsTr("Navigation"), items: [
+            [qsTr("Go to compose box"), "Ctrl+R", "Compose"], [qsTr("Go back"), "Alt+Left", "GoBack"], [qsTr("Go forward"), "Alt+Right", "GoForward"],
+            [qsTr("Open 1st app on app bar"), "Ctrl+1", "AppbarShortcut0"], [qsTr("Open 2nd app on app bar"), "Ctrl+2", "AppbarShortcut1"],
+            [qsTr("Open 3rd app on app bar"), "Ctrl+3", "AppbarShortcut2"], [qsTr("Open 4th app on app bar"), "Ctrl+4", "AppbarShortcut3"],
+            [qsTr("Open 5th app on app bar"), "Ctrl+5", "AppbarShortcut4"] ] },
+        { title: qsTr("Compose"), items: [
+            [qsTr("Start new line"), "Shift+Enter", "NewLine"], [qsTr("Attach file"), "Alt+Shift+O", "UploadFile"],
+            [qsTr("Apply bold style"), "Ctrl+B", "Bold"], [qsTr("Apply italic style"), "Ctrl+I", "Italic"],
+            [qsTr("Apply underline style"), "Ctrl+U", "Underline"], [qsTr("Apply strikethrough style"), "Ctrl+Alt+X", "Strikethrough"],
+            [qsTr("Undo", "shortcut:k94ba4q11"), "Ctrl+Z", "Undo"], [qsTr("Redo"), "Ctrl+Y", "Redo"], [qsTr("Cut"), "Ctrl+X", "Cut"], [qsTr("Copy"), "Ctrl+C", "CopyMessage"],
+            [qsTr("Paste"), "Ctrl+V", "Paste"], [qsTr("Select all"), "Ctrl+A", "SelectAll"] ] },
+        { title: qsTr("Messaging"), items: [
+            [qsTr("Find in current chat or channel"), "Ctrl+F", "SlashCommandSearchIn"], [qsTr("React to the last message"), "Ctrl+Alt+R", "ReactToLastMessage"],
+            [qsTr("Jump to newest message"), "Ctrl+J", "UnreadThreadNavigation"],
+            [qsTr("Mark all as read"), "Shift+Esc", "MarkAllAsRead"], [qsTr("Clear all filters"), "Ctrl+Alt+Z", "SimpleCollabClearAllFilters"],
+            [qsTr("See all chat conversations"), "Ctrl+Alt+C", "SimpleCollabToggleChatsFilter"], [qsTr("See all channel conversations"), "Ctrl+Alt+A", "SimpleCollabToggleChannelsFilter"],
+            [qsTr("See all unread items"), "Ctrl+Alt+U", "SimpleCollabToggleUnreadFilter"], [qsTr("Toggle details pane"), "Alt+P", "ToggleInfoPane"],
+            [qsTr("Open 1st tab on chat header"), "Alt+1", "FocusChatHeaderTabOne"], [qsTr("Open 2nd tab on chat header"), "Alt+2", "FocusChatHeaderTabTwo"],
+            [qsTr("Open 3rd tab on chat header"), "Alt+3", "FocusChatHeaderTabThree"], [qsTr("Open 4th tab on chat header"), "Alt+4", "FocusChatHeaderTabFour"],
+            [qsTr("Open 5th tab on chat header"), "Alt+5", "FocusChatHeaderTabFive"] ] },
+        { title: qsTr("Meetings, Calls and Calendar"), items: [
+            [qsTr("Toggle mute"), "Ctrl+Shift+M", "ToggleMuteCurrentCall"], [qsTr("Toggle video"), "Ctrl+Shift+O", "ToggleVideoCurrentCall"],
+            [qsTr("Leave meeting or call"), "Ctrl+Shift+H", "LeaveCall"],
+            [qsTr("Announce active speaker (screen reader)"), "Ctrl+Alt+Shift+S", "AnnounceActiveSpeaker"],
+            [qsTr("Start audio call"), "Alt+Shift+A", "StartAudioCallInChat"], [qsTr("Accept audio call"), "Ctrl+Shift+S", "AcceptIncomingCallWithAudio"],
+            [qsTr("Accept video call"), "Ctrl+Shift+A", "AcceptIncomingCallWithVideo"], [qsTr("Decline call"), "Ctrl+Shift+D", "RejectIncomingCall"],
+            [qsTr("Schedule a meeting"), "Alt+N", "ScheduleMeeting"] ] }
     ]
     // Teams' Windows desktop profiles (async-entry Z: L, N, V): the keys
     // they give each command.
@@ -104,7 +104,7 @@ Popup {
     contentItem: Item {
         Text {
             x: 25; y: 28
-            text: "Keyboard shortcuts"
+            text: qsTr("Keyboard shortcuts")
             font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold; lineHeight: 28; lineHeightMode: Text.FixedHeight
             color: theme.text
         }
@@ -116,13 +116,13 @@ Popup {
             HoverHandler { id: xh; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.close() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Close"
+            Accessible.name: qsTr("Close")
         }
         // Teams' "Use shortcuts from other apps" (shortcut-profile-dropdown,
         // 224 x 30; Apply 62 x 31; View options 32 x 31).
         Text {
             x: 23; y: 66; height: 24
-            text: "Use shortcuts from other apps"
+            text: qsTr("Use shortcuts from other apps")
             font.family: theme.font; font.pixelSize: 14; lineHeight: 24; lineHeightMode: Text.FixedHeight
             verticalAlignment: Text.AlignVCenter
             color: theme.text
@@ -131,11 +131,11 @@ Popup {
             id: profileBox
             x: 23; y: 90; width: 224; height: 30
             options: root.profiles.map(p => p === "default"
-                ? { label: "OST only", sublabel: "Default", display: "OST only (default)" }
-                : { label: p === "chats_alt" ? "OST + Slack shortcuts" : p === "meetings_alt" ? "OST + Zoom shortcuts" : "OST + combined shortcuts",
+                ? { label: qsTr("OST only"), sublabel: qsTr("Default"), display: "OST only (default)" }
+                : { label: p === "chats_alt" ? qsTr("OST + Slack shortcuts") : p === "meetings_alt" ? qsTr("OST + Zoom shortcuts") : qsTr("OST + combined shortcuts"),
                     sublabel: root.changeCount(p) + " available changes" })
             current: Math.max(0, root.profiles.indexOf(root.chosen))
-            accessibleName: "Use shortcuts from other apps"
+            accessibleName: qsTr("Use shortcuts from other apps")
             onPicked: i => root.chosen = root.profiles[i]
         }
         Rectangle {
@@ -146,14 +146,14 @@ Popup {
             border.color: theme.highContrast ? theme.text : "transparent"; border.width: 0.67
             Text {
                 anchors.centerIn: parent
-                text: "Apply"
+                text: qsTr("Apply")
                 font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
                 color: applyBtn.usable ? theme.hc("#FFFFFF", "#000000") : theme.disabled
             }
             HoverHandler { id: applyHover; cursorShape: applyBtn.usable ? Qt.PointingHandCursor : Qt.ArrowCursor }
             TapHandler { enabled: applyBtn.usable; onTapped: root.applyProfile(root.chosen) }
             Accessible.role: Accessible.Button
-            Accessible.name: "Apply"
+            Accessible.name: qsTr("Apply")
         }
         Rectangle {
             id: viewBtn
@@ -164,7 +164,7 @@ Popup {
             HoverHandler { id: viewHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: viewMenu.opened ? viewMenu.close() : viewMenu.open() }
             Accessible.role: Accessible.Button
-            Accessible.name: "View options"
+            Accessible.name: qsTr("View options")
             // Teams' View options menu: 300 wide under the button, ending at
             // its right; two 52 px rows (icon 20 at 6, text 207 wide at 30,
             // a switch).
@@ -177,8 +177,8 @@ Popup {
                     spacing: 2
                     Repeater {
                         model: [
-                            { icon: "highlight-20", text: "Highlight shortcuts from other apps", key: "highlight" },
-                            { icon: "arrow-sort-20", text: "Bring shortcuts from other apps to top", key: "top" }
+                            { icon: "highlight-20", text: qsTr("Highlight shortcuts from other apps"), key: "highlight" },
+                            { icon: "arrow-sort-20", text: qsTr("Bring shortcuts from other apps to top"), key: "top" }
                         ]
                         Rectangle {
                             id: vrow
@@ -222,8 +222,8 @@ Popup {
                 x: 34; width: parent.width - 44; anchors.verticalCenter: parent.verticalCenter
                 font.family: theme.font; font.pixelSize: theme.base; color: theme.text; clip: true
                 Keys.onEscapePressed: text ? text = "" : root.close()
-                Text { visible: !filter.text; text: "Filter shortcuts"; font: filter.font; color: theme.textSecondary }
-                Accessible.name: "Filter shortcuts"
+                Text { visible: !filter.text; text: qsTr("Filter shortcuts"); font: filter.font; color: theme.textSecondary }
+                Accessible.name: qsTr("Filter shortcuts")
             }
         }
         Flickable {
@@ -269,7 +269,7 @@ Popup {
                                 }
                             }
                             Accessible.role: Accessible.Button
-                            Accessible.name: sec.modelData.title + (sec.open ? ", expanded" : ", collapsed")
+                            Accessible.name: sec.open ? qsTr("%1, expanded").arg(sec.modelData.title) : qsTr("%1, collapsed").arg(sec.modelData.title)
                         }
                         Grid {
                             visible: sec.open
@@ -318,7 +318,7 @@ Popup {
                 }
                 Text {
                     visible: root.sections.every(s => !s.items.some(i => root.matches(i)))
-                    text: "No shortcuts match"
+                    text: qsTr("No shortcuts match")
                     font.family: theme.font; font.pixelSize: theme.base
                     color: theme.textSecondary
                 }

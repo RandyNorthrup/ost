@@ -15,7 +15,7 @@ Rectangle {
     color: theme.pane
     implicitHeight: 714
     Accessible.role: Accessible.Pane
-    Accessible.name: "Device settings"
+    Accessible.name: qsTr("Device settings")
 
     property var audio: ({ inputs: [], outputs: [] })
     property var cameras: []
@@ -62,59 +62,59 @@ Rectangle {
 
     Text {
         x: 20.7; y: 20.7
-        text: "Device settings"
+        text: qsTr("Device settings")
         font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold
         color: theme.text
         Accessible.role: Accessible.Heading
         Accessible.name: text
     }
 
-    Heading { y: 86; text: "Audio Settings" }
-    Label { y: 122; text: "Speaker" }
+    Heading { y: 86; text: qsTr("Audio Settings") }
+    Label { y: 122; text: qsTr("Speaker") }
     OutlineDropdown {
         x: 22.7; y: 144.1; width: 308.1; height: 30
         readonly property var values: ["default"].concat(pane.audio.outputs)
-        options: values.map(v => ({ label: v === "default" ? (pane.audio.defaultOutput || "Default") : v }))
+        options: values.map(v => ({ label: v === "default" ? (pane.audio.defaultOutput || qsTr("Default")) : v }))
         current: Math.max(0, values.indexOf(backend.setting("speakerDevice") || "default"))
-        accessibleName: "Speaker"
+        accessibleName: qsTr("Speaker")
         onPicked: i => backend.setSetting("speakerDevice", values[i])
     }
-    Label { y: 190.1; text: "Microphone" }
+    Label { y: 190.1; text: qsTr("Microphone") }
     OutlineDropdown {
         x: 22.7; y: 212.3; width: 308.1; height: 30
         readonly property var values: ["default"].concat(pane.audio.inputs)
-        options: values.map(v => ({ label: v === "default" ? (pane.audio.defaultInput || "Default") : v }))
+        options: values.map(v => ({ label: v === "default" ? (pane.audio.defaultInput || qsTr("Default")) : v }))
         current: Math.max(0, values.indexOf(backend.setting("micDevice") || "default"))
-        accessibleName: "Microphone"
+        accessibleName: qsTr("Microphone")
         onPicked: i => backend.setSetting("micDevice", values[i])
     }
     SwitchLine {
-        y: 258.3; label: "Noise suppression"; on: pane.noise
+        y: 258.3; label: qsTr("Noise suppression"); on: pane.noise
         onToggled: v => { pane.noise = v; backend.setNoiseSuppression(v) }
     }
     SettingsParts.RadioRow {
         x: 22.7; y: 294.3; width: 308.1
         readonly property var vi: backend.voiceIsolationJson ? JSON.parse(backend.voiceIsolationJson) : ({})
-        label: "Background noise only"; checked: !(vi.profile === true && vi.mode === "Pns"); usable: pane.noise
+        label: qsTr("Background noise only"); checked: !(vi.profile === true && vi.mode === "Pns"); usable: pane.noise
         onPicked: { backend.setSetting("noiseSuppressionMode", "Auto"); backend.applyVoiceIsolation() }
     }
     SettingsParts.RadioRow {
         x: 22.7; y: 326.3; width: 308.1
         readonly property var vi: backend.voiceIsolationJson ? JSON.parse(backend.voiceIsolationJson) : ({})
-        label: "Voice isolation"; checked: vi.profile === true && vi.mode === "Pns"; usable: pane.noise && vi.profile === true
+        label: qsTr("Voice isolation"); checked: vi.profile === true && vi.mode === "Pns"; usable: pane.noise && vi.profile === true
         onPicked: { backend.setSetting("noiseSuppressionMode", "Pns"); backend.applyVoiceIsolation() }
     }
 
-    Heading { y: 383.2; text: "Video Settings" }
-    Label { y: 419.2; text: "Camera" }
+    Heading { y: 383.2; text: qsTr("Video Settings") }
+    Label { y: 419.2; text: qsTr("Camera") }
     OutlineDropdown {
         x: 22.7; y: 441.3; width: 308.1; height: 30
         options: pane.cameras.map(c => ({ label: c.name }))
         current: Math.max(0, pane.cameras.findIndex(c => c.path === pane.camera))
-        accessibleName: "Camera"
+        accessibleName: qsTr("Camera")
         onPicked: i => { const c = pane.cameras[i]; if (c) { pane.camera = c.path; backend.setCameraDevice(c.path) } }
     }
-    SwitchLine { y: 487.3; label: "Mirror my video"; on: videoEffects.mirror; onToggled: v => videoEffects.setMirror(v) }
-    SwitchLine { y: 539.3; label: "Adjust brightness"; on: videoEffects.brightness; onToggled: v => videoEffects.setBrightness(v) }
-    SwitchLine { y: 590.3; label: "Soft focus"; on: videoEffects.softFocus; onToggled: v => videoEffects.setSoftFocus(v) }
+    SwitchLine { y: 487.3; label: qsTr("Mirror my video"); on: videoEffects.mirror; onToggled: v => videoEffects.setMirror(v) }
+    SwitchLine { y: 539.3; label: qsTr("Adjust brightness"); on: videoEffects.brightness; onToggled: v => videoEffects.setBrightness(v) }
+    SwitchLine { y: 590.3; label: qsTr("Soft focus"); on: videoEffects.softFocus; onToggled: v => videoEffects.setSoftFocus(v) }
 }

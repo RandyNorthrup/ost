@@ -38,19 +38,19 @@ Popup {
     signal created(string channelId, string name)
 
     readonly property var types: [
-        { key: "Standard", label: "Standard", hint: "Everyone on the team has access.", icon: "people-team-20", tile: "#BDD99B" },
-        { key: "Shared", label: "Shared", hint: "People or teams in your org or outside your org can have access.", icon: "channel-share-20", tile: "#A6E9ED" },
-        { key: "Private", label: "Private", hint: "Specific people on the team have access.", icon: "lock-closed-20", tile: "#FFDDB3" }
+        { key: "Standard", label: qsTr("Standard"), hint: qsTr("Everyone on the team has access."), icon: "people-team-20", tile: "#BDD99B" },
+        { key: "Shared", label: qsTr("Shared"), hint: qsTr("People or teams in your org or outside your org can have access."), icon: "channel-share-20", tile: "#A6E9ED" },
+        { key: "Private", label: qsTr("Private"), hint: qsTr("Specific people on the team have access."), icon: "lock-closed-20", tile: "#FFDDB3" }
     ]
     readonly property var chosenType: types.find(t => t.key === type) || null
     readonly property string nameError: {
         const n = name.trim()
         if (!n) return ""
-        if (n.startsWith("_") || n.startsWith(".")) return "Channel name cannot start with an underscore (_) or a period (.)"
-        if (/[~#%&*{}+\/\\:<>?|'"]/.test(n) || n.indexOf("..") >= 0) return "We don't support these characters: ~#%&*{}+/\\:<>?|'\".."
-        if (n.endsWith(".")) return "Channel name cannot end with a period (.)"
-        if (/https?:\/\/|www\./i.test(n)) return "Links are not allowed in the channel name"
-        if (n.toLowerCase() === "general") return "General can only be used for the first-created channel in a team. Try another name."
+        if (n.startsWith("_") || n.startsWith(".")) return qsTr("Channel name cannot start with an underscore (_) or a period (.)")
+        if (/[~#%&*{}+\/\\:<>?|'"]/.test(n) || n.indexOf("..") >= 0) return qsTr("We don't support these characters: ~#%&*{}+/\\:<>?|'\"..")
+        if (n.endsWith(".")) return qsTr("Channel name cannot end with a period (.)")
+        if (/https?:\/\/|www\./i.test(n)) return qsTr("Links are not allowed in the channel name")
+        if (n.toLowerCase() === "general") return qsTr("General can only be used for the first-created channel in a team. Try another name.")
         return ""
     }
     readonly property bool nameGood: name.trim().length > 0 && !nameError
@@ -81,7 +81,7 @@ Popup {
                 memberStep.pendingId = r.data.id; memberStep.pendingName = r.data.name
                 memberStep.startChannel(dlg.teamId, team.thread_id || "", dlg.teamName, r.data.id, r.data.name)
             } else if (r.ok) { dlg.close(); dlg.created(r.data.id, r.data.name) }
-            else dlg.failure = /409|conflict|already/i.test(r.error || "") ? "Channel name is already taken." : "Something went wrong on our end. Please try again."
+            else dlg.failure = /409|conflict|already/i.test(r.error || "") ? qsTr("Channel name is already taken.") : qsTr("Something went wrong on our end. Please try again.")
         }
     }
 
@@ -118,7 +118,7 @@ Popup {
             x: 17; y: 2; height: 20; radius: 10
             width: newText.implicitWidth + 12
             color: theme.brandFill
-            Text { id: newText; anchors.centerIn: parent; text: "New"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, "white") }
+            Text { id: newText; anchors.centerIn: parent; text: qsTr("New"); font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, "white") }
         }
         Text { x: 8.6; y: 92.6; text: lc.label; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: lc.chosen ? theme.text : theme.textSecondary }
         Rectangle {
@@ -143,7 +143,7 @@ Popup {
     contentItem: Item {
         Text {
             x: 0.7; y: 0.7
-            text: "Create a channel"
+            text: qsTr("Create a channel")
             font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold
             lineHeight: 28; lineHeightMode: Text.FixedHeight
             color: theme.text
@@ -152,7 +152,7 @@ Popup {
         Column {
             x: 2.7; y: 42.7; width: 546.7
             spacing: 0
-            Label { text: "Channel name"; required: true }
+            Label { text: qsTr("Channel name"); required: true }
             Item { width: 1; height: 3 }
             Rectangle {
                 width: parent.width; height: 32; radius: 4
@@ -168,9 +168,9 @@ Popup {
                     color: theme.text
                     clip: true
                     Keys.onReturnPressed: if (dlg.canCreate) dlg.create()
-                    Text { visible: !nameField.text; x: 12; anchors.verticalCenter: parent.verticalCenter; text: "Letters, numbers, and spaces are allowed"; font: nameField.font; color: theme.textTertiary }
+                    Text { visible: !nameField.text; x: 12; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Letters, numbers, and spaces are allowed"); font: nameField.font; color: theme.textTertiary }
                     Accessible.role: Accessible.EditableText
-                    Accessible.name: "Channel name"
+                    Accessible.name: qsTr("Channel name")
                 }
                 FluentIcon { visible: dlg.nameGood; x: parent.width - 30; anchors.verticalCenter: parent.verticalCenter; name: "checkmark-circle-20"; size: 20; color: theme.brand }
                 Rectangle { anchors.bottom: parent.bottom; x: 1; width: parent.width - 2; height: nameField.activeFocus ? 2 : 0; color: dlg.nameError ? theme.danger : theme.brand }
@@ -183,7 +183,7 @@ Popup {
                 color: theme.danger
             }
             Item { width: 1; height: 18 }
-            Label { text: "Description" }
+            Label { text: qsTr("Description") }
             Item { width: 1; height: 3 }
             Rectangle {
                 width: parent.width; height: Math.max(55.3, descField.contentHeight + 20); radius: 4
@@ -196,15 +196,15 @@ Popup {
                     wrapMode: TextEdit.Wrap
                     font.family: theme.font; font.pixelSize: 14
                     color: theme.text
-                    Text { visible: !descField.text; text: "Help others find the right channel by providing a description"; font: descField.font; color: theme.textTertiary }
+                    Text { visible: !descField.text; text: qsTr("Help others find the right channel by providing a description"); font: descField.font; color: theme.textTertiary }
                     Accessible.role: Accessible.EditableText
-                    Accessible.name: "Description"
+                    Accessible.name: qsTr("Description")
                 }
             }
             Item { width: 1; height: 18 }
             Row {
                 height: 21.3
-                Label { text: "Choose a channel type"; required: true; anchors.verticalCenter: parent.verticalCenter }
+                Label { text: qsTr("Choose a channel type"); required: true; anchors.verticalCenter: parent.verticalCenter }
                 Rectangle {
                     id: hcFill2
                     width: 32; height: 21.3; radius: 4
@@ -212,9 +212,9 @@ Popup {
                     FluentIcon { x: 6; anchors.verticalCenter: parent.verticalCenter; name: "info-20"; size: 20; color: theme.onFill(hcFill2, theme.textStrong) }
                     HoverHandler { id: infoHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: Qt.openUrlExternally("https://learn.microsoft.com/en-us/microsoftteams/teams-channels-overview") }
-                    ToolTip.visible: infoHover.hovered; ToolTip.delay: 300; ToolTip.text: "Learn more about channel types"
+                    ToolTip.visible: infoHover.hovered; ToolTip.delay: 300; ToolTip.text: qsTr("Learn more about channel types")
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Learn more about channel types"
+                    Accessible.name: qsTr("Learn more about channel types")
                 }
             }
             Item { width: 1; height: 3 }
@@ -228,7 +228,7 @@ Popup {
                 Text {
                     x: 12; anchors.verticalCenter: parent.verticalCenter
                     width: parent.width - 52; elide: Text.ElideRight
-                    text: dlg.chosenType ? dlg.chosenType.label + " — " + dlg.chosenType.hint.replace(/\.$/, "") : "Select"
+                    text: dlg.chosenType ? dlg.chosenType.label + " — " + dlg.chosenType.hint.replace(/\.$/, "") : qsTr("Select")
                     font.family: theme.font; font.pixelSize: 14
                     color: dlg.chosenType ? theme.text : theme.pick("#707070", "#ADADAD", "#FFFFFF")
                 }
@@ -236,7 +236,7 @@ Popup {
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: typeList.opened ? typeList.close() : typeList.open() }
                 Accessible.role: Accessible.ComboBox
-                Accessible.name: "Choose a channel type"
+                Accessible.name: qsTr("Choose a channel type")
                 Popup {
                     id: typeList
                     y: parent.height + 1.4
@@ -282,7 +282,7 @@ Popup {
                         border.color: dlg.recommend ? theme.brand : theme.textSecondary; border.width: 0.67
                         FluentIcon { visible: dlg.recommend; anchors.centerIn: parent; size: 12; name: "checkmark-12"; color: theme.onFill(hcFill4, "white") }
                     }
-                    Text { id: recText; x: 36; y: 8; text: "Recommend that people show this channel in their channel lists"; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: dlg.recommend ? theme.text : theme.textSecondary }
+                    Text { id: recText; x: 36; y: 8; text: qsTr("Recommend that people show this channel in their channel lists"); font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: dlg.recommend ? theme.text : theme.textSecondary }
                     HoverHandler { cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: dlg.recommend = !dlg.recommend }
                     Accessible.role: Accessible.CheckBox
@@ -291,13 +291,13 @@ Popup {
                 }
             }
             Item { width: 1; height: 16 }
-            Text { text: "Layout"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.Bold; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.text }
-            Text { text: "Channel owners can change this at any time"; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.text }
+            Text { text: qsTr("Layout"); font.family: theme.font; font.pixelSize: 12; font.weight: Font.Bold; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.text }
+            Text { text: qsTr("Channel owners can change this at any time"); font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.text }
             Item { width: 1; height: 10 }
             Row {
                 spacing: 12
-                LayoutCard { key: "Conversational"; picture: "conversational"; label: "Threads"; hint: "Looks like chat with replies on the side in threads. Good for back-and-forth discussions."; isNew: true }
-                LayoutCard { key: "PostReply"; picture: "post-reply"; label: "Posts"; hint: "Posts reorder by most recent reply. Good for forums and announcements." }
+                LayoutCard { key: "Conversational"; picture: "conversational"; label: qsTr("Threads"); hint: qsTr("Looks like chat with replies on the side in threads. Good for back-and-forth discussions."); isNew: true }
+                LayoutCard { key: "PostReply"; picture: "post-reply"; label: qsTr("Posts"); hint: qsTr("Posts reorder by most recent reply. Good for forums and announcements.") }
             }
             Text {
                 visible: !!dlg.failure
@@ -315,19 +315,19 @@ Popup {
                 width: 96; height: 31.3; radius: 4
                 color: cancelHover.hovered ? theme.rowHover : theme.surface
                 border.color: theme.stroke; border.width: 0.67
-                Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill5, theme.text) }
+                Text { anchors.centerIn: parent; text: qsTr("Cancel"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill5, theme.text) }
                 HoverHandler { id: cancelHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: dlg.close() }
-                Accessible.role: Accessible.Button; Accessible.name: "Cancel"
+                Accessible.role: Accessible.Button; Accessible.name: qsTr("Cancel")
             }
             Rectangle {
                 id: hcFill6
                 width: 96; height: 31.3; radius: 4
                 color: !dlg.canCreate ? theme.pick("#F0F0F0", "#141414", "#000000") : createHover.hovered ? theme.brandHover : theme.brandFill
-                Text { anchors.centerIn: parent; text: "Create"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill6, dlg.canCreate ? "white" : theme.disabled) }
+                Text { anchors.centerIn: parent; text: qsTr("Create"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill6, dlg.canCreate ? "white" : theme.disabled) }
                 HoverHandler { id: createHover; cursorShape: dlg.canCreate ? Qt.PointingHandCursor : Qt.ArrowCursor }
                 TapHandler { enabled: dlg.canCreate; onTapped: dlg.create() }
-                Accessible.role: Accessible.Button; Accessible.name: "Create"
+                Accessible.role: Accessible.Button; Accessible.name: qsTr("Create")
             }
         }
     }

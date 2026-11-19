@@ -23,7 +23,7 @@ Popup {
 
     Text {
         x: 24.67; y: 24.67; height: 28; verticalAlignment: Text.AlignVCenter
-        text: root.locked ? "Unlock the meeting" : "Lock the meeting?"
+        text: root.locked ? qsTr("Unlock the meeting") : qsTr("Lock the meeting?")
         font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold
         color: theme.text
     }
@@ -46,8 +46,8 @@ Popup {
         x: 24.67; y: 322.67; width: 380.67
         wrapMode: Text.Wrap
         lineHeight: 20; lineHeightMode: Text.FixedHeight
-        text: root.locked ? "People will be able to join."
-                          : "No one else will be able to join, but invitees can still access the meeting chat, the recording, and other meeting info."
+        text: root.locked ? qsTr("People will be able to join.")
+                          : qsTr("No one else will be able to join, but invitees can still access the meeting chat, the recording, and other meeting info.")
         font.family: theme.font; font.pixelSize: 14
         color: theme.text
     }
@@ -59,21 +59,21 @@ Popup {
             width: 96; height: 31.33; radius: 4
             color: cancelHover.hovered ? theme.menuHover : theme.surface
             border.color: theme.stroke; border.width: 0.67
-            Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.text) }
+            Text { anchors.centerIn: parent; text: qsTr("Cancel"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.text) }
             HoverHandler { id: cancelHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.close() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Cancel"
+            Accessible.name: qsTr("Cancel")
         }
         Rectangle {
             id: hcFill2
             width: 96; height: 31.33; radius: 4
             color: okHover.hovered ? theme.brandHover : theme.brandFill
-            Text { anchors.centerIn: parent; text: root.locked ? "Unlock" : "Lock"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.textOnBrand) }
+            Text { anchors.centerIn: parent; text: root.locked ? qsTr("Unlock") : qsTr("Lock"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.textOnBrand) }
             HoverHandler { id: okHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: { root.close(); root.confirmed() } }
             Accessible.role: Accessible.Button
-            Accessible.name: root.locked ? "Unlock" : "Lock"
+            Accessible.name: root.locked ? qsTr("Unlock") : qsTr("Lock")
         }
     }
 }

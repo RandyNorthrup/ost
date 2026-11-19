@@ -77,7 +77,7 @@ Popup {
         HoverHandler { id: cbh; enabled: cb.usable; cursorShape: Qt.PointingHandCursor }
         TapHandler { enabled: cb.usable; onTapped: root.close() }
         Accessible.role: Accessible.Button
-        Accessible.name: "Close"
+        Accessible.name: qsTr("Close")
         Accessible.onPressAction: if (cb.usable) root.close()
     }
     component DialogButton: Rectangle {
@@ -157,9 +157,9 @@ Popup {
         width: 600; height: 176
         Repeater {
             model: [
-                { x: 24, w: 167.57, icon: "premium-card-benefits.svg", title: "Explore your benefits", text: "See what’s included in Teams Premium.", link: "View benefits", act: "benefits" },
-                { x: 206.57, w: 181.11, icon: "premium-card-feedback.svg", title: "Share feedback", text: "Help us improve your Premium experience.", link: "Share feedback", act: "feedback" },
-                { x: 402.69, w: 173.31, icon: "premium-card-help.svg", title: "Get help", text: "Browse our Teams Premium help articles.", link: "Get help", act: "help" }
+                { x: 24, w: 167.57, icon: "premium-card-benefits.svg", title: qsTr("Explore your benefits"), text: qsTr("See what’s included in Teams Premium."), link: qsTr("View benefits"), act: "benefits" },
+                { x: 206.57, w: 181.11, icon: "premium-card-feedback.svg", title: qsTr("Share feedback"), text: qsTr("Help us improve your Premium experience."), link: qsTr("Share feedback"), act: "feedback" },
+                { x: 402.69, w: 173.31, icon: "premium-card-help.svg", title: qsTr("Get help"), text: qsTr("Browse our Teams Premium help articles."), link: qsTr("Get help"), act: "help" }
             ]
             FluentSurface {
                 required property var modelData
@@ -184,11 +184,11 @@ Popup {
     // OST opens it in the browser).
     component TrialFooter: Item {
         width: 600; height: 31.33
-        DialogButton { x: 24; kind: "subtle"; size: 12; label: "Cancel trial"; onClicked: { root.backTo = root.page; root.page = "cancel" } }
+        DialogButton { x: 24; kind: "subtle"; size: 12; label: qsTr("Cancel trial"); onClicked: { root.backTo = root.page; root.page = "cancel" } }
         Row {
             x: 576 - width; spacing: 10
-            DialogButton { label: "Buy now"; icon: "open-20"; onClicked: Qt.openUrlExternally("https://signup.microsoft.com/get-started/signup?products=CFQ7TTC0RM8K%3a0007&fOfferId=a8a931ff-8672-48ce-b5db-8d70f738012c") }
-            DialogButton { kind: "primary"; label: "Request a license"; onClicked: Qt.openUrlExternally("https://admin.microsoft.com/centrohost?appname=LicenseRequest&feature=host-license-request-app") }
+            DialogButton { label: qsTr("Buy now"); icon: "open-20"; onClicked: Qt.openUrlExternally("https://signup.microsoft.com/get-started/signup?products=CFQ7TTC0RM8K%3a0007&fOfferId=a8a931ff-8672-48ce-b5db-8d70f738012c") }
+            DialogButton { kind: "primary"; label: qsTr("Request a license"); onClicked: Qt.openUrlExternally("https://admin.microsoft.com/centrohost?appname=LicenseRequest&feature=host-license-request-app") }
         }
     }
 
@@ -198,12 +198,12 @@ Popup {
         anchors.fill: parent
         Hero {}
         CloseButton { onPicture: true }
-        Title { y: 197; text: "Start your free Teams Premium trial" }
+        Title { y: 197; text: qsTr("Start your free Teams Premium trial") }
         Repeater {
             model: [
-                { y: 244, image: "premium-protected.svg", title: "More protected", text: "Expand security in meetings & calls with added controls and features." },
-                { y: 311, image: "premium-engaging.svg", title: "More engaging", text: "Build stronger connections with branded experiences in meetings and collaborative call handling in Queues app." },
-                { y: 378, image: "premium-intelligent.svg", title: "More intelligent", text: "Use AI to focus on what matters most in every meeting or call." }
+                { y: 244, image: "premium-protected.svg", title: qsTr("More protected"), text: qsTr("Expand security in meetings & calls with added controls and features.") },
+                { y: 311, image: "premium-engaging.svg", title: qsTr("More engaging"), text: qsTr("Build stronger connections with branded experiences in meetings and collaborative call handling in Queues app.") },
+                { y: 378, image: "premium-intelligent.svg", title: qsTr("More intelligent"), text: qsTr("Use AI to focus on what matters most in every meeting or call.") }
             ]
             Item {
                 required property var modelData
@@ -216,13 +216,13 @@ Popup {
         Text {
             anchors.horizontalCenter: parent.horizontalCenter; y: 460
             // Teams' string when Start trial fails (premium-benefits).
-            text: root.st.error ? "We ran into a problem setting up your trial. Let's try again." : "Free 60-day trial, no card required."
+            text: root.st.error ? qsTr("We ran into a problem setting up your trial. Let's try again.") : qsTr("Free 60-day trial, no card required.")
             font.family: theme.font; font.pixelSize: 12; lineHeight: 20; lineHeightMode: Text.FixedHeight
             color: root.st.error ? theme.danger : theme.textSecondary
         }
         Text {
             anchors.horizontalCenter: parent.horizontalCenter; y: 480
-            text: "Microsoft Teams Trial Terms & Conditions."
+            text: qsTr("Microsoft Teams Trial Terms & Conditions.")
             font.family: theme.font; font.pixelSize: 12; lineHeight: 14; lineHeightMode: Text.FixedHeight
             color: theme.brandLink
             font.underline: termsHover.hovered
@@ -231,8 +231,8 @@ Popup {
             Accessible.role: Accessible.Link
             Accessible.name: text
         }
-        DialogButton { x: 24; y: 544.67; kind: "subtle"; label: "View all benefits"; onClicked: Qt.openUrlExternally("https://go.microsoft.com/fwlink/?linkid=2227979") }
-        DialogButton { x: 480; y: 544.67; kind: "primary"; label: root.st.error ? "Try again" : "Start trial"; onClicked: backend.startPremiumTrial() }
+        DialogButton { x: 24; y: 544.67; kind: "subtle"; label: qsTr("View all benefits"); onClicked: Qt.openUrlExternally("https://go.microsoft.com/fwlink/?linkid=2227979") }
+        DialogButton { x: 480; y: 544.67; kind: "primary"; label: root.st.error ? qsTr("Try again") : qsTr("Start trial"); onClicked: backend.startPremiumTrial() }
     }
 
     // ---- pending ----
@@ -243,13 +243,13 @@ Popup {
         Image { x: 204; y: 128; width: 192; height: 192; source: "../assets/dialogs/premium-loading.svg"; sourceSize: Qt.size(384, 384); smooth: true }
         Text {
             width: root.width; y: 353; horizontalAlignment: Text.AlignHCenter
-            text: "Getting your trial ready..."
+            text: qsTr("Getting your trial ready...")
             font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; lineHeight: 28; lineHeightMode: Text.FixedHeight
             color: theme.text
             Accessible.role: Accessible.Heading
             Accessible.name: text
         }
-        Line { y: 399; text: "This might take a minute."; color: theme.text }
+        Line { y: 399; text: qsTr("This might take a minute."); color: theme.text }
         // Fluent's spinner (32): a brand arc turning on a light track.
         Item {
             x: 284; y: 441.3; width: 32; height: 32
@@ -268,7 +268,7 @@ Popup {
                 RotationAnimator on rotation { from: 0; to: 360; duration: 1500; loops: Animation.Infinite; running: root.page === "pending" && root.opened }
             }
             Accessible.role: Accessible.ProgressBar
-            Accessible.name: "Getting your trial ready"
+            Accessible.name: qsTr("Getting your trial ready")
         }
     }
 
@@ -278,13 +278,13 @@ Popup {
         anchors.fill: parent
         Hero {}
         CloseButton { onPicture: true }
-        Title { y: 197; text: "Your Teams Premium trial is now active!" }
-        Line { y: 244; text: "Here's how to make the most of it:"; color: theme.text }
+        Title { y: 197; text: qsTr("Your Teams Premium trial is now active!") }
+        Line { y: 244; text: qsTr("Here's how to make the most of it:"); color: theme.text }
         Repeater {
             model: [
-                { y: 279, ty: 279, size: 60, tx: 195, image: "premium-active-translate.svg", text: "Talk to people globally with live-translated captions and record meetings to generate AI notes in recap." },
-                { y: 354, ty: 358, size: 48, tx: 183, image: "premium-active-watermark.svg", text: "Turn on watermarking for your next confidential meeting" },
-                { y: 417, ty: 421, size: 48, tx: 183, image: "premium-active-queues.svg", text: "View rich call history and analytics for call queues in Queues app" }
+                { y: 279, ty: 279, size: 60, tx: 195, image: "premium-active-translate.svg", text: qsTr("Talk to people globally with live-translated captions and record meetings to generate AI notes in recap.") },
+                { y: 354, ty: 358, size: 48, tx: 183, image: "premium-active-watermark.svg", text: qsTr("Turn on watermarking for your next confidential meeting") },
+                { y: 417, ty: 421, size: 48, tx: 183, image: "premium-active-queues.svg", text: qsTr("View rich call history and analytics for call queues in Queues app") }
             ]
             Item {
                 required property var modelData
@@ -295,11 +295,11 @@ Popup {
         }
         Text {
             anchors.horizontalCenter: parent.horizontalCenter; y: 495
-            text: "Premium features may take up to 24 hours to become available."
+            text: qsTr("Premium features may take up to 24 hours to become available.")
             font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight
             color: theme.textSecondary
         }
-        DialogButton { x: 480; y: 550; kind: "primary"; label: "Got it"; onClicked: root.close() }
+        DialogButton { x: 480; y: 550; kind: "primary"; label: qsTr("Got it"); onClicked: root.close() }
     }
 
     // ---- home (in the trial) ----
@@ -317,13 +317,13 @@ Popup {
             wrapMode: Text.Wrap
             textFormat: Text.RichText
             readonly property int days: root.st.daysLeft || 0
-            text: "You’ve got <span style=\"color:#2A5FC6\">" + days + (days === 1 ? " day" : " days") + "</span> left to enjoy your free trial of Teams Premium"
+            text: qsTr("You’ve got <0><0></0></0> left to enjoy your free trial of Teams Premium").replace("<0><0></0></0>", "<span style=\"color:#2A5FC6\">" + qsTr("%n days", "", days) + "</span>")
             font.family: theme.font; font.pixelSize: 24; font.weight: Font.Bold; lineHeight: 32; lineHeightMode: Text.FixedHeight
             color: theme.text
             Accessible.role: Accessible.Heading
-            Accessible.name: "You’ve got " + days + " days left to enjoy your free trial of Teams Premium"
+            Accessible.name: qsTr("You’ve got <0><0></0></0> left to enjoy your free trial of Teams Premium").replace("<0><0></0></0>", qsTr("%n days", "", days))
         }
-        Line { x: 20; y: 269.67; width: 560; text: "How's your trial going? Request a license anytime to keep using premium features."; lineHeight: 18.67 }
+        Line { x: 20; y: 269.67; width: 560; text: qsTr("How's your trial going? Request a license anytime to keep using premium features."); lineHeight: 18.67 }
         Cards { y: 312 }
         TrialFooter { y: 544.67 }
     }
@@ -334,8 +334,8 @@ Popup {
         anchors.fill: parent
         Hero { wide: true }
         CloseButton { onPicture: true }
-        Title { y: 309; text: "You’ve got Teams Premium!" }
-        Line { x: 37.38; y: 349.67; width: 525.24; text: "Explore Premium features, tips, and resources that make every meeting and call more protected, engaging, and intelligent."; lineHeight: 19.33 }
+        Title { y: 309; text: qsTr("You’ve got Teams Premium!") }
+        Line { x: 37.38; y: 349.67; width: 525.24; text: qsTr("Explore Premium features, tips, and resources that make every meeting and call more protected, engaging, and intelligent."); lineHeight: 19.33 }
         Cards { y: 404 }
     }
 
@@ -343,10 +343,10 @@ Popup {
     Item {
         visible: root.page === "benefits"
         anchors.fill: parent
-        DialogButton { x: 24; y: 24; width: 32; kind: "subtle"; icon: "arrow-left-20"; label: ""; onClicked: root.page = root.backTo; Accessible.name: "Back to Premium home" }
+        DialogButton { x: 24; y: 24; width: 32; kind: "subtle"; icon: "arrow-left-20"; label: ""; onClicked: root.page = root.backTo; Accessible.name: qsTr("Back to Premium home") }
         Text {
             x: 66; y: 24; height: 31.33; verticalAlignment: Text.AlignVCenter
-            text: "Your benefits with Premium"
+            text: qsTr("Your benefits with Premium")
             font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold
             color: theme.text
             Accessible.role: Accessible.Heading
@@ -394,31 +394,31 @@ Popup {
                         }
                     }
                     Item { width: 1; height: 24 }
-                    DialogButton { label: "Learn more"; icon: "open-20"; width: 123.4; onClicked: Qt.openUrlExternally(sec.url) }
+                    DialogButton { label: qsTr("Learn more"); icon: "open-20"; width: 123.4; onClicked: Qt.openUrlExternally(sec.url) }
                 }
             }
             Section {
-                sectionTop: 79.3; picture: "premium-benefits-protected.svg"; title: "More protected"
-                text: "Expand security in meetings & calls with added controls and features"
-                points: ["End-to-end encryption for up to 200 participants", "Watermarks for video, audio, and shared content", "Designate who can record in meetings", "Real-time sensitive content detection", "Meeting sensitivity labels*", "Turn off copy and paste of meeting chat*"]
+                sectionTop: 79.3; picture: "premium-benefits-protected.svg"; title: qsTr("More protected")
+                text: qsTr("Expand security in meetings & calls with added controls and features")
+                points: [qsTr("End-to-end encryption for up to 200 participants"), qsTr("Watermarks for video, audio, and shared content"), qsTr("Designate who can record in meetings"), qsTr("Real-time sensitive content detection"), qsTr("Meeting sensitivity labels*"), qsTr("Turn off copy and paste of meeting chat*")]
                 url: "https://support.microsoft.com/en-us/office/advanced-meeting-protection-in-microsoft-teams-premium-46e39bcb-40e0-4617-84be-14be9dd99780"
             }
             Section {
-                sectionTop: 340.7; pictureLeft: false; shaded: true; pictureDy: 58.6; picture: "premium-benefits-engaging.svg"; title: "More engaging"
-                text: "Create rich, personalized experiences for stronger connections with colleagues and customers"
-                points: ["Queues app with shared call history across the queue, silent coaching features, and rich analytics in Teams Phone", "Manage customer appointments end-to-end, from scheduling to follow-up with Advanced Bookings", "Bring your brand into every meeting with your organization’s logo, colors, branded reactions, and custom backgrounds", "Turn every interview, QBR, and exec review into a consistent experience with admin-approved templates*"]
+                sectionTop: 340.7; pictureLeft: false; shaded: true; pictureDy: 58.6; picture: "premium-benefits-engaging.svg"; title: qsTr("More engaging")
+                text: qsTr("Create rich, personalized experiences for stronger connections with colleagues and customers")
+                points: [qsTr("Queues app with shared call history across the queue, silent coaching features, and rich analytics in Teams Phone"), qsTr("Manage customer appointments end-to-end, from scheduling to follow-up with Advanced Bookings"), qsTr("Bring your brand into every meeting with your organization’s logo, colors, branded reactions, and custom backgrounds"), qsTr("Turn every interview, QBR, and exec review into a consistent experience with admin-approved templates*")]
                 url: "https://support.microsoft.com/en-us/office/engaging-meeting-experiences-in-microsoft-teams-premium-b48c2174-0faa-4cf9-800b-75e030c115e3"
             }
             Section {
-                sectionTop: 682; pictureDy: 34.7; picture: "premium-benefits-intelligent.svg"; title: "More intelligent"
-                text: "Use AI to focus on what matters most in every meeting or call."
-                points: ["AI generated summaries, action items, and personalized highlights", "AI-generated chapters in meeting recordings", "Live translation for captions and transcripts in 40 languages", "Personalized timeline markers in meeting recordings", "AI-powered speaker recognition in transcript"]
+                sectionTop: 682; pictureDy: 34.7; picture: "premium-benefits-intelligent.svg"; title: qsTr("More intelligent")
+                text: qsTr("Use AI to focus on what matters most in every meeting or call.")
+                points: [qsTr("AI generated summaries, action items, and personalized highlights"), qsTr("AI-generated chapters in meeting recordings"), qsTr("Live translation for captions and transcripts in 40 languages"), qsTr("Personalized timeline markers in meeting recordings"), qsTr("AI-powered speaker recognition in transcript")]
                 url: "https://support.microsoft.com/en-us/office/intelligent-productivity-with-microsoft-teams-premium-d5b02821-b9b1-4687-8c77-2f903ea68ad2"
             }
             Text {
                 y: 959.3 - 63.33; width: 586; height: 48
                 horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
-                text: "*Must be turned on by your admin."
+                text: qsTr("*Must be turned on by your admin.")
                 font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight
                 color: theme.textSecondary
             }
@@ -430,22 +430,22 @@ Popup {
     Item {
         visible: root.page === "cancel"
         anchors.fill: parent
-        DialogButton { x: 32; y: 32; width: 32; height: 21.33; kind: "subtle"; icon: "arrow-left-20"; label: ""; onClicked: root.page = root.backTo; Accessible.name: "Back to Premium home" }
+        DialogButton { x: 32; y: 32; width: 32; height: 21.33; kind: "subtle"; icon: "arrow-left-20"; label: ""; onClicked: root.page = root.backTo; Accessible.name: qsTr("Back to Premium home") }
         CloseButton {}
         Image { x: 200; y: 90; width: 200; height: 200; source: "../assets/dialogs/premium-cancel.svg"; sourceSize: Qt.size(400, 400); smooth: true }
         Text {
             x: 22; y: 322; width: 556; horizontalAlignment: Text.AlignHCenter
-            text: "Are you sure you want to cancel your trial?"
+            text: qsTr("Are you sure you want to cancel your trial?")
             font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; lineHeight: 28; lineHeightMode: Text.FixedHeight
             color: theme.text
             Accessible.role: Accessible.Heading
             Accessible.name: text
         }
-        Line { x: 20; y: 363; width: 560; color: theme.text; text: root.st.cancelError ? "We ran into a problem canceling your trial. Let's try again." : "Canceling your trial means losing access to AI-powered meeting recaps, advanced meeting protection, and more. To request access to Teams Premium again, you’ll need to contact your admin." }
-        Line { x: 20; y: 438; width: 560; color: theme.text; text: "Note: Your trial will cancel within 24 hours." }
-        DialogButton { x: 367.4; y: 546.7; label: "Never mind"; width: 99.6; onClicked: root.page = root.backTo }
+        Line { x: 20; y: 363; width: 560; color: theme.text; text: root.st.cancelError ? qsTr("We ran into a problem canceling your trial. Let's try again.") : qsTr("Canceling your trial means losing access to AI-powered meeting recaps, advanced meeting protection, and more. To request access to Teams Premium again, you’ll need to contact your admin.") }
+        Line { x: 20; y: 438; width: 560; color: theme.text; text: qsTr("Note: Your trial will cancel within 24 hours.") }
+        DialogButton { x: 367.4; y: 546.7; label: qsTr("Never mind"); width: 99.6; onClicked: root.page = root.backTo }
         DialogButton {
-            x: 482; y: 546.7; kind: "primary"; label: root.st.cancelError ? "Try again" : "Cancel trial"
+            x: 482; y: 546.7; kind: "primary"; label: root.st.cancelError ? qsTr("Try again") : qsTr("Cancel trial")
             opacity: root.st.canceling ? 0.6 : 1
             onClicked: if (!root.st.canceling) backend.cancelPremiumTrial()
         }

@@ -114,13 +114,13 @@ Rectangle {
         Text {
             visible: !pane.rootId
             x: 25 - 0.67; anchors.verticalCenter: parent.verticalCenter
-            text: "Threads"
+            text: qsTr("Threads")
             font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text
             Accessible.role: Accessible.Heading
         }
         PaneAction {
             visible: !pane.rootId
-            x: parent.width - 57.7 + 0.67; icon: "dismiss-20"; Accessible.name: "Close threads"
+            x: parent.width - 57.7 + 0.67; icon: "dismiss-20"; Accessible.name: qsTr("Close threads")
             onClicked: pane.closed()
         }
         // A thread's.
@@ -131,12 +131,12 @@ Rectangle {
             readonly property bool following: !!pane.rootMessage && pane.rootMessage.following === true
             Text {
                 x: 20 - 0.67; anchors.verticalCenter: parent.verticalCenter
-                text: "Threads"
+                text: qsTr("Threads")
                 font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: pane.rootId = "" }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Go to thread list"
+                Accessible.name: qsTr("Go to thread list")
             }
             FluentIcon { x: 80 - 0.67; anchors.verticalCenter: parent.verticalCenter; name: "chevron-right-16"; size: 16; color: theme.text }
             Text {
@@ -149,7 +149,7 @@ Rectangle {
                 id: followButton
                 x: parent.width - 112.7 + 0.67; height: 31.3
                 icon: threadHead.following ? "chat-multiple-minus-20" : "chat-multiple-20"
-                Accessible.name: threadHead.following ? "Unfollow thread" : "Follow thread"
+                Accessible.name: threadHead.following ? qsTr("Unfollow thread") : qsTr("Follow thread")
                 onClicked: backend.setThreadFollowing(pane.rootId, !threadHead.following)
                 ToolTip.visible: followHover.hovered; ToolTip.delay: 500
                 ToolTip.text: Accessible.name
@@ -160,16 +160,16 @@ Rectangle {
                 x: parent.width - 80.7 + 0.67; height: 31.3
                 icon: "more-horizontal-20"
                 iconColor: threadMenu.opened ? theme.brand : theme.textStrong
-                Accessible.name: "More thread options"
+                Accessible.name: qsTr("More thread options")
                 onClicked: threadMenu.open()
                 MenuPopup {
                     id: threadMenu
                     x: parent.width - width; y: parent.height + 4
                     items: [
-                        { key: "unread", label: "Mark as unread", icon: "glasses-off-20" },
-                        { key: "link", label: "Copy link", icon: "link-20" },
-                        { key: "jump", label: "Jump to original message", icon: "arrow-enter-20" },
-                        { key: "window", label: "Open thread in new window", icon: "window-new-20" }
+                        { key: "unread", label: qsTr("Mark as unread"), icon: "glasses-off-20" },
+                        { key: "link", label: qsTr("Copy link"), icon: "link-20" },
+                        { key: "jump", label: qsTr("Jump to original message"), icon: "arrow-enter-20" },
+                        { key: "window", label: qsTr("Open thread in new window"), icon: "window-new-20" }
                     ]
                     onPicked: i => {
                         const k = items[i].key, m = pane.rootMessage
@@ -183,7 +183,7 @@ Rectangle {
             }
             PaneAction {
                 x: parent.width - 48.7 + 0.67; height: 31.3
-                icon: "dismiss-20"; Accessible.name: "Close threads"
+                icon: "dismiss-20"; Accessible.name: qsTr("Close threads")
                 onClicked: pane.closed()
             }
         }
@@ -230,7 +230,7 @@ Rectangle {
             Text {
                 x: 68; y: 26; width: parent.width - x - 12; height: 20
                 verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight
-                text: (row.modelData.thread_last_mine ? "You" : row.modelData.thread_last_sender || "") + ": " + (row.modelData.thread_last_text || "").replace(/\n/g, " ")
+                text: (row.modelData.thread_last_mine ? qsTr("You") : row.modelData.thread_last_sender || "") + ": " + (row.modelData.thread_last_text || "").replace(/\n/g, " ")
                 font.family: theme.font; font.pixelSize: 14; color: theme.onFill(row, theme.textSecondary)
             }
             Row {
@@ -260,7 +260,7 @@ Rectangle {
             HoverHandler { id: rowHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: pane.openThread(row.modelData.id) }
             Accessible.role: Accessible.ListItem
-            Accessible.name: (row.modelData.text || "") + ", " + row.modelData.thread_replies + (row.modelData.thread_replies === 1 ? " reply" : " replies") + (row.modelData.following === true ? ", followed" : "")
+            Accessible.name: (row.modelData.text || "") + ", " + qsTr("%n replies", "", row.modelData.thread_replies) + (row.modelData.following === true ? ", " + qsTr("followed") : "")
         }
     }
 }

@@ -120,11 +120,10 @@ Popup {
     // characters: the first and last 12).
     function org() { const n = info ? info.tenant : ""; return n.length > 24 ? n.slice(0, 12) + "..." + n.slice(-12) : n }
     function linkSentence(scope, edit, full) {
-        const can = edit ? "edit" : "view"
-        if (scope === 3) return "People with existing access can use the link."
-        if (scope === 0) return "Anyone with the link can " + can + "."
-        if (scope === 1) return "People in " + (full ? (info ? info.tenant : "") : "your organization") + " with the link can " + can + "."
-        return "Only the people you specified can " + can + "."
+        if (scope === 3) return qsTr("People with existing access can use the link.")
+        if (scope === 0) return edit ? qsTr("Anyone with the link can edit.") : qsTr("Anyone with the link can view.")
+        if (scope === 1) return (edit ? qsTr("People in %1 with the link can edit.") : qsTr("People in %1 with the link can view.")).arg(full ? (info ? info.tenant : "") : qsTr("your organization"))
+        return edit ? qsTr("Only the people you specified can edit.") : qsTr("Only the people you specified can view.")
     }
     // A name shortened in the middle to fit, as OneDrive writes it ("...").
     TextMetrics { id: tm; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; elide: Text.ElideMiddle }
@@ -153,7 +152,7 @@ Popup {
         pickerInput.text = ""; pickerInput.forceActiveFocus()
     }
     function unpick(i) { const a = picked.slice(); a.splice(i, 1); picked = a }
-    function roleWord(r) { return r === 3 ? "Owner" : r === 2 ? "Can edit" : "Can view" }
+    function roleWord(r) { return r === 3 ? qsTr("Owner") : r === 2 ? qsTr("Can edit") : qsTr("Can view") }
     function personPhoto(p) { return p && p.oid ? "8:orgid:" + p.oid : "" }
 
     // A 32 px OneDrive icon button (Help, Close, Back, Grant Access).
@@ -213,13 +212,13 @@ Popup {
             height: footer.y + footer.height + (copiedBar.visible ? 12 + copiedBar.height : 0) + (errorText.visible ? 8 + errorText.height : 0) + 24
             Text {
                 x: 24; y: 26.67; width: 356; height: 26.67
-                text: "Share \"" + titleMetrics.elidedText.replace("\u2026", "...") + "\""
+                text: qsTr("Share \"%1\"").arg(titleMetrics.elidedText.replace("\u2026", "..."))
                 TextMetrics { id: titleMetrics; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; elide: Text.ElideMiddle; elideWidth: 276; text: root.fileName }
                 font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: root.ink
                 elide: Text.ElideRight
             }
-            IconButton { x: 389; y: 24; width: 30; icon: "question-circle-20"; label: "Help"; onClicked: Qt.openUrlExternally("https://go.microsoft.com/fwlink/?linkid=2103402") }
-            IconButton { x: 424; y: 24; icon: "dismiss-20"; label: "Close"; onClicked: root.close() }
+            IconButton { x: 389; y: 24; width: 30; icon: "question-circle-20"; label: qsTr("Help"); onClicked: Qt.openUrlExternally("https://go.microsoft.com/fwlink/?linkid=2103402") }
+            IconButton { x: 424; y: 24; icon: "dismiss-20"; label: qsTr("Close"); onClicked: root.close() }
 
             // Recipients.
             Rectangle {
@@ -249,7 +248,7 @@ Popup {
                                 HoverHandler { id: pxh; cursorShape: Qt.PointingHandCursor }
                                 TapHandler { onTapped: root.unpick(pill.index) }
                                 Accessible.role: Accessible.Button
-                                Accessible.name: "Remove " + pill.modelData.DisplayText
+                                Accessible.name: qsTr("Remove %1").arg(pill.modelData.DisplayText)
                             }
                         }
                     }
@@ -265,9 +264,9 @@ Popup {
                         else root.suggestions = []
                     }
                     Keys.onReturnPressed: if (root.suggestions.length) root.pick(root.suggestions[0])
-                    Text { visible: !parent.text; text: root.picked.length ? "Add more" : "Add a name, group, or email"; font: parent.font; color: root.soft }
+                    Text { visible: !parent.text; text: root.picked.length ? qsTr("Add more") : qsTr("Add a name, group, or email"); font: parent.font; color: root.soft }
                     Accessible.role: Accessible.EditableText
-                    Accessible.name: "Add a name, group, or email"
+                    Accessible.name: qsTr("Add a name, group, or email")
                 }
                 Rectangle { x: 362.33; y: 3.67; width: 1; height: parent.height - 7.33; color: theme.pick("#D1D1D1", "#605E5C", "#000000") }
                 Rectangle {
@@ -279,7 +278,7 @@ Popup {
                     HoverHandler { id: rbh; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: roleMenu.open() }
                     Accessible.role: Accessible.ComboBox
-                    Accessible.name: "Select a role for the person you would like to grant access to"
+                    Accessible.name: qsTr("Select a role for the person you would like to grant access to")
                 }
                 Rectangle { visible: pickerInput.activeFocus; anchors.bottom: parent.bottom; x: 0; width: parent.width; height: 2; radius: 1; color: root.accent }
             }
@@ -292,7 +291,7 @@ Popup {
                 background: FluentSurface { depth: 16; radius: 2; color: theme.surface }
                 Column {
                     Repeater {
-                        model: [{ edit: true, name: "Can edit", line: "Make any changes", icon: "edit-20" }, { edit: false, name: "Can view", line: "Can't make changes", icon: "eye-20" }]
+                        model: [{ edit: true, name: qsTr("Can edit"), line: qsTr("Make any changes"), icon: "edit-20" }, { edit: false, name: qsTr("Can view"), line: qsTr("Can't make changes"), icon: "eye-20" }]
                         Rectangle {
                             id: hcFill3
                             required property var modelData
@@ -343,14 +342,14 @@ Popup {
                     Row {
                         anchors.centerIn: parent; spacing: 12
                         FluentIcon { size: 16; name: "search-20"; color: theme.onFill(hcFill5, theme.pick("#383966", "#C5C7F9", "#FFFFFF")) }
-                        Text { text: "Search directory"; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(hcFill5, root.ink) }
+                        Text { text: qsTr("Search directory"); font.family: theme.font; font.pixelSize: 12; color: theme.onFill(hcFill5, root.ink) }
                     }
                     HoverHandler { id: sdh; cursorShape: Qt.PointingHandCursor }
                     // The directory search is the same people search, with
                     // what is typed.
                     TapHandler { onTapped: backend.shareAction("people", JSON.stringify({ site: root.item ? root.item.site : "" }), JSON.stringify({ query: root.query.trim() })) }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Search directory"
+                    Accessible.name: qsTr("Search directory")
                 }
             }
 
@@ -368,9 +367,9 @@ Popup {
                         width: parent.width; wrapMode: TextEdit.Wrap
                         font.family: theme.font; font.pixelSize: 14; color: root.ink
                         onTextChanged: root.message = text
-                        Text { visible: !parent.text; text: "Add a message"; font: parent.font; color: root.soft }
+                        Text { visible: !parent.text; text: qsTr("Add a message"); font: parent.font; color: root.soft }
                         Accessible.role: Accessible.EditableText
-                        Accessible.name: "Add a message"
+                        Accessible.name: qsTr("Add a message")
                     }
                 }
                 Rectangle { visible: msgEdit.activeFocus; anchors.bottom: parent.bottom; width: parent.width; height: 2; color: root.accent }
@@ -402,7 +401,7 @@ Popup {
                     HoverHandler { id: mah; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: { root.tab = "people"; root.view = "manage" } }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Manage access (" + (root.info ? root.info.people.length : 0) + " people) Select to manage access."
+                    Accessible.name: qsTr("Manage access (%1 people) Select to manage access.").arg(root.info ? root.info.people.length : 0)
                 }
                 Rectangle {
                     id: hcFill6
@@ -413,12 +412,12 @@ Popup {
                     Row {
                         anchors.centerIn: parent; spacing: 4
                         FluentIcon { anchors.verticalCenter: parent.verticalCenter; size: 16; name: "link-20"; color: theme.onFill(hcFill6, theme.pick("#383966", "#C5C7F9", "#FFFF00")) }
-                        Text { text: "Copy link"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill6, theme.pick("#383966", "#C5C7F9", "#FFFF00")) }
+                        Text { text: qsTr("Copy link"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill6, theme.pick("#383966", "#C5C7F9", "#FFFF00")) }
                     }
                     HoverHandler { id: clh; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.copyLink() }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Copy link"
+                    Accessible.name: qsTr("Copy link")
                 }
                 Rectangle {
                     id: hcFill7
@@ -428,7 +427,7 @@ Popup {
                     HoverHandler { id: lsh; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.openSettings() }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Link settings"
+                    Accessible.name: qsTr("Link settings")
                 }
                 Rectangle {
                     id: hcFill8
@@ -438,12 +437,12 @@ Popup {
                     Row {
                         anchors.centerIn: parent; spacing: 6
                         FluentIcon { anchors.verticalCenter: parent.verticalCenter; size: 16; name: "send-20"; color: theme.onFill(hcFill8, "white") }
-                        Text { text: "Send"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill8, "white") }
+                        Text { text: qsTr("Send"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill8, "white") }
                     }
                     HoverHandler { id: sdbh; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.picked.length ? root.send() : pickerInput.forceActiveFocus() }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Send"
+                    Accessible.name: qsTr("Send")
                 }
             }
             // "Link copied." and what the link does.
@@ -457,11 +456,11 @@ Popup {
                     id: copiedText
                     x: 34; width: parent.width - 46; anchors.verticalCenter: parent.verticalCenter
                     wrapMode: Text.Wrap; textFormat: Text.StyledText
-                    text: "<b>Link copied.</b> " + root.copied
+                    text: "<b>" + qsTr("Link copied.") + "</b> " + root.copied
                     font.family: theme.font; font.pixelSize: 14; color: root.ink
                 }
                 Accessible.role: Accessible.AlertMessage
-                Accessible.name: "Link copied. " + root.copied
+                Accessible.name: qsTr("Link copied.") + " " + root.copied
             }
             Text {
                 id: errorText
@@ -478,22 +477,22 @@ Popup {
             visible: root.view === "settings"
             width: parent.width
             height: applyRow.y + 32 + 32
-            IconButton { visible: !root.chatMode; x: 24; y: 30.67; icon: "arrow-left-20"; label: "Back"; onClicked: root.view = "main" }
-            Text { x: root.chatMode ? 24 : 65; y: 24; width: 313; height: 26.67; text: "Link settings"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: root.ink }
+            IconButton { visible: !root.chatMode; x: 24; y: 30.67; icon: "arrow-left-20"; label: qsTr("Back"); onClicked: root.view = "main" }
+            Text { x: root.chatMode ? 24 : 65; y: 24; width: 313; height: 26.67; text: qsTr("Link settings"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: root.ink }
             Text { x: root.chatMode ? 24 : 65; y: 50.67; width: 313; elide: Text.ElideMiddle; text: root.fileName; font.family: theme.font; font.pixelSize: 14; color: root.ink }
-            IconButton { x: 387; y: 30.67; icon: "info-20"; label: "Learn more"; onClicked: Qt.openUrlExternally("https://go.microsoft.com/fwlink/?linkid=2185222") }
-            IconButton { x: 424; y: 30.67; icon: "dismiss-20"; label: "Close"; onClicked: root.close() }
-            Text { x: 24; y: 93.33; text: "The link works for"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: root.ink }
+            IconButton { x: 387; y: 30.67; icon: "info-20"; label: qsTr("Learn more"); onClicked: Qt.openUrlExternally("https://go.microsoft.com/fwlink/?linkid=2185222") }
+            IconButton { x: 424; y: 30.67; icon: "dismiss-20"; label: qsTr("Close"); onClicked: root.close() }
+            Text { x: 24; y: 93.33; text: qsTr("The link works for"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: root.ink }
             Column {
                 id: scopes
                 x: 24; y: 132; width: 432; spacing: 12
                 Repeater {
                     model: [
-                        { scope: 0, name: "Anyone", line: "Share with anyone, doesn't require sign-in" },
-                        { scope: 1, name: "People in " + root.org(), line: "Share with people in " + root.org() + ", organization account required." }
-                    ].concat(root.chatMode ? [{ scope: 4, name: "People currently in this chat", line: "", noInfo: true }] : []).concat([
-                        { scope: 3, name: "Only people with existing access", line: "Reshare with people in your organization who already have access." },
-                        { scope: 2, name: "People you choose", line: "Share with specific people you choose inside or outside of " + root.org() + ", using their name, group, or email." }
+                        { scope: 0, name: qsTr("Anyone"), line: qsTr("Share with anyone, doesn't require sign-in") },
+                        { scope: 1, name: qsTr("People in %1").arg(root.org()), line: qsTr("Share with people in %1, organization account required.").arg(root.org()) }
+                    ].concat(root.chatMode ? [{ scope: 4, name: qsTr("People currently in this chat"), line: "", noInfo: true }] : []).concat([
+                        { scope: 3, name: qsTr("Only people with existing access"), line: qsTr("Reshare with people in your organization who already have access.") },
+                        { scope: 2, name: qsTr("People you choose"), line: qsTr("Share with specific people you choose inside or outside of %1, using their name, group, or email.").arg(root.org()) }
                     ])
                     Column {
                         id: srow
@@ -543,18 +542,18 @@ Popup {
                 x: 24; y: scopes.y + scopes.height; width: 432
                 Item {
                     width: 432; height: 50.67
-                    Text { y: 24; text: "More settings"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: root.ink }
+                    Text { y: 24; text: qsTr("More settings"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: root.ink }
                 }
                 Rectangle {
                     id: roleCombo
                     width: 432; height: 42; color: rch.hovered ? theme.menuHover : "transparent"
                     FluentIcon { x: 16; anchors.verticalCenter: parent.verticalCenter; size: 16; name: root.pendEdit ? "edit-20" : "eye-20"; color: theme.onFill(roleCombo, root.soft) }
-                    Text { x: 42; anchors.verticalCenter: parent.verticalCenter; text: root.pendEdit ? "Can edit" : "Can view"; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(roleCombo, root.soft) }
+                    Text { x: 42; anchors.verticalCenter: parent.verticalCenter; text: root.pendEdit ? qsTr("Can edit") : qsTr("Can view"); font.family: theme.font; font.pixelSize: 14; color: theme.onFill(roleCombo, root.soft) }
                     FluentIcon { anchors.right: parent.right; anchors.rightMargin: 14; anchors.verticalCenter: parent.verticalCenter; size: 12; name: "chevron-down-20"; color: theme.onFill(roleCombo, root.soft) }
                     HoverHandler { id: rch; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: linkRoleList.open() }
                     Accessible.role: Accessible.ComboBox
-                    Accessible.name: "Select a role, " + (root.pendEdit ? "Can edit" : "Can view")
+                    Accessible.name: qsTr("Select a role, %1").arg(root.pendEdit ? qsTr("Can edit") : qsTr("Can view"))
                     Popup {
                         id: linkRoleList
                         y: parent.height + 4; width: 432; height: 133.58; padding: 4
@@ -562,7 +561,7 @@ Popup {
                         Column {
                             spacing: 2
                             Repeater {
-                                model: [{ edit: true, name: "Can edit", line: "Make any changes", icon: "edit-20" }, { edit: false, name: "Can view", line: "Can't make changes", icon: "eye-20" }]
+                                model: [{ edit: true, name: qsTr("Can edit"), line: qsTr("Make any changes"), icon: "edit-20" }, { edit: false, name: qsTr("Can view"), line: qsTr("Can't make changes"), icon: "eye-20" }]
                                 Rectangle {
                                     id: hcFill9
                                     required property var modelData
@@ -589,7 +588,7 @@ Popup {
                         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: root.rule }
                         Text {
                             x: 12.67; anchors.verticalCenter: parent.verticalCenter
-                            text: root.pendExpiration ? Qt.formatDate(new Date(root.pendExpiration), "MM/dd/yyyy") : "Set expiration date (MM/DD/YYYY)"
+                            text: root.pendExpiration ? theme.fmtDate(new Date(root.pendExpiration), "MM/dd/yyyy") : qsTr("Set expiration date (MM/DD/YYYY)")
                             font.family: theme.font; font.pixelSize: 14; color: root.pendExpiration ? root.ink : root.soft
                         }
                         Rectangle {
@@ -598,12 +597,12 @@ Popup {
                             FluentIcon { anchors.centerIn: parent; size: 12; name: "dismiss-20"; color: root.ink }
                             TapHandler { onTapped: root.pendExpiration = "" }
                             Accessible.role: Accessible.Button
-                            Accessible.name: "Remove expiration date"
+                            Accessible.name: qsTr("Remove expiration date")
                         }
                         HoverHandler { cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: expiryPicker.openPicker() }
                         Accessible.role: Accessible.ComboBox
-                        Accessible.name: "Set expiration date"
+                        Accessible.name: qsTr("Set expiration date")
                         DatePickerField {
                             id: expiryPicker
                             bare: true; width: parent.width; height: parent.height
@@ -627,9 +626,9 @@ Popup {
                             echoMode: TextInput.Password
                             text: root.pendPassword; onTextChanged: root.pendPassword = text
                             font.family: theme.font; font.pixelSize: 14; color: root.ink
-                            Text { visible: !parent.text; anchors.verticalCenter: parent.verticalCenter; text: "Set password"; font: parent.font; color: theme.pick("#3F3D3D", "#C8C6C4", "#FFFFFF") }
+                            Text { visible: !parent.text; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Set password"); font: parent.font; color: theme.pick("#3F3D3D", "#C8C6C4", "#FFFFFF") }
                             Accessible.role: Accessible.EditableText
-                            Accessible.name: "Password field"
+                            Accessible.name: qsTr("Password field")
                         }
                     }
                 }
@@ -638,7 +637,7 @@ Popup {
                 id: applyRow
                 x: 24; y: (more.visible ? more.y + more.height : scopes.y + scopes.height) + 36; width: 432; height: 32
                 DialogButton {
-                    anchors.right: parent.right; label: "Apply"; primary: true
+                    anchors.right: parent.right; label: qsTr("Apply"); primary: true
                     onClicked: {
                         root.linkScope = root.pendScope; root.linkEdit = root.pendEdit
                         root.expiration = root.pendScope === 3 ? "" : root.pendExpiration
@@ -655,11 +654,11 @@ Popup {
         Item {
             visible: root.view === "invited"
             width: parent.width; height: 288
-            IconButton { x: 424; y: 24; icon: "dismiss-20"; label: "Close"; onClicked: root.close() }
+            IconButton { x: 424; y: 24; icon: "dismiss-20"; label: qsTr("Close"); onClicked: root.close() }
             Text {
                 x: 24; y: 70; width: 432; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
                 lineHeight: 26; lineHeightMode: Text.FixedHeight
-                text: "You've invited " + root.invited.join(", ") + " to " + (root.invitedEdit ? "edit" : "view") + "\n\"" + invitedMetrics.elidedText.replace("\u2026", "...") + "\""
+                text: (root.invitedEdit ? qsTr("You've invited %1 to edit") : qsTr("You've invited %1 to view")).arg(root.invited.join(", ")) + "\n\"" + invitedMetrics.elidedText.replace("\u2026", "...") + "\""
                 TextMetrics { id: invitedMetrics; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; elide: Text.ElideMiddle; elideWidth: 260; text: root.fileName }
                 font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: root.ink
             }
@@ -670,7 +669,7 @@ Popup {
                 HoverHandler { id: ivh; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: { root.tab = "people"; root.view = "manage" } }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Shared with " + root.invited.join(", ") + ". Select to manage access."
+                Accessible.name: qsTr("Shared with %1. Select to manage access.").arg(root.invited.join(", "))
             }
         }
 
@@ -679,10 +678,10 @@ Popup {
             id: manageView
             visible: root.view === "manage"
             width: parent.width; height: 650
-            IconButton { x: 24; y: 24; icon: "arrow-left-20"; label: "Back"; onClicked: { root.picked = []; root.view = "main" } }
-            Text { x: 65; y: 26.67; text: "Manage Access"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: root.ink }
-            IconButton { x: 387; y: 24; icon: "person-add-20"; label: "Grant Access"; onClicked: { root.view = "main"; pickerInput.forceActiveFocus() } }
-            IconButton { x: 424; y: 24; icon: "dismiss-20"; label: "Close"; onClicked: root.close() }
+            IconButton { x: 24; y: 24; icon: "arrow-left-20"; label: qsTr("Back"); onClicked: { root.picked = []; root.view = "main" } }
+            Text { x: 65; y: 26.67; text: qsTr("Manage Access"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: root.ink }
+            IconButton { x: 387; y: 24; icon: "person-add-20"; label: qsTr("Grant Access"); onClicked: { root.view = "main"; pickerInput.forceActiveFocus() } }
+            IconButton { x: 424; y: 24; icon: "dismiss-20"; label: qsTr("Close"); onClicked: root.close() }
             FluentIcon { x: 31; y: 68; size: 16; name: root.fileIconName(); color: root.ink }
             Text { x: 55; y: 66.33; width: 400; elide: Text.ElideMiddle; text: root.fileName; font.family: theme.font; font.pixelSize: 14; color: root.ink }
             Rectangle {
@@ -691,20 +690,20 @@ Popup {
                 Row {
                     id: stopRow; x: 2; spacing: 8
                     FluentIcon { anchors.verticalCenter: parent.verticalCenter; size: 14; name: "subtract-circle-20"; color: theme.pick("#383966", "#C5C7F9", "#FFFFFF") }
-                    Text { text: "Stop sharing"; font.family: theme.font; font.pixelSize: 14; color: root.accent; font.underline: ssh.hovered }
+                    Text { text: qsTr("Stop sharing"); font.family: theme.font; font.pixelSize: 14; color: root.accent; font.underline: ssh.hovered }
                 }
                 HoverHandler { id: ssh; cursorShape: Qt.PointingHandCursor }
-                TapHandler { onTapped: root.ask = { title: "Stop sharing?", text: "Only owners of this item will still have access.", ok: "Stop sharing", run: () => backend.shareAction("stop", JSON.stringify(root.item), "{}") } }
+                TapHandler { onTapped: root.ask = { title: qsTr("Stop sharing?"), text: qsTr("Only owners of this item will still have access."), ok: qsTr("Stop sharing"), run: () => backend.shareAction("stop", JSON.stringify(root.item), "{}") } }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Stop sharing"
+                Accessible.name: qsTr("Stop sharing")
             }
             Row {
                 x: 24; y: root.shared ? 124 : 94
                 Repeater {
                     model: [
-                        { key: "people", label: "People" + (root.info ? " • " + root.info.people.length : "") },
-                        { key: "groups", label: "Groups" },
-                        { key: "links", label: "Links" + (root.info && root.info.links.length ? " • " + root.info.links.length : "") }
+                        { key: "people", label: qsTr("People") + (root.info ? " • " + root.info.people.length : "") },
+                        { key: "groups", label: qsTr("Groups") },
+                        { key: "links", label: qsTr("Links") + (root.info && root.info.links.length ? " • " + root.info.links.length : "") }
                     ]
                     Item {
                         required property var modelData
@@ -732,9 +731,9 @@ Popup {
                         x: 28; y: 4; width: 384; height: 19.17
                         font.family: theme.font; font.pixelSize: 14; color: root.ink
                         onTextChanged: root.filter = text
-                        Text { visible: !parent.text; text: "Search displayed names"; font: parent.font; color: root.soft }
+                        Text { visible: !parent.text; text: qsTr("Search displayed names"); font: parent.font; color: root.soft }
                         Accessible.role: Accessible.EditableText
-                        Accessible.name: "Search displayed names"
+                        Accessible.name: qsTr("Search displayed names")
                     }
                     Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: root.soft }
                 }
@@ -743,11 +742,11 @@ Popup {
                 Column {
                     visible: !!root.info && !root.shared
                     y: 76; width: 432; spacing: 10
-                    Text { text: "This file has not been shared with anyone yet."; font.family: theme.font; font.pixelSize: 14; color: root.ink }
+                    Text { text: qsTr("This file has not been shared with anyone yet."); font.family: theme.font; font.pixelSize: 14; color: root.ink }
                     Row {
                         spacing: 10
                         FluentIcon { anchors.verticalCenter: parent.verticalCenter; size: 16; name: "add-circle-20"; color: root.accent }
-                        Text { text: "Start sharing"; font.family: theme.font; font.pixelSize: 14; color: root.accent; font.underline: stsh.hovered; HoverHandler { id: stsh; cursorShape: Qt.PointingHandCursor }
+                        Text { text: qsTr("Start sharing"); font.family: theme.font; font.pixelSize: 14; color: root.accent; font.underline: stsh.hovered; HoverHandler { id: stsh; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: { root.view = "main"; pickerInput.forceActiveFocus() } } }
                     }
                 }
@@ -790,7 +789,7 @@ Popup {
                 x: 24; y: 192; width: 432; spacing: 10
                 Text {
                     width: 432; wrapMode: Text.Wrap; textFormat: Text.StyledText
-                    text: "This file has not been shared with a group yet. <a href=\"learn\" style=\"color:" + root.accent + "\">Learn more</a>"
+                    text: qsTr("This file has not been shared with a group yet.") + " <a href=\"learn\" style=\"color:" + root.accent + "\">" + qsTr("Learn more") + "</a>"
                     font.family: theme.font; font.pixelSize: 14; color: root.ink
                     onLinkActivated: Qt.openUrlExternally("https://go.microsoft.com/fwlink/?linkid=2185222")
                     HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
@@ -798,7 +797,7 @@ Popup {
                 Row {
                     spacing: 10
                     FluentIcon { anchors.verticalCenter: parent.verticalCenter; size: 16; name: "add-circle-20"; color: root.ink }
-                    Text { text: "Share with a group"; font.family: theme.font; font.pixelSize: 14; color: root.accent; font.underline: sgg.hovered; HoverHandler { id: sgg; cursorShape: Qt.PointingHandCursor }
+                    Text { text: qsTr("Share with a group"); font.family: theme.font; font.pixelSize: 14; color: root.accent; font.underline: sgg.hovered; HoverHandler { id: sgg; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: { root.view = "main"; pickerInput.forceActiveFocus() } } }
                 }
             }
@@ -809,11 +808,11 @@ Popup {
                 Column {
                     visible: !!root.info && root.info.links.length === 0
                     width: 432; spacing: 10
-                    Text { width: 432; wrapMode: Text.Wrap; text: "A sharing link hasn't been created for this file yet. Create a new link to start sharing with others."; font.family: theme.font; font.pixelSize: 14; color: root.ink }
+                    Text { width: 432; wrapMode: Text.Wrap; text: qsTr("A sharing link hasn't been created for this file yet. Create a new link to start sharing with others."); font.family: theme.font; font.pixelSize: 14; color: root.ink }
                     Row {
                         spacing: 10
                         FluentIcon { anchors.verticalCenter: parent.verticalCenter; size: 16; name: "add-circle-20"; color: root.ink }
-                        Text { text: "Create and share a new link"; font.family: theme.font; font.pixelSize: 14; color: root.accent; font.underline: cnl.hovered; HoverHandler { id: cnl; cursorShape: Qt.PointingHandCursor }
+                        Text { text: qsTr("Create and share a new link"); font.family: theme.font; font.pixelSize: 14; color: root.accent; font.underline: cnl.hovered; HoverHandler { id: cnl; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: root.openSettings() } }
                     }
                 }
@@ -832,21 +831,21 @@ Popup {
                         Rectangle {
                             id: hcFill11
                             x: 314; width: 54; height: 32; radius: 3; color: lch.hovered ? theme.menuHover : theme.surface; border.width: 0.67; border.color: theme.pick("#B6B4B4", "#8A8886", "#FFFFFF")
-                            Text { anchors.centerIn: parent; text: "Copy"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.onFill(hcFill11, root.ink) }
+                            Text { anchors.centerIn: parent; text: qsTr("Copy"); font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.onFill(hcFill11, root.ink) }
                             HoverHandler { id: lch; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: backend.copyText(parent.parent.modelData.url) }
                             Accessible.role: Accessible.Button
-                            Accessible.name: "Copy link"
+                            Accessible.name: qsTr("Copy link")
                         }
-                        IconButton { x: 368; icon: "settings-20"; label: "More link options"; onClicked: { root.pendScope = parent.modelData.scope; root.pendEdit = parent.modelData.edit; root.openSettings() } }
-                        IconButton { x: 400; icon: "delete-20"; label: "Remove link"
-                            onClicked: { const l = parent.modelData; root.ask = { title: "Delete link?", text: "The link will not work for anyone anymore.", ok: "Remove", run: () => backend.shareAction("unlink", JSON.stringify(root.item), JSON.stringify({ kind: l.kind, share_id: l.share_id })) } } }
+                        IconButton { x: 368; icon: "settings-20"; label: qsTr("More link options"); onClicked: { root.pendScope = parent.modelData.scope; root.pendEdit = parent.modelData.edit; root.openSettings() } }
+                        IconButton { x: 400; icon: "delete-20"; label: qsTr("Remove link")
+                            onClicked: { const l = parent.modelData; root.ask = { title: qsTr("Delete link?"), text: qsTr("The link will not work for anyone anymore."), ok: qsTr("Remove"), run: () => backend.shareAction("unlink", JSON.stringify(root.item), JSON.stringify({ kind: l.kind, share_id: l.share_id })) } } }
                         Text {
                             id: linkSentence
                             x: 42; y: 40; width: 382; wrapMode: Text.Wrap
-                            text: parent.modelData.scope === 0 ? "Anyone with the link can " + (parent.modelData.edit ? "edit" : "view")
-                                : parent.modelData.scope === 1 ? "People in " + (root.info ? root.info.tenant : "") + " with the link can " + (parent.modelData.edit ? "edit" : "view")
-                                : "Only the people you specified can " + (parent.modelData.edit ? "edit" : "view")
+                            text: parent.modelData.scope === 0 ? (parent.modelData.edit ? qsTr("Anyone with the link can edit") : qsTr("Anyone with the link can view"))
+                                : parent.modelData.scope === 1 ? (parent.modelData.edit ? qsTr("People in %1 with the link can edit") : qsTr("People in %1 with the link can view")).arg(root.info ? root.info.tenant : "")
+                                : parent.modelData.edit ? qsTr("Only the people you specified can edit") : qsTr("Only the people you specified can view")
                             font.family: theme.font; font.pixelSize: 14; color: root.ink
                         }
                         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: root.rule }
@@ -859,21 +858,21 @@ Popup {
         Item {
             visible: root.view === "access"
             width: parent.width; height: 650
-            IconButton { x: 24; y: 24; icon: "arrow-left-20"; label: "Back"; onClicked: root.view = "manage" }
-            Text { x: 65; y: 32; text: "Manage Access"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: root.ink }
-            IconButton { x: 424; y: 24; icon: "dismiss-20"; label: "Close"; onClicked: root.close() }
+            IconButton { x: 24; y: 24; icon: "arrow-left-20"; label: qsTr("Back"); onClicked: root.view = "manage" }
+            Text { x: 65; y: 32; text: qsTr("Manage Access"); font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: root.ink }
+            IconButton { x: 424; y: 24; icon: "dismiss-20"; label: qsTr("Close"); onClicked: root.close() }
             Row {
                 x: 24; y: 83.61; spacing: 4
-                Text { text: "Access summary"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: root.ink }
+                Text { text: qsTr("Access summary"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: root.ink }
                 FluentIcon { anchors.verticalCenter: parent.verticalCenter; size: 12; name: "info-16"; color: root.soft }
             }
             Avatar { x: 24; y: 129.56; size: 32; name: root.person ? root.person.name : ""; photoId: root.personPhoto(root.person) }
             Text {
                 x: 64; y: 129.56; height: 32; verticalAlignment: Text.AlignVCenter; textFormat: Text.StyledText
-                text: root.person ? root.escapeText(root.person.name) + " <b>can " + (root.person.role === 2 ? "edit" : "view") + "</b>" : ""
+                text: root.person ? root.escapeText(root.person.name) + " <b>" + (root.person.role === 2 ? qsTr("can edit") : qsTr("can view")) + "</b>" : ""
                 font.family: theme.font; font.pixelSize: 18; color: root.ink
             }
-            Text { x: 24; y: 210.23; text: "Ways this person has access"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: root.ink }
+            Text { x: 24; y: 210.23; text: qsTr("Ways this person has access"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: root.ink }
             Column {
                 x: 24; y: 254.51; width: 432; spacing: 16
                 // Through links first ("Anyone with this link: can edit"),
@@ -890,7 +889,7 @@ Popup {
                             FluentIcon { x: 6; anchors.verticalCenter: parent.verticalCenter; size: 8; name: way.expanded ? "chevron-up-20" : "chevron-down-20"; color: root.soft }
                             Text {
                                 x: 22; anchors.verticalCenter: parent.verticalCenter
-                                text: (way.modelData.scope === 0 ? "Anyone with this link" : way.modelData.scope === 1 ? "People in " + root.info.tenant + " with this link" : "Specific people with this link") + ": can " + (way.modelData.edit ? "edit" : "view")
+                                text: (way.modelData.scope === 0 ? qsTr("Anyone with this link") : way.modelData.scope === 1 ? qsTr("People in %1 with this link").arg(root.info.tenant) : qsTr("Specific people with this link")) + ": " + (way.modelData.edit ? qsTr("can edit") : qsTr("can view"))
                                 font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: root.ink
                             }
                             HoverHandler { cursorShape: Qt.PointingHandCursor }
@@ -909,14 +908,14 @@ Popup {
                             Rectangle {
                                 id: hcFill12
                                 x: 283; width: 54; height: 32; radius: 3; color: wch.hovered ? theme.menuHover : theme.surface; border.width: 0.67; border.color: theme.pick("#B6B4B4", "#8A8886", "#FFFFFF")
-                                Text { anchors.centerIn: parent; text: "Copy"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.onFill(hcFill12, root.ink) }
+                                Text { anchors.centerIn: parent; text: qsTr("Copy"); font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.onFill(hcFill12, root.ink) }
                                 HoverHandler { id: wch; cursorShape: Qt.PointingHandCursor }
                                 TapHandler { onTapped: backend.copyText(way.modelData.url) }
                                 Accessible.role: Accessible.Button
-                                Accessible.name: "Copy link"
+                                Accessible.name: qsTr("Copy link")
                             }
-                            IconButton { x: 338; icon: "settings-20"; label: "More link options"; onClicked: { root.pendScope = way.modelData.scope; root.pendEdit = way.modelData.edit; root.openSettings() } }
-                            Text { x: 42.67; y: 44; text: "How do I modify this link?"; font.family: theme.font; font.pixelSize: 12; color: root.ink }
+                            IconButton { x: 338; icon: "settings-20"; label: qsTr("More link options"); onClicked: { root.pendScope = way.modelData.scope; root.pendEdit = way.modelData.edit; root.openSettings() } }
+                            Text { x: 42.67; y: 44; text: qsTr("How do I modify this link?"); font.family: theme.font; font.pixelSize: 12; color: root.ink }
                         }
                     }
                 }
@@ -931,24 +930,24 @@ Popup {
                         FluentIcon { x: 6; anchors.verticalCenter: parent.verticalCenter; size: 8; name: direct.expanded ? "chevron-up-20" : "chevron-down-20"; color: root.soft }
                         Text {
                             x: 22; anchors.verticalCenter: parent.verticalCenter; textFormat: Text.StyledText
-                            text: (direct.expanded ? "<b>Direct Access</b>" : "Direct Access") + ": <b>" + (root.person && root.person.direct ? (root.person.role === 2 ? "can edit" : "can view") : "none") + "</b>"
+                            text: (direct.expanded ? "<b>" + qsTr("Direct Access") + "</b>" : qsTr("Direct Access")) + ": <b>" + (root.person && root.person.direct ? (root.person.role === 2 ? qsTr("can edit") : qsTr("can view")) : qsTr("none")) + "</b>"
                             font.family: theme.font; font.pixelSize: 14; color: root.ink
                         }
                         HoverHandler { cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: direct.expanded = !direct.expanded }
                         Accessible.role: Accessible.Button
-                        Accessible.name: "Direct Access"
+                        Accessible.name: qsTr("Direct Access")
                     }
                     Text {
                         visible: direct.expanded
                         x: 22; width: 410; wrapMode: Text.Wrap
-                        text: direct.viaLink ? "Grant access is not available because this person can already " + (root.person.role === 2 ? "edit" : "view") + " this item."
-                                             : "Direct Access grants access permissions without the use of a link"
+                        text: direct.viaLink ? (root.person.role === 2 ? qsTr("Grant access is not available because this person can already edit this item.") : qsTr("Grant access is not available because this person can already view this item."))
+                                             : qsTr("Direct Access grants access permissions without the use of a link")
                         font.family: theme.font; font.pixelSize: 14; color: root.soft
                     }
                     Repeater {
-                        model: !direct.expanded ? [] : direct.viaLink ? [{ role: 2, name: "Can edit", line: "Make any changes" }, { role: 1, name: "Can view", line: "Can't make changes" }]
-                             : [{ role: 2, name: "Can edit", line: "Make any changes" }, { role: 1, name: "Can view", line: "Can't make changes" }, { role: 0, name: "No direct access", line: "" }]
+                        model: !direct.expanded ? [] : direct.viaLink ? [{ role: 2, name: qsTr("Can edit"), line: qsTr("Make any changes") }, { role: 1, name: qsTr("Can view"), line: qsTr("Can't make changes") }]
+                             : [{ role: 2, name: qsTr("Can edit"), line: qsTr("Make any changes") }, { role: 1, name: qsTr("Can view"), line: qsTr("Can't make changes") }, { role: 0, name: qsTr("No direct access"), line: "" }]
                         Item {
                             id: opt
                             required property var modelData
@@ -973,15 +972,15 @@ Popup {
                 anchors.right: parent.right; anchors.rightMargin: 24; y: 520.23; spacing: 12
                 readonly property int was: root.person && root.person.direct ? root.person.role : 0
                 DialogButton {
-                    label: "Apply"; primary: true; enabled2: root.personRole !== parent.was
+                    label: qsTr("Apply"); primary: true; enabled2: root.personRole !== parent.was
                     onClicked: {
                         const p = root.person
-                        if (root.personRole === 0) root.ask = { title: "Want to remove " + p.name + "'s direct access?", text: "They may still have access to this item through a group or link.", ok: "Remove",
+                        if (root.personRole === 0) root.ask = { title: qsTr("Want to remove %1's direct access?").arg(p.name), text: qsTr("They may still have access to this item through a group or link."), ok: qsTr("Remove"),
                                                                run: () => { backend.shareAction("role", JSON.stringify(root.item), JSON.stringify({ login: p.login, role: 0 })); root.view = "manage" } }
                         else { backend.shareAction("role", JSON.stringify(root.item), JSON.stringify({ login: p.login, role: root.personRole })); root.person = Object.assign({}, p, { role: root.personRole, direct: true }) }
                     }
                 }
-                DialogButton { label: "Cancel"; enabled2: root.personRole !== parent.was; onClicked: root.personRole = parent.was }
+                DialogButton { label: qsTr("Cancel"); enabled2: root.personRole !== parent.was; onClicked: root.personRole = parent.was }
             }
         }
     }
@@ -995,12 +994,12 @@ Popup {
             anchors.centerIn: parent; width: 380; height: askTitle.height + askText.height + 24 + 16 + 16 + 32 + 24
             radius: 8; color: theme.surface
             Text { id: askTitle; x: 24; y: 24; width: 290.67; wrapMode: Text.Wrap; lineHeight: 28; lineHeightMode: Text.FixedHeight; text: root.ask ? root.ask.title : ""; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: root.ink }
-            IconButton { x: 323.33; y: 24; height: 31.33; icon: "dismiss-20"; label: "Close"; onClicked: root.ask = null }
+            IconButton { x: 323.33; y: 24; height: 31.33; icon: "dismiss-20"; label: qsTr("Close"); onClicked: root.ask = null }
             Text { id: askText; x: 24; y: askTitle.y + askTitle.height + 8.67; width: 332; wrapMode: Text.Wrap; lineHeight: 20; lineHeightMode: Text.FixedHeight; text: root.ask ? root.ask.text : ""; font.family: theme.font; font.pixelSize: 14; color: root.ink }
             Row {
                 anchors.right: parent.right; anchors.rightMargin: 24; y: askText.y + askText.height + 8.67; spacing: 8
                 DialogButton { label: root.ask ? root.ask.ok : ""; primary: true; width: Math.max(80, implicitWidth); onClicked: { const r = root.ask.run; root.ask = null; r() } }
-                DialogButton { label: "Cancel"; width: 83.19; onClicked: root.ask = null }
+                DialogButton { label: qsTr("Cancel"); width: 83.19; onClicked: root.ask = null }
             }
         }
     }

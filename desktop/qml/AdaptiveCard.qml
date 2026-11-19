@@ -516,7 +516,7 @@ Item {
                     HoverHandler { id: nbh; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: car.step(nb.next ? 1 : -1) }
                     Accessible.role: Accessible.Button
-                    Accessible.name: next ? "Next page" : "Previous page"
+                    Accessible.name: next ? qsTr("Next page") : qsTr("Previous page")
                 }
                 NavButton {}
                 Row {
@@ -534,7 +534,7 @@ Item {
                             HoverHandler { cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: car.page = parent.index }
                             Accessible.role: Accessible.Button
-                            Accessible.name: "Page " + (index + 1) + " of " + car.pages.length
+                            Accessible.name: qsTr("Page %1 of %2").arg(index + 1).arg(car.pages.length)
                         }
                     }
                 }
@@ -742,7 +742,7 @@ Item {
                     onTextChanged: card.setValue(ti.e.id, text)
                     Text {
                         visible: !field.text
-                        text: ti.e.placeholder || (ti.kind === "input.date" ? "Select a date..." : ti.kind === "input.time" ? "Select a time..." : "")
+                        text: ti.e.placeholder || (ti.kind === "input.date" ? qsTr("Select a date...") : ti.kind === "input.time" ? qsTr("Select a time...") : "")
                         font: field.font; color: theme.textSecondary
                     }
                     Accessible.role: Accessible.EditableText
@@ -885,11 +885,11 @@ Item {
                     visible: btnHover.hovered && card.lc(btn.modelData.type, "") === "action.openurl"; delay: 500
                     y: -height - 4; padding: 8
                     background: FluentSurface { depth: 16; radius: 4 }
-                    contentItem: Text { text: (btn.modelData.title || "") + "\nThis is a card action with a link"; font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
+                    contentItem: Text { text: (btn.modelData.title || "") + "\n" + qsTr("This is a card action with a link"); font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
                 }
                 Accessible.role: Accessible.Button
                 Accessible.name: modelData.title || ""
-                Accessible.description: card.lc(modelData.type, "") === "action.openurl" ? "This is a card action with a link" : ""
+                Accessible.description: card.lc(modelData.type, "") === "action.openurl" ? qsTr("This is a card action with a link") : ""
             }
         }
     }

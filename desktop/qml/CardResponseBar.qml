@@ -54,6 +54,6 @@ Item {
         HoverHandler { id: dh; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.dismissed() }
         Accessible.role: Accessible.Button
-        Accessible.name: "Close"
+        Accessible.name: qsTr("Close")
     }
 }

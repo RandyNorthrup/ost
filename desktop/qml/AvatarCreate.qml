@@ -27,7 +27,7 @@ Item {
         fillMode: Image.PreserveAspectFit
         asynchronous: true
         Accessible.role: Accessible.Graphic
-        Accessible.name: "Avatar FRE image"
+        Accessible.name: qsTr("Avatar FRE image")
     }
     Text {
         id: line
@@ -36,7 +36,7 @@ Item {
         width: root.sidePanel ? root.width - 60 : root.width - 200 - 20
         horizontalAlignment: root.sidePanel ? Text.AlignHCenter : Text.AlignLeft
         wrapMode: Text.Wrap
-        text: "Create your avatar in just a few steps."
+        text: qsTr("Create your avatar in just a few steps.")
         font.family: theme.font; font.pixelSize: 14
         color: theme.pick("#252423", "#FFFFFF", "#FFFFFF")
     }
@@ -47,10 +47,10 @@ Item {
         width: label.implicitWidth + 40; height: 31.3; radius: 4
         color: buttonHover.hovered ? theme.rowHover : theme.input
         border.color: theme.stroke
-        Text { id: label; anchors.centerIn: parent; text: "Create your avatar"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(button, theme.text) }
+        Text { id: label; anchors.centerIn: parent; text: qsTr("Create your avatar"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(button, theme.text) }
         HoverHandler { id: buttonHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.create() }
         Accessible.role: Accessible.Button
-        Accessible.name: "Create your avatar"
+        Accessible.name: qsTr("Create your avatar")
     }
 }

@@ -78,12 +78,12 @@ Item {
         }
         BubbleButton {
             x: 261.17; y: 12
-            icon: "alert-snooze-20"; tip: "Mute these notifications"
+            icon: "alert-snooze-20"; tip: qsTr("Mute these notifications")
             onClicked: { root.dismiss(); root.muteBubbles() }
         }
         BubbleButton {
             x: 288.67; y: 12
-            icon: "dismiss-20"; tip: "Close"
+            icon: "dismiss-20"; tip: qsTr("Close")
             onClicked: root.dismiss()
         }
         Text {

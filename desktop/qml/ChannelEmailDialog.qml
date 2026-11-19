@@ -44,10 +44,10 @@ Popup {
                     dlg.allowed = dlg.email.allowed || "members"
                     dlg.domains = (dlg.email.domains || []).join(", ")
                     Qt.callLater(() => { field.selectAll(); field.forceActiveFocus() })
-                } else dlg.failure = "Something went wrong on our end. Please try again."
+                } else dlg.failure = qsTr("Something went wrong on our end. Please try again.")
             } else if (r.op === "email-remove") {
                 dlg.busy = false
-                if (r.ok) dlg.close(); else dlg.failure = "Something went wrong on our end. Please try again."
+                if (r.ok) dlg.close(); else dlg.failure = qsTr("Something went wrong on our end. Please try again.")
             }
         }
     }
@@ -96,7 +96,7 @@ Popup {
 
     contentItem: Column {
         spacing: 0
-        Text { text: "Get email address"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; lineHeight: 28; lineHeightMode: Text.FixedHeight; color: theme.text }
+        Text { text: qsTr("Get email address"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; lineHeight: 28; lineHeightMode: Text.FixedHeight; color: theme.text }
         Item { width: 1; height: 23 }
         Rectangle {
             width: parent.width; height: 32; radius: 4
@@ -113,21 +113,21 @@ Popup {
                 selectionColor: theme.selectionFill
                 selectedTextColor: theme.text
                 clip: true
-                Accessible.name: "Email address"
+                Accessible.name: qsTr("Email address")
             }
             Rectangle { anchors.bottom: parent.bottom; x: 1; width: parent.width - 2; height: field.activeFocus ? 2 : 0; color: theme.brand }
         }
         Item { width: 1; height: 10 }
-        Subtle { icon: "delete-20"; label: "Remove email address"; enabled: !!dlg.email && !dlg.busy; onClicked: { dlg.busy = true; backend.channelAction("email-remove", dlg.teamId, dlg.channel.id, "") } }
+        Subtle { icon: "delete-20"; label: qsTr("Remove email address"); enabled: !!dlg.email && !dlg.busy; onClicked: { dlg.busy = true; backend.channelAction("email-remove", dlg.teamId, dlg.channel.id, "") } }
         Item { width: 1; height: 10 }
-        Subtle { icon: dlg.advanced ? "chevron-down-20" : "chevron-right-20"; label: "Advanced settings"; onClicked: dlg.advanced = !dlg.advanced }
+        Subtle { icon: dlg.advanced ? "chevron-down-20" : "chevron-right-20"; label: qsTr("Advanced settings"); onClicked: dlg.advanced = !dlg.advanced }
         Column {
             visible: dlg.advanced
             x: 30; width: parent.width - 30
             Item { width: 1; height: 4 }
-            Radio { key: "anyone"; label: "Anyone can send emails to this address" }
-            Radio { key: "members"; label: "Only members of this team" }
-            Radio { key: "domains"; label: "Only email sent from these domains:" }
+            Radio { key: "anyone"; label: qsTr("Anyone can send emails to this address") }
+            Radio { key: "members"; label: qsTr("Only members of this team") }
+            Radio { key: "domains"; label: qsTr("Only email sent from these domains:") }
             Item { width: 1; height: 10 }
             Rectangle {
                 x: 30; width: 490.7; height: 32; radius: 4
@@ -143,8 +143,8 @@ Popup {
                     font.family: theme.font; font.pixelSize: 14
                     color: enabled ? theme.text : theme.disabled
                     clip: true
-                    Text { visible: !domainField.text; x: 12; anchors.verticalCenter: parent.verticalCenter; text: "e.g. microsoft.com, gmail.com"; font: domainField.font; color: theme.disabled }
-                    Accessible.name: "Domains"
+                    Text { visible: !domainField.text; x: 12; anchors.verticalCenter: parent.verticalCenter; text: qsTr("e.g. microsoft.com, gmail.com"); font: domainField.font; color: theme.disabled }
+                    Accessible.name: qsTr("Domains")
                 }
             }
         }
@@ -163,17 +163,17 @@ Popup {
                 width: 96; height: 31.3; radius: 4
                 color: closeHover.hovered ? theme.rowHover : theme.surface
                 border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF"); border.width: 0.67
-                Text { anchors.centerIn: parent; text: "Close"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.text) }
+                Text { anchors.centerIn: parent; text: qsTr("Close"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.text) }
                 HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: dlg.close() }
-                Accessible.role: Accessible.Button; Accessible.name: "Close"
+                Accessible.role: Accessible.Button; Accessible.name: qsTr("Close")
             }
             Rectangle {
                 id: hcFill2
                 readonly property bool on: !!dlg.email && !dlg.busy
                 width: 96; height: 31.3; radius: 4
                 color: !on ? theme.pick("#F0F0F0", "#141414", "#000000") : primaryHover.hovered ? theme.brandHover : theme.brandFill
-                Text { anchors.centerIn: parent; text: dlg.advanced ? "Save" : "Copy"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, parent.on ? "white" : theme.disabled) }
+                Text { anchors.centerIn: parent; text: dlg.advanced ? qsTr("Save") : qsTr("Copy"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, parent.on ? "white" : theme.disabled) }
                 HoverHandler { id: primaryHover; cursorShape: parent.on ? Qt.PointingHandCursor : Qt.ArrowCursor }
                 TapHandler {
                     enabled: parent.on
@@ -187,7 +187,7 @@ Popup {
                         }
                     }
                 }
-                Accessible.role: Accessible.Button; Accessible.name: dlg.advanced ? "Save" : "Copy"
+                Accessible.role: Accessible.Button; Accessible.name: dlg.advanced ? qsTr("Save") : qsTr("Copy")
             }
         }
     }

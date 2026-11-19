@@ -72,15 +72,15 @@ QtObject {
         if (r.error) return r.error
         uploads = JSON.parse(backend.videoUploads())
         setBackground(r.id)
-        return "Background added."
+        return qsTr("Background added.")
     }
     function removeUpload(id) {
-        if (!backend.removeVideoBackground(id)) return "Couldn't remove background."
+        if (!backend.removeVideoBackground(id)) return qsTr("Couldn't remove background.")
         uploads = JSON.parse(backend.videoUploads())
         if (background === id) setBackground("none")
-        return "Background removed."
+        return qsTr("Background removed.")
     }
-    readonly property string blurLabel: blurKind === "portrait" ? "Portrait blur" : "Standard blur"
+    readonly property string blurLabel: blurKind === "portrait" ? qsTr("Portrait blur") : qsTr("Standard blur")
 
     // Teams' avatars (its Avatars app, hosted by AvatarHost): the avatar
     // and background chosen, kept as Teams keeps your last used one

@@ -58,10 +58,10 @@ FluentSurface {
         HoverHandler { id: dismissHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.dismissed() }
         Accessible.role: Accessible.Button
-        Accessible.name: "Remove Reference"
+        Accessible.name: qsTr("Remove Reference")
     }
     HoverHandler { enabled: !root.dismissable; cursorShape: Qt.PointingHandCursor }
     TapHandler { enabled: !root.dismissable; onTapped: root.activated() }
     Accessible.role: Accessible.Grouping
-    Accessible.name: "Begin quote, " + (quote ? quote.sender_name : "") + ", " + stamp + ", " + (quote ? quote.preview : "") + ", End quote"
+    Accessible.name: qsTr("Begin quote, %1, %2, %3, End quote").arg(quote ? quote.sender_name : "").arg(stamp).arg(quote ? quote.preview : "")
 }

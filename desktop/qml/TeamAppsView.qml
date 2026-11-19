@@ -48,7 +48,7 @@ Item {
             if (r.channel !== view.scope) return
             if ((r.op === "team-apps" || r.op === "chat-apps") && r.ok) view.apps = r.data.apps || []
             else if (r.op === "team-app-remove" || r.op === "chat-app-remove" || r.op === "team-webhook") {
-                if (!r.ok) backend.toast("Something went wrong on our end. Please try again.", "error")
+                if (!r.ok) backend.toast(qsTr("Something went wrong on our end. Please try again."), "error")
                 view.load()
             }
         }
@@ -63,22 +63,22 @@ Item {
             x: 10; anchors.verticalCenter: parent.verticalCenter
             spacing: 6
             FluentIcon { name: "add-20"; size: 20; color: theme.onFill(hcFill1, theme.text) }
-            Text { anchors.verticalCenter: parent.verticalCenter; text: "Get more apps"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.text) }
+            Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Get more apps"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.text) }
         }
         HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: view.getMoreApps() }
         Accessible.role: Accessible.Button
-        Accessible.name: "Get more apps"
+        Accessible.name: qsTr("Get more apps")
     }
     Plain {
         visible: view.owner && !view.chatMode
         x: 199.8; y: 28.6
-        icon: "webhook-20"; text: "Create an outgoing webhook"
+        icon: "webhook-20"; text: qsTr("Create an outgoing webhook")
         onClicked: webhook.start()
     }
     Plain {
         x: view.chatMode ? 551 : 531; y: view.chatMode ? 8 : 28.3
-        icon: "arrow-sort-20"; text: "Sort"
+        icon: "arrow-sort-20"; text: qsTr("Sort")
         active: view.sorted
         onClicked: { if (view.sorted) view.descending = !view.descending; view.sorted = true }
     }
@@ -93,9 +93,9 @@ Item {
             color: theme.text
             clip: true
             selectByMouse: true
-            Text { visible: !find.text; anchors.verticalCenter: parent.verticalCenter; text: "Find by name"; font: find.font; color: theme.textSecondary }
+            Text { visible: !find.text; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Find by name"); font: find.font; color: theme.textSecondary }
             Accessible.role: Accessible.EditableText
-            Accessible.name: "Find by name"
+            Accessible.name: qsTr("Find by name")
         }
         FluentIcon { x: parent.width - 30; anchors.verticalCenter: parent.verticalCenter; name: "search-20"; size: 20; color: theme.textSecondary }
     }
@@ -145,7 +145,7 @@ Item {
                         HoverHandler { id: moreH; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: { rowMenu.app = row.modelData; rowMenu.parent = more; rowMenu.x = more.width - rowMenu.implicitWidth; rowMenu.y = more.height + 4; rowMenu.open() } }
                         Accessible.role: Accessible.Button
-                        Accessible.name: "More options"
+                        Accessible.name: qsTr("More options")
                     }
                     Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.divider }
                 }
@@ -157,7 +157,7 @@ Item {
         id: rowMenu
         property var app: null
         margins: 8
-        items: [{ key: "link", label: "Copy link", icon: "link-20" }].concat(view.owner ? [{ key: "remove", label: "Remove", icon: "delete-20" }] : [])
+        items: [{ key: "link", label: qsTr("Copy link"), icon: "link-20" }].concat(view.owner ? [{ key: "remove", label: qsTr("Remove"), icon: "delete-20" }] : [])
         onPicked: i => {
             const k = items[i].key
             if (k === "link") backend.copyText("https://teams.microsoft.com/l/app/" + rowMenu.app.id + "?source=manage-apps-copy-link")
@@ -178,17 +178,17 @@ Item {
         Overlay.modal: Rectangle { color: theme.pick(Qt.rgba(0, 0, 0, 0.4), Qt.rgba(0, 0, 0, 0.5)) }
         FileDialog {
             id: iconFile
-            title: "Profile picture"
-            nameFilters: ["PNG (*.png)"]
+            title: qsTr("Profile picture")
+            nameFilters: [qsTr("PNG (*.png)")]
             onAccepted: webhook.icon = selectedFile.toString()
         }
         Item {
             anchors.fill: parent
-            Text { y: 0.7; text: "Create an outgoing webhook"; font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; lineHeight: 28; lineHeightMode: Text.FixedHeight; color: theme.text }
+            Text { y: 0.7; text: qsTr("Create an outgoing webhook"); font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; lineHeight: 28; lineHeightMode: Text.FixedHeight; color: theme.text }
             Text {
                 y: 36.6; width: parent.width; wrapMode: Text.Wrap
                 textFormat: Text.StyledText
-                text: "Outgoing webhooks allow you to send commands to services that respond with messages and rich cards. While you control whether data is sent to or received from third parties, Microsoft recommends that you only integrate with trusted systems. <a href=\"https://docs.microsoft.com/en-us/microsoftteams/platform/webhooks-and-connectors/how-to/add-outgoing-webhook\">Click to learn more</a> about outgoing webhooks."
+                text: qsTr("Outgoing webhooks allow you to send commands to services that respond with messages and rich cards. While you control whether data is sent to or received from third parties, Microsoft recommends that you only integrate with trusted systems. <0>%1</0> about outgoing webhooks.").arg(qsTr("Click to learn more")).replace("<0>", "<a href=\"https://docs.microsoft.com/en-us/microsoftteams/platform/webhooks-and-connectors/how-to/add-outgoing-webhook\">").replace("</0>", "</a>")
                 linkColor: theme.brandForeground1
                 font.family: theme.font; font.pixelSize: 14
                 lineHeight: 20; lineHeightMode: Text.FixedHeight
@@ -196,11 +196,11 @@ Item {
                 onLinkActivated: link => Qt.openUrlExternally(link)
                 HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
             }
-            FieldLabel { y: 148; text: "Name" }
+            FieldLabel { y: 148; text: qsTr("Name") }
             Field { id: nameField; y: 170.6 }
-            FieldLabel { y: 219; text: "Callback URL" }
+            FieldLabel { y: 219; text: qsTr("Callback URL") }
             Field { id: urlField; y: 241.6 }
-            FieldLabel { y: 290; text: "Description*" }
+            FieldLabel { y: 290; text: qsTr("Description*") }
             Rectangle {
                 y: 312.6; width: parent.width; height: 76.7; radius: 4
                 color: theme.inputFilled; border.color: theme.transparentStroke
@@ -212,11 +212,11 @@ Item {
                     color: theme.text
                     clip: true
                     Accessible.role: Accessible.EditableText
-                    Accessible.name: "Description"
+                    Accessible.name: qsTr("Description")
                 }
                 Rectangle { visible: descField.activeFocus; anchors.bottom: parent.bottom; width: parent.width; height: 2; radius: 1; color: theme.brand }
             }
-            Text { y: 407; text: "Profile picture (optional) - 30kb max, png only"; font.family: theme.font; font.pixelSize: 12; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.textSecondary }
+            Text { y: 407; text: qsTr("Profile picture (optional) - 30kb max, png only"); font.family: theme.font; font.pixelSize: 12; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.textSecondary }
             Row {
                 y: 431; spacing: 8
                 Rectangle {
@@ -224,20 +224,20 @@ Item {
                     width: chooseText.implicitWidth + 16; height: 22; radius: 2
                     color: chooseHover.hovered ? theme.pick("#E5E5E5", "#3D3D3D", "#1AEBFF") : theme.pick("#EFEFEF", "#333333", "#000000")
                     border.color: theme.pick("#767676", "#999999", "#FFFFFF"); border.width: 1
-                    Text { id: chooseText; anchors.centerIn: parent; text: "Choose File"; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill2, theme.text) }
+                    Text { id: chooseText; anchors.centerIn: parent; text: qsTr("Choose File"); font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill2, theme.text) }
                     HoverHandler { id: chooseHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: iconFile.open() }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Choose File"
+                    Accessible.name: qsTr("Choose File")
                 }
-                Text { anchors.verticalCenter: parent.verticalCenter; text: webhook.icon ? webhook.icon.split("/").pop() : "No file chosen"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: webhook.icon ? webhook.icon.split("/").pop() : qsTr("No file chosen"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
             }
             Row {
                 anchors.right: parent.right; y: 479.1
                 spacing: 10
-                Btn { text: "Cancel"; onClicked: webhook.close() }
+                Btn { text: qsTr("Cancel"); onClicked: webhook.close() }
                 Btn {
-                    text: "Create"; primary: true; enabled: webhook.valid
+                    text: qsTr("Create"); primary: true; enabled: webhook.valid
                     onClicked: {
                         backend.channelAction("team-webhook", view.teamId, view.teamThread, JSON.stringify({ name: nameField.text.trim(), url: urlField.text.trim(), description: descField.text.trim(), icon: webhook.icon.replace(/^file:\/\//, "") }))
                         webhook.close()

@@ -82,7 +82,7 @@ Row {
         }
         TapHandler { onTapped: host.openWhoReacted(overflowBtn, summary.messageId, null, true, summary.split.overflow) }
         Accessible.role: Accessible.Button
-        Accessible.name: people === 1 ? "1 overflow reaction." : people + " overflow reactions."
+        Accessible.name: qsTr("%n overflow reactions.", "", people)
     }
     Rectangle {
         width: 34; height: 26; radius: 13
@@ -92,6 +92,6 @@ Row {
         HoverHandler { id: addHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: host.openReactionPicker(summary.messageId, parent) }
         Accessible.role: Accessible.Button
-        Accessible.name: "More reactions"
+        Accessible.name: qsTr("More reactions")
     }
 }

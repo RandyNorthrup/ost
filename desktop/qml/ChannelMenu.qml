@@ -52,7 +52,7 @@ Item {
         const out = folderList.filter(f => (f.kind === "Favorites" || f.kind === "UserCreated" || f.kind === "UserDefined") && f.id !== holder)
             .map(f => ({ label: f.title, to: f.id }))
         if (out.length) out.push({ separator: true })
-        out.push({ label: "New section", icon: "folder-add-20", newSection: true })
+        out.push({ label: qsTr("New section"), icon: "folder-add-20", newSection: true })
         return out
     }
     function act(op, arg) { backend.channelAction(op, root.teamId, root.channel.id, arg || "") }
@@ -63,11 +63,11 @@ Item {
     readonly property bool teamOwner: { const t = JSON.parse(backend.teamsJson || "[]").find(t => t.id === root.teamId); return !!t && t.owner === true }
     readonly property bool ownedChannel: (root.channel.owner === true || teamOwner) && root.channel.general !== true
     readonly property var archivedItems: [
-        { key: "window", label: "Open in new window", icon: "open-window-20" },
-        { key: "manage", label: "Manage channel", icon: "settings-20" },
-        { key: "link", label: "Copy link", icon: "link-20" },
-        { key: "restore", label: "Restore channel", icon: "arrow-clockwise-20" },
-        { key: "delete", label: "Delete channel", icon: "delete-20" }
+        { key: "window", label: qsTr("Open in new window"), icon: "open-window-20" },
+        { key: "manage", label: qsTr("Manage channel"), icon: "settings-20" },
+        { key: "link", label: qsTr("Copy link"), icon: "link-20" },
+        { key: "restore", label: qsTr("Restore channel"), icon: "arrow-clockwise-20" },
+        { key: "delete", label: qsTr("Delete channel"), icon: "delete-20" }
     ]
     // A Threads-layout channel (measured on winpc 2026-11-10): no posts
     // order, Manage channel, Recommend or Archive; owners get Delete only.
@@ -76,41 +76,41 @@ Item {
     /// straight before Open in new window.
     property var movedItems: []
     signal openDetails()
-    readonly property var ownerItems: ownedChannel && threads ? [{ separator: true }, { key: "delete", label: "Delete channel", icon: "delete-20" }] : ownedChannel ? [
+    readonly property var ownerItems: ownedChannel && threads ? [{ separator: true }, { key: "delete", label: qsTr("Delete channel"), icon: "delete-20" }] : ownedChannel ? [
         root.channel.recommended
-            ? { key: "unrecommend", label: "Stop recommending for everyone", icon: "sparkle-20" }
-            : { key: "recommend", label: "Recommend for everyone", icon: "sparkle-20" },
+            ? { key: "unrecommend", label: qsTr("Stop recommending for everyone"), icon: "sparkle-20" }
+            : { key: "recommend", label: qsTr("Recommend for everyone"), icon: "sparkle-20" },
         { separator: true },
-        { key: "archive", label: "Archive channel", icon: "archive-20" },
-        { key: "delete", label: "Delete channel", icon: "delete-20" }
+        { key: "archive", label: qsTr("Archive channel"), icon: "archive-20" },
+        { key: "delete", label: qsTr("Delete channel"), icon: "delete-20" }
     ] : []
     MenuPopup {
         id: menu
         margins: 8
         items: root.channel.archived === true ? root.archivedItems : (root.manageMode
-            ? [{ key: "go", label: "Go to channel", icon: "channel-20" },
-               { key: "window", label: "Open in new window", icon: "open-window-20" },
+            ? [{ key: "go", label: qsTr("Go to channel"), icon: "channel-20" },
+               { key: "window", label: qsTr("Open in new window"), icon: "open-window-20" },
                { separator: true }]
             : root.movedItems.concat(root.postsOrder && !root.threads ? [root.postsAtBottom
-                ? { key: "top", label: "See new posts at top", icon: "channel-posts-top-20" }
-                : { key: "bottom", label: "See new posts at bottom", icon: "channel-posts-top-20" },
+                ? { key: "top", label: qsTr("See new posts at top"), icon: "channel-posts-top-20" }
+                : { key: "bottom", label: qsTr("See new posts at bottom"), icon: "channel-posts-top-20" },
                { separator: true }] : []).concat([
-               { key: "window", label: "Open in new window", icon: "open-window-20" }]).concat(
+               { key: "window", label: qsTr("Open in new window"), icon: "open-window-20" }]).concat(
                // In a section you can reorder, with single pointer controls
                // on: Teams' Start reordering.
-               root.reorderGroup ? [{ key: "reorder", label: "Start reordering", icon: "arrow-sort-20", endIcon: "accessibility-20" }] : [],
+               root.reorderGroup ? [{ key: "reorder", label: qsTr("Start reordering"), icon: "arrow-sort-20", endIcon: "accessibility-20" }] : [],
                [{ separator: true }])).concat([
-            { key: "notify", label: "Manage notifications", icon: "alert-20", flyout: true },
-            { key: "move", label: "Move to section", icon: "star-20", submenu: root.moveTargets() },
+            { key: "notify", label: qsTr("Manage notifications"), icon: "alert-20", flyout: true },
+            { key: "move", label: qsTr("Move to section"), icon: "star-20", submenu: root.moveTargets() },
             root.rowMode ? null : root.channel.shown === false
-                ? { key: "show", label: "Show", icon: "eye-20" }
-                : { key: "hide", label: "Hide", icon: "eye-off-20" },
+                ? { key: "show", label: qsTr("Show"), icon: "eye-20" }
+                : { key: "hide", label: qsTr("Hide"), icon: "eye-off-20" },
             { separator: true },
-            { key: "edit", label: "Edit channel", icon: "edit-20" },
-            root.threads ? null : { key: "manage", label: "Manage channel", icon: "settings-20" },
-            { key: "link", label: "Copy link", icon: "link-20" },
-            { key: "email", label: "Get email address", icon: "mail-20" }
-        ], root.manageMode ? [] : [{ key: "workflows", label: "Workflows", icon: "workflows-20" }], root.ownerItems).filter(i => i !== null)
+            { key: "edit", label: qsTr("Edit channel"), icon: "edit-20" },
+            root.threads ? null : { key: "manage", label: qsTr("Manage channel"), icon: "settings-20" },
+            { key: "link", label: qsTr("Copy link"), icon: "link-20" },
+            { key: "email", label: qsTr("Get email address"), icon: "mail-20" }
+        ], root.manageMode ? [] : [{ key: "workflows", label: qsTr("Workflows"), icon: "workflows-20" }], root.ownerItems).filter(i => i !== null)
         onFlyoutRequested: (i, row) => {
             if (i < 0 || !row) { notifyFlyout.close(); return }
             const p = row.mapToItem(menu.contentItem, 0, 0)
@@ -152,9 +152,9 @@ Item {
         width: 290 + 8
         background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
         readonly property var choices: [
-            { mode: "all", icon: "alert-on-20", label: "All new messages", hint: "New messages, all @mentions, and replies to followed threads" },
-            { mode: "mentions", icon: "alert-20", label: "@mentions and replies", hint: "All @mentions and replies to followed threads" },
-            { mode: "mute", icon: "alert-off-20", label: "Mute", hint: "You'll still be notified for personal mentions and replies to followed threads" }
+            { mode: "all", icon: "alert-on-20", label: qsTr("All new messages"), hint: qsTr("New messages, all @mentions, and replies to followed threads") },
+            { mode: "mentions", icon: "alert-20", label: qsTr("@mentions and replies"), hint: qsTr("All @mentions and replies to followed threads") },
+            { mode: "mute", icon: "alert-off-20", label: qsTr("Mute"), hint: qsTr("You'll still be notified for personal mentions and replies to followed threads") }
         ]
         contentItem: Column {
             spacing: 2
@@ -162,7 +162,7 @@ Item {
                 width: 290; height: 32
                 leftPadding: 8; rightPadding: 8
                 verticalAlignment: Text.AlignVCenter
-                text: "Select what content notifies you"
+                text: qsTr("Select what content notifies you")
                 font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold
                 color: theme.textSecondary
             }
@@ -197,11 +197,11 @@ Item {
                 width: 290; height: 32; radius: 4
                 color: customHover.hovered ? theme.menuHover : "transparent"
                 FluentIcon { x: 24; anchors.verticalCenter: parent.verticalCenter; size: 20; name: "options-20"; color: theme.onFill(hcFill1, customHover.hovered ? theme.text : theme.textStrong) }
-                Text { x: 48; anchors.verticalCenter: parent.verticalCenter; text: "Customize"; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill1, customHover.hovered ? theme.text : theme.textStrong) }
+                Text { x: 48; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Customize"); font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill1, customHover.hovered ? theme.text : theme.textStrong) }
                 HoverHandler { id: customHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: { notifyFlyout.close(); menu.close(); notifyDialog.start(root.channel) } }
                 Accessible.role: Accessible.MenuItem
-                Accessible.name: "Customize"
+                Accessible.name: qsTr("Customize")
             }
         }
     }
@@ -244,10 +244,10 @@ Item {
                 width: 96; height: 31.3; radius: 4
                 color: cdCancelHover.hovered ? theme.rowHover : theme.surface
                 border.color: theme.stroke; border.width: 0.67
-                Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.text) }
+                Text { anchors.centerIn: parent; text: qsTr("Cancel"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.text) }
                 HoverHandler { id: cdCancelHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: cd.close() }
-                Accessible.role: Accessible.Button; Accessible.name: "Cancel"
+                Accessible.role: Accessible.Button; Accessible.name: qsTr("Cancel")
             }
             Rectangle {
                 id: hcFill3
@@ -263,13 +263,13 @@ Item {
     ChannelDialog {
         id: archiveDialog
         property bool readOnly: false
-        titleText: "Archive the " + (channel.name || "") + " channel?"
-        actionText: "Archive"
+        titleText: qsTr("Archive the %1 channel?").arg(channel.name || "")
+        actionText: qsTr("Archive")
         onOpened: readOnly = false
         onAccepted: backend.channelAction("archive", root.teamId, channel.id, JSON.stringify({ readOnly: readOnly }))
         Text {
             width: parent.width; wrapMode: Text.Wrap
-            text: "This will freeze all conversations in the channel. You can restore the channel any time."
+            text: qsTr("This will freeze all conversations in the channel. You can restore the channel any time.")
             font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text
         }
         Item {
@@ -281,18 +281,18 @@ Item {
                 border.color: archiveDialog.readOnly ? theme.brand : theme.textSecondary; border.width: 0.67
                 FluentIcon { visible: archiveDialog.readOnly; anchors.centerIn: parent; size: 12; name: "checkmark-12"; color: theme.onFill(hcFill4, "white") }
             }
-            Text { x: 36; y: 8; text: "Make the SharePoint folder read-only for team members"; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: archiveDialog.readOnly ? theme.text : theme.textSecondary }
+            Text { x: 36; y: 8; text: qsTr("Make the SharePoint folder read-only for team members"); font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: archiveDialog.readOnly ? theme.text : theme.textSecondary }
             HoverHandler { cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: archiveDialog.readOnly = !archiveDialog.readOnly }
             Accessible.role: Accessible.CheckBox
             Accessible.checked: archiveDialog.readOnly
-            Accessible.name: "Make the SharePoint folder read-only for team members"
+            Accessible.name: qsTr("Make the SharePoint folder read-only for team members")
         }
     }
     ChannelDialog {
         id: deleteDialog
-        titleText: "Delete the " + (channel.name || "") + " channel from the " + root.teamName + " team"
-        actionText: "Delete"
+        titleText: qsTr("Delete the %1 channel from the %2 team").arg(channel.name || "").arg(root.teamName)
+        actionText: qsTr("Delete")
         onAccepted: backend.channelAction("delete-channel", root.teamId, channel.id, "")
         readonly property string site: { const t = JSON.parse(backend.teamsJson || "[]").find(t => t.id === root.teamId); return t ? t.site_url || "" : "" }
         Text {
@@ -302,9 +302,10 @@ Item {
             // A private channel has its own site, so Teams says its files go
             // too (measured 2026-11-09).
             text: deleteDialog.channel.channel_type === 1
-                ? "Are you sure you want to delete the <b>" + esc + "</b> channel? All files and conversations will be deleted."
-                : "Are you sure you want to delete the <b>" + esc + "</b> channel? All conversations will be deleted. "
-                + (deleteDialog.site ? "<a href=\"" + deleteDialog.site + "/Shared%20Documents/" + encodeURI(deleteDialog.channel.name || "") + "\">Your files are still accessible here</a>." : "")
+                ? qsTr("Are you sure you want to delete the <0>%1</0> channel? All files and conversations will be deleted.").arg(esc).replace("<0>", "<b>").replace("</0>", "</b>")
+                : deleteDialog.site ? qsTr("Are you sure you want to delete the <0>%1</0> channel? All conversations will be deleted. <1>Your files are still accessible here</1>.").arg(esc).replace("<0>", "<b>").replace("</0>", "</b>")
+                    .replace("<1>", "<a href=\"" + deleteDialog.site + "/Shared%20Documents/" + encodeURI(deleteDialog.channel.name || "") + "\">").replace("</1>", "</a>")
+                : qsTr("Are you sure you want to delete the <0>%1</0> channel? All conversations will be deleted.").arg(esc).replace("<0>", "<b>").replace("</0>", "</b>") + " "
             font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text
             linkColor: theme.brandForeground1
             onLinkActivated: link => Qt.openUrlExternally(link)

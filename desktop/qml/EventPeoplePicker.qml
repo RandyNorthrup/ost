@@ -106,7 +106,7 @@ Item {
                     FluentIcon {
                         name: "dismiss-12"; size: 12; color: theme.textSecondary; anchors.verticalCenter: parent.verticalCenter
                         TapHandler { onTapped: root.remove(tag.index) }
-                        Accessible.role: Accessible.Button; Accessible.name: "Remove " + tag.modelData.name
+                        Accessible.role: Accessible.Button; Accessible.name: qsTr("Remove %1").arg(tag.modelData.name)
                     }
                 }
             }
@@ -148,7 +148,7 @@ Item {
             Text {
                 visible: root.searched && root.results.length === 0
                 width: drop.width - 8; height: 50; leftPadding: 12; verticalAlignment: Text.AlignVCenter
-                text: root.kind === "rooms" ? "We couldn't find any matches." : "We couldn't find any matches."
+                text: root.kind === "rooms" ? qsTr("We couldn't find any matches.") : qsTr("We couldn't find any matches.")
                 font.family: theme.font; font.pixelSize: 14; color: theme.textStrong
             }
             Repeater {
@@ -168,7 +168,7 @@ Item {
                             Text {
                                 textFormat: Text.StyledText
                                 text: root.kind === "rooms"
-                                    ? "<font color='" + (row.modelData.availability === "Free" ? theme.greenForeground1 : theme.textSecondary) + "'>" + (row.modelData.availability === "Free" ? "Available" : row.modelData.availability === "Busy" ? "Busy" : (row.modelData.availability || "Unknown")) + "</font> · " + root.esc(row.modelData.email)
+                                    ? "<font color='" + (row.modelData.availability === "Free" ? theme.greenForeground1 : theme.textSecondary) + "'>" + (row.modelData.availability === "Free" ? qsTr("Available") : row.modelData.availability === "Busy" ? qsTr("Busy") : (row.modelData.availability || qsTr("Unknown"))) + "</font> · " + root.esc(row.modelData.email)
                                     : root.bolden(row.modelData.detail || row.modelData.email)
                                 font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary
                             }

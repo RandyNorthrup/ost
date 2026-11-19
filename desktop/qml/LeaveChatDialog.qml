@@ -26,7 +26,7 @@ Popup {
     contentItem: Item {
         Text {
             x: 25; y: 25; width: 551
-            text: "Leave this chat?"
+            text: qsTr("Leave this chat?")
             font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold
             lineHeight: 28; lineHeightMode: Text.FixedHeight
             color: theme.text
@@ -36,7 +36,7 @@ Popup {
         Text {
             x: 25; y: 71; width: 551
             wrapMode: Text.Wrap
-            text: "This chat will stay in your list but you can hide it anytime or remove chat history now."
+            text: qsTr("This chat will stay in your list but you can hide it anytime or remove chat history now.")
             font.family: theme.font; font.pixelSize: 14
             lineHeight: 20; lineHeightMode: Text.FixedHeight
             color: theme.text
@@ -53,14 +53,14 @@ Popup {
             }
             Text {
                 x: 36; y: 6
-                text: "Remove chat history"
+                text: qsTr("Remove chat history")
                 font.family: theme.font; font.pixelSize: 14
                 lineHeight: 20; lineHeightMode: Text.FixedHeight
                 color: root.removeHistory ? theme.text : theme.textSecondary
             }
             Text {
                 x: 36; y: 31
-                text: "This will remove the chat from your list and search. It affects you only."
+                text: qsTr("This will remove the chat from your list and search. It affects you only.")
                 font.family: theme.font; font.pixelSize: 12
                 lineHeight: 16; lineHeightMode: Text.FixedHeight
                 color: theme.textSecondary
@@ -69,10 +69,10 @@ Popup {
             TapHandler { onTapped: root.removeHistory = !root.removeHistory }
             Accessible.role: Accessible.CheckBox
             Accessible.checked: root.removeHistory
-            Accessible.name: "Remove chat history"
+            Accessible.name: qsTr("Remove chat history")
         }
-        DialogButton { x: 375; y: 166; label: "Cancel"; onClicked: root.close() }
-        DialogButton { x: 479; y: 166; label: "Leave"; primary: true; onClicked: { root.close(); root.confirmed(root.removeHistory) } }
+        DialogButton { x: 375; y: 166; label: qsTr("Cancel"); onClicked: root.close() }
+        DialogButton { x: 479; y: 166; label: qsTr("Leave"); primary: true; onClicked: { root.close(); root.confirmed(root.removeHistory) } }
     }
     component DialogButton: Rectangle {
         id: btn

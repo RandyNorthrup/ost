@@ -98,19 +98,19 @@ Rectangle {
 
     BarButton {
         icon: "panel-left-text-20-filled"; x: 18; anchors.verticalCenter: parent.verticalCenter
-        Accessible.name: "Collapse app bar"
+        Accessible.name: qsTr("Collapse app bar")
         onClicked: root.toggleRail()
     }
     BarButton {
         icon: "chevron-left-20"; x: 68; anchors.verticalCenter: parent.verticalCenter
         usable: root.canGoBack
-        Accessible.name: "Back"
+        Accessible.name: qsTr("Back")
         onClicked: root.goBack()
     }
     BarButton {
         icon: "chevron-right-20"; x: 100; anchors.verticalCenter: parent.verticalCenter
         usable: root.canGoForward
-        Accessible.name: "Forward"
+        Accessible.name: qsTr("Forward")
         onClicked: root.goForward()
     }
 
@@ -128,7 +128,7 @@ Rectangle {
         id: searchButton
         visible: root.searchFolded && !root.searchOpen
         icon: "search-20"; x: 150; anchors.verticalCenter: parent.verticalCenter
-        Accessible.name: "Search"
+        Accessible.name: qsTr("Search")
         onClicked: { root.searchOpen = true; field.forceActiveFocus() }
     }
     Rectangle {
@@ -160,11 +160,11 @@ Rectangle {
             }
             Text {
                 visible: !field.text
-                text: field.activeFocus ? "Press Ctrl+G to go right to a chat or channel" : "Search (Ctrl+E)"
+                text: field.activeFocus ? qsTr("Press %1 to go right to a chat or channel").arg("Ctrl+G") : qsTr("Search (%1)").arg("Ctrl+E")
                 color: theme.onFill(search, theme.textTertiary)
                 font: field.font
             }
-            Accessible.name: "Search"
+            Accessible.name: qsTr("Search")
         }
     }
 
@@ -177,7 +177,7 @@ Rectangle {
         readonly property var items: {
             if (q.length === 0) return []
             const chats = root.chats.filter(c => (c.name || "").toLowerCase().indexOf(q) >= 0)
-                .slice(0, 5).map(c => ({ kind: "chat", id: c.id, name: c.name, sub: "Chat" }))
+                .slice(0, 5).map(c => ({ kind: "chat", id: c.id, name: c.name, sub: qsTr("Chat") }))
             const chatNames = chats.map(c => c.name)
             const people = root.people.filter(p => chatNames.indexOf(p.name) < 0 || p.mail)
                 .slice(0, 6).map(p => ({ kind: "person", id: p.id, name: p.name, sub: p.mail || p.job_title }))
@@ -219,7 +219,7 @@ Rectangle {
         Text {
             visible: suggestions.items.length === 0
             anchors.centerIn: parent
-            text: "No matches yet"
+            text: qsTr("No matches yet")
             font.family: theme.font; font.pixelSize: theme.small
             color: theme.textSecondary
         }
@@ -231,7 +231,7 @@ Rectangle {
         icon: "more-20"
         anchors.right: profile.left; anchors.rightMargin: 5
         anchors.verticalCenter: parent.verticalCenter
-        Accessible.name: "Settings and more"
+        Accessible.name: qsTr("Settings and more")
         onClicked: moreMenu.visible = !moreMenu.visible
     }
     // With a Teams Premium trial (or after it, while Premium lasts) Teams
@@ -243,7 +243,7 @@ Rectangle {
     Rectangle {
         id: premiumPill
         visible: root.premiumMode === "trial" || root.premiumMode === "canceled"
-        readonly property string label: root.premiumMode === "trial" ? (root.premiumDaysLeft === 1 ? "1 day left" : root.premiumDaysLeft + " days left") : "Get Premium"
+        readonly property string label: root.premiumMode === "trial" ? (root.premiumDaysLeft === 1 ? qsTr("1 day left") : qsTr("%1 days left").arg(root.premiumDaysLeft)) : qsTr("Get Premium")
         anchors.right: moreButton.right
         anchors.verticalCenter: parent.verticalCenter
         width: pillRow.implicitWidth + 17.33; height: 31.33; radius: 4
@@ -260,8 +260,8 @@ Rectangle {
         HoverHandler { id: pillHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: moreMenu.visible = !moreMenu.visible }
         Accessible.role: Accessible.Button
-        Accessible.name: "Settings and more"
-        Accessible.description: root.premiumMode === "trial" ? "There are " + root.premiumDaysLeft + " days left in your premium trial" : "Start your free 60 day Teams Premium trial"
+        Accessible.name: qsTr("Settings and more")
+        Accessible.description: root.premiumMode === "trial" ? qsTr("There are %1 days left in your premium trial").arg(root.premiumDaysLeft) : qsTr("Start your free 60 day Teams Premium trial")
         Accessible.onPressAction: moreMenu.visible = !moreMenu.visible
     }
     // "Settings and more", as Teams' (measured on winpc 2026-11-15): a
@@ -317,7 +317,7 @@ Rectangle {
                 anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter
                 width: 36.66; height: 20; radius: 10
                 color: theme.brandFill
-                Text { anchors.centerIn: parent; text: "New"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.textOnBrand) }
+                Text { anchors.centerIn: parent; text: qsTr("New"); font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.textOnBrand) }
             }
             HoverHandler { id: mrh; cursorShape: Qt.PointingHandCursor; onHoveredChanged: if (hovered) feedbackMenu.showFor(mr.submenu ? mr : null) }
             TapHandler { onTapped: { if (mr.submenu) { feedbackMenu.showFor(mr); return } moreMenu.visible = false; mr.picked() } }
@@ -349,38 +349,38 @@ Rectangle {
             x: 4.67; y: 4.67; width: parent.width - 9.33
             spacing: 2
             // Teams Premium (its modes: offer, trial, canceled).
-            MenuRow { visible: root.premiumMode === "offer"; icon: "premium-20"; label: "Unlock Teams Premium"; onPicked: root.openPremium("offer") }
-            MenuRow { visible: root.premiumMode === "canceled"; icon: "premium-20"; label: "Get Teams Premium"; onPicked: root.openPremium("home") }
-            MenuRow { visible: root.premiumMode === "trial" || root.premiumMode === "canceled"; icon: "premium-20"; label: "Teams Premium benefits"; onPicked: root.openPremium("home") }
+            MenuRow { visible: root.premiumMode === "offer"; icon: "premium-20"; label: qsTr("Unlock Teams Premium"); onPicked: root.openPremium("offer") }
+            MenuRow { visible: root.premiumMode === "canceled"; icon: "premium-20"; label: qsTr("Get Teams Premium"); onPicked: root.openPremium("home") }
+            MenuRow { visible: root.premiumMode === "trial" || root.premiumMode === "canceled"; icon: "premium-20"; label: qsTr("Teams Premium benefits"); onPicked: root.openPremium("home") }
             MenuDivider { visible: root.premiumMode === "offer" || root.premiumMode === "trial" || root.premiumMode === "canceled" }
-            MenuRow { icon: "pin-20"; label: root.pinned ? "Unpin window" : "Pin window on top"; keys: "Ctrl+Shift+T"; checked: root.pinned; onPicked: root.togglePin() }
-            MenuRow { icon: "settings-20"; label: "Settings"; keys: "Ctrl+,"; onPicked: root.openSettings() }
-            MenuRow { icon: "cast-20"; label: "Cast"; onPicked: root.openCast() }
-            MenuRow { icon: "arrow-download-20"; label: "Downloads"; onPicked: root.openDownloads() }
+            MenuRow { icon: "pin-20"; label: root.pinned ? qsTr("Unpin window") : qsTr("Pin window on top"); keys: "Ctrl+Shift+T"; checked: root.pinned; onPicked: root.togglePin() }
+            MenuRow { icon: "settings-20"; label: qsTr("Settings"); keys: "Ctrl+,"; onPicked: root.openSettings() }
+            MenuRow { icon: "cast-20"; label: qsTr("Cast"); onPicked: root.openCast() }
+            MenuRow { icon: "arrow-download-20"; label: qsTr("Downloads"); onPicked: root.openDownloads() }
             MenuDivider {}
             Item {
                 width: moreCol.width; height: 27.33
-                Text { x: 8; anchors.verticalCenter: parent.verticalCenter; text: "Zoom"; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.textStrong }
+                Text { x: 8; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Zoom"); font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.textStrong }
                 Row {
                     anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter
                     spacing: 8
-                    ZoomButton { icon: "subtract-20"; label: "Zoom out"; onPicked: root.zoomOut() }
+                    ZoomButton { icon: "subtract-20"; label: qsTr("Zoom out"); onPicked: root.zoomOut() }
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
                         text: "(" + root.zoomPercent + ")%"
                         font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.textStrong
                         Accessible.role: Accessible.StaticText
-                        Accessible.name: "Zoom " + root.zoomPercent + "%"
+                        Accessible.name: qsTr("Zoom %1%").arg(root.zoomPercent)
                     }
-                    ZoomButton { icon: "add-20"; label: "Zoom in"; onPicked: root.zoomIn() }
-                    ZoomButton { icon: "page-fit-20"; label: "Reset zoom"; onPicked: root.zoomReset() }
+                    ZoomButton { icon: "add-20"; label: qsTr("Zoom in"); onPicked: root.zoomIn() }
+                    ZoomButton { icon: "page-fit-20"; label: qsTr("Reset zoom"); onPicked: root.zoomReset() }
                 }
             }
             MenuDivider {}
-            MenuRow { icon: "question-circle-20"; label: "Help"; keys: "F1"; onPicked: root.openHelp() }
-            MenuRow { id: feedbackRow; icon: "person-feedback-20"; label: "Feedback"; submenu: true }
-            MenuRow { icon: "keyboard-20"; label: "Keyboard shortcuts"; keys: "Ctrl+."; onPicked: root.openShortcuts() }
-            MenuRow { icon: "phone-20"; label: "Get the mobile app"; labelX: 32; pill: true; onPicked: root.openMobileApp() }
+            MenuRow { icon: "question-circle-20"; label: qsTr("Help"); keys: "F1"; onPicked: root.openHelp() }
+            MenuRow { id: feedbackRow; icon: "person-feedback-20"; label: qsTr("Feedback"); submenu: true }
+            MenuRow { icon: "keyboard-20"; label: qsTr("Keyboard shortcuts"); keys: "Ctrl+."; onPicked: root.openShortcuts() }
+            MenuRow { icon: "phone-20"; label: qsTr("Get the mobile app"); labelX: 32; pill: true; onPicked: root.openMobileApp() }
         }
         onVisibleChanged: if (!visible) feedbackMenu.visible = false
     }
@@ -406,9 +406,9 @@ Rectangle {
             id: feedbackCol
             x: 4; y: 4; width: parent.width - 8
             Repeater {
-                model: [{ key: "problem", icon: "bug-20", label: "Report a problem", keys: "Ctrl+Alt+Shift+R" },
-                        { key: "compliment", icon: "heart-20", label: "Give a compliment", keys: "" },
-                        { key: "suggest", icon: "microscope-20", label: "Suggest a feature", keys: "" }]
+                model: [{ key: "problem", icon: "bug-20", label: qsTr("Report a problem"), keys: "Ctrl+Alt+Shift+R" },
+                        { key: "compliment", icon: "heart-20", label: qsTr("Give a compliment"), keys: "" },
+                        { key: "suggest", icon: "microscope-20", label: qsTr("Suggest a feature"), keys: "" }]
                 Rectangle {
                     id: hcFill2
                     required property var modelData
@@ -441,7 +441,7 @@ Rectangle {
         color: profileHover.hovered ? theme.titleHover : "transparent"
         HoverHandler { id: profileHover }
         TapHandler { onTapped: menu.visible = !menu.visible }
-        Accessible.name: "Your profile"
+        Accessible.name: qsTr("Your profile")
         Avatar {
             id: avatar
             anchors.centerIn: parent
@@ -502,18 +502,18 @@ Rectangle {
             }
         }
         CaptionButton {
-            kind: "min"; Accessible.name: "Minimize"
+            kind: "min"; Accessible.name: qsTr("Minimize")
             onClicked: if (root.Window.window) root.Window.window.showMinimized()
         }
         CaptionButton {
-            kind: "max"; Accessible.name: "Maximize"
+            kind: "max"; Accessible.name: qsTr("Maximize")
             onClicked: {
                 const w = root.Window.window
                 if (w) w.visibility = w.visibility === Window.Maximized ? Window.Windowed : Window.Maximized
             }
         }
         CaptionButton {
-            kind: "close"; danger: true; Accessible.name: "Close"
+            kind: "close"; danger: true; Accessible.name: qsTr("Close")
             onClicked: if (root.Window.window) root.Window.window.close()
         }
     }
@@ -524,17 +524,17 @@ Rectangle {
     property string orgName: ""
     signal setStatus(string status)
     readonly property var statuses: [
-        { key: "Available", label: "Available" },
-        { key: "Busy", label: "Busy" },
-        { key: "DoNotDisturb", label: "Do not disturb" },
-        { key: "BeRightBack", label: "Be right back" },
-        { key: "Away", label: "Appear away" },
-        { key: "Offline", label: "Appear offline" },
+        { key: "Available", label: qsTr("Available") },
+        { key: "Busy", label: qsTr("Busy") },
+        { key: "DoNotDisturb", label: qsTr("Do not disturb") },
+        { key: "BeRightBack", label: qsTr("Be right back") },
+        { key: "Away", label: qsTr("Appear away") },
+        { key: "Offline", label: qsTr("Appear offline") },
     ]
     function statusLabel(p) {
         const k = (p || "Available").toLowerCase()
         const s = statuses.find(s => s.key.toLowerCase() === k)
-        return s ? s.label : (k === "inacall" || k === "inameeting" || k === "busyidle" ? "Busy" : k === "availableidle" ? "Available" : p)
+        return s ? s.label : (k === "inacall" || k === "inameeting" || k === "busyidle" ? qsTr("Busy") : k === "availableidle" ? qsTr("Available") : p)
     }
     readonly property var presenceInk: ({ available: "#13A10E", away: "#EAA300", busy: "#D13438", dnd: "#D13438", offline: "#616161" })
     function presenceKind(key) {
@@ -556,12 +556,12 @@ Rectangle {
     function untilText(iso) {
         const d = new Date(iso), now = new Date()
         const t = theme.time(d)
-        return d.toDateString() === now.toDateString() ? t : Qt.formatDate(d, "MMM d") + ", " + t
+        return d.toDateString() === now.toDateString() ? t : theme.fmtDate(d, "MMM d") + ", " + t
     }
     readonly property var pauseItems: [
-        { label: "10 minutes", minutes: 10 }, { label: "30 minutes", minutes: 30 }, { label: "1 hour", minutes: 60 },
-        { label: "Today", minutes: -1 }, { label: "Custom", custom: true },
-        { separator: true }, { label: "Notifications settings", icon: "settings-20", settings: true }
+        { label: qsTr("10 minutes"), minutes: 10 }, { label: qsTr("30 minutes"), minutes: 30 }, { label: qsTr("1 hour"), minutes: 60 },
+        { label: qsTr("Today"), minutes: -1 }, { label: qsTr("Custom"), custom: true },
+        { separator: true }, { label: qsTr("Notifications settings"), icon: "settings-20", settings: true }
     ]
     function pickPause(i) {
         const it = pauseItems[i]
@@ -601,19 +601,19 @@ Rectangle {
                 Text {
                     x: 18; anchors.verticalCenter: parent.verticalCenter
                     width: parent.width - 120; elide: Text.ElideRight
-                    text: root.orgName || "Signed in"
+                    text: root.orgName || qsTr("Signed in")
                     font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold
                     color: theme.text
                 }
                 Text {
                     anchors.right: parent.right; anchors.rightMargin: 18; anchors.verticalCenter: parent.verticalCenter
-                    text: "Sign out"
+                    text: qsTr("Sign out")
                     font.family: theme.font; font.pixelSize: theme.small
                     color: theme.textStrong
                     HoverHandler { cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: { menu.visible = false; root.signOut() } }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Sign out"
+                    Accessible.name: qsTr("Sign out")
                 }
             }
             Item {
@@ -627,12 +627,12 @@ Rectangle {
                     // View account ↗ (opens the Microsoft account page in the browser, as Teams does).
                     Row {
                         spacing: 4
-                        Text { text: "View account"; font.family: theme.font; font.pixelSize: theme.small; color: theme.textStrong }
+                        Text { text: qsTr("View account"); font.family: theme.font; font.pixelSize: theme.small; color: theme.textStrong }
                         FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "open-16"; size: 12; color: theme.textStrong }
                         HoverHandler { cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: { menu.visible = false; Qt.openUrlExternally("https://myaccount.microsoft.com/") } }
                         Accessible.role: Accessible.Link
-                        Accessible.name: "View account"
+                        Accessible.name: qsTr("View account")
                     }
                 }
             }
@@ -672,7 +672,7 @@ Rectangle {
                 visible: !root.paused
                 icon: pauseMenu.opened || pauseRowHover.hovered ? "alert-20-filled" : "alert-20"
                 iconColor: pauseMenu.opened || pauseRowHover.hovered ? theme.brand : theme.textStrong
-                label: "Pause notifications"
+                label: qsTr("Pause notifications")
                 active: pauseMenu.opened
                 HoverHandler { id: pauseRowHover }
                 onClicked: pauseMenu.opened ? pauseMenu.close() : pauseMenu.open()
@@ -702,8 +702,8 @@ Rectangle {
                     color: theme.pick("#F5F5F5", "#2E2E2E", "#000000")
                     HoverHandler { id: pausedHover }
                     readonly property bool actions: pausedHover.hovered || editPause.activeFocus || resumePause.activeFocus || editMenu.opened
-                    Text { x: 8; y: 8; height: 20; verticalAlignment: Text.AlignVCenter; text: "Notifications paused"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.text }
-                    Text { x: 8; y: 36; height: 10; verticalAlignment: Text.AlignVCenter; text: "Until " + (root.statusUntil ? root.untilText(root.statusUntil) : ""); font.family: theme.font; font.pixelSize: 10; color: theme.textStrong }
+                    Text { x: 8; y: 8; height: 20; verticalAlignment: Text.AlignVCenter; text: qsTr("Notifications paused"); font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.text }
+                    Text { x: 8; y: 36; height: 10; verticalAlignment: Text.AlignVCenter; text: qsTr("Until %1").arg(root.statusUntil ? root.untilText(root.statusUntil) : ""); font.family: theme.font; font.pixelSize: 10; color: theme.textStrong }
                     Rectangle {
                         id: editPause
                         x: 184; y: 17; width: 20; height: 20; radius: 4
@@ -713,9 +713,9 @@ Rectangle {
                         FluentIcon { anchors.centerIn: parent; name: editHoverP.hovered || editMenu.opened ? "edit-16-filled" : "edit-16"; size: 16; color: editHoverP.hovered || editMenu.opened ? theme.brand : theme.textStrong }
                         HoverHandler { id: editHoverP; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: editMenu.opened ? editMenu.close() : editMenu.open() }
-                        ToolTip.visible: editHoverP.hovered && !editMenu.opened; ToolTip.delay: 500; ToolTip.text: "Edit pause duration"
+                        ToolTip.visible: editHoverP.hovered && !editMenu.opened; ToolTip.delay: 500; ToolTip.text: qsTr("Edit pause duration")
                         Accessible.role: Accessible.Button
-                        Accessible.name: "Edit pause duration, Notifications paused, until " + (root.statusUntil ? root.untilText(root.statusUntil) : "") + ", Your presence was changed to Do not disturb."
+                        Accessible.name: qsTr("Edit pause duration, Notifications paused, until %1, Your presence was changed to Do not disturb.").arg(root.statusUntil ? root.untilText(root.statusUntil) : "")
                         MenuPopup {
                             id: editMenu
                             perItemIcons: true
@@ -733,9 +733,9 @@ Rectangle {
                         FluentIcon { anchors.centerIn: parent; name: resumeHover.hovered ? "dismiss-16-filled" : "dismiss-16"; size: 16; color: resumeHover.hovered ? theme.brand : theme.textStrong }
                         HoverHandler { id: resumeHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: root.setStatusUntil("Reset", "Never") }
-                        ToolTip.visible: resumeHover.hovered; ToolTip.delay: 500; ToolTip.text: "Resume notifications"
+                        ToolTip.visible: resumeHover.hovered; ToolTip.delay: 500; ToolTip.text: qsTr("Resume notifications")
                         Accessible.role: Accessible.Button
-                        Accessible.name: "Resume notifications"
+                        Accessible.name: qsTr("Resume notifications")
                     }
                 }
             }
@@ -752,10 +752,10 @@ Rectangle {
                 readonly property string loc: root.workLocation
                 icon: loc === "Office" ? "building-checkmark-20-filled" : loc === "Remote" ? "home-20-filled" : "location-add-20"
                 iconColor: loc === "Office" || loc === "Remote" || workMenu.opened ? theme.brand : theme.textStrong
-                label: loc === "Office" ? "In the office" : loc === "Remote" ? "Working remotely" : "Set work location"
+                label: loc === "Office" ? qsTr("In the office") : loc === "Remote" ? qsTr("Working remotely") : qsTr("Set work location")
                 active: workMenu.opened
                 onClicked: workMenu.opened ? workMenu.close() : workMenu.open()
-                Accessible.name: "Your current work location: " + label
+                Accessible.name: qsTr("Your current work location: %1").arg(label)
                 Popup {
                     id: workMenu
                     parent: workRow
@@ -763,13 +763,13 @@ Rectangle {
                     width: 240; padding: 4
                     background: FluentSurface { depth: 16; radius: 4; color: theme.menu }
                     contentItem: Column {
-                        Text { width: parent.width; height: 32; leftPadding: 12; verticalAlignment: Text.AlignVCenter; text: "For today"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.textSecondary }
+                        Text { width: parent.width; height: 32; leftPadding: 12; verticalAlignment: Text.AlignVCenter; text: qsTr("For today"); font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.textSecondary }
                         Repeater {
-                            model: [{ key: "Office", label: "Office", icon: "building-20" }, { key: "Remote", label: "Remote", icon: "home-20" }]
+                            model: [{ key: "Office", label: qsTr("Office"), icon: "building-20" }, { key: "Remote", label: qsTr("Remote"), icon: "home-20" }]
                             WorkItem { required property var modelData; iconX: 12; labelX: 38; icon: modelData.icon; label: modelData.label; onClicked: { menu.visible = false; root.setWorkLocation(modelData.key) } }
                         }
                         Item { visible: !!workRow.loc; width: parent.width; height: 8.6; Rectangle { x: -4; width: 240; height: 0.67; anchors.verticalCenter: parent.verticalCenter; color: theme.divider } }
-                        WorkItem { visible: !!workRow.loc; iconX: 6; labelX: 32; icon: "delete-20"; label: "Clear work location"; onClicked: { menu.visible = false; root.setWorkLocation("") } }
+                        WorkItem { visible: !!workRow.loc; iconX: 6; labelX: 32; icon: "delete-20"; label: qsTr("Clear work location"); onClicked: { menu.visible = false; root.setWorkLocation("") } }
                     }
                     component WorkItem: Rectangle {
                         id: wi
@@ -791,7 +791,7 @@ Rectangle {
             }
             FlyoutRow {
                 visible: !root.statusNote
-                icon: "status-20"; label: "Set status message"
+                icon: "status-20"; label: qsTr("Set status message")
                 onClicked: { notePage.start(); menu.page = "note" }
             }
             // Your status message, as Teams shows it here (measured on
@@ -825,7 +825,7 @@ Rectangle {
                             FluentIcon { anchors.centerIn: parent; name: "edit-20"; size: 16; color: theme.onFill(hcFill3, theme.textSecondary) }
                             HoverHandler { id: editHover; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: { notePage.start(); menu.page = "note" } }
-                            Accessible.role: Accessible.Button; Accessible.name: "Set status message"
+                            Accessible.role: Accessible.Button; Accessible.name: qsTr("Set status message")
                         }
                         Rectangle {
                             id: hcFill4
@@ -834,11 +834,11 @@ Rectangle {
                             FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 16; color: theme.onFill(hcFill4, theme.textSecondary) }
                             HoverHandler { id: delHover; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: root.setStatusNote("", false, "Never") }
-                            Accessible.role: Accessible.Button; Accessible.name: "Delete status message"
+                            Accessible.role: Accessible.Button; Accessible.name: qsTr("Delete status message")
                         }
                     }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Your current status message: " + root.statusNote
+                    Accessible.name: qsTr("Your current status message: %1").arg(root.statusNote)
                 }
             }
             Item { width: 1; height: 8 }
@@ -849,8 +849,8 @@ Rectangle {
             x: 72; y: statusRow.y + statusRow.height + 2
             items: root.statuses.map(s => ({ label: s.label, icon: "presence-" + root.presenceKind(s.key) + "-16",
                                                iconColor: root.presenceInk[root.presenceKind(s.key)] }))
-                .concat([{ separator: true }, { label: "Duration", icon: "clock-20", chevron: true },
-                         { separator: true }, { label: "Reset status", icon: "arrow-reset-20" }])
+                .concat([{ separator: true }, { label: qsTr("Duration"), icon: "clock-20", chevron: true },
+                         { separator: true }, { label: qsTr("Reset status"), icon: "arrow-reset-20" }])
             onPicked: i => {
                 const n = root.statuses.length
                 if (i < n) { menu.visible = false; root.setStatus(root.statuses[i].key) }
@@ -923,8 +923,8 @@ Rectangle {
             visible: menu.page === "duration"
             width: 320; implicitHeight: 273 - 8
             readonly property var durations: [
-                { key: "HalfHour", label: "30 minutes" }, { key: "OneHour", label: "1 hour" },
-                { key: "TwoHours", label: "2 hours" }, { key: "Today", label: "Today" }, { key: "ThisWeek", label: "This week" }
+                { key: "HalfHour", label: qsTr("30 minutes") }, { key: "OneHour", label: qsTr("1 hour") },
+                { key: "TwoHours", label: qsTr("2 hours") }, { key: "Today", label: qsTr("Today") }, { key: "ThisWeek", label: qsTr("This week") }
             ]
             function start() {
                 const i = root.statuses.findIndex(s => s.key.toLowerCase() === (root.presence || "Available").toLowerCase())
@@ -937,14 +937,14 @@ Rectangle {
                 x: 16; y: 18; width: 57; height: 21; radius: 4
                 color: durBack.hovered ? theme.menuHover : "transparent"
                 FluentIcon { x: 1; y: 1; name: "chevron-left-20"; size: 20; color: theme.onFill(hcFill5, theme.textStrong) }
-                Text { x: 27; y: 1; height: 20; verticalAlignment: Text.AlignVCenter; text: "Back"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill5, theme.textStrong) }
+                Text { x: 27; y: 1; height: 20; verticalAlignment: Text.AlignVCenter; text: qsTr("Back"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill5, theme.textStrong) }
                 HoverHandler { id: durBack; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: menu.page = "main" }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Back"
+                Accessible.name: qsTr("Back")
             }
             Rectangle { x: 11; y: 43; width: 298; height: 1; color: theme.divider }   // Fluent MenuDivider (NeutralStroke2)
-            Text { x: 16; y: 61; height: 20; verticalAlignment: Text.AlignVCenter; text: "Status"; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
+            Text { x: 16; y: 61; height: 20; verticalAlignment: Text.AlignVCenter; text: qsTr("Status"); font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
             FilledDropdown {
                 id: statusPick
                 x: 16; y: 85
@@ -952,11 +952,11 @@ Rectangle {
                 leadIcon: options.length ? options[current].icon : ""
                 leadColor: options.length ? options[current].color : theme.text
             }
-            Text { x: 16; y: 142; height: 20; verticalAlignment: Text.AlignVCenter; text: "Reset status after"; font.family: theme.font; font.pixelSize: theme.base; color: theme.textStrong }
+            Text { x: 16; y: 142; height: 20; verticalAlignment: Text.AlignVCenter; text: qsTr("Reset status after"); font.family: theme.font; font.pixelSize: theme.base; color: theme.textStrong }
             FilledDropdown { id: durationPick; x: 16; y: 166; options: durationPage.durations }
             PrimaryButton {
                 x: 208; y: 226; width: 96
-                label: "Done"
+                label: qsTr("Done")
                 onClicked: { menu.visible = false; root.setStatusUntil(root.statuses[statusPick.current].key, durationPage.durations[durationPick.current].key) }
             }
         }
@@ -1022,8 +1022,8 @@ Rectangle {
             width: 320; implicitHeight: 522 - 8
             property bool saving: false
             readonly property var clearAfter: [
-                { key: "Never", label: "Never" }, { key: "Today", label: "Today" }, { key: "OneHour", label: "1 hour" },
-                { key: "FourHours", label: "4 hours" }, { key: "ThisWeek", label: "This week" }
+                { key: "Never", label: qsTr("Never") }, { key: "Today", label: qsTr("Today") }, { key: "OneHour", label: qsTr("1 hour") },
+                { key: "FourHours", label: qsTr("4 hours") }, { key: "ThisWeek", label: qsTr("This week") }
             ]
             // Teams focuses the editor when the page opens.
             function start() { saving = false; noteText.text = ""; noteText.insert(0, root.statusNote.replace(/&/g, "&amp;").replace(/</g, "&lt;")); pinBox.checked = root.statusNotePinned; clearPick.current = 0; noteText.forceActiveFocus() }
@@ -1059,7 +1059,7 @@ Rectangle {
                 focus: false
                 onPeopleChanged: current = 0
                 background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
-                Text { x: 20; y: 10.7; height: 20; verticalAlignment: Text.AlignVCenter; text: "Suggestions"; font.family: theme.font; font.pixelSize: 14; color: theme.textStrong }
+                Text { x: 20; y: 10.7; height: 20; verticalAlignment: Text.AlignVCenter; text: qsTr("Suggestions"); font.family: theme.font; font.pixelSize: 14; color: theme.textStrong }
                 Column {
                     y: 43.2
                     Repeater {
@@ -1088,9 +1088,9 @@ Rectangle {
                 HoverHandler { id: backHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: menu.page = "main" }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Back"
+                Accessible.name: qsTr("Back")
             }
-            Text { x: 53; y: 17; height: 20; verticalAlignment: Text.AlignVCenter; text: "Set status message"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
+            Text { x: 53; y: 17; height: 20; verticalAlignment: Text.AlignVCenter; text: qsTr("Set status message"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
             Text { x: 53; y: 37; height: 16; verticalAlignment: Text.AlignVCenter; text: root.userMail; font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
             Rectangle {
                 x: 16; y: 71; width: 288; height: 240; radius: 3
@@ -1125,8 +1125,8 @@ Rectangle {
                         else if ((e.key === Qt.Key_Return || e.key === Qt.Key_Enter || e.key === Qt.Key_Tab) && notePicker.people.length) { notePage.pickMention(notePicker.people[notePicker.current]); e.accepted = true }
                         else if (e.key === Qt.Key_Escape) { notePicker.close(); e.accepted = true }
                     }
-                    Text { visible: noteText.length === 0; text: "Type @ to mention someone in your status"; font: parent.font; color: theme.textSecondary }
-                    Accessible.name: "Type @ to mention someone in your status"
+                    Text { visible: noteText.length === 0; text: qsTr("Type @ to mention someone in your status"); font: parent.font; color: theme.textSecondary }
+                    Accessible.name: qsTr("Type @ to mention someone in your status")
                 }
                 Text {
                     anchors.right: parent.right; anchors.rightMargin: 8; y: 211; height: 20
@@ -1145,9 +1145,9 @@ Rectangle {
                     FluentIcon { anchors.centerIn: parent; visible: pinBox.checked; name: "checkmark-12-filled"; size: 12; color: theme.onFill(pinBox, "white") }
                     Accessible.role: Accessible.CheckBox
                     Accessible.checked: checked
-                    Accessible.name: "Show when people message me"
+                    Accessible.name: qsTr("Show when people message me")
                 }
-                Text { x: 30; y: 8; text: "Show when people message me"; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
+                Text { x: 30; y: 8; text: qsTr("Show when people message me"); font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: pinBox.checked = !pinBox.checked }
             }
@@ -1159,26 +1159,26 @@ Rectangle {
                 ToolTip {
                     visible: infoHover.hovered; width: 240
                     background: FluentSurface { depth: 16; radius: 4 }
-                    contentItem: Text { text: "Your status message will show above the compose message box when someone sends you a message or @mentions you."; wrapMode: Text.Wrap; font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
+                    contentItem: Text { text: qsTr("Your status message will show above the compose message box when someone sends you a message or @mentions you."); wrapMode: Text.Wrap; font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
                 }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Your status message will show above the compose message box when someone sends you a message or @mentions you."
+                Accessible.name: qsTr("Your status message will show above the compose message box when someone sends you a message or @mentions you.")
             }
-            Text { x: 16; y: 390; height: 20; verticalAlignment: Text.AlignVCenter; text: "Clear status message after"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.textStrong }
+            Text { x: 16; y: 390; height: 20; verticalAlignment: Text.AlignVCenter; text: qsTr("Clear status message after"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.textStrong }
             Dropdown { id: clearPick; x: 16; y: 424; width: 288; options: notePage.clearAfter }
             // Teams' "Schedule out of office" link (16, 478) opens
             // Settings ▸ General ▸ Out of office.
             Text {
                 x: 18; y: 480; height: 20; verticalAlignment: Text.AlignVCenter
-                text: "Schedule out of office"; font.family: theme.font; font.pixelSize: theme.base; color: theme.brand
+                text: qsTr("Schedule out of office"); font.family: theme.font; font.pixelSize: theme.base; color: theme.brand
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: { menu.visible = false; root.openOutOfOffice() } }
                 Accessible.role: Accessible.Link
-                Accessible.name: "Schedule out of office"
+                Accessible.name: qsTr("Schedule out of office")
             }
             PrimaryButton {
                 x: 191; y: 474
-                label: notePage.saving ? "Saving..." : "Done"
+                label: notePage.saving ? qsTr("Saving...") : qsTr("Done")
                 enabled: !notePage.saving && (noteText.getText(0, noteText.length).trim().length > 0 || root.statusNote.length > 0)
                 onClicked: { notePage.saving = true; root.setStatusNote(noteText.getText(0, noteText.length).trim().length ? noteText.text : "", pinBox.checked, notePage.clearAfter[clearPick.current].key) }
             }

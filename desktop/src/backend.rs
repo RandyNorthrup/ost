@@ -887,6 +887,11 @@ pub mod qobject {
         /// firstDayOfWeek}.
         #[qinvokable]
         fn regional_formats_json(self: Pin<&mut Backend>) -> QString;
+        /// The Fluent icons Teams mirrors in right-to-left languages (its
+        /// icon library's flipInRtl), as a JSON list of name stems
+        /// ("arrow-reply").
+        #[qinvokable]
+        fn rtl_flip_icons_json(self: Pin<&mut Backend>) -> QString;
         /// Settings ▸ General ▸ Language and regional formats: {followOs,
         /// appLanguage, dateFormat, timeFormat, languages: [{code, name,
         /// nativeName}], dateFormats, timeFormats: [{short, long}], os:
@@ -5048,13 +5053,25 @@ pub struct Typer {
 }
 
 fn typing_text(names: &[String]) -> String {
-    match names {
-        [] => String::new(),
-        [a] => format!("{a} is typing"),
-        [a, b] => format!("{a} and {b} are typing"),
-        [a, b, c] => format!("{a}, {b}, and {c} are typing"),
-        [a, b, rest @ ..] => format!("{a}, {b}, and {} others are typing", rest.len()),
+    if names.is_empty() {
+        return String::new();
     }
+    // Teams' one message for all (messaging k97sw4alx_mf): =1, =2 and =3
+    // forms, else "and {othersCount} others"; %4 is the third typer.
+    let template = tr_n("%1, %2, and %3 others are typing", names.len() as i32);
+    // Without a catalogue only the source is there: its English forms.
+    let template = match names.len() {
+        1 if template == "%1, %2, and %3 others are typing" => "%1 is typing".to_string(),
+        2 if template == "%1, %2, and %3 others are typing" => "%1 and %2 are typing".to_string(),
+        3 if template == "%1, %2, and %3 others are typing" => "%1, %2, and %4 are typing".to_string(),
+        _ => template,
+    };
+    let at = |i: usize| names.get(i).map(String::as_str).unwrap_or_default();
+    template
+        .replace("%1", at(0))
+        .replace("%2", at(1))
+        .replace("%3", &names.len().saturating_sub(2).to_string())
+        .replace("%4", at(2))
 }
 
 /// What Teams does with a toast (async-apps-notifications 876340 `jt`).
@@ -5559,6 +5576,132 @@ fn regional_in_effect() -> &'static (String, api::regional::Formats) {
         let culture = if c.follow_os { app_locale() } else { c.app_language.clone() };
         (culture, api::regional::resolve(&c, &app_locale()))
     })
+}
+
+/// Teams' App language for this run, applied before the QML loads (Teams
+/// applies it at start, after Save and restart): its strings (Teams' own
+/// wording in that language), its layout direction and its culture.
+/// Following the OS, it is the OS's language. Returns the string locale
+/// shown.
+///
+/// OST carries no translations: for a language other than en-us it builds
+/// the catalogue from Teams' own string resources, downloaded from Teams'
+/// CDN on first use (api::teams_strings) and cached in
+/// ~/.cache/ost/i18n/<locale>.json. Until it has them (offline, say) OST
+/// shows its English, as Teams does without its strings, left to right.
+pub fn install_app_language() -> &'static str {
+    unsafe extern "C" {
+        fn ost_install_translator(catalogue: *const core::ffi::c_char, lang: *const core::ffi::c_char, culture: *const core::ffi::c_char, rtl: bool) -> bool;
+    }
+    let culture = regional_in_effect().0.clone();
+    let wanted = api::regional::string_locale(&culture);
+    let catalogue = if wanted == "en-us" { None } else { app_language_catalogue(wanted) };
+    let strings = if catalogue.is_some() { wanted } else { "en-us" };
+    let rtl = catalogue.is_some() && api::regional::is_rtl(strings);
+    let path = catalogue.map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
+    let (Ok(p), Ok(l), Ok(c)) = (std::ffi::CString::new(path), std::ffi::CString::new(strings), std::ffi::CString::new(culture.replace('_', "-"))) else {
+        return "en-us";
+    };
+    // SAFETY: plain Qt calls with NUL-terminated strings, on the GUI
+    // thread, after the application exists and before the QML engine.
+    let ok = unsafe { ost_install_translator(p.as_ptr(), l.as_ptr(), c.as_ptr(), rtl) };
+    tracing::info!("app language {culture}: strings {strings}{}{}", if rtl { ", right to left" } else { "" }, if ok { "" } else { " (no catalogue)" });
+    strings
+}
+
+/// OST's strings keyed to Teams' ids (desktop/i18n/ids.json).
+const APP_LANGUAGE_IDS: &str = include_str!("../i18n/ids.json");
+/// Where Teams' string resources are (desktop/i18n/teams_resources.json).
+const APP_LANGUAGE_RESOURCES: &str = include_str!("../i18n/teams_resources.json");
+
+/// The cached catalogue for `locale`, built now from Teams' resources if
+/// there is none for this Teams build and these strings; None (logged)
+/// when it can't be had.
+fn app_language_catalogue(locale: &str) -> Option<std::path::PathBuf> {
+    use teams_cli::api::teams_strings as ts;
+    let res: ts::Resources = match serde_json::from_str(APP_LANGUAGE_RESOURCES) {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::warn!("app language: teams_resources.json: {e}");
+            return None;
+        }
+    };
+    let fp = ts::fingerprint(APP_LANGUAGE_IDS);
+    let path = cache_base().join("i18n").join(format!("{locale}.json"));
+    let current = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .is_some_and(|v| v["ids"] == fp.as_str() && v["teamsVersion"] == res.teams_version.as_str() && v["strings"].is_object());
+    if current {
+        return Some(path);
+    }
+    let ids: Vec<ts::IdRow> = match serde_json::from_str(APP_LANGUAGE_IDS) {
+        Ok(i) => i,
+        Err(e) => {
+            tracing::warn!("app language: ids.json: {e}");
+            return None;
+        }
+    };
+    tracing::info!("app language {locale}: getting Teams' strings ({} files, Teams {})", res.files.get(locale).map_or(0, |f| f.len()), res.teams_version);
+    let started = std::time::Instant::now();
+    let built = tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(anyhow::Error::from).and_then(|rt| {
+        rt.block_on(async {
+            let client = reqwest::Client::builder().connect_timeout(std::time::Duration::from_secs(5)).timeout(std::time::Duration::from_secs(30)).build()?;
+            tokio::time::timeout(std::time::Duration::from_secs(45), ts::fetch(&client, &res, &ids, &fp, locale))
+                .await
+                .map_err(|_| anyhow::anyhow!("timed out"))?
+        })
+    });
+    let cat = match built {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!("app language {locale}: Teams' strings unavailable ({}); showing English", short_error(&e));
+            return None;
+        }
+    };
+    // Written atomically: a temporary file renamed over the old one.
+    let write = || -> std::io::Result<()> {
+        std::fs::create_dir_all(path.parent().expect("cache dir"))?;
+        let tmp = path.with_extension(format!("json.{}.tmp", std::process::id()));
+        std::fs::write(&tmp, serde_json::to_vec(&cat)?)?;
+        std::fs::rename(&tmp, &path)
+    };
+    if let Err(e) = write() {
+        tracing::warn!("app language {locale}: caching its catalogue failed: {e}");
+        return None;
+    }
+    tracing::info!("app language {locale}: built {} strings from Teams' resources in {} ms", cat["strings"].as_object().map_or(0, |m| m.len()), started.elapsed().as_millis());
+    Some(path)
+}
+
+/// OST's text from Rust in the app language (as qsTr in QML): Teams' own
+/// wording where desktop/i18n has the string, else the English.
+pub fn tr(source: &str) -> String {
+    tr_with(source, "", -1)
+}
+
+/// `tr` for a count: "%n" in `source` and the translation is the number,
+/// and the plural form is the language's for it.
+pub fn tr_n(source: &str, n: i32) -> String {
+    tr_with(source, "", n)
+}
+
+fn tr_with(source: &str, disambiguation: &str, n: i32) -> String {
+    unsafe extern "C" {
+        fn ost_translate(source: *const core::ffi::c_char, disambiguation: *const core::ffi::c_char, n: i32, out: *mut core::ffi::c_char, cap: usize) -> usize;
+    }
+    let (Ok(s), Ok(d)) = (std::ffi::CString::new(source), std::ffi::CString::new(disambiguation)) else {
+        return source.to_string();
+    };
+    let mut buf = vec![0u8; source.len() * 4 + 256];
+    // SAFETY: NUL-terminated inputs; the C++ side writes at most `cap`
+    // bytes into `buf`. QCoreApplication::translate is thread-safe.
+    let len = unsafe { ost_translate(s.as_ptr(), d.as_ptr(), n, buf.as_mut_ptr().cast(), buf.len()) };
+    if len == 0 {
+        return source.replace("%n", &n.to_string());
+    }
+    buf.truncate(len);
+    String::from_utf8(buf).unwrap_or_else(|_| source.to_string())
 }
 
 /// Your translation settings (Settings ▸ General ▸ Translation), kept on
@@ -6889,7 +7032,7 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         // Teams keeps the call window on "Call is parked" with the code.
         let _ = qt.queue(move |mut this| {
             this.as_mut().set_call_park_code(QString::from(code.as_str()));
-            this.as_mut().set_status_text(QString::from("Call is parked"));
+            this.as_mut().set_status_text(QString::from(tr("Call is parked")));
             this.as_mut().set_call_state(QString::from("parked"));
         });
         return;
@@ -6921,7 +7064,7 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
                 }
                 let _ = qt.queue(|mut this| {
                     this.as_mut()
-                        .set_status_text(QString::from("Call transferred"));
+                        .set_status_text(QString::from(tr("Call transferred")));
                     this.as_mut().end_call_ui();
                 });
             }
@@ -6935,7 +7078,7 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
                 }
                 let _ = qt.queue(move |mut this| {
                     this.as_mut().set_status_text(QString::from(
-                        format!("Transfer failed: {phrase}").as_str(),
+                        tr("Transfer failed: %1").replace("%1", &phrase).as_str(),
                     ))
                 });
             }
@@ -8487,7 +8630,7 @@ impl qobject::Backend {
         }
         let Some(callee) = outgoing::callee_mri_for_chat(&chat_id, &my_oid) else {
             self.as_mut()
-                .set_status_text(QString::from("Calls are available in 1:1 chats"));
+                .set_status_text(QString::from(tr("Calls are available in 1:1 chats")));
             return;
         };
         self.as_mut().remember_header_call(video);
@@ -8504,7 +8647,7 @@ impl qobject::Backend {
             return;
         };
         tracing::info!("retrieving a parked call");
-        self.place_and_show(Placement::Unpark(code), QString::from("Parked call"), String::new());
+        self.place_and_show(Placement::Unpark(code), QString::from(tr("Parked call")), String::new());
     }
 
     /// Teams' Record a greeting (`startVoicemailCall`): a call to your own
@@ -8514,13 +8657,13 @@ impl qobject::Backend {
             return;
         }
         tracing::info!("calling own voicemail to record a greeting");
-        self.place_and_show(Placement::Voicemail, QString::from("Voicemail"), String::new());
+        self.place_and_show(Placement::Voicemail, QString::from(tr("Voicemail")), String::new());
     }
 
     /// Park the call (Teams' Park Call): the pickup code comes back on the
     /// transfer's completion, and the call ends for us.
     pub fn park_call(mut self: Pin<&mut Self>) {
-        self.as_mut().set_status_text(QString::from("Parking..."));
+        self.as_mut().set_status_text(QString::from(tr("Parking...")));
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let slot = call_slot().lock().await;
@@ -8535,7 +8678,7 @@ impl qobject::Backend {
             drop(slot);
             tracing::info!(ok = result.is_ok(), "park requested");
             if let Err(e) = result {
-                let msg = format!("Park: {}", short_error(&e));
+                let msg = tr("Park: %1").replace("%1", &short_error(&e));
                 let _ = qt.queue(move |mut this| this.as_mut().set_status_text(QString::from(msg.as_str())));
             }
         });
@@ -8862,7 +9005,7 @@ impl qobject::Backend {
                     tracing::info!("group call ended: {msg}");
                     let _ = qt.queue(move |mut this| {
                         this.as_mut().set_status_text(QString::from(
-                            format!("Couldn't start the call: {msg}").as_str(),
+                            tr("Couldn't start the call: %1").replace("%1", &msg).as_str(),
                         ));
                         this.as_mut().end_call_ui();
                     });
@@ -8984,7 +9127,7 @@ impl qobject::Backend {
         let src = std::path::PathBuf::from(path.strip_prefix("file://").unwrap_or(&path));
         let Some(dir) = download_dir() else { return };
         let msg = match std::fs::read(&src).map_err(anyhow::Error::from).and_then(|b| api::files::save_unique(&dir, RECORDING_DOWNLOAD_NAME, &b)) {
-            Ok(p) => format!("Saved {} to {}", p.file_name().and_then(|n| n.to_str()).unwrap_or(RECORDING_DOWNLOAD_NAME), dir.display()),
+            Ok(p) => tr("Saved %1 to %2").replace("%1", p.file_name().and_then(|n| n.to_str()).unwrap_or(RECORDING_DOWNLOAD_NAME)).replace("%2", &dir.display().to_string()),
             Err(e) => short_error(&e),
         };
         self.as_mut().set_status_text(QString::from(msg.as_str()));
@@ -9307,7 +9450,7 @@ impl qobject::Backend {
     }
 
     fn run_clip_download(mut self: Pin<&mut Self>, url: String, dir: std::path::PathBuf, target: Option<std::path::PathBuf>) {
-        self.as_mut().set_status_text(QString::from(format!("Downloading {CLIP_DOWNLOAD_NAME}…").as_str()));
+        self.as_mut().set_status_text(QString::from(tr("Downloading %1…").replace("%1", CLIP_DOWNLOAD_NAME).as_str()));
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let result = async {
@@ -9318,7 +9461,7 @@ impl qobject::Backend {
             }
             .await;
             let msg = match result {
-                Ok(path) => format!("Saved {} to {}", path.file_name().and_then(|n| n.to_str()).unwrap_or(CLIP_DOWNLOAD_NAME), path.parent().map(|p| p.display().to_string()).unwrap_or_default()),
+                Ok(path) => tr("Saved %1 to %2").replace("%1", path.file_name().and_then(|n| n.to_str()).unwrap_or(CLIP_DOWNLOAD_NAME)).replace("%2", &path.parent().map(|p| p.display().to_string()).unwrap_or_default()),
                 Err(e) => short_error(&e),
             };
             let _ = qt.queue(move |mut this| this.as_mut().set_status_text(QString::from(msg.as_str())));
@@ -9922,7 +10065,7 @@ impl qobject::Backend {
         }
         let Some(link) = outgoing::MeetingLink::parse(&join_url.to_string()) else {
             self.as_mut().set_status_text(QString::from(
-                "That isn't a Teams meeting link OST can join",
+                tr("That isn't a Teams meeting link OST can join"),
             ));
             return;
         };
@@ -10088,11 +10231,11 @@ impl qobject::Backend {
                     // Teams' retry screen for a room you can't join.
                     let (why_title, why_text) = if room_closed {
                         (
-                            "You don't have access to this room".to_string(),
-                            "The room isn't open yet, or you might have been assigned to a different one.".to_string(),
+                            tr("You don't have access to this room"),
+                            tr("The room isn't open yet, or you might have been assigned to a different one."),
                         )
                     } else {
-                        ("Couldn't join the meeting".to_string(), msg.clone())
+                        (tr("Couldn't join the meeting"), msg.clone())
                     };
                     // The window's alert: Teams' sentence, or just the title.
                     let alert_text = if room_closed { why_text.clone() } else { String::new() };
@@ -10165,7 +10308,7 @@ impl qobject::Backend {
                     }
                     let _ = qt.queue(move |mut this| {
                         this.as_mut().set_status_text(QString::from(
-                            format!("Couldn't join the meeting: {msg}").as_str(),
+                            tr("Couldn't join the meeting: %1").replace("%1", &msg).as_str(),
                         ));
                         this.as_mut().end_call_ui();
                     });
@@ -10400,7 +10543,7 @@ impl qobject::Backend {
     /// its title, links and an empty roster.
     fn reset_meeting_view(mut self: Pin<&mut Self>, link: &outgoing::MeetingLink, join_url: &QString, title: &QString) {
         let title = if title.is_empty() {
-            QString::from("Meeting")
+            QString::from(tr("Meeting"))
         } else {
             title.clone()
         };
@@ -11416,14 +11559,14 @@ impl qobject::Backend {
                         if call.call_me_pending().is_some() {
                             call.cancel_call_me();
                             tracing::info!("call me timed out");
-                            let json = phone_json(call, "failed", &shown2, "We could not complete the call. The user is unavailable at the moment.");
+                            let json = phone_json(call, "failed", &shown2, &tr("We could not complete the call. The user is unavailable at the moment."));
                             let _ = qt2.queue(move |mut this| this.as_mut().set_call_phone_json(QString::from(json.as_str())));
                         }
                     });
                 }
                 Err(e) => {
                     tracing::warn!("call me: {}", short_error(&e));
-                    let json = phone_json(call, "failed", &shown, "We could not complete the call. The user is unavailable at the moment.");
+                    let json = phone_json(call, "failed", &shown, &tr("We could not complete the call. The user is unavailable at the moment."));
                     let _ = qt.queue(move |mut this| this.as_mut().set_call_phone_json(QString::from(json.as_str())));
                 }
             }
@@ -11639,7 +11782,7 @@ impl qobject::Backend {
                         tracing::warn!("leaving the preheated call: {}", short_error(&e));
                     }
                     let _ = qt.queue(move |mut this| {
-                        this.as_mut().set_status_text(QString::from(format!("Couldn't join the meeting: {msg}").as_str()));
+                        this.as_mut().set_status_text(QString::from(tr("Couldn't join the meeting: %1").replace("%1", &msg).as_str()));
                         this.as_mut().end_call_ui();
                     });
                 }
@@ -11672,13 +11815,9 @@ impl qobject::Backend {
         let msg = match teams_cli::api::files::save_unique(&dir, "meetingAttendanceList.csv", &bytes) {
             Ok(path) => {
                 tracing::info!(path = %path.display(), "attendance list saved");
-                format!(
-                    "Saved {} to {}",
-                    path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
-                    dir.display()
-                )
+                tr("Saved %1 to %2").replace("%1", &path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()).replace("%2", &dir.display().to_string())
             }
-            Err(e) => format!("Couldn't save the attendance list: {}", short_error(&e)),
+            Err(e) => tr("Couldn't save the attendance list: %1").replace("%1", &short_error(&e)),
         };
         self.as_mut().set_status_text(QString::from(msg.as_str()));
     }
@@ -11767,13 +11906,9 @@ impl qobject::Backend {
             let msg = match result {
                 Ok(path) => {
                     tracing::info!(path = %path.display(), "attendance report saved");
-                    format!(
-                        "Saved {} to {}",
-                        path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
-                        dir.display()
-                    )
+                    tr("Saved %1 to %2").replace("%1", &path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()).replace("%2", &dir.display().to_string())
                 }
-                Err(e) => format!("Couldn't download the attendance report: {}", short_error(&e)),
+                Err(e) => tr("Couldn't download the attendance report: %1").replace("%1", &short_error(&e)),
             };
             let _ = qt.queue(move |mut this| this.as_mut().set_status_text(QString::from(msg.as_str())));
         });
@@ -11903,7 +12038,7 @@ impl qobject::Backend {
                 Err(e) => {
                     tracing::info!("camera: {}", short_error(&e));
                     this.as_mut().set_status_text(QString::from(
-                        format!("Camera: {}", short_error(&e)).as_str(),
+                        tr("Camera: %1").replace("%1", &short_error(&e)).as_str(),
                     ));
                 }
             });
@@ -11963,7 +12098,7 @@ impl qobject::Backend {
                 let _ = qt.queue(move |mut this| {
                     this.as_mut().set_call_held(!held);
                     this.as_mut().set_status_text(QString::from(
-                        format!("Hold: {}", short_error(&e)).as_str(),
+                        tr("Hold: %1").replace("%1", &short_error(&e)).as_str(),
                     ));
                 });
             }
@@ -12100,7 +12235,7 @@ impl qobject::Backend {
                 Err(e) => {
                     tracing::warn!("content from camera: {}", short_error(&e));
                     let _ = qt.queue(move |mut this| {
-                        this.as_mut().set_status_text(QString::from(format!("Share: {}", short_error(&e)).as_str()));
+                        this.as_mut().set_status_text(QString::from(tr("Share: %1").replace("%1", &short_error(&e)).as_str()));
                     });
                 }
             }
@@ -12139,7 +12274,7 @@ impl qobject::Backend {
                 tracing::warn!("share: {}", short_error(&e));
                 let _ = qt.queue(move |mut this| {
                     this.as_mut().set_status_text(QString::from(
-                        format!("Share: {}", short_error(&e)).as_str(),
+                        tr("Share: %1").replace("%1", &short_error(&e)).as_str(),
                     ));
                 });
             } else if !on {
@@ -12305,7 +12440,7 @@ impl qobject::Backend {
                 let _ = qt.queue(move |mut this| {
                     this.as_mut().set_call_hand_raised(!up);
                     this.as_mut().set_status_text(QString::from(
-                        format!("Raise: {}", short_error(&e)).as_str(),
+                        tr("Raise: %1").replace("%1", &short_error(&e)).as_str(),
                     ));
                 });
             }
@@ -12359,8 +12494,8 @@ impl qobject::Backend {
             };
             drop(slot);
             let text = match &result {
-                Ok(()) => "Transferring…".to_string(),
-                Err(e) => format!("Transfer: {}", short_error(e)),
+                Ok(()) => tr("Transferring…"),
+                Err(e) => tr("Transfer: %1").replace("%1", &short_error(e)),
             };
             tracing::info!(ok = result.is_ok(), "transfer requested");
             let _ = qt
@@ -12374,7 +12509,7 @@ impl qobject::Backend {
         let name = name.to_string();
         let my_oid = teams_cli::config::Config::load().ok().and_then(|c| c.object_id()).unwrap_or_default();
         let Some(chat) = outgoing::one_to_one_chat_id(&my_oid, &oid) else {
-            self.as_mut().set_status_text(QString::from("Consult: not someone you can call"));
+            self.as_mut().set_status_text(QString::from(tr("Consult: not someone you can call")));
             return;
         };
         let mri = format!("8:orgid:{oid}");
@@ -12419,7 +12554,7 @@ impl qobject::Backend {
                 }
                 Err(e) => {
                     tracing::info!("consult call failed: {}", short_error(&e));
-                    let msg = format!("Consult: {}", short_error(&e));
+                    let msg = tr("Consult: %1").replace("%1", &short_error(&e));
                     consult_ended(&qt, &mut slot).await;
                     let _ = qt.queue(move |mut this| this.as_mut().set_status_text(QString::from(msg.as_str())));
                 }
@@ -12454,7 +12589,7 @@ impl qobject::Backend {
                 let (next, _) = slot.consult_state.step(Event::Failed);
                 slot.consult_state = next;
                 publish_consult(&qt, &slot);
-                let msg = format!("Transfer: {}", short_error(&e));
+                let msg = tr("Transfer: %1").replace("%1", &short_error(&e));
                 let _ = qt.queue(move |mut this| this.as_mut().set_status_text(QString::from(msg.as_str())));
             }
         });
@@ -12551,7 +12686,7 @@ impl qobject::Backend {
                         this.as_mut().set_call_held(false);
                         this.as_mut().set_call_peer(QString::from(names.as_str()));
                         this.as_mut().set_call_thread_id(QString::from(thread.as_str()));
-                        this.as_mut().set_status_text(QString::from("Calls merged"));
+                        this.as_mut().set_status_text(QString::from(tr("Calls merged")));
                     });
                 }
                 Err(e) => {
@@ -12559,7 +12694,7 @@ impl qobject::Backend {
                     let (next, _) = slot.consult_state.step(Event::Failed);
                     slot.consult_state = next;
                     publish_consult(&qt, &slot);
-                    let msg = format!("Merge: {}", short_error(&e));
+                    let msg = tr("Merge: %1").replace("%1", &short_error(&e));
                     let _ = qt.queue(move |mut this| this.as_mut().set_status_text(QString::from(msg.as_str())));
                 }
             }
@@ -12601,7 +12736,7 @@ impl qobject::Backend {
             if let Err(e) = result {
                 let _ = qt.queue(move |mut this| {
                     this.as_mut().set_status_text(QString::from(
-                        format!("Dial pad: {}", short_error(&e)).as_str(),
+                        tr("Dial pad: %1").replace("%1", &short_error(&e)).as_str(),
                     ));
                 });
             }
@@ -12964,30 +13099,30 @@ impl qobject::Backend {
         // channel reply) over where it was said. Previews off: "Message
         // preview hidden".
         let one_on_one = m.conversation_id.ends_with("@unq.gbl.spaces");
-        let sender = if m.sender_name.is_empty() { "Unknown User".to_string() } else { m.sender_name.clone() };
+        let sender = if m.sender_name.is_empty() { tr("Unknown User") } else { m.sender_name.clone() };
         let preview: String = if prefs.previews {
             m.text.chars().take(NOTIFICATION_BODY_CHARS).collect()
         } else {
-            "Message preview hidden".to_string()
+            tr("Message preview hidden")
         };
         let mention = mentioned && prefs.personal_mention_banners;
         let (title, subtitle, text) = if mention {
             let title = if m.root_id.is_some() {
-                format!("{sender} @mentioned you in a thread")
+                tr("%1 @mentioned you in a thread").replace("%1", &sender)
             } else {
-                format!("{sender} @mentioned you")
+                tr("%1 @mentioned you").replace("%1", &sender)
             };
-            let place = if chat_name.is_empty() { format!("Chat with {sender}") } else { chat_name.clone() };
+            let place = if chat_name.is_empty() { tr("Chat with %1").replace("%1", &sender) } else { chat_name.clone() };
             (title, place, preview.clone())
         } else if one_on_one {
-            let title = if m.urgent { format!("{sender} sent an urgent message") } else { sender.clone() };
+            let title = if m.urgent { tr("%1 sent an urgent message").replace("%1", &sender) } else { sender.clone() };
             (title, String::new(), preview.clone())
         } else {
-            let title = if chat_name.is_empty() { "Unknown".to_string() } else { chat_name.clone() };
-            (title, String::new(), format!("{sender}: {preview}"))
+            let title = if chat_name.is_empty() { tr("Unknown") } else { chat_name.clone() };
+            (title, String::new(), tr("%1: %2").replace("%1", &sender).replace("%2", &preview))
         };
         let (title, subtitle, text) = if decision == Toast::Redacted {
-            ("You have a new notification".to_string(), String::new(), String::new())
+            (tr("You have a new notification"), String::new(), String::new())
         } else {
             (title, subtitle, text)
         };
@@ -13024,7 +13159,7 @@ impl qobject::Backend {
                 runtime().spawn(async move {
                     let short = sender_short_name(&mri, &display).await;
                     let mut banner = banner;
-                    banner["text"] = serde_json::Value::String(format!("{short}: {preview}"));
+                    banner["text"] = serde_json::Value::String(tr("%1: %2").replace("%1", &short).replace("%2", &preview));
                     let _ = qt.queue(move |mut this| this.as_mut().banner_requested(QString::from(banner.to_string().as_str())));
                 });
                 return;
@@ -13039,7 +13174,7 @@ impl qobject::Backend {
                 .summary(&title)
                 .body(&body)
                 .icon("ost-desktop")
-                .action("default", "Open")
+                .action("default", &tr("Open"))
                 .hint(notify_rust::Hint::Category("im.received".into()))
                 .hint(notify_rust::Hint::SuppressSound(silent))
                 .timeout(notify_rust::Timeout::Milliseconds(timeout))
@@ -13100,7 +13235,7 @@ impl qobject::Backend {
                     .ok()
                     .and_then(|found| found.into_iter().next().map(|(_, n)| n))
                     .filter(|n| !n.is_empty())
-                    .unwrap_or_else(|| "Someone".to_string());
+                    .unwrap_or_else(|| tr("Someone"));
                     start.initiator_name = name;
                     let qt3 = qt2.clone();
                     let _ = qt2.queue(move |mut this| this.as_mut().notify_meeting_start(start, qt3));
@@ -13214,7 +13349,7 @@ impl qobject::Backend {
                 live.retain(|m| m["threadId"].as_str() != Some(start.thread_id.as_str()));
                 live.push(serde_json::json!({
                     "threadId": start.thread_id, "callId": start.call_id,
-                    "subject": if start.subject.is_empty() { event.and_then(|e| e["subject"].as_str()).unwrap_or("(No title)") } else { &start.subject },
+                    "subject": if start.subject.is_empty() { event.and_then(|e| e["subject"].as_str()).map(str::to_string).unwrap_or_else(|| tr("(No title)")) } else { start.subject.clone() },
                     "joinUrl": if start.join_url.is_empty() { event.and_then(|e| e["join_url"].as_str()).unwrap_or_default() } else { &start.join_url },
                     "start": event.and_then(|e| e["start_utc"].as_str()).unwrap_or_default(),
                     "end": event.and_then(|e| e["end_utc"].as_str()).unwrap_or_default(),
@@ -13255,9 +13390,9 @@ impl qobject::Backend {
             .find(|c| c["id"].as_str() == Some(start.thread_id.as_str()))
             .and_then(|c| c["name"].as_str().map(str::to_string))
             .filter(|n| !n.is_empty())
-            .unwrap_or_else(|| "(No title)".to_string());
+            .unwrap_or_else(|| tr("(No title)"));
         let who = if start.initiator_name.is_empty() {
-            "Someone".to_string()
+            tr("Someone")
         } else {
             start.initiator_name.clone()
         };
@@ -13265,13 +13400,13 @@ impl qobject::Backend {
         // "{{meetingCaller}} started the meeting", its actions Join and Chat.
         let chat_name = if start.scheduled && !start.subject.is_empty() { start.subject.clone() } else { chat_name };
         let (title, body) = if decision == Toast::Redacted {
-            ("You have a new notification".to_string(), String::new())
+            (tr("You have a new notification"), String::new())
         } else if start.scheduled {
-            (chat_name.clone(), format!("{who} started the meeting"))
+            (chat_name.clone(), tr("%1 started the meeting").replace("%1", &who))
         } else {
-            (chat_name.clone(), format!("{who} started a meeting"))
+            (chat_name.clone(), tr("%1 started a meeting").replace("%1", &who))
         };
-        let second = if start.scheduled { ("chat", "Chat") } else { ("message", "Message") };
+        let second = if start.scheduled { ("chat", tr("Chat")) } else { ("message", tr("Message")) };
         let chat_id = start.thread_id.clone();
         let (scheduled, join_url) = (start.scheduled, start.join_url.clone());
         if banners_available() {
@@ -13289,7 +13424,7 @@ impl qobject::Backend {
                 // Teams' meeting-started sound (its MeetingStarted toast sound).
                 "silent": !prefs.sound || !prefs.call_sounds,
                 "sound": "teams_meet_up_reminder",
-                "actions": [{ "id": "join", "label": "Join" }, { "id": second.0, "label": second.1 }],
+                "actions": [{ "id": "join", "label": tr("Join") }, { "id": second.0, "label": second.1 }],
             });
             self.as_mut().banner_requested(QString::from(banner.to_string().as_str()));
             return;
@@ -13300,9 +13435,9 @@ impl qobject::Backend {
                 .summary(&title)
                 .body(&body)
                 .icon("ost-desktop")
-                .action("join", "Join")
-                .action(second.0, second.1)
-                .action("default", "Open")
+                .action("join", &tr("Join"))
+                .action(second.0, &second.1)
+                .action("default", &tr("Open"))
                 .hint(notify_rust::Hint::Category("call".into()))
                 .show();
             match shown {
@@ -13852,7 +13987,7 @@ impl qobject::Backend {
                     // A message at the service's size limit takes no more
                     // reactions (413); Teams' words for it.
                     let text = if format!("{e:#}").contains("HTTP 413") {
-                        "Current message size limit reached. We can't add any more reactions.".to_string()
+                        tr("Current message size limit reached. We can't add any more reactions.")
                     } else {
                         short_error(&e)
                     };
@@ -13995,7 +14130,7 @@ impl qobject::Backend {
 
     pub fn refresh(mut self: Pin<&mut Self>) {
         self.as_mut().set_busy(true);
-        self.as_mut().set_status_text(QString::from("Loading…"));
+        self.as_mut().set_status_text(QString::from(tr("Loading…")));
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let result = load_overview().await;
@@ -14528,7 +14663,7 @@ impl qobject::Backend {
             None
         };
         let qt = self.qt_thread();
-        self.as_mut().set_status_text(QString::from(if op == "download" { "Downloading…" } else { "" }));
+        self.as_mut().set_status_text(QString::from(if op == "download" { tr("Downloading…") } else { String::new() }));
         runtime().spawn(async move {
             let result = async {
                 let client = TeamsClient::new().await?;
@@ -14536,15 +14671,11 @@ impl qobject::Backend {
                 match dir {
                     Some(dir) => {
                         let path = api::drive::download(&client, &item, &dir).await?;
-                        Ok(format!(
-                            "Saved {} to {}",
-                            item.name,
-                            path.parent().map(|p| p.display().to_string()).unwrap_or_default()
-                        ))
+                        Ok(tr("Saved %1 to %2").replace("%1", &item.name).replace("%2", &path.parent().map(|p| p.display().to_string()).unwrap_or_default()))
                     }
                     None => {
                         api::drive::set_favorite(&client, &item.drive_id, &item.id, true).await?;
-                        Ok(format!("Added {} to Favorites", item.name))
+                        Ok(tr("Added %1 to Favorites").replace("%1", &item.name))
                     }
                 }
             }
@@ -14606,7 +14737,7 @@ impl qobject::Backend {
                 Ok(()) => this.as_mut().load_scheduled(),
                 Err(e) => {
                     tracing::warn!("scheduled edit failed: {}", short_error(&e));
-                    this.as_mut().set_status_text(QString::from("Failed to edit scheduled message"))
+                    this.as_mut().set_status_text(QString::from(tr("Failed to edit scheduled message")))
                 }
             });
         });
@@ -14625,7 +14756,7 @@ impl qobject::Backend {
                 Ok(_) => this.as_mut().load_scheduled(),
                 Err(e) => {
                     tracing::warn!("schedule failed: {}", short_error(&e));
-                    this.as_mut().set_status_text(QString::from("Failed to schedule."))
+                    this.as_mut().set_status_text(QString::from(tr("Failed to schedule.")))
                 }
             });
         });
@@ -15009,13 +15140,13 @@ impl qobject::Backend {
         let schedule = self.as_mut().rust_mut().next_schedule_ms.take();
         if content.len() > api::outbox::MAX_MESSAGE_CONTENT_SIZE {
             // Teams' words for each.
-            let text = if schedule.is_some() { "Failed to schedule. Message too large." } else { api::outbox::TOO_LARGE_TO_SEND };
+            let text = if schedule.is_some() { tr("Failed to schedule. Message too large.") } else { api::outbox::TOO_LARGE_TO_SEND.to_string() };
             self.as_mut().set_status_text(QString::from(text));
             return;
         }
         if schedule.is_some_and(|ms| ms <= chrono::Utc::now().timestamp_millis()) {
             self.as_mut()
-                .set_status_text(QString::from("This message was scheduled for a time in the past."));
+                .set_status_text(QString::from(tr("This message was scheduled for a time in the past.")));
             return;
         }
         let chat_id = self.rust().current_chat_id.to_string();
@@ -15189,7 +15320,7 @@ impl qobject::Backend {
         if let (Ok(u), Ok(h)) = (std::ffi::CString::new(url), std::ffi::CString::new(html)) {
             // SAFETY: two NUL-terminated strings, copied by Qt before returning.
             unsafe { ost_set_clipboard(u.as_ptr(), h.as_ptr()) };
-            self.as_mut().toast("Copied to clipboard", "success");
+            self.as_mut().toast(&tr("Copied to clipboard"), "success");
         }
     }
 
@@ -15274,7 +15405,7 @@ impl qobject::Backend {
             };
             let _ = qt.queue(move |mut this| {
                 if outcome == "ok" {
-                    this.as_mut().toast(&format!("{name} was added"), "success");
+                    this.as_mut().toast(&tr("%1 was added").replace("%1", &name), "success");
                     this.as_mut().load_custom_emoji();
                 }
                 this.as_mut()
@@ -15298,7 +15429,7 @@ impl qobject::Backend {
             let _ = qt.queue(move |mut this| match result {
                 Ok(()) => {
                     this.as_mut().toast(
-                        &format!("{} deleted for your organization.", e.shortcut),
+                        &tr("%1 deleted for your organization.").replace("%1", &e.shortcut),
                         "success",
                     );
                     this.as_mut().load_custom_emoji();
@@ -15306,7 +15437,7 @@ impl qobject::Backend {
                 Err(err) => {
                     tracing::warn!("custom emoji not deleted: {}", short_error(&err));
                     this.as_mut()
-                        .toast("Unable to delete. Please try again.", "error");
+                        .toast(&tr("Unable to delete. Please try again."), "error");
                 }
             });
         });
@@ -15386,7 +15517,7 @@ impl qobject::Backend {
             d => api::msgactions::SharedHistory::Days(d as u32),
         };
         self.as_mut()
-            .set_status_text(QString::from("Adding people…"));
+            .set_status_text(QString::from(tr("Adding people…")));
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let result = async {
@@ -15402,7 +15533,7 @@ impl qobject::Backend {
                     this.as_mut().forget_photos(&format!("chat:{chat_id}"));
                 }
                 Err(e) => this.as_mut().set_status_text(QString::from(
-                    format!("Couldn't add people: {}", short_error(&e)).as_str(),
+                    tr("Couldn't add people: %1").replace("%1", &short_error(&e)).as_str(),
                 )),
             });
         });
@@ -15417,7 +15548,7 @@ impl qobject::Backend {
             // SAFETY: a NUL-terminated string (and an empty one), copied by
             // Qt before returning.
             unsafe { ost_set_clipboard(t.as_ptr(), c"".as_ptr()) };
-            self.as_mut().toast("Copied to clipboard", "success");
+            self.as_mut().toast(&tr("Copied to clipboard"), "success");
         }
     }
 
@@ -15447,7 +15578,7 @@ impl qobject::Backend {
                     this.as_mut().forget_photos(&format!("chat:{chat_id}"));
                 }
                 Err(e) => this.as_mut().set_status_text(QString::from(
-                    format!("Couldn't remove them: {}", short_error(&e)).as_str(),
+                    tr("Couldn't remove them: %1").replace("%1", &short_error(&e)).as_str(),
                 )),
             });
         });
@@ -15552,9 +15683,9 @@ impl qobject::Backend {
                 let _ = qt.queue(move |mut this| {
                     this.as_mut().update_shown(&id, |m| m.saved = !save);
                     let msg = if save {
-                        "Your item couldn't be saved"
+                        tr("Your item couldn't be saved")
                     } else {
-                        "Your item couldn't be unsaved"
+                        tr("Your item couldn't be unsaved")
                     };
                     this.as_mut().set_status_text(QString::from(msg));
                 });
@@ -15616,9 +15747,9 @@ impl qobject::Backend {
                     tracing::warn!("pin failed: {}", short_error(&e));
                     this.as_mut().update_shown(&id, |m| m.pinned = !pin);
                     let msg = if pin {
-                        "Couldn't pin message"
+                        tr("Couldn't pin message")
                     } else {
-                        "Couldn't unpin message"
+                        tr("Couldn't unpin message")
                     };
                     this.as_mut().set_status_text(QString::from(msg));
                 }
@@ -15643,7 +15774,7 @@ impl qobject::Backend {
                 for mri in mris {
                     let name = api::messages::person_name(&client, &mri)
                         .await
-                        .unwrap_or_else(|| "Unknown user".into());
+                        .unwrap_or_else(|| tr("Unknown user"));
                     readers.push(json!({ "mri": mri, "name": name }));
                 }
                 anyhow::Ok(json!({ "message_id": id, "total": total, "readers": readers }))
@@ -15702,10 +15833,10 @@ impl qobject::Backend {
             }
             .await;
             let _ = qt.queue(move |mut this| match result {
-                Ok(_) => this.as_mut().toast("Message forwarded", "success"),
+                Ok(_) => this.as_mut().toast(&tr("Message forwarded"), "success"),
                 Err(e) => {
                     tracing::warn!("forward failed: {}", short_error(&e));
-                    this.as_mut().toast("Failed to forward", "error");
+                    this.as_mut().toast(&tr("Failed to forward"), "error");
                 }
             });
         });
@@ -15912,6 +16043,10 @@ impl qobject::Backend {
         quit_application();
     }
 
+    pub fn rtl_flip_icons_json(self: Pin<&mut Self>) -> QString {
+        QString::from(include_str!("../i18n/rtl_flip_icons.json"))
+    }
+
     pub fn regional_formats_json(self: Pin<&mut Self>) -> QString {
         use teams_cli::api::regional::{to_qt, without_year};
         let (culture, f) = regional_in_effect();
@@ -16103,7 +16238,7 @@ impl qobject::Backend {
                     outbox().submit(o);
                 }
                 Err(e) => this.as_mut().set_status_text(QString::from(
-                    format!("Couldn't upload the picture: {}", short_error(&e)).as_str(),
+                    tr("Couldn't upload the picture: %1").replace("%1", &short_error(&e)).as_str(),
                 )),
             });
         });
@@ -17641,7 +17776,7 @@ impl qobject::Backend {
                     Ok(id) => {
                         tracing::info!("group chat created");
                         let name = if topic.trim().is_empty() {
-                            "New group chat".to_string()
+                            tr("New group chat")
                         } else {
                             topic
                         };
@@ -18291,7 +18426,7 @@ impl qobject::Backend {
             let _ = qt.queue(move |mut this| {
                 if let Err(e) = &result {
                     tracing::warn!("remove chat history failed: {}", short_error(e));
-                    this.as_mut().toast("Something went wrong on our end. Please try again.", "error");
+                    this.as_mut().toast(&tr("Something went wrong on our end. Please try again."), "error");
                 }
                 this.as_mut().reload_chats();
             });
@@ -18319,7 +18454,7 @@ impl qobject::Backend {
                 }
                 Err(e) => {
                     tracing::warn!("leave chat failed: {}", short_error(&e));
-                    this.as_mut().toast("Couldn't leave the chat", "error");
+                    this.as_mut().toast(&tr("Couldn't leave the chat"), "error");
                 }
             });
         });
@@ -18698,7 +18833,7 @@ impl qobject::Backend {
                 Ok(()) => {}
                 Err(e) => {
                     tracing::warn!("report review failed: {}", short_error(&e));
-                    this.as_mut().toast("Couldn't report the review", "error");
+                    this.as_mut().toast(&tr("Couldn't report the review"), "error");
                 }
             });
         });
@@ -18727,13 +18862,13 @@ impl qobject::Backend {
             .await;
             let _ = qt.queue(move |mut this| match result {
                 Ok(()) => {
-                    this.as_mut().toast("Review posted", "success");
+                    this.as_mut().toast(&tr("Review posted"), "success");
                     let id = QString::from(app.as_str());
                     this.as_mut().app_details_load(&id);
                 }
                 Err(e) => {
                     tracing::warn!("post review failed: {}", short_error(&e));
-                    this.as_mut().toast("Couldn't post your review", "error");
+                    this.as_mut().toast(&tr("Couldn't post your review"), "error");
                 }
             });
         });
@@ -18838,7 +18973,7 @@ impl qobject::Backend {
                 // SAFETY: two NUL-terminated strings, copied by Qt before returning.
                 unsafe { ost_set_clipboard(u.as_ptr(), h.as_ptr()) };
                 let mut this = self;
-                this.as_mut().toast("Copied to clipboard", "success");
+                this.as_mut().toast(&tr("Copied to clipboard"), "success");
             }
             return;
         }
@@ -19347,9 +19482,9 @@ impl qobject::Backend {
                             Err(e) => {
                                 tracing::warn!("moderators failed: {e:#}");
                                 let msg = match (add.is_empty(), remove.is_empty()) {
-                                    (false, false) => "There was an error adding or removing moderators.",
-                                    (true, false) => "There was an error removing moderators.",
-                                    _ => "There was an error adding moderators.",
+                                    (false, false) => tr("There was an error adding or removing moderators."),
+                                    (true, false) => tr("There was an error removing moderators."),
+                                    _ => tr("There was an error adding moderators."),
                                 };
                                 Ok(json!({ "moderators": moderators, "error": msg }))
                             }
@@ -20271,7 +20406,7 @@ impl qobject::Backend {
                     Ok((op, v)) => {
                         if op == "shortcut" {
                             this.as_mut().set_status_text(QString::from(
-                                "Added a shortcut in your OneDrive",
+                                tr("Added a shortcut in your OneDrive"),
                             ));
                         }
                         this.as_mut()
@@ -20705,7 +20840,7 @@ impl qobject::Backend {
     }
 
     pub fn web_browsers(&self) -> QString {
-        let mut list = vec![json!({ "key": "default", "label": "Default browser" })];
+        let mut list = vec![json!({ "key": "default", "label": tr("Default browser") })];
         if edge_command().is_some() {
             list.push(json!({ "key": "edge", "label": "Microsoft Edge" }));
         }
@@ -20749,7 +20884,7 @@ impl qobject::Backend {
 
     fn run_drive_download(mut self: Pin<&mut Self>, item: api::drive::DriveItem, dir: std::path::PathBuf, target: Option<std::path::PathBuf>) {
         self.as_mut().set_status_text(QString::from(
-            format!("Downloading {}…", item.name).as_str(),
+            tr("Downloading %1…").replace("%1", &item.name).as_str(),
         ));
         let qt = self.qt_thread();
         runtime().spawn(async move {
@@ -20760,13 +20895,7 @@ impl qobject::Backend {
             }
             .await;
             let msg = match result {
-                Ok(path) => format!(
-                    "Saved {} to {}",
-                    item.name,
-                    path.parent()
-                        .map(|p| p.display().to_string())
-                        .unwrap_or_default()
-                ),
+                Ok(path) => tr("Saved %1 to %2").replace("%1", &item.name).replace("%2", &path.parent().map(|p| p.display().to_string()).unwrap_or_default()),
                 Err(e) => short_error(&e),
             };
             let _ = qt
@@ -20792,7 +20921,7 @@ impl qobject::Backend {
             return;
         }
         self.as_mut().set_status_text(QString::from(
-            format!("Uploading {} file(s)…", paths.len()).as_str(),
+            tr("Uploading %1 file(s)…").replace("%1", &paths.len().to_string()).as_str(),
         ));
         let qt = self.qt_thread();
         runtime().spawn(async move {
@@ -20807,7 +20936,7 @@ impl qobject::Backend {
             let _ = qt.queue(move |mut this| match result {
                 Ok(n) => {
                     this.as_mut()
-                        .set_status_text(QString::from(format!("Uploaded {n} file(s)").as_str()));
+                        .set_status_text(QString::from(tr("Uploaded %1 file(s)").replace("%1", &n.to_string()).as_str()));
                     this.as_mut().drive_reload();
                 }
                 Err(e) => this
@@ -21263,7 +21392,7 @@ impl qobject::Backend {
             start_utc.to_string(),
             end_utc.to_string(),
         );
-        self.as_mut().set_status_text(QString::from("Saving…"));
+        self.as_mut().set_status_text(QString::from(tr("Saving…")));
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let result = async {
@@ -21285,7 +21414,7 @@ impl qobject::Backend {
 
     pub fn delete_event(mut self: Pin<&mut Self>, id: &QString) {
         let id = id.to_string();
-        self.as_mut().set_status_text(QString::from("Deleting…"));
+        self.as_mut().set_status_text(QString::from(tr("Deleting…")));
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let result = async {
@@ -21314,15 +21443,15 @@ impl qobject::Backend {
             mri: self.rust().my_mri.clone().unwrap_or_default(),
         };
         let busy = match op.as_str() {
-            "respond" => "Sending your response…",
-            "schedule" => "Scheduling…",
-            "update" => "Sending update…",
-            "cancel" => "Cancelling…",
-            "propose" => "Sending your proposal…",
-            _ => "",
+            "respond" => tr("Sending your response…"),
+            "schedule" => tr("Scheduling…"),
+            "update" => tr("Sending update…"),
+            "cancel" => tr("Cancelling…"),
+            "propose" => tr("Sending your proposal…"),
+            _ => String::new(),
         };
         if !busy.is_empty() {
-            self.as_mut().set_status_text(QString::from(busy));
+            self.as_mut().set_status_text(QString::from(busy.as_str()));
         }
         let qt = self.qt_thread();
         let op2 = op.clone();
@@ -21482,7 +21611,7 @@ impl qobject::Backend {
             .map(|a| a.trim().to_string())
             .filter(|a| !a.is_empty())
             .collect();
-        self.as_mut().set_status_text(QString::from("Scheduling…"));
+        self.as_mut().set_status_text(QString::from(tr("Scheduling…")));
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let result = async {
@@ -21501,7 +21630,7 @@ impl qobject::Backend {
             let _ = qt.queue(move |mut this| match result {
                 Ok(ev) => {
                     this.as_mut().set_status_text(QString::from(
-                        format!("Scheduled {}", ev.subject).as_str(),
+                        tr("Scheduled %1").replace("%1", &ev.subject).as_str(),
                     ));
                     this.as_mut().refresh_calendar();
                 }
@@ -21858,7 +21987,7 @@ impl qobject::Backend {
 
     pub fn test_notification(mut self: Pin<&mut Self>) {
         let prefs = notify_prefs(&self.rust().settings_json.to_string(), &load_settings());
-        let body = if prefs.previews { "Message preview." } else { "Message preview hidden" };
+        let body = if prefs.previews { tr("Message preview.") } else { tr("Message preview hidden") };
         let timeout = prefs.seconds * 1000;
         let silent = !prefs.sound;
         if banners_available() {
@@ -21867,7 +21996,7 @@ impl qobject::Backend {
             let banner = serde_json::json!({
                 "id": "testNotification",
                 "kind": "test",
-                "title": "This is a test notification", "text": body,
+                "title": tr("This is a test notification"), "text": body,
                 "seconds": prefs.seconds,
                 "silent": silent,
                 "sound": prefs.sound_file,
@@ -21878,8 +22007,8 @@ impl qobject::Backend {
         std::thread::spawn(move || {
             let _ = notify_rust::Notification::new()
                 .appname("OST")
-                .summary("This is a test notification")
-                .body(body)
+                .summary(&tr("This is a test notification"))
+                .body(&body)
                 .icon("ost-desktop")
                 .hint(notify_rust::Hint::Category("im.received".into()))
                 .hint(notify_rust::Hint::SuppressSound(silent))
@@ -22454,10 +22583,10 @@ impl qobject::Backend {
             }
             .await;
             let text = match result {
-                Ok(p) => format!("Downloaded {}", p.file_name().and_then(|n| n.to_str()).unwrap_or_default()),
+                Ok(p) => tr("Downloaded %1").replace("%1", p.file_name().and_then(|n| n.to_str()).unwrap_or_default()),
                 Err(e) => {
                     tracing::warn!("biometric export: {}", short_error(&e));
-                    "Something went wrong. Please try again.".to_string()
+                    tr("Something went wrong. Please try again.")
                 }
             };
             let _ = qt.queue(move |mut this| this.as_mut().set_status_text(QString::from(text.as_str())));
@@ -22679,7 +22808,7 @@ impl qobject::Backend {
                     let _ = std::process::Command::new("xdg-open").arg(&path).spawn();
                 }
                 Err(e) => {
-                    let msg = format!("{name} didn't open: {}", short_error(&e));
+                    let msg = tr("%1 didn't open: %2").replace("%1", &name).replace("%2", &short_error(&e));
                     let _ = qt.queue(move |mut this| this.as_mut().toast(&msg, "error"));
                 }
             }
@@ -22895,7 +23024,7 @@ impl qobject::Backend {
         let shared: Vec<String> = parts.iter().filter_map(|p| if let Part::Cloud(f) = p { Some(f.name.clone()) } else { None }).collect();
         if !names.is_empty() {
             self.as_mut().set_status_text(QString::from(
-                format!("Uploading {}…", names.join(", ")).as_str(),
+                tr("Uploading %1…").replace("%1", &names.join(", ")).as_str(),
             ));
         }
         let qt = self.qt_thread();
@@ -22927,7 +23056,7 @@ impl qobject::Backend {
                         this.as_mut().reload_where(&sent_to);
                         // Teams' toast after sending a cloud file.
                         if let Some(name) = shared.first() {
-                            this.as_mut().toast(&format!("You've shared {name}"), "success");
+                            this.as_mut().toast(&tr("You've shared %1").replace("%1", name), "success");
                         }
                     }
                     Err(e) => this
@@ -22971,7 +23100,7 @@ impl qobject::Backend {
                         this.as_mut().send_rich_media(&QString::from(editor_html.as_str()), &QString::from(json.as_str()));
                     }
                     Err(e) => this.as_mut().set_status_text(QString::from(
-                        format!("Couldn't send the sticker: {}", short_error(&e)).as_str(),
+                        tr("Couldn't send the sticker: %1").replace("%1", &short_error(&e)).as_str(),
                     )),
                 });
             });
@@ -23007,7 +23136,7 @@ impl qobject::Backend {
 
     fn run_file_download(mut self: Pin<&mut Self>, file: api::files::FileAttachment, dir: std::path::PathBuf, target: Option<std::path::PathBuf>) {
         self.as_mut().set_status_text(QString::from(
-            format!("Downloading {}…", file.name).as_str(),
+            tr("Downloading %1…").replace("%1", &file.name).as_str(),
         ));
         let qt = self.qt_thread();
         runtime().spawn(async move {
@@ -23018,13 +23147,7 @@ impl qobject::Backend {
             }
             .await;
             let msg = match result {
-                Ok(path) => format!(
-                    "Saved {} to {}",
-                    file.name,
-                    path.parent()
-                        .map(|p| p.display().to_string())
-                        .unwrap_or_default()
-                ),
+                Ok(path) => tr("Saved %1 to %2").replace("%1", &file.name).replace("%2", &path.parent().map(|p| p.display().to_string()).unwrap_or_default()),
                 Err(e) => short_error(&e),
             };
             let _ = qt

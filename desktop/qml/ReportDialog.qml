@@ -30,7 +30,7 @@ Popup {
         function onReportResultChanged() { if (root.opened && backend.reportResult === "ok") root.close() }
     }
 
-    Text { x: 25; y: 25; height: 28; verticalAlignment: Text.AlignVCenter; text: "Report a security concern"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+    Text { x: 25; y: 25; height: 28; verticalAlignment: Text.AlignVCenter; text: qsTr("Report a security concern"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
     Rectangle {
         id: hcFill1
         x: 543; y: 25; width: 32; height: 32; radius: 4
@@ -39,7 +39,7 @@ Popup {
         HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.close() }
         Accessible.role: Accessible.Button
-        Accessible.name: "Close"
+        Accessible.name: qsTr("Close")
     }
     QuoteCard {
         x: 25; y: 68
@@ -56,17 +56,17 @@ Popup {
             maximumLength: 250
             clip: true
             font.family: theme.font; font.pixelSize: theme.base; color: theme.text
-            Text { visible: !why.text; text: "Enter an explanation (optional)"; font: why.font; color: theme.textSecondary }
+            Text { visible: !why.text; text: qsTr("Enter an explanation (optional)"); font: why.font; color: theme.textSecondary }
             Accessible.role: Accessible.EditableText
-            Accessible.name: "Enter an explanation (optional)"
+            Accessible.name: qsTr("Enter an explanation (optional)")
         }
     }
-    Text { x: 25; y: 199; height: 16; verticalAlignment: Text.AlignVCenter; text: why.text.length + "/250 maximum characters"; font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
+    Text { x: 25; y: 199; height: 16; verticalAlignment: Text.AlignVCenter; text: qsTr("%1/%2 maximum characters").arg(why.text.length).arg(250); font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
     Text {
         x: 25; y: 230; width: 551
         wrapMode: Text.Wrap; textFormat: Text.StyledText
         lineHeight: 20; lineHeightMode: Text.FixedHeight
-        text: "Information about this message will be shared with your IT admin and Microsoft. Microsoft may use the information to improve the accuracy of detection. <a href=\"https://learn.microsoft.com\">Learn more</a>"
+        text: qsTr("Information about this message will be shared with your IT admin and Microsoft. Microsoft may use the information to improve the accuracy of detection. <0>%1</0>").arg(qsTr("Learn more")).replace("<0>", "<a href=\"https://learn.microsoft.com\">").replace("</0>", "</a>")
         linkColor: theme.brandForeground2
         font.family: theme.font; font.pixelSize: theme.base; color: theme.text
         onLinkActivated: link => Qt.openUrlExternally(link)
@@ -76,7 +76,7 @@ Popup {
         visible: root.failed
         x: 25; y: 274; spacing: 6
         FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "warning-12-filled"; size: 16; color: theme.redForeground1 }
-        Text { anchors.verticalCenter: parent.verticalCenter; text: "Report didn't send. Try again."; font.family: theme.font; font.pixelSize: theme.base; color: theme.redForeground1 }
+        Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Report didn't send. Try again."); font.family: theme.font; font.pixelSize: theme.base; color: theme.redForeground1 }
     }
     Row {
         x: 375; y: 293 + (root.failed ? 28 : 0); spacing: 8
@@ -84,21 +84,21 @@ Popup {
             id: hcFill2
             width: 96; height: 32; radius: 4
             color: cancelHover.hovered && !root.sending ? theme.menuHover : theme.surface; border.color: theme.stroke
-            Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, root.sending ? theme.disabled : theme.text) }
+            Text { anchors.centerIn: parent; text: qsTr("Cancel"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, root.sending ? theme.disabled : theme.text) }
             HoverHandler { id: cancelHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { enabled: !root.sending; onTapped: root.close() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Cancel"
+            Accessible.name: qsTr("Cancel")
         }
         Rectangle {
             id: hcFill3
             width: 96; height: 32; radius: 4
             color: root.sending ? theme.bgDisabled : reportHover.hovered ? theme.brandHover : theme.brandFill
-            Text { anchors.centerIn: parent; text: root.sending ? "Reporting" : "Report"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, root.sending ? theme.disabledStrong : "white") }
+            Text { anchors.centerIn: parent; text: root.sending ? qsTr("Reporting") : qsTr("Report"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, root.sending ? theme.disabledStrong : "white") }
             HoverHandler { id: reportHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { enabled: !root.sending; onTapped: backend.reportMessage(root.message.id, why.text) }
             Accessible.role: Accessible.Button
-            Accessible.name: "Report"
+            Accessible.name: qsTr("Report")
         }
     }
 }

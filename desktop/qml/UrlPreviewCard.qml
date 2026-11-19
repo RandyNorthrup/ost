@@ -61,7 +61,7 @@ Item {
                 asynchronous: true
                 source: { backend.emoticonsVersion; return card.thumbnail ? backend.cardImage(card.thumbnail) : "" }
                 Accessible.role: Accessible.Graphic
-                Accessible.name: "Url Preview for " + card.title
+                Accessible.name: qsTr("Url Preview for %1").arg(card.title)
             }
         }
         Rectangle {
@@ -83,7 +83,7 @@ Item {
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: card.expandRequested() }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Expand preview"
+                Accessible.name: qsTr("Expand preview")
             }
             Item {
                 visible: card.removable && !!card.title
@@ -92,7 +92,7 @@ Item {
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: card.removeRequested() }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Remove URL Preview"
+                Accessible.name: qsTr("Remove URL Preview")
             }
             Text {
                 visible: !!card.description

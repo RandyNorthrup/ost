@@ -76,7 +76,7 @@ Popup {
         kind = "clone"; template = null; reset()
         source = team
         isPublic = !!team["public"]
-        nameField.text = (team.name || "") + " [copy]"
+        nameField.text = qsTr("%1 [copy]").arg(team.name || "")
         open(); nameField.forceActiveFocus()
     }
     function tryClose() {
@@ -103,7 +103,7 @@ Popup {
             if (r.op !== "create-team" || !dlg.creating) return
             dlg.creating = false
             if (r.ok) { dlg.close(); dlg.created(r.data.group_id || "", r.data.thread_id || "") }
-            else backend.toast("We couldn't create your team. Please try again.", "error")
+            else backend.toast(qsTr("We couldn't create your team. Please try again."), "error")
         }
     }
 
@@ -145,7 +145,7 @@ Popup {
         HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: parent.clicked() }
         Accessible.role: Accessible.Button
-        Accessible.name: "Close"
+        Accessible.name: qsTr("Close")
     }
     component Title: Text {
         width: 510.7; wrapMode: Text.Wrap
@@ -180,15 +180,15 @@ Popup {
             wrapMode: Text.NoWrap
             fontSizeMode: Text.HorizontalFit; minimumPixelSize: 15
             elide: Text.ElideRight
-            text: dlg.kind === "clone" ? "You are using \"" + (dlg.source ? dlg.source.name : "") + "\" as a template for a new team" : "Create a team"
+            text: dlg.kind === "clone" ? qsTr("You are using \"%1\" as a template for a new team").arg(dlg.source ? dlg.source.name : "") : qsTr("Create a team")
         }
         CloseButton { visible: !form.scratch || dlg.fromPage; onClicked: dlg.tryClose() }
         Row {
             visible: form.scratch
             y: dlg.fromPage ? 40 : 37.3
-            Text { text: "You're creating a team from scratch. "; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+            Text { text: qsTr("You're creating a team from scratch.") + " "; font.family: theme.font; font.pixelSize: 14; color: theme.text }
             Text {
-                text: "More create team options"
+                text: qsTr("More create team options")
                 font.family: theme.font; font.pixelSize: 14; font.underline: true
                 color: theme.brandForeground1
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
@@ -214,7 +214,7 @@ Popup {
                 readonly property real shift: dlg.nameError ? 18 : 0
                 width: fields.width
                 height: form.clone ? 500 : 420
-                Label { text: "Team name"; required: true }
+                Label { text: qsTr("Team name"); required: true }
                 Rectangle {
                     y: 20; width: parent.width; height: 32; radius: 4
                     color: theme.inputFilled
@@ -223,7 +223,7 @@ Popup {
                     // follows moves down 18.
                     border.color: dlg.nameError ? theme.pick("#D13438", "#DC626D", "#FFFFFF") : "transparent"; border.width: 0.67
                     FluentIcon { visible: dlg.nameError; x: parent.width - 30; anchors.verticalCenter: parent.verticalCenter; name: "error-circle-20-filled"; size: 16; color: theme.pick("#D13438", "#DC626D", "#FFFFFF") }
-                    Text { visible: dlg.nameError; y: 34; text: "Required"; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.pick("#BC2F32", "#DC626D", "#FFFFFF") }
+                    Text { visible: dlg.nameError; y: 34; text: qsTr("Required"); font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.pick("#BC2F32", "#DC626D", "#FFFFFF") }
                     TextInput {
                         id: nameField
                         onActiveFocusChanged: if (!activeFocus) dlg.nameTouched = true
@@ -231,14 +231,14 @@ Popup {
                         maximumLength: 256
                         font.family: theme.font; font.pixelSize: 14; color: theme.text
                         clip: true; selectByMouse: true
-                        Text { visible: !nameField.text; anchors.verticalCenter: parent.verticalCenter; text: "Give your team a name"; font: nameField.font; color: theme.textSecondary }
+                        Text { visible: !nameField.text; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Give your team a name"); font: nameField.font; color: theme.textSecondary }
                         Accessible.role: Accessible.EditableText
-                        Accessible.name: "Team name"
+                        Accessible.name: qsTr("Team name")
                     }
                     FluentIcon { visible: dlg.nameOk && !dlg.nameError; x: parent.width - 32; anchors.verticalCenter: parent.verticalCenter; name: "checkmark-circle-20"; size: 20; color: theme.textSecondary }
                     Rectangle { visible: nameField.activeFocus; anchors.bottom: parent.bottom; width: parent.width; height: 2; radius: 1; color: theme.brand }
                 }
-                Label { y: (form.scratch ? 71 : form.clone ? 66 : 71) + fieldCol.shift; text: "Description" }
+                Label { y: (form.scratch ? 71 : form.clone ? 66 : 71) + fieldCol.shift; text: qsTr("Description") }
                 Rectangle {
                     y: (form.scratch ? 71 : form.clone ? 66 : 71) + 20 + fieldCol.shift
                     width: parent.width; height: 78; radius: 4
@@ -249,14 +249,14 @@ Popup {
                         wrapMode: TextEdit.Wrap
                         font.family: theme.font; font.pixelSize: 14; color: theme.text
                         clip: true; selectByMouse: true
-                        Text { visible: !descField.text; text: "Let people know what this team is all about"; font: descField.font; color: theme.textSecondary }
+                        Text { visible: !descField.text; text: qsTr("Let people know what this team is all about"); font: descField.font; color: theme.textSecondary }
                         Accessible.role: Accessible.EditableText
-                        Accessible.name: "Description"
+                        Accessible.name: qsTr("Description")
                     }
                     Rectangle { visible: descField.activeFocus; anchors.bottom: parent.bottom; width: parent.width; height: 2; radius: 1; color: theme.brand }
                 }
                 // Team type (scratch, template): a button to the type page.
-                Label { visible: !form.clone; y: 188 + fieldCol.shift; text: "Team type" }
+                Label { visible: !form.clone; y: 188 + fieldCol.shift; text: qsTr("Team type") }
                 Rectangle {
                     id: typeButton
                     visible: !form.clone
@@ -266,28 +266,28 @@ Popup {
                     Row {
                         anchors.centerIn: parent; spacing: 6
                         FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: dlg.isPublic ? "globe-20" : "lock-closed-20"; size: 20; color: theme.onFill(typeButton, theme.text) }
-                        Text { anchors.verticalCenter: parent.verticalCenter; text: dlg.isPublic ? "Public" : "Private"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(typeButton, theme.text) }
+                        Text { anchors.verticalCenter: parent.verticalCenter; text: dlg.isPublic ? qsTr("Public") : qsTr("Private"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(typeButton, theme.text) }
                     }
                     HoverHandler { id: typeHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: dlg.page = "type" }
                     ToolTip.visible: typeHover.hovered
                     ToolTip.delay: 600
-                    ToolTip.text: "Select the button to change the team type and sensitivity label\nYour current team type is: " + (dlg.isPublic ? "Public\nAnyone in your org can join" : "Private\nPeople need permission to join")
+                    ToolTip.text: qsTr("Select the button to change the team type and sensitivity label") + "\n" + qsTr("Your current team type is:") + " " + (dlg.isPublic ? qsTr("Public") + "\n" + qsTr("Anyone in your org can join") : qsTr("Private") + "\n" + qsTr("People need permission to join"))
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Select the button to change the team type and sensitivity label. Your current team type is: " + (dlg.isPublic ? "Public" : "Private")
+                    Accessible.name: qsTr("Select the button to change the team type and sensitivity label") + ". " + qsTr("Your current team type is:") + " " + (dlg.isPublic ? qsTr("Public") : qsTr("Private"))
                 }
                 // First channel name (scratch).
                 Row {
                     visible: form.scratch
                     y: 262.3 + fieldCol.shift; spacing: 0
-                    Label { anchors.verticalCenter: parent.verticalCenter; text: "First channel name"; required: true }
+                    Label { anchors.verticalCenter: parent.verticalCenter; text: qsTr("First channel name"); required: true }
                     Rectangle {
                         width: 20; height: 20; radius: 4
                         color: "transparent"
                         FluentIcon { anchors.centerIn: parent; name: "info-12"; size: 12; color: theme.textStrong }
                         HoverHandler { id: infoHover }
                         ToolTip.visible: infoHover.hovered
-                        ToolTip.text: "We create the first channel for you. It'll have basic controls and use the team description, if you added one."
+                        ToolTip.text: qsTr("We create the first channel for you. It'll have basic controls and use the team description, if you added one.")
                         Accessible.role: Accessible.Button
                         Accessible.name: "information"
                     }
@@ -303,7 +303,7 @@ Popup {
                         font.family: theme.font; font.pixelSize: 14; color: theme.text
                         clip: true; selectByMouse: true
                         Accessible.role: Accessible.EditableText
-                        Accessible.name: "First channel name"
+                        Accessible.name: qsTr("First channel name")
                     }
                     Rectangle {
                         id: namingButton
@@ -313,11 +313,11 @@ Popup {
                         HoverHandler { id: namingHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: namingMenu.open() }
                         Accessible.role: Accessible.Button
-                        Accessible.name: "More naming options"
+                        Accessible.name: qsTr("More naming options")
                         MenuPopup {
                             id: namingMenu
                             y: parent.height + 4
-                            items: [{ key: "general", label: "Set name to General" }]
+                            items: [{ key: "general", label: qsTr("Set name to General") }]
                             onPicked: firstField.text = "General"
                         }
                     }
@@ -331,28 +331,28 @@ Popup {
                     color: customHover.hovered ? theme.menuHover : "transparent"
                     Row {
                         anchors.centerIn: parent; spacing: 6
-                        Text { anchors.verticalCenter: parent.verticalCenter; text: "Customize channels"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.brand) }
+                        Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Customize channels"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.brand) }
                         FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "chevron-right-16"; size: 16; color: theme.onFill(hcFill2, theme.brand) }
                     }
                     HoverHandler { id: customHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: { customRepeater.model = dlg.channelNames.slice(); dlg.page = "customize" } }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Customize channels"
+                    Accessible.name: qsTr("Customize channels")
                 }
                 // Clone: privacy and what to copy.
-                Text { visible: form.clone; y: 178 + fieldCol.shift; text: "Privacy"; font.family: theme.font; font.pixelSize: 14; lineHeight: 24; lineHeightMode: Text.FixedHeight; color: theme.text }
+                Text { visible: form.clone; y: 178 + fieldCol.shift; text: qsTr("Privacy"); font.family: theme.font; font.pixelSize: 14; lineHeight: 24; lineHeightMode: Text.FixedHeight; color: theme.text }
                 Dropdown {
                     visible: form.clone
                     y: 204.7 + fieldCol.shift; width: 536.7; height: 30
-                    options: [["private", "Private - People need permission to join"], ["public", "Public - Anyone in your org can join"]]
-                    label: dlg.isPublic ? "Public - Anyone in your org can join" : "Private - People need permission to join"
-                    accessibleName: "Privacy"
+                    options: [["private", qsTr("Private") + " - " + qsTr("People need permission to join")], ["public", qsTr("Public") + " - " + qsTr("Anyone in your org can join")]]
+                    label: dlg.isPublic ? qsTr("Public") + " - " + qsTr("Anyone in your org can join") : qsTr("Private") + " - " + qsTr("People need permission to join")
+                    accessibleName: qsTr("Privacy")
                     onPicked: code => dlg.isPublic = code === "public"
                 }
                 Text {
                     visible: form.clone
                     y: 262.8 + fieldCol.shift; width: parent.width; wrapMode: Text.Wrap
-                    text: "Choose what you'd like to include from the original team"
+                    text: qsTr("Choose what you'd like to include from the original team")
                     font.family: theme.font; font.pixelSize: 21; font.weight: Font.Bold
                     lineHeight: 20; lineHeightMode: Text.FixedHeight
                     color: theme.text
@@ -360,17 +360,17 @@ Popup {
                 Text {
                     visible: form.clone
                     y: 330.2 + fieldCol.shift; width: parent.width; wrapMode: Text.Wrap
-                    text: "Copy apps, settings, and channels over to your new team. Your existing team won't be changed."
+                    text: qsTr("Copy apps, settings, and channels over to your new team. Your existing team won't be changed.")
                     font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
                     color: theme.text
                 }
                 Repeater {
                     model: form.clone ? [
-                        { label: "Channels", x: 0, y: 380.2, fixed: true },
-                        { label: "Tabs", x: 0, y: 412.2, key: "tabs" },
-                        { label: "Team settings", x: 0, y: 444.2, key: "settings" },
-                        { label: "Apps", x: 268.3, y: 380.2, fixed: true },
-                        { label: dlg.source && (dlg.source.people || 0) === 1 ? "Member (1 person)" : "Members (" + (dlg.source ? dlg.source.people || 0 : 0) + " people)", x: 268.3, y: 412.2, key: "members" }
+                        { label: qsTr("Channels"), x: 0, y: 380.2, fixed: true },
+                        { label: qsTr("Tabs"), x: 0, y: 412.2, key: "tabs" },
+                        { label: qsTr("Team settings"), x: 0, y: 444.2, key: "settings" },
+                        { label: qsTr("Apps"), x: 268.3, y: 380.2, fixed: true },
+                        { label: dlg.source && (dlg.source.people || 0) === 1 ? qsTr("Member (%1 person)").arg(1) : qsTr("Members (%1 people)").arg(dlg.source ? dlg.source.people || 0 : 0), x: 268.3, y: 412.2, key: "members" }
                     ] : []
                     Item {
                         id: cb
@@ -401,13 +401,13 @@ Popup {
                 }
             }
         }
-        Link { visible: !form.clone; y: 492; text: "What's a team?"; url: "https://go.microsoft.com/fwlink/?linkid=2275168" }
+        Link { visible: !form.clone; y: 492; text: qsTr("What's a team?"); url: "https://go.microsoft.com/fwlink/?linkid=2275168" }
         Row {
             anchors.right: parent.right; y: 520
             anchors.rightMargin: form.clone ? 10 : 0
             spacing: 8
-            Btn { visible: !form.clone; text: "Cancel"; onClicked: dlg.tryClose() }
-            Btn { text: "Create"; primary: true; enabled: dlg.canCreate; onClicked: dlg.create() }
+            Btn { visible: !form.clone; text: qsTr("Cancel"); onClicked: dlg.tryClose() }
+            Btn { text: qsTr("Create"); primary: true; enabled: dlg.canCreate; onClicked: dlg.create() }
         }
     }
 
@@ -415,10 +415,10 @@ Popup {
     Item {
         visible: dlg.page === "type"
         anchors.fill: parent
-        Title { y: 0.7; text: "What kind of team will this be?" }
-        Text { y: 36.7; text: "Privacy"; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.text }
+        Title { y: 0.7; text: qsTr("What kind of team will this be?") }
+        Text { y: 36.7; text: qsTr("Privacy"); font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.text }
         Repeater {
-            model: [[false, "Private", "People need permission to join", "team-type-private.svg"], [true, "Public", "Anyone in your org can join", "team-type-public.svg"]]
+            model: [[false, qsTr("Private"), qsTr("People need permission to join"), "team-type-private.svg"], [true, qsTr("Public"), qsTr("Anyone in your org can join"), "team-type-public.svg"]]
             Rectangle {
                 id: card
                 required property var modelData
@@ -444,12 +444,12 @@ Popup {
             Row {
                 anchors.centerIn: parent; spacing: 6
                 FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "chevron-left-20"; size: 20; color: theme.onFill(hcFill4, theme.textStrong) }
-                Text { anchors.verticalCenter: parent.verticalCenter; text: "Back"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, theme.textStrong) }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Back"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, theme.textStrong) }
             }
             HoverHandler { id: backHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: dlg.page = "form" }
             Accessible.role: Accessible.Button
-            Accessible.name: "Back"
+            Accessible.name: qsTr("Back")
         }
     }
 
@@ -457,9 +457,9 @@ Popup {
     Item {
         visible: dlg.page === "customize"
         anchors.fill: parent
-        Title { y: 0.7; text: "Customize channels" }
+        Title { y: 0.7; text: qsTr("Customize channels") }
         CloseButton { onClicked: dlg.tryClose() }
-        Text { y: 40; text: "Rename a channel to customize it for your team."; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
+        Text { y: 40; text: qsTr("Rename a channel to customize it for your team."); font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
         Repeater {
             id: customRepeater
             model: []
@@ -486,8 +486,8 @@ Popup {
         }
         Row {
             anchors.right: parent.right; y: 520; spacing: 8
-            Btn { text: "Cancel customizing"; width: 148; onClicked: dlg.page = "form" }
-            Btn { text: "Done"; primary: true; enabled: true; onClicked: { dlg.channelNames = customRepeater.model.slice(); dlg.page = "form" } }
+            Btn { text: qsTr("Cancel customizing"); width: 148; onClicked: dlg.page = "form" }
+            Btn { text: qsTr("Done"); primary: true; enabled: true; onClicked: { dlg.channelNames = customRepeater.model.slice(); dlg.page = "form" } }
         }
     }
 
@@ -503,15 +503,15 @@ Popup {
         Overlay.modal: Rectangle { color: Qt.rgba(0, 0, 0, 0.2) }
         Text {
             y: 0.7; width: 350.7; wrapMode: Text.Wrap
-            text: "Do you want to stop creating this team and discard it?"
+            text: qsTr("Do you want to stop creating this team and discard it?")
             font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold
             lineHeight: 28; lineHeightMode: Text.FixedHeight
             color: theme.text
         }
         Row {
             anchors.right: parent.right; y: 74; spacing: 8
-            Btn { text: "No, go back"; width: 101.8; onClicked: discard.close() }
-            Btn { text: "Yes, discard"; primary: true; width: 98.4; onClicked: { discard.close(); dlg.close() } }
+            Btn { text: qsTr("No, go back"); width: 101.8; onClicked: discard.close() }
+            Btn { text: qsTr("Yes, discard"); primary: true; width: 98.4; onClicked: { discard.close(); dlg.close() } }
         }
     }
 

@@ -15,19 +15,19 @@ Popup {
     Overlay.modal: Rectangle { color: theme.hc("#66000000", "#000000") }
     contentItem: Column {
         spacing: 0
-        Text { text: "About this bot"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text; Accessible.role: Accessible.Heading; Accessible.name: text }
+        Text { text: qsTr("About this bot"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text; Accessible.role: Accessible.Heading; Accessible.name: text }
         Item { width: 1; height: 8 }
-        Text { width: parent.width; wrapMode: Text.Wrap; text: "This bot sends notifications only. You’re not able to chat with or @mention it."; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+        Text { width: parent.width; wrapMode: Text.Wrap; text: qsTr("This bot sends notifications only. You’re not able to chat with or @mention it."); font.family: theme.font; font.pixelSize: 14; color: theme.text }
         Item { width: 1; height: 24 }
         Rectangle {
             id: hcFill1
             anchors.right: parent.right
             width: 96; height: 32; radius: 4
             color: okHover.hovered ? theme.brandHover : theme.brandFill
-            Text { anchors.centerIn: parent; text: "OK"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.textOnBrand) }
+            Text { anchors.centerIn: parent; text: qsTr("OK"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.textOnBrand) }
             HoverHandler { id: okHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.close() }
-            Accessible.role: Accessible.Button; Accessible.name: "OK"
+            Accessible.role: Accessible.Button; Accessible.name: qsTr("OK")
         }
     }
 }

@@ -81,7 +81,7 @@ Item {
         HoverHandler { id: chevHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: blurMenu.opened ? blurMenu.close() : blurMenu.open() }
         Accessible.role: Accessible.ButtonMenu
-        Accessible.name: "Blur options"
+        Accessible.name: qsTr("Blur options")
     }
     Text {
         visible: tile.kind !== "image"
@@ -112,7 +112,7 @@ Item {
         HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: removeMenu.opened ? removeMenu.close() : removeMenu.open() }
         Accessible.role: Accessible.ButtonMenu
-        Accessible.name: "More options"
+        Accessible.name: qsTr("More options")
     }
 
     HoverHandler { id: hover; cursorShape: Qt.PointingHandCursor }
@@ -137,14 +137,14 @@ Item {
             FluentIcon { x: 6; y: 6; name: "delete-20"; size: 20; color: theme.onFill(hcFill1, theme.textStrong) }
             Text {
                 x: 30; anchors.verticalCenter: parent.verticalCenter
-                text: "Remove"
+                text: qsTr("Remove")
                 font.family: theme.font; font.pixelSize: 14
                 color: theme.onFill(hcFill1, theme.textStrong)
             }
             HoverHandler { id: rmHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: { removeMenu.close(); tile.removeRequested() } }
             Accessible.role: Accessible.MenuItem
-            Accessible.name: "Remove"
+            Accessible.name: qsTr("Remove")
         }
     }
 
@@ -162,7 +162,7 @@ Item {
         }
         Column {
             Repeater {
-                model: [{ k: "standard", t: "Standard blur" }, { k: "portrait", t: "Portrait blur" }]
+                model: [{ k: "standard", t: qsTr("Standard blur") }, { k: "portrait", t: qsTr("Portrait blur") }]
                 Rectangle {
                     id: bm
                     required property var modelData

@@ -23,7 +23,7 @@ Popup {
     contentItem: Column {
         spacing: 16
         Text {
-            text: "Pick up a parked call"
+            text: qsTr("Pick up a parked call")
             font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold
             color: theme.text
         }
@@ -35,11 +35,11 @@ Popup {
                 anchors.fill: parent; leftPadding: 12; rightPadding: 12
                 verticalAlignment: Text.AlignVCenter
                 font.family: theme.font; font.pixelSize: theme.base; color: theme.text
-                placeholderText: "Enter park code"
+                placeholderText: qsTr("Enter park code")
                 placeholderTextColor: theme.disabled
                 background: null
                 inputMethodHints: Qt.ImhDigitsOnly
-                Accessible.name: "Enter park code"
+                Accessible.name: qsTr("Enter park code")
                 onAccepted: if (text.trim()) pickUp.go()
             }
         }
@@ -67,10 +67,10 @@ Popup {
                 Accessible.role: Accessible.Button
                 Accessible.name: btn.label
             }
-            Btn { label: "Cancel"; onGo: dlg.close() }
+            Btn { label: qsTr("Cancel"); onGo: dlg.close() }
             Btn {
                 id: pickUp
-                label: "Pick up"; primary: true; enabled: field.text.trim().length > 0
+                label: qsTr("Pick up"); primary: true; enabled: field.text.trim().length > 0
                 onGo: { backend.unparkCall(field.text.trim()); dlg.close() }
             }
         }

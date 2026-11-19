@@ -62,7 +62,7 @@ Rectangle {
                 if (err) root.commentError = err
                 else { root.editingId = ""; root.load() }
             } else if (kind === "notify") {
-                root.notifyError = err ? "Notifications couldn't be turned " + (root.notify ? "on" : "off") + ". " + err : ""
+                root.notifyError = err ? (root.notify ? qsTr("Notifications couldn't be turned on. %1").arg(err) : qsTr("Notifications couldn't be turned off. %1").arg(err)) : ""
                 if (err) root.notify = !root.notify
             }
         }
@@ -122,7 +122,7 @@ Rectangle {
                     HoverHandler { id: oph; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: if (root.actions && root.item) root.actions.popup(root.item, optionsButton, 0, optionsButton.height) }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Options"
+                    Accessible.name: qsTr("Options")
                 }
                 Rectangle {
                     id: hcFill2
@@ -132,7 +132,7 @@ Rectangle {
                     HoverHandler { id: dsh; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.dismissed() }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Dismiss"
+                    Accessible.name: qsTr("Dismiss")
                 }
             }
             // The picture: 304 x 180.
@@ -151,7 +151,7 @@ Rectangle {
                 id: hcFill3
                 visible: !root.folderMode
                 width: parent.width; height: 114.67; radius: 4; color: root.card
-                Text { x: 16; y: 16; text: "Has access"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, root.ink); Accessible.role: Accessible.Heading; Accessible.name: text }
+                Text { x: 16; y: 16; text: qsTr("Has access"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, root.ink); Accessible.role: Accessible.Heading; Accessible.name: text }
                 Row {
                     x: 16; y: 42.67; spacing: 8
                     Rectangle {
@@ -161,7 +161,7 @@ Rectangle {
                         HoverHandler { cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: if (root.actions && root.item) { root.actions.item = root.item; root.actions.act("Share") } }
                         Accessible.role: Accessible.Button
-                        Accessible.name: "Add people"
+                        Accessible.name: qsTr("Add people")
                     }
                     Repeater {
                         model: root.info ? root.info.people : []
@@ -178,12 +178,12 @@ Rectangle {
                         HoverHandler { cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: root.manage() }
                         Accessible.role: Accessible.Button
-                        Accessible.name: "Shared via link, manage access"
+                        Accessible.name: qsTr("Shared via link, manage access")
                     }
                 }
                 Text {
                     x: 16; y: 82.67
-                    text: "Manage access"
+                    text: qsTr("Manage access")
                     font.family: theme.font; font.pixelSize: 12; color: theme.onFill(hcFill3, theme.pick("#3D3E66", "#C5C7FA", "#FFFF00"))
                     font.underline: mah.hovered
                     HoverHandler { id: mah; cursorShape: Qt.PointingHandCursor }
@@ -204,7 +204,7 @@ Rectangle {
                     Text {
                         visible: root.folderMode
                         height: 32; verticalAlignment: Text.AlignVCenter
-                        text: "Activity"
+                        text: qsTr("Activity")
                         font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.onFill(hcFill5, root.ink)
                         Accessible.role: Accessible.Heading
                         Accessible.name: text
@@ -216,18 +216,18 @@ Rectangle {
                             width: 94.1; height: 32
                             Row {
                                 x: 4; anchors.verticalCenter: parent.verticalCenter; spacing: 8
-                                Text { text: root.commentsOnly ? "Comments" : "All activity"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill5, root.brand) }
+                                Text { text: root.commentsOnly ? qsTr("Comments") : qsTr("All activity"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill5, root.brand) }
                                 FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-12"; size: 12; color: theme.onFill(hcFill5, root.brand) }
                             }
                             HoverHandler { cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: viewMenu.open() }
                             Accessible.role: Accessible.Button
-                            Accessible.name: "Activity feed view options. Selected view option is " + (root.commentsOnly ? "Comments" : "All activity")
+                            Accessible.name: qsTr("Activity feed view options. Selected view option is %1").arg(root.commentsOnly ? qsTr("Comments") : qsTr("All activity"))
                             MenuPopup {
                                 id: viewMenu
                                 fabric: true; fabricWidth: 232
                                 y: parent.height + 4
-                                items: [{ label: "All activity", checked: !root.commentsOnly }, { label: "Comments", checked: root.commentsOnly }]
+                                items: [{ label: qsTr("All activity"), checked: !root.commentsOnly }, { label: qsTr("Comments"), checked: root.commentsOnly }]
                                 onPicked: i => root.commentsOnly = i === 1
                             }
                         }
@@ -245,8 +245,8 @@ Rectangle {
                             }
                             Accessible.role: Accessible.CheckBox
                             Accessible.checked: root.notify
-                            Accessible.name: root.notify ? "Notifications for item activity. Select to turn off notifications"
-                                : "Notifications for item activity. Select to turn on notifications"
+                            Accessible.name: root.notify ? qsTr("Notifications for item activity. Select to turn off notifications")
+                                : qsTr("Notifications for item activity. Select to turn on notifications")
                         }
                     }
                     Text {
@@ -267,10 +267,10 @@ Rectangle {
                             x: 8; width: parent.width - 8 - 74; anchors.verticalCenter: parent.verticalCenter
                             font.family: theme.font; font.pixelSize: 14; color: root.ink; clip: true
                             maximumLength: 2000
-                            onTextChanged: root.commentError = text.length >= 2000 ? "Maximum character limit exceeded" : ""
+                            onTextChanged: root.commentError = text.length >= 2000 ? qsTr("Maximum character limit exceeded") : ""
                             Keys.onReturnPressed: root.send()
-                            Text { visible: !commentBox.text; text: "Add a comment"; color: theme.textTertiary; font: commentBox.font }
-                            Accessible.name: "Comment input"
+                            Text { visible: !commentBox.text; text: qsTr("Add a comment"); color: theme.textTertiary; font: commentBox.font }
+                            Accessible.name: qsTr("Comment input")
                         }
                         Row {
                             anchors.right: parent.right; anchors.rightMargin: 10; height: 32
@@ -279,7 +279,7 @@ Rectangle {
                                 FluentIcon { anchors.centerIn: parent; name: "dismiss-16"; size: 16; color: theme.pick("#7F85F5", "#7F85F5", "#FFFFFF") }
                                 TapHandler { onTapped: { commentBox.text = ""; root.commentError = "" } }
                                 Accessible.role: Accessible.Button
-                                Accessible.name: "Cancel"
+                                Accessible.name: qsTr("Cancel")
                             }
                             Rectangle {
                                 width: 32; height: 32; radius: 4; color: "transparent"
@@ -287,7 +287,7 @@ Rectangle {
                                 HoverHandler { cursorShape: commentBox.text.trim() ? Qt.PointingHandCursor : Qt.ArrowCursor }
                                 TapHandler { onTapped: root.send() }
                                 Accessible.role: Accessible.Button
-                                Accessible.name: "Submit comment"
+                                Accessible.name: qsTr("Submit comment")
                             }
                         }
                     }
@@ -333,7 +333,7 @@ Rectangle {
                                     font.family: theme.font; font.pixelSize: 14; color: root.ink
                                     Keys.onEscapePressed: root.editingId = ""
                                     Accessible.role: Accessible.EditableText
-                                    Accessible.name: "Comment input"
+                                    Accessible.name: qsTr("Comment input")
                                 }
                                 Row {
                                     anchors.right: parent.right; anchors.rightMargin: 6; anchors.bottom: parent.bottom; anchors.bottomMargin: 6
@@ -343,9 +343,9 @@ Rectangle {
                                         FluentIcon { anchors.centerIn: parent; name: "dismiss-16"; size: 16; color: theme.onFill(hcFill7, root.brand) }
                                         HoverHandler { id: ech; cursorShape: Qt.PointingHandCursor }
                                         TapHandler { onTapped: root.editingId = "" }
-                                        ToolTip.visible: ech.hovered; ToolTip.text: "Cancel"; ToolTip.delay: 300
+                                        ToolTip.visible: ech.hovered; ToolTip.text: qsTr("Cancel"); ToolTip.delay: 300
                                         Accessible.role: Accessible.Button
-                                        Accessible.name: "Cancel"
+                                        Accessible.name: qsTr("Cancel")
                                     }
                                     Rectangle {
                                         id: hcFill8
@@ -354,7 +354,7 @@ Rectangle {
                                         HoverHandler { id: esh; cursorShape: Qt.PointingHandCursor }
                                         TapHandler { onTapped: root.sendEdit(root.editingId, editText.text) }
                                         Accessible.role: Accessible.Button
-                                        Accessible.name: "Submit comment"
+                                        Accessible.name: qsTr("Submit comment")
                                     }
                                 }
                                 onVisibleChanged: if (visible) { editText.text = parent.modelData.source || ""; editText.cursorPosition = editText.text.length; editText.forceActiveFocus() }
@@ -377,7 +377,7 @@ Rectangle {
                                 Text {
                                     x: 64; y: cText.y + cText.height + 6 + 2
                                     // OneDrive's "{0} • Edited".
-                                    text: ccard.c.time + (ccard.c.edited ? " \u2022 Edited" : "")
+                                    text: ccard.c.edited ? qsTr("%1 \u2022 Edited").arg(ccard.c.time) : ccard.c.time
                                     font.family: theme.font; font.pixelSize: 10; color: root.strong
                                     HoverHandler { id: ctth }
                                     ToolTip.visible: ctth.hovered
@@ -393,12 +393,12 @@ Rectangle {
                                     HoverHandler { id: cah; cursorShape: Qt.PointingHandCursor }
                                     TapHandler { onTapped: cmenu.open() }
                                     Accessible.role: Accessible.Button
-                                    Accessible.name: "Show actions"
+                                    Accessible.name: qsTr("Show actions")
                                     MenuPopup {
                                         id: cmenu
                                         fabric: true
                                         x: parent.width - width; y: parent.height + 4
-                                        items: [{ label: "Edit comment", icon: "edit-16" }, { label: "Delete comment", icon: "delete-16" }]
+                                        items: [{ label: qsTr("Edit comment"), icon: "edit-16" }, { label: qsTr("Delete comment"), icon: "delete-16" }]
                                         onPicked: i => {
                                             if (i === 0) root.editingId = ccard.c.comment_id
                                             else { deleteComment.target = ccard.c.comment_id; deleteComment.open() }
@@ -426,9 +426,9 @@ Rectangle {
                                         text: parent.modelData.text
                                         font.family: theme.font; font.pixelSize: 12; color: theme.onFill(hcFill5, root.ink)
                                     }
-                                    Text { x: 72; y: rText.y + rText.height + 4; text: parent.modelData.time + (parent.modelData.edited ? " \u2022 Edited" : ""); font.family: theme.font; font.pixelSize: 10; color: theme.onFill(hcFill5, root.strong) }
+                                    Text { x: 72; y: rText.y + rText.height + 4; text: parent.modelData.edited ? qsTr("%1 \u2022 Edited").arg(parent.modelData.time) : parent.modelData.time; font.family: theme.font; font.pixelSize: 10; color: theme.onFill(hcFill5, root.strong) }
                                     Accessible.role: Accessible.ListItem
-                                    Accessible.name: parent.modelData.author + " replied: " + parent.modelData.text + " " + parent.modelData.time
+                                    Accessible.name: qsTr("%1 replied: %2 %3").arg(parent.modelData.author).arg(parent.modelData.text).arg(parent.modelData.time)
                                 }
                             }
                             // The Reply box under each comment: 256 x 32 on
@@ -446,10 +446,10 @@ Rectangle {
                                         x: 12; width: parent.width - 12 - 72; anchors.verticalCenter: parent.verticalCenter
                                         clip: true; maximumLength: 2000
                                         font.family: theme.font; font.pixelSize: 14; color: root.ink
-                                        Text { visible: !replyBox.text; text: "Reply"; color: theme.textTertiary; font: replyBox.font }
+                                        Text { visible: !replyBox.text; text: qsTr("Reply"); color: theme.textTertiary; font: replyBox.font }
                                         Keys.onReturnPressed: if (root.sendReply(parent.parent.cid, text)) text = ""
                                         Accessible.role: Accessible.EditableText
-                                        Accessible.name: "Comment input"
+                                        Accessible.name: qsTr("Comment input")
                                     }
                                     Rectangle {
                                         id: hcFill10
@@ -459,7 +459,7 @@ Rectangle {
                                         HoverHandler { id: rch; cursorShape: Qt.PointingHandCursor }
                                         TapHandler { onTapped: replyBox.text = "" }
                                         Accessible.role: Accessible.Button
-                                        Accessible.name: "Cancel"
+                                        Accessible.name: qsTr("Cancel")
                                     }
                                     Rectangle {
                                         id: hcFill11
@@ -469,7 +469,7 @@ Rectangle {
                                         HoverHandler { id: rsh; cursorShape: replyBox.text.trim() ? Qt.PointingHandCursor : Qt.ArrowCursor }
                                         TapHandler { onTapped: if (root.sendReply(parent.parent.parent.cid, replyBox.text)) replyBox.text = "" }
                                         Accessible.role: Accessible.Button
-                                        Accessible.name: "Submit comment"
+                                        Accessible.name: qsTr("Submit comment")
                                     }
                                 }
                             }
@@ -503,7 +503,7 @@ Rectangle {
                     }
                     Text {
                         visible: !!root.info && root.feed.length === 0 && root.commentsOnly
-                        text: "This item has no comments."
+                        text: qsTr("This item has no comments.")
                         font.family: theme.font; font.pixelSize: 12; color: theme.onFill(hcFill5, root.ink)
                     }
                 }
@@ -519,11 +519,11 @@ Rectangle {
                     spacing: 12
                     Repeater {
                         model: !root.info || root.folderMode ? [] : [
-                            { label: "Type", value: root.info.details.type_text },
-                            { label: "Modified", value: root.info.details.modified },
-                            { label: "Date created", value: root.info.details.created },
-                            { label: "Path", value: root.info.details.path.join(" › "), copy: true },
-                            { label: "Size", value: root.item && !root.item.is_folder ? root.size(root.item.size) : "" }
+                            { label: qsTr("Type"), value: root.info.details.type_text },
+                            { label: qsTr("Modified"), value: root.info.details.modified },
+                            { label: qsTr("Date created"), value: root.info.details.created },
+                            { label: qsTr("Path"), value: root.info.details.path.join(" › "), copy: true },
+                            { label: qsTr("Size"), value: root.item && !root.item.is_folder ? root.size(root.item.size) : "" }
                         ].filter(r => !!r.value)
                         Column {
                             required property var modelData
@@ -541,7 +541,7 @@ Rectangle {
                                     HoverHandler { id: cph; cursorShape: Qt.PointingHandCursor }
                                     TapHandler { onTapped: if (root.actions) root.actions.copy(root.info.direct_url || (root.item ? root.item.web_url : "")) }
                                     Accessible.role: Accessible.Button
-                                    Accessible.name: "Copy direct link"
+                                    Accessible.name: qsTr("Copy direct link")
                                 }
                             }
                             Text {
@@ -576,26 +576,26 @@ Rectangle {
         background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
         contentItem: Column {
             spacing: 20
-            Text { text: "Delete comment"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: root.ink; Accessible.role: Accessible.Heading; Accessible.name: text }
-            Text { width: 392; wrapMode: Text.Wrap; text: "Do you want to delete this comment?"; font.family: theme.font; font.pixelSize: 14; color: root.ink }
+            Text { text: qsTr("Delete comment"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: root.ink; Accessible.role: Accessible.Heading; Accessible.name: text }
+            Text { width: 392; wrapMode: Text.Wrap; text: qsTr("Do you want to delete this comment?"); font.family: theme.font; font.pixelSize: 14; color: root.ink }
             Row {
                 anchors.right: parent.right; spacing: 8
                 Rectangle {
                     id: hcFill14
                     width: 80; height: 32; radius: 4; color: dyh.hovered ? theme.brandHover : theme.brandFill
-                    Text { anchors.centerIn: parent; text: "Yes"; color: theme.onFill(hcFill14, "white"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold }
+                    Text { anchors.centerIn: parent; text: qsTr("Yes"); color: theme.onFill(hcFill14, "white"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold }
                     HoverHandler { id: dyh; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: { deleteComment.close(); backend.driveAction(root.tag + "delete_comment", JSON.stringify(root.item), JSON.stringify({ id: deleteComment.target })) } }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Yes"
+                    Accessible.name: qsTr("Yes")
                 }
                 Rectangle {
                     width: 80; height: 32; radius: 4; color: theme.surface; border.width: 0.67; border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF")
-                    Text { anchors.centerIn: parent; text: "Cancel"; color: root.ink; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold }
+                    Text { anchors.centerIn: parent; text: qsTr("Cancel"); color: root.ink; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold }
                     HoverHandler { cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: deleteComment.close() }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Cancel"
+                    Accessible.name: qsTr("Cancel")
                 }
             }
         }
@@ -624,12 +624,12 @@ Rectangle {
     }
     function size(n) {
         if (typeof n !== "number") return ""
-        if (n === 1) return "1 byte"
+        if (n === 1) return qsTr("1 byte")
         const f = v => v >= 100 || v === Math.floor(v) ? v.toFixed(0) : v.toFixed(v >= 10 ? 1 : 2)
-        if (n < 1024) return n + " bytes"
-        if (n < 1024e3) return f(n / 1024) + " KB"
-        if (n < 1048576e3) return f(n / 1048576) + " MB"
-        return f(n / 1073741824) + " GB"
+        if (n < 1024) return qsTr("%1 bytes").arg(n)
+        if (n < 1024e3) return qsTr("%1 KB").arg(f(n / 1024))
+        if (n < 1048576e3) return qsTr("%1 MB").arg(f(n / 1048576))
+        return qsTr("%1 GB").arg(f(n / 1073741824))
     }
     // Test hooks
     function stateForTest() {

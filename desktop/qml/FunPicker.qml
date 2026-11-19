@@ -92,9 +92,9 @@ Popup {
 
     // GIFs: categories, the open one, and the newest results.
     readonly property var gifCategories: [
-        ["Trending", "", "trending"], ["Reactions", "reactions", "reactions"], ["Greetings", "greetings", "greetings"],
-        ["Perfect", "perfect", "perfect"], ["Welcome", "welcome", "welcome"], ["Congratulations", "congratulations", "congratulations"],
-        ["Thank you", "thank you", "thankyou"], ["Excited", "excited", "excited"]
+        [qsTr("Trending"), "", "trending"], [qsTr("Reactions"), "reactions", "reactions"], [qsTr("Greetings"), "greetings", "greetings"],
+        [qsTr("Perfect"), "perfect", "perfect"], [qsTr("Welcome"), "welcome", "welcome"], [qsTr("Congratulations"), "congratulations", "congratulations"],
+        [qsTr("Thank you"), "thank you", "thankyou"], [qsTr("Excited"), "excited", "excited"]
     ]
     property string gifQuery: ""
     property bool gifResultsOpen: false
@@ -124,8 +124,8 @@ Popup {
     // Tabs.
     Repeater {
         model: root.gifsOn
-            ? [["all", "All", 19.1, 40.7], ["emoji", "Emoji", 78, 59.3], ["gifs", "GIFs", 155.5, 50.9], ["stickers", "Stickers", 224.6, 72.4]]
-            : [["all", "All", 31.3, 40.7], ["emoji", "Emoji", 115.3, 59.3], ["stickers", "Stickers", 215.3, 72.4]]
+            ? [["all", qsTr("All"), 19.1, 40.7], ["emoji", qsTr("Emoji"), 78, 59.3], ["gifs", qsTr("GIFs"), 155.5, 50.9], ["stickers", qsTr("Stickers"), 224.6, 72.4]]
+            : [["all", qsTr("All"), 31.3, 40.7], ["emoji", qsTr("Emoji"), 115.3, 59.3], ["stickers", qsTr("Stickers"), 215.3, 72.4]]
         Item {
             id: tabItem
             required property var modelData
@@ -165,7 +165,7 @@ Popup {
         HoverHandler { id: backHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: { if (root.tab === "gifs") { root.gifResultsOpen = false; search.text = "" } else if (editor.sticker) editor.sticker = null; else root.openPack = "" } }
         Accessible.role: Accessible.Button
-        Accessible.name: "Back"
+        Accessible.name: qsTr("Back")
     }
     Rectangle {
         visible: root.tab !== "emoji"
@@ -177,9 +177,9 @@ Popup {
             font.family: theme.font; font.pixelSize: theme.base; color: theme.text
             clip: true
             onTextChanged: root.query = text
-            Text { visible: !search.text; text: "Find something fun"; font: search.font; color: theme.textSecondary }
+            Text { visible: !search.text; text: qsTr("Find something fun"); font: search.font; color: theme.textSecondary }
             Accessible.role: Accessible.EditableText
-            Accessible.name: "Search for emoji, GIFs or stickers"
+            Accessible.name: qsTr("Search for emoji, GIFs or stickers")
         }
         FluentIcon { anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter; name: "search-20"; size: 20; color: theme.textSecondary }
     }
@@ -197,12 +197,12 @@ Popup {
             visible: hd.seeAll
             x: 224.8; width: 83.2; height: 31.3; radius: 4
             color: seeHover.hovered ? theme.hover : "transparent"
-            Text { x: 12.7; y: 5.7; height: 20; verticalAlignment: Text.AlignVCenter; text: "See all"; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill2, theme.textStrong) }
+            Text { x: 12.7; y: 5.7; height: 20; verticalAlignment: Text.AlignVCenter; text: qsTr("See all"); font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill2, theme.textStrong) }
             FluentIcon { x: 59; anchors.verticalCenter: parent.verticalCenter; name: "chevron-right-20"; size: 16; color: theme.onFill(hcFill2, theme.textStrong) }
             HoverHandler { id: seeHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: hd.seeAllClicked() }
             Accessible.role: Accessible.Button
-            Accessible.name: "See all " + hd.text
+            Accessible.name: qsTr("See all %1").arg(hd.text)
         }
     }
 
@@ -268,7 +268,7 @@ Popup {
         y: 115; width: root.width; height: 334
         clip: true
         readonly property string q: root.query.trim().toLowerCase()
-        Heading { y: 2; text: "Emoji"; onSeeAllClicked: root.tab = "emoji" }
+        Heading { y: 2; text: qsTr("Emoji"); onSeeAllClicked: root.tab = "emoji" }
         Grid {
             x: 15; y: 35.3; columns: 6
             Repeater {
@@ -288,7 +288,7 @@ Popup {
                 }
             }
         }
-        Heading { visible: root.gifsOn; y: 96.7; text: "GIFs"; onSeeAllClicked: root.tab = "gifs" }
+        Heading { visible: root.gifsOn; y: 96.7; text: qsTr("GIFs"); onSeeAllClicked: root.tab = "gifs" }
         Repeater {
             model: root.gifsOn ? (parent.q ? root.gifResults : root.trending).slice(0, 3) : []
             GifTile {
@@ -298,7 +298,7 @@ Popup {
                 x: [17.5, 113.3, 209.2][index]; y: 130; width: 89.3; height: 86.3
             }
         }
-        Heading { y: root.gifsOn ? 231.7 : 145.3; text: "Stickers"; onSeeAllClicked: root.tab = "stickers" }
+        Heading { y: root.gifsOn ? 231.7 : 145.3; text: qsTr("Stickers"); onSeeAllClicked: root.tab = "stickers" }
         Grid {
             x: root.gifsOn ? 15 : 16; y: root.gifsOn ? 265 : 180.3
             columns: root.gifsOn ? 4 : 3; spacing: root.gifsOn ? 3 : 2.7
@@ -388,7 +388,7 @@ Popup {
         Text {
             visible: root.gifResultsOpen && root.gifResults.length === 0 && backend.funResultsJson.indexOf("\"query\":" + JSON.stringify(root.gifQuery)) >= 0
             anchors.centerIn: parent
-            text: "We didn't find any matches."
+            text: qsTr("We didn't find any matches.")
             font.family: theme.font; font.pixelSize: theme.base; color: theme.textSecondary
         }
     }
@@ -409,14 +409,14 @@ Popup {
             id: stickersCol
             width: root.width
             // A search, or an open pack: one grid.
-            Heading { visible: stickFlick.q.length === 0 && root.openPack === ""; y: 0; text: "Recent"; seeAll: false; height: 22 }
+            Heading { visible: stickFlick.q.length === 0 && root.openPack === ""; y: 0; text: qsTr("Recent"); seeAll: false; height: 22 }
             Grid {
                 visible: stickFlick.q.length === 0 && root.openPack === ""
                 x: 15; columns: 4; spacing: 3
                 Repeater { model: root.recentStickers; StickerTile { required property var modelData; sticker: modelData } }
             }
             Item { visible: stickFlick.q.length === 0 && root.openPack === ""; width: 1; height: 45 }
-            Heading { visible: stickFlick.q.length === 0 && root.openPack === ""; text: "Sticker Packs"; onSeeAllClicked: packsAll.visible = !packsAll.visible }
+            Heading { visible: stickFlick.q.length === 0 && root.openPack === ""; text: qsTr("Sticker Packs"); onSeeAllClicked: packsAll.visible = !packsAll.visible }
             Item { visible: stickFlick.q.length === 0 && root.openPack === ""; width: 1; height: 2 }
             Grid {
                 id: packGrid
@@ -443,7 +443,7 @@ Popup {
             Heading {
                 visible: stickFlick.q.length > 0 || root.openPack !== ""
                 seeAll: false; height: 22
-                text: root.openPack !== "" ? (root.openPack === "Popular" ? "Popular stickers and memes" : ((root.catalog.categories.find(c => c.id === root.openPack) || {}).title || "")) : ""
+                text: root.openPack !== "" ? (root.openPack === "Popular" ? qsTr("Popular stickers and memes") : ((root.catalog.categories.find(c => c.id === root.openPack) || {}).title || "")) : ""
             }
             Grid {
                 visible: stickFlick.q.length > 0 || root.openPack !== ""
@@ -512,9 +512,9 @@ Popup {
                     width: parent.width
                     font.family: theme.font; font.pixelSize: theme.base; color: theme.text
                     maximumLength: 100; clip: true
-                    Text { visible: !cap1.text; text: editor.meme ? "Top Caption" : "Caption"; font: cap1.font; color: theme.textSecondary }
+                    Text { visible: !cap1.text; text: editor.meme ? qsTr("Top Caption") : qsTr("Caption"); font: cap1.font; color: theme.textSecondary }
                     Accessible.role: Accessible.EditableText
-                    Accessible.name: editor.meme ? "Top Caption" : "Caption"
+                    Accessible.name: editor.meme ? qsTr("Top Caption") : qsTr("Caption")
                 }
                 TextInput {
                     id: cap2
@@ -522,9 +522,9 @@ Popup {
                     width: parent.width
                     font.family: theme.font; font.pixelSize: theme.base; color: theme.text
                     maximumLength: 100; clip: true
-                    Text { visible: !cap2.text; text: "Bottom caption"; font: cap2.font; color: theme.textSecondary }
+                    Text { visible: !cap2.text; text: qsTr("Bottom caption"); font: cap2.font; color: theme.textSecondary }
                     Accessible.role: Accessible.EditableText
-                    Accessible.name: "Bottom caption"
+                    Accessible.name: qsTr("Bottom caption")
                 }
             }
         }
@@ -532,22 +532,22 @@ Popup {
             id: hcFill4
             x: 15.3; y: 395.3; width: 138; height: 31.3; radius: 4
             color: cancelHover.hovered ? theme.menuHover : theme.surface; border.color: theme.stroke
-            Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, theme.text) }
+            Text { anchors.centerIn: parent; text: qsTr("Cancel"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, theme.text) }
             HoverHandler { id: cancelHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: editor.sticker = null }
             Accessible.role: Accessible.Button
-            Accessible.name: "Cancel"
+            Accessible.name: qsTr("Cancel")
         }
         Rectangle {
             id: hcFill5
             readonly property bool can: tpl.status === Image.Ready && (cap1.text.trim().length > 0 || cap2.text.trim().length > 0)
             x: 163.3; y: 395.3; width: 138; height: 31.3; radius: 4
             color: !can ? theme.bgDisabled : doneHover.hovered ? theme.brandHover : theme.brandFill
-            Text { anchors.centerIn: parent; text: "Done"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill5, parent.can ? "white" : theme.disabledStrong) }
+            Text { anchors.centerIn: parent; text: qsTr("Done"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill5, parent.can ? "white" : theme.disabledStrong) }
             HoverHandler { id: doneHover; cursorShape: parent.can ? Qt.PointingHandCursor : Qt.ArrowCursor }
             TapHandler { enabled: parent.can; onTapped: editor.finish() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Done"
+            Accessible.name: qsTr("Done")
         }
         function finish() {
             const caption = [cap1.text.trim(), editor.meme ? cap2.text.trim() : ""].filter(t => t).join(" ")
@@ -556,7 +556,7 @@ Popup {
             const w = editor.nativeW, h = editor.nativeH
             drawing.grabToImage(r => {
                 if (!r.saveToFile(path)) { console.warn("sticker not saved", path); return }
-                root.pickedCaptioned({ kind: "image", src: "file://" + path, path: path, title: "Sticker image, " + caption, width: w, height: h })
+                root.pickedCaptioned({ kind: "image", src: "file://" + path, path: path, title: qsTr("Sticker image, %1").arg(caption), width: w, height: h })
                 editor.sticker = null
                 root.close()
             }, Qt.size(w, h))
@@ -567,11 +567,11 @@ Popup {
     Item {
         visible: root.gifsOn && (root.tab === "all" || root.tab === "gifs")
         y: 449; width: root.width; height: 36
-        Text { x: 111.5; y: 10; height: 16; verticalAlignment: Text.AlignVCenter; text: "GIFs powered by GIPHY"; font.family: theme.font; font.pixelSize: 12; color: theme.text }
+        Text { x: 111.5; y: 10; height: 16; verticalAlignment: Text.AlignVCenter; text: qsTr("GIFs powered by GIPHY"); font.family: theme.font; font.pixelSize: 12; color: theme.text }
         Text {
             id: viewTerms
             x: 241.4; y: 10; height: 16; verticalAlignment: Text.AlignVCenter
-            text: "View Terms"; font.family: theme.font; font.pixelSize: 12; color: theme.brand
+            text: qsTr("View Terms"); font.family: theme.font; font.pixelSize: 12; color: theme.brand
             HoverHandler { cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: termsPopup.open() }
             Accessible.role: Accessible.Link
@@ -583,7 +583,7 @@ Popup {
             background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
             contentItem: Text {
                 wrapMode: Text.Wrap; textFormat: Text.StyledText
-                text: "When you search for images, your search terms are sent to GIPHY. To learn more, see GIPHY's <a href=\"https://support.giphy.com/hc/en-us/articles/360032872931-GIPHY-Privacy-Policy\">Privacy Policy</a> and <a href=\"https://support.giphy.com/hc/en-us/articles/360020027752-GIPHY-User-Terms-of-Service\">Terms of Service</a>."
+                text: qsTr("When you search for images, your search terms are sent to GIPHY. To learn more, see GIPHY's <0>Privacy Policy</0> and <1>Terms of Service</1>.").replace("<0>", "<a href=\"https://support.giphy.com/hc/en-us/articles/360032872931-GIPHY-Privacy-Policy\">").replace("<1>", "<a href=\"https://support.giphy.com/hc/en-us/articles/360020027752-GIPHY-User-Terms-of-Service\">").replace(/<\/[01]>/g, "</a>")
                 linkColor: theme.link
                 font.family: theme.font; font.pixelSize: theme.small; color: theme.text
                 onLinkActivated: link => Qt.openUrlExternally(link)

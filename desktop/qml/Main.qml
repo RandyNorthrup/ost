@@ -130,10 +130,10 @@ Window {
     function presentApp(name) {
         const inCall = backend.callState === "connected"
         presentDialog.inCall = inCall
-        presentDialog.title = inCall ? "Share " + name : "Start a meeting and share " + name
-        presentDialog.body = inCall ? "You'll be sharing this app for everyone in the meeting to view."
-                                    : "After the meeting starts, you'll be sharing this app for everyone to view."
-        presentDialog.confirmText = inCall ? "Start sharing" : "Start meeting"
+        presentDialog.title = inCall ? qsTr("Share %1").arg(name) : qsTr("Start a meeting and share %1").arg(name)
+        presentDialog.body = inCall ? qsTr("You'll be sharing this app for everyone in the meeting to view.")
+                                    : qsTr("After the meeting starts, you'll be sharing this app for everyone to view.")
+        presentDialog.confirmText = inCall ? qsTr("Start sharing", "extensibility:k9ukx0eo7") : qsTr("Start meeting")
         presentDialog.open()
     }
     ConfirmDialog {
@@ -219,7 +219,7 @@ Window {
         // The message goes from the chat's compose box (the main window's
         // conversation, which opens the chat too), then the chat window opens.
         w.chosen.connect((oid, name, message) => { window.popOutChatName = name; w.close(); backend.openChatWith(oid, name); if (message) conversation.adoptAndSend(JSON.parse(message)) })
-        w.group.connect((oids, topic, message) => { window.popOutChatName = topic || "Group chat"; window.newGroupMessage = message; w.close(); backend.createGroupChat(oids, topic, "") })
+        w.group.connect((oids, topic, message) => { window.popOutChatName = topic || qsTr("Group chat"); window.newGroupMessage = message; w.close(); backend.createGroupChat(oids, topic, "") })
         w.scheduleMeetingWith.connect(attendees => { w.close(); rail.current = "calendar"; calendarView.newMeetingWith(attendees, "", "") })
         w.closing.connect(() => { window.newChatWin = null; w.destroy() })
         window.newChatWin = w
@@ -328,10 +328,10 @@ Window {
     ConfirmDialog {
         id: markAllDialog
         dialogWidth: 600
-        title: "Are you sure you want to mark all as read?"
-        body: "This will mark all your " + chatList.markAllEntities + " as read. This action can't be undone."
-        confirmText: "Confirm"
-        checkText: "Don't ask again"
+        title: qsTr("Are you sure you want to mark all %1 as read?").arg("").replace("  ", " ")
+        body: qsTr("This will mark all your %1 as read. This action can't be undone.").arg(chatList.markAllEntities)
+        confirmText: qsTr("Confirm")
+        checkText: qsTr("Don't ask again")
         onConfirmed: { if (checked) backend.setSetting("skipMarkAllAsReadConfirmDialog", "true"); backend.markAllRead(chatList.markAllAppType) }
         onCancelled: if (checked) backend.setSetting("skipMarkAllAsReadConfirmDialog", "true")
     }
@@ -364,9 +364,9 @@ Window {
     ConfirmDialog {
         id: hidTransferDialog
         dialogWidth: 600
-        title: "Transfer audio device buttons to this app?"
-        body: "Buttons on your connected audio device, such as mute, answer, and hang up, will control this OST app. Other OST apps will no longer respond to these buttons."
-        confirmText: "Transfer controls"
+        title: qsTr("Transfer audio device buttons to this app?")
+        body: qsTr("Buttons on your connected audio device, such as mute, answer, and hang up, will control this OST app. Other OST apps will no longer respond to these buttons.")
+        confirmText: qsTr("Transfer controls")
         onConfirmed: backend.headsetTakeControl()
     }
     Shortcut { sequence: "Ctrl+Alt+Z"; onActivated: chatList.clearFilters() }
@@ -484,7 +484,7 @@ Window {
     }
     function trayStatusLabel(p) {
         const s = titleBar.statuses.find(x => x.key.toLowerCase() === (p || "").toLowerCase())
-        return s ? (s.key === "Away" ? "Away" : s.key === "Offline" ? "Offline" : s.label) : (p || "Available")
+        return s ? (s.key === "Away" ? qsTr("Away") : s.key === "Offline" ? qsTr("Offline") : s.label) : (p || qsTr("Available"))
     }
     // The tray (desktop/src/tray.rs): kept current from here; it calls
     // back for Show and Quit.
@@ -507,7 +507,7 @@ Window {
     FileDialog {
         id: saveAsDialog
         property int pending: 0
-        title: "Save as"
+        title: qsTr("Save as")
         fileMode: FileDialog.SaveFile
         onAccepted: backend.saveAsAnswer(pending, decodeURIComponent(String(selectedFile)))
         onRejected: backend.saveAsAnswer(pending, "")
@@ -2558,7 +2558,7 @@ Window {
         if (breakoutMove.running && breakoutMove.room && breakoutMove.room.join_url === room.join_url) return
         breakoutMove.room = room
         if (room.auto_move) {
-            callWindow.showBreakoutAlert("We'll move you to your assigned room in " + breakoutMoveSeconds + " seconds.")
+            callWindow.showBreakoutAlert(qsTr("We'll move you to your assigned room in %1 seconds.").arg(breakoutMoveSeconds))
             breakoutMove.interval = breakoutMoveSeconds * 1000 + room.move_jitter_ms
             breakoutMove.restart()
         } else {
@@ -2571,7 +2571,7 @@ Window {
         // refuses us says it's closed) moves nobody back.
         if (backend.callState !== "connected") return
         if (!(window.breakoutMain || callWindow.heldMeeting) || !breakoutRoomState || !breakoutRoomState.closed || breakoutReturn.running) return
-        callWindow.showBreakoutAlert("We'll move you back to the main meeting in " + breakoutMoveSeconds + " seconds.")
+        callWindow.showBreakoutAlert(qsTr("We'll move you back to the main meeting in %1 seconds.").arg(breakoutMoveSeconds))
         breakoutReturn.interval = breakoutMoveSeconds * 1000 + breakoutRoomState.move_jitter_ms
         breakoutReturn.restart()
     }
@@ -6423,7 +6423,7 @@ Window {
         function fill() {
             banners.add({ id: "call", kind: "call", title: "OST Test 2", senderMri: "8:orgid:9edcc62f-2f4b-4f55-bbf9-02c7cbaadbb5", silent: true })
             banners.add({ id: "t1", kind: "standard", title: "OST Test 2", text: "Here is a longer message that needs two lines to show all of it in the banner, and then some more", chatId: "19:x@unq.gbl.spaces", messageId: "1", senderMri: "8:orgid:9edcc62f-2f4b-4f55-bbf9-02c7cbaadbb5", senderName: "OST Test 2", quickReply: true, seconds: 300, silent: true })
-            banners.add({ id: "t2", kind: "msn", title: "OST group test", text: "OST Test 2 started a meeting", chatId: "19:y@thread.v2", senderMri: "8:orgid:9edcc62f-2f4b-4f55-bbf9-02c7cbaadbb5", senderName: "OST Test 2", seconds: 300, silent: true, actions: [{ id: "join", label: "Join" }, { id: "message", label: "Message" }] })
+            banners.add({ id: "t2", kind: "msn", title: "OST group test", text: "OST Test 2 started a meeting", chatId: "19:y@thread.v2", senderMri: "8:orgid:9edcc62f-2f4b-4f55-bbf9-02c7cbaadbb5", senderName: "OST Test 2", seconds: 300, silent: true, actions: [{ id: "join", label: qsTr("Join") }, { id: "message", label: qsTr("Message") }] })
         }
         function report(tag) {
             const cards = []
@@ -7103,10 +7103,12 @@ Window {
     // formats are in effect (chat list and a chat captured), then your
     // settings are put back. Logs REGIONAL lines.
     Timer {
-        running: Qt.application.arguments.indexOf("--regional-test") >= 0 && backend.signedIn && chatList.chats.some(c => c.name === "OST Test 2")
+        running: Qt.application.arguments.indexOf("--regional-test") >= 0 && backend.signedIn && chatList.chats.some(c => /^OST TEST/.test(c.name) || c.name === "OST Test 2")
         interval: 2500; repeat: true
         property int step: 0
         readonly property bool restarted: backend.setting("regionalTest") !== ""
+        // --regional-lang=<code>: the app language to pick (default en-gb).
+        readonly property string lang: (Qt.application.arguments.find(a => a.startsWith("--regional-lang=")) || "--regional-lang=en-gb").slice(16)
         onTriggered: {
             const log = (...a) => console.warn("REGIONAL", ...a.map(x => typeof x === "string" ? x : JSON.stringify(x)))
             const cap = tag => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-" + tag + ".png")))
@@ -7119,20 +7121,26 @@ Window {
                 case 3: cap("follow"); break
                 case 4: card().followOs = false; break
                 case 5: cap("off"); break
-                case 6: card().appLanguage = "en-gb"; card().dateFormat = "yyyy-MM-dd"; card().timeFormat = "hh:mm tt"; break
+                case 6: card().appLanguage = lang; card().dateFormat = "yyyy-MM-dd"; card().timeFormat = "hh:mm tt"; break
                 case 7: log("chosen", card().appLanguage, card().dateFormat, card().timeFormat, "changed", card().changed); cap("chosen"); break
-                case 8: backend.setSetting("regionalTest", JSON.stringify(keys.map(k => backend.setting(k)))); card().followOs = false; backend.saveRegionalAndRestart(false, "en-gb", "yyyy-MM-dd", "hh:mm tt"); return
+                case 8: backend.setSetting("regionalTest", JSON.stringify(keys.map(k => backend.setting(k)))); card().followOs = false; backend.saveRegionalAndRestart(false, lang, "yyyy-MM-dd", "hh:mm tt"); return
                 }
             } else {
                 switch (step) {
                 case 0: log("after restart", theme.regional, "now", theme.dateTime(new Date()), theme.dateMaybeYear(new Date(2025, 2, 4)), theme.time(new Date(2026, 0, 31, 16, 9))); break
-                case 1: { const c = chatList.chats.find(c => c.name === "OST Test 2"); backend.selectChat(c.id, c.name); break }
+                case 1: { const c = chatList.chats.find(c => /^OST TEST/.test(c.name)) || chatList.chats.find(c => c.name === "OST Test 2"); backend.selectChat(c.id, c.name); break }
                 case 3: cap("after-chat"); break
                 case 4: rail.current = "settings"; settingsView.pageForTest("general"); break
                 case 5: settingsView.scrollToRegionalForTest(); break
                 case 6: cap("after-settings"); break
-                case 7: { const before = JSON.parse(backend.setting("regionalTest")); keys.forEach((k, i) => backend.setSetting(k, before[i])); backend.setSetting("regionalTest", ""); log("restored", keys.map(k => backend.setting(k))); break }
-                case 8: Qt.quit(); return
+                case 7: rail.current = "activity"; break
+                case 8: cap("after-activity"); break
+                case 9: rail.current = "calendar"; break
+                case 11: cap("after-calendar"); break
+                case 12: rail.current = "chat"; settingsView.pageForTest("general"); rail.current = "settings"; break
+                case 13: cap("after-settings-top"); break
+                case 14: { const before = JSON.parse(backend.setting("regionalTest")); keys.forEach((k, i) => backend.setSetting(k, before[i])); backend.setSetting("regionalTest", ""); log("restored", keys.map(k => backend.setting(k))); break }
+                case 15: Qt.quit(); return
                 }
             }
             step++
@@ -11764,7 +11772,7 @@ Window {
         property int step: 0
         onTriggered: {
             const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
-            if (step === 0) backend.toastJson = JSON.stringify({ id: 1, text: "Message forwarded", intent: "success" })
+            if (step === 0) backend.toastJson = JSON.stringify({ id: 1, text: qsTr("Message forwarded"), intent: "success" })
             else if (step === 1) window.contentItem.grabToImage(r => r.saveToFile(dir + "toast.png"))
             else Qt.quit()
             step++
@@ -11846,7 +11854,7 @@ Window {
             HoverHandler { id: toastClose; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: toast.toastData = null }
             Accessible.role: Accessible.Button
-            Accessible.name: "Dismiss"
+            Accessible.name: qsTr("Dismiss")
         }
         Timer { id: toastTimer; onTriggered: toast.toastData = null }
         Accessible.role: Accessible.AlertMessage
@@ -11995,8 +12003,8 @@ Window {
         if ((n.text || n.html) && n.pinned) {
             const end = n.expiry ? new Date(n.expiry) : null
             noteBannerText = !end || end.getFullYear() >= 9999
-                ? "Your status message is showing in chat and channels when people message or @mention you."
-                : "Your status message is showing in chat and channels when people message or @mention you until " + theme.dateTime(end) + "."
+                ? qsTr("Your status message is showing in chat and channels when people message or @mention you.")
+                : qsTr("Your status message is showing in chat and channels when people message or @mention you until %1.").arg(theme.dateTime(end))
             noteBanner = true
         } else noteBanner = false
     }
@@ -12044,10 +12052,10 @@ Window {
             x: 40; anchors.verticalCenter: parent.verticalCenter
             width: bannerAction.x - 12 - x; elide: Text.ElideRight
             textFormat: appBanner.kind === "threads" ? Text.RichText : Text.PlainText
-            text: appBanner.kind === "live" ? (window.liveMeetings.length > 1 ? "Meetings Started: " + window.liveMeetings[0].subject + " +" + (window.liveMeetings.length - 1) : "Meeting Started: " + window.liveMeetings[0].subject)
+            text: appBanner.kind === "live" ? (window.liveMeetings.length > 1 ? qsTr("Meetings Started: %1 +%2").arg(window.liveMeetings[0].subject).arg(window.liveMeetings.length - 1) : qsTr("Meeting Started: %1").arg(window.liveMeetings[0].subject))
                 : appBanner.kind === "note" ? window.noteBannerText
-                : appBanner.kind === "threads" ? "A channel owner set this channel to a threads layout. <a href=\"https://go.microsoft.com/fwlink/?linkid=2311967\" style=\"text-decoration:none; color:" + theme.brandForeground1 + "\">Learn how threads work</a>"
-                : "Your status is set to do not disturb. You'll only get notifications for urgent messages and from your priority contacts."
+                : appBanner.kind === "threads" ? qsTr("A channel owner set this channel to a threads layout.") + " <a href=\"https://go.microsoft.com/fwlink/?linkid=2311967\" style=\"text-decoration:none; color:" + theme.brandForeground1 + "\">" + qsTr("Learn how threads work") + "</a>"
+                : qsTr("Your status is set to do not disturb. You'll only get notifications for urgent messages and from your priority contacts.")
             font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: appBanner.kind === "live" ? theme.brandForeground1 : theme.text
             onLinkActivated: url => Qt.openUrlExternally(url)
             HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
@@ -12057,7 +12065,7 @@ Window {
             visible: appBanner.kind === "dnd" || appBanner.kind === "live"
             anchors.right: bannerDismiss.left; anchors.rightMargin: visible ? 12 : 0; anchors.verticalCenter: parent.verticalCenter
             readonly property bool primary: appBanner.kind === "live" && window.liveMeetings.length === 1
-            readonly property string label: appBanner.kind !== "live" ? "Change settings" : primary ? "Join" : "View meetings"
+            readonly property string label: appBanner.kind !== "live" ? qsTr("Change settings") : primary ? qsTr("Join") : qsTr("View meetings")
             width: visible ? (primary ? 64 : bannerActionText.implicitWidth + 16) : 0; height: 23.3; radius: 4
             color: primary ? (bannerActionHover.hovered ? theme.brandHover : theme.brandFill) : bannerActionHover.hovered ? theme.menuHover : theme.surface
             border.color: primary ? "transparent" : theme.stroke; border.width: 0.67
@@ -12089,7 +12097,7 @@ Window {
                 }
             }
             Accessible.role: Accessible.Button
-            Accessible.name: "Dismiss"
+            Accessible.name: qsTr("Dismiss")
         }
     }
 
@@ -12272,7 +12280,7 @@ Window {
         color: theme.surface
         Text {
             anchors.centerIn: parent
-            text: "This app isn't available in OST yet."
+            text: qsTr("This app isn't available in OST yet.")
             font.family: theme.font; font.pixelSize: theme.base
             color: theme.textSecondary
         }
@@ -12553,7 +12561,7 @@ Window {
         const ch = team.channels.find(c => c.id === channelId)
         const w = channelWindowComponent.createObject(null, { channelId: channelId, teamId: team.id, teamName: team.name, channelName: ch.name })
         const all = Object.assign({}, window.channelWindows); all[channelId] = w; window.channelWindows = all
-        w.meetNow.connect((id, name) => preJoin.openMeetNow(id, "Meeting in \"" + name + "\""))
+        w.meetNow.connect((id, name) => preJoin.openMeetNow(id, qsTr("Meeting in \"%1\"").arg(name)))
         // Schedule a meeting: Teams' form with this channel filled in.
         w.scheduleMeeting.connect(() => { rail.current = "calendar"; calendarView.newChannelMeeting(w.teamId, w.teamName, w.channelId, w.channelName) })
         w.manageChannel.connect(id => window.openManageChannel(id))
@@ -12982,7 +12990,7 @@ Window {
             return t ? (t.thread_id || "") : ""
         }
         // A channel's Meet now: Teams' pre-join, titled for the channel.
-        onChannelMeetNow: preJoin.openMeetNow(conversation.chatId, "Meeting in \"" + conversation.chatName + "\"")
+        onChannelMeetNow: preJoin.openMeetNow(conversation.chatId, qsTr("Meeting in \"%1\"").arg(conversation.chatName))
         onOpenChannelWindow: id => window.openChannelWindow(id)
         onChannelWorkflows: id => window.openWorkflows(id)
         onManageChannel: id => window.openManageChannel(id)
@@ -12998,7 +13006,7 @@ Window {
         // you, the box disabled with Teams' words.
         readonly property bool notMember: { const m = backend.chatMembersJson ? JSON.parse(backend.chatMembersJson) : []; return m.length > 0 && !m.some(x => x.me) && backend.currentChatId.endsWith("@thread.v2") }
         composeDisabled: notMember
-        composeDisabledText: notMember ? "You can't send messages because you are not a member of the chat." : ""
+        composeDisabledText: notMember ? qsTr("You can't send messages because you are not a member of the chat.") : ""
         isChannel: backend.currentChatId.endsWith("@thread.tacv2")
         isSelf: backend.currentChatId === "48:notes"
         isGroup: backend.currentChatId.endsWith("@thread.v2") || backend.currentChatId.indexOf("meeting_") >= 0

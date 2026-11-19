@@ -150,7 +150,7 @@ Window {
         if (!lobby || !backend.callLobbyThread) return []
         const all = backend.threadWindowsJson ? JSON.parse(backend.threadWindowsJson) : {}
         return (all["win:" + backend.callLobbyThread] || []).filter(m => m.kind === "message" && !m.mine)
-            .map(m => Object.assign({}, m, { sender: "Meeting Organizer", sender_mri: "" }))
+            .map(m => Object.assign({}, m, { sender: qsTr("Meeting Organizer"), sender_mri: "" }))
     }
     property bool lobbyPaneOpen: false
     readonly property real lobbyPaneW: lobbyPaneOpen && lobby ? 360 : 0
@@ -200,7 +200,7 @@ Window {
     width: 1280; height: 680
     minimumWidth: 1000; minimumHeight: 640
     color: theme.pane
-    title: "Meeting join | " + subject
+    title: qsTr("Meeting join | %1").arg(subject)
 
     function openMeetNow(channel, subj) {
         meetNow = true; meetChannel = channel; joinUrl = ""; subject = subj
@@ -234,8 +234,8 @@ Window {
     // Phone audio comes back once the meeting is known to offer it.
     onPhoneAvailableChanged: if (phoneAvailable && audio === "computer" && backend.setting("prejoinAudio") === "phone") audio = "phone"
     readonly property bool canJoin: !lobby && (audio !== "room" || !!room)
-    readonly property string mic: { const v = backend.setting("micDevice"); return v && v !== "default" ? v : "Default microphone" }
-    readonly property string speaker: { const v = backend.setting("speakerDevice"); return v && v !== "default" ? v : "Default speaker" }
+    readonly property string mic: { const v = backend.setting("micDevice"); return v && v !== "default" ? v : qsTr("Default microphone") }
+    readonly property string speaker: { const v = backend.setting("speakerDevice"); return v && v !== "default" ? v : qsTr("Default speaker") }
 
     Shortcut { sequence: "Escape"; onActivated: win.cancel() }
     /// Join now.
@@ -286,9 +286,9 @@ Window {
         // The title, or in the lobby Teams' lobby text in its place.
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
-            text: win.meetNow ? Qt.application.name + " meeting" : !win.lobby ? win.subject
-                : win.presenterConnected ? "Hi, " + win.firstName + ". Someone will let you in shortly."
-                : "Hi, " + win.firstName + ". Someone will let you in when the meeting starts."
+            text: win.meetNow ? qsTr("OST meeting") : !win.lobby ? win.subject
+                : win.presenterConnected ? qsTr("Hi, %1. Someone will let you in shortly.").arg(win.firstName)
+                : qsTr("Hi, %1. Someone will let you in when the meeting starts.").arg(win.firstName)
             font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold
             color: theme.text
         }
@@ -307,7 +307,7 @@ Window {
                 color: theme.text
                 clip: true
                 maximumLength: 256
-                Accessible.name: "Meeting title"
+                Accessible.name: qsTr("Meeting title")
             }
             Rectangle {
                 anchors.bottom: parent.bottom; width: parent.width; height: titleField.activeFocus ? 2 : 1
@@ -318,7 +318,7 @@ Window {
             visible: !win.meetNow && win.timesKnown
             anchors.horizontalCenter: parent.horizontalCenter
             // Teams: "Friday, Nov 6 • 3:00 PM – 3:30 PM PST".
-            text: Qt.formatDate(win.startTime, "dddd, MMM d") + "  •  " + theme.time(win.startTime) + " – " + theme.time(win.endTime) + " " + Qt.formatDateTime(win.endTime, "t")
+            text: theme.fmtDate(win.startTime, "dddd, MMM d") + "  •  " + theme.time(win.startTime) + " – " + theme.time(win.endTime) + " " + theme.fmtDateTime(win.endTime, "t")
             font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold
             color: theme.textStrong
         }
@@ -353,7 +353,7 @@ Window {
                 visible: !preview.visible && !win.cameraOn && win.avatarsOffered && videoEffects.avatarCamera && !videoEffects.avatarId
                 anchors.horizontalCenter: parent.horizontalCenter
                 y: (329 - 44 - height) / 2
-                text: "Select an avatar"
+                text: qsTr("Select an avatar")
                 font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold
                 color: theme.textSecondary
             }
@@ -369,7 +369,7 @@ Window {
                 y: (329 - 44 - height) / 2
                 spacing: 8
                 FluentIcon { anchors.horizontalCenter: parent.horizontalCenter; name: "video-off"; size: 20; color: theme.textStrong }
-                Text { text: win.cameraOn ? "Starting your camera…" : "Your camera is turned off"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.textStrong }
+                Text { text: win.cameraOn ? qsTr("Starting your camera…") : qsTr("Your camera is turned off"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.textStrong }
             }
             Rectangle { y: 329 - 44; width: parent.width; height: 1; color: theme.dividerSoft }
             Row {
@@ -380,7 +380,7 @@ Window {
                     anchors.verticalCenter: parent.verticalCenter
                     on: win.cameraOn
                     onToggled: v => win.cameraOn = v
-                    Accessible.name: "Camera"
+                    Accessible.name: qsTr("Camera")
                 }
                 // Teams' divider (18 x 32) and its effects button (14/600,
                 // brand while the picker is open). Teams calls it "Effects
@@ -405,7 +405,7 @@ Window {
                         FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "video-background-effect-20"; size: 20; color: theme.onFill(hcFill1, win.effectsOpen ? theme.brand : theme.textStrong) }
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
-                            text: win.avatarsOffered ? "Effects and avatars" : "Video effects"
+                            text: win.avatarsOffered ? qsTr("Effects and avatars") : qsTr("Video effects")
                             font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
                             color: theme.onFill(hcFill1, win.effectsOpen ? theme.brand : theme.textStrong)
                         }
@@ -419,8 +419,8 @@ Window {
                     }
                     Accessible.role: Accessible.Button
                     Accessible.name: win.avatarsOffered
-                        ? (win.effectsOpen ? "Hide effects and avatars options" : win.cameraOn ? "Camera is on, show effects and avatars options" : "Camera is off, show effects and avatars options")
-                        : (win.effectsOpen ? "Hide video effects" : "Show video effects")
+                        ? (win.effectsOpen ? qsTr("Hide effects and avatars options") : win.cameraOn ? qsTr("Camera is on, show effects and avatars options") : qsTr("Camera is off, show effects and avatars options"))
+                        : (win.effectsOpen ? qsTr("Hide video effects") : qsTr("Show video effects"))
                 }
             }
             // Teams' quick picker (video-effects-quick-picker): "Backgrounds"
@@ -443,7 +443,7 @@ Window {
                     visible: win.avatarsOffered
                     width: parent.width; height: 46
                     Repeater {
-                        model: [{ k: "effects", t: "Video effects" }, { k: "avatars", t: "Avatars" }]
+                        model: [{ k: "effects", t: qsTr("Video effects") }, { k: "avatars", t: qsTr("Avatars") }]
                         Item {
                             id: ptb
                             required property var modelData
@@ -483,7 +483,7 @@ Window {
                         width: parent.width; height: visible ? 192 : 0
                         Text {
                             anchors.centerIn: parent
-                            text: "To enable avatars, turn off camera"
+                            text: qsTr("To enable avatars, turn off camera")
                             font.family: theme.font; font.pixelSize: 14
                             color: theme.text
                         }
@@ -513,7 +513,7 @@ Window {
                     visible: !win.cameraOn && win.pickerTab === "effects"
                     y: picker.tabsH + (114 - height) / 2
                     anchors.horizontalCenter: parent.horizontalCenter
-                    text: "To enable video effects, turn on camera"
+                    text: qsTr("To enable video effects, turn on camera")
                     font.family: theme.font; font.pixelSize: 14
                     color: theme.text
                 }
@@ -522,7 +522,7 @@ Window {
                     y: picker.tabsH + 12; width: parent.width
                     Text {
                         x: 12; height: 18; verticalAlignment: Text.AlignVCenter
-                        text: "Backgrounds"
+                        text: qsTr("Backgrounds")
                         font.family: theme.font; font.pixelSize: 12
                         color: theme.text
                     }
@@ -531,7 +531,7 @@ Window {
                         Cell {
                             EffectTile {
                                 x: 4; y: 4; width: 74; height: 42
-                                kind: "none"; label: "None"; accessibleName: "No background effect"
+                                kind: "none"; label: qsTr("None"); accessibleName: qsTr("No background effect")
                                 selected: videoEffects.background === "none"
                                 onPicked: videoEffects.setBackground("none")
                             }
@@ -553,7 +553,7 @@ Window {
                                 EffectTile {
                                     x: 4; y: 4; width: 74; height: 42
                                     thumb: parent.modelData.thumb; animated: parent.modelData.animated
-                                    label: parent.modelData.name; accessibleName: parent.modelData.name + " background effect"
+                                    label: parent.modelData.name; accessibleName: qsTr("%1 background effect").arg(parent.modelData.name)
                                     selected: videoEffects.background === parent.modelData.id
                                     onPicked: videoEffects.setBackground(parent.modelData.id)
                                 }
@@ -564,7 +564,7 @@ Window {
                     Text {
                         visible: videoEffects.quickFilters.length > 0
                         x: 12; height: visible ? 30 : 0; verticalAlignment: Text.AlignVCenter
-                        text: "Filters"
+                        text: qsTr("Filters")
                         font.family: theme.font; font.pixelSize: 12
                         color: theme.text
                     }
@@ -574,7 +574,7 @@ Window {
                         Cell {
                             EffectTile {
                                 x: 4; y: 4; width: 74; height: 42
-                                kind: "none"; label: "None"; accessibleName: "No video effect selected"
+                                kind: "none"; label: qsTr("None"); accessibleName: qsTr("No video effect selected")
                                 selected: videoEffects.filter === ""
                                 onPicked: videoEffects.setFilter("")
                             }
@@ -598,14 +598,14 @@ Window {
                         Text {
                             anchors.right: parent.right; anchors.rightMargin: 12
                             anchors.verticalCenter: parent.verticalCenter
-                            text: "More video effects"
+                            text: qsTr("More video effects")
                             font.family: theme.font; font.pixelSize: 12
                             font.underline: mveHover.hovered
                             color: theme.brand
                             HoverHandler { id: mveHover; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: { win.effectsPaneKind = "effects"; win.effectsPaneOpen = true } }
                             Accessible.role: Accessible.Button
-                            Accessible.name: "More video effects"
+                            Accessible.name: qsTr("More video effects")
                         }
                     }
                 }
@@ -628,7 +628,7 @@ Window {
                     color: theme.hcHighlight
                 }
                 Radio {
-                    x: 16; y: 18; on: win.audio === "computer"; label: "Computer audio"
+                    x: 16; y: 18; on: win.audio === "computer"; label: qsTr("Computer audio")
                     highlighted: win.audio === "computer"; unusable: win.lobby
                     opacity: win.lobby && !theme.highContrast ? 0.45 : 1
                     TapHandler { enabled: !win.lobby; onTapped: win.audio = "computer" }
@@ -644,7 +644,7 @@ Window {
                     anchors.right: parent.right; anchors.rightMargin: 18; y: 76
                     on: win.micOn
                     onToggled: v => win.micOn = v
-                    Accessible.name: "Microphone"
+                    Accessible.name: qsTr("Microphone")
                 }
                 Row {
                     x: 18; y: 112; spacing: 12
@@ -673,7 +673,7 @@ Window {
                     height: phoneCard.selected ? Math.max(44.7, 330.2 - 3 * win.otherCardHeight - 3 * audioColumn.spacing - 89.3) : parent.height
                     Radio {
                         x: 16; anchors.verticalCenter: parent.verticalCenter
-                        on: phoneCard.selected; label: "Phone audio"
+                        on: phoneCard.selected; label: qsTr("Phone audio")
                         highlighted: phoneCard.selected; unusable: !phoneCard.usable
                         opacity: phoneCard.usable || theme.highContrast ? 1 : 0.45
                     }
@@ -681,7 +681,7 @@ Window {
                     TapHandler { enabled: phoneCard.usable; onTapped: win.audio = "phone" }
                     QC.ToolTip.visible: phoneHover.hovered && !phoneCard.usable && win.phoneChecked
                     QC.ToolTip.delay: 500
-                    QC.ToolTip.text: "You don't have access to dial-in information for this meeting"
+                    QC.ToolTip.text: qsTr("You don't have access to dial-in information for this meeting")
                 }
                 Rectangle {
                     visible: phoneCard.selected
@@ -695,7 +695,7 @@ Window {
                     Text {
                         x: 18; width: parent.width - 36
                         anchors.verticalCenter: parent.verticalCenter
-                        text: "We'll give you a number to call after you join, or we can call you."
+                        text: qsTr("We'll give you a number to call after you join, or we can call you.")
                         wrapMode: Text.Wrap
                         font.family: theme.font; font.pixelSize: theme.base
                         lineHeight: 20; lineHeightMode: Text.FixedHeight
@@ -703,10 +703,10 @@ Window {
                     }
                 }
                 Accessible.role: Accessible.RadioButton
-                Accessible.name: "Phone audio"
-                Accessible.description: !win.phoneChecked ? "Checking for dial-in info…"
-                    : win.phoneAvailable ? "Dial in from any phone, or we'll call you."
-                    : "You don't have access to dial-in information for this meeting"
+                Accessible.name: qsTr("Phone audio")
+                Accessible.description: !win.phoneChecked ? qsTr("Checking for dial-in info…")
+                    : win.phoneAvailable ? qsTr("Dial in from any phone, or we'll call you.")
+                    : qsTr("You don't have access to dial-in information for this meeting")
                 Accessible.checked: selected
             }
             // Teams' Room audio (measured on winpc 2026-11-15): selected, its
@@ -735,7 +735,7 @@ Window {
                         width: parent.width - 48 - 20
                         Item {
                             width: parent.width; height: 20
-                            Text { anchors.verticalCenter: parent.verticalCenter; text: "Room audio"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
+                            Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Room audio"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
                             // Teams' "(suggested)" tag, at the title row's end.
                             Text {
                                 visible: win.roomSuggested
@@ -746,7 +746,7 @@ Window {
                         }
                         Text {
                             visible: roomCard.selected && win.roomSuggested
-                            text: "We've detected a room device."
+                            text: qsTr("We've detected a room device.")
                             font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight
                             color: theme.brandForeground1
                         }
@@ -774,20 +774,20 @@ Window {
                         FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: win.room ? "info-20-filled" : "bluetooth-20"; size: 14; color: theme.text }
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
-                            text: win.room ? "We'll add the room's audio system to the meeting after you join."
-                                : !win.nearby.supported ? "Automatic room discovery isn't available on your device yet."
-                                : win.nearby.radioOn ? "Requires a room with an audio system."
-                                : "Enable Bluetooth to improve list of available rooms."
+                            text: win.room ? qsTr("We'll add the room's audio system to the meeting after you join.")
+                                : !win.nearby.supported ? qsTr("Automatic room discovery isn't available on your device yet.")
+                                : win.nearby.radioOn ? qsTr("Requires a room with an audio system.")
+                                : qsTr("Enable Bluetooth to improve list of available rooms.")
                             font.family: theme.font; font.pixelSize: 10; color: theme.textSecondary
                         }
                         Accessible.role: Accessible.AlertMessage
                     }
                 }
                 Accessible.role: Accessible.RadioButton
-                Accessible.name: "Room audio" + (win.roomSuggested ? " (suggested)" : "")
+                Accessible.name: qsTr("Room audio") + (win.roomSuggested ? " (suggested)" : "")
                 Accessible.checked: selected
             }
-            OptionCard { key: "none"; label: "Don't use audio"; usable: true }
+            OptionCard { key: "none"; label: qsTr("Don't use audio"); usable: true }
         }
     }
 
@@ -800,11 +800,11 @@ Window {
             id: hcFill2
             width: 96; height: 32; radius: theme.radius
             color: cxh.hovered ? theme.rowHover : theme.input; border.color: theme.stroke
-            Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.text) }
+            Text { anchors.centerIn: parent; text: qsTr("Cancel"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.text) }
             HoverHandler { id: cxh; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: win.cancel() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Cancel"
+            Accessible.name: qsTr("Cancel")
         }
         Rectangle {
             id: hcFill3
@@ -814,7 +814,7 @@ Window {
             // Disabled in the lobby (Fluent's disabled primary button).
             color: !win.canJoin ? theme.pick("#F0F0F0", "#141414", "#000000") : jnh.hovered ? theme.brandHover : theme.brandFill
             border.color: !win.canJoin ? theme.pick("#E0E0E0", "#424242", "#FFFFFF") : "transparent"
-            Text { anchors.centerIn: parent; text: "Join now"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, !win.canJoin ? theme.pick("#BDBDBD", "#5C5C5C", "#3FF23F") : "white") }
+            Text { anchors.centerIn: parent; text: qsTr("Join now"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, !win.canJoin ? theme.pick("#BDBDBD", "#5C5C5C", "#3FF23F") : "white") }
             HoverHandler { id: jnh; cursorShape: win.canJoin ? Qt.PointingHandCursor : Qt.ArrowCursor }
             // Room audio waits for a room (Teams disables Join until one is
             // picked); a connected room device joins with its own audio.
@@ -838,7 +838,7 @@ Window {
                 HoverHandler { id: jmh; cursorShape: Qt.PointingHandCursor }
                 TapHandler { enabled: win.canJoin; onTapped: joinMenu.visible = !joinMenu.visible }
                 Accessible.role: Accessible.Button
-                Accessible.name: "More join options."
+                Accessible.name: qsTr("More join options.")
                 Connections { target: win; function onJoinMenuOpenForTest() { joinMenu.visible = true } }
                 Item {
                     id: joinMenu
@@ -856,7 +856,7 @@ Window {
                         x: 4; y: 4
                         spacing: 2
                         Repeater {
-                            model: win.eventJoin ? ["Join as " + win.eventJoin.joinAs, "Preview as Attendee"] : []
+                            model: win.eventJoin ? [win.eventJoin.joinAs === "Organizer" ? qsTr("Join as Organizer") : win.eventJoin.joinAs === "Presenter" ? qsTr("Join as Presenter") : qsTr("Join as %1").arg(win.eventJoin.joinAs), qsTr("Preview as Attendee")] : []
                             Rectangle {
                                 required property string modelData
                                 required property int index
@@ -874,7 +874,7 @@ Window {
                 }
             }
             Accessible.role: Accessible.Button
-            Accessible.name: win.eventJoin ? "Join Live Event Split Button. Use alt+down to toggle through more join options." : "Join now"
+            Accessible.name: win.eventJoin ? qsTr("Join Live Event Split Button. Use alt+down to toggle through more join options.") : qsTr("Join now")
         }
         // Room for the split button's chevron (26.67, less the row's spacing).
         Item { visible: !!win.eventJoin; width: 18.67; height: 32 }
@@ -888,12 +888,12 @@ Window {
                 anchors.centerIn: parent
                 spacing: 8
                 FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: lch.hovered ? "chat-20-filled" : "chat-20"; size: 20; color: theme.onFill(hcFill4, theme.text) }
-                Text { anchors.verticalCenter: parent.verticalCenter; text: "Lobby chat"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, theme.text) }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Lobby chat"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, theme.text) }
             }
             HoverHandler { id: lch; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: win.lobbyPaneOpen = !win.lobbyPaneOpen }
             Accessible.role: Accessible.Button
-            Accessible.name: "Lobby chat"
+            Accessible.name: qsTr("Lobby chat")
         }
     }
 
@@ -932,23 +932,23 @@ Window {
         id: rp
         width: 383.8; height: 30.7
         readonly property var items: {
-            const status = s => ({ Available: "Available", Busy: "Busy", DoNotDisturb: "Do not disturb", BeRightBack: "Be right back", Away: "Away", Offline: "Offline", OffWork: "Offline", PresenceUnknown: "Offline" })[s] || (s ? s : "Offline")
+            const status = s => ({ Available: qsTr("Available"), Busy: qsTr("Busy"), DoNotDisturb: qsTr("Do not disturb"), BeRightBack: qsTr("Be right back"), Away: qsTr("Away"), Offline: qsTr("Offline"), OffWork: qsTr("Offline"), PresenceUnknown: qsTr("Offline") })[s] || (s ? s : qsTr("Offline"))
             if (win.roomQuery.trim() && win.searchedRooms.length)
                 return win.searchedRooms.map(r => ({ header: r.name, content: status(r.status), tenant: r }))
             const out = []
             const devices = win.rooms.devices || []
             if (devices.length) {
-                out.push({ header: "Connected room devices", disabled: true })
+                out.push({ header: qsTr("Connected room devices"), disabled: true })
                 for (const d of devices) out.push({ header: d.label, device: d })
             }
-            out.push({ header: "Nearby", disabled: true })
+            out.push({ header: qsTr("Nearby"), disabled: true })
             const near = (win.nearby.rooms || [])
             if (near.length) for (const r of near) out.push({ header: r.name, content: status(r.status), tenant: r, isNearby: true })
-            else out.push({ header: "Unable to find any rooms", disabled: true, note: true })
-            out.push({ header: "Other Suggestions", disabled: true })
+            else out.push({ header: qsTr("Unable to find any rooms"), disabled: true, note: true })
+            out.push({ header: qsTr("Other Suggestions"), disabled: true })
             const others = win.suggestedRooms.filter(r => !near.some(n => n.mri === r.mri))
             if (others.length) for (const r of others) out.push({ header: r.name, content: status(r.status), tenant: r })
-            else out.push({ header: "Unable to find any rooms", disabled: true, note: true })
+            else out.push({ header: qsTr("Unable to find any rooms"), disabled: true, note: true })
             return out
         }
         Connections {
@@ -980,11 +980,11 @@ Window {
             }
             Text {
                 visible: !field.text
-                text: "Search for a room"
+                text: qsTr("Search for a room")
                 font: field.font; color: theme.textSecondary
             }
             Accessible.role: Accessible.ComboBox
-            Accessible.name: "Search for a room"
+            Accessible.name: qsTr("Search for a room")
         }
         // Fluent's clear button once a room is chosen.
         FluentIcon {
@@ -995,7 +995,7 @@ Window {
             TapHandler { onTapped: { win.room = null; field.text = ""; win.searchRooms("") } }
             HoverHandler { cursorShape: Qt.PointingHandCursor }
             Accessible.role: Accessible.Button
-            Accessible.name: "Clear selection"
+            Accessible.name: qsTr("Clear selection")
         }
         FluentIcon {
             id: chevron
@@ -1004,7 +1004,7 @@ Window {
             TapHandler { enabled: !win.lobby; onTapped: roomList.opened ? roomList.close() : roomList.open() }
             HoverHandler { cursorShape: Qt.PointingHandCursor }
             Accessible.role: Accessible.Button
-            Accessible.name: "Open"
+            Accessible.name: qsTr("Open")
         }
         QC.Popup {
             id: roomList
@@ -1129,7 +1129,7 @@ Window {
             width: parent.width; height: 58
             Text {
                 x: 20; anchors.verticalCenter: parent.verticalCenter
-                text: "Lobby"
+                text: qsTr("Lobby")
                 font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold
                 color: theme.text
                 Accessible.role: Accessible.Heading
@@ -1144,7 +1144,7 @@ Window {
                 HoverHandler { id: lpClose; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: win.lobbyPaneOpen = false }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Close chat pane"
+                Accessible.name: qsTr("Close chat pane")
             }
         }
         Rectangle {
@@ -1157,7 +1157,7 @@ Window {
                 id: lpBannerText
                 x: 16.7; y: 5.67; width: parent.width - 33.3
                 wrapMode: Text.Wrap
-                text: "Only organizers and people in the lobby can view these messages."
+                text: qsTr("Only organizers and people in the lobby can view these messages.")
                 font.family: theme.font; font.pixelSize: 12; lineHeight: 17.14; lineHeightMode: Text.FixedHeight
                 color: theme.textStrong
             }
@@ -1168,7 +1168,7 @@ Window {
             readOnly: true
             noAvatars: true
             chatId: backend.callLobbyThread
-            chatName: "Lobby"
+            chatName: qsTr("Lobby")
             isGroup: true
             messages: win.lobbyMessages
             paneTitle: ""

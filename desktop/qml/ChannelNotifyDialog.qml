@@ -154,32 +154,32 @@ Popup {
                         photoId: dlg.teamId ? "team:" + dlg.teamId : ""
                     }
                     Text { x: 44.7; y: 0.7; text: dlg.channel.name || ""; font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
-                    Text { x: 44.7; y: 22.7; text: "Manage notifications"; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textStrong }
+                    Text { x: 44.7; y: 22.7; text: qsTr("Manage notifications"); font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textStrong }
                 }
-                Text { text: "Select what content notifies you"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
+                Text { text: qsTr("Select what content notifies you"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
                 Text {
                     width: parent.width; topPadding: 4; wrapMode: Text.Wrap
-                    text: "Your notification count will include this content, even when device notifications are off. Personal @mentions and replies to followed threads are always included."
+                    text: qsTr("Your notification count will include this content, even when device notifications are off. Personal @mentions and replies to followed threads are always included.")
                     font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textStrong
                 }
                 Item { width: 1; height: 20 }
                 Column {
                     width: parent.width; spacing: 8
-                    Card { key: "all"; icon: "alert-on-20"; label: "All new messages"; hint: "New messages, all @mentions, and replies to followed threads" }
+                    Card { key: "all"; icon: "alert-on-20"; label: qsTr("All new messages"); hint: qsTr("New messages, all @mentions, and replies to followed threads") }
                     Card {
-                        key: "mentions"; icon: "alert-20"; label: "@mentions and replies"; hint: "All @mentions and replies to followed threads"
-                        Check { label: "Follow all new threads"; checked: dlg.followAll; onToggled: dlg.followAll = !dlg.followAll }
-                        Check { label: "Tag mentions"; checked: dlg.tag; onToggled: dlg.tag = !dlg.tag }
-                        Check { label: "Channel and team mentions"; checked: dlg.channelTeam; onToggled: dlg.channelTeam = !dlg.channelTeam }
+                        key: "mentions"; icon: "alert-20"; label: qsTr("@mentions and replies"); hint: qsTr("All @mentions and replies to followed threads")
+                        Check { label: qsTr("Follow all new threads"); checked: dlg.followAll; onToggled: dlg.followAll = !dlg.followAll }
+                        Check { label: qsTr("Tag mentions"); checked: dlg.tag; onToggled: dlg.tag = !dlg.tag }
+                        Check { label: qsTr("Channel and team mentions"); checked: dlg.channelTeam; onToggled: dlg.channelTeam = !dlg.channelTeam }
                     }
-                    Card { key: "mute"; icon: "alert-off-20"; label: "Mute"; hint: "You'll still be notified for personal mentions and replies to followed threads" }
+                    Card { key: "mute"; icon: "alert-off-20"; label: qsTr("Mute"); hint: qsTr("You'll still be notified for personal mentions and replies to followed threads") }
                 }
                 Item { width: 1; height: 20 }
-                Text { text: "Set a desktop notification preference"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
+                Text { text: qsTr("Set a desktop notification preference"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
                 Text {
                     width: parent.width; topPadding: 4; wrapMode: Text.Wrap
                     textFormat: Text.StyledText
-                    text: "Desktop notifications are on for all channels. Go to <a href=\"settings\">notifications settings for all channels</a>"
+                    text: qsTr("Desktop notifications are on for all channels. Go to") + " <a href=\"settings\">" + qsTr("notifications settings for all channels") + "</a>"
                     font.family: theme.font; font.pixelSize: 12; color: theme.textStrong
                     linkColor: theme.brandForeground1
                     onLinkActivated: { dlg.close(); dlg.openNotificationSettings() }
@@ -188,13 +188,13 @@ Popup {
                 Item { width: 1; height: 8 }
                 Item {
                     width: parent.width; height: 31.3
-                    Text { anchors.verticalCenter: parent.verticalCenter; text: "Set a preference for this channel"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Set a preference for this channel"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
                     Dropdown {
                         x: parent.width - width; width: 294; height: 31.3
-                        options: [["", "Match settings used for all channels"], ["On", "Get notified for selected content"], ["Off", "Don't get desktop notifications"]]
+                        options: [["", qsTr("Match settings used for all channels")], ["On", qsTr("Get notified for selected content")], ["Off", qsTr("Don't get desktop notifications")]]
                         label: options.find(o => o[0] === dlg.dsk)[1]
                         onPicked: code => dlg.dsk = code
-                        accessibleName: "Set a preference for this channel"
+                        accessibleName: qsTr("Set a preference for this channel")
                     }
                 }
             }
@@ -207,20 +207,20 @@ Popup {
                 width: 96; height: 31.3; radius: 4
                 color: cancelHover.hovered ? theme.rowHover : theme.surface
                 border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF"); border.width: 0.67
-                Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.text) }
+                Text { anchors.centerIn: parent; text: qsTr("Cancel"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.text) }
                 HoverHandler { id: cancelHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: dlg.close() }
-                Accessible.role: Accessible.Button; Accessible.name: "Cancel"
+                Accessible.role: Accessible.Button; Accessible.name: qsTr("Cancel")
             }
             Rectangle {
                 id: hcFill3
                 readonly property bool on: dlg.changed && !dlg.saving
                 width: 96; height: 31.3; radius: 4
                 color: !on ? theme.pick("#F0F0F0", "#141414", "#000000") : saveHover.hovered ? theme.brandHover : theme.checkedFill
-                Text { anchors.centerIn: parent; text: "Save"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, parent.on ? "white" : theme.disabled) }
+                Text { anchors.centerIn: parent; text: qsTr("Save"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, parent.on ? "white" : theme.disabled) }
                 HoverHandler { id: saveHover; cursorShape: parent.on ? Qt.PointingHandCursor : Qt.ArrowCursor }
                 TapHandler { enabled: parent.on; onTapped: dlg.save() }
-                Accessible.role: Accessible.Button; Accessible.name: "Save"
+                Accessible.role: Accessible.Button; Accessible.name: qsTr("Save")
             }
         }
     }

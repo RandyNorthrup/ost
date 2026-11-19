@@ -29,7 +29,7 @@ Popup {
         x: 24.67; y: 24.67; width: 310.67; height: 31.33
         verticalAlignment: Text.AlignVCenter
         elide: Text.ElideRight
-        text: "Share with all participants?"
+        text: qsTr("Share with all participants?")
         font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold
         color: theme.text
     }
@@ -41,15 +41,15 @@ Popup {
         HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.close() }
         Accessible.role: Accessible.Button
-        Accessible.name: "Close"
+        Accessible.name: qsTr("Close")
     }
     Text {
         x: 24.67; y: 64; width: 350.67
         wrapMode: Text.Wrap
         lineHeight: 20; lineHeightMode: Text.FixedHeight
         textFormat: Text.RichText
-        text: "<style>a { color: " + theme.brandForeground1 + "; }</style>Everyone invited to this meeting will be able to access this file. "
-              + (root.learnMoreUrl ? "<a href=\"" + root.learnMoreUrl + "\">Learn more</a>" : "Learn more")
+        text: "<style>a { color: " + theme.brandForeground1 + "; }</style>" + qsTr("Everyone invited to this meeting will be able to access this file.") + " "
+              + (root.learnMoreUrl ? "<a href=\"" + root.learnMoreUrl + "\">" + qsTr("Learn more") + "</a>" : qsTr("Learn more"))
         font.family: theme.font; font.pixelSize: 14
         color: theme.text
         onLinkActivated: link => Qt.openUrlExternally(link)
@@ -70,7 +70,7 @@ Popup {
         Text {
             x: 52.67; y: 27; width: 293.33; height: 14
             elide: Text.ElideRight
-            text: "People invited to this meeting can edit"
+            text: qsTr("People invited to this meeting can edit")
             font.family: theme.font; font.pixelSize: 10
             color: theme.text
         }
@@ -94,6 +94,6 @@ Popup {
         Accessible.role: Accessible.Button
         Accessible.name: db.label
     }
-    DialogButton { x: 175.33; label: "Cancel"; onClicked: root.close() }
-    DialogButton { x: 279.33; label: "Share"; primary: true; onClicked: { root.close(); root.confirmed() } }
+    DialogButton { x: 175.33; label: qsTr("Cancel"); onClicked: root.close() }
+    DialogButton { x: 279.33; label: qsTr("Share"); primary: true; onClicked: { root.close(); root.confirmed() } }
 }

@@ -22,7 +22,7 @@ Item {
     property string peopleQuery: ""
     /// Teams' other pickers of this kind (Manage interpreters: 600 wide,
     /// "Add someone as an interpreter", people only).
-    property string placeholder: "Type a name or number"
+    property string placeholder: qsTr("Type a name or number")
     property string accessibleName: placeholder
     property bool phoneSuggestions: true
     /// MRIs left out (already chosen).
@@ -148,7 +148,7 @@ Item {
                                 id: extRow
                                 x: 4; anchors.verticalCenter: parent.verticalCenter; spacing: 4
                                 FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "people-error-16-filled"; size: 16; color: theme.pick("#FFFFFF", "#000000", "#000000") }
-                                Text { anchors.verticalCenter: parent.verticalCenter; text: "External"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.pick("#FFFFFF", "#000000", "#000000") }
+                                Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("External"); font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.pick("#FFFFFF", "#000000", "#000000") }
                             }
                         }
                         Text {
@@ -161,7 +161,7 @@ Item {
                         HoverHandler { id: rowHover; cursorShape: Qt.PointingHandCursor; onHoveredChanged: if (hovered) root.current = row.index }
                         TapHandler { onTapped: root.choose(row.modelData) }
                         Accessible.role: Accessible.ListItem
-                        Accessible.name: row.modelData.name + (row.modelData.kind === "pstn" ? ", External" : "")
+                        Accessible.name: row.modelData.name + (row.modelData.kind === "pstn" ? ", " + qsTr("External") : "")
                     }
                 }
             }
@@ -203,10 +203,10 @@ Item {
                 visible: delHover.hovered; delay: 500
                 y: -height - 4; padding: 8
                 background: FluentSurface { depth: 16; radius: 4 }
-                contentItem: Text { text: "Delete"; font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
+                contentItem: Text { text: qsTr("Delete"); font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
             }
             Accessible.role: Accessible.Button
-            Accessible.name: "Delete"
+            Accessible.name: qsTr("Delete")
         }
     }
 }

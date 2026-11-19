@@ -42,13 +42,13 @@ Item {
         if (!d) return ""
         const day = new Date(d + "T00:00:00"), today = new Date(); today.setHours(0, 0, 0, 0)
         const n = Math.round((day - today) / 86400000)
-        if (n === 0) return "Today"
-        if (n === 1) return "Tomorrow"
-        if (n === -1) return "Yesterday"
-        return Qt.formatDate(day, "ddd") + " " + theme.dateNoYear(day)
+        if (n === 0) return qsTr("Today")
+        if (n === 1) return qsTr("Tomorrow")
+        if (n === -1) return qsTr("Yesterday")
+        return theme.fmtDate(day, "ddd") + " " + theme.dateNoYear(day)
     }
     readonly property var columns: {
-        const key = t => view === "plan" ? (t.bucket || "No bucket") : t.source
+        const key = t => view === "plan" ? (t.bucket || qsTr("No bucket")) : t.source
         const out = []
         for (const t of tasks) {
             let c = out.find(c => c.name === key(t))
@@ -69,7 +69,7 @@ Item {
         Row {
             x: 24; y: 19; spacing: 10
             FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "clipboard-task-list-ltr-24-filled"; size: 22; color: theme.brand }
-            Text { text: "Planner"; font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text }
+            Text { text: qsTr("Planner"); font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text }
         }
         // Create a plan: plans belong to a team; the menu lists yours.
         Rectangle {
@@ -79,20 +79,20 @@ Item {
             Row {
                 anchors.centerIn: parent; spacing: 8
                 FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "add-20"; size: 20; color: theme.onFill(hcFill1, "white") }
-                Text { anchors.verticalCenter: parent.verticalCenter; text: "Create a plan"; color: theme.onFill(hcFill1, "white"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Create a plan"); color: theme.onFill(hcFill1, "white"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
             }
             HoverHandler { id: cph; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: planDialog.open() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Create a plan"
+            Accessible.name: qsTr("Create a plan")
         }
         Column {
             x: 8; y: 133; width: parent.width - 16
             Repeater {
                 model: [
-                    { key: "myday", label: "My day", icon: "weather-sunny-20" },
-                    { key: "mytasks", label: "My tasks", icon: "task-list-ltr-20" },
-                    { key: "plans", label: "My plans", icon: "grid-20" }
+                    { key: "myday", label: qsTr("My day"), icon: "weather-sunny-20" },
+                    { key: "mytasks", label: qsTr("My tasks"), icon: "task-list-ltr-20" },
+                    { key: "plans", label: qsTr("My plans"), icon: "grid-20" }
                 ]
                 Rectangle {
                     id: nav
@@ -110,9 +110,9 @@ Item {
                 }
             }
             Item { width: 1; height: 12 }
-            Text { x: 8; text: "Pinned"; font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
+            Text { x: 8; text: qsTr("Pinned"); font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
             Item { width: 1; height: 12 }
-            Text { x: 8; text: "Pinned items will appear here."; font.family: theme.font; font.pixelSize: theme.small; color: theme.textStrong }
+            Text { x: 8; text: qsTr("Pinned items will appear here."); font.family: theme.font; font.pixelSize: theme.small; color: theme.textStrong }
         }
     }
 
@@ -129,7 +129,7 @@ Item {
                 size: 20; color: theme.textStrong
             }
             Text {
-                text: root.view === "plan" && root.plan ? root.plan.title : root.view === "plans" ? "My plans" : root.view === "myday" ? "My day" : "My tasks"
+                text: root.view === "plan" && root.plan ? root.plan.title : root.view === "plans" ? qsTr("My plans") : root.view === "myday" ? qsTr("My day") : qsTr("My tasks")
                 font.family: theme.font; font.pixelSize: theme.base + 2; font.weight: Font.Bold
                 color: theme.text
             }
@@ -147,7 +147,7 @@ Item {
             visible: root.view === "mytasks" || root.view === "plan" || root.view === "myday"
             x: 18; y: 77; spacing: 8
             Repeater {
-                model: [{ key: false, label: "Grid", icon: "grid-20" }, { key: true, label: "Board", icon: "board-20" }]
+                model: [{ key: false, label: qsTr("Grid"), icon: "grid-20" }, { key: true, label: qsTr("Board"), icon: "board-20" }]
                 Chip {
                     required property var modelData
                     on: root.board === modelData.key; icon: modelData.icon; label: modelData.label
@@ -156,7 +156,7 @@ Item {
             }
             Rectangle { visible: root.view === "mytasks"; width: 1; height: 20; anchors.verticalCenter: parent.verticalCenter; color: theme.divider }
             Repeater {
-                model: root.view === "mytasks" ? [{ key: "all", label: "All" }, { key: "private", label: "Private tasks" }, { key: "assigned", label: "Assigned to me" }, { key: "mail", label: "Flagged emails" }] : []
+                model: root.view === "mytasks" ? [{ key: "all", label: qsTr("All") }, { key: "private", label: qsTr("Private tasks") }, { key: "assigned", label: qsTr("Assigned to me") }, { key: "mail", label: qsTr("Flagged emails") }] : []
                 Chip {
                     required property var modelData
                     on: root.filter === modelData.key; label: modelData.label
@@ -176,12 +176,12 @@ Item {
                     font.family: theme.font; font.pixelSize: theme.base; color: theme.onFill(hcFill2, theme.text); clip: true
                     onTextChanged: root.search = text
                     Keys.onEscapePressed: { text = ""; focus = false }
-                    Accessible.name: "Search tasks"
+                    Accessible.name: qsTr("Search tasks")
                 }
                 HoverHandler { id: sh; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: searching.forceActiveFocus() }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Search"
+                Accessible.name: qsTr("Search")
             }
         }
 
@@ -208,12 +208,12 @@ Item {
                 HoverHandler { id: ph; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: root.open("plan", modelData) }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Plan " + modelData.title
+                Accessible.name: qsTr("Plan %1").arg(modelData.title)
             }
             Text {
                 visible: !root.busy && root.plans.length === 0
                 y: 16; x: 16
-                text: "Your teams don't have any plans yet."
+                text: qsTr("Your teams don't have any plans yet.")
                 font.family: theme.font; font.pixelSize: theme.base; color: theme.textSecondary
             }
         }
@@ -225,14 +225,14 @@ Item {
             visible: !root.board && root.view !== "plans"
             x: 0; y: 124; width: parent.width; height: parent.height - y
             readonly property var rows: root.view === "myday"
-                ? root.tasks.filter(t => root.dueText(t.due) === "Today") : root.tasks
+                ? root.tasks.filter(t => root.dueText(t.due) === qsTr("Today")) : root.tasks
             Row {
                 id: head
                 x: 49; height: 46
-                HeadCell { label: "Task name"; width: Math.max(260, grid.width * 0.42) }
-                HeadCell { label: root.view === "plan" ? "Bucket" : "Source"; width: Math.max(160, grid.width * 0.25) }
-                HeadCell { label: "Due"; width: 140 }
-                HeadCell { label: "Priority"; width: 110 }
+                HeadCell { label: qsTr("Task name"); width: Math.max(260, grid.width * 0.42) }
+                HeadCell { label: root.view === "plan" ? qsTr("Bucket") : qsTr("Source"); width: Math.max(160, grid.width * 0.25) }
+                HeadCell { label: qsTr("Due"); width: 140 }
+                HeadCell { label: qsTr("Priority"); width: 110 }
             }
             Rectangle { y: head.height; x: 0; width: parent.width; height: 1; color: theme.dividerSoft }
             // Add new task (private tasks, as in Teams' My tasks).
@@ -245,7 +245,7 @@ Item {
                     id: newTask
                     x: 49; width: parent.width - 120; anchors.verticalCenter: parent.verticalCenter
                     font.family: theme.font; font.pixelSize: theme.base; color: theme.text; clip: true
-                    Text { visible: !newTask.text; text: "Add new task"; color: theme.brand; font: newTask.font }
+                    Text { visible: !newTask.text; text: qsTr("Add new task"); color: theme.brand; font: newTask.font }
                     Keys.onReturnPressed: {
                         if (!text.trim()) return
                         if (root.view === "plan" && root.plan) root.addToPlan(JSON.stringify(root.plan), text.trim())
@@ -253,7 +253,7 @@ Item {
                         text = ""
                     }
                     Keys.onEscapePressed: { text = ""; focus = false }
-                    Accessible.name: "Add new task"
+                    Accessible.name: qsTr("Add new task")
                 }
                 Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: theme.dividerSoft }
             }
@@ -277,7 +277,7 @@ Item {
                         HoverHandler { id: ch; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: root.complete(JSON.stringify(trow.modelData)) }
                         Accessible.role: Accessible.CheckBox
-                        Accessible.name: "Mark " + trow.modelData.title + " complete"
+                        Accessible.name: qsTr("Mark %1 complete").arg(trow.modelData.title)
                     }
                     Row {
                         x: 49; height: parent.height
@@ -292,7 +292,7 @@ Item {
                     Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: theme.dividerSoft }
                     HoverHandler { id: trh }
                     Accessible.role: Accessible.ListItem
-                    Accessible.name: modelData.title + (modelData.due ? ", due " + root.dueText(modelData.due) : "")
+                    Accessible.name: (modelData.due ? qsTr("%1, due %2").arg(modelData.title).arg(root.dueText(modelData.due)) : modelData.title)
                 }
             }
         }
@@ -340,7 +340,7 @@ Item {
         Text {
             visible: !root.busy && !root.plannerData.error && root.view !== "plans" && grid.rows.length === 0 && !root.board
             anchors.horizontalCenter: parent.horizontalCenter; y: 300
-            text: root.view === "myday" ? "Nothing is due today." : "You have no tasks here."
+            text: root.view === "myday" ? qsTr("Nothing is due today.") : qsTr("You have no tasks here.")
             font.family: theme.font; font.pixelSize: theme.base; color: theme.textSecondary
         }
         Text {
@@ -362,7 +362,7 @@ Item {
         background: Rectangle { radius: 8; color: theme.menu; border.color: theme.dividerSoft }
         contentItem: Column {
             spacing: 14
-            Text { text: "Create a plan"; font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text }
+            Text { text: qsTr("Create a plan"); font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text }
             Rectangle {
                 width: 360; height: 32; radius: theme.radius
                 color: theme.input; border.color: planName.activeFocus ? theme.brand : theme.stroke
@@ -370,36 +370,36 @@ Item {
                     id: planName
                     x: 10; width: parent.width - 20; anchors.verticalCenter: parent.verticalCenter
                     font.family: theme.font; font.pixelSize: theme.base; color: theme.text; clip: true
-                    Text { visible: !planName.text; text: "Plan name"; color: theme.textTertiary; font: planName.font }
+                    Text { visible: !planName.text; text: qsTr("Plan name"); color: theme.textTertiary; font: planName.font }
                     Keys.onReturnPressed: planDialog.create()
-                    Accessible.name: "Plan name"
+                    Accessible.name: qsTr("Plan name")
                 }
             }
-            Text { text: "Team"; font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
+            Text { text: qsTr("Team"); font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
             ComboBox {
                 id: teamBox
                 width: 360
                 model: root.teams.map(t => t.name)
                 currentIndex: planDialog.team
                 onActivated: i => planDialog.team = i
-                Accessible.name: "Team"
+                Accessible.name: qsTr("Team")
             }
             Row {
                 spacing: 8
                 Rectangle {
                     id: hcFill4
                     width: 90; height: 32; radius: theme.radius; color: theme.brandFill
-                    Text { anchors.centerIn: parent; text: "Create"; color: theme.onFill(hcFill4, "white"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
+                    Text { anchors.centerIn: parent; text: qsTr("Create"); color: theme.onFill(hcFill4, "white"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
                     TapHandler { onTapped: planDialog.create() }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Create"
+                    Accessible.name: qsTr("Create")
                 }
                 Rectangle {
                     width: 90; height: 32; radius: theme.radius; color: theme.input; border.color: theme.stroke
-                    Text { anchors.centerIn: parent; text: "Cancel"; color: theme.text; font.family: theme.font; font.pixelSize: theme.base }
+                    Text { anchors.centerIn: parent; text: qsTr("Cancel"); color: theme.text; font.family: theme.font; font.pixelSize: theme.base }
                     TapHandler { onTapped: planDialog.close() }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Cancel"
+                    Accessible.name: qsTr("Cancel")
                 }
             }
         }

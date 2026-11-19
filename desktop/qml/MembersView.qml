@@ -43,7 +43,7 @@ Item {
             if (r.channel !== view.teamThread) return
             if (r.op === "team-roster" && r.ok) view.members = r.data.members || []
             else if (r.op === "team-membership") {
-                if (!r.ok || r.data.code) backend.toast("Something went wrong on our end. Please try again.", "error")
+                if (!r.ok || r.data.code) backend.toast(qsTr("Something went wrong on our end. Please try again."), "error")
                 view.load()
             } else if (r.op === "add-members") view.load()
         }
@@ -54,11 +54,11 @@ Item {
         x: 20; y: 20.6; width: 134.8; height: 31.3; radius: 4
         color: addHover.hovered ? theme.menuHover : "transparent"
         FluentIcon { x: 12.7; anchors.verticalCenter: parent.verticalCenter; name: "add-20"; size: 20; color: theme.onFill(hcFill1, theme.textStrong) }
-        Text { x: 38.7; anchors.verticalCenter: parent.verticalCenter; text: "Add member"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.textStrong) }
+        Text { x: 38.7; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Add member"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.textStrong) }
         HoverHandler { id: addHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: view.addMember() }
         Accessible.role: Accessible.Button
-        Accessible.name: "Add member"
+        Accessible.name: qsTr("Add member")
     }
     Rectangle {
         x: parent.width - 20 - width; y: 20.6; width: 280; height: 32; radius: 4
@@ -72,9 +72,9 @@ Item {
             color: theme.text
             clip: true
             selectByMouse: true
-            Text { visible: !search.text; anchors.verticalCenter: parent.verticalCenter; text: "Search members"; font: search.font; color: theme.textSecondary }
+            Text { visible: !search.text; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Search members"); font: search.font; color: theme.textSecondary }
             Accessible.role: Accessible.EditableText
-            Accessible.name: "Search members"
+            Accessible.name: qsTr("Search members")
         }
     }
 
@@ -88,12 +88,12 @@ Item {
             id: sections
             width: parent.width
             Section {
-                label: "Owners (" + view.owners.length + ")"
+                label: qsTr("Owners") + " (" + view.owners.length + ")"
                 open: view.ownersOpen; onToggled: view.ownersOpen = !view.ownersOpen
                 Grid_ { people: view.owners }
             }
             Section {
-                label: "Members and guests (" + view.others.length + ")"
+                label: qsTr("Members and guests") + " (" + view.others.length + ")"
                 open: view.othersOpen && view.others.length > 0; onToggled: view.othersOpen = !view.othersOpen
                 Grid_ { people: view.others }
             }
@@ -128,14 +128,14 @@ Item {
         x: 12; width: parent ? parent.width - 24 : 0
         height: people.length ? 48.7 + people.length * 44.7 + 4 : 0
         Repeater {
-            model: grid.people.length ? ["Name", "Title", "Location", "Tags", "Team role"] : []
+            model: grid.people.length ? [qsTr("Name"), qsTr("Title", "teamsAndChannels:kdeyny7h8"), qsTr("Location", "teamsAndChannels:k8j1emyc5"), qsTr("Tags"), qsTr("Team role")] : []
             Row {
                 required property string modelData
                 required property int index
                 x: 8 + index * grid.col + 10; y: 16
                 spacing: 10
                 Text { text: modelData; font.family: theme.font; font.pixelSize: 12; color: theme.text }
-                FluentIcon { visible: modelData === "Tags"; y: -1.7; name: "info-16-regular"; size: 16; color: theme.text }
+                FluentIcon { visible: index === 3; y: -1.7; name: "info-16-regular"; size: 16; color: theme.text }
             }
         }
         Column {
@@ -201,7 +201,7 @@ Item {
                             spacing: 5
                             Text {
                                 anchors.verticalCenter: parent.verticalCenter
-                                text: row.modelData.role === "Admin" ? "Owner" : row.modelData.role === "Guest" ? "Guest" : "Member"
+                                text: row.modelData.role === "Admin" ? qsTr("Owner") : row.modelData.role === "Guest" ? qsTr("Guest") : qsTr("Member")
                                 font.family: theme.font; font.pixelSize: 14
                                 color: theme.onFill(row, theme.text)
                             }
@@ -210,7 +210,7 @@ Item {
                         HoverHandler { enabled: role.changeable; cursorShape: Qt.PointingHandCursor }
                         TapHandler { enabled: role.changeable; onTapped: roleMenu.open() }
                         Accessible.role: Accessible.ComboBox
-                        Accessible.name: "Current role for " + (row.modelData.name || "") + " is " + (row.modelData.role === "Admin" ? "Owner" : "Member") + ". Open the change role dropdown."
+                        Accessible.name: qsTr("Current role for %1 is %2. Open the change role dropdown.").arg(row.modelData.name || "").arg(row.modelData.role === "Admin" ? qsTr("Owner") : qsTr("Member"))
                         Popup {
                             id: roleMenu
                             y: role.height + 2; width: 127.6; height: 74; padding: 4
@@ -218,7 +218,7 @@ Item {
                             Column {
                                 spacing: 2
                                 Repeater {
-                                    model: [["Owner", "Admin"], ["Member", "User"]]
+                                    model: [[qsTr("Owner"), "Admin"], [qsTr("Member"), "User"]]
                                     Rectangle {
                                         id: opt
                                         required property var modelData
@@ -250,7 +250,7 @@ Item {
                         HoverHandler { id: rmHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: backend.channelAction("team-membership", view.teamId, view.teamThread, JSON.stringify({ mri: row.modelData.mri, update: "Left" })) }
                         Accessible.role: Accessible.Button
-                        Accessible.name: "Remove from team"
+                        Accessible.name: qsTr("Remove from team")
                     }
                     Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.pick("#EBEBEB", "#333333", "#000000") }
                 }

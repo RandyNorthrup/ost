@@ -75,7 +75,7 @@ Popup {
     function trivial(q) { return !q || JSON.stringify(q) === JSON.stringify(fullFrame) || JSON.stringify(q) === JSON.stringify(noQuad) }
     readonly property bool quadOn: !!fx.quadEnabled || !trivial(fx.quadDetails ? fx.quadDetails.normalizedQuad : null)
     readonly property bool cleanupOn: !!fx.cleanupEnabled
-    function typeName(t) { return ({ whiteboard: "Whiteboard", document: "Document", video: "Video" })[t] || "Video" }
+    function typeName(t) { return ({ whiteboard: qsTr("Whiteboard"), document: qsTr("Document"), video: qsTr("Video") })[t] || qsTr("Video") }
 
     width: wide ? 800 : 520
     height: body.y + body.height + pad
@@ -95,7 +95,7 @@ Popup {
         previewRunning = false
         hideToast()
         open()
-        say("Content from camera")
+        say(qsTr("Content from camera"))
         if (!infoView) startPreview(true)
     }
     function say(t) { announced = ""; announced = t; console.warn("CCAM announce", t) }
@@ -132,19 +132,19 @@ Popup {
 
     function showToastNow(t) { toastText = t; toast = true }
     function hideToast() { toast = false }
-    function lookingText() { return type === "whiteboard" ? "Looking for a whiteboard" : "Looking for a document" }
+    function lookingText() { return type === "whiteboard" ? qsTr("Looking for a whiteboard") : qsTr("Looking for a document") }
     function failedText() {
-        return type === "whiteboard" ? "Couldn't detect edges. We've turned off edge detection, but you can still share the whiteboard."
-                                     : "Couldn't detect edges. We've turned off edge detection, but you can still share the document."
+        return type === "whiteboard" ? qsTr("Couldn't detect edges. We've turned off edge detection, but you can still share the whiteboard.")
+                                     : qsTr("Couldn't detect edges. We've turned off edge detection, but you can still share the document.")
     }
     function startDetection() {
         stopDetection()
         detecting = true
         failTimer.restart()
         pollTimer.restart()
-        if (type === "video") { hideToast(); say("Detecting edges"); return }
+        if (type === "video") { hideToast(); say(qsTr("Detecting edges")); return }
         showToastNow(lookingText())
-        say("Detecting edges")
+        say(qsTr("Detecting edges"))
     }
     function stopDetection() { detecting = false; failTimer.stop(); pollTimer.stop(); errShow.stop(); errHide.stop() }
 
@@ -157,7 +157,7 @@ Popup {
             if (s && !s.pending) root.fx = s
             if (root.stable(s)) {
                 root.detecting = false; stop(); failTimer.stop(); root.hideToast()
-                root.say("Edges detected")
+                root.say(qsTr("Edges detected"))
                 console.warn("CCAM detected", JSON.stringify(s.quadDetails))
             }
         }
@@ -172,7 +172,7 @@ Popup {
             if (root.stable(s)) return
             console.warn("CCAM no edges", JSON.stringify(s ? s.quadDetails : null))
             root.hideToast()
-            root.say(root.type === "video" ? "Couldn't detect edges. We've turned off edge detection, but you can still share the document." : root.failedText())
+            root.say(root.type === "video" ? qsTr("Couldn't detect edges. We've turned off edge detection, but you can still share the document.") : root.failedText())
             if (root.type !== "video") errShow.restart()
             root.apply({ quadEnabled: false, cleanupEnabled: s ? s.cleanupEnabled : false, zoomEnabled: true, normalizedQuad: root.fullFrame })
         }
@@ -240,7 +240,7 @@ Popup {
         const on = !cleanupOn
         const q = fx.quadDetails ? fx.quadDetails.normalizedQuad : fullFrame
         apply({ quadEnabled: quadOn, cleanupEnabled: on, zoomEnabled: quadOn || on || !!fx.zoomEnabled, normalizedQuad: q || fullFrame })
-        say(on ? "Overlay presenter turned on" : "Overlay presenter turned off")
+        say(on ? qsTr("Overlay presenter turned on") : qsTr("Overlay presenter turned off"))
     }
     function toggleEdges() {
         const on = !quadOn
@@ -251,7 +251,7 @@ Popup {
         } else {
             stopDetection(); hideToast()
             apply({ quadEnabled: false, cleanupEnabled: cleanupOn, zoomEnabled: cleanupOn, normalizedQuad: fullFrame })
-            say("Edge detection turned off")
+            say(qsTr("Edge detection turned off"))
         }
     }
     function rotate() { backend.contentCameraRotate(); console.warn("CCAM rotate") }
@@ -400,7 +400,7 @@ Popup {
         Text {
             width: parent.width - 40; height: 28
             verticalAlignment: Text.AlignVCenter
-            text: "Content from camera"
+            text: qsTr("Content from camera")
             font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold
             color: theme.text
             Accessible.role: Accessible.Heading
@@ -414,7 +414,7 @@ Popup {
             HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.close() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Close"
+            Accessible.name: qsTr("Close")
             Accessible.onPressAction: root.close()
         }
 
@@ -435,7 +435,7 @@ Popup {
                     Item { width: 1; height: 6 }
                     Text {
                         height: 20; verticalAlignment: Text.AlignVCenter
-                        text: "Camera"
+                        text: qsTr("Camera")
                         font.family: theme.font; font.pixelSize: 14
                         color: root.infoView ? theme.disabled : theme.text
                     }
@@ -444,10 +444,10 @@ Popup {
                         FilledDropdown {
                             width: root.dropW
                             usable: !root.infoView
-                            placeholder: "None"
+                            placeholder: qsTr("None")
                             label: (root.devices.find(d => d.path === root.device) || { name: "" }).name
                             options: root.devices.map(d => [d.path, d.name])
-                            accessibleName: "Cameras"
+                            accessibleName: qsTr("Cameras")
                             onPicked: code => root.pickCamera(code)
                         }
                         // Fluent's InfoButton (medium).
@@ -459,9 +459,9 @@ Popup {
                             FluentIcon { anchors.centerIn: parent; name: "info-16-regular"; size: 16; color: theme.onFill(infoBtn, infoHover.hovered ? theme.brand : theme.textStrong) }
                             HoverHandler { id: infoHover; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: infoTip.visible = !infoTip.visible }
-                            ArrowTip { id: infoTip; visible: infoHover.hovered; tipText: "For the best experience, use wireless headphones and a camera with at least 720p resolution." }
+                            ArrowTip { id: infoTip; visible: infoHover.hovered; tipText: qsTr("For the best experience, use wireless headphones and a camera with at least 720p resolution.") }
                             Accessible.role: Accessible.Button
-                            Accessible.name: "For the best experience, use wireless headphones and a camera with at least 720p resolution."
+                            Accessible.name: qsTr("For the best experience, use wireless headphones and a camera with at least 720p resolution.")
                         }
                     }
                 }
@@ -472,7 +472,7 @@ Popup {
                     Item { width: 1; height: 6 }
                     Text {
                         height: 20; verticalAlignment: Text.AlignVCenter
-                        text: "Content type"
+                        text: qsTr("Content type")
                         font.family: theme.font; font.pixelSize: 14
                         color: root.infoView ? theme.disabled : theme.text
                     }
@@ -480,10 +480,10 @@ Popup {
                     FilledDropdown {
                         width: root.dropW
                         usable: !root.infoView
-                        placeholder: "Video"
+                        placeholder: qsTr("Video")
                         label: root.typeName(root.type)
-                        options: [["whiteboard", "Whiteboard"], ["document", "Document"], ["video", "Video"]]
-                        accessibleName: "Content type"
+                        options: [["whiteboard", qsTr("Whiteboard")], ["document", qsTr("Document")], ["video", qsTr("Video")]]
+                        accessibleName: qsTr("Content type")
                         onPicked: code => root.pickType(code)
                     }
                 }
@@ -495,19 +495,19 @@ Popup {
                     y: typeCol.y + 62 - 4 - 32
                     Tool {
                         icon: root.cleanupOn ? "content-camera-cleanup-on" : "content-camera-cleanup-off"
-                        tip: root.cleanupOn ? "Don't overlay presenter" : "Overlay presenter"
+                        tip: root.cleanupOn ? qsTr("Don't overlay presenter") : qsTr("Overlay presenter")
                         usable: !root.infoView
                         onClicked: root.toggleCleanup()
                     }
                     Tool {
                         icon: root.quadOn ? "content-camera-edges-on" : "content-camera-edges-off"
-                        tip: root.quadOn ? "Don't detect edges" : "Detect edges"
+                        tip: root.quadOn ? qsTr("Don't detect edges") : qsTr("Detect edges")
                         usable: !root.infoView
                         onClicked: root.toggleEdges()
                     }
                     Tool {
                         icon: "content-camera-rotate"
-                        tip: "Rotate"
+                        tip: qsTr("Rotate")
                         usable: !root.infoView
                         onClicked: root.rotate()
                     }
@@ -549,7 +549,7 @@ Popup {
                                 x: 14; width: parent.width - 28
                                 horizontalAlignment: Text.AlignHCenter
                                 wrapMode: Text.Wrap
-                                text: root.type === "document" ? "Share a document" : "Share a whiteboard"
+                                text: root.type === "document" ? qsTr("Share a document") : qsTr("Share a whiteboard")
                                 font.family: theme.font; font.pixelSize: 20
                                 lineHeight: 20; lineHeightMode: Text.FixedHeight
                                 color: theme.text
@@ -560,7 +560,7 @@ Popup {
                                 x: root.wide ? 100 : 14; width: parent.width - 2 * x
                                 horizontalAlignment: Text.AlignHCenter
                                 wrapMode: Text.Wrap
-                                text: root.type === "document" ? "Put the document in view of your document camera or webcam." : "Point your camera at a nearby whiteboard to detect it."
+                                text: root.type === "document" ? qsTr("Put the document in view of your document camera or webcam.") : qsTr("Point your camera at a nearby whiteboard to detect it.")
                                 font.family: theme.font; font.pixelSize: 16  // Teams: 15.6 (pixel sizes are whole here)
                                 lineHeight: 20; lineHeightMode: Text.FixedHeight
                                 color: theme.text
@@ -571,9 +571,9 @@ Popup {
                             DialogButton {
                                 id: gotItBtn
                                 anchors.horizontalCenter: parent.horizontalCenter
-                                label: "Got it"
+                                label: qsTr("Got it")
                                 onClicked: root.gotIt()
-                                Accessible.name: root.type === "document" ? "Got it, dismiss document sharing information and start camera preview" : "Got it, dismiss whiteboard sharing information and start camera preview"
+                                Accessible.name: root.type === "document" ? qsTr("Got it, dismiss document sharing information and start camera preview") : qsTr("Got it, dismiss whiteboard sharing information and start camera preview")
                             }
                         }
                     }
@@ -588,7 +588,7 @@ Popup {
                         Text {
                             id: dsText
                             x: 34; y: 8; height: 20; verticalAlignment: Text.AlignVCenter
-                            text: "Don't show again"
+                            text: qsTr("Don't show again")
                             font.family: theme.font; font.pixelSize: 14
                             color: theme.text
                         }
@@ -602,7 +602,7 @@ Popup {
                             }
                         }
                         Accessible.role: Accessible.CheckBox
-                        Accessible.name: "Don't show again"
+                        Accessible.name: qsTr("Don't show again")
                         Accessible.checked: checked
                     }
                 }
@@ -622,7 +622,7 @@ Popup {
                         y: root.areaH - 20
                         height: 20; verticalAlignment: Text.AlignVCenter
                         textFormat: Text.StyledText
-                        text: "<b>Preview</b> (only you can see this)"
+                        text: qsTr("<0></0> (only you can see this)").replace("<0></0>", "<b>" + qsTr("Preview") + "</b>")
                         font.family: theme.font; font.pixelSize: 14
                         color: theme.text
                     }
@@ -637,14 +637,14 @@ Popup {
             width: parent.width; height: 32
             SettingsParts.Link {
                 anchors.verticalCenter: parent.verticalCenter
-                text: "Learn more"
+                text: qsTr("Learn more")
                 onClicked: Qt.openUrlExternally("https://aka.ms/AAdu0p9")
             }
             Row {
                 anchors.right: parent.right
                 spacing: 8
-                DialogButton { label: "Scan Again"; usable: root.shareEnabled; onClicked: root.scanAgain() }
-                DialogButton { id: shareBtn; label: "Share"; usable: root.shareEnabled; onClicked: root.doShare() }
+                DialogButton { label: qsTr("Scan Again"); usable: root.shareEnabled; onClicked: root.scanAgain() }
+                DialogButton { id: shareBtn; label: qsTr("Share"); usable: root.shareEnabled; onClicked: root.doShare() }
             }
         }
     }

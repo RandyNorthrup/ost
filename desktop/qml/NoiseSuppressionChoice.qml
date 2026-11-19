@@ -44,16 +44,16 @@ Column {
     property Component infoButton: null
 
     Choice {
-        label: "Background noise only"
-        tooltip: "Enable this to enhance your microphone audio quality by removing background noise. <a href=\"https://aka.ms/noisesuppression\">Learn more</a>"
+        label: qsTr("Background noise only")
+        tooltip: qsTr("Enable this to enhance your microphone audio quality by removing background noise. <0>Learn more</0>").replace("<0>", "<a href=\"https://aka.ms/noisesuppression\">").replace("</0>", "</a>")
         checked: !root.isolation
         usable: root.noiseOn
         onPicked: root.pick("Auto")
     }
     Choice {
-        label: "Voice isolation"
-        tooltip: root.roomAudio ? "You are currently in a meeting with others nearby. Voice isolation is disabled for you to ensure everyone is heard."
-                                : "Isolate your voice from background noise and other voices while speaking. Only your voice will be audible."
+        label: qsTr("Voice isolation")
+        tooltip: root.roomAudio ? qsTr("You are currently in a meeting with others nearby. Voice isolation is disabled for you to ensure everyone is heard.")
+                                : qsTr("Isolate your voice from background noise and other voices while speaking. Only your voice will be audible.")
         checked: root.isolation
         usable: root.noiseOn && root.hasProfile && !root.roomAudio
         onPicked: root.pick("Pns")

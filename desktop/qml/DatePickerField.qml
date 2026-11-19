@@ -42,7 +42,8 @@ Item {
     function sameDay(a, b) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate() }
     function inRange(d) { return dayStart(d) >= dayStart(minDate) && dayStart(d) <= dayStart(maxDate) }
     function monthInRange(y, m) { return new Date(y, m + 1, 0) >= dayStart(minDate) && new Date(y, m, 1) <= dayStart(maxDate) }
-    readonly property var monthNames: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
+    readonly property var monthNames: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(m => Qt.locale().standaloneMonthName(m, Locale.LongFormat))
+    readonly property var shortMonthNames: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(m => Qt.locale().standaloneMonthName(m, Locale.ShortFormat))
 
     Rectangle {
         id: field
@@ -53,14 +54,14 @@ Item {
         Rectangle { anchors.bottom: parent.bottom; x: 1; width: parent.width - 2; height: popup.opened ? 2 : 0.67; color: popup.opened ? theme.brand : theme.textSecondary }
         Text {
             x: 12; anchors.verticalCenter: parent.verticalCenter
-            text: root.empty ? root.placeholder : Qt.formatDate(root.date, root.format)
+            text: root.empty ? root.placeholder : theme.fmtDate(root.date, root.format)
             font.family: theme.font; font.pixelSize: 14; color: theme.onFill(field, root.empty ? theme.textSecondary : theme.text)
         }
         FluentIcon { anchors.right: parent.right; anchors.rightMargin: root.iconRight; anchors.verticalCenter: parent.verticalCenter; name: "calendar-ltr-20"; size: root.iconSize; color: theme.onFill(field, theme.textSecondary) }
         HoverHandler { id: fieldHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: popup.opened ? popup.close() : popup.open() }
         Accessible.role: Accessible.ComboBox
-        Accessible.name: root.empty ? root.placeholder : "Date, " + Qt.formatDate(root.date, root.format)
+        Accessible.name: root.empty ? root.placeholder : qsTr("Date, %1").arg(theme.fmtDate(root.date, root.format))
     }
 
     Popup {
@@ -79,12 +80,12 @@ Item {
         Item {
             x: 0.67; y: 0.67; width: 220; height: 241
             Text { x: 22; y: 16.7; height: 18.7; verticalAlignment: Text.AlignVCenter; text: root.monthNames[popup.month] + " " + popup.year; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
-            NavButton { x: 152; y: 12; icon: "arrow-up-16"; enabled: root.monthInRange(popup.month === 0 ? popup.year - 1 : popup.year, (popup.month + 11) % 12); label: "Go to previous month"
+            NavButton { x: 152; y: 12; icon: "arrow-up-16"; enabled: root.monthInRange(popup.month === 0 ? popup.year - 1 : popup.year, (popup.month + 11) % 12); label: qsTr("Go to previous month")
                 onClicked: { if (popup.month === 0) { popup.month = 11; popup.year-- } else popup.month-- } }
-            NavButton { x: 180; y: 12; icon: "arrow-down-16"; enabled: root.monthInRange(popup.month === 11 ? popup.year + 1 : popup.year, (popup.month + 1) % 12); label: "Go to next month"
+            NavButton { x: 180; y: 12; icon: "arrow-down-16"; enabled: root.monthInRange(popup.month === 11 ? popup.year + 1 : popup.year, (popup.month + 1) % 12); label: qsTr("Go to next month")
                 onClicked: { if (popup.month === 11) { popup.month = 0; popup.year++ } else popup.month++ } }
             Repeater {
-                model: ["S", "M", "T", "W", "T", "F", "S"]
+                model: [0, 1, 2, 3, 4, 5, 6].map(d => Qt.locale().standaloneDayName(d, Locale.NarrowFormat))
                 Text { required property string modelData; required property int index; x: 12 + 28 * index; y: 44; width: 28; height: 24; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; text: modelData; font.family: theme.font; font.pixelSize: 12; color: theme.text }
             }
             Repeater {
@@ -135,12 +136,12 @@ Item {
                 HoverHandler { id: yearHover; cursorShape: popup.years ? Qt.ArrowCursor : Qt.PointingHandCursor }
                 TapHandler { enabled: !popup.years; onTapped: popup.years = true }
                 Accessible.role: Accessible.Button
-                Accessible.name: popup.year + ", change year"
+                Accessible.name: qsTr("%1, change year").arg(popup.year)
             }
-            NavButton { x: 372.7; y: 12; icon: "arrow-up-16"; label: popup.years ? "Previous decade" : "Go to previous year"
+            NavButton { x: 372.7; y: 12; icon: "arrow-up-16"; label: popup.years ? qsTr("Previous decade") : qsTr("Go to previous year")
                 enabled: popup.years ? popup.year - popup.year % 10 - 1 >= root.minDate.getFullYear() : popup.year - 1 >= root.minDate.getFullYear()
                 onClicked: popup.year -= popup.years ? 10 : 1 }
-            NavButton { x: 400.7; y: 12; icon: "arrow-down-16"; label: popup.years ? "Next decade" : "Go to next year"
+            NavButton { x: 400.7; y: 12; icon: "arrow-down-16"; label: popup.years ? qsTr("Next decade") : qsTr("Go to next year")
                 enabled: popup.years ? popup.year - popup.year % 10 + 10 <= root.maxDate.getFullYear() : popup.year + 1 <= root.maxDate.getFullYear()
                 onClicked: popup.year += popup.years ? 10 : 1 }
             Repeater {
@@ -155,7 +156,7 @@ Item {
                     color: cellHover.hovered && usable ? theme.menuHover : "transparent"
                     Text {
                         anchors.centerIn: parent
-                        text: popup.years ? cell.yearShown : root.monthNames[cell.index].slice(0, 3)
+                        text: popup.years ? cell.yearShown : root.shortMonthNames[cell.index]
                         font.family: theme.font; font.pixelSize: 12
                         color: theme.onFill(cell, cell.usable ? theme.textStrong : theme.disabled)
                     }
@@ -169,13 +170,13 @@ Item {
                 id: goToday
                 readonly property bool usable: !(popup.year === new Date().getFullYear() && popup.month === new Date().getMonth()) || popup.years
                 x: 353.6; y: 211; height: 30; verticalAlignment: Text.AlignVCenter
-                text: "Go to today"
+                text: qsTr("Go to today")
                 font.family: theme.font; font.pixelSize: 12
                 color: usable ? theme.text : theme.disabled
                 HoverHandler { cursorShape: goToday.usable ? Qt.PointingHandCursor : Qt.ArrowCursor }
                 TapHandler { enabled: goToday.usable; onTapped: { const t = new Date(); popup.year = t.getFullYear(); popup.month = t.getMonth(); popup.years = false } }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Go to today"
+                Accessible.name: qsTr("Go to today")
             }
         }
     }

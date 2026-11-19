@@ -86,16 +86,16 @@ Item {
             value: player.position
             enabled: player.seekable
             onMoved: player.position = value
-            Accessible.name: "Progress bar"
+            Accessible.name: qsTr("Progress bar")
         }
         Row {
             x: 8; y: parent.height - 15.7 - 24
             Ctl { icon: player.playbackState === MediaPlayer.PlayingState ? "pause-20-filled" : "play-20-filled"
-                  tip: player.playbackState === MediaPlayer.PlayingState ? "Pause (Alt+K)" : "Play (Alt+K)"
+                  tip: player.playbackState === MediaPlayer.PlayingState ? qsTr("Pause (Alt+K)") : qsTr("Play (Alt+K)")
                   onClicked: player.playbackState === MediaPlayer.PlayingState ? player.pause() : player.play() }
-            Ctl { icon: "skip-back-10-20"; tip: "Skip backward 10 seconds"; onClicked: if (player.seekable) player.position = Math.max(0, player.position - 10000) }
-            Ctl { icon: "skip-forward-10-20"; tip: "Skip forward 10 seconds (Alt+L)"; onClicked: if (player.seekable) player.position = Math.min(player.duration, player.position + 10000) }
-            Ctl { icon: root.muted ? "speaker-mute-20" : "speaker-2-20"; tip: root.muted ? "Unmute (Alt+M)" : "Mute (Alt+M)"; onClicked: root.muted = !root.muted }
+            Ctl { icon: "skip-back-10-20"; tip: qsTr("Skip backward 10 seconds"); onClicked: if (player.seekable) player.position = Math.max(0, player.position - 10000) }
+            Ctl { icon: "skip-forward-10-20"; tip: qsTr("Skip forward 10 seconds (Alt+L)"); onClicked: if (player.seekable) player.position = Math.min(player.duration, player.position + 10000) }
+            Ctl { icon: root.muted ? "speaker-mute-20" : "speaker-2-20"; tip: root.muted ? qsTr("Unmute (Alt+M)") : qsTr("Mute (Alt+M)"); onClicked: root.muted = !root.muted }
             Item { width: 10; height: 1 }
             Text {
                 anchors.verticalCenter: parent.verticalCenter
@@ -110,7 +110,7 @@ Item {
             FluentIcon { anchors.centerIn: parent; name: "full-screen-maximize-20"; size: 20; color: "white" }
             HoverHandler { id: fsHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.fullScreenRequested() }
-            Accessible.role: Accessible.Button; Accessible.name: "Full screen (Alt+Enter)"
+            Accessible.role: Accessible.Button; Accessible.name: qsTr("Full screen (Alt+Enter)")
         }
     }
     focus: true
@@ -122,5 +122,5 @@ Item {
         else if (ev.key === Qt.Key_Return || ev.key === Qt.Key_Enter) { root.fullScreenRequested(); ev.accepted = true }
     }
     Accessible.role: Accessible.Animation
-    Accessible.name: "Live event video"
+    Accessible.name: qsTr("Live event video")
 }

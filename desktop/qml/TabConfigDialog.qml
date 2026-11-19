@@ -51,8 +51,8 @@ Popup {
 
     readonly property string nameError: {
         const v = nameField.text
-        if (v.trim() === "") return "Name is required"
-        if (v.length > 128) return "Tab name cannot exceed 128 characters."
+        if (v.trim() === "") return qsTr("Name is required")
+        if (v.length > 128) return qsTr("Tab name cannot exceed 128 characters.")
         return ""
     }
     readonly property string urlError: backend.websiteUrlError(urlField.text)
@@ -70,7 +70,7 @@ Popup {
     function start(a, id, team, isChannel) {
         app = a; conversationId = id; teamId = team || ""; channel = isChannel
         saving = false; failure = ""; barShown = true; appValid = false; appSettings = null
-        nameField.text = a && a.name ? a.name : "Website"
+        nameField.text = a && a.name ? a.name : qsTr("Website")
         urlField.text = ""
         post.checked = true
         open()
@@ -93,7 +93,7 @@ Popup {
             if (r.op !== "add" || r.conversation !== root.conversationId) return
             root.saving = false
             if (r.ok) { root.close(); root.saved(r.tab) }
-            else root.failure = "Unable to save " + (root.website ? nameField.text.trim() : root.app.name) + " tab configuration."
+            else root.failure = qsTr("Unable to save %1 tab configuration.").arg(root.website ? nameField.text.trim() : root.app.name)
         }
     }
 
@@ -151,10 +151,10 @@ Popup {
             id: aboutBtn
             x: 422.6; y: 5.9; width: 96; height: 31.3; radius: 4
             color: aboutHover.hovered ? theme.menuHover : "transparent"
-            Text { anchors.centerIn: parent; text: "About"; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(aboutBtn, theme.brandLink) }
+            Text { anchors.centerIn: parent; text: qsTr("About"); font.family: theme.font; font.pixelSize: 14; color: theme.onFill(aboutBtn, theme.brandLink) }
             HoverHandler { id: aboutHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.about(root.app) }
-            Accessible.role: Accessible.Button; Accessible.name: "About"
+            Accessible.role: Accessible.Button; Accessible.name: qsTr("About")
         }
         Rectangle {
             id: closeBtn
@@ -163,7 +163,7 @@ Popup {
             FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(closeBtn, theme.textStrong) }
             HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.close() }
-            Accessible.role: Accessible.Button; Accessible.name: "Close"
+            Accessible.role: Accessible.Button; Accessible.name: qsTr("Close")
         }
     }
 
@@ -178,7 +178,7 @@ Popup {
                 if (name === "validity") root.appValid = JSON.parse(json).valid
                 else if (name === "settings") root.appSettings = JSON.parse(json)
                 else if (name === "saveSuccess" && root.saving) root.appSaved(JSON.parse(json))
-                else if (name === "saveFailure" && root.saving) { root.saving = false; root.failure = "Unable to save " + root.app.name + " tab configuration." }
+                else if (name === "saveFailure" && root.saving) { root.saving = false; root.failure = qsTr("Unable to save %1 tab configuration.").arg(root.app.name) }
             }
         }
     }
@@ -192,7 +192,7 @@ Popup {
             width: parent.width; height: 32.7; radius: 4
             color: theme.inputFilledDark; border.width: 0.67; border.color: theme.stroke
             FluentIcon { x: 5.6; anchors.verticalCenter: parent.verticalCenter; name: "info-16"; size: 14; color: theme.onFill(bar, theme.text) }
-            Text { x: 27.6; anchors.verticalCenter: parent.verticalCenter; text: "This site will be added as a tab and open in a browser window."; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.onFill(bar, theme.text) }
+            Text { x: 27.6; anchors.verticalCenter: parent.verticalCenter; text: qsTr("This site will be added as a tab and open in a browser window."); font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.onFill(bar, theme.text) }
             Rectangle {
                 id: barClose
                 x: parent.width - 37.7; y: 0.7; width: 32; height: 31.3; radius: 4
@@ -200,39 +200,39 @@ Popup {
                 FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(barClose, theme.textStrong) }
                 HoverHandler { id: barCloseHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: root.barShown = false }
-                Accessible.role: Accessible.Button; Accessible.name: "Close"
+                Accessible.role: Accessible.Button; Accessible.name: qsTr("Close")
             }
             Accessible.role: Accessible.AlertMessage
-            Accessible.name: "This site will be added as a tab and open in a browser window."
+            Accessible.name: qsTr("This site will be added as a tab and open in a browser window.")
         }
         Item { width: 1; height: root.barShown ? 16 : 0 }
         Item {
             width: parent.width; height: 20
-            Text { text: "Tab name"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+            Text { text: qsTr("Tab name"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
             Text { anchors.right: parent.right; text: root.nameError; font.family: theme.font; font.pixelSize: 14; color: theme.redForeground3; Accessible.role: Accessible.AlertMessage; Accessible.name: text }
         }
         Field {
             id: nameBox
-            a11yName: "Tab name"
+            a11yName: qsTr("Tab name")
             iconName: root.nameError ? "error-circle-20-filled" : "checkmark-circle-20-filled"
             iconColor: root.nameError ? theme.redForeground1 : theme.brandFill
         }
         Item { width: 1; height: 30 }
         Item {
             width: parent.width; height: 20
-            Text { text: "URL*"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+            Text { text: qsTr("URL*"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
             Text { anchors.right: parent.right; text: root.urlError; font.family: theme.font; font.pixelSize: 14; color: theme.redForeground3; Accessible.role: Accessible.AlertMessage; Accessible.name: text }
         }
         Field {
             id: urlBox
             iconName: urlField.text.length === 0 ? "" : root.urlError ? "error-circle-20-filled" : "checkmark-circle-20-filled"
             iconColor: root.urlError ? theme.redForeground1 : theme.brandFill
-            a11yName: "URL"
+            a11yName: qsTr("URL")
         }
         Item { width: 1; height: 10 }
         Text {
             width: parent.width; wrapMode: Text.Wrap
-            text: "*Make sure you're only linking to sites that start with 'https://' and contain trustworthy web content. That way, you and your team can stay secure."
+            text: qsTr("*Make sure you're only linking to sites that start with 'https://' and contain trustworthy web content. That way, you and your team can stay secure.")
             font.family: theme.font; font.pixelSize: 12; font.weight: Font.Light; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.text
         }
         Item { width: 1; height: 12 }
@@ -268,15 +268,15 @@ Popup {
                 border.width: post.checked ? 0 : 1; border.color: theme.textStrong
                 FluentIcon { visible: post.checked; anchors.centerIn: parent; name: "checkmark-12"; size: 12; color: theme.onFill(box, theme.textOnBrand) }
             }
-            Text { id: postLabel; x: 36; anchors.verticalCenter: parent.verticalCenter; text: root.channel ? "Post to the channel about this tab" : "Post to the chat about this tab"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+            Text { id: postLabel; x: 36; anchors.verticalCenter: parent.verticalCenter; text: root.channel ? qsTr("Post to the channel about this tab") : qsTr("Post to the chat about this tab"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
             HoverHandler { cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: post.checked = !post.checked }
             Accessible.role: Accessible.CheckBox; Accessible.name: postLabel.text; Accessible.checked: checked
         }
         Row {
             anchors.right: parent.right; y: 10; spacing: 10
-            Button96 { label: "Back"; onClicked: { root.close(); root.back() } }
-            Button96 { label: "Save"; primary: true; enabled: root.valid && !root.saving; onClicked: root.save() }
+            Button96 { label: qsTr("Back"); onClicked: { root.close(); root.back() } }
+            Button96 { label: qsTr("Save"); primary: true; enabled: root.valid && !root.saving; onClicked: root.save() }
         }
     }
 

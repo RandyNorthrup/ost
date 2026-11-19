@@ -36,7 +36,7 @@ Window {
     /// What Capture screenshot grabs (the main window).
     property Item captureTarget: null
     readonly property bool compliment: kind === "compliment"
-    title: compliment ? "Give a compliment" : "Report a problem"
+    title: compliment ? qsTr("Give a compliment") : qsTr("Report a problem")
     width: 786; height: 673
     minimumWidth: 480; minimumHeight: 480
     color: theme.surface
@@ -73,7 +73,7 @@ Window {
         x: 24; y: 58; width: parent.width - 48; height: parent.height - y
         Text {
             x: 24; y: 24; height: 28
-            text: "Submit feedback to OST"
+            text: qsTr("Submit feedback to OST")
             font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text
             Accessible.role: Accessible.Heading
         }
@@ -92,7 +92,7 @@ Window {
                 Text {
                     x: 26; y: 4; height: 24; verticalAlignment: Text.AlignVCenter
                     textFormat: Text.StyledText
-                    text: (win.compliment ? "What did you like?" : "What did you dislike?") + " <font color=\"#D13438\">*</font>"
+                    text: (win.compliment ? qsTr("What did you like?") : qsTr("What did you dislike?")) + " <font color=\"#D13438\">*</font>"
                     font.family: theme.font; font.pixelSize: 14; color: theme.text
                 }
                 Rectangle {
@@ -108,7 +108,7 @@ Window {
                             wrapMode: TextArea.Wrap
                             leftPadding: 12; rightPadding: 12; topPadding: 8; bottomPadding: 8
                             font.family: theme.font; font.pixelSize: 14; color: theme.text
-                            placeholderText: "Do not include any private or sensitive information."
+                            placeholderText: qsTr("Do not include any private or sensitive information.")
                             placeholderTextColor: theme.textSecondary
                             background: null
                             selectByMouse: true
@@ -119,7 +119,7 @@ Window {
                                     if (p) { win.addFile(p); e.accepted = true }
                                 }
                             }
-                            Accessible.name: win.compliment ? "What did you like?" : "What did you dislike?"
+                            Accessible.name: win.compliment ? qsTr("What did you like?") : qsTr("What did you dislike?")
                         }
                     }
                 }
@@ -130,8 +130,8 @@ Window {
                     onDropped: d => { for (const u of d.urls) win.addFile(decodeURIComponent(String(u).replace(/^file:\/\//, ""))) }
                     Rectangle { anchors.fill: parent; anchors.margins: -4; radius: 4; visible: drop.containsDrag; color: "transparent"; border.color: theme.brand; border.width: 1 }
                 }
-                Text { x: 26; y: 157.3; text: "Add more details"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
-                Text { x: 26; y: 181.3; text: "Drag and drop files here or paste an image from your clipboard"; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+                Text { x: 26; y: 157.3; text: qsTr("Add more details"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                Text { x: 26; y: 181.3; text: qsTr("Drag and drop files here or paste an image from your clipboard"); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
                 component OutlineButton: Rectangle {
                     id: ob
                     property string icon: ""
@@ -150,8 +150,8 @@ Window {
                 }
                 Row {
                     x: 26; y: 201.3; spacing: 8
-                    OutlineButton { icon: "screenshot-20"; label: "Capture screenshot"; onClicked: win.capture() }
-                    OutlineButton { icon: "attach-20"; label: "Attach file"; onClicked: picker.open() }
+                    OutlineButton { icon: "screenshot-20"; label: qsTr("Capture screenshot"); onClicked: win.capture() }
+                    OutlineButton { icon: "attach-20"; label: qsTr("Attach file"); onClicked: picker.open() }
                 }
                 // What's been added: a 64 px picture (or the file's icon and
                 // name) with an × to take it off.
@@ -176,7 +176,7 @@ Window {
                                 HoverHandler { id: xh; cursorShape: Qt.PointingHandCursor }
                                 TapHandler { onTapped: win.files = win.files.filter(f => f !== parent.parent.modelData) }
                                 Accessible.role: Accessible.Button
-                                Accessible.name: "Remove " + parent.modelData.split("/").pop()
+                                Accessible.name: qsTr("Remove %1").arg(parent.modelData.split("/").pop())
                             }
                         }
                     }
@@ -186,7 +186,7 @@ Window {
                     id: shareQ
                     x: 26; y: details.y + details.height + (win.files.length ? 10 : 10.7); height: 22.7; verticalAlignment: Text.AlignVCenter
                     textFormat: Text.StyledText
-                    text: "Share relevant content samples and additional log files? <a href=\"learn\">Learn more</a> <font color=\"#D13438\">*</font>"
+                    text: qsTr("Share relevant content samples and additional log files?") + " <a href=\"learn\">" + qsTr("Learn more") + "</a> <font color=\"#D13438\">*</font>"
                     linkColor: theme.brandLink
                     font.family: theme.font; font.pixelSize: 14; color: theme.text
                     onLinkActivated: Qt.openUrlExternally(backend.feedbackLink("privacy-feedback"))
@@ -215,17 +215,17 @@ Window {
                     Accessible.name: rb.label
                     Accessible.checked: rb.checked
                 }
-                Radio { id: shareYes; x: 26; y: shareQ.y + 21.4; label: "Yes, share"; checked: win.share === 0; onPicked: win.share = 0 }
-                Radio { id: shareNo; x: 26; y: shareYes.y + 32; label: "No, don't share"; checked: win.share === 1; onPicked: win.share = 1 }
+                Radio { id: shareYes; x: 26; y: shareQ.y + 21.4; label: qsTr("Yes, share"); checked: win.share === 0; onPicked: win.share = 0 }
+                Radio { id: shareNo; x: 26; y: shareYes.y + 32; label: qsTr("No, don't share"); checked: win.share === 1; onPicked: win.share = 1 }
                 Text {
                     id: contactQ
                     x: 26; y: shareNo.y + 40; height: 24; verticalAlignment: Text.AlignVCenter
                     textFormat: Text.StyledText
-                    text: "May we contact you about your feedback? <font color=\"#D13438\">*</font>"
+                    text: qsTr("May we contact you about your feedback?") + " <font color=\"#D13438\">*</font>"
                     font.family: theme.font; font.pixelSize: 14; color: theme.text
                 }
-                Radio { id: contactYes; x: 26; y: contactQ.y + 26; label: "Yes, you may contact me"; checked: win.contact === 0; onPicked: win.contact = 0 }
-                Radio { id: contactNo; x: 26; y: contactYes.y + 32; label: "No, don't contact me"; checked: win.contact === 1; onPicked: win.contact = 1 }
+                Radio { id: contactYes; x: 26; y: contactQ.y + 26; label: qsTr("Yes, you may contact me"); checked: win.contact === 0; onPicked: win.contact = 0 }
+                Radio { id: contactNo; x: 26; y: contactYes.y + 32; label: qsTr("No, don't contact me"); checked: win.contact === 1; onPicked: win.contact = 1 }
             }
         }
         Text {
@@ -234,9 +234,10 @@ Window {
             textFormat: Text.StyledText
             lineHeight: 13.3; lineHeightMode: Text.FixedHeight
             linkColor: theme.brandLink
-            text: (backend.userMail ? "Signed in as " + backend.userMail + ". " : "")
-                + "<a href=\"learn\">Learn more</a> about how this data is used and your rights. By pressing Submit, your feedback opens as a public issue on GitHub ("
-                + backend.feedbackLink("repo").replace("https://github.com/", "") + ") and will be used to improve OST. <a href=\"privacy\">Privacy statement.</a>"
+            text: (backend.userMail ? qsTr("Signed in as %1.").arg(backend.userMail) + " " : "")
+                + "<a href=\"learn\">" + qsTr("Learn more") + "</a>"
+                + qsTr(" about how this data is used and your rights. By pressing Submit, your feedback opens as a public issue on GitHub (%1) and will be used to improve OST.").arg(backend.feedbackLink("repo").replace("https://github.com/", ""))
+                + " <a href=\"privacy\">" + qsTr("Privacy statement") + ".</a>"
             font.family: theme.font; font.pixelSize: 10; color: theme.textSecondary
             onLinkActivated: l => Qt.openUrlExternally(backend.feedbackLink(l === "privacy" ? "privacy" : "privacy-feedback"))
             HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
@@ -245,22 +246,22 @@ Window {
             id: hcFill2
             x: parent.width - 228; y: 536; width: 96; height: 31.3; radius: 4
             color: win.ready ? (submitHover.hovered ? theme.brandHover : theme.brandFill) : theme.pick("#F0F0F0", "#2E2E2E", "#000000")
-            Text { anchors.centerIn: parent; text: "Submit"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, win.ready ? "#FFFFFF" : theme.pick("#BDBDBD", "#5C5C5C", "#3FF23F")) }
+            Text { anchors.centerIn: parent; text: qsTr("Submit"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, win.ready ? "#FFFFFF" : theme.pick("#BDBDBD", "#5C5C5C", "#3FF23F")) }
             HoverHandler { id: submitHover; cursorShape: win.ready ? Qt.PointingHandCursor : Qt.ArrowCursor }
             TapHandler { enabled: win.ready; onTapped: win.submit() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Submit"
+            Accessible.name: qsTr("Submit")
         }
         Rectangle {
             id: hcFill3
             x: parent.width - 120; y: 536; width: 96; height: 31.3; radius: 4
             color: cancelHover.hovered ? theme.pick("#F5F5F5", "#3D3D3D", "#1AEBFF") : theme.surface
             border.color: theme.stroke; border.width: 0.67
-            Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, theme.text) }
+            Text { anchors.centerIn: parent; text: qsTr("Cancel"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, theme.text) }
             HoverHandler { id: cancelHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: win.close() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Cancel"
+            Accessible.name: qsTr("Cancel")
         }
     }
 
@@ -270,7 +271,7 @@ Window {
         x: 48; y: 82; width: parent.width - 96; height: parent.height - y
         Text {
             id: thanks
-            text: "Thank you for your feedback"
+            text: qsTr("Thank you for your feedback")
             font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text
             Accessible.role: Accessible.Heading
         }
@@ -278,8 +279,8 @@ Window {
             y: thanks.height + 16; width: parent.width
             wrapMode: Text.Wrap
             text: win.files.length
-                ? "Finish on GitHub: paste your screenshot (Ctrl+V), drop in any other files from the folder that opened, and select Create."
-                : "Finish on GitHub: check the issue, then select Create."
+                ? qsTr("Finish on GitHub: paste your screenshot (Ctrl+V), drop in any other files from the folder that opened, and select Create.")
+                : qsTr("Finish on GitHub: check the issue, then select Create.")
             font.family: theme.font; font.pixelSize: 14; color: theme.text
         }
         Rectangle {
@@ -287,17 +288,17 @@ Window {
             x: parent.width - 96 + 24; y: 536 + 58 - 82; width: 96; height: 31.3; radius: 4
             color: closeHover.hovered ? theme.pick("#F5F5F5", "#3D3D3D", "#1AEBFF") : theme.surface
             border.color: theme.stroke; border.width: 0.67
-            Text { anchors.centerIn: parent; text: "Close"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, theme.text) }
+            Text { anchors.centerIn: parent; text: qsTr("Close"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, theme.text) }
             HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: win.close() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Close"
+            Accessible.name: qsTr("Close")
         }
     }
 
     FileDialog {
         id: picker
-        title: "Attach file"
+        title: qsTr("Attach file")
         fileMode: FileDialog.OpenFiles
         onAccepted: { for (const u of selectedFiles) win.addFile(decodeURIComponent(String(u).replace(/^file:\/\//, ""))) }
     }

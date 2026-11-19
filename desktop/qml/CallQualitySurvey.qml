@@ -44,7 +44,7 @@ Rectangle {
     signal finished()
     color: theme.pick("#F5F5F5", "#1F1F1F", "#000000")
     Accessible.role: Accessible.Pane
-    Accessible.name: survey.question || "How was the call quality?"
+    Accessible.name: survey.question || qsTr("How was the call quality?")
 
     function reset() { page = "rate"; rating = 0; category = 0; ticked = ({}) }
     onSurveyChanged: reset()
@@ -72,7 +72,7 @@ Rectangle {
             id: title
             anchors.horizontalCenter: parent.horizontalCenter
             height: 40; verticalAlignment: Text.AlignVCenter
-            text: root.survey.question || "How was the call quality?"
+            text: root.survey.question || qsTr("How was the call quality?")
             font.family: theme.font; font.pixelSize: 28; font.weight: Font.Bold
             color: theme.pick("#424242", "#D6D6D6", "#FFFFFF")
             Accessible.role: Accessible.Heading; Accessible.name: text
@@ -83,7 +83,7 @@ Rectangle {
             y: title.height + 18.75
             spacing: 10.14
             Repeater {
-                model: [{ label: "Had issues", rating: 1 }, { label: "Good", rating: 5 }]
+                model: [{ label: qsTr("Had issues"), rating: 1 }, { label: qsTr("Good"), rating: 5 }]
                 delegate: Item {
                     required property var modelData
                     width: Math.max(61.33, thumbLabel.implicitWidth); height: 61.33 + 20
@@ -124,7 +124,7 @@ Rectangle {
             Text {
                 id: heading
                 y: (parent.height - height) / 2; height: 20; verticalAlignment: Text.AlignVCenter
-                text: "What could've been better?"
+                text: qsTr("What could've been better?")
                 font.family: theme.font; font.pixelSize: 14; color: theme.text
                 Accessible.role: Accessible.Heading; Accessible.name: text
             }
@@ -218,8 +218,8 @@ Rectangle {
             width: parent.width
             textFormat: Text.StyledText
             wrapMode: Text.Wrap
-            text: "By pressing \"Send feedback\", Report a problem opens with your answers and the call's technical details, to post as a public issue on GitHub ("
-                  + backend.feedbackRepo() + "). Nothing is sent before you do. <a href=\"privacy\">Privacy statement</a>"
+            text: qsTr("By pressing \"Send feedback\", Report a problem opens with your answers and the call's technical details, to post as a public issue on GitHub (%1). Nothing is sent before you do.").arg(backend.feedbackRepo())
+                  + " <a href=\"privacy\">" + qsTr("Privacy statement") + "</a>"
             linkColor: theme.brandForeground1
             font.family: theme.font; font.pixelSize: 10; lineHeight: 14; lineHeightMode: Text.FixedHeight
             color: theme.pick("#424242", "#D6D6D6", "#FFFFFF")
@@ -231,9 +231,9 @@ Rectangle {
             anchors.right: parent.right
             y: privacy.y + privacy.height + 16
             spacing: 15
-            SettingsParts.Button { label: "Dismiss"; onClicked: root.finished() }
+            SettingsParts.Button { label: qsTr("Dismiss"); onClicked: root.finished() }
             SettingsParts.Button {
-                label: "Send feedback"; primary: true
+                label: qsTr("Send feedback"); primary: true
                 onClicked: { root.sendFeedback(root.reasons); root.thank() }
             }
         }
@@ -248,13 +248,13 @@ Rectangle {
             anchors.horizontalCenter: parent.horizontalCenter
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
-                text: "Thanks for the feedback!"
+                text: qsTr("Thanks for the feedback!")
                 font.family: theme.font; font.pixelSize: 28; font.weight: Font.Bold; color: theme.text
                 Accessible.role: Accessible.Heading; Accessible.name: text
             }
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
-                text: "We'll keep working on improving your experience."
+                text: qsTr("We'll keep working on improving your experience.")
                 font.family: theme.font; font.pixelSize: 14; color: theme.text
             }
         }

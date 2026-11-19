@@ -106,9 +106,9 @@ Popup {
             thread_id: threadId || backend.currentChatId, context_type: contextType }))
     }
     function adjust(key) {
-        const m = ({ concise: ["Make it concise", "default", "short"], longer: ["Make it longer", "default", "long"],
-                     casual: ["Make it sound casual", "casual", "medium"], professional: ["Make it sound professional", "professional", "medium"],
-                     confident: ["Make it sound confident", "confident", "medium"], enthusiastic: ["Make it sound enthusiastic", "enthusiastic", "medium"] })[key]
+        const m = ({ concise: [qsTr("Make it concise"), "default", "short"], longer: [qsTr("Make it longer"), "default", "long"],
+                     casual: [qsTr("Make it sound casual"), "casual", "medium"], professional: [qsTr("Make it sound professional"), "professional", "medium"],
+                     confident: [qsTr("Make it sound confident"), "confident", "medium"], enthusiastic: [qsTr("Make it sound enthusiastic"), "enthusiastic", "medium"] })[key]
         if (key === "custom") { custom = true; Qt.callLater(() => customField.forceActiveFocus()); return }
         if (m) ask(m[0], m[1], m[2])
     }
@@ -141,9 +141,9 @@ Popup {
         Row {
             x: 16.7; y: pop.custom ? 17 : 16.7
             spacing: 10
-            CmdButton { label: pop.custom ? "" : "Rewrite"; icon: "copilot-rewrite-20"; tip: "Rewrite"; w: 99; on: !pop.empty && !pop.busy; onClicked: pop.ask("Rewrite", "default", "medium") }
-            CmdButton { visible: pop.proofread; label: pop.custom ? "" : "Proofread"; icon: "copilot-proofread-20"; tip: "Proofread"; w: 114.1; on: !pop.empty && !pop.busy; onClicked: pop.ask("Proofread this message", "proofread_scenario", "medium") }
-            CmdButton { id: adjustButton; label: pop.custom ? "" : "Adjust"; icon: "copilot-adjust-20"; tip: "Adjust"; w: 108.1; chevron: !pop.custom; on: !pop.empty && !pop.busy; onClicked: adjustMenu.open() }
+            CmdButton { label: pop.custom ? "" : qsTr("Rewrite"); icon: "copilot-rewrite-20"; tip: qsTr("Rewrite"); w: 99; on: !pop.empty && !pop.busy; onClicked: pop.ask(qsTr("Rewrite"), "default", "medium") }
+            CmdButton { visible: pop.proofread; label: pop.custom ? "" : qsTr("Proofread"); icon: "copilot-proofread-20"; tip: qsTr("Proofread"); w: 114.1; on: !pop.empty && !pop.busy; onClicked: pop.ask(qsTr("Proofread this message"), "proofread_scenario", "medium") }
+            CmdButton { id: adjustButton; label: pop.custom ? "" : qsTr("Adjust"); icon: "copilot-adjust-20"; tip: qsTr("Adjust"); w: 108.1; chevron: !pop.custom; on: !pop.empty && !pop.busy; onClicked: adjustMenu.open() }
             // Custom: "Make it..." and its arrow.
             Rectangle {
                 visible: pop.custom
@@ -162,9 +162,9 @@ Popup {
                     selectByMouse: true
                     Keys.onReturnPressed: pop.askCustom()
                     Keys.onEnterPressed: pop.askCustom()
-                    Text { visible: !customField.text; text: "Make it..."; font: customField.font; color: theme.pick("#707070", "#ADADAD", "#FFFFFF") }
+                    Text { visible: !customField.text; text: qsTr("Make it..."); font: customField.font; color: theme.pick("#707070", "#ADADAD", "#FFFFFF") }
                     Accessible.role: Accessible.EditableText
-                    Accessible.name: "Make it..."
+                    Accessible.name: qsTr("Make it...")
                 }
                 Item {
                     x: 370; y: 6; width: 20; height: 20
@@ -173,7 +173,7 @@ Popup {
                     HoverHandler { enabled: parent.ready; cursorShape: Qt.PointingHandCursor }
                     TapHandler { enabled: parent.ready; onTapped: pop.askCustom() }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Custom rewrite"
+                    Accessible.name: qsTr("Custom rewrite")
                 }
             }
         }
@@ -185,7 +185,7 @@ Popup {
             HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: pop.close() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Close"
+            Accessible.name: qsTr("Close")
         }
 
         // Asking.
@@ -193,7 +193,7 @@ Popup {
             visible: !!pop.shown && !pop.shown.done && !pop.shown.text
             anchors.horizontalCenter: parent.horizontalCenter
             y: 64.4; spacing: 8
-            Text { text: "Generating a response"; font.family: theme.font; font.pixelSize: 12; color: pop.soft; lineHeight: 16; lineHeightMode: Text.FixedHeight }
+            Text { text: qsTr("Generating a response"); font.family: theme.font; font.pixelSize: 12; color: pop.soft; lineHeight: 16; lineHeightMode: Text.FixedHeight }
             TypingDots { anchors.verticalCenter: parent.verticalCenter }
         }
 
@@ -210,8 +210,8 @@ Popup {
                 visible: !pop.shown
                 x: 16; y: 12; width: parent.width - 32
                 wrapMode: Text.Wrap
-                text: pop.empty ? "Copilot can rewrite and adjust your messages to make them even better. Type a message to get started."
-                                : "Choose an option above for Copilot to improve your message."
+                text: pop.empty ? qsTr("Copilot can rewrite and adjust your messages to make them even better. Type a message to get started.")
+                                : qsTr("Choose an option above for Copilot to improve your message.")
                 lineHeight: 20; lineHeightMode: Text.FixedHeight
                 font.family: theme.font; font.pixelSize: 14; color: pop.ink
             }
@@ -231,7 +231,7 @@ Popup {
                     width: parent.width
                     wrapMode: Text.Wrap
                     textFormat: pop.shown && pop.shown.done && !pop.shown.error ? Text.RichText : Text.PlainText
-                    text: !pop.shown ? "" : pop.shown.error ? "Something went wrong. Please try again." : pop.shown.done ? pop.shown.html.replace(/^<GENERATED_MESSAGE>/, "").replace(/<p>/g, "").replace(/<\/p>/g, "<br>").replace(/(<br>)+$/, "") : pop.shown.text
+                    text: !pop.shown ? "" : pop.shown.error ? qsTr("Something went wrong. Please try again.") : pop.shown.done ? pop.shown.html.replace(/^<GENERATED_MESSAGE>/, "").replace(/<p>/g, "").replace(/<\/p>/g, "<br>").replace(/(<br>)+$/, "") : pop.shown.text
                     lineHeight: 20; lineHeightMode: Text.FixedHeight
                     font.family: theme.font; font.pixelSize: 14; color: pop.ink
                 }
@@ -244,26 +244,26 @@ Popup {
                         width: 96; height: 31.3; radius: 4
                         color: on ? (replaceHover.hovered ? theme.brandHover : theme.brandFill) : theme.pick("#F0F0F0", "#2E2E2E", "#000000")
                         Text {
-                            anchors.centerIn: parent; text: "Replace"
+                            anchors.centerIn: parent; text: qsTr("Replace")
                             font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
                             color: theme.onFill(replaceButton, parent.on ? "white" : theme.pick("#BDBDBD", "#5C5C5C", "#3FF23F"))
                         }
                         HoverHandler { id: replaceHover; enabled: parent.on; cursorShape: Qt.PointingHandCursor }
                         TapHandler { enabled: parent.on; onTapped: pop.replace() }
                         Accessible.role: Accessible.Button
-                        Accessible.name: "Replace"
+                        Accessible.name: qsTr("Replace")
                     }
                     // Previous / n of m / Next.
                     Row {
                         visible: pop.answers.length > 1
                         x: 111; spacing: 10
-                        PagerButton { icon: "chevron-left-20"; tip: "Previous response"; on: pop.index > 0 && !pop.busy; onClicked: pop.index-- }
+                        PagerButton { icon: "chevron-left-20"; tip: qsTr("Previous response"); on: pop.index > 0 && !pop.busy; onClicked: pop.index-- }
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
                             text: (pop.index + 1) + " of " + pop.answers.length
                             font.family: theme.font; font.pixelSize: 12; color: pop.ink
                         }
-                        PagerButton { icon: "chevron-right-20"; tip: "Next response"; on: pop.index < pop.answers.length - 1 && !pop.busy; onClicked: pop.index++ }
+                        PagerButton { icon: "chevron-right-20"; tip: qsTr("Next response"); on: pop.index < pop.answers.length - 1 && !pop.busy; onClicked: pop.index++ }
                     }
                     Row {
                         anchors.right: parent.right; anchors.rightMargin: -0.6
@@ -271,11 +271,11 @@ Popup {
                         spacing: 8
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
-                            text: "AI-generated content may be incorrect"
+                            text: qsTr("AI-generated content may be incorrect")
                             font.family: theme.font; font.pixelSize: 10; color: theme.pick("#707070", "#ADADAD", "#FFFFFF")
                         }
-                        Thumb { icon: "copilot-like-20"; tip: "Content is correct"; key: "like" }
-                        Thumb { icon: "copilot-dislike-20"; tip: "Content is incorrect"; key: "dislike" }
+                        Thumb { icon: "copilot-like-20"; tip: qsTr("Content is correct"); key: "like" }
+                        Thumb { icon: "copilot-dislike-20"; tip: qsTr("Content is incorrect"); key: "dislike" }
                     }
                 }
             }
@@ -289,13 +289,13 @@ Popup {
         x: 0; y: -implicitHeight
         rowHeight: 38; separatorHeight: 8.67; perItemIcons: true; minRowWidth: 170.7; labelInset: -1
         items: [
-            { label: "Custom", icon: "copilot-custom-20" },
+            { label: qsTr("Custom"), icon: "copilot-custom-20" },
             { separator: true },
-            { heading: "Make it" },
-            { label: "Concise" }, { label: "Longer" },
+            { heading: qsTr("Make it") },
+            { label: qsTr("Concise") }, { label: qsTr("Longer") },
             { separator: true },
-            { heading: "Make it sound" },
-            { label: "Casual" }, { label: "Professional" }, { label: "Confident" }, { label: "Enthusiastic" }
+            { heading: qsTr("Make it sound") },
+            { label: qsTr("Casual") }, { label: qsTr("Professional") }, { label: qsTr("Confident") }, { label: qsTr("Enthusiastic") }
         ]
         onPicked: i => pop.adjust(["custom", "", "", "concise", "longer", "", "", "casual", "professional", "confident", "enthusiastic"][i])
     }
@@ -385,7 +385,7 @@ Popup {
                 const t = Object.assign({}, pop.thumbs); t[pop.shown.id] = th.picked ? "" : th.key; pop.thumbs = t
             }
         }
-        ToolTip.visible: thHover.hovered; ToolTip.delay: 500; ToolTip.text: th.key === "like" ? "Like" : "Dislike"
+        ToolTip.visible: thHover.hovered; ToolTip.delay: 500; ToolTip.text: th.key === "like" ? qsTr("Like") : qsTr("Dislike")
         Accessible.role: Accessible.Button
         Accessible.name: tip
     }

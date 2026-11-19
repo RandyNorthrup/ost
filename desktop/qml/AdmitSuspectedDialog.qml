@@ -27,7 +27,7 @@ Popup {
     Text {
         x: 24; y: 24.7; width: 518.7; height: 28
         verticalAlignment: Text.AlignVCenter
-        text: "Admit this unverified bot?"
+        text: qsTr("Admit this unverified bot?")
         font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold
         color: theme.text
     }
@@ -39,7 +39,7 @@ Popup {
         HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.close() }
         Accessible.role: Accessible.Button
-        Accessible.name: "Close"
+        Accessible.name: qsTr("Close")
     }
     // Who: their avatar, name and badge.
     GuestAvatar { x: 24.7; y: 66.7; personId: root.personId }
@@ -57,7 +57,7 @@ Popup {
     Text {
         x: 24.7; y: 114.7; width: 550.7
         wrapMode: Text.Wrap
-        text: "External bots might record or transcribe your meeting and cause sensitive information to leave your org. Admit this bot only if you know and trust it."
+        text: qsTr("External bots might record or transcribe your meeting and cause sensitive information to leave your org. Admit this bot only if you know and trust it.")
         font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
         color: theme.text
     }
@@ -73,14 +73,14 @@ Popup {
         }
         Text {
             x: 36; anchors.verticalCenter: parent.verticalCenter
-            text: "This isn't a bot"
+            text: qsTr("This isn't a bot")
             font.family: theme.font; font.pixelSize: 14
             color: theme.textSecondary
         }
         HoverHandler { cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.notBot = !root.notBot }
         Accessible.role: Accessible.CheckBox
-        Accessible.name: "This isn't a bot"
+        Accessible.name: qsTr("This isn't a bot")
         Accessible.checked: root.notBot
     }
     Row {
@@ -91,21 +91,21 @@ Popup {
             width: 96; height: 31.3; radius: 4
             color: admitHover.hovered ? theme.menuHover : theme.surface
             border.color: theme.stroke; border.width: 0.67
-            Text { anchors.centerIn: parent; text: "Admit"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, theme.text) }
+            Text { anchors.centerIn: parent; text: qsTr("Admit"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, theme.text) }
             HoverHandler { id: admitHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: { root.close(); root.admit(root.personId, root.personName, root.notBot) } }
             Accessible.role: Accessible.Button
-            Accessible.name: "Admit"
+            Accessible.name: qsTr("Admit")
         }
         Rectangle {
             id: hcFill4
             width: 96; height: 31.3; radius: 4
             color: denyHover.hovered ? theme.brandHover : theme.brandFill
-            Text { anchors.centerIn: parent; text: "Deny"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, "white") }
+            Text { anchors.centerIn: parent; text: qsTr("Deny"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, "white") }
             HoverHandler { id: denyHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: { root.close(); root.deny(root.personId, root.personName) } }
             Accessible.role: Accessible.Button
-            Accessible.name: "Deny"
+            Accessible.name: qsTr("Deny")
         }
     }
 }

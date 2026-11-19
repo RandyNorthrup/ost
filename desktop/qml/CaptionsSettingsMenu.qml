@@ -16,7 +16,7 @@ Popup {
     id: root
     /// The meeting's spoken language code ("en-us") and its name.
     property string language: "en-us"
-    property string languageName: "English (US)"
+    property string languageName: qsTr("English (US)")
     /// [{code, name}] Teams' spoken languages.
     property var languages: []
     /// "Top" or "Bottom".
@@ -31,14 +31,14 @@ Popup {
 
     padding: 4
     implicitWidth: Math.ceil(Math.max(
-        6 + metrics.advanceWidth("Meeting spoken language") + 6 + small.advanceWidth(languageName) + 6 + 20 + 6,
-        30 + metrics.advanceWidth("Position") + 6 + small.advanceWidth(positionName) + 6 + 20 + 6,
-        6 + metrics.advanceWidth("Always turn on captions") + 10 + 40 + 10,
-        30 + metrics.advanceWidth("Caption styles") + 6)) + 2 * padding
+        6 + metrics.advanceWidth(qsTr("Meeting spoken language")) + 6 + small.advanceWidth(languageName) + 6 + 20 + 6,
+        30 + metrics.advanceWidth(qsTr("Position")) + 6 + small.advanceWidth(positionName) + 6 + 20 + 6,
+        6 + metrics.advanceWidth(qsTr("Always turn on captions")) + 10 + 40 + 10,
+        30 + metrics.advanceWidth(qsTr("Caption styles")) + 6)) + 2 * padding
     background: FluentSurface { depth: 16; radius: 4 }
     FontMetrics { id: metrics; font.family: theme.font; font.pixelSize: theme.base }
     FontMetrics { id: small; font.family: theme.font; font.pixelSize: 12 }
-    readonly property string positionName: position === "Top" ? "At top" : "At bottom"
+    readonly property string positionName: position === "Top" ? qsTr("At top") : qsTr("At bottom")
     onClosed: { languageMenu.close(); positionMenu.close() }
 
     component Row32: Rectangle {
@@ -117,30 +117,30 @@ Popup {
         spacing: 2
         Row32 {
             id: languageRow
-            label: "Meeting spoken language"; value: root.languageName; chevron: true
+            label: qsTr("Meeting spoken language"); value: root.languageName; chevron: true
             onHovered: { positionMenu.close(); root.openLanguages() }
             onActivated: root.openLanguages()
         }
         Divider {}
         Row32 {
-            label: "Caption styles"; icon: "caption-styles-20"
+            label: qsTr("Caption styles"); icon: "caption-styles-20"
             onHovered: { languageMenu.close(); positionMenu.close() }
             onActivated: { root.close(); root.captionStyles() }
         }
         Row32 {
             id: positionRow
-            label: "Position"; icon: "caption-position-20"; value: root.positionName; chevron: true
+            label: qsTr("Position"); icon: "caption-position-20"; value: root.positionName; chevron: true
             onHovered: { languageMenu.close(); root.openPositions() }
             onActivated: root.openPositions()
         }
         Divider {}
         SwitchRow32 {
-            label: "Always turn on captions"; checked: root.alwaysOn
+            label: qsTr("Always turn on captions"); checked: root.alwaysOn
             onHovered: { languageMenu.close(); positionMenu.close() }
             onToggled: root.alwaysOnToggled(!root.alwaysOn)
         }
         SwitchRow32 {
-            label: "Filter profane words"; checked: root.filterProfanity
+            label: qsTr("Filter profane words"); checked: root.filterProfanity
             onHovered: { languageMenu.close(); positionMenu.close() }
             onToggled: root.filterProfanityToggled(!root.filterProfanity)
         }
@@ -157,7 +157,7 @@ Popup {
         languageMenu.open()
     }
     function openPositions() {
-        positionMenu.items = [{ label: "At top", checked: position === "Top" }, { label: "At bottom", checked: position !== "Top" }]
+        positionMenu.items = [{ label: qsTr("At top"), checked: position === "Top" }, { label: qsTr("At bottom"), checked: position !== "Top" }]
         positionMenu.x = -positionMenu.implicitWidth + 5 - root.padding
         positionMenu.y = positionRow.mapToItem(root.contentItem, 0, 0).y
         positionMenu.open()

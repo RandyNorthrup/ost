@@ -28,28 +28,28 @@ Item {
             x: 40.7; y: 10.7; width: box.width - 40.7 - 49
             Text {
                 width: parent.width
-                text: "Changes are coming to Avatars in Teams"
+                text: qsTr("Changes are coming to Avatars in Teams")
                 wrapMode: Text.Wrap; lineHeight: 20; lineHeightMode: Text.FixedHeight
                 font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
                 color: theme.pick("#252423", "#FFFFFF", "#FFFFFF")
             }
             Text {
                 width: parent.width
-                text: "Avatars will remain available and supported through April 2027. If your organization uses Avatars, please watch for additional guidance."
+                text: qsTr("Avatars will remain available and supported through April 2027. If your organization uses Avatars, please watch for additional guidance.")
                 wrapMode: Text.Wrap; lineHeight: 20; lineHeightMode: Text.FixedHeight
                 font.family: theme.font; font.pixelSize: 14
                 color: theme.pick("#252423", "#FFFFFF", "#FFFFFF")
             }
             Text {
                 height: 20; verticalAlignment: Text.AlignVCenter
-                text: "Learn more"
+                text: qsTr("Learn more")
                 font.family: theme.font; font.pixelSize: 14
                 font.underline: true
                 color: theme.brandForeground1
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: Qt.openUrlExternally("https://aka.ms/AvatarsUpdate") }
                 Accessible.role: Accessible.Link
-                Accessible.name: "Learn more about the Avatars retirement update"
+                Accessible.name: qsTr("Learn more about the Avatars retirement update")
             }
         }
         Rectangle {
@@ -61,7 +61,7 @@ Item {
             HoverHandler { id: dismissHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.dismissed = true }
             Accessible.role: Accessible.Button
-            Accessible.name: "Dismiss"
+            Accessible.name: qsTr("Dismiss")
         }
     }
 }

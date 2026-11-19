@@ -89,12 +89,12 @@ Popup {
     readonly property string errorText: {
         switch (errorCode) {
         case "": return ""
-        case "NotEnoughWords": return "Voice enrollment failed. Please carefully read the paragraph aloud to ensure proper enrollment. Skipping or skimming may cause errors."
-        case "SdsTimeout": case "SdsUnavailable": return "Error: Voice Enrollment Failed. We were unable to store your voice profile. Please try again later."
-        case "SdsAccessDenied": return "Error: Voice Enrollment Failed. Your access to voice enrollment is currently restricted. Please contact your IT administrator for assistance."
-        case "CTSConnectionError": return "Error: Voice Enrollment Failed. We were unable to connect to enrollment service. Please try again later."
-        case "MicrophoneInitialization": return "Error: Voice Enrollment Failed. Try using a different mic, and start your voice capture again."
-        default: return "Couldn’t capture your voice. Try moving to a quieter area or using a different mic, and start your voice capture again."
+        case "NotEnoughWords": return qsTr("Voice enrollment failed. Please carefully read the paragraph aloud to ensure proper enrollment. Skipping or skimming may cause errors.")
+        case "SdsTimeout": case "SdsUnavailable": return qsTr("Error: Voice Enrollment Failed. We were unable to store your voice profile. Please try again later.")
+        case "SdsAccessDenied": return qsTr("Error: Voice Enrollment Failed. Your access to voice enrollment is currently restricted. Please contact your IT administrator for assistance.")
+        case "CTSConnectionError": return qsTr("Error: Voice Enrollment Failed. We were unable to connect to enrollment service. Please try again later.")
+        case "MicrophoneInitialization": return qsTr("Error: Voice Enrollment Failed. Try using a different mic, and start your voice capture again.")
+        default: return qsTr("Couldn’t capture your voice. Try moving to a quieter area or using a different mic, and start your voice capture again.")
         }
     }
 
@@ -104,7 +104,7 @@ Popup {
         Text {
             x: 32; y: 3; height: 32
             verticalAlignment: Text.AlignVCenter
-            text: "Create your voice profile"
+            text: qsTr("Create your voice profile")
             font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold
             color: theme.text
             Accessible.role: Accessible.Heading
@@ -113,8 +113,8 @@ Popup {
         OutlineDropdown {
             x: 32.7; y: 43.2; width: 278.7; height: 30
             enabled: root.phase !== "listening" && root.phase !== "learning"
-            accessibleName: "Choose microphone"
-            placeholder: root.mics.length ? "Choose microphone" : "Connect a microphone"
+            accessibleName: qsTr("Choose microphone")
+            placeholder: root.mics.length ? qsTr("Choose microphone") : qsTr("Connect a microphone")
             options: root.mics.map(m => ({ label: m }))
             current: root.micIndex
             onPicked: i => root.micIndex = i
@@ -122,7 +122,7 @@ Popup {
         Text {
             x: 32; y: 105.4; height: 20
             verticalAlignment: Text.AlignVCenter
-            text: "Start voice capture and read the text below out loud."
+            text: qsTr("Start voice capture and read the text below out loud.")
             font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold
             color: theme.text
         }
@@ -134,7 +134,7 @@ Popup {
                 id: readText
                 x: 40; y: 7.5; width: parent.width - 80
                 wrapMode: Text.Wrap
-                text: "Hi, Teams. I’m going to speak for a moment to help you get to know my voice better. You need to hear more than just a few words to be able to accurately recognize me in meetings. If I make a mistake, that’s all right you’ll let me know if I need to read this again."
+                text: qsTr("Hi, Teams. I’m going to speak for a moment to help you get to know my voice better. You need to hear more than just a few words to be able to accurately recognize me in meetings. If I make a mistake, that’s all right you’ll let me know if I need to read this again.")
                 font.family: theme.font; font.pixelSize: 16; lineHeight: 22; lineHeightMode: Text.FixedHeight
                 color: theme.text
             }
@@ -152,13 +152,13 @@ Popup {
                 }
             }
             Accessible.role: Accessible.Indicator
-            Accessible.name: root.phase === "listening" ? "Learning your voice... Please wait" : ""
+            Accessible.name: root.phase === "listening" ? qsTr("Learning your voice... Please wait") : ""
         }
         Row {
             visible: root.phase === "learning"
             x: 32; y: 276.9; spacing: 8
             BusyIndicator { width: 20; height: 20; running: parent.visible }
-            Text { anchors.verticalCenter: parent.verticalCenter; text: "Learning your voice..."; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+            Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Learning your voice..."); font.family: theme.font; font.pixelSize: 14; color: theme.text }
         }
         Row {
             visible: root.phase === "error"
@@ -176,12 +176,12 @@ Popup {
             x: 600 - 47 - width; y: 312.9; spacing: 15
             SettingsParts.Button {
                 enabled: root.phase !== "learning"
-                label: "Cancel"
+                label: qsTr("Cancel")
                 onClicked: root.close()
             }
             SettingsParts.Button {
                 enabled: root.phase !== "learning" && (root.mics.length > 0 || root.testWav !== "")
-                label: root.phase === "listening" || root.phase === "learning" ? "End voice capture" : "Start voice capture"
+                label: root.phase === "listening" || root.phase === "learning" ? qsTr("End voice capture") : qsTr("Start voice capture")
                 onClicked: root.phase === "listening" ? root.end() : root.start()
             }
         }

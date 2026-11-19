@@ -26,27 +26,27 @@ Popup {
     readonly property string esc: teamName.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
     readonly property var spec: ({
         archive: {
-            title: "Want to archive the " + teamName + " team?",
-            body: "This will freeze all team activity, but you'll still be able to remove members and update roles. Go to <b>Manage teams</b> to restore the team.",
-            check: "Make the SharePoint site read-only for team members",
-            cancel: "Cancel", action: "Archive"
+            title: qsTr("Want to archive the %1 team?").arg(teamName),
+            body: qsTr("This will freeze all team activity, but you'll still be able to remove members and update roles. Go to <strong>Manage teams</strong> to restore the team."),
+            check: qsTr("Make the SharePoint site read-only for team members"),
+            cancel: qsTr("Cancel"), action: qsTr("Archive")
         },
-        leave: { title: "Are you sure you want to leave the " + teamName + " team?", body: "", check: "", cancel: "No", action: "Yes" },
+        leave: { title: qsTr("Are you sure you want to leave the %1 team?").arg(teamName), body: "", check: "", cancel: qsTr("No"), action: qsTr("Yes") },
         "delete": {
-            title: "Delete the " + teamName + " team",
-            body: "Are you sure you want to delete the <b>" + esc + "</b> team? All hosted channels, conversations, files, and the Microsoft 365 group for this team will be deleted. You'll lose access to any shared channels that have been shared with the team.",
-            check: "I understand that everything will be deleted",
-            cancel: "Cancel", action: "Delete team"
+            title: qsTr("Delete the %1 team").arg(teamName),
+            body: qsTr("Are you sure you want to delete the <strong>%1</strong> team? All hosted channels, conversations, files, and the Microsoft 365 group for this team will be deleted. You'll lose access to any shared channels that have been shared with the team.").arg(esc),
+            check: qsTr("I understand that everything will be deleted"),
+            cancel: qsTr("Cancel"), action: qsTr("Delete team")
         },
         denyAll: {
-            title: "Deny all join requests",
-            body: "Are you sure you want to deny all join requests for " + esc + "?",
-            check: "", cancel: "Cancel", action: "Deny all"
+            title: qsTr("Deny all join requests"),
+            body: qsTr("Are you sure you want to deny all join requests for %1?").arg(esc),
+            check: "", cancel: qsTr("Cancel"), action: qsTr("Deny all")
         },
         lastOwner: {
-            title: "The last owner can't leave the team",
-            body: "You're the last owner of the " + esc + " team. There has to be at least one other owner for you to leave the team.",
-            check: "", cancel: "", action: "OK"
+            title: qsTr("The last owner can't leave the team"),
+            body: qsTr("You're the last owner of the %1 team. There has to be at least one other owner for you to leave the team.").arg(esc),
+            check: "", cancel: "", action: qsTr("OK")
         }
     })[kind]
     function start(k, name) { kind = k; teamName = name; checked = false; open() }

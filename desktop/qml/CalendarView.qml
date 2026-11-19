@@ -81,7 +81,7 @@ Item {
         if (rangeStartIso) calendarAction("calendarEvents", JSON.stringify({ calendars: otherSelected, start: rangeStartIso, end: rangeEndIso }))
     }
     /// The calendars Split view shows, in the pane's order: yours first.
-    readonly property var splitCalendars: (showCalendar ? [{ id: "", name: "Calendar", color: "" }] : []).concat(otherCalendars.filter(c => otherSelected.indexOf(c.id) >= 0))
+    readonly property var splitCalendars: (showCalendar ? [{ id: "", name: qsTr("Calendar"), color: "" }] : []).concat(otherCalendars.filter(c => otherSelected.indexOf(c.id) >= 0))
     readonly property bool splitActive: splitView && canSplit
     readonly property bool canSplit: selectedCalendars >= 2 && !monthView
     // Teams' device-local marker (localStorage UnselectedReservationFilter):
@@ -218,10 +218,10 @@ Item {
     // Recurrence ▸, In-person ▸. Checkboxes keep the menu open.
     function cbIcon(st) { return st === 2 ? "checkbox-checked-20-filled" : st === 1 ? "checkbox-indeterminate-20" : "checkbox-unchecked-20" }
     function fLeaf(type, v, label) { return { label: label, icon: cbIcon(isExcluded(type, v) ? 0 : 2), iconColor: theme.brand, persist: true, act: ["toggle", type, v] } }
-    function fUnselect(type) { return { label: "Unselect all", persist: true, enabled: groupState(type) !== 0, act: ["none", type] } }
+    function fUnselect(type) { return { label: qsTr("Unselect all"), persist: true, enabled: groupState(type) !== 0, act: ["none", type] } }
     function fGroup(type, label, sub) {
         const st = groupState(type)
-        return { label: label, icon: cbIcon(st), iconColor: theme.brand, persist: true, split: true, splitLabel: "More " + label + " options", act: [st === 2 ? "none" : "all", type], submenu: sub }
+        return { label: label, icon: cbIcon(st), iconColor: theme.brand, persist: true, split: true, splitLabel: qsTr("More %1 options").arg(label), act: [st === 2 ? "none" : "all", type], submenu: sub }
     }
     // Outlook's category colour presets (light theme): [fill, outline].
     readonly property var categoryPresets: [["#F6D1D5", "#C50F1F"], ["#F1D9CC", "#A74109"], ["#FFDDB3", "#8F4E00"], ["#FCEFD3", "#835B00"], ["#CEF0CD", "#0E7A0B"],
@@ -236,34 +236,34 @@ Item {
     }
     readonly property var filterMenuItems: {
         const m = filterMap
-        const meet = [fUnselect("Meetings"), { separator: true }, { group: "I'm the organizer" }, fLeaf("Meetings", "Organizer", "Sent"), fLeaf("Meetings", "Drafts", "Draft"),
-            { separator: true }, { group: "I'm an attendee" }, fLeaf("Meetings", "Accepted", "Accepted"), fLeaf("Meetings", "DeclinedEvents", "Declined"),
-            fLeaf("Meetings", "Followed", "Followed"), fLeaf("Meetings", "Maybe", "Tentative"), fLeaf("Meetings", "Canceled", "Canceled"), fLeaf("Meetings", "NotResponded", "Not responded")]
-        const polls = [{ label: "Organizer holds", enabled: false }, fLeaf("PollHolds", "SeeAll", "See all"), { separator: true },
-            { label: "Attendee holds", enabled: false }, fLeaf("PollHolds", "VotedYes", "Voted: yes"), fLeaf("PollHolds", "VotedNo", "Voted: no"), fLeaf("PollHolds", "NotVoted", "Not voted")]
-        const cats = [fUnselect("Category"), { separator: true }, fLeaf("Category", catValue("Uncategorized"), "Uncategorized"), { separator: true }]
+        const meet = [fUnselect("Meetings"), { separator: true }, { group: qsTr("I'm the organizer") }, fLeaf("Meetings", "Organizer", qsTr("Sent")), fLeaf("Meetings", "Drafts", qsTr("Draft")),
+            { separator: true }, { group: qsTr("I'm an attendee") }, fLeaf("Meetings", "Accepted", qsTr("Accepted")), fLeaf("Meetings", "DeclinedEvents", qsTr("Declined")),
+            fLeaf("Meetings", "Followed", qsTr("Followed")), fLeaf("Meetings", "Maybe", qsTr("Tentative")), fLeaf("Meetings", "Canceled", qsTr("Canceled")), fLeaf("Meetings", "NotResponded", qsTr("Not responded"))]
+        const polls = [{ label: qsTr("Organizer holds"), enabled: false }, fLeaf("PollHolds", "SeeAll", qsTr("See all")), { separator: true },
+            { label: qsTr("Attendee holds"), enabled: false }, fLeaf("PollHolds", "VotedYes", qsTr("Voted: yes")), fLeaf("PollHolds", "VotedNo", qsTr("Voted: no")), fLeaf("PollHolds", "NotVoted", qsTr("Not voted"))]
+        const cats = [fUnselect("Category"), { separator: true }, fLeaf("Category", catValue("Uncategorized"), qsTr("Uncategorized")), { separator: true }]
             .concat(categories.map(c => Object.assign(fLeaf("Category", catValue(c.name), c.name), { tag: categoryTag(c.color) })))
-        const showAs = [fUnselect("ShowAs"), { separator: true }, fLeaf("ShowAs", "Free", "Free"), fLeaf("ShowAs", "WorkingElsewhere", "Working elsewhere"),
-            fLeaf("ShowAs", "Tentative", "Tentative"), fLeaf("ShowAs", "Busy", "Busy"), fLeaf("ShowAs", "OOF", "Out of office")]
-        return [{ label: "Clear filters", icon: "dismiss-20", persist: true, enabled: filterApplied, act: ["clear"] }, { separator: true },
-            fLeaf("General", "Appointments", "Appointments"), fGroup("Meetings", "Meetings", meet), fGroup("PollHolds", "Poll holds", polls),
-            fGroup("Reservations", "Reservations", [fLeaf("Reservations", "Desk", "Desk")]), { separator: true },
-            fGroup("Category", "Categories", cats), fGroup("ShowAs", "Show as", showAs),
-            fGroup("Recurrence", "Recurrence", [fLeaf("Recurrence", "Single", "Single"), fLeaf("Recurrence", "Series", "Series")]),
-            fGroup("InPerson", "In-person", [fLeaf("InPerson", "Required", "Requested"), fLeaf("InPerson", "NotRequired", "Not requested")])]
+        const showAs = [fUnselect("ShowAs"), { separator: true }, fLeaf("ShowAs", "Free", qsTr("Free")), fLeaf("ShowAs", "WorkingElsewhere", qsTr("Working elsewhere")),
+            fLeaf("ShowAs", "Tentative", qsTr("Tentative")), fLeaf("ShowAs", "Busy", qsTr("Busy")), fLeaf("ShowAs", "OOF", qsTr("Out of office"))]
+        return [{ label: qsTr("Clear filters"), icon: "dismiss-20", persist: true, enabled: filterApplied, act: ["clear"] }, { separator: true },
+            fLeaf("General", "Appointments", qsTr("Appointments")), fGroup("Meetings", qsTr("Meetings"), meet), fGroup("PollHolds", qsTr("Poll holds"), polls),
+            fGroup("Reservations", qsTr("Reservations"), [fLeaf("Reservations", "Desk", qsTr("Desk"))]), { separator: true },
+            fGroup("Category", qsTr("Categories"), cats), fGroup("ShowAs", qsTr("Show as"), showAs),
+            fGroup("Recurrence", qsTr("Recurrence"), [fLeaf("Recurrence", "Single", qsTr("Single")), fLeaf("Recurrence", "Series", qsTr("Series"))]),
+            fGroup("InPerson", qsTr("In-person"), [fLeaf("InPerson", "Required", qsTr("Requested")), fLeaf("InPerson", "NotRequired", qsTr("Not requested"))])]
     }
     // The view menu (Teams' CalendarViewTypes): Day ▸ (1 to 7 days), Work
     // week, Week, Month; Split view; Time scale ▸; Saved views ▸.
-    function scaleLabel(m) { return m === 60 ? "60 minutes - Least space for details" : m === 5 ? "5 minutes - Most space for details" : m + " minutes" }
+    function scaleLabel(m) { return m === 60 ? qsTr("60 minutes - Least space for details") : m === 5 ? qsTr("5 minutes - Most space for details") : qsTr("%n minutes", "", m) }
     // Saved views' icons ("charms"): the picker's 36 in its order, and the
     // glyph each shows in the menu (no icon, Pill, Exam and Goal: a dot).
-    readonly property var charms: [[0, "No icon", ""], [3, "Plane", "airplane-20"], [4, "Note", "notepad-20"], [5, "First aid", "briefcase-medical-20"], [6, "Trophy", "trophy-20"],
-        [7, "Home", "home-20"], [8, "Pill", "pill-20"], [9, "Luggage", "luggage-20"], [11, "Group", "people-20"], [12, "Timer", "timer-20"], [13, "Music", "music-note-2-20"],
-        [15, "Car", "vehicle-car-20"], [16, "Star", "star-20"], [18, "Person", "person-20"], [19, "Balloon", "balloon-20"], [20, "Fork knife", "food-20"], [21, "Heart", "heart-20"],
-        [22, "Soccer", "sport-soccer-20"], [23, "Movie", "movies-and-tv-20"], [25, "Books", "book-open-20"], [26, "Cake", "food-cake-20"], [27, "TV", "tv-20"],
-        [29, "Package delivery", "vehicle-truck-profile-20"], [31, "Event", "ticket-diagonal-20"], [33, "Credit card", "payment-20"], [34, "Bike", "vehicle-bicycle-20"],
-        [38, "Bus", "vehicle-bus-20"], [42, "Class", "hat-graduation-20"], [46, "Gym", "dumbbell-20"], [47, "Island", "beach-20"], [50, "Professional", "city-20"],
-        [51, "Repair", "wrench-20"], [53, "Sprint", "run-20"], [55, "Todo", "checkmark-20"], [57, "Exam", "note-edit-20"], [58, "Goal", "target-arrow-20"]]
+    readonly property var charms: [[0, "No icon", "", qsTr("No icon")], [3, "Plane", "airplane-20", qsTr("Plane")], [4, "Note", "notepad-20", qsTr("Note")], [5, "First aid", "briefcase-medical-20", qsTr("First aid")], [6, "Trophy", "trophy-20", qsTr("Trophy")],
+        [7, "Home", "home-20", qsTr("Home")], [8, "Pill", "pill-20", qsTr("Pill")], [9, "Luggage", "luggage-20", qsTr("Luggage")], [11, "Group", "people-20", qsTr("Group")], [12, "Timer", "timer-20", qsTr("Timer")], [13, "Music", "music-note-2-20", qsTr("Music")],
+        [15, "Car", "vehicle-car-20", qsTr("Car")], [16, "Star", "star-20", qsTr("Star")], [18, "Person", "person-20", qsTr("Person")], [19, "Balloon", "balloon-20", qsTr("Balloon")], [20, "Fork knife", "food-20", qsTr("Fork knife")], [21, "Heart", "heart-20", qsTr("Heart")],
+        [22, "Soccer", "sport-soccer-20", qsTr("Soccer")], [23, "Movie", "movies-and-tv-20", qsTr("Movie")], [25, "Books", "book-open-20", qsTr("Books")], [26, "Cake", "food-cake-20", qsTr("Cake")], [27, "TV", "tv-20", qsTr("TV")],
+        [29, "Package delivery", "vehicle-truck-profile-20", qsTr("Package delivery")], [31, "Event", "ticket-diagonal-20", qsTr("Event")], [33, "Credit card", "payment-20", qsTr("Credit card")], [34, "Bike", "vehicle-bicycle-20", qsTr("Bike")],
+        [38, "Bus", "vehicle-bus-20", qsTr("Bus")], [42, "Class", "hat-graduation-20", qsTr("Class")], [46, "Gym", "dumbbell-20", qsTr("Gym")], [47, "Island", "beach-20", qsTr("Island")], [50, "Professional", "city-20", qsTr("Professional")],
+        [51, "Repair", "wrench-20", qsTr("Repair")], [53, "Sprint", "run-20", qsTr("Sprint")], [55, "Todo", "checkmark-20", qsTr("Todo")], [57, "Exam", "note-edit-20", qsTr("Exam")], [58, "Goal", "target-arrow-20", qsTr("Goal")]]
     function charmMenuIcon(id) {
         const n = Number(id) || 0
         if ([0, 8, 57, 58].indexOf(n) >= 0) return "circle-20-filled"
@@ -271,22 +271,22 @@ Item {
         return c ? c[2] : "circle-20-filled"
     }
     readonly property var viewMenuItems: {
-        const days = [1, 2, 3, 4, 5, 6, 7].map(n => ({ label: n + (n > 1 ? " days" : " day"), checked: view === "day" && numDays === n, act: ["days", n] }))
+        const days = [1, 2, 3, 4, 5, 6, 7].map(n => ({ label: qsTr("%n days", "", n), checked: view === "day" && numDays === n, act: ["days", n] }))
         const scales = [60, 30, 15, 10, 6, 5].map(m => ({ label: scaleLabel(m), checked: timeScale === m, persist: true, act: ["scale", m] }))
         const views = savedViews.map(v => ({ label: v.viewName || "", icon: charmMenuIcon(v.viewIcon), checked: currentViewId === v.id, split: true,
-            splitLabel: "More " + (v.viewName || "") + " options", act: ["openView", v.id],
-            submenu: [{ label: "Open", icon: "open-20", act: ["openView", v.id] }, { label: "Edit", icon: "edit-20", act: ["editView", v.id] }, { label: "Delete", icon: "delete-20", act: ["deleteView", v.id] }] }))
+            splitLabel: qsTr("More %1 options").arg(v.viewName || ""), act: ["openView", v.id],
+            submenu: [{ label: qsTr("Open"), icon: "open-20", act: ["openView", v.id] }, { label: qsTr("Edit"), icon: "edit-20", act: ["editView", v.id] }, { label: qsTr("Delete"), icon: "delete-20", act: ["deleteView", v.id] }] }))
         if (views.length) views.push({ separator: true })
-        views.push({ label: "Save current view", indent: true, enabled: savedViews.length < 10, act: ["saveView"] })
-        return [{ label: "Day", icon: "calendar-day-20", checked: view === "day", split: true, splitLabel: "Expand to see more Day options", act: ["view", "day"], submenu: days },
-            { label: "Work week", icon: "calendar-work-week-20", checked: view === "workweek", act: ["view", "workweek"] },
-            { label: "Week", icon: "calendar-week-numbers-20", checked: view === "week", act: ["view", "week"] },
-            { label: "Month", icon: "calendar-month-20", checked: view === "month", act: ["view", "month"] },
+        views.push({ label: qsTr("Save current view"), indent: true, enabled: savedViews.length < 10, act: ["saveView"] })
+        return [{ label: qsTr("Day"), icon: "calendar-day-20", checked: view === "day", split: true, splitLabel: qsTr("Expand to see more Day options"), act: ["view", "day"], submenu: days },
+            { label: qsTr("Work week"), icon: "calendar-work-week-20", checked: view === "workweek", act: ["view", "workweek"] },
+            { label: qsTr("Week"), icon: "calendar-week-numbers-20", checked: view === "week", act: ["view", "week"] },
+            { label: qsTr("Month"), icon: "calendar-month-20", checked: view === "month", act: ["view", "month"] },
             { separator: true },
-            { label: "Split view", icon: "square-multiple-20", checked: splitView && canSplit, enabled: canSplit, act: ["split"] },
+            { label: qsTr("Split view"), icon: "square-multiple-20", checked: splitView && canSplit, enabled: canSplit, act: ["split"] },
             { separator: true },
-            { label: "Time scale", icon: "arrow-autofit-height-20", secondary: timeScale + " minutes", chevron: false, enabled: !monthView, submenu: scales },
-            { label: "Saved views", icon: "save-20", checked: !!currentViewId, submenu: views }]
+            { label: qsTr("Time scale"), icon: "arrow-autofit-height-20", secondary: qsTr("%n minutes", "", timeScale), chevron: false, enabled: !monthView, submenu: scales },
+            { label: qsTr("Saved views"), icon: "save-20", checked: !!currentViewId, submenu: views }]
     }
     readonly property var rangeTypes: ({ day: 1, week: 2, workweek: 3, month: 4 })
     function viewAct(a) {
@@ -468,9 +468,9 @@ Item {
         else if (op === "propose" && !error) details.close()
         else if (op === "availability" && !error) { form.freeBusy = r.freeBusy || {}; if (r.timeZone) mtTimeZone = r.timeZone }
         else if ((op === "schedule" || op === "update" || op === "cancel") && !error) formLayer.visible = false
-        else if (op === "joinById" && !error && r.joinUrl) root.joinMeeting(r.joinUrl, r.subject || "Meeting")
+        else if (op === "joinById" && !error && r.joinUrl) root.joinMeeting(r.joinUrl, r.subject || qsTr("Meeting"))
         else if (op === "meetNow" && !error && r.joinUrl) {
-            if (meetNowDialog.linkOnly) { meetNowDialog.link = r.joinUrl } else { meetNowDialog.close(); root.joinMeeting(r.joinUrl, r.subject || "Meeting") }
+            if (meetNowDialog.linkOnly) { meetNowDialog.link = r.joinUrl } else { meetNowDialog.close(); root.joinMeeting(r.joinUrl, r.subject || qsTr("Meeting")) }
         }
     }
 
@@ -541,12 +541,12 @@ Item {
         try { otherSelected = JSON.parse(calendarLocal.selectedCalendars || "[]") } catch (e) { otherSelected = [] }
     }
     readonly property string rangeLabel: {
-        if (monthView) return Qt.formatDate(focusMonth, "MMMM yyyy")
+        if (monthView) return theme.fmtDate(focusMonth, "MMMM yyyy")
         const a = start, b = dayAt(days - 1)
-        if (days === 1) return Qt.formatDate(a, "MMMM d, yyyy")
-        if (a.getMonth() === b.getMonth()) return Qt.formatDate(a, "MMMM d") + "–" + b.getDate() + ", " + b.getFullYear()
-        if (a.getFullYear() === b.getFullYear()) return Qt.formatDate(a, "MMMM d") + " – " + Qt.formatDate(b, "MMMM d, yyyy")
-        return Qt.formatDate(a, "MMMM d, yyyy") + " – " + Qt.formatDate(b, "MMMM d, yyyy")
+        if (days === 1) return theme.fmtDate(a, "MMMM d, yyyy")
+        if (a.getMonth() === b.getMonth()) return theme.fmtDate(a, "MMMM d") + "–" + b.getDate() + ", " + b.getFullYear()
+        if (a.getFullYear() === b.getFullYear()) return theme.fmtDate(a, "MMMM d") + " – " + theme.fmtDate(b, "MMMM d, yyyy")
+        return theme.fmtDate(a, "MMMM d, yyyy") + " – " + theme.fmtDate(b, "MMMM d, yyyy")
     }
 
     // ── events laid out ─────────────────────────────────────────────────
@@ -687,7 +687,7 @@ Item {
         width: visible ? 235 : 0; height: parent.height
         color: theme.pane
         Rectangle { anchors.right: parent.right; width: 1; height: parent.height; color: theme.edge }
-        Text { x: 16; y: 19; text: "Calendar"; font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text }
+        Text { x: 16; y: 19; text: qsTr("Calendar"); font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text }
         Item {
             id: month
             x: 8; y: 78; width: 219; height: 230
@@ -697,11 +697,11 @@ Item {
                 const last = new Date(shown.getFullYear(), shown.getMonth() + 1, 0)
                 return Math.ceil((first.getDay() + (last - first) / 86400000 + 1) / 7)
             }
-            Text { x: 24; y: 0; text: Qt.formatDate(month.shown, "MMMM yyyy"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
+            Text { x: 24; y: 0; text: theme.fmtDate(month.shown, "MMMM yyyy"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
             Row {
                 anchors.right: parent.right; anchors.rightMargin: 12; y: -4
                 Repeater {
-                    model: [{ icon: "chevron-left-20", d: -1, l: "Previous month" }, { icon: "chevron-right-20", d: 1, l: "Next month" }]
+                    model: [{ icon: "chevron-left-20", d: -1, l: qsTr("Previous month") }, { icon: "chevron-right-20", d: 1, l: qsTr("Next month") }]
                     Rectangle {
                         id: mFill
                         required property var modelData
@@ -718,7 +718,7 @@ Item {
             Row {
                 y: 28
                 Repeater {
-                    model: ["S", "M", "T", "W", "T", "F", "S"]
+                    model: [0, 1, 2, 3, 4, 5, 6].map(i => Qt.locale().dayName(i, Locale.NarrowFormat))
                     Text { required property string modelData; width: 28; horizontalAlignment: Text.AlignHCenter; text: modelData; font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
                 }
             }
@@ -762,15 +762,15 @@ Item {
                 id: calCol
                 width: parent.width
                 spacing: 6
-                Text { text: "My calendars"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
-                CalRow { label: "Calendar"; on: root.showCalendar; onToggled: root.showCalendar = !root.showCalendar }
+                Text { text: qsTr("My calendars"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
+                CalRow { label: qsTr("Calendar"); on: root.showCalendar; onToggled: root.showCalendar = !root.showCalendar }
                 Repeater {
                     model: root.otherCalendars.filter(c => c.section === "My calendars" && (root.showAllCalendars || root.otherSelected.indexOf(c.id) >= 0))
                     CalRow { required property var modelData; label: modelData.name; on: root.otherSelected.indexOf(modelData.id) >= 0; tick: modelData.color || theme.brandFill; onToggled: root.toggleCalendar(modelData.id) }
                 }
                 Text {
                     visible: root.otherCalendars.some(c => c.section === "Groups" && (root.showAllCalendars || root.otherSelected.indexOf(c.id) >= 0))
-                    topPadding: 8; text: "Groups"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text
+                    topPadding: 8; text: qsTr("Groups"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text
                 }
                 Repeater {
                     model: root.otherCalendars.filter(c => c.section === "Groups" && (root.showAllCalendars || root.otherSelected.indexOf(c.id) >= 0))
@@ -779,7 +779,7 @@ Item {
                 Text {
                     visible: root.otherCalendars.length > 0
                     topPadding: 8; leftPadding: 32
-                    text: root.showAllCalendars ? "Show selected" : "Show all"
+                    text: root.showAllCalendars ? qsTr("Show selected") : qsTr("Show all")
                     font.family: theme.font; font.pixelSize: theme.base; color: theme.brand
                     HoverHandler { cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.showAllCalendars = !root.showAllCalendars }
@@ -875,7 +875,7 @@ Item {
             HoverHandler { id: dabHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: { root.copilotOpen = !root.copilotOpen; dabChips.visible = false } }
             Accessible.role: Accessible.Button
-            Accessible.name: "Chat with Copilot"
+            Accessible.name: qsTr("Chat with Copilot")
             Timer { interval: 400; running: dabHover.hovered && !root.copilotOpen; onTriggered: dabChips.visible = true }
         }
         Column {
@@ -889,18 +889,19 @@ Item {
             Timer { id: chipsHide; interval: 300; onTriggered: dabChips.visible = false }
             HoverHandler { id: chipsHover }
             Repeater {
-                model: ["Find my next one-on-one with", "Show me meetings I haven't responded to next week", "What are the top three things I should focus on right now?", "Schedule 1 hour of focus time"]
+                model: [{ k: "Find my next one-on-one with", t: qsTr("Find my next one-on-one with") }, { k: "Show me meetings I haven't responded to next week", t: qsTr("Show me meetings I haven't responded to next week") },
+                    { k: "What are the top three things I should focus on right now?", t: qsTr("What are the top three things I should focus on right now?") }, { k: "Schedule 1 hour of focus time", t: qsTr("Schedule 1 hour of focus time") }]
                 Item {
                     id: chip
-                    required property string modelData
+                    required property var modelData
                     anchors.right: parent ? parent.right : undefined
                     width: chipText.implicitWidth + 24; height: 39.33
                     FluentSurface { anchors.fill: parent; depth: 16; radius: 12; color: chipHover.hovered ? theme.hc("#F5F5F5", "#000000") : theme.surface }
-                    Text { id: chipText; x: 12; anchors.verticalCenter: parent.verticalCenter; text: chip.modelData; font.family: theme.font; font.pixelSize: 12; color: theme.text }
+                    Text { id: chipText; x: 12; anchors.verticalCenter: parent.verticalCenter; text: chip.modelData.t; font.family: theme.font; font.pixelSize: 12; color: theme.text }
                     HoverHandler { id: chipHover; cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: { dabChips.visible = false; root.openCopilotWith(chip.modelData, true) } }
+                    TapHandler { onTapped: { dabChips.visible = false; root.openCopilotWith(chip.modelData.k, true) } }
                     Accessible.role: Accessible.Button
-                    Accessible.name: chip.modelData
+                    Accessible.name: chip.modelData.t
                 }
             }
         }
@@ -910,16 +911,16 @@ Item {
             spacing: 6
             // With Copilot's pane open Teams keeps only the pane toggle here.
             readonly property bool narrow: root.copilotOpen
-            NavButton { icon: "panel-left-20"; tip: root.paneShown ? "Hide navigation" : "Show navigation"; onClicked: root.paneShown = !root.paneShown }
+            NavButton { icon: "panel-left-20"; tip: root.paneShown ? qsTr("Hide navigation") : qsTr("Show navigation"); onClicked: root.paneShown = !root.paneShown }
             Rectangle { visible: !leftRow.narrow; width: 1; height: 20; anchors.verticalCenter: parent.verticalCenter; color: theme.dividerSoft }
-            BarButton2 { visible: !leftRow.narrow; icon: "calendar-ltr-20"; label: "Today"; onClicked: root.start = root.startFor(new Date()); Accessible.name: "Go to today" }
-            NavButton { visible: !leftRow.narrow; icon: root.monthView ? "chevron-up-20" : "chevron-left-20"; iconSize: 16; onClicked: root.shift(-1); tip: root.monthView ? "Go to previous month" : root.view === "day" ? "Go to previous day" : "Go to previous week" }
-            NavButton { visible: !leftRow.narrow; icon: root.monthView ? "chevron-down-20" : "chevron-right-20"; iconSize: 16; onClicked: root.shift(1); tip: root.monthView ? "Go to next month" : root.view === "day" ? "Go to next day" : "Go to next week" }
+            BarButton2 { visible: !leftRow.narrow; icon: "calendar-ltr-20"; label: qsTr("Today"); onClicked: root.start = root.startFor(new Date()); Accessible.name: qsTr("Go to today") }
+            NavButton { visible: !leftRow.narrow; icon: root.monthView ? "chevron-up-20" : "chevron-left-20"; iconSize: 16; onClicked: root.shift(-1); tip: root.monthView ? qsTr("Go to previous month") : root.view === "day" ? qsTr("Go to previous day") : qsTr("Go to previous week") }
+            NavButton { visible: !leftRow.narrow; icon: root.monthView ? "chevron-down-20" : "chevron-right-20"; iconSize: 16; onClicked: root.shift(1); tip: root.monthView ? qsTr("Go to next month") : root.view === "day" ? qsTr("Go to next day") : qsTr("Go to next week") }
             BarButton2 {
                 visible: !leftRow.narrow
                 label: root.rangeLabel; chevron: true
                 onClicked: { month.shown = new Date(root.start.getFullYear(), root.start.getMonth(), 1); root.paneShown = true }
-                Accessible.name: root.rangeLabel + ", Jump to a specific date"
+                Accessible.name: qsTr("%1, Jump to a specific date").arg(root.rangeLabel)
             }
         }
         Row {
@@ -931,7 +932,7 @@ Item {
                 id: viewButton
                 visible: !root.copilotOpen
                 icon: ({ day: "calendar-day-20", workweek: "calendar-work-week-20", week: "calendar-week-numbers-20", month: "calendar-month-20" })[root.view]
-                label: ({ day: "Day", workweek: "Work week", week: "Week", month: "Month" })[root.view]
+                label: ({ day: qsTr("Day"), workweek: qsTr("Work week"), week: qsTr("Week"), month: qsTr("Month") })[root.view]
                 chevron: true
                 onClicked: viewMenu.open()
                 Accessible.role: Accessible.ComboBox
@@ -951,10 +952,10 @@ Item {
             BarButton2 {
                 id: filterBtn
                 visible: root.filterInline
-                icon: "filter-20"; label: root.filterApplied ? "Filter applied" : "Filter"; chevron: true
+                icon: "filter-20"; label: root.filterApplied ? qsTr("Filter applied") : qsTr("Filter"); chevron: true
                 outlined: root.filterApplied
                 onClicked: filterMenu.open()
-                Accessible.name: "Apply or remove calendar event filters."
+                Accessible.name: qsTr("Apply or remove calendar event filters.")
                 MenuPopup {
                     id: filterMenu
                     submenuMinWidth: 0
@@ -966,7 +967,7 @@ Item {
             }
             NavButton {
                 id: moreBtn
-                icon: "more-horizontal-20"; tip: "More options"
+                icon: "more-horizontal-20"; tip: qsTr("More options")
                 onClicked: moreMenu.open()
                 MenuPopup {
                     id: moreMenu
@@ -984,16 +985,16 @@ Item {
             Row {
                 id: meetRow
                 anchors.verticalCenter: parent.verticalCenter
-                BarButton2 { icon: "video-20"; label: "Meet now"; onClicked: meetNowDialog.openFresh(); Accessible.name: "Start an instant Teams meeting." }
+                BarButton2 { icon: "video-20"; label: qsTr("Meet now"); onClicked: meetNowDialog.openFresh(); Accessible.name: qsTr("Start an instant Teams meeting.") }
                 BarButton2 {
                     chevron: true; width: 28
                     onClicked: meetMenu.open()
-                    Accessible.name: "More meet now options"
+                    Accessible.name: qsTr("More meet now options")
                     MenuPopup {
                         id: meetMenu
                         x: -120; y: parent.height + 4; width: 141
                         perItemIcons: true
-                        items: [{ label: "Join with an ID", icon: "number-symbol-20" }]
+                        items: [{ label: qsTr("Join with an ID"), icon: "number-symbol-20" }]
                         onPicked: joinId.openFresh()
                     }
                 }
@@ -1007,19 +1008,19 @@ Item {
                 visible: !root.copilotOpen
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 1
-                BarButton2 { primary: true; icon: "calendar-add-20"; label: "New"; onClicked: root.openForm(null, [], null); Accessible.name: "Create a new event." }
+                BarButton2 { primary: true; icon: "calendar-add-20"; label: qsTr("New"); onClicked: root.openForm(null, [], null); Accessible.name: qsTr("Create a new event.") }
                 BarButton2 {
                     primary: true; chevron: true; width: 24
                     onClicked: newMenu.open()
-                    Accessible.name: "More new options"
+                    Accessible.name: qsTr("More new options")
                     MenuPopup {
                         id: newMenu
                         x: -150; y: parent.height + 4; width: 174
                         perItemIcons: true
-                        items: [{ label: "Event", icon: "calendar-ltr-20" }, { label: "Channel meeting", icon: "channel-20" }, { separator: true },
-                                { heading: true, label: "Organization templates" },
-                                { label: "Webinar", icon: "board-person-20" }, { label: "Town hall", icon: "megaphone-loud-20" },
-                                { label: "Virtual appointment", icon: "desktop-20" }, { label: "Live Event", icon: "live-20" }]
+                        items: [{ label: qsTr("Event"), icon: "calendar-ltr-20" }, { label: qsTr("Channel meeting"), icon: "channel-20" }, { separator: true },
+                                { heading: true, label: qsTr("Organization templates") },
+                                { label: qsTr("Webinar"), icon: "board-person-20" }, { label: qsTr("Town hall"), icon: "megaphone-loud-20" },
+                                { label: qsTr("Virtual appointment"), icon: "desktop-20" }, { label: qsTr("Live Event"), icon: "live-20" }]
                         onPicked: i => { if (i === 0) root.openEventForm(); else if (i === 1) root.openForm(null, [], null)
                                          else if (i === 4) root.newEventTemplate("webinar"); else if (i === 5) root.newEventTemplate("townhall")
                                          else if (i === 6) root.openVirtualAppointment(); else if (i === 7) liveEventsRetiring.open() }
@@ -1058,7 +1059,7 @@ Item {
                     }
                     NavButton {
                         anchors.right: parent.right; anchors.rightMargin: 4; anchors.verticalCenter: parent.verticalCenter
-                        icon: "dismiss-20"; tip: "Close " + blk.modelData.name
+                        icon: "dismiss-20"; tip: qsTr("Close %1").arg(blk.modelData.name)
                         onClicked: { if (blk.modelData.id === "") root.showCalendar = false; else root.toggleCalendar(blk.modelData.id) }
                     }
                     Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: theme.hc("#E0E0E0", "#FFFFFF") }
@@ -1075,7 +1076,7 @@ Item {
                     color: root.busyDay(dayIndex) ? theme.hc("#EEEFF9", "#000000") : root.pastDay(dayIndex) ? theme.hc("#FAFAFA", "#000000") : theme.surface
                     Rectangle { visible: parent.today; width: parent.width; height: 3; color: theme.brand }
                     Text { x: 13; y: 8; text: parent.day.getDate(); font.family: theme.font; font.pixelSize: 20; color: parent.today ? theme.brand : theme.text }
-                    Text { x: 13; y: 33; text: Qt.formatDate(parent.day, root.wideLayout ? "dddd" : "ddd"); font.family: theme.font; font.pixelSize: theme.small; color: parent.today ? theme.brand : theme.textSecondary }
+                    Text { x: 13; y: 33; text: theme.fmtDate(parent.day, root.wideLayout ? "dddd" : "ddd"); font.family: theme.font; font.pixelSize: theme.small; color: parent.today ? theme.brand : theme.textSecondary }
                     Rectangle { width: 1; height: parent.height; color: theme.hc("#D1D1D1", "#FFFFFF") }
                     Rectangle { y: 54; width: parent.width; height: 1; color: theme.hc("#E0E0E0", "#FFFFFF") }
                 }
@@ -1094,14 +1095,14 @@ Item {
                     ShowAsBar { ev: sb.ev; height: parent.height }
                     Text {
                         anchors.centerIn: parent; width: Math.min(implicitWidth, parent.width - 18)
-                        text: sb.ev.subject || "(No title)"; elide: Text.ElideRight
+                        text: sb.ev.subject || qsTr("(No title)"); elide: Text.ElideRight
                         font.family: theme.font; font.pixelSize: 10; font.weight: Font.DemiBold; color: root.textOf(sb.ev)
                     }
                     HoverHandler { cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: details.show(sb.ev, sb) }
                     TapHandler { acceptedButtons: Qt.RightButton; onTapped: ep => tileMenu.openFor(sb.ev, sb, ep.position.x, ep.position.y) }
                     Accessible.role: Accessible.Button
-                    Accessible.name: (ev.subject || "Event") + ", all day event"
+                    Accessible.name: qsTr("%1, all day event").arg(ev.subject || qsTr("Event"))
                 }
             }
             Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: theme.hc("#D1D1D1", "#FFFFFF") }
@@ -1143,7 +1144,7 @@ Item {
                     Text {
                         visible: index > 0 && grid.contentX <= 0
                         x: 10; y: 8
-                        text: (index % 12 === 0 ? 12 : index % 12) + " " + (index < 12 ? "AM" : "PM")
+                        text: index < 12 ? qsTr("%1 AM").arg(index % 12 === 0 ? 12 : index % 12) : qsTr("%1 PM").arg(index % 12 === 0 ? 12 : index % 12)
                         font.family: theme.font; font.pixelSize: 11; color: theme.textSecondary
                     }
                     Rectangle { x: root.gutter; width: parent.width - root.gutter; height: 1; color: theme.hc("#D1D1D1", "#FFFFFF") }
@@ -1197,13 +1198,13 @@ Item {
                         visible: evTile.shortOne
                         x: 12; y: 4; width: parent.width - 16 - (joinTile.visible ? joinTile.width + 6 : 0) - (seriesIcon.visible ? 20 : 0)
                         elide: Text.ElideRight; textFormat: Text.StyledText
-                        text: "<b>" + (evTile.ev.subject || "(No title)").replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</b> " + [evTile.ev.location, evTile.ev.is_organizer ? "" : evTile.ev.organizer].filter(x => x).join(" ").replace(/&/g, "&amp;").replace(/</g, "&lt;")
+                        text: "<b>" + (evTile.ev.subject || qsTr("(No title)")).replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</b> " + [evTile.ev.location, evTile.ev.is_organizer ? "" : evTile.ev.organizer].filter(x => x).join(" ").replace(/&/g, "&amp;").replace(/</g, "&lt;")
                         font.family: theme.font; font.pixelSize: 12; color: root.textOf(evTile.ev)
                     }
                     Column {
                         visible: !evTile.shortOne
                         x: 12; y: 4; width: parent.width - 16
-                        Text { width: parent.width; elide: Text.ElideRight; text: evTile.ev.subject || "(No title)"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: root.textOf(evTile.ev) }
+                        Text { width: parent.width; elide: Text.ElideRight; text: evTile.ev.subject || qsTr("(No title)"); font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: root.textOf(evTile.ev) }
                         Text { width: parent.width; wrapMode: Text.Wrap; maximumLineCount: Math.max(1, Math.floor((evTile.height - 24) / 16)); elide: Text.ElideRight; visible: !!text; text: [evTile.ev.location, evTile.ev.is_organizer ? "" : evTile.ev.organizer].filter(x => x).join(" "); font.family: theme.font; font.pixelSize: 12; color: root.textOf(evTile.ev) }
                     }
                     FluentIcon {
@@ -1226,17 +1227,17 @@ Item {
                         border.width: live ? 0 : 0.67
                         border.color: theme.hc("#BDBDBD", "#FFFFFF")
                         FluentIcon { visible: joinTile.iconOnly; anchors.centerIn: parent; name: "video-16"; size: 16; color: theme.onFill(joinTile, joinTile.live ? "white" : theme.textSecondary) }
-                        Text { id: jt; visible: !joinTile.iconOnly; anchors.centerIn: parent; text: "Join"; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(joinTile, joinTile.live ? "white" : theme.textSecondary) }
+                        Text { id: jt; visible: !joinTile.iconOnly; anchors.centerIn: parent; text: qsTr("Join"); font.family: theme.font; font.pixelSize: 12; color: theme.onFill(joinTile, joinTile.live ? "white" : theme.textSecondary) }
                         HoverHandler { id: jth; cursorShape: Qt.PointingHandCursor }
-                        TapHandler { onTapped: root.joinMeeting(evTile.ev.join_url, evTile.ev.subject || "Meeting") }
+                        TapHandler { onTapped: root.joinMeeting(evTile.ev.join_url, evTile.ev.subject || qsTr("Meeting")) }
                         Accessible.role: Accessible.Button
-                        Accessible.name: "Join Teams meeting"
+                        Accessible.name: qsTr("Join Teams meeting")
                     }
                     HoverHandler { cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: details.show(evTile.ev, evTile) }
                     TapHandler { acceptedButtons: Qt.RightButton; onTapped: ep => tileMenu.openFor(evTile.ev, evTile, ep.position.x, ep.position.y) }
                     Accessible.role: Accessible.Button
-                    Accessible.name: (ev.subject || "Event") + ", " + theme.time(root.evStart(ev)) + " to " + theme.time(root.evEnd(ev))
+                    Accessible.name: (ev.subject || qsTr("Event")) + ", " + theme.time(root.evStart(ev)) + " to " + theme.time(root.evEnd(ev))
                 }
             }
             // Scrolled sideways (Split view): the hours stay at the left.
@@ -1249,7 +1250,7 @@ Item {
                     Text {
                         required property int index
                         x: 10; y: (index + 1) * root.hourHeight + 8
-                        text: ((index + 1) % 12 === 0 ? 12 : (index + 1) % 12) + " " + (index + 1 < 12 ? "AM" : "PM")
+                        text: index + 1 < 12 ? qsTr("%1 AM").arg((index + 1) % 12 === 0 ? 12 : (index + 1) % 12) : qsTr("%1 PM").arg((index + 1) % 12 === 0 ? 12 : (index + 1) % 12)
                         font.family: theme.font; font.pixelSize: 11; color: theme.textSecondary
                     }
                 }
@@ -1305,7 +1306,7 @@ Item {
         readonly property real cellH: (height - 28) / root.monthWeeks
         readonly property int rowsPerCell: Math.max(1, Math.floor((cellH - 32 - 4) / 26))
         Repeater {
-            model: ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+            model: [qsTr("Sunday"), qsTr("Monday"), qsTr("Tuesday"), qsTr("Wednesday"), qsTr("Thursday"), qsTr("Friday"), qsTr("Saturday")]
             Text { required property int index; required property string modelData; x: index * monthArea.cellW + 8; y: 8; text: modelData; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
         }
         Rectangle { y: 28; width: parent.width; height: 1; color: theme.hc("#D1D1D1", "#FFFFFF") }
@@ -1363,7 +1364,7 @@ Item {
                 Text {
                     x: cell.today ? 4 : 8; y: 6; width: cell.today ? 22 : implicitWidth; height: cell.today ? 22 : 19
                     horizontalAlignment: cell.today ? Text.AlignHCenter : Text.AlignLeft; verticalAlignment: Text.AlignVCenter
-                    text: cell.day.getDate() === 1 ? Qt.formatDate(cell.day, "MMM d") : cell.day.getDate()
+                    text: cell.day.getDate() === 1 ? theme.fmtDate(cell.day, "MMM d") : cell.day.getDate()
                     font.family: theme.font; font.pixelSize: 14; font.weight: cell.today ? Font.DemiBold : Font.Normal
                     color: theme.onFill(todayDot, cell.today ? "white" : theme.textSecondary)
                 }
@@ -1382,7 +1383,7 @@ Item {
                     HoverHandler { id: moreH; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: { root.view = "day"; root.start = root.startFor(cell.day) } }
                     Accessible.role: Accessible.Button
-                    Accessible.name: n + " more events from " + theme.longDate(cell.day)
+                    Accessible.name: qsTr("%1 more events from %2").arg(n).arg(theme.longDate(cell.day))
                 }
             }
         }
@@ -1409,7 +1410,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     width: Math.min(implicitWidth, parent.width - 11 - (mbSeries.visible ? 26 : 9))
                     elide: Text.ElideRight; textFormat: Text.StyledText
-                    text: (mb.allDay ? "" : theme.time(root.evStart(mb.ev)).replace(":00", "") + " ") + "<b>" + (mb.ev.subject || "(No title)").replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</b>"
+                    text: (mb.allDay ? "" : theme.time(root.evStart(mb.ev)).replace(":00", "") + " ") + "<b>" + (mb.ev.subject || qsTr("(No title)")).replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</b>"
                     font.family: theme.font; font.pixelSize: 12; color: theme.hc(mb.ev.show_as === "busy" && !root.isTentative(mb.ev) ? "#191919" : "#282828", "#FFFFFF")
                 }
                 FluentIcon {
@@ -1421,7 +1422,7 @@ Item {
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: details.show(mb.ev, mb) }
                 Accessible.role: Accessible.Button
-                Accessible.name: (ev.subject || "Event") + ", " + theme.dateTime(ev.start_utc)
+                Accessible.name: (ev.subject || qsTr("Event")) + ", " + theme.dateTime(ev.start_utc)
             }
         }
     }
@@ -1458,7 +1459,7 @@ Item {
         }
     }
     function responseLine(r) {
-        return ({ accepted: "You accepted.", tentativelyAccepted: "You tentatively accepted.", declined: "You declined.", following: "You're following." })[r] || "You didn't respond."
+        return ({ accepted: qsTr("You accepted."), tentativelyAccepted: qsTr("You tentatively accepted."), declined: qsTr("You declined."), following: qsTr("You're following.") })[r] || qsTr("You didn't respond.")
     }
     Popup {
         id: details
@@ -1497,12 +1498,12 @@ Item {
                 Text {
                     id: titleText
                     width: parent.width - 32; wrapMode: Text.Wrap
-                    text: details.ev.subject || "(No title)"
+                    text: details.ev.subject || qsTr("(No title)")
                     font.family: theme.font; font.pixelSize: 21; font.weight: Font.DemiBold; color: theme.text
                 }
                 NavButton {
                     anchors.right: parent.right; y: 2; width: 24; height: 24; iconSize: 16
-                    icon: "open-20"; tip: "View event"
+                    icon: "open-20"; tip: qsTr("View event")
                     onClicked: { const e = details.ev; details.close(); root.openPage(e) }
                 }
             }
@@ -1511,20 +1512,20 @@ Item {
                 visible: details.live
                 height: 24; spacing: 4
                 FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "clock-20"; size: 12; color: theme.brand }
-                Text { anchors.verticalCenter: parent.verticalCenter; text: "Now"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.brand }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Now"); font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.brand }
             }
             Item { width: 1; height: 16 }
             Row {
                 visible: !!details.ev.join_url
                 spacing: 5
                 CardButton {
-                    primary: true; icon: "video-20"; label: "Join"
-                    onClicked: { root.joinMeeting(details.ev.join_url, details.ev.subject || "Meeting"); details.close() }
+                    primary: true; icon: "video-20"; label: qsTr("Join")
+                    onClicked: { root.joinMeeting(details.ev.join_url, details.ev.subject || qsTr("Meeting")); details.close() }
                 }
                 CardButton {
-                    icon: "chat-20"; label: "Chat"
-                    onClicked: { root.openMeetingChat(details.ev.join_url, details.ev.subject || "Meeting"); details.close() }
-                    Accessible.name: "Chat with participants"
+                    icon: "chat-20"; label: qsTr("Chat")
+                    onClicked: { root.openMeetingChat(details.ev.join_url, details.ev.subject || qsTr("Meeting")); details.close() }
+                    Accessible.name: qsTr("Chat with participants")
                 }
             }
             Item { visible: !!details.ev.join_url; width: 1; height: 16 }
@@ -1535,12 +1536,12 @@ Item {
                     const e = details.ev
                     if (!e.start_utc) return ""
                     const s = root.evStart(e), en = root.evEnd(e)
-                    const d = Qt.formatDate(s, "ddd") + " " + Qt.formatDate(s, "M/d/yyyy")
-                    let t = e.is_all_day ? d + " All day" : root.sameDay(s, new Date(en - 1)) ? d + " " + theme.time(s) + " - " + theme.time(en)
-                        : d + " " + theme.time(s) + " - " + Qt.formatDate(en, "ddd") + " " + Qt.formatDate(en, "M/d/yyyy") + " " + theme.time(en)
+                    const d = theme.fmtDate(s, "ddd") + " " + theme.fmtDate(s, "M/d/yyyy")
+                    let t = e.is_all_day ? d + " " + qsTr("All day") : root.sameDay(s, new Date(en - 1)) ? d + " " + theme.time(s) + " - " + theme.time(en)
+                        : d + " " + theme.time(s) + " - " + theme.fmtDate(en, "ddd") + " " + theme.fmtDate(en, "M/d/yyyy") + " " + theme.time(en)
                     return t
                 }
-                suffix: details.series ? "Series" : ""
+                suffix: details.series ? qsTr("Series") : ""
             }
             // Your meeting: each proposed time under the time, as Teams'
             // card shows it: "{name} proposed new time" (12 px brand),
@@ -1552,7 +1553,7 @@ Item {
                     required property var modelData
                     x: 35; topPadding: -8; bottomPadding: 8; spacing: 4
                     Text {
-                        text: (proposal.modelData.name || proposal.modelData.address) + " proposed new time"
+                        text: qsTr("%1 proposed new time").arg(proposal.modelData.name || proposal.modelData.address)
                         font.family: theme.font; font.pixelSize: 12; color: theme.brand
                         HoverHandler { cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: { const e = details.ev; details.close(); root.openPage(e) } }
@@ -1562,31 +1563,31 @@ Item {
                         spacing: 8
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
-                            text: Qt.formatDate(new Date(proposal.modelData.proposed_start), "ddd M/d/yyyy") + " " + theme.time(new Date(proposal.modelData.proposed_start)) + " - " + theme.time(new Date(proposal.modelData.proposed_end))
+                            text: theme.fmtDate(new Date(proposal.modelData.proposed_start), "ddd M/d/yyyy") + " " + theme.time(new Date(proposal.modelData.proposed_start)) + " - " + theme.time(new Date(proposal.modelData.proposed_end))
                             font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary
                         }
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
-                            text: "Accept"
+                            text: qsTr("Accept")
                             font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.brand
                             HoverHandler { cursorShape: Qt.PointingHandCursor }
                             // Accepting moves the meeting to the proposed time.
                             TapHandler { onTapped: { root.updateEvent(details.ev.id, details.ev.subject || "", proposal.modelData.proposed_start, proposal.modelData.proposed_end); details.close() } }
-                            Accessible.role: Accessible.Button; Accessible.name: "Accept the proposed time"
+                            Accessible.role: Accessible.Button; Accessible.name: qsTr("Accept the proposed time")
                         }
                     }
                 }
             }
             DetailRow {
                 icon: "location-20"
-                text: details.ev.location && !(details.ev.is_online_meeting && details.ev.location === "Microsoft Teams Meeting") ? details.ev.location : "No location added"
+                text: details.ev.location && !(details.ev.is_online_meeting && details.ev.location === "Microsoft Teams Meeting") ? details.ev.location : qsTr("No location added")
             }
             // Copilot (a Copilot licence): "Add a room with Copilot" under
             // the location (14/20 #4F52B2), as Teams' card shows it.
             Text {
                 visible: root.copilotEntries && !!details.ev.is_online_meeting && (!details.ev.location || details.ev.location === "Microsoft Teams Meeting")
                 x: 35; topPadding: -12; bottomPadding: 8
-                text: "Add a room with Copilot"
+                text: qsTr("Add a room with Copilot")
                 font.family: theme.font; font.pixelSize: 14; color: theme.hc("#4F52B2", "#1AEBFF")
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: root.askCopilot("Add a room") }
@@ -1600,7 +1601,7 @@ Item {
                 Avatar { x: 0; y: 14; size: 24; name: (details.ev.channel_id ? (root.withTeam(details.ev).team_name || details.ev.organizer) : details.ev.organizer) || ""; photoId: details.ev.channel_id && root.withTeam(details.ev).team_id ? "team:" + root.withTeam(details.ev).team_id : "" }
                 Text {
                     x: 36; y: 14; width: 322; elide: Text.ElideRight
-                    text: details.ev.channel_id ? (root.withTeam(details.ev).team_name || details.ev.organizer) + " in the channel " + (root.withTeam(details.ev).channel_name || "") : (details.ev.organizer || "Someone") + " invited you."
+                    text: details.ev.channel_id ? qsTr("%1 in the channel %2").arg(root.withTeam(details.ev).team_name || details.ev.organizer).arg(root.withTeam(details.ev).channel_name || "") : qsTr("%1 invited you.").arg(details.ev.organizer || qsTr("Someone"))
                     font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
                 }
                 Text { x: 36; y: 38; text: root.responseLine(details.ev.response); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
@@ -1623,7 +1624,7 @@ Item {
                     x: 35; y: 13; width: prepText.implicitWidth + 32; height: 32; radius: 4
                     color: prepHover.hovered ? theme.rowHover : theme.surface
                     border.width: 0.67; border.color: theme.hc("#BDBDBD", "#FFFFFF")
-                    Text { id: prepText; anchors.centerIn: parent; text: "Prepare for this meeting"; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(prepBtn, theme.textSecondary) }
+                    Text { id: prepText; anchors.centerIn: parent; text: qsTr("Prepare for this meeting"); font.family: theme.font; font.pixelSize: 14; color: theme.onFill(prepBtn, theme.textSecondary) }
                     HoverHandler { id: prepHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.askCopilot("Prepare for this meeting") }
                     Accessible.role: Accessible.Button; Accessible.name: prepText.text
@@ -1644,10 +1645,10 @@ Item {
                         FluentIcon { visible: details.emailOrganizer; anchors.centerIn: parent; name: "checkmark-12"; size: 14; color: theme.onFill(emailBox, "white") }
                         TapHandler { onTapped: details.emailOrganizer = !details.emailOrganizer }
                         Accessible.role: Accessible.CheckBox
-                        Accessible.name: "Email organizer"
+                        Accessible.name: qsTr("Email organizer")
                         Accessible.checked: details.emailOrganizer
                     }
-                    Text { text: "Email organizer"; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
+                    Text { text: qsTr("Email organizer"); font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
                 }
                 Rectangle {
                     x: 37; width: 309; height: 31
@@ -1657,15 +1658,15 @@ Item {
                         x: 8; width: parent.width - 16; anchors.verticalCenter: parent.verticalCenter
                         enabled: details.emailOrganizer
                         font.family: theme.font; font.pixelSize: 14; color: theme.text; clip: true
-                        Text { visible: !note.text; text: "Add a message (optional)"; color: theme.textSecondary; font: note.font }
+                        Text { visible: !note.text; text: qsTr("Add a message (optional)"); color: theme.textSecondary; font: note.font }
                     }
                     Accessible.role: Accessible.EditableText
-                    Accessible.name: "Add a message (optional)"
+                    Accessible.name: qsTr("Add a message (optional)")
                 }
                 Row {
                     x: 37; spacing: 6
                     Repeater {
-                        model: [{ r: "Accept", icon: "checkmark-20", c: "#498205" }, { r: "Decline", icon: "dismiss-20", c: "#E81123" }, { r: "Tentative", icon: "question-20", c: "#881798" }]
+                        model: [{ r: "Accept", t: qsTr("Accept"), icon: "checkmark-20", c: "#498205" }, { r: "Decline", t: qsTr("Decline"), icon: "dismiss-20", c: "#E81123" }, { r: "Tentative", t: qsTr("Tentative"), icon: "question-20", c: "#881798" }]
                         Rectangle {
                             id: rb
                             required property var modelData
@@ -1676,13 +1677,13 @@ Item {
                                 id: rbRow
                                 anchors.centerIn: parent; spacing: 8
                                 FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: rb.modelData.icon; size: 16; color: theme.hc(rb.modelData.c, "#FFFFFF") }
-                                Text { visible: !details.series || rb.modelData.r !== "Tentative"; anchors.verticalCenter: parent.verticalCenter; text: rb.modelData.r; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
+                                Text { visible: !details.series || rb.modelData.r !== "Tentative"; anchors.verticalCenter: parent.verticalCenter; text: rb.modelData.t; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
                                 FluentIcon { visible: details.series; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-12"; size: 12; color: theme.textSecondary }
                             }
                             HoverHandler { id: rbh; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: details.series ? scopeMenu.openFor(rb.modelData.r, rb) : details.respond(rb.modelData.r, false) }
                             Accessible.role: Accessible.Button
-                            Accessible.name: modelData.r
+                            Accessible.name: modelData.t
                         }
                     }
                 }
@@ -1697,33 +1698,33 @@ Item {
                     name: ({ accepted: "checkmark-20", declined: "dismiss-20", tentativelyAccepted: "question-20" })[details.ev.response] || "star-20"
                     color: theme.hc(({ accepted: "#498205", declined: "#E81123", tentativelyAccepted: "#881798" })[details.ev.response] || "#5B5FC7", "#FFFFFF")
                 }
-                Text { anchors.verticalCenter: parent.verticalCenter; text: ({ accepted: "Accepted", declined: "Declined", tentativelyAccepted: "Tentative", following: "Following" })[details.ev.response] || ""; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: ({ accepted: qsTr("Accepted"), declined: qsTr("Declined"), tentativelyAccepted: qsTr("Tentative"), following: qsTr("Following") })[details.ev.response] || ""; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
                 Text {
-                    anchors.verticalCenter: parent.verticalCenter; text: "Change"; font.family: theme.font; font.pixelSize: 14; color: theme.brand
+                    anchors.verticalCenter: parent.verticalCenter; text: qsTr("Change"); font.family: theme.font; font.pixelSize: 14; color: theme.brand
                     TapHandler { onTapped: details.changing = true }
                     HoverHandler { cursorShape: Qt.PointingHandCursor }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Change"
+                    Accessible.name: qsTr("Change")
                 }
             }
             Row {
                 visible: details.ev.is_organizer === true && !details.confirming
                 topPadding: 14; leftPadding: 34; spacing: 6
-                CardButton { icon: "edit-20"; label: "Edit"; onClicked: { const e = details.ev; details.close(); root.openPage(e) } }
-                CardButton { icon: "calendar-cancel-20"; iconColor: theme.hc("#C50F1F", "#FFFFFF"); label: details.ev.attendees && details.ev.attendees.length || details.ev.channel_id ? "Cancel" : "Delete"; onClicked: details.confirming = true }
+                CardButton { icon: "edit-20"; label: qsTr("Edit"); onClicked: { const e = details.ev; details.close(); root.openPage(e) } }
+                CardButton { icon: "calendar-cancel-20"; iconColor: theme.hc("#C50F1F", "#FFFFFF"); label: details.ev.attendees && details.ev.attendees.length || details.ev.channel_id ? qsTr("Cancel") : qsTr("Delete"); onClicked: details.confirming = true }
             }
             Column {
                 visible: details.confirming
                 topPadding: 14; spacing: 10
                 Text {
                     width: 358; wrapMode: Text.Wrap
-                    text: details.ev.attendees && details.ev.attendees.length || details.ev.channel_id ? "Cancel this meeting for everyone?" : "Delete this event?"
+                    text: details.ev.attendees && details.ev.attendees.length || details.ev.channel_id ? qsTr("Cancel this meeting for everyone?") : qsTr("Delete this event?")
                     font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text
                 }
                 Row {
                     spacing: 8
                     CardButton {
-                        danger: true; label: details.ev.attendees && details.ev.attendees.length || details.ev.channel_id ? "Cancel meeting" : "Delete"
+                        danger: true; label: details.ev.attendees && details.ev.attendees.length || details.ev.channel_id ? qsTr("Cancel meeting") : qsTr("Delete")
                         onClicked: {
                             const e = root.withTeam(details.ev)
                             if (e.channel_id || (e.attendees && e.attendees.length)) root.calendarAction("cancel", JSON.stringify({ event: e, teamId: e.team_id || "", note: "" }))
@@ -1731,7 +1732,7 @@ Item {
                             details.close()
                         }
                     }
-                    CardButton { label: "Keep it"; onClicked: details.confirming = false }
+                    CardButton { label: qsTr("Keep it"); onClicked: details.confirming = false }
                 }
             }
         }
@@ -1754,17 +1755,17 @@ Item {
                 id: promptCol
                 x: 40; y: 8.5; spacing: 8
                 Repeater {
-                    model: ["What are key talking points?", "What are the anticipated outcomes?", "What will this meeting cover?"]
+                    model: [{ k: "What are key talking points?", t: qsTr("What are key talking points?") }, { k: "What are the anticipated outcomes?", t: qsTr("What are the anticipated outcomes?") }, { k: "What will this meeting cover?", t: qsTr("What will this meeting cover?") }]
                     Rectangle {
                         id: chipP
-                        required property string modelData
+                        required property var modelData
                         width: chipPText.implicitWidth + 16; height: 25.33; radius: 8
                         color: chipPHover.hovered ? theme.rowHover : theme.surface
                         border.width: 0.67; border.color: theme.stroke
-                        Text { id: chipPText; anchors.centerIn: parent; text: chipP.modelData; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(chipP, theme.text) }
+                        Text { id: chipPText; anchors.centerIn: parent; text: chipP.modelData.t; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(chipP, theme.text) }
                         HoverHandler { id: chipPHover; cursorShape: Qt.PointingHandCursor }
-                        TapHandler { onTapped: root.askCopilot(chipP.modelData) }
-                        Accessible.role: Accessible.Button; Accessible.name: chipP.modelData
+                        TapHandler { onTapped: root.askCopilot(chipP.modelData.k) }
+                        Accessible.role: Accessible.Button; Accessible.name: chipP.modelData.t
                     }
                 }
             }
@@ -1827,26 +1828,26 @@ Item {
         readonly property var times: { const out = []; for (let m = 0; m < 1440; m += 30) { const d = new Date(2000, 0, 1, 0, m); out.push([String(m), theme.time(d)]) } return out }
         contentItem: Column {
             spacing: 16
-            Text { text: "Propose new time"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text; Accessible.role: Accessible.Heading; Accessible.name: text }
+            Text { text: qsTr("Propose new time"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text; Accessible.role: Accessible.Heading; Accessible.name: text }
             Text { width: 550; elide: Text.ElideRight; text: proposeDialog.ev.subject || ""; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
             Row {
                 spacing: 8
-                Text { anchors.verticalCenter: parent.verticalCenter; text: "Propose new time:"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Propose new time:"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
                 DatePickerField { width: 150; date: proposeDialog.day; onPicked: d => proposeDialog.day = root.midnight(d) }
-                Dropdown { width: 120; label: theme.time(proposeDialog.startAt); options: proposeDialog.times; accessibleName: "Start time"; onPicked: c => proposeDialog.startMin = parseInt(c) }
-                Dropdown { width: 120; label: theme.time(proposeDialog.endAt); accessibleName: "End time"
+                Dropdown { width: 120; label: theme.time(proposeDialog.startAt); options: proposeDialog.times; accessibleName: qsTr("Start time"); onPicked: c => proposeDialog.startMin = parseInt(c) }
+                Dropdown { width: 120; label: theme.time(proposeDialog.endAt); accessibleName: qsTr("End time")
                     options: proposeDialog.times.filter(t => parseInt(t[0]) > proposeDialog.startMin); onPicked: c => proposeDialog.minutes = parseInt(c) - proposeDialog.startMin }
             }
             Dropdown {
-                width: 180; label: proposeDialog.response; accessibleName: "Response"
-                options: [["Tentative", "Tentative"], ["Decline", "Decline"]]
+                width: 180; label: proposeDialog.response === "Decline" ? qsTr("Decline") : qsTr("Tentative"); accessibleName: qsTr("Response")
+                options: [["Tentative", qsTr("Tentative")], ["Decline", qsTr("Decline")]]
                 onPicked: c => proposeDialog.response = c
             }
-            Field600 { id: proposeNote; hint: "Add a message (optional)" }
+            Field600 { id: proposeNote; hint: qsTr("Add a message (optional)") }
             Row {
                 anchors.right: parent.right; spacing: 8
-                CardButton { label: "Cancel"; onClicked: proposeDialog.close() }
-                CardButton { primary: true; icon: "send-20"; label: "Send"; onClicked: proposeDialog.send() }
+                CardButton { label: qsTr("Cancel"); onClicked: proposeDialog.close() }
+                CardButton { primary: true; icon: "send-20"; label: qsTr("Send"); onClicked: proposeDialog.send() }
             }
         }
     }
@@ -1871,21 +1872,21 @@ Item {
             const invited = e.is_organizer === false
             const r = e.response || ""
             const out = []
-            if (e.join_url) out.push({ label: "Join Teams meeting", icon: "video-20", act: "join" }, { label: "Chat with participants", icon: "chat-20", act: "chat" }, { label: "Copy meeting link", icon: "link-20", act: "copy" }, { separator: true })
-            out.push({ label: "Print", icon: "print-20", act: "owa:Print" }, { separator: true })
+            if (e.join_url) out.push({ label: qsTr("Join Teams meeting"), icon: "video-20", act: "join" }, { label: qsTr("Chat with participants"), icon: "chat-20", act: "chat" }, { label: qsTr("Copy meeting link"), icon: "link-20", act: "copy" }, { separator: true })
+            out.push({ label: qsTr("Print"), icon: "print-20", act: "owa:Print" }, { separator: true })
             if (invited) {
-                out.push({ label: "Accept", icon: "checkmark-20", checked: r === "accepted", act: "rsvp:Accept" },
-                         { label: "Decline", icon: "dismiss-20", checked: r === "declined", act: "rsvp:Decline" },
-                         { label: "Tentative", icon: "question-20", checked: r === "tentativelyAccepted", act: "rsvp:Tentative" })
-                if (e.allow_new_time_proposals !== false) out.push({ label: "Propose new time", icon: "calendar-arrow-right-20", act: "owa:Propose new time" })
-                out.push({ label: "Forward", icon: "arrow-forward-20", act: "owa:Forward" }, { separator: true })
+                out.push({ label: qsTr("Accept"), icon: "checkmark-20", checked: r === "accepted", act: "rsvp:Accept" },
+                         { label: qsTr("Decline"), icon: "dismiss-20", checked: r === "declined", act: "rsvp:Decline" },
+                         { label: qsTr("Tentative"), icon: "question-20", checked: r === "tentativelyAccepted", act: "rsvp:Tentative" })
+                if (e.allow_new_time_proposals !== false) out.push({ label: qsTr("Propose new time"), icon: "calendar-arrow-right-20", act: "owa:Propose new time" })
+                out.push({ label: qsTr("Forward"), icon: "arrow-forward-20", act: "owa:Forward" }, { separator: true })
             }
-            const shows = [["free", "Free"], ["workingElsewhere", "Working elsewhere"], ["tentative", "Tentative"], ["busy", "Busy"], ["oof", "Away"]]
+            const shows = [["free", qsTr("Free")], ["workingElsewhere", qsTr("Working elsewhere")], ["tentative", qsTr("Tentative")], ["busy", qsTr("Busy")], ["oof", qsTr("Away")]]
             // Charm › opens the charm picker beside it (Outlook's CharmPicker).
-            out.push({ label: "Charm", icon: root.charmOf(e) ? root.charmMenuIcon(root.charmOf(e)) : "emoji-20", chevron: true, flyout: true },
-                     { label: "Show as", icon: "status-20", submenu: shows.map(x => ({ label: x[1], checked: e.show_as === x[0], act: "showAs:" + x[0] })) },
-                     { label: "Categorize", icon: "tag-20", submenu: root.categories.map(c => ({ label: c.name, tag: root.categoryTag(c.color), checked: (e.categories || []).indexOf(c.name) >= 0, act: "cat:" + c.name })) },
-                     { label: "Private", icon: "lock-closed-20", checked: e.sensitivity === "private", act: "private" })
+            out.push({ label: qsTr("Charm"), icon: root.charmOf(e) ? root.charmMenuIcon(root.charmOf(e)) : "emoji-20", chevron: true, flyout: true },
+                     { label: qsTr("Show as"), icon: "status-20", submenu: shows.map(x => ({ label: x[1], checked: e.show_as === x[0], act: "showAs:" + x[0] })) },
+                     { label: qsTr("Categorize"), icon: "tag-20", submenu: root.categories.map(c => ({ label: c.name, tag: root.categoryTag(c.color), checked: (e.categories || []).indexOf(c.name) >= 0, act: "cat:" + c.name })) },
+                     { label: qsTr("Private"), icon: "lock-closed-20", checked: e.sensitivity === "private", act: "private" })
             // Instructions › (Copilot's calendar instructions, for a Copilot
             // user): Create instruction (not on your own meetings) hands
             // Copilot "Always {accept|follow|decline} meeting from {organizer}"
@@ -1893,14 +1894,14 @@ Item {
             // settings at Calendar instructions.
             if (copilotEntries && !e.is_draft) {
                 const sub = []
-                if (invited) sub.push({ label: "Create instruction", act: "instr:create" })
-                sub.push({ label: "Manage instructions", act: "instr:manage" })
-                out.push({ label: "Instructions", icon: "calendar-sparkle-20", submenu: sub })
+                if (invited) sub.push({ label: qsTr("Create instruction"), act: "instr:create" })
+                sub.push({ label: qsTr("Manage instructions"), act: "instr:manage" })
+                out.push({ label: qsTr("Instructions"), icon: "calendar-sparkle-20", submenu: sub })
             }
             out.push({ separator: true },
-                     { label: "Duplicate event", icon: "copy-20", act: "owa:Duplicate" },
-                     { label: "Save as .ics", icon: "arrow-download-20", act: "owa:Save as .ics" },
-                     { label: "Delete", icon: "delete-20", act: "delete" })
+                     { label: qsTr("Duplicate event"), icon: "copy-20", act: "owa:Duplicate" },
+                     { label: qsTr("Save as .ics"), icon: "arrow-download-20", act: "owa:Save as .ics" },
+                     { label: qsTr("Delete"), icon: "delete-20", act: "delete" })
             return out
         }
         onPicked: i => root.tileAct(ev, items[i].act)
@@ -1941,7 +1942,7 @@ Item {
                     HoverHandler { id: tcHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: { const e = tileMenu.ev; tileCharms.close(); tileMenu.close(); root.tileAct(e, "charm:" + tcCell.modelData[0]) } }
                     Accessible.role: Accessible.Button
-                    Accessible.name: tcCell.modelData[1] + " icon"
+                    Accessible.name: qsTr("%1 icon").arg(tcCell.modelData[3])
                 }
             }
         }
@@ -1950,8 +1951,8 @@ Item {
     function tileAct(e, a) {
         if (!a) return
         const id = e.id
-        if (a === "join") root.joinMeeting(e.join_url, e.subject || "Meeting")
-        else if (a === "chat") root.openMeetingChat(e.join_url, e.subject || "Meeting")
+        if (a === "join") root.joinMeeting(e.join_url, e.subject || qsTr("Meeting"))
+        else if (a === "chat") root.openMeetingChat(e.join_url, e.subject || qsTr("Meeting"))
         else if (a === "copy") backend.copyText(e.join_url)
         else if (a === "owa:Propose new time" && !objectId) proposeDialog.openFor(e, "Tentative")
         else if (a.startsWith("owa:")) openOwaItem(e, a.slice(4))
@@ -1983,20 +1984,19 @@ Item {
         // With the pane open (measured on winpc): Go to today, previous,
         // next, the range, the view, Filter, a divider, New (split), then
         // Share, Print, Calendar settings.
-        const unit = monthView ? "month" : view === "day" ? "day" : "week"
         if (copilotOpen) out.push(
-            { label: "Go to today", icon: "calendar-today-20", act: "today" },
-            { label: "Go to previous " + unit, icon: "chevron-left-20", act: "prev" },
-            { label: "Go to next " + unit, icon: "chevron-right-20", act: "next" },
+            { label: qsTr("Go to today"), icon: "calendar-today-20", act: "today" },
+            { label: monthView ? qsTr("Go to previous month") : view === "day" ? qsTr("Go to previous day") : qsTr("Go to previous week"), icon: "chevron-left-20", act: "prev" },
+            { label: monthView ? qsTr("Go to next month") : view === "day" ? qsTr("Go to next day") : qsTr("Go to next week"), icon: "chevron-right-20", act: "next" },
             { label: rangeLabel, icon: "calendar-month-20", act: "range" },
-            { label: ({ day: "Day", workweek: "Work week", week: "Week", month: "Month" })[view], icon: "calendar-work-week-20", submenu: viewMenuItems.filter(x => !x.separator && !x.heading && x.act), act: "view" })
-        if (!filterInline || copilotOpen) out.push({ label: filterApplied ? "Filter applied" : "Filter", icon: "filter-20", outlined: filterApplied, submenu: filterMenuItems, act: "filter" }, { separator: true })
-        if (copilotOpen) out.push({ label: "New", icon: "calendar-add-20", split: true, act: "new", submenu: [{ label: "Event", icon: "calendar-ltr-20", act: "newEvent" }, { label: "Channel meeting", icon: "channel-20", act: "new" }] })
+            { label: ({ day: qsTr("Day"), workweek: qsTr("Work week"), week: qsTr("Week"), month: qsTr("Month") })[view], icon: "calendar-work-week-20", submenu: viewMenuItems.filter(x => !x.separator && !x.heading && x.act), act: "view" })
+        if (!filterInline || copilotOpen) out.push({ label: filterApplied ? qsTr("Filter applied") : qsTr("Filter"), icon: "filter-20", outlined: filterApplied, submenu: filterMenuItems, act: "filter" }, { separator: true })
+        if (copilotOpen) out.push({ label: qsTr("New"), icon: "calendar-add-20", split: true, act: "new", submenu: [{ label: qsTr("Event"), icon: "calendar-ltr-20", act: "newEvent" }, { label: qsTr("Channel meeting"), icon: "channel-20", act: "new" }] })
         out.push(shareable.length > 1
-            ? { label: "Share", icon: "share-20", submenu: shareable.map(c => ({ label: c.name, icon: "calendar-ltr-20", act: "share:" + c.name })), act: "share" }
-            : { label: "Share", icon: "share-20", act: "share" },
-            { label: "Print", icon: "print-20", act: "print" },
-            { label: "Calendar settings", icon: "settings-20", act: "settings" })
+            ? { label: qsTr("Share"), icon: "share-20", submenu: shareable.map(c => ({ label: c.name, icon: "calendar-ltr-20", act: "share:" + c.name })), act: "share" }
+            : { label: qsTr("Share"), icon: "share-20", act: "share" },
+            { label: qsTr("Print"), icon: "print-20", act: "print" },
+            { label: qsTr("Calendar settings"), icon: "settings-20", act: "settings" })
         return out
     }
     function moreAct(a) {
@@ -2118,7 +2118,7 @@ Item {
         property string response
         function openFor(r, item) { response = r; parent = item; x = 0; y = item.height + 2; open() }
         width: 180
-        items: [{ label: "This event" }, { label: "All events in the series" }]
+        items: [{ label: qsTr("This event") }, { label: qsTr("All events in the series") }]
         onPicked: i => details.respond(scopeMenu.response, i === 1)
     }
 
@@ -2163,7 +2163,7 @@ Item {
             Text {
                 anchors.verticalCenter: parent.verticalCenter
                 text: cb.label
-                font.family: theme.font; font.pixelSize: theme.base; font.weight: cb.primary || cb.danger || cb.label === "Chat" ? Font.DemiBold : Font.Normal
+                font.family: theme.font; font.pixelSize: theme.base; font.weight: cb.primary || cb.danger || cb.label === qsTr("Chat") ? Font.DemiBold : Font.Normal
                 color: theme.onFill(cb, cb.primary || cb.danger ? "white" : theme.text)
             }
         }
@@ -2192,11 +2192,11 @@ Item {
                 width: 340
                 Text {
                     leftPadding: 24; topPadding: 16; rightPadding: 46; bottomPadding: 20; width: 340; wrapMode: Text.Wrap
-                    text: "Teams Live Events is Retiring"; font.family: theme.font; font.pixelSize: 20; color: theme.text
+                    text: qsTr("Teams Live Events is Retiring"); font.family: theme.font; font.pixelSize: 20; color: theme.text
                 }
                 Text {
                     x: 24; width: 292; wrapMode: Text.Wrap; textFormat: Text.StyledText
-                    text: "Teams Live Events is retiring. Please transition to Teams town hall to get the improved experience for large digital and hybrid events at scale. For more information, <a href=\"https://go.microsoft.com/fwlink/?linkid=2347480\">Learn more</a>."
+                    text: qsTr("Teams Live Events is retiring. Please transition to Teams town hall to get the improved experience for large digital and hybrid events at scale. For more information, ") + "<a href=\"https://go.microsoft.com/fwlink/?linkid=2347480\">" + qsTr("Learn more") + "</a>."
                     linkColor: theme.brand; onLinkActivated: l => Qt.openUrlExternally(l)
                     font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
                 }
@@ -2204,7 +2204,7 @@ Item {
                 Row {
                     x: 340 - 24 - width; spacing: 8
                     Repeater {
-                        model: [["Create town hall", true], ["Continue", false]]
+                        model: [[qsTr("Create town hall"), true], [qsTr("Continue"), false]]
                         Rectangle {
                             id: lerBtn
                             required property var modelData
@@ -2229,26 +2229,26 @@ Item {
     // brand), and Close (96 x 32, 600, a #D1D1D1 edge) at the bottom left.
     Window {
         id: newLiveEvent
-        title: "Microsoft Teams"
+        title: qsTr("Microsoft Teams")
         width: 946; height: 681
         color: theme.surface
         modality: Qt.NonModal
         Rectangle { anchors.fill: parent; color: theme.surface }
-        Text { x: 30; y: 17.4; text: "New live event"; font.family: theme.font; font.pixelSize: 21; font.weight: Font.Bold; color: theme.textSecondary }
+        Text { x: 30; y: 17.4; text: qsTr("New live event"); font.family: theme.font; font.pixelSize: 21; font.weight: Font.Bold; color: theme.textSecondary }
         FluentIcon { x: (parent.width - 80) / 2; y: 278.4; name: "prohibited-20-regular"; size: 80; color: theme.textSecondary }
         Text {
             anchors.horizontalCenter: parent.horizontalCenter; y: 366.4
             textFormat: Text.StyledText; linkColor: theme.brand; onLinkActivated: l => Qt.openUrlExternally(l)
-            text: "Teams live events is retiring, please use <a href=\"https://adoption.microsoft.com/en-us/microsoft-teams/meetings-webinars-and-town-halls/town-halls/\"><span style=\"font-weight:400\">Teams town halls</span></a> for your large digital and hybrid events"
+            text: qsTr("Teams live events is retiring, please use ") + "<a href=\"https://adoption.microsoft.com/en-us/microsoft-teams/meetings-webinars-and-town-halls/town-halls/\"><span style=\"font-weight:400\">" + qsTr("Teams town halls") + "</span></a>" + qsTr(" for your large digital and hybrid events")
             font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold; color: theme.text
         }
         Rectangle {
             x: 30; y: parent.height - 61.3; width: 96; height: 32; radius: 4
             color: nleClose.hovered ? theme.hover : theme.surface; border.width: 1; border.color: theme.hc("#D1D1D1", "#FFFFFF")
-            Text { anchors.centerIn: parent; text: "Close"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+            Text { anchors.centerIn: parent; text: qsTr("Close"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
             HoverHandler { id: nleClose; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: newLiveEvent.close() }
-            Accessible.role: Accessible.Button; Accessible.name: "Close"
+            Accessible.role: Accessible.Button; Accessible.name: qsTr("Close")
         }
     }
 
@@ -2280,18 +2280,18 @@ Item {
         id: meetNowDialog
         property bool linkOnly: false
         property string link: ""
-        function openFresh() { linkOnly = false; link = ""; meetName.text = "Meeting with " + (root.me.name || ""); open() }
+        function openFresh() { linkOnly = false; link = ""; meetName.text = qsTr("Meeting with %1").arg(root.me.name || ""); open() }
         contentItem: Column {
             spacing: 0
             Item {
                 width: 550; height: 32
-                Text { anchors.verticalCenter: parent.verticalCenter; text: "Start a meeting now"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
-                NavButton { anchors.right: parent.right; icon: "dismiss-20"; tip: "Close"; onClicked: meetNowDialog.close() }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Start a meeting now"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+                NavButton { anchors.right: parent.right; icon: "dismiss-20"; tip: qsTr("Close"); onClicked: meetNowDialog.close() }
             }
             Item { width: 1; height: 16 }
-            Text { text: "Meeting name"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+            Text { text: qsTr("Meeting name"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
             Item { width: 1; height: 8 }
-            Field600 { id: meetName; hint: "Meeting name" }
+            Field600 { id: meetName; hint: qsTr("Meeting name") }
             Item { width: 1; height: 20 }
             Text {
                 visible: !!meetNowDialog.link
@@ -2301,9 +2301,9 @@ Item {
             Item { visible: !!meetNowDialog.link; width: 1; height: 12 }
             Row {
                 anchors.right: parent.right; spacing: 8
-                CardButton { primary: true; icon: "video-20"; label: "Start meeting"; onClicked: { meetNowDialog.linkOnly = false; root.calendarAction("meetNow", JSON.stringify({ subject: meetName.text.trim() || "Meeting" })) } }
+                CardButton { primary: true; icon: "video-20"; label: qsTr("Start meeting"); onClicked: { meetNowDialog.linkOnly = false; root.calendarAction("meetNow", JSON.stringify({ subject: meetName.text.trim() || "Meeting" })) } }
                 CardButton {
-                    icon: "link-20"; label: meetNowDialog.link ? "Copy link" : "Get a link to share"
+                    icon: "link-20"; label: meetNowDialog.link ? qsTr("Copy link") : qsTr("Get a link to share")
                     onClicked: {
                         if (meetNowDialog.link) { textCopy.text = meetNowDialog.link; textCopy.selectAll(); textCopy.copy(); return }
                         meetNowDialog.linkOnly = true
@@ -2324,25 +2324,25 @@ Item {
             spacing: 0
             Item {
                 width: 550; height: 32
-                Text { anchors.verticalCenter: parent.verticalCenter; text: "Join a meeting with an ID"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
-                NavButton { anchors.right: parent.right; icon: "dismiss-20"; tip: "Close"; onClicked: joinId.close() }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Join a meeting with an ID"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+                NavButton { anchors.right: parent.right; icon: "dismiss-20"; tip: qsTr("Close"); onClicked: joinId.close() }
             }
             Item { width: 1; height: 16 }
             Row {
                 spacing: 2
-                Text { anchors.verticalCenter: parent.verticalCenter; text: "Meeting ID"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Meeting ID"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
                 NavButton {
-                    icon: "info-16"; iconSize: 12; tip: "You'll find the meeting ID with the other join info near the bottom of the meeting invite."
+                    icon: "info-16"; iconSize: 12; tip: qsTr("You'll find the meeting ID with the other join info near the bottom of the meeting invite.")
                     ToolTip.visible: hovered2.hovered; ToolTip.text: tip
                     HoverHandler { id: hovered2 }
                 }
             }
             Item { width: 1; height: 4 }
-            Field600 { id: idField; hint: "Type a meeting ID" }
+            Field600 { id: idField; hint: qsTr("Type a meeting ID") }
             Item { width: 1; height: 18 }
-            Text { text: "Meeting passcode"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+            Text { text: qsTr("Meeting passcode"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
             Item { width: 1; height: 12 }
-            Field600 { id: passField; hint: "Type a meeting passcode" }
+            Field600 { id: passField; hint: qsTr("Type a meeting passcode") }
             Item { width: 1; height: 16 }
             Rectangle {
                 id: joinIdButton
@@ -2353,12 +2353,12 @@ Item {
                     id: jidRow
                     anchors.centerIn: parent; spacing: 6
                     FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "video-20"; size: 16; color: joinId.ready ? theme.onFill(joinIdButton, "white") : theme.hc("#BDBDBD", "#3FF23F") }
-                    Text { text: "Join Meeting"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: joinId.ready ? theme.onFill(joinIdButton, "white") : theme.hc("#BDBDBD", "#3FF23F") }
+                    Text { text: qsTr("Join Meeting"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: joinId.ready ? theme.onFill(joinIdButton, "white") : theme.hc("#BDBDBD", "#3FF23F") }
                 }
                 HoverHandler { id: jidh; cursorShape: joinId.ready ? Qt.PointingHandCursor : Qt.ArrowCursor }
                 TapHandler { enabled: joinId.ready; onTapped: { root.joinWithId(idField.text.replace(/\s/g, ""), passField.text.trim()); joinId.close() } }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Join Meeting"
+                Accessible.name: qsTr("Join Meeting")
             }
         }
     }
@@ -2387,7 +2387,7 @@ Item {
         contentItem: Item {
             Text {
                 x: 27; y: 18; width: 220; elide: Text.ElideRight
-                text: saveViewDialog.existing ? "Edit view" : "Save current view"
+                text: saveViewDialog.existing ? qsTr("Edit view") : qsTr("Save current view")
                 font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text
                 Accessible.role: Accessible.Heading; Accessible.name: text
             }
@@ -2398,9 +2398,9 @@ Item {
                 FluentIcon { anchors.centerIn: parent; name: "dismiss-16"; size: 16; color: theme.onFill(svClose, theme.textSecondary) }
                 HoverHandler { id: svCloseHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: saveViewDialog.close() }
-                Accessible.role: Accessible.Button; Accessible.name: "Close"
+                Accessible.role: Accessible.Button; Accessible.name: qsTr("Close")
             }
-            Text { x: 51; y: 61; text: "Name this view"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.textSecondary }
+            Text { x: 51; y: 61; text: qsTr("Name this view"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.textSecondary }
             Rectangle {
                 id: charmBtn
                 x: 14; y: 92.67; width: 28; height: 28; radius: 2
@@ -2413,7 +2413,7 @@ Item {
                 HoverHandler { id: charmHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: charmPicker.visible ? charmPicker.close() : charmPicker.open() }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Select an event charm button, " + (saveViewDialog.charm > 0 ? (root.charms.find(c => c[0] === saveViewDialog.charm) || [0, "No"])[1] + " icon" : "No icon") + " selected"
+                Accessible.name: qsTr("Select an event charm button, %1 selected").arg(saveViewDialog.charm > 0 ? qsTr("%1 icon").arg((root.charms.find(c => c[0] === saveViewDialog.charm) || [0, "", "", qsTr("No")])[3]) : qsTr("No icon"))
                 // The charms (Teams' CharmDefaultSet): 12 a row, 32 px each,
                 // 4 apart, the chosen one #DCDFFA, glyphs 17 px #616161.
                 Popup {
@@ -2434,7 +2434,7 @@ Item {
                                 HoverHandler { id: cellHover; cursorShape: Qt.PointingHandCursor }
                                 TapHandler { onTapped: { saveViewDialog.charm = charmCell.modelData[0]; charmPicker.close() } }
                                 Accessible.role: Accessible.Button
-                                Accessible.name: charmCell.modelData[1] + " icon"
+                                Accessible.name: qsTr("%1 icon").arg(charmCell.modelData[3])
                             }
                         }
                     }
@@ -2450,7 +2450,7 @@ Item {
                     font.family: theme.font; font.pixelSize: 14; color: theme.text; clip: true; selectByMouse: true
                     onAccepted: if (text.trim().length) svSave.clicked()
                 }
-                Accessible.role: Accessible.EditableText; Accessible.name: "Name this view"
+                Accessible.role: Accessible.EditableText; Accessible.name: qsTr("Name this view")
             }
             Rectangle {
                 id: svSave
@@ -2460,20 +2460,20 @@ Item {
                 x: 144.81; y: 152.67; width: 80; height: 32; radius: 2
                 color: !on ? theme.hc("#F5F5F5", "#000000") : svSaveHover.hovered ? theme.brandHover : theme.brandFill
                 border.width: 0.67; border.color: on ? "transparent" : theme.hc("#F5F5F5", "#3FF23F")
-                Text { anchors.centerIn: parent; text: "Save"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: svSave.on ? theme.onFill(svSave, "white") : theme.disabled }
+                Text { anchors.centerIn: parent; text: qsTr("Save"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: svSave.on ? theme.onFill(svSave, "white") : theme.disabled }
                 HoverHandler { id: svSaveHover; cursorShape: svSave.on ? Qt.PointingHandCursor : Qt.ArrowCursor }
                 TapHandler { enabled: svSave.on; onTapped: svSave.clicked() }
-                Accessible.role: Accessible.Button; Accessible.name: "Save"
+                Accessible.role: Accessible.Button; Accessible.name: qsTr("Save")
             }
             Rectangle {
                 id: svCancel
                 x: 232.81; y: 152.67; width: 83.19; height: 32; radius: 2
                 color: svCancelHover.hovered ? theme.rowHover : theme.surface
                 border.width: 0.67; border.color: theme.hc("#BDBDBD", "#FFFFFF")
-                Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(svCancel, theme.textSecondary) }
+                Text { anchors.centerIn: parent; text: qsTr("Cancel"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(svCancel, theme.textSecondary) }
                 HoverHandler { id: svCancelHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: saveViewDialog.close() }
-                Accessible.role: Accessible.Button; Accessible.name: "Cancel"
+                Accessible.role: Accessible.Button; Accessible.name: qsTr("Cancel")
             }
         }
     }
@@ -2481,9 +2481,9 @@ Item {
     ConfirmDialog {
         id: deleteViewDialog
         property var view: null
-        title: "Delete view"
-        body: view ? "Do you want to delete the view \"" + (view.viewName || "") + "\"?" : ""
-        confirmText: "Delete"
+        title: qsTr("Delete view")
+        body: view ? qsTr("Do you want to delete the view \"%1\"?").arg(view.viewName || "") : ""
+        confirmText: qsTr("Delete")
         onConfirmed: if (view) root.calendarAction("deleteView", JSON.stringify({ id: view.id }))
     }
 
@@ -2500,9 +2500,9 @@ Item {
         width: root.copilotWidth
         color: theme.surface
         FluentSurface { anchors.fill: parent; depth: 4; radius: 0; z: -1 }
-        Text { x: 16.67; y: 21.67; text: "Copilot"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
-        NavButton { x: parent.width - 80; y: 20; icon: "panel-right-contract-20"; tip: "Collapse Copilot Chat"; onClicked: root.copilotOpen = false }
-        NavButton { x: parent.width - 48; y: 20; icon: "dismiss-20"; tip: "Close Copilot Chat"; onClicked: root.copilotOpen = false }
+        Text { x: 16.67; y: 21.67; text: qsTr("Copilot"); font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
+        NavButton { x: parent.width - 80; y: 20; icon: "panel-right-contract-20"; tip: qsTr("Collapse Copilot Chat"); onClicked: root.copilotOpen = false }
+        NavButton { x: parent.width - 48; y: 20; icon: "dismiss-20"; tip: qsTr("Close Copilot Chat"); onClicked: root.copilotOpen = false }
         Rectangle {
             anchors { top: parent.top; topMargin: 59.33; left: parent.left; right: parent.right; bottom: parent.bottom }
             color: theme.hc("#FAFAFA", "#000000")
@@ -2551,7 +2551,7 @@ Item {
             width: parent.width; height: 48
             color: theme.surface
             Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.hc("#D1D1D1", "#FFFFFF") }
-            Text { x: 16; anchors.verticalCenter: parent.verticalCenter; text: "New event"; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
+            Text { x: 16; anchors.verticalCenter: parent.verticalCenter; text: qsTr("New event"); font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
             // Open in new window (Teams' stage view pop-out of the same page).
             Rectangle {
                 id: composePop
@@ -2560,7 +2560,7 @@ Item {
                 FluentIcon { anchors.centerIn: parent; name: "open-20"; size: 20; color: theme.onFill(composePop, theme.text) }
                 HoverHandler { id: cpHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: root.popOutCompose({}) }
-                Accessible.role: Accessible.Button; Accessible.name: "Open in new window"
+                Accessible.role: Accessible.Button; Accessible.name: qsTr("Open in new window")
             }
             Rectangle {
                 id: composeClose
@@ -2569,7 +2569,7 @@ Item {
                 FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(composeClose, theme.text) }
                 HoverHandler { id: ccHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: composeLayer.visible = false }
-                Accessible.role: Accessible.Button; Accessible.name: "Close"
+                Accessible.role: Accessible.Button; Accessible.name: qsTr("Close")
             }
         }
         Loader {
@@ -2596,7 +2596,7 @@ Item {
         Window {
             id: cw
             property string url: ""
-            title: "New event | Calendar"
+            title: qsTr("New event | Calendar")
             width: root.Window.window ? root.Window.window.width : 1280
             height: root.Window.window ? root.Window.window.height : 680
             color: theme.hc("#FAFAFA", "#000000")
@@ -2615,7 +2615,7 @@ Item {
     signal composeClosed()
     function popOutCompose(p) {
         composeLayer.visible = false; composeHost.active = false
-        const w = composeWindow.createObject(null, { url: p.contentUrl || "", title: p.title || "New event | Calendar" })
+        const w = composeWindow.createObject(null, { url: p.contentUrl || "", title: p.title || qsTr("New event | Calendar") })
         w.show()
         popoutForTest = w
         return w
@@ -2670,8 +2670,8 @@ Item {
                 root.calendarAction("respond", JSON.stringify({ id: id, event: { id: e.id, ical_uid: e.ical_uid, event_type: e.event_type, start_utc: e.start_utc, series_master_id: e.series_master_id }, series: !!series, response: response, send: send, note: msg }))
                 formLayer.visible = false
             }
-            onJoin: root.joinMeeting(form.event.join_url, form.event.subject || "Meeting")
-            onOpenChat: root.openMeetingChat(form.event.join_url, form.event.subject || "Meeting")
+            onJoin: root.joinMeeting(form.event.join_url, form.event.subject || qsTr("Meeting"))
+            onOpenChat: root.openMeetingChat(form.event.join_url, form.event.subject || qsTr("Meeting"))
             onCopyLink: { textCopy.text = form.event.join_url || ""; textCopy.selectAll(); textCopy.copy() }
         }
     }

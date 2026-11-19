@@ -15,11 +15,11 @@ Rectangle {
         FluentIcon { name: "person-unverified-16-filled"; size: 16; color: theme.onFill(hcFill1, theme.pick("#FFFFFF", "#242424", "#FFFFFF")); anchors.verticalCenter: parent.verticalCenter }
         Text {
             anchors.verticalCenter: parent.verticalCenter
-            text: "Unverified"
+            text: qsTr("Unverified")
             font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold
             color: theme.onFill(hcFill1, theme.pick("#FFFFFF", "#242424", "#FFFFFF"))
         }
     }
     Accessible.role: Accessible.StaticText
-    Accessible.name: "Unverified"
+    Accessible.name: qsTr("Unverified")
 }

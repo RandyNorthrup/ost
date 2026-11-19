@@ -13,6 +13,11 @@ Image {
     sourceSize: Qt.size(size * 2, size * 2)
     smooth: true
     fillMode: Image.PreserveAspectFit
+    // Right to left the window is mirrored (src/i18n.cpp) and its pictures
+    // mirrored back; Teams leaves the icons its library marks flipInRtl
+    // mirrored.
+    readonly property bool ostMirrorsItself: true
+    mirror: theme.rtl && !theme.iconFlips(name)
 
     property string svgText: ""
     onNameChanged: load()

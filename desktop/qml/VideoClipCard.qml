@@ -67,7 +67,7 @@ Item {
     function spokenLength(s) {
         s = Math.max(1, Math.round(s))
         const m = Math.floor(s / 60), ss = s % 60
-        return (m > 0 ? m + (m === 1 ? " minute" : " minutes") + (ss > 0 ? " " : "") : "") + (ss > 0 || m === 0 ? ss + (ss === 1 ? " second" : " seconds") : "")
+        return (m > 0 ? qsTr("%n minutes", "", m) + (ss > 0 ? " " : "") : "") + (ss > 0 || m === 0 ? (ss === 1 ? qsTr("1 second") : qsTr("%1 seconds").arg(ss)) : "")
     }
     function play(fromQuality) {
         error = ""
@@ -201,7 +201,7 @@ Item {
         HoverHandler { cursorShape: Qt.PointingHandCursor }
         TapHandler { enabled: root.state_ === "preview"; onTapped: root.play() }
         Accessible.role: Accessible.Button
-        Accessible.name: "Play video. " + root.spokenLength(root.clip.duration || 0) + " long"
+        Accessible.name: qsTr("Play video. %1 long").arg(root.spokenLength(root.clip.duration || 0))
         Accessible.onPressAction: root.play()
     }
     Rectangle {
@@ -214,7 +214,7 @@ Item {
     Text {
         visible: root.error.length > 0 && root.state_ === "preview"
         x: 72; y: parent.height - 12 - 40; width: parent.width - 72 - 80
-        text: "Couldn't load video clip."
+        text: qsTr("Couldn't load video clip.")
         font.family: theme.font; font.pixelSize: 12; color: theme.onFill(hcFill1, "white"); wrapMode: Text.Wrap
         style: Text.Raised; styleColor: "#80000000"
     }
@@ -224,9 +224,9 @@ Item {
         anchors.fill: parent
         color: theme.hc("#66000000", "#000000")
         BusyIndicator { x: 0; y: parent.height - 62; width: 62; height: 62; running: root.processing; padding: 15; palette.dark: "white" }
-        Text { x: 62; y: parent.height - 62; height: 34; verticalAlignment: Text.AlignVCenter; text: "Processing..."; font.family: theme.font; font.pixelSize: 14; color: "white" }
+        Text { x: 62; y: parent.height - 62; height: 34; verticalAlignment: Text.AlignVCenter; text: qsTr("Processing..."); font.family: theme.font; font.pixelSize: 14; color: "white" }
         Accessible.role: Accessible.Indicator
-        Accessible.name: "Video processing"
+        Accessible.name: qsTr("Video processing")
     }
     Rectangle {
         visible: root.uploadFailed && !root.processing
@@ -237,11 +237,11 @@ Item {
             anchors.centerIn: parent
             width: retryText.implicitWidth + 24; height: 31.3; radius: 4
             color: retryHover.hovered ? theme.brandHover : theme.brand
-            Text { id: retryText; anchors.centerIn: parent; text: "Re-upload video clip"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, "white") }
+            Text { id: retryText; anchors.centerIn: parent; text: qsTr("Re-upload video clip"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, "white") }
             HoverHandler { id: retryHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.retryUpload() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Re-upload video clip"
+            Accessible.name: qsTr("Re-upload video clip")
         }
     }
     // Remove video clip (compose box, hover).
@@ -254,9 +254,9 @@ Item {
         FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: "white" }
         HoverHandler { id: removeHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: { player.stop(); root.removeRequested() } }
-        ToolTip.visible: removeHover.hovered; ToolTip.delay: 500; ToolTip.text: "Remove video clip"
+        ToolTip.visible: removeHover.hovered; ToolTip.delay: 500; ToolTip.text: qsTr("Remove video clip")
         Accessible.role: Accessible.Button
-        Accessible.name: "Remove video clip"
+        Accessible.name: qsTr("Remove video clip")
     }
     // Options (hover): Download video.
     Rectangle {
@@ -269,13 +269,13 @@ Item {
         HoverHandler { id: optHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: clipMenu.popup(optionsBtn, optionsBtn.width - clipMenu.width, optionsBtn.height + 4) }
         ToolTip.visible: optHover.hovered && !clipMenu.opened
-        ToolTip.text: "More video clip options"
+        ToolTip.text: qsTr("More video clip options")
         Accessible.role: Accessible.Button
-        Accessible.name: "Options"
+        Accessible.name: qsTr("Options")
     }
     MenuPopup {
         id: clipMenu
-        items: [{ label: "Download video", icon: "arrow-download-20" }]
+        items: [{ label: qsTr("Download video"), icon: "arrow-download-20" }]
         // (Placed in the card's own coordinates, under the button, its end
         // at the button's.)
         function popup(item, px, py) { const p = item.mapToItem(root, px, py); x = p.x; y = p.y; open() }
@@ -294,11 +294,11 @@ Item {
             anchors.horizontalCenter: parent.horizontalCenter
             width: replyText.implicitWidth + 24; height: 31.3; radius: 4
             color: replyHover.hovered ? theme.brandHover : theme.brand
-            Text { id: replyText; anchors.centerIn: parent; text: "Reply with a video clip"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, theme.textOnBrand) }
+            Text { id: replyText; anchors.centerIn: parent; text: qsTr("Reply with a video clip"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, theme.textOnBrand) }
             HoverHandler { id: replyHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.replyWithClip() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Reply with a video clip"
+            Accessible.name: qsTr("Reply with a video clip")
         }
         Item {
             anchors.horizontalCenter: parent.horizontalCenter
@@ -307,12 +307,12 @@ Item {
                 id: againRow
                 anchors.centerIn: parent; spacing: 6
                 FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "replay-20"; size: 20; color: theme.onFill(hcFill1, "white") }
-                Text { anchors.verticalCenter: parent.verticalCenter; text: "Play again"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, "white") }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Play again"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, "white") }
             }
             HoverHandler { cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.play() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Play again"
+            Accessible.name: qsTr("Play again")
         }
     }
 
@@ -345,7 +345,7 @@ Item {
                 onPositionChanged: m => { if (pressed) seek(m.x) }
             }
             Accessible.role: Accessible.Slider
-            Accessible.name: "Progress bar"
+            Accessible.name: qsTr("Progress bar")
         }
         component CtlButton: Item {
             id: cb
@@ -372,34 +372,34 @@ Item {
             CtlButton {
                 readonly property bool playing: player.playbackState === MediaPlayer.PlayingState
                 icon: playing ? "pause-20" : "play-20"
-                label: playing ? "Pause" : "Play"
+                label: playing ? qsTr("Pause") : qsTr("Play")
                 onClicked: playing ? player.pause() : player.play()
             }
-            CtlButton { icon: "skip-back-10-20"; label: "Skip 10 seconds backward"; onClicked: root.skip(-10000) }
-            CtlButton { icon: "skip-forward-10-20"; label: "Skip 10 seconds forward"; onClicked: root.skip(10000) }
+            CtlButton { icon: "skip-back-10-20"; label: qsTr("Skip 10 seconds backward"); onClicked: root.skip(-10000) }
+            CtlButton { icon: "skip-forward-10-20"; label: qsTr("Skip 10 seconds forward"); onClicked: root.skip(10000) }
             CtlButton {
                 enabledCtl: player.hasAudio
                 icon: !player.hasAudio || audio.muted || audio.volume === 0 ? "speaker-mute-20" : "speaker-2-20"
-                label: !player.hasAudio ? "This video has no sound" : audio.muted ? "Unmute (Alt + M)" : "Mute (Alt + M)"
+                label: !player.hasAudio ? qsTr("This video has no sound") : audio.muted ? qsTr("Unmute (Alt + M)") : qsTr("Mute (Alt + M)")
                 onClicked: audio.muted = !audio.muted
             }
         }
         Row {
             anchors.right: parent.right; anchors.rightMargin: 8
             y: parent.height - 8 - 32
-            CtlButton { enabledCtl: false; icon: "closed-caption-20"; label: "This video doesn't contain closed captions." }
+            CtlButton { enabledCtl: false; icon: "closed-caption-20"; label: qsTr("This video doesn't contain closed captions.") }
             CtlButton {
                 id: speedBtn
                 text: player.playbackRate + "x"
-                label: "Playback speed is " + player.playbackRate
+                label: qsTr("Playback speed is %1").arg(player.playbackRate)
                 onClicked: speedMenu.opened ? speedMenu.close() : speedMenu.openAt(speedBtn)
             }
             CtlButton {
                 id: optionsCtl
-                icon: "settings-20"; label: "Playback options"
+                icon: "settings-20"; label: qsTr("Playback options")
                 onClicked: optionsMenu.opened ? optionsMenu.close() : optionsMenu.openAt(optionsCtl)
             }
-            CtlButton { icon: "full-screen-maximize-20"; label: root.fullScreen ? "Exit Fullscreen" : "Full screen"; onClicked: root.fullScreen = !root.fullScreen }
+            CtlButton { icon: "full-screen-maximize-20"; label: root.fullScreen ? qsTr("Exit Fullscreen") : qsTr("Full screen"); onClicked: root.fullScreen = !root.fullScreen }
         }
     }
 
@@ -470,14 +470,14 @@ Item {
         onPickedRow: i => { player.playbackRate = root.speeds[i]; close() }
     }
     readonly property string qualityLabel: {
-        if (!quality) return "Auto"
+        if (!quality) return qsTr("Auto")
         const q = qualities.find(q => q.id === quality)
-        return q ? q.height + "p" : "Auto"
+        return q ? q.height + "p" : qsTr("Auto")
     }
     DarkMenu {
         id: optionsMenu
         minRow: 265
-        rows: [{ label: "Quality", value: root.qualityLabel, chevron: true }, { label: "Keyboard shortcuts" }]
+        rows: [{ label: qsTr("Quality"), value: root.qualityLabel, chevron: true }, { label: qsTr("Keyboard shortcuts") }]
         onPickedRow: i => {
             close()
             if (i === 0) qualityMenu.openAt(optionsCtl)
@@ -487,7 +487,7 @@ Item {
     DarkMenu {
         id: qualityMenu
         minRow: 160
-        rows: [{ label: "Auto", checked: !root.quality }].concat(root.qualities.map(q => ({ label: q.height + "p", checked: root.quality === q.id })))
+        rows: [{ label: qsTr("Auto"), checked: !root.quality }].concat(root.qualities.map(q => ({ label: q.height + "p", checked: root.quality === q.id })))
         onPickedRow: i => { close(); root.setQuality(i === 0 ? "" : root.qualities[i - 1].id) }
     }
 
@@ -499,15 +499,15 @@ Item {
         color: theme.surface
         z: 5
         readonly property var rows: [
-            ["Play or pause media", "Alt + K"], ["Close open popups", "Esc"], ["Enter or exit full screen mode", "Alt + Enter"],
-            ["Mute or unmute sound", "Alt + M"], ["Increase sound volume", "Alt + up arrow key"], ["Decrease sound volume", "Alt + down arrow key"],
-            ["Toggle noise suppression on and off", "Alt + A"], ["Toggle between audio tracks", "Alt + H"], ["Toggle between caption languages", "Alt + C"],
-            ["Enter or exit captions reposition mode", "Alt + R"], ["Move captions while in reposition mode", "Alt + arrow keys"],
-            ["Increase playback speed", "Alt + X"], ["Decrease playback speed", "Alt + Z"], ["Skip 10 seconds forward", "Alt + L"],
-            ["Skip 10 seconds backward", "Alt + J"], ["Skip 15 seconds forward", "Alt + right arrow key"], ["Skip 15 seconds backward", "Alt + left arrow key"],
-            ["Go to 0% to 90% of the media", "Alt + 0 to 9 number keys"], ["Access keyboard shortcuts", "Alt + G"]
+            [qsTr("Play or pause media"), "Alt + K"], [qsTr("Close open popups"), "Esc"], [qsTr("Enter or exit full screen mode"), "Alt + Enter"],
+            [qsTr("Mute or unmute sound"), "Alt + M"], [qsTr("Increase sound volume"), qsTr("Alt + up arrow key")], [qsTr("Decrease sound volume"), qsTr("Alt + down arrow key")],
+            [qsTr("Toggle noise suppression on and off"), "Alt + A"], [qsTr("Toggle between audio tracks"), "Alt + H"], [qsTr("Toggle between caption languages"), "Alt + C"],
+            [qsTr("Enter or exit captions reposition mode"), "Alt + R"], [qsTr("Move captions while in reposition mode"), qsTr("Alt + arrow keys")],
+            [qsTr("Increase playback speed"), "Alt + X"], [qsTr("Decrease playback speed"), "Alt + Z"], [qsTr("Skip 10 seconds forward"), "Alt + L"],
+            [qsTr("Skip 10 seconds backward"), "Alt + J"], [qsTr("Skip 15 seconds forward"), qsTr("Alt + right arrow key")], [qsTr("Skip 15 seconds backward"), qsTr("Alt + left arrow key")],
+            [qsTr("Go to 0% to 90% of the media"), qsTr("Alt + 0 to 9 number keys")], [qsTr("Access keyboard shortcuts"), "Alt + G"]
         ]
-        Text { x: 24; y: 22; text: "Keyboard shortcuts"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+        Text { x: 24; y: 22; text: qsTr("Keyboard shortcuts"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
         Rectangle {
             id: hcFill5
             x: parent.width - 24 - 32; y: 16; width: 32; height: 31.3; radius: 4
@@ -516,7 +516,7 @@ Item {
             HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: { shortcuts.visible = false; surface.forceActiveFocus() } }
             Accessible.role: Accessible.Button
-            Accessible.name: "Close keyboard shortcuts modal"
+            Accessible.name: qsTr("Close keyboard shortcuts modal")
         }
         Flickable {
             x: 24; y: 48; width: parent.width - 48; height: parent.height - 48
@@ -527,8 +527,9 @@ Item {
                 id: table
                 width: parent.width
                 Row {
-                    Text { width: table.width * 0.54; padding: 12; text: "Shortcut name"; font.family: theme.font; font.pixelSize: 14; font.bold: true; color: theme.text; wrapMode: Text.Wrap }
-                    Text { width: table.width * 0.46; padding: 12; text: "Keyboard command"; font.family: theme.font; font.pixelSize: 14; font.bold: true; color: theme.text; wrapMode: Text.Wrap }
+                    Text { width: table.width * 0.54; padding: 12; text: qsTr("Shortcut name"); font.family: theme.font; font.pixelSize: 14; font.bold: true; color: theme.text; wrapMode: Text.Wrap }
+                    Text { width: table.width * 0.46; padding: 12; text: qsTr("Keyboard command");
+ font.family: theme.font; font.pixelSize: 14; font.bold: true; color: theme.text; wrapMode: Text.Wrap }
                 }
                 Repeater {
                     model: shortcuts.rows
@@ -551,7 +552,7 @@ Item {
         visible: root.fullScreen
         visibility: root.fullScreen ? Window.FullScreen : Window.Hidden
         color: "black"
-        title: "Video Clip"
+        title: qsTr("Video Clip")
         onClosing: root.fullScreen = false
         VideoOutput { id: fullVideo; anchors.fill: parent; fillMode: VideoOutput.PreserveAspectFit }
         Item {
@@ -577,5 +578,5 @@ Item {
     function openClipMenuForTest() { clipMenu.popup(optionsBtn, optionsBtn.width - clipMenu.width, optionsBtn.height + 4) }
 
     Accessible.role: Accessible.Grouping
-    Accessible.name: "Media player. Press enter, spacebar, or otherwise activate player controls to play or pause the video."
+    Accessible.name: qsTr("Media player. Press enter, spacebar, or otherwise activate player controls to play or pause the video.")
 }

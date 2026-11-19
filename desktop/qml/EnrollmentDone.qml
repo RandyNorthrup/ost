@@ -22,12 +22,12 @@ Item {
         width: 600; height: 160
         source: "../assets/biometric/all_set_enrollment.svg"
         sourceSize: Qt.size(1200, 320)
-        Accessible.name: "voice enrollment completed icon"
+        Accessible.name: qsTr("voice enrollment completed icon")
     }
     Text {
         x: 30; y: 180; height: 32
         verticalAlignment: Text.AlignVCenter
-        text: "Thanks for letting us get to know you!"
+        text: qsTr("Thanks for letting us get to know you!")
         font.family: theme.font; font.pixelSize: 24; font.weight: Font.Bold
         color: theme.text
         Accessible.role: Accessible.Heading
@@ -37,26 +37,26 @@ Item {
     Section {
         id: voiceSection
         y: 252.7
-        title: "Voice recognition"
+        title: qsTr("Voice recognition")
         enrolled: done.voice
-        body: "Your voice profile is used to suppress background noises in Teams meetings through voice isolation. When using an intelligent speaker, your voice profile is used to identify you in meeting transcripts." + (done.voice ? "" : " Manage and delete your profile anytime from this device. Takes about 30 seconds.")
-        privacyName: "Privacy policy - Voice recognition"
+        body: qsTr("Your voice profile is used to suppress background noises in Teams meetings through voice isolation. When using an intelligent speaker, your voice profile is used to identify you in meeting transcripts.") + (done.voice ? "" : " " + qsTr("Manage and delete your profile anytime from this device. Takes about 30 seconds."))
+        privacyName: qsTr("Privacy policy - Voice recognition")
         onStart: done.startVoice()
     }
     Section {
         id: faceSection
         y: voiceSection.y + voiceSection.height + 40.7
-        title: "Face recognition"
+        title: qsTr("Face recognition")
         enrolled: done.face
-        body: done.face ? "Your face will now be identified by Teams when you attend a meeting in a room with an intelligent camera."
-                        : "A face profile lets Teams identify you when you attend a meeting in a room with an intelligent camera."
-        privacyName: "Privacy policy - Face recognition"
+        body: done.face ? qsTr("Your face will now be identified by Teams when you attend a meeting in a room with an intelligent camera.")
+                        : qsTr("A face profile lets Teams identify you when you attend a meeting in a room with an intelligent camera.")
+        privacyName: qsTr("Privacy policy - Face recognition")
         onStart: done.startFace()
     }
     SettingsParts.Button {
         id: closeButton
         x: 489; y: faceSection.y + faceSection.height + 27.5
-        label: "Close"
+        label: qsTr("Close")
         onClicked: done.closed()
     }
 
@@ -85,7 +85,7 @@ Item {
             id: bodyText
             y: 32; width: 538.7
             textFormat: Text.StyledText
-            text: sec.body + (sec.enrolled ? "" : " <a href=\"privacy\">Privacy policy</a>")
+            text: sec.body + (sec.enrolled ? "" : " <a href=\"privacy\">" + qsTr("Privacy policy") + "</a>")
             linkColor: theme.brandForeground1
             wrapMode: Text.Wrap
             font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
@@ -99,7 +99,7 @@ Item {
             id: getStarted
             visible: !sec.enrolled
             x: 433.1; y: bodyText.y + bodyText.height + 10
-            label: "Get started"
+            label: qsTr("Get started")
             onClicked: sec.start()
         }
     }

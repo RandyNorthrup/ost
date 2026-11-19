@@ -60,7 +60,7 @@ Rectangle {
             else if (r.op === "moderation") {
                 page.savingModeration = false
                 if (r.ok) page.generalSetting = r.data.general
-                else { page.loadModeration(); backend.toast("Something went wrong on our end. Please try again.", "error") }
+                else { page.loadModeration(); backend.toast(qsTr("Something went wrong on our end. Please try again."), "error") }
             }
         }
     }
@@ -81,7 +81,7 @@ Rectangle {
             id: title
             x: 60; y: 17.2
             width: Math.min(implicitWidth, parent.width * 0.35); elide: Text.ElideRight
-            text: page.channel.general ? "General" : (page.channel.name || "")
+            text: page.channel.general ? qsTr("General") : (page.channel.name || "")
             font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold
             lineHeight: 24; lineHeightMode: Text.FixedHeight
             color: theme.text
@@ -89,7 +89,7 @@ Rectangle {
         Row {
             x: title.x + title.width + 2; y: 2; height: 56.3
             Repeater {
-                model: [["settings", "Settings"], ["analytics", "Analytics"]]
+                model: [["settings", qsTr("Settings")], ["analytics", qsTr("Analytics")]]
                 Item {
                     id: tabItem
                     required property var modelData
@@ -125,7 +125,7 @@ Rectangle {
             HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: channelMenu.show(moreButton, moreButton.width - channelMenu.menu.implicitWidth, moreButton.height) }
             Accessible.role: Accessible.Button
-            Accessible.name: "More options"
+            Accessible.name: qsTr("More options")
         }
         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.divider }
     }
@@ -155,7 +155,7 @@ Rectangle {
             x: 48; y: 20; width: flick.width - 96
             Section {
                 id: details
-                label: "Channel details"; hint: "Edit channel name, description, and layout"
+                label: qsTr("Channel details"); hint: qsTr("Edit channel name, description, and layout")
                 open: page.detailsOpen
                 onToggled: page.detailsOpen = !page.detailsOpen
                 Item {
@@ -163,7 +163,7 @@ Rectangle {
                     Text {
                         x: 38; y: 0
                         width: Math.min(380, parent.width - 38); elide: Text.ElideRight
-                        text: page.channel.general ? "General" : (page.channel.name || "")
+                        text: page.channel.general ? qsTr("General") : (page.channel.name || "")
                         font.family: theme.font; font.pixelSize: 28; font.weight: Font.DemiBold
                         lineHeight: 36; lineHeightMode: Text.FixedHeight
                         color: theme.text
@@ -173,24 +173,24 @@ Rectangle {
                         width: layoutText.implicitWidth + 16; height: 25.3; radius: 4
                         color: theme.pick("#E6E6E6", "#3D3D3D", "#000000")
                         border.color: theme.stroke; border.width: 0.67
-                        Text { id: layoutText; anchors.centerIn: parent; text: page.channel.layout === "Conversational" ? "Threads" : "Posts"; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
+                        Text { id: layoutText; anchors.centerIn: parent; text: page.channel.layout === "Conversational" ? qsTr("Threads") : qsTr("Posts"); font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
                     }
                     Rectangle {
                         id: hcFill1
                         x: 38; y: 106.3
                         width: 96; height: 31.3; radius: 4
                         color: editHover.hovered ? theme.brandHover : theme.brandFill
-                        Text { anchors.centerIn: parent; text: "Edit"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, "white") }
+                        Text { anchors.centerIn: parent; text: qsTr("Edit"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, "white") }
                         HoverHandler { id: editHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: editDialog.start(page.channel) }
                         Accessible.role: Accessible.Button
-                        Accessible.name: "Edit channel name, description"
+                        Accessible.name: qsTr("Edit channel name, description")
                     }
                 }
             }
             Section {
                 id: moderation
-                label: "Moderation"; hint: "Set channel moderation preferences"
+                label: qsTr("Moderation"); hint: qsTr("Set channel moderation preferences")
                 open: page.moderationOpen
                 onToggled: page.moderationOpen = !page.moderationOpen
                 ChannelModeration {
@@ -206,13 +206,13 @@ Rectangle {
                 Item {
                     visible: page.general
                     width: parent.width; height: 148.7
-                    Text { x: 38; y: 2; text: "General Channel:"; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
+                    Text { x: 38; y: 2; text: qsTr("General Channel:"); font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
                     Column {
                         x: 38; y: 24
                         spacing: -4
-                        Radio { value: 0; label: "Anyone can post messages" }
-                        Radio { value: 1; label: "Anyone can post; show alert that posting will notify everyone (recommended for large teams)" }
-                        Radio { value: 2; label: "Only owners can post messages" }
+                        Radio { value: 0; label: qsTr("Anyone can post messages") }
+                        Radio { value: 1; label: qsTr("Anyone can post; show alert that posting will notify everyone (recommended for large teams)") }
+                        Radio { value: 2; label: qsTr("Only owners can post messages") }
                     }
                 }
             }

@@ -48,7 +48,7 @@ Popup {
             if (r.op !== "team-edit" || r.channel !== dlg.teamThread || !dlg.saving) return
             dlg.saving = false
             if (r.ok) dlg.close()
-            else backend.toast("Something went wrong on our end. Please try again.", "error")
+            else backend.toast(qsTr("Something went wrong on our end. Please try again."), "error")
         }
     }
 
@@ -62,7 +62,7 @@ Popup {
         anchors.fill: parent
         Text {
             y: 0.7; width: parent.width; elide: Text.ElideRight
-            text: "Edit " + (dlg.team.name || "") + " team details"
+            text: qsTr("Edit %1 team details").arg(dlg.team.name || "")
             font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold
             lineHeight: 28; lineHeightMode: Text.FixedHeight
             color: theme.text
@@ -70,7 +70,7 @@ Popup {
         Text {
             y: 36.6; width: 525.5; wrapMode: Text.Wrap
             textFormat: Text.StyledText
-            text: "Collaborate closely with a group of people inside your organization based on project, initiative, or common interest. <a href=\"https://go.microsoft.com/fwlink/?linkid=2275168\">Learn more about teams and channels</a>"
+            text: qsTr("Collaborate closely with a group of people inside your organization based on project, initiative, or common interest.") + " <a href=\"https://go.microsoft.com/fwlink/?linkid=2275168\">" + qsTr("Learn more about teams and channels") + "</a>"
             linkColor: theme.brandForeground1
             font.family: theme.font; font.pixelSize: 14
             lineHeight: 20; lineHeightMode: Text.FixedHeight
@@ -80,7 +80,7 @@ Popup {
         }
         Row {
             y: 86; spacing: 4
-            Text { text: "Team name"; font.family: theme.font; font.pixelSize: 12; color: theme.text }
+            Text { text: qsTr("Team name"); font.family: theme.font; font.pixelSize: 12; color: theme.text }
             Text { text: "*"; font.family: theme.font; font.pixelSize: 12; color: theme.redForeground3 }
         }
         Rectangle {
@@ -94,14 +94,14 @@ Popup {
                 color: theme.text
                 clip: true
                 selectByMouse: true
-                Text { visible: !nameField.text; anchors.verticalCenter: parent.verticalCenter; text: "Give your team a name"; font: nameField.font; color: theme.textSecondary }
+                Text { visible: !nameField.text; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Give your team a name"); font: nameField.font; color: theme.textSecondary }
                 Accessible.role: Accessible.EditableText
-                Accessible.name: "Team name"
+                Accessible.name: qsTr("Team name")
             }
             FluentIcon { visible: dlg.valid; x: parent.width - 32; anchors.verticalCenter: parent.verticalCenter; name: "checkmark-circle-20"; size: 20; color: theme.textStrong }
             Rectangle { visible: nameField.activeFocus; anchors.bottom: parent.bottom; width: parent.width; height: 2; radius: 1; color: theme.brand }
         }
-        Text { y: 152; text: "Description"; font.family: theme.font; font.pixelSize: 12; color: theme.text }
+        Text { y: 152; text: qsTr("Description"); font.family: theme.font; font.pixelSize: 12; color: theme.text }
         Rectangle {
             y: 172.6; width: 550.7; height: 77.3; radius: 4
             color: theme.inputFilled; border.color: theme.transparentStroke
@@ -113,20 +113,20 @@ Popup {
                 color: theme.text
                 clip: true
                 selectByMouse: true
-                Text { visible: !descField.text; text: "Let people know what this team is all about"; font: descField.font; color: theme.textSecondary }
+                Text { visible: !descField.text; text: qsTr("Let people know what this team is all about"); font: descField.font; color: theme.textSecondary }
                 Accessible.role: Accessible.EditableText
-                Accessible.name: "Description"
+                Accessible.name: qsTr("Description")
             }
             Rectangle { visible: descField.activeFocus; anchors.bottom: parent.bottom; width: parent.width; height: 2; radius: 1; color: theme.brand }
         }
-        Text { y: 274; text: "Privacy"; font.family: theme.font; font.pixelSize: 12; color: theme.text }
+        Text { y: 274; text: qsTr("Privacy"); font.family: theme.font; font.pixelSize: 12; color: theme.text }
         Rectangle {
             id: privacy
             y: 298.6; width: 327.6; height: 30; radius: 4
             color: theme.inputFilled; border.color: theme.transparentStroke
             Text {
                 x: 12; anchors.verticalCenter: parent.verticalCenter
-                text: dlg.isPublic ? "Public - Anyone in your organization can join" : "Private - Only team owners can add members"
+                text: dlg.isPublic ? qsTr("Public - Anyone in your organization can join") : qsTr("Private - Only team owners can add members")
                 font.family: theme.font; font.pixelSize: 14
                 color: theme.text
             }
@@ -135,7 +135,7 @@ Popup {
             HoverHandler { cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: privacyMenu.open() }
             Accessible.role: Accessible.ComboBox
-            Accessible.name: "Privacy"
+            Accessible.name: qsTr("Privacy")
             Popup {
                 id: privacyMenu
                 y: privacy.height + 2; width: 328.9; height: 74; padding: 4
@@ -143,7 +143,7 @@ Popup {
                 Column {
                     spacing: 2
                     Repeater {
-                        model: [[false, "Private - Only team owners can add members"], [true, "Public - Anyone in your organization can join"]]
+                        model: [[false, qsTr("Private - Only team owners can add members")], [true, qsTr("Public - Anyone in your organization can join")]]
                         Rectangle {
                             id: popt
                             required property var modelData
@@ -163,8 +163,8 @@ Popup {
         Row {
             anchors.right: parent.right; anchors.bottom: parent.bottom
             spacing: 8
-            Btn { text: "Cancel"; onClicked: dlg.close() }
-            Btn { text: "Done"; primary: true; enabled: dlg.changed && dlg.valid && !dlg.saving; onClicked: dlg.done() }
+            Btn { text: qsTr("Cancel"); onClicked: dlg.close() }
+            Btn { text: qsTr("Done"); primary: true; enabled: dlg.changed && dlg.valid && !dlg.saving; onClicked: dlg.done() }
         }
     }
 

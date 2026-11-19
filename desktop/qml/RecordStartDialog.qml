@@ -36,21 +36,21 @@ Popup {
     signal confirmed(string language, bool audioOnly)
 
     readonly property var languages: [
-        ["sq-al", "Albanian (Albania)"], ["ar-sa", "Arabic (Saudi Arabia)"], ["ar-ae", "Arabic (United Arab Emirates)"],
-        ["bg-bg", "Bulgarian (Bulgaria)"], ["ca-es", "Catalan (Catalan)"], ["zh-cn", "Chinese (Simplified, China)"],
-        ["zh-hk", "Chinese (Traditional, Hong Kong SAR)"], ["zh-tw", "Chinese (Traditional, Taiwan)"], ["hr-hr", "Croatian (Croatia)"],
-        ["cs-cz", "Czech (Czechia)"], ["da-dk", "Danish (Denmark)"], ["nl-be", "Dutch (Belgium)"], ["nl-nl", "Dutch (Netherlands)"],
-        ["en-au", "English (Australia)"], ["en-ca", "English (Canada)"], ["en-in", "English (India)"], ["en-nz", "English (New Zealand)"],
-        ["en-gb", "English (UK)"], ["en-us", "English (US)"], ["et-ee", "Estonian (Estonia)"], ["fil-ph", "Filipino (Philippines)"],
-        ["fi-fi", "Finnish (Finland)"], ["fr-ca", "French (Canada)"], ["fr-fr", "French (France)"], ["de-de", "German (Germany)"],
-        ["de-ch", "German (Switzerland)"], ["el-gr", "Greek (Greece)"], ["he-il", "Hebrew (Israel)"], ["hi-in", "Hindi (India)"],
-        ["hu-hu", "Hungarian (Hungary)"], ["is-is", "Icelandic (Iceland)"], ["id-id", "Indonesian (Indonesia)"], ["it-it", "Italian (Italy)"],
-        ["ja-jp", "Japanese (Japan)"], ["kk-kz", "Kazakh (Kazakhstan)"], ["ko-kr", "Korean (Korea)"], ["lv-lv", "Latvian (Latvia)"],
-        ["lt-lt", "Lithuanian (Lithuania)"], ["ms-my", "Malay (Malaysia)"], ["mt-mt", "Maltese (Malta)"], ["nb-no", "Norwegian (Norway)"],
-        ["pl-pl", "Polish (Poland)"], ["pt-br", "Portuguese (Brazil)"], ["pt-pt", "Portuguese (Portugal)"], ["ro-ro", "Romanian (Romania)"],
-        ["ru-ru", "Russian (Russia)"], ["sr-rs", "Serbian (Cyrillic, Serbia)"], ["sk-sk", "Slovak (Slovakia)"], ["sl-si", "Slovenian (Slovenia)"],
-        ["es-mx", "Spanish (Mexico)"], ["es-es", "Spanish (Spain)"], ["sv-se", "Swedish (Sweden)"], ["th-th", "Thai (Thailand)"],
-        ["tr-tr", "Turkish (Turkey)"], ["uk-ua", "Ukrainian (Ukraine)"], ["vi-vn", "Vietnamese (Vietnam)"], ["cy-gb", "Welsh (United Kingdom)"]]
+        ["sq-al", qsTr("Albanian (Albania)")], ["ar-sa", qsTr("Arabic (Saudi Arabia)")], ["ar-ae", qsTr("Arabic (United Arab Emirates)")],
+        ["bg-bg", qsTr("Bulgarian (Bulgaria)")], ["ca-es", qsTr("Catalan (Catalan)")], ["zh-cn", qsTr("Chinese (Simplified, China)")],
+        ["zh-hk", qsTr("Chinese (Traditional, Hong Kong SAR)")], ["zh-tw", qsTr("Chinese (Traditional, Taiwan)")], ["hr-hr", qsTr("Croatian (Croatia)")],
+        ["cs-cz", qsTr("Czech (Czechia)")], ["da-dk", qsTr("Danish (Denmark)")], ["nl-be", qsTr("Dutch (Belgium)")], ["nl-nl", qsTr("Dutch (Netherlands)")],
+        ["en-au", qsTr("English (Australia)")], ["en-ca", qsTr("English (Canada)")], ["en-in", qsTr("English (India)")], ["en-nz", qsTr("English (New Zealand)")],
+        ["en-gb", qsTr("English (UK)")], ["en-us", qsTr("English (US)")], ["et-ee", qsTr("Estonian (Estonia)")], ["fil-ph", qsTr("Filipino (Philippines)")],
+        ["fi-fi", qsTr("Finnish (Finland)")], ["fr-ca", qsTr("French (Canada)")], ["fr-fr", qsTr("French (France)")], ["de-de", qsTr("German (Germany)")],
+        ["de-ch", qsTr("German (Switzerland)")], ["el-gr", qsTr("Greek (Greece)")], ["he-il", qsTr("Hebrew (Israel)")], ["hi-in", qsTr("Hindi (India)")],
+        ["hu-hu", qsTr("Hungarian (Hungary)")], ["is-is", qsTr("Icelandic (Iceland)")], ["id-id", qsTr("Indonesian (Indonesia)")], ["it-it", qsTr("Italian (Italy)")],
+        ["ja-jp", qsTr("Japanese (Japan)")], ["kk-kz", qsTr("Kazakh (Kazakhstan)")], ["ko-kr", qsTr("Korean (Korea)")], ["lv-lv", qsTr("Latvian (Latvia)")],
+        ["lt-lt", qsTr("Lithuanian (Lithuania)")], ["ms-my", qsTr("Malay (Malaysia)")], ["mt-mt", qsTr("Maltese (Malta)")], ["nb-no", qsTr("Norwegian (Norway)")],
+        ["pl-pl", qsTr("Polish (Poland)")], ["pt-br", qsTr("Portuguese (Brazil)")], ["pt-pt", qsTr("Portuguese (Portugal)")], ["ro-ro", qsTr("Romanian (Romania)")],
+        ["ru-ru", qsTr("Russian (Russia)")], ["sr-rs", qsTr("Serbian (Cyrillic, Serbia)")], ["sk-sk", qsTr("Slovak (Slovakia)")], ["sl-si", qsTr("Slovenian (Slovenia)")],
+        ["es-mx", qsTr("Spanish (Mexico)")], ["es-es", qsTr("Spanish (Spain)")], ["sv-se", qsTr("Swedish (Sweden)")], ["th-th", qsTr("Thai (Thailand)")],
+        ["tr-tr", qsTr("Turkish (Turkey)")], ["uk-ua", qsTr("Ukrainian (Ukraine)")], ["vi-vn", qsTr("Vietnamese (Vietnam)")], ["cy-gb", qsTr("Welsh (United Kingdom)")]]
     function languageName(code) { const l = languages.find(x => x[0] === code); return l ? l[1] : code }
 
     function ask(m) {
@@ -71,8 +71,8 @@ Popup {
         width: root.width - 24.67 - 74.67
         verticalAlignment: Text.AlignVCenter
         elide: Text.ElideRight
-        text: root.languageOnly ? "What language is everyone speaking?"
-            : root.mode === "recording" ? "Start recording" : "Start recording and transcription"
+        text: root.languageOnly ? qsTr("What language is everyone speaking?")
+            : root.mode === "recording" ? qsTr("Start recording") : qsTr("Start recording and transcription")
         font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold
         color: theme.text
         Accessible.role: Accessible.Heading
@@ -87,7 +87,7 @@ Popup {
         HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.close() }
         Accessible.role: Accessible.Button
-        Accessible.name: "Close"
+        Accessible.name: qsTr("Close")
     }
     Column {
         id: content
@@ -97,7 +97,7 @@ Popup {
             visible: root.withLanguage
             width: parent.width
             wrapMode: Text.Wrap
-            text: "Select the correct language to ensure the accuracy of features that process audio."
+            text: qsTr("Select the correct language to ensure the accuracy of features that process audio.")
             font.family: theme.font; font.pixelSize: 14
             lineHeight: 19.33; lineHeightMode: Text.FixedHeight
             color: theme.text
@@ -106,7 +106,7 @@ Popup {
         Text {
             visible: root.withLanguage
             height: 20; verticalAlignment: Text.AlignVCenter
-            text: "Spoken language"
+            text: qsTr("Spoken language")
             font.family: theme.font; font.pixelSize: 12
             color: theme.textSecondary
         }
@@ -119,7 +119,7 @@ Popup {
             // Teams: the current choice first, then every language.
             options: [[root.language, root.languageName(root.language)]].concat(root.languages)
             onPicked: code => root.language = code
-            accessibleName: "Spoken language"
+            accessibleName: qsTr("Spoken language")
         }
         // "More options" with "Choose what to record".
         Item { visible: root.withLanguage && root.withRecordMode; width: 1; height: 16.67 }
@@ -131,12 +131,12 @@ Popup {
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 8
                 FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-20"; size: 20; color: theme.text; rotation: root.moreOptions ? 0 : -90 }
-                Text { anchors.verticalCenter: parent.verticalCenter; text: "More options"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("More options"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
             }
             HoverHandler { cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.moreOptions = !root.moreOptions }
             Accessible.role: Accessible.Button
-            Accessible.name: "More options"
+            Accessible.name: qsTr("More options")
         }
         Rectangle {
             visible: root.withRecordMode && (root.moreOptions || !root.withLanguage)
@@ -145,17 +145,17 @@ Popup {
             border.color: theme.dividerSoft; border.width: 0.67
             Text {
                 x: 10; anchors.verticalCenter: parent.verticalCenter
-                text: "Choose what to record"
+                text: qsTr("Choose what to record")
                 font.family: theme.font; font.pixelSize: 14
                 color: theme.text
             }
             Dropdown {
                 x: parent.width - 10 - 248.67; anchors.verticalCenter: parent.verticalCenter
                 width: 248.67
-                label: root.audioOnly ? "Audio only" : "Video and audio"
-                options: [["video", "Video and audio"], ["audio", "Audio only"]]
+                label: root.audioOnly ? qsTr("Audio only") : qsTr("Video and audio")
+                options: [["video", qsTr("Video and audio")], ["audio", qsTr("Audio only")]]
                 onPicked: code => root.audioOnly = code === "audio"
-                accessibleName: "Choose what to record"
+                accessibleName: qsTr("Choose what to record")
             }
         }
     }
@@ -186,9 +186,9 @@ Popup {
             Accessible.role: Accessible.Button
             Accessible.name: db.label
         }
-        DialogButton { label: "Cancel"; onClicked: root.close() }
+        DialogButton { label: qsTr("Cancel"); onClicked: root.close() }
         DialogButton {
-            label: "Confirm"; primary: true
+            label: qsTr("Confirm"); primary: true
             onClicked: {
                 if (root.withLanguage) backend.setSetting("spokenLanguage", root.language)
                 root.close()

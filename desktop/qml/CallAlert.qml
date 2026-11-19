@@ -88,7 +88,7 @@ Item {
         HoverHandler { id: dismissHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.dismissed() }
         Accessible.role: Accessible.Button
-        Accessible.name: "Dismiss"
+        Accessible.name: qsTr("Dismiss")
     }
     Accessible.role: Accessible.AlertMessage
     Accessible.name: root.title ? root.title + " " + root.text : root.text

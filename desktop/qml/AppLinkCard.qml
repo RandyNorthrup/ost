@@ -72,7 +72,7 @@ Rectangle {
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: card.collapseRequested() }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Collapse preview"
+                Accessible.name: qsTr("Collapse preview")
             }
             Item {
                 visible: card.compose
@@ -81,7 +81,7 @@ Rectangle {
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: card.removeRequested() }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Remove URL Preview"
+                Accessible.name: qsTr("Remove URL Preview")
             }
         }
         Item { width: 1; height: 12 }
@@ -164,7 +164,7 @@ Rectangle {
                 lineHeight: 17.14; lineHeightMode: Text.FixedHeight
                 font.family: theme.font; font.pixelSize: 12
                 color: theme.textStrong
-                text: card.appCard ? "<style>a { text-decoration: none; color: " + theme.brandForeground1 + "; }</style>By using " + (card.appCard.app_name || "") + ", you agree to the <a href=\"privacy\">privacy policy</a>, <a href=\"terms\">terms of use</a>, and <a href=\"permissions\">permissions</a>." : ""
+                text: card.appCard ? "<style>a { text-decoration: none; color: " + theme.brandForeground1 + "; }</style>" + qsTr("By using %1, you agree to the <1>%2</1>, <2>%3</2>, and <3>%4</3>.").arg(card.appCard.app_name || "").arg(qsTr("privacy policy")).arg(qsTr("terms of use")).arg(qsTr("permissions")).replace("<1>", "<a href=\"privacy\">").replace("<2>", "<a href=\"terms\">").replace("<3>", "<a href=\"permissions\">").replace(/<\/[123]>/g, "</a>") : ""
                 onLinkActivated: link => {
                     if (link === "privacy" && card.appCard.privacy_url) Qt.openUrlExternally(card.appCard.privacy_url)
                     else if (link === "terms" && card.appCard.terms_url) Qt.openUrlExternally(card.appCard.terms_url)
@@ -180,7 +180,7 @@ Rectangle {
                 HoverHandler { id: gearHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: card.settingsRequested() }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Settings"
+                Accessible.name: qsTr("Settings")
             }
         }
     }

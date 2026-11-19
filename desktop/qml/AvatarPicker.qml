@@ -28,20 +28,20 @@ Column {
 
     Text {
         x: root.inFlyout ? 0 : 12; height: root.inFlyout ? 12 : 18; verticalAlignment: Text.AlignBottom
-        text: "Avatars"
+        text: qsTr("Avatars")
         font.family: theme.font; font.pixelSize: 12
         color: theme.pick("#252423", "#FFFFFF", "#FFFFFF")
     }
     Row {
         x: root.gridX
         Accessible.role: Accessible.MenuBar
-        Accessible.name: "Avatars"
+        Accessible.name: qsTr("Avatars")
         Cell {
             EffectTile {
                 x: root.inFlyout ? 0 : (root.cellW - width) / 2; y: (root.cellH - height) / 2; width: root.tileW; height: root.tileH
-                kind: "none"; label: "None"
+                kind: "none"; label: qsTr("None")
                 selected: !videoEffects.avatarId
-                accessibleName: selected ? "No avatar selected" : "No avatar"
+                accessibleName: selected ? qsTr("No avatar selected") : qsTr("No avatar")
                 onPicked: videoEffects.selectAvatar("")
             }
         }
@@ -74,20 +74,20 @@ Column {
                 Text {
                     anchors.horizontalCenter: parent.horizontalCenter
                     y: Math.round((parent.height - 35) / 2) + 23
-                    text: "Create More"
+                    text: qsTr("Create More")
                     font.family: theme.font; font.pixelSize: 10; font.weight: Font.DemiBold
                     color: theme.text
                 }
                 HoverHandler { id: createHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: root.createMore() }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Create More"
+                Accessible.name: qsTr("Create More")
             }
         }
     }
     Text {
         x: root.inFlyout ? 0 : 12; height: root.inFlyout ? 12 : 30; verticalAlignment: Text.AlignBottom
-        text: "Backgrounds"
+        text: qsTr("Backgrounds")
         font.family: theme.font; font.pixelSize: 12
         color: theme.pick("#252423", "#FFFFFF", "#FFFFFF")
     }
@@ -96,13 +96,13 @@ Column {
         enabled: !!videoEffects.avatarId
         opacity: enabled ? 1 : 0.5
         Accessible.role: Accessible.MenuBar
-        Accessible.name: "Backgrounds"
+        Accessible.name: qsTr("Backgrounds")
         Cell {
             EffectTile {
                 x: root.inFlyout ? 0 : (root.cellW - width) / 2; y: (root.cellH - height) / 2; width: root.tileW; height: root.tileH
-                kind: "none"; label: "None"
+                kind: "none"; label: qsTr("None")
                 selected: !videoEffects.avatarBackground || videoEffects.avatarBackground === "microsoft_none"
-                accessibleName: selected ? "No background selected" : "No background"
+                accessibleName: selected ? qsTr("No background selected") : qsTr("No background")
                 onPicked: videoEffects.selectAvatarBackground("")
             }
         }
@@ -125,14 +125,14 @@ Column {
         width: root.width; height: visible ? 20 : 0
         Text {
             anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
-            text: "More avatar settings"
+            text: qsTr("More avatar settings")
             font.family: theme.font; font.pixelSize: 12
             font.underline: moreHover.hovered
             color: theme.brand
             HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.moreSettings() }
             Accessible.role: Accessible.Button
-            Accessible.name: "More avatar settings"
+            Accessible.name: qsTr("More avatar settings")
         }
     }
 }

@@ -16,9 +16,9 @@ Item {
     /// with or without the action button (e.g. Teams' MeetingLocked:
     /// "This meeting is locked." / "No one else can join.").
     property string icon: "mic-off-20-filled"
-    property string title: "You've been muted"
-    property string text: "You have been muted."
-    property string action: "Unmute"
+    property string title: qsTr("You've been muted")
+    property string text: qsTr("You have been muted.")
+    property string action: qsTr("Unmute")
     // A second line of text (Teams' "Your microphone is muted" hint)
     // makes the card 20 taller.
     readonly property real extra: Math.max(0, body.height - 20)
@@ -45,7 +45,7 @@ Item {
         HoverHandler { cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.dismissed() }
         Accessible.role: Accessible.Button
-        Accessible.name: "Dismiss"
+        Accessible.name: qsTr("Dismiss")
     }
     Text {
         id: body

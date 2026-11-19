@@ -155,7 +155,7 @@ Popup {
         Text {
             x: 0.7; y: 0.7; width: 550
             elide: Text.ElideRight
-            text: dlg.channelMode ? "Add members to the " + dlg.channelName + " channel" : "Add members to " + dlg.teamName
+            text: dlg.channelMode ? qsTr("Add members to the %1 channel").arg(dlg.channelName) : qsTr("Add members to %1").arg(dlg.teamName)
             font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold
             lineHeight: 28; lineHeightMode: Text.FixedHeight
             color: theme.text
@@ -163,7 +163,7 @@ Popup {
         Text {
             visible: dlg.channelMode
             x: 0.7; y: 36; width: 543.5
-            text: "Start typing a name of a person you want to add to this private channel."
+            text: qsTr("Start typing a name of a person you want to add to this private channel.")
             font.family: theme.font; font.pixelSize: 14
             lineHeight: 20; lineHeightMode: Text.FixedHeight
             color: theme.text
@@ -173,7 +173,7 @@ Popup {
             x: 0.7; y: 37.3; width: 543.5
             wrapMode: Text.Wrap
             textFormat: Text.StyledText
-            text: "Start typing a name, distribution list, or security group to add to your team. You can also add people outside your organization as guests by typing their email addresses. People outside your org will get an email letting them know they've been added. <a href=\"https://support.microsoft.com/office/add-guests-to-a-team-in-teams-fccb4fa6-f864-4508-bdde-256e7384a14f\">Learn about adding guests</a>"
+            text: qsTr("Start typing a name, distribution list, or security group to add to your team. You can also add people outside your organization as guests by typing their email addresses. People outside your org will get an email letting them know they've been added.") + " <a href=\"https://support.microsoft.com/office/add-guests-to-a-team-in-teams-fccb4fa6-f864-4508-bdde-256e7384a14f\">" + qsTr("Learn about adding guests") + "</a>"
             linkColor: theme.brandForeground1
             font.family: theme.font; font.pixelSize: 14
             lineHeight: 20; lineHeightMode: Text.FixedHeight
@@ -214,12 +214,12 @@ Popup {
                 Text {
                     visible: !picker.text
                     anchors.verticalCenter: parent.verticalCenter
-                    text: "Type a name or email"
+                    text: qsTr("Type a name or email")
                     font: picker.font
                     color: theme.textStrong
                 }
                 Accessible.role: Accessible.ComboBox
-                Accessible.name: "Type a name or email"
+                Accessible.name: qsTr("Type a name or email")
             }
             FluentIcon {
                 visible: picker.activeFocus
@@ -253,19 +253,19 @@ Popup {
             spacing: 8
             Text {
                 width: parent.width; wrapMode: Text.Wrap
-                text: dlg.outcome ? dlg.outcome.added + " of " + dlg.outcome.requested + " members were added" : ""
+                text: dlg.outcome ? qsTr("%1 of %2 members were added").arg(dlg.outcome.added).arg(dlg.outcome.requested) : ""
                 font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
                 color: theme.text
             }
             Text {
                 width: parent.width; wrapMode: Text.Wrap
-                text: !dlg.outcome ? "" : dlg.outcome.failed === 1 ? "1 person couldn't be added" : dlg.outcome.failed + " people couldn't be added"
+                text: !dlg.outcome ? "" : dlg.outcome.failed === 1 ? qsTr("1 person couldn't be added") : qsTr("%1 people couldn't be added").arg(dlg.outcome.failed)
                 font.family: theme.font; font.pixelSize: 14
                 color: theme.text
             }
             Text {
                 width: parent.width; wrapMode: Text.Wrap
-                text: !dlg.outcome ? "" : dlg.outcome.failed === 1 ? "There was an error." : "There were some errors."
+                text: !dlg.outcome ? "" : dlg.outcome.failed === 1 ? qsTr("There was an error.") : qsTr("There were some errors.")
                 font.family: theme.font; font.pixelSize: 14
                 color: theme.danger
             }
@@ -306,10 +306,10 @@ Popup {
         Row {
             x: 351.3; y: dlg.channelMode ? 369.4 : 403
             spacing: 8
-            DialogButton { text: dlg.outcome ? "Close" : dlg.channelMode || dlg.afterCreate ? "Skip" : "Cancel"; onClicked: dlg.close() }
+            DialogButton { text: dlg.outcome ? qsTr("Close") : dlg.channelMode || dlg.afterCreate ? qsTr("Skip") : qsTr("Cancel"); onClicked: dlg.close() }
             DialogButton {
                 visible: !dlg.outcome
-                text: dlg.adding ? "Adding..." : "Add"; primary: true
+                text: dlg.adding ? qsTr("Adding...") : qsTr("Add"); primary: true
                 enabled: dlg.staged.length > 0 && !dlg.adding && dlg.staged.every(s => !s.group || s.people !== null)
                 onClicked: dlg.add()
             }
@@ -348,7 +348,7 @@ Popup {
         Text {
             x: 60; y: opt.candidate ? 7 : 15; width: parent.width - 68; elide: Text.ElideRight
             textFormat: Text.StyledText
-            text: opt.candidate ? dlg.marked(opt.candidate.name) : "Add <b>" + dlg.marked(opt.guestEmail).replace(/<\/?b>/g, "") + "</b> as a guest?"
+            text: opt.candidate ? dlg.marked(opt.candidate.name) : qsTr("Add %1 as a guest?").arg("<b>" + dlg.marked(opt.guestEmail).replace(/<\/?b>/g, "") + "</b>")
             font.family: theme.font; font.pixelSize: 14
             lineHeight: 20; lineHeightMode: Text.FixedHeight
             color: theme.onFill(opt, theme.textStrong)
@@ -365,7 +365,7 @@ Popup {
         HoverHandler { id: optHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: opt.chosen() }
         Accessible.role: Accessible.ListItem
-        Accessible.name: opt.candidate ? opt.candidate.name : "Add " + opt.guestEmail + " as a guest?"
+        Accessible.name: opt.candidate ? opt.candidate.name : qsTr("Add %1 as a guest?").arg(opt.guestEmail)
     }
 
     component StagedRow: Rectangle {
@@ -403,14 +403,14 @@ Popup {
             }
             Text {
                 visible: !!row.item.guest && !row.item.name
-                text: "Add name"
+                text: qsTr("Add name")
                 font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
                 lineHeight: 20; lineHeightMode: Text.FixedHeight
                 color: theme.onFill(row, theme.brandFill)
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: { row.editing = true; nameEdit.text = ""; nameEdit.forceActiveFocus() } }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Add name"
+                Accessible.name: qsTr("Add name")
             }
             Item {
                 visible: !!row.item.group && row.item.people !== null && row.count > 0
@@ -418,7 +418,7 @@ Popup {
                 FluentIcon { anchors.centerIn: parent; name: "chevron-circle-down-12"; size: 12; color: theme.onFill(row, theme.textStrong) }
                 HoverHandler { id: expandHover; cursorShape: Qt.PointingHandCursor }
                 ToolTip.visible: expandHover.hovered
-                ToolTip.text: row.count === 1 ? "Expand the list with 1 person" : "Expand the list with " + row.count + " people"
+                ToolTip.text: row.count === 1 ? qsTr("Expand the list with 1 person") : qsTr("Expand the list with %1 people").arg(row.count)
                 TapHandler { onTapped: dlg.expand(row.item.key) }
                 Accessible.role: Accessible.Button
                 Accessible.name: ToolTip.text
@@ -448,7 +448,7 @@ Popup {
                     visible: !nameEdit.text
                     anchors.verticalCenter: parent.verticalCenter
                     width: parent.width; elide: Text.ElideRight
-                    text: "Enter a name for " + (row.item.email || "")
+                    text: qsTr("Enter a name for %1").arg(row.item.email || "")
                     font: nameEdit.font
                     color: theme.onFill(row, theme.textTertiary)
                 }
@@ -457,12 +457,12 @@ Popup {
         }
         IconButton {
             visible: row.editing
-            x: 469.6; icon: "dismiss-20"; label: "Cancel"
+            x: 469.6; icon: "dismiss-20"; label: qsTr("Cancel")
             onClicked: row.editing = false
         }
         IconButton {
             visible: row.editing
-            x: 501.6; icon: "checkmark-20"; label: "Save"
+            x: 501.6; icon: "checkmark-20"; label: qsTr("Save")
             onClicked: { dlg.update(row.item.key, { name: nameEdit.text.trim() }); row.editing = false }
         }
         // The role, or the Guest tag.
@@ -470,7 +470,7 @@ Popup {
             visible: !!row.item.guest && !row.editing
             x: 458.4; y: 12.3; width: guestTag.implicitWidth + 12; height: 20; radius: 4
             color: theme.pick("#EBEBEB", "#3D3D3D", "#000000")
-            Text { id: guestTag; anchors.centerIn: parent; text: "Guest"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.textSecondary }
+            Text { id: guestTag; anchors.centerIn: parent; text: qsTr("Guest"); font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.textSecondary }
         }
         Rectangle {
             id: roleButton
@@ -480,7 +480,7 @@ Popup {
             border.color: roleMenu.opened ? theme.text : "transparent"; border.width: roleMenu.opened ? 2 : 0
             Text {
                 anchors.right: roleChevron.left; anchors.rightMargin: 9; anchors.verticalCenter: parent.verticalCenter
-                text: row.item.group ? (row.item.owner ? "Owners" : "Members") : (row.item.owner ? "Owner" : "Member")
+                text: row.item.group ? (row.item.owner ? qsTr("Owners") : qsTr("Members")) : (row.item.owner ? qsTr("Owner") : qsTr("Member"))
                 font.family: theme.font; font.pixelSize: 14
                 color: theme.onFill(roleButton, theme.text)
             }
@@ -488,7 +488,7 @@ Popup {
             HoverHandler { id: roleHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: roleMenu.opened ? roleMenu.close() : roleMenu.open() }
             Accessible.role: Accessible.ComboBox
-            Accessible.name: "Role"
+            Accessible.name: qsTr("Role")
             Popup {
                 id: roleMenu
                 y: roleButton.height + 4.3; x: -10.3
@@ -507,14 +507,14 @@ Popup {
                             FluentIcon { visible: roleOpt.chosen; x: 8; anchors.verticalCenter: parent.verticalCenter; name: "checkmark-16"; size: 16; color: theme.onFill(roleOpt, theme.text) }
                             Text {
                                 x: 32; anchors.verticalCenter: parent.verticalCenter
-                                text: row.item.group ? (roleOpt.modelData ? "Owners" : "Members") : (roleOpt.modelData ? "Owner" : "Member")
+                                text: row.item.group ? (roleOpt.modelData ? qsTr("Owners") : qsTr("Members")) : (roleOpt.modelData ? qsTr("Owner") : qsTr("Member"))
                                 font.family: theme.font; font.pixelSize: 14
                                 color: theme.onFill(roleOpt, theme.text)
                             }
                             HoverHandler { id: roleOptHover; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: { roleMenu.close(); dlg.update(row.item.key, { owner: roleOpt.modelData }) } }
                             Accessible.role: Accessible.ListItem
-                            Accessible.name: row.item.group ? (roleOpt.modelData ? "Owners" : "Members") : (roleOpt.modelData ? "Owner" : "Member")
+                            Accessible.name: row.item.group ? (roleOpt.modelData ? qsTr("Owners") : qsTr("Members")) : (roleOpt.modelData ? qsTr("Owner") : qsTr("Member"))
                         }
                     }
                 }
@@ -522,7 +522,7 @@ Popup {
         }
         IconButton {
             visible: !row.editing
-            x: 501.6; icon: "dismiss-20"; label: "Remove " + (row.item.name || row.item.email || "")
+            x: 501.6; icon: "dismiss-20"; label: qsTr("Remove %1").arg(row.item.name || row.item.email || "")
             onClicked: dlg.staged = dlg.staged.filter(s => s.key !== row.item.key)
         }
         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.divider }

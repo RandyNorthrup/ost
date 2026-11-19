@@ -25,7 +25,7 @@ Rectangle {
     signal closed()
     color: theme.pane
     Accessible.role: Accessible.Pane
-    Accessible.name: "Post EchoBot Calling Screen"
+    Accessible.name: qsTr("Post EchoBot Calling Screen")
 
     readonly property real listWidth: 500
     readonly property real paneWidth: 350.8
@@ -67,7 +67,7 @@ Rectangle {
                         width: list.width
                         height: Math.max(48, 24.7 + Math.max(1, problems.length) * 18.7 + 4.7) + 16 + 0.67 + 10
                         Accessible.role: Accessible.ListItem
-                        Accessible.name: modelData.title + ", " + (problems.length ? problems.join(", ") : "Connected")
+                        Accessible.name: modelData.title + ", " + (problems.length ? problems.join(", ") : qsTr("Connected"))
                         FluentIcon {
                             x: 10; y: 4.7; size: 20
                             name: root.glyph(row.modelData.kind)
@@ -84,7 +84,7 @@ Rectangle {
                         Column {
                             x: 40; y: 24.7
                             Repeater {
-                                model: row.problems.length ? row.problems : ["Connected"]
+                                model: row.problems.length ? row.problems : [qsTr("Connected")]
                                 delegate: Text {
                                     required property string modelData
                                     height: 18.7
@@ -112,9 +112,9 @@ Rectangle {
                 y: list.height + 30
                 anchors.horizontalCenter: parent.horizontalCenter
                 spacing: 30
-                SettingsParts.Button { label: "Close"; onClicked: root.closed() }
+                SettingsParts.Button { label: qsTr("Close"); onClicked: root.closed() }
                 SettingsParts.Button {
-                    label: root.showDevices ? "Hide Device Settings" : "Show Device Settings"
+                    label: root.showDevices ? qsTr("Hide Device Settings") : qsTr("Show Device Settings")
                     onClicked: root.showDevices = !root.showDevices
                 }
             }

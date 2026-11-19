@@ -38,42 +38,42 @@ Rectangle {
     // Apps opened from "View more apps" join the rail, as in Teams.
     property var opened: []
     readonly property var extraApps: [
-        { key: "planner", icon: "clipboard-task-list-ltr-24", label: "Planner", keys: "" },
-        { key: "people", icon: "people-20", label: "People", keys: "" },
-        { key: "onenote", icon: "notebook-20", label: "OneNote", keys: "" },
-        { key: "whiteboard", icon: "board-20", label: "Whiteboard", keys: "" },
-        { key: "clipchamp", icon: "video", label: "Clipchamp", keys: "" },
-        { key: "shifts", icon: "calendar-clock-20", label: "Shifts", keys: "" },
+        { key: "planner", icon: "clipboard-task-list-ltr-24", label: qsTr("Planner"), keys: "" },
+        { key: "people", icon: "people-20", label: qsTr("People"), keys: "" },
+        { key: "onenote", icon: "notebook-20", label: qsTr("OneNote"), keys: "" },
+        { key: "whiteboard", icon: "board-20", label: qsTr("Whiteboard"), keys: "" },
+        { key: "clipchamp", icon: "video", label: qsTr("Clipchamp"), keys: "" },
+        { key: "shifts", icon: "calendar-clock-20", label: qsTr("Shifts"), keys: "" },
         // An app from Teams' store shows its own outline icon (the
         // manifest's), tinted as the rail's glyphs are.
-        { key: "avatars", icon: "person-20", iconUrl: avatarHost.app.outline || "", label: "Avatars", keys: "" },
-        { key: "help", icon: "question-circle-20", label: "Help", keys: "" },
-        { key: "events", icon: "ticket-diagonal-20", label: "Events", keys: "" },
-        { key: "recaps", icon: "arrow-counterclockwise-20", label: "Meeting Recaps", keys: "" },
+        { key: "avatars", icon: "person-20", iconUrl: avatarHost.app.outline || "", label: qsTr("Avatars"), keys: "" },
+        { key: "help", icon: "question-circle-20", label: qsTr("Help"), keys: "" },
+        { key: "events", icon: "ticket-diagonal-20", label: qsTr("Events"), keys: "" },
+        { key: "recaps", icon: "arrow-counterclockwise-20", label: qsTr("Meeting Recaps"), keys: "" },
         // A Word, Excel or PowerPoint file open in Office for the web takes
         // the slot as its app (Teams' "Teams" choice).
-        { key: "office", icon: "document-20", label: officeLabel || "Office", keys: "" }
+        { key: "office", icon: "document-20", label: officeLabel || qsTr("Office", "nova:k71egteo9"), keys: "" }
     ]
     property string officeLabel: ""
     /// Apps pinned to the bar (Events' Pin app).
     property var pinned: backend.setting("eventsAppPinned") === "true" ? ["events"] : []
     // Teams desktop's rail, with its labels and shortcuts (Copilot left out).
     readonly property var apps: (split ? [
-        { key: "activity", icon: "alert", label: "Activity", keys: "Ctrl+1" },
-        { key: "chat", icon: "chat", label: "Chat", keys: "Ctrl+2" },
-        { key: "teams", icon: "people-team", label: "Teams", keys: "Ctrl+3" },
-        { key: "calendar", icon: "calendar", label: "Calendar", keys: "Ctrl+4" },
-        { key: "calls", icon: "call", label: "Calls", keys: "Ctrl+5" },
-        { key: "onedrive", icon: "onedrive", label: "OneDrive", keys: "Ctrl+6" },
+        { key: "activity", icon: "alert", label: qsTr("Activity"), keys: "Ctrl+1" },
+        { key: "chat", icon: "chat", label: qsTr("Chat"), keys: "Ctrl+2" },
+        { key: "teams", icon: "people-team", label: qsTr("Teams"), keys: "Ctrl+3" },
+        { key: "calendar", icon: "calendar", label: qsTr("Calendar"), keys: "Ctrl+4" },
+        { key: "calls", icon: "call", label: qsTr("Calls"), keys: "Ctrl+5" },
+        { key: "onedrive", icon: "onedrive", label: qsTr("OneDrive"), keys: "Ctrl+6" },
     ] : [
-        { key: "activity", icon: "alert", label: "Activity", keys: "Ctrl+1" },
-        { key: "chat", icon: "chat", label: "Chat", keys: "Ctrl+2" },
-        { key: "calendar", icon: "calendar", label: "Calendar", keys: "Ctrl+3" },
-        { key: "calls", icon: "call", label: "Calls", keys: "Ctrl+4" },
-        { key: "onedrive", icon: "onedrive", label: "OneDrive", keys: "Ctrl+5" },
+        { key: "activity", icon: "alert", label: qsTr("Activity"), keys: "Ctrl+1" },
+        { key: "chat", icon: "chat", label: qsTr("Chat"), keys: "Ctrl+2" },
+        { key: "calendar", icon: "calendar", label: qsTr("Calendar"), keys: "Ctrl+3" },
+        { key: "calls", icon: "call", label: qsTr("Calls"), keys: "Ctrl+4" },
+        { key: "onedrive", icon: "onedrive", label: qsTr("OneDrive"), keys: "Ctrl+5" },
     ]).concat(extraApps.filter(a => opened.indexOf(a.key) >= 0 || current === a.key || pinned.indexOf(a.key) >= 0)).concat([
-        { key: "add", icon: "add-app", label: "Store", keys: "" },
-        { key: "more", icon: "more", label: "View more apps", keys: "" },
+        { key: "add", icon: "add-app", label: qsTr("Store"), keys: "" },
+        { key: "more", icon: "more", label: qsTr("View more apps"), keys: "" },
     ])
     // Teams keeps one slot for an app opened from View more apps: the
     // newest replaces the last.
@@ -192,12 +192,12 @@ Rectangle {
                 }
                 MenuPopup {
                     id: railMenu
-                    items: [{ key: "pin", label: root.pinned.indexOf("events") >= 0 ? "Unpin" : "Pin", icon: root.pinned.indexOf("events") >= 0 ? "pin-off-20" : "pin-20" }]
+                    items: [{ key: "pin", label: root.pinned.indexOf("events") >= 0 ? qsTr("Unpin") : qsTr("Pin"), icon: root.pinned.indexOf("events") >= 0 ? "pin-off-20" : "pin-20" }]
                     onPicked: i => root.pinRequested("events", root.pinned.indexOf("events") < 0)
                 }
-                ToolTipLabel { text: modelData.keys ? modelData.label + " (" + modelData.keys + ")" : modelData.label; shown: hover.hovered }
+                ToolTipLabel { text: modelData.keys ? qsTr("%1 (%2)").arg(modelData.label).arg(modelData.keys) : modelData.label; shown: hover.hovered }
                 Accessible.role: Accessible.Button
-                Accessible.name: modelData.keys ? modelData.label + " (" + modelData.keys + ")" : modelData.label
+                Accessible.name: modelData.keys ? qsTr("%1 (%2)").arg(modelData.label).arg(modelData.keys) : modelData.label
             }
         }
     }
@@ -216,15 +216,15 @@ Rectangle {
         // Whiteboard are apps Teams hosts (OST's TeamsJS host); Events is
         // Teams' own module, drawn natively (EventsView).
         readonly property var all: [
-            { key: "shifts", label: "Shifts", icon: "calendar-clock-20", color: "#5B5FC7" },
-            { key: "planner", label: "Planner", icon: "clipboard-task-list-ltr-24-filled", color: theme.brand },
-            { key: "onenote", label: "OneNote", icon: "notebook-20", color: "#7719AA" },
-            { key: "help", label: "Help", icon: "question-circle-20", color: theme.textStrong },
-            { key: "clipchamp", label: "Clipchamp", icon: "video", color: "#8764B8" },
-            { key: "whiteboard", label: "Whiteboard", icon: "board-20", color: "#0F6CBD" },
-            { key: "events", label: "Events", icon: "ticket-diagonal-20", color: theme.textStrong },
-            { key: "people", label: "People", icon: "people-20", color: theme.textStrong },
-            { key: "avatars", label: "Avatars", icon: "person-20", color: "#1D1F4E" }
+            { key: "shifts", label: qsTr("Shifts"), icon: "calendar-clock-20", color: "#5B5FC7" },
+            { key: "planner", label: qsTr("Planner"), icon: "clipboard-task-list-ltr-24-filled", color: theme.brand },
+            { key: "onenote", label: qsTr("OneNote"), icon: "notebook-20", color: "#7719AA" },
+            { key: "help", label: qsTr("Help"), icon: "question-circle-20", color: theme.textStrong },
+            { key: "clipchamp", label: qsTr("Clipchamp"), icon: "video", color: "#8764B8" },
+            { key: "whiteboard", label: qsTr("Whiteboard"), icon: "board-20", color: "#0F6CBD" },
+            { key: "events", label: qsTr("Events"), icon: "ticket-diagonal-20", color: theme.textStrong },
+            { key: "people", label: qsTr("People"), icon: "people-20", color: theme.textStrong },
+            { key: "avatars", label: qsTr("Avatars"), icon: "person-20", color: "#1D1F4E" }
         ]
         contentItem: Column {
             spacing: 2
@@ -236,9 +236,9 @@ Rectangle {
                     id: appSearch
                     x: 32; width: parent.width - 40; anchors.verticalCenter: parent.verticalCenter
                     font.family: theme.font; font.pixelSize: theme.base; color: theme.text; clip: true
-                    Text { visible: !appSearch.text; text: "Search apps"; color: theme.textSecondary; font: appSearch.font }
+                    Text { visible: !appSearch.text; text: qsTr("Search apps"); color: theme.textSecondary; font: appSearch.font }
                     Keys.onEscapePressed: moreApps.close()
-                    Accessible.name: "Search apps"
+                    Accessible.name: qsTr("Search apps")
                 }
             }
             Item { width: 1; height: 4 }

@@ -83,10 +83,10 @@ Popup {
     readonly property var here: trail.length ? trail[trail.length - 1] : null
     readonly property bool folderView: trail.length > 0 && place !== "more"
     function reload() { if (here) ask("folders", { drive_id: here.drive_id, item_id: here.item_id }) }
-    readonly property var placeTitles: ({ home: "Home", shared: "Shared with you", favorites: "Favorites", people: "People", meetings: "Meetings", media: "Media", more: "Shared libraries" })
-    readonly property var emptyStates: ({ shared: ["Shared files will show up here", "empty-shared-v3.png"],
-                                          favorites: ["Items you favorite will show up here", "empty-favorites-v3.png"],
-                                          meetings: ["Files shared in meetings will show up here", "empty-meeting-v3.png"] })
+    readonly property var placeTitles: ({ home: qsTr("Home"), shared: qsTr("Shared with you"), favorites: qsTr("Favorites"), people: qsTr("People"), meetings: qsTr("Meetings"), media: qsTr("Media"), more: qsTr("Shared libraries") })
+    readonly property var emptyStates: ({ shared: [qsTr("Shared files will show up here"), "empty-shared-v3.png"],
+                                          favorites: [qsTr("Items you favorite will show up here"), "empty-favorites-v3.png"],
+                                          meetings: [qsTr("Files shared in meetings will show up here"), "empty-meeting-v3.png"] })
     readonly property color ink: theme.pick("#616161", "#D6D6D6", "#FFFFFF")
     readonly property color faint: theme.pick("#8A8A8A", "#ADADAD")
     readonly property color label: theme.pick("#424242", "#D6D6D6")
@@ -103,7 +103,7 @@ Popup {
     function openPlace(key) {
         navOpen = false; place = key; trail = []; rows = []; people = []
         if (key === "home") ask("attach_recent")
-        else if (key === "myfiles") { trail = [{ name: "My files", drive_id: "", item_id: "" }]; ask("folders", { drive_id: "", item_id: "" }) }
+        else if (key === "myfiles") { trail = [{ name: qsTr("My files"), drive_id: "", item_id: "" }]; ask("folders", { drive_id: "", item_id: "" }) }
         else if (key === "more") ask("libraries")
         else ask("attach_place", { place: key })
     }
@@ -113,7 +113,7 @@ Popup {
         ask("folders", { drive_id: lib.drive_id, item_id: "" })
     }
     function openFolder(it) {
-        const t = trail.length ? trail : [{ name: placeTitles[place] || "My files", drive_id: it.drive_id, item_id: "" }]
+        const t = trail.length ? trail : [{ name: placeTitles[place] || qsTr("My files"), drive_id: it.drive_id, item_id: "" }]
         trail = t.concat([{ name: it.name, drive_id: it.drive_id, item_id: it.id }])
         rows = []
         ask("folders", { drive_id: it.drive_id, item_id: it.id })
@@ -166,7 +166,7 @@ Popup {
                 // A channel's folder: the team's library › Documents › the channel.
                 const f = v.folder
                 dlg.trail = [{ name: dlg.entry.team || "", drive_id: f.drive_id, item_id: "", site: true },
-                             { name: "Documents", drive_id: f.drive_id, item_id: "" },
+                             { name: qsTr("Documents"), drive_id: f.drive_id, item_id: "" },
                              { name: f.name, drive_id: f.drive_id, item_id: f.id, shared: true }]
                 dlg.ask("folders", { drive_id: f.drive_id, item_id: f.id })
                 return
@@ -236,7 +236,7 @@ Popup {
             radius: 12; color: theme.surface
             border.color: theme.pick("#F0F0F0", "#333333", "#FFFFFF"); border.width: 0.67
             clip: true
-            readonly property var cols: [["Name", 45.7], ["Opened", 370.2], ["Owner", 524.7], ["Activity", 699.2]]
+            readonly property var cols: [[qsTr("Name"), 45.7], [qsTr("Opened"), 370.2], [qsTr("Owner"), 524.7], [qsTr("Activity"), 699.2]]
             Repeater {
                 model: homeCard.cols
                 Text {
@@ -313,8 +313,8 @@ Popup {
                 PickCircle { x: 23; anchors.verticalCenter: parent.verticalCenter; shown: tableHead.hovered; on: dlg.allPicked(); TapHandler { onTapped: dlg.pickAll() } }
                 FluentIcon { x: 64; anchors.verticalCenter: parent.verticalCenter; size: 16; name: "document-16"; color: dlg.faint }
                 Repeater {
-                    model: table.compact ? [["Name", 92.3], ["Modified", 392.3], ["Modified By", 542.3], ["File Size", 692.3], ["Sharing", 842.3]]
-                                         : [["Name", 104], ["Modified", 374], ["Modified By", 544], ["Activity", 694]]
+                    model: table.compact ? [[qsTr("Name"), 92.3], [qsTr("Modified"), 392.3], [qsTr("Modified By"), 542.3], [qsTr("File Size"), 692.3], [qsTr("Sharing"), 842.3]]
+                                         : [[qsTr("Name"), 104], [qsTr("Modified"), 374], [qsTr("Modified By"), 544], [qsTr("Activity"), 694]]
                     Text {
                         required property var modelData
                         x: modelData[1]; anchors.verticalCenter: parent.verticalCenter
@@ -460,20 +460,20 @@ Popup {
             id: commandBar
             visible: dlg.folderView
             x: content.width - 285.6 + 10; y: 20; height: 44
-            CmdItem { icon: "folder-add-20"; label: "New folder"; w: 108.2; onClicked: dlg.openNewFolder() }
-            CmdItem { id: uploadItem; icon: "arrow-upload-16"; label: "Upload"; w: 100.8; chevron: true; onClicked: uploadMenu.open() }
+            CmdItem { icon: "folder-add-20"; label: qsTr("New folder"); w: 108.2; onClicked: dlg.openNewFolder() }
+            CmdItem { id: uploadItem; icon: "arrow-upload-16"; label: qsTr("Upload"); w: 100.8; chevron: true; onClicked: uploadMenu.open() }
             Item {
                 width: 4.7; height: 44
                 Rectangle { x: 2; y: 10; width: 0.67; height: 20; color: theme.pick("#D2D0CE", "#605E5C", "#FFFFFF") }
             }
-            CmdItem { id: viewItem; icon: dlg.view === "tiles" ? "grid-16" : dlg.view === "compact" ? "text-align-left-16" : "list-16"; label: ""; tip: "View options"; w: 48; chevron: true; onClicked: viewMenu.open() }
+            CmdItem { id: viewItem; icon: dlg.view === "tiles" ? "grid-16" : dlg.view === "compact" ? "text-align-left-16" : "list-16"; label: ""; tip: qsTr("View options"); w: 48; chevron: true; onClicked: viewMenu.open() }
         }
         MenuPopup {
             id: uploadMenu
             parent: uploadItem
             fabric: true; fabricWidth: 180
             x: 0; y: uploadItem.height
-            items: [{ label: "Files", icon: "document-arrow-up-20" }, { label: "Folder", icon: "folder-arrow-up-20" }]
+            items: [{ label: qsTr("Files"), icon: "document-arrow-up-20" }, { label: qsTr("Folder"), icon: "folder-arrow-up-20" }]
             onPicked: i => { if (i === 0) uploadFiles.open(); else uploadFolder.open() }
         }
         MenuPopup {
@@ -481,8 +481,8 @@ Popup {
             parent: viewItem
             fabric: true; fabricWidth: 180
             x: viewItem.width - 180; y: viewItem.height
-            items: [{ label: "List", icon: "list-16", checked: dlg.view === "list" }, { label: "Compact List", icon: "text-align-left-16", checked: dlg.view === "compact" },
-                    { label: "Tiles", icon: "grid-16", checked: dlg.view === "tiles" }]
+            items: [{ label: qsTr("List"), icon: "list-16", checked: dlg.view === "list" }, { label: qsTr("Compact List"), icon: "text-align-left-16", checked: dlg.view === "compact" },
+                    { label: qsTr("Tiles"), icon: "grid-16", checked: dlg.view === "tiles" }]
             onPicked: i => dlg.view = ["list", "compact", "tiles"][i]
         }
 
@@ -589,7 +589,7 @@ Popup {
             x: 0; y: folder ? 207.7 : 119.7; width: content.width - 8; height: 316
             // A folder's (the library view's): 20/600 at 207.7 over
             // empty_files_v3 (256).
-            readonly property var es: dlg.trail.length ? ["This folder is empty", "empty-files-v3.png"] : dlg.emptyStates[dlg.place] || ["", ""]
+            readonly property var es: dlg.trail.length ? [qsTr("This folder is empty"), "empty-files-v3.png"] : dlg.emptyStates[dlg.place] || ["", ""]
             readonly property bool folder: dlg.trail.length > 0
             Text {
                 id: esTitle
@@ -628,7 +628,7 @@ Popup {
                 HoverHandler { id: clearHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: dlg.selected = [] }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Clear selected items"
+                Accessible.name: qsTr("Clear selected items")
             }
             Rectangle {
                 id: hcFill3
@@ -636,25 +636,25 @@ Popup {
                 readonly property bool on: dlg.selected.length > 0
                 color: on ? (attachHover.hovered ? theme.brandHover : theme.brand) : theme.pick("#F5F5F5", "#2E2E2E", "#000000")
                 Text {
-                    anchors.centerIn: parent; text: "Attach"
+                    anchors.centerIn: parent; text: qsTr("Attach")
                     font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
                     color: theme.onFill(hcFill3, parent.on ? "white" : theme.pick("#BDBDBD", "#5C5C5C", "#3FF23F"))
                 }
                 HoverHandler { id: attachHover; enabled: parent.on; cursorShape: Qt.PointingHandCursor }
                 TapHandler { enabled: parent.on; onTapped: dlg.attach() }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Attach"
+                Accessible.name: qsTr("Attach")
             }
             Rectangle {
                 id: hcFill4
                 x: parent.width - 104; y: 24; width: 80; height: 32; radius: 2
                 color: cancelHover.hovered ? theme.menuHover : theme.surface
                 border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF"); border.width: 0.67
-                Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, theme.text) }
+                Text { anchors.centerIn: parent; text: qsTr("Cancel"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, theme.text) }
                 HoverHandler { id: cancelHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: dlg.close() }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Cancel"
+                Accessible.name: qsTr("Cancel")
             }
         }
     }
@@ -672,34 +672,34 @@ Popup {
         Text {
             visible: dlg.navOpen
             x: 24; y: 14; height: 37.3; verticalAlignment: Text.AlignVCenter
-            text: "OneDrive"
+            text: qsTr("OneDrive")
             font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text
         }
-        RailItem { y: 18; icon: dlg.navOpen ? "panel-left-contract-20" : "panel-left-expand-20"; tip: "Navigation Pane"; iconX: dlg.navOpen ? 162 : 8; onClicked: dlg.navOpen = !dlg.navOpen }
-        RailItem { y: 51.3; key: "home"; icon: "home-20"; text: "Home" }
-        RailItem { y: 87.3; key: "myfiles"; icon: "folder-20"; text: "My files" }
-        RailItem { y: 123.3; key: "shared"; icon: "people-20"; text: "Shared" }
-        RailItem { y: 159.3; key: "favorites"; icon: "star-20"; text: "Favorites" }
+        RailItem { y: 18; icon: dlg.navOpen ? "panel-left-contract-20" : "panel-left-expand-20"; tip: qsTr("Navigation Pane"); iconX: dlg.navOpen ? 162 : 8; onClicked: dlg.navOpen = !dlg.navOpen }
+        RailItem { y: 51.3; key: "home"; icon: "home-20"; text: qsTr("Home") }
+        RailItem { y: 87.3; key: "myfiles"; icon: "folder-20"; text: qsTr("My files") }
+        RailItem { y: 123.3; key: "shared"; icon: "people-20"; text: qsTr("Shared") }
+        RailItem { y: 159.3; key: "favorites"; icon: "star-20"; text: qsTr("Favorites") }
         Item {
             x: 16; y: 203.3; width: dlg.navOpen ? 190 : 36; height: 36
             Text {
                 visible: dlg.navOpen
                 x: 8; anchors.verticalCenter: parent.verticalCenter
-                text: "Browse by"
+                text: qsTr("Browse by")
                 font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text
             }
             FluentIcon { visible: !dlg.navOpen; x: 10; anchors.verticalCenter: parent.verticalCenter; size: 16; name: "chevron-down-16"; color: dlg.ink }
             Accessible.role: Accessible.Heading
-            Accessible.name: "Browse by"
+            Accessible.name: qsTr("Browse by")
         }
-        RailItem { y: 239.3; key: "people"; icon: "person-20"; text: "People" }
-        RailItem { y: 275.3; key: "meetings"; icon: "calendar-ltr-20"; text: "Meetings" }
-        RailItem { y: 311.3; key: "media"; icon: "image-20"; text: "Media" }
+        RailItem { y: 239.3; key: "people"; icon: "person-20"; text: qsTr("People") }
+        RailItem { y: 275.3; key: "meetings"; icon: "calendar-ltr-20"; text: qsTr("Meetings") }
+        RailItem { y: 311.3; key: "media"; icon: "image-20"; text: qsTr("Media") }
         Rectangle { visible: !dlg.navOpen; x: 22; y: 366.8; width: 24; height: 1; radius: 1; color: theme.pick("#D1D1D1", "#3D3D3D", "#000000") }
         Row {
             visible: dlg.navOpen
             x: 24; y: 364; spacing: 6
-            Text { text: "Quick access"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+            Text { text: qsTr("Quick access"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
             FluentIcon { y: 1.3; size: 16; name: "info-16"; color: dlg.ink }
         }
         Column {
@@ -720,13 +720,13 @@ Popup {
             FluentIcon { visible: !dlg.navOpen; x: 10; anchors.verticalCenter: parent.verticalCenter; size: 16; name: "more-horizontal-16"; color: dlg.railBlue }
             Text {
                 visible: dlg.navOpen
-                y: 10; text: "More places..."
+                y: 10; text: qsTr("More places...")
                 font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: dlg.railBlue
             }
             HoverHandler { cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: dlg.openPlace("more") }
             Accessible.role: Accessible.Link
-            Accessible.name: "More places..."
+            Accessible.name: qsTr("More places...")
         }
     }
 
@@ -769,7 +769,7 @@ Popup {
             spacing: 0
             Item {
                 width: parent.width; height: 28
-                Text { text: "Create a folder"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text; lineHeight: 28; lineHeightMode: Text.FixedHeight }
+                Text { text: qsTr("Create a folder"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text; lineHeight: 28; lineHeightMode: Text.FixedHeight }
                 Rectangle {
                     id: nfClose
                     x: 374.7; y: -12; width: 32; height: 30; radius: 4
@@ -778,11 +778,11 @@ Popup {
                     HoverHandler { id: nfCloseHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: newFolderDialog.close() }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Close"
+                    Accessible.name: qsTr("Close")
                 }
             }
             Item { width: 1; height: 8 }
-            Text { text: "Name"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text; lineHeight: 20; lineHeightMode: Text.FixedHeight }
+            Text { text: qsTr("Name"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text; lineHeight: 20; lineHeightMode: Text.FixedHeight }
             Item { width: 1; height: 10 }
             Rectangle {
                 width: 390.7; height: 32; radius: 4; color: theme.surface
@@ -793,13 +793,13 @@ Popup {
                     x: 8.7; width: parent.width - 17.4; anchors.verticalCenter: parent.verticalCenter
                     font.family: theme.font; font.pixelSize: 14; color: theme.text; clip: true; selectByMouse: true
                     Keys.onReturnPressed: dlg.createFolder()
-                    Text { visible: !newFolderName.text; text: "Enter your folder name"; font: newFolderName.font; color: theme.textSecondary }
+                    Text { visible: !newFolderName.text; text: qsTr("Enter your folder name"); font: newFolderName.font; color: theme.textSecondary }
                     Accessible.role: Accessible.EditableText
-                    Accessible.name: "Name"
+                    Accessible.name: qsTr("Name")
                 }
             }
             Item { width: 1; height: 28 }
-            Text { text: "Folder color"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text; lineHeight: 20; lineHeightMode: Text.FixedHeight }
+            Text { text: qsTr("Folder color"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text; lineHeight: 20; lineHeightMode: Text.FixedHeight }
             Item { width: 1; height: 6 }
             Grid {
                 columns: 8; columnSpacing: 27; rowSpacing: 18
@@ -830,35 +830,35 @@ Popup {
                     readonly property bool on: !!newFolderName.text.trim()
                     width: 121; height: 32; radius: 2
                     color: on ? (nfCreateHover.hovered ? theme.brandHover : theme.brand) : theme.pick("#F5F5F5", "#2E2E2E", "#000000")
-                    Text { anchors.centerIn: parent; text: "Create"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(nfCreate, parent.on ? "white" : theme.pick("#BDBDBD", "#5C5C5C", "#3FF23F")) }
+                    Text { anchors.centerIn: parent; text: qsTr("Create"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(nfCreate, parent.on ? "white" : theme.pick("#BDBDBD", "#5C5C5C", "#3FF23F")) }
                     HoverHandler { id: nfCreateHover; enabled: parent.on; cursorShape: Qt.PointingHandCursor }
                     TapHandler { enabled: parent.on; onTapped: dlg.createFolder() }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Create"
+                    Accessible.name: qsTr("Create")
                 }
                 Rectangle {
                     id: nfCancel
                     width: 83.3; height: 32; radius: 2
                     color: nfCancelHover.hovered ? theme.menuHover : theme.surface
                     border.width: 0.67; border.color: theme.pick("#8A8886", "#666666", "#FFFFFF")
-                    Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(nfCancel, theme.text) }
+                    Text { anchors.centerIn: parent; text: qsTr("Cancel"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(nfCancel, theme.text) }
                     HoverHandler { id: nfCancelHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: newFolderDialog.close() }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Cancel"
+                    Accessible.name: qsTr("Cancel")
                 }
             }
         }
     }
     FileDialog {
         id: uploadFiles
-        title: "Upload"
+        title: qsTr("Upload")
         fileMode: FileDialog.OpenFiles
         onAccepted: dlg.upload(selectedFiles.map(u => decodeURIComponent(u.toString().replace(/^file:\/\//, ""))))
     }
     FolderDialog {
         id: uploadFolder
-        title: "Upload"
+        title: qsTr("Upload")
         onAccepted: dlg.upload([decodeURIComponent(selectedFolder.toString().replace(/^file:\/\//, ""))])
     }
     function upload(paths) {
@@ -958,15 +958,15 @@ Popup {
         const t = esc(r.activity).replace("{0}", "<b>" + esc(r.activity_user) + "</b>")
         return r.activity_time ? t + " · " + esc(r.activity_time) : t
     }
-    function itemCount(n) { return n === 1 ? "1 item" : (n || 0) + " items" }
+    function itemCount(n) { return n === 1 ? qsTr("1 item") : qsTr("%1 items").arg(n || 0) }
     function sizeText(n) {
         if (typeof n !== "number" || isNaN(n) || n < 0) return ""
-        if (n === 1) return "1 byte"
+        if (n === 1) return qsTr("1 byte")
         const f = v => v >= 100 || v === Math.floor(v) ? v.toFixed(0) : v.toFixed(v >= 10 ? 1 : 2)
-        if (n < 1024) return n + " bytes"
-        if (n < 1024e3) return f(n / 1024) + " KB"
-        if (n < 1048576e3) return f(n / 1048576) + " MB"
-        return f(n / 1073741824) + " GB"
+        if (n < 1024) return qsTr("%1 bytes").arg(n)
+        if (n < 1024e3) return qsTr("%1 KB").arg(f(n / 1024))
+        if (n < 1048576e3) return qsTr("%1 MB").arg(f(n / 1048576))
+        return qsTr("%1 GB").arg(f(n / 1073741824))
     }
     function acronymOf(name) {
         const w = String(name || "").split(/\s+/).filter(x => /^[A-Za-z0-9]/.test(x))

@@ -85,13 +85,13 @@ Popup {
     Text {
         x: 25; y: 17; width: 550; height: 28
         verticalAlignment: Text.AlignVCenter
-        text: "Add an existing page"
+        text: qsTr("Add an existing page")
         font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text
         Accessible.role: Accessible.Heading; Accessible.name: text
     }
     Text {
         x: 25; y: 48; height: 16
-        text: "When you add a page, everyone in the channel can access it."
+        text: qsTr("When you add a page, everyone in the channel can access it.")
         font.family: theme.font; font.pixelSize: 12; color: theme.textStrong
     }
     Rectangle {
@@ -107,12 +107,12 @@ Popup {
             onTextChanged: if (!root.confirming) root.failure = ""
             Keys.onReturnPressed: root.next()
             Keys.onEnterPressed: root.next()
-            Accessible.role: Accessible.EditableText; Accessible.name: "Paste a link"
+            Accessible.role: Accessible.EditableText; Accessible.name: qsTr("Paste a link")
         }
         Text {
             visible: !field.text
             x: 12; anchors.verticalCenter: parent.verticalCenter
-            text: "Paste a link"; font.family: theme.font; font.pixelSize: 12; color: theme.textTertiary
+            text: qsTr("Paste a link"); font.family: theme.font; font.pixelSize: 12; color: theme.textTertiary
         }
         Rectangle { visible: field.activeFocus; anchors.bottom: parent.bottom; width: parent.width; height: 2; radius: 1; color: theme.brand }
     }
@@ -137,7 +137,7 @@ Popup {
         }
         Text {
             x: 44; y: 32; width: parent.width - 44 - 56; height: 20
-            text: root.page && root.page.edited_by ? "Last edited by " + root.page.edited_by : ""; elide: Text.ElideRight
+            text: root.page && root.page.edited_by ? qsTr("Last edited by %1").arg(root.page.edited_by) : ""; elide: Text.ElideRight
             font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.textStrong
         }
         Rectangle {
@@ -147,17 +147,17 @@ Popup {
             FluentIcon { anchors.centerIn: parent; name: "open-20"; size: 20; color: theme.onFill(openBtn, theme.textStrong) }
             HoverHandler { id: openHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: if (root.page && root.page.web_url) Qt.openUrlExternally(root.page.web_url) }
-            ToolTip.visible: openHover.hovered; ToolTip.text: "Open in Loop"; ToolTip.delay: 500
-            Accessible.role: Accessible.Button; Accessible.name: "Open in Loop"
+            ToolTip.visible: openHover.hovered; ToolTip.text: qsTr("Open in Loop"); ToolTip.delay: 500
+            Accessible.role: Accessible.Button; Accessible.name: qsTr("Open in Loop")
         }
     }
     Item {
         x: 25; y: root.confirming ? 225 : 137 + (root.failure ? 20 : 0); width: 550; height: 32
-        Button96 { label: "New Page"; onClicked: { root.close(); root.newPage() } }
+        Button96 { label: qsTr("New Page"); onClicked: { root.close(); root.newPage() } }
         Row {
             anchors.right: parent.right; spacing: 8
-            Button96 { label: "Cancel"; onClicked: root.close() }
-            Button96 { label: root.confirming ? "Confirm" : "Add page"; primary: true; enabled: !!field.text.trim() && !root.busy; onClicked: root.next() }
+            Button96 { label: qsTr("Cancel"); onClicked: root.close() }
+            Button96 { label: root.confirming ? qsTr("Confirm") : qsTr("Add page"); primary: true; enabled: !!field.text.trim() && !root.busy; onClicked: root.next() }
         }
     }
 }

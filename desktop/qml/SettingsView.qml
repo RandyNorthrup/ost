@@ -25,18 +25,18 @@ Rectangle {
     color: theme.surface
 
     readonly property var pages: [
-        { key: "general", label: "General", icon: "settings-20" },
-        { key: "appearance", label: "Appearance", icon: "wand-20" },
-        { key: "chats", label: "Chats and channels", icon: "chat-20" },
-        { key: "notifications", label: "Notifications and activity", icon: "alert-20" },
-        { key: "accounts", label: "Accounts and orgs", icon: "contact-card-20" },
-        { key: "privacy", label: "Privacy", icon: "lock-closed-20" },
-        { key: "accessibility", label: "Accessibility", icon: "accessibility-20" },
-        { key: "devices", label: "Devices", icon: "headset-20" },
-        { key: "calls", label: "Calls", icon: "call-20" },
-        { key: "files", label: "Files and links", icon: "document-20" },
-        { key: "apppermissions", label: "App permissions", icon: "shield-20" },
-        { key: "recognition", label: "Recognition", icon: "slide-text-20" },
+        { key: "general", label: qsTr("General"), icon: "settings-20" },
+        { key: "appearance", label: qsTr("Appearance"), icon: "wand-20" },
+        { key: "chats", label: qsTr("Chats and channels"), icon: "chat-20" },
+        { key: "notifications", label: qsTr("Notifications and activity"), icon: "alert-20" },
+        { key: "accounts", label: qsTr("Accounts and orgs"), icon: "contact-card-20" },
+        { key: "privacy", label: qsTr("Privacy"), icon: "lock-closed-20" },
+        { key: "accessibility", label: qsTr("Accessibility"), icon: "accessibility-20" },
+        { key: "devices", label: qsTr("Devices"), icon: "headset-20" },
+        { key: "calls", label: qsTr("Calls"), icon: "call-20" },
+        { key: "files", label: qsTr("Files and links"), icon: "document-20" },
+        { key: "apppermissions", label: qsTr("App permissions"), icon: "shield-20" },
+        { key: "recognition", label: qsTr("Recognition"), icon: "slide-text-20" },
     ]
     property string filter: ""
     function appPermsForTest() { return { n: (appPerms.data_.apps || []).length, names: (appPerms.data_.apps || []).map(a => a.name), loading: !!appPerms.data_.loading } }
@@ -102,11 +102,17 @@ Rectangle {
         Ping: "a8_teams_basic_notification_r4_ping", Prioritize: "b2_teams_urgent_notification_r4_prioritize",
         Escalate: "b3_teams_urgent_notification_r4_escalate", Alarm: "b4_teams_urgent_notification_r4_alarm"
     })
+    /// Their names as Teams shows them.
+    readonly property var soundLabels: ({
+        Default: qsTr("Default"), DefaultUrgent: qsTr("Default"), Vibe: qsTr("Vibe"), Nudge: qsTr("Nudge"), Tap: qsTr("Tap"),
+        Flick: qsTr("Flick"), Pluck: qsTr("Pluck"), Summon: qsTr("Summon"), Ping: qsTr("Ping"),
+        Prioritize: qsTr("Prioritize"), Escalate: qsTr("Escalate"), Alarm: qsTr("Alarm")
+    })
     // Teams' Preview button: play (stop while it plays), 32 x 31.3.
     component PreviewButton: Rectangle {
         id: pb
         property string file
-        property string label: "Preview sound"
+        property string label: qsTr("Preview sound")
         width: 32; height: 31.3; radius: 4
         color: pbHover.hovered ? theme.menuHover : "transparent"
         FluentIcon { anchors.centerIn: parent; name: preview.playing === pb.file ? "stop-20-filled" : "play-20"; size: 20; color: theme.onFill(pb, theme.text) }
@@ -126,7 +132,7 @@ Rectangle {
         x: 443.3; width: 281.3; height: 31.3
         OutlineDropdown {
             width: 248.7; height: 30
-            options: sp.keys.map(k => ({ label: k === "DefaultUrgent" ? "Default" : k }))
+            options: sp.keys.map(k => ({ label: root.soundLabels[k] || k }))
             current: Math.max(0, sp.keys.indexOf(sp.value))
             accessibleName: sp.accessibleName
             onPicked: i => root.setProp("userPersonalSettings", "toastSettings." + sp.setting, sp.keys[i])
@@ -134,12 +140,13 @@ Rectangle {
         PreviewButton { x: 249.3; y: -0.6; file: root.soundFiles[sp.value] || root.soundFiles.Default }
     }
 
-    // Recognition's consent line: the text, Learn More and Privacy Policy.
+    // Recognition's consent line: the text with its <a>Learn More</a>, and
+    // Privacy Policy.
     component RecognitionConsent: Text {
         property string lead
         property string privacyName
         textFormat: Text.StyledText
-        text: lead + " <a href=\"learn\">Learn More</a>. <a href=\"privacy\">Privacy Policy</a>"
+        text: lead.replace("<a>", "<a href=\"learn\">") + " <a href=\"privacy\">" + qsTr("Privacy Policy") + "</a>"
         linkColor: theme.brandForeground1
         wrapMode: Text.Wrap
         font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight
@@ -149,7 +156,7 @@ Rectangle {
             : "https://myaccount.microsoft.com/settingsandprivacy/privacy")
         HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
         Accessible.role: Accessible.StaticText
-        Accessible.name: lead + " Learn More. " + privacyName
+        Accessible.name: lead.replace(/<[^>]+>/g, "") + " " + privacyName
     }
     // Recognition's 12/16 secondary text.
     component RecognitionSmall: Text {
@@ -163,7 +170,7 @@ Rectangle {
         property string icon
         property string title
         property string about
-        /// The consent (or retention) line before Learn More, or "".
+        /// The consent (or retention) line ending in <a>Learn More</a>., or "".
         property string consent
         property string privacyName
         property real textWidth
@@ -269,7 +276,7 @@ Rectangle {
             visible: rc.optIn
             enabled: rc.enabled
             x: 591; y: optInCol.y + (optInCol.height - height) / 2
-            label: "Start voice capture"
+            label: qsTr("Start voice capture")
             onClicked: rc.act("optin")
         }
 
@@ -282,7 +289,7 @@ Rectangle {
                 font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
                 color: theme.text
             }
-            RecognitionSmall { text: "Takes about 30 seconds." }
+            RecognitionSmall { text: qsTr("Takes about 30 seconds.") }
         }
         Repeater {
             model: rc.rowLabel ? rc.rowButtons : []
@@ -325,7 +332,7 @@ Rectangle {
         HoverHandler { id: alHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: { if (al.url) Qt.openUrlExternally(al.url); else al.activated() } }
         Accessible.role: Accessible.Link
-        Accessible.name: label + (external ? " (opens in new window)" : "")
+        Accessible.name: external ? qsTr("%1 (opens in new window)").arg(label) : label
         Accessible.onPressAction: { if (al.url) Qt.openUrlExternally(al.url); else al.activated() }
     }
 
@@ -336,7 +343,7 @@ Rectangle {
         color: theme.pane
         Text {
             x: 32; y: 20
-            text: "Settings"
+            text: qsTr("Settings")
             font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold
             lineHeight: 25.7; lineHeightMode: Text.FixedHeight
             color: theme.text
@@ -354,8 +361,8 @@ Rectangle {
                 color: theme.text
                 clip: true
                 onTextChanged: root.filter = text.trim().toLowerCase()
-                Text { visible: !find.text; text: "Find in Settings (Ctrl+F)"; color: theme.textSecondary; font: find.font }
-                Accessible.name: "Find in Settings"
+                Text { visible: !find.text; text: qsTr("Find in Settings") + " (Ctrl+F)"; color: theme.textSecondary; font: find.font }
+                Accessible.name: qsTr("Find in Settings")
             }
         }
         Shortcut { sequence: "Ctrl+F"; enabled: root.visible; onActivated: find.forceActiveFocus() }
@@ -388,7 +395,7 @@ Rectangle {
                 NavItem { required property var modelData; def: modelData }
             }
         }
-        NavItem { x: 17; y: parent.height - 49; def: ({ key: "about", label: "About OST", icon: "info-20" }) }
+        NavItem { x: 17; y: parent.height - 49; def: ({ key: "about", label: qsTr("About OST"), icon: "info-20" }) }
     }
 
 
@@ -412,7 +419,7 @@ Rectangle {
             }
             FluentIcon { visible: !!root.subPage; anchors.verticalCenter: parent.verticalCenter; name: "chevron-right-16"; size: 16; color: theme.textStrong }
             Text {
-                text: root.subPage === "oof" ? "Out of office" : root.subPage === "priority" ? "Manage priority access" : root.subPage === "blocked" ? "Manage blocked people" : root.subPage === "spellcheck" ? "Manage spellcheck languages" : root.subPage === "status" ? "Manage status notifications" : root.subPage === "connected" ? "Manage devices" : root.subPage === "stationary" ? "Stationary device location" : root.subPage === "ddv" ? "Diagnostic data viewer" : root.subPage === "interpreters" ? "Manage interpreters" : root.page === "about" ? "About OST" : (root.pages.find(p => p.key === root.page) || {}).label || ""
+                text: root.subPage === "oof" ? qsTr("Out of office") : root.subPage === "priority" ? qsTr("Manage priority access") : root.subPage === "blocked" ? qsTr("Manage blocked people") : root.subPage === "spellcheck" ? qsTr("Manage spellcheck languages") : root.subPage === "status" ? qsTr("Manage status notifications") : root.subPage === "connected" ? qsTr("Manage devices") : root.subPage === "stationary" ? qsTr("Stationary device location") : root.subPage === "ddv" ? qsTr("Diagnostic data viewer") : root.subPage === "interpreters" ? qsTr("Manage interpreters") : root.page === "about" ? qsTr("About OST") : (root.pages.find(p => p.key === root.page) || {}).label || ""
                 font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; lineHeight: 25.7; lineHeightMode: Text.FixedHeight
                 color: theme.text
                 Accessible.role: Accessible.Heading
@@ -427,7 +434,7 @@ Rectangle {
             primary: true
             anchors.right: parent.right; anchors.rightMargin: Math.max(22, content.width - pageCol.x - pageCol.width)
             y: 14.8
-            label: "Update now"
+            label: qsTr("Update now")
             onClicked: if (u.url) Qt.openUrlExternally(u.url)
         }
     }
@@ -449,47 +456,47 @@ Rectangle {
             // ---- General ----
             SettingsParts.Card {
                 visible: root.page === "general" && !root.subPage
-                icon: "settings-20"; title: "System"
+                icon: "settings-20"; title: qsTr("System")
                 SettingsParts.CheckRow {
-                    label: "Auto-start OST"
+                    label: qsTr("Auto-start OST")
                     checked: root.local("autoStart", "false") === "true"
                     onToggled: on => { backend.setSetting("autoStart", on ? "true" : "false"); checked = on }
                 }
                 SettingsParts.CheckRow {
-                    label: "Open application in background"
+                    label: qsTr("Open application in background")
                     checked: root.local("openInBackground", "false") === "true"
                     onToggled: on => { backend.setSetting("openInBackground", on ? "true" : "false"); checked = on }
                 }
                 SettingsParts.CheckRow {
-                    label: "On close, keep the application running"
+                    label: qsTr("On close, keep the application running")
                     checked: root.local("keepRunning", "true") !== "false"
                     onToggled: on => { backend.setSetting("keepRunning", on ? "true" : "false"); checked = on }
                 }
             }
             SettingsParts.Card {
                 visible: root.page === "general" && !root.subPage
-                icon: "chat-multiple-20"; title: "Opening content in OST windows"
+                icon: "chat-multiple-20"; title: qsTr("Opening content in OST windows")
                 bodyGap: 28
-                subtitle: "Open incoming notifications and links in the main window or a new window. This will only apply to this account."
+                subtitle: qsTr("Open incoming notifications and links in the main window or a new window. This will only apply to this account.")
                 Row {
                     spacing: 12.7
                     property string mode: root.local("openContentIn", "main")
-                    SettingsParts.ImageRadio { imageHeight: 80; label: "Main window"; image: "../assets/settings/new-chat-mainwindow-" + theme.pick("default", "dark", "contrast") + ".svg"; checked: parent.mode === "main"; onPicked: { backend.setSetting("openContentIn", "main"); parent.mode = "main" } }
-                    SettingsParts.ImageRadio { imageHeight: 80; label: "New window"; image: "../assets/settings/new-chat-popout-" + theme.pick("default", "dark", "contrast") + ".svg"; checked: parent.mode === "popout"; onPicked: { backend.setSetting("openContentIn", "popout"); parent.mode = "popout" } }
+                    SettingsParts.ImageRadio { imageHeight: 80; label: qsTr("Main window"); image: "../assets/settings/new-chat-mainwindow-" + theme.pick("default", "dark", "contrast") + ".svg"; checked: parent.mode === "main"; onPicked: { backend.setSetting("openContentIn", "main"); parent.mode = "main" } }
+                    SettingsParts.ImageRadio { imageHeight: 80; label: qsTr("New window"); image: "../assets/settings/new-chat-popout-" + theme.pick("default", "dark", "contrast") + ".svg"; checked: parent.mode === "popout"; onPicked: { backend.setSetting("openContentIn", "popout"); parent.mode = "popout" } }
                 }
             }
             // Teams' Starting chats card: new chats in the main window or a
             // new window (the synced alwaysPopOutNewChat).
             SettingsParts.Card {
                 visible: root.page === "general" && !root.subPage
-                icon: "compose-20"; title: "Starting chats"
+                icon: "compose-20"; title: qsTr("Starting chats")
                 bodyGap: 28
-                subtitle: "Create new chats in the main window or a new window. This will only apply to this account."
+                subtitle: qsTr("Create new chats in the main window or a new window. This will only apply to this account.")
                 Row {
                     spacing: 12.7
                     readonly property bool popout: root.prop("userPersonalSettings", ["messagingSettings", "alwaysPopOutNewChat"], false) === true
-                    SettingsParts.ImageRadio { imageHeight: 80; label: "Main window"; image: "../assets/settings/new-chat-mainwindow-" + theme.pick("default", "dark", "contrast") + ".svg"; checked: !parent.popout; onPicked: root.setProp("userPersonalSettings", "messagingSettings.alwaysPopOutNewChat", false) }
-                    SettingsParts.ImageRadio { imageHeight: 80; label: "New window"; image: "../assets/settings/new-chat-popout-" + theme.pick("default", "dark", "contrast") + ".svg"; checked: parent.popout; onPicked: root.setProp("userPersonalSettings", "messagingSettings.alwaysPopOutNewChat", true) }
+                    SettingsParts.ImageRadio { imageHeight: 80; label: qsTr("Main window"); image: "../assets/settings/new-chat-mainwindow-" + theme.pick("default", "dark", "contrast") + ".svg"; checked: !parent.popout; onPicked: root.setProp("userPersonalSettings", "messagingSettings.alwaysPopOutNewChat", false) }
+                    SettingsParts.ImageRadio { imageHeight: 80; label: qsTr("New window"); image: "../assets/settings/new-chat-popout-" + theme.pick("default", "dark", "contrast") + ".svg"; checked: parent.popout; onPicked: root.setProp("userPersonalSettings", "messagingSettings.alwaysPopOutNewChat", true) }
                 }
             }
             // Teams' Meeting card (measured on winpc 2026-11-16). "New
@@ -500,11 +507,11 @@ Rectangle {
             // thumbs-down feedback form (OST's, sent to its GitHub).
             SettingsParts.Card {
                 visible: root.page === "general" && !root.subPage
-                icon: "video-20"; title: "Meeting"
+                icon: "video-20"; title: qsTr("Meeting")
                 SettingsParts.SwitchRow {
                     id: newControlsRow
-                    label: "New meeting controls"
-                    sublabel: "Meetings are easier than ever with a simplified, organized, and intuitive experience."
+                    label: qsTr("New meeting controls")
+                    sublabel: qsTr("Meetings are easier than ever with a simplified, organized, and intuitive experience.")
                     on: root.local("newMeetingControls", "false") === "true"
                     onToggled: v => {
                         backend.setSetting("newMeetingControls", v ? "true" : "false")
@@ -514,7 +521,7 @@ Rectangle {
                 }
                 SettingsParts.SwitchRow {
                     id: leaveRow
-                    label: "Ask me to confirm when I leave a meeting"
+                    label: qsTr("Ask me to confirm when I leave a meeting")
                     on: root.local("leaveConfirmation", "false") === "true"
                     onToggled: v => { backend.setSetting("leaveConfirmation", v ? "true" : "false"); leaveRow.on = v }
                 }
@@ -529,8 +536,8 @@ Rectangle {
             SettingsParts.Card {
                 id: regionalCard
                 visible: root.page === "general" && !root.subPage
-                icon: "local-language-20"; title: "Language and regional formats"
-                subtitle: "Restart OST to apply language and regional format settings"
+                icon: "local-language-20"; title: qsTr("Language and regional formats")
+                subtitle: qsTr("Restart OST to apply language and regional format settings")
                 property var opts: JSON.parse(backend.regionalOptionsJson())
                 property bool followOs: opts.followOs
                 property string appLanguage: opts.appLanguage
@@ -544,17 +551,17 @@ Rectangle {
                 }
                 readonly property bool changed: followOs !== opts.followOs || (!followOs && (appLanguage !== opts.appLanguage || dateFormat !== (opts.dateFormat || opts.os.dateFormat) || timeFormat !== (opts.timeFormat || opts.os.timeFormat)))
                 // Teams' samples: January 31 of this year, 1:01 to 23:59.
-                function dateSample(p) { return Qt.formatDate(new Date(new Date().getFullYear(), 0, 31), p) }
+                function dateSample(p) { return theme.fmtDate(new Date(new Date().getFullYear(), 0, 31), p) }
                 function timeSample(p) {
                     const q = p.replace(/tt/g, "AP"), y = new Date().getFullYear()
-                    return Qt.formatTime(new Date(y, 0, 31, 1, 1), q) + " - " + Qt.formatTime(new Date(y, 0, 31, 23, 59), q)
+                    return theme.fmtTime(new Date(y, 0, 31, 1, 1), q) + " - " + theme.fmtTime(new Date(y, 0, 31, 23, 59), q)
                 }
                 // The current choice first, then the others in Teams' order.
                 function ordered(list, cur) { return [cur].concat(list.filter(x => x !== cur)) }
                 readonly property var dates: ordered(opts.dateFormats, followOs ? opts.os.dateFormat : dateFormat)
                 readonly property var times: ordered(opts.timeFormats.map(t => t.short), followOs ? opts.os.timeFormat : timeFormat)
                 SettingsParts.SwitchRow {
-                    label: "Follow OS settings"
+                    label: qsTr("Follow OS settings")
                     on: regionalCard.followOs
                     onToggled: v => regionalCard.followOs = v
                 }
@@ -562,43 +569,43 @@ Rectangle {
                 // settings (KDE or GNOME), 15 under the switch.
                 SettingsParts.Link {
                     visible: backend.hasOsSettings("region")
-                    text: "Manage system settings"; font.pixelSize: 14
+                    text: qsTr("Manage system settings"); font.pixelSize: 14
                     height: 16.1; verticalAlignment: Text.AlignVCenter
                     onClicked: backend.openOsSettings("region")
                     Accessible.role: Accessible.Link
-                    Accessible.name: "Link to Manage your OS language and region settings"
+                    Accessible.name: qsTr("Link to Manage your OS language and region settings")
                 }
                 SettingsParts.Gap { size: backend.hasOsSettings("region") ? 15 : 4 }
-                SettingsParts.SubHeading { text: "App language" }
+                SettingsParts.SubHeading { text: qsTr("App language") }
                 SettingsParts.Gap { size: 10.6 }
                 SearchCombobox {
                     width: 258.7; height: 30.7
                     enabled: !regionalCard.followOs
                     options: regionalCard.opts.languages.map(l => ({ key: l.code, label: l.nativeName, sublabel: l.name }))
                     current: regionalCard.followOs ? "" : regionalCard.appLanguage
-                    accessibleName: "App language"
+                    accessibleName: qsTr("App language")
                     onPicked: code => regionalCard.appLanguage = code
                 }
                 SettingsParts.Gap { size: 15.7 }
-                SettingsParts.SubHeading { text: "Date format" }
+                SettingsParts.SubHeading { text: qsTr("Date format") }
                 SettingsParts.Gap { size: 10.6 }
                 OutlineDropdown {
                     width: 292.7; height: 30
                     enabled: !regionalCard.followOs
                     options: regionalCard.dates.map(p => ({ label: regionalCard.dateSample(p) }))
                     current: 0
-                    accessibleName: "Date format"
+                    accessibleName: qsTr("Date format")
                     onPicked: i => regionalCard.dateFormat = regionalCard.dates[i]
                 }
                 SettingsParts.Gap { size: 15.7 }
-                SettingsParts.SubHeading { text: "Time format" }
+                SettingsParts.SubHeading { text: qsTr("Time format") }
                 SettingsParts.Gap { size: 10.6 }
                 OutlineDropdown {
                     width: 292.7; height: 30
                     enabled: !regionalCard.followOs
                     options: regionalCard.times.map(p => ({ label: regionalCard.timeSample(p) }))
                     current: 0
-                    accessibleName: "Time format"
+                    accessibleName: qsTr("Time format")
                     onPicked: i => regionalCard.timeFormat = regionalCard.times[i]
                 }
                 SettingsParts.Gap { size: 15.7 }
@@ -606,7 +613,7 @@ Rectangle {
                     visible: regionalCard.changed
                     x: -8
                     primary: true
-                    label: regionalCard.followOs ? "Restart" : "Save and restart"
+                    label: regionalCard.followOs ? qsTr("Restart") : qsTr("Save and restart")
                     onClicked: backend.saveRegionalAndRestart(regionalCard.followOs, regionalCard.appLanguage, regionalCard.dateFormat, regionalCard.timeFormat)
                 }
                 SettingsParts.Gap { size: regionalCard.changed ? 10 : 0 }
@@ -615,18 +622,18 @@ Rectangle {
             // Windows' own).
             SettingsParts.Card {
                 visible: root.page === "general" && !root.subPage
-                icon: "globe-20"; title: "Time zone"
-                subtitle: "You can adjust the time zone from your OS settings."
-                SettingsParts.SubHeading { text: "Current time zone: " + backend.timeZoneName() }
+                icon: "globe-20"; title: qsTr("Time zone")
+                subtitle: qsTr("You can adjust the time zone from your OS settings.")
+                SettingsParts.SubHeading { text: qsTr("Current time zone: %1").arg(backend.timeZoneName()) }
                 // Teams' "Manage Windows settings": the desktop's own date
                 // and time settings (KDE or GNOME).
                 SettingsParts.Link {
                     visible: backend.hasOsSettings("timezone")
-                    text: "Manage system settings"; font.pixelSize: 14
+                    text: qsTr("Manage system settings"); font.pixelSize: 14
                     height: 16.1; verticalAlignment: Text.AlignVCenter
                     onClicked: backend.openOsSettings("timezone")
                     Accessible.role: Accessible.Link
-                    Accessible.name: "Link to Manage your OS time zone settings"
+                    Accessible.name: qsTr("Link to Manage your OS time zone settings")
                 }
                 SettingsParts.Gap { size: backend.hasOsSettings("timezone") ? 15 : 8 }
             }
@@ -638,7 +645,7 @@ Rectangle {
             SettingsParts.Card {
                 id: translationCard
                 visible: root.page === "general" && !root.subPage
-                icon: "translate-20-filled"; title: "Translation"
+                icon: "translate-20-filled"; title: qsTr("Translation")
                 property var settings: JSON.parse(backend.translationSettingsJson())
                 property var languages: JSON.parse(backend.translationLanguagesJson())
                 Connections {
@@ -657,14 +664,14 @@ Rectangle {
                 readonly property var modes: ["SUGGEST_TRANSLATION", "ALWAYS_TRANSLATE", "NEVER_TRANSLATE"]
                 // The other known languages (yours is its own chip).
                 readonly property var others: settings.known.filter(k => k !== settings.target)
-                SettingsParts.SubHeading { text: "Translate messages into this language" }
+                SettingsParts.SubHeading { text: qsTr("Translate messages into this language") }
                 SettingsParts.Gap { size: 10 }
                 SearchCombobox {
                     id: translationTargetBox
                     width: 294; height: 32
                     options: translationCard.languages.map(l => ({ key: l.code, label: l.native, sublabel: l.english }))
                     current: translationCard.settings.target
-                    accessibleName: "Translate messages into this language"
+                    accessibleName: qsTr("Translate messages into this language")
                     onPicked: code => {
                         // Your new language is one you never translate.
                         const known = translationCard.settings.known.filter(k => k !== code).concat([code])
@@ -673,27 +680,27 @@ Rectangle {
                     }
                 }
                 SettingsParts.Gap { size: 15 }
-                SettingsParts.SubHeading { text: "How to handle messages in other languages" }
+                SettingsParts.SubHeading { text: qsTr("How to handle messages in other languages") }
                 SettingsParts.Gap { size: 10 }
                 OutlineDropdown {
                     width: 294; height: 31.3
-                    options: [{ label: "Ask me before translating" }, { label: "Auto-translate all messages" }, { label: "Never translate" }]
+                    options: [{ label: qsTr("Ask me before translating") }, { label: qsTr("Auto-translate all messages") }, { label: qsTr("Never translate") }]
                     current: Math.max(0, translationCard.modes.indexOf(translationCard.settings.mode))
-                    accessibleName: "How to handle messages in other languages"
+                    accessibleName: qsTr("How to handle messages in other languages")
                     onPicked: i => translationCard.save("translationMode", translationCard.modes[i])
                 }
                 SettingsParts.Gap { size: 15 }
-                SettingsParts.SubHeading { text: "Never translate messages in these languages" }
+                SettingsParts.SubHeading { text: qsTr("Never translate messages in these languages") }
                 SettingsParts.Gap { size: 10 }
                 OutlineDropdown {
                     id: addLanguage
                     width: 294; height: 31.3
                     maxListHeight: 332
-                    placeholder: "Add another language"
+                    placeholder: qsTr("Add another language")
                     current: -1
                     readonly property var choices: translationCard.languages.filter(l => translationCard.settings.known.indexOf(l.code) < 0 && l.code !== translationCard.settings.target)
                     options: choices.map(l => ({ label: l.name }))
-                    accessibleName: "Never translate messages in these languages"
+                    accessibleName: qsTr("Never translate messages in these languages")
                     onPicked: i => translationCard.save("translationKnown", JSON.stringify(translationCard.settings.known.concat([choices[i].code])))
                 }
                 SettingsParts.Gap { size: 15 }
@@ -725,7 +732,7 @@ Rectangle {
                             HoverHandler { id: chipHover; enabled: chip.removable; cursorShape: Qt.PointingHandCursor }
                             TapHandler { enabled: chip.removable; onTapped: translationCard.save("translationKnown", JSON.stringify(translationCard.settings.known.filter(k => k !== chip.modelData))) }
                             Accessible.role: chip.removable ? Accessible.Button : Accessible.StaticText
-                            Accessible.name: chip.removable ? "Remove " + translationCard.nameOf(chip.modelData) + " from known languages" : translationCard.nameOf(chip.modelData)
+                            Accessible.name: chip.removable ? qsTr("Remove %1 from known languages").arg(translationCard.nameOf(chip.modelData)) : translationCard.nameOf(chip.modelData)
                             Accessible.onPressAction: if (chip.removable) translationCard.save("translationKnown", JSON.stringify(translationCard.settings.known.filter(k => k !== chip.modelData)))
                         }
                     }
@@ -739,9 +746,9 @@ Rectangle {
             SettingsParts.Card {
                 id: editorSpellCard
                 visible: root.page === "general" && !root.subPage
-                icon: "local-language-20"; title: "Editor spellcheck"
-                subtitle: "Customize Editor to check for spelling and grammar improvements in up to three languages. If you'd like to include a different language or remove an old one, select Manage spellcheck languages."
-                trailing: Component { SettingsParts.Button { label: "Manage"; onClicked: root.subPage = "spellcheck" } }
+                icon: "local-language-20"; title: qsTr("Editor spellcheck")
+                subtitle: qsTr("Customize Editor to check for spelling and grammar improvements in up to three languages. If you'd like to include a different language or remove an old one, select Manage spellcheck languages.")
+                trailing: Component { SettingsParts.Button { label: qsTr("Manage"); onClicked: root.subPage = "spellcheck" } }
                 property var st: JSON.parse(backend.editorSettingsJson())
                 property string selected: ""
                 Connections {
@@ -782,7 +789,7 @@ Rectangle {
                 SettingsParts.Gap { size: editorSpellCard.optLang ? 15 : 0 }
                 SettingsParts.SwitchRow {
                     visible: editorSpellCard.optLang !== ""
-                    label: "Correct words while typing"
+                    label: qsTr("Correct words while typing")
                     on: editorSpellCard.st.autocorrect.indexOf(editorSpellCard.optLang) >= 0
                     onToggled: v => {
                         const l = editorSpellCard.st.autocorrect.filter(x => x !== editorSpellCard.optLang)
@@ -820,18 +827,18 @@ Rectangle {
             }
             SettingsParts.Card {
                 visible: root.page === "general" && !root.subPage
-                icon: "calendar-arrow-right-20"; title: "Out of office"
-                subtitle: "Schedule out of office and set automatic replies"
-                trailing: Component { SettingsParts.Button { label: "Schedule"; onClicked: root.subPage = "oof" } }
+                icon: "calendar-arrow-right-20"; title: qsTr("Out of office")
+                subtitle: qsTr("Schedule out of office and set automatic replies")
+                trailing: Component { SettingsParts.Button { label: qsTr("Schedule"); onClicked: root.subPage = "oof" } }
             }
             // Teams' Keyboard shortcuts card: its profile dropdown (248.7 x
             // 30) — Teams only, + Slack, + Zoom, + combined — saved to the
             // synced keyboardShortcutsSettings.shortcutProfile.
             SettingsParts.Card {
                 visible: root.page === "general" && !root.subPage
-                icon: "keyboard-20"; title: "Keyboard shortcuts"
+                icon: "keyboard-20"; title: qsTr("Keyboard shortcuts")
                 bodyGap: 10.6
-                subtitle: "Use OST shortcuts, or combine them with those of other apps. <a href=\"shortcuts\">See available keyboard shortcuts</a>"
+                subtitle: qsTr("Use OST shortcuts, or combine them with those of other apps.") + " <a href=\"shortcuts\">" + qsTr("See available keyboard shortcuts") + "</a>"
                 onLinkActivated: root.showShortcuts()
                 OutlineDropdown {
                     width: 248.7; height: 30
@@ -841,9 +848,9 @@ Rectangle {
                         if (typeof v === "string") { try { v = JSON.parse(v) } catch (e) { v = null } }
                         return (v && v.shortcutProfile) || "default"
                     }
-                    options: [{ label: "OST only (Default)" }, { label: "OST + Slack shortcuts" }, { label: "OST + Zoom shortcuts" }, { label: "OST + combined shortcuts" }]
+                    options: [{ label: qsTr("OST only (default)") }, { label: qsTr("OST + Slack shortcuts") }, { label: qsTr("OST + Zoom shortcuts") }, { label: qsTr("OST + combined shortcuts") }]
                     current: Math.max(0, keys.indexOf(current_))
-                    accessibleName: "Keyboard shortcuts"
+                    accessibleName: qsTr("Keyboard shortcuts")
                     onPicked: i => root.setProp("keyboardShortcutsSettings", "shortcutProfile", keys[i])
                 }
                 SettingsParts.Gap { size: 0.8 }
@@ -854,12 +861,12 @@ Rectangle {
             // the chat list's Up / Down then only move, Enter or Space opens.
             SettingsParts.Card {
                 visible: root.page === "general" && !root.subPage
-                icon: "keyboard-20"; title: "Use Enter or Spacebar to show content"
-                subtitle: "Press Enter or Spacebar to open an item in a list (like @mentions, chats, or channels) and view its content."
+                icon: "keyboard-20"; title: qsTr("Use Enter or Spacebar to show content")
+                subtitle: qsTr("Press Enter or Spacebar to open an item in a list (like @mentions, chats, or channels) and view its content.")
                 trailing: Component {
                     SettingsParts.Toggle {
                         on: root.prop("userPersonalSettings", ["messagingSettings", "disableAutomaticConvSwitchOnKeyboardNav"], false) === true
-                        accessibleName: "Use Enter or Spacebar to show content"
+                        accessibleName: qsTr("Use Enter or Spacebar to show content")
                         onToggled: v => root.setProp("userPersonalSettings", "messagingSettings.disableAutomaticConvSwitchOnKeyboardNav", v)
                     }
                 }
@@ -869,14 +876,14 @@ Rectangle {
             SettingsParts.Card {
                 id: efficiencyCard
                 visible: root.page === "general" && !root.subPage
-                icon: "top-speed-20"; title: "Efficiency mode"
+                icon: "top-speed-20"; title: qsTr("Efficiency mode")
                 bodyGap: 26
-                subtitle: "This mode reduces processor, memory and network usage and is ideal for lower performance devices or those under heavy load. Turning this on may affect some functionality such as camera resolution."
+                subtitle: qsTr("This mode reduces processor, memory and network usage and is ideal for lower performance devices or those under heavy load. Turning this on may affect some functionality such as camera resolution.")
                 property string mode: root.local("efficiencyMode", "auto")
                 function pick(m) { mode = m; backend.setSetting("efficiencyMode", m) }
-                SettingsParts.RadioRow { label: "Use only when resources are low (Default)"; sublabel: "Reduce processor and memory usage when reduced resources are detected."; checked: efficiencyCard.mode === "auto"; onPicked: efficiencyCard.pick("auto") }
-                SettingsParts.RadioRow { label: "Never use efficiency mode"; sublabel: "Prioritize a richer experience, using more system resources."; checked: efficiencyCard.mode === "off"; onPicked: efficiencyCard.pick("off") }
-                SettingsParts.RadioRow { label: "Always use efficiency mode"; sublabel: "Reduce processor and memory use at all times."; checked: efficiencyCard.mode === "on"; onPicked: efficiencyCard.pick("on") }
+                SettingsParts.RadioRow { label: qsTr("Use only when resources are low (Default)"); sublabel: qsTr("Reduce processor and memory usage when reduced resources are detected."); checked: efficiencyCard.mode === "auto"; onPicked: efficiencyCard.pick("auto") }
+                SettingsParts.RadioRow { label: qsTr("Never use efficiency mode"); sublabel: qsTr("Prioritize a richer experience, using more system resources."); checked: efficiencyCard.mode === "off"; onPicked: efficiencyCard.pick("off") }
+                SettingsParts.RadioRow { label: qsTr("Always use efficiency mode"); sublabel: qsTr("Reduce processor and memory use at all times."); checked: efficiencyCard.mode === "on"; onPicked: efficiencyCard.pick("on") }
                             }
 
             // ---- General ▸ Out of office ----
@@ -896,8 +903,8 @@ Rectangle {
             SettingsParts.Card {
                 id: spellManage
                 visible: root.page === "general" && root.subPage === "spellcheck"
-                icon: "local-language-20"; title: "Spellcheck languages"
-                subtitle: "Select up to three languages you'd like Editor to work in. Make sure you select your preferred language at the top of the list."
+                icon: "local-language-20"; title: qsTr("Spellcheck languages")
+                subtitle: qsTr("Select up to three languages you'd like Editor to work in. Make sure you select your preferred language at the top of the list.")
                 property var st: JSON.parse(backend.editorSettingsJson())
                 property string pick: ""
                 Connections {
@@ -926,13 +933,13 @@ Rectangle {
                             HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: langMenu.open() }
                             Accessible.role: Accessible.Button
-                            Accessible.name: "More options"
+                            Accessible.name: qsTr("More options")
                             Menu {
                                 id: langMenu
                                 y: parent.height
-                                MenuItem { visible: langRow.index > 0; height: visible ? implicitHeight : 0; text: "Move up"; onTriggered: { const l = spellManage.st.languages.slice(); l.splice(langRow.index - 1, 0, l.splice(langRow.index, 1)[0]); spellManage.setLanguages(l) } }
-                                MenuItem { visible: langRow.index < spellManage.st.languages.length - 1; height: visible ? implicitHeight : 0; text: "Move down"; onTriggered: { const l = spellManage.st.languages.slice(); l.splice(langRow.index + 1, 0, l.splice(langRow.index, 1)[0]); spellManage.setLanguages(l) } }
-                                MenuItem { text: "Remove"; onTriggered: spellManage.setLanguages(spellManage.st.languages.filter(x => x !== langRow.modelData)) }
+                                MenuItem { visible: langRow.index > 0; height: visible ? implicitHeight : 0; text: qsTr("Move up"); onTriggered: { const l = spellManage.st.languages.slice(); l.splice(langRow.index - 1, 0, l.splice(langRow.index, 1)[0]); spellManage.setLanguages(l) } }
+                                MenuItem { visible: langRow.index < spellManage.st.languages.length - 1; height: visible ? implicitHeight : 0; text: qsTr("Move down"); onTriggered: { const l = spellManage.st.languages.slice(); l.splice(langRow.index + 1, 0, l.splice(langRow.index, 1)[0]); spellManage.setLanguages(l) } }
+                                MenuItem { text: qsTr("Remove"); onTriggered: spellManage.setLanguages(spellManage.st.languages.filter(x => x !== langRow.modelData)) }
                             }
                         }
                         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D", "#000000") }
@@ -946,12 +953,12 @@ Rectangle {
                         width: 250; height: 32
                         options: spellManage.st.supported.filter(l => spellManage.st.languages.indexOf(l.code) < 0).map(l => ({ key: l.code, label: l.native, sublabel: l.english }))
                         current: spellManage.pick
-                        accessibleName: "Select a spell check language"
-                        placeholder: "Select a spell check language"
+                        accessibleName: qsTr("Select a spell check language")
+                        placeholder: qsTr("Select a spell check language")
                         onPicked: code => spellManage.pick = code
                     }
                     SettingsParts.Button {
-                        label: "Add"
+                        label: qsTr("Add")
                         height: 32
                         onClicked: if (spellManage.pick) { spellManage.setLanguages(spellManage.st.languages.concat([spellManage.pick])); spellManage.pick = "" }
                     }
@@ -962,21 +969,21 @@ Rectangle {
             // ---- Appearance ----
             SettingsParts.Card {
                 visible: root.page === "appearance"
-                icon: "dark-theme-20"; title: "Theme"; subtitle: "This will apply to all your OST apps."
+                icon: "dark-theme-20"; title: qsTr("Theme"); subtitle: qsTr("This will apply to all your OST apps.")
                 bodyGap: 10.6
                 OutlineDropdown {
                     width: 249.3; height: 30
                     readonly property var keys: ["system", "light", "dark", "classic", "highContrast"]
-                    options: [{ label: "Follow operating system theme" }, { label: "Light" }, { label: "Dark" }, { label: "Classic" }, { label: "High contrast" }]
+                    options: [{ label: qsTr("Follow operating system theme") }, { label: qsTr("Light") }, { label: qsTr("Dark") }, { label: qsTr("Classic") }, { label: qsTr("High contrast") }]
                     current: Math.max(0, keys.indexOf(backend.themeMode))
-                    accessibleName: "Theme"
+                    accessibleName: qsTr("Theme")
                     onPicked: i => backend.setSetting("theme", keys[i])
                 }
                 // Teams: only in the Light theme.
                 SettingsParts.Gap { size: 16.7 }
                 SettingsParts.CheckRow {
                     rowHeight: 32
-                    label: "Always use dark theme for calls and meetings"
+                    label: qsTr("Always use dark theme for calls and meetings")
                     usable: !theme.dark && !theme.classic
                     checked: window.darkCallSetting
                     onToggled: v => { backend.setSetting("darkCallTheme", v ? "true" : "false"); window.darkCallSetting = v }
@@ -984,14 +991,14 @@ Rectangle {
             }
             SettingsParts.Card {
                 visible: root.page === "appearance"
-                icon: "emoji-hand-20"; title: "Skin tone preference"; subtitle: "Reactions and emoji will appear with this skin tone."
+                icon: "emoji-hand-20"; title: qsTr("Skin tone preference"); subtitle: qsTr("Reactions and emoji will appear with this skin tone.")
                 // Teams' skin tone radios (measured on winpc 2026-11-14): 42 x
                 // 50 each from 8 left of the text, a 30 px swatch 6 in and the
                 // chosen one's 30 x 4 brand bar at 40.
                 Row {
                     x: -8; spacing: 0
                     Repeater {
-                        model: ["None", "Light", "Medium light", "Medium", "Medium dark", "Dark"]
+                        model: [qsTr("None"), qsTr("Light"), qsTr("Medium light"), qsTr("Medium"), qsTr("Medium dark"), qsTr("Dark")]
                         Item {
                             required property string modelData
                             required property int index
@@ -1012,16 +1019,16 @@ Rectangle {
             // Teams' App bar card (measured on winpc 2026-11-14).
             SettingsParts.Card {
                 visible: root.page === "appearance"
-                icon: "panel-left-text-20"; title: "App bar"
-                subtitle: "Customize your app bar layout and properties"
+                icon: "panel-left-text-20"; title: qsTr("App bar")
+                subtitle: qsTr("Customize your app bar layout and properties")
                 SettingsParts.SwitchRow {
-                    label: "Show app names"
+                    label: qsTr("Show app names")
                     on: window.appBarNames
                     onToggled: v => { backend.setSetting("appBarShowNames", v ? "true" : "false"); window.appBarNames = v }
                 }
                 SettingsParts.SwitchRow {
-                    label: "Auto collapse app bar"
-                    sublabel: "The app bar will automatically collapse after you select an app."
+                    label: qsTr("Auto collapse app bar")
+                    sublabel: qsTr("The app bar will automatically collapse after you select an app.")
                     on: window.appBarAutoCollapse
                     onToggled: v => { backend.setSetting("appBarAutoCollapse", v ? "true" : "false"); window.appBarAutoCollapse = v }
                 }
@@ -1033,52 +1040,52 @@ Rectangle {
             // simpleCollabUserSettings.
             SettingsParts.Card {
                 visible: root.page === "chats"
-                icon: "window-layout-20"; title: "Viewing chats, teams, and channels"
+                icon: "window-layout-20"; title: qsTr("Viewing chats, teams, and channels")
                 bodyGap: 28
-                subtitle: "See all conversations in a combined view, or keep chats separate from teams and channels."
+                subtitle: qsTr("See all conversations in a combined view, or keep chats separate from teams and channels.")
                 Row {
                     spacing: 12.7
                     readonly property bool separate: window.splitView
-                    SettingsParts.ImageRadio { imageHeight: 80; label: "Combined"; image: "../assets/settings/simple-collab-picker-combined-" + theme.pick("light", "dark", "contrast") + ".svg"; checked: !parent.separate
+                    SettingsParts.ImageRadio { imageHeight: 80; label: qsTr("Combined"); image: "../assets/settings/simple-collab-picker-combined-" + theme.pick("light", "dark", "contrast") + ".svg"; checked: !parent.separate
                         onPicked: backend.changeSetting("prop", "simpleCollabUserSettings", JSON.stringify({ hasUserEnabledAdaptiveRailForDesktop: true, hasUserEnabledUnifiedAppForDesktop: true })) }
-                    SettingsParts.ImageRadio { imageHeight: 80; label: "Separate"; image: "../assets/settings/simple-collab-picker-separate-" + theme.pick("light", "dark", "contrast") + ".svg"; checked: parent.separate
+                    SettingsParts.ImageRadio { imageHeight: 80; label: qsTr("Separate"); image: "../assets/settings/simple-collab-picker-separate-" + theme.pick("light", "dark", "contrast") + ".svg"; checked: parent.separate
                         onPicked: backend.changeSetting("prop", "simpleCollabUserSettings", JSON.stringify({ hasUserEnabledAdaptiveRailForDesktop: true, hasUserEnabledUnifiedAppForDesktop: false })) }
                 }
             }
             SettingsParts.Card {
                 visible: root.page === "chats"
-                icon: "apps-list-20"; title: "Chats and channels list"
+                icon: "apps-list-20"; title: qsTr("Chats and channels list")
                 SettingsParts.SwitchRow {
-                    label: "Show message previews for chats and team names for channels"
+                    label: qsTr("Show message previews for chats and team names for channels")
                     // Separate view has its own (on unless turned off).
                     on: window.splitView ? root.prop("simpleCollabUserSettings", ["hasUserEnabledMessagePreviewsForSplitApp"], true) !== false : root.prop("simpleCollabUserSettings", ["hasUserEnabledMessagePreviews"], false) === true
                     onToggled: v => root.setProp("simpleCollabUserSettings", window.splitView ? "hasUserEnabledMessagePreviewsForSplitApp" : "hasUserEnabledMessagePreviews", v)
                 }
                 SettingsParts.SwitchRow {
-                    label: "Show time stamps"
+                    label: qsTr("Show time stamps")
                     // Always on in the Separate view (Teams greys it).
                     usable: !window.splitView
                     on: window.splitView || root.prop("simpleCollabUserSettings", ["hasUserEnabledShowTimeStamps"], false) === true
                     onToggled: v => root.setProp("simpleCollabUserSettings", "hasUserEnabledShowTimeStamps", v)
                 }
                 SettingsParts.SwitchRow {
-                    label: "Filters"
+                    label: qsTr("Filters")
                     on: root.prop("simpleCollabUserSettings", ["hasUserDisabledShowingFilterAtTop"], false) !== true
                     onToggled: v => root.setProp("simpleCollabUserSettings", "hasUserDisabledShowingFilterAtTop", !v)
                 }
                 SettingsParts.SwitchRow {
-                    label: "Copilot"
+                    label: qsTr("Copilot")
                     on: root.prop("userPersonalSettings", ["messagingSettings", "shouldShowMetaOSCopilotApp"], true) !== false
                     onToggled: v => root.setProp("userPersonalSettings", "messagingSettings.shouldShowMetaOSCopilotApp", v)
                 }
             }
             SettingsParts.Card {
                 visible: root.page === "chats"
-                icon: "chat-bubbles-question-20"; title: "Automatically follow threads in channels"
-                subtitle: "To choose how you get notified, go to <a href=\"followed\">Replies to followed threads and posts</a>"
+                icon: "chat-bubbles-question-20"; title: qsTr("Automatically follow threads in channels")
+                subtitle: qsTr("To choose how you get notified, go to <0>Replies to followed threads and posts</0>").replace("<0>", "<a href=\"followed\">").replace("</0>", "</a>")
                 onLinkActivated: root.page = "notifications"
                 Repeater {
-                    model: [{ key: "Authored", label: "Threads started from my messages or posts" }, { key: "Participated", label: "Threads I reply to" }, { key: "AtMentioned", label: "Threads where I'm @mentioned" }]
+                    model: [{ key: "Authored", label: qsTr("Threads started from my messages or posts") }, { key: "Participated", label: qsTr("Threads I reply to") }, { key: "AtMentioned", label: qsTr("Threads where I'm @mentioned") }]
                     SettingsParts.CheckRow {
                         required property var modelData
                         label: modelData.label
@@ -1094,51 +1101,51 @@ Rectangle {
             }
             SettingsParts.Card {
                 visible: root.page === "chats"
-                icon: "chat-20"; title: "Chat"
-                SettingsParts.SubHeading { text: "Message density" }
+                icon: "chat-20"; title: qsTr("Chat")
+                SettingsParts.SubHeading { text: qsTr("Message density") }
                 SettingsParts.Gap { size: 12 }
                 Row {
                     spacing: 12.7
                     readonly property string mode: root.prop("messageDensity", [], "COMFY")
-                    SettingsParts.ImageRadio { label: "Comfy"; image: "../assets/settings/chat-density-comfy-" + theme.pick("default", "dark", "contrast") + ".svg"; checked: parent.mode !== "COMPACT"; onPicked: root.setProp("messageDensity", "", "COMFY") }
-                    SettingsParts.ImageRadio { label: "Compact"; image: "../assets/settings/chat-density-compact-" + theme.pick("default", "dark", "contrast") + ".svg"; checked: parent.mode === "COMPACT"; onPicked: root.setProp("messageDensity", "", "COMPACT") }
+                    SettingsParts.ImageRadio { label: qsTr("Comfy"); image: "../assets/settings/chat-density-comfy-" + theme.pick("default", "dark", "contrast") + ".svg"; checked: parent.mode !== "COMPACT"; onPicked: root.setProp("messageDensity", "", "COMFY") }
+                    SettingsParts.ImageRadio { label: qsTr("Compact"); image: "../assets/settings/chat-density-compact-" + theme.pick("default", "dark", "contrast") + ".svg"; checked: parent.mode === "COMPACT"; onPicked: root.setProp("messageDensity", "", "COMPACT") }
                 }
-                SettingsParts.SubHeading { text: "When I open a chat, take me to"; gapAbove: 15 }
+                SettingsParts.SubHeading { text: qsTr("When I open a chat, take me to"); gapAbove: 15 }
                 SettingsParts.Gap { size: 12 }
                 Row {
                     spacing: 12.7
                     readonly property bool lastRead: root.prop("userPersonalSettings", ["messagingSettings", "navigateToLastReadMessage"], true) !== false
-                    SettingsParts.ImageRadio { label: "Last read message"; image: "../assets/settings/chat-landing-unread-" + theme.pick("light", "dark", "contrast") + ".svg"; checked: parent.lastRead; onPicked: root.setProp("userPersonalSettings", "messagingSettings.navigateToLastReadMessage", true) }
-                    SettingsParts.ImageRadio { label: "Newest message"; image: "../assets/settings/chat-landing-latest-" + theme.pick("light", "dark", "contrast") + ".svg"; checked: !parent.lastRead; onPicked: root.setProp("userPersonalSettings", "messagingSettings.navigateToLastReadMessage", false) }
+                    SettingsParts.ImageRadio { label: qsTr("Last read message"); image: "../assets/settings/chat-landing-unread-" + theme.pick("light", "dark", "contrast") + ".svg"; checked: parent.lastRead; onPicked: root.setProp("userPersonalSettings", "messagingSettings.navigateToLastReadMessage", true) }
+                    SettingsParts.ImageRadio { label: qsTr("Newest message"); image: "../assets/settings/chat-landing-latest-" + theme.pick("light", "dark", "contrast") + ".svg"; checked: !parent.lastRead; onPicked: root.setProp("userPersonalSettings", "messagingSettings.navigateToLastReadMessage", false) }
                 }
             }
             SettingsParts.Card {
                 id: enterCard
                 visible: root.page === "chats"
-                icon: "keyboard-20"; title: "When writing a message, press Enter to"
+                icon: "keyboard-20"; title: qsTr("When writing a message, press Enter to")
                 bodyGap: 26
-                subtitle: "This setting doesn't apply when message formatting is active."
+                subtitle: qsTr("This setting doesn't apply when message formatting is active.")
                 property string enterKey: root.local("enterKey", "send")
-                SettingsParts.RadioRow { label: "Send the message"; checked: enterCard.enterKey === "send"; onPicked: { backend.setSetting("enterKey", "send"); enterCard.enterKey = "send"; root.settingsChanged() } }
-                SettingsParts.RadioRow { label: "Start a new line (to send, select Send or use Ctrl+Enter)."; checked: enterCard.enterKey === "newline"; onPicked: { backend.setSetting("enterKey", "newline"); enterCard.enterKey = "newline"; root.settingsChanged() } }
+                SettingsParts.RadioRow { label: qsTr("Send the message"); checked: enterCard.enterKey === "send"; onPicked: { backend.setSetting("enterKey", "send"); enterCard.enterKey = "send"; root.settingsChanged() } }
+                SettingsParts.RadioRow { label: qsTr("Start a new line (to send, select Send or use %1).").arg("Ctrl+Enter"); checked: enterCard.enterKey === "newline"; onPicked: { backend.setSetting("enterKey", "newline"); enterCard.enterKey = "newline"; root.settingsChanged() } }
             }
             SettingsParts.Card {
                 visible: root.page === "chats"
-                icon: "eye-20"; title: "Read receipts"
-                subtitle: "Let people know when you’ve seen their messages and know when they’ve seen yours. When this is off, you won't see read receipts from others."
-                trailing: Component { SettingsParts.Toggle { on: backend.readReceipts; accessibleName: "Read receipts"; onToggled: v => backend.changeReadReceipts(v) } }
+                icon: "eye-20"; title: qsTr("Read receipts")
+                subtitle: qsTr("Let people know when you’ve seen their messages and know when they’ve seen yours. When this is off, you won't see read receipts from others.")
+                trailing: Component { SettingsParts.Toggle { on: backend.readReceipts; accessibleName: qsTr("Read receipts"); onToggled: v => backend.changeReadReceipts(v) } }
             }
             SettingsParts.Card {
                 visible: root.page === "chats"
-                icon: "arrow-sort-20"; title: "In post channels, show recent activity"
+                icon: "arrow-sort-20"; title: qsTr("In post channels, show recent activity")
                 bodyGap: 26
-                SettingsParts.RadioRow { label: "At the top"; checked: backend.channelPostsAtTop; onPicked: backend.channelAction("posts-at-top", "", "", "") }
-                SettingsParts.RadioRow { label: "At the bottom"; checked: !backend.channelPostsAtTop; onPicked: backend.channelAction("posts-at-bottom", "", "", "") }
+                SettingsParts.RadioRow { label: qsTr("At the top"); checked: backend.channelPostsAtTop; onPicked: backend.channelAction("posts-at-top", "", "", "") }
+                SettingsParts.RadioRow { label: qsTr("At the bottom"); checked: !backend.channelPostsAtTop; onPicked: backend.channelAction("posts-at-bottom", "", "", "") }
             }
             SettingsParts.Card {
                 visible: root.page === "chats"
-                icon: "chat-sparkle-20"; title: "Suggested replies"; subtitle: "Show suggested replies in chat"
-                trailing: Component { SettingsParts.Toggle { on: root.prop("suggestedRepliesSettings", ["suggestionsEnabled"], true) !== false; accessibleName: "Suggested replies"; onToggled: v => root.setProp("suggestedRepliesSettings", "suggestionsEnabled", v) } }
+                icon: "chat-sparkle-20"; title: qsTr("Suggested replies"); subtitle: qsTr("Show suggested replies in chat")
+                trailing: Component { SettingsParts.Toggle { on: root.prop("suggestedRepliesSettings", ["suggestionsEnabled"], true) !== false; accessibleName: qsTr("Suggested replies"); onToggled: v => root.setProp("suggestedRepliesSettings", "suggestionsEnabled", v) } }
             }
 
             // ---- Notifications and activity ----
@@ -1166,16 +1173,16 @@ Rectangle {
                     for (const k of keys) { toast[k] = i === 0; act[k] = i !== 2; mail[k] = i === 0 }
                     setMany({ toastSettings: toast, activityGenerationSettings: act, emailSettings: mail })
                 }
-                readonly property var levels: [{ label: "Show in Activity and banner" }, { label: "Show in Activity" }, { label: "Off" }]
+                readonly property var levels: [{ label: qsTr("Show in Activity and banner") }, { label: qsTr("Show in Activity") }, { label: qsTr("Off") }]
             }
-            SectionTitle { visible: root.page === "notifications" && !root.subPage; text: "General"; first: true }
+            SectionTitle { visible: root.page === "notifications" && !root.subPage; text: qsTr("General"); first: true }
             SettingsParts.Card {
                 visible: root.page === "notifications" && !root.subPage
-                icon: "alert-off-20"; title: "Mute all notifications (except for calls and meetings)"
+                icon: "alert-off-20"; title: qsTr("Mute all notifications (except for calls and meetings)")
                 readonly property bool muted: notif.ts("muteGenericNotifications", "Off") === "On"
-                trailing: Component { SettingsParts.Toggle { on: notif.ts("muteGenericNotifications", "Off") === "On"; accessibleName: "Mute all notifications (except for calls and meetings)"; onToggled: v => notif.setTs("muteGenericNotifications", v ? "On" : "Off") } }
+                trailing: Component { SettingsParts.Toggle { on: notif.ts("muteGenericNotifications", "Off") === "On"; accessibleName: qsTr("Mute all notifications (except for calls and meetings)"); onToggled: v => notif.setTs("muteGenericNotifications", v ? "On" : "Off") } }
                 SettingsParts.CheckRow {
-                    label: "Always allow urgent and priority contact notifications"
+                    label: qsTr("Always allow urgent and priority contact notifications")
                     usable: parent.parent.muted
                     checked: root.local("allowUrgentWhenMuted", "false") === "true"
                     onToggled: v => { backend.setSetting("allowUrgentWhenMuted", v ? "true" : "false"); checked = v }
@@ -1183,7 +1190,7 @@ Rectangle {
             }
             SettingsParts.Card {
                 visible: root.page === "notifications" && !root.subPage
-                icon: "speaker-2-20"; title: "Sound"
+                icon: "speaker-2-20"; title: qsTr("Sound")
                 // Teams' last row keeps its 36 px label box.
                 bottomPad: 23.6
                 // Teams' rows (measured on winpc 2026-11-15): labels wrap at
@@ -1192,38 +1199,38 @@ Rectangle {
                 // beside them.
                 Item {
                     width: parent.width; height: soundRow.height
-                    SettingsParts.CheckRow { id: soundRow; rowHeight: 44; labelWidth: 332.3; label: "Play sounds with notifications"; checked: root.prop("userPersonalSettings", ["soundsSettings", "alertSound"], "All") !== "Off"; onToggled: v => root.setProp("userPersonalSettings", "soundsSettings.alertSound", v ? "All" : "Off") }
-                    SoundPicker { y: 2.6; setting: "alertSoundType"; dflt: "Default"; keys: ["Default", "Vibe", "Nudge", "Tap", "Flick", "Pluck", "Summon", "Ping"]; accessibleName: "Notification sound" }
+                    SettingsParts.CheckRow { id: soundRow; rowHeight: 44; labelWidth: 332.3; label: qsTr("Play sounds with notifications"); checked: root.prop("userPersonalSettings", ["soundsSettings", "alertSound"], "All") !== "Off"; onToggled: v => root.setProp("userPersonalSettings", "soundsSettings.alertSound", v ? "All" : "Off") }
+                    SoundPicker { y: 2.6; setting: "alertSoundType"; dflt: "Default"; keys: ["Default", "Vibe", "Nudge", "Tap", "Flick", "Pluck", "Summon", "Ping"]; accessibleName: qsTr("Notification sound") }
                 }
                 Item {
                     width: parent.width; height: urgentRow.height
-                    SettingsParts.CheckRow { id: urgentRow; rowHeight: 44; labelWidth: 332.3; label: "Play sounds with urgent and priority contact notifications"; checked: notif.ts("PlayNotificationSoundsForUrgentAndPriority", "On") !== "Off"; onToggled: v => notif.setTs("PlayNotificationSoundsForUrgentAndPriority", v ? "On" : "Off") }
-                    SoundPicker { y: 2.6; setting: "alertUrgentSoundType"; dflt: "DefaultUrgent"; keys: ["DefaultUrgent", "Prioritize", "Escalate", "Alarm"]; accessibleName: "Urgent and priority contact notification sound" }
+                    SettingsParts.CheckRow { id: urgentRow; rowHeight: 44; labelWidth: 332.3; label: qsTr("Play sounds with urgent and priority contact notifications"); checked: notif.ts("PlayNotificationSoundsForUrgentAndPriority", "On") !== "Off"; onToggled: v => notif.setTs("PlayNotificationSoundsForUrgentAndPriority", v ? "On" : "Off") }
+                    SoundPicker { y: 2.6; setting: "alertUrgentSoundType"; dflt: "DefaultUrgent"; keys: ["DefaultUrgent", "Prioritize", "Escalate", "Alarm"]; accessibleName: qsTr("Urgent and priority contact notification sound") }
                 }
-                SettingsParts.CheckRow { rowHeight: 44; labelWidth: 332.3; label: "Play sounds with incoming calls, requests to join, and meeting start notifications"; checked: root.prop("userPersonalSettings", ["soundsSettings", "incomingCallsAndMeetingStartSound"], "On") !== "Off"; onToggled: v => root.setProp("userPersonalSettings", "soundsSettings.incomingCallsAndMeetingStartSound", v ? "On" : "Off") }
-                SettingsParts.CheckRow { rowHeight: 44; labelWidth: 332.3; label: "Play sounds when I'm busy or in a meeting"; checked: notif.ts("PlayNotificationSoundsWhenBusyOrInMeetings", "On") !== "Off"; onToggled: v => notif.setTs("PlayNotificationSoundsWhenBusyOrInMeetings", v ? "On" : "Off") }
+                SettingsParts.CheckRow { rowHeight: 44; labelWidth: 332.3; label: qsTr("Play sounds with incoming calls, requests to join, and meeting start notifications"); checked: root.prop("userPersonalSettings", ["soundsSettings", "incomingCallsAndMeetingStartSound"], "On") !== "Off"; onToggled: v => root.setProp("userPersonalSettings", "soundsSettings.incomingCallsAndMeetingStartSound", v ? "On" : "Off") }
+                SettingsParts.CheckRow { rowHeight: 44; labelWidth: 332.3; label: qsTr("Play sounds when I'm busy or in a meeting"); checked: notif.ts("PlayNotificationSoundsWhenBusyOrInMeetings", "On") !== "Off"; onToggled: v => notif.setTs("PlayNotificationSoundsWhenBusyOrInMeetings", v ? "On" : "Off") }
             }
             SettingsParts.Card {
                 visible: root.page === "notifications" && !root.subPage
-                icon: "eye-20"; title: "Display"
-                trailing: Component { SettingsParts.Button { label: "Test notification"; onClicked: backend.testNotification() } }
-                SettingsParts.CheckRow { rowHeight: 44; label: "Show message and content previews in notifications"; checked: notif.ts("ShowPreviewInToasts", "On") !== "Off"; onToggled: v => notif.setTs("ShowPreviewInToasts", v ? "On" : "Off") }
-                SettingsParts.CheckRow { rowHeight: 44; label: "Show notifications during calls and meetings"; checked: notif.ts("MuteNotificationsDuringMeetings", "Off") !== "On"; onToggled: v => notif.setTs("MuteNotificationsDuringMeetings", v ? "Off" : "On") }
-                SettingsParts.CheckRow { rowHeight: 44; label: "Flash taskbar when notifications are received"; checked: root.local("flashTaskbar", "true") !== "false"; onToggled: v => { backend.setSetting("flashTaskbar", v ? "true" : "false"); checked = v } }
-                SettingsParts.SubHeading { text: "Dismiss notifications after this amount of time"; gapAbove: 4 }
+                icon: "eye-20"; title: qsTr("Display")
+                trailing: Component { SettingsParts.Button { label: qsTr("Test notification"); onClicked: backend.testNotification() } }
+                SettingsParts.CheckRow { rowHeight: 44; label: qsTr("Show message and content previews in notifications"); checked: notif.ts("ShowPreviewInToasts", "On") !== "Off"; onToggled: v => notif.setTs("ShowPreviewInToasts", v ? "On" : "Off") }
+                SettingsParts.CheckRow { rowHeight: 44; label: qsTr("Show notifications during calls and meetings"); checked: notif.ts("MuteNotificationsDuringMeetings", "Off") !== "On"; onToggled: v => notif.setTs("MuteNotificationsDuringMeetings", v ? "Off" : "On") }
+                SettingsParts.CheckRow { rowHeight: 44; label: qsTr("Flash taskbar when notifications are received"); checked: root.local("flashTaskbar", "true") !== "false"; onToggled: v => { backend.setSetting("flashTaskbar", v ? "true" : "false"); checked = v } }
+                SettingsParts.SubHeading { text: qsTr("Dismiss notifications after this amount of time"); gapAbove: 4 }
                 SettingsParts.Gap { size: 10.6 }
                 OutlineDropdown {
                     width: 293.3; height: 30
                     readonly property var secs: [5, 7, 15, 30, 60, 300]
-                    options: [{ label: "5 seconds (Default)" }, { label: "7 seconds" }, { label: "15 seconds" }, { label: "30 seconds" }, { label: "1 minute" }, { label: "5 minutes" }]
+                    options: [{ label: qsTr("5 seconds (Default)") }, { label: qsTr("%n seconds", "settings:k1z6j877l_mf", 7) }, { label: qsTr("15 seconds") }, { label: qsTr("30 seconds") }, { label: qsTr("1 minute") }, { label: qsTr("%n minutes", "settings:kdf2mzr5x_mf", 5) }]
                     current: Math.max(0, secs.indexOf(parseInt(root.local("toastSeconds", "5"))))
-                    accessibleName: "Dismiss notifications after this amount of time"
+                    accessibleName: qsTr("Dismiss notifications after this amount of time")
                     onPicked: i => backend.setSetting("toastSeconds", String(secs[i]))
                 }
                 // Where OST's banners go and how big they are (Teams' own
                 // pictures; only where OST draws its banners itself, see
                 // NotificationBanners.qml).
-                SettingsParts.SubHeading { visible: notif.ownBanners; text: "Position on the screen"; gapAbove: 12.7 }
+                SettingsParts.SubHeading { visible: notif.ownBanners; text: qsTr("Position on the screen"); gapAbove: 12.7 }
                 SettingsParts.Gap { visible: notif.ownBanners; size: 12 }
                 Grid {
                     id: cornerTiles
@@ -1231,7 +1238,7 @@ Rectangle {
                     columns: 3; columnSpacing: 12; rowSpacing: 12
                     property string corner: root.local("notificationCorner", "BR")
                     Repeater {
-                        model: [{ key: "BR", label: "Bottom right" }, { key: "TR", label: "Top right" }, { key: "BL", label: "Bottom left" }, { key: "TL", label: "Top left" }]
+                        model: [{ key: "BR", label: qsTr("Bottom right") }, { key: "TR", label: qsTr("Top right") }, { key: "BL", label: qsTr("Bottom left") }, { key: "TL", label: qsTr("Top left") }]
                         delegate: SettingsParts.ImageRadio {
                             required property var modelData
                             imageHeight: 80
@@ -1242,7 +1249,7 @@ Rectangle {
                         }
                     }
                 }
-                SettingsParts.SubHeading { visible: notif.ownBanners; text: "Size"; gapAbove: 12 }
+                SettingsParts.SubHeading { visible: notif.ownBanners; text: qsTr("Size"); gapAbove: 12 }
                 SettingsParts.Gap { visible: notif.ownBanners; size: 12 }
                 Row {
                     id: sizeTiles
@@ -1250,7 +1257,7 @@ Rectangle {
                     spacing: 12
                     property string size: root.local("notificationSize", "COMFY")
                     Repeater {
-                        model: [{ key: "COMFY", label: "Comfy" }, { key: "COMPACT", label: "Compact" }]
+                        model: [{ key: "COMFY", label: qsTr("Comfy") }, { key: "COMPACT", label: qsTr("Compact") }]
                         delegate: SettingsParts.ImageRadio {
                             required property var modelData
                             imageHeight: 80
@@ -1265,37 +1272,37 @@ Rectangle {
             }
             SettingsParts.Card {
                 visible: root.page === "notifications" && !root.subPage
-                icon: "mail-20"; title: "Missed activity emails"
+                icon: "mail-20"; title: qsTr("Missed activity emails")
                 pad: 16.3; bottomPad: 16.4; minHeader: 0; iconX: 16.7; titleX: 61.7
                 trailing: Component {
                     OutlineDropdown {
                         width: 249.3; height: 30
                         readonly property var keys: ["Immediately", "Every10Mins", "Hourly", "EveryEightHours", "Daily", "Never"]
-                        options: [{ label: "As soon as possible" }, { label: "Once every 10 mins" }, { label: "Once every hour" }, { label: "Once every 8 hours" }, { label: "Daily" }, { label: "Off" }]
+                        options: [{ label: qsTr("As soon as possible") }, { label: qsTr("Once every 10 mins") }, { label: qsTr("Once every hour") }, { label: qsTr("Once every 8 hours") }, { label: qsTr("Daily") }, { label: qsTr("Off") }]
                         current: Math.max(0, keys.indexOf(root.prop("userPersonalSettings", ["emailSettings", "EmailNotificationDelay"], "Hourly")))
-                        accessibleName: "Missed activity emails"
+                        accessibleName: qsTr("Missed activity emails")
                         onPicked: i => root.setProp("userPersonalSettings", "emailSettings.EmailNotificationDelay", keys[i])
                     }
                 }
             }
-            SectionTitle { visible: root.page === "notifications" && !root.subPage; text: "Chats and channels" }
+            SectionTitle { visible: root.page === "notifications" && !root.subPage; text: qsTr("Chats and channels") }
             SettingsParts.Card {
                 visible: root.page === "notifications" && !root.subPage
-                icon: "chat-20"; title: "Chat message notifications"
+                icon: "chat-20"; title: qsTr("Chat message notifications")
                 pad: 16.3; bottomPad: 16.4; minHeader: 0; iconX: 16.7; titleX: 61.7
                 trailing: Component {
                     OutlineDropdown {
                         width: 249.3; height: 30
-                        options: [{ label: "Off" }, { label: "Show in banner" }]
+                        options: [{ label: qsTr("Off") }, { label: qsTr("Show in banner") }]
                         current: notif.ts("Chat", true) === false ? 0 : 1
-                        accessibleName: "Chat message notifications"
+                        accessibleName: qsTr("Chat message notifications")
                         onPicked: i => notif.setMany({ toastSettings: { Chat: i === 1 }, activityGenerationSettings: { Chat: i === 1 } })
                     }
                 }
             }
             SettingsParts.Card {
                 visible: root.page === "notifications" && !root.subPage
-                icon: "mention-20"; title: "@Mentions"
+                icon: "mention-20"; title: qsTr("@Mentions")
                 id: mentionsCard
                 pad: 14.7; bodyGap: 33.3; bottomPad: 34.9
                 // Teams' @Mentions switch (Global_Mention): on while any row
@@ -1304,17 +1311,17 @@ Rectangle {
                 // Activity and banner and the rest to Activity; off, the
                 // reverse floor. The rows are disabled while it's off.
                 readonly property var rows: [
-                    { label: "Channel and team @mentions", keys: ["Mention_Team", "Visible_ChannelMention_v2"], dflt: 0, off: true },
-                    { label: "Tag @mentions", keys: ["Mention_Tag"], dflt: 0, off: true },
-                    { label: "Everyone in chat @mentions", keys: ["MentionInChat_Everyone"], dflt: 0, off: true },
-                    { label: "Personal @mentions", keys: ["Mention_Person", "MentionInChat_Person_v2"], dflt: 0, off: false }
+                    { label: qsTr("Channel and team @mentions"), keys: ["Mention_Team", "Visible_ChannelMention_v2"], dflt: 0, off: true },
+                    { label: qsTr("Tag @mentions"), keys: ["Mention_Tag"], dflt: 0, off: true },
+                    { label: qsTr("Everyone in chat @mentions"), keys: ["MentionInChat_Everyone"], dflt: 0, off: true },
+                    { label: qsTr("Personal @mentions"), keys: ["Mention_Person", "MentionInChat_Person_v2"], dflt: 0, off: false }
                 ]
                 readonly property bool on: rows.some(r => notif.level(r.keys, r.dflt) !== (r.off ? 2 : 1)) || notif.level(["Global_Mention"], 0) !== 2
                 function setAll(v) {
                     notif.setLevel(["Global_Mention"], v ? 0 : 2)
                     for (const r of rows) notif.setLevel(r.keys, r.off ? (v ? 1 : 2) : (v ? 0 : 1))
                 }
-                trailing: Component { SettingsParts.Toggle { on: mentionsCard.on; accessibleName: "@Mentions " + (mentionsCard.on ? "On" : "Off"); onToggled: v => mentionsCard.setAll(v) } }
+                trailing: Component { SettingsParts.Toggle { on: mentionsCard.on; accessibleName: qsTr("@Mentions %1").arg(mentionsCard.on ? qsTr("On") : qsTr("Off")); onToggled: v => mentionsCard.setAll(v) } }
                 Repeater {
                     model: mentionsCard.rows
                     Item {
@@ -1338,8 +1345,8 @@ Rectangle {
             }
             Repeater {
                 model: [
-                    { icon: "arrow-reply-20", title: "Replies to followed threads and posts", keys: ["Reply", "ReplyToReply"] },
-                    { icon: "heart-20", title: "Likes and reactions", keys: ["Like", "LikeInChat_v2"] }
+                    { icon: "arrow-reply-20", title: qsTr("Replies to followed threads and posts"), keys: ["Reply", "ReplyToReply"] },
+                    { icon: "heart-20", title: qsTr("Likes and reactions"), keys: ["Like", "LikeInChat_v2"] }
                 ]
                 SettingsParts.Card {
                     required property var modelData
@@ -1362,7 +1369,7 @@ Rectangle {
             SettingsParts.Card {
                 id: shownPosts
                 visible: root.page === "notifications" && !root.subPage
-                icon: "channel-20"; title: "Posts in all shown channels"
+                icon: "channel-20"; title: qsTr("Posts in all shown channels")
                 pad: 20; bottomPad: 28.7; minHeader: 0; bodyGap: 19.3; iconX: 16.3; titleX: 61.3
                 readonly property int lvl: notif.level(["Visible_ChannelNewMessage_v2"], 2)
                 trailing: Component {
@@ -1370,7 +1377,7 @@ Rectangle {
                         width: 249.3; height: 30
                         options: notif.levels
                         current: shownPosts.lvl
-                        accessibleName: "Posts in all shown channels"
+                        accessibleName: qsTr("Posts in all shown channels")
                         onPicked: i => {
                             notif.setLevel(["Visible_ChannelNewMessage_v2"], i)
                             // Teams: replies follow the posts (off when the posts are).
@@ -1380,25 +1387,25 @@ Rectangle {
                 }
                 SettingsParts.CheckRow {
                     rowHeight: 32
-                    label: "Include replies"
+                    label: qsTr("Include replies")
                     usable: shownPosts.lvl !== 2
                     checked: root.prop("userPersonalSettings", ["activityGenerationSettings", "Visible_ChannelReplyMessage_v2"], false) === true
                     onToggled: v => notif.setLevel(["Visible_ChannelReplyMessage_v2"], v ? shownPosts.lvl : 2)
                 }
             }
-            SectionTitle { visible: root.page === "notifications" && !root.subPage; text: "Meetings" }
+            SectionTitle { visible: root.page === "notifications" && !root.subPage; text: qsTr("Meetings") }
             SettingsParts.Card {
                 visible: root.page === "notifications" && !root.subPage
-                icon: "calendar-20"; title: "Meetings"
+                icon: "calendar-20"; title: qsTr("Meetings")
                 pad: 22.7; minHeader: 20; bodyGap: 48; bottomPad: 18.7; iconX: 17.7; titleX: 55.7
-                SettingsParts.SwitchRow { rowHeight: 61; label: "Meeting start notifications"; on: notif.ts("MeetingWentLiveNotification", true) !== false
+                SettingsParts.SwitchRow { rowHeight: 61; label: qsTr("Meeting start notifications"); on: notif.ts("MeetingWentLiveNotification", true) !== false
                     onToggled: v => notif.setMany(v ? { toastSettings: { MeetingWentLiveNotification: true }, activityGenerationSettings: { MeetingWentLiveNotification: true }, emailSettings: { MeetingWentLiveNotification: true } } : { toastSettings: { MeetingWentLiveNotification: false } }) }
-                SettingsParts.SwitchRow { rowHeight: 59.3; label: "Show meeting join bar"; on: notif.ts("liveMeetingStatusBanner", true) !== false; onToggled: v => notif.setTs("liveMeetingStatusBanner", v) }
+                SettingsParts.SwitchRow { rowHeight: 59.3; label: qsTr("Show meeting join bar"); on: notif.ts("liveMeetingStatusBanner", true) !== false; onToggled: v => notif.setTs("liveMeetingStatusBanner", v) }
                 // Teams' meeting chat notifications by your RSVP (chatSettings:
                 // Mute / Unmute / Mute until I join or send a message).
                 Repeater {
-                    model: [{ key: "meetingChatNotificationForAcceptedMeetings", label: "Meeting chat notifications for meetings I've accepted", dflt: "MeetingsUserIsInvitedTo" },
-                            { key: "meetingChatNotificationForTentativeMeetings", label: "Meeting chat notifications for meetings marked as tentative or without a response", dflt: "MeetingsUserParticipatesIn" }]
+                    model: [{ key: "meetingChatNotificationForAcceptedMeetings", label: qsTr("Meeting chat notifications for meetings I've accepted"), dflt: "MeetingsUserIsInvitedTo" },
+                            { key: "meetingChatNotificationForTentativeMeetings", label: qsTr("Meeting chat notifications for meetings marked as tentative or without a response"), dflt: "MeetingsUserParticipatesIn" }]
                     Item {
                         id: mcRow
                         required property var modelData
@@ -1410,31 +1417,31 @@ Rectangle {
                         OutlineDropdown {
                             anchors.right: parent.right; anchors.rightMargin: 28; y: 0
                             width: 249.3; height: mcRow.modelData.key.indexOf("Tentative") > 0 ? 50 : 30
-                            options: [{ label: "Mute" }, { label: "Unmute" }, { label: "Mute until I join or send a message" }]
+                            options: [{ label: qsTr("Mute") }, { label: qsTr("Unmute") }, { label: qsTr("Mute until I join or send a message") }]
                             current: Math.max(0, mcRow.values.indexOf(root.prop("userPersonalSettings", ["chatSettings", mcRow.modelData.key], mcRow.modelData.dflt)))
                             accessibleName: mcRow.modelData.label
                             onPicked: i => root.setProp("userPersonalSettings", "chatSettings." + mcRow.modelData.key, mcRow.values[i])
                         }
                     }
                 }
-                SettingsParts.SwitchRow { label: "Meet now start notifications"; on: notif.ts("HuddleStartedNotification", false) === true; onToggled: v => notif.setTs("HuddleStartedNotification", v) }
+                SettingsParts.SwitchRow { label: qsTr("Meet now start notifications"); on: notif.ts("HuddleStartedNotification", false) === true; onToggled: v => notif.setTs("HuddleStartedNotification", v) }
             }
 
             // Teams' Presence: Manage notifications opens Manage status
             // notifications (Notify when available, contacts v3 "Tagged").
-            SectionTitle { visible: root.page === "notifications" && !root.subPage; text: "Presence" }
+            SectionTitle { visible: root.page === "notifications" && !root.subPage; text: qsTr("Presence") }
             SettingsParts.Card {
                 visible: root.page === "notifications" && !root.subPage
-                icon: "person-available-20"; title: "Presence"
-                subtitle: "Keep track of someone's status and get notified when they appear available or offline."
+                icon: "person-available-20"; title: qsTr("Presence")
+                subtitle: qsTr("Keep track of someone's status and get notified when they appear available or offline.")
                 pad: 15.7; bottomPad: 15.6; minHeader: 0; iconX: 16.7; titleX: 58.7; textWidth: 494.2; subtitleSize: 14
-                trailing: Component { SettingsParts.Button { label: "Manage notifications"; onClicked: root.subPage = "status" } }
+                trailing: Component { SettingsParts.Button { label: qsTr("Manage notifications"); onClicked: root.subPage = "status" } }
             }
             SettingsParts.Card {
                 id: statusNotif
                 visible: root.page === "notifications" && root.subPage === "status"
-                icon: "contact-card-20"; title: "Manage status notifications"
-                subtitle: "Keep track of someone's status and get notified when they appear available or offline."
+                icon: "contact-card-20"; title: qsTr("Manage status notifications")
+                subtitle: qsTr("Keep track of someone's status and get notified when they appear available or offline.")
                 property var tagged: []
                 readonly property var names: backend.peopleNamesJson ? JSON.parse(backend.peopleNamesJson) : ({})
                 onVisibleChanged: if (visible) backend.channelAction("notify-tagged", "", "", "")
@@ -1451,9 +1458,9 @@ Rectangle {
                             x: 12; width: parent.width - 24; anchors.verticalCenter: parent.verticalCenter
                             font.family: theme.font; font.pixelSize: 14; color: theme.text; clip: true
                             onTextEdited: { peopleDelay.restart(); if (text.trim().length >= 2) matches.open(); else matches.close() }
-                            Text { visible: !addPeople.text; text: "Add people"; font: addPeople.font; color: theme.textSecondary }
+                            Text { visible: !addPeople.text; text: qsTr("Add people"); font: addPeople.font; color: theme.textSecondary }
                             Keys.onEscapePressed: { text = ""; matches.close() }
-                            Accessible.name: "Add people"
+                            Accessible.name: qsTr("Add people")
                         }
                         Timer { id: peopleDelay; interval: 300; onTriggered: if (addPeople.text.trim().length >= 2) backend.searchPeople(addPeople.text.trim()) }
                         Popup {
@@ -1511,7 +1518,7 @@ Rectangle {
                             HoverHandler { id: rmHover; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: backend.channelAction("notify-off", "", "", JSON.stringify({ id: tagRow.modelData.id, mri: tagRow.modelData.mri, email: tagRow.modelData.email })) }
                             Accessible.role: Accessible.Button
-                            Accessible.name: "Remove " + tagRow.name
+                            Accessible.name: qsTr("Remove %1").arg(tagRow.name)
                         }
                     }
                 }
@@ -1521,11 +1528,11 @@ Rectangle {
             // Teams' Calendar notifications: the Calendar app's Graph
             // notification settings (userGraphSettings), each choice setting its
             // group of meeting notification kinds.
-            SectionTitle { visible: root.page === "notifications" && !root.subPage; text: "Calendar" }
+            SectionTitle { visible: root.page === "notifications" && !root.subPage; text: qsTr("Calendar") }
             SettingsParts.Card {
                 id: calNotif
                 visible: root.page === "notifications" && !root.subPage
-                icon: "calendar-20"; title: "Calendar"
+                icon: "calendar-20"; title: qsTr("Calendar")
                 pad: 22.7; minHeader: 20; bodyGap: 19.3; bottomPad: 46; iconX: 17.7; titleX: 55.7
                 readonly property string app: "ef56c0de-36fc-4ef8-b417-3d82ba9d073c"
                 readonly property var groups: ({
@@ -1542,7 +1549,7 @@ Rectangle {
                     backend.changeSetting("prop", "userGraphSettings", JSON.stringify({ [app]: { activityGenerationSettings: act, toastSettings: toast } }))
                 }
                 Repeater {
-                    model: [{ key: "privateMeetingCreated", label: "New invites, updates and cancellations sent to me" }, { key: "privateMeetingForwardedNotification", label: "When people forward meetings I’ve organized" }]
+                    model: [{ key: "privateMeetingCreated", label: qsTr("New invites, updates and cancellations sent to me") }, { key: "privateMeetingForwardedNotification", label: qsTr("When people forward meetings I’ve organized") }]
                     Item {
                         id: calRow
                         required property var modelData
@@ -1584,7 +1591,7 @@ Rectangle {
                             const want = peopleLists.mris.filter(m => !peopleLists.names[m])
                             if (want.length) backend.resolveNames(JSON.stringify(want))
                         } else if ((r.op === "people-list-add" || r.op === "people-list-remove") && r.ok) peopleLists.load()
-                        else if ((r.op === "people-list-add" || r.op === "people-list-remove") && !r.ok) backend.toast("Something went wrong on our end. Please try again.", "error")
+                        else if ((r.op === "people-list-add" || r.op === "people-list-remove") && !r.ok) backend.toast(qsTr("Something went wrong on our end. Please try again."), "error")
                     }
                 }
                 Column {
@@ -1597,14 +1604,14 @@ Rectangle {
                         width: parent.width
                         topPadding: 20
                         spacing: 30
-                        Text { width: parent.width; wrapMode: Text.Wrap; text: "When you block someone, they can't call you, message you, or see your presence."; font.family: theme.font; font.pixelSize: 14; color: theme.text }
-                        Text { visible: peopleLists.mris.length === 0; width: parent.width; wrapMode: Text.Wrap; text: "When you block people, you'll see them listed below."; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                        Text { width: parent.width; wrapMode: Text.Wrap; text: qsTr("When you block someone, they can't call you, message you, or see your presence."); font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                        Text { visible: peopleLists.mris.length === 0; width: parent.width; wrapMode: Text.Wrap; text: qsTr("When you block people, you'll see them listed below."); font.family: theme.font; font.pixelSize: 14; color: theme.text }
                     }
                     SettingsParts.Card {
                         id: priorityCard
                         visible: peopleLists.list === "priority"
-                        icon: "presence-dnd-20"; title: "Manage priority access"
-                        subtitle: "When your status is set to Do not disturb, you can still receive notifications for chats, calls, and @mentions from the people below."
+                        icon: "presence-dnd-20"; title: qsTr("Manage priority access")
+                        subtitle: qsTr("When your status is set to Do not disturb, you can still receive notifications for chats, calls, and @mentions from the people below.")
                         trailingY: 21; trailingRight: 24.7
                         trailing: Component {
                             Rectangle {
@@ -1617,9 +1624,9 @@ Rectangle {
                                     x: 30; width: parent.width - 40; anchors.verticalCenter: parent.verticalCenter
                                     font.family: theme.font; font.pixelSize: 14; color: theme.text; clip: true
                                     onTextEdited: { prioDelay.restart(); if (text.trim().length >= 2) prioMatches.open(); else prioMatches.close() }
-                                    Text { visible: !prioField.text; text: "Search for a name or number"; font: prioField.font; color: theme.textSecondary }
+                                    Text { visible: !prioField.text; text: qsTr("Search for a name or number"); font: prioField.font; color: theme.textSecondary }
                                     Keys.onEscapePressed: { text = ""; prioMatches.close() }
-                                    Accessible.name: "Search for a name or number"
+                                    Accessible.name: qsTr("Search for a name or number")
                                 }
                                 Timer { id: prioDelay; interval: 300; onTriggered: if (prioField.text.trim().length >= 2) backend.searchPeople(prioField.text.trim()) }
                                 Popup {
@@ -1660,7 +1667,7 @@ Rectangle {
                             Text { x: 56; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 170; elide: Text.ElideRight; text: plRow.name || plRow.modelData; font.family: theme.font; font.pixelSize: 14; color: theme.text }
                             SettingsParts.Button {
                                 anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
-                                label: peopleLists.list === "blocked" ? "Unblock" : "Remove"
+                                label: peopleLists.list === "blocked" ? qsTr("Unblock") : qsTr("Remove")
                                 onClicked: backend.channelAction("people-list-remove", "", "", JSON.stringify({ list: peopleLists.list, mri: plRow.modelData }))
                             }
                         }
@@ -1698,10 +1705,10 @@ Rectangle {
                         visible: refreshHover.hovered; delay: 500
                         y: -height - 4; padding: 8
                         background: FluentSurface { depth: 16; radius: 4 }
-                        contentItem: Text { text: "Refresh license and restart"; font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
+                        contentItem: Text { text: qsTr("Refresh license and restart"); font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
                     }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Refresh license and restart"
+                    Accessible.name: qsTr("Refresh license and restart")
                 }
                 Rectangle {
                     id: hcFill5
@@ -1711,13 +1718,13 @@ Rectangle {
                     border.color: theme.pick("#D1D1D1", "#5C5C5C", "#FFFFFF"); border.width: 0.67
                     Row {
                         anchors.centerIn: parent; spacing: 6
-                        Text { anchors.verticalCenter: parent.verticalCenter; text: "Manage"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill5, theme.text) }
+                        Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Manage"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill5, theme.text) }
                         FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "open-16"; size: 14; color: theme.onFill(hcFill5, theme.text) }
                     }
                     HoverHandler { id: manageHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: Qt.openUrlExternally("https://myaccount.microsoft.com/?login_hint=" + encodeURIComponent(backend.userMail)) }
                     Accessible.role: Accessible.Link
-                    Accessible.name: "Manage Account for " + backend.userName + " (opens in browser)"
+                    Accessible.name: qsTr("Manage Account for %1 (opens in browser)").arg(backend.userName)
                 }
                 Rectangle { y: 72; width: parent.width; height: 0.67; color: theme.pick("#D1D1D1", "#3D3D3D", "#000000") }
                 Rectangle {
@@ -1756,7 +1763,7 @@ Rectangle {
                 readonly property string outlookUrl: { if (!shown) return ""; const v = backend.ecsSetting("presence", "outlookLocationSettingUrl"); return v ? JSON.parse(v) : "" }
                 readonly property bool outlookLink: shown && backend.ecsSetting("presence", "enableWorkLocationSettingsLink") === "true" && outlookUrl.length > 0
                 function link(href, label) { return "<a href=\"" + href + "\" style=\"color:" + theme.brandLink + ";text-decoration:none\">" + label + "</a>" }
-                readonly property string outlookNote: "Your work location will be shared with Places and Outlook. Manage more preferences in Outlook. " + link(outlookUrl, "Open Outlook work hours and location settings")
+                readonly property string outlookNote: qsTr("Your work location will be shared with Places and Outlook. Manage more preferences in Outlook.") + " " + link(outlookUrl, qsTr("Open Outlook work hours and location settings"))
                 // Teams' convertAutoUpdateLocationPreferenceToBool: set, or
                 // for an unset preference the policy's default (with the
                 // adlEnableDefaultOptIn flight) unless this is the first run.
@@ -1770,12 +1777,12 @@ Rectangle {
                 }
                 function setAuto(on) { root.setProp("placesSettings", "", { autoUpdateLocationPreference: on ? "Enabled" : "Disabled", autoLocationFirstEngagement: "SETTING_TOGGLE" }) }
                 visible: shown
-                icon: "building-home-20"; title: "Manage my work location"
+                icon: "building-home-20"; title: qsTr("Manage my work location")
                 subtitleLineHeight: 17.14
                 subtitleFormat: Text.RichText
                 subtitle: detection
-                    ? "Automatically set my location across all devices when connecting to my organization's networks and devices. " + link("learn", "Learn about automatically setting a work location")
-                    : "Automatically setting your work location has been turned off by your IT department. " + link("https://support.microsoft.com/en-us/office/first-things-to-know-about-bookable-desks-in-microsoft-teams-5d10c217-1205-48a1-a883-ff4533f4ae71?preview=true", "Learn more")
+                    ? qsTr("Automatically set my location across all devices when connecting to my organization's networks and devices.") + " " + link("learn", qsTr("Learn about automatically setting a work location"))
+                    : qsTr("Automatically setting your work location has been turned off by your IT department.") + " " + link("https://support.microsoft.com/en-us/office/first-things-to-know-about-bookable-desks-in-microsoft-teams-5d10c217-1205-48a1-a883-ff4533f4ae71?preview=true", qsTr("Learn more"))
                         + (outlookLink ? "<br>" + outlookNote : "")
                 onLinkActivated: l => { if (l === "learn") autoLocationDialog.open(); else Qt.openUrlExternally(l) }
                 trailingGapX: 0
@@ -1784,11 +1791,11 @@ Rectangle {
                 trailing: detection ? workLocationToggle : null
                 Component {
                     id: workLocationToggle
-                    SettingsParts.Toggle { on: workLocationCard.autoOn; accessibleName: "Automatically set my work location"; onToggled: v => workLocationCard.setAuto(v) }
+                    SettingsParts.Toggle { on: workLocationCard.autoOn; accessibleName: qsTr("Automatically set my work location"); onToggled: v => workLocationCard.setAuto(v) }
                 }
                 SettingsParts.Button {
                     visible: workLocationCard.stationary
-                    label: "Manage stationary location"
+                    label: qsTr("Manage stationary location")
                     onClicked: { root.subPage = "stationary"; backend.loadBuildings() }
                 }
                 SettingsParts.Gap { visible: workLocationCard.stationary && workLocationCard.detection && workLocationCard.outlookLink; size: 12.1 }
@@ -1833,14 +1840,14 @@ Rectangle {
                 onVisibleChanged: if (!visible) buildingList.close()
                 Text {
                     width: Math.min(parent.width, 790)
-                    text: "Set a permanent location for stationary devices that stay in one building. When Wi-Fi isn't detected, this device will remain checked in at the selected building instead of being automatically checked out."
+                    text: qsTr("Set a permanent location for stationary devices that stay in one building. When Wi-Fi isn't detected, this device will remain checked in at the selected building instead of being automatically checked out.")
                     wrapMode: Text.Wrap
                     font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
                     color: theme.textStrong
                 }
                 SettingsParts.Gap { size: 16 }
                 Text {
-                    text: "Permanent device building"
+                    text: qsTr("Permanent device building")
                     font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; lineHeight: 20; lineHeightMode: Text.FixedHeight
                     color: theme.text
                 }
@@ -1857,11 +1864,11 @@ Rectangle {
                         font.family: theme.font; font.pixelSize: 14; color: theme.text; clip: true
                         text: stationaryPage.chosenBuilding ? stationaryPage.chosenBuilding.name : ""
                         onTextEdited: buildingList.open()
-                        Text { visible: !buildingField.text; text: "Find a building"; font: buildingField.font; color: theme.pick("#707070", "#ADADAD", "#FFFFFF") }
+                        Text { visible: !buildingField.text; text: qsTr("Find a building"); font: buildingField.font; color: theme.pick("#707070", "#ADADAD", "#FFFFFF") }
                         Keys.onEscapePressed: buildingList.close()
                         Keys.onDownPressed: buildingList.open()
                         Accessible.role: Accessible.ComboBox
-                        Accessible.name: "Permanent device building"
+                        Accessible.name: qsTr("Permanent device building")
                     }
                     FluentIcon { x: 269.3; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-20"; size: 20; color: theme.textSecondary }
                     TapHandler { onTapped: { buildingField.forceActiveFocus(); if (buildingList.opened) buildingList.close(); else buildingList.open() } }
@@ -1879,9 +1886,9 @@ Rectangle {
                             Item {
                                 visible: buildingList.matches.length === 0
                                 width: 292; height: 32
-                                Text { x: 28; anchors.verticalCenter: parent.verticalCenter; text: stationaryPage.data_.loading ? "Loading…" : "No buildings found"; font.family: theme.font; font.pixelSize: 14; color: theme.pick("#BDBDBD", "#5C5C5C", "#3FF23F") }
+                                Text { x: 28; anchors.verticalCenter: parent.verticalCenter; text: stationaryPage.data_.loading ? qsTr("Loading…") : qsTr("No buildings found"); font.family: theme.font; font.pixelSize: 14; color: theme.pick("#BDBDBD", "#5C5C5C", "#3FF23F") }
                                 Accessible.role: Accessible.ListItem
-                                Accessible.name: "No buildings found"
+                                Accessible.name: qsTr("No buildings found")
                             }
                             Repeater {
                                 model: buildingList.matches
@@ -1904,31 +1911,31 @@ Rectangle {
             }
             SettingsParts.Card {
                 visible: root.page === "privacy" && !root.subPage
-                icon: "presence-dnd-20"; title: "Do not disturb"
-                subtitle: "You can still receive notifications from people who have priority access when your status is set to Do not disturb."
-                trailing: Component { SettingsParts.Button { label: "Manage priority contacts"; onClicked: root.subPage = "priority" } }
+                icon: "presence-dnd-20"; title: qsTr("Do not disturb")
+                subtitle: qsTr("You can still receive notifications from people who have priority access when your status is set to Do not disturb.")
+                trailing: Component { SettingsParts.Button { label: qsTr("Manage priority contacts"); onClicked: root.subPage = "priority" } }
                 SettingsParts.CheckRow {
-                    label: "Set my status to do not disturb when I'm sharing my screen"
-                    sublabel: "Turning this setting off will change your status to busy and let you receive calls, as well as urgent and priority contact notifications."
+                    label: qsTr("Set my status to do not disturb when I'm sharing my screen")
+                    sublabel: qsTr("Turning this setting off will change your status to busy and let you receive calls, as well as urgent and priority contact notifications.")
                     checked: root.mt.allowAutoDnd !== false
                     onToggled: on => root.setMt("allowAutoDnd", on)
                 }
             }
             SettingsParts.Card {
                 visible: root.page === "privacy" && !root.subPage
-                icon: "person-prohibited-20"; title: "Blocked contacts"
-                subtitle: "Blocked contacts will be unable to call you, message you, or see your presence."
-                trailing: Component { SettingsParts.Button { label: "Manage blocked contacts"; onClicked: root.subPage = "blocked" } }
+                icon: "person-prohibited-20"; title: qsTr("Blocked contacts")
+                subtitle: qsTr("Blocked contacts will be unable to call you, message you, or see your presence.")
+                trailing: Component { SettingsParts.Button { label: qsTr("Manage blocked contacts"); onClicked: root.subPage = "blocked" } }
                 SettingsParts.CheckRow {
-                    label: "Block calls with no caller ID"
+                    label: qsTr("Block calls with no caller ID")
                     checked: root.mt.blockAnonymousCaller === true
                     onToggled: on => root.setMt("blockAnonymousCaller", on)
                 }
             }
             SettingsParts.Card {
                 visible: root.page === "privacy" && !root.subPage
-                icon: "clipboard-task-list-20"; title: "Surveys"; subtitle: "Participate in surveys from OST."
-                trailing: Component { SettingsParts.Toggle { on: root.prop("userEnableSurveysNotification", [], "true") !== "false"; accessibleName: "Surveys"; onToggled: v => root.setProp("userEnableSurveysNotification", "", v ? "true" : "false") } }
+                icon: "clipboard-task-list-20"; title: qsTr("Surveys"); subtitle: qsTr("Participate in surveys from OST.")
+                trailing: Component { SettingsParts.Toggle { on: root.prop("userEnableSurveysNotification", [], "true") !== "false"; accessibleName: qsTr("Surveys"); onToggled: v => root.setProp("userEnableSurveysNotification", "", v ? "true" : "false") } }
                 // OST's opt-in for Teams' post-call "How was the call
                 // quality?" (off by default; kept on this device). Teams asks
                 // only while Surveys is on, so this does too.
@@ -1936,8 +1943,8 @@ Rectangle {
                     id: cqfRow
                     readonly property bool surveysOn: root.prop("userEnableSurveysNotification", [], "true") !== "false"
                     property bool optedIn: backend.setting("callQualitySurvey") === "true"
-                    label: "Ask me about call quality after calls"
-                    sublabel: "OST asks after some calls. If a call had issues, Report a problem opens with its technical details (no one's name) for you to post as a public issue on GitHub."
+                    label: qsTr("Ask me about call quality after calls")
+                    sublabel: qsTr("OST asks after some calls. If a call had issues, Report a problem opens with its technical details (no one's name) for you to post as a public issue on GitHub.")
                     usable: surveysOn
                     checked: optedIn && surveysOn
                     onToggled: on => { backend.setSetting("callQualitySurvey", on ? "true" : "false"); optedIn = on }
@@ -1945,17 +1952,17 @@ Rectangle {
             }
             SettingsParts.Card {
                 visible: root.page === "privacy" && !root.subPage
-                icon: "video-person-off-20"; title: "Turn off my camera and mic when my screen locks"
-                subtitle: "If your screen locks due to inactivity while you're in a meeting, your camera, mic, and screensharing will automatically turn off. Restart OST to apply this setting."
-                trailing: Component { SettingsParts.Toggle { on: backend.setting("turnOffMediaOnDeviceLock") === "true"; accessibleName: "Turn off my camera and mic when my screen locks"; onToggled: v => { backend.setSetting("turnOffMediaOnDeviceLock", v ? "true" : "false"); on = v } } }
+                icon: "video-person-off-20"; title: qsTr("Turn off my camera and mic when my screen locks")
+                subtitle: qsTr("If your screen locks due to inactivity while you're in a meeting, your camera, mic, and screensharing will automatically turn off. Restart OST to apply this setting.")
+                trailing: Component { SettingsParts.Toggle { on: backend.setting("turnOffMediaOnDeviceLock") === "true"; accessibleName: qsTr("Turn off my camera and mic when my screen locks"); onToggled: v => { backend.setSetting("turnOffMediaOnDeviceLock", v ? "true" : "false"); on = v } } }
             }
             // Teams' "View Diagnostic Data" (settings-app FF/RF, measured on
             // winpc 2026-11-19): Manage opens Privacy › Diagnostic data
             // viewer.
             SettingsParts.Card {
                 visible: root.page === "privacy" && !root.subPage
-                icon: "data-area-20"; title: "View Diagnostic Data"
-                trailing: Component { SettingsParts.Button { label: "Manage"; onClicked: root.subPage = "ddv" } }
+                icon: "data-area-20"; title: qsTr("View Diagnostic Data")
+                trailing: Component { SettingsParts.Button { label: qsTr("Manage"); onClicked: root.subPage = "ddv" } }
             }
             // Teams' diagnostic data viewer (its trusted-UI page, measured
             // on winpc 2026-11-19): at 20, 21 in the pane, 790 wide. With
@@ -1970,14 +1977,14 @@ Rectangle {
                 spacing: 0
                 readonly property var st: backend.ddvJson ? JSON.parse(backend.ddvJson) : ({})
                 onVisibleChanged: if (visible) backend.loadDdv()
-                Text { width: parent.width; text: "View Diagnostic Data"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold; lineHeight: 22; lineHeightMode: Text.FixedHeight; color: theme.text; Accessible.role: Accessible.Heading; Accessible.name: text }
+                Text { width: parent.width; text: qsTr("View Diagnostic Data"); font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold; lineHeight: 22; lineHeightMode: Text.FixedHeight; color: theme.text; Accessible.role: Accessible.Heading; Accessible.name: text }
                 Item { width: 1; height: 15 }
-                Text { width: parent.width; wrapMode: Text.Wrap; text: "To view diagnostic data associated with this app, connect to a Windows device running Diagnostic Data Viewer and enter the connection string below. The app will disconnect after 24 hours."; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
+                Text { width: parent.width; wrapMode: Text.Wrap; text: qsTr("To view diagnostic data associated with this app, connect to a Windows device running Diagnostic Data Viewer and enter the connection string below. The app will disconnect after 24 hours."); font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
                 Item { width: 1; height: 8 }
-                Text { width: parent.width; wrapMode: Text.Wrap; text: "Note: When you enable data viewing the data sent to the device running Diagnostic Data Viewer (at the connection string you enter) will use HTTP instead of HTTPS so that it can properly display. However, diagnostic data sent to Microsoft will still use HTTPS to encrypt and protect your data."; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
+                Text { width: parent.width; wrapMode: Text.Wrap; text: qsTr("Note: When you enable data viewing the data sent to the device running Diagnostic Data Viewer (at the connection string you enter) will use HTTP instead of HTTPS so that it can properly display. However, diagnostic data sent to Microsoft will still use HTTPS to encrypt and protect your data."); font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
                 Item { width: 1; height: 8 }
                 Text {
-                    text: "Learn More"
+                    text: qsTr("Learn More")
                     font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
                     font.underline: ddvLink.hovered
                     color: theme.brandForeground1
@@ -1994,15 +2001,15 @@ Rectangle {
                         x: 8; anchors.verticalCenter: parent.verticalCenter
                         stateLabel: false
                         on: ddvPage.st.enabled === true
-                        accessibleName: "Enable data viewing"
+                        accessibleName: qsTr("Enable data viewing")
                         onToggled: v => backend.setDdvEnabled(v)
                     }
-                    Text { x: 56; anchors.verticalCenter: parent.verticalCenter; text: "Enable data viewing"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold; lineHeight: 22; lineHeightMode: Text.FixedHeight; color: theme.text }
+                    Text { x: 56; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Enable data viewing"); font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold; lineHeight: 22; lineHeightMode: Text.FixedHeight; color: theme.text }
                 }
                 Item { visible: ddvPage.st.enabled === true; width: 1; height: 15 }
                 Text {
                     visible: ddvPage.st.enabled === true
-                    text: "Diagnostic data viewer connection string"
+                    text: qsTr("Diagnostic data viewer connection string")
                     font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text
                 }
                 Item { visible: ddvPage.st.enabled === true; width: 1; height: 8 }
@@ -2022,7 +2029,7 @@ Rectangle {
                             selectByMouse: true
                             onAccepted: backend.connectDdv(text.trim())
                             Accessible.role: Accessible.EditableText
-                            Accessible.name: "Diagnostic data viewer connection string"
+                            Accessible.name: qsTr("Diagnostic data viewer connection string")
                         }
                         // After a try: Teams' CheckmarkCircleRegular (green)
                         // or ErrorCircleRegular (red) at the end.
@@ -2033,15 +2040,15 @@ Rectangle {
                             color: ddvPage.st.state === "connected" ? theme.pick("#107C10", "#54B054", "#3FF23F") : theme.pick("#BC2F32", "#E37D80", "#FFFF00")
                         }
                     }
-                    SettingsParts.Button { primary: true; label: "Connect"; height: 32; onClicked: backend.connectDdv(ddvField.text.trim()) }
+                    SettingsParts.Button { primary: true; label: qsTr("Connect"); height: 32; onClicked: backend.connectDdv(ddvField.text.trim()) }
                 }
                 Item { visible: ddvPage.st.enabled === true && !!ddvPage.st.state && ddvPage.st.state !== "idle"; width: 1; height: 8 }
                 Text {
                     visible: ddvPage.st.enabled === true && !!ddvPage.st.state && ddvPage.st.state !== "idle"
                     width: 325; wrapMode: Text.Wrap
-                    text: ddvPage.st.state === "connecting" ? "Attempting to establish connection..."
-                        : ddvPage.st.state === "connected" ? "Connection established"
-                        : "Couldn't connect. Double check the connection string is correct and that Diagnostic Data Viewer is running on the Windows device you're connecting to, then try again."
+                    text: ddvPage.st.state === "connecting" ? qsTr("Attempting to establish connection...")
+                        : ddvPage.st.state === "connected" ? qsTr("Connection established")
+                        : qsTr("Couldn't connect. Double check the connection string is correct and that Diagnostic Data Viewer is running on the Windows device you're connecting to, then try again.")
                     font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
                     color: ddvPage.st.state === "failed" ? theme.pick("#BC2F32", "#E37D80", "#FFFF00") : theme.text
                     Accessible.role: ddvPage.st.state === "failed" ? Accessible.AlertMessage : Accessible.StaticText
@@ -2050,14 +2057,14 @@ Rectangle {
             }
             SettingsParts.Card {
                 visible: root.page === "privacy" && !root.subPage
-                icon: "data-area-20"; title: "Extended diagnostics data"
-                subtitle: "Enable the application to store a larger duration of diagnostics data for debugging purposes."
-                trailing: Component { SettingsParts.Toggle { on: backend.setting("shouldPersistLogsIntoIDB") === "true"; accessibleName: "Extended diagnostics data"; onToggled: v => { backend.setSetting("shouldPersistLogsIntoIDB", v ? "true" : "false"); on = v } } }
+                icon: "data-area-20"; title: qsTr("Extended diagnostics data")
+                subtitle: qsTr("Enable the application to store a larger duration of diagnostics data for debugging purposes.")
+                trailing: Component { SettingsParts.Toggle { on: backend.setting("shouldPersistLogsIntoIDB") === "true"; accessibleName: qsTr("Extended diagnostics data"); onToggled: v => { backend.setSetting("shouldPersistLogsIntoIDB", v ? "true" : "false"); on = v } } }
             }
             SettingsParts.Card {
                 visible: root.page === "privacy" && !root.subPage
-                icon: "people-list-20"; title: "Identify me in attendance reports"; subtitle: "Let meeting or event organizer know your attendance information."
-                trailing: Component { SettingsParts.Toggle { on: root.prop("showInMeetingReport", [], "true") !== "false"; accessibleName: "Identify me in attendance reports"; onToggled: v => root.setProp("showInMeetingReport", "", v ? "true" : "false") } }
+                icon: "people-list-20"; title: qsTr("Identify me in attendance reports"); subtitle: qsTr("Let meeting or event organizer know your attendance information.")
+                trailing: Component { SettingsParts.Toggle { on: root.prop("showInMeetingReport", [], "true") !== "false"; accessibleName: qsTr("Identify me in attendance reports"); onToggled: v => root.setProp("showInMeetingReport", "", v ? "true" : "false") } }
             }
             // Teams' E2EE card (settings-app m4, measured on winpc): its
             // switch is greyed when the tenant's encryption policy doesn't let
@@ -2065,22 +2072,22 @@ Rectangle {
             // the choice is kept in the middle tier (useEndToEndEncryption).
             SettingsParts.Card {
                 visible: root.page === "privacy" && !root.subPage
-                icon: "call-20"; title: "End-to-end encrypted calls"
-                subtitle: "One-on-one OST calls are end-to-end encrypted if both participants turn on this setting. Some features won't be available, including recording and transcription. <a href=\"https://go.microsoft.com/fwlink/?linkid=2174740\">Learn more</a>"
+                icon: "call-20"; title: qsTr("End-to-end encrypted calls")
+                subtitle: qsTr("One-on-one OST calls are end-to-end encrypted if both participants turn on this setting. Some features won't be available, including recording and transcription. %1").arg("<a href=\"https://go.microsoft.com/fwlink/?linkid=2174740\">" + qsTr("Learn more") + "</a>")
                 onLinkActivated: l => Qt.openUrlExternally(l)
-                trailing: Component { SettingsParts.Toggle { on: root.mt.useEndToEndEncryption === true; usable: root.mt.e2eeAllowedByAdmin === true; accessibleName: "End-to-end encrypted calls"; onToggled: v => root.setMt("useEndToEndEncryption", v) } }
+                trailing: Component { SettingsParts.Toggle { on: root.mt.useEndToEndEncryption === true; usable: root.mt.e2eeAllowedByAdmin === true; accessibleName: qsTr("End-to-end encrypted calls"); onToggled: v => root.setMt("useEndToEndEncryption", v) } }
             }
             SettingsParts.Card {
                 visible: root.page === "privacy" && !root.subPage
-                icon: "image-sparkle-20"; title: "Optional connected experiences"
-                subtitle: "Enhance your OST experience with cloud-backed services, including Giphy, URL Preview, and more. <a href=\"https://go.microsoft.com/fwlink/?linkid=2295907\">Learn More</a><br><a href=\"https://privacy.microsoft.com/privacystatement\">Microsoft Privacy Statement</a>"
+                icon: "image-sparkle-20"; title: qsTr("Optional connected experiences")
+                subtitle: qsTr("Enhance your OST experience with cloud-backed services, including Giphy, URL Preview, and more.") + " <a href=\"https://go.microsoft.com/fwlink/?linkid=2295907\">" + qsTr("Learn More") + "</a><br><a href=\"https://privacy.microsoft.com/privacystatement\">" + qsTr("Microsoft Privacy Statement") + "</a>"
                 onLinkActivated: l => Qt.openUrlExternally(l)
-                trailing: Component { SettingsParts.Toggle { on: root.prop("controllerConnectedServicesEnabled", [], "true") !== "false"; accessibleName: "Optional connected experiences"; onToggled: v => root.setProp("controllerConnectedServicesEnabled", "", v ? "true" : "false") } }
+                trailing: Component { SettingsParts.Toggle { on: root.prop("controllerConnectedServicesEnabled", [], "true") !== "false"; accessibleName: qsTr("Optional connected experiences"); onToggled: v => root.setProp("controllerConnectedServicesEnabled", "", v ? "true" : "false") } }
             }
             SettingsParts.Card {
                 visible: root.page === "privacy" && !root.subPage
-                icon: "mic-20"; title: "Keyboard shortcut to unmute"; subtitle: "Press and hold Ctrl + Spacebar to temporarily unmute your mic during a meeting."
-                trailing: Component { SettingsParts.Toggle { on: root.prop("enablePushToTalk", [], "true") !== "false"; accessibleName: "Keyboard shortcut to unmute"; onToggled: v => root.setProp("enablePushToTalk", "", v ? "true" : "false") } }
+                icon: "mic-20"; title: qsTr("Keyboard shortcut to unmute"); subtitle: qsTr("Press and hold Ctrl + Spacebar to temporarily unmute your mic during a meeting.")
+                trailing: Component { SettingsParts.Toggle { on: root.prop("enablePushToTalk", [], "true") !== "false"; accessibleName: qsTr("Keyboard shortcut to unmute"); onToggled: v => root.setProp("enablePushToTalk", "", v ? "true" : "false") } }
             }
 
             // ---- Accessibility ----
@@ -2095,14 +2102,14 @@ Rectangle {
                 visible: root.page === "accessibility" && !root.subPage
                 readonly property bool on: root.prop("callAccessibilitySettings", ["accessibilityModeEnabledV2"], false) === true
                 readonly property bool signer: root.prop("callAccessibilitySettings", ["signLanguageModeSelection"], "SIGNER") !== "INTERPRETER"
-                icon: "hand-wave-20"; title: "Sign language mode"; subtitle: "Enable features that provide an enhanced experience for sign language users."
+                icon: "hand-wave-20"; title: qsTr("Sign language mode"); subtitle: qsTr("Enable features that provide an enhanced experience for sign language users.")
                 bodyGap: 30.3
-                trailing: Component { SettingsParts.Toggle { on: signCard.on; accessibleName: "Sign language mode"; onToggled: v => root.setProp("callAccessibilitySettings", "accessibilityModeEnabledV2", v) } }
+                trailing: Component { SettingsParts.Toggle { on: signCard.on; accessibleName: qsTr("Sign language mode"); onToggled: v => root.setProp("callAccessibilitySettings", "accessibilityModeEnabledV2", v) } }
                 SettingsParts.RadioRow {
                     visible: signCard.on
                     height: 46
-                    label: "I am a Signer"
-                    sublabel: "I am a Deaf/Hard-of-hearing meeting participant who uses sign language to communicate."
+                    label: qsTr("I am a Signer")
+                    sublabel: qsTr("I am a Deaf/Hard-of-hearing meeting participant who uses sign language to communicate.")
                     checked: signCard.signer
                     onPicked: root.setProp("callAccessibilitySettings", "signLanguageModeSelection", "SIGNER")
                 }
@@ -2111,7 +2118,7 @@ Rectangle {
                     width: parent.width; height: 42
                     SettingsParts.CheckRow {
                         x: 49; width: parent.width - 49; rowHeight: 32
-                        label: "Show my signer status to others using Sign language mode"
+                        label: qsTr("Show my signer status to others using Sign language mode")
                         usable: signCard.signer
                         checked: root.prop("callAccessibilitySettings", ["showSignerIdentificationToOthers"], true) !== false
                         onToggled: v => root.setProp("callAccessibilitySettings", "showSignerIdentificationToOthers", v)
@@ -2120,12 +2127,12 @@ Rectangle {
                 Item {
                     visible: signCard.on
                     width: parent.width; height: 37
-                    SettingsParts.Button { x: 28; label: "Manage interpreters"; enabled: signCard.signer; opacity: enabled ? 1 : 0.4; onClicked: root.subPage = "interpreters" }
+                    SettingsParts.Button { x: 28; label: qsTr("Manage interpreters"); enabled: signCard.signer; opacity: enabled ? 1 : 0.4; onClicked: root.subPage = "interpreters" }
                 }
                 SettingsParts.RadioRow {
                     visible: signCard.on
-                    label: "I am a Sign Language Interpreter"
-                    sublabel: "I provide sign language interpretation for Deaf/Hard-of-hearing meeting participants."
+                    label: qsTr("I am a Sign Language Interpreter")
+                    sublabel: qsTr("I provide sign language interpretation for Deaf/Hard-of-hearing meeting participants.")
                     checked: !signCard.signer
                     onPicked: root.setProp("callAccessibilitySettings", "signLanguageModeSelection", "INTERPRETER")
                 }
@@ -2140,14 +2147,14 @@ Rectangle {
                 readonly property var names: backend.peopleNamesJson ? JSON.parse(backend.peopleNamesJson) : ({})
                 onVisibleChanged: if (visible && mris.length) backend.resolveNames(JSON.stringify(mris))
                 function save(list) { root.setProp("callAccessibilitySettings", "selectedDHHInterpreters", list) }
-                Text { height: 26; text: "Add someone as an interpreter"; font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; lineHeight: 26; lineHeightMode: Text.FixedHeight; color: theme.text; Accessible.role: Accessible.Heading; Accessible.name: text }
+                Text { height: 26; text: qsTr("Add someone as an interpreter"); font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; lineHeight: 26; lineHeightMode: Text.FixedHeight; color: theme.text; Accessible.role: Accessible.Heading; Accessible.name: text }
                 Item { width: 1; height: 10 }
-                Text { height: 17; text: "Please choose the interpreters for your meetings."; font.family: theme.font; font.pointSize: 8.75 /* Teams: 11.67 px */; color: theme.text }
+                Text { height: 17; text: qsTr("Please choose the interpreters for your meetings."); font.family: theme.font; font.pointSize: 8.75 /* Teams: 11.67 px */; color: theme.text }
                 Item { width: 1; height: 9.3 }
                 VoicemailTransferPicker {
                     width: 600
-                    placeholder: "Add someone as an interpreter"
-                    accessibleName: "Type a name or email address to add someone as an interpreter"
+                    placeholder: qsTr("Add someone as an interpreter")
+                    accessibleName: qsTr("Type a name or email address to add someone as an interpreter")
                     phoneSuggestions: false
                     exclude: interpretersPage.mris
                     people: { const v = backend.newChatPeopleJson ? JSON.parse(backend.newChatPeopleJson) : ({}); return v.items || [] }
@@ -2176,29 +2183,29 @@ Rectangle {
                                 visible: irmHover.hovered; delay: 500
                                 y: -height - 4; padding: 8
                                 background: FluentSurface { depth: 16; radius: 4 }
-                                contentItem: Text { text: "Remove as signer"; font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
+                                contentItem: Text { text: qsTr("Remove as signer"); font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
                             }
                             Accessible.role: Accessible.Button
-                            Accessible.name: "Remove " + (irow.name || irow.modelData) + " from signers list"
+                            Accessible.name: qsTr("Remove %1 from signers list").arg(irow.name || irow.modelData)
                         }
                     }
                 }
             }
             SettingsParts.Card {
                 visible: root.page === "accessibility" && !root.subPage
-                icon: "closed-caption-20"; title: "Captions and transcripts"
+                icon: "closed-caption-20"; title: qsTr("Captions and transcripts")
                 SettingsParts.SwitchRow {
-                    label: "Always show captions in my calls and meetings"
+                    label: qsTr("Always show captions in my calls and meetings")
                     on: root.prop("callAccessibilitySettings", ["startCaptionsAutomatically"], false) === true
                     onToggled: v => root.setProp("callAccessibilitySettings", "startCaptionsAutomatically", v)
                 }
                 SettingsParts.SwitchRow {
-                    label: "Automatically identify me in live captions and live transcripts"
+                    label: qsTr("Automatically identify me in live captions and live transcripts")
                     on: root.mt.enableSpeakerAttribution !== false
                     onToggled: v => root.setMt("enableSpeakerAttribution", v)
                 }
                 SettingsParts.SwitchRow {
-                    label: "Filter out profane words in live captions"
+                    label: qsTr("Filter out profane words in live captions")
                     on: root.prop("callAccessibilitySettings", ["profanityFilterEnabled"], false) === true
                     onToggled: v => root.setProp("callAccessibilitySettings", "profanityFilterEnabled", v)
                 }
@@ -2208,9 +2215,9 @@ Rectangle {
             // pane, so a call in progress follows it at once.
             SettingsParts.Card {
                 visible: root.page === "accessibility" && !root.subPage
-                icon: "mic-off-20"; title: "Muted notification"
-                subtitle: "Show the 'You're muted' notification when audio is detected while your microphone is off."
-                trailing: Component { SettingsParts.Toggle { on: backend.setting("showMutedNotice") !== "false"; accessibleName: "Muted notification"; onToggled: v => { backend.setSetting("showMutedNotice", v ? "true" : "false"); on = v; callWindow.showMutedNotice = v } } }
+                icon: "mic-off-20"; title: qsTr("Muted notification")
+                subtitle: qsTr("Show the 'You're muted' notification when audio is detected while your microphone is off.")
+                trailing: Component { SettingsParts.Toggle { on: backend.setting("showMutedNotice") !== "false"; accessibleName: qsTr("Muted notification"); onToggled: v => { backend.setSetting("showMutedNotice", v ? "true" : "false"); on = v; callWindow.showMutedNotice = v } } }
             }
             // Teams' "Turn on single pointer controls" (measured on winpc
             // 2026-11-16, after Muted notification; clientPreferences
@@ -2219,9 +2226,9 @@ Rectangle {
             // Start reordering (ChatList.reorderMode).
             SettingsParts.Card {
                 visible: root.page === "accessibility" && !root.subPage
-                icon: "hand-point-20"; title: "Turn on single pointer controls"
-                subtitle: "Available: Start reordering, an alternate to drag and drop in the chats and channels list."
-                trailing: Component { SettingsParts.Toggle { on: backend.setting("singlePointReordering") === "true"; accessibleName: "Turn on single pointer controls"; onToggled: v => { backend.setSetting("singlePointReordering", v ? "true" : "false"); on = v; window.singlePointReordering = v } } }
+                icon: "hand-point-20"; title: qsTr("Turn on single pointer controls")
+                subtitle: qsTr("Available: Start reordering, an alternate to drag and drop in the chats and channels list.")
+                trailing: Component { SettingsParts.Toggle { on: backend.setting("singlePointReordering") === "true"; accessibleName: qsTr("Turn on single pointer controls"); onToggled: v => { backend.setSetting("singlePointReordering", v ? "true" : "false"); on = v; window.singlePointReordering = v } } }
             }
             // Teams' Teletypewriter (TTY) mode (measured on winpc 2026-11-16:
             // the last card, 93.3 tall, Teams' accessibility glyph, the
@@ -2234,9 +2241,9 @@ Rectangle {
                 id: ttyCard
                 visible: root.page === "accessibility" && !root.subPage
                 property bool changed: false
-                icon: "accessibility-20"; title: "Teletypewriter (TTY) mode"
-                subtitle: "Use the TTY mode to communicate using text over the phone. For this to work, you’ll need to connect a TTY device."
-                trailing: Component { SettingsParts.Toggle { on: backend.setting("ttyMode") === "true"; accessibleName: "Teletypewriter (TTY) mode"; onToggled: v => { backend.setSetting("ttyMode", v ? "true" : "false"); on = v; ttyCard.changed = true } } }
+                icon: "accessibility-20"; title: qsTr("Teletypewriter (TTY) mode")
+                subtitle: qsTr("Use the TTY mode to communicate using text over the phone. For this to work, you’ll need to connect a TTY device.")
+                trailing: Component { SettingsParts.Toggle { on: backend.setting("ttyMode") === "true"; accessibleName: qsTr("Teletypewriter (TTY) mode"); onToggled: v => { backend.setSetting("ttyMode", v ? "true" : "false"); on = v; ttyCard.changed = true } } }
                 // Measured on winpc 2026-11-17: the glyph 8 left of the
                 // text column, 16 under the subtitle; the text 10 after it;
                 // the card 129.3 tall then.
@@ -2247,7 +2254,7 @@ Rectangle {
                     FluentIcon { name: "info-20"; size: 20; color: theme.text }
                     Text {
                         height: 20; verticalAlignment: Text.AlignVCenter
-                        text: "Changes will be applied for your next call"
+                        text: qsTr("Changes will be applied for your next call")
                         font.family: theme.font; font.pixelSize: 14
                         color: theme.text
                         Accessible.role: Accessible.AlertMessage
@@ -2271,7 +2278,7 @@ Rectangle {
                 visible: root.page === "devices" && !root.subPage
                 width: parent.width; height: 44
                 verticalAlignment: Text.AlignVCenter
-                text: "Audio"
+                text: qsTr("Audio")
                 font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold
                 color: theme.text
                 Accessible.role: Accessible.Heading
@@ -2280,34 +2287,34 @@ Rectangle {
             SettingsParts.Card {
                 id: devices
                 visible: root.page === "devices" && !root.subPage
-                icon: "speaker-settings-20"; title: "Audio settings"
+                icon: "speaker-settings-20"; title: qsTr("Audio settings")
                 readonly property var list: root.page === "devices" ? JSON.parse(backend.audioDevices()) : { inputs: [], outputs: [] }
                 property bool noise: root.local("noiseSuppression", "on") !== "off"
-                SettingsParts.SubHeading { text: "Speaker" }
+                SettingsParts.SubHeading { text: qsTr("Speaker", "calling:kp3u3qpn") }
                 SettingsParts.Gap { size: 10.7 }
                 OutlineDropdown {
                     width: 292.7; height: 30
                     readonly property var values: ["default"].concat(devices.list.outputs)
-                    options: values.map(v => ({ label: v === "default" ? "Default" : v }))
+                    options: values.map(v => ({ label: v === "default" ? qsTr("Default") : v }))
                     current: Math.max(0, values.indexOf(root.local("speakerDevice", "default")))
-                    accessibleName: "Speaker"
+                    accessibleName: qsTr("Speaker", "calling:kp3u3qpn")
                     onPicked: i => backend.setSetting("speakerDevice", values[i])
                 }
                 SettingsParts.Gap { size: 30.7 }
-                SettingsParts.SubHeading { text: "Microphone" }
+                SettingsParts.SubHeading { text: qsTr("Microphone") }
                 SettingsParts.Gap { size: 10.7 }
                 OutlineDropdown {
                     width: 292.7; height: 30
                     readonly property var values: ["default"].concat(devices.list.inputs)
-                    options: values.map(v => ({ label: v === "default" ? "Default" : v }))
+                    options: values.map(v => ({ label: v === "default" ? qsTr("Default") : v }))
                     current: Math.max(0, values.indexOf(root.local("micDevice", "default")))
-                    accessibleName: "Microphone"
+                    accessibleName: qsTr("Microphone")
                     onPicked: i => backend.setSetting("micDevice", values[i])
                 }
                 SettingsParts.Gap { size: 22 }
                 SettingsParts.SwitchRow {
                     id: agcRow
-                    label: "Automatically adjust mic sensitivity"
+                    label: qsTr("Automatically adjust mic sensitivity")
                     on: root.local("autoGainControl", "on") !== "off"
                     onToggled: v => { backend.setSetting("autoGainControl", v ? "on" : "off"); agcRow.on = v }
                 }
@@ -2319,7 +2326,7 @@ Rectangle {
                 SettingsParts.Button {
                     x: -12
                     icon: "test-call-20"
-                    label: "Make a test call"
+                    label: qsTr("Make a test call")
                     enabled: backend.callState === "" || backend.callState === "ended"
                     onClicked: backend.makeTestCall()
                 }
@@ -2349,8 +2356,8 @@ Rectangle {
                     FluentIcon { x: -38; y: 8; name: "headset-20"; size: 20; color: theme.text }
                     Column {
                         width: parent.width - transferBtn.width - 28 - 24
-                        Text { width: parent.width; text: "Audio device button controls"; wrapMode: Text.Wrap; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
-                        Text { width: parent.width; text: "Choose whether this OST app responds to buttons on connected audio devices."; wrapMode: Text.Wrap; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textSecondary }
+                        Text { width: parent.width; text: qsTr("Audio device button controls"); wrapMode: Text.Wrap; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
+                        Text { width: parent.width; text: qsTr("Choose whether this OST app responds to buttons on connected audio devices."); wrapMode: Text.Wrap; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textSecondary }
                     }
                     Rectangle {
                         id: transferBtn
@@ -2359,19 +2366,19 @@ Rectangle {
                         y: 2.4; width: transferText.implicitWidth + 25.4; height: 31.3; radius: 4
                         color: !usable ? theme.bgDisabled : tbh.pressed ? theme.menuHover : tbHover.hovered ? theme.pick("#F5F5F5", "#3D3D3D", "#1AEBFF") : theme.surface
                         border.color: !usable ? theme.pick("#E0E0E0", "#424242", "#3FF23F") : theme.pick("#D1D1D1", "#5C5C5C", "#FFFFFF"); border.width: 0.67
-                        Text { id: transferText; anchors.centerIn: parent; text: "Transfer controls to this app"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: transferBtn.usable ? theme.onFill(transferBtn, theme.text) : theme.disabled }
+                        Text { id: transferText; anchors.centerIn: parent; text: qsTr("Transfer controls to this app"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: transferBtn.usable ? theme.onFill(transferBtn, theme.text) : theme.disabled }
                         HoverHandler { id: tbHover; cursorShape: transferBtn.usable ? Qt.PointingHandCursor : Qt.ArrowCursor }
                         TapHandler { id: tbh; enabled: transferBtn.usable; onTapped: { backend.headsetTakeControl(); hidRow.refresh() } }
-                        ArrowTip { visible: tbHover.hovered && !transferBtn.usable; tipText: "This app already responds to buttons on your audio device." }
+                        ArrowTip { visible: tbHover.hovered && !transferBtn.usable; tipText: qsTr("This app already responds to buttons on your audio device.") }
                         Accessible.role: Accessible.Button
-                        Accessible.name: transferBtn.usable ? "Transfer controls to this app" : "This app already responds to buttons on your audio device."
+                        Accessible.name: transferBtn.usable ? qsTr("Transfer controls to this app") : qsTr("This app already responds to buttons on your audio device.")
                     }
                 }
                 SettingsParts.Gap { size: 22 }
                 SettingsParts.SwitchRow {
                     id: syncRow
-                    label: "Sync audio device buttons when in use on this app"
-                    sublabel: "The Teams buttons will always work when this app is in use. (Recommended)"
+                    label: qsTr("Sync audio device buttons when in use on this app")
+                    sublabel: qsTr("The Teams buttons will always work when this app is in use. (Recommended)")
                     centred: true
                     on: root.local("audioDeviceSyncEnabled", "true") !== "false"
                     onToggled: v => { backend.setSetting("audioDeviceSyncEnabled", v ? "true" : "false"); syncRow.on = v }
@@ -2381,7 +2388,7 @@ Rectangle {
                 // Noise suppression: its title 38.7 under the divider (winpc 2026-11-17).
                 SettingsParts.Gap { size: 30 }
                 SettingsParts.SwitchRow {
-                    label: "Noise suppression"
+                    label: qsTr("Noise suppression")
                     on: devices.noise
                     onToggled: v => { devices.noise = v; backend.setNoiseSuppression(v) }
                 }
@@ -2392,7 +2399,7 @@ Rectangle {
                 readonly property var vi: backend.voiceIsolationJson ? JSON.parse(backend.voiceIsolationJson) : ({})
                 readonly property bool isolation: vi.profile === true && vi.mode === "Pns"
                 SettingsParts.RadioRow {
-                    label: "Background noise only"
+                    label: qsTr("Background noise only")
                     sublabel: "Enable this to enhance your microphone audio quality by removing background noise."
                     checked: !devices.isolation
                     usable: devices.noise
@@ -2400,8 +2407,8 @@ Rectangle {
                 }
                 SettingsParts.Gap { size: 4 }
                 SettingsParts.RadioRow {
-                    label: "Voice isolation"
-                    sublabel: "Isolate your voice from background noise and other voices while speaking. Only your voice will be audible."
+                    label: qsTr("Voice isolation")
+                    sublabel: qsTr("Isolate your voice from background noise and other voices while speaking. Only your voice will be audible.")
                     checked: devices.isolation
                     usable: devices.noise && devices.vi.profile === true
                     onPicked: { backend.setSetting("noiseSuppressionMode", "Pns"); backend.applyVoiceIsolation() }
@@ -2430,9 +2437,9 @@ Rectangle {
                         id: spatialRow
                         readonly property bool capable: root.page === "devices" && backend.spatialAudioCapable()
                         readonly property bool inOneToOne: backend.callState === "connected" && !callWindow.meeting
-                        label: "Spatial audio"
-                        sublabel: "Voices will sound like they're coming from where each person is positioned on your screen. Not yet available with wireless headphones. Available with Together mode, Gallery and Speaker view."
-                        link: "Learn more"
+                        label: qsTr("Spatial audio")
+                        sublabel: qsTr("Voices will sound like they're coming from where each person is positioned on your screen. Not yet available with wireless headphones. ") + qsTr("Available with Together mode, Gallery and Speaker view.")
+                        link: qsTr("Learn more")
                         centred: true
                         rowHeight: 36
                         usable: capable && !inOneToOne
@@ -2444,14 +2451,14 @@ Rectangle {
                 SettingsParts.Gap { size: 22.6 }
                 Rectangle { x: -44.3; width: devices.width - 25.4; height: 0.67; color: theme.pick("#F0F0F0", "#3D3D3D", "#000000") }
                 SettingsParts.Gap { size: 30 }
-                SettingsParts.SubHeading { text: "Secondary Ringer" }
+                SettingsParts.SubHeading { text: qsTr("Secondary Ringer") }
                 SettingsParts.Gap { size: 16.7 }
                 OutlineDropdown {
                     width: 292.7; height: 30
                     readonly property var values: ["none"].concat(devices.list.outputs)
-                    options: values.map(v => ({ label: v === "none" ? "None" : v }))
+                    options: values.map(v => ({ label: v === "none" ? qsTr("None") : v }))
                     current: Math.max(0, values.indexOf(root.local("secondaryRinger", "none")))
-                    accessibleName: "Secondary Ringer"
+                    accessibleName: qsTr("Secondary Ringer")
                     onPicked: i => backend.setSetting("secondaryRinger", values[i])
                 }
                 SettingsParts.Gap { size: 8 }
@@ -2473,7 +2480,7 @@ Rectangle {
                 visible: root.page === "devices" && !root.subPage
                 width: parent.width; height: 44
                 verticalAlignment: Text.AlignVCenter
-                text: "Video"
+                text: qsTr("Video")
                 font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold
                 color: theme.text
                 Accessible.role: Accessible.Heading
@@ -2482,7 +2489,7 @@ Rectangle {
             SettingsParts.Card {
                 id: videoCard
                 visible: root.page === "devices" && !root.subPage
-                icon: "video-20"; title: "Video settings"
+                icon: "video-20"; title: qsTr("Video settings")
                 readonly property bool showing: visible && root.visible
                 property bool previewing: false
                 property bool picking: false
@@ -2567,7 +2574,7 @@ Rectangle {
                             color: Qt.rgba(0, 0, 0, 0.5)
                             Text {
                                 anchors.centerIn: parent
-                                text: videoEffects.greenScreen ? "What is your background color?" : "Preview"
+                                text: videoEffects.greenScreen ? qsTr("What is your background color?") : qsTr("Preview")
                                 font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold
                                 color: theme.onFill(hcFill7, "white")
                             }
@@ -2589,20 +2596,20 @@ Rectangle {
                                     }
                                 }
                                 ToolTip.visible: swatchHover.hovered
-                                ToolTip.text: "Select a color"
+                                ToolTip.text: qsTr("Select a color")
                                 Accessible.role: Accessible.Button
-                                Accessible.name: "Select a color"
+                                Accessible.name: qsTr("Select a color")
                             }
                         }
                     }
                 }
-                SettingsParts.SubHeading { text: "Camera" }
+                SettingsParts.SubHeading { text: qsTr("Camera") }
                 SettingsParts.Gap { size: 10.7 }
                 OutlineDropdown {
                     width: 292.7; height: 30
                     options: videoCard.cameras.map(c => ({ label: c.name }))
                     current: Math.max(0, videoCard.cameras.findIndex(c => c.path === videoCard.currentCamera))
-                    accessibleName: "Camera"
+                    accessibleName: qsTr("Camera")
                     onPicked: i => {
                         const c = videoCard.cameras[i]
                         if (!c || c.path === videoCard.currentCamera) return
@@ -2623,7 +2630,7 @@ Rectangle {
                 // (Teams' automaticCameraSettingsSelected).
                 SettingsParts.SwitchRow {
                     id: autoCamRow
-                    label: "Automatically adjust camera controls"
+                    label: qsTr("Automatically adjust camera controls")
                     rowHeight: on ? 66 : 36
                     on: videoCard.showing && videoCard.autoCamera()
                     onToggled: v => { backend.setCameraAutoControls(videoCard.currentCamera, v); on = v }
@@ -2632,20 +2639,20 @@ Rectangle {
                     visible: !autoCamRow.on
                     height: 16.1
                     verticalAlignment: Text.AlignVCenter
-                    text: "Open camera settings"
+                    text: qsTr("Open camera settings")
                     onClicked: cameraSettings.show(videoCard.currentCamera, (videoCard.cameras.find(c => c.path === videoCard.currentCamera) || {}).name || "")
                 }
                 Text {
                     visible: !autoCamRow.on
-                    text: "Some settings might not be available for all camera types."
+                    text: qsTr("Some settings might not be available for all camera types.")
                     font.family: theme.font; font.pixelSize: 12; lineHeight: 17.1; lineHeightMode: Text.FixedHeight
                     color: theme.textSecondary
                 }
                 SettingsParts.Gap { visible: !autoCamRow.on; size: 30.1 }
                 SettingsParts.SwitchRow {
                     id: greenScreenRow
-                    label: "Green Screen"
-                    sublabel: "Turn on Green screen for a better look when you're using a virtual background."
+                    label: qsTr("Green Screen")
+                    sublabel: qsTr("Turn on Green screen for a better look when you're using a virtual background.")
                     on: videoEffects.greenScreen
                     onToggled: v => {
                         if (!v && videoCard.picking) { videoCard.picking = false; backend.setGreenScreenPicking(false) }
@@ -2653,20 +2660,20 @@ Rectangle {
                     }
                 }
                 SettingsParts.SwitchRow {
-                    label: "Mirror my video"
-                    sublabel: "Changing this setting will only change the view for you. This setting doesn’t currently work in Together mode."
+                    label: qsTr("Mirror my video")
+                    sublabel: qsTr("Changing this setting will only change the view for you. This setting doesn’t currently work in Together mode.")
                     on: videoEffects.mirror
                     onToggled: v => videoEffects.setMirror(v)
                 }
                 SettingsParts.SwitchRow {
-                    label: "Adjust brightness"
-                    sublabel: "Enhance the quality of your video in low light conditions."
+                    label: qsTr("Adjust brightness")
+                    sublabel: qsTr("Enhance the quality of your video in low light conditions.")
                     on: videoEffects.brightness
                     onToggled: v => videoEffects.setBrightness(v)
                 }
                 SettingsParts.SwitchRow {
-                    label: "Soft focus"
-                    sublabel: "Smoothen your appearance for a polished look."
+                    label: qsTr("Soft focus")
+                    sublabel: qsTr("Smoothen your appearance for a polished look.")
                     on: videoEffects.softFocus
                     onToggled: v => videoEffects.setSoftFocus(v)
                 }
@@ -2680,20 +2687,20 @@ Rectangle {
             // byod.pushToRoomAudio, on unless turned off, kept on the device).
             SettingsParts.Card {
                 visible: root.page === "devices" && !root.subPage
-                icon: "laptop-20"; title: "Connected devices"
+                icon: "laptop-20"; title: qsTr("Connected devices")
                 bottomPad: 16.3
                 SettingsParts.ButtonRow {
-                    label: "Manage your connected devices"; buttonText: "Manage devices"
+                    label: qsTr("Manage your connected devices"); buttonText: qsTr("Manage devices")
                     onClicked: root.subPage = "connected"
                 }
                 SettingsParts.Gap { size: 21.6 }
                 SettingsParts.SwitchRow {
                     rowHeight: 36
-                    label: "Automatically activate meeting room mode when in a meeting"
-                    sublabel: "Optimizes meeting setup for connected audio/video devices and room displays. Attendees see only meeting content on the room display."
+                    label: qsTr("Automatically activate meeting room mode when in a meeting")
+                    sublabel: qsTr("Optimizes meeting setup for connected audio/video devices and room displays. Attendees see only meeting content on the room display.")
                     on: root.local("pushToRoomAudio", "true") !== "false"
                     onToggled: v => backend.setSetting("pushToRoomAudio", v ? "true" : "false")
-                    link: "Learn More"; centred: true
+                    link: qsTr("Learn More"); centred: true
                     onLinkActivated: Qt.openUrlExternally("https://aka.ms/meetingroommode")
                 }
             }
@@ -2703,7 +2710,7 @@ Rectangle {
             Text {
                 visible: root.page === "devices" && root.subPage === "connected"
                 width: parent.width; height: 20
-                text: "Select a device to connect"
+                text: qsTr("Select a device to connect")
                 font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
                 color: theme.text
                 Accessible.role: Accessible.Heading
@@ -2763,31 +2770,31 @@ Rectangle {
                 // Teams' voicemail greeting languages (measured on winpc
                 // 2026-11-14, in its order): [native, English, code].
                 readonly property var greetingLanguages: [
-                    ["Arabic (Egypt)", "Arabic (Egypt)", "ar-eg"], ["Bahasa Indonesia (Indonesia)", "Indonesian (Indonesia)", "id-id"],
-                    ["Català (Català)", "Catalan (Spain)", "ca-es"], ["Čeština (Česká republika)", "Czech (Czechia)", "cs-cz"],
-                    ["Dansk (Danmark)", "Danish (Denmark)", "da-dk"], ["Deutsch (Deutschland)", "German (Germany)", "de-de"],
-                    ["English (Australia)", "English (Australia)", "en-au"], ["English (Canada)", "English (Canada)", "en-ca"],
-                    ["English (India)", "English (India)", "en-in"], ["English (United Kingdom)", "English (United Kingdom)", "en-gb"],
-                    ["English (United States)", "English (United States)", "en-us"], ["Español (España, alfabetización internacional)", "Spanish (Spain)", "es-es"],
-                    ["Español (México)", "Spanish (Mexico)", "es-mx"], ["Français (Canada)", "French (Canada)", "fr-ca"],
-                    ["Français (France)", "French (France)", "fr-fr"], ["Hrvatski (Hrvatska)", "Croatian (Croatia)", "hr-hr"],
-                    ["Italiano (Italia)", "Italian (Italy)", "it-it"], ["Magyar (Magyarország)", "Hungarian (Hungary)", "hu-hu"],
-                    ["Nederlands (Nederland)", "Dutch (Netherlands)", "nl-nl"], ["Norsk, Bokmål (Norge)", "Norwegian Bokmål (Norway)", "nb-no"],
-                    ["Polski (Polska)", "Polish (Poland)", "pl-pl"], ["Português (Brasil)", "Portuguese (Brazil)", "pt-br"],
-                    ["Português (Portugal)", "Portuguese (Portugal)", "pt-pt"], ["Română (România)", "Romanian (Romania)", "ro-ro"],
-                    ["Slovenčina (Slovenská republika)", "Slovak (Slovakia)", "sk-sk"], ["Slovenščina (Slovenija)", "Slovenian (Slovenia)", "sl-si"],
-                    ["Suomi (Suomi)", "Finnish (Finland)", "fi-fi"], ["Svenska (Sverige)", "Swedish (Sweden)", "sv-se"],
-                    ["Türkçe (Türkiye)", "Turkish (Türkiye)", "tr-tr"], ["Ελληνικά (Ελλάδας)", "Greek (Greece)", "el-gr"],
-                    ["Русский (Россия)", "Russian (Russia)", "ru-ru"], ["ไทย (ไทย)", "Thai (Thailand)", "th-th"],
-                    ["한국어 (대한민국)", "Korean (Korea)", "ko-kr"], ["中文(中国)", "Chinese (China)", "zh-cn"],
-                    ["中文(台灣)", "Chinese (Taiwan)", "zh-tw"], ["中文(香港特別行政區)", "Chinese (Hong Kong SAR)", "zh-hk"],
-                    ["日本語 (日本)", "Japanese (Japan)", "ja-jp"]
+                    ["Arabic (Egypt)", qsTr("Arabic (Egypt)"), "ar-eg"], ["Bahasa Indonesia (Indonesia)", qsTr("Indonesian (Indonesia)"), "id-id"],
+                    ["Català (Català)", qsTr("Catalan (Spain)"), "ca-es"], ["Čeština (Česká republika)", qsTr("Czech (Czechia)"), "cs-cz"],
+                    ["Dansk (Danmark)", qsTr("Danish (Denmark)"), "da-dk"], ["Deutsch (Deutschland)", qsTr("German (Germany)"), "de-de"],
+                    ["English (Australia)", qsTr("English (Australia)"), "en-au"], ["English (Canada)", qsTr("English (Canada)"), "en-ca"],
+                    ["English (India)", qsTr("English (India)"), "en-in"], ["English (United Kingdom)", qsTr("English (United Kingdom)"), "en-gb"],
+                    ["English (United States)", qsTr("English (United States)"), "en-us"], ["Español (España, alfabetización internacional)", qsTr("Spanish (Spain)"), "es-es"],
+                    ["Español (México)", qsTr("Spanish (Mexico)"), "es-mx"], ["Français (Canada)", qsTr("French (Canada)"), "fr-ca"],
+                    ["Français (France)", qsTr("French (France)"), "fr-fr"], ["Hrvatski (Hrvatska)", qsTr("Croatian (Croatia)"), "hr-hr"],
+                    ["Italiano (Italia)", qsTr("Italian (Italy)"), "it-it"], ["Magyar (Magyarország)", qsTr("Hungarian (Hungary)"), "hu-hu"],
+                    ["Nederlands (Nederland)", qsTr("Dutch (Netherlands)"), "nl-nl"], ["Norsk, Bokmål (Norge)", qsTr("Norwegian Bokmål (Norway)"), "nb-no"],
+                    ["Polski (Polska)", qsTr("Polish (Poland)"), "pl-pl"], ["Português (Brasil)", qsTr("Portuguese (Brazil)"), "pt-br"],
+                    ["Português (Portugal)", qsTr("Portuguese (Portugal)"), "pt-pt"], ["Română (România)", qsTr("Romanian (Romania)"), "ro-ro"],
+                    ["Slovenčina (Slovenská republika)", qsTr("Slovak (Slovakia)"), "sk-sk"], ["Slovenščina (Slovenija)", qsTr("Slovenian (Slovenia)"), "sl-si"],
+                    ["Suomi (Suomi)", qsTr("Finnish (Finland)"), "fi-fi"], ["Svenska (Sverige)", qsTr("Swedish (Sweden)"), "sv-se"],
+                    ["Türkçe (Türkiye)", qsTr("Turkish (Türkiye)"), "tr-tr"], ["Ελληνικά (Ελλάδας)", qsTr("Greek (Greece)"), "el-gr"],
+                    ["Русский (Россия)", qsTr("Russian (Russia)"), "ru-ru"], ["ไทย (ไทย)", qsTr("Thai (Thailand)"), "th-th"],
+                    ["한국어 (대한민국)", qsTr("Korean (Korea)"), "ko-kr"], ["中文(中国)", qsTr("Chinese (China)"), "zh-cn"],
+                    ["中文(台灣)", qsTr("Chinese (Taiwan)"), "zh-tw"], ["中文(香港特別行政區)", qsTr("Chinese (Hong Kong SAR)"), "zh-hk"],
+                    ["日本語 (日本)", qsTr("Japanese (Japan)"), "ja-jp"]
                 ]
                 function setVm(k, v) { const b = {}; b[k] = v; root.setMt("voicemail", b) }
             }
             Text {
                 visible: root.page === "calls"
-                text: "Call handling and forwarding"
+                text: qsTr("Call handling and forwarding")
                 font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; lineHeight: 22; lineHeightMode: Text.FixedHeight
                 color: theme.text
                 Accessible.role: Accessible.Heading
@@ -2795,33 +2802,33 @@ Rectangle {
             }
             SettingsParts.Card {
                 visible: root.page === "calls"
-                icon: "call-forward-20"; title: "Call handling and forwarding"
+                icon: "call-forward-20"; title: qsTr("Call handling and forwarding")
                 bottomPad: 21.4
                 SettingsParts.SwitchRow {
-                    label: "Forward all calls to voicemail"
+                    label: qsTr("Forward all calls to voicemail")
                     on: calls.forwardAll
                     onToggled: v => calls.save(v, calls.toVoicemail, calls.delay)
                 }
                 SettingsParts.Divider { visible: !calls.forwardAll }
-                SettingsParts.SubHeading { visible: !calls.forwardAll; text: "When you can't answer a call"; gapAbove: 15.6 }
+                SettingsParts.SubHeading { visible: !calls.forwardAll; text: qsTr("When you can't answer a call"); gapAbove: 15.6 }
                 SettingsParts.Gap { visible: !calls.forwardAll; size: 10 }
                 OutlineDropdown {
                     visible: !calls.forwardAll
                     width: 293.3; height: 30
-                    options: [{ label: "Do not redirect calls" }, { label: "Redirect to voicemail" }]
+                    options: [{ label: qsTr("Do not redirect calls") }, { label: qsTr("Redirect to voicemail") }]
                     current: calls.toVoicemail ? 1 : 0
-                    accessibleName: "When you can't answer a call"
+                    accessibleName: qsTr("When you can't answer a call")
                     onPicked: i => calls.save(false, i === 1, calls.delay)
                 }
-                SettingsParts.SubHeading { visible: !calls.forwardAll && calls.toVoicemail; text: "Ring for this many seconds before redirect"; gapAbove: 15.7 }
+                SettingsParts.SubHeading { visible: !calls.forwardAll && calls.toVoicemail; text: qsTr("Ring for this many seconds before redirecting"); gapAbove: 15.7 }
                 SettingsParts.Gap { visible: !calls.forwardAll && calls.toVoicemail; size: 10 }
                 OutlineDropdown {
                     visible: !calls.forwardAll && calls.toVoicemail
                     width: 293.3; height: 30
                     readonly property var secs: [5, 10, 15, 20, 30, 40, 50, 60]
-                    options: secs.map(n => ({ label: n + " seconds" + (n === 20 ? " (default)" : "") }))
+                    options: secs.map(n => ({ label: n === 20 ? qsTr("20 seconds (default)") : qsTr("%1 seconds").arg(n) }))
                     current: Math.max(0, secs.indexOf(calls.delay))
-                    accessibleName: "Ring for this many seconds before redirect"
+                    accessibleName: qsTr("Ring for this many seconds before redirecting")
                     onPicked: i => calls.save(false, true, secs[i])
                 }
                 // Teams' "Choose a ringtone for you" (measured on winpc
@@ -2829,12 +2836,12 @@ Rectangle {
                 // (Teams' 18 ringtones, Ring as "Default") with Preview
                 // ringtone 10.7 after it; saved with Teams' ringtone
                 // settings and rung by Main.qml's ringer.
-                SettingsParts.SubHeading { text: "Choose a ringtone for you"; gapAbove: 32 }
+                SettingsParts.SubHeading { text: qsTr("Choose a ringtone for you"); gapAbove: 32 }
                 SettingsParts.Gap { size: 10.6 }
                 Row {
                     spacing: 10.7
                     readonly property var names: ["Ring", "Beep", "Bop", "Bounce", "Bubbles", "BubblesLoud", "DripDrop", "Eureka", "Flutter", "HighScore", "NextLevel", "Plink", "Remix", "RingRing", "Ripple", "Spacetime", "WishGranted", "Wobble"]
-                    readonly property var labels: ["Default", "Beep", "Bop", "Bounce", "Bubbles", "Bubbles (Loud)", "Drip Drop", "Eureka", "Flutter", "High Score", "Next Level", "Plink", "Remix", "Ring Ring", "Ripple", "Spacetime", "Wish Granted", "Wobble"]
+                    readonly property var labels: [qsTr("Default"), qsTr("Beep"), qsTr("Bop"), qsTr("Bounce"), qsTr("Bubbles"), qsTr("Bubbles (Loud)"), qsTr("Drip Drop"), qsTr("Eureka"), qsTr("Flutter"), qsTr("High Score"), qsTr("Next Level"), qsTr("Plink"), qsTr("Remix"), qsTr("Ring Ring"), qsTr("Ripple"), qsTr("Spacetime"), qsTr("Wish Granted"), qsTr("Wobble")]
                     readonly property string chosen: {
                         const voice = root.mt.voice || {}
                         const list = ((voice.ringtoneSettings || {}).assignments || {}).ringToneAssignments || []
@@ -2845,15 +2852,15 @@ Rectangle {
                         width: 293.3; height: 30
                         options: parent.labels.map(l => ({ label: l }))
                         current: Math.max(0, parent.names.indexOf(parent.chosen))
-                        accessibleName: "Choose a ringtone for you"
+                        accessibleName: qsTr("Choose a ringtone for you")
                         onPicked: i => backend.changeSetting("mt", "ringtone", JSON.stringify(parent.names[i]))
                     }
-                    PreviewButton { height: 30; label: "Preview ringtone"; file: parent.chosen.toLowerCase() }
+                    PreviewButton { height: 30; label: qsTr("Preview ringtone"); file: parent.chosen.toLowerCase() }
                 }
             }
             Text {
                 visible: root.page === "calls"
-                text: "Voicemail"
+                text: qsTr("Voicemail")
                 font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; lineHeight: 22; lineHeightMode: Text.FixedHeight
                 color: theme.text
                 Accessible.role: Accessible.Heading
@@ -2861,7 +2868,7 @@ Rectangle {
             }
             SettingsParts.Card {
                 visible: root.page === "calls"
-                icon: "voicemail-20"; title: "Voicemail"
+                icon: "voicemail-20"; title: qsTr("Voicemail")
                 // Teams' "Record a custom greeting" (measured on winpc
                 // 2026-11-10: its button at the body's top, a divider 15 under
                 // it) calls your own voicemail, where the greeting is
@@ -2869,31 +2876,31 @@ Rectangle {
                 // settings can't be read back (Teams shows them unset too);
                 // what you set here shows.
                 SettingsParts.ButtonRow {
-                    label: "Record a custom greeting"
-                    buttonText: "Record a greeting"
+                    label: qsTr("Record a custom greeting")
+                    buttonText: qsTr("Record a greeting")
                     onClicked: backend.recordVoicemailGreeting()
                 }
                 SettingsParts.Gap { size: 15.1 }
                 SettingsParts.Divider {}
-                SettingsParts.SubHeading { text: "Choose a language for your default greeting"; gapAbove: 15.6 }
+                SettingsParts.SubHeading { text: qsTr("Choose a language for your default greeting"); gapAbove: 15.6 }
                 SettingsParts.Gap { size: 10.7 }
                 SearchCombobox {
                     width: 258.7; height: 30.7
                     options: calls.greetingLanguages.map(l => ({ key: l[2], label: l[0], sublabel: l[1] }))
                     current: calls.vm.vmAudioLang || ""
-                    accessibleName: "Choose a language for your default greeting"
+                    accessibleName: qsTr("Choose a language for your default greeting")
                     onPicked: code => calls.setVm("vmAudioLang", code)
                 }
                 SettingsParts.Gap { size: 15.6 }
                 SettingsParts.Divider {}
-                SettingsParts.SubHeading { text: "Choose what happens when the call is redirected to voicemail"; gapAbove: 15.7 }
+                SettingsParts.SubHeading { text: qsTr("Choose what happens when the call is redirected to voicemail"); gapAbove: 15.7 }
                 SettingsParts.Gap { size: 10.7 }
                 OutlineDropdown {
                     width: 293.3; height: 30
-                    options: [{ label: "Let the caller record a message" }, { label: "Let the caller record a message or be transferred to someone else" }, { label: "Play your greeting and end the call" }, { label: "Play greeting then transfer the call to someone else" }, { label: "End the call without playing your greeting" }]
+                    options: [{ label: qsTr("Let the caller record a message") }, { label: qsTr("Let the caller record a message or be transferred to someone else") }, { label: qsTr("Play your greeting and end the call") }, { label: qsTr("Play greeting then transfer the call to someone else") }, { label: qsTr("End the call without playing your greeting") }]
                     current: calls.rules.indexOf(calls.rule)
-                    placeholder: "Choose what happens when the call is redirected to voicemail"
-                    accessibleName: "Choose what happens when the call is redirected to voicemail"
+                    placeholder: qsTr("Choose what happens when the call is redirected to voicemail")
+                    accessibleName: qsTr("Choose what happens when the call is redirected to voicemail")
                     onPicked: i => calls.pickRule(calls.rules[i])
                 }
                 // The transfer rules' target (Teams' rg, measured on winpc
@@ -2921,16 +2928,16 @@ Rectangle {
                 SettingsParts.Divider {}
                 SettingsParts.Gap { size: 15.7 }
                 SettingsParts.ButtonRow {
-                    label: "Set up text-to-speech customized greeting option"
-                    sublabel: "If you\u2019ve recorded a greeting, it\u2019ll override this option."
-                    buttonText: calls.vm.vmDefaultGreetingPromptOverwrite ? "Edit custom greeting" : "Write a custom greeting"
+                    label: qsTr("Set up text-to-speech customized greeting option")
+                    sublabel: qsTr("If you\u2019ve recorded a greeting, it\u2019ll override this option.")
+                    buttonText: calls.vm.vmDefaultGreetingPromptOverwrite ? qsTr("Edit custom greeting") : qsTr("Write a custom greeting")
                     onClicked: { greetingDialog.oof = false; greetingDialog.show(calls.vm.vmDefaultGreetingPromptOverwrite || "") }
                 }
                 
             }
             Text {
                 visible: root.page === "calls"
-                text: "Out-of-office voicemail"
+                text: qsTr("Out-of-office voicemail")
                 font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; lineHeight: 22; lineHeightMode: Text.FixedHeight
                 color: theme.text
                 Accessible.role: Accessible.Heading
@@ -2938,14 +2945,14 @@ Rectangle {
             }
             SettingsParts.Card {
                 visible: root.page === "calls"
-                icon: "voicemail-arrow-back-20"; title: "Out-of-office voicemail"
-                SettingsParts.SubHeading { text: "When should your greeting play" }
+                icon: "voicemail-arrow-back-20"; title: qsTr("Out-of-office voicemail")
+                SettingsParts.SubHeading { text: qsTr("When should your greeting play") }
                 SettingsParts.Gap { size: 15 }
-                SettingsParts.CheckRow { label: "All the time"; checked: calls.vm.vmUseOof === true; onToggled: v => calls.setVm("vmUseOof", v) }
-                SettingsParts.CheckRow { label: "When Outlook automatic replies are on"; checked: calls.vm.vmUseAutoRepliesForOof === true; onToggled: v => calls.setVm("vmUseAutoRepliesForOof", v) }
+                SettingsParts.CheckRow { label: qsTr("All the time"); checked: calls.vm.vmUseOof === true; onToggled: v => calls.setVm("vmUseOof", v) }
+                SettingsParts.CheckRow { label: qsTr("When Outlook automatic replies are on"); checked: calls.vm.vmUseAutoRepliesForOof === true; onToggled: v => calls.setVm("vmUseAutoRepliesForOof", v) }
                 SettingsParts.ButtonRow {
-                    label: "Your custom greeting"
-                    buttonText: calls.vm.vmDefaultOofGreetingPromptOverwrite ? "Edit custom greeting" : "Write a custom greeting"
+                    label: qsTr("Your custom greeting")
+                    buttonText: calls.vm.vmDefaultOofGreetingPromptOverwrite ? qsTr("Edit custom greeting") : qsTr("Write a custom greeting")
                     onClicked: { greetingDialog.oof = true; greetingDialog.show(calls.vm.vmDefaultOofGreetingPromptOverwrite || "") }
                 }
                 
@@ -2982,7 +2989,7 @@ Rectangle {
                     color: theme.pick("#FDF3F4", "#3F1011", "#000000")
                     border.color: theme.pick("#EEACB2", "#6E0811", "#FFFFFF"); border.width: 0.67
                     FluentIcon { x: 12; anchors.verticalCenter: parent.verticalCenter; name: "error-circle-20-filled"; size: 16; color: theme.pick("#BC2F32", "#DC626D", "#FFFFFF") }
-                    Text { x: 36; anchors.verticalCenter: parent.verticalCenter; text: "You are currently in a meeting. To modify your profile, please return after your meeting."; font.family: theme.font; font.pixelSize: 12; color: theme.text }
+                    Text { x: 36; anchors.verticalCenter: parent.verticalCenter; text: qsTr("You are currently in a meeting. To modify your profile, please return after your meeting."); font.family: theme.font; font.pixelSize: 12; color: theme.text }
                 }
                     // Teams' voice card, by whether you have a profile and whether
                 // you opted in to keeping it up to date from your calls
@@ -2995,29 +3002,29 @@ Rectangle {
                 RecognitionCard {
                     readonly property bool enrolled: !!recognition.st.voice
                     readonly property bool joined: !!recognition.st.passiveVoice
-                    icon: "mic-20-filled"; title: "Voice Recognition"
+                    icon: "mic-20-filled"; title: qsTr("Voice Recognition")
                     enabled: !recognition.inCall && !!recognition.st.loaded
                     textWidth: !enrolled && !joined ? 484.3 : enrolled && !joined ? 416.7 : 532.7
                     about: enrolled && !joined
-                        ? "Your voice profile is used to suppress background noises in Teams meetings through voice isolation and to identify you in meeting rooms, transcripts, and notes."
-                        : "Microsoft Teams, on behalf of your organization, collects and processes your pitch, inflection, and speech patterns to build and update your unique voice profile, which may be considered biometric data. Your voice profile is used to suppress background noises in Teams meetings through voice isolation and to identify you in meeting rooms, transcripts, and notes."
+                        ? qsTr("Your voice profile is used to suppress background noises in Teams meetings through voice isolation and to identify you in meeting rooms, transcripts, and notes.")
+                        : qsTr("Microsoft Teams, on behalf of your organization, collects and processes your pitch, inflection, and speech patterns to build and update your unique voice profile, which may be considered biometric data. Your voice profile is used to suppress background noises in Teams meetings through voice isolation and to identify you in meeting rooms, transcripts, and notes.")
                     consent: enrolled && !joined ? ""
-                        : joined ? "Your voice profile will be retained as described in the data retention section of this"
-                        : "When you click \u201cStart voice capture\u201d you are consenting to the collection and use of your data. Your voice profile will be retained as described in the data retention section of this"
-                    privacyName: "Privacy policy - Voice recognition"
-                    badge: enrolled ? "Voice profile complete" : joined ? "Generating voice profile" : ""
+                        : joined ? qsTr("Your voice profile will be retained as described in the data retention section of this <a>Learn More</a>.")
+                        : qsTr("When you click \u201cStart voice capture\u201d you are consenting to the collection and use of your data. Your voice profile will be retained as described in the data retention section of this <a>Learn More</a>.")
+                    privacyName: qsTr("Privacy policy - Voice recognition")
+                    badge: enrolled ? qsTr("Voice profile complete") : joined ? qsTr("Generating voice profile") : ""
                     badgeWave: !enrolled
-                    topButtons: !enrolled && !joined ? [{ label: "Start voice capture", x: 591, act: "optin" }]
-                        : enrolled && !joined ? [{ label: "Export", x: 523.3, act: "export" }, { label: "Opt out", x: 634.3, act: "optout" }]
-                        : [{ label: "Opt out", x: 639.3, act: "optout" }]
-                    infoTip: enrolled ? "Opting out will remove your voice profile, disabling all features that use it." : ""
+                    topButtons: !enrolled && !joined ? [{ label: qsTr("Start voice capture"), x: 591, act: "optin" }]
+                        : enrolled && !joined ? [{ label: qsTr("Export"), x: 523.3, act: "export" }, { label: qsTr("Opt out"), x: 634.3, act: "optout" }]
+                        : [{ label: qsTr("Opt out"), x: 639.3, act: "optout" }]
+                    infoTip: enrolled ? qsTr("Opting out will remove your voice profile, disabling all features that use it.") : ""
                     optIn: enrolled && !joined
-                    optInTitle: "Opt in to keep my voice profile up to date automatically"
-                    optInAbout: "Microsoft Teams, on behalf of your organization, collects and processes your pitch, inflection, and speech patterns to build and update your unique voice profile, which may be considered biometric data."
-                    optInConsent: "When you click \u201cStart voice capture\u201d you are consenting to the collection and use of your data. Your voice profile will be retained as described in the data retention section of this"
-                    rowLabel: joined ? (enrolled ? "Update my voice profile now" : "Create my voice profile now") : ""
-                    rowButtons: enrolled ? [{ label: "Export", x: 533.3, act: "export" }, { label: "Update", x: 639.3, act: "capture" }]
-                                         : [{ label: "Create", x: 639.3, act: "capture" }]
+                    optInTitle: qsTr("Opt in to keep my voice profile up to date automatically")
+                    optInAbout: qsTr("Microsoft Teams, on behalf of your organization, collects and processes your pitch, inflection, and speech patterns to build and update your unique voice profile, which may be considered biometric data.")
+                    optInConsent: qsTr("When you click \u201cStart voice capture\u201d you are consenting to the collection and use of your data. Your voice profile will be retained as described in the data retention section of this <a>Learn More</a>.")
+                    rowLabel: joined ? (enrolled ? qsTr("Update my voice profile now") : qsTr("Create my voice profile now")) : ""
+                    rowButtons: enrolled ? [{ label: qsTr("Export"), x: 533.3, act: "export" }, { label: qsTr("Update"), x: 639.3, act: "capture" }]
+                                         : [{ label: qsTr("Create"), x: 639.3, act: "capture" }]
                     onAct: what => {
                         if (what === "optin") backend.recognitionPassiveVoice(true)
                         else if (what === "optout") { if (joined) backend.recognitionPassiveVoice(false); else backend.recognitionRemoveVoice() }
@@ -3027,19 +3034,19 @@ Rectangle {
                 }
                 RecognitionCard {
                     readonly property bool enrolled: !!recognition.st.face
-                    icon: "video-person-20-filled"; title: "Face Recognition"
+                    icon: "video-person-20-filled"; title: qsTr("Face Recognition")
                     enabled: !recognition.inCall && !!recognition.st.loaded
                     textWidth: enrolled ? 527.7 : 572.7
-                    about: "Microsoft Teams, on behalf of your organization, collects and processes facial data to build and update your unique face profile, which may be considered biometric data. Your face profile is used to automatically recognize you during meetings, display your name, and add your name to the participant list as you walk into a Microsoft Teams Rooms with supported equipment."
-                    consent: enrolled ? "Your face profile will be retained as described in the data retention section of this"
-                                      : "When you click \u201cStart face capture\u201d, you are consenting to the collection and use of your data. Your face profile will be retained as described in the data retention section of this"
-                    privacyName: "Privacy policy - Face recognition"
-                    badge: enrolled ? "Face profile complete" : ""
-                    topButtons: enrolled ? [{ label: "Opt out", x: 634.3, act: "optout" }] : []
-                    infoTip: enrolled ? "Opting out will remove your face profile, disabling all features that use it." : ""
-                    rowLabel: enrolled ? "Update my face profile now" : "Create my face profile now"
-                    rowButtons: enrolled ? [{ label: "Export", x: 528.3, act: "export" }, { label: "Update", x: 639.3, act: "capture" }]
-                                         : [{ label: "Start face capture", x: 597.9, act: "capture" }]
+                    about: qsTr("Microsoft Teams, on behalf of your organization, collects and processes facial data to build and update your unique face profile, which may be considered biometric data. Your face profile is used to automatically recognize you during meetings, display your name, and add your name to the participant list as you walk into a Microsoft Teams Rooms with supported equipment.")
+                    consent: enrolled ? qsTr("Your face profile will be retained as described in the data retention section of this <a>Learn More</a>.")
+                                      : qsTr("When you click \u201cStart face capture\u201d, you are consenting to the collection and use of your data. Your face profile will be retained as described in the data retention section of this <a>Learn More</a>.")
+                    privacyName: qsTr("Privacy policy - Face recognition")
+                    badge: enrolled ? qsTr("Face profile complete") : ""
+                    topButtons: enrolled ? [{ label: qsTr("Opt out"), x: 634.3, act: "optout" }] : []
+                    infoTip: enrolled ? qsTr("Opting out will remove your face profile, disabling all features that use it.") : ""
+                    rowLabel: enrolled ? qsTr("Update my face profile now") : qsTr("Create my face profile now")
+                    rowButtons: enrolled ? [{ label: qsTr("Export"), x: 528.3, act: "export" }, { label: qsTr("Update"), x: 639.3, act: "capture" }]
+                                         : [{ label: qsTr("Start face capture"), x: 597.9, act: "capture" }]
                     onAct: what => {
                         if (what === "optout") backend.recognitionRemoveFace()
                         else if (what === "export") backend.recognitionExport("face")
@@ -3073,12 +3080,12 @@ Rectangle {
                 radius: 8; color: "transparent"
                 border.width: 0.67; border.color: theme.pick("#F0F0F0", "#3D3D3D", "#FFFFFF")
                 FluentIcon { x: 18.7; y: 22.7; size: 20; name: "shield-20"; color: theme.text }
-                Text { x: 68.5; y: 5.5; text: "App permissions"; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
+                Text { x: 68.5; y: 5.5; text: qsTr("App permissions"); font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
                 Text {
                     x: 68.5; y: 25.5; width: parent.width - 68.5 - 1
                     wrapMode: Text.Wrap
                     textFormat: Text.RichText
-                    text: "Control what your apps can access when using Teams. Some apps have permissions enabled by default for your convenience. <a href=\"https://go.microsoft.com/fwlink/?linkid=2166702&clcid=0x409\" style=\"color:" + theme.brandLink + ";text-decoration:none\">Learn more</a>"
+                    text: qsTr("Control what your apps can access when using Teams. Some apps have permissions enabled by default for your convenience.") + " <a href=\"https://go.microsoft.com/fwlink/?linkid=2166702&clcid=0x409\" style=\"color:" + theme.brandLink + ";text-decoration:none\">" + qsTr("Learn more") + "</a>"
                     font.family: theme.font; font.pixelSize: 12; lineHeight: 17.14; lineHeightMode: Text.FixedHeight
                     color: theme.text
                     onLinkActivated: l => Qt.openUrlExternally(l)
@@ -3114,7 +3121,7 @@ Rectangle {
                                 HoverHandler { cursorShape: Qt.PointingHandCursor }
                                 TapHandler { onTapped: appPerms.open = appRow.expanded ? "" : appRow.modelData.id }
                                 Accessible.role: Accessible.Button
-                                Accessible.name: "App permissions for " + appRow.modelData.name
+                                Accessible.name: qsTr("App permissions for %1").arg(appRow.modelData.name)
                             }
                             Column {
                                 visible: appRow.expanded
@@ -3134,7 +3141,7 @@ Rectangle {
                                             x: 640.1; y: 9.3
                                             stateLabel: false
                                             on: { appPerms.rev; return backend.appPermission(appRow.modelData.id, permRow.modelData.kind) }
-                                            accessibleName: permRow.modelData.title + " for " + appRow.modelData.name
+                                            accessibleName: qsTr("%1 for %2").arg(permRow.modelData.title).arg(appRow.modelData.name)
                                             onToggled: v => { backend.setAppPermission(appRow.modelData.id, permRow.modelData.kind, v); appPerms.rev++ }
                                         }
                                     }
@@ -3142,7 +3149,7 @@ Rectangle {
                                 Text {
                                     y: 2.5
                                     textFormat: Text.StyledText
-                                    text: "<b>Note:</b> Permission updates will be applied the next time you open or refresh this app."
+                                    text: qsTr("<strong>Note:</strong> Permission updates will be applied the next time you open or refresh this app.")
                                     font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
                                     color: theme.text
                                 }
@@ -3152,7 +3159,7 @@ Rectangle {
                 }
                 Text {
                     visible: !!appPerms.data_.loading
-                    x: 68.5; y: 72; text: "Loading…"; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
+                    x: 68.5; y: 72; text: qsTr("Loading…"); font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
                 }
             }
 
@@ -3160,7 +3167,7 @@ Rectangle {
             SettingsParts.Card {
                 id: downloads
                 visible: root.page === "files"
-                icon: "arrow-download-20"; title: "Downloads"; subtitle: "Location"
+                icon: "arrow-download-20"; title: qsTr("Downloads"); subtitle: qsTr("Location")
                 property string where: root.page === "files" ? backend.downloadLocation() : ""
                 Item {
                     width: parent.width; height: 47
@@ -3172,23 +3179,23 @@ Rectangle {
                         color: changeHover.hovered ? theme.menuHover : "transparent"
                         Row { id: changeRow; anchors.centerIn: parent; spacing: 4
                             FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "folder-20"; size: 20; color: theme.onFill(hcFill8, theme.textStrong) }
-                            Text { anchors.verticalCenter: parent.verticalCenter; text: "Change"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill8, theme.text) } }
+                            Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Change"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill8, theme.text) } }
                         HoverHandler { id: changeHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: folderPick.open() }
                         Accessible.role: Accessible.Button
-                        Accessible.name: "Change download location"
+                        Accessible.name: qsTr("Change download location")
                     }
                 }
                 // Teams' "Always ask where to save downloaded file" (this
                 // device's): each download asks for its place first.
                 SettingsParts.SwitchRow {
-                    label: "Always ask where to save downloaded file"
+                    label: qsTr("Always ask where to save downloaded file")
                     on: root.local("askDownloadLocation", "false") === "true"
                     onToggled: v => backend.setSetting("askDownloadLocation", v ? "true" : "false")
                 }
                 FolderDialog {
                     id: folderPick
-                    title: "Choose a download location"
+                    title: qsTr("Choose a download location")
                     currentFolder: "file://" + downloads.where
                     onAccepted: { const p = decodeURIComponent(String(selectedFolder).replace(/^file:\/\//, "")); backend.setSetting("downloadDir", p); downloads.where = backend.downloadLocation() }
                 }
@@ -3196,7 +3203,7 @@ Rectangle {
             SettingsParts.Card {
                 visible: root.page === "files"
                 id: openIn
-                icon: "document-20"; title: "Always open Word, PowerPoint, and Excel files in:"
+                icon: "document-20"; title: qsTr("Always open Word, PowerPoint, and Excel files in:")
                 bodyGap: 26
                 // Teams' choices (docs/spec/file-actions.md): Teams (Office
                 // for the web inside its window, synced "teamsV2"), Desktop
@@ -3212,34 +3219,34 @@ Rectangle {
                     backend.setSetting("fileOpenIn", v); choice = v
                     if (v === "web" || v === "teams") root.setProp("userPersonalSettings", "filesSettings.fileOpenPreference", v === "web" ? "web" : "teamsV2")
                 }
-                SettingsParts.RadioRow { label: "Teams"; checked: openIn.choice === "teams"; onPicked: openIn.pick("teams") }
-                SettingsParts.RadioRow { visible: !!openIn.app; label: "Desktop app"; checked: openIn.choice === "desktop" && !!openIn.app; onPicked: openIn.pick("desktop") }
-                SettingsParts.RadioRow { label: "Browser"; checked: openIn.choice === "web" || (openIn.choice === "desktop" && !openIn.app); onPicked: openIn.pick("web") }
+                SettingsParts.RadioRow { label: qsTr("Teams"); checked: openIn.choice === "teams"; onPicked: openIn.pick("teams") }
+                SettingsParts.RadioRow { visible: !!openIn.app; label: qsTr("Desktop app"); checked: openIn.choice === "desktop" && !!openIn.app; onPicked: openIn.pick("desktop") }
+                SettingsParts.RadioRow { label: qsTr("Browser"); checked: openIn.choice === "web" || (openIn.choice === "desktop" && !openIn.app); onPicked: openIn.pick("web") }
             }
             // Teams' "Links open preference": web links open in the default
             // browser or Microsoft Edge (when installed; Teams' default).
             SettingsParts.Card {
                 id: linksPref
                 visible: root.page === "files"
-                icon: "link-20"; title: "Links open preference"
+                icon: "link-20"; title: qsTr("Links open preference")
                 readonly property var browsers: root.page === "files" ? JSON.parse(backend.webBrowsers()) : []
                 readonly property string choice: root.local("linkBrowser", browsers.some(b => b.key === "edge") ? "edge" : "default")
-                SettingsParts.SubHeading { text: "Always open web links in:" }
+                SettingsParts.SubHeading { text: qsTr("Always open web links in:") }
                 SettingsParts.Gap { size: 10.6 }
                 OutlineDropdown {
                     width: 293.3; height: 30
                     options: linksPref.browsers.map(b => ({ label: b.label }))
                     current: Math.max(0, linksPref.browsers.findIndex(b => b.key === linksPref.choice))
-                    accessibleName: "Always open web links in"
+                    accessibleName: qsTr("Always open web links in")
                     onPicked: i => backend.setSetting("linkBrowser", linksPref.browsers[i].key)
                 }
                 
             }
             SettingsParts.Card {
                 visible: root.page === "files"
-                icon: "image-20"; title: "File previews"
-                subtitle: "Show preview cards for files shared in chats, channels, and groups, including files you share."
-                trailing: Component { SettingsParts.Toggle { on: root.prop("userPersonalSettings", ["filesSettings", "enableThumbnailPreview"], true) !== false; accessibleName: "File previews"; onToggled: v => root.setProp("userPersonalSettings", "filesSettings.enableThumbnailPreview", v) } }
+                icon: "image-20"; title: qsTr("File previews")
+                subtitle: qsTr("Show preview cards for files shared in chats, channels, and groups, including files you share.")
+                trailing: Component { SettingsParts.Toggle { on: root.prop("userPersonalSettings", ["filesSettings", "enableThumbnailPreview"], true) !== false; accessibleName: qsTr("File previews"); onToggled: v => root.setProp("userPersonalSettings", "filesSettings.enableThumbnailPreview", v) } }
             }
 
             // ---- About (Teams' About Teams, measured on winpc 2026-11-14) ----
@@ -3249,11 +3256,11 @@ Rectangle {
             // for Microsoft's; Teams' "Web" notices have no OST counterpart.
             // The update line checks OST's GitHub releases.
             AboutCard {
-                title: "Version"
+                title: qsTr("Version")
                 Text {
                     width: parent.width; height: 20.7; verticalAlignment: Text.AlignVCenter
                     textFormat: Text.StyledText
-                    text: "You have OST version <b>" + Qt.application.version + "</b>."
+                    text: qsTr("You have OST version <0>%1</0>.").arg(Qt.application.version).replace("<0>", "<b>").replace("</0>", "</b>")
                     font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
                 }
                 // Teams' update line (settings-app `vd`), from OST's release
@@ -3266,36 +3273,36 @@ Rectangle {
                         visible: parent.u.state === "checking"
                         spacing: 8; anchors.verticalCenter: parent.verticalCenter
                         BusyIndicator { width: 16; height: 16; running: parent.visible }
-                        Text { text: "Checking for updates"; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
+                        Text { text: qsTr("Checking for updates"); font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
                     }
                     Text {
                         visible: parent.u.state !== "checking"
                         width: parent.width; height: 18.7; verticalAlignment: Text.AlignVCenter
                         elide: Text.ElideRight
-                        text: parent.u.state === "error" ? "Issue occurred while checking for updates."
-                            : parent.u.state === "available" ? "An update is available."
-                            : "You've got the latest version." + (parent.u.checkedAt ? " It was last checked on " + Qt.formatDate(new Date(parent.u.checkedAt), Qt.locale(), Locale.ShortFormat) + "." : "")
+                        text: parent.u.state === "error" ? qsTr("Issue occurred while checking for updates.")
+                            : parent.u.state === "available" ? qsTr("An update is available.")
+                            : qsTr("You've got the latest version. %1").arg(parent.u.checkedAt ? qsTr("It was last checked on %1.").arg(Qt.formatDate(new Date(parent.u.checkedAt), Qt.locale(), Locale.ShortFormat)) : "").trim()
                         font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
                     }
                 }
             }
             AboutCard {
-                icon: "info-20"; title: "Legal information"
-                AboutLink { label: "OST Legal Information"; url: "https://github.com/RandyNorthrup/ost/blob/main/LICENSE" }
+                icon: "info-20"; title: qsTr("Legal information")
+                AboutLink { label: qsTr("OST Legal Information"); url: "https://github.com/RandyNorthrup/ost/blob/main/LICENSE" }
             }
             AboutCard {
-                icon: "cookies-20"; title: "Privacy and cookies"
-                AboutLink { label: "OST Privacy Statement"; url: "https://github.com/RandyNorthrup/ost/blob/main/PRIVACY.md" }
+                icon: "cookies-20"; title: qsTr("Privacy and cookies")
+                AboutLink { label: qsTr("OST Privacy Statement"); url: "https://github.com/RandyNorthrup/ost/blob/main/PRIVACY.md" }
             }
             AboutCard {
-                icon: "document-text-20"; title: "Third party notice"
-                AboutLink { label: "Desktop"; external: false; onActivated: { const u = backend.thirdPartyNoticesUrl(); if (u) Qt.openUrlExternally(u) } }
+                icon: "document-text-20"; title: qsTr("Third party notice")
+                AboutLink { label: qsTr("Desktop"); external: false; onActivated: { const u = backend.thirdPartyNoticesUrl(); if (u) Qt.openUrlExternally(u) } }
             }
 
             // A failed save, as Teams' Settings says it.
             Text {
                 visible: !!backend.settingsError
-                text: "Couldn't save your setting. Try again."
+                text: qsTr("Couldn't save your setting. Try again.")
                 font.family: theme.font; font.pixelSize: 12; color: theme.danger
             }
         }

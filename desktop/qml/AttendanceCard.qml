@@ -19,12 +19,12 @@ Rectangle {
     }
     Text {
         x: 56.7; anchors.verticalCenter: parent.verticalCenter
-        text: "Attendance"
+        text: qsTr("Attendance")
         font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
         color: theme.onFill(card, theme.text)
     }
     HoverHandler { id: h; cursorShape: Qt.PointingHandCursor }
     TapHandler { onTapped: card.clicked() }
     Accessible.role: Accessible.Button
-    Accessible.name: "Attendance Download the attendance report"
+    Accessible.name: qsTr("Attendance") + " " + qsTr("Download the attendance report")
 }

@@ -42,12 +42,12 @@ Popup {
             }
         }
         Accessible.role: Accessible.Graphic
-        Accessible.name: "An office building on a desk"
+        Accessible.name: qsTr("An office building on a desk")
     }
     Text {
         id: title
         x: 24.67; y: 343.9; width: 550.67
-        text: "Why set my work location automatically?"
+        text: qsTr("Why set my work location automatically?")
         wrapMode: Text.Wrap
         font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; lineHeight: 28; lineHeightMode: Text.FixedHeight
         color: theme.text
@@ -57,7 +57,7 @@ Popup {
     Text {
         id: para1
         x: 24.67; y: title.y + title.height + 16; width: 550.67
-        text: "Each time you connect to your organization's networks or devices, your profile card will show you're in the office."
+        text: qsTr("Each time you connect to your organization's networks or devices, your profile card will show you're in the office.")
         wrapMode: Text.Wrap
         font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
         color: theme.text
@@ -65,7 +65,7 @@ Popup {
     Text {
         id: para2
         x: 24.67; y: para1.y + para1.height + 20; width: 550.67
-        text: "Your admin provides this option to help everyone better connect with each other when in the office. You can turn this on or off in Settings."
+        text: qsTr("Your admin provides this option to help everyone better connect with each other when in the office. You can turn this on or off in Settings.")
         wrapMode: Text.Wrap
         font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
         color: theme.text
@@ -89,8 +89,8 @@ Popup {
             Accessible.name: label
             Accessible.onPressAction: db.clicked()
         }
-        DialogButton { visible: !root.settingOn; label: "Not now"; onClicked: root.close() }
-        DialogButton { visible: !root.settingOn; primary: true; label: "Set my location automatically"; onClicked: { root.close(); root.turnOn() } }
-        DialogButton { visible: root.settingOn; primary: true; label: "Got it"; onClicked: root.close() }
+        DialogButton { visible: !root.settingOn; label: qsTr("Not now"); onClicked: root.close() }
+        DialogButton { visible: !root.settingOn; primary: true; label: qsTr("Set my location automatically"); onClicked: { root.close(); root.turnOn() } }
+        DialogButton { visible: root.settingOn; primary: true; label: qsTr("Got it"); onClicked: root.close() }
     }
 }

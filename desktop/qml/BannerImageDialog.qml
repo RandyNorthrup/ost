@@ -54,8 +54,8 @@ Popup {
 
     FileDialog {
         id: files
-        title: "Upload an image"
-        nameFilters: ["Images (*.png *.jpg *.jpeg *.gif *.bmp *.webp)"]
+        title: qsTr("Upload an image")
+        nameFilters: [qsTr("Images") + " (*.png *.jpg *.jpeg *.gif *.bmp *.webp)"]
         onAccepted: { dlg.zoom = 1; dlg.panX = 0; dlg.panY = 0; dlg.source = selectedFile }
     }
     Image { id: preview; visible: false; source: dlg.source; asynchronous: true }
@@ -83,7 +83,7 @@ Popup {
     contentItem: Item {
         Text {
             x: 32; y: 27
-            text: "Add a background image"
+            text: qsTr("Add a background image")
             font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold
             lineHeight: 25.7; lineHeightMode: Text.FixedHeight
             color: theme.text
@@ -97,7 +97,7 @@ Popup {
             HoverHandler { id: xHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: dlg.close() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Cancel"
+            Accessible.name: qsTr("Cancel")
         }
 
         // No picture yet: the drop area.
@@ -123,13 +123,13 @@ Popup {
             }
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter; y: 168
-                text: "To get the best result, choose an image that's at least 848x244 px."
+                text: qsTr("To get the best result, choose an image that's at least %1x%2 px.").arg(848).arg(244)
                 font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight
                 color: theme.pick("#0F0F0F", "#FFFFFF", "#FFFFFF")
             }
             OutlineButton {
                 x: parent.width - 14.3 - width; y: 314
-                icon: "arrow-upload-20"; label: "Upload an image"
+                icon: "arrow-upload-20"; label: qsTr("Upload an image")
                 onClicked: dlg.pickFile()
             }
         }
@@ -169,7 +169,7 @@ Popup {
             }
             OutlineButton {
                 x: 712.4; y: 251.8
-                icon: "arrow-upload-20"; label: "Upload an image"
+                icon: "arrow-upload-20"; label: qsTr("Upload an image")
                 onClicked: dlg.pickFile()
             }
         }
@@ -192,14 +192,14 @@ Popup {
                 width: 10; height: 10; radius: 5
                 color: theme.textSecondary
             }
-            Accessible.name: "Image Crop slider. The number value represents amplifying multiplier."
+            Accessible.name: qsTr("Image Crop slider. The number value represents amplifying multiplier.")
         }
         // The hint and the buttons.
         Row {
             x: 32; y: dlg.hasPicture ? 504.7 : 448.7; spacing: 8
             FluentIcon { anchors.verticalCenter: parent.verticalCenter; size: 12; name: "info-12"; color: theme.pick("#0F0F0F", "#FFFFFF", "#FFFFFF") }
             Text {
-                text: "To get the best result, choose an image that's at least 848x244 px."
+                text: qsTr("To get the best result, choose an image that's at least %1x%2 px.").arg(848).arg(244)
                 font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight
                 color: theme.pick("#0F0F0F", "#FFFFFF", "#FFFFFF")
             }
@@ -210,10 +210,10 @@ Popup {
             width: 96; height: 32; radius: 4
             color: cancelHover.hovered ? theme.rowHover : theme.surface
             border.color: theme.stroke; border.width: 0.67
-            Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.text) }
+            Text { anchors.centerIn: parent; text: qsTr("Cancel"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.text) }
             HoverHandler { id: cancelHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: dlg.close() }
-            Accessible.role: Accessible.Button; Accessible.name: "Cancel"
+            Accessible.role: Accessible.Button; Accessible.name: qsTr("Cancel")
         }
         Rectangle {
             id: hcFill3
@@ -221,10 +221,10 @@ Popup {
             x: 790; y: 496.7
             width: 96; height: 32; radius: 4
             color: doneHover.hovered ? theme.brandHover : theme.brandFill
-            Text { anchors.centerIn: parent; text: "Done"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, "white") }
+            Text { anchors.centerIn: parent; text: qsTr("Done"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, "white") }
             HoverHandler { id: doneHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: dlg.finish() }
-            Accessible.role: Accessible.Button; Accessible.name: "Done"
+            Accessible.role: Accessible.Button; Accessible.name: qsTr("Done")
         }
     }
 

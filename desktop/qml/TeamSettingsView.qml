@@ -61,13 +61,13 @@ Item {
             } else if (r.op === "team-settings") {
                 view.saving = false
                 if (r.ok) view.settings = r.data.settings
-                else { backend.toast("Something went wrong on our end. Please try again.", "error"); view.load() }
+                else { backend.toast(qsTr("Something went wrong on our end. Please try again."), "error"); view.load() }
             } else if (r.op === "team-tag-settings") {
                 if (r.ok) view.tags = r.data.tags
-                else backend.toast("Something went wrong on our end. Please try again.", "error")
+                else backend.toast(qsTr("Something went wrong on our end. Please try again."), "error")
             } else if (r.op === "team-code") {
                 if (r.ok) view.code = r.data.code || ""
-                else backend.toast("Something went wrong on our end. Please try again.", "error")
+                else backend.toast(qsTr("Something went wrong on our end. Please try again."), "error")
             }
         }
     }
@@ -83,7 +83,7 @@ Item {
             x: 52; y: 20.3; width: Math.min(774, view.width - 118)
 
             Section {
-                key: "details"; title: "Team details"; hint: "Edit team name, description, privacy, and picture"
+                key: "details"; title: qsTr("Team details"); hint: qsTr("Edit team name, description, privacy, and picture")
                 Item {
                     width: parent.width; height: 414.7 - 64
                     Text {
@@ -105,12 +105,12 @@ Item {
                         color: theme.pick("#E6E6E6", "#3D3D3D", "#000000")
                         FluentIcon { anchors.centerIn: parent; name: view.team["public"] ? "globe-20" : "lock-closed-20"; size: 20; color: theme.textSecondary }
                         Accessible.role: Accessible.StaticText
-                        Accessible.name: view.team["public"] ? "Public Team" : "Private Team"
+                        Accessible.name: view.team["public"] ? qsTr("Public Team") : qsTr("Private Team")
                     }
-                    Btn { visible: view.owner; x: 39; y: 124; text: "Edit"; primary: true; onClicked: editDialog.start(view.team) }
+                    Btn { visible: view.owner; x: 39; y: 124; text: qsTr("Edit"); primary: true; onClicked: editDialog.start(view.team) }
                     Text {
                         x: 39; y: 190.3
-                        text: "Team picture"
+                        text: qsTr("Team picture")
                         font.family: theme.font; font.pixelSize: 14; font.weight: Font.Light
                         lineHeight: 20; lineHeightMode: Text.FixedHeight
                         color: theme.text
@@ -131,58 +131,58 @@ Item {
                             x: 12; anchors.verticalCenter: parent.verticalCenter
                             spacing: 6
                             FluentIcon { name: "arrow-upload-20"; size: 20; color: theme.onFill(hcFill1, theme.textStrong) }
-                            Text { anchors.verticalCenter: parent.verticalCenter; text: "Change picture"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.textStrong) }
+                            Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Change picture"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.textStrong) }
                         }
                         HoverHandler { id: picHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: pictureDialog.start() }
                         Accessible.role: Accessible.Button
-                        Accessible.name: "Change picture"
+                        Accessible.name: qsTr("Change picture")
                     }
                 }
             }
 
             Section {
-                key: "members"; title: "Member permissions"; hint: "Enable channel creation, adding apps, and more"
+                key: "members"; title: qsTr("Member permissions"); hint: qsTr("Enable channel creation, adding apps, and more")
                 Checks {
                     model: [
-                        ["Allow members to create and update channels", view.user.createTopic !== false, s => view.change("userSettings", { createTopic: s, updateTopic: s }), 0],
-                        ["Allow members to create private channels", view.user.createPrivateSpace !== false, s => view.change("userSettings", { createPrivateSpace: s }), 1],
-                        ["Allow members to delete and restore channels", view.user.deleteTopic !== false, s => view.change("userSettings", { deleteTopic: s }), 0],
-                        ["Allow members to add and remove apps", view.user.installApp !== false, s => view.change("userSettings", { installApp: s, uninstallApp: s }), 0],
-                        ["Allow members to upload custom apps", view.user.uploadCustomApp !== false, s => view.change("userSettings", { uploadCustomApp: s }), 0],
-                        ["Allow members to create, update, and remove tabs", view.user.createTab !== false, s => view.change("userSettings", { createTab: s, deleteTab: s }), 0],
-                        ["Allow members to create, update, and remove connectors", view.user.createIntegration !== false, s => view.change("userSettings", { createIntegration: s, updateIntegration: s, deleteIntegration: s }), 0],
-                        ["Allow members to create, edit, and delete tags", !!view.tags && !view.tags.only_owners, s => backend.channelAction("team-tag-settings", view.teamId, view.teamThread, JSON.stringify({ onlyOwners: !s })), 0],
-                        ["Give members the option to delete their messages", view.user.deleteEnabled !== false, s => view.change("userSettings", { deleteEnabled: s }), 0],
-                        ["Give members the option to edit their messages", view.user.editEnabled !== false, s => view.change("userSettings", { editEnabled: s }), 0]
+                        [qsTr("Allow members to create and update channels"), view.user.createTopic !== false, s => view.change("userSettings", { createTopic: s, updateTopic: s }), 0],
+                        [qsTr("Allow members to create private channels"), view.user.createPrivateSpace !== false, s => view.change("userSettings", { createPrivateSpace: s }), 1],
+                        [qsTr("Allow members to delete and restore channels"), view.user.deleteTopic !== false, s => view.change("userSettings", { deleteTopic: s }), 0],
+                        [qsTr("Allow members to add and remove apps"), view.user.installApp !== false, s => view.change("userSettings", { installApp: s, uninstallApp: s }), 0],
+                        [qsTr("Allow members to upload custom apps"), view.user.uploadCustomApp !== false, s => view.change("userSettings", { uploadCustomApp: s }), 0],
+                        [qsTr("Allow members to create, update, and remove tabs"), view.user.createTab !== false, s => view.change("userSettings", { createTab: s, deleteTab: s }), 0],
+                        [qsTr("Allow members to create, update, and remove connectors"), view.user.createIntegration !== false, s => view.change("userSettings", { createIntegration: s, updateIntegration: s, deleteIntegration: s }), 0],
+                        [qsTr("Allow members to create, edit, and delete tags"), !!view.tags && !view.tags.only_owners, s => backend.channelAction("team-tag-settings", view.teamId, view.teamThread, JSON.stringify({ onlyOwners: !s })), 0],
+                        [qsTr("Give members the option to delete their messages"), view.user.deleteEnabled !== false, s => view.change("userSettings", { deleteEnabled: s }), 0],
+                        [qsTr("Give members the option to edit their messages"), view.user.editEnabled !== false, s => view.change("userSettings", { editEnabled: s }), 0]
                     ]
                 }
             }
             Section {
-                key: "guests"; title: "Guest permissions"; hint: "Enable channel creation"
+                key: "guests"; title: qsTr("Guest permissions"); hint: qsTr("Enable channel creation")
                 Checks {
                     model: [
-                        ["Allow guests to create and update channels", view.guest.createTopic === true, s => view.change("guestSettings", { createTopic: s, updateTopic: s }), 0],
-                        ["Allow guests to delete channels", view.guest.deleteTopic === true, s => view.change("guestSettings", { deleteTopic: s }), 0]
+                        [qsTr("Allow guests to create and update channels"), view.guest.createTopic === true, s => view.change("guestSettings", { createTopic: s, updateTopic: s }), 0],
+                        [qsTr("Allow guests to delete channels"), view.guest.deleteTopic === true, s => view.change("guestSettings", { deleteTopic: s }), 0]
                     ]
                 }
             }
             Section {
-                key: "mentions"; title: "@mentions"; hint: "Choose who can use team, channel, and group @mentions"
+                key: "mentions"; title: qsTr("@mentions"); hint: qsTr("Choose who can use team, channel, and group @mentions")
                 Checks {
                     rowHeight: 62
                     model: [
-                        ["Show members the option to @team or @[team name] (this will send a notification to everyone on the team)", view.user.teamMention !== false, s => view.change("userSettings", { teamMention: s }), 0],
-                        ["Give members the option to @channel or @[channel name]. This will notify everyone who's shown the mentioned channel in their channel lists.", view.user.channelMention !== false, s => view.change("userSettings", { channelMention: s }), 0]
+                        [qsTr("Show members the option to @team or @[team name] (this will send a notification to everyone on the team)"), view.user.teamMention !== false, s => view.change("userSettings", { teamMention: s }), 0],
+                        [qsTr("Give members the option to @channel or @[channel name]. This will notify everyone who's shown the mentioned channel in their channel lists.", "teamsAndChannels:k43rqmnmy"), view.user.channelMention !== false, s => view.change("userSettings", { channelMention: s }), 0]
                     ]
                 }
             }
             Section {
-                key: "code"; title: "Team code"
-                hint: view.team["public"] ? "Share this code so people can join the team directly - you won't get join requests for public teams" : "Share this code so people can join the team directly - you won't get join requests"
+                key: "code"; title: qsTr("Team code")
+                hint: view.team["public"] ? qsTr("Share this code so people can join the team directly - you won't get join requests for public teams") : qsTr("Share this code so people can join the team directly - you won't get join requests")
                 Item {
                     width: parent.width; height: view.code ? 228 - 64 : 160.3 - 64
-                    Btn { visible: view.codeLoaded && !view.code && view.owner; x: 39; y: 10; text: "Generate"; primary: true; onClicked: backend.channelAction("team-code", view.teamId, view.teamThread, "generate") }
+                    Btn { visible: view.codeLoaded && !view.code && view.owner; x: 39; y: 10; text: qsTr("Generate"); primary: true; onClicked: backend.channelAction("team-code", view.teamId, view.teamThread, "generate") }
                     // The code (Teams: 28/36, then Full screen and Reset, Remove and Copy).
                     Text {
                         visible: !!view.code
@@ -195,14 +195,14 @@ Item {
                     Grid {
                         visible: !!view.code
                         x: 31; y: 34; columns: 2; columnSpacing: 8; rowSpacing: 18.7
-                        Plain { icon: "arrow-maximize-20"; text: "Full screen"; tip: "Show team code full screen"; onClicked: codeFull.open() }
-                        Plain { visible: view.owner; icon: "arrow-clockwise-20"; text: "Reset"; tip: "Resetting team code will generate a new join code"; onClicked: backend.channelAction("team-code", view.teamId, view.teamThread, "generate") }
-                        Plain { visible: view.owner; icon: "delete-20"; text: "Remove"; tip: "Removing team code will delete the current code and prevent future user from joining this team with a code"; onClicked: backend.channelAction("team-code", view.teamId, view.teamThread, "remove") }
-                        Plain { icon: "copy-20"; text: "Copy"; onClicked: backend.copyText(view.code) }
+                        Plain { icon: "arrow-maximize-20"; text: qsTr("Full screen"); tip: qsTr("Show team code full screen"); onClicked: codeFull.open() }
+                        Plain { visible: view.owner; icon: "arrow-clockwise-20"; text: qsTr("Reset"); tip: qsTr("Resetting team code will generate a new join code"); onClicked: backend.channelAction("team-code", view.teamId, view.teamThread, "generate") }
+                        Plain { visible: view.owner; icon: "delete-20"; text: qsTr("Remove"); tip: qsTr("Removing team code will delete the current code and prevent future user from joining this team with a code"); onClicked: backend.channelAction("team-code", view.teamId, view.teamThread, "remove") }
+                        Plain { icon: "copy-20"; text: qsTr("Copy"); onClicked: backend.copyText(view.code) }
                     }
                     Text {
                         x: 39; y: view.code ? 140 : 61.3
-                        text: "Note: guests won't be able to join with a team code"
+                        text: qsTr("Note: guests won't be able to join with a team code")
                         font.family: theme.font; font.pixelSize: 14
                         lineHeight: 20; lineHeightMode: Text.FixedHeight
                         color: theme.text
@@ -210,12 +210,12 @@ Item {
                 }
             }
             Section {
-                key: "fun"; title: "Fun stuff"; hint: "Allow memes, GIFs, or stickers"
+                key: "fun"; title: qsTr("Fun stuff"); hint: qsTr("Allow memes, GIFs, or stickers")
                 Item {
                     width: parent.width; height: 337.3 - 64
-                    Text { x: 39; y: 5; text: "Giphy"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
-                    Check { x: 39; y: 30; label: "Enable Giphy for this team"; checked: view.user.giphyEnabled !== false; onToggled: s => view.change("userSettings", { giphyEnabled: s }) }
-                    Text { x: 69; y: 77; text: "Filter out inappropriate content using one of the settings below:"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    Text { x: 39; y: 5; text: qsTr("Giphy"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                    Check { x: 39; y: 30; label: qsTr("Enable Giphy for this team"); checked: view.user.giphyEnabled !== false; onToggled: s => view.change("userSettings", { giphyEnabled: s }) }
+                    Text { x: 69; y: 77; text: qsTr("Filter out inappropriate content using one of the settings below:"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
                     Rectangle {
                         id: rating
                         x: 69.7; y: 105.7; width: 296.1; height: 30; radius: 4
@@ -223,7 +223,7 @@ Item {
                         color: ratingHover.hovered && on ? theme.menuHover : "transparent"
                         Text {
                             x: 12; anchors.verticalCenter: parent.verticalCenter
-                            text: view.user.giphyRating === 0 ? "G (based on the GIPHY Content Rating)" : "PG (based on the GIPHY Content Rating)"
+                            text: view.user.giphyRating === 0 ? qsTr("G (based on the GIPHY Content Rating)") : qsTr("PG (based on the GIPHY Content Rating)")
                             font.family: theme.font; font.pixelSize: 14
                             color: theme.onFill(rating, rating.on ? theme.text : theme.disabled)
                         }
@@ -231,7 +231,7 @@ Item {
                         HoverHandler { id: ratingHover; enabled: rating.on; cursorShape: Qt.PointingHandCursor }
                         TapHandler { enabled: rating.on; onTapped: ratingMenu.open() }
                         Accessible.role: Accessible.ComboBox
-                        Accessible.name: "Filter out inappropriate content using one of the settings below:"
+                        Accessible.name: qsTr("Filter out inappropriate content using one of the settings below:")
                         Popup {
                             id: ratingMenu
                             y: rating.height + 2; width: rating.width; height: 74; padding: 4
@@ -239,7 +239,7 @@ Item {
                             Column {
                                 spacing: 2
                                 Repeater {
-                                    model: [[0, "G (based on the GIPHY Content Rating)"], [1, "PG (based on the GIPHY Content Rating)"]]
+                                    model: [[0, qsTr("G (based on the GIPHY Content Rating)")], [1, qsTr("PG (based on the GIPHY Content Rating)")]]
                                     Rectangle {
                                         id: ropt
                                         required property var modelData
@@ -255,16 +255,16 @@ Item {
                             }
                         }
                     }
-                    Text { x: 39; y: 149.3; text: "Stickers and memes"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
-                    Check { x: 39; y: 174.3; label: "Enable stickers and memes"; checked: view.user.stickersEnabled !== false; onToggled: s => view.change("userSettings", { stickersEnabled: s }) }
-                    Check { x: 39; y: 216.3; label: "Allow memes to be uploaded"; checked: view.user.customMemesEnabled !== false; onToggled: s => view.change("userSettings", { customMemesEnabled: s }) }
+                    Text { x: 39; y: 149.3; text: qsTr("Stickers and memes"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                    Check { x: 39; y: 174.3; label: qsTr("Enable stickers and memes"); checked: view.user.stickersEnabled !== false; onToggled: s => view.change("userSettings", { stickersEnabled: s }) }
+                    Check { x: 39; y: 216.3; label: qsTr("Allow memes to be uploaded"); checked: view.user.customMemesEnabled !== false; onToggled: s => view.change("userSettings", { customMemesEnabled: s }) }
                 }
             }
             Section {
-                key: "tags"; title: "Tags"; hint: "Automatically apply tags from other apps"
+                key: "tags"; title: qsTr("Tags"); hint: qsTr("Automatically apply tags from other apps")
                 Item {
                     width: parent.width; height: 131 - 64
-                    Text { x: 39; y: 0; text: "Apps"; font.family: theme.font; font.pixelSize: 12; color: theme.text }
+                    Text { x: 39; y: 0; text: qsTr("Apps"); font.family: theme.font; font.pixelSize: 12; color: theme.text }
                     Item {
                         id: shifts
                         x: 39; y: 26; width: 88.8; height: 26
@@ -275,12 +275,12 @@ Item {
                             border.color: shifts.on ? theme.checkedFill : theme.textSecondary; border.width: 1
                             Rectangle { x: shifts.on ? 22 : 4; anchors.verticalCenter: parent.verticalCenter; width: 12; height: 12; radius: 6; color: shifts.on ? theme.hc("white", "#000000") : theme.textSecondary }
                         }
-                        Text { x: 50; y: 3; text: "Shifts"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                        Text { x: 50; y: 3; text: qsTr("Shifts"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
                         HoverHandler { enabled: view.owner; cursorShape: Qt.PointingHandCursor }
                         TapHandler { enabled: view.owner && !!view.tags; onTapped: backend.channelAction("team-tag-settings", view.teamId, view.teamThread, JSON.stringify({ shifts: !shifts.on })) }
                         Accessible.role: Accessible.CheckBox
                         Accessible.checked: on
-                        Accessible.name: "Automatically apply tags from other apps. Shifts"
+                        Accessible.name: qsTr("Automatically apply tags from other apps. Shifts")
                     }
                 }
             }

@@ -88,7 +88,7 @@ Item {
                     width: parent.width
                     elide: Text.ElideRight
                     maximumLineCount: 1
-                    text: "About to leave meeting ..."
+                    text: qsTr("About to leave meeting ...")
                     font.family: theme.font; font.pixelSize: 32; font.weight: Font.Bold
                     color: theme.text
                 }
@@ -129,9 +129,9 @@ Item {
                         Accessible.name: eb.label
                         Accessible.onPressAction: eb.clicked()
                     }
-                    ExitButton { label: "Snooze"; onClicked: { root.shown = false; snoozeTimer.restart() } }
+                    ExitButton { label: qsTr("Snooze"); onClicked: { root.shown = false; snoozeTimer.restart() } }
                     Item { width: 8; height: 1 }
-                    ExitButton { label: "Leave now"; brandFill: true; onClicked: { root.shown = false; root.leave() } }
+                    ExitButton { label: qsTr("Leave now"); brandFill: true; onClicked: { root.shown = false; root.leave() } }
                     Item { width: 8; height: 1 }
                 }
             }

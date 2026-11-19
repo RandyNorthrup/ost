@@ -327,20 +327,20 @@ Window {
     }
     /// Turned off by "Turn off all video" (Teams then offers to turn it on).
     property bool nsiVideoOff: false
-    readonly property string networkHeading: networkStrength === "Bad" ? "Connection is weak"
-        : networkStrength === "Poor" ? "Connection is unstable" : "Connection is good"
+    readonly property string networkHeading: networkStrength === "Bad" ? qsTr("Connection is weak")
+        : networkStrength === "Poor" ? qsTr("Connection is unstable") : qsTr("Connection is good")
     readonly property string networkTip: {
         const p2p = !meeting, cam = cameraOn, inc = !incomingVideoOff
         if (networkStrength === "Bad") {
-            if (cam && inc) return p2p ? "One or both participants may have network problems. Try turning off your camera and incoming video to use less bandwidth." : "Try turning off your camera and incoming video to use less bandwidth."
-            if (cam) return p2p ? "One or both participants may have network problems. Try turning off your camera to use less bandwidth." : "Try turning off your camera to use less bandwidth."
-            if (inc) return p2p ? "One or both participants may have network problems. Try turning off incoming video to use less bandwidth." : "Try turning off incoming video to use less bandwidth."
-            return p2p ? "One or both participants may have network problems. This might impact the quality of the call." : "This may impact the quality of your call."
+            if (cam && inc) return p2p ? qsTr("One or both participants may have network problems. Try turning off your camera and incoming video to use less bandwidth.") : qsTr("Try turning off your camera and incoming video to use less bandwidth.")
+            if (cam) return p2p ? qsTr("One or both participants may have network problems. Try turning off your camera to use less bandwidth.") : qsTr("Try turning off your camera to use less bandwidth.")
+            if (inc) return p2p ? qsTr("One or both participants may have network problems. Try turning off incoming video to use less bandwidth.") : qsTr("Try turning off incoming video to use less bandwidth.")
+            return p2p ? qsTr("One or both participants may have network problems. This might impact the quality of the call.") : qsTr("This may impact the quality of your call.")
         }
         if (networkStrength === "Poor")
-            return wired ? "Check your cable connection or try turning off other apps."
-                : p2p ? "One or both participants may have network problems. This might impact the quality of the call." : "This may impact the quality of your call."
-        return "Turn on your camera and video anytime."
+            return wired ? qsTr("Check your cable connection or try turning off other apps.")
+                : p2p ? qsTr("One or both participants may have network problems. This might impact the quality of the call.") : qsTr("This may impact the quality of your call.")
+        return qsTr("Turn on your camera and video anytime.")
     }
     function showNetworkPopover(item) { networkPopoverClose.stop(); if (!networkPopover.opened) { networkPopover.anchorItem = item; networkPopover.open() } }
     function leaveNetworkPopover() { networkPopoverClose.restart() }
@@ -407,21 +407,21 @@ Window {
         if (!meeting) return []
         const out = []
         const manager = myRole === "organizer" || myRole === "presenter" || myRole === "coorganizer"
-        if (canMuteAll) out.push({ k: "muteAll", t: "Mute all", icon: "mic-off-20" })
+        if (canMuteAll) out.push({ k: "muteAll", t: qsTr("Mute all"), icon: "mic-off-20" })
         const attendees = others.some(p => p.active !== false && (p.role || "").toLowerCase() === "attendee")
         if (manager && attendees) {
             out.push(attendeeRestrictions & 1
-                ? { k: "allowMic", t: "Allow mic for attendees", icon: "mic-20" }
-                : { k: "restrictMic", t: "Disable mic for attendees", icon: "mic-prohibited-20" })
+                ? { k: "allowMic", t: qsTr("Allow mic for attendees"), icon: "mic-20" }
+                : { k: "restrictMic", t: qsTr("Disable mic for attendees"), icon: "mic-prohibited-20" })
             out.push(attendeeRestrictions & 2
-                ? { k: "allowCamera", t: "Allow camera for attendees", icon: "video-20" }
-                : { k: "restrictCamera", t: "Disable camera for attendees", icon: "video-prohibited-20" })
+                ? { k: "allowCamera", t: qsTr("Allow camera for attendees"), icon: "video-20" }
+                : { k: "restrictCamera", t: qsTr("Disable camera for attendees"), icon: "video-prohibited-20" })
         }
-        if (manager && hands.length > 0) out.push({ k: "lowerHands", t: "Lower all hands", icon: "hand-right-off-20" })
-        if (organizer) out.push({ k: "attendance", t: "Download attendance list", icon: "arrow-download-20" })
-        if (manager && spotlighted.length > 1) out.push({ k: "stopSpotlights", t: "Stop all spotlights", icon: "spotlight-20" })
-        if (organizer) out.push(locked ? { k: "unlock", t: "Unlock the meeting", icon: "lock-closed-20" }
-                                       : { k: "lock", t: "Lock the meeting", icon: "lock-closed-20" })
+        if (manager && hands.length > 0) out.push({ k: "lowerHands", t: qsTr("Lower all hands"), icon: "hand-right-off-20" })
+        if (organizer) out.push({ k: "attendance", t: qsTr("Download attendance list"), icon: "arrow-download-20" })
+        if (manager && spotlighted.length > 1) out.push({ k: "stopSpotlights", t: qsTr("Stop all spotlights"), icon: "spotlight-20" })
+        if (organizer) out.push(locked ? { k: "unlock", t: qsTr("Unlock the meeting"), icon: "lock-closed-20" }
+                                       : { k: "lock", t: qsTr("Lock the meeting"), icon: "lock-closed-20" })
         return out
     }
     /// Teams' Controls menu (organizers), read from the meeting's options
@@ -459,19 +459,19 @@ Window {
     function listToggle(current) { return current === "Everyone" ? "OrganizerOnly" : "Everyone" }
     readonly property var controlsItems: {
         const loaded = Object.keys(controlsOptions).length > 0
-        const lockTip = "This option is locked because everyone in this meeting already has presenter permissions."
+        const lockTip = qsTr("This option is locked because everyone in this meeting already has presenter permissions.")
         return [
-            { label: "Lock meeting", key: "lock", checked: locked, tip: "When the meeting is locked, nobody else can join the meeting." },
-            { label: "Enable lobby", key: "AutoAdmittedUsers", checked: loaded && controlValue("AutoAdmittedUsers") !== "Everyone", enabled: loaded,
-              tip: "When lobby is enabled, participants will wait in a lobby until admitted by an organizer." },
+            { label: qsTr("Lock meeting"), key: "lock", checked: locked, tip: qsTr("When the meeting is locked, nobody else can join the meeting.") },
+            { label: qsTr("Enable lobby"), key: "AutoAdmittedUsers", checked: loaded && controlValue("AutoAdmittedUsers") !== "Everyone", enabled: loaded,
+              tip: qsTr("When lobby is enabled, participants will wait in a lobby until admitted by an organizer.") },
             { separator: true },
-            { heading: "Allow all participants to:" },
-            { label: "Present", key: "PresenterOption", checked: loaded && controlValue("PresenterOption") === "Everyone", enabled: loaded },
-            { label: "Chat", key: "AllowMeetingChat", checked: loaded && controlValue("AllowMeetingChat") !== "Disabled", enabled: loaded },
-            { label: "Unmute themselves", key: "audio", checked: avActive(true), enabled: loaded && !controlsEveryonePresents, tip: controlsEveryonePresents ? lockTip : "" },
-            { label: "Turn on their cameras", key: "video", checked: avActive(false), enabled: loaded && !controlsEveryonePresents, tip: controlsEveryonePresents ? lockTip : "" },
+            { heading: qsTr("Allow all participants to:") },
+            { label: qsTr("Present"), key: "PresenterOption", checked: loaded && controlValue("PresenterOption") === "Everyone", enabled: loaded },
+            { label: qsTr("Chat"), key: "AllowMeetingChat", checked: loaded && controlValue("AllowMeetingChat") !== "Disabled", enabled: loaded },
+            { label: qsTr("Unmute themselves"), key: "audio", checked: avActive(true), enabled: loaded && !controlsEveryonePresents, tip: controlsEveryonePresents ? lockTip : "" },
+            { label: qsTr("Turn on their cameras"), key: "video", checked: avActive(false), enabled: loaded && !controlsEveryonePresents, tip: controlsEveryonePresents ? lockTip : "" },
             { separator: true },
-            { label: "View more options", key: "options" }
+            { label: qsTr("View more options"), key: "options" }
         ]
     }
     function pickControl(key) {
@@ -504,10 +504,10 @@ Window {
     signal toggleHand()
     readonly property var hands: roster.filter(p => !!p.hand).map(p => p.id)
     readonly property var people: meeting
-        ? [{ name: selfName || "You", id: "me", you: true, mutedNow: muted || !hasAudio, hand: handRaised,
+        ? [{ name: selfName || qsTr("You"), id: "me", you: true, mutedNow: muted || !hasAudio, hand: handRaised,
              role: (roster.find(p => p.id === selfId) || {}).role || "" }]
           .concat(others.map(p => ({ name: p.name, id: p.id, you: false, mutedNow: p.muted, role: p.role, hand: !!p.hand, guest: !!p.guest, suspected: !!p.suspected, spotlight: p.spotlight || "", signLine: signLine(p), signFirst: signMode && (iSign ? p.sign_role === "signLanguageInterpreter" : p.sign_role === "dhhSigner") })))
-        : [{ name: selfName || "You", id: "me", you: true, mutedNow: muted || !hasAudio },
+        : [{ name: selfName || qsTr("You"), id: "me", you: true, mutedNow: muted || !hasAudio },
            { name: peer, id: backend.callPeerId, you: false, mutedNow: false }]
     /// Hold: you put the call on hold, or the other person did.
     property bool held: false
@@ -535,7 +535,7 @@ Window {
     /// Optimize for room: the gallery shows in a shared display window.
     property bool roomMode: false
     /// Your tile entry, as the layouts use it.
-    readonly property var selfEntry: ({ id: selfId, name: selfName || "You", self: true })
+    readonly property var selfEntry: ({ id: selfId, name: selfName || qsTr("You"), self: true })
     /// How wide each person's tile is drawn ({mri: px}): the size of video
     /// to ask for (Teams asks to fit its tiles).
     readonly property var videoWidths: {
@@ -579,8 +579,8 @@ Window {
     // chose you "Paired to you".
     function signLine(p) {
         if (!signMode) return ""
-        if (p.sign_role === "signLanguageInterpreter") return myInterpreter(p) ? "Your Sign Language Interpreter" : "Sign Language Interpreter"
-        if (pairedSigner(p)) return "Paired to you"
+        if (p.sign_role === "signLanguageInterpreter") return myInterpreter(p) ? qsTr("Your Sign Language Interpreter") : qsTr("Sign Language Interpreter")
+        if (pairedSigner(p)) return qsTr("Paired to you")
         return ""
     }
     // Role 3 (paired): a partner with video on; then only partners count.
@@ -613,10 +613,10 @@ Window {
     // unknown "Voice interpretation in progress".
     function signingTooltip(tethered) {
         const ids = (tethered || []).map(q => q.id)
-        if (!ids.length || ids.indexOf(selfId) >= 0) return "Voice interpretation in progress"
+        if (!ids.length || ids.indexOf(selfId) >= 0) return qsTr("Voice interpretation in progress")
         const pick = ids.length === 1 ? tethered[0] : (tethered.find(q => q.id === speakerId) || null)
         const name = pick ? (pick.name || "").trim() : ""
-        return name ? name + " is voice interpreting" : "Voice interpretation in progress"
+        return name ? qsTr("%1 is voice interpreting").arg(name) : qsTr("Voice interpretation in progress")
     }
     // What we publish, kept in step with the settings while in the meeting.
     readonly property string signKind: !signMode ? "" : iInterpret ? "signLanguageInterpreter" : "dhhSigner"
@@ -749,27 +749,27 @@ Window {
     function breakoutDone(action, error) {
         breakoutBusy = false
         const ok = {
-            create: ["Breakout rooms have been created.", "call-rooms"], add: ["Room was added", ""],
-            rename: ["Room was renamed", ""], delete: ["Room was deleted", ""], delete_all: ["Rooms were deleted", ""],
-            import_csv: ["Breakout rooms have been created.", "call-rooms"]
+            create: [qsTr("Breakout rooms have been created."), "call-rooms"], add: [qsTr("Room was added"), ""],
+            rename: [qsTr("Room was renamed"), ""], delete: [qsTr("Room was deleted"), ""], delete_all: [qsTr("Rooms were deleted"), ""],
+            import_csv: [qsTr("Breakout rooms have been created."), "call-rooms"]
         }
         const failed = {
-            create: "We ran into a problem creating rooms. Try again.", add: "Room failed to be added",
-            rename: "Room failed to be renamed", delete: "Room failed to be deleted", delete_all: "Couldn't delete rooms.",
-            assign: "We had some trouble assigning participants.", announce: "Couldn't send your announcement.",
-            settings: "Your settings failed to save", import_csv: "We ran into a problem creating rooms. Try again."
+            create: qsTr("We ran into a problem creating rooms. Try again."), add: qsTr("Room failed to be added"),
+            rename: qsTr("Room failed to be renamed"), delete: qsTr("Room failed to be deleted"), delete_all: qsTr("Couldn't delete rooms."),
+            assign: qsTr("We had some trouble assigning participants."), announce: qsTr("Couldn't send your announcement."),
+            settings: qsTr("Your settings failed to save"), import_csv: qsTr("We ran into a problem creating rooms. Try again.")
         }
         // A CSV import that skipped entries says why (Teams' import
         // warnings).
         const warnings = action === "import_csv" && !error
             ? ((backend.callBreakoutRoomsJson ? JSON.parse(backend.callBreakoutRoomsJson) : {}).warnings || []) : []
         if (error && failed[action]) showBreakoutAlert(action === "import_csv" && error.indexOf("couldn't import") >= 0 ? error : failed[action], "alert-warning-16-filled")
-        else if (warnings.length > 1) showBreakoutAlert("Your CSV was imported, but some entries were skipped because of multiple issues.", "alert-warning-16-filled")
+        else if (warnings.length > 1) showBreakoutAlert(qsTr("Your CSV was imported, but some entries were skipped because of multiple issues."), "alert-warning-16-filled")
         else if (warnings.length === 1) showBreakoutAlert({
-                MALFORMED_ENTRIES: "Some entries in CSV were skipped because of the following issues",
-                USER_ASSIGNED_MULTIPLE_ROOMS: "Some participants were listed in multiple rooms. Each participant can be assigned to only one room. We kept the assignment from the last occurrence in the file. Remove duplicates, then import again.",
-                LIMIT_EXCEEDED: "Breakout room limits were exceeded. Teams supports up to 100 rooms and 1000 participants. Reduce the number of rooms or participants in your CSV, then import again.",
-                UNMATCHED_PARTICIPANTS: "Some entries in CSV were skipped because of the following issues"
+                MALFORMED_ENTRIES: qsTr("Some entries in CSV were skipped because of the following issues"),
+                USER_ASSIGNED_MULTIPLE_ROOMS: qsTr("Some participants were listed in multiple rooms. Each participant can be assigned to only one room. We kept the assignment from the last occurrence in the file. Remove duplicates, then import again."),
+                LIMIT_EXCEEDED: qsTr("Breakout room limits were exceeded. Teams supports up to %1 rooms and %2 participants. Reduce the number of rooms or participants in your CSV, then import again.").arg(100).arg(1000),
+                UNMATCHED_PARTICIPANTS: qsTr("Some entries in CSV were skipped because of the following issues")
             }[warnings[0]] || "", "alert-warning-16-filled")
         else if (!error && ok[action]) showBreakoutAlert(ok[action][0], ok[action][1])
     }
@@ -781,8 +781,8 @@ Window {
     readonly property bool lobbyTabShown: lobbyChatAvailable && backend.callLobbyThread !== ""
     property string chatTab: "everyone"
     readonly property var chatTabs: [
-        { key: "everyone", label: "Everyone", tip: "Chat for everyone in the meeting" },
-        { key: "lobby", label: "Lobby", tip: "Chat for organizers messaging people in the lobby", badge: lobby.length + " waiting", count: lobby.length }
+        { key: "everyone", label: qsTr("Everyone"), tip: qsTr("Chat for everyone in the meeting") },
+        { key: "lobby", label: qsTr("Lobby"), tip: qsTr("Chat for organizers messaging people in the lobby"), badge: qsTr("%n waiting", "", lobby.length), count: lobby.length }
     ]
     function openLobbyChat() {
         side = "chat"; openChat(); chatTab = "lobby"
@@ -811,7 +811,7 @@ Window {
             if (m.kind !== "event" || !m.event || m.event.kind !== "LobbyJoined" || (m.event.targets || []).length !== 1) return m
             const shown = m.text.replace(/ is in the lobby\.$/, "")
             const named = shown + " (" + real + ")"
-            return Object.assign({}, m, { text: named + " is in the lobby.", event: Object.assign({}, m.event, { unverified: (m.event.unverified || []).map(n => n === shown ? named : n) }) })
+            return Object.assign({}, m, { text: qsTr("%1 is in the lobby.").arg(named), event: Object.assign({}, m.event, { unverified: (m.event.unverified || []).map(n => n === shown ? named : n) }) })
         })
     }
     signal openChat()
@@ -934,6 +934,7 @@ Window {
     /// The Manage screen panel's filter: "All", "Live", "People" or
     /// "Content".
     property string manageFilter: "All"
+    function manageFilterLabel(k) { return ({ All: qsTr("All"), Live: qsTr("Live"), People: qsTr("People"), Content: qsTr("Content") })[k] || k }
     /// "On with preview" (Manage what attendees see: AdvancedHostMode)
     /// and you manage the screen: Teams' production view (measured in
     /// Teams desktop 2026-11-19): the Preview and Live stages side by side,
@@ -1009,8 +1010,8 @@ Window {
     /// More ▸ Facilitator ▸: Turn on / Turn off Facilitator, Enable /
     /// Disable voice (Teams' FacilitatorButton menu, measured 2026-11-16).
     readonly property var facilitatorItems: [
-        { name: "FacilitatorToggle", label: aiFacilitator ? "Turn off Facilitator" : "Turn on Facilitator", icon: "ai-facilitator", enabled: organizer },
-        { name: "FacilitatorVoice", label: backend.callAiFacilitatorVoice ? "Disable voice" : "Enable voice", icon: "sound-wave-circle-20", enabled: aiFacilitator && organizer }
+        { name: "FacilitatorToggle", label: aiFacilitator ? qsTr("Turn off Facilitator") : qsTr("Turn on Facilitator"), icon: "ai-facilitator", enabled: organizer },
+        { name: "FacilitatorVoice", label: backend.callAiFacilitatorVoice ? qsTr("Disable voice") : qsTr("Enable voice"), icon: "sound-wave-circle-20", enabled: aiFacilitator && organizer }
     ]
     function facilitatorAction(name) {
         if (name === "FacilitatorToggle") {
@@ -1020,17 +1021,17 @@ Window {
             if (!transcribing) { facilitatorAsk = true; copilotAsk.visible = true }
         } else if (name === "FacilitatorVoice") backend.meetingAction(backend.callAiFacilitatorVoice ? "facilitatorVoiceOff" : "facilitatorVoiceOn")
     }
-    TextMetrics { id: resumeMetrics; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; text: "Resume" }
+    TextMetrics { id: resumeMetrics; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; text: qsTr("Resume") }
     // Each control's slot (button 48 + 4 either side; split buttons 74).
-    TextMetrics { id: joinRoomMetrics; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; text: "Join room" }
-    TextMetrics { id: returnMetrics; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; text: "Return" }
+    TextMetrics { id: joinRoomMetrics; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; text: qsTr("Join room") }
+    TextMetrics { id: returnMetrics; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; text: qsTr("Return") }
     TextMetrics { id: startEventMetrics; font.family: theme.font; font.pixelSize: 11; text: win.startLabel }
     TextMetrics { id: endEventMetrics; font.family: theme.font; font.pixelSize: 11; text: win.endLabel }
     /// The green room's buttons (Teams' StagingRoomStartMeetingButton,
     /// "Start meeting" unless enableTownhallDelayMessage; End event for
     /// town halls and webinars, else End meeting).
-    readonly property string startLabel: townhallDelayMessage && !!liveEvent.streaming ? "Start event" : "Start meeting"
-    readonly property string endLabel: isEvent ? "End event" : "End meeting"
+    readonly property string startLabel: townhallDelayMessage && !!liveEvent.streaming ? qsTr("Start event") : qsTr("Start meeting")
+    readonly property string endLabel: isEvent ? qsTr("End event") : qsTr("End meeting")
     // The compact bar: 32 px buttons in 36 px slots, split buttons 54.
     readonly property real ubarButton: compactBar ? 36 : 56
     readonly property real ubarDivider: compactBar ? 9 : 17
@@ -1159,21 +1160,21 @@ Window {
     // uses the control's title, else its label).
     function overflowItem(name) {
         const m = {
-            ChatButton: { label: "Chat", icon: "call-chat", checked: side === "chat" },
-            RosterButton: { label: side === "people" ? "Hide people" : "People", icon: "call-people", checked: side === "people" },
-            RaiseHandsButton: { label: handRaised ? "Lower hand" : "Raise hand", icon: "call-raise" },
-            ReactionButton: { label: "Send a reaction", icon: "call-react" },
-            ViewModeButton: { label: "View", icon: "call-view", chevron: true },
-            OrganizerControlButton: { label: "Controls", icon: "call-controls", chevron: true },
-            MeetingDetailsButton: { label: side === "notes" ? "Close notes" : "Open notes", icon: "call-notes", checked: side === "notes" },
-            StartBreakoutRoomButton: { label: "Breakout rooms", icon: "call-rooms" },
-            MeetingAppsAddButton: { label: "Get more apps and agents", icon: "call-apps" },
-            PopoutContentButton: { label: "Pop out", icon: "call-popout" },
-            CallTransferButtonV2: { label: "Transfer", icon: "call-transfer" },
-            CallConsultativeTransferButtonV2: { label: "Consult then transfer", icon: "consult" },
-            DialpadButton: { label: "Dial pad", icon: "dialpad" },
-            HoldButton: { label: "Hold", icon: "pause" },
-            ResumeButton: { label: "Resume", icon: "play-20" }
+            ChatButton: { label: qsTr("Chat"), icon: "call-chat", checked: side === "chat" },
+            RosterButton: { label: side === "people" ? qsTr("Hide people") : qsTr("People"), icon: "call-people", checked: side === "people" },
+            RaiseHandsButton: { label: handRaised ? qsTr("Lower hand") : qsTr("Raise hand"), icon: "call-raise" },
+            ReactionButton: { label: qsTr("Send a reaction"), icon: "call-react" },
+            ViewModeButton: { label: qsTr("View"), icon: "call-view", chevron: true },
+            OrganizerControlButton: { label: qsTr("Controls"), icon: "call-controls", chevron: true },
+            MeetingDetailsButton: { label: side === "notes" ? qsTr("Close notes") : qsTr("Open notes"), icon: "call-notes", checked: side === "notes" },
+            StartBreakoutRoomButton: { label: qsTr("Breakout rooms"), icon: "call-rooms" },
+            MeetingAppsAddButton: { label: qsTr("Get more apps and agents"), icon: "call-apps" },
+            PopoutContentButton: { label: qsTr("Pop out"), icon: "call-popout" },
+            CallTransferButtonV2: { label: qsTr("Transfer"), icon: "call-transfer" },
+            CallConsultativeTransferButtonV2: { label: qsTr("Consult then transfer"), icon: "consult" },
+            DialpadButton: { label: qsTr("Dial pad"), icon: "dialpad" },
+            HoldButton: { label: qsTr("Hold"), icon: "pause" },
+            ResumeButton: { label: qsTr("Resume"), icon: "play-20" }
         }[name]
         if (!m) return null
         m.name = name
@@ -1185,48 +1186,48 @@ Window {
     readonly property bool transcribing: recordingState === "Transcribing" || recordingState === "RecordingAndTranscribing"
     readonly property bool recording: recordingState === "Recording" || recordingState === "RecordingAndTranscribing"
     function moreLabel(n) {
-        if (n === "MeetingInfoButton") return { label: "Meeting info", icon: "info-20" }
+        if (n === "MeetingInfoButton") return { label: qsTr("Meeting info"), icon: "info-20" }
         // Teams' PstnButton ("Call me", the Call glyph).
-        if (n === "PstnButton") return { label: "Call me", icon: "call-20", enabled: live }
+        if (n === "PstnButton") return { label: qsTr("Call me"), icon: "call-20", enabled: live }
         // Teams' FacilitatorButton: its glyph in brand while Facilitator is on.
-        if (n === "FacilitatorButton") return { label: "Facilitator", icon: "ai-facilitator", iconColor: aiFacilitator ? theme.brand : undefined }
-        if (n === "CameraEffectsButton") return { label: "Video effects and settings", icon: "video-background-effect-20" }
-        if (n === "AudioSettingsButton") return { label: "Audio settings", icon: "speaker-settings-20" }
+        if (n === "FacilitatorButton") return { label: qsTr("Facilitator"), icon: "ai-facilitator", iconColor: aiFacilitator ? theme.brand : undefined }
+        if (n === "CameraEffectsButton") return { label: qsTr("Video effects and settings"), icon: "video-background-effect-20" }
+        if (n === "AudioSettingsButton") return { label: qsTr("Audio settings"), icon: "speaker-settings-20" }
         // A town hall attendee's More (Teams' DeviceSettingsButton).
-        if (n === "DeviceSettingsButton") return { label: "Device settings", icon: "speaker-settings-20" }
-        if (n === "RecordingMenuControl") return { label: "Record and transcribe", icon: "record-20" }
+        if (n === "DeviceSettingsButton") return { label: qsTr("Device settings"), icon: "speaker-settings-20" }
+        if (n === "RecordingMenuControl") return { label: qsTr("Record and transcribe"), icon: "record-20" }
         if (n === "RecordingButton") return recording
-            ? { label: "Stop recording", icon: "record-stop-20", tip: "Stop recording and transcription" }
-            : { label: "Start recording", icon: "record-20", tip: transcribing ? "Start recording only" : "Start recording and transcription" }
+            ? { label: qsTr("Stop recording"), icon: "record-stop-20", tip: qsTr("Stop recording and transcription") }
+            : { label: qsTr("Start recording"), icon: "record-20", tip: transcribing ? qsTr("Start recording only") : qsTr("Start recording and transcription") }
         if (n === "TranscriptButton") return transcribing
-            ? { label: "Stop transcription", icon: "call-transcript-stop-20" }
-            : { label: "Start transcription", icon: "call-transcript-20" }
-        if (n === "LanguageSpeechMenuControl") return { label: "Language and speech", icon: "local-language-20" }
-        if (n === "SettingsMenuControl") return { label: "Settings", icon: "settings-20" }
-        if (n === "AccessibilitySettingsButton") return { label: "Accessibility settings", icon: "accessibility-20" }
+            ? { label: qsTr("Stop transcription"), icon: "call-transcript-stop-20" }
+            : { label: qsTr("Start transcription"), icon: "call-transcript-20" }
+        if (n === "LanguageSpeechMenuControl") return { label: qsTr("Language and speech"), icon: "local-language-20" }
+        if (n === "SettingsMenuControl") return { label: qsTr("Settings"), icon: "settings-20" }
+        if (n === "AccessibilitySettingsButton") return { label: qsTr("Accessibility settings"), icon: "accessibility-20" }
         // Teams toggles the pane (toggle_call_health_on/off).
-        if (n === "CallHealth") return { label: side === "callHealth" ? "Hide call health" : "Call health", icon: "pulse-20" }
+        if (n === "CallHealth") return { label: side === "callHealth" ? qsTr("Hide call health") : qsTr("Call health"), icon: "pulse-20" }
         if (n === "ChatBubblesButton") return chatBubblesSuppressed
-            ? { label: "Show chat bubbles", icon: "chat-bubbles-20" }
-            : { label: "Don't show chat bubbles", icon: "chat-bubbles-off-20" }
-        if (n === "MeetingHelpButton") return { label: "Help", icon: "question-circle-20" }
-        if (n === "ReportMeetingButton") return { label: "Report a concern", icon: "shield-error-20" }
-        if (n === "CallParkButton") return { label: "Park Call", icon: "call-park-20" }
+            ? { label: qsTr("Show chat bubbles"), icon: "chat-bubbles-20" }
+            : { label: qsTr("Don't show chat bubbles"), icon: "chat-bubbles-off-20" }
+        if (n === "MeetingHelpButton") return { label: qsTr("Help"), icon: "question-circle-20" }
+        if (n === "ReportMeetingButton") return { label: qsTr("Report a concern"), icon: "shield-error-20" }
+        if (n === "CallParkButton") return { label: qsTr("Park Call"), icon: "call-park-20" }
         if (n === "MeetingFacilitatorTimerButton") return timerCanView
-            ? { label: "Timer", icon: "timer-20", endCheck: timerVisible } : null
+            ? { label: qsTr("Timer"), icon: "timer-20", endCheck: timerVisible } : null
         if (n === "MuteNotificationsButton") return notificationsMuted
-            ? { label: "Allow notifications", icon: "alert-20" }
-            : { label: "Mute notifications", icon: "alert-off-20" }
+            ? { label: qsTr("Allow notifications"), icon: "alert-20" }
+            : { label: qsTr("Mute notifications"), icon: "alert-off-20" }
         if (n === "ClosedCaptionsButton") return {
-            label: captionsOn ? "Hide live captions" : "Show live captions",
+            label: captionsOn ? qsTr("Hide live captions") : qsTr("Show live captions"),
             icon: "closed-caption-20", keys: "Alt+Shift+C", endCheck: captionsOn }
         // Once on, RTT stays on for the call (Teams greys it, checked).
         if (n === "RealTimeTextButton") return {
-            label: "Turn on RTT for this call", icon: "real-time-text-20",
+            label: qsTr("Turn on RTT for this call"), icon: "real-time-text-20",
             endCheck: rttOn, enabled: !rttOn }
         // Once a transcript has run in the meeting: show or hide its pane.
         if (n === "TranscriptPanelButton") return transcriptStarted
-            ? { label: side === "transcript" ? "Hide transcript" : "Show transcript",
+            ? { label: side === "transcript" ? qsTr("Hide transcript") : qsTr("Show transcript"),
                 icon: "transcript-panel-20", endCheck: side === "transcript" }
             : null
         return null
@@ -1295,9 +1296,9 @@ Window {
     ConfirmDialog {
         id: rttAsk
         stacked: true
-        title: "RTT"
-        body: "RTT (real-time text) will be turned on for everyone in the call."
-        confirmText: "Turn on"
+        title: qsTr("RTT")
+        body: qsTr("RTT (real-time text) will be turned on for everyone in the call.")
+        confirmText: qsTr("Turn on")
         onConfirmed: win.startRtt()
     }
     function rttAskForTest() { return rttAsk }
@@ -1327,7 +1328,7 @@ Window {
     readonly property var spokenLanguages: recordStart.languages.map(l => ({ code: l[0], name: l[1] }))
     function languageName(code) {
         const l = recordStart.languages.find(x => x[0] === code)
-        return l ? l[1] : "English (US)"
+        return l ? l[1] : qsTr("English (US)")
     }
     function openCaptionSettings(anchor) {
         if (captionsWindow.overflow) {
@@ -1447,9 +1448,9 @@ Window {
         Text {
             id: askTitle
             x: win.facilitatorAsk ? 37 : 40.7; y: win.facilitatorAsk ? 13 : 12.7; height: 20; verticalAlignment: Text.AlignVCenter
-            text: win.facilitatorAsk ? "Start transcription to use Facilitator"
-                : win.copilotTurnOnAsk ? (win.callingScenario ? "Turn on Copilot for everyone in this call?" : "Turn on Copilot for everyone?")
-                : "Start transcription to use Copilot"
+            text: win.facilitatorAsk ? qsTr("Start transcription to use %1").arg("Facilitator")
+                : win.copilotTurnOnAsk ? (win.callingScenario ? qsTr("Turn on Copilot for everyone in this call?") : qsTr("Turn on Copilot for everyone?"))
+                : qsTr("Start transcription to use Copilot")
             font.family: theme.font; font.pixelSize: 12; color: theme.text
         }
         FluentIcon {
@@ -1457,16 +1458,16 @@ Window {
             HoverHandler { id: closeH; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: copilotAsk.visible = false }
             Accessible.role: Accessible.Button
-            Accessible.name: "Close"
+            Accessible.name: qsTr("Close")
         }
         Text {
             id: askText
             x: win.facilitatorAsk ? 13 : 12.7; y: win.facilitatorAsk ? 41 : 40.7; width: 296.7
-            text: win.facilitatorAsk ? "Transcription is required to get help from Facilitator in this meeting."
-                : win.copilotTurnOnAsk ? (win.callingScenario ? "Copilot uses the audio, chat, and other content to answer questions. Start transcription to get an AI-generated recap."
-                                                              : "Copilot uses the audio, chat, and other content to answer questions during the meeting.")
-                : win.callingScenario ? "Transcription is required to get help from Copilot in the call."
-                : "Transcription is required to get help from Copilot in the meeting."
+            text: win.facilitatorAsk ? qsTr("Transcription is required to get help from %1 in this meeting.").arg("Facilitator")
+                : win.copilotTurnOnAsk ? (win.callingScenario ? qsTr("Copilot uses the audio, chat, and other content to answer questions. Start transcription to get an AI-generated recap.")
+                                                              : qsTr("Copilot uses the audio, chat, and other content to answer questions during the meeting."))
+                : win.callingScenario ? qsTr("Transcription is required to get help from Copilot in the call.")
+                : qsTr("Transcription is required to get help from Copilot in the meeting.")
             wrapMode: Text.Wrap
             font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
             color: theme.textSecondary
@@ -1477,7 +1478,7 @@ Window {
         // alone; in a meeting: Cancel.
         SettingsParts.Button {
             x: 12.7; y: copilotAsk.buttonsY; width: 143.3
-            label: win.facilitatorAsk ? "Dismiss" : copilotAsk.callChoice ? "Just Copilot" : "Cancel"
+            label: win.facilitatorAsk ? qsTr("Dismiss") : copilotAsk.callChoice ? qsTr("Just Copilot") : qsTr("Cancel")
             onClicked: {
                 copilotAsk.visible = false
                 if (!copilotAsk.callChoice) return
@@ -1487,7 +1488,7 @@ Window {
         }
         SettingsParts.Button {
             x: 164; y: copilotAsk.buttonsY; width: 143.3; primary: true
-            label: copilotAsk.callChoice ? "Transcribe" : win.copilotTurnOnAsk && !win.facilitatorAsk ? "Turn on" : "Start"
+            label: copilotAsk.callChoice ? qsTr("Transcribe") : win.copilotTurnOnAsk && !win.facilitatorAsk ? qsTr("Turn on") : qsTr("Start")
             onClicked: {
                 copilotAsk.visible = false
                 if (!win.facilitatorAsk) win.copilotAfterTranscript = true
@@ -1519,11 +1520,11 @@ Window {
         border.width: theme.highContrast ? 1 : 0.67
         border.color: theme.highContrast ? "#FFFFFF" : theme.pick("#F0F0F0", "#3D3D3D", "#FFFFFF")
         Accessible.role: Accessible.AlertMessage
-        Accessible.name: "Copilot is available in this meeting"
+        Accessible.name: qsTr("Copilot is available in this meeting")
         FluentIcon { x: 12.67; y: 12.67; size: 20; name: "sparkle-20"; color: theme.text }
         Text {
             x: 40.67; y: 12.67; height: 20; verticalAlignment: Text.AlignVCenter
-            text: "Copilot is available in this meeting"
+            text: qsTr("Copilot is available in this meeting")
             font.family: theme.font; font.pixelSize: 12; color: theme.text
         }
         FluentIcon {
@@ -1531,7 +1532,7 @@ Window {
             HoverHandler { id: noticeClose; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: copilotOnNotice.visible = false }
             Accessible.role: Accessible.Button
-            Accessible.name: "Close"
+            Accessible.name: qsTr("Close")
         }
         Text {
             id: noticeText
@@ -1541,9 +1542,9 @@ Window {
             // turned on" (on unless the organizer turned it off) Teams names
             // the recap too.
             text: (win.controlValue("IsRecapEnabled") !== false
-                   ? "Copilot uses your data to generate responses during the meeting and an Intelligent recap after the meeting. Interactions and summaries with Copilot might be retained due to the host organization’s policy."
-                   : "Copilot uses your data to generate responses during the meeting. Interactions with Copilot might be retained due to the host organization's policy.")
-                  + (win.privacyUrl ? " <a href=\"" + win.privacyUrl + "\">Privacy policy</a>" : "")
+                   ? qsTr("Copilot uses your data to generate responses during the meeting and an Intelligent recap after the meeting. Interactions and summaries with Copilot might be retained due to the host organization’s policy.")
+                   : qsTr("Copilot uses your data to generate responses during the meeting. Interactions with Copilot might be retained due to the host organization's policy."))
+                  + (win.privacyUrl ? " <a href=\"" + win.privacyUrl + "\">" + qsTr("Privacy policy") + "</a>" : "")
             linkColor: theme.link
             onLinkActivated: link => Qt.openUrlExternally(link)
             wrapMode: Text.Wrap
@@ -1574,12 +1575,12 @@ Window {
     }
     ConfirmDialog {
         id: stopTranscriptAsk
-        title: "Stop transcription?"; body: ""; confirmText: "Stop"
+        title: qsTr("Stop transcription?"); body: ""; confirmText: qsTr("Stop")
         onConfirmed: win.recorderCommand("stopTranscription", "", false)
     }
     ConfirmDialog {
         id: stopRecordingAsk
-        title: "Stop recording and transcription?"; body: ""; confirmText: "Stop"
+        title: qsTr("Stop recording and transcription?"); body: ""; confirmText: qsTr("Stop")
         onConfirmed: win.recorderCommand("stopRecording", "", false)
     }
     function recordMenuForTest() {
@@ -1621,7 +1622,7 @@ Window {
         else if (name === "MuteNotificationsButton") {
             setNotificationsMuted(!notificationsMuted)
             // Teams announces it to screen readers.
-            contentItem.Accessible.announce(notificationsMuted ? "Notifications allowed" : "Notifications muted")
+            contentItem.Accessible.announce(notificationsMuted ? qsTr("Notifications allowed") : qsTr("Notifications muted"))
         }
         else if (name === "TranscriptPanelButton") toggleTranscript()
         else if (name === "RecordingButton") {
@@ -1667,9 +1668,9 @@ Window {
             }
             HoverHandler { id: encHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: encryptionCard.visible ? encryptionCard.close() : encryptionCard.open() }
-            IndicatorTip { target: encryptionIndicator; text: "Encryption status"; shown: encHover.hovered && !encryptionCard.visible }
+            IndicatorTip { target: encryptionIndicator; text: qsTr("Encryption status"); shown: encHover.hovered && !encryptionCard.visible }
             Accessible.role: Accessible.Button
-            Accessible.name: "Encryption status"
+            Accessible.name: qsTr("Encryption status")
             Accessible.onPressAction: encryptionCard.open()
         }
         // The AI indicator (measured in Teams, 2026-11-08): a 37.33 x 32
@@ -1707,8 +1708,8 @@ Window {
             x: win.compactBar ? (recordingIndicator.visible ? 52 : 30) : recordingIndicator.visible ? 68 : 38
             y: win.compactBar ? 8.7 : 14; width: win.compactBar ? 24.9 : 37.33; height: win.compactBar ? 22 : 32
             readonly property bool active: win.aiOn && win.aiAvailable
-            readonly property string tip: !win.aiAvailable ? "AI isn't available in this meeting"
-                : active ? "AI is on in the meeting" : "AI is turned off and doesn't have access to the meeting"
+            readonly property string tip: !win.aiAvailable ? qsTr("AI isn't available in this meeting")
+                : active ? qsTr("AI is on in the meeting") : qsTr("AI is turned off and doesn't have access to the meeting")
             Rectangle {
                 id: hcFill1
                 x: win.compactBar ? 2.7 : 4.67; y: win.compactBar ? 4 : 6
@@ -1751,12 +1752,12 @@ Window {
                  : phase === "active" ? "#D13438" : !attendeeView ? "#FDE300" : theme.pick("#EBEBEB", "#333333", "#000000")
             border.width: theme.highContrast ? 1 : 0; border.color: theme.text
             readonly property color ink: theme.highContrast ? theme.text : phase === "active" ? "#FFFFFF" : !attendeeView ? "#242424" : theme.pick("#616161", "#D6D6D6", "#FFFFFF")
-            readonly property string label: phase === "active" ? "Live" : phase === "ended" ? "Ended" : attendeeView ? "Waiting" : "Not started"
+            readonly property string label: phase === "active" ? qsTr("Live") : phase === "ended" ? qsTr("Ended") : attendeeView ? qsTr("Waiting") : qsTr("Not started")
             readonly property string tip: attendeeView
-                ? (phase === "active" ? "Live state." : phase === "ended" ? "Ended state." : "Pre-live state.")
-                : phase === "active" ? (win.attendeeCount === 1 ? "1 attendee watching at a delay" : win.attendeeCount + " attendees watching at a delay")
-                : phase === "ended" ? (win.attendeeCount === 1 ? "1 attendee remains" : win.attendeeCount + " attendees remain")
-                : (win.attendeeCount === 1 ? "1 person has joined" : win.attendeeCount + " people have joined")
+                ? (phase === "active" ? qsTr("Live state.") : phase === "ended" ? qsTr("Ended state.") : qsTr("Pre-live state."))
+                : phase === "active" ? (win.attendeeCount === 1 ? qsTr("1 attendee watching at a delay") : qsTr("%1 attendees watching at a delay").arg(win.attendeeCount))
+                : phase === "ended" ? qsTr("%n attendees remain", "", win.attendeeCount)
+                : (win.attendeeCount === 1 ? qsTr("1 person has joined") : qsTr("%1 people have joined").arg(win.attendeeCount))
             Row {
                 id: liveRow
                 x: 8; anchors.verticalCenter: parent.verticalCenter; spacing: 0
@@ -1863,13 +1864,13 @@ Window {
                 // In a room joined over the held main meeting: Teams' "Leave
                 // room" with its exit arrow, and Leave meeting in its menu.
                 icon: win.heldMeeting ? "arrow-exit-20-filled" : "call-leave-filled"
-                label: win.heldMeeting ? "Leave room" : "Leave"; strong: true
+                label: win.heldMeeting ? qsTr("Leave room") : qsTr("Leave"); strong: true
                 iconColor: win.newControls ? theme.nmcLeave : theme.hc("#B10E1C", "#FFFFFF")
                 danger: true
-                tip: win.heldMeeting ? "Leave room" : "Leave"; shortcut: "Ctrl+Shift+H"
+                tip: win.heldMeeting ? qsTr("Leave room") : qsTr("Leave"); shortcut: "Ctrl+Shift+H"
                 // Teams splits Leave only when its menu has more than Leave.
                 split: win.meeting && win.leaveItems.length > 1 && !win.streaming
-                chevronLabel: "More options"
+                chevronLabel: qsTr("More options")
                 chevronChecked: leaveMenu.visible
                 onClicked: win.heldMeeting ? win.leaveRoom(true) : win.leaveAsked()
                 onChevronClicked: leaveMenu.open()
@@ -1893,7 +1894,7 @@ Window {
                 spacing: 0
                 Text {
                     width: 240; height: 20; verticalAlignment: Text.AlignVCenter
-                    text: "Are you sure you want to leave?"
+                    text: qsTr("Are you sure you want to leave?")
                     font.family: theme.font; font.pixelSize: 14
                     color: theme.text
                 }
@@ -1903,22 +1904,22 @@ Window {
                     width: 240; height: 31.3; radius: 4
                     color: stayHover.hovered ? theme.menuHover : theme.surface
                     border.color: theme.stroke; border.width: 0.67
-                    Text { anchors.centerIn: parent; text: "Stay"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.text) }
+                    Text { anchors.centerIn: parent; text: qsTr("Stay"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.text) }
                     HoverHandler { id: stayHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: leaveConfirm.close() }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Stay"
+                    Accessible.name: qsTr("Stay")
                 }
                 Item { width: 1; height: 8 }
                 Rectangle {
                     id: hcFill3
                     width: 240; height: 31.3; radius: 4
                     color: goHover.hovered ? theme.hc("#A80C1A", "#1AEBFF") : theme.hc("#C50F1F", "#000000")
-                    Text { anchors.centerIn: parent; text: "Leave"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, "white") }
+                    Text { anchors.centerIn: parent; text: qsTr("Leave"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, "white") }
                     HoverHandler { id: goHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: { leaveConfirm.close(); win.leave() } }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Leave"
+                    Accessible.name: qsTr("Leave")
                 }
             }
         }
@@ -1977,10 +1978,10 @@ Window {
         }
         // What changed, as Teams announces it to everyone.
         const left = timerStrip.spoken(timerData.adhoc.remainingDuration || 0)
-        if (before === "Paused" && st === "InProgress") contentItem.Accessible.announce("Timer resumed with " + left + " remaining.")
-        else if (before === "InProgress" && st === "Paused") contentItem.Accessible.announce("Timer paused at " + left + ".")
-        else if (before === "Cancelled" && st === "InProgress") contentItem.Accessible.announce("Timer started with " + left + ".")
-        else if (before === "InProgress" && st === "Cancelled") contentItem.Accessible.announce("Timer stopped.")
+        if (before === "Paused" && st === "InProgress") contentItem.Accessible.announce(qsTr("Timer resumed with %1 remaining.").arg(left))
+        else if (before === "InProgress" && st === "Paused") contentItem.Accessible.announce(qsTr("Timer paused at %1.").arg(left))
+        else if (before === "Cancelled" && st === "InProgress") contentItem.Accessible.announce(qsTr("Timer started with %1.").arg(left))
+        else if (before === "InProgress" && st === "Cancelled") contentItem.Accessible.announce(qsTr("Timer stopped."))
     }
     function timerStripForTest() { return timerStrip }
     MeetingTimerStrip {
@@ -2063,9 +2064,9 @@ Window {
     // "RTT/Captions".
     MenuPopup {
         id: captionsOverflow
-        items: (win.rttOn ? [{ label: "Live Captions", toggle: true, checked: win.captionsOn }] : []).concat([
-                { label: "Open caption settings", icon: "settings-20", chevron: true },
-                { label: win.rttOn ? "Open RTT/Captions in new window" : "Open captions in new window", icon: "captions-pop-out-20" }])
+        items: (win.rttOn ? [{ label: qsTr("Live Captions"), toggle: true, checked: win.captionsOn }] : []).concat([
+                { label: qsTr("Open caption settings"), icon: "settings-20", chevron: true },
+                { label: win.rttOn ? qsTr("Open RTT/Captions in new window") : qsTr("Open captions in new window"), icon: "captions-pop-out-20" }])
         onPicked: i => {
             const k = win.rttOn ? i - 1 : i
             if (k < 0) win.setCaptions(!win.captionsOn)
@@ -2124,7 +2125,7 @@ Window {
     // Settings and more), the Help app's header, then the page.
     Window {
         id: helpWindow
-        title: "Help"
+        title: qsTr("Help")
         width: 946; height: 593
         color: theme.surface
         property bool pinned: false
@@ -2133,7 +2134,7 @@ Window {
         readonly property Item appForTest: helpApp.item
         ChildWindowTitleBar {
             id: helpTitle
-            title: "Help"
+            title: qsTr("Help")
             pinned: helpWindow.pinned
             onTogglePin: helpWindow.pinned = !helpWindow.pinned
         }
@@ -2209,7 +2210,7 @@ Window {
             Text {
                 visible: win.streaming && stagingScreen.phase === "prelive"
                 anchors.centerIn: parent; width: parent.width - 48; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
-                text: "The event isn't live right now."
+                text: qsTr("The event isn't live right now.")
                 color: theme.pick("#252423", "#FFFFFF", "#FFFFFF"); font.family: theme.font; font.pixelSize: 24; font.weight: Font.Bold; lineHeight: 32; lineHeightMode: Text.FixedHeight
             }
             // (Measured in Teams desktop 2026-11-19, a webinar's attendee
@@ -2218,16 +2219,16 @@ Window {
             Column {
                 visible: !win.streaming
                 anchors.centerIn: parent; spacing: 16; width: parent.width - 48
-                Text { visible: stagingScreen.phase === "prelive"; width: parent.width; horizontalAlignment: Text.AlignHCenter; text: "Welcome to"
+                Text { visible: stagingScreen.phase === "prelive"; width: parent.width; horizontalAlignment: Text.AlignHCenter; text: qsTr("Welcome to")
                        color: theme.textSecondary; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight }
                 Text { visible: stagingScreen.phase === "prelive"; width: parent.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; text: win.peer
                        color: theme.text; font.family: theme.font; font.pixelSize: 20; font.weight: Font.Bold; lineHeight: 28; lineHeightMode: Text.FixedHeight }
                 Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
-                       text: stagingScreen.phase === "ended" ? "The event has concluded. Thank you for attending." : "This meeting will start shortly"
+                       text: stagingScreen.phase === "ended" ? qsTr("The event has concluded. Thank you for attending.") : qsTr("This meeting will start shortly")
                        color: theme.textSecondary; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight }
             }
             Accessible.role: Accessible.StaticText
-            Accessible.name: stagingScreen.phase === "ended" ? "The event has concluded. Thank you for attending." : "Welcome to " + win.peer + ". This meeting will start shortly"
+            Accessible.name: stagingScreen.phase === "ended" ? qsTr("The event has concluded. Thank you for attending.") : qsTr("Welcome to %1. This meeting will start shortly").arg(win.peer)
         }
         // Managing the screen (Manage what attendees see on, Teams'
         // managed-mode stage measured in a town hall's green room
@@ -2241,7 +2242,7 @@ Window {
             Text {
                 anchors.centerIn: parent; width: Math.min(653, parent.width - 48)
                 horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
-                text: "Bring presenters on screen and share content that you want attendees to see."
+                text: qsTr("Bring presenters on screen and share content that you want attendees to see.")
                 color: theme.pick("#252423", "#FFFFFF", "#FFFFFF"); font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold
                 lineHeight: 25.7; lineHeightMode: Text.FixedHeight
             }
@@ -2264,27 +2265,27 @@ Window {
                 if (win.manageFilter === "Content") return []
                 return all
             }
-            Text { x: 20; y: 20; text: "Manage screen"; color: theme.pick("#252423", "#FFFFFF", "#FFFFFF"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold }
+            Text { x: 20; y: 20; text: qsTr("Manage screen"); color: theme.pick("#252423", "#FFFFFF", "#FFFFFF"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold }
             FluentIcon {
                 id: manageInfo
                 x: 121; y: 22; name: "info-16"; size: 16; color: theme.pick("#252423", "#FFFFFF", "#FFFFFF")
                 HoverHandler { id: manageInfoHover }
                 ToolTip.visible: manageInfoHover.hovered
-                ToolTip.text: "Choose who and what attendees see. Only organizers and presenters can manage the screen."
-                Accessible.role: Accessible.Button; Accessible.name: "More information"
+                ToolTip.text: qsTr("Choose who and what attendees see. Only organizers and presenters can manage the screen.")
+                Accessible.role: Accessible.Button; Accessible.name: qsTr("More information")
             }
             Rectangle {
                 x: 196; y: 14; width: 32; height: 32; radius: 4
                 color: addVideosHover.hovered ? theme.hover : "transparent"
                 FluentIcon { anchors.centerIn: parent; name: "video-add-20"; size: 20; color: theme.pick("#424242", "#D6D6D6", "#FFFFFF") }
                 HoverHandler { id: addVideosHover; cursorShape: Qt.PointingHandCursor }
-                ToolTip.visible: addVideosHover.hovered; ToolTip.text: "Add Videos"
-                Accessible.role: Accessible.Button; Accessible.name: "Add Videos"
+                ToolTip.visible: addVideosHover.hovered; ToolTip.text: qsTr("Add Videos")
+                Accessible.role: Accessible.Button; Accessible.name: qsTr("Add Videos")
             }
             Rectangle { y: 59.3; width: 240; height: 1; color: theme.dividerSoft }
             Text {
                 x: 20; y: 66; width: 200; wrapMode: Text.Wrap
-                text: "Attendees can still hear your audio when you're off screen."
+                text: qsTr("Attendees can still hear your audio when you're off screen.")
                 color: theme.pick("#424242", "#D6D6D6", "#FFFFFF"); font.family: theme.font; font.pixelSize: 12; lineHeight: 14; lineHeightMode: Text.FixedHeight
             }
             Row {
@@ -2299,13 +2300,13 @@ Window {
                         color: chosen ? theme.brand : pillHover.hovered ? theme.hover : "transparent"
                         border.width: chosen ? 0 : 1; border.color: theme.divider
                         Text {
-                            id: pillText; anchors.centerIn: parent; text: pill.modelData
+                            id: pillText; anchors.centerIn: parent; text: win.manageFilterLabel(pill.modelData)
                             color: pill.chosen ? "white" : theme.pick("#424242", "#D6D6D6", "#FFFFFF")
                             font.family: theme.font; font.pixelSize: 12; font.weight: pill.chosen ? Font.DemiBold : Font.Normal
                         }
                         HoverHandler { id: pillHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: win.manageFilter = pill.modelData }
-                        Accessible.role: Accessible.RadioButton; Accessible.name: pill.modelData; Accessible.checked: pill.chosen
+                        Accessible.role: Accessible.RadioButton; Accessible.name: win.manageFilterLabel(pill.modelData); Accessible.checked: pill.chosen
                     }
                 }
             }
@@ -2321,7 +2322,7 @@ Window {
                     SettingsParts.Toggle {
                         x: 240 - 2 - width - 8; y: 12; stateLabel: false
                         on: !!backstageTile.modelData.spotlight
-                        accessibleName: "Stage presence: " + (on ? "On stage" : "Off stage")
+                        accessibleName: on ? qsTr("Stage presence: On stage") : qsTr("Stage presence: Off stage")
                         onToggled: v => {
                             const p = backstageTile.modelData
                             if (v) win.participantAction("spotlight", p.self ? win.selfId : p.id, p.name || "", "")
@@ -2330,7 +2331,7 @@ Window {
                     }
                 }
             }
-            Accessible.role: Accessible.Pane; Accessible.name: "Manage screen"
+            Accessible.role: Accessible.Pane; Accessible.name: qsTr("Manage screen")
         }
         // "On with preview" (measured in Teams desktop 2026-11-19, a town
         // hall's green room, 1280 x 680): the stage's top part (all but
@@ -2365,7 +2366,7 @@ Window {
                     visible: sub.updatedBy !== ""
                     anchors.right: parent.right; y: 22.1; width: Math.min(implicitWidth, parent.width / 2 - 12)
                     elide: Text.ElideRight; textFormat: Text.StyledText
-                    text: "Last updated by <b>" + sub.updatedBy.replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</b>"
+                    text: qsTr("Last updated by <b>%1</b>").arg(sub.updatedBy.replace(/&/g, "&amp;").replace(/</g, "&lt;"))
                     color: production.ink; font.family: theme.font; font.pixelSize: 13; lineHeight: 18.6; lineHeightMode: Text.FixedHeight
                 }
                 Rectangle {
@@ -2417,13 +2418,13 @@ Window {
             SubStage {
                 id: previewStage
                 x: production.width / 2 - 16 - width; y: 0
-                title: "Preview"; edge: "#FDE300"
+                title: qsTr("Preview"); edge: "#FDE300"
                 people: win.sourcePeople(win.previewSources)
-                empty: "Bring presenters on screen and share content that you want attendees to see."
+                empty: qsTr("Bring presenters on screen and share content that you want attendees to see.")
             }
             SubStage {
                 x: production.width / 2 + 16; y: 0
-                title: "Live"; edge: (win.liveEvent.eventPhase || "") === "active" ? "#D13438" : "#FDE300"
+                title: qsTr("Live"); edge: (win.liveEvent.eventPhase || "") === "active" ? "#D13438" : "#FDE300"
                 people: win.sourcePeople(win.liveSources)
                 updatedBy: {
                     const id = win.liveEvent.layout ? win.liveEvent.layout.updatedBy || "" : ""
@@ -2432,7 +2433,7 @@ Window {
                     const p = win.roster.find(r => r.id === id)
                     return p ? p.name : ""
                 }
-                empty: (win.liveEvent.eventPhase || "") === "prelive" ? "The event hasn't started yet." : "Bring presenters on screen and share content that you want attendees to see."
+                empty: (win.liveEvent.eventPhase || "") === "prelive" ? qsTr("The event hasn't started yet.") : qsTr("Bring presenters on screen and share content that you want attendees to see.")
             }
             Rectangle {
                 id: sendLiveButton
@@ -2440,26 +2441,26 @@ Window {
                 x: previewStage.x + previewStage.width - width; y: previewStage.y + previewStage.height + 24
                 width: 96; height: 31.3; radius: 4
                 color: busy ? theme.pick("#F0F0F0", "#141414", "#000000") : sendLiveHover.hovered ? "#E6CE00" : "#FDE300"
-                Text { anchors.centerIn: parent; text: "Send live"; color: sendLiveButton.busy ? theme.disabled : "#242424"
+                Text { anchors.centerIn: parent; text: qsTr("Send live"); color: sendLiveButton.busy ? theme.disabled : "#242424"
                        font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold }
                 HoverHandler { id: sendLiveHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { enabled: !sendLiveButton.busy; onTapped: win.sendLive() }
-                ToolTip.visible: sendLiveHover.hovered; ToolTip.text: sendLiveButton.busy ? "Sending to live..." : "Send the preview to the live screen"
-                Accessible.role: Accessible.Button; Accessible.name: "Send the preview to the live screen"
+                ToolTip.visible: sendLiveHover.hovered; ToolTip.text: sendLiveButton.busy ? qsTr("Sending to live...") : qsTr("Send the preview to the live screen")
+                Accessible.role: Accessible.Button; Accessible.name: qsTr("Send the preview to the live screen")
             }
             // The Manage screen strip.
             Item {
                 y: production.topH; width: parent.width; height: 224
-                Text { x: 20; y: 18; text: "Manage screen"; color: production.ink; font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; lineHeight: 24; lineHeightMode: Text.FixedHeight }
+                Text { x: 20; y: 18; text: qsTr("Manage screen"); color: production.ink; font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; lineHeight: 24; lineHeightMode: Text.FixedHeight }
                 FluentIcon {
                     x: 158; y: 22; name: "info-16"; size: 16; color: production.ink
                     HoverHandler { id: prodInfoHover }
                     ToolTip.visible: prodInfoHover.hovered
-                    ToolTip.text: "Choose who and what attendees see. Only organizers and presenters can manage the screen."
-                    Accessible.role: Accessible.Button; Accessible.name: "More information"
+                    ToolTip.text: qsTr("Choose who and what attendees see. Only organizers and presenters can manage the screen.")
+                    Accessible.role: Accessible.Button; Accessible.name: qsTr("More information")
                 }
                 Text {
-                    x: 186; y: 26; text: "Attendees can still hear your audio when you're off screen."
+                    x: 186; y: 26; text: qsTr("Attendees can still hear your audio when you're off screen.")
                     color: theme.pick("#424242", "#D6D6D6", "#FFFFFF"); font.family: theme.font; font.pixelSize: 12; lineHeight: 14; lineHeightMode: Text.FixedHeight
                 }
                 Row {
@@ -2472,12 +2473,12 @@ Window {
                             readonly property bool chosen: win.manageFilter === modelData
                             width: ppText.implicitWidth + 13.3; height: 24; radius: 12
                             color: chosen ? theme.brand : ppHover.hovered ? theme.hover : "transparent"
-                            Text { id: ppText; anchors.centerIn: parent; text: ppill.modelData
+                            Text { id: ppText; anchors.centerIn: parent; text: win.manageFilterLabel(ppill.modelData)
                                    color: ppill.chosen ? "white" : theme.pick("#424242", "#D6D6D6", "#FFFFFF")
                                    font.family: theme.font; font.pixelSize: 12; font.weight: ppill.chosen ? Font.DemiBold : Font.Normal }
                             HoverHandler { id: ppHover; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: win.manageFilter = ppill.modelData }
-                            Accessible.role: Accessible.RadioButton; Accessible.name: ppill.modelData; Accessible.checked: ppill.chosen
+                            Accessible.role: Accessible.RadioButton; Accessible.name: win.manageFilterLabel(ppill.modelData); Accessible.checked: ppill.chosen
                         }
                     }
                 }
@@ -2486,8 +2487,8 @@ Window {
                     color: prodAddHover.hovered ? theme.hover : "transparent"
                     FluentIcon { anchors.centerIn: parent; name: "video-add-20"; size: 20; color: theme.pick("#424242", "#D6D6D6", "#FFFFFF") }
                     HoverHandler { id: prodAddHover; cursorShape: Qt.PointingHandCursor }
-                    ToolTip.visible: prodAddHover.hovered; ToolTip.text: "Add Videos"
-                    Accessible.role: Accessible.Button; Accessible.name: "Add Videos"
+                    ToolTip.visible: prodAddHover.hovered; ToolTip.text: qsTr("Add Videos")
+                    Accessible.role: Accessible.Button; Accessible.name: qsTr("Add Videos")
                 }
                 ListView {
                     x: 4; y: 64; width: parent.width - 8; height: 156
@@ -2510,13 +2511,13 @@ Window {
                         SettingsParts.Toggle {
                             x: 277 - 2 - width - 8; y: 12; stateLabel: false
                             on: prodTile.inPreview
-                            accessibleName: on ? "Remove from preview" : "Add to preview"
+                            accessibleName: on ? qsTr("Remove from preview") : qsTr("Add to preview")
                             onToggled: v => win.togglePreview(prodTile.modelData, v)
                         }
                     }
                 }
             }
-            Accessible.role: Accessible.Pane; Accessible.name: "Production view"
+            Accessible.role: Accessible.Pane; Accessible.name: qsTr("Production view")
         }
         // Alone with your video on (measured on Teams desktop, a Meet now,
         // 2026-11-17): your own video (myself-video) fills the stage at
@@ -2561,7 +2562,7 @@ Window {
                         FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "mic-off-24"; size: 16; color: "white"; visible: win.muted || !win.hasAudio }
                     }
                     Accessible.role: Accessible.StaticText
-                    Accessible.name: "Myself video, " + (win.selfName || "You") + ", video is on"
+                    Accessible.name: qsTr("Myself video, %1, video is on").arg(win.selfName || qsTr("You"))
                 }
             }
         }
@@ -2569,11 +2570,11 @@ Window {
             visible: win.meeting && win.others.length === 0 && !soloSelf.visible && !win.contentShown && !win.manageScreen
             anchors.centerIn: parent
             spacing: 24
-            Avatar { ring: false; size: 154; name: win.selfName || "You"; photoId: "me"; anchors.horizontalCenter: parent.horizontalCenter }
+            Avatar { ring: false; size: 154; name: win.selfName || qsTr("You"); photoId: "me"; anchors.horizontalCenter: parent.horizontalCenter }
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
                 // (Teams: an organizer or presenter is asked to invite.)
-                text: win.state === "connected" ? (win.canMuteAll ? "Invite people to join you" : "Waiting for others to join...") : win.state === "ended" ? "You left the meeting" : "Connecting…"
+                text: win.state === "connected" ? (win.canMuteAll ? qsTr("Invite people to join you") : qsTr("Waiting for others to join...")) : win.state === "ended" ? qsTr("You left the meeting") : qsTr("Connecting…")
                 color: theme.text
                 font.family: theme.font; font.pixelSize: 24; font.weight: Font.DemiBold
             }
@@ -2719,9 +2720,9 @@ Window {
                     anchors.horizontalCenter: parent.horizontalCenter
                     Repeater {
                         model: [
-                            { icon: "chevron-left-20", tip: "Previous page", step: -1 },
+                            { icon: "chevron-left-20", tip: qsTr("Previous page"), step: -1 },
                             { counter: true },
-                            { icon: "chevron-right-20", tip: "Next page", step: 1 }
+                            { icon: "chevron-right-20", tip: qsTr("Next page"), step: 1 }
                         ]
                         Item {
                             id: pagerItem
@@ -2761,8 +2762,8 @@ Window {
                                     contentItem: Text { text: pagerItem.modelData.tip || ""; font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
                                 }
                                 Accessible.role: Accessible.Button
-                                Accessible.name: (pagerItem.modelData.step < 0 ? "Navigate to previous video page. Currently " : "Navigate to next video page. Currently ")
-                                    + (tiles.page + 1) + "/" + tiles.pageCount
+                                Accessible.name: (pagerItem.modelData.step < 0 ? qsTr("Navigate to previous video page. Currently %1/%2") : qsTr("Navigate to next video page. Currently %1/%2"))
+                                    .arg(tiles.page + 1).arg(tiles.pageCount)
                             }
                         }
                     }
@@ -2933,7 +2934,7 @@ Window {
                     Text { id: contentName; x: 6; anchors.verticalCenter: parent.verticalCenter; text: win.presenterName; color: theme.onFill(hcFill5, "white"); font.family: theme.font; font.pixelSize: 14 }
                 }
                 Accessible.role: Accessible.Graphic
-                Accessible.name: win.presenterName + " is presenting"
+                Accessible.name: qsTr("%1 is presenting").arg(win.presenterName)
             }
             // The side gallery.
             Grid {
@@ -2981,7 +2982,7 @@ Window {
                     }
                 }
                 Accessible.role: Accessible.Slider
-                Accessible.name: tiles.atTop ? "Resize top gallery" : "Resize side gallery"
+                Accessible.name: tiles.atTop ? qsTr("Resize top gallery") : qsTr("Resize side gallery")
                 activeFocusOnTab: true
                 Keys.onLeftPressed: tiles.sideWidth = tiles.sideW + 16
                 Keys.onRightPressed: tiles.sideWidth = tiles.sideW - 16
@@ -3016,7 +3017,7 @@ Window {
             anchors { left: parent.left; top: parent.top; margins: 12 }
             width: shareText.implicitWidth + 16; height: 28; radius: 4
             color: theme.hc("#CC000000", "#000000")
-            Text { id: shareText; anchors.centerIn: parent; text: win.peer + " is presenting"; color: "white"; font.family: theme.font; font.pixelSize: theme.small }
+            Text { id: shareText; anchors.centerIn: parent; text: qsTr("%1 is presenting").arg(win.peer); color: "white"; font.family: theme.font; font.pixelSize: theme.small }
         }
         Timer {
             interval: 33; repeat: true
@@ -3034,7 +3035,7 @@ Window {
                 id: presentingRow
                 anchors.centerIn: parent; spacing: 8
                 FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "share-screen"; size: 16; color: theme.leave }
-                Text { anchors.verticalCenter: parent.verticalCenter; text: "You're presenting"; color: theme.text; font.family: theme.font; font.pixelSize: theme.small; font.weight: Font.DemiBold }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("You're presenting"); color: theme.text; font.family: theme.font; font.pixelSize: theme.small; font.weight: Font.DemiBold }
             }
         }
         Column {
@@ -3044,11 +3045,11 @@ Window {
             Avatar { ring: false; size: 144; name: win.peer; photoId: backend.callPeerId; anchors.horizontalCenter: parent.horizontalCenter }
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
-                text: win.state === "calling" ? "Calling…"
-                    : win.state === "connecting" ? "Connecting…"
-                    : win.state === "ended" ? "Call ended"
+                text: win.state === "calling" ? qsTr("Calling…")
+                    : win.state === "connecting" ? qsTr("Connecting…")
+                    : win.state === "ended" ? qsTr("Call ended")
                     : win.held || win.heldByPeer ? ""
-                    : !win.hasAudio ? "Connected without audio" : ""
+                    : !win.hasAudio ? qsTr("Connected without audio") : ""
                 visible: text.length > 0
                 color: theme.text
                 font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold
@@ -3061,7 +3062,7 @@ Window {
                 spacing: 8
                 FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "pause"; size: 20; color: theme.text }
                 Text {
-                    text: win.held ? "On hold " + win.clock(win.heldSeconds) : "On hold"
+                    text: win.held ? qsTr("On hold %1").arg(win.clock(win.heldSeconds)) : qsTr("On hold")
                     color: theme.text
                     font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold
                 }
@@ -3094,7 +3095,7 @@ Window {
                 GradientStop { position: 1.0; color: theme.hc("#EEF0F8", "#000000") }
             }
             border.color: theme.dividerSoft
-            Avatar { ring: false; visible: !selfVideo.visible; anchors.centerIn: parent; size: 64; name: win.selfName || "You"; photoId: "me" }
+            Avatar { ring: false; visible: !selfVideo.visible; anchors.centerIn: parent; size: 64; name: win.selfName || qsTr("You"); photoId: "me" }
             ReactionShown { z: 3; mri: win.selfId }
             // Your camera, mirrored as Teams shows your own video.
             VideoFrame {
@@ -3151,7 +3152,7 @@ Window {
             anchors.fill: parent; anchors.margins: 1
             pane: true; popout: true
             chatId: backend.callLobbyThread
-            chatName: "Lobby"
+            chatName: qsTr("Lobby")
             myName: backend.userName
             isGroup: true
             messages: win.lobbyMessages
@@ -3159,14 +3160,14 @@ Window {
             paneTab: win.chatTab
             onPaneTabPicked: key => win.chatTab = key
             onClosePane: win.side = ""
-            emptyTitle: "Messages you send to people waiting in the lobby will show up here."
+            emptyTitle: qsTr("Messages you send to people waiting in the lobby will show up here.")
             // Teams' banners: the awareness note while someone waits, else
             // the compose is off with "Chat will be available…".
             composeTextOnly: true
             composeDisabled: win.lobby.length === 0
             composeNoteMuted: win.lobby.length === 0
-            composeNote: win.lobby.length === 0 ? "Chat will be available when someone is waiting in the lobby."
-                : "Messages you send are only visible to people currently in the lobby. They can view messages but not reply."
+            composeNote: win.lobby.length === 0 ? qsTr("Chat will be available when someone is waiting in the lobby.")
+                : qsTr("Messages you send are only visible to people currently in the lobby. They can view messages but not reply.")
             onReact: (id, key, on) => backend.toggleReaction(id, key, on)
             onEditMessage: (id, text) => backend.editMessage(id, text)
             onDeleteMessage: id => backend.deleteMessage(id)
@@ -3194,7 +3195,7 @@ Window {
                 FluentIcon { x: 24.7; y: 11.7; size: 20; name: "copilot-color-48"; color: theme.text }
                 Text {
                     x: 49.7; y: 11.7; height: 20; verticalAlignment: Text.AlignVCenter
-                    text: "Copilot"
+                    text: qsTr("Copilot")
                     font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text
                     Accessible.role: Accessible.Heading; Accessible.name: text
                 }
@@ -3202,7 +3203,7 @@ Window {
                     x: parent.width - 56; y: 6; width: 32; height: 31.3
                     icon: "dismiss-20"; label: ""; tip: ""
                     onClicked: win.side = ""
-                    Accessible.name: "Close Copilot"
+                    Accessible.name: qsTr("Close Copilot")
                 }
                 Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.divider }
             }
@@ -3281,14 +3282,14 @@ Window {
             onOpenRooms: win.breakoutRun("open", { threads: win.breakoutRooms.filter(r => (r.invitees || []).length > 0).map(r => r.thread) })
             onCloseRooms: win.breakoutRun("close", { threads: win.breakoutRooms.filter(r => r.open).map(r => r.thread) })
             onAddRoom: win.breakoutRun("add", { name: win.nextRoomName() })
-            onAnnounce: { roomText.rename = false; roomText.title = "Announcement"; roomText.initial = ""; roomText.placeholder = "Make an announcement"; roomText.thread = ""; roomText.show() }
+            onAnnounce: { roomText.rename = false; roomText.title = qsTr("Announcement"); roomText.initial = ""; roomText.placeholder = qsTr("Make an announcement"); roomText.thread = ""; roomText.show() }
             onRemoveRooms: removeRoomsAsk.open()
             onSaveSettings: s => win.breakoutRun("settings", s)
             onRoomAction: (action, room) => {
                 if (action === "join") win.joinRoomAsOrganizer(room)
                 else if (action === "open" || action === "close") win.breakoutRun(action, { threads: [room.thread] })
-                else if (action === "rename") { roomText.rename = true; roomText.title = "Rename " + room.name + "?"; roomText.initial = room.name; roomText.placeholder = ""; roomText.thread = room.thread; roomText.show() }
-                else if (action === "delete") { deleteRoomAsk.thread = room.thread; deleteRoomAsk.title = "Delete " + room.name + "?"; deleteRoomAsk.open() }
+                else if (action === "rename") { roomText.rename = true; roomText.title = qsTr("Rename %1?").arg(room.name); roomText.initial = room.name; roomText.placeholder = ""; roomText.thread = room.thread; roomText.show() }
+                else if (action === "delete") { deleteRoomAsk.thread = room.thread; deleteRoomAsk.title = qsTr("Delete %1?").arg(room.name); deleteRoomAsk.open() }
             }
         }
         CallHealthPane {
@@ -3415,7 +3416,7 @@ Window {
         active: win.contentPoppedOut
         sourceComponent: Component {
             Window {
-                title: "Shared content | " + win.peer + " | OST"
+                title: qsTr("Shared content | %1").arg(win.peer) + " | OST"
                 width: 1280; height: 680
                 visible: true
                 color: theme.hc("#F5F5F5", "#000000")
@@ -3496,8 +3497,8 @@ Window {
         x: stage.x + (stage.width - width) / 2
         y: win.belowBar + 10.7
         z: 5
-        title: "Your microphone is muted"
-        text: "Press Ctrl+Shift+M to unmute your mic, or press and hold down Ctrl+Space."
+        title: qsTr("Your microphone is muted")
+        text: qsTr("Press %1 to unmute your mic, or press and hold down %2.").arg("Ctrl+Shift+M").arg("Ctrl+Space")
         action: ""
         onDismissed: win.speakingNoticeClosed = true
     }
@@ -3510,7 +3511,7 @@ Window {
         y: win.belowBar + 10.7
         z: 5
         icon: "checkmark-circle-20-filled"
-        title: "Your report was sent"
+        title: qsTr("Your report was sent")
         text: ""
         action: ""
         onDismissed: win.reportSent = false
@@ -3526,8 +3527,8 @@ Window {
         y: win.belowBar + 10.7
         z: 5
         icon: "lock-closed-20-filled"
-        title: win.locked ? "This meeting is locked." : "This meeting is unlocked."
-        text: win.locked ? "No one else can join." : "People can join."
+        title: win.locked ? qsTr("This meeting is locked.") : qsTr("This meeting is unlocked.")
+        text: win.locked ? qsTr("No one else can join.") : qsTr("People can join.")
         action: ""
         onDismissed: win.lockNoticeShown = false
     }
@@ -3588,9 +3589,9 @@ Window {
         y: win.belowBar + 10.7
         z: 6
         icon: "warning-20-filled"
-        title: "Another user took control"
-        text: takenBy + " is now in control of the presentation."
-        actionText: "Take back"
+        title: qsTr("Another user took control")
+        text: qsTr("%1 is now in control of the presentation.").arg(takenBy)
+        actionText: qsTr("Take back")
         onAction: { win.pptTakenDismissed = takenBy; backend.contentTakeControl(win.contentSession.correlationId) }
         onDismissed: win.pptTakenDismissed = takenBy
     }
@@ -3607,9 +3608,9 @@ Window {
         x: stage.x + (stage.width - width) / 2
         y: win.belowBar + 10.7
         z: 6
-        title: "Add interpreters for your meetings"
+        title: qsTr("Add interpreters for your meetings")
         richText: true
-        text: "Select interpreters in your <span style=\"font-weight: 600;\">Accessibility</span> settings for Sign language mode to work correctly. <a href=\"https://go.microsoft.com/fwlink/?linkid=2330204\">Learn more</a>"
+        text: qsTr("Select interpreters in your <span style=\"font-weight: 600;\">Accessibility</span> settings for Sign language mode to work correctly. <a href=\"https://go.microsoft.com/fwlink/?linkid=2330204\" target=\"_blank\">Learn more</a>")
         onDismissed: visible = false
         Timer { id: signAlertTimer; interval: 8000; onTriggered: signAlert.visible = false }
     }
@@ -3642,10 +3643,10 @@ Window {
     // when more than one of your devices is in the call; End meeting for
     // the organizer, after Teams' confirmation.
     readonly property int myDevices: { const me = roster.find(p => p.id === selfId); return me ? (me.devices || 0) : 0 }
-    readonly property var leaveItems: heldMeeting ? [{ k: "room", t: "Leave room" }, { k: "meeting", t: "Leave meeting" }]
-        : [{ k: "leave", t: "Leave" }]
-        .concat(myDevices > 1 ? [{ k: "all", t: "Leave on all my devices" }] : [])
-        .concat(organizer ? [{ k: "end", t: "End meeting" }] : [])
+    readonly property var leaveItems: heldMeeting ? [{ k: "room", t: qsTr("Leave room") }, { k: "meeting", t: qsTr("Leave meeting") }]
+        : [{ k: "leave", t: qsTr("Leave") }]
+        .concat(myDevices > 1 ? [{ k: "all", t: qsTr("Leave on all my devices") }] : [])
+        .concat(organizer ? [{ k: "end", t: qsTr("End meeting") }] : [])
     Popup {
         id: leaveMenu
         parent: leaveButton
@@ -3741,29 +3742,29 @@ Window {
                             id: resumeRow
                             anchors.centerIn: parent; spacing: 6
                             FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "play-20"; size: 20; color: theme.onFill(hcFill8, theme.text) }
-                            Text { anchors.verticalCenter: parent.verticalCenter; text: "Resume"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill8, theme.text) }
+                            Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Resume"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill8, theme.text) }
                         }
                         HoverHandler { id: resumeHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: win.leaveRoom(true) }
                         Accessible.role: Accessible.Button
-                        Accessible.name: "Resume"
+                        Accessible.name: qsTr("Resume")
                     }
                 }
-                BarButton { icon: "call-chat"; label: "Chat"; tip: "Chat"; onClicked: if (win.heldMeeting) backend.openChatWindow(win.heldMeeting.thread) }
-                BarButton { icon: "call-people"; label: "People"; enabled: false }
-                BarButton { icon: "call-raise"; label: "Raise"; enabled: false }
-                BarButton { icon: "call-react"; label: "React"; enabled: false }
-                BarButton { icon: "call-view"; label: "View"; enabled: false }
-                BarButton { icon: "call-controls"; label: "Controls"; enabled: false }
-                BarButton { icon: "call-notes"; label: "Notes"; enabled: false }
-                BarButton { icon: "call-rooms"; label: "Rooms"; tip: "Breakout rooms"; checked: heldWindow.roomsShown; onClicked: heldWindow.roomsShown = !heldWindow.roomsShown }
-                BarButton { icon: "call-apps"; label: "Apps"; enabled: false }
+                BarButton { icon: "call-chat"; label: qsTr("Chat"); tip: qsTr("Chat"); onClicked: if (win.heldMeeting) backend.openChatWindow(win.heldMeeting.thread) }
+                BarButton { icon: "call-people"; label: qsTr("People"); enabled: false }
+                BarButton { icon: "call-raise"; label: qsTr("Raise"); enabled: false }
+                BarButton { icon: "call-react"; label: qsTr("React"); enabled: false }
+                BarButton { icon: "call-view"; label: qsTr("View"); enabled: false }
+                BarButton { icon: "call-controls"; label: qsTr("Controls"); enabled: false }
+                BarButton { icon: "call-notes"; label: qsTr("Notes"); enabled: false }
+                BarButton { icon: "call-rooms"; label: qsTr("Rooms"); tip: qsTr("Breakout rooms"); checked: heldWindow.roomsShown; onClicked: heldWindow.roomsShown = !heldWindow.roomsShown }
+                BarButton { icon: "call-apps"; label: qsTr("Apps"); enabled: false }
                 Rectangle { width: 17; height: 60; color: "transparent"; Rectangle { anchors.centerIn: parent; width: 0.67; height: 32; color: theme.divider } }
-                BarButton { icon: "call-camera-off-filled"; label: "Camera"; strong: true; split: true; enabled: false }
-                BarButton { icon: "call-mic-off-filled"; label: "Mic"; strong: true; split: true; enabled: false }
-                BarButton { icon: "call-share-filled"; label: "Share"; strong: true; enabled: false }
+                BarButton { icon: "call-camera-off-filled"; label: qsTr("Camera"); strong: true; split: true; enabled: false }
+                BarButton { icon: "call-mic-off-filled"; label: qsTr("Mic"); strong: true; split: true; enabled: false }
+                BarButton { icon: "call-share-filled"; label: qsTr("Share"); strong: true; enabled: false }
                 Rectangle { width: 17; height: 60; color: "transparent"; Rectangle { anchors.centerIn: parent; width: 0.67; height: 32; color: theme.divider } }
-                BarButton { icon: "call-leave-filled"; label: "Leave"; strong: true; iconColor: theme.hc("#B10E1C", "#FFFFFF"); tip: "Leave"; onClicked: backend.leaveHeldMeeting() }
+                BarButton { icon: "call-leave-filled"; label: qsTr("Leave"); strong: true; iconColor: theme.hc("#B10E1C", "#FFFFFF"); tip: qsTr("Leave"); onClicked: backend.leaveHeldMeeting() }
             }
             Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.divider }
         }
@@ -3774,7 +3775,7 @@ Window {
                 Avatar { anchors.horizontalCenter: parent.horizontalCenter; size: 153; name: win.selfName; photoId: "me" }
                 Text {
                     anchors.horizontalCenter: parent.horizontalCenter
-                    text: "On hold " + win.clock(win.mainHeldSeconds)
+                    text: qsTr("On hold %1").arg(win.clock(win.mainHeldSeconds))
                     font.family: theme.font; font.pixelSize: 24; font.weight: Font.DemiBold
                     color: theme.text
                 }
@@ -3811,9 +3812,9 @@ Window {
     // Teams' Mute all confirmation ("All" scope).
     ConfirmDialog {
         id: muteAllAsk
-        title: "Mute everyone?"
-        body: "This will mute everyone in the meeting but you."
-        confirmText: "Mute"
+        title: qsTr("Mute everyone?")
+        body: qsTr("This will mute everyone in the meeting but you.")
+        confirmText: qsTr("Mute")
         onConfirmed: win.muteAll()
     }
     InviteDialog { id: inviteDialog; link: win.inviteUrl }
@@ -3826,24 +3827,24 @@ Window {
         width: 410
         fixedButtons: true
         titleIcon: disabling ? "alert-warning-16-filled" : ""
-        title: modality === 1 ? (disabling ? "Disable mic for attendees?" : "Allow mic for attendees?")
-                              : (disabling ? "Disable camera for attendees?" : "Allow camera for attendees?")
+        title: modality === 1 ? (disabling ? qsTr("Disable mic for attendees?") : qsTr("Allow mic for attendees?"))
+                              : (disabling ? qsTr("Disable camera for attendees?") : qsTr("Allow camera for attendees?"))
         body: modality === 1
-            ? (disabling ? "Attendees won’t be able to unmute themselves. The organizer and presenters can let people unmute as needed."
-                         : "Everyone in the meeting will be able to unmute themselves.")
-            : (disabling ? "Attendees won’t be able to share video. The organizer and presenters can let people turn on their cameras as needed."
-                         : "Everyone in the meeting will be able to share video.")
-        confirmText: modality === 1 ? (disabling ? "Disable mics" : "Allow mics")
-                                    : (disabling ? "Disable cameras" : "Allow cameras")
+            ? (disabling ? qsTr("Attendees won’t be able to unmute themselves. The organizer and presenters can let people unmute as needed.")
+                         : qsTr("Everyone in the meeting will be able to unmute themselves."))
+            : (disabling ? qsTr("Attendees won’t be able to share video. The organizer and presenters can let people turn on their cameras as needed.")
+                         : qsTr("Everyone in the meeting will be able to share video."))
+        confirmText: modality === 1 ? (disabling ? qsTr("Disable mics") : qsTr("Allow mics"))
+                                    : (disabling ? qsTr("Disable cameras") : qsTr("Allow cameras"))
         onConfirmed: win.setAttendeeRestrictions((win.attendeeRestrictions & 3) ^ modality)
     }
     // Teams' "Lower all hands?" (confirm-attendee-lower-all-raised-hand).
     ConfirmDialog {
         id: lowerHandsAsk
         property int count: 0
-        title: "Lower all hands?"
-        body: count === 1 ? "You'll lower 1 raised hand." : "You'll lower " + count + " raised hands."
-        confirmText: "Lower all hands"
+        title: qsTr("Lower all hands?")
+        body: qsTr("You'll lower %n raised hands.", "", count)
+        confirmText: qsTr("Lower all hands")
         onConfirmed: win.meetingAction("lowerHands")
     }
     RoleChangeDialog {
@@ -3875,9 +3876,9 @@ Window {
     ConfirmDialog {
         id: removeRoomsAsk
         width: 450; closeButton: true
-        title: "Remove rooms?"
-        body: "This will delete all existing rooms."
-        confirmText: "Remove"
+        title: qsTr("Remove rooms?")
+        body: qsTr("This will delete all existing rooms.")
+        confirmText: qsTr("Remove")
         onConfirmed: win.breakoutRun("delete_all", {})
     }
     ConfirmDialog {
@@ -3885,7 +3886,7 @@ Window {
         property string thread: ""
         width: 500; closeButton: true
         body: ""
-        confirmText: "Delete"
+        confirmText: qsTr("Delete")
         onConfirmed: win.breakoutRun("delete", { thread: thread })
     }
     BreakoutCsvDialog {
@@ -3901,9 +3902,9 @@ Window {
         id: csvOverwriteAsk
         property string path: ""
         width: 500
-        title: "Overwriting rooms and participant assignment"
-        body: "There are already rooms created with participants in them. If you import a CSV it will overwrite the current rooms and participant assignment. Are you sure to continue?"
-        confirmText: "Continue"
+        title: qsTr("Overwriting rooms and participant assignment")
+        body: qsTr("There are already rooms created with participants in them. If you import a CSV it will overwrite the current rooms and participant assignment. Are you sure to continue?")
+        confirmText: qsTr("Continue")
         onConfirmed: win.breakoutRun("import_csv", { path: path })
     }
     LockMeetingDialog {
@@ -3917,17 +3918,17 @@ Window {
         property bool unlocking: false
         width: 430
         titleIcon: "alert-warning-16-filled"
-        title: unlocking ? "Couldn't unlock the meeting" : "Couldn't lock the meeting"
-        body: unlocking ? "An error occurred. Try unlocking it again." : "An error occurred. Try locking it again."
-        confirmText: "Try again"
+        title: unlocking ? qsTr("Couldn't unlock the meeting") : qsTr("Couldn't lock the meeting")
+        body: unlocking ? qsTr("An error occurred. Try unlocking it again.") : qsTr("An error occurred. Try locking it again.")
+        confirmText: qsTr("Try again")
         onConfirmed: win.meetingAction(unlocking ? "unlock" : "lock")
     }
     function meetingActionFailed(action) {
         if (action === "lock" || action === "unlock") { lockRetry.unlocking = action === "unlock"; lockRetry.open() }
         if (action === "startTranscription" || action === "startRecording") openTranscriptWhenStarted = false
-        if (action === "startRecording") { recorderFailure = "Couldn't start recording"; recorderFailureTimer.restart() }
+        if (action === "startRecording") { recorderFailure = qsTr("Couldn't start recording"); recorderFailureTimer.restart() }
         else if (action.indexOf("Transcription") >= 0 || action === "stopRecording") {
-            recorderFailure = "Something went wrong with transcription. Please try again later."; recorderFailureTimer.restart()
+            recorderFailure = qsTr("Something went wrong with transcription. Please try again later."); recorderFailureTimer.restart()
         }
     }
     function moreMenuForTest() { side = "people"; peoplePane.moreMenuForTest() }
@@ -3983,14 +3984,14 @@ Window {
             spacing: 30
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
-                text: "Call is parked"
+                text: qsTr("Call is parked")
                 font.family: theme.font; font.pixelSize: 24; font.weight: Font.Bold
                 lineHeight: 32; lineHeightMode: Text.FixedHeight
                 color: theme.text
             }
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
-                text: "Share this code " + win.parkCode + " to retrieve the call"
+                text: qsTr("Share this code %1 to retrieve the call").arg(win.parkCode)
                 font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold
                 lineHeight: 22; lineHeightMode: Text.FixedHeight
                 color: theme.text
@@ -4003,14 +4004,14 @@ Window {
                 border.width: 1; border.color: theme.stroke
                 Text {
                     anchors.centerIn: parent
-                    text: "Copy code"
+                    text: qsTr("Copy code")
                     font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
                     color: theme.text
                 }
                 HoverHandler { id: copyHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: backend.copyText(win.parkCode) }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Copy code " + win.parkCode
+                Accessible.name: qsTr("Copy code %1").arg(win.parkCode)
             }
         }
     }
@@ -4043,7 +4044,7 @@ Window {
                 visible: win.e2ee
                 width: parent.width; wrapMode: Text.Wrap
                 bottomPadding: 16
-                text: win.meeting ? "End-to-end encryption enabled for this meeting" : "End-to-end encryption enabled for this call"
+                text: win.meeting ? qsTr("End-to-end encryption enabled for this meeting") : qsTr("End-to-end encryption enabled for this call")
                 font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
                 lineHeight: 20; lineHeightMode: Text.FixedHeight
                 color: theme.text
@@ -4053,16 +4054,16 @@ Window {
                 width: parent.width; wrapMode: Text.Wrap
                 textFormat: Text.StyledText
                 linkColor: theme.brandForeground1
-                text: (!win.e2ee ? (win.meeting ? "This meeting is secured by OST data encryption. " : "This call is secured by OST data encryption. ")
-                       : win.meeting ? "This meeting is end-to-end encrypted if the numbers below are the same for all participants. "
-                       : "Verify your call's encryption by making sure the numbers below are the same for both of you. ")
-                      + "<a href=\"" + (win.e2ee ? "https://go.microsoft.com/fwlink/?linkid=2174740" : "https://go.microsoft.com/fwlink/?linkid=2174896") + "\">Learn more</a>"
+                text: (!win.e2ee ? (win.meeting ? qsTr("This meeting is secured by OST data encryption. ") : qsTr("This call is secured by OST data encryption. "))
+                       : (win.meeting ? qsTr("This meeting is end-to-end encrypted if the numbers below are the same for all participants.")
+                       : qsTr("Verify your call's encryption by making sure the numbers below are the same for both of you.")) + " ")
+                      + "<a href=\"" + (win.e2ee ? "https://go.microsoft.com/fwlink/?linkid=2174740" : "https://go.microsoft.com/fwlink/?linkid=2174896") + "\">" + qsTr("Learn more") + "</a>"
                 font.family: theme.font; font.pixelSize: 12
                 lineHeight: win.e2ee ? 20 : 16; lineHeightMode: Text.FixedHeight
                 color: theme.textSecondary
                 onLinkActivated: l => Qt.openUrlExternally(l)
                 HoverHandler { cursorShape: encryptionText.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
-                Accessible.name: win.e2ee ? "Learn more about OST End-to-end encryption" : "Learn more about OST data encryption"
+                Accessible.name: win.e2ee ? qsTr("Learn more about OST End-to-end encryption") : qsTr("Learn more about OST data encryption")
             }
             Item {
                 visible: win.e2ee && win.e2eeNumbers.length > 0
@@ -4087,7 +4088,7 @@ Window {
                     }
                 }
                 Accessible.role: Accessible.StaticText
-                Accessible.name: "End-to-end encryption numbers " + win.e2eeNumbers.join(" ")
+                Accessible.name: qsTr("End-to-end encryption numbers") + " " + win.e2eeNumbers.join(" ")
             }
         }
     }
@@ -4130,7 +4131,7 @@ Window {
         Row {
             x: win.newControls ? 16.7 : 20.7; y: win.newControls ? 16.7 : 20.7; spacing: win.newControls ? 14.13 : 12
             Repeater {
-                model: [{ n: "like", t: "Like" }, { n: "heart", t: "Love" }, { n: "applause", t: "Applause" }, { n: "laugh", t: "Laugh" }, { n: "surprised", t: "Surprised" }]
+                model: [{ n: "like", t: qsTr("Like") }, { n: "heart", t: qsTr("Love") }, { n: "applause", t: qsTr("Applause") }, { n: "laugh", t: qsTr("Laugh") }, { n: "surprised", t: qsTr("Surprised") }]
                 Rectangle {
                     required property var modelData
                     width: 32; height: 32; radius: 4
@@ -4166,7 +4167,7 @@ Window {
                 }
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
-                    text: win.handRaised ? "Lower hand" : "Raise hand"
+                    text: win.handRaised ? qsTr("Lower hand") : qsTr("Raise hand")
                     font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
                     color: theme.onFill(hcFillRaise, win.handRaised ? theme.textOnBrand : raiseHover.hovered ? theme.text : theme.textStrong)
                 }
@@ -4174,7 +4175,7 @@ Window {
             HoverHandler { id: raiseHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { enabled: win.live; onTapped: win.toggleHand() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Raise"
+            Accessible.name: qsTr("Raise")
             Accessible.onPressAction: win.toggleHand()
         }
     }
@@ -4209,48 +4210,48 @@ Window {
         y: win.meeting ? 59.3 : (parent ? parent.height + 4 : 0)
         width: win.meeting ? 263.3 : 240
         readonly property var moreOptions: [
-            { label: win.galleryAtTop ? "Show gallery on right" : "Show gallery at top", checked: false },
-            { label: "Turn off other videos", checked: win.incomingVideoOff },
-            { label: "Hide me", checked: win.hideMe },
+            { k: "galleryTop", label: win.galleryAtTop ? qsTr("Show gallery on right") : qsTr("Show gallery at top"), checked: false },
+            { k: "incoming", label: qsTr("Turn off other videos"), checked: win.incomingVideoOff },
+            { k: "hideMe", label: qsTr("Hide me"), checked: win.hideMe },
             win.layout === "speaker"
-                ? { label: win.speakerMeInGallery ? "Remove me from gallery" : "Include me in gallery", checked: false }
-                : { label: win.meInGallery ? "Remove me from gallery" : "Include me in gallery", checked: false },
-            { label: "Optimize for room", checked: win.roomMode },
-            { label: "Full screen", keys: "F11", checked: win.visibility === Window.FullScreen }]
+                ? { k: "meInGallery", label: win.speakerMeInGallery ? qsTr("Remove me from gallery") : qsTr("Include me in gallery"), checked: false }
+                : { k: "meInGallery", label: win.meInGallery ? qsTr("Remove me from gallery") : qsTr("Include me in gallery"), checked: false },
+            { k: "room", label: qsTr("Optimize for room"), checked: win.roomMode },
+            { k: "fullscreen", label: qsTr("Full screen"), keys: "F11", checked: win.visibility === Window.FullScreen }]
         items: win.meeting
-            ? [{ label: "Gallery", icon: "view-gallery-20", checked: win.layout === "gallery" },
-               { label: "Speaker", icon: "view-speaker-20", checked: win.layout === "speaker" }].concat(win.signMode ? [{ label: "Sign language", icon: "hand-wave-20", checked: win.layout === "accessibility" }] : []).concat([
-               { label: "Focus on content", icon: "view-focus-20", checked: win.layout === "focus", enabled: win.shareShown || win.layout === "focus" },
+            ? [{ k: "gallery", label: qsTr("Gallery"), icon: "view-gallery-20", checked: win.layout === "gallery" },
+               { k: "speaker", label: qsTr("Speaker", "calling:k26t72ax"), icon: "view-speaker-20", checked: win.layout === "speaker" }].concat(win.signMode ? [{ k: "sign", label: qsTr("Sign language"), icon: "hand-wave-20", checked: win.layout === "accessibility" }] : []).concat([
+               { k: "focus", label: qsTr("Focus on content"), icon: "view-focus-20", checked: win.layout === "focus", enabled: win.shareShown || win.layout === "focus" },
                { separator: true }])
               .concat(win.layout === "gallery" ? [
-               { label: "Gallery size", icon: "view-gallery-size-20", submenu: [4, 9, 16, 49].map(n => ({ label: n + " people", checked: win.gallerySize === n })) },
-               { label: "Show videos first", icon: "view-videos-first-20", checked: win.videosFirst }] : [])
-              .concat([{ label: "More options", submenu: moreOptions }])
-            : [{ label: win.visibility === Window.FullScreen ? "Exit full screen" : "Full screen", icon: "full-screen-maximize-20" },
-               { label: win.incomingVideoOff ? "Turn on incoming video" : "Turn off incoming video", icon: "video-off-20" }]
+               { k: "gallerySize", label: qsTr("Gallery size"), icon: "view-gallery-size-20", submenu: [4, 9, 16, 49].map(n => ({ label: qsTr("%n people", "calling:k8syueuxc_mf", n), checked: win.gallerySize === n })) },
+               { k: "videosFirst", label: qsTr("Show videos first"), icon: "view-videos-first-20", checked: win.videosFirst }] : [])
+              .concat([{ k: "more", label: qsTr("More options"), submenu: moreOptions }])
+            : [{ k: "fullscreen", label: win.visibility === Window.FullScreen ? qsTr("Exit full screen") : qsTr("Full screen"), icon: "full-screen-maximize-20" },
+               { k: "incoming", label: win.incomingVideoOff ? qsTr("Turn on incoming video") : qsTr("Turn off incoming video"), icon: "video-off-20" }]
         onPicked: i => {
-            const l = items[i].label
-            if (l === "Gallery") win.layout = "gallery"
-            else if (l === "Speaker") win.layout = "speaker"
-            else if (l === "Sign language") { win.layout = "accessibility"; win.contentItem.Accessible.announce("Accessibility mode was set") }
-            else if (l === "Focus on content") win.layout = win.layout === "focus" ? "gallery" : "focus"
-            else if (l === "Show videos first") win.videosFirst = !win.videosFirst
-            else if (l.indexOf("ull screen") >= 0) win.toggleFullScreen()
+            const k = items[i].k
+            if (k === "gallery") win.layout = "gallery"
+            else if (k === "speaker") win.layout = "speaker"
+            else if (k === "sign") { win.layout = "accessibility"; win.contentItem.Accessible.announce(qsTr("Accessibility mode was set")) }
+            else if (k === "focus") win.layout = win.layout === "focus" ? "gallery" : "focus"
+            else if (k === "videosFirst") win.videosFirst = !win.videosFirst
+            else if (k === "fullscreen") win.toggleFullScreen()
             else win.incomingVideoOff = !win.incomingVideoOff
         }
         onSubPicked: (i, j) => {
             const it = items[i]
-            if (it.label === "Gallery size") { win.gallerySize = [4, 9, 16, 49][j]; return }
-            const l = it.submenu[j].label
-            if (l.startsWith("Show gallery")) win.galleryAtTop = !win.galleryAtTop
-            else if (l === "Turn off other videos") win.incomingVideoOff = !win.incomingVideoOff
-            else if (l === "Hide me") win.hideMe = !win.hideMe
-            else if (l.endsWith("me from gallery") || l.endsWith("me in gallery")) {
+            if (it.k === "gallerySize") { win.gallerySize = [4, 9, 16, 49][j]; return }
+            const k = it.submenu[j].k
+            if (k === "galleryTop") win.galleryAtTop = !win.galleryAtTop
+            else if (k === "incoming") win.incomingVideoOff = !win.incomingVideoOff
+            else if (k === "hideMe") win.hideMe = !win.hideMe
+            else if (k === "meInGallery") {
                 if (win.layout === "speaker") win.speakerMeInGallery = !win.speakerMeInGallery
                 else win.meInGallery = !win.meInGallery
             }
-            else if (l === "Optimize for room") win.roomMode = !win.roomMode
-            else if (l === "Full screen") win.toggleFullScreen()
+            else if (k === "room") win.roomMode = !win.roomMode
+            else if (k === "fullscreen") win.toggleFullScreen()
         }
     }
     // Teams' Controls menu (organizer-control-button-menu, measured on
@@ -4312,19 +4313,19 @@ Window {
     function announceActiveSpeaker() {
         const id = win.speakerId
         const p = !id ? null : (id === win.selfId ? { name: win.selfName } : win.others.find(o => o.id === id))
-        const named = n => (n || "").trim() || "Unknown"
+        const named = n => (n || "").trim() || qsTr("Unknown")
         let who = p ? (p.name || "").trim() : ""
         let kase = !p ? "nobody_speaking" : who ? "known_speaker" : "unknown_speaker"
         if (p && p.sign_role === "signLanguageInterpreter") {
             let signer = ""
-            if (win.iSign && win.myInterpreters.indexOf(id) >= 0) signer = "You"
+            if (win.iSign && win.myInterpreters.indexOf(id) >= 0) signer = qsTr("You")
             else {
                 const s = win.others.filter(o => o.sign_role === "dhhSigner" && (win.signContentOf(o).interpreterIds || "").split(",").indexOf(id) >= 0)
                 if (s.length === 1) signer = named(s[0].name)
             }
-            if (signer) { who = signer + " voiced by " + named(p.name); kase = "paired_signer" }
+            if (signer) { who = qsTr("%1 voiced by %2").arg(signer).arg(named(p.name)); kase = "paired_signer" }
         }
-        const text = "Latest speaker: " + (!p ? "Nobody is speaking" : who || "Unknown")
+        const text = qsTr("Latest speaker: %1").arg(!p ? qsTr("Nobody is speaking") : who || qsTr("Unknown"))
         console.warn("ANNOUNCE", JSON.stringify({ speaker: id, case: kase, text: text }))
         win.contentItem.Accessible.announce(text, Accessible.Assertive)
         return text
@@ -4391,31 +4392,31 @@ Window {
     /// pinned): its short label and glyph; null when OST doesn't show it.
     function gridEntry(name) {
         let e = null
-        if (name === "RecordingButton") e = { label: recording ? "Recording" : "Record", icon: "nmc-record", checked: recording }
+        if (name === "RecordingButton") e = { label: recording ? qsTr("Recording") : qsTr("Record"), icon: "nmc-record", checked: recording }
         else if (name === "TranscriptButton") {
-            e = { label: transcribing ? "Transcribing" : "Transcribe", icon: "nmc-transcribe", checked: transcribing }
+            e = { label: transcribing ? qsTr("Transcribing") : qsTr("Transcribe"), icon: "nmc-transcribe", checked: transcribing }
             // Once a transcript has run: its pane from the item's chevron.
-            if (transcriptStarted) e.submenu = [{ name: "TranscriptPanelButton", label: side === "transcript" ? "Hide transcript" : "Show transcript",
+            if (transcriptStarted) e.submenu = [{ name: "TranscriptPanelButton", label: side === "transcript" ? qsTr("Hide transcript") : qsTr("Show transcript"),
                                                  icon: "transcript-panel-20", checked: side === "transcript" }]
         }
-        else if (name === "MeetingFacilitatorTimerButton") e = timerCanView ? { label: "Timer", icon: "nmc-timer", checked: timerVisible } : null
-        else if (name === "MeetingDetailsButton") e = { label: "Notes", icon: "nmc-notes", checked: side === "notes" }
-        else if (name === "ClosedCaptionsButton") e = { label: "Captions", icon: "nmc-captions", checked: captionsOn }
-        else if (name === "StartBreakoutRoomButton") e = { label: "Rooms", icon: "nmc-rooms", checked: side === "rooms" }
-        else if (name === "RealTimeTextButton") e = { label: "RTT", icon: "nmc-rtt", checked: rttOn, enabled: !rttOn }
-        else if (name === "MeetingAppsAddButton") e = { label: "Get more apps and agents", apps: true, checked: appsMenu.visible }
+        else if (name === "MeetingFacilitatorTimerButton") e = timerCanView ? { label: qsTr("Timer"), icon: "nmc-timer", checked: timerVisible } : null
+        else if (name === "MeetingDetailsButton") e = { label: qsTr("Notes"), icon: "nmc-notes", checked: side === "notes" }
+        else if (name === "ClosedCaptionsButton") e = { label: qsTr("Captions"), icon: "nmc-captions", checked: captionsOn }
+        else if (name === "StartBreakoutRoomButton") e = { label: qsTr("Rooms"), icon: "nmc-rooms", checked: side === "rooms" }
+        else if (name === "RealTimeTextButton") e = { label: qsTr("RTT"), icon: "nmc-rtt", checked: rttOn, enabled: !rttOn }
+        else if (name === "MeetingAppsAddButton") e = { label: qsTr("Get more apps and agents"), apps: true, checked: appsMenu.visible }
         // Bar controls that overflowed or were unpinned: their bar label.
-        else if (name === "ChatButton") e = { label: "Chat", icon: "nmc-chat", checked: side === "chat" }
-        else if (name === "RosterButton") e = { label: "People", icon: "nmc-people", checked: side === "people" }
-        else if (name === "MeetingCollabButton") e = { label: "Copilot", icon: side === "copilot" ? "copilot-filled-48" : "ai-copilot", checked: side === "copilot" }
-        else if (name === "ReactionButton") e = { label: "React", icon: handRaised ? "nmc-react-filled" : "nmc-react", checked: handRaised }
-        else if (name === "RaiseHandsButton") e = { label: handRaised ? "Lower" : "Raise", icon: "nmc-raise", checked: handRaised }
-        else if (name === "OrganizerControlButton") e = { label: "Controls", icon: "nmc-controls", chevron: true }
-        else if (name === "PopoutContentButton") e = { label: "Pop out", icon: "call-popout" }
-        else if (name === "CallTransferButtonV2") e = { label: "Transfer", icon: "call-transfer" }
-        else if (name === "CallConsultativeTransferButtonV2") e = { label: "Consult", icon: "consult" }
-        else if (name === "DialpadButton") e = { label: "Dial pad", icon: "dialpad" }
-        else if (name === "HoldButton") e = { label: "Hold", icon: "pause" }
+        else if (name === "ChatButton") e = { label: qsTr("Chat"), icon: "nmc-chat", checked: side === "chat" }
+        else if (name === "RosterButton") e = { label: qsTr("People"), icon: "nmc-people", checked: side === "people" }
+        else if (name === "MeetingCollabButton") e = { label: qsTr("Copilot"), icon: side === "copilot" ? "copilot-filled-48" : "ai-copilot", checked: side === "copilot" }
+        else if (name === "ReactionButton") e = { label: qsTr("React"), icon: handRaised ? "nmc-react-filled" : "nmc-react", checked: handRaised }
+        else if (name === "RaiseHandsButton") e = { label: handRaised ? qsTr("Lower") : qsTr("Raise"), icon: "nmc-raise", checked: handRaised }
+        else if (name === "OrganizerControlButton") e = { label: qsTr("Controls"), icon: "nmc-controls", chevron: true }
+        else if (name === "PopoutContentButton") e = { label: qsTr("Pop out"), icon: "call-popout" }
+        else if (name === "CallTransferButtonV2") e = { label: qsTr("Transfer"), icon: "call-transfer" }
+        else if (name === "CallConsultativeTransferButtonV2") e = { label: qsTr("Consult"), icon: "consult" }
+        else if (name === "DialpadButton") e = { label: qsTr("Dial pad"), icon: "dialpad" }
+        else if (name === "HoldButton") e = { label: qsTr("Hold"), icon: "pause" }
         if (!e) return null
         e.name = name
         if (e.enabled === undefined) e.enabled = controlEnabled(name)
@@ -4435,22 +4436,22 @@ Window {
     }
     /// More's list rows (and their submenus), as the new controls name them.
     function newLabel(n) {
-        if (n === "ViewModeButton") return { label: "View", icon: "nmc-view", submenu: newViewItems }
-        if (n === "JoinInfoMenuControl") return { label: "Join info", icon: "nmc-info" }
-        if (n === "SettingsMenuControl") return { label: "Settings", icon: "nmc-settings" }
-        if (n === "MeetingInfoButton") return { label: "Meeting info", icon: "nmc-info", checked: side === "info" }
-        if (n === "CallHealth") return { label: "Call health", icon: "nmc-health", checked: side === "callHealth" }
-        if (n === "PstnButton") return { label: "Call me", icon: "nmc-callme" }
-        if (n === "AccessibilitySettingsButton") return { label: "Accessibility settings", icon: "nmc-accessibility", checked: side === "accessibility" }
-        if (n === "ChatBubblesButton") return chatBubblesSuppressed ? { label: "Show chat bubbles", icon: "nmc-bubbles" }
-                                                                   : { label: "Don't show chat bubbles", icon: "nmc-bubbles-off" }
-        if (n === "ToggleHideMyselfButton") return hideMe ? { label: "Unhide me", icon: "nmc-show-me" } : { label: "Hide me", icon: "nmc-hide-me" }
-        if (n === "CameraEffectsButton") return { label: "Video effects and settings", icon: "nmc-effects", checked: side === "video" }
-        if (n === "AudioSettingsButton") return { label: "Audio settings", icon: "nmc-audio", checked: side === "audio" }
-        if (n === "ByodMeetingRoomModeButton") return { label: "Optimize for room", icon: "nmc-room", checked: roomMode }
-        if (n === "ReportMeetingButton") return { label: "Report a concern", icon: "nmc-report" }
-        if (n === "CallParkButton") return { label: "Park Call", icon: "call-park-20" }
-        if (n === "MeetingHelpButton") return { label: "Help", icon: "nmc-help" }
+        if (n === "ViewModeButton") return { label: qsTr("View"), icon: "nmc-view", submenu: newViewItems }
+        if (n === "JoinInfoMenuControl") return { label: qsTr("Join info"), icon: "nmc-info" }
+        if (n === "SettingsMenuControl") return { label: qsTr("Settings"), icon: "nmc-settings" }
+        if (n === "MeetingInfoButton") return { label: qsTr("Meeting info"), icon: "nmc-info", checked: side === "info" }
+        if (n === "CallHealth") return { label: qsTr("Call health"), icon: "nmc-health", checked: side === "callHealth" }
+        if (n === "PstnButton") return { label: qsTr("Call me"), icon: "nmc-callme" }
+        if (n === "AccessibilitySettingsButton") return { label: qsTr("Accessibility settings"), icon: "nmc-accessibility", checked: side === "accessibility" }
+        if (n === "ChatBubblesButton") return chatBubblesSuppressed ? { label: qsTr("Show chat bubbles"), icon: "nmc-bubbles" }
+                                                                   : { label: qsTr("Don't show chat bubbles"), icon: "nmc-bubbles-off" }
+        if (n === "ToggleHideMyselfButton") return hideMe ? { label: qsTr("Unhide me"), icon: "nmc-show-me" } : { label: qsTr("Hide me"), icon: "nmc-hide-me" }
+        if (n === "CameraEffectsButton") return { label: qsTr("Video effects and settings"), icon: "nmc-effects", checked: side === "video" }
+        if (n === "AudioSettingsButton") return { label: qsTr("Audio settings"), icon: "nmc-audio", checked: side === "audio" }
+        if (n === "ByodMeetingRoomModeButton") return { label: qsTr("Optimize for room"), icon: "nmc-room", checked: roomMode }
+        if (n === "ReportMeetingButton") return { label: qsTr("Report a concern"), icon: "nmc-report" }
+        if (n === "CallParkButton") return { label: qsTr("Park Call"), icon: "call-park-20" }
+        if (n === "MeetingHelpButton") return { label: qsTr("Help"), icon: "nmc-help" }
         return null
     }
     // A menu control's sections as one list (a section of one merges
@@ -4485,20 +4486,20 @@ Window {
     // content, Show gallery at top, Gallery size ▸ | Turn off other
     // videos, Show videos first.
     readonly property var newViewItems: [
-        { action: "gallery", label: "Gallery", icon: "nmc-view", checked: layout === "gallery" },
-        { action: "speaker", label: "Speaker", icon: "nmc-speaker", checked: layout === "speaker" }].concat(signMode ? [{ action: "signLanguage", label: "Sign language", icon: "hand-wave-20", checked: layout === "accessibility" }] : []).concat([
+        { action: "gallery", label: qsTr("Gallery"), icon: "nmc-view", checked: layout === "gallery" },
+        { action: "speaker", label: qsTr("Speaker", "calling:k26t72ax"), icon: "nmc-speaker", checked: layout === "speaker" }].concat(signMode ? [{ action: "signLanguage", label: qsTr("Sign language"), icon: "hand-wave-20", checked: layout === "accessibility" }] : []).concat([
         { separator: true },
-        { action: "fullscreen", label: "Full screen", icon: "nmc-fullscreen", keys: "F11", checked: visibility === Window.FullScreen },
-        { action: "focus", label: "Focus on content", icon: "nmc-focus", checked: layout === "focus", enabled: shareShown || layout === "focus" },
-        { action: "galleryTop", label: galleryAtTop ? "Show gallery on right" : "Show gallery at top", icon: "nmc-gallery-right" }])
-        .concat(layout === "gallery" ? [{ action: "gallerySize", label: "Gallery size", icon: "nmc-gallery-size",
-                                          submenu: [4, 9, 16, 49].map(n => ({ label: n + " people", checked: gallerySize === n })) }] : [])
+        { action: "fullscreen", label: qsTr("Full screen"), icon: "nmc-fullscreen", keys: "F11", checked: visibility === Window.FullScreen },
+        { action: "focus", label: qsTr("Focus on content"), icon: "nmc-focus", checked: layout === "focus", enabled: shareShown || layout === "focus" },
+        { action: "galleryTop", label: galleryAtTop ? qsTr("Show gallery on right") : qsTr("Show gallery at top"), icon: "nmc-gallery-right" }])
+        .concat(layout === "gallery" ? [{ action: "gallerySize", label: qsTr("Gallery size"), icon: "nmc-gallery-size",
+                                          submenu: [4, 9, 16, 49].map(n => ({ label: qsTr("%n people", "calling:k8syueuxc_mf", n), checked: gallerySize === n })) }] : [])
         .concat([{ separator: true },
-                 { action: "incoming", label: incomingVideoOff ? "Turn on other videos" : "Turn off other videos", icon: "nmc-videos-off" }])
-        .concat(layout === "gallery" ? [{ action: "videosFirst", label: "Show videos first", icon: "view-videos-first-20", checked: videosFirst }] : [])
+                 { action: "incoming", label: incomingVideoOff ? qsTr("Turn on other videos") : qsTr("Turn off other videos"), icon: "nmc-videos-off" }])
+        .concat(layout === "gallery" ? [{ action: "videosFirst", label: qsTr("Show videos first"), icon: "view-videos-first-20", checked: videosFirst }] : [])
     function runViewAction(a) {
         if (a === "gallery") layout = "gallery"
-        else if (a === "signLanguage") { layout = "accessibility"; contentItem.Accessible.announce("Accessibility mode was set") }
+        else if (a === "signLanguage") { layout = "accessibility"; contentItem.Accessible.announce(qsTr("Accessibility mode was set")) }
         else if (a === "speaker") layout = "speaker"
         else if (a === "focus") layout = layout === "focus" ? "gallery" : "focus"
         else if (a === "fullscreen") toggleFullScreen()
@@ -4647,7 +4648,7 @@ Window {
                             }
                         }
                         Accessible.role: Accessible.MenuItem
-                        Accessible.name: "More options for " + cell.modelData.label
+                        Accessible.name: qsTr("More options for %1").arg(cell.modelData.label)
                     }
                 }
             }
@@ -4668,7 +4669,7 @@ Window {
                 HoverHandler { id: appsHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: { newMore.close(); win.runControl("MeetingAppsAddButton") } }
                 Accessible.role: Accessible.MenuItem
-                Accessible.name: "Apps"
+                Accessible.name: qsTr("Apps")
             }
         }
     }
@@ -4693,10 +4694,10 @@ Window {
         if (!group) return
         const i = group.indexOf(name)
         const rows = []
-        if (i > 0) rows.push({ action: "before", label: "Move before \"" + controlLabel(group[i - 1]) + "\"", icon: "nmc-move-before" })
-        if (i < group.length - 1) rows.push({ action: "after", label: "Move after \"" + controlLabel(group[i + 1]) + "\"", icon: "nmc-move-after" })
-        rows.push({ action: "unpin", label: "Unpin", icon: "nmc-unpin" }, { separator: true },
-                  { action: "reset", label: "Reset meeting controls", icon: "nmc-reset" })
+        if (i > 0) rows.push({ action: "before", label: qsTr("Move before \"%1\"").arg(controlLabel(group[i - 1])), icon: "nmc-move-before" })
+        if (i < group.length - 1) rows.push({ action: "after", label: qsTr("Move after \"%1\"").arg(controlLabel(group[i + 1])), icon: "nmc-move-after" })
+        rows.push({ action: "unpin", label: qsTr("Unpin"), icon: "nmc-unpin" }, { separator: true },
+                  { action: "reset", label: qsTr("Reset meeting controls"), icon: "nmc-reset" })
         arrangeTarget = name
         arrangeMenu.items = rows
         const q = item.mapToItem(win.contentItem, p.x, p.y)
@@ -4708,8 +4709,8 @@ Window {
         const rows = []
         const grid = ubar.more.filter(s => s.grid).reduce((a, s) => a.concat(s.items.map(i => i.name)), [])
         if (name !== "MeetingAppsAddButton" && (grid.indexOf(name) >= 0 || ubar.overflowed.indexOf(name) >= 0))
-            rows.push({ action: "pin", label: "Pin", icon: "nmc-pin" }, { separator: true })
-        rows.push({ action: "reset", label: "Reset meeting controls", icon: "nmc-reset" })
+            rows.push({ action: "pin", label: qsTr("Pin"), icon: "nmc-pin" }, { separator: true })
+        rows.push({ action: "reset", label: qsTr("Reset meeting controls"), icon: "nmc-reset" })
         arrangeTarget = name
         arrangeMenu.items = rows
         arrangeMenu.x = Math.min(q.x - 5, win.width - arrangeMenu.implicitWidth)
@@ -4959,7 +4960,7 @@ Window {
                         HoverHandler { id: kh2; cursorShape: Qt.PointingHandCursor }
                         TapHandler { id: kh; onTapped: dialPad.press(modelData[0]) }
                         Accessible.role: Accessible.Button
-                        Accessible.name: "Dial " + modelData[0]
+                        Accessible.name: qsTr("Dial %1").arg(modelData[0])
                     }
                 }
             }
@@ -4978,7 +4979,7 @@ Window {
         contentItem: Column {
             spacing: 8
             Text {
-                text: picker.mode === "transfer" ? "Transfer to" : "Consult with"
+                text: picker.mode === "transfer" ? qsTr("Transfer to") : qsTr("Consult with")
                 font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text
             }
             Rectangle {
@@ -4988,10 +4989,10 @@ Window {
                     id: who
                     x: 10; width: parent.width - 20; anchors.verticalCenter: parent.verticalCenter
                     font.family: theme.font; font.pixelSize: theme.base; color: theme.text; clip: true
-                    Text { visible: !who.text; text: "Type a name"; color: theme.textTertiary; font: who.font }
+                    Text { visible: !who.text; text: qsTr("Type a name"); color: theme.textTertiary; font: who.font }
                     onTextChanged: win.searchPeople(text)
                     Keys.onEscapePressed: picker.close()
-                    Accessible.name: picker.mode === "transfer" ? "Transfer to" : "Consult with"
+                    Accessible.name: picker.mode === "transfer" ? qsTr("Transfer to") : qsTr("Consult with")
                 }
             }
             Repeater {
@@ -5013,11 +5014,11 @@ Window {
                         id: openChat
                         visible: picker.mode === "consult"
                         anchors { right: parent.right; rightMargin: 10; verticalCenter: parent.verticalCenter }
-                        text: "Open chat"; font.family: theme.font; font.pixelSize: theme.small; color: theme.brandForeground1
+                        text: qsTr("Open chat"); font.family: theme.font; font.pixelSize: theme.small; color: theme.brandForeground1
                         z: 2
                         TapHandler { onTapped: { picker.close(); win.consulting = { id: modelData.id, name: modelData.name }; win.consult(modelData.id, modelData.name) } }
                         Accessible.role: Accessible.Button
-                        Accessible.name: "Open chat with " + modelData.name
+                        Accessible.name: qsTr("Open chat with %1").arg(modelData.name)
                     }
                     TapHandler {
                         onTapped: {
@@ -5027,7 +5028,7 @@ Window {
                         }
                     }
                     Accessible.role: Accessible.Button
-                    Accessible.name: (picker.mode === "transfer" ? "Transfer to " : "Start a call with ") + modelData.name
+                    Accessible.name: (picker.mode === "transfer" ? qsTr("Transfer to %1") : qsTr("Start a call with %1")).arg(modelData.name)
                 }
             }
         }
@@ -5047,17 +5048,17 @@ Window {
             anchors.centerIn: parent; spacing: 12
             Text {
                 anchors.verticalCenter: parent.verticalCenter
-                text: parent.parent.consultState === "calling" ? "Calling " + parent.parent.who + "…"
-                    : parent.parent.consultState === "transferring" ? "Transferring to " + parent.parent.who + "…"
-                    : parent.parent.consultState === "merging" ? "Merging calls…"
-                    : "Consulting " + parent.parent.who
+                text: parent.parent.consultState === "calling" ? qsTr("Calling %1…").arg(parent.parent.who)
+                    : parent.parent.consultState === "transferring" ? qsTr("Transferring to %1…").arg(parent.parent.who)
+                    : parent.parent.consultState === "merging" ? qsTr("Merging calls…")
+                    : qsTr("Consulting %1").arg(parent.parent.who)
                 font.family: theme.font; font.pixelSize: theme.base; color: theme.text
             }
             Repeater {
                 model: [
-                    { key: "transfer", label: "Transfer", primary: true, on: true },
-                    { key: "merge", label: "Merge Calls", primary: false, on: true },
-                    { key: "end", label: "End consult", primary: false, on: false }
+                    { key: "transfer", label: qsTr("Transfer"), primary: true, on: true },
+                    { key: "merge", label: qsTr("Merge Calls"), primary: false, on: true },
+                    { key: "end", label: qsTr("End consult"), primary: false, on: false }
                 ]
                 Rectangle {
                     id: hcFillC
@@ -5093,23 +5094,23 @@ Window {
         Row {
             id: consultRow
             anchors.centerIn: parent; spacing: 12
-            Text { anchors.verticalCenter: parent.verticalCenter; text: win.consulting ? "Consulting " + win.consulting.name : ""; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
+            Text { anchors.verticalCenter: parent.verticalCenter; text: win.consulting ? qsTr("Consulting %1").arg(win.consulting.name) : ""; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
             Rectangle {
                 id: hcFill11
                 width: 84; height: 28; radius: theme.radius; color: theme.brandFill
                 anchors.verticalCenter: parent.verticalCenter
-                Text { anchors.centerIn: parent; text: "Transfer"; color: theme.onFill(hcFill11, "white"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
+                Text { anchors.centerIn: parent; text: qsTr("Transfer"); color: theme.onFill(hcFill11, "white"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
                 TapHandler { onTapped: { const c = win.consulting; win.consulting = null; win.transfer(c.id, c.name) } }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Transfer to " + (win.consulting ? win.consulting.name : "")
+                Accessible.name: qsTr("Transfer to %1").arg(win.consulting ? win.consulting.name : "")
             }
             Rectangle {
                 width: 84; height: 28; radius: theme.radius; color: theme.input; border.color: theme.stroke
                 anchors.verticalCenter: parent.verticalCenter
-                Text { anchors.centerIn: parent; text: "Resume"; color: theme.text; font.family: theme.font; font.pixelSize: theme.base }
+                Text { anchors.centerIn: parent; text: qsTr("Resume"); color: theme.text; font.family: theme.font; font.pixelSize: theme.base }
                 TapHandler { onTapped: { win.consulting = null; if (win.held) win.toggleHold() } }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Stop consulting and resume"
+                Accessible.name: qsTr("Stop consulting and resume")
             }
         }
     }
@@ -5133,15 +5134,15 @@ Window {
     // tooltips (titles and shortcuts as Teams shows them).
     // Compact: 9 wide, the line 4 in and 21.6 tall.
     Component { id: barDivider; Item { width: win.ubarDivider; height: bar.height; Rectangle { x: win.compactBar ? 4 : 8; y: win.compactBar ? 8.9 : 13.5; width: 0.67; height: win.compactBar ? 21.6 : 33; color: theme.stroke } } }
-    Component { id: cPopout; BarButton { icon: "call-popout"; label: "Pop out"; tip: "Pop out"; onClicked: win.runControl("PopoutContentButton") } }
+    Component { id: cPopout; BarButton { icon: "call-popout"; label: qsTr("Pop out"); tip: qsTr("Pop out"); onClicked: win.runControl("PopoutContentButton") } }
     // Presenting a Whiteboard: Teams' whiteboard-sharing-controls, "Stop
     // sharing" (62 wide, measured 2026-11-18).
     Component {
         id: cContentStop
         BarButton {
-            icon: win.newControls ? "nmc-share-stop" : "call-share-stop-filled"; label: "Stop sharing"; strong: !win.newControls
+            icon: win.newControls ? "nmc-share-stop" : "call-share-stop-filled"; label: qsTr("Stop sharing"); strong: !win.newControls
             iconColor: theme.hc("#B10E1C", "#FFFFFF")
-            tip: "Stop sharing"
+            tip: qsTr("Stop sharing")
             onClicked: win.runControl("WhiteboardControlsSection")
         }
     }
@@ -5154,20 +5155,20 @@ Window {
             // takeControlPptBtn).
             BarButton {
                 visible: win.pptViewed
-                icon: "take-control-20"; label: "Take control"; tip: "Take control"
+                icon: "take-control-20"; label: qsTr("Take control"); tip: qsTr("Take control")
                 onClicked: win.runControl("PptControlsSection")
             }
             BarButton {
                 visible: !win.pptViewed
                 id: pptLayoutB
-                icon: "scb-layout"; label: "Layout"; tip: "Layout"
+                icon: "scb-layout"; label: qsTr("Layout"); tip: qsTr("Layout")
                 onClicked: { pptLayoutMenu.parent = pptLayoutB; pptLayoutMenu.open() }
             }
             BarButton {
                 visible: !win.pptViewed
-                icon: win.newControls ? "nmc-share-stop" : "call-share-stop-filled"; label: "Stop sharing"; strong: !win.newControls
+                icon: win.newControls ? "nmc-share-stop" : "call-share-stop-filled"; label: qsTr("Stop sharing"); strong: !win.newControls
                 iconColor: theme.hc("#B10E1C", "#FFFFFF")
-                tip: "Stop sharing"
+                tip: qsTr("Stop sharing")
                 onClicked: win.runControl("PptControlsSection")
             }
         }
@@ -5197,10 +5198,10 @@ Window {
         id: pptLayoutMenu
         y: parent ? parent.height + 5 : 0
         items: [
-            { label: "Content only", checked: win.pptLayout === "ContentOnly" },
+            { label: qsTr("Content only"), checked: win.pptLayout === "ContentOnly" },
             // Teams: Cameo needs your camera and a cameo in the deck.
-            { label: "Cameo", checked: win.pptLayout === "Cameo", enabled: win.cameraOn && win.pptCameoDetected,
-              tip: !win.cameraOn ? "Turn on your camera to select this layout" : !win.pptCameoDetected ? "Add your video feed to this slide to use Cameo." : "" }
+            { label: qsTr("Cameo"), checked: win.pptLayout === "Cameo", enabled: win.cameraOn && win.pptCameoDetected,
+              tip: !win.cameraOn ? qsTr("Turn on your camera to select this layout") : !win.pptCameoDetected ? qsTr("Add your video feed to this slide to use Cameo.") : "" }
         ]
         onPicked: i => { win.pptLayout = i === 1 ? "Cameo" : "ContentOnly"; backend.contentPptCameo(win.pptLayout === "Cameo") }
     }
@@ -5208,15 +5209,15 @@ Window {
     ConfirmDialog {
         id: stopPresentingDialog
         dialogWidth: 400
-        title: "Stop presenting?"
-        body: "This will end the presentation for everyone. To switch presenters select Cancel so the next person can take control"
-        confirmText: "Stop presenting"
+        title: qsTr("Stop presenting?")
+        body: qsTr("This will end the presentation for everyone. To switch presenters select Cancel so the next person can take control")
+        confirmText: qsTr("Stop presenting")
         onConfirmed: backend.contentShareStop()
     }
-    Component { id: cTransfer; BarButton { icon: "call-transfer"; label: "Transfer"; tip: "Transfer"; enabled: win.controlEnabled("CallTransferButtonV2"); checked: picker.visible && picker.mode === "transfer"; onClicked: win.runControl("CallTransferButtonV2") } }
-    Component { id: cConsult; BarButton { icon: "consult"; label: "Consult"; tip: "Consult then transfer"; enabled: win.controlEnabled("CallConsultativeTransferButtonV2"); checked: picker.visible && picker.mode === "consult"; onClicked: win.runControl("CallConsultativeTransferButtonV2") } }
-    Component { id: cDialpad; BarButton { icon: "dialpad"; label: "Dial pad"; tip: "Dial pad"; enabled: win.controlEnabled("DialpadButton"); checked: dialPad.visible; onClicked: win.runControl("DialpadButton") } }
-    Component { id: cHold; BarButton { icon: "pause"; label: "Hold"; tip: "Hold"; enabled: win.controlEnabled("HoldButton"); onClicked: win.runControl("HoldButton") } }
+    Component { id: cTransfer; BarButton { icon: "call-transfer"; label: qsTr("Transfer"); tip: qsTr("Transfer"); enabled: win.controlEnabled("CallTransferButtonV2"); checked: picker.visible && picker.mode === "transfer"; onClicked: win.runControl("CallTransferButtonV2") } }
+    Component { id: cConsult; BarButton { icon: "consult"; label: qsTr("Consult"); tip: qsTr("Consult then transfer"); enabled: win.controlEnabled("CallConsultativeTransferButtonV2"); checked: picker.visible && picker.mode === "consult"; onClicked: win.runControl("CallConsultativeTransferButtonV2") } }
+    Component { id: cDialpad; BarButton { icon: "dialpad"; label: qsTr("Dial pad"); tip: qsTr("Dial pad"); enabled: win.controlEnabled("DialpadButton"); checked: dialPad.visible; onClicked: win.runControl("DialpadButton") } }
+    Component { id: cHold; BarButton { icon: "pause"; label: qsTr("Hold"); tip: qsTr("Hold"); enabled: win.controlEnabled("HoldButton"); onClicked: win.runControl("HoldButton") } }
     // Held: Teams' "Resume" text button in the contextual group.
     Component {
         id: cResume
@@ -5231,26 +5232,26 @@ Window {
                 Row {
                     anchors.centerIn: parent; spacing: 8
                     FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "play-20"; size: 20; color: theme.onFill(hcFill12, theme.text) }
-                    Text { anchors.verticalCenter: parent.verticalCenter; text: "Resume"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.onFill(hcFill12, theme.text) }
+                    Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Resume"); font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.onFill(hcFill12, theme.text) }
                 }
                 HoverHandler { id: rph; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: win.runControl("ResumeButton") }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Resume"
+                Accessible.name: qsTr("Resume")
             }
         }
     }
     // Copilot (meeting-collab-button): Teams' Copilot mark, filled while
     // its pane is open; "Open Copilot (Alt+C)" / "Close Copilot".
-    Component { id: cCopilot; BarButton { icon: win.side === "copilot" ? "copilot-filled-48" : "ai-copilot"; label: "Copilot"; checked: win.side === "copilot"; tip: win.side === "copilot" ? "Close Copilot" : "Open Copilot"; shortcut: win.side === "copilot" ? "" : "Alt+C"; enabled: win.controlEnabled("MeetingCollabButton"); onClicked: win.runControl("MeetingCollabButton") } }
-    Component { id: cChat; BarButton { icon: win.newControls ? "nmc-chat" : "call-chat"; label: "Chat"; checked: win.side === "chat"; tip: win.side === "chat" ? "Hide conversation" : "Show conversation"; enabled: win.controlEnabled("ChatButton"); onClicked: win.runControl("ChatButton") } }
+    Component { id: cCopilot; BarButton { icon: win.side === "copilot" ? "copilot-filled-48" : "ai-copilot"; label: qsTr("Copilot"); checked: win.side === "copilot"; tip: win.side === "copilot" ? qsTr("Close Copilot") : qsTr("Open Copilot"); shortcut: win.side === "copilot" ? "" : "Alt+C"; enabled: win.controlEnabled("MeetingCollabButton"); onClicked: win.runControl("MeetingCollabButton") } }
+    Component { id: cChat; BarButton { icon: win.newControls ? "nmc-chat" : "call-chat"; label: qsTr("Chat"); checked: win.side === "chat"; tip: win.side === "chat" ? qsTr("Hide conversation") : qsTr("Show conversation"); enabled: win.controlEnabled("ChatButton"); onClicked: win.runControl("ChatButton") } }
     Component {
         id: cPeople
         BarButton {
-            icon: win.newControls ? "nmc-people" : "call-people"; label: "People"; checked: win.side === "people"
+            icon: win.newControls ? "nmc-people" : "call-people"; label: qsTr("People"); checked: win.side === "people"
             readonly property int count: win.roster.length
             // The new controls' tooltip has no count.
-            tip: (count === 0 || win.newControls ? "" : count === 1 ? "1 participant. " : count + " participants. ") + (win.side === "people" ? "Hide participants" : "Show participants")
+            tip: (count === 0 || win.newControls ? "" : (qsTr("%n participants.", "", count) + " ")) + (win.side === "people" ? qsTr("Hide participants") : qsTr("Show participants"))
             // Teams: people waiting in the lobby, or raised hands, as a
             // red count; else how many are here (meetings).
             badge: !win.meeting ? 0 : win.lobby.length > 0 ? win.lobby.length : win.hands.length > 0 ? win.hands.length : win.roster.length > 1 ? win.roster.length : 0
@@ -5259,18 +5260,18 @@ Window {
             onClicked: win.runControl("RosterButton")
         }
     }
-    Component { id: cRaise; BarButton { icon: "call-raise"; label: win.handRaised ? "Lower" : "Raise"; checked: win.handRaised; tip: win.handRaised ? "Lower your hand" : "Raise your hand"; shortcut: "Ctrl+Shift+K"; enabled: win.controlEnabled("RaiseHandsButton"); onClicked: win.runControl("RaiseHandsButton") } }
+    Component { id: cRaise; BarButton { icon: "call-raise"; label: win.handRaised ? qsTr("Lower") : qsTr("Raise"); checked: win.handRaised; tip: win.handRaised ? qsTr("Lower your hand") : qsTr("Raise your hand"); shortcut: "Ctrl+Shift+K"; enabled: win.controlEnabled("RaiseHandsButton"); onClicked: win.runControl("RaiseHandsButton") } }
     // The new controls: React holds Raise hand too; its glyph is the
     // emoji-hand, filled in brand while your hand is up.
-    Component { id: cReact; BarButton { icon: !win.newControls ? "call-react" : win.handRaised ? "nmc-react-filled" : "nmc-react"; label: "React"; checked: reactMenu.visible
+    Component { id: cReact; BarButton { icon: !win.newControls ? "call-react" : win.handRaised ? "nmc-react-filled" : "nmc-react"; label: qsTr("React"); checked: reactMenu.visible
             iconColor: win.newControls && win.handRaised ? theme.brand : hovered ? theme.text : theme.textStrong
-            tip: !win.newControls ? "Send a reaction" : win.handRaised ? "React or lower your hand. Your hand is raised" : "React or raise your hand. Your hand is not raised"; enabled: win.controlEnabled("ReactionButton"); onClicked: win.runControl("ReactionButton") } }
-    Component { id: cView; BarButton { id: viewB; icon: "call-view"; label: "View"; tip: "Change your view"; checked: viewMenu.visible && viewMenu.parent === viewB; enabled: win.controlEnabled("ViewModeButton"); onClicked: win.runControl("ViewModeButton") } }
+            tip: !win.newControls ? qsTr("Send a reaction") : win.handRaised ? qsTr("React or lower your hand. Your hand is raised") : qsTr("React or raise your hand. Your hand is not raised"); enabled: win.controlEnabled("ReactionButton"); onClicked: win.runControl("ReactionButton") } }
+    Component { id: cView; BarButton { id: viewB; icon: "call-view"; label: qsTr("View"); tip: qsTr("Change your view"); checked: viewMenu.visible && viewMenu.parent === viewB; enabled: win.controlEnabled("ViewModeButton"); onClicked: win.runControl("ViewModeButton") } }
     // Controls: the meeting options (organizers), as Teams opens them.
-    Component { id: cControls; BarButton { id: ctlB; icon: win.newControls ? "nmc-controls" : "call-controls"; label: "Controls"; checked: controlsMenu.visible; enabled: win.controlEnabled("OrganizerControlButton"); onClicked: win.runControl("OrganizerControlButton"); Component.onCompleted: win.controlsButton = ctlB } }
+    Component { id: cControls; BarButton { id: ctlB; icon: win.newControls ? "nmc-controls" : "call-controls"; label: qsTr("Controls"); checked: controlsMenu.visible; enabled: win.controlEnabled("OrganizerControlButton"); onClicked: win.runControl("OrganizerControlButton"); Component.onCompleted: win.controlsButton = ctlB } }
     // Notes: Teams keeps meeting notes in the meeting chat's Notes tab.
-    Component { id: cNotes; BarButton { icon: win.newControls ? "nmc-notes" : "call-notes"; label: "Notes"; tip: win.side === "notes" ? "Close notes" : "Open notes"; checked: win.side === "notes"; enabled: win.controlEnabled("MeetingDetailsButton"); onClicked: win.runControl("MeetingDetailsButton") } }
-    Component { id: cRooms; BarButton { icon: win.newControls ? "nmc-rooms" : "call-rooms"; label: "Rooms"; tip: win.breakoutRooms.length ? "Breakout rooms" : "Create breakout rooms"; checked: win.side === "rooms"; enabled: win.controlEnabled("StartBreakoutRoomButton"); onClicked: win.runControl("StartBreakoutRoomButton") } }
+    Component { id: cNotes; BarButton { icon: win.newControls ? "nmc-notes" : "call-notes"; label: qsTr("Notes"); tip: win.side === "notes" ? qsTr("Close notes") : qsTr("Open notes"); checked: win.side === "notes"; enabled: win.controlEnabled("MeetingDetailsButton"); onClicked: win.runControl("MeetingDetailsButton") } }
+    Component { id: cRooms; BarButton { icon: win.newControls ? "nmc-rooms" : "call-rooms"; label: qsTr("Rooms"); tip: win.breakoutRooms.length ? qsTr("Breakout rooms") : qsTr("Create breakout rooms"); checked: win.side === "rooms"; enabled: win.controlEnabled("StartBreakoutRoomButton"); onClicked: win.runControl("StartBreakoutRoomButton") } }
     // A More grid control the user pinned to the bar (new controls): its
     // grid label and glyph.
     Component {
@@ -5315,7 +5316,7 @@ Window {
         Accessible.role: Accessible.Button
         Accessible.name: btb.label
     }
-    Component { id: cJoinRoom; BarTextButton { label: "Join room"; control: "ReturnToBreakoutRoomButton" } }
+    Component { id: cJoinRoom; BarTextButton { label: qsTr("Join room"); control: "ReturnToBreakoutRoomButton" } }
     // Start meeting (primary) and End event in the end slot; disabled
     // while a presenter starts or ends it (Teams' tooltips).
     // Teams' StagingRoomStartMeetingButton and End event: bar buttons with
@@ -5323,30 +5324,30 @@ Window {
     // the label (measured 2026-11-18: "Start event" 53.4, "End event"
     // 49.3), greyed while a presenter starts or ends it.
     Component { id: cStartEvent; BarButton { icon: "play-circle-20-filled"; label: win.startLabel; labelPad: 1.33; enabled: !win.liveEvent.busy
-        tip: win.liveEvent.busy ? (win.liveEvent.streaming ? "A presenter already started the event" : "A presenter already started the meeting") : win.startLabel
+        tip: win.liveEvent.busy ? (win.liveEvent.streaming ? qsTr("A presenter already started the event") : qsTr("A presenter already started the meeting")) : win.startLabel
         onClicked: win.runControl("StagingRoomStartMeetingButton") } }
     Component { id: cEndEvent; BarButton { icon: "dismiss-circle-20"; label: win.endLabel; labelPad: 1.33; enabled: !win.liveEvent.busy
-        tip: win.liveEvent.busy ? (win.isEvent ? "Someone already ended the event" : "Someone already ended the meeting") : win.endLabel
+        tip: win.liveEvent.busy ? (win.isEvent ? qsTr("Someone already ended the event") : qsTr("Someone already ended the meeting")) : win.endLabel
         onClicked: win.runControl("StagingRoomEndMeetingButton") } }
     Component { id: cQna; BarButton { icon: "chat-bubbles-question-20"; label: "Q&A"; tip: "Q&A"; checked: win.side === "qna"; onClicked: win.runControl("YammerQnaButton") } }
-    Component { id: cReturnMain; BarTextButton { label: "Return"; control: "BreakoutRoomReturnToMainButton" } }
-    Component { id: cApps; BarButton { id: appsB; icon: "call-apps"; label: "Apps"; tip: appsMenu.visible ? "Close apps" : "Find apps and more"; checked: appsMenu.visible && appsMenu.parent === appsB; onClicked: win.runControl("MeetingAppsAddButton") } }
-    Component { id: cMore; BarButton { icon: win.newControls ? "nmc-more" : "call-more"; label: "More"; tip: "More actions"; checked: moreMenu.visible || newMore.visible; dropTarget: win.dragZone === "more"; onClicked: win.runControl("MoreButton") } }
+    Component { id: cReturnMain; BarTextButton { label: qsTr("Return"); control: "BreakoutRoomReturnToMainButton" } }
+    Component { id: cApps; BarButton { id: appsB; icon: "call-apps"; label: qsTr("Apps"); tip: appsMenu.visible ? qsTr("Close apps") : qsTr("Find apps and more"); checked: appsMenu.visible && appsMenu.parent === appsB; onClicked: win.runControl("MeetingAppsAddButton") } }
+    Component { id: cMore; BarButton { icon: win.newControls ? "nmc-more" : "call-more"; label: qsTr("More"); tip: qsTr("More actions"); checked: moreMenu.visible || newMore.visible; dropTarget: win.dragZone === "more"; onClicked: win.runControl("MoreButton") } }
     Component {
         id: cCamera
         BarButton {
             id: camB
             // The new controls draw the regular glyphs in #424242.
             icon: win.newControls ? (win.cameraOn ? "nmc-camera" : "nmc-camera-off") : win.cameraOn ? "call-camera-filled" : "call-camera-off-filled"
-            label: "Camera"; strong: !win.newControls
+            label: qsTr("Camera"); strong: !win.newControls
             // Teams' disabled reasons, first match wins (§3).
-            readonly property string disabledReason: !win.canVideo ? "No available camera found"
-                : win.videoRestricted ? "Only select participants can share video" : ""
-            tip: disabledReason.length > 0 ? disabledReason : win.cameraOn ? "Turn camera off" : "Turn camera on"
+            readonly property string disabledReason: !win.canVideo ? qsTr("No available camera found")
+                : win.videoRestricted ? qsTr("Only select participants can share video") : ""
+            tip: disabledReason.length > 0 ? disabledReason : win.cameraOn ? qsTr("Turn camera off") : qsTr("Turn camera on")
             shortcut: disabledReason.length > 0 ? "" : "Ctrl+Shift+O"
             enabled: win.controlEnabled("VideoButton") && !win.videoRestricted
             // Teams' Camera ▾ (video-button-configure, "Open video options").
-            split: true; chevronLabel: "Open video options"
+            split: true; chevronLabel: qsTr("Open video options")
             chevronChecked: videoFlyout.visible && videoFlyout.parent === camB
             onClicked: win.runControl("VideoButton")
             onChevronClicked: { videoFlyout.parent = camB; videoFlyout.open() }
@@ -5357,12 +5358,12 @@ Window {
         BarButton {
             id: micB
             icon: win.newControls ? (win.muted || !win.hasAudio ? "nmc-mic-off" : "nmc-mic") : win.muted || !win.hasAudio ? "call-mic-off-filled" : "call-mic-filled"
-            label: "Mic"; strong: !win.newControls
-            tip: win.micRestricted ? "Only select participants can unmute"
-                : !win.hasAudio ? "Turn audio on" : win.muted ? "Unmute mic" : "Mute mic"
+            label: qsTr("Mic"); strong: !win.newControls
+            tip: win.micRestricted ? qsTr("Only select participants can unmute")
+                : !win.hasAudio ? qsTr("Turn audio on") : win.muted ? qsTr("Unmute mic") : qsTr("Mute mic")
             shortcut: win.micRestricted ? "" : "Ctrl+Shift+M"
             enabled: win.controlEnabled("MicrophoneButton") && !win.micRestricted
-            split: true; chevronLabel: "Open audio options"
+            split: true; chevronLabel: qsTr("Open audio options")
             chevronChecked: audioFlyout.visible && audioFlyout.parent === micB
             onClicked: win.runControl("MicrophoneButton")
             onChevronClicked: win.openAudioOptions(micB)
@@ -5376,10 +5377,10 @@ Window {
         BarButton {
             readonly property string st: win.controlState.state || "none"
             icon: "take-control-20"
-            label: st === "controlling" ? "Stop control" : st === "requested" ? "Waiting for approval" : "Take control"
+            label: st === "controlling" ? qsTr("Stop control") : st === "requested" ? qsTr("Waiting for approval") : qsTr("Take control")
             checked: st === "controlling"
-            tip: win.controlState.deniedBySharer ? "Requesting control is disabled by the sharer company's administrator"
-                : st === "controlling" ? "Stop control" : st === "requested" ? "Waiting for approval" : "Take control of the presentation"
+            tip: win.controlState.deniedBySharer ? qsTr("Requesting control is disabled by the sharer company's administrator")
+                : st === "controlling" ? qsTr("Stop control") : st === "requested" ? qsTr("Waiting for approval") : qsTr("Take control of the presentation")
             enabled: win.controlEnabled("ScreensharingControlButton")
             onClicked: win.runControl("ScreensharingControlButton")
         }
@@ -5388,9 +5389,9 @@ Window {
         id: cShare
         BarButton {
             icon: win.newControls ? (win.sharing ? "nmc-share-stop" : "nmc-share") : win.sharing ? "call-share-stop-filled" : "call-share-filled"
-            label: win.sharing ? "Stop sharing" : "Share"; strong: !win.newControls
+            label: win.sharing ? qsTr("Stop sharing") : qsTr("Share"); strong: !win.newControls
             iconColor: win.sharing ? theme.hc("#B10E1C", "#FFFFFF") : win.newControls && !hovered ? theme.textStrong : theme.text
-            tip: win.sharing ? "Stop sharing" : "Share content"; shortcut: "Ctrl+Shift+E"
+            tip: win.sharing ? qsTr("Stop sharing") : qsTr("Share content"); shortcut: "Ctrl+Shift+E"
             enabled: win.controlEnabled("ShareButton")
             onClicked: win.runControl("ShareButton")
         }
@@ -5680,18 +5681,18 @@ Window {
     ConfirmDialog {
         id: startEventDialog
         readonly property bool th: win.townhallDelayMessage && !!win.liveEvent.townHall
-        title: th ? "Start the event for everyone?" : "Start the meeting for everyone?"
-        body: th ? (win.attendeeCount === 1 ? "1 attendee will enter and watch the event at a slight delay." : win.attendeeCount + " attendees will enter and watch the event at a slight delay.")
-                 : (win.attendeeCount === 1 ? "1 attendee will enter the meeting" : win.attendeeCount + " attendees will enter the meeting")
-        confirmText: th ? "Start event" : "Start meeting"
+        title: th ? qsTr("Start the event for everyone?") : qsTr("Start the meeting for everyone?")
+        body: th ? qsTr("%n attendees will enter and watch the event at a slight delay.", "", win.attendeeCount)
+                 : qsTr("%n attendees will enter the meeting", "", win.attendeeCount)
+        confirmText: th ? qsTr("Start event") : qsTr("Start meeting")
         onConfirmed: backend.setEventLive(true)
     }
     ConfirmDialog {
         id: endEventDialog
-        title: win.isEvent ? "End the event for attendees?" : "End the meeting for attendees?"
-        body: win.isEvent ? "This will end the event for all attendees and return organizers and presenters to the Green Room."
-                          : "This will end the meeting for all attendees and return organizers and presenters to the Green Room."
-        confirmText: win.isEvent ? "End event for all attendees" : "End meeting"
+        title: win.isEvent ? qsTr("End the event for attendees?") : qsTr("End the meeting for attendees?")
+        body: win.isEvent ? qsTr("This will end the event for all attendees and return organizers and presenters to the Green Room.")
+                          : qsTr("This will end the meeting for all attendees and return organizers and presenters to the Green Room.")
+        confirmText: win.isEvent ? qsTr("End event for all attendees") : qsTr("End meeting")
         onConfirmed: backend.setEventLive(false)
     }
     property int eventFailures: 0
@@ -5703,10 +5704,10 @@ Window {
     ConfirmDialog {
         id: eventFailedDialog
         property bool starting: true
-        title: starting ? "Unable to start meeting" : (win.isEvent ? "Couldn't end event" : "Couldn't end meeting")
-        body: starting ? (win.eventFailures > 1 ? "Wait and try again later or ask another presenter or organizer to start the meeting for you." : "Let's try starting the meeting again.")
-                       : win.eventFailures > 1 ? "Wait and try again or ask another organizer to end it." : (win.isEvent ? "Let's try ending the event again." : "Let's try ending the meeting again.")
-        confirmText: "Try again"
+        title: starting ? qsTr("Unable to start meeting") : (win.isEvent ? qsTr("Couldn't end event") : qsTr("Couldn't end meeting"))
+        body: starting ? (win.eventFailures > 1 ? qsTr("Wait and try again later or ask another presenter or organizer to start the meeting for you.") : qsTr("Let's try starting the meeting again."))
+                       : win.eventFailures > 1 ? qsTr("Wait and try again or ask another organizer to end it.") : (win.isEvent ? qsTr("Let's try ending the event again.") : qsTr("Let's try ending the meeting again."))
+        confirmText: qsTr("Try again")
         onConfirmed: backend.setEventLive(starting)
     }
     Connections {
@@ -5727,18 +5728,18 @@ Window {
         y: win.belowBar + 10.7
         z: 6
         // Back in the green room after the end (Teams' info alert).
-        text: !ended ? "Start the meeting whenever you're ready."
-            : win.isEvent ? "The event has ended for attendees. If recording was enabled, it has now stopped."
-            : "The meeting has ended for attendees and recording has stopped."
+        text: !ended ? qsTr("Start the meeting whenever you're ready.")
+            : win.isEvent ? qsTr("The event has ended for attendees. If recording was enabled, it has now stopped.")
+            : qsTr("The meeting has ended for attendees and recording has stopped.")
         icon: "info-20"
         onDismissed: win.greenRoomAlertClosed = true
         onEndedChanged: if (ended) win.greenRoomAlertClosed = false
     }
     ConfirmDialog {
         id: requestControlDialog
-        title: "Request control?"
-        body: "You'll control the content the presenter is sharing."
-        confirmText: "Request"
+        title: qsTr("Request control?")
+        body: qsTr("You'll control the content the presenter is sharing.")
+        confirmText: qsTr("Request")
         onConfirmed: win.screenControl("request", "")
     }
     // Give / take control's alerts (calling alerts 523673 and the
@@ -5747,15 +5748,15 @@ Window {
     Connections {
         target: backend
         function onScreenControlNotice(kind, mri, name) {
-            const n = name || "Someone"
-            if (kind === "request") win.controlAlert = { kind: "request", text: n + " is requesting control.", mri: mri }
+            const n = name || qsTr("Someone")
+            if (kind === "request") win.controlAlert = { kind: "request", text: qsTr("%1 is requesting control.").arg(n), mri: mri }
             else if (kind === "withdrawn" && win.controlAlert && win.controlAlert.kind === "request") win.controlAlert = null
-            else if (kind === "hasControl") win.controlAlert = { kind: "has", text: n + " has control.", mri: mri }
+            else if (kind === "hasControl") win.controlAlert = { kind: "has", text: qsTr("%1 has control.").arg(n), mri: mri }
             else if (kind === "controlEnded" && win.controlAlert && win.controlAlert.kind === "has") win.controlAlert = null
-            else if (kind === "given") win.controlAlert = { kind: "note", text: "You have been given screen control" }
-            else if (kind === "denied") win.controlAlert = { kind: "note", text: "Your request for control wasn't accepted." }
-            else if (kind === "takenBack") win.controlAlert = { kind: "note", text: "The person sharing took control back." }
-            else if (kind === "stopped") win.controlAlert = { kind: "note", text: "Screen control has been stopped" }
+            else if (kind === "given") win.controlAlert = { kind: "note", text: qsTr("You have been given screen control") }
+            else if (kind === "denied") win.controlAlert = { kind: "note", text: qsTr("Your request for control wasn't accepted.") }
+            else if (kind === "takenBack") win.controlAlert = { kind: "note", text: qsTr("The person sharing took control back.") }
+            else if (kind === "stopped") win.controlAlert = { kind: "note", text: qsTr("Screen control has been stopped") }
         }
     }
     Timer {

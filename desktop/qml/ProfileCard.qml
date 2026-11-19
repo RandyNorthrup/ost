@@ -52,16 +52,16 @@ Popup {
     function relative(iso) {
         const t = Date.parse(iso || ""); if (!t) return ""
         const m = Math.round((Date.now() - t) / 60000)
-        if (m < 60) return m <= 1 ? "1 minute" : m + " minutes"
-        const h = Math.round(m / 60); if (h < 24) return h === 1 ? "1 hour" : h + " hours"
-        const d = Math.round(h / 24); return d === 1 ? "1 day" : d + " days"
+        if (m < 60) return qsTr("%n minutes ago", "", Math.max(m, 1))
+        const h = Math.round(m / 60); if (h < 24) return qsTr("%n hours ago", "", h)
+        const d = Math.round(h / 24); return qsTr("%n days ago", "", d)
     }
-    readonly property var statusLabels: ({ Available: "Available", Busy: "Busy", DoNotDisturb: "Do not disturb", BeRightBack: "Be right back", Away: "Away", Offline: "Offline", OffWork: "Offline" })
+    readonly property var statusLabels: ({ Available: qsTr("Available"), Busy: qsTr("Busy"), DoNotDisturb: qsTr("Do not disturb"), BeRightBack: qsTr("Be right back"), Away: qsTr("Away"), Offline: qsTr("Offline"), OffWork: qsTr("Offline") })
     readonly property string availability: {
         const a = p.availability || ""
         const offline = !a || a === "Offline" || a === "PresenceUnknown"
-        let s = offline ? (p.lastActive ? "Last seen " + relative(p.lastActive) + " ago" : "Offline") : (statusLabels[a] || a)
-        if (p.outOfOffice) s = "Out of office"
+        let s = offline ? (p.lastActive ? qsTr("Last seen %1").arg(relative(p.lastActive)) : qsTr("Offline")) : (statusLabels[a] || a)
+        if (p.outOfOffice) s = qsTr("Out of office")
         return s + (freeText ? " • " + freeText : "")
     }
     // "Free at …": the end of what's on their calendar, else the start of
@@ -69,7 +69,7 @@ Popup {
     readonly property string freeText: {
         const sch = card.schedule || {}
         const wh = sch.workingHours || {}
-        if (sch.nextFree) return "Free at " + theme.time(new Date(sch.nextFree))
+        if (sch.nextFree) return qsTr("Free at %1").arg(theme.time(new Date(sch.nextFree)))
         if (wh.startTime && wh.daysOfWeek) {
             const days = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
             const [sh, sm] = wh.startTime.split(":").map(Number), [eh, em] = (wh.endTime || "17:00").split(":").map(Number)
@@ -77,7 +77,7 @@ Popup {
             const today = wh.daysOfWeek.indexOf(days[now.getDay()]) >= 0
             if (today && mins >= sh * 60 + sm && mins < eh * 60 + em) return ""
             const at = new Date(now); at.setHours(sh, sm, 0, 0)
-            return "Free at " + theme.time(at)
+            return qsTr("Free at %1").arg(theme.time(at))
         }
         return ""
     }
@@ -85,13 +85,13 @@ Popup {
         const wh = (card.schedule || {}).workingHours || {}
         if (!wh.startTime) return ""
         const t = s => { const [h, m] = s.split(":").map(Number); return theme.time(new Date(2000, 0, 1, h, m)) }
-        return "Work hours: " + t(wh.startTime) + " - " + t(wh.endTime || "17:00")
+        return qsTr("Work hours: %1 - %2").arg(t(wh.startTime)).arg(t(wh.endTime || "17:00"))
     }
     readonly property string localTime: {
         const sch = card.schedule || {}
         const theirs = ((sch.workingHours || {}).timeZone || {}).name || ""
         if (!theirs) return ""
-        return theme.time(new Date()) + (theirs === sch.myTimeZone ? " - Same time zone as you" : " - " + theirs)
+        return theme.time(new Date()) + (theirs === sch.myTimeZone ? " - " + qsTr("Same time zone as you") : " - " + theirs)
     }
 
     contentItem: Item {
@@ -115,12 +115,12 @@ Popup {
             x: 144.7; y: 74.7; spacing: 8
             Repeater {
                 model: [
-                    { icon: "chat-20", label: "Start a chat with ", act: "chat" },
-                    { icon: "org-20", label: "Navigate to the org chart of ", act: "org" },
-                    { icon: "video-20", label: "Start a video call with ", act: "video" },
-                    { icon: "call-20", label: "Start an audio call with ", act: "call" },
+                    { icon: "chat-20", label: qsTr("Start a chat with %1"), act: "chat" },
+                    { icon: "org-20", label: qsTr("Navigate to the org chart of %1"), act: "org" },
+                    { icon: "video-20", label: qsTr("Start a video call with %1"), act: "video" },
+                    { icon: "call-20", label: qsTr("Start an audio call with %1"), act: "call" },
                     // LinkedIn's logo (16 px, #1177B3): its people search for the name.
-                    { icon: "linkedin-logo", label: "Find LinkedIn profile for ", act: "linkedin" }
+                    { icon: "linkedin-logo", label: qsTr("Find LinkedIn profile for %1"), act: "linkedin" }
                 ]
                 Rectangle {
                     id: hcFill1
@@ -142,9 +142,9 @@ Popup {
                             else { root.close(); root.startCall(root.mri, n, modelData.act === "video") }
                         }
                     }
-                    ToolTip.visible: ah.hovered; ToolTip.delay: 500; ToolTip.text: modelData.label + (root.card.displayName || "")
+                    ToolTip.visible: ah.hovered; ToolTip.delay: 500; ToolTip.text: modelData.label.arg(root.card.displayName || "")
                     Accessible.role: Accessible.Button
-                    Accessible.name: modelData.label + (root.card.displayName || "")
+                    Accessible.name: modelData.label.arg(root.card.displayName || "")
                 }
             }
         }
@@ -156,13 +156,13 @@ Popup {
             HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.close() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Close"
+            Accessible.name: qsTr("Close")
         }
         // Tabs.
         Row {
             x: 20.7; y: 148.7
             Repeater {
-                model: [{ key: "overview", label: "Overview" }, { key: "profile", label: "Profile" }, { key: "organization", label: "Organization" }, { key: "linkedin", label: "LinkedIn" }]
+                model: [{ key: "overview", label: qsTr("Overview") }, { key: "profile", label: qsTr("Profile") }, { key: "organization", label: qsTr("Organization") }, { key: "linkedin", label: qsTr("LinkedIn") }]
                 Item {
                     required property var modelData
                     readonly property bool on: root.tab === modelData.key
@@ -203,8 +203,8 @@ Popup {
                             x: 12; width: parent.width - 24; anchors.verticalCenter: parent.verticalCenter
                             font.family: theme.font; font.pixelSize: 14; color: theme.text; clip: true
                             onAccepted: send.go()
-                            Text { visible: !quick.text; text: "Send a quick message"; font: quick.font; color: theme.textSecondary }
-                            Accessible.name: "Send a quick message"
+                            Text { visible: !quick.text; text: qsTr("Send a quick message"); font: quick.font; color: theme.textSecondary }
+                            Accessible.name: qsTr("Send a quick message")
                         }
                     }
                     Rectangle {
@@ -216,7 +216,7 @@ Popup {
                         HoverHandler { id: sendHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: send.go() }
                         Accessible.role: Accessible.Button
-                        Accessible.name: "Send"
+                        Accessible.name: qsTr("Send")
                     }
                 }
                 Item { width: 1; height: 15 }
@@ -246,7 +246,7 @@ Popup {
                             visible: root.p.workLocation === "Office" || root.p.workLocation === "Remote"
                             width: parent.width; height: 28
                             FluentIcon { x: 12; y: 2; name: root.p.workLocation === "Office" ? "building-20" : "home-20"; size: 20; color: theme.textStrong }
-                            Text { x: 43; y: 4; text: root.p.workLocation === "Office" ? "In the office" : "Working remotely"; font.family: theme.font; font.pixelSize: 12; color: theme.text }
+                            Text { x: 43; y: 4; text: root.p.workLocation === "Office" ? qsTr("In the office") : qsTr("Working remotely"); font.family: theme.font; font.pixelSize: 12; color: theme.text }
                         }
                         Rectangle { visible: !!root.localTime; width: parent.width; height: 0.67; color: theme.pick("#E0E0E0", "#3D3D3D", "#000000") }
                         Item {
@@ -258,22 +258,22 @@ Popup {
                     }
                 }
                 Item { width: 1; height: 20 }
-                Heading { text: "Contact information" }
+                Heading { text: qsTr("Contact information") }
                 Item { width: 1; height: 20 }
                 Flow {
                     x: 4; width: 773; spacing: 20
                     readonly property var items: {
                         const c = root.card, out = []
-                        if (c.mail) out.push({ icon: "mail-20", label: "Email", value: c.mail, url: "mailto:" + c.mail })
+                        if (c.mail) out.push({ icon: "mail-20", label: qsTr("Email"), value: c.mail, url: "mailto:" + c.mail })
                         const im = (c.imAddresses || [])[0] || c.userPrincipalName
-                        if (im) out.push({ icon: "chat-20", label: "Chat", value: im, chat: true })
-                        if ((c.businessPhones || []).length) out.push({ icon: "call-20", label: "Work phone", value: c.businessPhones[0], url: "tel:" + c.businessPhones[0] })
+                        if (im) out.push({ icon: "chat-20", label: qsTr("Chat"), value: im, chat: true })
+                        if ((c.businessPhones || []).length) out.push({ icon: "call-20", label: qsTr("Work phone"), value: c.businessPhones[0], url: "tel:" + c.businessPhones[0] })
                         if (root.moreContact) {
-                            if (c.mobilePhone) out.push({ icon: "phone-20", label: "Mobile", value: c.mobilePhone, url: "tel:" + c.mobilePhone })
-                            if (c.officeLocation) out.push({ icon: "building-20", label: "Office location", value: c.officeLocation })
-                            if (c.companyName) out.push({ icon: "building-multiple-20", label: "Company", value: c.companyName })
+                            if (c.mobilePhone) out.push({ icon: "phone-20", label: qsTr("Mobile"), value: c.mobilePhone, url: "tel:" + c.mobilePhone })
+                            if (c.officeLocation) out.push({ icon: "building-20", label: qsTr("Office location"), value: c.officeLocation })
+                            if (c.companyName) out.push({ icon: "building-multiple-20", label: qsTr("Company"), value: c.companyName })
                             const addr = [c.streetAddress, c.city, c.state, c.postalCode, c.country].filter(x => x).join(", ")
-                            if (addr) out.push({ icon: "location-20", label: "Business address", value: addr })
+                            if (addr) out.push({ icon: "location-20", label: qsTr("Business address"), value: addr })
                         }
                         return out
                     }
@@ -297,13 +297,13 @@ Popup {
                         }
                     }
                 }
-                LinkButton { visible: !root.moreContact; text: "Show more contact information"; onClicked: root.moreContact = true }
+                LinkButton { visible: !root.moreContact; text: qsTr("Show more contact information"); onClicked: root.moreContact = true }
                 Item { width: 1; height: 24 }
-                Heading { visible: orgPreview.count > 0 || !!root.card.manager; text: "Organization" }
+                Heading { visible: orgPreview.count > 0 || !!root.card.manager; text: qsTr("Organization") }
                 Item { width: 1; height: 16 }
                 Text {
                     visible: (root.card.reports || []).length > 0 || !!root.card.manager
-                    text: (root.card.reports || []).length ? "People reporting to " + (root.card.displayName || "") + " (" + root.card.reports.length + ")" : "Reports to"
+                    text: (root.card.reports || []).length ? qsTr("People reporting to %1 (%2)").arg(root.card.displayName || "").arg(root.card.reports.length) : qsTr("Reports to")
                     font.family: theme.font; font.pixelSize: 12; color: theme.textStrong
                 }
                 Item { width: 1; height: 8 }
@@ -315,7 +315,7 @@ Popup {
                         PersonTile { required property var modelData; person: modelData }
                     }
                 }
-                LinkButton { visible: orgPreview.count > 0; text: "Show organization"; onClicked: root.tab = "organization" }
+                LinkButton { visible: orgPreview.count > 0; text: qsTr("Show organization"); onClicked: root.tab = "organization" }
             }
 
             // ---- Profile ----
@@ -327,10 +327,10 @@ Popup {
                     model: {
                         const c = root.card, out = []
                         const add = (l, v) => { if (v) out.push({ label: l, value: v }) }
-                        add("Job title", c.jobTitle); add("Department", c.department); add("Company", c.companyName)
-                        add("Office location", c.officeLocation); add("Email", c.mail); add("Chat", (c.imAddresses || [])[0] || c.userPrincipalName)
-                        add("Work phone", (c.businessPhones || [])[0]); add("Mobile", c.mobilePhone)
-                        add("Business address", [c.streetAddress, c.city, c.state, c.postalCode, c.country].filter(x => x).join(", "))
+                        add(qsTr("Job title"), c.jobTitle); add(qsTr("Department"), c.department); add(qsTr("Company"), c.companyName)
+                        add(qsTr("Office location"), c.officeLocation); add(qsTr("Email"), c.mail); add(qsTr("Chat"), (c.imAddresses || [])[0] || c.userPrincipalName)
+                        add(qsTr("Work phone"), (c.businessPhones || [])[0]); add(qsTr("Mobile"), c.mobilePhone)
+                        add(qsTr("Business address"), [c.streetAddress, c.city, c.state, c.postalCode, c.country].filter(x => x).join(", "))
                         return out
                     }
                     Column {
@@ -370,10 +370,10 @@ Popup {
                     Accessible.role: Accessible.Button
                     Accessible.name: label
                 }
-                NavButton { icon: "home-20"; label: "Home"; can: root.historyAt > 0; onGo: root.stepTo(0) }
+                NavButton { icon: "home-20"; label: qsTr("Home"); can: root.historyAt > 0; onGo: root.stepTo(0) }
                 Item { width: 8; height: 1 }
-                NavButton { icon: "chevron-left-20"; label: "Back to previous profile"; can: root.historyAt > 0; onGo: root.stepTo(root.historyAt - 1) }
-                NavButton { icon: "chevron-right-20"; label: "Next profile"; can: root.historyAt < root.history.length - 1; onGo: root.stepTo(root.historyAt + 1) }
+                NavButton { icon: "chevron-left-20"; label: qsTr("Back to previous profile"); can: root.historyAt > 0; onGo: root.stepTo(root.historyAt - 1) }
+                NavButton { icon: "chevron-right-20"; label: qsTr("Next profile"); can: root.historyAt < root.history.length - 1; onGo: root.stepTo(root.historyAt + 1) }
             }
             Column {
                 id: orgTab
@@ -391,15 +391,15 @@ Popup {
                         id: noOrgText
                         x: 48; y: 12; width: parent.width - 48 - 16
                         wrapMode: Text.Wrap
-                        text: "We don't have the necessary details to show the organization chart for " + (root.card.displayName || "") + ". Organization details are provided by your admin or human resources department."
+                        text: qsTr("We don't have the necessary details to show the organization chart for %1. Organization details are provided by your admin or human resources department.").arg(root.card.displayName || "")
                         font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
                         color: theme.textStrong
                     }
                 }
-                Heading { visible: !!root.card.manager; text: "Reports to" }
+                Heading { visible: !!root.card.manager; text: qsTr("Reports to") }
                 PersonTile { visible: !!root.card.manager; person: root.card.manager || ({}) }
                 Heading { visible: !orgTab.noOrg; text: root.card.displayName || "" }
-                Heading { visible: (root.card.reports || []).length > 0; text: "People reporting to " + (root.card.displayName || "") + " (" + (root.card.reports || []).length + ")" }
+                Heading { visible: (root.card.reports || []).length > 0; text: qsTr("People reporting to %1 (%2)").arg(root.card.displayName || "").arg((root.card.reports || []).length) }
                 Flow {
                     width: parent.width; spacing: 8
                     Repeater { model: root.card.reports || []; PersonTile { required property var modelData; person: modelData } }
@@ -426,7 +426,7 @@ Popup {
                 Item { width: 1; height: 24 }
                 Text {
                     anchors.horizontalCenter: parent.horizontalCenter
-                    text: "Learn more on LinkedIn"
+                    text: qsTr("Learn more on LinkedIn")
                     font.family: theme.font; font.pixelSize: 24; font.weight: Font.DemiBold; lineHeight: 32; lineHeightMode: Text.FixedHeight
                     color: theme.text
                     Accessible.role: Accessible.Heading
@@ -436,7 +436,7 @@ Popup {
                 Text {
                     anchors.horizontalCenter: parent.horizontalCenter
                     width: 400; wrapMode: Text.Wrap; horizontalAlignment: Text.AlignHCenter
-                    text: (root.card.displayName || "") + " isn't sharing LinkedIn profile information here or doesn't have a LinkedIn profile."
+                    text: qsTr("%1 isn't sharing LinkedIn profile information here or doesn't have a LinkedIn profile.").arg(root.card.displayName || "")
                     font.family: theme.font; font.pixelSize: 14; lineHeight: 18.67; lineHeightMode: Text.FixedHeight
                     color: theme.text
                 }
@@ -446,7 +446,7 @@ Popup {
                     width: 360; wrapMode: Text.Wrap; horizontalAlignment: Text.AlignHCenter
                     textFormat: Text.RichText
                     readonly property string link: theme.brandForeground1
-                    text: "If your contact is based in the European Economic Area or Switzerland, they may need to change the LinkedIn Digital Markets Act <a href=\"https://aka.ms/LinkedInDMAVisibility\" style=\"color:" + link + ";text-decoration:none\">privacy setting</a> for you and others to see their LinkedIn profile here. <a href=\"https://aka.ms/LinkedInPrivacyHelp\" style=\"color:" + link + ";text-decoration:none\">Learn more</a>"
+                    text: qsTr("If your contact is based in the European Economic Area or Switzerland, they may need to change the LinkedIn Digital Markets Act %1 for you and others to see their LinkedIn profile here.").arg("<a href=\"https://aka.ms/LinkedInDMAVisibility\" style=\"color:" + link + ";text-decoration:none\">" + qsTr("privacy setting") + "</a>") + " <a href=\"https://aka.ms/LinkedInPrivacyHelp\" style=\"color:" + link + ";text-decoration:none\">" + qsTr("Learn more") + "</a>"
                     font.family: theme.font; font.pixelSize: 14; lineHeight: 18.67; lineHeightMode: Text.FixedHeight
                     color: theme.text
                     onLinkActivated: l => Qt.openUrlExternally(l)
@@ -458,7 +458,7 @@ Popup {
                     anchors.horizontalCenter: parent.horizontalCenter
                     width: settingsLabel.implicitWidth + 41.33; height: 32; radius: 4
                     color: setHover.pressed ? theme.pick("#444791", "#444791", "#1AEBFF") : setHover.hovered ? theme.brandHover : theme.brand
-                    Text { id: settingsLabel; anchors.centerIn: parent; text: "Check your own settings"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, "#FFFFFF") }
+                    Text { id: settingsLabel; anchors.centerIn: parent; text: qsTr("Check your own settings"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, "#FFFFFF") }
                     HoverHandler { id: setHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: Qt.openUrlExternally("https://aka.ms/LinkedInVisibility") }
                     Accessible.role: Accessible.Button
@@ -469,7 +469,7 @@ Popup {
                     anchors.horizontalCenter: parent.horizontalCenter
                     spacing: 4
                     Text {
-                        text: "Connect your account"
+                        text: qsTr("Connect your account")
                         font.family: theme.font; font.pixelSize: 14
                         font.underline: connectHover.hovered
                         color: theme.brandForeground1
@@ -482,7 +482,7 @@ Popup {
                         anchors.verticalCenter: parent.verticalCenter; size: 12; name: "info-16"; color: theme.textStrong
                         HoverHandler { id: infoHover }
                         ToolTip.visible: infoHover.hovered
-                        ToolTip.text: "Securely connect your LinkedIn account to bring your professional network into Microsoft apps."
+                        ToolTip.text: qsTr("Securely connect your LinkedIn account to bring your professional network into Microsoft apps.")
                     }
                 }
             }
@@ -490,7 +490,7 @@ Popup {
         Text {
             visible: !!root.card.loading || !!root.card.error
             anchors.centerIn: parent
-            text: root.card.error ? "Couldn't load this profile." : ""
+            text: root.card.error ? qsTr("Couldn't load this profile.") : ""
             font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
         }
     }

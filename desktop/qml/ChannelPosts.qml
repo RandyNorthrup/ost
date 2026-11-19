@@ -90,7 +90,7 @@ Item {
     function joinLiveForTest() {
         const p = root.posts.filter(g => g.post && g.post.kind === "call" && [g.post].concat(g.events).some(e => e.call_state === "started" && e.call_active)).pop()
         if (!p) return false
-        root.joinMeeting(p.post.meeting_join_url, p.post.meeting_title || "Meeting in \"" + root.channelName + "\"")
+        root.joinMeeting(p.post.meeting_join_url, p.post.meeting_title || qsTr("Meeting in \"%1\"").arg(root.channelName))
         return true
     }
     readonly property var peopleNames: backend.peopleNamesJson ? JSON.parse(backend.peopleNamesJson) : ({})
@@ -167,7 +167,7 @@ Item {
             readonly property bool meeting: !!post && post.kind === "call"
             readonly property var liveStart: !meeting ? null : [post].concat(modelData.events).filter(e => e.call_state === "started" && e.call_active).pop() || null
             readonly property bool live: !!liveStart
-            readonly property string meetingTitle: !meeting ? "" : (post.meeting_title || "Meeting in \"" + root.channelName + "\"")
+            readonly property string meetingTitle: !meeting ? "" : (post.meeting_title || qsTr("Meeting in \"%1\"").arg(root.channelName))
             readonly property string subjectText: meeting ? meetingTitle + (live ? "" : " ended") : (post && post.subject ? post.subject : "")
             x: root.compact ? 30 : (list.width - width) / 2
             width: list.cardW
@@ -213,7 +213,7 @@ Item {
                     Text {
                         visible: !postEdit.active
                         x: card.post ? 60 : 18; y: !card.post ? 14 : root.compact ? 13.4 : 22
-                        text: card.post ? root.senderOf(card.post) : "Earlier post"
+                        text: card.post ? root.senderOf(card.post) : qsTr("Earlier post")
                         font.family: theme.font; font.pixelSize: theme.base
                         lineHeight: root.compact ? 20 : 1; lineHeightMode: root.compact ? Text.FixedHeight : Text.ProportionalHeight
                         color: card.post ? theme.text : theme.textSecondary
@@ -231,7 +231,7 @@ Item {
                             }
                             Text {
                                 visible: !!card.post && card.post.edited === true
-                                text: "Edited"
+                                text: qsTr("Edited")
                                 font.family: theme.font; font.pixelSize: theme.small
                                 color: theme.textSecondary
                             }
@@ -334,8 +334,8 @@ Item {
                         message: card.post || ({})
                         context: "post"
                         acts: card.post && card.post.mine
-                            ? [{ key: "edit", icon: "edit-20", tip: "Edit" }]
-                            : [{ key: "reply", icon: "quote-reply-20", tip: "Reply with quote" }]
+                            ? [{ key: "edit", icon: "edit-20", tip: qsTr("Edit") }]
+                            : [{ key: "reply", icon: "quote-reply-20", tip: qsTr("Reply with quote") }]
                         x: card.width - 10 - width; y: 11; z: 5
                     }
                     TapHandler {
@@ -376,7 +376,7 @@ Item {
                             font.family: theme.font; font.pixelSize: 14
                             color: "white"
                             Accessible.role: Accessible.StaticText
-                            Accessible.name: "Meeting duration " + text
+                            Accessible.name: qsTr("Meeting duration %1").arg(text)
                         }
                         Row {
                             id: people
@@ -395,11 +395,11 @@ Item {
                             x: parent.width - 20 - width; anchors.verticalCenter: parent.verticalCenter
                             width: 96; height: 32; radius: 4
                             color: !can ? theme.bgDisabled : jh.hovered ? theme.brandHover : theme.hc("#5B5FC7", "#FFFFFF")
-                            Text { anchors.centerIn: parent; text: "Join"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(joinButton, joinButton.can ? "white" : theme.disabled) }
+                            Text { anchors.centerIn: parent; text: qsTr("Join"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(joinButton, joinButton.can ? "white" : theme.disabled) }
                             HoverHandler { id: jh; enabled: joinButton.can; cursorShape: Qt.PointingHandCursor }
                             TapHandler { enabled: joinButton.can; onTapped: root.joinMeeting(card.post.meeting_join_url, card.meetingTitle) }
                             Accessible.role: Accessible.Button
-                            Accessible.name: "Join " + card.meetingTitle
+                            Accessible.name: qsTr("Join %1").arg(card.meetingTitle)
                         }
                     }
                 }
@@ -411,7 +411,7 @@ Item {
                     Rectangle { width: parent.width; height: 0.67; color: theme.quoteBorder }
                     Text {
                         x: 21.7; y: 12.7
-                        text: "See details"
+                        text: qsTr("See details")
                         font.family: theme.font; font.pixelSize: 12
                         color: theme.brand
                         HoverHandler { cursorShape: Qt.PointingHandCursor }
@@ -492,7 +492,7 @@ Item {
                                         x: root.compact ? 0 : parent.implicitWidth + 8; y: root.compact ? 17.1 : 0
                                         spacing: 8
                                         Text { text: root.conversationStamp(rep.modelData.time); font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
-                                        Text { visible: rep.modelData.edited === true; text: "Edited"; font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
+                                        Text { visible: rep.modelData.edited === true; text: qsTr("Edited"); font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
                                     }
                                 }
                                 MessageText {
@@ -527,8 +527,8 @@ Item {
                                     message: rep.modelData
                                     context: "reply"
                                     acts: rep.modelData.mine
-                                        ? [{ key: "edit", icon: "edit-20", tip: "Edit" }]
-                                        : [{ key: "reply", icon: "quote-reply-20", tip: "Reply with quote" }]
+                                        ? [{ key: "edit", icon: "edit-20", tip: qsTr("Edit") }]
+                                        : [{ key: "reply", icon: "quote-reply-20", tip: qsTr("Reply with quote") }]
                                     x: rep.width - width; y: -3.7 - height; z: 5
                                 }
                                 TapHandler {
@@ -547,12 +547,12 @@ Item {
                     Rectangle { width: parent.width; height: 1; color: theme.dividerSoft }
                     Avatar {
                         x: 18; anchors.verticalCenter: parent.verticalCenter
-                        size: 20; name: root.myName || "You"; photoId: "me"
+                        size: 20; name: root.myName || qsTr("You"); photoId: "me"
                     }
                     Text {
                         visible: !card.open
                         x: 50; anchors.verticalCenter: parent.verticalCenter
-                        text: "Reply in thread"
+                        text: qsTr("Reply in thread")
                         font.family: theme.font; font.pixelSize: theme.base
                         color: theme.textSecondary
                     }
@@ -562,7 +562,7 @@ Item {
                         cursorShape: Qt.PointingHandCursor
                         onClicked: { root.replying = card.modelData.id; replyBox.input.forceActiveFocus() }
                         Accessible.role: Accessible.Button
-                        Accessible.name: "Reply in thread"
+                        Accessible.name: qsTr("Reply in thread")
                     }
                     Rectangle {
                         id: replyBox
@@ -580,7 +580,7 @@ Item {
                         TextArea {
                             id: replyInput
                             anchors { left: parent.left; right: sendReply.left; verticalCenter: parent.verticalCenter; leftMargin: 8 }
-                            placeholderText: "Reply in thread"
+                            placeholderText: qsTr("Reply in thread")
                             placeholderTextColor: theme.textSecondary
                             font.family: theme.font; font.pixelSize: theme.base
                             color: theme.text
@@ -594,7 +594,7 @@ Item {
                             }
                             Keys.onReturnPressed: e => { if (e.modifiers & Qt.ShiftModifier) e.accepted = false; else submit() }
                             Keys.onEscapePressed: { text = ""; root.replying = "" }
-                            Accessible.name: "Reply in thread"
+                            Accessible.name: qsTr("Reply in thread")
                         }
                         Rectangle {
                             id: sendReply
@@ -609,13 +609,13 @@ Item {
                             HoverHandler { id: srh; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: replyInput.submit() }
                             Accessible.role: Accessible.Button
-                            Accessible.name: "Send reply"
+                            Accessible.name: qsTr("Send reply")
                         }
                     }
                 }
             }
             Accessible.role: Accessible.Grouping
-            Accessible.name: card.post ? "Post by " + card.post.sender : "Replies"
+            Accessible.name: card.post ? qsTr("Post by %1").arg(card.post.sender) : qsTr("Replies")
         }
         }
     }
@@ -623,7 +623,7 @@ Item {
     Text {
         visible: root.posts.length === 0 && !root.busy
         anchors.centerIn: list
-        text: "No posts yet. Start the conversation."
+        text: qsTr("No posts yet. Start the conversation.")
         font.family: theme.font; font.pixelSize: theme.base
         color: theme.textSecondary
     }
@@ -646,14 +646,14 @@ Item {
                     color: startHover.hovered ? theme.rowHover : "transparent"
                     Text {
                         x: 12.7; anchors.verticalCenter: parent.verticalCenter
-                        text: "Post in channel"
+                        text: qsTr("Post in channel")
                         font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
                         color: theme.onFill(hcFill2, theme.textStrong)
                     }
                     HoverHandler { id: startHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.startPost() }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Post in channel"
+                    Accessible.name: qsTr("Post in channel")
                 }
                 // The post types: Post (chosen) and Announcement.
                 Rectangle {
@@ -663,12 +663,12 @@ Item {
                     Row {
                         anchors.centerIn: parent; spacing: 6
                         FluentIcon { anchors.verticalCenter: parent.verticalCenter; size: 20; name: postTypeHover.hovered ? "channel-20-filled" : "channel-20"; color: theme.onFill(hcFill3, theme.brandForeground1) }
-                        Text { anchors.verticalCenter: parent.verticalCenter; text: "Post"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, theme.brandForeground1) }
+                        Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Post"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, theme.brandForeground1) }
                     }
                     HoverHandler { id: postTypeHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.startPost() }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Post"
+                    Accessible.name: qsTr("Post")
                 }
                 Rectangle {
                     id: hcFill4
@@ -677,12 +677,12 @@ Item {
                     Row {
                         anchors.centerIn: parent; spacing: 6
                         FluentIcon { anchors.verticalCenter: parent.verticalCenter; size: 20; name: annTypeHover.hovered ? "fmt-announcement-filled" : "fmt-announcement"; color: theme.onFill(hcFill4, annTypeHover.hovered ? theme.brand : theme.text) }
-                        Text { anchors.verticalCenter: parent.verticalCenter; text: "Announcement"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, theme.text) }
+                        Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Announcement"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, theme.text) }
                     }
                     HoverHandler { id: annTypeHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.startAnnouncement() }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Announcement"
+                    Accessible.name: qsTr("Announcement")
                 }
             }
         }
@@ -700,12 +700,12 @@ Item {
             id: pbRow
             anchors.centerIn: parent; spacing: 8
             FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "compose-20"; size: 20; color: theme.onFill(postButton, "white") }
-            Text { anchors.verticalCenter: parent.verticalCenter; text: "Post in channel"; color: theme.onFill(postButton, "white"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
+            Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Post in channel"); color: theme.onFill(postButton, "white"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
         }
         HoverHandler { id: pbh; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.startPost() }
         Accessible.role: Accessible.Button
-        Accessible.name: "Post in channel"
+        Accessible.name: qsTr("Post in channel")
     }
 
     // The in-place editor for a post or reply (Teams' compose).

@@ -9,6 +9,8 @@ use ksni::menu::{StandardItem, SubMenu};
 use ksni::{Icon, MenuItem, ToolTip, Tray, TrayMethods};
 use tokio::sync::mpsc::UnboundedSender;
 
+use crate::backend::tr;
+
 /// What the tray asks the app to do.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
@@ -136,20 +138,20 @@ impl Tray for OstTray {
     }
 
     fn menu(&self) -> Vec<MenuItem<Self>> {
-        let statuses: [(&str, &str, &'static str); 6] = [
-            ("Available", "available", "Available"),
-            ("Busy", "busy", "Busy"),
-            ("Do not disturb", "dnd", "DoNotDisturb"),
-            ("Be right back", "away", "BeRightBack"),
-            ("Appear away", "away", "Away"),
-            ("Appear offline", "offline", "Offline"),
+        let statuses: [(String, &str, &'static str); 6] = [
+            (tr("Available"), "available", "Available"),
+            (tr("Busy"), "busy", "Busy"),
+            (tr("Do not disturb"), "dnd", "DoNotDisturb"),
+            (tr("Be right back"), "away", "BeRightBack"),
+            (tr("Appear away"), "away", "Away"),
+            (tr("Appear offline"), "offline", "Offline"),
         ];
         let mut status_rows: Vec<MenuItem<Self>> = statuses
             .iter()
             .map(|(label, kind, key)| item(label, presence_png(kind), Action::Status(key)))
             .collect();
         status_rows.push(MenuItem::Separator);
-        status_rows.push(item("Reset Status", RESET_PNG, Action::Status("Reset")));
+        status_rows.push(item(&tr("Reset Status"), RESET_PNG, Action::Status("Reset")));
         vec![
             item(&self.name_line, tray_png(&self.kind), Action::Show),
             SubMenu {
@@ -161,16 +163,16 @@ impl Tray for OstTray {
             .into(),
             MenuItem::Separator,
             SubMenu {
-                label: "Help".into(),
+                label: tr("Help"),
                 submenu: vec![item(
-                    "Collect Support Files",
+                    &tr("Collect Support Files"),
                     &[],
                     Action::CollectSupportFiles,
                 )],
                 ..Default::default()
             }
             .into(),
-            item("Quit OST", &[], Action::Quit),
+            item(&tr("Quit OST"), &[], Action::Quit),
         ]
     }
 }

@@ -38,7 +38,7 @@ import com.ost.desktop
 Item {
     id: root
     property bool editing: false
-    property string placeholder: "Type a message"
+    property string placeholder: qsTr("Type a message")
     property var quote: null
     property var files: []
     /// Files picked from OneDrive or SharePoint ({key, name, kind, loading,
@@ -60,9 +60,9 @@ Item {
     /// whether this compose offers it.
     property real scheduleAt: 0
     property bool scheduleAllowed: false
-    function scheduleText(ms) {
+    function scheduleText(tpl, ms) {
         const d = new Date(ms)
-        return Qt.formatDate(d, "dddd, MMM d") + " at " + theme.time(d)
+        return tpl.arg(theme.fmtDate(d, "dddd, MMM d")).arg(theme.time(d))
     }
     /// Teams' default: the next 8:00 AM.
     function nextEight() {
@@ -414,14 +414,14 @@ Item {
         contentItem: Column {
             Item {
                 width: parent.width; height: 32
-                Text { x: 6; anchors.verticalCenter: parent.verticalCenter; text: "Display option"; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
+                Text { x: 6; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Display option"); font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
             }
             Rectangle {
                 id: hcFill1
                 width: parent.width; height: 32; radius: 4
                 color: autoHover.hovered ? theme.menuHover : "transparent"
                 FluentIcon { visible: !!codeMenu.region && codeMenu.region.auto === true; x: 6; anchors.verticalCenter: parent.verticalCenter; name: "checkmark-16"; size: 16; color: theme.onFill(hcFill1, theme.textStrong) }
-                Text { x: 50; anchors.verticalCenter: parent.verticalCenter; text: "Auto-detect language"; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill1, theme.textStrong) }
+                Text { x: 50; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Auto-detect language"); font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill1, theme.textStrong) }
                 HoverHandler { id: autoHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler {
                     onTapped: {
@@ -432,19 +432,19 @@ Item {
                 }
                 Accessible.role: Accessible.CheckBox
                 Accessible.checked: !!codeMenu.region && codeMenu.region.auto === true
-                Accessible.name: "Auto-detect language"
+                Accessible.name: qsTr("Auto-detect language")
             }
         }
     }
     // Teams' code block languages (id, name), as its editor lists them.
-    readonly property var codeLanguages: [["plaintext", "Plain Text"], ["bash", "Bash"], ["c", "C"], ["cpp", "C++"], ["csharp", "C#"], ["css", "CSS"],
+    readonly property var codeLanguages: [["plaintext", qsTr("Plain Text")], ["bash", "Bash"], ["c", "C"], ["cpp", "C++"], ["csharp", "C#"], ["css", "CSS"],
         ["dart", "Dart"], ["dockerfile", "DockerFile"], ["dos", "DOS"], ["go", "Go"], ["graphql", "GraphQL"], ["html", "HTML"], ["http", "HTTP"],
         ["java", "Java"], ["javascript", "JavaScript"], ["json", "JSON"], ["jsp", "JSP"], ["jsx", "JSX"], ["kotlin", "Kotlin"], ["kql", "KQL"],
         ["latex", "LaTeX"], ["lisp", "Lisp"], ["markdown", "Markdown"], ["objectivec", "Objective-C"], ["octave", "Octave"], ["perl", "Perl"],
         ["php", "PHP"], ["powershell", "PowerShell"], ["python", "Python"], ["r", "R"], ["ruby", "Ruby"], ["rust", "Rust"], ["scala", "Scala"],
         ["scss", "SCSS"], ["shell", "Shell"], ["sql", "SQL"], ["swift", "Swift"], ["typescript", "TypeScript"], ["vbnet", "VB.NET"],
         ["vbscript", "VBScript"], ["verilog", "Verilog"], ["vhdl", "VHDL"], ["xml", "XML"], ["yaml", "YAML"]]
-    function codeLanguageName(id) { const l = codeLanguages.find(l => l[0] === id); return l ? l[1] : "Plain Text" }
+    function codeLanguageName(id) { const l = codeLanguages.find(l => l[0] === id); return l ? l[1] : qsTr("Plain Text") }
     MenuPopup {
         id: langMenu
         parent: Overlay.overlay
@@ -540,7 +540,7 @@ Item {
             // Teams' RoamingDraftConflictBanner: its text and a "View draft" link.
             textFormat: root.bannerText ? Text.PlainText : Text.StyledText
             text: root.bannerText ? root.bannerText
-                : "There's a draft saved from another platform&nbsp;&nbsp;<a href=\"view\">View draft</a>"
+                : qsTr("There's a draft saved from another platform") + "&nbsp;&nbsp;<a href=\"view\">" + qsTr("View draft") + "</a>"
             linkColor: theme.brandForeground1
             onLinkActivated: root.viewConflict()
             font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
@@ -553,12 +553,12 @@ Item {
             FluentIcon { x: 3.5; y: 7.25; size: 16; name: "dismiss-16"; color: theme.onFill(hcFill2, closeBannerHover.hovered ? theme.brand : (root.bannerDanger ? theme.pick("#C4314B", "#E73550", "#FFFFFF") : theme.textStrong)) }
             HoverHandler { id: closeBannerHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.bannerText = "" }
-            ToolTip.visible: closeBannerHover.hovered; ToolTip.delay: 500; ToolTip.text: "Close this notification"
+            ToolTip.visible: closeBannerHover.hovered; ToolTip.delay: 500; ToolTip.text: qsTr("Close this notification")
             Accessible.role: Accessible.Button
-            Accessible.name: "Close notification"
+            Accessible.name: qsTr("Close notification")
         }
         Accessible.role: Accessible.AlertMessage
-        Accessible.name: root.bannerText || "There's a draft saved from another platform"
+        Accessible.name: root.bannerText || qsTr("There's a draft saved from another platform")
     }
     Rectangle {
         visible: !!root.noteText
@@ -610,7 +610,7 @@ Item {
                     HoverHandler { id: postCloseHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.postEmpty ? root.closeRequested() : root.requestCancel() }
                     Accessible.role: Accessible.Button
-                    Accessible.name: root.postEmpty ? "Close" : "Discard"
+                    Accessible.name: root.postEmpty ? qsTr("Close") : qsTr("Discard")
                 }
                 Rectangle { y: Math.round(parent.height - 1); width: parent.width; height: 1; color: theme.divider }
             }
@@ -642,7 +642,7 @@ Item {
                     HoverHandler { id: delImgHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: { root.bannerImage = ""; root.bannerImageW = 0; root.bannerImageH = 0 } }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Delete background image"
+                    Accessible.name: qsTr("Delete background image")
                 }
                 border.width: 0.67
                 border.color: parseInt(root.bannerTheme, 10) >= 6 ? Qt.rgba(1, 1, 1, theme.dark ? 0.1 : 0.2) : Qt.rgba(0, 0, 0, theme.dark ? 0.1 : 0.05)
@@ -664,10 +664,10 @@ Item {
                     Text {
                         visible: !headlineEdit.text && !headlineEdit.preeditText
                         width: parent.width; horizontalAlignment: Text.AlignHCenter
-                        text: "Type a headline"; font: headlineEdit.font; color: theme.onFill(bannerEdit, bannerEdit.colors[1])
+                        text: qsTr("Type a headline"); font: headlineEdit.font; color: theme.onFill(bannerEdit, bannerEdit.colors[1])
                     }
                     Accessible.role: Accessible.EditableText
-                    Accessible.name: "Type a headline"
+                    Accessible.name: qsTr("Type a headline")
                 }
                 Rectangle {
                     x: parent.width - 12.8 - width; y: parent.height - 12.6 - height
@@ -684,9 +684,9 @@ Item {
                         }
                         HoverHandler { id: schemeHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: schemes.opened ? schemes.close() : schemes.open() }
-                        ToolTip.visible: schemeHover.hovered && !schemes.opened; ToolTip.delay: 500; ToolTip.text: "Color scheme"
+                        ToolTip.visible: schemeHover.hovered && !schemes.opened; ToolTip.delay: 500; ToolTip.text: qsTr("Color scheme")
                         Accessible.role: Accessible.Button
-                        Accessible.name: "Color scheme, " + theme.bannerNames[parseInt(root.bannerTheme, 10) || 0]
+                        Accessible.name: qsTr("Color scheme") + ", " + theme.bannerNames[parseInt(root.bannerTheme, 10) || 0]
                         // Teams' scheme picker: 12 swatches (16, radius 4) in
                         // two rows of six, 28 apart, above the button with its
                         // right edge on the button's.
@@ -719,9 +719,9 @@ Item {
                         FluentIcon { anchors.centerIn: parent; size: 20; name: "image-add-20"; color: theme.onFill(hcFill5, uploadHover.hovered ? theme.brand : theme.textStrong) }
                         HoverHandler { id: uploadHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: bannerImageDialog.start() }
-                        ToolTip.visible: uploadHover.hovered; ToolTip.delay: 500; ToolTip.text: "Upload an image"
+                        ToolTip.visible: uploadHover.hovered; ToolTip.delay: 500; ToolTip.text: qsTr("Upload an image")
                         Accessible.role: Accessible.Button
-                        Accessible.name: "Upload an image"
+                        Accessible.name: qsTr("Upload an image")
                     }
                 }
             }
@@ -745,11 +745,11 @@ Item {
                     Keys.onTabPressed: input.forceActiveFocus()
                     Text {
                         visible: !subjectField.text && !subjectField.preeditText
-                        text: root.announcement ? "Add a subheading" : "Add a subject"
+                        text: root.announcement ? qsTr("Add a subheading") : qsTr("Add a subject")
                         font: subjectField.font; color: theme.pick("#707070", "#ADADAD", "#FFFFFF")
                     }
                     Accessible.role: Accessible.EditableText
-                    Accessible.name: root.announcement ? "Add a subheading" : "Add a subject"
+                    Accessible.name: root.announcement ? qsTr("Add a subheading") : qsTr("Add a subject")
                 }
                 Rectangle {
                     anchors.bottom: parent.bottom; width: parent.width
@@ -764,7 +764,7 @@ Item {
         Text {
             visible: !!root.importance
             x: 16.7; y: 3; height: 20; verticalAlignment: Text.AlignVCenter
-            text: root.importance === "urgent" ? "URGENT!" : "IMPORTANT!"
+            text: (root.importance === "urgent" ? qsTr("Urgent!") : qsTr("Important!")).toUpperCase()
             font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold
             color: root.importance === "urgent" ? theme.redForeground3 : theme.pick("#DA3B01", "#E9835E", "#FFFFFF")
         }
@@ -780,7 +780,7 @@ Item {
                 id: sendToLabel
                 anchors.verticalCenter: parent.verticalCenter
                 textFormat: Text.StyledText
-                text: "<b>Send to:</b> " + (root.sendTo === "channel" ? "thread and channel" : "thread only")
+                text: root.sendTo === "channel" ? qsTr("<strong>Send to:</strong> thread and channel") : qsTr("<strong>Send to:</strong> thread only")
                 font.family: theme.font; font.pixelSize: 12; color: theme.brandForeground1
             }
             FluentIcon { x: sendToLabel.implicitWidth + 4; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-12"; size: 12; color: theme.brandForeground1 }
@@ -791,7 +791,7 @@ Item {
             MenuPopup {
                 id: sendToMenu
                 y: -height - 4; x: -35
-                items: [{ label: "Thread only", checked: root.sendTo !== "channel" }, { label: "Thread and channel", checked: root.sendTo === "channel" }]
+                items: [{ label: qsTr("Thread only"), checked: root.sendTo !== "channel" }, { label: qsTr("Thread and channel"), checked: root.sendTo === "channel" }]
                 onPicked: i => { root.sendTo = i === 1 ? "channel" : "thread"; input.forceActiveFocus() }
             }
         }
@@ -815,11 +815,11 @@ Item {
                 Keys.onTabPressed: input.forceActiveFocus()
                 Text {
                     visible: !threadSubjectField.text && !threadSubjectField.preeditText
-                    text: "Add a subject"
+                    text: qsTr("Add a subject")
                     font: threadSubjectField.font; color: theme.pick("#707070", "#ADADAD", "#FFFFFF")
                 }
                 Accessible.role: Accessible.EditableText
-                Accessible.name: "Add a subject"
+                Accessible.name: qsTr("Add a subject")
             }
             Rectangle {
                 anchors.bottom: parent.bottom; width: parent.width
@@ -840,7 +840,7 @@ Item {
                 id: scheduleLabel
                 anchors.verticalCenter: parent.verticalCenter
                 textFormat: Text.StyledText
-                text: "Select <b>" + (root.editing ? "Done" : root.post ? "Post" : "Send") + "</b> to deliver on " + root.scheduleText(root.scheduleAt)
+                text: root.scheduleText(root.editing ? qsTr("Select <strong>Done</strong> to deliver on %1 at %2") : root.post ? qsTr("Select <strong>Post</strong> to deliver on %1 at %2") : qsTr("Select <strong>Send</strong> to deliver on %1 at %2"), root.scheduleAt)
                 font.family: theme.font; font.pixelSize: 12; color: theme.brandForeground1
             }
             FluentIcon { x: scheduleLabel.implicitWidth + 4; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-12"; size: 12; color: theme.brandForeground1 }
@@ -909,7 +909,7 @@ Item {
                         Row {
                             x: 36.7; anchors.verticalCenter: parent.verticalCenter; spacing: 4
                             Text {
-                                text: region.modelData.lang ? root.codeLanguageName(region.modelData.lang) : "Plain Text"
+                                text: region.modelData.lang ? root.codeLanguageName(region.modelData.lang) : qsTr("Plain Text")
                                 font.family: theme.font; font.pixelSize: 12; color: theme.textStrong
                             }
                             FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-12"; size: 12; color: theme.textStrong }
@@ -925,7 +925,7 @@ Item {
                             HoverHandler { id: codeMoreHover; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: { codeMenu.region = region.modelData; const p = parent.mapToItem(Overlay.overlay, parent.width - codeMenu.width, parent.height + 4); codeMenu.x = p.x; codeMenu.y = p.y; codeMenu.open() } }
                             Accessible.role: Accessible.ButtonMenu
-                            Accessible.name: "More options"
+                            Accessible.name: qsTr("More options")
                         }
                     }
                     Repeater {
@@ -995,7 +995,7 @@ Item {
                         }
                         ToolButton32 {
                             anchors.right: parent.right; anchors.rightMargin: 4; anchors.verticalCenter: parent.verticalCenter
-                            icon: "dismiss-20"; label: "Remove " + parent.modelData.split("/").pop()
+                            icon: "dismiss-20"; label: qsTr("Remove %1").arg(parent.modelData.split("/").pop())
                             onClicked: root.fileRemoved(parent.modelData)
                         }
                     }
@@ -1073,7 +1073,7 @@ Item {
                                 id: ccLink
                                 x: 60; y: 25; width: Math.min(implicitWidth, 206.4)
                                 elide: Text.ElideRight
-                                text: cc.modelData.linking ? "Updating link settings..." : cc.modelData.file ? cc.modelData.file.link_description : ""
+                                text: cc.modelData.linking ? qsTr("Updating link settings...") : cc.modelData.file ? cc.modelData.file.link_description : ""
                                 lineHeight: 20; lineHeightMode: Text.FixedHeight
                                 font.family: theme.font; font.pixelSize: 12; font.underline: ccLinkHover.hovered
                                 color: ccLinkHover.hovered ? theme.pick("#4F52B2", "#7F85F5", "#FFFF00") : theme.pick("#424242", "#D6D6D6", "#FFFFFF")
@@ -1090,7 +1090,7 @@ Item {
                                 HoverHandler { id: ccRemove; cursorShape: Qt.PointingHandCursor }
                                 TapHandler { onTapped: root.cloudRemoved(cc.modelData.key) }
                                 Accessible.role: Accessible.Button
-                                Accessible.name: "Remove attachment"
+                                Accessible.name: qsTr("Remove attachment")
                             }
                         }
                         Rectangle {
@@ -1266,11 +1266,11 @@ Item {
                 x: parent.width - 16.7 - width; y: 0
                 width: 96; height: 31.3; radius: 4
                 color: postHover.hovered ? theme.brandHover : theme.brandFill
-                Text { anchors.centerIn: parent; text: "Post"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill8, "white") }
+                Text { anchors.centerIn: parent; text: qsTr("Post"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill8, "white") }
                 HoverHandler { id: postHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: root.trySubmit() }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Post"
+                Accessible.name: qsTr("Post")
             }
         }
         Item {
@@ -1303,17 +1303,17 @@ Item {
         y: root.bannerShownH + root.boxHeight + 2
         spacing: 4
         Text {
-            text: root.fmtOn || root.enterKey === "newline" ? "Enter" : "Shift+Enter"
+            text: root.fmtOn || root.enterKey === "newline" ? qsTr("Enter") : qsTr("Shift+Enter")
             font.family: theme.font; font.pixelSize: theme.small; color: theme.brandForeground1
             lineHeight: 16; lineHeightMode: Text.FixedHeight
             HoverHandler { id: hintHover; cursorShape: Qt.PointingHandCursor }
             font.underline: hintHover.hovered
             TapHandler { onTapped: root.settingsRequested() }
             Accessible.role: Accessible.Link
-            Accessible.name: "Select " + text + " to open settings"
+            Accessible.name: root.fmtOn || root.enterKey === "newline" ? qsTr("Select Enter to open settings") : qsTr("Select Shift+Enter to open settings")
         }
         Text {
-            text: "starts a new line."
+            text: qsTr("starts a new line.")
             font.family: theme.font; font.pixelSize: theme.small; color: theme.text
             lineHeight: 16; lineHeightMode: Text.FixedHeight
         }
@@ -1324,11 +1324,11 @@ Item {
     /// Only Format and Send (Teams' lobby chat compose).
     property bool textOnly: false
     readonly property var toolModel: [
-        { id: "expand-compose", icon: "format-20", label: root.formatting ? "Hide Formatting options" : "Show Formatting options", pressed: root.formatting },
-        { id: "UnifiedFunPicker", icon: "emoji-20", label: "Emoji, GIFs and Stickers", hidden: root.textOnly },
-        { id: "FilePicker", icon: "attach-20", label: "Attach files (Alt+Shift+O)", hidden: root.editing || root.textOnly },
-        { id: "open-compose-copilot", icon: "pen-sparkle-20", label: "Write with Copilot (Alt+A)", hidden: root.editing || root.textOnly || !root.copilotAllowed, pressed: copilotPopover.opened },
-        { id: "message-extension-flyout-command", icon: "add-20", label: "Actions and apps", hidden: root.editing || root.textOnly }
+        { id: "expand-compose", icon: "format-20", label: root.formatting ? qsTr("Hide Formatting options") : qsTr("Show Formatting options"), pressed: root.formatting },
+        { id: "UnifiedFunPicker", icon: "emoji-20", label: qsTr("Emoji, GIFs and Stickers"), hidden: root.textOnly },
+        { id: "FilePicker", icon: "attach-20", label: qsTr("Attach files") + " (Alt+Shift+O)", hidden: root.editing || root.textOnly },
+        { id: "open-compose-copilot", icon: "pen-sparkle-20", label: qsTr("Write with Copilot") + " (Alt+A)", hidden: root.editing || root.textOnly || !root.copilotAllowed, pressed: copilotPopover.opened },
+        { id: "message-extension-flyout-command", icon: "add-20", label: qsTr("Actions and apps"), hidden: root.editing || root.textOnly }
     ].filter(t => !t.hidden)
     // Write with Copilot (Teams' compose Copilot): for a Microsoft 365
     // Copilot licence where Teams' settings turn it on, between Attach
@@ -1359,8 +1359,8 @@ Item {
         onActivated: root.openCopilot(null)
     }
     readonly property var endModel: root.editing
-        ? [{ id: "discard-draft", icon: "dismiss-20", label: "Cancel" }, { id: "send", icon: "checkmark-20", label: "Done" }]
-        : [{ id: "send", icon: "send-20", label: "Send", ready: !root.empty }]
+        ? [{ id: "discard-draft", icon: "dismiss-20", label: qsTr("Cancel") }, { id: "send", icon: "checkmark-20", label: qsTr("Done") }]
+        : [{ id: "send", icon: "send-20", label: qsTr("Send"), ready: !root.empty }]
     Component {
         id: toolDelegate
         ToolButton32 {
@@ -1427,30 +1427,30 @@ Item {
         const text = root.plainText().replace(/[\u00a0\ufffc\ufdd0\ufdd1]/g, " ")
         const html = root.formattedText()
         // FileEvaluator and VideoMessageEvaluator: uploads still going.
-        if (root.cloudFiles.some(c => c.loading || c.linking) || (root.clip && (root.clip.uploading || (!root.clip.id && !root.newConversation)))) return "Uploading... Please wait."
+        if (root.cloudFiles.some(c => c.loading || c.linking) || (root.clip && (root.clip.uploading || (!root.clip.id && !root.newConversation)))) return qsTr("Uploading... Please wait.")
         // EmptyContentEvaluator: nothing but spaces (files and cards count).
         if (!text.trim() && root.mediaInUse().length === 0 && root.files.length === 0 && root.cloudFiles.length === 0 && !root.clip && !root.appCard)
-            return "Please type a message to continue."
+            return qsTr("Please type a message to continue.")
         // AnnouncementPostEvaluator: an announcement needs its headline.
-        if (root.post && root.announcement && !root.headline.trim() && !root.bannerImage) return "You'll need to add a headline to post your announcement."
+        if (root.post && root.announcement && !root.headline.trim() && !root.bannerImage) return qsTr("You'll need to add a headline to post your announcement.")
         // exceedsMaxSizeEvaluator.
-        if (root.sizeCheck(html)) return "Message is too large to send."
+        if (root.sizeCheck(html)) return qsTr("Message is too large to send.")
         // scheduledSendTimeInThePastEvaluator (10 s of grace).
-        if (root.scheduleAt > 0 && Date.now() > root.scheduleAt + 10000) return "This message was scheduled for a time in the past."
+        if (root.scheduleAt > 0 && Date.now() > root.scheduleAt + 10000) return qsTr("This message was scheduled for a time in the past.")
         // VideoMessageEvaluator: a clip is kept for 7 days.
-        if (root.clip && root.clip.created && Date.now() - root.clip.created > 604800000) return "The video clip might not exist or is no longer available."
+        if (root.clip && root.clip.created && Date.now() - root.clip.created > 604800000) return qsTr("The video clip might not exist or is no longer available.")
         // ShareToL1WithBotMentionEvaluator: a reply also sent to the channel
         // can't @mention a bot.
-        if (root.sendTo === "channel" && /href="mention:28:/.test(html)) return "Remove the bot mention or switch to thread only to proceed."
+        if (root.sendTo === "channel" && /href="mention:28:/.test(html)) return qsTr("Remove the bot mention or switch to thread only to proceed.")
         return ""
     }
     // The post composer's tools under the editor (Teams: Emoji, GIFs and
     // Stickers, Attach files, Actions and apps).
     readonly property var postTools: [
-        { id: "UnifiedFunPicker", icon: "emoji-20", label: "Emoji, GIFs and Stickers" },
-        { id: "FilePicker", icon: "attach-20", label: "Attach files" },
-        { id: "open-compose-copilot", icon: "pen-sparkle-20", label: "Write with Copilot (Alt+A)", hidden: !root.copilotAllowed, pressed: copilotPopover.opened },
-        { id: "message-extension-flyout-command", icon: "add-20", label: "Actions and apps" }
+        { id: "UnifiedFunPicker", icon: "emoji-20", label: qsTr("Emoji, GIFs and Stickers") },
+        { id: "FilePicker", icon: "attach-20", label: qsTr("Attach files") },
+        { id: "open-compose-copilot", icon: "pen-sparkle-20", label: qsTr("Write with Copilot") + " (Alt+A)", hidden: !root.copilotAllowed, pressed: copilotPopover.opened },
+        { id: "message-extension-flyout-command", icon: "add-20", label: qsTr("Actions and apps") }
     ].filter(t => !t.hidden)
     /// Back to an empty post composer.
     function resetPost() { subject = ""; headline = ""; bannerTheme = "0"; announcement = false; bannerImage = ""; bannerImageW = 0; bannerImageH = 0 }
@@ -1520,10 +1520,10 @@ Item {
         background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
         onOpened: { search.text = ""; if (!plain) search.forceActiveFocus() }
         readonly property var items: [
-            { key: "schedule", label: "Schedule message", icon: "send-clock-20", hidden: !root.scheduleAllowed },
-            { key: "delivery", label: "Set delivery options", icon: "important-20", hidden: !root.deliveryOptions },
-            { key: "meeting", label: "Schedule meeting", icon: "calendar-add-20" },
-            { key: "clip", label: "Record video clip", icon: "video-clip-20", hidden: !root.canRecordClip }
+            { key: "schedule", label: qsTr("Schedule message"), icon: "send-clock-20", hidden: !root.scheduleAllowed },
+            { key: "delivery", label: qsTr("Set delivery options"), icon: "important-20", hidden: !root.deliveryOptions },
+            { key: "meeting", label: qsTr("Schedule meeting"), icon: "calendar-add-20" },
+            { key: "clip", label: qsTr("Record video clip"), icon: "video-clip-20", hidden: !root.canRecordClip }
         ].filter(i => !i.hidden && i.label.toLowerCase().indexOf(search.text.trim().toLowerCase()) >= 0)
         Rectangle {
             visible: !plusFlyout.plain
@@ -1536,9 +1536,9 @@ Item {
                 id: search
                 x: 34.6; width: parent.width - 46; anchors.verticalCenter: parent.verticalCenter
                 font.family: theme.font; font.pixelSize: 14; color: theme.text; clip: true
-                Text { visible: !search.text; text: "Search for apps"; font: search.font; color: theme.textSecondary }
+                Text { visible: !search.text; text: qsTr("Search for apps"); font: search.font; color: theme.textSecondary }
                 Accessible.role: Accessible.EditableText
-                Accessible.name: "Search for apps"
+                Accessible.name: qsTr("Search for apps")
             }
         }
         Column {
@@ -1605,7 +1605,7 @@ Item {
             return out
         }
         readonly property real chosen: new Date(day.getFullYear(), day.getMonth(), day.getDate(), Math.floor(slot / 2), (slot % 2) * 30).getTime()
-        Text { x: 12; y: 16.7; text: "Send this message on"; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
+        Text { x: 12; y: 16.7; text: qsTr("Send this message on"); font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
         DatePickerField {
             x: 12; y: 52; width: 220; height: 31.3
             filled: true; format: "dddd, MMMM d"
@@ -1618,7 +1618,7 @@ Item {
             filled: true
             options: schedulePopup.slots
             current: schedulePopup.slot
-            accessibleName: "Select time"
+            accessibleName: qsTr("Select time")
             onPicked: i => schedulePopup.slot = i
         }
         Rectangle {
@@ -1626,11 +1626,11 @@ Item {
             readonly property bool usable: schedulePopup.chosen > Date.now()
             x: 12; y: 139.3; width: 220; height: 31.3; radius: 4
             color: !usable ? theme.bgDisabled : goHover.hovered ? theme.brandHover : theme.brand
-            Text { anchors.centerIn: parent; text: "Continue"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(scheduleGo, scheduleGo.usable ? "white" : theme.disabled) }
+            Text { anchors.centerIn: parent; text: qsTr("Continue"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(scheduleGo, scheduleGo.usable ? "white" : theme.disabled) }
             HoverHandler { id: goHover; cursorShape: scheduleGo.usable ? Qt.PointingHandCursor : Qt.ArrowCursor }
             TapHandler { enabled: scheduleGo.usable; onTapped: { root.scheduleAt = schedulePopup.chosen; schedulePopup.close(); input.forceActiveFocus() } }
             Accessible.role: Accessible.Button
-            Accessible.name: "Continue"
+            Accessible.name: qsTr("Continue")
         }
         Rectangle {
             id: hcFill10
@@ -1638,11 +1638,11 @@ Item {
             x: 12; y: 178.7; width: 220; height: 31.3; radius: 4
             color: cancelHover.hovered ? theme.menuHover : theme.surface
             border.color: theme.stroke; border.width: 0.67
-            Text { anchors.centerIn: parent; text: "Cancel scheduled time"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill10, theme.text) }
+            Text { anchors.centerIn: parent; text: qsTr("Cancel scheduled time"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill10, theme.text) }
             HoverHandler { id: cancelHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: { root.scheduleAt = 0; schedulePopup.close(); input.forceActiveFocus() } }
             Accessible.role: Accessible.Button
-            Accessible.name: "Cancel scheduled time"
+            Accessible.name: qsTr("Cancel scheduled time")
         }
     }
     function openScheduleForTest(anchor) { schedulePopup.openFor(anchor, root.scheduleAt > 0) }
@@ -1662,9 +1662,9 @@ Item {
             x: 0.7; y: 8.7
             Repeater {
                 model: [
-                    { key: "", title: "Standard", desc: "Message will be sent as usual", icon: "chat-20", color: "", name: "Standard Message Delivery" },
-                    { key: "high", title: "Important", desc: "Message will be marked as important", icon: "important-20", color: "#C4314B", name: "Mark message as important" },
-                    { key: "urgent", title: "Urgent", desc: root.urgentAllowed ? "Recipient notified every 2 min for 20 min" : "Unavailable in chats with more than 20 people", icon: "alert-urgent-20", color: "#C4314B", name: "Mark message as urgent and repeatedly notify recipient every 2 minutes for 20 minutes" }
+                    { key: "", title: qsTr("Standard"), desc: qsTr("Message will be sent as usual"), icon: "chat-20", color: "", name: qsTr("Standard Message Delivery") },
+                    { key: "high", title: qsTr("Important"), desc: qsTr("Message will be marked as important"), icon: "important-20", color: "#C4314B", name: qsTr("Mark message as important") },
+                    { key: "urgent", title: qsTr("Urgent"), desc: root.urgentAllowed ? qsTr("Recipients notified every %1 min for %2 min", "", 1).arg(2).arg(20) : qsTr("Unavailable in chats with more than 20 people"), icon: "alert-urgent-20", color: "#C4314B", name: qsTr("Mark message as urgent and repeatedly notify recipients every %1 minutes for %2 minutes", "", 1).arg(2).arg(20) }
                 ]
                 Rectangle {
                     id: opt
@@ -1737,7 +1737,7 @@ Item {
             if (!root.everyoneAllowed) return
             // Teams: past 50 others, "# people will be notified".
             if (root.everyoneOthers > 50)
-                root.showBanner(root.everyoneOthers === 1 ? "1 person will be notified" : root.everyoneOthers + " people will be notified", true, 3000, false)
+                root.showBanner(qsTr("%n people will be notified", "", root.everyoneOthers), true, 3000, false)
             const at0 = mentionAt, end0 = input.cursorPosition
             mentionAt = -1; mentionPicker.close()
             input.remove(at0, end0)
@@ -1776,23 +1776,23 @@ Item {
             const words = n => (n || "").toLowerCase().split(/\s+/)
             const t = root.teamMention, c = root.channelMention
             if (q && t && (words(t.name).some(w => w.startsWith(q)) || t.name.toLowerCase().startsWith(q) || "team".startsWith(q)))
-                out.push({ kind: "team", mri: t.id, name: t.name, mail: "Team", photoId: t.groupId })
+                out.push({ kind: "team", mri: t.id, name: t.name, mail: qsTr("Team"), photoId: t.groupId })
             if (q && c && (words(c.name).some(w => w.startsWith(q)) || c.name.toLowerCase().startsWith(q) || "channel".startsWith(q)))
-                out.push({ kind: "channel", mri: c.id, name: c.name, mail: "Channel", photoId: t ? t.groupId : "" })
+                out.push({ kind: "channel", mri: c.id, name: c.name, mail: qsTr("Channel"), photoId: t ? t.groupId : "" })
             // Tags, by a word of their name ("1 person", "N people").
             if (q) for (const g of root.tagMentions || [])
                 if (words(g.name).some(w => w.startsWith(q)) || g.name.toLowerCase().startsWith(q))
-                    out.push({ kind: "tag", mri: g.id, name: g.name, mail: g.count === 1 ? "1 person" : g.count + " people" })
+                    out.push({ kind: "tag", mri: g.id, name: g.name, mail: qsTr("%n people", "", g.count) })
             for (const p of fromRoster) out.push(p)
             for (const p of found) if (!out.some(o => o.mri === p.mri)) out.push(p)
             // Everyone: offered up to Teams' limit, shown disabled past it.
             if (root.everyoneId && (!q || "everyone".startsWith(q)))
-                out.push({ everyone: true, name: "Everyone", mail: "Notify everyone in the chat", disabled: !root.everyoneAllowed })
+                out.push({ everyone: true, name: qsTr("Everyone"), mail: qsTr("Notify everyone in the chat"), disabled: !root.everyoneAllowed })
             const rows = out.slice(0, 20)
-            if (root.canAddAgent) rows.push({ kind: "agent", name: root.channelMention ? "Add agent to the channel" : "Add agent to the chat", mail: "" })
-            if (root.canAddPeople) rows.push({ kind: "add", name: "Add someone to the chat", mail: "" })
+            if (root.canAddAgent) rows.push({ kind: "agent", name: root.channelMention ? qsTr("Add agent to the channel") : qsTr("Add agent to the chat"), mail: "" })
+            if (root.canAddPeople) rows.push({ kind: "add", name: qsTr("Add someone to the chat"), mail: "" })
             // Always last (Teams): share someone's contact card.
-            rows.push({ kind: "share", name: "Share someone\u2019s contact info", mail: "" })
+            rows.push({ kind: "share", name: qsTr("Share someone\u2019s contact info"), mail: "" })
             return rows
         }
         function move(d) { if (people.length) current = (current + d + people.length) % people.length }
@@ -1803,7 +1803,7 @@ Item {
         background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
         Text {
             x: 20.7; y: 10.7; height: 20; verticalAlignment: Text.AlignVCenter
-            text: "Suggestions"
+            text: qsTr("Suggestions")
             font.family: theme.font; font.pixelSize: 14; color: theme.textStrong
         }
         Column {
@@ -1839,7 +1839,7 @@ Item {
                     FluentIcon { visible: !!prow.modelData.everyone; x: 25.6; y: 13.6; name: "people-20"; size: 20; color: theme.onFill(prow, prow.modelData.disabled ? theme.disabled : theme.textStrong) }
                     // Past the limit: Teams' tooltip.
                     ToolTip.visible: !!prow.modelData.disabled && prowHover.hovered; ToolTip.delay: 300
-                    ToolTip.text: "Not available for chats over 1,000 users."
+                    ToolTip.text: qsTr("Not available for chats over 1,000 users.")
                     // Share someone's contact info: the contact card icon (20).
                     FluentIcon { visible: prow.modelData.kind === "share"; x: 19.6; y: 14.6; name: "contact-card-20"; size: 20; color: theme.onFill(prow, theme.textStrong) }
                     // Add agent: bot-add (20).
@@ -1949,7 +1949,7 @@ Item {
         closePolicy: Popup.CloseOnEscape
         background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
         Overlay.modal: Rectangle { color: theme.hc("#66000000", "#000000") }
-        Text { x: 24.7; y: 24.7; height: 28; verticalAlignment: Text.AlignVCenter; text: "Discard draft"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+        Text { x: 24.7; y: 24.7; height: 28; verticalAlignment: Text.AlignVCenter; text: qsTr("Discard draft"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
         Rectangle {
             id: hcFill11
             x: 543.3; y: 24.7; width: 32; height: 31.3; radius: 4
@@ -1958,30 +1958,30 @@ Item {
             HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: discardDialog.close() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Close"
+            Accessible.name: qsTr("Close")
         }
-        Text { x: 22.7; y: 62; height: 32; verticalAlignment: Text.AlignVCenter; text: "You can discard your draft or cancel to keep editing"; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
+        Text { x: 22.7; y: 62; height: 32; verticalAlignment: Text.AlignVCenter; text: qsTr("You can discard your draft or cancel to keep editing"); font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
         Row {
             x: 375.3; y: 100; spacing: 8
             Rectangle {
                 id: hcFill12
                 width: 96; height: 31.3; radius: 4
                 color: dCancelHover.hovered ? theme.menuHover : theme.surface; border.color: theme.stroke
-                Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill12, theme.text) }
+                Text { anchors.centerIn: parent; text: qsTr("Cancel"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill12, theme.text) }
                 HoverHandler { id: dCancelHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: { discardDialog.close(); input.forceActiveFocus() } }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Cancel"
+                Accessible.name: qsTr("Cancel")
             }
             Rectangle {
                 id: hcFill13
                 width: 96; height: 31.3; radius: 4
                 color: discardHover.hovered ? theme.brandHover : theme.brandFill
-                Text { anchors.centerIn: parent; text: "Discard"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill13, "white") }
+                Text { anchors.centerIn: parent; text: qsTr("Discard"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill13, "white") }
                 HoverHandler { id: discardHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: { discardDialog.close(); root.formatting = false; input.clear(); if (root.post) root.resetPost(); root.cancelled() } }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Discard"
+                Accessible.name: qsTr("Discard")
             }
         }
     }
@@ -2003,7 +2003,7 @@ Item {
         closePolicy: Popup.CloseOnEscape
         background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
         Overlay.modal: Rectangle { color: theme.hc("#66000000", "#000000") }
-        Text { x: 24.7; y: 24.7; height: 28; verticalAlignment: Text.AlignVCenter; text: "Saved draft"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+        Text { x: 24.7; y: 24.7; height: 28; verticalAlignment: Text.AlignVCenter; text: qsTr("Saved draft"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
         Rectangle {
             id: hcFill14
             x: 543.3; y: 24.7; width: 32; height: 31.3; radius: 4
@@ -2012,11 +2012,11 @@ Item {
             HoverHandler { id: cdCloseHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: conflictDialog.close() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Close"
+            Accessible.name: qsTr("Close")
         }
         Row {
             x: 24.7; y: 62; spacing: 4
-            Text { text: "Saved on"; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textSecondary }
+            Text { text: qsTr("Saved on"); font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textSecondary }
             Text {
                 text: root.conflictDraft && root.conflictDraft.time ? theme.date(new Date(root.conflictDraft.time)) + " " + theme.time(new Date(root.conflictDraft.time)) : ""
                 font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textSecondary
@@ -2038,21 +2038,21 @@ Item {
                 id: hcFill15
                 width: 96; height: 31.3; radius: 4
                 color: cdDiscardHover.hovered ? theme.menuHover : theme.surface; border.color: theme.stroke
-                Text { anchors.centerIn: parent; text: "Discard"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill15, theme.text) }
+                Text { anchors.centerIn: parent; text: qsTr("Discard"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill15, theme.text) }
                 HoverHandler { id: cdDiscardHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: { conflictDialog.close(); root.conflictResolved(false) } }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Discard"
+                Accessible.name: qsTr("Discard")
             }
             Rectangle {
                 id: hcFill16
                 width: useLabel.implicitWidth + 32; height: 31.3; radius: 4
                 color: cdUseHover.hovered ? theme.brandHover : theme.brandFill
-                Text { id: useLabel; anchors.centerIn: parent; text: "Use this version"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill16, "white") }
+                Text { id: useLabel; anchors.centerIn: parent; text: qsTr("Use this version"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill16, "white") }
                 HoverHandler { id: cdUseHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: { conflictDialog.close(); root.conflictResolved(true) } }
                 Accessible.role: Accessible.Button
-                Accessible.name: "Use this version"
+                Accessible.name: qsTr("Use this version")
             }
         }
     }

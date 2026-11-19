@@ -42,7 +42,7 @@ Popup {
                     FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(hcFill1, theme.textStrong) }
                     HoverHandler { id: aboutClose; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: aboutDialog.close() }
-                    Accessible.role: Accessible.Button; Accessible.name: "Close"
+                    Accessible.role: Accessible.Button; Accessible.name: qsTr("Close")
                 }
             }
             Row {
@@ -81,14 +81,15 @@ Popup {
             Column {
                 visible: !!aboutDialog.about && aboutDialog.about.needs_identity
                 width: parent.width
-                Text { width: parent.width; wrapMode: Text.Wrap; text: (aboutDialog.about ? aboutDialog.about.name : "") + " needs access to:"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.Bold; color: theme.text }
-                Text { width: parent.width; wrapMode: Text.Wrap; text: "Team member's email addresses and information that can identify your team and organization name. Data may be sent to a third-party service"; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
+                Text { width: parent.width; wrapMode: Text.Wrap; text: qsTr("%1 needs access to:").arg(aboutDialog.about ? aboutDialog.about.name : ""); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.Bold; color: theme.text }
+                Text { width: parent.width; wrapMode: Text.Wrap; text: qsTr("Team member's email addresses and information that can identify your team and organization name. Data may be sent to a third-party service"); font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
             }
             Text {
                 visible: !!aboutDialog.about && !!aboutDialog.about.privacy_url && !!aboutDialog.about.terms_url
                 width: parent.width; wrapMode: Text.Wrap
                 textFormat: Text.StyledText
-                text: aboutDialog.about ? "By using this tab, you agree to the developer's <a href=\"" + aboutDialog.about.privacy_url + "\">privacy policy</a> and <a href=\"" + aboutDialog.about.terms_url + "\">terms of use</a>." : ""
+                text: aboutDialog.about ? qsTr("By using this tab, you agree to the developer's <0>%1</0> and <1>%2</1>.").arg(qsTr("privacy policy")).arg(qsTr("terms of use"))
+                    .replace("<0>", "<a href=\"" + aboutDialog.about.privacy_url + "\">").replace("</0>", "</a>").replace("<1>", "<a href=\"" + aboutDialog.about.terms_url + "\">").replace("</1>", "</a>") : ""
                 font.family: theme.font; font.pixelSize: theme.base; color: theme.text
                 linkColor: theme.brandLink
                 onLinkActivated: link => Qt.openUrlExternally(link)

@@ -10,7 +10,7 @@ Window {
     id: room
     /// The call window.
     property var call
-    title: "Meeting join | " + (call ? call.peer : "") + " | OST"
+    title: qsTr("Meeting join | %1").arg(call ? call.peer : "") + " | OST"
     width: 1280; height: 680
     color: theme.hc("#F5F5F5", "#000000")
     onClosing: if (call) call.roomMode = false

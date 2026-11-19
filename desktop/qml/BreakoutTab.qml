@@ -69,16 +69,16 @@ Rectangle {
 
     Button31 {
         x: 21; y: 14; width: 174
-        icon: "breakout-assign-20"; label: "Assign participants"
+        icon: "breakout-assign-20"; label: qsTr("Assign participants")
         enabled: root.hasRooms && !root.busy
         onClicked: assignNote.open()
     }
     Row {
         anchors.right: parent.right; anchors.rightMargin: 20; y: 14; spacing: 5
-        Accessible.role: Accessible.ToolBar; Accessible.name: "Room action buttons"
-        ToolButton32 { icon: "add-20"; tip: "Add room"; enabled: root.hasRooms && !root.busy; onClicked: root.act("add", { name: "Room " + (root.rooms.length + 1) }) }
-        ToolButton32 { icon: "delete-20"; tip: "Remove rooms"; enabled: root.hasRooms && !root.busy; onClicked: root.act("delete_all") }
-        ToolButton32 { icon: "settings-20"; tip: "Room settings"; enabled: !root.busy; onClicked: settingsNote.open() }
+        Accessible.role: Accessible.ToolBar; Accessible.name: qsTr("Room action buttons")
+        ToolButton32 { icon: "add-20"; tip: qsTr("Add room"); enabled: root.hasRooms && !root.busy; onClicked: root.act("add", { name: "Room " + (root.rooms.length + 1) }) }
+        ToolButton32 { icon: "delete-20"; tip: qsTr("Remove rooms"); enabled: root.hasRooms && !root.busy; onClicked: root.act("delete_all") }
+        ToolButton32 { icon: "settings-20"; tip: qsTr("Room settings"); enabled: !root.busy; onClicked: settingsNote.open() }
     }
 
     // No rooms yet.
@@ -91,10 +91,10 @@ Rectangle {
             source: "../assets/illustrations/breakout-rooms-empty.svg"
             sourceSize: Qt.size(440, 285); fillMode: Image.PreserveAspectFit; smooth: true
         }
-        Text { anchors.horizontalCenter: parent.horizontalCenter; y: 312.4; text: "Create breakout rooms"; font.family: theme.font; font.pixelSize: 24; font.weight: Font.Bold; lineHeight: 32; lineHeightMode: Text.FixedHeight; color: theme.text; Accessible.role: Accessible.Heading; Accessible.name: text }
-        Text { anchors.horizontalCenter: parent.horizontalCenter; y: 360.4; text: "See your rooms and set them up the way you want, all right here."; font.family: theme.font; font.pixelSize: 16; lineHeight: 22.86; lineHeightMode: Text.FixedHeight; color: theme.text }
-        Button31 { anchors.horizontalCenter: parent.horizontalCenter; y: 415.3; width: 110.3; primary: true; label: "Create rooms"; enabled: !root.busy; onClicked: createDialog.start() }
-        Button31 { anchors.horizontalCenter: parent.horizontalCenter; y: 462.6; width: 132.9; label: "Import from CSV"; enabled: !root.busy; onClicked: csvNote.open() }
+        Text { anchors.horizontalCenter: parent.horizontalCenter; y: 312.4; text: qsTr("Create breakout rooms"); font.family: theme.font; font.pixelSize: 24; font.weight: Font.Bold; lineHeight: 32; lineHeightMode: Text.FixedHeight; color: theme.text; Accessible.role: Accessible.Heading; Accessible.name: text }
+        Text { anchors.horizontalCenter: parent.horizontalCenter; y: 360.4; text: qsTr("See your rooms and set them up the way you want, all right here."); font.family: theme.font; font.pixelSize: 16; lineHeight: 22.86; lineHeightMode: Text.FixedHeight; color: theme.text }
+        Button31 { anchors.horizontalCenter: parent.horizontalCenter; y: 415.3; width: 110.3; primary: true; label: qsTr("Create rooms"); enabled: !root.busy; onClicked: createDialog.start() }
+        Button31 { anchors.horizontalCenter: parent.horizontalCenter; y: 462.6; width: 132.9; label: qsTr("Import from CSV"); enabled: !root.busy; onClicked: csvNote.open() }
     }
 
     // The rooms.
@@ -120,7 +120,7 @@ Rectangle {
     Text {
         visible: !!root.state_ && !!root.state_.error && !!root.state_.loaded
         anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom; anchors.bottomMargin: 16
-        text: "Something went wrong. Try again later."
+        text: qsTr("Something went wrong. Try again later.")
         font.family: theme.font; font.pixelSize: 14; color: theme.redForeground3
     }
 
@@ -135,9 +135,9 @@ Rectangle {
         Overlay.modal: Rectangle { color: theme.hc("#66000000", "#000000") }
         contentItem: Column {
             spacing: 0
-            Text { text: "Create rooms"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; lineHeight: 28; lineHeightMode: Text.FixedHeight; color: theme.text; Accessible.role: Accessible.Heading; Accessible.name: text }
+            Text { text: qsTr("Create rooms"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; lineHeight: 28; lineHeightMode: Text.FixedHeight; color: theme.text; Accessible.role: Accessible.Heading; Accessible.name: text }
             Item { width: 1; height: 8.6 }
-            Text { text: "How many rooms do you need?"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+            Text { text: qsTr("How many rooms do you need?"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
             Rectangle {
                 width: parent.width; height: 32; radius: 4
                 color: theme.inputFilled; border.width: 0.67; border.color: theme.transparentStroke
@@ -148,13 +148,13 @@ Rectangle {
                     font.family: theme.font; font.pixelSize: 14; color: theme.text
                     selectByMouse: true
                     onTextEdited: { const n = parseInt(text); if (n >= 1 && n <= 50) createDialog.count = n }
-                    Accessible.role: Accessible.SpinBox; Accessible.name: "How many rooms do you need?"
+                    Accessible.role: Accessible.SpinBox; Accessible.name: qsTr("How many rooms do you need?")
                 }
                 Rectangle { visible: countInput.activeFocus; anchors.bottom: parent.bottom; width: parent.width; height: 2; radius: 1; color: theme.brand }
                 Column {
                     anchors.right: parent.right
                     Repeater {
-                        model: [{ icon: "chevron-up-16", step: 1, name: "Increment value" }, { icon: "chevron-down-16", step: -1, name: "Decrement value" }]
+                        model: [{ icon: "chevron-up-16", step: 1, name: qsTr("Increment value") }, { icon: "chevron-down-16", step: -1, name: qsTr("Decrement value") }]
                         Rectangle {
                             id: step
                             required property var modelData
@@ -170,9 +170,9 @@ Rectangle {
             Item { width: 1; height: 8 }
             Row {
                 anchors.right: parent.right; spacing: 8
-                Button31 { width: 96; label: "Cancel"; onClicked: createDialog.close() }
+                Button31 { width: 96; label: qsTr("Cancel"); onClicked: createDialog.close() }
                 Button31 {
-                    width: 96; primary: true; label: "Add rooms"
+                    width: 96; primary: true; label: qsTr("Add rooms")
                     onClicked: {
                         const rooms = []
                         for (let i = 1; i <= createDialog.count; i++) rooms.push({ name: "Room " + i, participants: [] })
@@ -193,12 +193,12 @@ Rectangle {
         contentItem: Column {
             spacing: 16
             Text { width: parent.width; wrapMode: Text.Wrap; text: note.text; font.family: theme.font; font.pixelSize: 14; color: theme.text }
-            Button31 { anchors.right: parent.right; width: 96; label: "OK"; primary: true; onClicked: note.close() }
+            Button31 { anchors.right: parent.right; width: 96; label: qsTr("OK"); primary: true; onClicked: note.close() }
         }
     }
-    Note { id: assignNote; text: "Assign participants from the meeting window's Breakout rooms pane." }
-    Note { id: settingsNote; text: "Change room settings from the meeting window's Breakout rooms pane." }
-    Note { id: csvNote; text: "Import rooms from CSV from the meeting window's Breakout rooms pane." }
+    Note { id: assignNote; text: qsTr("Assign participants from the meeting window's Breakout rooms pane.") }
+    Note { id: settingsNote; text: qsTr("Change room settings from the meeting window's Breakout rooms pane.") }
+    Note { id: csvNote; text: qsTr("Import rooms from CSV from the meeting window's Breakout rooms pane.") }
 
     function createForTest(n) { createDialog.start(); createDialog.count = n }
 }

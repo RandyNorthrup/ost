@@ -65,7 +65,7 @@ Popup {
         }
         Text {
             x: 76; y: 40.4
-            text: "Workflows"
+            text: qsTr("Workflows")
             font.family: theme.font; font.pixelSize: 20; font.weight: Font.Bold
             lineHeight: 28.6; lineHeightMode: Text.FixedHeight
             color: theme.text
@@ -77,7 +77,7 @@ Popup {
             FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(hcFill1, theme.textStrong) }
             HoverHandler { id: closeHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: dlg.close() }
-            Accessible.role: Accessible.Button; Accessible.name: "Close"
+            Accessible.role: Accessible.Button; Accessible.name: qsTr("Close")
         }
         Loader {
             id: page

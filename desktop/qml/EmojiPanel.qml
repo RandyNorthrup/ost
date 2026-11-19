@@ -24,11 +24,11 @@ Item {
     property bool customizing: false
     signal picked(string key, bool on)
     signal customize()
-    readonly property var toneNames: ["no", "light", "medium light", "medium", "medium dark", "dark"]
+    readonly property var toneNames: [qsTr("no", "messaging:kau178ztw"), qsTr("light", "messaging:kdditzq3h"), qsTr("medium light", "messaging:k1ay2emet"), qsTr("medium", "messaging:kcv8hdqb2"), qsTr("medium dark", "messaging:kbkrx29m7"), qsTr("dark", "messaging:k2kcmet5z")]
     function commonKey(id) { const m = /^(.{1,40})-tone\d$/.exec(id); return m ? m[1] : id }
     function toneOf(id) { const m = /-tone(\d)$/.exec(id); return m ? Number(m[1]) : 0 }
     function shown(e) { backend.skinTone; return e.diverse ? backend.emoticonToned(e.id) : e.id }
-    function label(e, id) { return e.diverse ? e.description + " with " + toneNames[toneOf(id)] + " skin tone" : e.description }
+    function label(e, id) { return e.diverse ? qsTr("%1 with %2 skin tone").arg(e.description).arg(toneNames[toneOf(id)]) : e.description }
     function myReaction(id) { return root.customizing ? undefined : root.mine.find(r => r.key === root.commonKey(id)) }
     // Test hook: the tones of an emoticon, as if its cell in Recent's first
     // row were right-clicked.
@@ -82,12 +82,12 @@ Item {
             }
             return [{ id: "search", title: "", emoticons: hits }]
         }
-        const all = [{ id: "recent", title: "Recent", emoticons: recent }].concat(catalog)
+        const all = [{ id: "recent", title: qsTr("Recent"), emoticons: recent }].concat(catalog)
         // Teams' "Your org's emoji" tab (customEmoji), headed "Custom": the
         // add button first, then the org's emoji, newest first.
         if (!root.customSection) return all
         const org = (backend.customEmojiJson ? JSON.parse(backend.customEmojiJson) : []).map(e => ({ id: e.id, description: e.shortcut, diverse: false, custom: true, creator_name: e.creator_name, created_on: e.created_on }))
-        return all.concat([{ id: "customEmoji", title: "Custom", tip: "Your org's emoji", custom: true, org: org, emoticons: org.length ? (backend.customEmojiCanAdd ? [{ id: "", addCell: true }] : []).concat(org) : [] }])
+        return all.concat([{ id: "customEmoji", title: qsTr("Custom"), tip: qsTr("Your org's emoji"), custom: true, org: org, emoticons: org.length ? (backend.customEmojiCanAdd ? [{ id: "", addCell: true }] : []).concat(org) : [] }])
     }
     onActiveChanged: if (active && customSection) backend.loadCustomEmoji()
     function reset() { query = ""; search.text = ""; list.positionViewAtBeginning(); search.forceActiveFocus() }
@@ -104,11 +104,11 @@ Item {
             onTextChanged: root.query = text
             Text {
                 visible: !search.text
-                text: "Find something fun"
+                text: qsTr("Find something fun")
                 font: search.font; color: theme.textSecondary
             }
             Accessible.role: Accessible.EditableText
-            Accessible.name: "Search for emoji, GIFs or stickers"
+            Accessible.name: qsTr("Search for emoji, GIFs or stickers")
         }
         FluentIcon { anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter; name: "search-20"; size: 20; color: theme.textSecondary }
     }
@@ -126,10 +126,10 @@ Item {
             visible: custHover.hovered; delay: 500
             y: parent.height + 4; padding: 8
             background: FluentSurface { depth: 16; radius: 4 }
-            contentItem: Text { text: "Customize default reactions"; font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
+            contentItem: Text { text: qsTr("Customize default reactions"); font.family: theme.font; font.pixelSize: theme.small; color: theme.text }
         }
         Accessible.role: Accessible.Button
-        Accessible.name: "Customize default reactions"
+        Accessible.name: qsTr("Customize default reactions")
     }
 
     ListView {
@@ -162,7 +162,7 @@ Item {
                     horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
                     lineHeight: 20; lineHeightMode: Text.FixedHeight
                     // Without creation rights Teams says it found nothing.
-                    text: backend.customEmojiCanAdd ? "Add your own emoji that everyone in your org can use." : "We didn't find any matches."
+                    text: backend.customEmojiCanAdd ? qsTr("Add your own emoji that everyone in your org can use.") : qsTr("We didn't find any matches.")
                     font.family: theme.font; font.pixelSize: theme.base; color: theme.text
                 }
                 Rectangle {
@@ -170,11 +170,11 @@ Item {
                     visible: backend.customEmojiCanAdd
                     x: 33.5; y: 110; width: 220; height: 32; radius: 4
                     color: addHover.hovered ? theme.brandHover : theme.brandFill
-                    Text { anchors.centerIn: parent; text: "Add emoji"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, "white") }
+                    Text { anchors.centerIn: parent; text: qsTr("Add emoji"); font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, "white") }
                     HoverHandler { id: addHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.addCustomEmoji() }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Add emoji"
+                    Accessible.name: qsTr("Add emoji")
                 }
             }
             Text {
@@ -217,12 +217,12 @@ Item {
                             y: cell.height + 4; padding: 8
                             background: FluentSurface { depth: 16; radius: 4 }
                             contentItem: Text {
-                                text: cell.addCell ? "Add emoji" : cell.modelData.custom ? cell.modelData.description + "\nShortcut: :" + cell.modelData.description + ":" : cell.modelData.description
+                                text: cell.addCell ? qsTr("Add emoji") : cell.modelData.custom ? qsTr("%1\nShortcut: %2").arg(cell.modelData.description).arg(":" + cell.modelData.description + ":") : cell.modelData.description
                                 font.family: theme.font; font.pixelSize: theme.small; color: theme.text
                             }
                         }
                         Accessible.role: Accessible.MenuItem
-                        Accessible.name: cell.addCell ? "Add emoji" : (root.myReaction(cell.shownId) ? "Undo " : "") + root.label(cell.modelData, cell.shownId) + (cell.modelData.custom ? ", has context menu" : "")
+                        Accessible.name: cell.addCell ? qsTr("Add emoji") : (root.myReaction(cell.shownId) ? qsTr("Undo %1").arg(root.label(cell.modelData, cell.shownId)) : root.label(cell.modelData, cell.shownId)) + (cell.modelData.custom ? ", " + qsTr("has context menu") : "")
                     }
                 }
             }
@@ -238,8 +238,8 @@ Item {
         const who = e.creator_name || ""
         const when = e.created_on > 0 ? theme.date(new Date(e.created_on)) : ""
         // Delete only where the policy allows it (Teams also for tenant admins).
-        const del = backend.customEmojiCanDelete ? [{ key: "delete", label: "Delete emoji for org.", icon: "delete-20" }] : []
-        const info = who && when ? [{ label: "Created by " + who + " on " + when, enabled: false }] : []
+        const del = backend.customEmojiCanDelete ? [{ key: "delete", label: qsTr("Delete emoji for org."), icon: "delete-20" }] : []
+        const info = who && when ? [{ label: qsTr("Created by %1 on %2").arg(who).arg(when), enabled: false }] : []
         customMenu.items = del.concat(del.length && info.length ? [{ separator: true }] : []).concat(info)
         if (customMenu.items.length === 0) return
         customMenu.x = Math.min(p.x, root.width - customMenu.implicitWidth - 4); customMenu.y = p.y
@@ -261,28 +261,28 @@ Item {
         Overlay.modal: Rectangle { color: theme.hc("#66000000", "#000000") }
         contentItem: Column {
             spacing: 16
-            Text { width: 550.66; wrapMode: Text.Wrap; text: "Are you sure you want to delete it?"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; lineHeight: 28; lineHeightMode: Text.FixedHeight; color: theme.text; Accessible.role: Accessible.Heading }
+            Text { width: 550.66; wrapMode: Text.Wrap; text: qsTr("Are you sure you want to delete it?"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; lineHeight: 28; lineHeightMode: Text.FixedHeight; color: theme.text; Accessible.role: Accessible.Heading }
             Row {
                 anchors.right: parent.right; spacing: 8
                 Rectangle {
                     id: hcFill2
                     width: 96; height: 31.3; radius: 4
                     color: dcHover.hovered ? theme.menuHover : theme.surface; border.color: theme.stroke
-                    Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.text) }
+                    Text { anchors.centerIn: parent; text: qsTr("Cancel"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.text) }
                     HoverHandler { id: dcHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: deleteDialog.close() }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Cancel"
+                    Accessible.name: qsTr("Cancel")
                 }
                 Rectangle {
                     id: hcFill3
                     width: 96; height: 31.3; radius: 4
                     color: ddHover.hovered ? theme.brandHover : theme.brandFill
-                    Text { anchors.centerIn: parent; text: "Delete"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, "white") }
+                    Text { anchors.centerIn: parent; text: qsTr("Delete"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.onFill(hcFill3, "white") }
                     HoverHandler { id: ddHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: { if (root.customTarget) backend.deleteCustomEmoji(root.customTarget.id); deleteDialog.close() } }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Delete"
+                    Accessible.name: qsTr("Delete")
                 }
             }
         }

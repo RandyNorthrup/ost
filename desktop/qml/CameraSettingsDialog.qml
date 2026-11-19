@@ -34,7 +34,7 @@ Popup {
         id: titleText
         x: 24; y: 24; width: dlg.width - 48; height: 28
         verticalAlignment: Text.AlignVCenter
-        text: "Camera settings"
+        text: qsTr("Camera settings")
         font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold
         color: theme.text
         Accessible.role: Accessible.Heading
@@ -61,7 +61,7 @@ Popup {
         Text {
             visible: dlg.controls.length === 0
             width: parent.width
-            text: "This camera has no settings to change."
+            text: qsTr("This camera has no settings to change.")
             wrapMode: Text.Wrap
             font.family: theme.font; font.pixelSize: 14
             color: theme.textSecondary
@@ -94,7 +94,7 @@ Popup {
                 anchors.right: parent.right
                 spacing: 8
                 SettingsParts.Box { y: 2; checked: !!row.modelData.auto; hovered: autoHover.hovered }
-                Text { text: "Auto"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                Text { text: qsTr("Auto"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
                 HoverHandler { id: autoHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler {
                     onTapped: {
@@ -103,7 +103,7 @@ Popup {
                     }
                 }
                 Accessible.role: Accessible.CheckBox
-                Accessible.name: "Auto " + row.modelData.name
+                Accessible.name: qsTr("Auto %1").arg(row.modelData.name)
                 Accessible.checked: !!row.modelData.auto
             }
             Slider {
@@ -153,7 +153,7 @@ Popup {
     }
     Row {
         x: dlg.width - 24 - width; y: dlg.height - 24 - 31.3; spacing: 8
-        SettingsParts.Button { label: "Restore defaults"; onClicked: { backend.resetCameraControls(dlg.path); dlg.reload() } }
-        SettingsParts.Button { label: "Close"; primary: true; onClicked: dlg.close() }
+        SettingsParts.Button { label: qsTr("Restore defaults"); onClicked: { backend.resetCameraControls(dlg.path); dlg.reload() } }
+        SettingsParts.Button { label: qsTr("Close"); primary: true; onClicked: dlg.close() }
     }
 }

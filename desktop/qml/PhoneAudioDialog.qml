@@ -78,14 +78,14 @@ Item {
         backend.setSetting("phoneFavorites", list.concat([n]).join(","))
     }
 
-    readonly property string header: calling ? "We are calling your phone"
-        : connected ? "Meeting audio"
-        : view === "none" ? "Phone audio isn't available" : "Use phone for audio"
+    readonly property string header: calling ? qsTr("We are calling your phone")
+        : connected ? qsTr("Meeting audio")
+        : view === "none" ? qsTr("Phone audio isn't available") : qsTr("Use phone for audio")
     readonly property string subheader: calling || connected ? ""
-        : view === "none" ? "Unmute your mic for meeting audio."
-        : view === "dialIn" ? "Dial in with one of the following phone numbers."
-        : failed ? (phone.error || "We could not complete the call. The user is unavailable at the moment.")
-        : "Enter your number and we'll call you."
+        : view === "none" ? qsTr("Unmute your mic for meeting audio.")
+        : view === "dialIn" ? qsTr("Dial in with one of the following phone numbers.")
+        : failed ? (phone.error || qsTr("We could not complete the call. The user is unavailable at the moment."))
+        : qsTr("Enter your number and we'll call you.")
 
     // The overlay closes the dialog on a click outside (closeOnOutsideClick).
     Rectangle {
@@ -124,9 +124,9 @@ Item {
                     TapHandler { onTapped: root.close() }
                     ToolTip.visible: closeHover.hovered
                     ToolTip.delay: 500
-                    ToolTip.text: "Close"
+                    ToolTip.text: qsTr("Close")
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Close"
+                    Accessible.name: qsTr("Close")
                 }
             }
             Item { width: 1; height: 10; visible: root.subheader.length > 0 }
@@ -166,12 +166,12 @@ Item {
                         Keys.onEscapePressed: root.close()
                         Text {
                             visible: !parent.text && !parent.preeditText
-                            text: "Enter phone number"
+                            text: qsTr("Enter phone number")
                             font: parent.font
                             color: theme.textSecondary
                         }
                         Accessible.role: Accessible.EditableText
-                        Accessible.name: "Enter phone number"
+                        Accessible.name: qsTr("Enter phone number")
                     }
                     FluentIcon {
                         visible: root.failed
@@ -195,14 +195,14 @@ Item {
                     color: !usable ? theme.bgDisabled : cmHover.hovered ? theme.brandHover : theme.brandFill
                     Text {
                         anchors.centerIn: parent
-                        text: "Call me"
+                        text: qsTr("Call me")
                         font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
                         color: callMeButton.usable ? theme.onFill(callMeButton, theme.textOnBrand) : theme.disabled
                     }
                     HoverHandler { id: cmHover; cursorShape: callMeButton.usable ? Qt.PointingHandCursor : Qt.ArrowCursor }
                     TapHandler { enabled: callMeButton.usable; onTapped: root.callMe() }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Call me"
+                    Accessible.name: qsTr("Call me")
                 }
                 // Favourites: numbers Teams called for you before.
                 Column {
@@ -210,7 +210,7 @@ Item {
                     width: parent.width
                     Item { width: 1; height: 16 }
                     Text {
-                        text: "Favorites"
+                        text: qsTr("Favorites")
                         font.family: theme.font; font.pixelSize: 12
                         lineHeight: 16; lineHeightMode: Text.FixedHeight
                         color: theme.text
@@ -226,7 +226,7 @@ Item {
                             Column {
                                 x: 52; anchors.verticalCenter: parent.verticalCenter
                                 Text { text: modelData; font.family: theme.font; font.pixelSize: 14; color: theme.text }
-                                Text { text: "Other"; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+                                Text { text: qsTr("Other"); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
                             }
                             HoverHandler { id: favHover; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: { numberBox.text = modelData; root.callMe() } }
@@ -236,7 +236,7 @@ Item {
                     }
                 }
                 Item { width: 1; height: 15 }
-                LinkButton { label: "Dial in manually"; onClicked: root.view = "dialIn" }
+                LinkButton { label: qsTr("Dial in manually"); onClicked: root.view = "dialIn" }
             }
 
             // Dial in.
@@ -258,7 +258,7 @@ Item {
                         Accessible.name: root.dial ? root.dial.tollAria : ""
                     }
                     Text {
-                        text: " (Toll)"
+                        text: qsTr(" (Toll)")
                         font.family: theme.font; font.pixelSize: 14
                         lineHeight: 20; lineHeightMode: Text.FixedHeight
                         color: theme.text
@@ -278,7 +278,7 @@ Item {
                         Accessible.name: root.dial ? root.dial.tollFreeAria : ""
                     }
                     Text {
-                        text: " (Toll-Free)"
+                        text: qsTr(" (Toll-Free)")
                         font.family: theme.font; font.pixelSize: 14
                         lineHeight: 20; lineHeightMode: Text.FixedHeight
                         color: theme.text
@@ -286,7 +286,7 @@ Item {
                 }
                 Text {
                     visible: !!root.dial && root.dial.localNumbersUrl.length > 0
-                    text: "Get local numbers"
+                    text: qsTr("Get local numbers")
                     font.family: theme.font; font.pixelSize: 14
                     lineHeight: 20; lineHeightMode: Text.FixedHeight
                     font.underline: localHover.hovered
@@ -308,7 +308,7 @@ Item {
                 Item { width: 1; height: 15 }
                 LinkButton {
                     visible: !!root.phone.dialOut
-                    label: "Call me back"
+                    label: qsTr("Call me back")
                     onClicked: { root.view = "callMe"; numberBox.forceActiveFocus() }
                 }
                 Item { width: 1; height: 15 }
@@ -334,7 +334,7 @@ Item {
                         visible: root.calling
                         anchors.right: parent.right; anchors.rightMargin: 12
                         anchors.verticalCenter: parent.verticalCenter
-                        text: "Calling..."
+                        text: qsTr("Calling...")
                         font.family: theme.font; font.pixelSize: 12
                         color: theme.text
                     }
@@ -346,11 +346,11 @@ Item {
                         width: discText.implicitWidth + 24; height: 32; radius: 4
                         color: discHover.hovered ? theme.menuHover : theme.surface
                         border.color: theme.stroke; border.width: 1
-                        Text { id: discText; anchors.centerIn: parent; text: "Disconnect"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.text) }
+                        Text { id: discText; anchors.centerIn: parent; text: qsTr("Disconnect"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, theme.text) }
                         HoverHandler { id: discHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: { backend.disconnectPhoneAudio(); root.close() } }
                         Accessible.role: Accessible.Button
-                        Accessible.name: "Disconnect"
+                        Accessible.name: qsTr("Disconnect")
                     }
                 }
             }

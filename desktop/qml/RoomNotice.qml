@@ -24,7 +24,7 @@ Item {
     FluentIcon { x: 12; y: 12; name: "room-display-16"; size: 16; color: theme.text }
     Text {
         x: 36; y: 12; height: 20; verticalAlignment: Text.AlignVCenter
-        text: "Connected to a room device"
+        text: qsTr("Connected to a room device")
         font.family: theme.font; font.pixelSize: 12
         color: theme.text
     }
@@ -34,17 +34,17 @@ Item {
         HoverHandler { cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.dismissed() }
         Accessible.role: Accessible.Button
-        Accessible.name: "Dismiss"
+        Accessible.name: qsTr("Dismiss")
     }
     Text {
         visible: root.body
         x: 12.7; y: 41.3; width: 296.7
         wrapMode: Text.WordWrap
         lineHeight: 20; lineHeightMode: Text.FixedHeight
-        text: "Your gallery appears on the display. Controls and private data stay on this device."
+        text: qsTr("Your gallery appears on the display. Controls and private data stay on this device.")
         font.family: theme.font; font.pixelSize: 14
         color: theme.textSecondary
     }
     Accessible.role: Accessible.AlertMessage
-    Accessible.name: "Connected to a room device"
+    Accessible.name: qsTr("Connected to a room device")
 }

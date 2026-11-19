@@ -66,7 +66,7 @@ Rectangle {
     function key(i) { return i.thread_id + "|" + (followed ? i.reply_chain : i.message_id) }
     // A channel's name and its team (picture) from the team list.
     function channelOf(id) {
-        for (const t of teams) { const c = (t.channels || []).find(c => c.id === id); if (c) return { team: t, name: c.general ? "General" : c.name } }
+        for (const t of teams) { const c = (t.channels || []).find(c => c.id === id); if (c) return { team: t, name: c.general ? qsTr("General") : c.name } }
         return null
     }
     function titleOf(i) { if (!i.channel) return i.topic; const c = channelOf(i.thread_id); return c ? c.name : i.topic }
@@ -74,8 +74,8 @@ Rectangle {
         const d = new Date(t), now = new Date()
         const days = Math.round((new Date(now.getFullYear(), now.getMonth(), now.getDate()) - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 86400000)
         if (days === 0) return theme.time(d)
-        if (days === 1) return "Yesterday"
-        if (days > 1 && days < 7) return Qt.formatDate(d, "dddd")
+        if (days === 1) return qsTr("Yesterday")
+        if (days > 1 && days < 7) return theme.fmtDate(d, "dddd")
         return theme.dateNoYear(d)
     }
     function esc(t) { return (t || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") }
@@ -87,7 +87,7 @@ Rectangle {
         Rectangle { anchors.right: parent.right; width: 1; height: parent.height; color: theme.dividerSoft }
         Text {
             x: 32; y: 19
-            text: root.followed ? "Followed threads" : "Saved"
+            text: root.followed ? qsTr("Followed threads") : qsTr("Saved")
             font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold
             lineHeight: 22; lineHeightMode: Text.FixedHeight
             color: theme.text
@@ -96,20 +96,20 @@ Rectangle {
             x: 32; y: 69.5
             spacing: 4
             Repeater {
-                model: root.followed ? ["Unread", "Channels", "Chats"] : ["Channels", "Chats"]
+                model: root.followed ? [{ key: "unread", label: qsTr("Unread") }, { key: "channels", label: qsTr("Channels") }, { key: "chats", label: qsTr("Chats") }] : [{ key: "channels", label: qsTr("Channels") }, { key: "chats", label: qsTr("Chats") }]
                 delegate: Rectangle {
                     id: qchip
-                    required property string modelData
-                    readonly property bool on: root.chip === modelData.toLowerCase()
+                    required property var modelData
+                    readonly property bool on: root.chip === modelData.key
                     height: 23.3; radius: height / 2
                     width: chipText.implicitWidth + 16
                     color: on ? theme.hc(theme.brandTint, theme.hcHighlight) : (qch.hovered ? theme.rowHover : "transparent")
                     border.color: on ? theme.brand : theme.stroke; border.width: 0.67
                     HoverHandler { id: qch; cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: root.chip = qchip.on ? "" : qchip.modelData.toLowerCase() }
-                    Text { id: chipText; anchors.centerIn: parent; text: qchip.modelData; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(qchip, qchip.on ? theme.brand : theme.textStrong) }
+                    TapHandler { onTapped: root.chip = qchip.on ? "" : qchip.modelData.key }
+                    Text { id: chipText; anchors.centerIn: parent; text: qchip.modelData.label; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(qchip, qchip.on ? theme.brand : theme.textStrong) }
                     Accessible.role: Accessible.CheckBox
-                    Accessible.name: modelData
+                    Accessible.name: modelData.label
                     Accessible.checked: on
                 }
             }
@@ -198,7 +198,7 @@ Rectangle {
                         HoverHandler { id: actHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: row.toggle() }
                         Accessible.role: Accessible.Button
-                        Accessible.name: root.followed ? "Unfollow thread" : "Unsave this message"
+                        Accessible.name: root.followed ? qsTr("Unfollow thread") : qsTr("Unsave this message")
                     }
                     Rectangle {
                         id: hcFill3
@@ -208,11 +208,11 @@ Rectangle {
                         HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: rowMenu.open() }
                         Accessible.role: Accessible.Button
-                        Accessible.name: "More options"
+                        Accessible.name: qsTr("More options")
                         MenuPopup {
                             id: rowMenu
                             y: parent.height + 4
-                            items: [{ key: "open", label: root.followed ? "Go to thread" : "Go to message" }, { key: "toggle", label: root.followed ? "Unfollow thread" : "Unsave this message" }]
+                            items: [{ key: "open", label: root.followed ? qsTr("Go to thread") : qsTr("Go to message") }, { key: "toggle", label: root.followed ? qsTr("Unfollow thread") : qsTr("Unsave this message") }]
                             onPicked: i => items[i].key === "open" ? root.openItem(row.modelData) : row.toggle()
                         }
                     }
@@ -237,7 +237,7 @@ Rectangle {
         }
         Text {
             width: parent.width; y: 432; horizontalAlignment: Text.AlignHCenter
-            text: root.followed ? "When you select a thread, it'll show up here" : "When you select a saved item, it'll show up here."
+            text: root.followed ? qsTr("When you select a thread, it'll show up here") : qsTr("When you select a saved item, it'll show up here.")
             font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold; lineHeight: 24; lineHeightMode: Text.FixedHeight
             color: theme.text
         }

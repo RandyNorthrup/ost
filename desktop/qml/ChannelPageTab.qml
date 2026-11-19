@@ -79,9 +79,9 @@ Rectangle {
         Row {
             anchors { right: parent.right; rightMargin: 15 }
             y: 8
-            PageButton { icon: "apps"; tip: "Shared locations"; onClicked: locations.open() }
-            PageButton { icon: "select-object-20"; tip: "Copy component"; onClicked: { copier.text = root.link; copier.selectAll(); copier.copy() } }
-            PageButton { icon: "people-checkmark-20"; tip: "See who has access"; onClicked: if (root.link) Qt.openUrlExternally(root.link) }
+            PageButton { icon: "apps"; tip: qsTr("Shared locations"); onClicked: locations.open() }
+            PageButton { icon: "select-object-20"; tip: qsTr("Copy component"); onClicked: { copier.text = root.link; copier.selectAll(); copier.copy() } }
+            PageButton { icon: "people-checkmark-20"; tip: qsTr("See who has access"); onClicked: if (root.link) Qt.openUrlExternally(root.link) }
         }
         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: theme.divider }
         TextEdit { id: copier; visible: false }
@@ -92,7 +92,7 @@ Rectangle {
             background: Rectangle { radius: 8; color: theme.menu; border.color: theme.dividerSoft }
             contentItem: Column {
                 spacing: 6
-                Text { text: "Shared locations"; font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
+                Text { text: qsTr("Shared locations"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
                 Text { text: root.location; font.family: theme.font; font.pixelSize: theme.base; color: theme.textStrong }
             }
         }
@@ -129,7 +129,7 @@ Rectangle {
         Text {
             width: parent.width
             horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
-            text: parent.error ? "This page is temporarily not available." : "Give us a moment while we get things ready for you..."
+            text: parent.error ? qsTr("This page is temporarily not available.") : qsTr("Give us a moment while we get things ready for you...")
             lineHeight: 22; lineHeightMode: Text.FixedHeight
             font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold; color: theme.text
         }
@@ -139,10 +139,10 @@ Rectangle {
             anchors.horizontalCenter: parent.horizontalCenter
             width: retryText.implicitWidth + 24; height: 32; radius: 4
             color: retryHover.hovered ? theme.brandHover : theme.brandFill
-            Text { id: retryText; anchors.centerIn: parent; text: "Retry"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.textOnBrand }
+            Text { id: retryText; anchors.centerIn: parent; text: qsTr("Retry"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.textOnBrand }
             HoverHandler { id: retryHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.reload() }
-            Accessible.role: Accessible.Button; Accessible.name: "Retry"
+            Accessible.role: Accessible.Button; Accessible.name: qsTr("Retry")
         }
     }
 

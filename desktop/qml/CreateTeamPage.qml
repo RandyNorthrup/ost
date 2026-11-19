@@ -61,11 +61,11 @@ Rectangle {
             HoverHandler { id: backHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: page.back() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Back to channel list"
+            Accessible.name: qsTr("Back to channel list")
         }
-        Text { x: 42; y: 18.7; text: "Create team"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold; lineHeight: 22; lineHeightMode: Text.FixedHeight; color: theme.text }
+        Text { x: 42; y: 18.7; text: qsTr("Create team"); font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold; lineHeight: 22; lineHeightMode: Text.FixedHeight; color: theme.text }
         Repeater {
-            model: [["template", "From template"], ["another", "From another team"], ["group", "From group"]]
+            model: [["template", qsTr("From template")], ["another", qsTr("From another team")], ["group", qsTr("From group")]]
             Rectangle {
                 id: nav
                 required property var modelData
@@ -83,7 +83,7 @@ Rectangle {
         }
         Text {
             x: 40; y: 214
-            text: "What's a team?"
+            text: qsTr("What's a team?")
             font.family: theme.font; font.pixelSize: 13; font.underline: true
             color: theme.brandForeground1
             HoverHandler { cursorShape: Qt.PointingHandCursor }
@@ -112,10 +112,10 @@ Rectangle {
         clip: true
         boundsBehavior: Flickable.StopAtBounds
         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-        Text { x: 32; y: 20; text: "Create a team from a template"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold; lineHeight: 22; lineHeightMode: Text.FixedHeight; color: theme.text }
-        Text { x: 32; y: 47; text: "Skip the setup and use a template to get your team engaged quickly."; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
+        Text { x: 32; y: 20; text: qsTr("Create a team from a template"); font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold; lineHeight: 22; lineHeightMode: Text.FixedHeight; color: theme.text }
+        Text { x: 32; y: 47; text: qsTr("Skip the setup and use a template to get your team engaged quickly."); font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
         Repeater {
-            model: [{ id: "", name: "From scratch", category: "", short_description: "We'll help you create a basic team.", icon: "" }].concat(page.templates)
+            model: [{ id: "", name: qsTr("From scratch"), category: "", short_description: qsTr("We'll help you create a basic team."), icon: "" }].concat(page.templates)
             Card {
                 id: tcard
                 required property var modelData
@@ -144,8 +144,8 @@ Rectangle {
         contentHeight: 196 + Math.ceil(page.ownedTeams.length / Math.max(1, Math.floor((width - 40) / 296))) * 316
         clip: true
         boundsBehavior: Flickable.StopAtBounds
-        Text { width: parent.width; y: 80; horizontalAlignment: Text.AlignHCenter; text: "Which team do you want to use?"; font.family: theme.font; font.pixelSize: 24; font.weight: Font.Bold; lineHeight: 32; lineHeightMode: Text.FixedHeight; color: theme.text }
-        Text { width: parent.width; y: 129; horizontalAlignment: Text.AlignHCenter; text: "Copy apps, settings, and channels over to your new team. Your existing team won't be changed"; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
+        Text { width: parent.width; y: 80; horizontalAlignment: Text.AlignHCenter; text: qsTr("Which team do you want to use?"); font.family: theme.font; font.pixelSize: 24; font.weight: Font.Bold; lineHeight: 32; lineHeightMode: Text.FixedHeight; color: theme.text }
+        Text { width: parent.width; y: 129; horizontalAlignment: Text.AlignHCenter; text: qsTr("Copy apps, settings, and channels over to your new team. Your existing team won't be changed"); font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
         Flow {
             readonly property int perRow: Math.max(1, Math.min(page.ownedTeams.length, Math.floor((parent.width - 40) / 296)))
             // Teams' grid sits 12 right of centre.
@@ -170,7 +170,7 @@ Rectangle {
                     Row {
                         anchors.horizontalCenter: parent.horizontalCenter; y: 161; spacing: 10
                         FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: acard.modelData["public"] ? "globe-20" : "lock-closed-20-filled"; size: 12; color: theme.text }
-                        Text { text: acard.modelData["public"] ? "Public" : "Private"; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
+                        Text { text: acard.modelData["public"] ? qsTr("Public") : qsTr("Private"); font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
                     }
                     Text { x: 12.7; width: 254.7; y: 217; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; maximumLineCount: 3; elide: Text.ElideRight; text: acard.modelData.description || ""; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
                 }
@@ -182,16 +182,16 @@ Rectangle {
     Item {
         visible: page.view === "group"
         x: left.width; width: parent.width - x; height: parent.height
-        Text { x: 32; y: 20; text: "Which Microsoft 365 group do you want to use?"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold; lineHeight: 22; lineHeightMode: Text.FixedHeight; color: theme.text }
+        Text { x: 32; y: 20; text: qsTr("Which Microsoft 365 group do you want to use?"); font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold; lineHeight: 22; lineHeightMode: Text.FixedHeight; color: theme.text }
         Row {
             x: 32; y: 47
-            Text { text: "This will permanently add Teams to your existing Microsoft 365 Group. "; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
+            Text { text: qsTr("This will permanently add Teams to your existing Microsoft 365 Group.") + " "; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
             Text {
-                text: "Learn more"; font.family: theme.font; font.pixelSize: 14; font.underline: true; lineHeight: 20; lineHeightMode: Text.FixedHeight
+                text: qsTr("Learn more"); font.family: theme.font; font.pixelSize: 14; font.underline: true; lineHeight: 20; lineHeightMode: Text.FixedHeight
                 color: theme.brandForeground1
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: Qt.openUrlExternally("https://go.microsoft.com/fwlink/?linkid=2275168") }
-                Accessible.role: Accessible.Link; Accessible.name: "Learn more"
+                Accessible.role: Accessible.Link; Accessible.name: qsTr("Learn more")
             }
         }
         Image {
@@ -204,8 +204,8 @@ Rectangle {
         Column {
             visible: page.groupsLoaded && page.groups.length === 0
             y: 410.8; width: parent.width; spacing: 36
-            Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; text: "You need to own a group with fewer than 10000 people to create a team from that group."; font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; lineHeight: 25.7; lineHeightMode: Text.FixedHeight; color: theme.text }
-            Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: "Please create a group first."; font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; lineHeight: 25.7; lineHeightMode: Text.FixedHeight; color: theme.text }
+            Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; text: qsTr("You need to own a group with fewer than %1 people to create a team from that group.").arg("10000"); font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; lineHeight: 25.7; lineHeightMode: Text.FixedHeight; color: theme.text }
+            Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: qsTr("Please create a group first."); font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; lineHeight: 25.7; lineHeightMode: Text.FixedHeight; color: theme.text }
         }
         // Your groups (none in the test tenant; Teams' team cards).
         Flow {
@@ -231,9 +231,9 @@ Rectangle {
         id: groupConfirm
         property var group: null
         function start(g) { group = g; open() }
-        title: "Create a team from " + (group ? group.name : "")
-        body: "This will permanently add Teams to your existing Microsoft 365 Group."
-        confirmText: "Create"
+        title: qsTr("Create a team from %1").arg(group ? group.name : "")
+        body: qsTr("This will permanently add Teams to your existing Microsoft 365 Group.")
+        confirmText: qsTr("Create")
         onConfirmed: backend.channelAction("create-team", "", "", JSON.stringify({ mode: "group", group: groupConfirm.group }))
     }
     Connections {
@@ -242,7 +242,7 @@ Rectangle {
             const r = JSON.parse(backend.channelActionResult || "{}")
             if (r.op === "create-team" && !createDialog.opened) {
                 if (r.ok) page.teamCreated(r.data.group_id || "", r.data.thread_id || "")
-                else backend.toast("We couldn't create your team. Please try again.", "error")
+                else backend.toast(qsTr("We couldn't create your team. Please try again."), "error")
             }
         }
     }
@@ -304,7 +304,7 @@ Rectangle {
             FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(hcFill2, theme.textStrong) }
             HoverHandler { id: tclose; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: templateDialog.close() }
-            Accessible.role: Accessible.Button; Accessible.name: "Close"
+            Accessible.role: Accessible.Button; Accessible.name: qsTr("Close")
         }
         Text {
             y: 40; width: 550.7; wrapMode: Text.Wrap
@@ -313,13 +313,13 @@ Rectangle {
             color: theme.text
         }
         FluentIcon { visible: !!templateDialog.details; x: 10.3; y: 105; name: "channel-20-filled"; size: 20; color: theme.text }
-        Text { visible: !!templateDialog.details; x: 40; y: 105; text: (templateDialog.d.channels || []).length + " channels"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
+        Text { visible: !!templateDialog.details; x: 40; y: 105; text: qsTr("%1 channels").arg((templateDialog.d.channels || []).length); font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
         Repeater {
             model: templateDialog.d.listed_channels || []
             Text { required property var modelData; required property int index; x: 40; y: 151 + index * 20; width: 220; elide: Text.ElideRight; text: modelData.displayName; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.text }
         }
         FluentIcon { visible: !!templateDialog.details; x: 278; y: 105; name: "apps-20-filled"; size: 20; color: theme.text }
-        Text { visible: !!templateDialog.details; x: 305.3; y: 105; text: (templateDialog.details ? templateDialog.details.app_ids.length : 0) + " apps"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
+        Text { visible: !!templateDialog.details; x: 305.3; y: 105; text: qsTr("%1 apps").arg(templateDialog.details ? templateDialog.details.app_ids.length : 0); font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
         Repeater {
             model: templateDialog.rows
             Item {
@@ -335,7 +335,7 @@ Rectangle {
                     HoverHandler { id: foldHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: { const f = Object.assign({}, templateDialog.folded); f[arow.modelData.app.id] = !f[arow.modelData.app.id]; templateDialog.folded = f } }
                     Accessible.role: Accessible.Button
-                    Accessible.name: (templateDialog.folded[arow.modelData.app.id] ? "Show " : "Hide ") + arow.modelData.app.name + " items"
+                    Accessible.name: (templateDialog.folded[arow.modelData.app.id] ? qsTr("Show %1 items") : qsTr("Hide %1 items")).arg(arow.modelData.app.name)
                 }
                 Image { x: 305.3; width: 20; height: 20; source: arow.modelData.app.icon || ""; sourceSize: Qt.size(40, 40); fillMode: Image.PreserveAspectFit }
                 Text { x: 339.3; y: arow.modelData.expandable ? 7.4 : 4; text: arow.modelData.app.name; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.text }
@@ -349,7 +349,7 @@ Rectangle {
             id: hcFill4
             anchors.right: parent.right; y: 520; width: 135.9; height: 31.3; radius: 4
             color: !templateDialog.details ? theme.bgDisabled : useHover.hovered ? theme.brandHover : theme.brandFill
-            Text { anchors.centerIn: parent; text: "Use this template"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, templateDialog.details ? theme.textOnBrand : theme.disabled) }
+            Text { anchors.centerIn: parent; text: qsTr("Use this template"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, templateDialog.details ? theme.textOnBrand : theme.disabled) }
             HoverHandler { id: useHover; enabled: !!templateDialog.details; cursorShape: Qt.PointingHandCursor }
             TapHandler {
                 enabled: !!templateDialog.details
@@ -359,7 +359,7 @@ Rectangle {
                     createDialog.startTemplate({ id: d.id, name: d.name, locale: d.locale, visibility: d.visibility, channels: d.channels, app_ids: d.app_ids })
                 }
             }
-            Accessible.role: Accessible.Button; Accessible.name: "Use this template"
+            Accessible.role: Accessible.Button; Accessible.name: qsTr("Use this template")
         }
     }
 

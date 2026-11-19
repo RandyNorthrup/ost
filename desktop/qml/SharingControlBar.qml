@@ -34,7 +34,7 @@ Window {
     // when nobody can be given control.
     readonly property bool canGive: (control.controllable || []).length > 0 && mode !== "SideBySide" && mode !== "NewsAnchor"
     readonly property bool someoneControls: control.state === "controlled"
-    title: "Sharing control bar"
+    title: qsTr("Sharing control bar")
     flags: Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.WindowDoesNotAcceptFocus
     color: "transparent"
     width: expanded ? card.width + 20 : 298
@@ -115,14 +115,14 @@ Window {
             Item { width: 0.1; height: 1 }
             BarItem {
                 icon: bar.call && (bar.call.muted || !bar.call.hasAudio) ? "nmc-mic-off" : "nmc-mic"
-                label: "Mic"
-                tip: bar.call && bar.call.muted ? "Unmute mic" : "Mute mic"
+                label: qsTr("Mic")
+                tip: bar.call && bar.call.muted ? qsTr("Unmute mic") : qsTr("Mute mic")
                 onClicked: bar.call.toggleMute()
             }
             BarItem {
                 icon: bar.call && bar.call.cameraOn ? "nmc-camera" : "nmc-camera-off"
-                label: "Camera"
-                tip: bar.call && bar.call.cameraOn ? "Turn camera off" : "Turn camera on"
+                label: qsTr("Camera")
+                tip: bar.call && bar.call.cameraOn ? qsTr("Turn camera off") : qsTr("Turn camera on")
                 enabled: bar.call ? bar.call.canVideo : false
                 onClicked: bar.call.toggleCamera()
             }
@@ -130,11 +130,11 @@ Window {
             BarItem {
                 id: giveButton
                 icon: "scb-give-control"
-                label: bar.someoneControls ? "Take back" : "Give control"
+                label: bar.someoneControls ? qsTr("Take back") : qsTr("Give control")
                 enabled: bar.someoneControls || bar.canGive
-                tip: bar.someoneControls ? "Take back control"
-                    : (bar.mode === "SideBySide" || bar.mode === "NewsAnchor") ? "Unavailable with this layout."
-                    : !bar.canGive ? "Participants are not allowed to control the shared content" : ""
+                tip: bar.someoneControls ? qsTr("Take back control")
+                    : (bar.mode === "SideBySide" || bar.mode === "NewsAnchor") ? qsTr("Unavailable with this layout.")
+                    : !bar.canGive ? qsTr("Participants are not allowed to control the shared content") : ""
                 onClicked: {
                     if (bar.someoneControls) bar.call.screenControl("takeBack", "")
                     else giveMenu.open()
@@ -143,24 +143,24 @@ Window {
             }
             BarItem {
                 icon: "scb-share-sound"
-                label: "Share sound"
+                label: qsTr("Share sound")
                 checked: bar.call ? bar.call.shareIncludeSound : false
-                tip: checked ? "Share system sound is on" : "Share system sound is off"
+                tip: checked ? qsTr("Share system sound is on") : qsTr("Share system sound is off")
                 onClicked: bar.call.shareIncludeSound = !bar.call.shareIncludeSound
             }
             BarItem {
                 icon: "scb-optimize"
-                label: "Optimize"
+                label: qsTr("Optimize")
                 checked: bar.call ? !!bar.call.presentingState.optimize : false
-                tip: checked ? "Optimize for video content is on" : "Optimize for video content is off"
+                tip: checked ? qsTr("Optimize for video content is on") : qsTr("Optimize for video content is off")
                 onClicked: bar.call.setShareOptimize(!checked)
             }
             BarItem {
                 // Teams' apl-mode-switcher-button: the current mode's glyph.
                 icon: ({ ContentOnly: "scb-layout", Weatherperson: "share-layout-standout", SideBySide: "share-layout-sidebyside", NewsAnchor: "share-layout-reporter" })[bar.mode] || "scb-layout"
-                label: "Layout"
+                label: qsTr("Layout")
                 enabled: bar.call ? bar.call.cameraOn : false
-                tip: enabled ? "" : "Turn on your camera to select this layout"
+                tip: enabled ? "" : qsTr("Turn on your camera to select this layout")
                 onClicked: layoutMenu.open()
                 // apl-mode-switcher-button-menu-popover (measured
                 // 2026-11-16): 255.3 wide, 5 under the button, 12.7 in;
@@ -177,10 +177,10 @@ Window {
                         spacing: 2
                         Repeater {
                             model: [
-                                { key: "ContentOnly", label: "Content only", icon: "share-layout-content" },
-                                { key: "Weatherperson", label: "Standout", icon: "share-layout-standout" },
-                                { key: "SideBySide", label: "Side-by-side", icon: "share-layout-sidebyside" },
-                                { key: "NewsAnchor", label: "Reporter", icon: "share-layout-reporter" }
+                                { key: "ContentOnly", label: qsTr("Content only"), icon: "share-layout-content" },
+                                { key: "Weatherperson", label: qsTr("Standout"), icon: "share-layout-standout" },
+                                { key: "SideBySide", label: qsTr("Side-by-side"), icon: "share-layout-sidebyside" },
+                                { key: "NewsAnchor", label: qsTr("Reporter"), icon: "share-layout-reporter" }
                             ]
                             Rectangle {
                                 id: lm
@@ -215,23 +215,23 @@ Window {
                 // over the shared screen (docs/spec/content-sharing.md §4).
                 readonly property bool on: bar.call.annotating
                 icon: "scb-annotate"
-                label: "Annotate"
+                label: qsTr("Annotate")
                 checked: on
                 enabled: bar.kind === "screen" && !bar.call.annotationBusy
-                tip: bar.kind !== "screen" ? "Annotation is available when you share your screen"
-                     : bar.call.annotationBusy ? (on ? "Annotations is stopping" : "Annotations is starting")
-                     : on ? "Stop annotation" : "Start annotation"
+                tip: bar.kind !== "screen" ? qsTr("Annotation is available when you share your screen")
+                     : bar.call.annotationBusy ? (on ? qsTr("Annotations is stopping") : qsTr("Annotations is starting"))
+                     : on ? qsTr("Stop annotation") : qsTr("Start annotation")
                 onClicked: bar.call.toggleAnnotation()
             }
             Divider {}
             BarItem {
                 icon: "scb-more"
-                label: "More"
+                label: qsTr("More")
                 onClicked: moreMenu.open()
                 MenuPopup {
                     id: moreMenu
                     y: parent.height + 6
-                    items: [{ label: "Chat", icon: "scb-chat" }, { label: "People", icon: "scb-people" }]
+                    items: [{ label: qsTr("Chat"), icon: "scb-chat" }, { label: qsTr("People"), icon: "scb-people" }]
                     onPicked: i => bar.call.showSidePane(i === 0 ? "chat" : "people")
                 }
             }
@@ -240,8 +240,8 @@ Window {
                 icon: "scb-stop-sharing"
                 iconColor: theme.pick("#B10E1C", "#DC626D", "#FFFFFF")
                 labelColor: theme.pick("#242424", "#FFFFFF", "#FFFFFF")
-                label: "Stop sharing"
-                tip: "Stop sharing"
+                label: qsTr("Stop sharing")
+                tip: qsTr("Stop sharing")
                 onClicked: bar.call.toggleShare()
             }
         }
@@ -254,7 +254,7 @@ Window {
             HoverHandler { id: pinHover }
             TapHandler { onTapped: bar.pinned = !bar.pinned }
             Accessible.role: Accessible.Button
-            Accessible.name: bar.pinned ? "Unpin toolbar" : "Pin toolbar"
+            Accessible.name: bar.pinned ? qsTr("Unpin toolbar") : qsTr("Pin toolbar")
         }
     }
 
@@ -271,14 +271,14 @@ Window {
             color: theme.pick("#FAFAFA", "#292929", "#000000")
             Text {
                 anchors.centerIn: parent
-                text: bar.kind === "screen" ? "You're sharing your screen" : "You're sharing a window"
+                text: bar.kind === "screen" ? qsTr("You're sharing your screen") : qsTr("You're sharing a window")
                 font.family: theme.font; font.pixelSize: 12; font.weight: Font.Medium
                 color: theme.text
             }
             HoverHandler { onHoveredChanged: if (hovered) bar.expanded = true }
             TapHandler { onTapped: bar.expanded = true }
             Accessible.role: Accessible.Button
-            Accessible.name: bar.kind === "screen" ? "You're sharing your screen" : "You're sharing a window"
+            Accessible.name: bar.kind === "screen" ? qsTr("You're sharing your screen") : qsTr("You're sharing a window")
         }
         Rectangle {
             id: hcStop
@@ -287,14 +287,14 @@ Window {
             border.width: theme.highContrast ? 1 : 0; border.color: "#FFFFFF"
             Text {
                 anchors.centerIn: parent
-                text: "Stop sharing"
+                text: qsTr("Stop sharing")
                 font.family: theme.font; font.pixelSize: 12
                 color: theme.onFill(hcStop, "#FFFFFF")
             }
             HoverHandler { id: stopHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: bar.call.toggleShare() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Stop sharing"
+            Accessible.name: qsTr("Stop sharing")
         }
     }
 
@@ -334,7 +334,7 @@ Window {
             }
         }
         Accessible.role: Accessible.Button
-        Accessible.name: "Dragger"
+        Accessible.name: qsTr("Dragger")
     }
     component BarItem: Rectangle {
         id: bi
@@ -397,11 +397,11 @@ Window {
                 TextField {
                     id: search
                     x: 0.67; y: 0.67; width: 222.67; height: 30.67
-                    placeholderText: "Give control of your screen to"
+                    placeholderText: qsTr("Give control of your screen to")
                     font.family: theme.font; font.pixelSize: 14
                     color: theme.text
                     background: null
-                    Accessible.name: "Give control of your screen to"
+                    Accessible.name: qsTr("Give control of your screen to")
                 }
                 FluentIcon { x: 225.3; y: 6; size: 20; name: "search-20"; color: theme.textSecondary }
             }

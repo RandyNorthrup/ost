@@ -32,7 +32,7 @@ Popup {
 
     Text {
         x: 16.7; y: 16.7; height: 20; verticalAlignment: Text.AlignVCenter
-        text: "Add"
+        text: qsTr("Add")
         font.family: theme.font; font.pixelSize: 14; color: theme.pick("#424242", "#D6D6D6", "#FFFFFF")
     }
     // The history choice: 12 px labels at 44.7, 20 apart; the chosen one
@@ -41,7 +41,7 @@ Popup {
         id: choices
         x: 16.7; y: picker.y + picker.height + 4
         Repeater {
-            model: [{ v: -1, t: "Don't include chat history" }, { v: 1, t: "Include history from the past number of days:" }, { v: 0, t: "Include all chat history" }]
+            model: [{ v: -1, t: qsTr("Don't include chat history") }, { v: 1, t: qsTr("Include history from the past number of days:") }, { v: 0, t: qsTr("Include all chat history") }]
             Item {
                 required property var modelData
                 width: 368.7; height: 20
@@ -73,7 +73,7 @@ Popup {
                         validator: IntValidator { bottom: 1; top: 999 }
                         font.family: theme.font; font.pixelSize: 12; color: theme.text
                         onTextEdited: { const n = parseInt(text); if (n >= 1 && n <= 999) { root.days = n; root.history = 1 } }
-                        Accessible.name: "Number of days"
+                        Accessible.name: qsTr("Number of days")
                     }
                 }
                 TapHandler { onTapped: root.history = parent.modelData.v }
@@ -91,28 +91,28 @@ Popup {
             id: hcFill1
             width: 96; height: 31.3; radius: 4
             color: cancelHover.hovered ? theme.menuHover : theme.surface; border.color: theme.stroke
-            Text { anchors.centerIn: parent; text: "Cancel"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.text) }
+            Text { anchors.centerIn: parent; text: qsTr("Cancel"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill1, theme.text) }
             HoverHandler { id: cancelHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.close() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Cancel"
+            Accessible.name: qsTr("Cancel")
         }
         Rectangle {
             id: hcFill2
             readonly property bool can: picker.picked.length > 0
             width: 96; height: 31.3; radius: 4
             color: !can ? theme.pick("#F0F0F0", "#141414", "#000000") : addHover.hovered ? theme.brandHover : theme.brandFill
-            Text { anchors.centerIn: parent; text: "Add"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, parent.can ? "white" : theme.pick("#BDBDBD", "#5C5C5C", "#3FF23F")) }
+            Text { anchors.centerIn: parent; text: qsTr("Add"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill2, parent.can ? "white" : theme.pick("#BDBDBD", "#5C5C5C", "#3FF23F")) }
             HoverHandler { id: addHover; cursorShape: parent.can ? Qt.PointingHandCursor : Qt.ArrowCursor }
             TapHandler { enabled: parent.can; onTapped: root.finish() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Add"
+            Accessible.name: qsTr("Add")
         }
     }
     PeopleTagPicker {
         id: picker
         x: 16.7; y: 43.3 - 0.6
-        placeholder: "Enter a name, email, or tag"
+        placeholder: qsTr("Enter a name, email, or tag")
         exclude: root.members
     }
     function finish() {

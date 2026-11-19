@@ -57,13 +57,13 @@ Item {
             const key = decodeURIComponent(rest.slice(0, cut))
             const kind = rest.slice(cut + 1)
             if (kind === "attach_prepare") {
-                if (error) { ca.remove(key); ca.failed("Couldn't attach the file. Please try again."); return }
+                if (error) { ca.remove(key); ca.failed(qsTr("Couldn't attach the file. Please try again.")); return }
                 const v = JSON.parse(result)
                 ca.update(key, { loading: false, file: v.file, thumbnail: v.thumbnail })
             } else if (kind === "attach_link") {
                 const c = ca.pending.find(x => x.key === key)
                 if (!c) return
-                if (error) { ca.update(key, { linking: false }); ca.failed("Couldn't update the link settings. Please try again."); return }
+                if (error) { ca.update(key, { linking: false }); ca.failed(qsTr("Couldn't update the link settings. Please try again.")); return }
                 const v = JSON.parse(result)
                 ca.update(key, { linking: false, file: Object.assign({}, c.file, { share_url: v.url, share_id: v.share_id, scope: v.scope, link_description: c.wantLine }) })
             }

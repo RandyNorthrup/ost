@@ -60,12 +60,12 @@ Column {
             x: 20.67; width: parent.width - x - 12
             anchors.verticalCenter: parent.verticalCenter
             elide: Text.ElideRight
-            text: root.tooLong ? "You cannot type more than 2000 characters" : "Please type a message to continue."
+            text: root.tooLong ? qsTr("You cannot type more than 2000 characters") : qsTr("Please type a message to continue.")
             font.family: theme.font; font.pixelSize: 14
             color: theme.onFill(hcFill1, theme.text)
         }
         Accessible.role: Accessible.AlertMessage
-        Accessible.name: root.tooLong ? "You cannot type more than 2000 characters" : "Please type a message to continue."
+        Accessible.name: root.tooLong ? qsTr("You cannot type more than 2000 characters") : qsTr("Please type a message to continue.")
     }
     Rectangle {
         width: root.width; height: 32; radius: 4
@@ -117,12 +117,12 @@ Column {
             TapHandler { onTapped: if (input.text.length > 0) idle.restart() }
             Text {
                 visible: !input.text
-                text: "Type a message in real-time"
+                text: qsTr("Type a message in real-time")
                 font: input.font
                 color: theme.pick("#707070", "#ADADAD", "#FFFFFF")
             }
             Accessible.role: Accessible.EditableText
-            Accessible.name: "Type a message in real-time"
+            Accessible.name: qsTr("Type a message in real-time")
         }
     }
 }

@@ -89,7 +89,7 @@ Popup {
             else if (op === "sf:access") { if (v) root.noAccess = v.filter(a => !a.ok).map(a => a.upn.toLowerCase()) }
             else if (op === "sf:copy") {
                 if (error) { root.error = error; return }
-                backend.copyText(v.url); backend.statusText = "Link copied"
+                backend.copyText(v.url); backend.statusText = qsTr("Link copied")
             } else if (op === "sf:link") {
                 if (error) { root.error = error; root.sharing = false; return }
                 root.post(v.url, v.share_id)
@@ -132,17 +132,16 @@ Popup {
         backend.shareAction("sf:access", JSON.stringify(item), JSON.stringify({ upns: upns }))
     }
     readonly property bool blocked: picked.some(p => p.kind === "person" && p.upn && noAccess.indexOf(p.upn.toLowerCase()) >= 0)
-    function org() { return info ? info.tenant : "your organization" }
+    function org() { return info ? info.tenant : qsTr("your organization") }
     function linkLine() {
-        const can = edit ? "edit" : "view"
-        return scope === 3 ? "People with existing access can use the link"
-             : scope === 0 ? "Anyone with the link can " + can
-             : scope === 1 ? "People in " + org() + " with the link can " + can
-             : "Specific people with the link can " + can
+        return scope === 3 ? qsTr("People with existing access can use the link")
+             : scope === 0 ? (edit ? qsTr("Anyone with the link can edit") : qsTr("Anyone with the link can view"))
+             : scope === 1 ? (edit ? qsTr("People in %1 with the link can edit") : qsTr("People in %1 with the link can view")).arg(org())
+             : edit ? qsTr("Specific people with the link can edit") : qsTr("Specific people with the link can view")
     }
     function copyLink() {
         error = ""
-        if (scope === 3) { if (info) { backend.copyText(info.direct_url); backend.statusText = "Link copied" } return }
+        if (scope === 3) { if (info) { backend.copyText(info.direct_url); backend.statusText = qsTr("Link copied") } return }
         backend.shareAction("sf:copy", JSON.stringify(item), JSON.stringify({ scope: scope, edit: edit, expiration: expiration, password: password }))
     }
     function share() {
@@ -182,8 +181,8 @@ Popup {
         square: !!who && !!who.group
     }
 
-    Text { x: 32.67; y: 32.67; height: 28; verticalAlignment: Text.AlignVCenter; text: "Share this file"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
-    Text { x: 32.67; y: 60.67; height: 28; verticalAlignment: Text.AlignVCenter; text: "You can share to any chat or channel."; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
+    Text { x: 32.67; y: 32.67; height: 28; verticalAlignment: Text.AlignVCenter; text: qsTr("Share this file"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+    Text { x: 32.67; y: 60.67; height: 28; verticalAlignment: Text.AlignVCenter; text: qsTr("You can share to any chat or channel."); font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
     Rectangle {
         id: moreBtn
         x: 495.33; y: 36.67; width: 32; height: 31.33; radius: 4
@@ -192,11 +191,11 @@ Popup {
         HoverHandler { id: mbh; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: moreMenu.open() }
         Accessible.role: Accessible.Button
-        Accessible.name: "More actions"
+        Accessible.name: qsTr("More actions")
         MenuPopup {
             id: moreMenu
             x: parent.width - width; y: parent.height + 4
-            items: [{ label: "Share outside Teams", icon: "share-20" }]
+            items: [{ label: qsTr("Share outside Teams"), icon: "share-20" }]
             onPicked: { close(); const it = root.item, n = root.fileName, t = root.fileType; root.close(); outside.openFor(it, n, t) }
         }
     }
@@ -208,13 +207,13 @@ Popup {
         HoverHandler { id: clh; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.close() }
         Accessible.role: Accessible.Button
-        Accessible.name: "Close"
+        Accessible.name: qsTr("Close")
     }
 
     // Recipients.
     Row {
         x: 32.67; y: 114.67
-        Text { text: "Add recipients"; font.family: theme.font; font.pixelSize: 12; color: theme.text }
+        Text { text: qsTr("Add recipients"); font.family: theme.font; font.pixelSize: 12; color: theme.text }
         Text { leftPadding: 4; text: "*"; font.family: theme.font; font.pixelSize: 12; color: theme.pick("#D13438", "#F1707B", "#FFFFFF") }
     }
     Rectangle {
@@ -239,7 +238,7 @@ Popup {
                         HoverHandler { cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: root.unpick(pill.index) }
                         Accessible.role: Accessible.Button
-                        Accessible.name: "Remove " + pill.modelData.name
+                        Accessible.name: qsTr("Remove %1").arg(pill.modelData.name)
                     }
                 }
             }
@@ -256,9 +255,9 @@ Popup {
                 }
                 Keys.onReturnPressed: if (root.suggestions.length) root.pick(root.suggestions[0])
                 Keys.onPressed: e => { if (e.key === Qt.Key_Backspace && !text && root.picked.length) { root.unpick(root.picked.length - 1); e.accepted = true } }
-                Text { visible: !parent.text && !root.picked.length; anchors.verticalCenter: parent.verticalCenter; text: "Enter name, email, group or tag"; font: parent.font; color: theme.textSecondary }
+                Text { visible: !parent.text && !root.picked.length; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Enter name, email, group or tag"); font: parent.font; color: theme.textSecondary }
                 Accessible.role: Accessible.EditableText
-                Accessible.name: "Enter name, email, group or tag"
+                Accessible.name: qsTr("Enter name, email, group or tag")
             }
         }
         Rectangle { visible: pickerInput.activeFocus; anchors.bottom: parent.bottom; width: parent.width; height: 2; radius: 1; color: theme.brand }
@@ -266,7 +265,7 @@ Popup {
     }
 
     // The message, and the file.
-    Text { x: 32.67; y: picker.y + picker.height + 37.33; text: "Message preview"; font.family: theme.font; font.pixelSize: 12; color: theme.text }
+    Text { x: 32.67; y: picker.y + picker.height + 37.33; text: qsTr("Message preview"); font.family: theme.font; font.pixelSize: 12; color: theme.text }
     Rectangle {
         id: preview
         x: 32.67; y: picker.y + picker.height + 57.33; width: 534.67; height: 329.33 + (root.formatting ? 20.67 : 0)
@@ -295,9 +294,9 @@ Popup {
             onTextChanged: root.refreshRichState()
             RichText { id: rich }
             // A rich-text editor's text is never empty (it is HTML): its length is.
-            Text { visible: note.length === 0; text: "Add a message (optional)"; font: parent.font; color: theme.textSecondary }
+            Text { visible: note.length === 0; text: qsTr("Add a message (optional)"); font: parent.font; color: theme.textSecondary }
             Accessible.role: Accessible.EditableText
-            Accessible.name: "Add a message (optional)"
+            Accessible.name: qsTr("Add a message (optional)")
         }
         // The file card.
         Rectangle {
@@ -322,17 +321,17 @@ Popup {
                 id: warn
                 visible: root.blocked
                 y: 57.33; width: parent.width; height: 32; color: theme.pick("#FDF3F4", "#3F1011", "#000000")
-                Text { x: 8; anchors.verticalCenter: parent.verticalCenter; text: "The recipient can’t access this item"; font.family: theme.font; font.pixelSize: 10; color: theme.text }
+                Text { x: 8; anchors.verticalCenter: parent.verticalCenter; text: qsTr("The recipient can’t access this item"); font.family: theme.font; font.pixelSize: 10; color: theme.text }
                 Rectangle {
                     id: hcFill2
                     anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter
                     width: gaText.implicitWidth + 16; height: 21.33; radius: 4
                     color: gah.hovered ? theme.hover : theme.surface; border.width: 0.67; border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF")
-                    Text { id: gaText; anchors.centerIn: parent; text: "Give access"; font.family: theme.font; font.pixelSize: 10; color: theme.onFill(hcFill2, theme.text) }
+                    Text { id: gaText; anchors.centerIn: parent; text: qsTr("Give access"); font.family: theme.font; font.pixelSize: 10; color: theme.onFill(hcFill2, theme.text) }
                     HoverHandler { id: gah; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: outside.openLinkSettings(root.item, root.fileName, root.fileType, root.scope, root.edit, root.expiration, root.password) }
                     Accessible.role: Accessible.Button
-                    Accessible.name: "Give access"
+                    Accessible.name: qsTr("Give access")
                 }
             }
             Rectangle {
@@ -354,7 +353,7 @@ Popup {
             HoverHandler { id: fmh; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: { root.formatting = !root.formatting; note.forceActiveFocus() } }
             Accessible.role: Accessible.Button
-            Accessible.name: root.formatting ? "Hide Formatting option" : "Show Formatting options"
+            Accessible.name: root.formatting ? qsTr("Hide Formatting options") : qsTr("Show Formatting options")
         }
         Rectangle {
             id: hcFill4
@@ -364,7 +363,7 @@ Popup {
             HoverHandler { id: emh; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: noteEmoji.open() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Emoji, GIFs and Stickers"
+            Accessible.name: qsTr("Emoji, GIFs and Stickers")
             EmojiPicker { id: noteEmoji; y: -height - 4; x: parent.width - width; onPicked: e => { note.insert(note.cursorPosition, e); close(); note.forceActiveFocus() } }
         }
     }
@@ -381,22 +380,22 @@ Popup {
             id: hcFill5
             width: 96; height: 31.33; radius: 4
             color: cph.hovered ? theme.hover : theme.surface; border.width: 0.67; border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF")
-            Text { anchors.centerIn: parent; text: "Copy link"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill5, theme.text) }
+            Text { anchors.centerIn: parent; text: qsTr("Copy link"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill5, theme.text) }
             HoverHandler { id: cph; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.copyLink() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Copy link"
+            Accessible.name: qsTr("Copy link")
         }
         Rectangle {
             id: hcFill6
             readonly property bool on: root.picked.length > 0 && !root.sharing
             width: 96; height: 31.33; radius: 4
             color: !on ? theme.pick("#F0F0F0", "#2E2E2E", "#000000") : shh.hovered ? theme.brandHover : theme.checkedFill
-            Text { anchors.centerIn: parent; text: "Share"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill6, parent.on ? "white" : theme.pick("#BDBDBD", "#5C5C5C", "#3FF23F")) }
+            Text { anchors.centerIn: parent; text: qsTr("Share"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(hcFill6, parent.on ? "white" : theme.pick("#BDBDBD", "#5C5C5C", "#3FF23F")) }
             HoverHandler { id: shh; cursorShape: parent.on ? Qt.PointingHandCursor : Qt.ArrowCursor }
             TapHandler { enabled: parent.on; onTapped: root.share() }
             Accessible.role: Accessible.Button
-            Accessible.name: "Share"
+            Accessible.name: qsTr("Share")
         }
     }
 

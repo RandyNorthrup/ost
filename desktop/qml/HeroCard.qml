@@ -127,7 +127,7 @@ Rectangle {
                     y: -height - 4; padding: 8
                     background: FluentSurface { depth: 16; radius: 4 }
                     contentItem: Text {
-                        text: (btn.modelData.title || "") + (String(btn.modelData.type || "").toLowerCase() === "openurl" ? "\nThis is a card action with a link" : "")
+                        text: (btn.modelData.title || "") + (String(btn.modelData.type || "").toLowerCase() === "openurl" ? "\n" + qsTr("This is a card action with a link") : "")
                         font.family: theme.font; font.pixelSize: theme.small; color: theme.text
                     }
                 }
