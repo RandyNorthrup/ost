@@ -1,11 +1,11 @@
 ---
 id: TASK-0214
 title: Present Whiteboard, PowerPoint Live and Excel Live, and Annotate, as Teams
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-17T02:43:00Z'
-updated_date: '2026-11-19T01:53:00Z'
+updated_date: '2026-11-19T02:26:00Z'
 labels:
   - desktop
 dependencies: []
@@ -19,7 +19,7 @@ What TASK-0210 left (docs/spec/call-and-meeting-window.md §9c): starting a Micr
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 OST starts and views Whiteboard, PowerPoint Live and Excel Live shares as Teams
+- [x] #1 OST starts and views Whiteboard, PowerPoint Live and Excel Live shares as Teams
 - [x] #2 Annotate works on a shared screen as in Teams
 - [x] #3 Content from camera has Teams' preview and clean-up
 - [x] #4 Teams controls a screen OST shares, and OST gives control from its side, checked live
@@ -57,3 +57,17 @@ What TASK-0210 left (docs/spec/call-and-meeting-window.md §9c): starting a Micr
 - Merged a9ad6d3 (2026-11-18): Annotate is seen by Teams (board address, screen facts, sharer attributes as Teams' sharer sends them); keys during give control reach OST (30 key events played on linuxlt); Excel Live from Teams opens in OST for an invitee. AC2 and AC4 verified live. Open (AC1): Cameo in OST's own presenter view.
 - Cameo in OST's own views (2026-11-18): Teams desktop on winpc sends 46 Cameo, 75, then 64 with its WebView2 stream id; PowerPoint (enableCameoInT2 True, hostExperience react-web-client) opens it with chrome.webview.getTextureStream and plays it in its own unmuted video element. OST: ppt_cameo_stream.js provides getTextureStream for ost-cameo (a canvas stream from the posted BGRA frames); ppt_host.js sends 64 after 46, also on each layout change; PptLiveStage sets playbackRequiresUserGesture false (PowerPoint's play() failed with ErrorVideoPlaybackFailed under Chromium's gesture rule, found with logpoints in SlideShowApp.js). Recheck with test3 presenting (test camera) and test2 attending: PowerPoint opened ost-cameo by itself (startMediaCaptureAsync success) and both OST slides drew the cameo.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Presenting Whiteboard, PowerPoint Live and Excel Live, Annotate, Content from camera and give/take control now work as in Teams, verified live against Teams desktop on winpc.
+
+- Content-sharing sessions (src/calling/content_sharing.rs, src/api/live_share.rs, docs/spec/content-sharing.md): start and view Whiteboard, PowerPoint Live and Excel Live both ways, with Teams' Stop sharing, Layout, "Stop presenting?" and pop-out.
+- PowerPoint Live: slides follow both ways; take control and Take back with Teams' alert; ink and laser both ways; Cameo with Teams' 46/75/64 messages, a getTextureStream stand-in and playback without a click, so the camera shows in OST's presenter view, the attendee view and Teams.
+- Excel Live: Teams' "Share with all participants?" step; session context as Teams; opens for invitees.
+- Annotate: the board address, screen facts and screenSharerAttributes as Teams' sharer sends them, so Teams shows its annotation layer; the overlay stays out of the share.
+- Content from camera (vfx/src/content_camera.rs, ContentCameraDialog.qml): Teams' dialog, timings and strings; OST's own edge detection, straightening, clean-up and see-through presenter; the 11 s no-board path; Teams sees the cleaned board.
+- Give/take control: Teams' Take control drives linuxlt's pointer and keys (keys proven via CDP Input.dispatchKeyEvent after the shared surface has focus); OST's Give control reaches Teams.
+- Tests: 749 lib, 29 desktop and the vfx tests pass.
+<!-- SECTION:FINAL_SUMMARY:END -->
