@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-17T06:06:00Z'
-updated_date: '2026-11-19T06:48:00Z'
+updated_date: '2026-11-19T06:28:00Z'
 labels:
   - desktop
 dependencies: []
@@ -40,4 +40,9 @@ What TASK-0184 left (docs/spec/town-halls-and-webinars.md):
 - Open: (1) when OST is the organizer who starts the event, a streaming attendee lost the call (Teams attendee in run 1, OST Test 2 in run 3) while Teams starting it kept them: compare OST go-live with Teams; (2) Bring on screen with a second presenter not rechecked live (test webinar was not HostMode); (3) webinar registration not built; (4) On with preview and the Manage screen panel not built; (5) Virtual appointment / Live Event not built; (6) the pre-join split menu needs the preheat to finish, not yet seen on screen; (7) OST Test 3 keeps cancelled OST TEST 217 webinar entries.
 
 - Merged 7120e0c/c38329a (2026-11-19): build OK, 758 lib tests passed. Town hall attendee streaming verified live; webinar run live; extras partly built. Open: organizer start drops attendees, Bring on screen, waiting screen, registration, On with preview, Manage screen, New menu items.
+- Handoff for the follow-up items (coordinator list, 2026-11-18):
+  - Go-live drop: Teams desktop's signaling is native (SlimCore), so CDP on winpc shows only JS; Teams' go-live JS is calling-app meetingGoLive (ufd stage-curtain, 3 s, updateMeetingLiveState). Teams starting it kept OST Test 2 streaming; OST starting it dropped attendees (Teams attendee run 1: call ended at go-live; OST Test 2 run 3: "call ended by the other side" 06:16:42Z, before the start, so run 3 may be a separate join-time drop). Compare OST's live_state_body/curtain_state with Teams' meetingGoLive payload in calling-pluginless (updateMeetingLiveState request) and the ufd publishState body.
+  - Tools: examples/virtual_event (create/publish/cancel/purge, test accounts only); scratchpad th/cdp.mjs (read-only CDP: list, js, net browser <file> <s> <regex>; tokens redacted); th/dump.js (DOM boxes); harness --join-event[-start|-end], --join-preview-attendee; RUST_LOG=teams_cli::calling::live_stream=debug.
+  - Registration API (services-virtual-events): POST events/{id}/attendee/register (RegisterVirtualEventAttendeeInput, registrationType Registration|AddToCalendar), GET events/{id}/users/{oid}/registration; capture Teams' body on winpc before building.
+  - HostMode for a webinar: the form's Manage what attendees see sends attendeeViewModes null; find how Teams sets HostMode (meeting options after save?) before the Bring on screen run.
 <!-- SECTION:NOTES:END -->
