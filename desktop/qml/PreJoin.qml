@@ -58,6 +58,8 @@ Window {
     }
     signal roomPickerOpenForTest()
     function roomPickerForTest() { roomPickerOpenForTest() }
+    /// The split Join now's menu (an event we present in), opened.
+    signal joinMenuOpenForTest()
     function findRooms() {
         room = null
         try { rooms = JSON.parse(backend.roomDevices()) } catch (e) { rooms = { devices: [], select: null, suggest: false } }
@@ -837,6 +839,7 @@ Window {
                 TapHandler { enabled: win.canJoin; onTapped: joinMenu.visible = !joinMenu.visible }
                 Accessible.role: Accessible.Button
                 Accessible.name: "More join options."
+                Connections { target: win; function onJoinMenuOpenForTest() { joinMenu.visible = true } }
                 Item {
                     id: joinMenu
                     // Under the split button, right-aligned to it (Teams' menu:

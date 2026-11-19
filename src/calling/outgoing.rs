@@ -661,8 +661,9 @@ impl OutgoingCall {
             .clone()
             .context("This meeting can't spotlight")?;
         // Teams (enableContentShareQueueInManagedMode, on): what of theirs
-        // is on screen, the person (and not their screen share).
-        let content = serde_json::json!({ "isParticipantSpotlighted": true, "isScreenShareSpotlighted": false }).to_string();
+        // is on screen, the person (and not their screen share). An object,
+        // as Teams' calling stack posts a state's content.
+        let content = serde_json::json!({ "isParticipantSpotlighted": true, "isScreenShareSpotlighted": false });
         let body = serde_json::json!({
             "from": from,
             "publishedState": {

@@ -122,7 +122,9 @@ pub fn live_event(json: &Value) -> Option<LiveEvent> {
 }
 
 /// The curtain Teams publishes while the event starts or ends (a "ufd"
-/// state at user level).
+/// state at user level). The content goes as an object: Teams' calling
+/// stack parses a state's JSON before it posts it (pluginless
+/// publishStateAsync and its payload builder).
 pub fn curtain_state(live: bool, teams_call_id: &str, sequence: u64) -> Value {
     let content = json!({
         "publishStateUFDType": if live { "stage-curtain" } else { "stage-end-curtain" },
@@ -130,7 +132,7 @@ pub fn curtain_state(live: bool, teams_call_id: &str, sequence: u64) -> Value {
         "teamsCallId": teams_call_id,
     });
     json!({
-        "content": content.to_string(),
+        "content": content,
         "level": "user",
         "stateType": "ufd",
         "sequenceNumber": sequence,
@@ -180,8 +182,7 @@ mod tests {
     fn starts_the_event_as_teams_does() {
         let c = curtain_state(true, "abc", 7);
         assert_eq!(c["stateType"], "ufd");
-        let content: Value = serde_json::from_str(c["content"].as_str().unwrap()).unwrap();
-        assert_eq!(content, json!({"publishStateUFDType": "stage-curtain", "meetingPhase": "live", "teamsCallId": "abc"}));
+        assert_eq!(c["content"], json!({"publishStateUFDType": "stage-curtain", "meetingPhase": "live", "teamsCallId": "abc"}));
         let b = live_state_body(&json!({"id": "8:orgid:x"}), false, 2, "https://cb/conversation/updateMeetingLiveStateStatus/", "op");
         assert_eq!(b["meetingLiveState"], json!({"phase": "ended", "sequenceNumber": 2}));
         assert_eq!(b["links"]["updateMeetingLiveStateStatus"], "https://cb/conversation/updateMeetingLiveStateStatus/");

@@ -65,6 +65,16 @@ Item {
     property string lobbyBypass: "People in my org and guests"
     property string recordAuto: "Off"
     property bool dirty: false
+    /// Calendar ▸ New ▸ Virtual appointment (Teams' template, measured
+    /// 2026-11-19): "Virtual appointment" heads the form, a notice bar,
+    /// the external guests (name and email, both required) under the
+    /// title, and the attendees are "within my organization".
+    property bool virtualAppointment: false
+    property var guests: [{ name: "", email: "" }]
+    property bool noticeClosed: false
+    property string vaPresenters: "Only organizers and co-organizers"
+    property string vaChat: "In-meeting only"
+    readonly property bool guestsReady: guests.every(g => g.name.trim().length > 0 && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(g.email.trim()))
     property bool loading: false
     property string tab: "Details"
     property bool paneOpen: true
@@ -76,9 +86,11 @@ Item {
     readonly property bool isSeries: ["occurrence", "exception", "seriesMaster"].indexOf(event.event_type || "") >= 0
     readonly property string primaryLabel: mode === "view" ? "Join"
         : existing ? (dirty ? "Send update" : (event.join_url ? "Join" : "Send update"))
-        : (hasInvitees ? "Send" : "Save")
+        : (hasInvitees || virtualAppointment ? "Send" : "Save")
+    // A virtual appointment sends once it has a title and its guests.
     readonly property bool primaryEnabled: primaryLabel === "Join" ? !!event.join_url
-        : primaryLabel === "Send update" ? dirty : true
+        : primaryLabel === "Send update" ? dirty
+        : virtualAppointment && !existing ? guestsReady && titleInput.text.trim().length > 0 : true
     readonly property int durationMin: Math.max(0, Math.round((endAt - startAt) / 60000))
     readonly property var showAsLabels: ({ Free: "Free", WorkingElsewhere: "Working elsewhere", Tentative: "Tentative", Busy: "Busy", Oof: "Away" })
 
@@ -108,6 +120,7 @@ Item {
         allDay = false; recurrence = null; location = ""; online = true
         channel = null; personalInvites = false; facilitator = false
         showAs = "Busy"; tab = "Details"; dirty = false
+        virtualAppointment = false; guests = [{ name: "", email: "" }]; noticeClosed = false
         titleInput.text = ""; editor.text = ""; peopleInput.text = ""; optionalInput.text = ""
         channelInput.text = ""; locationInput.text = ""
         loading = false
@@ -123,6 +136,14 @@ Item {
         loading = false
         if (required.length) availabilityWanted(allMails())
         titleInput.forceActiveFocus()
+    }
+    /// New ▸ Virtual appointment: Teams' template's options (Who can
+    /// present: only organizers and co-organizers; no automatic recording;
+    /// in-meeting chat).
+    function openVirtualAppointment(start) {
+        openNew(start, [], null)
+        virtualAppointment = true
+        recordAuto = "Off"
     }
     function openEvent(ev, asOrganizer) {
         reset()
@@ -213,7 +234,9 @@ Item {
             editingId: editingId,
             sendPersonalInvites: personalInvites,
             lobbyBypass: lobbyBypass,
-            recordAutomatically: recordAuto === "On"
+            recordAutomatically: recordAuto === "On",
+            templateId: virtualAppointment ? "firstparty_e514e598-fba6-4e1f-b8b3-138dd3bca748" : "",
+            guests: virtualAppointment ? guests.map(g => ({ displayName: g.name.trim(), emailAddress: g.email.trim() })) : []
         }
     }
     function primaryAction() {
@@ -280,7 +303,7 @@ Item {
             x: 60; anchors.verticalCenter: parent.verticalCenter
             width: Math.min(implicitWidth, root.width * 0.35)
             elide: Text.ElideRight
-            text: root.mode === "new" ? "New meeting" : (root.event.subject || "(No title)")
+            text: root.mode === "new" ? (root.virtualAppointment ? "Virtual appointment" : "New meeting") : (root.event.subject || "(No title)")
             font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold
             color: theme.text
         }
@@ -408,6 +431,33 @@ Item {
             width: parent.width
             spacing: 14
 
+            // A virtual appointment's notice bar (Teams: 1 px #D1D1D1
+            // border, radius 4, info glyph, 12/18 text, Learn more,
+            // dismiss).
+            Item {
+                visible: root.virtualAppointment && !root.noticeClosed
+                x: 32; width: scroller.fieldW + 42; height: visible ? noticeText.implicitHeight + 10 : 0
+                Rectangle {
+                    anchors.fill: parent; radius: 4; color: "transparent"; border.width: 1; border.color: theme.divider
+                    FluentIcon { x: 6; anchors.verticalCenter: parent.verticalCenter; name: "info-20"; size: 20; color: theme.text }
+                    Text {
+                        id: noticeText
+                        x: 46; y: 5; width: parent.width - 46 - 44; wrapMode: Text.Wrap; textFormat: Text.StyledText
+                        text: "External guests will receive a tailored invitation for this scheduled online meeting. They will join from a mobile or web browser and experience a virtual lobby before the appointment begins. <a href=\"https://go.microsoft.com/fwlink/?linkid=2209737\">Learn more</a>"
+                        linkColor: theme.brand; onLinkActivated: l => Qt.openUrlExternally(l)
+                        font.family: theme.font; font.pixelSize: 12; lineHeight: 18; lineHeightMode: Text.FixedHeight; color: theme.text
+                    }
+                    Rectangle {
+                        anchors.right: parent.right; anchors.rightMargin: 0; anchors.verticalCenter: parent.verticalCenter
+                        width: 32; height: 30; radius: 4; color: noticeX.hovered ? theme.hover : "transparent"
+                        FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.text }
+                        HoverHandler { id: noticeX; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: root.noticeClosed = true }
+                        Accessible.role: Accessible.Button; Accessible.name: "Dismiss notice bar"
+                    }
+                }
+            }
+
             // Title
             FieldRow {
                 icon: "edit-20"; height: 34
@@ -423,6 +473,61 @@ Item {
                         onTextEdited: root.markDirty()
                         Accessible.name: "Add title"
                         Text { visible: !titleInput.text; text: "Add title"; color: theme.textSecondary; font: titleInput.font }
+                    }
+                }
+            }
+
+            // A virtual appointment's external guests: "External guest name *"
+            // and "Email *" (316 x 31 each, 9 apart) per guest, then "+ Add
+            // additional external guest".
+            Column {
+                visible: root.virtualAppointment
+                width: parent.width; spacing: 8
+                Repeater {
+                    model: root.virtualAppointment ? root.guests.length : 0
+                    FieldRow {
+                        id: guestRow
+                        required property int index
+                        icon: index === 0 ? "clipboard-20" : ""; height: 31
+                        Repeater {
+                            model: [["name", "External guest name *"], ["email", "Email *"]]
+                            FieldBox {
+                                id: guestBox
+                                required property var modelData
+                                required property int index
+                                x: index * ((scroller.fieldW - 9.3) / 2 + 9.3); width: (scroller.fieldW - 9.3) / 2; height: 31
+                                focused: guestInput.activeFocus
+                                TextInput {
+                                    id: guestInput
+                                    x: 12; width: parent.width - 24; anchors.verticalCenter: parent.verticalCenter
+                                    font.family: theme.font; font.pixelSize: 14; color: theme.text; clip: true; selectByMouse: true
+                                    text: (root.guests[guestRow.index] || {})[guestBox.modelData[0]] || ""
+                                    onTextEdited: {
+                                        const g = root.guests.slice()
+                                        g[guestRow.index] = Object.assign({}, g[guestRow.index], { [guestBox.modelData[0]]: text })
+                                        root.guests = g; root.markDirty()
+                                    }
+                                    Accessible.name: guestBox.modelData[1]
+                                    Text { visible: !guestInput.text; text: guestBox.modelData[1]; color: theme.textSecondary; font: guestInput.font }
+                                }
+                            }
+                        }
+                    }
+                }
+                FieldRow {
+                    height: 31
+                    Rectangle {
+                        x: 3; width: addGuestRow.implicitWidth + 24; height: 31; radius: 4
+                        color: addGuestHover.hovered ? theme.hover : "transparent"
+                        Row {
+                            id: addGuestRow
+                            x: 12; anchors.verticalCenter: parent.verticalCenter; spacing: 8
+                            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "add-20"; size: 18; color: theme.text }
+                            Text { anchors.verticalCenter: parent.verticalCenter; text: "Add additional external guest"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                        }
+                        HoverHandler { id: addGuestHover; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: root.guests = root.guests.concat([{ name: "", email: "" }]) }
+                        Accessible.role: Accessible.Button; Accessible.name: "Add additional external guest"
                     }
                 }
             }
@@ -465,7 +570,7 @@ Item {
                                 Keys.onEnterPressed: suggest.pickFirst(peopleInput, false)
                                 Keys.onPressed: e => { if (e.key === Qt.Key_Backspace && !text && root.required.length) { root.required = root.required.slice(0, -1); e.accepted = true } }
                                 Accessible.name: "Add required attendees"
-                                Text { visible: !peopleInput.text && root.required.length === 0; anchors.verticalCenter: parent.verticalCenter; x: 4; text: "Add required attendees"; color: theme.textSecondary; font: peopleInput.font }
+                                Text { visible: !peopleInput.text && root.required.length === 0; anchors.verticalCenter: parent.verticalCenter; x: 4; text: root.virtualAppointment ? "Add attendees within my organization" : "Add required attendees"; color: theme.textSecondary; font: peopleInput.font }
                             }
                             Text {
                                 visible: root.readOnly
@@ -524,7 +629,7 @@ Item {
                 }
                 // Facilitator (not with a channel, not on an invitation)
                 FieldRow {
-                    visible: !root.channel && !root.readOnly && !root.existing
+                    visible: !root.channel && !root.readOnly && !root.existing && !root.virtualAppointment
                     icon: ""; height: 38
                     Rectangle {
                         width: scroller.fieldW; height: 38; radius: 4
@@ -659,7 +764,7 @@ Item {
             // Channel
             FieldRow {
                 icon: "channel-20"; height: 32
-                visible: !root.readOnly || !!root.channel
+                visible: (!root.readOnly || !!root.channel) && !root.virtualAppointment
                 FieldBox {
                     id: channelBox
                     width: scroller.fieldW; height: 32
@@ -768,7 +873,7 @@ Item {
                         }
                     }
                     Row {
-                        visible: !root.channel && !root.readOnly
+                        visible: !root.channel && !root.readOnly && !root.virtualAppointment
                         anchors.right: parent.right; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter
                         spacing: 12
                         Text { anchors.verticalCenter: parent.verticalCenter; text: "Online meeting"; font.family: theme.font; font.pixelSize: 14; color: theme.textStrong }
@@ -944,7 +1049,19 @@ Item {
             visible: root.paneOpen && !root.existing
             x: 18; y: 59
             spacing: 4
+            // A virtual appointment's options (its template's): Who can
+            // present, Record and transcribe automatically, Meeting chat.
+            Text { visible: root.virtualAppointment; text: "Who can present"; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
+            PaneDropdown {
+                visible: root.virtualAppointment
+                value: root.vaPresenters
+                options: ["Only organizers and co-organizers", "Specific people", "People in my org and guests", "Everyone"]
+                accessible: "Who can present"
+                onChosen: v => root.vaPresenters = v
+            }
+            Item { visible: root.virtualAppointment; width: 1; height: 12 }
             Row {
+                visible: !root.virtualAppointment
                 spacing: 2
                 Text { text: "Who can bypass the lobby?"; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
                 FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "info-16"; size: 16; color: theme.textSecondary
@@ -953,18 +1070,28 @@ Item {
             }
             PaneDropdown {
                 id: lobbyDrop
+                visible: !root.virtualAppointment
                 value: root.lobbyBypass
                 options: ["Only organizers and co-organizers", "People who were invited", "People in my org", "People in my org and guests", "Everyone"]
                 accessible: "Who can bypass the lobby?"
                 onChosen: v => root.lobbyBypass = v
             }
-            Item { width: 1; height: 12 }
+            Item { visible: !root.virtualAppointment; width: 1; height: 12 }
             Text { text: "Record and transcribe automatically"; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
             PaneDropdown {
                 value: root.recordAuto
                 options: ["Off", "On"]
                 accessible: "Record and transcribe automatically"
                 onChosen: v => root.recordAuto = v
+            }
+            Item { visible: root.virtualAppointment; width: 1; height: 12 }
+            Text { visible: root.virtualAppointment; text: "Meeting chat"; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
+            PaneDropdown {
+                visible: root.virtualAppointment
+                value: root.vaChat
+                options: ["On", "In-meeting only", "Off"]
+                accessible: "Meeting chat"
+                onChosen: v => root.vaChat = v
             }
             Item { width: 1; height: 21 }
             LinkButton { label: "More options"; bold: true }

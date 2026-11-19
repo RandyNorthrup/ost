@@ -293,6 +293,129 @@ window's stage was never captured.
   U+E416, a board with a person), Town hall (MegaphoneLoud), Virtual
   appointment, Live Event.
 
+## 8. Round 2 in Teams desktop (TASK-0217, 2026-11-19)
+
+Measured on winpc (ost-test1, build 26304) with "OST TEST 217 town hall
+preview" (organizer ost-test1 in Teams) and "OST TEST 217 virtual
+appointment" (guest OST Test 2), both deleted afterwards.
+
+### Going live and published states
+- Teams' calling stack posts a published state's content as an object:
+  pluginless publishStateAsync parses the state's JSON and its payload
+  builder sends `publishedState {content: <object>, level, stateType,
+  sequenceNumber}` (and endpoint states the same way). OST sent the
+  curtain (`stage-curtain`) and the spotlight (Bring on screen) as JSON
+  strings; both go as objects now.
+- `updateMeetingLiveState`: `{from {id, endpointId, participantId,
+  languageId, displayName}, meetingLiveState {phase, sequenceNumber},
+  links {updateMeetingLiveStateStatus}, operationId}`, the sequence
+  number being the meeting's `meetingCapability.meetingLiveState.seqNum`
+  (handleMeetingDetailsChanged) — as OST sends it.
+
+### Joining as organizer without dropping attendees
+- A town hall's conversation ends for everyone once its last non-hidden
+  participant leaves: streaming attendees got `conversation/
+  conversationEnd` code 0, subCode 5020, "This conversation has ended as
+  there are no non-hidden participants in the incoming roster." (Teams
+  only logs it: CallEndDiagnosticsWithNoInnerParticipant). OST's
+  organizer hit it by withdrawing its pre-join preheat when Join now came
+  before the preheat was answered (and again when the pre-join window
+  closed), then joining afresh: the preheat had been the only presenter.
+- Teams never leaves and rejoins: Join now promotes the preheated call
+  (disablePreheat). OST now waits for a preheat still being placed and
+  joins that call; closing the window doesn't withdraw a preheat Join now
+  waits for.
+- Checked live 2026-11-19 ("OST TEST 217 town hall B2"): OST Test 2
+  organized in OST, ost-test1 watched in Teams desktop; Teams' attendee
+  stayed WAITING while OST joined (preheated), went LIVE with the player
+  running when OST started the event, then ENDED.
+
+### Manage what attendees see
+- The webinar form has no "Manage what attendees see" here (neither the
+  quick setup nor All options ▸ Production tools: Who has control of
+  production tools, Enable Green room). Webinars get it only through the
+  meeting's own options.
+- The town hall form's dropdown (Off / On / On with preview, the form's
+  `productionStudioMode` Off / Simple / Advanced) isn't sent: `POST
+  events` carries `attendeeViewModes` null and no `productionStudioMode`,
+  Publish `{"state":"Published","meetingOptions":null}`. The town hall
+  came out `HostMode` (On) with "On with preview" picked.
+- In the meeting, More ▸ Settings ▸ Meeting options ▸ Production tools
+  has "Manage what attendees see" ("Choose if you'd like organizers and
+  presenters to manage the content and people attendees see on their
+  screens. Only people you've selected in the setting above can manage
+  the screen.") as three radios: Off (`Default`), On (`HostMode`), On
+  with preview (`AdvancedHostMode`), saved with the meeting options
+  (`AttendeeViewModes`).
+
+### The Manage screen panel (HostMode, organizers and presenters)
+- The stage (2.7, 94.7, 1274.7 x 582.7) splits: the panel 240 wide on the
+  left, the managed stage (242.7, 1034.7 wide) on the right showing only
+  who is on screen; with nobody there it says "Bring presenters on screen
+  and share content that you want attendees to see." (18/700 #252423 on
+  #F5F5F5, centred).
+- The panel: a 60 tall header ("Manage screen" 14/600 #252423 at 20, 20;
+  an info button 16 at 121; Add Videos, a 32 x 32 button with a 20 glyph
+  at 196, 14), a divider at 59.3, "Attendees can still hear your audio
+  when you're off screen." (12/14 #424242 at 20, 66, 200 wide), the pills
+  All / Live / People / Content (24 tall, radius full, at 20, 102; the
+  chosen one #5B5FC7 with 12/600 white, the others 12/400 #424242), then
+  the organizers' and presenters' tiles (236 x 131 at 2, 134.6; your own
+  with your avatar and name tag) with their Stage presence switch at the
+  top right ("Stage presence: Off stage"). The Start the meeting alert
+  wasn't shown with it; "Recording and transcription will begin when the
+  meeting starts." was.
+- The form's preview of On with preview (the town hall form): Preview
+  (yellow edge) and Live (red edge) stages, Customize screen and Send
+  live (#FDE300), "Manage screen and audio", End event (#FDE300); an
+  Attendee view / Your view switch under it.
+
+### A webinar's attendee before the start
+- Teams joins the call (attendee, green room on, not live): the bar has
+  the "Not started" pill (11.67 #616161), the duration, Mic, Camera,
+  Share, React, Chat, People, Copilot, Q&A, More, Leave; the stage says
+  "Welcome to" (14/400 #616161 at 336), the title (20/700/28 #242424 at
+  372) and "This meeting will start shortly" (14/400 #616161 at 416),
+  with the alert "Recording and transcription will begin when the
+  meeting starts".
+- An invited attendee of a webinar with registration joins straight from
+  Calendar's Join (no Register step).
+
+### Calendar ▸ New ▸ Virtual appointment and Live Event
+- **Virtual appointment** opens Teams' "New meeting" window (1226 x 713)
+  headed "Virtual appointment" (Details, Scheduling Assistant, Send): a
+  notice bar ("External guests will receive a tailored invitation for
+  this scheduled online meeting. They will join from a mobile or web
+  browser and experience a virtual lobby before the appointment begins.
+  Learn more"), Add title, "External guest name *" and "Email *" (316 x
+  31 each) with "+ Add additional external guest", the times, Does not
+  repeat, "Add attendees within my organization" (+ Optional), Add
+  location, the editor; Options: Who can present "Only organizers and
+  co-organizers", Record and transcribe automatically Off, Meeting chat
+  "In-meeting only", More options. Opening it makes the Teams meeting
+  (`privateMeeting/schedulingService/create`). Send: `POST {mt}/v2.0/me/
+  calendars/default/events?isOnlineMeeting=true&shouldDecryptData=true`
+  with the usual calendarEvent and schedulingServiceEvent, but
+  `meetingTemplateId "firstparty_e514e598-fba6-4e1f-b8b3-138dd3bca748"`,
+  `isAppointment` false, only the organizer in `attendees`, and
+  `virtualAppointmentInfo {appointmentClients [{displayName,
+  emailAddress}], eTag "", isSmsEligible false, settings
+  {allowClientToJoinUsingBrowser true, notifications [], organizerLocale
+  "en-us"}}`.
+- **Live Event** shows "Teams Live Events is Retiring" (Fluent v8 dialog,
+  340 x 209, radius 2; title 20/400 #242424 padded 16 46 20 24; "Teams
+  Live Events is retiring. Please transition to Teams town hall to get
+  the improved experience for large digital and hybrid events at scale.
+  For more information, Learn more." 14/400 #616161 in 292; "Create town
+  hall" primary 145 x 32 and "Continue" 99 x 32, 8 apart, radius 2).
+  Create town hall opens the town hall form; Continue opens a 946 x 713
+  "Microsoft Teams" window: "New live event" (21/700 #616161 at 30), the
+  Prohibited glyph (regular, 80, #616161) centred, "Teams live events is
+  retiring, please use Teams town halls for your large digital and
+  hybrid events" (14/700, the link 14/400 #4F52B2 to adoption.microsoft.
+  com …/town-halls/), and Close (96 x 32, 600, #D1D1D1 edge) at the
+  bottom left.
+
 ## OST status (see the tasks' notes for the live checks)
 
 - [x] Events: the Town hall template's form (capacity, large audience,
@@ -320,7 +443,19 @@ window's stage was never captured.
 - [x] An attendee's staging screen ("Welcome to" / title / "This meeting
   will start shortly", and the end text) where the call connects (webinar
   attendees); the presenters' alert after the end.
-- [ ] The player's own controls (pause, skip, DVR position, full screen),
-  live stream captions, "On with preview" (production layouts) and the
-  Manage screen panel (the green room's off-screen strip) are the next
-  step; Virtual appointment and Live Event in Calendar ▸ New aren't built.
+- [x] Round 2 (TASK-0217, §8): the organizer's join reuses its preheated
+  call (attendees stay); published states' contents go as objects; the
+  Manage screen panel (HostMode); Meeting options ▸ Production tools ▸
+  Manage what attendees see (ManagedMode: Off / On / On with preview);
+  Calendar ▸ New ▸ Virtual appointment (Teams' template, external guests)
+  and Live Event (the retirement dialog and window); the webinar
+  attendee's waiting screen as measured; your registration read
+  (`events/{id}/users/{oid}/registration`).
+- [ ] Open: "On with preview" production stages (Preview / Live, Send
+  live = Teams' setMeetingLayout production layout) aren't built; the
+  Register flow (Teams' `POST events/{id}/attendee/register`) wasn't
+  captured: invited attendees join without registering, a Private event
+  can't take registration in this tenant ("Registration-gated private
+  invite-only events are not currently supported."), and an organization
+  event made discoverable didn't show in Discover's upcoming list; the
+  player's own controls and live stream captions.

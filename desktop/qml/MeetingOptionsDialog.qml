@@ -124,6 +124,7 @@ Popup {
         UsersCanAdmitFromLobby: { OrganizersAndPresentersOnly: "Organizers, co-organizers, and presenters", OrganizerAndCoOrganizersOnly: "Organizers and co-organizers" },
         AllowedUsersForMeetingDetails: { UsersAllowedToByPassTheLobby: "Users allowed to bypass the lobby", Everyone: "Everyone" },
         PresenterOption: { Everyone: "Everyone", EveryoneInCompany: "People in my org and guests", SpecifiedPeople: "Specific people", OrganizerOnly: "Only organizers and co-organizers" },
+        ManagedMode: { Default: "Off", HostMode: "On", AdvancedHostMode: "On with preview" },
         ProducerOption: { OrganizerAndCoOrganizersOnly: "Organizer and co-organizers", OrganizersAndPresentersOnly: "Organizer, co-organizers, and presenters", SpecifiedPeople: "Specific people" },
         AllowMeetingChat: { Enabled: "On", Disabled: "Off", InMeeting: "In-meeting only" },
         WhoCanStartAnnotations: { ActiveSharer: "Active sharer", Everyone: "Everyone" },
@@ -151,6 +152,7 @@ Popup {
         { key: "PRODUCTION_TOOLS", title: "Production tools", icon: "mo-production", fields: [
             { name: "ProducerOption", kind: "list", label: "Who has control of production tools", desc: "To give people in the meeting control over what is shown on screen for attendees, add them as co-organizers or presenters." },
             { name: "SpecifiedProducers", kind: "people", label: "", showWhen: ["ProducerOption", "SpecifiedPeople"] },
+            { name: "ManagedMode", kind: "radio", label: "Manage what attendees see", desc: "Choose if you'd like organizers and presenters to manage the content and people attendees see on their screens. Only people you've selected in the setting above can manage the screen." },
             { name: "StagingRoomEnabled", kind: "switch", label: "Enable Green room", desc: "Lets organizers and presenters check their audio, video, and content sharing before attendees are admitted. To use this feature, make someone a presenter and turn it on before the meeting starts." }] },
         { key: "PARTICIPATION", title: "Participation", icon: "mo-participation", fields: [
             { name: "AttendeeRestrictions", kind: "audio", label: "Allow mic for attendees", desc: "Turn this off to prevent attendees from unmuting. You can allow them to unmute individually as needed." },
@@ -382,6 +384,37 @@ Popup {
                                     options: (field.opt.values || []).map(v => [v, nameOf(v)])
                                     accessibleName: field.modelData.label
                                     onPicked: code => root.change(field.modelData.name, code)
+                                }
+                                // Manage what attendees see: Teams' radio group
+                                // (Off, On, On with preview; 145 apart).
+                                Row {
+                                    visible: field.modelData.kind === "radio"
+                                    enabled: !field.locked
+                                    opacity: field.locked ? 0.5 : 1
+                                    Repeater {
+                                        model: field.modelData.kind === "radio" ? (field.opt.values && field.opt.values.length ? field.opt.values : Object.keys(root.labels[field.modelData.name] || {})) : []
+                                        Item {
+                                            id: radioItem
+                                            required property var modelData
+                                            readonly property bool chosen: root.value(field.modelData.name) === modelData
+                                            width: 145; height: 32
+                                            Rectangle {
+                                                x: 8; anchors.verticalCenter: parent.verticalCenter; width: 16; height: 16; radius: 8
+                                                color: "transparent"; border.width: 1
+                                                border.color: radioItem.chosen ? theme.brand : radioHover.hovered ? theme.text : theme.textSecondary
+                                                Rectangle { visible: radioItem.chosen; anchors.centerIn: parent; width: 10; height: 10; radius: 5; color: theme.brand }
+                                            }
+                                            Text {
+                                                x: 32; anchors.verticalCenter: parent.verticalCenter
+                                                text: (root.labels[field.modelData.name] || {})[radioItem.modelData] || String(radioItem.modelData)
+                                                font.family: theme.font; font.pixelSize: 14; color: theme.text
+                                            }
+                                            HoverHandler { id: radioHover; cursorShape: Qt.PointingHandCursor }
+                                            TapHandler { onTapped: root.change(field.modelData.name, radioItem.modelData) }
+                                            Accessible.role: Accessible.RadioButton; Accessible.checked: radioItem.chosen
+                                            Accessible.name: (root.labels[field.modelData.name] || {})[radioItem.modelData] || String(radioItem.modelData)
+                                        }
+                                    }
                                 }
                                 // People pickers (Teams' TagPicker).
                                 MeetingPeoplePicker {

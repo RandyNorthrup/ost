@@ -737,6 +737,20 @@ pub async fn publish(client: &TeamsClient, id: &str) -> Result<Value> {
                "embedCode": if v.get("type").and_then(Value::as_str) == Some("Townhall") { json!(embed_code(&id)) } else { Value::Null } }))
 }
 
+/// Your registration for an event (Teams' get-virtual-event-attendee-
+/// registration-by-user, `GET events/{id}/users/{oid}/registration`):
+/// the service's registration, or null when you haven't registered.
+pub async fn my_registration(client: &TeamsClient, id: &str) -> Result<Value> {
+    let id = event_path(id)?;
+    let oid = client.object_id().context("Not signed in")?;
+    let url = format!("{}/events/{}/users/{oid}/registration", regional_endpoint(client), urlencoding(&id));
+    match get_json(&url, false).await {
+        Ok(v) => Ok(v),
+        Err(e) if e.to_string().contains("404") => Ok(Value::Null),
+        Err(e) => Err(e),
+    }
+}
+
 /// The published dialog's "Show event in Events app" (Teams'
 /// toggleDiscoverability): `PATCH events/{id}` `{"isDiscoverable": on}`
 /// with the event's eTag as If-Match (Teams' updateVirtualEvent, read

@@ -1163,6 +1163,36 @@ pub struct MeetingForm {
     pub send_personal_invites: bool,
     /// The middle tier's name for your time zone ("PacificSt").
     pub time_zone: String,
+    /// The meeting template ("" for Teams' "default"; New ▸ Virtual
+    /// appointment uses [`VIRTUAL_APPOINTMENT_TEMPLATE`]).
+    pub template_id: String,
+    /// A virtual appointment's external guests (its clients), who get
+    /// Teams' tailored invitation instead of being attendees.
+    pub guests: Vec<FormGuest>,
+}
+
+/// Teams' Virtual appointment template (Calendar ▸ New ▸ Virtual
+/// appointment, measured 2026-11-19).
+pub const VIRTUAL_APPOINTMENT_TEMPLATE: &str = "firstparty_e514e598-fba6-4e1f-b8b3-138dd3bca748";
+
+/// A virtual appointment's external guest (name and email, both
+/// required in Teams' form).
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct FormGuest {
+    pub display_name: String,
+    pub email_address: String,
+}
+
+/// What Teams' form sends for a virtual appointment's guests
+/// (`virtualAppointmentInfo`, captured 2026-11-19).
+pub fn virtual_appointment_info(guests: &[FormGuest]) -> serde_json::Value {
+    serde_json::json!({
+        "appointmentClients": guests.iter().map(|g| serde_json::json!({ "displayName": g.display_name.trim(), "emailAddress": g.email_address.trim() })).collect::<Vec<_>>(),
+        "eTag": "",
+        "isSmsEligible": false,
+        "settings": { "allowClientToJoinUsingBrowser": true, "notifications": [], "organizerLocale": "en-us" },
+    })
 }
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
@@ -1233,7 +1263,7 @@ fn mt_event(form: &MeetingForm, me: &Me, group_mail: Option<&str>) -> Result<ser
         "isResponseRequested": true,
         "joinMeetingLabel": "Join Microsoft Teams Online Meeting",
         "location": form.location,
-        "meetingTemplateId": "default",
+        "meetingTemplateId": if form.template_id.is_empty() { "default" } else { form.template_id.as_str() },
         "organizerAddress": me.mail,
         "organizerName": me.name,
         "primarySpokenLanguage": "en-us",
@@ -1253,9 +1283,14 @@ fn mt_event(form: &MeetingForm, me: &Me, group_mail: Option<&str>) -> Result<ser
         ev["mailboxAddress"] = serde_json::json!(group_mail.unwrap_or_default());
         ev["skypeTeamsData"] = serde_json::json!(serde_json::json!({"cid": c.channel_id, "uid": me.mri, "type": 0}).to_string());
     } else {
-        ev["isAppointment"] = serde_json::json!(people.is_empty());
+        // A virtual appointment is a meeting with its guests, never an
+        // appointment (Teams sends isAppointment false with no attendees).
+        ev["isAppointment"] = serde_json::json!(people.is_empty() && form.guests.is_empty());
         ev["skypeTeamsData"] = serde_json::json!(serde_json::json!({"uid": me.mri, "type": 0, "private": true}).to_string());
         ev["TransactionId"] = serde_json::json!(id);
+    }
+    if !form.guests.is_empty() {
+        ev["virtualAppointmentInfo"] = virtual_appointment_info(&form.guests);
     }
     Ok(ev)
 }
@@ -1499,6 +1534,29 @@ mod tests {
         assert_eq!(c["attendees"].as_array().unwrap().last().unwrap()["address"], "Team@x.com");
         assert!(c["skypeTeamsData"].as_str().unwrap().contains("19:c@thread.tacv2"));
         assert_eq!(c["eventRecurrencePattern"]["patternType"], 2);
+    }
+
+    #[test]
+    fn a_virtual_appointment_is_sent_as_teams_sends_it() {
+        // Calendar ▸ New ▸ Virtual appointment, Send (captured 2026-11-19).
+        let me = super::Me { name: "OST Test 1".into(), mail: "t1@x.com".into(), mri: "8:orgid:1".into() };
+        let form: super::MeetingForm = serde_json::from_value(serde_json::json!({
+            "subject": "OST TEST 217 virtual appointment", "start": "2026-11-18T23:30:00-08:00", "end": "2026-11-19T00:00:00-08:00",
+            "online": true, "timeZone": "PacificSt", "templateId": super::VIRTUAL_APPOINTMENT_TEMPLATE,
+            "guests": [{"displayName": "OST Test 2", "emailAddress": "t2@x.com"}]
+        }))
+        .unwrap();
+        let e = super::mt_event(&form, &me, None).unwrap();
+        assert_eq!(e["meetingTemplateId"], "firstparty_e514e598-fba6-4e1f-b8b3-138dd3bca748");
+        assert_eq!(e["isAppointment"], false);
+        assert_eq!(e["attendees"].as_array().unwrap().len(), 1);
+        assert_eq!(e["virtualAppointmentInfo"], serde_json::json!({
+            "appointmentClients": [{"displayName": "OST Test 2", "emailAddress": "t2@x.com"}], "eTag": "", "isSmsEligible": false,
+            "settings": {"allowClientToJoinUsingBrowser": true, "notifications": [], "organizerLocale": "en-us"}}));
+        let plain: super::MeetingForm = serde_json::from_value(serde_json::json!({"start": "2026-11-18T23:30:00-08:00", "end": "2026-11-19T00:00:00-08:00"})).unwrap();
+        let p = super::mt_event(&plain, &me, None).unwrap();
+        assert_eq!(p["meetingTemplateId"], "default");
+        assert!(p.get("virtualAppointmentInfo").is_none());
     }
 
     #[test]

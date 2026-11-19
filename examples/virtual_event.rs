@@ -91,6 +91,13 @@ async fn main() -> anyhow::Result<()> {
             println!("cancelled");
         }
         Some("manage") => println!("{:#}", events::manage(&client).await?),
+        Some("discoverable") => {
+            let on = args.get(2).map(String::as_str) == Some("on");
+            println!("{}", events::set_discoverable(&client, args.get(1).context("id")?, on).await?);
+        }
+        // Your registration for an event (Teams' get-virtual-event-
+        // attendee-registration-by-user).
+        Some("registration") => println!("{:#}", events::my_registration(&client, args.get(1).context("id")?).await?),
         // Remove the calendar entries test events left (cancelled copies
         // included) whose subject contains the given "OST TEST …" text.
         Some("purge") => {
@@ -105,7 +112,7 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
         }
-        _ => bail!("create | publish | overview | cancel | manage"),
+        _ => bail!("create | publish | overview | cancel | manage | discoverable | registration | purge"),
     }
     Ok(())
 }

@@ -823,6 +823,17 @@ Window {
     readonly property bool streaming: backend.callStreamJson !== ""
     /// Teams' isEvent: a town hall or webinar says "event" (End event).
     readonly property bool isEvent: !!liveEvent.townHall || !!liveEvent.webinar
+    /// Manage what attendees see is on (HostMode) and you manage the
+    /// screen: Teams' managed-mode stage (measured in Teams desktop
+    /// 2026-11-18, a town hall's green room): the "Manage screen" panel on
+    /// the left (240 wide) with the people off screen, and on the stage
+    /// only who and what is on screen.
+    readonly property bool manageScreen: meeting && !!liveEvent.managed && !streaming && myRole !== "" && myRole !== "attendee"
+    /// Who is on screen for attendees (spotlighted), you as your tile.
+    readonly property var onScreen: spotlighted.map(p => p.id === selfId ? Object.assign({}, selfEntry, { spotlight: p.spotlight }) : p)
+    /// The Manage screen panel's filter: "All", "Live", "People" or
+    /// "Content".
+    property string manageFilter: "All"
     /// Teams' enableTownhallDelayMessage: on in Teams desktop (measured
     /// 2026-11-18: a town hall streaming to its attendees says "Start
     /// event", "Start the event for everyone?" and "1 attendee will enter
@@ -2059,19 +2070,125 @@ Window {
                 text: "The event isn't live right now."
                 color: theme.pick("#252423", "#FFFFFF", "#FFFFFF"); font.family: theme.font; font.pixelSize: 24; font.weight: Font.Bold; lineHeight: 32; lineHeightMode: Text.FixedHeight
             }
+            // (Measured in Teams desktop 2026-11-19, a webinar's attendee
+            // before the start: "Welcome to" and "This meeting will start
+            // shortly" 14/400 #616161, the title 20/700/28 #242424, 16 apart.)
             Column {
                 visible: !win.streaming
-                anchors.centerIn: parent; spacing: 8; width: parent.width - 48
+                anchors.centerIn: parent; spacing: 16; width: parent.width - 48
                 Text { visible: stagingScreen.phase === "prelive"; width: parent.width; horizontalAlignment: Text.AlignHCenter; text: "Welcome to"
-                       color: theme.text; font.family: theme.font; font.pixelSize: 16 }
+                       color: theme.textSecondary; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight }
                 Text { visible: stagingScreen.phase === "prelive"; width: parent.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; text: win.peer
-                       color: theme.text; font.family: theme.font; font.pixelSize: 24; font.weight: Font.Bold }
+                       color: theme.text; font.family: theme.font; font.pixelSize: 20; font.weight: Font.Bold; lineHeight: 28; lineHeightMode: Text.FixedHeight }
                 Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
                        text: stagingScreen.phase === "ended" ? "The event has concluded. Thank you for attending." : "This meeting will start shortly"
-                       color: theme.text; font.family: theme.font; font.pixelSize: 16 }
+                       color: theme.textSecondary; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight }
             }
             Accessible.role: Accessible.StaticText
             Accessible.name: stagingScreen.phase === "ended" ? "The event has concluded. Thank you for attending." : "Welcome to " + win.peer + ". This meeting will start shortly"
+        }
+        // Managing the screen (Manage what attendees see on, Teams'
+        // managed-mode stage measured in a town hall's green room
+        // 2026-11-18): with nobody on screen the stage says "Bring
+        // presenters on screen and share content that you want attendees
+        // to see." (18/700 #252423 on #F5F5F5, centred).
+        Rectangle {
+            visible: win.manageScreen && !tiles.visible && !stagingScreen.visible
+            x: 240; width: parent.width - 240; height: parent.height
+            radius: parent.radius; color: theme.pane
+            Text {
+                anchors.centerIn: parent; width: Math.min(653, parent.width - 48)
+                horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
+                text: "Bring presenters on screen and share content that you want attendees to see."
+                color: theme.pick("#252423", "#FFFFFF", "#FFFFFF"); font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold
+                lineHeight: 25.7; lineHeightMode: Text.FixedHeight
+            }
+        }
+        // The "Manage screen" panel (240 wide on the stage's left): the
+        // header (60 tall: "Manage screen" 14/600, its info button, Add
+        // Videos), "Attendees can still hear your audio when you're off
+        // screen." (12/14 #424242), the All / Live / People / Content pills
+        // (24 tall, the chosen one brand with white 12/600), then a 236 x 131
+        // tile for each organizer and presenter with its Stage presence
+        // switch at the top right.
+        Item {
+            id: manageScreenPane
+            visible: win.manageScreen && !stagingScreen.visible
+            width: 240; height: parent.height
+            readonly property var people: {
+                const all = win.roster.filter(p => p.active !== false && (p.role || "").toLowerCase() !== "attendee" && !p.bot)
+                    .map(p => p.id === win.selfId ? Object.assign({}, win.selfEntry, { spotlight: p.spotlight || "", role: p.role }) : p)
+                if (win.manageFilter === "Live") return all.filter(p => !!p.spotlight)
+                if (win.manageFilter === "Content") return []
+                return all
+            }
+            Text { x: 20; y: 20; text: "Manage screen"; color: theme.pick("#252423", "#FFFFFF", "#FFFFFF"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold }
+            FluentIcon {
+                id: manageInfo
+                x: 121; y: 22; name: "info-16"; size: 16; color: theme.pick("#252423", "#FFFFFF", "#FFFFFF")
+                HoverHandler { id: manageInfoHover }
+                ToolTip.visible: manageInfoHover.hovered
+                ToolTip.text: "Choose who and what attendees see. Only organizers and presenters can manage the screen."
+                Accessible.role: Accessible.Button; Accessible.name: "More information"
+            }
+            Rectangle {
+                x: 196; y: 14; width: 32; height: 32; radius: 4
+                color: addVideosHover.hovered ? theme.hover : "transparent"
+                FluentIcon { anchors.centerIn: parent; name: "video-add-20"; size: 20; color: theme.pick("#424242", "#D6D6D6", "#FFFFFF") }
+                HoverHandler { id: addVideosHover; cursorShape: Qt.PointingHandCursor }
+                ToolTip.visible: addVideosHover.hovered; ToolTip.text: "Add Videos"
+                Accessible.role: Accessible.Button; Accessible.name: "Add Videos"
+            }
+            Rectangle { y: 59.3; width: 240; height: 1; color: theme.dividerSoft }
+            Text {
+                x: 20; y: 66; width: 200; wrapMode: Text.Wrap
+                text: "Attendees can still hear your audio when you're off screen."
+                color: theme.pick("#424242", "#D6D6D6", "#FFFFFF"); font.family: theme.font; font.pixelSize: 12; lineHeight: 14; lineHeightMode: Text.FixedHeight
+            }
+            Row {
+                x: 20; y: 102; spacing: 4
+                Repeater {
+                    model: ["All", "Live", "People", "Content"]
+                    Rectangle {
+                        id: pill
+                        required property string modelData
+                        readonly property bool chosen: win.manageFilter === modelData
+                        width: pillText.implicitWidth + 13.3; height: 24; radius: 12
+                        color: chosen ? theme.brand : pillHover.hovered ? theme.hover : "transparent"
+                        border.width: chosen ? 0 : 1; border.color: theme.divider
+                        Text {
+                            id: pillText; anchors.centerIn: parent; text: pill.modelData
+                            color: pill.chosen ? "white" : theme.pick("#424242", "#D6D6D6", "#FFFFFF")
+                            font.family: theme.font; font.pixelSize: 12; font.weight: pill.chosen ? Font.DemiBold : Font.Normal
+                        }
+                        HoverHandler { id: pillHover; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: win.manageFilter = pill.modelData }
+                        Accessible.role: Accessible.RadioButton; Accessible.name: pill.modelData; Accessible.checked: pill.chosen
+                    }
+                }
+            }
+            ListView {
+                x: 0; y: 134.6; width: 240; height: parent.height - y
+                clip: true; spacing: 4
+                model: manageScreenPane.people
+                delegate: Item {
+                    id: backstageTile
+                    required property var modelData
+                    width: 240; height: 135
+                    MeetingTile { x: 2; y: 2; width: 236; height: 131; call: win; person: backstageTile.modelData }
+                    SettingsParts.Toggle {
+                        x: 240 - 2 - width - 8; y: 12; stateLabel: false
+                        on: !!backstageTile.modelData.spotlight
+                        accessibleName: "Stage presence: " + (on ? "On stage" : "Off stage")
+                        onToggled: v => {
+                            const p = backstageTile.modelData
+                            if (v) win.participantAction("spotlight", p.self ? win.selfId : p.id, p.name || "", "")
+                            else win.participantAction("unspotlight", p.self ? win.selfId : p.id, p.name || "", p.spotlight || "")
+                        }
+                    }
+                }
+            }
+            Accessible.role: Accessible.Pane; Accessible.name: "Manage screen"
         }
         // Alone with your video on (measured on Teams desktop, a Meet now,
         // 2026-11-17): your own video (myself-video) fills the stage at
@@ -2080,7 +2197,7 @@ Window {
         // the bottom left showing your voice level and mic state.
         Item {
             id: soloSelf
-            visible: win.meeting && win.others.length === 0 && win.cameraOn && win.state === "connected" && !stagingScreen.visible
+            visible: win.meeting && win.others.length === 0 && win.cameraOn && win.state === "connected" && !stagingScreen.visible && !win.manageScreen
             anchors { fill: parent; topMargin: 2; bottomMargin: 2 }
             readonly property real vw: Math.min(width, height * 16 / 9)
             Item {
@@ -2121,7 +2238,7 @@ Window {
             }
         }
         Column {
-            visible: win.meeting && win.others.length === 0 && !soloSelf.visible && !win.contentShown
+            visible: win.meeting && win.others.length === 0 && !soloSelf.visible && !win.contentShown && !win.manageScreen
             anchors.centerIn: parent
             spacing: 24
             Avatar { ring: false; size: 154; name: win.selfName || "You"; photoId: "me"; anchors.horizontalCenter: parent.horizontalCenter }
@@ -2140,16 +2257,20 @@ Window {
         // divider with a 1 px #D1D1D1 line resizes it.
         Item {
             id: tiles
-            visible: win.meeting && (win.others.length > 0 || win.contentShown) && (win.layout !== "focus" || win.presenting || win.contentShown)
-            anchors { fill: parent; margins: 2.67 }
+            visible: win.manageScreen ? win.onScreen.length > 0 || win.contentShown
+                     : win.meeting && (win.others.length > 0 || win.contentShown) && (win.layout !== "focus" || win.presenting || win.contentShown)
+            // Managing the screen: the stage right of the Manage screen
+            // panel shows only who is on screen.
+            anchors { fill: parent; margins: 2.67; leftMargin: win.manageScreen ? 240 : 2.67 }
             // Spotlight (for everyone) and Pin for me put that person on
             // the stage, everyone else in the side gallery.
             readonly property var featured: {
+                if (win.manageScreen) return null
                 const sp = win.spotlighted.length ? win.spotlighted[0] : null
                 if (sp) return sp.id === win.selfId ? win.selfEntry : sp
                 return win.others.find(p => p.id === win.pinnedId) || null
             }
-            readonly property bool speakerView: win.layout === "speaker" || !!featured
+            readonly property bool speakerView: !win.manageScreen && (win.layout === "speaker" || !!featured)
             readonly property var speaker: {
                 if (featured) return featured
                 const pool = win.speakerMeInGallery && !win.hideMe ? win.others.concat([win.selfEntry]) : win.others
@@ -2163,15 +2284,17 @@ Window {
             // Teams (updateShouldMeBeInOverlay, live): with at most two
             // people tiles, the other person fills the stage and you float
             // over it, bottom right.
-            readonly property bool meOverlay: !content && win.others.length === 1 && !win.hideMe
-            readonly property var side: content
+            readonly property bool meOverlay: !content && win.others.length === 1 && !win.hideMe && !win.manageScreen
+            readonly property var side: win.manageScreen ? (content && win.layout !== "focus" ? win.onScreen : [])
+                : content
                 ? (win.layout === "focus" ? [] : win.othersOrdered.concat(win.hideMe ? [] : [win.selfEntry]))
                 : meOverlay ? []
                 : speakerView
                 ? win.othersOrdered.filter(p => p !== speaker).concat(win.hideMe || speaker.self ? [] : [win.selfEntry])
                 : (win.hideMe || win.meInGallery ? [] : [win.selfEntry])
             // Everyone in the gallery, in pages of the gallery size.
-            readonly property var galleryAll: (win.hideMe || !win.meInGallery ? [] : [win.selfEntry]).concat(win.othersOrdered)
+            readonly property var galleryAll: win.manageScreen ? win.onScreen
+                : (win.hideMe || !win.meInGallery ? [] : [win.selfEntry]).concat(win.othersOrdered)
             readonly property int pageCount: Math.max(1, Math.ceil(galleryAll.length / win.gallerySize))
             readonly property int page: Math.min(win.galleryPage, pageCount - 1)
             readonly property var gallery: galleryAll.slice(page * win.gallerySize, (page + 1) * win.gallerySize)
@@ -5157,6 +5280,8 @@ Window {
     function startEventForTest() { startEventDialog.close(); backend.setEventLive(true) }
     function streamForTest() { return { playing: streamPlayer.playing, waiting: streamPlayer.waiting, error: streamPlayer.error, staging: stagingScreen.visible } }
     function endEventForTest() { endEventDialog.close(); backend.setEventLive(false) }
+    function leaveSplitForTest() { return leaveButton.split }
+    function greenRoomAlertForTest() { return greenRoomAlert.visible }
     ConfirmDialog {
         id: eventFailedDialog
         property bool starting: true
@@ -5177,6 +5302,7 @@ Window {
     // "Start the meeting whenever you're ready." (Teams' green room alert,
     // info, dismissable) while presenters wait in the green room.
     CallAlert {
+        id: greenRoomAlert
         readonly property bool ended: win.liveEvent.eventPhase === "ended" && win.myRole !== "attendee"
         visible: (win.ubarFacts.greenRoom || ended) && !win.liveEvent.busy && !win.greenRoomAlertClosed && !win.breakoutAlert
         x: stage.x + (stage.width - width) / 2

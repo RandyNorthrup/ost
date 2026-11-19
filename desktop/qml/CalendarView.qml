@@ -420,6 +420,17 @@ Item {
         form.detail = ({})
         form.openNew(at, people, channel)
     }
+    /// New ▸ Virtual appointment: the meeting form with Teams' Virtual
+    /// appointment template (external guests, its options).
+    function openVirtualAppointment() {
+        formLayer.visible = true
+        form.detail = ({})
+        form.openVirtualAppointment(null)
+    }
+    function openNewMenuForTest() { newMenu.open() }
+    function closeNewMenuForTest() { newMenu.close() }
+    function liveEventDialogForTest() { return liveEventsRetiring }
+    function newLiveEventForTest() { return newLiveEvent }
     /// The event page: yours to edit, or an invitation to answer.
     function openPage(e) {
         const ev = withTeam(e)
@@ -1007,9 +1018,11 @@ Item {
                         perItemIcons: true
                         items: [{ label: "Event", icon: "calendar-ltr-20" }, { label: "Channel meeting", icon: "channel-20" }, { separator: true },
                                 { heading: true, label: "Organization templates" },
-                                { label: "Webinar", icon: "board-person-20" }, { label: "Town hall", icon: "megaphone-loud-20" }]
+                                { label: "Webinar", icon: "board-person-20" }, { label: "Town hall", icon: "megaphone-loud-20" },
+                                { label: "Virtual appointment", icon: "desktop-20" }, { label: "Live Event", icon: "live-20" }]
                         onPicked: i => { if (i === 0) root.openEventForm(); else if (i === 1) root.openForm(null, [], null)
-                                         else if (i === 4) root.newEventTemplate("webinar"); else if (i === 5) root.newEventTemplate("townhall") }
+                                         else if (i === 4) root.newEventTemplate("webinar"); else if (i === 5) root.newEventTemplate("townhall")
+                                         else if (i === 6) root.openVirtualAppointment(); else if (i === 7) liveEventsRetiring.open() }
                     }
                 }
             }
@@ -2160,6 +2173,85 @@ Item {
         Accessible.name: cb.label
     }
 
+    // ── New ▸ Live Event (measured in Teams desktop 2026-11-19): Teams'
+    // retirement notice, a 340 x 209 dialog (radius 2, title 20/400 #242424,
+    // text 14/400 #616161 in 292, "Create town hall" (primary, 145 x 32)
+    // and "Continue" (99 x 32), radius 2). Create town hall opens the town
+    // hall form; Continue opens Teams' "New live event" page saying live
+    // events are retiring.
+    Popup {
+        id: liveEventsRetiring
+        anchors.centerIn: Overlay.overlay
+        modal: true; padding: 0
+        width: 340; height: lerCol.implicitHeight + 23.3
+        background: Rectangle { radius: 2; color: theme.menu; border.color: theme.hc("transparent", "#FFFFFF") }
+        Overlay.modal: Rectangle { color: Qt.rgba(0, 0, 0, 0.4) }
+        contentItem: Item {
+            Column {
+                id: lerCol
+                width: 340
+                Text {
+                    leftPadding: 24; topPadding: 16; rightPadding: 46; bottomPadding: 20; width: 340; wrapMode: Text.Wrap
+                    text: "Teams Live Events is Retiring"; font.family: theme.font; font.pixelSize: 20; color: theme.text
+                }
+                Text {
+                    x: 24; width: 292; wrapMode: Text.Wrap; textFormat: Text.StyledText
+                    text: "Teams Live Events is retiring. Please transition to Teams town hall to get the improved experience for large digital and hybrid events at scale. For more information, <a href=\"https://go.microsoft.com/fwlink/?linkid=2347480\">Learn more</a>."
+                    linkColor: theme.brand; onLinkActivated: l => Qt.openUrlExternally(l)
+                    font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
+                }
+                Item { width: 1; height: 16.7 }
+                Row {
+                    x: 340 - 24 - width; spacing: 8
+                    Repeater {
+                        model: [["Create town hall", true], ["Continue", false]]
+                        Rectangle {
+                            id: lerBtn
+                            required property var modelData
+                            width: lerText.implicitWidth + 41.3; height: 32; radius: 2
+                            color: lerBtn.modelData[1] ? (lerHover.hovered ? theme.brandHover : theme.brand) : (lerHover.hovered ? theme.hover : theme.surface)
+                            border.width: lerBtn.modelData[1] ? 0 : 1; border.color: theme.hc("#8A8886", "#FFFFFF")
+                            Text { id: lerText; anchors.centerIn: parent; text: lerBtn.modelData[0]; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
+                                   color: lerBtn.modelData[1] ? "white" : theme.textSecondary }
+                            HoverHandler { id: lerHover; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: { liveEventsRetiring.close(); if (lerBtn.modelData[1]) root.newEventTemplate("townhall"); else newLiveEvent.show() } }
+                            Accessible.role: Accessible.Button; Accessible.name: lerBtn.modelData[0]
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // Continue: Teams' "New live event" window (946 x 713): the heading
+    // (21/700 #616161 at 30, 49), the Prohibited glyph (80, #616161)
+    // centred, "Teams live events is retiring, please use Teams town halls
+    // for your large digital and hybrid events" (14/700, the link 14/400
+    // brand), and Close (96 x 32, 600, a #D1D1D1 edge) at the bottom left.
+    Window {
+        id: newLiveEvent
+        title: "Microsoft Teams"
+        width: 946; height: 681
+        color: theme.surface
+        modality: Qt.NonModal
+        Rectangle { anchors.fill: parent; color: theme.surface }
+        Text { x: 30; y: 17.4; text: "New live event"; font.family: theme.font; font.pixelSize: 21; font.weight: Font.Bold; color: theme.textSecondary }
+        FluentIcon { x: (parent.width - 80) / 2; y: 278.4; name: "prohibited-20-regular"; size: 80; color: theme.textSecondary }
+        Text {
+            anchors.horizontalCenter: parent.horizontalCenter; y: 366.4
+            textFormat: Text.StyledText; linkColor: theme.brand; onLinkActivated: l => Qt.openUrlExternally(l)
+            text: "Teams live events is retiring, please use <a href=\"https://adoption.microsoft.com/en-us/microsoft-teams/meetings-webinars-and-town-halls/town-halls/\"><span style=\"font-weight:400\">Teams town halls</span></a> for your large digital and hybrid events"
+            font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold; color: theme.text
+        }
+        Rectangle {
+            x: 30; y: parent.height - 61.3; width: 96; height: 32; radius: 4
+            color: nleClose.hovered ? theme.hover : theme.surface; border.width: 1; border.color: theme.hc("#D1D1D1", "#FFFFFF")
+            Text { anchors.centerIn: parent; text: "Close"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+            HoverHandler { id: nleClose; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: newLiveEvent.close() }
+            Accessible.role: Accessible.Button; Accessible.name: "Close"
+        }
+    }
+
     // ── Meet now: "Start a meeting now" ─────────────────────────────────
     component Dialog600: Popup {
         anchors.centerIn: Overlay.overlay
@@ -2555,7 +2647,8 @@ Item {
                     subject: f.subject || "", start: root.isoLocal(f.start), end: root.isoLocal(f.end), allDay: !!f.allDay,
                     attendees: f.attendees || [], location: f.location || "", bodyHtml: f.bodyHtml || "", online: !!f.online,
                     channel: f.channel && f.channel.channelId ? f.channel : null, showAs: f.showAs || "Busy",
-                    editingId: f.editingId || "", sendPersonalInvites: !!f.sendPersonalInvites, timeZone: root.mtTimeZone
+                    editingId: f.editingId || "", sendPersonalInvites: !!f.sendPersonalInvites, timeZone: root.mtTimeZone,
+                    templateId: f.templateId || "", guests: f.guests || []
                 }
                 if (f.recurrence) {
                     const r = f.recurrence, pattern = { patternType: r.patternType }

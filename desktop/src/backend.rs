@@ -3315,6 +3315,9 @@ struct Preheat {
     /// late joiner's room comes while the call is preheated, and Join now
     /// starts from it.
     breakout: Option<String>,
+    /// Join now is waiting for it to be placed: closing the pre-join
+    /// window mustn't withdraw it.
+    joining: bool,
 }
 
 /// How long Teams keeps a preheated call (ECS `preheatedCallTimeoutInMs`).
@@ -4006,7 +4009,7 @@ async fn preheat_for_prejoin(qt: cxx_qt::CxxQtThread<qobject::Backend>, url: Str
             old.stop.notify_one();
             dispose_preheat(old);
         }
-        slot.preheat = Some(Preheat { url, tag: tag.clone(), call: None, cancel: Some(cancel_tx), stop: stop.clone(), breakout: None });
+        slot.preheat = Some(Preheat { url, tag: tag.clone(), call: None, cancel: Some(cancel_tx), stop: stop.clone(), breakout: None, joining: false });
     }
     let ours = |slot: &CallSlot| slot.preheat.as_ref().is_some_and(|p| p.tag == tag);
     let publish = |available: bool, how: &'static str| {
@@ -11158,6 +11161,50 @@ impl qobject::Backend {
             return;
         }
         let url = join_url.to_string();
+        // The preheat is still being placed: Teams never leaves and rejoins
+        // (it promotes its preheated call), so wait for it and join that.
+        // Leaving instead ended a town hall for its streaming attendees
+        // when we were its only presenter: the service closes the
+        // conversation once no non-hidden participant is left
+        // (conversationEnd subCode 5020, "This conversation has ended as
+        // there are no non-hidden participants in the incoming roster.",
+        // seen 2026-11-19).
+        let placing = runtime().block_on(async {
+            let mut slot = call_slot().lock().await;
+            match slot.preheat.as_mut() {
+                Some(p) if p.url == url && p.call.is_none() && p.cancel.is_some() => {
+                    p.joining = true;
+                    true
+                }
+                _ => false,
+            }
+        });
+        if placing {
+            tracing::info!("join meeting: waiting for the preheated call");
+            let qt = self.qt_thread();
+            let (j, t) = (join_url.clone(), title.clone());
+            runtime().spawn(async move {
+                let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(15);
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                    let mut slot = call_slot().lock().await;
+                    let still = slot.preheat.as_ref().is_some_and(|p| p.url == url && p.call.is_none() && p.cancel.is_some());
+                    if !still {
+                        break;
+                    }
+                    if tokio::time::Instant::now() >= deadline {
+                        // Too slow: withdraw it and join afresh.
+                        if let Some(p) = slot.preheat.take() {
+                            p.stop.notify_one();
+                            dispose_preheat(p);
+                        }
+                        break;
+                    }
+                }
+                let _ = qt.queue(move |this| this.join_meeting_from_prejoin(&j, &t, mic_on, with_audio));
+            });
+            return;
+        }
         // The preheated call, if it is still up (Teams leaves it after a
         // minute) and for this meeting.
         let preheated = runtime().block_on(async {
@@ -11234,9 +11281,15 @@ impl qobject::Backend {
 
     pub fn cancel_prejoin(self: Pin<&mut Self>) {
         runtime().spawn(async {
-            let Some(p) = call_slot().lock().await.preheat.take() else {
+            let mut slot = call_slot().lock().await;
+            // Join now is waiting for it: the window closing is the join.
+            if slot.preheat.as_ref().is_some_and(|p| p.joining) {
+                return;
+            }
+            let Some(p) = slot.preheat.take() else {
                 return;
             };
+            drop(slot);
             tracing::info!("pre-join closed: leaving its preheated call");
             p.stop.notify_one();
             dispose_preheat(p);
