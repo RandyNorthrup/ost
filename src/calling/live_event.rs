@@ -37,6 +37,9 @@ pub struct LiveEvent {
     pub town_hall: bool,
     /// A webinar (its template).
     pub webinar: bool,
+    /// Its attendees watch a stream (`forceAttendeeStreaming`): Teams' town
+    /// hall wording ("Start event", the delay message).
+    pub streaming: bool,
     /// The green room is on (`stagingRoomEnabled`).
     pub staging: bool,
     /// "staging", "live", "ended" or "" (no live state).
@@ -105,6 +108,7 @@ pub fn live_event(json: &Value) -> Option<LiveEvent> {
     Some(LiveEvent {
         town_hall: flag("forceAttendeeStreaming") || template == TOWNHALL_TEMPLATE || conv_type == "scheduledTownhall",
         webinar: template == WEBINAR_TEMPLATE,
+        streaming: flag("forceAttendeeStreaming"),
         staging: flag("stagingRoomEnabled"),
         phase: state.and_then(|s| s.get("phase")).and_then(Value::as_str).unwrap_or_default().to_string(),
         seq: state

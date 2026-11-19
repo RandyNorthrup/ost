@@ -113,6 +113,8 @@ Rectangle {
     }
     function openTab(t) { tab = t; page = ""; filtersOpen = false; reload() }
     function startCreate() { page = "create"; filtersOpen = false }
+    /// Calendar ▸ New ▸ Webinar / Town hall: the form with that template.
+    function startFormKey(key) { const t = templates.find(x => x.key === key); if (t) { filtersOpen = false; startForm(t) } }
     function startForm(t) {
         const now = new Date(), s = new Date(now)
         // Teams' default: the next half hour, for 30 minutes.
@@ -221,7 +223,37 @@ Rectangle {
             }
         }
         Text { x: 20; y: 131; width: parent.width - 40; text: ec.modelData.title; elide: Text.ElideRight; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
-        Text { x: 20; y: 157; text: root.whenText(ec.modelData.start, ec.modelData.end, false); font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
+        // Teams' card header (meet-app, measured 2026-11-18): a published
+        // event shows a red "Live" badge (record glyph) from its start to
+        // its end, or "in N mins" (clock, brand on #E8EBFA, rounded down
+        // to 5, at least 5) in the hour before; the date follows it.
+        property real now: Date.now()
+        Timer { interval: 30000; running: ec.published; repeat: true; onTriggered: ec.now = Date.now() }
+        readonly property bool published: ec.modelData.state === "Published"
+        readonly property real startMs: ec.modelData.start ? new Date(ec.modelData.start).getTime() : 0
+        readonly property real endMs: ec.modelData.end ? new Date(ec.modelData.end).getTime() : 0
+        readonly property bool live: published && now >= startMs && now < endMs
+        readonly property int soonMinutes: Math.floor((startMs - now) / 60000)
+        readonly property bool soon: published && !live && soonMinutes >= 0 && soonMinutes <= 59
+        // Teams' card actions: Join from 5 minutes before the start to the end.
+        readonly property bool joinable: published && !!ec.modelData.join_url && now >= startMs - 300000 && now <= endMs
+        Rectangle {
+            id: ecBadge
+            visible: ec.live || ec.soon
+            x: 20; y: 160; height: 16; radius: 8
+            width: ecBadgeRow.implicitWidth + (ec.live ? 10 : 6)
+            color: ec.live ? "#D13438" : theme.pick("#E8EBFA", "#2F2F4A", "#000000")
+            border.width: theme.highContrast ? 1 : 0; border.color: theme.text
+            Row {
+                id: ecBadgeRow
+                x: ec.live ? 4 : 2; anchors.verticalCenter: parent.verticalCenter; spacing: 2
+                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: ec.live ? "record-20" : "clock-12-filled"; size: ec.live ? 10 : 12
+                             color: ec.live ? "#FFFFFF" : theme.brand }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: ec.live ? "Live" : "in " + Math.max(5, Math.floor(ec.soonMinutes / 5) * 5) + " mins"
+                       font.family: theme.font; font.pixelSize: 10; font.weight: Font.DemiBold; color: ec.live ? "#FFFFFF" : theme.brand }
+            }
+        }
+        Text { x: ecBadge.visible ? ecBadge.x + ecBadge.width + 4 : 20; y: ecBadge.visible ? 158 : 157; text: root.whenText(ec.modelData.start, ec.modelData.end, false); font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
         Column {
             x: 20; y: 187; spacing: 4
             Row { spacing: 4; visible: !!ec.modelData.role
@@ -231,7 +263,16 @@ Rectangle {
                 FluentIcon { name: "location-20"; size: 16; color: theme.textSecondary }
                 Text { text: ec.modelData.location || "Online"; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } }
         }
-        Btn { x: 20; y: 259; height: 24; text: "Edit"; icon: "edit-16"; outlined: true; fontSize: 12; pad: 8; visible: ec.modelData.state === "Draft"; onClicked: root.openEvent(ec.modelData) }
+        Btn { x: 20; y: 259; height: 24; text: "Edit"; icon: "edit-16"; outlined: true; fontSize: 12; pad: 8; visible: ec.modelData.state === "Draft" || (ec.published && !ec.joinable && /organizer/i.test(ec.modelData.role || "")); onClicked: root.openEvent(ec.modelData) }
+        // Join (64 x 23, brand, the video glyph), Copy event page link and
+        // More (24 x 23).
+        Row {
+            visible: ec.joinable
+            x: 20; y: 261; spacing: 8
+            Btn { height: 23; width: 64; primary: true; icon: "video-16"; text: "Join"; fontSize: 12; pad: 8; onClicked: root.joinEvent(ec.modelData.join_url, ec.modelData.title, ec.modelData.start, ec.modelData.end) }
+            Btn { height: 23; width: 24; outlined: true; icon: "link-16"; text: ""; pad: 2; onClicked: { backend.copyText(ec.modelData.site_url || ec.modelData.join_url); root.toast({ text: "Copied", intent: "success" }) }
+                  Accessible.name: "Copy event page link" }
+        }
         HoverHandler { cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.openEvent(ec.modelData) }
         Accessible.role: Accessible.Button
@@ -990,35 +1031,93 @@ Rectangle {
                               if (v.error) { root.toast({ text: "Couldn't publish the event. " + v.error, intent: "error" }); return }
                               root.current = Object.assign({}, root.current, { state: v.state || "Published" })
                               root.manageData = null
-                              publishedDialog.open()
+                              publishedDialog.openWith(v)
                           })
                       } }
             }
         }
     }
-    // "Success! Your event has been published" (800 wide; title 20/28
-    // semibold centred, "Help your attendees discover it:"): the copy
-    // buttons (36 tall, outlined, full width of the right column).
+    // "Success! Your event has been published" (measured in Teams desktop
+    // 2026-11-18: 800 x 454, padding 24, radius 8): the title 20/600 and
+    // "Help your attendees discover it:" centred; on the left a preview of
+    // the event's card (369 x 309, radius 24) with "Here's what attendees
+    // will see." under it; on the right "Show event in Events app"
+    // (Teams' isDiscoverable: PATCH events/{id} with the eTag) and the
+    // copy buttons (369 x 31.33, outlined): Copy join details, Copy event
+    // page link and, for a town hall, Copy embed code (Teams' town hall
+    // player in an iframe).
     Popup {
         id: publishedDialog
         parent: Overlay.overlay
-        modal: true; padding: 24
+        modal: true; padding: 0
         x: (parent.width - width) / 2; y: (parent.height - height) / 2
-        width: 800
+        width: 800; height: 454.4
+        property bool discoverable: false
+        property bool toggling: false
+        property string embedCode: ""
+        readonly property var ev: root.current || ({})
+        function openWith(v) { discoverable = !!v.isDiscoverable; embedCode = v.embedCode || ""; open() }
         background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
-        contentItem: Column {
-            spacing: 0
-            Item { width: 752; height: 28
-                Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Success! Your event has been published"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
-                Btn { anchors.right: parent.right; icon: "dismiss-20"; text: ""; pad: 6; onClicked: publishedDialog.close(); Accessible.name: "Close" } }
-            Text { width: 752; horizontalAlignment: Text.AlignHCenter; text: "Help your attendees discover it:"; font.family: theme.font; font.pixelSize: 14; color: theme.text; height: 20 }
-            Item { width: 1; height: 28 }
+        contentItem: Item {
+            Text { x: 24; y: 24.7; width: 752; horizontalAlignment: Text.AlignHCenter; text: "Success! Your event has been published"
+                   font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+            Text { x: 24; y: 52.7; width: 752; horizontalAlignment: Text.AlignHCenter; text: "Help your attendees discover it:"
+                   font.family: theme.font; font.pixelSize: 14; color: theme.text }
+            Btn { x: 743.3; y: 24.7; width: 32; height: 31.3; icon: "dismiss-20"; text: ""; pad: 6; onClicked: publishedDialog.close(); Accessible.name: "Close" }
+            // The attendees' view of the card.
+            Item {
+                x: 25; y: 93; width: 369; height: 309
+                FluentSurface { anchors.fill: parent; depth: 2; radius: 24; color: theme.surface }
+                Rectangle {
+                    x: 12; y: 12; width: 345; height: 115; radius: 16; clip: true
+                    color: publishedDialog.ev.primary_color || "#5B5FC7"
+                    Image { anchors.fill: parent; fillMode: Image.PreserveAspectCrop; asynchronous: true
+                            source: { theme.dark; backend.emoticonsVersion; return publishedDialog.ev.promo_image ? backend.cardImage(publishedDialog.ev.promo_image) : "" } }
+                }
+                Text { x: 19.7; y: 136.8; width: 329; elide: Text.ElideRight; text: publishedDialog.ev.title || ""
+                       font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
+                Text { x: 19.7; y: 162.8; text: root.whenText(publishedDialog.ev.start, publishedDialog.ev.end, false); font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
+                Row { x: 19.7; y: 192.8; spacing: 4
+                    FluentIcon { name: "person-16"; size: 16; color: theme.textSecondary }
+                    Text { text: "By " + backend.userName; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } }
+                Row { x: 19.7; y: 212.8; spacing: 4
+                    FluentIcon { name: "location-20"; size: 16; color: theme.textSecondary }
+                    Text { text: publishedDialog.ev.location || "Online"; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } }
+                Row { x: 19.7; y: 265.4; spacing: 8
+                    Btn { height: 23.3; width: 64; primary: true; icon: "video-16"; text: "Join"; fontSize: 12; pad: 8; usable: false }
+                    Btn { height: 23.3; width: 24; outlined: true; icon: "link-16"; text: ""; pad: 2; usable: false } }
+            }
+            Text { x: 24.7; y: 413.8; width: 369.3; horizontalAlignment: Text.AlignHCenter; text: "Here’s what attendees will see."
+                   font.family: theme.font; font.pixelSize: 10; color: theme.text }
+            // Show event in Events app.
+            Rectangle { x: 406; y: 97; width: 28; height: 28; radius: 4; color: theme.brandFill
+                FluentIcon { anchors.centerIn: parent; name: "people-community-20"; size: 20; color: "white" } }
+            Text { x: 444; y: 92.7; text: "Show event in Events app"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.text }
+            Text { x: 444; y: 108.7; text: "Attendees with access can view"; font.family: theme.font; font.pixelSize: 12; color: theme.text }
+            SettingsParts.Toggle {
+                x: 727; y: 101; stateLabel: false; on: publishedDialog.discoverable; accessibleName: "Show event in Events app"
+                onToggled: v => {
+                    if (publishedDialog.toggling) return
+                    publishedDialog.toggling = true
+                    publishedDialog.discoverable = v
+                    root.call("discoverable", { id: publishedDialog.ev.id, on: v }, r => {
+                        publishedDialog.toggling = false
+                        if (r.error) { root.toast({ text: "Couldn't change it. " + r.error, intent: "error" }); publishedDialog.discoverable = !v; return }
+                        publishedDialog.discoverable = !!r.isDiscoverable
+                    })
+                }
+            }
             Column {
-                anchors.right: parent.right; width: 369; spacing: 10
+                x: 406; y: 289.8; spacing: 10
                 Repeater {
-                    model: [["document-20", "Copy join details", "details"], ["link-20", "Copy event page link", "page"]]
-                    Btn { required property var modelData; width: 369; height: 32; outlined: true; icon: modelData[0]; text: modelData[1]
-                          onClicked: { const ev = root.current || {}; backend.copyText(modelData[2] === "page" ? (ev.site_url || "") : root.joinDetails(ev)); root.toast({ text: "Copied", intent: "success" }) } }
+                    model: publishedDialog.embedCode ? [["document-20", "Copy join details", "details"], ["link-20", "Copy event page link", "page"], ["code-20", "Copy embed code", "embed"]]
+                                                     : [["document-20", "Copy join details", "details"], ["link-20", "Copy event page link", "page"]]
+                    Btn { required property var modelData; width: 369.3; height: 31.3; outlined: true; icon: modelData[0]; text: modelData[1]
+                          onClicked: {
+                              const ev = publishedDialog.ev
+                              backend.copyText(modelData[2] === "page" ? (ev.site_url || "") : modelData[2] === "embed" ? publishedDialog.embedCode : root.joinDetails(ev))
+                              root.toast({ text: "Copied", intent: "success" })
+                          } }
                 }
             }
         }

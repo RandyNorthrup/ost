@@ -178,7 +178,122 @@ town hall's form and All options have no Run of Show setting. Teams'
 desktop window couldn't be watched going live (the Windows PC was busy),
 so that last step is from the configuration, not seen.
 
-## OST status (see the task's notes for the live checks)
+## 7. Measured live in Teams desktop (TASK-0217, 2026-11-18)
+
+Teams desktop on winpc (ost-test1, build 26304) over its DevTools port
+(DOM boxes and styles, network log with tokens redacted whole), with two
+test town halls ("OST TEST 217 town hall", organizer OST Test 2 in OST,
+attendee ost-test1; "OST TEST 217 town hall 2", organizer ost-test1 in
+Teams, attendee OST Test 2 in OST), both cancelled afterwards. The call
+window's stage was never captured.
+
+### The attendee's stream
+- Teams' calling stack (pluginless `handleRosterParticipant`): the join is
+  an ordinary meeting join, but the service never answers the call. The
+  roster puts our endpoint in a `stream` modality (`streamLobby` before
+  the start, in Teams' code) and Teams switches to streaming mode
+  (`configureStreamingMode`: call mode 2, connected, media and pending
+  call setup dropped, call end subCode DowngradeToStreamingClient).
+  OST's attendee join saw `stream` already in the join response.
+- The composition service is a bot participant (`28:e32c9418-…`,
+  "s04-prdnoamcompsvc") whose endpoint carries `streamInformation.
+  streams[]`: `urls`, `isPrimary`, `deliveryPipelineType` in words ("Middle
+  Lane HLS Network", "Middle Lane ULL Network", "Azure Media Service";
+  Teams' `gV` maps them to MiddleLaneHttpLiveStreaming /
+  MiddleLaneUltraLowLatency / AMS), `decryptionKey {id, value}`,
+  `setKeyAuthorizationCookieUri`, `keyAuthorizationToken`, `setCookieUrl`,
+  `sdn`, `transcription`. They appear once the event is live.
+- Teams' pick (`pn`, prod configuration): ULL only with
+  `useULLPlayerWithILiveStreamForStreaming` (local builds), else HLS
+  (`useHttpLiveStreamingPlayerForStreaming` true), else AMS; the primary
+  stream and an alternate with other URLs.
+- The player: an iframe (`/v2/streaming-container.html`) loading
+  Microsoft's Hydra HLS player (`s01-ml-player/4.26315.1/
+  hydra_player_hls_bundle.js`). It fetches `…prod.ml.cdn.office.net/v1/
+  fileserver/{id}/{stream}/media.m3u8` (fMP4: `video33.m3u8`,
+  `video34.m3u8`, `video35.m3u8`, `audio.m3u8`, `*_init.m4s`,
+  `*_0047.m4s`), no cookies; the key from the playlist's key URI
+  (`kd.public-teams.keys.ml.teams.microsoft.com/v3/hlskeydelivery/
+  {stream}/get-key/…`) with the stream's `keyAuthorizationToken` as the
+  bare `Authorization` header. `setKeyAuthorizationCookieUri` wasn't
+  called.
+- OST plays it natively: a loopback server hands the playlists (rewritten
+  to come back through it), segments and keys (with the token) to Qt
+  Multimedia's FFmpeg HLS demuxer.
+- Hidden from the stage and People by Teams' `blacklistedBots` (ECS
+  Calling, prod default list, which names the composition service and the
+  call recorder) and an endpoint's `botData.hiddenParticipant`
+  (useFilterBlacklistedBots).
+
+### The attendee's window (streamingClient layout)
+- The prod `ubarLayoutOverrides` entry `streamingClient` (available:
+  CallDurationIndicator, Mic, Video, Raise, React, apps, Q&A, Chat, Leave,
+  Resume, Audio/Device settings, Captions, AI interpretation, More,
+  annotations, the live indicator, Hide controls; Captions and More moved
+  to the middle slot).
+- Before the start: the bar is the state pill "WAITING" (#EBEBEB,
+  #616161, "Pre-live state."), Q&A, More, Leave, centred; the stage
+  (#F5F5F5) says "The event isn't live right now." (24/32 bold #252423).
+  No title, duration or shield.
+- Live: "LIVE" (#D13438, white), Q&A, Captions, More, Leave; the player
+  fills the stage (0, 92, 1280 x 588) with its controls along the
+  bottom: a progress bar (8, 616.7, 1264 x 20), Pause (Alt+K), Skip back
+  10 s, Skip forward 10 s (Alt+L), Mute (Alt+M), the position (14 px
+  white) and Full screen (Alt+Enter).
+- Ended: "ENDED" (#EBEBEB); the player stays. More holds only Device
+  settings.
+- The pill: 21.67 tall, radius 10, padding 0 8, 11.67 px uppercase.
+
+### Presenters
+- Pre-join of a town hall organizer: Join now is a split button
+  (`prejoin-join-button-event-etm`, 96 + 26.67) whose menu (141 wide, 14
+  px, no glyphs) has "Join as Organizer" ("Join as Presenter") and
+  "Preview as Attendee". Preview joins with
+  `participationPreferences {requestedEndpointMeetingRoles ["attendee"]}`
+  (Teams' joinEventAsAttendee).
+- Green room: the pill "NOT STARTED" on #FDE300 (#242424) with a divider,
+  the eye glyph and the attendee count ("Pre-live state. 0 people have
+  joined"), then the duration; the end slot's **Start event**
+  (`staging-room-start-meeting-ubar`, PlayCircle filled glyph, an
+  ordinary bar button 53.4 wide) before Leave; the alerts "Recording and
+  transcription will begin when the meeting starts." and "Start the
+  meeting whenever you're ready."; with Manage what attendees see on, the
+  "Manage screen" panel (240 wide: Add Videos, "Attendees can still hear
+  your audio when you're off screen.", All / Live / People / Content,
+  the off-screen tiles with their Stage presence toggles) beside the
+  stage ("Bring presenters on screen and share content that you want
+  attendees to see.").
+- `enableTownhallDelayMessage` is on: "Start the event for everyone?" /
+  "1 attendee will enter and watch the event at a slight delay." (Cancel,
+  Start event; 600 wide); the stage says "Starting..." and Start greys
+  out (#BDBDBD).
+- Live: "LIVE | (eye) 1" ("Live state. 1 attendee watching at a delay"),
+  the recording indicator, **End event** (DismissCircle, 49.3 wide).
+
+### Events app
+- Publish ▸ "Success! Your event has been published" (800 x 454): a
+  preview of the card (369 x 309, radius 24; title, date, By, Online,
+  Join, copy link) with "Here's what attendees will see." (10 px); "Show
+  event in Events app" / "Attendees with access can view" with a switch
+  (on for the private test event: the service's `isDiscoverable`); Copy
+  join details, Copy event page link, Copy embed code (town halls: Teams'
+  `<iframe src="https://teams.microsoft.com/convene/townhall?eventId=…"
+  width="1280" height="720" …>`). The switch sends `PATCH events/{id}
+  {"isDiscoverable": …}` with the event's eTag (If-Match).
+- The published event's page: Edit details, Share, More options; tabs
+  Overview, People & emails, Insights, Highlights; Join (split, Join
+  menu) and Chat with participants.
+- Cards: a published event shows "Live" (#D13438, record glyph 10, 10/600
+  white, 40 x 16) from start to end and "in N mins" (#E8EBFA, brand,
+  clock 12, rounded down to 5, at least 5) in the hour before; the date
+  follows the badge; Join (64 x 23) and Copy event page link replace Edit
+  from 5 minutes before the start.
+- Calendar ▸ New ▾ (174 wide): Event, Channel meeting, then
+  "Organization templates" (12/600 #616161): Webinar (Fluent glyph
+  U+E416, a board with a person), Town hall (MegaphoneLoud), Virtual
+  appointment, Live Event.
+
+## OST status (see the tasks' notes for the live checks)
 
 - [x] Events: the Town hall template's form (capacity, large audience,
   tiles, Manage what attendees see, green room), its draft as Teams sends
@@ -186,17 +301,26 @@ so that last step is from the configuration, not seen.
   Join (pre-join) with Copy join link / details, and the event chat.
 - [x] Joining a town hall as organizer or presenter (the desktop's
   capabilities).
-- [x] The green room: Start meeting (confirmation, go-live, failure),
-  End event, the state pill, the alert, the bar rules for town halls and
-  webinars, Q&A, Bring on screen / Take off screen.
+- [x] The green room: Start event / Start meeting (Teams' town hall
+  wording and the delay message), End event, the state pill as measured
+  (§7), the alert, the bar rules for town halls and webinars, Q&A, Bring
+  on screen / Take off screen.
+- [x] Town hall attendees (TASK-0217): streaming mode from the roster,
+  the composition service's HLS stream played natively (Qt Multimedia
+  through OST's loopback server, the key with its token), the
+  streamingClient bar (Waiting / Live / Ended, Q&A, Captions, More with
+  Device settings, Leave), "The event isn't live right now.", leaving
+  through the conversation's leave link; Teams' blacklistedBots hide the
+  composition service from the stage and People.
+- [x] Preview as Attendee and the pre-join's Join as Organizer / Presenter
+  split; Calendar ▸ New ▸ Webinar / Town hall (the Events form with that
+  template); the published dialog's card preview, Show event in Events
+  app and Copy embed code; the cards' Live and "in N mins" badges and
+  their Join.
 - [x] An attendee's staging screen ("Welcome to" / title / "This meeting
   will start shortly", and the end text) where the call connects (webinar
   attendees); the presenters' alert after the end.
-- [ ] Streaming playback for town hall attendees (the composition bot's
-  stream, Hydra/HLS): an OST attendee's call goes unanswered ("No answer"
-  after a minute). Hiding the composition bot from the stage and People
-  (Teams' rule not traced). "On with preview" (production layouts),
-  Preview as attendee, the Join as Organizer / Presenter split button,
-  Calendar ▸ New ▸ Webinar / Town hall, Copy embed code, Show event in
-  Events app, the webinar's own form and registration. Webinars were not
-  run live (only town halls).
+- [ ] The player's own controls (pause, skip, DVR position, full screen),
+  live stream captions, "On with preview" (production layouts) and the
+  Manage screen panel (the green room's off-screen strip) are the next
+  step; Virtual appointment and Live Event in Calendar ▸ New aren't built.

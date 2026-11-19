@@ -801,8 +801,8 @@ Window {
         centered: newControls, customization: dragPreview || controlsCustomization, echo: testCall, copilot: copilotAllowed,
         canTakeControl: presenting && !!controlState.capable,
         callMe: !!phone.available && !!phone.dialIn && !!phone.dial, facilitator: copilotAllowed,
-        townHall: !!liveEvent.townHall, webinar: !!liveEvent.webinar, attendee: myRole === "attendee",
-        greenRoom: !!liveEvent.staging && myRole !== "attendee" && live && liveEvent.eventPhase === "prelive",
+        townHall: !!liveEvent.townHall, webinar: !!liveEvent.webinar, attendee: myRole === "attendee" || streaming, streaming: streaming,
+        greenRoom: !!liveEvent.staging && myRole !== "attendee" && !streaming && live && liveEvent.eventPhase === "prelive",
         eventPhase: liveEvent.eventPhase || "", qna: !!liveEvent.qna && scheduled,
         e2ee: e2ee, canPark: canPark, voicemail: voicemail,
         whiteboardSharing: !!contentState.mine && !!contentState.mine.content && ["whiteboard", "extensible_app"].indexOf(contentState.mine.content.type) >= 0,
@@ -817,11 +817,18 @@ Window {
     /// live state, Manage what attendees see and Q&A
     /// (docs/spec/town-halls-and-webinars.md).
     readonly property var liveEvent: backend.callEventJson ? JSON.parse(backend.callEventJson) : ({})
+    /// Watching a town hall as its attendee (Backend call_stream_json):
+    /// {lobby, url, player}.
+    readonly property var streamState: backend.callStreamJson ? JSON.parse(backend.callStreamJson) : ({})
+    readonly property bool streaming: backend.callStreamJson !== ""
     /// Teams' isEvent: a town hall or webinar says "event" (End event).
     readonly property bool isEvent: !!liveEvent.townHall || !!liveEvent.webinar
-    /// Teams' enableTownhallDelayMessage (off in shipped clients): the
-    /// town hall's own Start event wording.
-    readonly property bool townhallDelayMessage: false
+    /// Teams' enableTownhallDelayMessage: on in Teams desktop (measured
+    /// 2026-11-18: a town hall streaming to its attendees says "Start
+    /// event", "Start the event for everyone?" and "1 attendee will enter
+    /// and watch the event at a slight delay."); webinars keep "Start
+    /// meeting".
+    readonly property bool townhallDelayMessage: true
     /// Attendees in the meeting (Teams counts its attendees and streaming
     /// attendees for the LIVE pill and Start's confirmation).
     readonly property int attendeeCount: roster.filter(p => p.active !== false && (p.role || "").toLowerCase() === "attendee").length
@@ -864,12 +871,12 @@ Window {
     // Each control's slot (button 48 + 4 either side; split buttons 74).
     TextMetrics { id: joinRoomMetrics; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; text: "Join room" }
     TextMetrics { id: returnMetrics; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; text: "Return" }
-    TextMetrics { id: startEventMetrics; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; text: win.startLabel }
-    TextMetrics { id: endEventMetrics; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; text: win.endLabel }
+    TextMetrics { id: startEventMetrics; font.family: theme.font; font.pixelSize: 11; text: win.startLabel }
+    TextMetrics { id: endEventMetrics; font.family: theme.font; font.pixelSize: 11; text: win.endLabel }
     /// The green room's buttons (Teams' StagingRoomStartMeetingButton,
     /// "Start meeting" unless enableTownhallDelayMessage; End event for
     /// town halls and webinars, else End meeting).
-    readonly property string startLabel: townhallDelayMessage && liveEvent.townHall ? "Start event" : "Start meeting"
+    readonly property string startLabel: townhallDelayMessage && !!liveEvent.streaming ? "Start event" : "Start meeting"
     readonly property string endLabel: isEvent ? "End event" : "End meeting"
     // The compact bar: 32 px buttons in 36 px slots, split buttons 54.
     readonly property real ubarButton: compactBar ? 36 : 56
@@ -878,15 +885,16 @@ Window {
                                          ResumeButton: Math.ceil(resumeMetrics.advanceWidth) + 20 + 8 + 40 + 8,
                                          ReturnToBreakoutRoomButton: Math.ceil(joinRoomMetrics.advanceWidth) + 24.67 + 16,
                                          BreakoutRoomReturnToMainButton: Math.ceil(returnMetrics.advanceWidth) + 24.67 + 16,
-                                         StagingRoomStartMeetingButton: Math.ceil(startEventMetrics.advanceWidth) + 24.67 + 16,
-                                         StagingRoomEndMeetingButton: Math.ceil(endEventMetrics.advanceWidth) + 24.67 + 16,
+                                         StagingRoomStartMeetingButton: Math.max(48, Math.ceil(startEventMetrics.advanceWidth) + 1.33) + 8,
+                                         StagingRoomEndMeetingButton: Math.max(48, Math.ceil(endEventMetrics.advanceWidth) + 1.33) + 8,
                                          // Teams' "Stop sharing" (62 wide) and PowerPoint Live's Layout + Stop sharing.
                                          WhiteboardControlsSection: 70, PptControlsSection: pptViewed ? 60 : 126,
                                          default: ubarButton })
     // The middle slot's room: from 4 past the indicators (shield, timer)
     // to 17 before Leave; the new controls' slot ends 4 before the end
     // slot and centres its controls.
-    readonly property real ubarStart: timerText.x + timerText.implicitWidth + (compactBar ? 2.7 : 6.67) + 4
+    readonly property real ubarStart: streaming ? liveIndicator.x + (liveIndicator.visible ? liveIndicator.width : 0) + 12
+                                      : timerText.x + timerText.implicitWidth + (compactBar ? 2.7 : 6.67) + 4
     readonly property real ubarRoom: newControls ? leaveGroup.x - 4 - ubarStart : leaveGroup.x - 17 - ubarStart
     readonly property var ubar: JSON.parse(backend.ubarArrange(JSON.stringify(ubarFacts), JSON.stringify(ubarWidths), ubarDivider,
                                                                ubarRoom - 10) || '{"bar":[],"end":[],"overflowed":[],"more":[],"onHold":[],"movable":[]}')
@@ -963,7 +971,7 @@ Window {
         else if (name === "HoldButton" || name === "ResumeButton") toggleHold()
         else if (name === "CallParkButton") parkCall()
         else if (name === "CameraEffectsButton") side = side === "video" ? "" : "video"
-        else if (name === "AudioSettingsButton") side = side === "audio" ? "" : "audio"
+        else if (name === "AudioSettingsButton" || name === "DeviceSettingsButton") side = side === "audio" ? "" : "audio"
         else if (name === "MeetingInfoButton") { side = side === "info" ? "" : "info"; if (side === "info") loadMeetingInfo() }
         else if (name === "PstnButton") openPhoneAudio()
         else if (name === "MeetingHelpButton") { helpWindow.show(); helpWindow.raise(); helpWindow.requestActivate() }
@@ -1031,6 +1039,8 @@ Window {
         if (n === "FacilitatorButton") return { label: "Facilitator", icon: "ai-facilitator", iconColor: aiFacilitator ? theme.brand : undefined }
         if (n === "CameraEffectsButton") return { label: "Video effects and settings", icon: "video-background-effect-20" }
         if (n === "AudioSettingsButton") return { label: "Audio settings", icon: "speaker-settings-20" }
+        // A town hall attendee's More (Teams' DeviceSettingsButton).
+        if (n === "DeviceSettingsButton") return { label: "Device settings", icon: "speaker-settings-20" }
         if (n === "RecordingMenuControl") return { label: "Record and transcribe", icon: "record-20" }
         if (n === "RecordingButton") return recording
             ? { label: "Stop recording", icon: "record-stop-20", tip: "Stop recording and transcription" }
@@ -1491,6 +1501,9 @@ Window {
         // status"; a click opens the encryption card under it.
         Item {
             id: encryptionIndicator
+            // A town hall's stream has only its state pill (Teams'
+            // streamingClient layout).
+            visible: !win.streaming
             // Compact: a 22 px indicator with its 14 px glyph.
             x: win.compactBar ? 7 : 8; y: win.compactBar ? 8.7 : 14
             width: win.compactBar ? 22 : 30; height: win.compactBar ? 22 : 32
@@ -1518,7 +1531,7 @@ Window {
         // (#D13438) dot of radius 4.6.
         Item {
             id: recordingIndicator
-            visible: win.meeting && win.recordingState !== ""
+            visible: win.meeting && win.recordingState !== "" && !win.streaming
             x: 38; y: 14; width: 30; height: 32
             FluentIcon {
                 x: 5; y: 6
@@ -1537,7 +1550,7 @@ Window {
         }
         Item {
             id: aiIndicator
-            visible: win.meeting && win.aiIndicator
+            visible: win.meeting && win.aiIndicator && !win.streaming
             x: win.compactBar ? (recordingIndicator.visible ? 52 : 30) : recordingIndicator.visible ? 68 : 38
             y: win.compactBar ? 8.7 : 14; width: win.compactBar ? 24.9 : 37.33; height: win.compactBar ? 22 : 32
             readonly property bool active: win.aiOn && win.aiAvailable
@@ -1567,35 +1580,42 @@ Window {
             Accessible.onPressAction: if (win.aiAvailable) aiPopover.open()
         }
         // Teams' event state pill (VirtualEventsLiveIndicator) with a green
-        // room: "Not started", "Live" or "Ended", then (presenters) the
-        // attendees; attendees see "Waiting", "Live", "Ended".
+        // room, measured in Teams desktop 2026-11-18: 22 tall, radius 10,
+        // 8 padding, the label 11.67 uppercase; presenters see "Not
+        // started" on #FDE300, "Live" on #D13438 (white) or "Ended" on
+        // #EBEBEB, then a divider, the eye glyph (22) and the attendee
+        // count; attendees (the stream) see "Waiting", "Live", "Ended",
+        // first in the bar.
         Rectangle {
             id: liveIndicator
-            readonly property string phase: win.liveEvent.eventPhase || ""
-            readonly property bool attendeeView: win.myRole === "attendee"
-            visible: win.meeting && !win.compactBar && !!win.liveEvent.staging && (!attendeeView || phase === "active" || phase === "ended" || !!win.liveEvent.townHall)
-            x: timerText.x - width - 8
+            readonly property string phase: win.streaming && win.streamState.lobby && (win.liveEvent.eventPhase || "") === "" ? "prelive" : win.liveEvent.eventPhase || ""
+            readonly property bool attendeeView: win.myRole === "attendee" || win.streaming
+            visible: win.meeting && !win.compactBar && (!!win.liveEvent.staging || win.streaming) && (!attendeeView || phase === "active" || phase === "ended" || !!win.liveEvent.townHall || win.streaming)
+            x: win.streaming ? 14.67 : timerText.x - width - 8
             anchors.verticalCenter: parent.verticalCenter
-            height: 24; radius: 12; width: liveRow.implicitWidth + 16
-            color: phase === "active" ? "#C4314B" : theme.pick("#F0F0F0", "#333333", "#000000")
+            height: 21.67; radius: 10; width: liveRow.implicitWidth + 16
+            color: theme.highContrast ? theme.pane
+                 : phase === "active" ? "#D13438" : !attendeeView ? "#FDE300" : theme.pick("#EBEBEB", "#333333", "#000000")
             border.width: theme.highContrast ? 1 : 0; border.color: theme.text
+            readonly property color ink: theme.highContrast ? theme.text : phase === "active" ? "#FFFFFF" : !attendeeView ? "#242424" : theme.pick("#616161", "#D6D6D6", "#FFFFFF")
             readonly property string label: phase === "active" ? "Live" : phase === "ended" ? "Ended" : attendeeView ? "Waiting" : "Not started"
             readonly property string tip: attendeeView
-                ? (phase === "active" ? "The event is live." : phase === "ended" ? "The event has ended." : "Waiting for the event to start.")
-                : phase === "active" ? (win.attendeeCount === 1 ? "1 attendee watching" : win.attendeeCount + " attendees watching")
+                ? (phase === "active" ? "Live state." : phase === "ended" ? "Ended state." : "Pre-live state.")
+                : phase === "active" ? (win.attendeeCount === 1 ? "1 attendee watching at a delay" : win.attendeeCount + " attendees watching at a delay")
                 : phase === "ended" ? (win.attendeeCount === 1 ? "1 attendee remains" : win.attendeeCount + " attendees remain")
-                : (win.attendeeCount === 1 ? "1 attendee waiting" : win.attendeeCount + " attendees waiting")
+                : (win.attendeeCount === 1 ? "1 person has joined" : win.attendeeCount + " people have joined")
             Row {
                 id: liveRow
-                x: 8; anchors.verticalCenter: parent.verticalCenter; spacing: 6
-                Text { anchors.verticalCenter: parent.verticalCenter; text: liveIndicator.label; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold
-                       color: liveIndicator.phase === "active" ? "#FFFFFF" : theme.textStrong }
-                Rectangle { visible: !liveIndicator.attendeeView; width: 1; height: 12; anchors.verticalCenter: parent.verticalCenter
-                            color: liveIndicator.phase === "active" ? "#FFFFFF" : theme.textSecondary }
-                FluentIcon { visible: !liveIndicator.attendeeView; anchors.verticalCenter: parent.verticalCenter; name: "people-16"; size: 16
-                             color: liveIndicator.phase === "active" ? "#FFFFFF" : theme.textStrong }
-                Text { visible: !liveIndicator.attendeeView; anchors.verticalCenter: parent.verticalCenter; text: win.attendeeCount; font.family: theme.font; font.pixelSize: 12
-                       color: liveIndicator.phase === "active" ? "#FFFFFF" : theme.textStrong }
+                x: 8; anchors.verticalCenter: parent.verticalCenter; spacing: 0
+                Text { anchors.verticalCenter: parent.verticalCenter; text: liveIndicator.label.toUpperCase(); font.family: theme.font; font.pointSize: 8.75 // 11.67 px
+                       color: liveIndicator.ink }
+                // Fluent's vertical divider: a 0.67 line, 9 tall, in a 10.67 slot.
+                Item { visible: !liveIndicator.attendeeView; width: 10.67; height: 22
+                    Rectangle { anchors.centerIn: parent; width: 0.67; height: 9; color: liveIndicator.ink } }
+                FluentIcon { visible: !liveIndicator.attendeeView; anchors.verticalCenter: parent.verticalCenter; name: "eye-20"; size: 22
+                             color: liveIndicator.ink }
+                Text { visible: !liveIndicator.attendeeView; anchors.verticalCenter: parent.verticalCenter; text: win.attendeeCount; font.family: theme.font; font.pointSize: 8.75 // 11.67 px
+                       color: liveIndicator.ink }
             }
             HoverHandler { id: liveHover }
             IndicatorTip { target: liveIndicator; text: liveIndicator.tip; shown: liveHover.hovered }
@@ -1603,6 +1623,7 @@ Window {
         }
         Text {
             id: timerText
+            visible: !win.streaming
             // After the shield (and the AI indicator), 6.67 into the
             // duration's slot.
             x: win.compactBar ? 30 + (recordingIndicator.visible ? 22 : 0) + (aiIndicator.visible ? 24.9 : 0) + 2.7
@@ -1624,7 +1645,9 @@ Window {
         // the end slot, its controls centred in it.
         Row {
             id: middleSlot
-            x: win.newControls ? win.ubarStart + Math.max(0, (win.ubarRoom - implicitWidth) / 2)
+            // A town hall's stream centres its few controls in the slot
+            // (measured: Q&A, Captions, More around the window's middle).
+            x: win.newControls || win.streaming ? win.ubarStart + Math.max(0, (win.ubarRoom - implicitWidth) / 2)
                                : leaveGroup.x - 17 - implicitWidth
             anchors.top: parent.top
             spacing: 0
@@ -1692,7 +1715,7 @@ Window {
                 danger: true
                 tip: win.heldMeeting ? "Leave room" : "Leave"; shortcut: "Ctrl+Shift+H"
                 // Teams splits Leave only when its menu has more than Leave.
-                split: win.meeting && win.leaveItems.length > 1
+                split: win.meeting && win.leaveItems.length > 1 && !win.streaming
                 chevronLabel: "More options"
                 chevronChecked: leaveMenu.visible
                 onClicked: win.heldMeeting ? win.leaveRoom(true) : win.leaveAsked()
@@ -2009,12 +2032,35 @@ Window {
         // staging screen: "Welcome to", the title, "This meeting will start
         // shortly"), or after it ended ("The event has concluded. Thank you
         // for attending.").
+        // A town hall's attendee watches the event's stream where the
+        // stage is (Teams' streaming player).
+        LiveStreamPlayer {
+            id: streamPlayer
+            anchors.fill: parent
+            z: 4
+            visible: win.streaming
+            source: win.streamState.url || ""
+            active: win.streaming && !win.streamState.lobby && (win.liveEvent.eventPhase || "") !== "prelive"
+            onFullScreenRequested: win.visibility === Window.FullScreen ? win.showNormal() : win.showFullScreen()
+        }
         Rectangle {
             id: stagingScreen
-            readonly property string phase: win.liveEvent.eventPhase || ""
-            visible: win.meeting && win.myRole === "attendee" && (phase === "prelive" || phase === "ended")
+            readonly property string phase: win.streaming && win.streamState.lobby && (win.liveEvent.eventPhase || "") !== "ended" ? "prelive" : win.liveEvent.eventPhase || ""
+            // A town hall's stream keeps playing after the end (Teams
+            // shows the Ended pill over the player).
+            visible: win.meeting && (win.streaming ? phase === "prelive" : win.myRole === "attendee" && (phase === "prelive" || phase === "ended"))
             anchors.fill: parent; radius: parent.radius; color: theme.pane; z: 5
+            // A town hall's stream before it's live (Teams' streaming
+            // curtain, measured 2026-11-18: 24/32 bold, centred, on the
+            // #F5F5F5 calling background).
+            Text {
+                visible: win.streaming && stagingScreen.phase === "prelive"
+                anchors.centerIn: parent; width: parent.width - 48; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
+                text: "The event isn't live right now."
+                color: theme.pick("#252423", "#FFFFFF", "#FFFFFF"); font.family: theme.font; font.pixelSize: 24; font.weight: Font.Bold; lineHeight: 32; lineHeightMode: Text.FixedHeight
+            }
             Column {
+                visible: !win.streaming
                 anchors.centerIn: parent; spacing: 8; width: parent.width - 48
                 Text { visible: stagingScreen.phase === "prelive"; width: parent.width; horizontalAlignment: Text.AlignHCenter; text: "Welcome to"
                        color: theme.text; font.family: theme.font; font.pixelSize: 16 }
@@ -4714,10 +4760,16 @@ Window {
     Component { id: cJoinRoom; BarTextButton { label: "Join room"; control: "ReturnToBreakoutRoomButton" } }
     // Start meeting (primary) and End event in the end slot; disabled
     // while a presenter starts or ends it (Teams' tooltips).
-    Component { id: cStartEvent; BarTextButton { label: win.startLabel; control: "StagingRoomStartMeetingButton"; primary: true; usable: !win.liveEvent.busy
-        tip: win.liveEvent.busy ? (win.isEvent ? "A presenter already started the event" : "A presenter already started the meeting") : "" } }
-    Component { id: cEndEvent; BarTextButton { label: win.endLabel; control: "StagingRoomEndMeetingButton"; usable: !win.liveEvent.busy
-        tip: win.liveEvent.busy ? (win.isEvent ? "Someone already ended the event" : "Someone already ended the meeting") : "" } }
+    // Teams' StagingRoomStartMeetingButton and End event: bar buttons with
+    // their glyph (PlayCircle filled, DismissCircle) and label, as wide as
+    // the label (measured 2026-11-18: "Start event" 53.4, "End event"
+    // 49.3), greyed while a presenter starts or ends it.
+    Component { id: cStartEvent; BarButton { icon: "play-circle-20-filled"; label: win.startLabel; labelPad: 1.33; enabled: !win.liveEvent.busy
+        tip: win.liveEvent.busy ? (win.liveEvent.streaming ? "A presenter already started the event" : "A presenter already started the meeting") : win.startLabel
+        onClicked: win.runControl("StagingRoomStartMeetingButton") } }
+    Component { id: cEndEvent; BarButton { icon: "dismiss-circle-20"; label: win.endLabel; labelPad: 1.33; enabled: !win.liveEvent.busy
+        tip: win.liveEvent.busy ? (win.isEvent ? "Someone already ended the event" : "Someone already ended the meeting") : win.endLabel
+        onClicked: win.runControl("StagingRoomEndMeetingButton") } }
     Component { id: cQna; BarButton { icon: "chat-bubbles-question-20"; label: "Q&A"; tip: "Q&A"; checked: win.side === "qna"; onClicked: win.runControl("YammerQnaButton") } }
     Component { id: cReturnMain; BarTextButton { label: "Return"; control: "BreakoutRoomReturnToMainButton" } }
     Component { id: cApps; BarButton { id: appsB; icon: "call-apps"; label: "Apps"; tip: appsMenu.visible ? "Close apps" : "Find apps and more"; checked: appsMenu.visible && appsMenu.parent === appsB; onClicked: win.runControl("MeetingAppsAddButton") } }
@@ -4850,7 +4902,8 @@ Window {
         /// a 36 px slot without its label, the chevron 20 wide (slot 54).
         readonly property bool compact: win.compactBar
         // 48 wide, or wider for a long label (Teams' "Leave room").
-        readonly property real bw: compact ? 32 : Math.max(48, Math.ceil(bbLabelMetrics.advanceWidth) + 8)
+        property real labelPad: 8
+        readonly property real bw: compact ? 32 : Math.max(48, Math.ceil(bbLabelMetrics.advanceWidth) + labelPad)
         readonly property real bx: compact ? 2 : 4
         readonly property real by: compact ? 3.7 : 6
         readonly property real cw: compact ? 20 : 22
@@ -5085,6 +5138,7 @@ Window {
     }
     property int eventFailures: 0
     function startEventForTest() { startEventDialog.close(); backend.setEventLive(true) }
+    function streamForTest() { return { playing: streamPlayer.playing, waiting: streamPlayer.waiting, error: streamPlayer.error, staging: stagingScreen.visible } }
     function endEventForTest() { endEventDialog.close(); backend.setEventLive(false) }
     ConfirmDialog {
         id: eventFailedDialog

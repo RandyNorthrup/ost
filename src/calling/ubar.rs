@@ -93,6 +93,9 @@ pub enum LayoutName {
     OneToOnePstn,
     /// A consult call (`CONSULT_AND_ADD`).
     ConsultAndAdd,
+    /// Watching a town hall's stream (Teams' isStreamingClient: call mode
+    /// Streaming).
+    StreamingClient,
 }
 
 impl LayoutName {
@@ -102,19 +105,28 @@ impl LayoutName {
             LayoutName::OneToOneOrGroupCall => "oneToOneOrGroupCall",
             LayoutName::OneToOnePstn => "oneToOnePstn",
             LayoutName::ConsultAndAdd => "consultAndAdd",
+            LayoutName::StreamingClient => "streamingClient",
         }
     }
 }
 
 /// The layout for a call: consult first, then 1:1 PSTN, then 1:1 (P2P),
-/// else default (meetings and group calls alike).
+/// then a town hall's stream, else default (meetings and group calls
+/// alike).
 pub fn layout_name(p2p: bool, pstn: bool, consult: bool) -> LayoutName {
+    layout_for(p2p, pstn, consult, false)
+}
+
+/// [`layout_name`] with Teams' streaming client case.
+pub fn layout_for(p2p: bool, pstn: bool, consult: bool, streaming: bool) -> LayoutName {
     if consult {
         LayoutName::ConsultAndAdd
     } else if p2p && pstn {
         LayoutName::OneToOnePstn
     } else if p2p {
         LayoutName::OneToOneOrGroupCall
+    } else if streaming {
+        LayoutName::StreamingClient
     } else {
         LayoutName::Default
     }
@@ -324,6 +336,7 @@ impl Layout {
             // Menu controls the overrides lift out of this group's menus:
             // their own group, placed before this one, in preset order.
             let mut lifted = Vec::new();
+            let mut more_moved = false;
             for item in &group.items {
                 collect_moved(item, &moved, &available, shown, &mut lifted);
                 if !available(&item.name) && item.name != "MoreButton" {
@@ -341,19 +354,31 @@ impl Layout {
                     overflow: Overflow::parse(item.overflow.as_deref()),
                     on_hold: item.on_hold,
                 };
+                // A layout that names More among its moved controls
+                // (`isDisconnected`, the streamingClient layout) takes it
+                // out of its group into the moved controls' group, after
+                // what it lifted (Teams' attendee bar: Q&A, Captions, More).
+                if item.name == "MoreButton" && moved.iter().any(|m| m == "MoreButton") {
+                    lifted.push(control);
+                    more_moved = true;
+                    continue;
+                }
                 match item.slot.as_deref() {
                     Some("horizontalMiddleEnd") => controls.push(control),
                     Some("horizontalEnd") => end.push(control),
                     _ => {}
                 }
             }
-            if !lifted.is_empty() {
-                middle.push(BarGroup {
-                    name: format!("{}Overrides", group.name),
-                    controls: lifted,
-                    grouping: None,
-                    customizable: false,
-                });
+            let lifted_group = (!lifted.is_empty()).then(|| BarGroup {
+                name: format!("{}Overrides", group.name),
+                controls: lifted,
+                grouping: None,
+                customizable: false,
+            });
+            // Lifted controls go before their group, unless More went with
+            // them: then after it, at the middle slot's end.
+            if !more_moved && let Some(g) = &lifted_group {
+                middle.push(g.clone());
             }
             // The new controls keep each group, even an empty one, so the
             // user's pins have somewhere to go.
@@ -364,6 +389,9 @@ impl Layout {
                     grouping: Grouping::parse(group.grouping.as_deref()),
                     customizable: group.customization.as_deref() == Some("All"),
                 });
+            }
+            if more_moved && let Some(g) = lifted_group {
+                middle.push(g);
             }
         }
         Layout { middle, end, more, grouping }
@@ -649,6 +677,9 @@ pub struct Facts {
     pub webinar: bool,
     /// Your meeting role is Attendee.
     pub attendee: bool,
+    /// Watching the meeting's stream as a town hall's attendee (Teams'
+    /// isStreamingClient).
+    pub streaming: bool,
     /// Teams' isGreenRoom: not an attendee, connected, the green room on
     /// and the event not live.
     pub green_room: bool,
@@ -700,6 +731,19 @@ impl Facts {
         }
         if self.voicemail {
             return matches!(control, "MicrophoneButton" | "DialpadButton" | "CallButton" | "AudioSettingsButton");
+        }
+        // A town hall's stream (measured in Teams desktop as an attendee,
+        // 2026-11-18): Q&A where the meeting has it, Captions once the
+        // event is live (Teams' live stream captions), More (Device
+        // settings) and Leave. Chat waits for a comment stream, and Mic and
+        // Raise for town hall raise hands, both off in prod.
+        if self.streaming {
+            return match control {
+                "YammerQnaButton" => self.qna,
+                "ClosedCaptionsButton" => matches!(self.event_phase.as_str(), "active" | "ended"),
+                "MoreButton" | "CallButton" | "DeviceSettingsButton" => true,
+                _ => false,
+            };
         }
         match control {
             "PopoutContentButton" => self.can_pop_out,
@@ -814,7 +858,7 @@ pub struct Arranged {
 /// Lay the bar out for `facts` in `available` px of middle slot.
 pub fn arrange(facts: &Facts, widths: &dyn Fn(&str) -> f64, divider: f64, available: f64) -> Arranged {
     let layout = Layout::build_with(
-        layout_name(facts.p2p, facts.pstn, facts.consult),
+        layout_for(facts.p2p, facts.pstn, facts.consult, facts.streaming),
         facts.centered,
         &facts.customization,
         &|n| facts.shows(n),
@@ -1045,6 +1089,21 @@ mod tests {
                 assert!(!gall.iter().any(|n| n == gone), "a group call ({centered}) has no {gone}");
             }
         }
+    }
+
+    #[test]
+    fn a_town_hall_stream_has_the_attendee_bar() {
+        // Teams desktop as a town hall attendee (2026-11-18): Waiting with
+        // Q&A, More, Leave; live with Q&A, Captions, More, Leave.
+        let waiting = Facts { scheduled: true, attendee: true, streaming: true, town_hall: true, qna: true, event_phase: "prelive".into(), ..Default::default() };
+        let l = Layout::build(layout_for(false, false, false, true), &|c| waiting.shows(c));
+        let bar: Vec<String> = l.middle.iter().flat_map(|g| g.controls.iter().map(|c| c.name.clone())).collect();
+        assert_eq!(bar, vec!["YammerQnaButton", "MoreButton"]);
+        assert_eq!(l.end.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), vec!["CallButton"]);
+        let live = Facts { event_phase: "active".into(), ..waiting };
+        let l = Layout::build(layout_for(false, false, false, true), &|c| live.shows(c));
+        let bar: Vec<String> = l.middle.iter().flat_map(|g| g.controls.iter().map(|c| c.name.clone())).collect();
+        assert_eq!(bar, vec!["YammerQnaButton", "ClosedCaptionsButton", "MoreButton"]);
     }
 
     #[test]

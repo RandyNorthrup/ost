@@ -170,6 +170,12 @@ pub struct OutgoingCall {
     /// The conversation's leave link (leaving a meeting before joining it,
     /// as Teams' pre-join Cancel does).
     leave_link: Option<String>,
+    /// A town hall's attendee: the meeting streams to us instead of
+    /// answering our call (live_stream.rs).
+    streaming: bool,
+    /// The stream Teams' player would play (the composition bot's), as the
+    /// roster last offered it.
+    stream: Option<super::live_stream::StreamChoice>,
     /// Joined hidden while the pre-join window is open (Teams' preheat):
     /// nothing is sent or played, and nobody sees us, until
     /// [`OutgoingCall::join_preheated`].
@@ -1499,6 +1505,52 @@ impl OutgoingCall {
         Ok(())
     }
 
+    /// Watching a town hall's stream (no media call).
+    pub fn streaming(&self) -> bool {
+        self.streaming
+    }
+
+    /// The town hall's stream as last offered.
+    pub fn stream(&self) -> Option<&super::live_stream::StreamChoice> {
+        self.stream.as_ref()
+    }
+
+    /// Note a roster update: our place in the stream (its lobby, or
+    /// watching) and the stream on offer; true when either changed.
+    pub fn apply_stream(&mut self, json: &serde_json::Value) -> bool {
+        if !self.streaming {
+            return false;
+        }
+        let me = self.me.0["id"].as_str().unwrap_or_default().to_string();
+        let ep = self.me.0["endpointId"].as_str().unwrap_or_default().to_string();
+        let mut changed = false;
+        if let Some(lobby) = super::live_stream::self_streaming(json, &me, &ep)
+            && lobby != self.in_lobby
+        {
+            tracing::info!(lobby, "town hall stream: our place changed");
+            self.in_lobby = lobby;
+            changed = true;
+        }
+        if let Some(all) = super::live_stream::streams(json, &me) {
+            // What's on offer, without its addresses' paths or keys.
+            let summary: Vec<String> = all
+                .iter()
+                .map(|s| {
+                    let host = s.urls.first().and_then(|u| url::Url::parse(u).ok()).and_then(|u| u.host_str().map(str::to_string)).unwrap_or_default();
+                    format!("{} primary={} host={} token={}", s.delivery_pipeline_type, s.is_primary, host, !s.key_authorization_token.is_empty())
+                })
+                .collect();
+            tracing::info!(?summary, "town hall streams");
+            let c = super::live_stream::choose_as_teams(&all);
+            if self.stream.as_ref() != Some(&c) {
+                tracing::info!(player = %c.player_type, has_url = c.url().is_some(), "town hall stream offered");
+                self.stream = Some(c);
+                changed = true;
+            }
+        }
+        changed
+    }
+
     /// The meeting as a town hall or webinar (its live state, green room,
     /// attendee view), as last reported.
     pub fn event(&self) -> super::live_event::LiveEvent {
@@ -2087,6 +2139,10 @@ impl OutgoingCall {
     /// Stop media and end the call for both sides.
     pub async fn hang_up(mut self) -> Result<()> {
         self.media = None;
+        // A stream's watcher has no call leg: Teams leaves the conversation.
+        if self.streaming && self.leave_link.is_some() {
+            return self.leave().await;
+        }
         if let Some(leg) = &self.call_leg {
             let body = serde_json::json!({
                 "callEnd": { "code": 0, "subCode": 0, "phrase": "CallEndReasonLocalUserInitiated" }
@@ -2560,7 +2616,14 @@ fn leave_link(create_response: &str) -> Option<String> {
 const EARLY_ANSWER_GRACE: std::time::Duration = std::time::Duration::from_secs(20);
 
 /// What the callee's answer told us.
+#[derive(Default)]
 struct Acceptance {
+    /// No answer comes: the roster put us in the meeting's stream (a town
+    /// hall's attendee, live_stream.rs), in its lobby (`in_lobby`) before
+    /// the event starts.
+    streaming: bool,
+    /// The roster that put us in the stream (its streams).
+    stream_roster: Option<serde_json::Value>,
     sdp: String,
     acknowledgement: Option<String>,
     call_leg: Option<String>,
@@ -2643,6 +2706,7 @@ fn read_answer(json: &str) -> Option<std::result::Result<Acceptance, String>> {
             .pointer("/callAcceptance/acceptedCallModalities")
             .and_then(|m| m.as_array())
             .is_some_and(|m| m.is_empty()),
+        ..Default::default()
     }))
 }
 
@@ -3019,6 +3083,9 @@ pub struct JoinHow<'a> {
     /// meeting while in a breakout room): the call goes straight to it,
     /// with its `meetingData`, as Teams goes back to the main meeting.
     pub kept: Option<&'a KeptConversation>,
+    /// Teams' Preview as Attendee: join a town hall as its attendees do
+    /// (the meeting then streams to us).
+    pub as_attendee: bool,
 }
 
 /// [`join_meeting`], the way `how` says.
@@ -3500,6 +3567,7 @@ async fn start_tagged(
                 meeting_data_wait: how.meeting_data_wait,
                 meeting_data: how.kept.and_then(|k| k.meeting_data.clone()),
                 conversation_url: how.kept.map(|k| k.controller.as_str()),
+                as_attendee: how.as_attendee,
             };
             signaling::join_meeting(&http, &epconv_url, &params, &offer, &link.message_id, organizer, &opts).await?
         }
@@ -3608,8 +3676,25 @@ async fn start_tagged(
     tracing::info!(?capability, has_settings = settings_link.is_some(), "meeting capability");
     tracing::info!(members = members.len(), "group call members named");
     tracing::info!("call placed; waiting for the answer");
+    // A town hall's attendee isn't answered: the roster puts our endpoint
+    // in the meeting's stream (Teams' configureStreamingMode).
+    let streaming_in = |json: &serde_json::Value| {
+        super::live_stream::self_streaming(json, params.caller_mri, params.endpoint_id).map(|lobby| Acceptance {
+            streaming: true,
+            in_lobby: lobby,
+            stream_roster: Some(json.clone()),
+            ..Default::default()
+        })
+    };
+    let joined_streaming = meeting_join
+        .then(|| serde_json::from_str::<serde_json::Value>(&created.response_body).ok())
+        .flatten()
+        .and_then(|v| streaming_in(&v));
 
     let wait_answer = async {
+        if let Some(a) = joined_streaming {
+            return Ok(a);
+        }
         // An early mediaAnswer waits for the callAcceptance after it (its
         // links); if none comes within EARLY_ANSWER_GRACE it is the answer.
         let mut early: Option<Acceptance> = None;
@@ -3630,6 +3715,13 @@ async fn start_tagged(
             // the main meeting held under a breakout room) aren't ours.
             if ev.kind != EventKind::Call || is_other_calls_event(&ev.json, &call_tag) {
                 continue;
+            }
+            if meeting_join
+                && ev.json.contains("rosterUpdate")
+                && let Some(a) = serde_json::from_str::<serde_json::Value>(&ev.json).ok().and_then(|v| streaming_in(&v))
+            {
+                tracing::info!(lobby = a.in_lobby, "the meeting streams to us (a town hall's attendee): streaming mode");
+                return Ok(a);
             }
             match read_answer(&ev.json) {
                 Some(Ok(a)) if a.provisional => {
@@ -3697,7 +3789,9 @@ async fn start_tagged(
 
     super::incoming::debug_dump("sdp-call-offer", &offer);
     super::incoming::debug_dump("sdp-call-answer", &acceptance.sdp);
-    let media = match WebRtcOffer::parse(&acceptance.sdp) {
+    let parsed = if acceptance.streaming { None } else { WebRtcOffer::parse(&acceptance.sdp) };
+    let media = match parsed {
+        None if acceptance.streaming => None,
         Some(answer) => match WebRtcAudioSession::start_as_offerer(local, answer.clone()).await {
             Ok(m) => {
                 m.set_local_sdp(&offer);
@@ -3847,6 +3941,13 @@ async fn start_tagged(
             })
             .unwrap_or(true),
         leave_link: leave_url.clone(),
+        streaming: acceptance.streaming,
+        stream: acceptance
+            .stream_roster
+            .clone()
+            .or_else(|| serde_json::from_str::<serde_json::Value>(&created.response_body).ok())
+            .and_then(|v| super::live_stream::streams(&v, params.caller_mri))
+            .map(|all| super::live_stream::choose_as_teams(&all)),
         preheated: preheat,
         joined_details: serde_json::from_str::<serde_json::Value>(&created.response_body)
             .ok()

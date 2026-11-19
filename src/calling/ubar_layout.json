@@ -1,5 +1,5 @@
 {
- "source": "Teams desktop ECS settings (calling: ubarLayoutPresets[0], ubarLayoutOverrides), read from the live client on 2026-11-06; ubarLayoutSetup = Inline; centered = ubarLayoutPresets[1] (layoutSetup InlineCentered, picked by Teams' New meeting controls), read from the live client on 2026-11-16",
+ "source": "Teams desktop ECS settings (calling: ubarLayoutPresets[0], ubarLayoutOverrides), read from the live client on 2026-11-06; ubarLayoutSetup = Inline; centered = ubarLayoutPresets[1] (layoutSetup InlineCentered, picked by Teams' New meeting controls), read from the live client on 2026-11-16; streamingClient = the prod configuration's default ubarLayoutOverrides entry (config-prod, read 2026-11-18)",
  "preset": {
   "groups": [
    {
@@ -1132,6 +1132,48 @@
    },
    "settings": {
     "groupingStrategy": "AlwaysKeep"
+   }
+  },
+  "streamingClient": {
+   "configName": "streamingClient",
+   "available": [
+    "CallDurationIndicator",
+    "MicrophoneButton",
+    "VideoButton",
+    "RaiseHandsButton",
+    "ReactionButton",
+    "PlatformTabSection",
+    "PlatformTabOverflowSection",
+    "YammerQnaButton",
+    "ChatButton",
+    "CallButton",
+    "ResumeButton",
+    "AudioSettingsButton",
+    "DeviceSettingsButton",
+    "ClosedCaptionsButton",
+    "AiInterpretationButtonForAll",
+    "AiInterpretationIndicator",
+    "MoreButton",
+    "AnnotationViewerButton",
+    "VirtualEventsLiveIndicator",
+    "HideControlsButton"
+   ],
+   "overrides": {
+    "horizontalMiddleEnd": [
+     {
+      "name": "ClosedCaptionsButton"
+     },
+     {
+      "name": "MoreButton",
+      "isDisconnected": true
+     }
+    ],
+    "overflow": [
+     {
+      "name": "AiInterpretationButtonForAll",
+      "isDisconnected": true
+     }
+    ]
    }
   }
  },

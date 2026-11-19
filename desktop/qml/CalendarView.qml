@@ -987,7 +987,10 @@ Item {
                     }
                 }
             }
-            // New ▾: Event; Channel meeting.
+            // New ▾ (measured in Teams desktop 2026-11-18, 174 wide): Event,
+            // Channel meeting, then "Organization templates" (12/600
+            // #616161): Webinar and Town hall open the Events app's form
+            // with that template.
             Row {
                 id: newRow
                 visible: !root.copilotOpen
@@ -1002,8 +1005,11 @@ Item {
                         id: newMenu
                         x: -150; y: parent.height + 4; width: 174
                         perItemIcons: true
-                        items: [{ label: "Event", icon: "calendar-ltr-20" }, { label: "Channel meeting", icon: "channel-20" }]
-                        onPicked: i => { if (i === 0) root.openEventForm(); else root.openForm(null, [], null) }
+                        items: [{ label: "Event", icon: "calendar-ltr-20" }, { label: "Channel meeting", icon: "channel-20" }, { separator: true },
+                                { heading: true, label: "Organization templates" },
+                                { label: "Webinar", icon: "board-person-20" }, { label: "Town hall", icon: "megaphone-loud-20" }]
+                        onPicked: i => { if (i === 0) root.openEventForm(); else if (i === 1) root.openForm(null, [], null)
+                                         else if (i === 4) root.newEventTemplate("webinar"); else if (i === 5) root.newEventTemplate("townhall") }
                     }
                 }
             }
@@ -2438,6 +2444,8 @@ Item {
     // compose page, as Teams' calendar opens it: hosted/calendar/deeplink/
     // compose with subEntityId {"type":"compose"}), under Teams' 48 px
     // "New event" bar (14/400 #616161, 16 in, a 0.67 #D1D1D1 edge) ──────
+    /// New ▸ Webinar / Town hall ("webinar", "townhall").
+    signal newEventTemplate(string key)
     function openEventForm() { composeLayer.visible = true; composeHost.active = true }
     Rectangle {
         id: composeLayer

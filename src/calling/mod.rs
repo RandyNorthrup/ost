@@ -36,6 +36,7 @@ pub mod hid_telephony;
 pub mod ice;
 pub mod incoming;
 pub mod live_event;
+pub mod live_stream;
 pub mod live_roster;
 pub mod mcp;
 pub mod network_quality;

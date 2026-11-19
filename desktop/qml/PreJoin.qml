@@ -123,6 +123,13 @@ Window {
     property string meetChannel: ""
     signal join(bool micOn, bool withAudio, bool cameraOn)
     signal cancelled()
+    /// "Preview as Attendee" (a town hall's organizer or presenter).
+    signal joinAsAttendee()
+    /// A town hall we present in (Backend prejoin_event_json): Teams'
+    /// split Join now (prejoin-join-button-event-etm, 96 + 26.67 wide)
+    /// with "Join as Organizer" / "Join as Presenter" and "Preview as
+    /// Attendee" (measured in Teams desktop 2026-11-18).
+    readonly property var eventJoin: backend.prejoinEventJson ? JSON.parse(backend.prejoinEventJson) : null
     /// Leave the lobby (Cancel, Escape).
     signal leaveLobby()
     /// The service ended the join (denied from the lobby, or nobody let us
@@ -800,6 +807,8 @@ Window {
         Rectangle {
             id: hcFill3
             width: 96; height: 32; radius: theme.radius
+            // The split button's left half: square on its right.
+            Rectangle { visible: !!win.eventJoin; anchors.right: parent.right; width: theme.radius; height: parent.height; color: parent.color }
             // Disabled in the lobby (Fluent's disabled primary button).
             color: !win.canJoin ? theme.pick("#F0F0F0", "#141414", "#000000") : jnh.hovered ? theme.brandHover : theme.brandFill
             border.color: !win.canJoin ? theme.pick("#E0E0E0", "#424242", "#FFFFFF") : "transparent"
@@ -814,9 +823,55 @@ Window {
                 enabled: win.canJoin
                 onTapped: win.joinNow()
             }
+            // "More join options." (26.67 wide, a divider line on its left).
+            Rectangle {
+                id: joinMore
+                visible: !!win.eventJoin
+                width: 26.67; height: 32; radius: theme.radius
+                x: parent.width
+                color: !win.canJoin ? theme.pick("#F0F0F0", "#141414", "#000000") : jmh.hovered || joinMenu.visible ? theme.brandHover : theme.brandFill
+                Rectangle { anchors.left: parent.left; width: theme.radius; height: parent.height; color: parent.color }
+                Rectangle { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; width: 1; height: parent.height; color: Qt.rgba(1, 1, 1, 0.5) }
+                FluentIcon { anchors.centerIn: parent; name: "chevron-down-16"; size: 16; color: "white" }
+                HoverHandler { id: jmh; cursorShape: Qt.PointingHandCursor }
+                TapHandler { enabled: win.canJoin; onTapped: joinMenu.visible = !joinMenu.visible }
+                Accessible.role: Accessible.Button
+                Accessible.name: "More join options."
+                Item {
+                    id: joinMenu
+                    // Under the split button, right-aligned to it (Teams' menu:
+                    // 141 wide, 4 padding, items 32 tall, 14 px, no glyphs).
+                    visible: false
+                    z: 100
+                    x: parent.width - width; y: parent.height + 4
+                    width: joinMenuCol.width + 8; height: joinMenuCol.height + 8
+                    FluentSurface { anchors.fill: parent; depth: 16; radius: 4; color: theme.surface }
+                    Column {
+                        id: joinMenuCol
+                        x: 4; y: 4
+                        Repeater {
+                            model: win.eventJoin ? ["Join as " + win.eventJoin.joinAs, "Preview as Attendee"] : []
+                            Rectangle {
+                                required property string modelData
+                                required property int index
+                                width: Math.max(133, jmText.implicitWidth + 12); height: 32; radius: 4
+                                color: jmiHover.hovered ? theme.rowHover : "transparent"
+                                Text { id: jmText; x: 6; anchors.verticalCenter: parent.verticalCenter; text: parent.modelData
+                                       font.family: theme.font; font.pixelSize: 14; color: theme.textStrong }
+                                HoverHandler { id: jmiHover; cursorShape: Qt.PointingHandCursor }
+                                TapHandler { onTapped: { joinMenu.visible = false; if (parent.index === 0) win.joinNow(); else win.joinAsAttendee() } }
+                                Accessible.role: Accessible.MenuItem
+                                Accessible.name: parent.modelData
+                            }
+                        }
+                    }
+                }
+            }
             Accessible.role: Accessible.Button
-            Accessible.name: "Join now"
+            Accessible.name: win.eventJoin ? "Join Live Event Split Button. Use alt+down to toggle through more join options." : "Join now"
         }
+        // Room for the split button's chevron (26.67, less the row's spacing).
+        Item { visible: !!win.eventJoin; width: 18.67; height: 32 }
         Rectangle {
             id: hcFill4
             visible: win.lobby && win.lobbyMessages.length > 0

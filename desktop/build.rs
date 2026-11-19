@@ -162,6 +162,7 @@ fn main() {
         "qml/ChannelWindow.qml",
         "qml/WorkflowsDialog.qml",
         "qml/VideoClipCard.qml",
+        "qml/LiveStreamPlayer.qml",
         "qml/VideoClipRecorder.qml",
         "qml/ManageChannel.qml",
         "qml/ChannelModeration.qml",

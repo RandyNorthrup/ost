@@ -305,6 +305,22 @@ pub struct NewEvent {
     /// A town hall's "Optimize for large audience" (on by default): the
     /// event streams to view-only attendees (3,000 by default).
     pub large_audience: bool,
+    /// Invited attendees and presenters, as Teams' People picker gives
+    /// them ([`person`]).
+    pub attendees: Vec<Value>,
+    pub presenters: Vec<Value>,
+}
+
+/// Someone in your organization as an event names them (Teams' people
+/// mapping for owner, team, presenters and attendees).
+pub fn person(email: &str, display_name: &str, object_id: &str, tenant_id: &str) -> Value {
+    json!({
+        "email": email,
+        "displayName": display_name,
+        "identity": { "mri": format!("8:orgid:{object_id}"), "objectId": object_id, "tenantId": tenant_id, "upn": null },
+        "userBio": { "description": "", "company": "", "jobTitle": "", "socialMediaLinks": { "linkedIn": "", "twitter": "" } },
+        "userPurpose": "unknown"
+    })
 }
 
 /// The time zone details Teams sends with an event (its time zone keys are
@@ -346,8 +362,8 @@ pub fn create_body(e: &NewEvent, owner: &Value, tz: Value, promo: &str) -> Value
         "owner": owner,
         "team": [],
         "access": { "accessType": access_type, "inviteOnly": invite_only, "isRegistrationEnabled": e.registration },
-        "presenters": [],
-        "attendees": [],
+        "presenters": e.presenters,
+        "attendees": e.attendees,
         "communicationProperties": {
             "isReminderEmailEnabled": true, "isGroupMailboxEnabled": true, "disableAttendeeEmails": false,
             "isSocialShareEnabled": null, "isSeparateAttendeeInvitesEnabled": false, "enableOneEventsArtifacts": true,
@@ -395,7 +411,9 @@ fn new_meeting_options(e: &NewEvent, town_hall: bool) -> Value {
         "allowMeetingChat": if e.chat { "Enabled" } else { "Disabled" },
         "yammerQNAEnabled": e.qna,
         "allowPstnUsersToBypassLobby": false,
-        "autoAdmittedUsers": "EveryoneInCompany",
+        // A private event admits its invited people (the service refuses
+        // anything else: "expected InvitedUsers", 2026-11-18).
+        "autoAdmittedUsers": if e.access == "Private" { "InvitedUsers" } else { "EveryoneInCompany" },
         "usersCanAdmitFromLobby": "OrganizersAndPresentersOnly",
         "attendanceReportEnabled": true,
         "entryExitAnnouncementsEnabled": false,
@@ -443,14 +461,12 @@ pub fn default_promo() -> String {
 
 /// You, as Teams names the owner of a new event.
 pub fn owner_of(client: &TeamsClient) -> Value {
-    let oid = client.object_id().unwrap_or_default();
-    json!({
-        "email": client.user_principal_name().unwrap_or_default(),
-        "displayName": client.display_name().unwrap_or_default(),
-        "identity": { "mri": format!("8:orgid:{oid}"), "objectId": oid, "tenantId": client.tenant_id().unwrap_or_default(), "upn": null },
-        "userBio": { "description": "", "company": "", "jobTitle": "", "socialMediaLinks": { "linkedIn": "", "twitter": "" } },
-        "userPurpose": "unknown"
-    })
+    person(
+        &client.user_principal_name().unwrap_or_default(),
+        &client.display_name().unwrap_or_default(),
+        &client.object_id().unwrap_or_default(),
+        &client.tenant_id().unwrap_or_default(),
+    )
 }
 
 /// Save a new event as a draft (Save and continue); its id.
@@ -534,7 +550,44 @@ pub async fn publish(client: &TeamsClient, id: &str) -> Result<Value> {
     let body = json!({ "state": "Published", "meetingOptions": null });
     let r = send(reqwest::Method::PATCH, &format!("{}/events/{}", regional_endpoint(client), urlencoding(&id)), Some(&body), false).await?;
     let v: Value = r.json().await.context("The published event")?;
-    Ok(json!({ "id": v.get("id").cloned().unwrap_or_default(), "state": v.get("state").cloned().unwrap_or_default() }))
+    Ok(json!({ "id": v.get("id").cloned().unwrap_or_default(), "state": v.get("state").cloned().unwrap_or_default(),
+               "isDiscoverable": v.get("isDiscoverable").cloned().unwrap_or(Value::Bool(false)),
+               "embedCode": if v.get("type").and_then(Value::as_str) == Some("Townhall") { json!(embed_code(&id)) } else { Value::Null } }))
+}
+
+/// The published dialog's "Show event in Events app" (Teams'
+/// toggleDiscoverability): `PATCH events/{id}` `{"isDiscoverable": on}`
+/// with the event's eTag as If-Match (Teams' updateVirtualEvent, read
+/// 2026-11-18). On, people in your organization with access see the event
+/// on Events' Discover page.
+pub async fn set_discoverable(client: &TeamsClient, id: &str, on: bool) -> Result<bool> {
+    let id = event_path(id)?;
+    let base = format!("{}/events/{}", regional_endpoint(client), urlencoding(&id));
+    let ov = get_json(&format!("{base}/overview"), false).await?;
+    let etag = ov.pointer("/event/eTag").and_then(Value::as_str).unwrap_or_default().to_string();
+    let t = token().await?;
+    let mut req = reqwest::Client::new()
+        .patch(&base)
+        .bearer_auth(t)
+        .header("content-type", "application/json")
+        .header("x-ms-correlation-id", uuid::Uuid::new_v4().to_string())
+        .json(&json!({ "isDiscoverable": on }));
+    if !etag.is_empty() {
+        req = req.header("If-Match", etag);
+    }
+    let r = req.send().await.context("The events service")?;
+    anyhow::ensure!(r.status().is_success(), "The events service answered {}", r.status());
+    let v: Value = r.json().await.unwrap_or_default();
+    Ok(v.get("isDiscoverable").and_then(Value::as_bool).unwrap_or(on))
+}
+
+/// Teams' "Copy embed code" for a published town hall (the share dialog's
+/// copy-embed-code-button, town halls only): an iframe of Teams' town hall
+/// player page for the event.
+pub fn embed_code(event_id: &str) -> String {
+    format!(
+        "<iframe src=\"https://teams.microsoft.com/convene/townhall?eventId={event_id}\" width=\"1280\" height=\"720\" frameborder=\"0\" scrolling=\"no\" allowfullscreen style=\"border:none;\" allow=\"autoplay; camera; microphone\"></iframe>"
+    )
 }
 
 /// Cancel an event (the event page's ··· ▸ Cancel): Teams'
@@ -637,6 +690,11 @@ mod tests {
         let w = create_body(&NewEvent { event_type: "Webinar".into(), ..Default::default() }, &json!({}), json!({}), "");
         assert_eq!(w["commentStreamProperties"]["isCommentStreamEnabled"], false);
         assert!(w["meetingOptions"].get("allowTeamsMeetingReactions").is_some());
+    }
+
+    #[test]
+    fn the_embed_code_is_teams_town_hall_player() {
+        assert_eq!(embed_code("e1@t1"), "<iframe src=\"https://teams.microsoft.com/convene/townhall?eventId=e1@t1\" width=\"1280\" height=\"720\" frameborder=\"0\" scrolling=\"no\" allowfullscreen style=\"border:none;\" allow=\"autoplay; camera; microphone\"></iframe>");
     }
 
     #[test]

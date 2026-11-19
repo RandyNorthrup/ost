@@ -84,12 +84,55 @@ fn is_hidden(mri: &str, p: &serde_json::Value) -> bool {
     // The call recorder is always hidden; not every update repeats its
     // endpoint's flag, which Teams keeps from an earlier one.
     mri.eq_ignore_ascii_case(CALL_RECORDER_MRI)
+        || is_blacklisted_bot(mri)
         || p.pointer("/details/hidden").and_then(|h| h.as_bool()) == Some(true)
         || p.get("endpoints").and_then(|e| e.as_object()).is_some_and(|eps| {
             eps.values().any(|ep| {
                 ep.pointer("/endpointMetadata/__platform/ui/hidden").and_then(|h| h.as_bool()) == Some(true)
+                    // Teams' streaming-bot filter: the bot's endpoint
+                    // metadata names it a hidden participant.
+                    || ep.pointer("/endpointMetadata/botData/hiddenParticipant").and_then(|h| h.as_bool()) == Some(true)
             })
         })
+}
+
+/// Teams' `blacklistedBots` (its prod configuration's default, read
+/// 2026-11-18): service bots Teams leaves out of the stage and People, such
+/// as the call recorder and a town hall's composition service
+/// (`28:e32c9418-…`, "s04-prdnoamcompsvc", which streams the event to its
+/// attendees). Teams' useFilterBlacklistedBots compares MRIs exactly.
+pub const BLACKLISTED_BOTS: [&str; 64] = [
+    "28:5f2511f1-6da9-41d9-80d9-af7da23a2c27", "28:accb0009-8d12-4cfe-969c-39b204e3ed0c", "28:bdd75849-e0a6-4cce-8fc1-d7c0d4da43e5",
+    "28:4b25d9f8-18f5-4d09-a582-cd0a28f63181", "28:07331c9d-bd9a-4d00-bb00-9dcacd105691", "28:123425f9-0c72-4bd8-8814-7cb6b02dfc3f",
+    "28:4be36d18-a394-4f94-ad18-fb20df412d7a", "28:4c072661-d231-483f-b32c-2d305791d32d", "28:e8f1f4bd-f39c-479f-8885-a69ded583534",
+    "28:ae05be75-6c5a-47c0-97b8-8c84fd83880d", "28:0a18c351-466c-4293-87eb-7b08a096b0a1", "28:4c1a6ff1-c702-4652-9991-e0b36d310d19",
+    "28:b1902c3e-b9f7-4650-9b23-5772bd429747", "28:a8011016-05a6-4f6e-b2b3-26543cf329a0", "4:*13",
+    "28:f4693563-c70b-4e4d-bda6-01792aa21440", "28:e32c9418-a835-4eb1-bfb9-733fa74dd6e8", "28:cebb622a-9099-475d-9f85-0413cf0b19c7",
+    "28:38b34208-9db4-425d-91e5-6f201eeaef40", "28:a53eec89-0b8a-4f98-9c56-8e99ce1c58a3", "28:3d59cb08-f597-4e49-9add-a05f9735152b",
+    "28:8cf0f6d9-65dc-464b-a2cb-8f66a9767358", "28:b102ccd8-1925-448b-90a7-b083aba25074", "28:556b15e7-452c-4773-b728-6313eaa47b77",
+    "28:494c14c2-d8bb-41e7-b463-4dd17c3fda60", "28:dod-global:494c14c2-d8bb-41e7-b463-4dd17c3fda60", "28:9fe5a0d5-c286-41f1-a014-67c755902881",
+    "28:gcch-global:9fe5a0d5-c286-41f1-a014-67c755902881", "28:b5738585-9037-4ebd-8c03-d9a8bdbb537d", "28:gcch-global:b5738585-9037-4ebd-8c03-d9a8bdbb537d",
+    "28:e9989ac1-1203-4f1e-a716-07abc621a240", "28:dod-global:e9989ac1-1203-4f1e-a716-07abc621a240", "28:c733a6ab-69c4-4b1d-b660-60048c4dce2f",
+    "28:56aa0a8f-4cd3-446b-8146-0023476a5ff2", "28:bf9a6ad5-ccd4-4c41-ba31-87e67b045a9a", "28:0235a40d-f7c9-4028-a32b-13a50dd6e2fa",
+    "28:dod-global:bf9a6ad5-ccd4-4c41-ba31-87e67b045a9a", "28:gcch-global:0235a40d-f7c9-4028-a32b-13a50dd6e2fa", "28:729cc3ee-79fa-4b21-8601-8b45e143623f",
+    "28:badb39bd-1bdd-4a66-86de-2246b27cd138", "28:bleu-global:729cc3ee-79fa-4b21-8601-8b45e143623f", "28:delos-global:badb39bd-1bdd-4a66-86de-2246b27cd138",
+    "28:fr-global:9d2127a4-a920-42c8-8be7-c5e3285f9188", "28:de-global:9d2127a4-a920-42c8-8be7-c5e3285f9188", "28:6b45c5b6-1c34-47c0-8980-11e98d47d23f",
+    "28:c78e4215-e66c-4a70-8964-74992656de25", "28:8133db4c-c049-4346-9edd-273f164a9227", "28:dod-global:0468c4cf-7b80-4846-ab60-332bd6a9c47f",
+    "28:dod-global:95939add-a568-4c86-89b1-0ae3cdbdeeee", "28:gcch-global:523206b9-49f4-4051-b9d3-07db3242884b", "28:gcch-global:3d00fc8a-a067-49a2-9ae7-4d214f9422a6",
+    "28:gal-global:5f950626-8b3f-41ef-bb7e-3af032f46ee7", "28:gal-global:c8637bd1-81d1-4f05-b3da-08c30cdc6284", "28:ag08-global:9b96c71e-f4d4-4b03-b307-93f4171e17bd",
+    "28:ag09-global:018434e7-ea81-43aa-b947-2cba6462f332", "28:30f2ee85-68d2-40a0-9fcd-3e4a759c8c34", "28:b8cd536a-fe8e-4088-a5b8-e298cc3f2577",
+    "28:bfa8d8c3-fa5e-4ee9-88f5-ffce728a797c", "28:4062df8b-5499-49a2-abe0-29ad866b2c04", "28:gcch-global:56aa0a8f-4cd3-446b-8146-0023476a5ff2",
+    "28:dod-global:56aa0a8f-4cd3-446b-8146-0023476a5ff2", "28:ag08-global:c8637bd1-81d1-4f05-b3da-08c30cdc6284", "28:ag09-global:c8637bd1-81d1-4f05-b3da-08c30cdc6284",
+    "28:d123a3e6-7f0a-4bbd-91f2-6d0ad1707297",
+];
+
+/// Whether Teams hides this participant as a blacklisted bot (ECS
+/// `Calling.blacklistedBots` when it sets one, else Teams' default list).
+pub fn is_blacklisted_bot(mri: &str) -> bool {
+    match crate::api::ecs::setting("Calling", "blacklistedBots").and_then(|v| v.as_array().cloned()) {
+        Some(list) if !list.is_empty() => list.iter().any(|b| b.as_str() == Some(mri)),
+        _ => BLACKLISTED_BOTS.contains(&mri),
+    }
 }
 
 /// The sourceId of an endpoint stream labelled `label`, when it sends.
@@ -564,6 +607,20 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn the_town_hall_composition_bot_is_hidden() {
+        // The composition service in a town hall's roster (2026-11-17).
+        let ev = serde_json::json!({"callAgentPath": "conversation/rosterUpdate/", "body": {"participants": {
+            "28:e32c9418-a835-4eb1-bfb9-733fa74dd6e8": {"state": "active", "details": {"displayName": "s04-prdnoamcompsvc"},
+                "endpoints": {"e": {"call": {"mediaStreams": []}}}},
+            "8:orgid:a": {"state": "active", "details": {"displayName": "A"}}
+        }}});
+        let d = roster_delta(&ev.to_string()).unwrap();
+        assert_eq!(d.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), vec!["A"]);
+        assert!(is_blacklisted_bot("28:e32c9418-a835-4eb1-bfb9-733fa74dd6e8"));
+        assert!(!is_blacklisted_bot("8:orgid:a"));
+    }
 
     #[test]
     fn hidden_participants_are_left_out() {

@@ -1738,6 +1738,8 @@ Window {
             // Teams' Join now on the call its pre-join preheated.
             else backend.joinMeetingFromPrejoin(joinUrl, subject, micOn, withAudio)
         }
+        // Preview as Attendee: the town hall as its attendees see it.
+        onJoinAsAttendee: { window.muteOnJoin = true; window.noAudioOnJoin = false; window.cameraOnJoin = false; backend.joinPrejoinAsAttendee(joinUrl, subject) }
         // Cancel, Escape or closing the window without joining: Teams
         // leaves the call its pre-join preheated.
         onCancelled: backend.cancelPrejoin()
@@ -3211,6 +3213,12 @@ Window {
                 // --join-muted: switch the mic off in pre-join.
                 const noAudio = preJoin.audio === "none"
                 const cam = preJoin.cameraOn
+                // --join-preview-attendee (a town hall we present in, TASK-0217):
+                // the split Join now's Preview as Attendee.
+                if (Qt.application.arguments.indexOf("--join-preview-attendee") >= 0) {
+                    console.warn("JOIN preview prejoin event", backend.prejoinEventJson)
+                    preJoin.close(); preJoin.joinAsAttendee(); step++; return
+                }
                 preJoin.close(); preJoin.join(!noAudio && Qt.application.arguments.indexOf("--join-muted") < 0, !noAudio, cam)
             } else if (step >= 3 && step <= 6 && !backend.callState && preJoin.visible) {
                 // Join with an ID can open the pre-join screen late: join once it's there.
@@ -3556,7 +3564,8 @@ Window {
                 const shot = n => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-event-" + n + ".png")))
                 const has = f => Qt.application.arguments.indexOf(f) >= 0
                 const log = t => console.warn("JOIN event", t, backend.callEventJson, "role", callWindow.myRole, "bar", JSON.stringify(callWindow.ubar.bar),
-                                              "end", JSON.stringify(callWindow.ubar.end), "attendees", callWindow.attendeeCount, "side", callWindow.side)
+                                              "end", JSON.stringify(callWindow.ubar.end), "attendees", callWindow.attendeeCount, "side", callWindow.side,
+                                              "stream", backend.callStreamJson, JSON.stringify(callWindow.streamForTest()), "state", backend.callState)
                 const endAt = 11 + window.joinStay - 14
                 if (step === 8) { callWindow.side = ""; log("joined"); shot("green") }
                 else if (step === 9 && has("--join-event-qna")) callWindow.runControl("YammerQnaButton")
@@ -3571,7 +3580,7 @@ Window {
                 else if (step === endAt + 1 && has("--join-event-end")) { shot("end-dialog"); callWindow.endEventForTest() }
                 else if (step === endAt + 8 && has("--join-event-end")) { log("ended"); shot("ended") }
                 else if (step === 11 + window.joinStay) log("end")
-                else if (step > 23 && step % 5 === 0) log("wait")
+                else if (step > 23 && step % 5 === 0) { log("wait"); if (callWindow.streaming && step % 15 === 0) shot("stream-" + step) }
             } else if (step >= 8 && step <= Math.min(100, 11 + window.joinStay) && Qt.application.arguments.indexOf("--join-copilot") >= 0) {
                 // --join-copilot: Copilot in the meeting (TASK-0188, a
                 // Copilot-licensed account): the bar's Copilot, Teams'
@@ -11564,6 +11573,7 @@ Window {
     CalendarView {
         id: calendarView
         visible: rail.current === "calendar"
+        onNewEventTemplate: key => eventsView.newFromTemplate(key)
         anchors { top: appBanner.bottom; bottom: parent.bottom; left: rail.right; right: parent.right }
         events: backend.calendarJson ? JSON.parse(backend.calendarJson) : []
         teams: backend.teamsJson ? JSON.parse(backend.teamsJson) : []
@@ -11791,6 +11801,13 @@ Window {
         onVisibleChanged: if (visible) opened = true
         active: opened
         anchors { top: appBanner.bottom; bottom: statusBar.top; left: rail.right; right: parent.right }
+        /// Calendar ▸ New ▸ Webinar / Town hall: open Events on its form.
+        property string pendingTemplate: ""
+        onLoaded: if (pendingTemplate) { item.startFormKey(pendingTemplate); pendingTemplate = "" }
+        function newFromTemplate(key) {
+            rail.current = "events"
+            if (item) item.startFormKey(key); else pendingTemplate = key
+        }
         sourceComponent: EventsView {
             onPinToggled: on => { backend.setSetting("eventsAppPinned", on ? "true" : "false"); rail.pinned = on ? ["events"] : [] }
             onViewMeetings: rail.current = "calendar"

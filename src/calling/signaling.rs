@@ -717,6 +717,7 @@ pub async fn create_echo_call(
         meeting_data: None,
         meeting_data_wait: None,
         conversation_url: None,
+        as_attendee: false,
     };
     create_call_with(http, epconv_url, params, sdp_offer, &opts).await
 }
@@ -893,6 +894,7 @@ pub async fn join_meeting(
         meeting_data: how.meeting_data.clone(),
         meeting_data_wait: how.meeting_data_wait,
         conversation_url: how.conversation_url,
+        as_attendee: how.as_attendee,
     };
     create_call_with(http, epconv_url, params, sdp_offer, &opts).await
 }
@@ -910,6 +912,17 @@ pub struct MeetingJoinOptions<'a> {
     /// The conversation we're in already without a call: the call goes
     /// straight to it (Teams going back to the main meeting it kept).
     pub conversation_url: Option<&'a str>,
+    /// Teams' "Preview as Attendee" (a town hall's organizer or presenter
+    /// joining as its attendees do, joinEventAsAttendee): the join asks
+    /// for the attendee role (`participationPreferences.
+    /// requestedEndpointMeetingRoles ["attendee"]`), and the meeting
+    /// streams to us.
+    pub as_attendee: bool,
+}
+
+/// Teams' `participationPreferences` for a join as an attendee.
+pub fn attendee_preferences() -> serde_json::Value {
+    serde_json::json!({ "requestedEndpointMeetingRoles": ["attendee"] })
 }
 
 /// A scheduled meeting's `meetingInfo`, as Teams sends it when joining:
@@ -968,6 +981,7 @@ pub async fn create_group_call(
         meeting_data: None,
         meeting_data_wait: None,
         conversation_url: None,
+        as_attendee: false,
     };
     create_call_with(http, epconv_url, params, sdp_offer, &opts).await
 }
@@ -1000,6 +1014,7 @@ pub async fn create_channel_meeting(
         meeting_data: None,
         meeting_data_wait: None,
         conversation_url: None,
+        as_attendee: false,
     };
     create_call_with(http, epconv_url, params, sdp_offer, &opts).await
 }
@@ -1038,6 +1053,8 @@ struct CreateOptions<'a> {
     /// the call, when known already (the main meeting's, going back to
     /// it from a breakout room).
     meeting_data: Option<serde_json::Value>,
+    /// Join as an attendee (Teams' Preview as Attendee).
+    as_attendee: bool,
     /// Two-step joins: how long to wait after the conversation join for
     /// the conversation's update that names its `meetingData`, which
     /// Teams then sends with the call (it moves into a breakout room 1.8 s
@@ -1255,6 +1272,7 @@ pub async fn join_conversation_without_call(
         meeting_data: None,
         meeting_data_wait: None,
         conversation_url: None,
+        as_attendee: false,
     };
     join_conversation_with(http, conversation_url, params, &opts, None).await.map(|(c, l, _)| (c, l))
 }
@@ -1386,6 +1404,7 @@ pub async fn resolve_meeting_code(
         meeting_data: None,
         meeting_data_wait: None,
         conversation_url: None,
+        as_attendee: false,
     };
     let (_controller, leave, v) = join_conversation_with(http, epconv_url, params, &opts, Some(meeting_data)).await?;
     let text = v.to_string();
@@ -1452,6 +1471,7 @@ async fn create_call(
         meeting_data: None,
         meeting_data_wait: None,
         conversation_url: None,
+        as_attendee: false,
     };
     create_call_with(http, epconv_url, params, sdp_offer, &opts).await
 }
@@ -1595,6 +1615,9 @@ async fn create_call_with(
     }
     if opts.meeting_info.is_some() {
         payload["participantPropertyBag"] = participant_property_bag();
+    }
+    if opts.as_attendee {
+        payload["participationPreferences"] = attendee_preferences();
     }
 
     // Meetings: the conversation first, then the call to it (Teams'). Its

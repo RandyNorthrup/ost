@@ -317,10 +317,20 @@ pub mod qobject {
         /// busy ("" | "starting" | "ending"), failed ("" | "start" | "end")},
         /// or "" for other calls.
         #[qproperty(QString, call_event_json)]
+        /// Watching a town hall as its attendee (calling::live_stream):
+        /// {lobby (the event hasn't started), url (OST's loopback address
+        /// for the stream, "" until offered), player (Teams' player type)},
+        /// or "" when the call isn't a stream.
+        #[qproperty(QString, call_stream_json)]
         /// The pre-join window's Phone audio for the meeting being joined:
         /// {checked (Teams' "Checking for dial-in info…" until true),
         /// available}.
         #[qproperty(QString, prejoin_phone_json)]
+        /// The pre-join window's town hall facts once its call is preheated
+        /// ({joinAs: "Organizer" | "Presenter"}, "" otherwise): Teams'
+        /// split Join now ("Join as Organizer" / "Preview as Attendee") for
+        /// a town hall's organizers and presenters.
+        #[qproperty(QString, prejoin_event_json)]
         /// The meeting's notes link the call shares (its
         /// collabResources.notes meeting state), "" until someone made them.
         #[qproperty(QString, call_notes_url)]
@@ -1300,6 +1310,11 @@ pub mod qobject {
         /// closed): leave its preheated call, as Teams does.
         #[qinvokable]
         fn cancel_prejoin(self: Pin<&mut Backend>);
+        /// The pre-join's "Preview as Attendee" (a town hall's organizer
+        /// or presenter): leave the preheated call and join as the
+        /// attendees do (the meeting streams to us).
+        #[qinvokable]
+        fn join_prejoin_as_attendee(self: Pin<&mut Backend>, join_url: &QString, title: &QString);
         /// Teams' "Turn off other videos": stop (or resume) asking for
         /// others' cameras.
         #[qinvokable]
@@ -2980,7 +2995,9 @@ pub struct BackendRust {
     call_meeting_info_json: QString,
     call_phone_json: QString,
     call_event_json: QString,
+    call_stream_json: QString,
     prejoin_phone_json: QString,
+    prejoin_event_json: QString,
     /// The phone "Call me" put in the meeting (for Disconnect).
     phone_mri: String,
     call_notes_url: QString,
@@ -3780,6 +3797,9 @@ struct JoinedView {
     phone: String,
     /// The meeting as a town hall or webinar (call_event_json).
     event: String,
+    /// Watching the meeting's stream (a town hall's attendee): the stream
+    /// on offer and whether we wait in its lobby.
+    stream: Option<(Option<teams_cli::calling::live_stream::StreamChoice>, bool)>,
     /// The breakout rooms the join already assigns us (call_breakout_json;
     /// empty when none).
     breakout: String,
@@ -3849,6 +3869,7 @@ impl JoinedView {
             timers: call.timers().clone(),
             phone: phone_json(call, "", "", ""),
             event: event_json(&call.event(), "", ""),
+            stream: call.streaming().then(|| (call.stream().cloned(), call.in_lobby())),
             breakout: call
                 .joined_details()
                 .and_then(teams_cli::calling::breakout::assigned_rooms_at_join)
@@ -3856,6 +3877,57 @@ impl JoinedView {
                 .unwrap_or_default(),
         }
     }
+}
+
+/// The next meeting join asks for the attendee role (Preview as Attendee).
+static JOIN_AS_ATTENDEE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// call_stream_json's text.
+fn stream_json(lobby: bool, url: &str, player: &str) -> String {
+    serde_json::json!({ "lobby": lobby, "url": url, "player": player }).to_string()
+}
+
+/// The loopback server playing the town hall we watch, and the stream it serves.
+static STREAM_PROXY: std::sync::Mutex<Option<(String, teams_cli::calling::live_stream::StreamProxy)>> = std::sync::Mutex::new(None);
+
+fn stop_stream_proxy() {
+    if let Ok(mut p) = STREAM_PROXY.lock() {
+        *p = None;
+    }
+}
+
+/// Serve the offered stream to the call window's player (a new server when
+/// the stream's address changes) and tell the window.
+fn update_stream(
+    choice: Option<teams_cli::calling::live_stream::StreamChoice>,
+    lobby: bool,
+    qt: cxx_qt::CxxQtThread<qobject::Backend>,
+) {
+    runtime().spawn(async move {
+        let first = choice.as_ref().and_then(|c| c.url().map(str::to_string)).unwrap_or_default();
+        let player = choice.as_ref().map(|c| c.player_type.clone()).unwrap_or_default();
+        let current = STREAM_PROXY.lock().ok().and_then(|p| p.as_ref().map(|(u, s)| (u.clone(), s.url.clone())));
+        let url = match (current, choice) {
+            (Some((u, local)), _) if u == first && !first.is_empty() => local,
+            (_, Some(c)) if !first.is_empty() => match teams_cli::calling::live_stream::StreamProxy::start(&c).await {
+                Ok(p) => {
+                    tracing::info!(player = %player, "town hall stream: serving it to the player");
+                    let local = p.url.clone();
+                    if let Ok(mut slot) = STREAM_PROXY.lock() {
+                        *slot = Some((first.clone(), p));
+                    }
+                    local
+                }
+                Err(e) => {
+                    tracing::warn!("town hall stream: {}", short_error(&e));
+                    String::new()
+                }
+            },
+            _ => String::new(),
+        };
+        let text = stream_json(lobby, &url, &player);
+        let _ = qt.queue(move |mut this| this.as_mut().set_call_stream_json(QString::from(text.as_str())));
+    });
 }
 
 /// call_event_json: the meeting's event facts ("" when it isn't a town
@@ -3946,6 +4018,16 @@ async fn preheat_for_prejoin(qt: cxx_qt::CxxQtThread<qobject::Backend>, url: Str
                         if let Some(d) = call.joined_details() {
                             latest = Some(d.clone());
                         }
+                        // A town hall we present in: Teams' split Join now.
+                        let e = call.event();
+                        let ev = if e.streaming && !call.streaming() {
+                            let me = teams_cli::config::Config::load().ok().and_then(|c| c.object_id()).unwrap_or_default();
+                            let organizer = call.organizer_oid().is_some_and(|o| o.eq_ignore_ascii_case(&me));
+                            serde_json::json!({ "joinAs": if organizer { "Organizer" } else { "Presenter" } }).to_string()
+                        } else {
+                            String::new()
+                        };
+                        let _ = qt.queue(move |mut this| this.as_mut().set_prejoin_event_json(QString::from(ev.as_str())));
                         if let Some(p) = slot.preheat.as_mut() {
                             p.cancel = None;
                             p.call = Some(call);
@@ -6064,6 +6146,16 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         if let Some(p) = changed {
             tracing::info!(?p, "call recorder processing changed");
             let _ = qt.queue(move |mut this| this.as_mut().show_processing(p));
+        }
+        // A town hall's stream: our place in it, and the stream on offer.
+        let stream = call_slot()
+            .lock()
+            .await
+            .outgoing
+            .as_mut()
+            .and_then(|call| call.apply_stream(&v).then(|| (call.stream().cloned(), call.in_lobby())));
+        if let Some((choice, lobby)) = stream {
+            update_stream(choice, lobby, qt.clone());
         }
     }
     // Content-sharing sessions (Whiteboard, PowerPoint Live, Excel Live,
@@ -9451,9 +9543,14 @@ impl qobject::Backend {
                 };
                 (kept, undo.is_some() || slot.held_main.is_some())
             };
+            let as_attendee = JOIN_AS_ATTENDEE.swap(false, std::sync::atomic::Ordering::SeqCst);
+            if as_attendee {
+                tracing::info!("joining as an attendee (Preview as Attendee)");
+            }
             let how = outgoing::JoinHow {
                 meeting_data_wait: moving.then_some(std::time::Duration::from_secs(2)),
                 kept: kept.as_ref(),
+                as_attendee,
             };
             if kept.is_some() {
                 tracing::info!("back to the main meeting through its kept conversation");
@@ -9481,7 +9578,7 @@ impl qobject::Backend {
                 call_tag = outgoing::new_call_tag();
                 let (retry_tx, retry_rx) = tokio::sync::oneshot::channel();
                 call_slot().lock().await.cancel_placing = Some(retry_tx);
-                let how = outgoing::JoinHow { meeting_data_wait: how.meeting_data_wait, kept: kept.as_ref() };
+                let how = outgoing::JoinHow { meeting_data_wait: how.meeting_data_wait, kept: kept.as_ref(), as_attendee: how.as_attendee };
                 result = outgoing::join_meeting_with(&link, &call_tag, how, retry_rx).await;
             }
             let mut slot = call_slot().lock().await;
@@ -9919,6 +10016,8 @@ impl qobject::Backend {
         self.as_mut().set_call_meeting_info_json(QString::default());
         self.as_mut().set_call_phone_json(QString::default());
         self.as_mut().set_call_event_json(QString::default());
+        self.as_mut().set_call_stream_json(QString::default());
+        stop_stream_proxy();
         self.as_mut().set_call_notes_url(QString::default());
         self.as_mut().set_call_lobby_thread(QString::default());
         self.as_mut().show_transcript(Vec::new(), true);
@@ -9941,6 +10040,15 @@ impl qobject::Backend {
         self.as_mut().set_call_lobby_presenter(v.started);
         self.as_mut().set_call_phone_json(QString::from(v.phone.as_str()));
         self.as_mut().set_call_event_json(QString::from(v.event.as_str()));
+        if let Some((choice, lobby)) = v.stream.clone() {
+            // A town hall's attendee: the stream plays where the stage is;
+            // its lobby is the event's welcome screen, not the meeting
+            // lobby.
+            self.as_mut().set_call_stream_json(QString::from(stream_json(lobby, "", "").as_str()));
+            update_stream(choice, lobby, self.qt_thread());
+            self.as_mut().set_call_state(QString::from("connected"));
+            return;
+        }
         // Joined after the rooms opened: our room is known from the join,
         // before the call shows as connected (where Teams starts from).
         if !v.breakout.is_empty() && self.rust().call_breakout_json.is_empty() {
@@ -10810,6 +10918,7 @@ impl qobject::Backend {
     pub fn check_prejoin_phone(mut self: Pin<&mut Self>, join_url: &QString) {
         let url = join_url.to_string();
         self.as_mut().set_prejoin_phone_json(QString::from(r#"{"checked":false,"available":false}"#));
+        self.as_mut().set_prejoin_event_json(QString::default());
         // A meeting started now (Meet now) has nothing to preheat yet.
         if url.is_empty() {
             self.as_mut().set_prejoin_phone_json(QString::from(r#"{"checked":true,"available":false}"#));
@@ -10861,6 +10970,22 @@ impl qobject::Backend {
             let _ = qt.queue(move |mut this| this.as_mut().set_prejoin_phone_json(QString::from(json.as_str())));
         });
         runtime().spawn(load_dial_plan());
+    }
+
+    pub fn join_prejoin_as_attendee(mut self: Pin<&mut Self>, join_url: &QString, title: &QString) {
+        if !self.rust().call_state.is_empty() {
+            return;
+        }
+        // Teams joins anew with joinEventAsAttendee: the preheated call
+        // (joined as a presenter) goes.
+        runtime().block_on(async {
+            if let Some(p) = call_slot().lock().await.preheat.take() {
+                p.stop.notify_one();
+                dispose_preheat(p);
+            }
+        });
+        JOIN_AS_ATTENDEE.store(true, std::sync::atomic::Ordering::SeqCst);
+        self.as_mut().join_meeting(join_url, title);
     }
 
     pub fn join_meeting_from_prejoin(mut self: Pin<&mut Self>, join_url: &QString, title: &QString, mic_on: bool, with_audio: bool) {
@@ -19033,6 +19158,12 @@ impl qobject::Backend {
                         api::events::cancel(&client, &s("id")).await?;
                         tracing::info!("events: event cancelled");
                         Ok(json!({ "ok": true }))
+                    }
+                    "discoverable" => {
+                        let on = p.get("on").and_then(|v| v.as_bool()).unwrap_or(false);
+                        let now = api::events::set_discoverable(&client, &s("id"), on).await?;
+                        tracing::info!(discoverable = now, "events: Show event in Events app");
+                        Ok(json!({ "isDiscoverable": now }))
                     }
                     _ => anyhow::bail!("unknown"),
                 }
