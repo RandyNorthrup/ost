@@ -130,6 +130,10 @@ Item {
         anchors.fill: parent
         backgroundColor: "transparent"
         settings.localContentCanAccessRemoteUrls: false
+        // Cameo: the slide show plays the camera's stream in a video element of its own
+        // (not muted, no click first), as Teams' WebView2 lets it; Chromium's default
+        // gesture rule fails that play() (ErrorVideoPlaybackFailed).
+        settings.playbackRequiresUserGesture: false
         webChannel: channel
         webChannelWorld: WebEngineScript.ApplicationWorld
         property bool hostLoading: false

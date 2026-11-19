@@ -173,6 +173,19 @@ Captured (presenter "OST TEST 214 deck.pptx", 2026-11-18):
   '{"sharedArrayBuffer": false, "width": W, "height": H, "format":
   "BGRA"}', arrayBuffer}, origin, [arrayBuffer])` (a 0 × 0 frame with an
   empty buffer when there's no picture).
+  New Teams' slide show doesn't take those frames: with the form's
+  `hostExperience` "react-web-client" PowerPoint's CameoAddon rejects them
+  ("this code path is not supported in T2") and, with its server setting
+  `enableCameoInT2` True (in the slide-show page's inline settings, as
+  Teams desktop gets it), opens a stream it is named instead.
+  Teams desktop (CDP and logpoints on winpc, 2026-11-18), turning its
+  camera's Cameo on: 46 `"Cameo"`, 75 (presenter name), then
+  `UpdateBufferInfoForCameo` (64) `{m_bufferName: "20712-235"}`; turning it
+  off: 46 `"ContentOnly"`, 75, 64 `""`. PowerPoint then calls WebView2's
+  `chrome.webview.getTextureStream(id)` (a live 640 × 480 track), plays it
+  in a video element of its own (not muted, no click first) and draws the
+  camera in Teams' own slide. With a cameo deck Teams switches to Cameo
+  itself when the camera comes on.
 
 ## 4. Excel Live and Annotate (from Teams' code)
 
@@ -236,7 +249,12 @@ Captured (presenter "OST TEST 214 deck.pptx", 2026-11-18):
   presenter's mode; the camera's picture (ours, or the presenter's
   incoming video) reaches the frame at the slide view's size through
   `cameo_feed` (a loopback WebSocket with a secret path, BGRA) and
-  ppt_host.js's VideoFrameToPptForCameo.
+  ppt_host.js's VideoFrameToPptForCameo. For new Teams' slide show OST
+  names its own stream, "ost-cameo", in 64 after 46 (Teams' order, also on
+  every layout change) and provides `chrome.webview.getTextureStream` for
+  that id in PowerPoint's frame (ppt_cameo_stream.js: a canvas stream
+  drawn from the frames above); the slide-show view lets media play
+  without a click (`playbackRequiresUserGesture: false`), as WebView2 does.
 - [x] Excel Live (`api::live_share::excel_share`): an edit link for the
   meeting's people, Excel's meeting stage page from its app definition,
   the extensible_app session; attendees host it with isPresenter and
@@ -349,20 +367,20 @@ Captured (presenter "OST TEST 214 deck.pptx", 2026-11-18):
     - Cameo: with OST presenting, its camera on (a test feed) and Layout ▸
       Cameo, Teams showed OST's camera inside the slide's cameo (Teams'
       viewer composites the presenter's video itself). OST's own slide show
-      gets the frames over the loopback feed (`cameo frames … 383x287`)
-      but PowerPoint doesn't draw them there yet — open. What PowerPoint's
-      own code (SlideShowApp.js, read over OST's web debugging) shows: with
-      the form's `hostExperience` "react-web-client" (Teams' value) its
-      CameoAddon rejects frames posted as array buffers ("this code path is
-      not supported in T2") and takes the camera only from
-      UpdateBufferInfoForCameo (64): with its `enableCameoInT2` setting it
-      calls getUserMedia for the device id it is given (on Teams desktop a
-      stream WebView2's stream renderer registers). OST now sends 64 with
-      its own id and answers that getUserMedia in PowerPoint's frame with a
-      stream drawn from its frames (ppt_cameo_stream.js); the frames arrive
-      (about 500 counted inside the frame in 35 s) but PowerPoint opened no stream in
-      OST's presenter view, so `enableCameoInT2` is likely off
-      for this host — not resolved.
+      gets the frames over the loopback feed (`cameo frames … 383x287`).
+      Logpoints in PowerPoint's SlideShowApp.js over OST's web debugging
+      showed why it drew nothing there: 64 reached
+      `updateBufferInfoForCameo` with the addon present, `enableCameoInT2`
+      True and `hostExperience` "react-web-client", and
+      `updateMediaStreamInfoForCameo("ost-cameo")` opened OST's stream, but
+      its video element's play() failed (`ErrorVideoPlaybackFailed`,
+      Chromium's NotAllowedError without a click; muted it played
+      383 × 287). With playback allowed without a gesture:
+      PowerPoint opened "ost-cameo" on its own after 46 and 64
+      (`startMediaCaptureAsync: success`) and drew the test camera in the
+      cameo of OST Test 3's presenter slide, and OST Test 2's attendee
+      view drew the presenter's incoming video in the same cameo (both
+      OST windows, 2026-11-18).
     - Annotate, OST Test 3 sharing with screenSharerAttributes sent: still
       no annotation layer in Teams. Captured what Teams' own sharer sends
       (Teams sharing a full-screen test window, OST Test 3 viewing and

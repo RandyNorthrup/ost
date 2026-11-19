@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-17T02:43:00Z'
-updated_date: '2026-11-19T00:46:00Z'
+updated_date: '2026-11-19T01:53:00Z'
 labels:
   - desktop
 dependencies: []
@@ -55,4 +55,5 @@ What TASK-0210 left (docs/spec/call-and-meeting-window.md §9c): starting a Micr
   - Incident: a full-screen test window closed while Teams still shared its screen (16:08:42-16:10:42 PT) — only test accounts in the meeting (chat roster), nobody else joined, no recording/transcript; Teams now shares only the test window.
 
 - Merged a9ad6d3 (2026-11-18): Annotate is seen by Teams (board address, screen facts, sharer attributes as Teams' sharer sends them); keys during give control reach OST (30 key events played on linuxlt); Excel Live from Teams opens in OST for an invitee. AC2 and AC4 verified live. Open (AC1): Cameo in OST's own presenter view.
+- Cameo in OST's own views (2026-11-18): Teams desktop on winpc sends 46 Cameo, 75, then 64 with its WebView2 stream id; PowerPoint (enableCameoInT2 True, hostExperience react-web-client) opens it with chrome.webview.getTextureStream and plays it in its own unmuted video element. OST: ppt_cameo_stream.js provides getTextureStream for ost-cameo (a canvas stream from the posted BGRA frames); ppt_host.js sends 64 after 46, also on each layout change; PptLiveStage sets playbackRequiresUserGesture false (PowerPoint's play() failed with ErrorVideoPlaybackFailed under Chromium's gesture rule, found with logpoints in SlideShowApp.js). Recheck with test3 presenting (test camera) and test2 attending: PowerPoint opened ost-cameo by itself (startMediaCaptureAsync success) and both OST slides drew the cameo.
 <!-- SECTION:NOTES:END -->

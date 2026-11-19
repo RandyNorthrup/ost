@@ -39,7 +39,7 @@
         let pending = null;
         // Cameo: the presenter's camera into the slide show (Teams'
         // VideoFrameToPptForCameo), from OST's loopback feed.
-        const cameo = { url: "", key: "", width: 0, height: 0, ws: null, sent: "", bounds: false, frames: 0 };
+        const cameo = { url: "", key: "", width: 0, height: 0, ws: null, sent: "", bounds: false, frames: 0, layout: cfg.layout || "ContentOnly" };
         const cameoFrame = buf => {
             if (!frame.contentWindow) return;
             const v = new DataView(buf);
@@ -62,9 +62,12 @@
                 return;
             }
             // New Teams' slide show opens the camera it is named (UpdateBufferInfoForCameo):
-            // OST's stream (ppt_cameo_stream.js), drawn from the frames below.
-            if (!cameo.key && ready) post({ m_type: 64, m_bufferName: "ost-cameo" });
+            // OST's stream (ppt_cameo_stream.js), drawn from the frames below. Teams
+            // names it after PPTSharingLayoutChanged "Cameo" (46), so it goes out once
+            // the layout has (see layoutChanged).
+            const starting = !cameo.key;
             cameo.key = key;
+            if (starting && ready && cameo.layout === "Cameo") post({ m_type: 64, m_bufferName: "ost-cameo" });
             if (!cameo.ws || cameo.url !== url) {
                 if (cameo.ws) cameo.ws.close();
                 cameo.url = url; cameo.sent = "";
@@ -184,7 +187,13 @@
             if (ready) post(msg); else pending = msg;
         });
         ost.command.connect(json => { try { const o = JSON.parse(json); if (ready && typeof o.m_type === "number") post(o); } catch (e) {} });
-        ost.layoutChanged.connect(mode => { if (ready) post({ m_type: 46, m_sharingLayoutMode: mode }); });
+        ost.layoutChanged.connect(mode => {
+            cameo.layout = mode;
+            if (!ready) return;
+            post({ m_type: 46, m_sharingLayoutMode: mode });
+            // Teams' order: the layout, then the camera's stream (or none).
+            if (mode === "Cameo" && cameo.key) post({ m_type: 64, m_bufferName: "ost-cameo" });
+        });
         // Cameo's pictures: {url, key} (the camera's frames), or {} to stop.
         ost.cameo.connect(json => { let c = {}; try { c = JSON.parse(json); } catch (e) {} cameoSet(c.url || "", c.key || ""); });
         ost.token.connect((resource, token) => { if (ready) post({ m_type: 49, m_token: token, m_resourceId: resource }); });

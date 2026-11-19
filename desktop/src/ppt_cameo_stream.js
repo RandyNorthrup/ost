@@ -1,13 +1,14 @@
 // Cameo's camera inside PowerPoint Live's slide show, as the host provides
 // it (docs/spec/content-sharing.md §3). New Teams' slide show
-// (hostExperience "react-web-client") ignores frames posted as array
-// buffers: on UpdateBufferInfoForCameo (m_type 64) it opens the camera it is
-// named itself, with getUserMedia({video: {deviceId}}) — on Teams desktop a
-// stream the host registers (WebView2's stream renderer). OST does the same
-// for its own device id: this script, run in PowerPoint's frame only, answers
-// getUserMedia for "ost-cameo" with a stream drawn from the frames the host
-// already posts ({bufferMetadata, arrayBuffer}, BGRA), and passes every
-// other request through untouched.
+// (hostExperience "react-web-client", its enableCameoInT2 setting on)
+// ignores frames posted as array buffers: on UpdateBufferInfoForCameo
+// (m_type 64) it opens the stream it is named with WebView2's
+// `chrome.webview.getTextureStream(id)` (seen on Teams desktop 2026-11-18:
+// 64 with "20712-247", getTextureStream gave a live 640 × 480 track). OST
+// provides that one function for its own id, "ost-cameo": a stream drawn
+// from the frames the host already posts ({bufferMetadata, arrayBuffer},
+// BGRA). Nothing else of WebView2 is imitated; PowerPoint uses only
+// getTextureStream from it. This runs in PowerPoint's frame only.
 (() => {
     if (!/\.officeapps\.live\.com$/.test(location.hostname) || window.__ostCameoStream) return;
     window.__ostCameoStream = true;
@@ -24,11 +25,12 @@
     };
     window.addEventListener("message", e => {
         const d = e.data;
-        if (!d || typeof d !== "object" || d.bufferMetadata === undefined || !d.arrayBuffer || !ctx) return;
+        if (!d || typeof d !== "object" || d.bufferMetadata === undefined || !d.arrayBuffer) return;
         let m;
         try { m = JSON.parse(d.bufferMetadata); } catch (x) { return; }
         const w = m.width | 0, h = m.height | 0;
         if (!w || !h || d.arrayBuffer.byteLength < w * h * 4) return;
+        ensure();
         if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
         const src = new Uint8Array(d.arrayBuffer, 0, w * h * 4);
         const px = new Uint8ClampedArray(w * h * 4);
@@ -36,16 +38,11 @@
         for (let i = 0; i < px.length; i += 4) { px[i] = src[i + 2]; px[i + 1] = src[i + 1]; px[i + 2] = src[i]; px[i + 3] = 255; }
         ctx.putImageData(new ImageData(px, w, h), 0, 0);
     }, true);
-    const md = navigator.mediaDevices;
-    if (!md || !md.getUserMedia) return;
-    const wants = c => {
-        const v = c && c.video;
-        if (!v || typeof v !== "object") return false;
-        const id = v.deviceId;
-        return id === DEVICE || (id && (id.exact === DEVICE || id.ideal === DEVICE || (Array.isArray(id.exact) && id.exact.includes(DEVICE))));
-    };
-    const gum = md.getUserMedia.bind(md);
-    md.getUserMedia = c => wants(c) ? Promise.resolve(ensure()) : gum(c);
-    const enumerate = md.enumerateDevices.bind(md);
-    md.enumerateDevices = () => enumerate().then(list => list.concat([{ deviceId: DEVICE, groupId: DEVICE, kind: "videoinput", label: "OST camera", toJSON() { return this; } }]));
+    const chrome = window.chrome || (window.chrome = {});
+    const webview = chrome.webview || (chrome.webview = {});
+    if (!webview.getTextureStream) {
+        webview.getTextureStream = id => id === DEVICE
+            ? Promise.resolve(ensure())
+            : Promise.reject(new Error("No texture stream " + id));
+    }
 })();
