@@ -91,6 +91,11 @@ impl TeamsClient {
         Ok(token.token)
     }
 
+    /// The Skype token, for services that want it as `x-skypetoken`.
+    pub fn skype_token_value(&self) -> Result<String> {
+        self.skype_token()
+    }
+
     fn skype_token(&self) -> Result<String> {
         let token = self
             .config

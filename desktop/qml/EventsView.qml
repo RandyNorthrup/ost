@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls.Basic
+import QtQuick.Dialogs
 import com.ost.desktop
 
 // Teams' Events app, drawn natively as Teams draws it itself (it is not a
@@ -79,9 +80,10 @@ Rectangle {
     signal viewMeetings()
     /// The intro card's View audio recaps: Meeting Recaps' Audio recaps.
     signal viewAudioRecaps()
-    /// Manage apps' "here": the event meeting's details (Teams'
-    /// manageAppsLinkUrl, /l/meeting/{tenant}/{organizer}/{thread}/{message}).
-    signal openMeetingDetails(string threadId, string title)
+    /// Manage apps' "here": the event meeting's details page (Teams'
+    /// entityCommanding.calendar.meetingDetails for the session's meeting:
+    /// the scheduling form's view, its default tab).
+    signal openMeetingDetails(string joinUrl, string start)
     signal toast(var d)
     /// The event page's Join: its meeting's pre-join.
     signal joinEvent(string url, string title, string start, string end)
@@ -280,6 +282,7 @@ Rectangle {
         reload()
         call("pinned", {}, v => { if (!v.error && v.pinned !== pinned) { pinned = v.pinned; pinToggled(v.pinned) } })
         call("zones", {}, v => { if (!v.error) { zones = v.zones || []; localZone = v.local || "" } })
+        call("policy", {}, v => { if (!v.error) eventsPolicy = v })
     }
     onVisibleChanged: if (visible && page === "") reload()
     function stateForTest() {
@@ -643,8 +646,11 @@ Rectangle {
                 model: tabPage.empty ? [] : tabPage.lists
                 Column {
                     required property var modelData
-                    readonly property var items: Array.isArray(modelData[1]) ? modelData[1] : ((modelData[1] && modelData[1].items) || [])
-                    readonly property int total: Array.isArray(modelData[1]) ? items.length : ((modelData[1] && modelData[1].total) || 0)
+                    // Discover's lists are arrays, Manage's {items, total}
+                    // (a Repeater hands nested arrays over as sequences, not
+                    // Arrays, so tell them apart by `items`).
+                    readonly property var items: modelData[1] && modelData[1].items !== undefined ? modelData[1].items : (modelData[1] || [])
+                    readonly property int total: modelData[1] && modelData[1].total !== undefined ? modelData[1].total : items.length
                     readonly property bool manage: root.tab === "manage"
                     // Discover leaves out an empty Happening now.
                     visible: manage || modelData[2] !== "now" || items.length > 0
@@ -669,7 +675,7 @@ Rectangle {
                         visible: manage && items.length === 0
                         spacing: 12; leftPadding: 0; height: 47
                         FluentIcon { name: "calendar-clock-20"; size: 20; color: theme.textSecondary; anchors.verticalCenter: parent.verticalCenter }
-                        Text { anchors.verticalCenter: parent.verticalCenter; text: modelData[0] + " events will show up here."; font.family: theme.font; font.pixelSize: 16; color: theme.textSecondary }
+                        Text { anchors.verticalCenter: parent.verticalCenter; text: modelData[2] === "Draft" ? "Events you haven’t published yet will show up here." : modelData[0] + " events will show up here."; font.family: theme.font; font.pixelSize: 16; color: theme.textSecondary }
                     }
                     Flow {
                         visible: items.length > 0
@@ -691,6 +697,26 @@ Rectangle {
                         model: root.templates.slice(1)
                         TemplateCard { width: (tabCol.width - 32) / 2; height: 317; onPicked: root.startForm(modelData) }
                     }
+                }
+            }
+            // Manage immersive collections (ECS
+            // enableImmersiveContentManagementInMeetApp and your events
+            // policy's immersive events): Teams' archive picture, the title,
+            // the text, View immersive collections.
+            Item {
+                visible: root.tab === "manage" && !!root.eventsPolicy.immersiveCollections
+                width: parent.width; height: visible ? 24 + 176 : 0
+                Rectangle {
+                    y: 24; width: parent.width; height: 176; radius: 24
+                    color: theme.pick("#F5F5F5", "#292929", "#000000"); border.color: theme.stroke; border.width: 1
+                    Image { x: 24; anchors.verticalCenter: parent.verticalCenter; width: 128; height: 128; asynchronous: true
+                            source: root.cdn + "webp/128/archive-" + (theme.dark || theme.highContrast ? "d" : "l") + "-standard-128x128.webp" }
+                    Column { x: 24 + 128 + 30; anchors.verticalCenter: parent.verticalCenter; width: parent.width - x - 24; spacing: 0
+                        Text { text: "Manage immersive collections"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
+                        Item { width: 1; height: 4 }
+                        Text { width: parent.width; wrapMode: Text.Wrap; text: "Use immersive collections to save and manage templates for immersive events."; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                        Item { width: 1; height: 16 }
+                        Btn { outlined: true; text: "View immersive collections"; onClicked: root.openCollections() } }
                 }
             }
         }
@@ -716,6 +742,396 @@ Rectangle {
         }
     }
 
+    // ---- Manage ▸ Immersive collections (Teams 26304's immersive
+    // collections pages, in Manage) ----
+    // The list: the retirement notice (a warning bar: "Changes are coming to
+    // Immersive Events in Teams." … Learn more, Dismiss), a back arrow,
+    // "Immersive collections (n)" and Create collection; the collections as
+    // cards (auto-fill, at least 300 wide, 24 / 20 apart, 150 tall: the
+    // name, the description, View details) or the empty state (Teams'
+    // folder-favorite picture, "You don’t have any immersive collections").
+    // A collection: back, its name, the tabs Templates, Members, Settings.
+    property var collections: null
+    property var collection: null
+    property var collectionPeople: null
+    property string collectionTab: "templates"
+    property bool retirementDismissed: false
+    function openCollections() { page = "collections"; collections = null; call("collections", {}, v => { collections = v.error ? [] : v }) }
+    function openCollection(c) {
+        collection = { collection: { id: c.id, displayName: c.displayName, description: c.description } }
+        collectionTab = "templates"; collectionPeople = null; page = "collection"
+        pollCollection(c.id, 0)
+    }
+    // The group's owners and members (Graph; a new group shows up there a
+    // little later, so ask again a few times).
+    function loadCollectionPeople(id, tries) {
+        call("collectionPeople", { id: id }, v => {
+            if (!v.error) collectionPeople = v
+            else if ((tries || 0) < 10) peopleTimer.again(id, (tries || 0) + 1)
+        })
+    }
+    Timer { id: peopleTimer; interval: 3000; property string cid: ""; property int n: 0
+            function again(id, k) { cid = id; n = k; restart() }
+            onTriggered: root.loadCollectionPeople(cid, n) }
+    // Teams asks again every second until the collection is ready (15 min).
+    function pollCollection(id, n) {
+        call("collection", { id: id }, v => {
+            if (page !== "collection" || !collection || collection.collection.id !== id) return
+            if (v.error) { if (n > 900) collection = { error: true }; else collTimer.again(id, n); return }
+            collection = v
+            if (v.status && v.status !== "Succeeded" && n < 900) collTimer.again(id, n)
+            else if (!collectionPeople) loadCollectionPeople(id)
+        })
+    }
+    Timer { id: collTimer; interval: 1000; property string cid: ""; property int n: 0
+            function again(id, k) { cid = id; n = k + 1; restart() }
+            onTriggered: root.pollCollection(cid, n) }
+    readonly property bool imOwner: !!collectionPeople && (collectionPeople.owners || []).some(o => o.id === backend.userMri.replace("8:orgid:", ""))
+    Flickable {
+        id: collPage
+        visible: root.page === "collections" || root.page === "collection"
+        anchors { top: header.bottom; left: parent.left; right: parent.right; bottom: parent.bottom }
+        contentHeight: collCol.y + collCol.height + 32
+        clip: true
+        boundsBehavior: Flickable.StopAtBounds
+        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+        Column {
+            id: collCol
+            x: 20; y: 24; width: Math.min(1440, collPage.width - 40); spacing: 8
+            // The retirement notice.
+            Rectangle {
+                visible: root.page === "collections" && !root.retirementDismissed
+                width: parent.width; height: visible ? retCol.implicitHeight + 24 : 0; radius: 4
+                color: theme.pick("#FFF9F5", "#411200", "#000000"); border.color: theme.pick("#FDCFB4", "#8A3200", "#FFFFFF"); border.width: 1
+                FluentIcon { x: 12; y: 14; name: "warning-20"; size: 20; color: theme.pick("#BC4B09", "#FAB28C", "#FFFFFF") }
+                Column { id: retCol; x: 40; y: 12; width: parent.width - 96; spacing: 2
+                    Text { width: parent.width; wrapMode: Text.Wrap; text: "Changes are coming to Immersive Events in Teams."; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                    Text { width: parent.width; wrapMode: Text.Wrap; text: "Immersive Events will remain available and supported through April 2027. If your organization uses Immersive Events, please review future event plans and watch for additional guidance."; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    Text { text: "Learn more"; font.family: theme.font; font.pixelSize: 14; color: theme.brandForeground1; font.underline: true
+                           HoverHandler { cursorShape: Qt.PointingHandCursor }
+                           TapHandler { onTapped: Qt.openUrlExternally("https://aka.ms/ImmersiveUpdate") }
+                           Accessible.role: Accessible.Link; Accessible.name: "Learn more about the Immersive Events update (opens in new tab)" } }
+                Btn { anchors.right: parent.right; anchors.rightMargin: 8; y: 8; icon: "dismiss-20"; text: ""; pad: 6; Accessible.name: "Dismiss"; onClicked: root.retirementDismissed = true }
+            }
+            Item { width: 1; height: root.page === "collections" && !root.retirementDismissed ? 8 : 0 }
+            // The header.
+            Item {
+                width: parent.width; height: 32
+                Btn { icon: "arrow-left-20"; text: ""; pad: 6; Accessible.name: root.page === "collection" ? "Back to collections" : "Go back"
+                      onClicked: { if (root.page === "collection") root.openCollections(); else { root.page = ""; root.openTab("manage") } } }
+                Text { x: 44; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 260; elide: Text.ElideRight
+                       text: root.page === "collection" ? (root.collection && root.collection.collection ? root.collection.collection.displayName : "")
+                             : (root.collections && root.collections.length ? "Immersive collections (" + root.collections.length + ")" : "Immersive collections")
+                       font.family: theme.font; font.pixelSize: root.page === "collection" ? 16 : 20; font.weight: Font.DemiBold; color: theme.text }
+                Btn { visible: root.page === "collections"; anchors.right: parent.right; outlined: true; icon: "add-20"; text: "Create collection"; onClicked: collDialog.openFor(null) }
+            }
+            // ---- the list ----
+            Text { visible: root.page === "collections" && root.collections === null; text: "Loading..."; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary; height: 400; width: parent.width; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+            Column {
+                visible: root.page === "collections" && !!root.collections && root.collections.length === 0
+                width: parent.width; spacing: 8
+                Item { width: 1; height: 160 }
+                Image { anchors.horizontalCenter: parent.horizontalCenter; width: 128; height: 128; asynchronous: true
+                        source: root.cdn + "webp/128/folder-favorite-" + (theme.dark || theme.highContrast ? "d" : "l") + "-standard-128x128.webp" }
+                Item { width: 1; height: 8 }
+                Text { anchors.horizontalCenter: parent.horizontalCenter; width: Math.min(600, parent.width); horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
+                       text: "You don’t have any immersive collections"; font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text }
+                Text { anchors.horizontalCenter: parent.horizontalCenter; width: Math.min(600, parent.width); horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; maximumLineCount: 2
+                       text: "Immersive collections allow you to share custom environments and templates. Create a collection when the time’s right!"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+            }
+            Flow {
+                visible: root.page === "collections" && !!root.collections && root.collections.length > 0
+                width: parent.width; spacing: 20
+                readonly property int cols: Math.max(1, Math.floor((width + 20) / 320))
+                Repeater {
+                    model: root.collections || []
+                    Item {
+                        required property var modelData
+                        width: (collCol.width - 20 * (parent.cols - 1)) / parent.cols; height: 150 + 4
+                        FluentSurface { width: parent.width; height: 150; depth: 4; radius: 8; color: theme.surface }
+                        Column { x: 12; y: 12; width: parent.width - 24; spacing: 4
+                            Text { width: parent.width; elide: Text.ElideRight; text: modelData.displayName; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                            Text { visible: !!modelData.description; width: parent.width; wrapMode: Text.Wrap; maximumLineCount: 2; elide: Text.ElideRight; text: modelData.description || ""; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } }
+                        Btn { anchors.right: parent.right; anchors.rightMargin: 12; y: 150 - 44; outlined: true; icon: "calendar-add-20"; text: "View details"; onClicked: root.openCollection(modelData) }
+                        TapHandler { onTapped: root.openCollection(modelData) }
+                        Accessible.role: Accessible.ListItem; Accessible.name: "Immersive collection, " + modelData.displayName + ", " + (modelData.description || "")
+                    }
+                }
+            }
+            // ---- a collection ----
+            Text { visible: root.page === "collection" && !!root.collection && !!root.collection.error; text: "Error loading collection details"; font.family: theme.font; font.pixelSize: 14; color: theme.danger }
+            Row {
+                visible: root.page === "collection" && !!root.collection && !root.collection.error
+                height: 44; spacing: 4
+                Repeater { model: [["templates", "Templates"], ["members", "Members"], ["settings", "Settings"]]
+                    Item {
+                        required property var modelData
+                        width: tabT.implicitWidth + 20; height: 44
+                        Text { id: tabT; anchors.centerIn: parent; text: modelData[1]; font.family: theme.font; font.pixelSize: 14; font.weight: root.collectionTab === modelData[0] ? Font.DemiBold : Font.Normal; color: root.collectionTab === modelData[0] ? theme.text : theme.textStrong }
+                        Rectangle { visible: root.collectionTab === modelData[0]; anchors.bottom: parent.bottom; anchors.bottomMargin: 6; anchors.horizontalCenter: parent.horizontalCenter; width: tabT.implicitWidth; height: 3; radius: 2; color: theme.brand }
+                        TapHandler { onTapped: root.collectionTab = modelData[0] }
+                        Accessible.role: Accessible.PageTab; Accessible.name: modelData[1]
+                    } }
+            }
+            readonly property bool provisioning: !!root.collection && root.collection.status === "Provisioning"
+            // Templates.
+            Column {
+                visible: root.page === "collection" && root.collectionTab === "templates" && !!root.collection && !root.collection.error
+                width: parent.width; spacing: 16
+                Text { text: "Immersive templates (0)"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
+                Text { visible: collCol.provisioning; width: parent.width; height: 400; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; wrapMode: Text.Wrap
+                       text: "Your collection is being created! It can take up to 15 minutes before storage is set up and you can upload environments and edit templates."; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                Column {
+                    visible: !collCol.provisioning
+                    width: parent.width; spacing: 16
+                    Item { width: 1; height: 60 }
+                    Image { anchors.horizontalCenter: parent.horizontalCenter; width: 128; height: 128; asynchronous: true
+                            source: root.cdn + "webp/128/design-from-scratch-" + (theme.dark || theme.highContrast ? "d" : "l") + "-standard-128x128.webp" }
+                    Text { anchors.horizontalCenter: parent.horizontalCenter; width: Math.min(600, parent.width); horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
+                           text: "You don't have any immersive templates in this collection yet. You can create a template from any immersive event."; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                }
+            }
+            // Members.
+            Column {
+                visible: root.page === "collection" && root.collectionTab === "members"
+                width: parent.width; spacing: 12
+                Item { width: parent.width; height: 32
+                    Text { anchors.verticalCenter: parent.verticalCenter; text: "Owners (" + ((root.collectionPeople || {}).owners || []).length + ")"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
+                    Btn { anchors.right: parent.right; outlined: true; icon: "person-add-20"; text: "Add people"; usable: root.imOwner; onClicked: collAdd.openNow() } }
+                CollTable { people: (root.collectionPeople || {}).owners || []; owners: true }
+                Text { text: "Members (" + ((root.collectionPeople || {}).members || []).length + ")"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text; height: 32; verticalAlignment: Text.AlignVCenter }
+                CollTable { people: (root.collectionPeople || {}).members || []; owners: false }
+            }
+            // Settings.
+            Column {
+                visible: root.page === "collection" && root.collectionTab === "settings" && !!root.collection && !!root.collection.collection
+                width: parent.width; spacing: 20
+                Item { width: parent.width; height: 32
+                    Text { anchors.verticalCenter: parent.verticalCenter; text: "Collection details"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
+                    Btn { anchors.right: parent.right; outlined: true; icon: "settings-20"; text: "Edit details"; onClicked: collDialog.openFor(root.collection.collection) } }
+                Item {
+                    width: parent.width; height: detailsCol.height
+                    FluentSurface { anchors.fill: parent; depth: 8; radius: 8; color: theme.surface }
+                    Column { id: detailsCol; width: parent.width
+                        Repeater { model: root.collection && root.collection.collection ? [["Collection name", root.collection.collection.displayName], ["Description", root.collection.collection.description || "—"],
+                                                                                         ["Sensitivity", "—"], ["Privacy", "Private"]] : []
+                            Item { required property var modelData; width: detailsCol.width; height: 40
+                                Text { x: 16; anchors.verticalCenter: parent.verticalCenter; text: modelData[0]; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                                Text { x: 200; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 216; elide: Text.ElideRight; text: modelData[1]; font.family: theme.font; font.pixelSize: 14; color: theme.text } } } }
+                }
+                Text { text: "Manage"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
+                Item {
+                    width: parent.width; height: 56
+                    FluentSurface { anchors.fill: parent; depth: 8; radius: 8; color: theme.surface }
+                    Text { x: 16; anchors.verticalCenter: parent.verticalCenter; text: "Delete collection"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                    Text { x: 176; anchors.verticalCenter: parent.verticalCenter; text: "Deleting a collection is permanent and cannot be undone"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    Rectangle { anchors.right: parent.right; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter; width: delT.implicitWidth + 24; height: 32; radius: 4
+                        color: delH.hovered ? theme.pick("#B10E1C", "#D13438", "#FFFFFF") : theme.pick("#C50F1F", "#C50F1F", "#FFFFFF")
+                        Text { id: delT; anchors.centerIn: parent; text: "Delete collection"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: "white" }
+                        HoverHandler { id: delH; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: collDelete.open() }
+                        Accessible.role: Accessible.Button; Accessible.name: "Delete collection" }
+                }
+            }
+        }
+    }
+    // A collection's people table: Name and email (the avatar, the name,
+    // the UPN), Title, Role (Owner / Member), and Remove for members.
+    component CollTable: Column {
+        id: ct
+        property var people: []
+        property bool owners: false
+        width: collCol.width
+        Item { width: parent.width; height: 40
+            Text { x: 16; anchors.verticalCenter: parent.verticalCenter; text: "Name and email"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+            Text { x: 516; anchors.verticalCenter: parent.verticalCenter; text: "Title"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+            Text { x: 716; anchors.verticalCenter: parent.verticalCenter; text: "Role"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text } }
+        Rectangle { width: parent.width; height: 1; color: theme.divider }
+        Repeater { model: ct.people
+            Column { required property var modelData; required property int index
+                width: ct.width
+                Item { width: parent.width; height: 64
+                    Avatar { x: 16; anchors.verticalCenter: parent.verticalCenter; size: 36; name: modelData.displayName; photoId: "8:orgid:" + modelData.id }
+                    Column { x: 64; anchors.verticalCenter: parent.verticalCenter
+                        Text { text: modelData.displayName; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                        Text { text: modelData.userPrincipalName || ""; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } }
+                    Text { x: 516; anchors.verticalCenter: parent.verticalCenter; text: modelData.jobTitle || ""; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    ComboBox {
+                        x: 716; anchors.verticalCenter: parent.verticalCenter; width: 120
+                        model: ["Owner", "Member"]; currentIndex: ct.owners ? 0 : 1
+                        enabled: root.imOwner && !(ct.owners && ct.people.length <= 1)
+                        onActivated: i => root.call("changeCollectionPerson", { id: root.collection.collection.id, user: modelData.id, what: i === 0 ? "owner" : "member" },
+                                                    v => { if (!v.error) root.call("collectionPeople", { id: root.collection.collection.id }, p => { if (!p.error) root.collectionPeople = p }) })
+                        Accessible.name: "Role"
+                    }
+                    Btn { visible: !ct.owners && (root.imOwner || modelData.id === backend.userMri.replace("8:orgid:", "")); anchors.right: parent.right; anchors.rightMargin: 16; anchors.verticalCenter: parent.verticalCenter
+                          icon: "dismiss-20"; text: ""; pad: 6; Accessible.name: "Remove " + modelData.displayName; onClicked: collRemove.openFor(modelData) }
+                }
+                Rectangle { visible: index < ct.people.length - 1; width: parent.width; height: 1; color: theme.divider } } }
+    }
+    // Create an immersive collection / Edit immersive collection.
+    Popup {
+        id: collDialog
+        parent: Overlay.overlay
+        modal: true; padding: 24
+        x: (parent.width - width) / 2; y: (parent.height - height) / 2
+        width: Math.max(320, Math.min(600, parent.width * 0.9))
+        background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
+        property var editing: null
+        property bool busy: false
+        property string error: ""
+        property bool touched: false
+        function openFor(c) { editing = c; busy = false; error = ""; touched = false; collName.text = c ? c.displayName : ""; collDesc.text = c ? (c.description || "") : ""; open() }
+        function submit() {
+            if (!collName.text.trim()) { touched = true; return }
+            busy = true
+            const done = v => {
+                busy = false
+                if (v.error) { error = /403/.test(v.error) ? "Your organization doesn't allow you to create Microsoft 365 groups, which are required for collections. Contact your IT administrator, or ask to be added to an existing collection." : "Something went wrong. Please try again."; return }
+                close()
+                if (editing) root.pollCollection(editing.id, 0)
+                else { root.call("collections", {}, l => { if (!l.error) root.collections = l }); root.openCollection({ id: v.id, displayName: collName.text.trim(), description: collDesc.text.trim() }) }
+            }
+            if (editing) root.call("updateCollection", { id: editing.id, name: collName.text, description: collDesc.text }, done)
+            else root.call("createCollection", { name: collName.text, description: collDesc.text }, done)
+        }
+        contentItem: Column {
+            spacing: 15
+            Item { width: parent.width; height: 28
+                Text { text: collDialog.editing ? "Edit immersive collection" : "Create an immersive collection"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+                Btn { anchors.right: parent.right; icon: "dismiss-20"; text: ""; pad: 6; onClicked: collDialog.close(); Accessible.name: "Close dialog" } }
+            Rectangle { visible: !!collDialog.error; width: parent.width; height: visible ? errT.implicitHeight + 16 : 0; radius: 4; color: theme.pick("#FDF3F4", "#3B2326", "#000000")
+                        Text { id: errT; x: 12; y: 8; width: parent.width - 24; wrapMode: Text.Wrap; text: collDialog.error; font.family: theme.font; font.pixelSize: 14; color: theme.text } }
+            Column { width: parent.width; spacing: 4
+                Label { text: "Collection name *" }
+                Rectangle { width: parent.width; height: 32; radius: 4; color: theme.input; border.color: collName.activeFocus ? theme.brand : theme.stroke; border.width: 1
+                    TextInput { id: collName; x: 10; width: parent.width - 20; anchors.verticalCenter: parent.verticalCenter; clip: true; selectByMouse: true; font.family: theme.font; font.pixelSize: 14; color: theme.text; Accessible.name: "Collection name"
+                                Text { visible: !parent.text && !parent.activeFocus; text: "Enter a name for your collection"; font: parent.font; color: theme.textSecondary } } }
+                Text { visible: collDialog.touched && collName.text.length > 0 && !collName.text.trim() || (collDialog.touched && !collName.text.trim()); text: "Collection name is required"; font.family: theme.font; font.pixelSize: 12; color: theme.danger } }
+            Column { width: parent.width; spacing: 4
+                Label { text: "Collection description" }
+                Rectangle { width: parent.width; height: collDialog.editing ? 72 : 32; radius: 4; color: theme.input; border.color: collDesc.activeFocus ? theme.brand : theme.stroke; border.width: 1
+                    TextEdit { id: collDesc; x: 10; y: 6; width: parent.width - 20; height: parent.height - 12; wrapMode: TextEdit.Wrap; clip: true; selectByMouse: true; font.family: theme.font; font.pixelSize: 14; color: theme.text; Accessible.name: "Collection description"
+                               Text { visible: !parent.text && !parent.activeFocus; text: "Enter a short description for your collection"; font: parent.font; color: theme.textSecondary } } } }
+            Column { width: parent.width; spacing: 4
+                Label { text: collDialog.editing ? "Privacy" : "Privacy *" }
+                Row { spacing: 15
+                    Repeater { model: [["Private", "People need permission to join", "lock-closed-20", true], ["Public", "Anyone can join", "globe-20", false]]
+                        Rectangle { required property var modelData
+                            width: (collDialog.availableWidth - 15) / 2; height: 80; radius: 8; opacity: modelData[3] ? 1 : 0.6
+                            color: theme.surface; border.color: modelData[3] ? theme.brand : theme.stroke; border.width: modelData[3] ? 2 : 1
+                            FluentIcon { x: 12; y: 12; name: modelData[2]; size: 20; color: theme.textStrong }
+                            Text { x: 40; y: 12; text: modelData[0]; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                            Text { x: 40; y: 34; width: parent.width - 52; wrapMode: Text.Wrap; text: modelData[1]; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+                            ToolTip.visible: !modelData[3] && pubH.hovered; ToolTip.text: "Public immersive collections are not supported yet."
+                            HoverHandler { id: pubH }
+                            Accessible.role: Accessible.RadioButton; Accessible.name: modelData[0]; Accessible.checked: modelData[3] } } } }
+            Row { anchors.right: parent.right; spacing: 8
+                Btn { outlined: true; text: "Cancel"; usable: !collDialog.busy; onClicked: collDialog.close() }
+                Btn { primary: true; usable: !collDialog.busy && !!collName.text.trim()
+                      text: collDialog.editing ? (collDialog.busy ? "Saving..." : "Save") : (collDialog.busy ? "Creating..." : "Create collection"); onClicked: collDialog.submit() } }
+        }
+    }
+    // Add people to this collection: Owners and Members pickers.
+    Popup {
+        id: collAdd
+        parent: Overlay.overlay
+        modal: true; padding: 24
+        x: (parent.width - width) / 2; y: (parent.height - height) / 2
+        width: 600
+        background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
+        property var owners: []
+        property var members: []
+        property bool busy: false
+        function openNow() { owners = []; members = []; busy = false; open() }
+        contentItem: Column {
+            spacing: 30
+            Item { width: parent.width; height: 28
+                Text { text: "Add people to this collection"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+                Btn { anchors.right: parent.right; icon: "dismiss-20"; text: ""; pad: 6; onClicked: collAdd.close(); Accessible.name: "Close dialog" } }
+            Column { width: parent.width; spacing: 10
+                Label { text: "Owners" }
+                EventPeoplePicker { id: collOwnersPicker; width: parent.width; kind: "team"; placeholder: "Enter a name or distribution list to add to your collection"; picked: collAdd.owners; onChanged: list => collAdd.owners = list }
+                Text { width: parent.width; wrapMode: Text.Wrap; text: "Those who have admin privileges and can edit templates and environments"; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } }
+            Column { width: parent.width; spacing: 10
+                Label { text: "Members" }
+                EventPeoplePicker { id: collMembersPicker; width: parent.width; kind: "team"; placeholder: "Enter a name or distribution list to add to your collection"; picked: collAdd.members; onChanged: list => collAdd.members = list }
+                Text { width: parent.width; wrapMode: Text.Wrap; text: "Those who can access and edit event templates and environments"; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } }
+            Row { anchors.right: parent.right; spacing: 8
+                Btn { outlined: true; text: "Cancel"; onClicked: collAdd.close() }
+                Btn { primary: true; usable: !collAdd.busy && collAdd.owners.length + collAdd.members.length > 0; text: "Add people"
+                      onClicked: {
+                          collAdd.busy = true
+                          const id = root.collection.collection.id
+                          root.call("addCollectionPeople", { id: id, owners: collAdd.owners.map(p => p.object_id || p.objectId), members: collAdd.members.map(p => p.object_id || p.objectId) }, v => {
+                              collAdd.busy = false
+                              console.warn("EVENTS collection people added", JSON.stringify(v))
+                              // Teams adds them to its cached lists (no refetch).
+                              if (!v.error) {
+                                  const asRow = p => ({ id: p.object_id || p.objectId, displayName: p.name, jobTitle: null, userPrincipalName: p.upn || p.email })
+                                  const cur = root.collectionPeople || { owners: [], members: [] }
+                                  const owners = cur.owners.concat(collAdd.owners.map(asRow).filter(o => !cur.owners.some(x => x.id === o.id)))
+                                  const members = cur.members.concat(collAdd.members.map(asRow)).filter((m, i, a) => !owners.some(o => o.id === m.id) && a.findIndex(x => x.id === m.id) === i)
+                                  root.collectionPeople = { owners: owners, members: members }
+                                  collAdd.close()
+                              }
+                          })
+                      } } }
+        }
+    }
+    // Remove person from this collection?
+    Popup {
+        id: collRemove
+        parent: Overlay.overlay
+        modal: true; padding: 24
+        x: (parent.width - width) / 2; y: (parent.height - height) / 2
+        width: 480
+        background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
+        property var person: null
+        function openFor(p) { person = p; open() }
+        contentItem: Column {
+            spacing: 16
+            Text { text: "Remove person from this collection?"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+            Text { width: parent.width; wrapMode: Text.Wrap; text: "This person will no longer have access to the collection or its contents."; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+            Row { anchors.right: parent.right; spacing: 8
+                Btn { outlined: true; text: "Cancel"; onClicked: collRemove.close() }
+                Btn { primary: true; text: "Remove person"
+                      onClicked: { const id = root.collection.collection.id
+                          root.call("changeCollectionPerson", { id: id, user: collRemove.person.id, what: "remove" }, v => {
+                              collRemove.close(); root.call("collectionPeople", { id: id }, p => { if (!p.error) root.collectionPeople = p }) }) } } }
+        }
+    }
+    // Delete this collection?
+    Popup {
+        id: collDelete
+        parent: Overlay.overlay
+        modal: true; padding: 24
+        x: (parent.width - width) / 2; y: (parent.height - height) / 2
+        width: 480
+        background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
+        property bool busy: false
+        contentItem: Column {
+            spacing: 16
+            Text { text: "Delete this collection?"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+            Text { width: parent.width; wrapMode: Text.Wrap; text: "This action cannot be undone and you will lose all associated content within."; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+            Row { anchors.right: parent.right; spacing: 8
+                Btn { outlined: true; text: "Cancel"; onClicked: collDelete.close() }
+                Btn { primary: true; usable: !collDelete.busy; text: "Delete collection"
+                      onClicked: { collDelete.busy = true
+                          root.call("deleteCollection", { id: root.collection.collection.id }, v => {
+                              collDelete.busy = false; console.warn("EVENTS collection deleted", JSON.stringify(v)); collDelete.close()
+                              // Teams drops it from its cached list (Graph lists it a while longer).
+                              if (!v.error) { const gone = root.collection.collection.id; root.page = "collections"; root.collections = (root.collections || []).filter(c => c.id !== gone)
+                                              root.call("collections", {}, l => { if (!l.error) root.collections = l.filter(c => c.id !== gone) }) } }) } } }
+        }
+    }
+    // Manage's card: Manage immersive collections.
+    function collectionsStateForTest() { return JSON.stringify({ page: page, list: collections ? collections.map(c => c.displayName) : null, collection: collection, people: collectionPeople, tab: collectionTab, owner: imOwner }) }
+    function createCollectionForTest(name, desc) { collDialog.openFor(null); collName.text = name; collDesc.text = desc; collDialog.submit() }
+    function addCollectionPeopleForTest(text) { collAdd.openNow(); collMembersPicker.typeForTest(text) }
+    function pickCollectionPersonForTest() { collMembersPicker.pickFirstForTest() }
+    function confirmAddCollectionPeopleForTest() { collAdd.contentItem.children[collAdd.contentItem.children.length - 1].children[1].clicked() }
+    function deleteCollectionForTest() { collDelete.open(); collDelete.contentItem.children[collDelete.contentItem.children.length - 1].children[1].clicked() }
     // ---- Filters (Discover) ----
     Rectangle {
         id: filters
@@ -1590,6 +2006,7 @@ Rectangle {
         readonly property real w: Math.min(1025, width - 64)
         readonly property real x0: (width - w) / 2
         readonly property var pd: root.peopleData || ({})
+        readonly property string emailError: root.emailTemplateList === undefined ? "error" : ""
         readonly property var speakers: pd.presenterList || []
         Rectangle {
             id: draftCard
@@ -1670,6 +2087,17 @@ Rectangle {
                         color: eventPage.ev.primary_color || "#5B5FC7"
                         Image { anchors.fill: parent; fillMode: Image.PreserveAspectCrop; asynchronous: true
                                 source: { backend.emoticonsVersion; return eventPage.ev.promo_image ? backend.cardImage(eventPage.ev.promo_image) : "" } }
+                        // Edit event banner (40 px round, 24 from the top right).
+                        Rectangle {
+                            visible: eventPage.organizer && !root.previewOn && !eventPage.canceled
+                            anchors.right: parent.right; anchors.top: parent.top; anchors.margins: 24
+                            width: 40; height: 40; radius: 20
+                            color: bannerHover.hovered ? theme.menuHover : theme.surface; border.color: theme.divider; border.width: 1
+                            FluentIcon { anchors.centerIn: parent; name: "edit-20"; size: 24; color: theme.textStrong }
+                            HoverHandler { id: bannerHover; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: branding.openNow() }
+                            Accessible.role: Accessible.Button; Accessible.name: "Edit event banner"
+                        }
                     }
                     Item {
                         width: parent.width; height: titleCol.height + 40
@@ -1774,7 +2202,7 @@ Rectangle {
                             x: 21; y: 54; width: parent.width - 42; wrapMode: Text.Wrap; textFormat: Text.StyledText
                             text: "Manage or add apps for your session <a href='here'>here</a>."; linkColor: theme.brandForeground1
                             font.family: theme.font; font.pixelSize: 14; color: theme.text
-                            onLinkActivated: root.openMeetingDetails(eventPage.ev.thread_id || "", eventPage.ev.title || "")
+                            onLinkActivated: root.openMeetingDetails(eventPage.ev.join_url || "", eventPage.ev.start || "")
                         }
                     }
                 }
@@ -1791,15 +2219,28 @@ Rectangle {
                             width: parent.width; height: 40
                             Text { anchors.verticalCenter: parent.verticalCenter; text: "Attendees"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
                             Row { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; spacing: 8
-                                SettingsParts.Toggle { stateLabel: false; on: !eventPage.pd.disableAttendeeEmails; accessibleName: "Send attendee emails"
-                                    onToggled: v => root.call("patch", { id: eventPage.ev.id, body: { communicationProperties: { disableAttendeeEmails: !v } } }, r => { if (!r.error) root.peopleData = Object.assign({}, root.peopleData, { disableAttendeeEmails: !v }) }) }
+                                SettingsParts.Toggle { stateLabel: false; on: !eventPage.pd.disableAttendeeEmails; enabled: eventPage.draft; opacity: enabled ? 1 : 0.5
+                                    accessibleName: eventPage.pd.disableAttendeeEmails ? "Turn on all attendee notifications" : "Turn off all attendee notifications"
+                                    onToggled: v => root.call("theme", { id: eventPage.ev.id }, th => {
+                                        const cp = Object.assign({}, th.communicationProperties || {}, { disableAttendeeEmails: !v })
+                                        root.call("patch", { id: eventPage.ev.id, body: { communicationProperties: cp } }, r => { if (!r.error) root.peopleData = Object.assign({}, root.peopleData, { disableAttendeeEmails: !v }) }) }) }
                                 Text { anchors.verticalCenter: parent.verticalCenter; text: "Send attendee emails"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text } }
                         }
+                        // Teams' rows: the event's templates (GET emailtemplates)
+                        // of these types in this order; Edit only with your
+                        // events policy's email editing; the reminder's
+                        // timing opens Send event reminder; the switch
+                        // changes only a draft, and off greys the table.
+                        Text { visible: !!eventPage.emailError; text: "Error loading email templates"; font.family: theme.font; font.pixelSize: 14; color: theme.danger; height: 32; verticalAlignment: Text.AlignVCenter }
                         PeopleTable {
+                            visible: !eventPage.emailError
+                            enabled: !eventPage.pd.disableAttendeeEmails
+                            opacity: enabled ? 1 : 0.5
                             headers: ["Email", "When it's sent", "Actions"]
-                            rows: [["Event invite", "Event is published or updated", ""], ["Event recording available", "As soon as recording is published", ""]]
+                            rows: (root.emailTemplateList || []).map(t => [root.emailLabel(t.templateType), root.emailTiming(t), t.templateId, t.templateType])
                             actions: true
                         }
+                        Text { visible: !eventPage.emailError && !!root.emailTemplateList && root.emailTemplateList.length === 0; text: "No attendee notifications configured"; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary; height: 44; verticalAlignment: Text.AlignVCenter }
                     }
                 }
                 PeopleSection {
@@ -1834,7 +2275,7 @@ Rectangle {
                             width: parent.width; spacing: 16
                             Item { width: 1; height: 40 }
                             Text { anchors.horizontalCenter: parent.horizontalCenter; text: "When attendees RSVP or register, they'll show up here."; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
-                            Image { anchors.horizontalCenter: parent.horizontalCenter; width: 100; height: 100; source: root.cdn + "v2/people-l-standard.svg"; sourceSize: Qt.size(200, 200); asynchronous: true }
+                            Image { anchors.horizontalCenter: parent.horizontalCenter; width: 128; height: 128; source: root.cdn + (theme.dark || theme.highContrast ? "v2/people-d-standard.svg" : "v2/people-l-standard.svg"); sourceSize: Qt.size(256, 256); asynchronous: true }
                             Item { width: 1; height: 40 }
                         }
                     }
@@ -1901,7 +2342,45 @@ Rectangle {
             }
         }
     }
-    function loadPeopleTab() { if (current) call("people", { id: current.id }, v => { if (!v.error) peopleData = v }) }
+    function loadPeopleTab() {
+        if (!current) return
+        call("people", { id: current.id }, v => { if (!v.error) peopleData = v })
+        emailTemplateList = null
+        call("emailTemplates", { id: current.id }, v => {
+            if (v.error) { emailTemplateList = undefined; return }
+            const list = Array.isArray(v) ? v : (v.emailTemplates || v.value || [])
+            emailTemplateList = emailOrder.map(k => list.find(t => t.templateType === k)).filter(t => !!t)
+        })
+        call("policy", {}, v => { if (!v.error) eventsPolicy = v })
+    }
+    // People & emails ▸ Email notifications (Teams 26304: the rows in this
+    // order, their labels and "When it's sent").
+    property var emailTemplateList: null
+    property var eventsPolicy: ({})
+    readonly property var emailOrder: ["AttendeeRegistration", "AttendeePendingApproval", "AttendeeCancellation", "AttendeeCancellationRequest",
+        "AttendeeRegisterAfterWaitlist", "AttendeeWaitlisting", "AttendeeRejection", "EventDateTimeUpdate", "EventCancellation",
+        "EventAttendeeReminder", "EventInvite", "AttendeesEventInvite", "EventRecording"]
+    readonly property var emailLabels: ({ AttendeeRegistration: ["Registration confirmation", "Attendee registers"],
+        AttendeePendingApproval: ["Registration pending", "Attendee registration is pending"],
+        AttendeeCancellation: ["Registration cancellation", "Attendee cancels registration"],
+        AttendeeCancellationRequest: ["Cancellation request", "Attendee requests cancellation"],
+        AttendeeRegisterAfterWaitlist: ["Registration after waitlist", "Attendee registers after waitlist"],
+        AttendeeWaitlisting: ["Waitlist confirmation", "Attendee joins waitlist for full event"],
+        AttendeeRejection: ["Registration rejected", "Pending registration is rejected"],
+        EventDateTimeUpdate: ["Date and time update", "Immediately"], EventCancellation: ["Event cancellation", "Immediately"],
+        EventAttendeeReminder: ["Event reminder", ""], EventInvite: ["Event invite", "Event is published or updated"],
+        AttendeesEventInvite: ["Attendees event invitation", "Event is published or updated"],
+        EventRecording: ["Event recording available", "As soon as recording is published"] })
+    function emailLabel(type) { return (emailLabels[type] || ["Email notification"])[0] }
+    function emailTiming(t) {
+        if (t.templateType !== "EventAttendeeReminder") return (emailLabels[t.templateType] || ["", "Unknown timing"])[1]
+        const d = (t.sendTimeInterval || {}).days || 0, h = (t.sendTimeInterval || {}).hours || 0
+        if (d === 1) return "1 day before event"
+        if (d > 1) return d + " days before event"
+        if (h === 1) return "1 hour before event starts"
+        if (h > 1) return h + " hours before event"
+        return "Unknown timing"
+    }
     // A People & emails card (white, radius 16, its title 20/28 semibold
     // with a chevron; open by default).
     component PeopleSection: Item {
@@ -1957,51 +2436,562 @@ Rectangle {
                 Item {
                     width: parent.width; height: 44
                     Text { x: 8; anchors.verticalCenter: parent.verticalCenter; text: parent.parent.modelData[0]; font.family: theme.font; font.pixelSize: 14; color: theme.text }
-                    Text { x: 333; anchors.verticalCenter: parent.verticalCenter; text: parent.parent.modelData[1]; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    Text { visible: parent.parent.modelData[3] !== "EventAttendeeReminder"; x: 333; anchors.verticalCenter: parent.verticalCenter; text: parent.parent.modelData[1]; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    // The reminder's timing is a brand link with a clock.
+                    Row {
+                        visible: pt.actions && parent.parent.modelData[3] === "EventAttendeeReminder"
+                        x: 333; anchors.verticalCenter: parent.verticalCenter; spacing: 4
+                        FluentIcon { name: "clock-20"; size: 16; color: theme.brandForeground1; anchors.verticalCenter: parent.verticalCenter }
+                        Text { text: parent.parent.parent.modelData[1]; font.family: theme.font; font.pixelSize: 14; color: theme.brandForeground1; anchors.verticalCenter: parent.verticalCenter }
+                        HoverHandler { cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: emailTiming.openFor(parent.parent.parent.modelData[2]) }
+                        Accessible.role: Accessible.Button; Accessible.name: "Edit timing"
+                    }
                     Row {
                         visible: pt.actions
                         anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; spacing: 16
-                        Btn { icon: "eye-20"; text: "Preview"; onClicked: emailPreview.openFor(parent.parent.parent.modelData[0]) }
-                        Btn { outlined: true; icon: "edit-20"; text: "Edit"; onClicked: emailPreview.openFor(parent.parent.parent.modelData[0]) }
+                        Btn { icon: "eye-20"; text: "Preview"; Accessible.name: "Preview email"; onClicked: emailEditor.openFor(parent.parent.parent.modelData[2], parent.parent.parent.modelData[3], true) }
+                        Btn { visible: !!root.eventsPolicy.emailEditing; outlined: true; icon: "edit-20"; text: "Edit"; Accessible.name: "Edit email"; onClicked: emailEditor.openFor(parent.parent.parent.modelData[2], parent.parent.parent.modelData[3], false) }
                     }
                 }
                 Rectangle { width: parent.width; height: 1; color: theme.divider }
             }
         }
     }
-    // An email's Preview: the event's email template (subject and body, as
-    // the event service keeps it).
+    // People & emails ▸ an email's Preview and Edit (Teams' email template
+    // dialog, 600 wide): Edit email template with Sender's name (only with
+    // registration on and more than 3,000 allowed attendees), Sender's
+    // email, Email subject *, the cover image and logo (the event's theme,
+    // read-only), Email body * (the Formatting toolbar and Personalization:
+    // tokens such as {{eventName}} show as read-only chips), Email footer
+    // ("This is set by your IT admin."); Preview / Edit email, Cancel, Save
+    // (PATCH {subject, body, senderName}). Preview draws the email with
+    // sample values.
     Popup {
-        id: emailPreview
+        id: emailEditor
         parent: Overlay.overlay
-        modal: true; padding: 24
-        x: (parent.width - width) / 2; y: (parent.height - height) / 2
-        width: 720; height: Math.min(560, parent.height - 80)
+        modal: true; padding: 0
+        x: (parent.width - width) / 2; y: Math.max(16, (parent.height - height) / 2)
+        width: 600; height: Math.min(edCol.implicitHeight + 48, parent.height - 32)
         background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
-        property string kind: ""
-        property var template: null
-        function openFor(k) {
-            kind = k; template = null; open()
-            root.call("emailTemplates", { id: root.current.id }, v => {
-                const list = Array.isArray(v) ? v : (v.value || v.emailTemplates || [])
-                const want = k === "Event invite" ? /invit/i : /record/i
-                template = list.find(t => want.test(JSON.stringify(t.emailType || t.type || t.name || ""))) || list[0] || { error: v.error || "" }
+        property string templateId: ""
+        property string type: ""
+        property bool preview: false
+        property bool saving: false
+        property bool subjectTouched: false
+        property var t: null
+        property var th: ({})
+        property var keyOf: ({})
+        readonly property bool editable: !!root.eventsPolicy.emailEditing
+        readonly property string status: t ? (t.adO4867893_IsBodyEditableStatusCode || "None") : "None"
+        readonly property bool bodyEditable: status !== "BodyNotEditable" && status !== "Indeterminate"
+        readonly property bool senderEditable: !!(root.current && root.current.registration) && ((root.features && root.features.eventCapacity && root.features.eventCapacity.allowedAttendeeCount) || 0) > 3000
+        readonly property var labels: ({ eventName: "Event Name", dateTime: "Event Date Time", eventDateTimeRange: "Event Date Time", eventDescription: "Event Description",
+                                         eventOrganization: "Organization Name", eventOrganizationName: "Organization Name", eventOrganizerName: "Organizer Name",
+                                         firstName: "Attendee First Name", lastName: "Attendee Last Name", eventInviteCard: "Event Invite Card" })
+        readonly property var tokenMenu: (type === "EventInvite" || type === "AttendeesEventInvite") ? ["eventName", "dateTime", "eventDescription", "eventOrganization", "eventInviteCard"]
+                                       : type === "EventRecording" ? ["eventName", "eventOrganization", "eventInviteCard"]
+                                       : ["eventName", "dateTime", "eventOrganizerName", "firstName", "lastName", "eventInviteCard"]
+        function chip(key) {
+            const label = labels[key] || key
+            const k = Object.assign({}, keyOf); k[label] = key; keyOf = k
+            return "<span style=\"background-color:" + theme.pick("#FAFAFA", "#292929", "#000000") + ";\">⁠" + label + "⁠</span>"
+        }
+        // The service's HTML is indented: its spaces aren't text.
+        function toEditor(html) { return (html || "").replace(/>\s+</g, "><").replace(/[ \t\r\n]{2,}/g, " ").replace(/\{\{\s*([A-Za-z]+)\s*\}\}/g, (m, k) => chip(k)) }
+        // Tokens back to {{key}}, without the chip's shading.
+        function fromEditor(html) {
+            const shade = theme.pick("#FAFAFA", "#292929", "#000000")
+            return html.split("background-color:" + shade + ";").join("").replace(/⁠([^⁠]*)⁠/g, (m, l) => "{{" + (keyOf[l] || l) + "}}")
+        }
+        function sample(html) {
+            const ev = root.current || {}
+            const org = ((root.peopleData || {}).organizerList || [])[0] || {}
+            const when = ev.start ? new Date(Date.parse(ev.start)).toLocaleString(Qt.locale(), "dddd, MMMM d, yyyy h:mm AP") + " - " + new Date(Date.parse(ev.end)).toLocaleTimeString(Qt.locale(), "h:mm AP") : ""
+            const tenant = ((t && t.footer) || "").replace(/<[^>]*>/g, " ").trim().split(/ This event| This /)[0]
+            const v = { eventName: ev.title || "", dateTime: when, eventDateTimeRange: when, eventDescription: (ev.description || "").replace(/<[^>]*>/g, ""),
+                        eventOrganizerName: org.name || "", eventOrganization: tenant, eventOrganizationName: tenant, firstName: "Attendee First Name", lastName: "Attendee Last Name", eventInviteCard: "" }
+            return (html || "").replace(/\{\{\s*([A-Za-z]+)\s*\}\}/g, (m, k) => "<span style=\"background-color:#FDF6E3;\">" + (v[k] !== undefined ? v[k] : k) + "</span>")
+        }
+        function openFor(id, kind, asPreview) {
+            templateId = id; type = kind; preview = asPreview; saving = false; subjectTouched = false; t = null; keyOf = ({})
+            edSubject.text = ""; edSender.text = ""; edBody.text = ""
+            open()
+            root.call("theme", { id: root.current.id }, v => { if (!v.error) th = Object.assign({}, v, { promoImage: v.promoImage || root.current.promo_image || "" }) })
+            root.call("emailTemplate", { id: root.current.id, templateId: id }, v => {
+                if (v.error) { t = { error: v.error }; return }
+                t = v
+                edSubject.text = v.subject || ""; edSender.text = v.senderName || ""
+                edBody.text = ""; edRich.importHtml(toEditor(v.body || ""), theme.text)
             })
         }
-        contentItem: Column {
-            spacing: 12
-            Item { width: parent.width; height: 28
-                Text { text: emailPreview.kind; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
-                Btn { anchors.right: parent.right; icon: "dismiss-20"; text: ""; pad: 6; onClicked: emailPreview.close(); Accessible.name: "Close" } }
-            Text { visible: !!emailPreview.template && !!emailPreview.template.subject; text: emailPreview.template ? (emailPreview.template.subject || "") : ""; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
-            Flickable {
-                width: parent.width; height: emailPreview.height - 120; clip: true; contentHeight: bodyText.height
-                Text { id: bodyText; width: parent.width; wrapMode: Text.Wrap; textFormat: Text.RichText
-                       text: !emailPreview.template ? "Loading..." : (emailPreview.template.body || emailPreview.template.htmlBody || emailPreview.template.content || "The design seen by your recipients may not look like this preview, depending on their email service and device.")
-                       font.family: theme.font; font.pixelSize: 14; color: theme.text }
+        function bodyHtml() { return fromEditor(edRich.exportHtml()) }
+        readonly property bool bodyEmpty: edBody.length === 0
+        function save() {
+            if (!edSubject.text.trim() || bodyEmpty || !edSender.text.trim()) { subjectTouched = true; return }
+            saving = true
+            root.call("saveEmailTemplate", { id: root.current.id, templateId: templateId, template: { subject: edSubject.text, body: bodyHtml(), senderName: edSender.text } }, v => {
+                saving = false
+                console.warn("EVENTS email saved", JSON.stringify(v).slice(0, 300))
+                // Teams keeps the dialog open when saving fails.
+                if (!v.error) { emailEditor.close(); root.loadPeopleTab() }
+            })
+        }
+        component EdLabel: Text { font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text; height: 20 }
+        component EdField: Rectangle {
+            id: ef
+            property alias text: efIn.text
+            property alias input: efIn
+            property string placeholder
+            property bool usable: true
+            height: 32; radius: 4
+            color: usable ? theme.input : theme.bgDisabled
+            border.color: efIn.activeFocus ? theme.brand : theme.stroke; border.width: usable ? 1 : 0
+            TextInput { id: efIn; x: 10; width: parent.width - 20; anchors.verticalCenter: parent.verticalCenter; enabled: ef.usable; clip: true; selectByMouse: true
+                        font.family: theme.font; font.pixelSize: 14; color: ef.usable ? theme.text : theme.disabledStrong
+                        Text { visible: !parent.text && !parent.activeFocus; text: ef.placeholder; font: parent.font; color: theme.textSecondary } }
+        }
+        contentItem: Flickable {
+            contentHeight: edCol.implicitHeight + 48; clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+            Column {
+                id: edCol
+                x: 24; y: 24; width: parent.width - 48; spacing: 12
+                Item { width: parent.width; height: 28
+                    Text { text: emailEditor.preview ? "Preview" : "Edit email template"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+                    Btn { anchors.right: parent.right; icon: "dismiss-20"; text: ""; pad: 6; onClicked: emailEditor.close(); Accessible.name: "Close" } }
+                // Teams' domain banners.
+                Rectangle {
+                    visible: emailEditor.status === "BodyNotEditable" || emailEditor.status === "Indeterminate"
+                    width: parent.width; height: visible ? bannerText.implicitHeight + 16 : 0; radius: 4
+                    color: emailEditor.status === "Indeterminate" ? theme.pick("#FDF3F4", "#3B2326", "#000000") : theme.pick("#F5F5F5", "#292929", "#000000")
+                    Text { id: bannerText; x: 12; y: 8; width: parent.width - 24; wrapMode: Text.Wrap; font.family: theme.font; font.pixelSize: 14; color: theme.text
+                           text: emailEditor.status === "Indeterminate" ? "Editing isn't available because we couldn't fetch your org's email domain for M365 notifications. Try again or check back later."
+                                                                       : "Editing isn't available because your org hasn't finished setting up your email domain for M365 notifications yet. Contact your admin for help." }
+                }
+                Text { visible: !emailEditor.t; text: "Loading..."; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
+                // ---- Edit ----
+                Column {
+                    visible: !emailEditor.preview && !!emailEditor.t
+                    width: parent.width; spacing: 12
+                    Row {
+                        spacing: 12
+                        Column { spacing: 4; width: (edCol.width - 12) / 2
+                            EdLabel { text: "Sender's name *" }
+                            EdField { id: edSender; width: parent.width; usable: emailEditor.senderEditable && emailEditor.editable; input.Accessible.name: "Sender's name" } }
+                        Column { spacing: 4; width: (edCol.width - 12) / 2
+                            EdLabel { text: "Sender's email" }
+                            EdField { width: parent.width; usable: false; text: emailEditor.t ? (emailEditor.t.senderEmail || "") : ""; input.Accessible.name: "Sender's email" } }
+                    }
+                    Column { width: parent.width; spacing: 4
+                        EdLabel { text: "Email subject *" }
+                        EdField { id: edSubject; width: parent.width; placeholder: "Enter subject"; usable: emailEditor.editable; input.Accessible.name: "Email subject"
+                                  input.onActiveFocusChanged: if (!input.activeFocus) emailEditor.subjectTouched = true }
+                        Text { visible: emailEditor.subjectTouched && !edSubject.text.trim(); text: "Email subject is required"; font.family: theme.font; font.pixelSize: 12; color: theme.danger } }
+                    Column { width: parent.width; spacing: 4
+                        EdLabel { text: "Cover image" }
+                        Rectangle {
+                            width: parent.width; height: Math.round(width * 0.25); radius: 4; clip: true
+                            color: theme.pick("#F0F0F0", "#1F1F1F", "#000000"); border.color: theme.divider; border.width: 1
+                            Image { anchors.fill: parent; anchors.margins: 1; fillMode: Image.PreserveAspectCrop; source: emailEditor.th.promoImage ? backend.cardImage(emailEditor.th.promoImage) : ""; asynchronous: true; visible: status === Image.Ready }
+                            Text { anchors.centerIn: parent; visible: !emailEditor.th.promoImage; text: "No banner image"; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+                        } }
+                    Column { spacing: 4
+                        EdLabel { text: "Logo" }
+                        Rectangle {
+                            width: 50; height: 50; radius: 4; clip: true
+                            color: theme.pick("#F0F0F0", "#1F1F1F", "#000000"); border.color: theme.divider; border.width: 1
+                            Image { anchors.fill: parent; anchors.margins: 1; fillMode: Image.PreserveAspectFit; source: emailEditor.th.logoImage ? backend.cardImage(emailEditor.th.logoImage) : ""; asynchronous: true; visible: status === Image.Ready }
+                            Text { anchors.centerIn: parent; visible: !emailEditor.th.logoImage; text: "No logo"; font.family: theme.font; font.pixelSize: 10; color: theme.textSecondary }
+                        } }
+                    Column { width: parent.width; spacing: 4
+                        EdLabel { text: "Email body *" }
+                        Rectangle {
+                            width: parent.width; height: 260; radius: 4; color: theme.input; border.color: theme.stroke; border.width: 1
+                            enabled: emailEditor.editable && emailEditor.bodyEditable; opacity: enabled ? 1 : 0.6
+                            property var rs: ({})
+                            FormatBar {
+                                id: edBar
+                                x: -6; y: -9; width: parent.width - 120; tierWidth: 640
+                                discard: false
+                                custom: [[{ k: "bold", icon: "fmt-bold", label: "Bold", on: !!parent.rs.bold }, { k: "italic", icon: "fmt-italic", label: "Italic", on: !!parent.rs.italic },
+                                          { k: "underline", icon: "fmt-underline", label: "Underline", on: !!parent.rs.underline }],
+                                         [{ k: "highlight", icon: "fmt-highlight", label: "Text highlight color", popup: true }, { k: "color", icon: "fmt-font-color", label: "Font color", popup: true },
+                                          { k: "size", icon: "fmt-font-size", label: "Font size", popup: true }, { k: "clear", icon: "fmt-clear-format", label: "Clear all formatting" }],
+                                         [{ k: "outdent", icon: "fmt-outdent", label: "Decrease indent" }, { k: "indent", icon: "fmt-indent", label: "Increase indent" },
+                                          { k: "ul", icon: "fmt-bullets", label: "Bulleted list", on: parent.rs.list === "ul" }, { k: "ol", icon: "fmt-numbers", label: "Numbered list", on: parent.rs.list === "ol" }],
+                                         [{ k: "link", icon: "fmt-link", label: "Insert link", popup: true }]]
+                                st: parent.rs
+                                selectedText: edBody.selectedText
+                                onCommand: (op, arg) => { edRich.apply(edBody.selectionStart, edBody.selectionEnd, op, arg || ""); edBody.forceActiveFocus(); parent.rs = JSON.parse(edRich.state(edBody.cursorPosition) || "{}") }
+                                Accessible.name: "Email body formatting"
+                            }
+                            Btn {
+                                id: persBtn
+                                anchors.right: parent.right; anchors.rightMargin: 4; y: 4
+                                text: "Personalization"; icon: "chevron-down-20"
+                                onClicked: { persMenu.parent = persBtn; persMenu.x = persBtn.width - persMenu.width; persMenu.y = persBtn.height + 4; persMenu.open() }
+                            }
+                            MenuPopup {
+                                id: persMenu
+                                items: emailEditor.tokenMenu.map(k => ({ key: k, label: emailEditor.labels[k] }))
+                                onPicked: i => { edBody.insert(edBody.cursorPosition, emailEditor.chip(items[i].key)); edBody.forceActiveFocus() }
+                            }
+                            Flickable {
+                                x: 13; y: 40; width: parent.width - 26; height: parent.height - 46
+                                contentHeight: edBody.contentHeight; clip: true
+                                boundsBehavior: Flickable.StopAtBounds
+                                TextEdit {
+                                    id: edBody
+                                    width: parent.width
+                                    textFormat: TextEdit.RichText
+                                    wrapMode: TextEdit.Wrap; font.family: theme.font; font.pixelSize: 14; color: theme.text; selectByMouse: true
+                                    selectionColor: theme.selectionFill; selectedTextColor: theme.text
+                                    onCursorPositionChanged: parent.parent.rs = JSON.parse(edRich.state(cursorPosition) || "{}")
+                                    RichText { id: edRich }
+                                    Text { visible: edBody.length === 0 && !edBody.activeFocus; text: "Enter email body"; font: edBody.font; color: theme.textSecondary }
+                                    Accessible.role: Accessible.EditableText
+                                    Accessible.name: "Email body"
+                                }
+                            }
+                        }
+                        Text { visible: emailEditor.subjectTouched && emailEditor.bodyEmpty; text: "Email body is required"; font.family: theme.font; font.pixelSize: 12; color: theme.danger } }
+                    Column { width: parent.width; spacing: 4
+                        EdLabel { text: "Email footer" }
+                        EdField { width: parent.width; usable: false; text: emailEditor.t ? (emailEditor.t.footer || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim() : "" }
+                        Text { text: "This is set by your IT admin."; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } }
+                }
+                // ---- Preview ----
+                Column {
+                    visible: emailEditor.preview && !!emailEditor.t
+                    width: parent.width; spacing: 12
+                    Text { width: parent.width; wrapMode: Text.Wrap; text: (emailEditor.t && emailEditor.t.subject) ? emailEditor.sample(emailEditor.t.subject).replace(/<[^>]*>/g, "") : root.emailLabel(emailEditor.type)
+                           font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+                    Row { spacing: 8
+                        Avatar { size: 32; name: (emailEditor.t && emailEditor.t.senderName) || "Event Organizer" }
+                        Column { anchors.verticalCenter: parent.verticalCenter
+                            Row { Text { text: (emailEditor.t && emailEditor.t.senderName) || "Event Organizer"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                                  Text { text: " <" + ((emailEditor.t && emailEditor.t.senderEmail) || "noreply@microsoft.com") + ">"; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary } }
+                            Text { text: "To: Recipient"; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } } }
+                    Rectangle {
+                        width: parent.width; height: Math.round(width / 3); radius: 4; clip: true
+                        color: "transparent"; border.color: emailEditor.th.promoImage ? "transparent" : theme.stroke; border.width: 1
+                        Image { anchors.fill: parent; fillMode: Image.PreserveAspectCrop; source: emailEditor.th.promoImage ? backend.cardImage(emailEditor.th.promoImage) : ""; asynchronous: true }
+                        Text { anchors.centerIn: parent; visible: !emailEditor.th.promoImage; horizontalAlignment: Text.AlignHCenter; text: "Event Banner Image\n(Appears here in actual email)"; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+                    }
+                    Image { visible: !!emailEditor.th.logoImage; width: 50; height: 50; fillMode: Image.PreserveAspectFit; source: emailEditor.th.logoImage ? backend.cardImage(emailEditor.th.logoImage) : "" }
+                    Text { width: parent.width; wrapMode: Text.Wrap; textFormat: Text.RichText; text: emailEditor.sample(emailEditor.t ? emailEditor.t.body : "")
+                           font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    Text { width: parent.width; wrapMode: Text.Wrap; textFormat: Text.RichText; text: emailEditor.t ? (emailEditor.t.footer || "") : ""; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+                    Row { spacing: 6
+                        FluentIcon { name: "info-16"; size: 16; color: theme.textSecondary }
+                        Text { width: edCol.width - 30; wrapMode: Text.Wrap; text: "The design seen by your recipients may not look like this preview, depending on their email service and device."; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } }
+                }
+                // The buttons.
+                Item {
+                    width: parent.width; height: 32
+                    Row { visible: emailEditor.editable
+                        spacing: 4; anchors.verticalCenter: parent.verticalCenter
+                        FluentIcon { name: emailEditor.preview ? "edit-20" : "eye-20"; size: 20; color: theme.brandForeground1; anchors.verticalCenter: parent.verticalCenter }
+                        Text { text: emailEditor.preview ? "Edit email" : "Preview"; font.family: theme.font; font.pixelSize: 14; color: theme.brandForeground1; anchors.verticalCenter: parent.verticalCenter }
+                        HoverHandler { cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: { if (!emailEditor.preview && emailEditor.t) emailEditor.t = Object.assign({}, emailEditor.t, { subject: edSubject.text, body: emailEditor.bodyHtml(), senderName: edSender.text }); emailEditor.preview = !emailEditor.preview } } }
+                    Row {
+                        anchors.right: parent.right; spacing: 8
+                        Btn { visible: emailEditor.editable; outlined: true; text: "Cancel"; onClicked: emailEditor.close() }
+                        Btn { visible: emailEditor.editable; primary: true; usable: !emailEditor.saving && !!emailEditor.t && !emailEditor.t.error; text: emailEditor.saving ? "Saving" : "Save"; onClicked: emailEditor.save() }
+                        Btn { visible: !emailEditor.editable; outlined: true; text: "Close"; onClicked: emailEditor.close() }
+                    }
+                }
             }
         }
     }
+    // Send event reminder (the reminder's timing): a number (1-23 hours, or
+    // 1 day) and Hours / Days, "before the event starts."; locked within an
+    // hour of the start. Save: PATCH the template with sendTimeInterval.
+    Popup {
+        id: emailTiming
+        parent: Overlay.overlay
+        modal: true; padding: 24
+        x: (parent.width - width) / 2; y: (parent.height - height) / 2
+        width: 480
+        background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
+        property string templateId: ""
+        property var t: null
+        property int amount: 1
+        property string unit: "hours"
+        property bool saving: false
+        readonly property bool locked: !!root.current && Date.parse(root.current.start) - Date.now() < 3600000
+        function openFor(id) {
+            templateId = id; t = null; saving = false; open()
+            root.call("emailTemplate", { id: root.current.id, templateId: id }, v => {
+                t = v
+                const iv = v.sendTimeInterval || {}
+                if ((iv.days || 0) > 0) { unit = "days"; amount = iv.days } else { unit = "hours"; amount = iv.hours || 1 }
+            })
+        }
+        contentItem: Column {
+            spacing: 16
+            Item { width: parent.width; height: 28
+                Text { text: "Send event reminder"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+                Btn { anchors.right: parent.right; icon: "dismiss-20"; text: ""; pad: 6; onClicked: emailTiming.close(); Accessible.name: "Close" } }
+            Text { visible: emailTiming.locked; width: parent.width; wrapMode: Text.Wrap; text: "Reminder timing cannot be changed because the event starts in less than an hour."; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+            Row {
+                spacing: 8; enabled: !emailTiming.locked; opacity: enabled ? 1 : 0.5
+                ComboBox { width: 80; model: emailTiming.unit === "days" ? [1] : Array.from({ length: 23 }, (x, i) => i + 1); currentIndex: Math.max(0, emailTiming.amount - 1)
+                           onActivated: i => emailTiming.amount = i + 1; Accessible.name: "Reminder amount" }
+                ComboBox { width: 100; model: ["Hours", "Days"]; currentIndex: emailTiming.unit === "days" ? 1 : 0
+                           onActivated: i => { emailTiming.unit = i === 1 ? "days" : "hours"; emailTiming.amount = 1 }; Accessible.name: "Reminder unit" }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: "before the event starts."; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+            }
+            Row {
+                anchors.right: parent.right; spacing: 8
+                Btn { outlined: true; text: "Cancel"; onClicked: emailTiming.close() }
+                Btn { primary: true; usable: !emailTiming.saving && !emailTiming.locked && !!emailTiming.t; text: emailTiming.saving ? "Saving" : "Save"
+                      onClicked: {
+                          emailTiming.saving = true
+                          const iv = emailTiming.unit === "days" ? { hours: 0, days: emailTiming.amount } : { hours: emailTiming.amount, days: 0 }
+                          root.call("saveEmailTemplate", { id: root.current.id, templateId: emailTiming.templateId,
+                                    template: { subject: emailTiming.t.subject, body: emailTiming.t.body, senderName: emailTiming.t.senderName, sendTimeInterval: iv } }, v => {
+                              emailTiming.saving = false; if (!v.error) { emailTiming.close(); root.loadPeopleTab() } })
+                      } }
+            }
+        }
+    }
+    // Test helpers for the email editor (--events-test=emails).
+    function emailEditorForTest(i, preview) { const t = (emailTemplateList || [])[i]; if (t) emailEditor.openFor(t.templateId, t.templateType, preview); return !!t }
+    function emailEditorStateForTest() { return JSON.stringify({ open: emailEditor.opened, preview: emailEditor.preview, type: emailEditor.type, subject: edSubject.text, sender: edSender.text,
+                                                                   senderEditable: emailEditor.senderEditable, editable: emailEditor.editable, status: emailEditor.status,
+                                                                   body: emailEditor.bodyHtml().slice(0, 600), rows: (emailTemplateList || []).map(t => root.emailLabel(t.templateType) + " / " + root.emailTiming(t)) }) }
+    function emailEditorTypeForTest(text) { edBody.insert(edBody.length, text) }
+    function emailEditorSaveForTest() { emailEditor.save() }
+    function emailEditorCloseForTest() { emailEditor.close() }
+    // Overview ▸ Edit event banner: Teams' Branding dialog (722 wide): the
+    // cover image (3:1; Edit image, or Upload image when there's none), the
+    // logo (90 x 90; Upload logo / Edit image), Theme color (nine 40 px
+    // swatches, the chosen one underlined); Cancel / Save. Edit image crops
+    // (670 x 223 for the cover, 300 x 300 for the logo) with Zoom out / the
+    // zoom level / Zoom in and Upload image; Back / Save. PNG or JPG up to
+    // 5 MB. Save sends the changed parts in turn: PATCH events/{id}/theme
+    // {primaryColor}, /theme/promo and /theme/logo {imageId, image}; then
+    // "Cover image successfully updated.", "Logo successfully updated.",
+    // "Theme color successfully updated.".
+    FileDialog {
+        id: brandFile
+        title: "Choose an image"
+        nameFilters: ["Images (*.png *.jpg *.jpeg)"]
+        onAccepted: branding.picked(selectedFile.toString())
+    }
+    Popup {
+        id: branding
+        parent: Overlay.overlay
+        modal: true; padding: 24; topPadding: 12
+        x: (parent.width - width) / 2; y: Math.max(16, (parent.height - height) / 2)
+        width: 722
+        background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
+        readonly property var swatches: [["Default", "#5B5FC7"], ["Red", "#B82F41"], ["Orange", "#FFA08F"], ["Yellow", "#FFBA82"], ["Green", "#9DE3CB"],
+                                         ["Teal", "#9EE5DE"], ["Blue", "#257ACC"], ["Pink", "#D13B6D"], ["Grey", "#F0F0F0"]]
+        property var th: ({})
+        property string color: ""
+        property string coverFile: ""
+        property string logoFile: ""
+        property string view: "main"   // main, cover, logo
+        property string cropSource: ""
+        property string error: ""
+        property bool saving: false
+        property real zoom: 1
+        property real minZoom: 1
+        property int savedSeq: 0
+        function openNow() {
+            view = "main"; error = ""; saving = false; coverFile = ""; logoFile = ""; th = ({}); color = ""
+            open()
+            root.call("theme", { id: root.current.id }, v => { if (!v.error) { th = v; color = v.primaryColor || "#8C5BD2" } })
+        }
+        readonly property string coverSource: coverFile ? coverFile : (th.promoImage ? backend.cardImage(th.promoImage) : "")
+        readonly property string logoSource: logoFile ? logoFile : (th.logoImage ? backend.cardImage(th.logoImage) : "")
+        property string pickFor: ""
+        function pick(which) { pickFor = which; brandFile.open() }
+        function picked(url) {
+            if (!/\.(png|jpe?g)$/i.test(url)) { error = "Choose a PNG or JPG file."; return }
+            const size = backend.fileSize(url.replace(/^file:\/\//, ""))
+            if (size > 5 * 1024 * 1024) { error = "Choose a file smaller than 5 MB. "; return }
+            error = ""
+            cropSource = url; view = pickFor
+        }
+        function editCurrent(which) { cropSource = which === "cover" ? coverSource : logoSource; view = which }
+        // The crop as Teams makes it: the visible part at the image's own
+        // size, a JPEG.
+        function saveCrop() {
+            const which = view
+            const n = ++savedSeq
+            const out = "/tmp/ost-branding-" + which + "-" + n + ".jpg"
+            const scale = cropImg.sourceSize.width > 0 ? cropImg.sourceSize.width / cropImg.paintedWidth : 1
+            cropBox.grabToImage(r => {
+                r.saveToFile(out)
+                if (which === "cover") coverFile = "file://" + out; else logoFile = "file://" + out
+                view = "main"
+            }, Qt.size(Math.round(cropBox.width * scale), Math.round(cropBox.height * scale)))
+        }
+        function save() {
+            saving = true; error = ""
+            const id = root.current.id, etag = th.eTag || "*"
+            const steps = []
+            if (color && color !== (th.primaryColor || "#8C5BD2")) steps.push(["color", "Theme color successfully updated."])
+            if (coverFile) steps.push(["promo", "Cover image successfully updated."])
+            if (logoFile) steps.push(["logo", "Logo successfully updated."])
+            const done = []
+            const next = () => {
+                const s = steps.shift()
+                if (!s) {
+                    saving = false
+                    for (const t of done) root.toast({ text: t })
+                    root.call("overview", { id: id }, v => { if (!v.error && v.card) root.current = Object.assign({}, root.current, v.card) })
+                    branding.close(); return
+                }
+                const cb = v => {
+                    console.warn("EVENTS branding", s[0], JSON.stringify(v).slice(0, 200))
+                    if (v.error) { saving = false; error = "Something went wrong. Please try again."; return }
+                    done.push(s[1]); next()
+                }
+                if (s[0] === "color") root.call("setThemeColor", { id: id, eTag: etag, color: color }, cb)
+                else root.call("setThemeImage", { id: id, eTag: etag, which: s[0], current: s[0] === "promo" ? (th.promoImage || "") : (th.logoImage || ""),
+                                                  path: s[0] === "promo" ? coverFile : logoFile }, cb)
+            }
+            next()
+        }
+        component RoundBtn: Rectangle {
+            id: rb
+            property string icon
+            property string text
+            signal clicked()
+            height: 32; width: text ? rbRow.implicitWidth + 24 : 32; radius: 16
+            color: rbh.hovered ? theme.menuHover : theme.surface; border.color: theme.stroke; border.width: 1
+            Row { id: rbRow; anchors.centerIn: parent; spacing: 6
+                FluentIcon { name: rb.icon; size: 20; color: theme.textStrong; anchors.verticalCenter: parent.verticalCenter }
+                Text { visible: !!rb.text; text: rb.text; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text; anchors.verticalCenter: parent.verticalCenter } }
+            HoverHandler { id: rbh; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: rb.clicked() }
+            Accessible.role: Accessible.Button; Accessible.name: rb.text
+        }
+        contentItem: Column {
+            spacing: 0
+            width: branding.availableWidth
+            Item { width: parent.width; height: 44
+                Text { y: 12; text: branding.view === "main" ? "Branding" : "Edit image"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+                Btn { anchors.right: parent.right; y: 6; icon: "dismiss-20"; text: ""; pad: 6; onClicked: branding.close(); Accessible.name: "Close dialog" } }
+            // ---- main ----
+            Column {
+                visible: branding.view === "main"
+                width: parent.width; spacing: 16
+                Row { spacing: 6
+                    Text { width: Math.min(implicitWidth, branding.availableWidth - 30); wrapMode: Text.Wrap; text: "Choose a PNG or JPG file (max 5 MB). For best results, image ratio should be at least 796 x 265 pixels."; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    FluentIcon { name: "info-16"; size: 16; color: theme.textStrong
+                        ToolTip.visible: infoHover.hovered; ToolTip.text: "The images you upload will be hosted in a publicly available CDN."
+                        HoverHandler { id: infoHover }
+                        Accessible.role: Accessible.Button; Accessible.name: "Public CDN hosting more information" } }
+                Column { width: parent.width; spacing: 8
+                    Text { text: "Cover image"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                    Rectangle {
+                        width: parent.width; height: Math.round(width / 3); radius: 8; clip: true
+                        color: theme.pick("#F0F0F0", "#1F1F1F", "#000000")
+                        Image { anchors.fill: parent; fillMode: Image.PreserveAspectFit; source: branding.coverSource; asynchronous: true; cache: false }
+                        RoundBtn { visible: !!branding.coverSource; anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.margins: 8; icon: "image-edit-20"; text: "Edit image"; onClicked: branding.editCurrent("cover") }
+                        Btn { visible: !branding.coverSource; anchors.centerIn: parent; opacity: 0.7; icon: "arrow-upload-20"; text: "Upload image"; onClicked: branding.pick("cover") }
+                    } }
+                Row {
+                    spacing: 24
+                    Column { spacing: 8
+                        Text { text: "Logo"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                        Rectangle {
+                            width: 90; height: 90; radius: 4; clip: true
+                            color: theme.pick("#F0F0F0", "#1F1F1F", "#000000"); border.color: theme.divider; border.width: 1
+                            Image { anchors.fill: parent; anchors.margins: 1; fillMode: Image.PreserveAspectFit; source: branding.logoSource; asynchronous: true; cache: false }
+                            RoundBtn { visible: !!branding.logoSource; anchors.right: parent.right; anchors.top: parent.top; anchors.margins: 4; icon: "image-edit-20"; onClicked: branding.editCurrent("logo"); Accessible.name: "Edit image" }
+                            RoundBtn { visible: !branding.logoSource; anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.margins: 6; icon: "arrow-upload-20"; onClicked: branding.pick("logo"); Accessible.name: "Upload logo" }
+                        } }
+                    Column { spacing: 8
+                        Text { text: "Theme color"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                        Row { spacing: 18
+                            Repeater { model: branding.swatches
+                                Item {
+                                    required property var modelData
+                                    width: 40; height: 48
+                                    Rectangle {
+                                        width: 40; height: 40; radius: 20
+                                        gradient: Gradient {
+                                            GradientStop { position: 0; color: Qt.lighter(modelData[1], 1.25) }
+                                            GradientStop { position: 1; color: Qt.darker(modelData[1], 1.1) }
+                                        }
+                                        border.color: theme.dividerSoft; border.width: modelData[0] === "Grey" ? 1 : 0
+                                    }
+                                    Rectangle { visible: branding.color.toUpperCase() === modelData[1].toUpperCase(); y: 44; width: 40; height: 4; radius: 2; color: theme.brand }
+                                    HoverHandler { cursorShape: Qt.PointingHandCursor }
+                                    TapHandler { onTapped: branding.color = modelData[1] }
+                                    ToolTip.visible: swh.hovered; ToolTip.text: modelData[0]
+                                    HoverHandler { id: swh }
+                                    Accessible.role: Accessible.RadioButton; Accessible.name: modelData[0]; Accessible.checked: branding.color.toUpperCase() === modelData[1].toUpperCase()
+                                } } } }
+                }
+                Item { width: parent.width; height: 40
+                    Text { visible: !!branding.error; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 260; elide: Text.ElideRight; text: branding.error; font.family: theme.font; font.pixelSize: 12; color: theme.danger }
+                    Row { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; spacing: 8
+                        Btn { outlined: true; text: "Cancel"; onClicked: branding.close() }
+                        Btn { primary: true; usable: !branding.saving; text: branding.saving ? "Saving..." : "Save"; onClicked: branding.save() } } }
+            }
+            // ---- Edit image (crop) ----
+            Column {
+                visible: branding.view !== "main"
+                width: parent.width; spacing: 12
+                Text { text: branding.view === "logo" ? "Logo image" : "Cover image"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                Text { width: parent.width; wrapMode: Text.Wrap; font.family: theme.font; font.pixelSize: 14; color: theme.text
+                       text: branding.view === "logo" ? "PNG or JPG (max 5 MB). For best results, use a 1:1 image (at least 280×280 px)." : "PNG or JPG (max 5 MB). For best results, use a 3:1 image (at least 796 × 265 px)." }
+                Rectangle {
+                    width: parent.width; height: branding.view === "logo" ? 300 : 287
+                    color: theme.pick("#F0F0F0", "#1F1F1F", "#000000"); clip: true
+                    Item {
+                        id: cropBox
+                        anchors.centerIn: parent
+                        width: branding.view === "logo" ? 300 : 670; height: branding.view === "logo" ? 300 : 223
+                        clip: true
+                        Image {
+                            id: cropImg
+                            source: branding.view !== "main" ? branding.cropSource : ""
+                            fillMode: Image.PreserveAspectFit; asynchronous: true; cache: false
+                            width: cropBox.width * branding.zoom; height: cropBox.height * branding.zoom
+                            x: (cropBox.width - width) / 2 + dragX; y: (cropBox.height - height) / 2 + dragY
+                            property real dragX: 0
+                            property real dragY: 0
+                            DragHandler { target: null; onTranslationChanged: { cropImg.dragX += translation.x - (cropImg._lx || 0); cropImg.dragY += translation.y - (cropImg._ly || 0); cropImg._lx = translation.x; cropImg._ly = translation.y }
+                                          onActiveChanged: { cropImg._lx = 0; cropImg._ly = 0 } }
+                            property real _lx: 0
+                            property real _ly: 0
+                        }
+                    }
+                    Rectangle { anchors.fill: cropBox; color: "transparent"; border.color: theme.textOnBrand; border.width: 2 }
+                }
+                Row {
+                    spacing: 12
+                    RoundBtn { icon: "arrow-upload-20"; text: "Upload image"; onClicked: branding.pick(branding.view) }
+                    Btn { icon: "zoom-out-20"; text: ""; pad: 6; Accessible.name: "Zoom out"; onClicked: branding.zoom = Math.max(branding.minZoom, branding.zoom - 0.1) }
+                    Slider { id: zoomSlider; width: 200; from: branding.minZoom; to: branding.minZoom + 5; stepSize: 0.1; value: branding.zoom; onMoved: branding.zoom = value
+                             Accessible.name: "Zoom level"; Accessible.description: "Zoom " + Math.round(branding.zoom * 100) + "%" }
+                    Btn { icon: "zoom-in-20"; text: ""; pad: 6; Accessible.name: "Zoom in"; onClicked: branding.zoom = Math.min(branding.minZoom + 5, branding.zoom + 0.1) }
+                }
+                Item { width: parent.width; height: 40
+                    Row { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; spacing: 8
+                        Btn { outlined: true; text: "Back"; Accessible.name: "Go back"; onClicked: branding.view = "main" }
+                        Btn { primary: true; text: "Save"; onClicked: branding.saveCrop() } } }
+            }
+        }
+        onViewChanged: { zoom = 1; cropImg.dragX = 0; cropImg.dragY = 0 }
+    }
+    function brandingForTest() { branding.openNow() }
+    function brandingStateForTest() { return JSON.stringify({ open: branding.opened, view: branding.view, color: branding.color, theme: branding.th, cover: branding.coverFile, logo: branding.logoFile, error: branding.error }) }
+    function brandingColorForTest(c) { branding.color = c }
+    function brandingCoverForTest(url) { branding.pickFor = "cover"; branding.picked(url) }
+    function brandingCropSaveForTest() { branding.saveCrop() }
+    function brandingSaveForTest() { branding.save() }
     // "Save this event as a template?" (722 wide: the promo picture, Name *
     // with the event's name, Description; Save template).
     Popup {
@@ -2383,5 +3373,6 @@ Rectangle {
     function cancelCurrentForTest() { if (current) call("cancel", { id: current.id }, v => { console.warn("EVENTS cancel", JSON.stringify(v)); current = Object.assign({}, current, { state: v.error ? current.state : "Canceled" }) }) }
     function openOptionsForTest() { form.open = [false, false, false, true]; form.contentY = 0 }
     function saveForTest(name) { nameField.text = name; saveDialog.open() }
+    function accessForTest(a) { form.access = a }
     function confirmSaveForTest() { saveDialog.contentItem.children[saveDialog.contentItem.children.length - 1].children[1].clicked() }
 }

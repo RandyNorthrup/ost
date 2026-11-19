@@ -66,6 +66,8 @@ pub fn meetings_from(v: &Value) -> Vec<Value> {
             "end": utc("/end/dateTime"),
             "organizer": s("/organizer/emailAddress/name"),
             "channel": s("/channelDisplayName"),
+            // Generate audio recap lists the meetings you have a transcript of.
+            "transcript": m.to_string().contains("TranscriptV2"),
         }))
     }).collect()
 }

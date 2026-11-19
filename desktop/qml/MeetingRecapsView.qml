@@ -204,10 +204,13 @@ Rectangle {
             visible: !!root.podcasts && root.podcasts.length === 0
             anchors.centerIn: parent; anchors.verticalCenterOffset: -20
             spacing: 0
-            Image { anchors.horizontalCenter: parent.horizontalCenter; width: 100; height: 100; source: "https://teams.public.onecdn.static.microsoft/evergreen-assets/illustrations/v2/sparkle-l-standard.svg"; sourceSize: Qt.size(200, 200); asynchronous: true }
-            Item { width: 1; height: 24 }
-            Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Get started on your first audio recap"; font.family: theme.font; font.pixelSize: 18; font.weight: Font.DemiBold; color: theme.text }
+            // Teams' empty state (audio recap 26304): its no-podcast picture
+            // (128), the title 18 bold 12 under it, the text 16 above and
+            // below, Generate audio recap.
+            Image { anchors.horizontalCenter: parent.horizontalCenter; width: 128; height: 128; source: "https://teams.public.onecdn.static.microsoft/evergreen-assets/podcast/no-podcast.png"; asynchronous: true }
             Item { width: 1; height: 12 }
+            Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Get started on your first audio recap"; font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text }
+            Item { width: 1; height: 16 }
             Text { anchors.horizontalCenter: parent.horizontalCenter; width: 400; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
                    text: "Catch up on meetings with AI-generated audio recaps—they’ll appear here."; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.textStrong }
             Item { width: 1; height: 24 }
@@ -218,8 +221,7 @@ Rectangle {
                     FluentIcon { name: "add-20"; size: 16; color: theme.textOnBrand; anchors.verticalCenter: parent.verticalCenter }
                     Text { text: "Generate audio recap"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.textOnBrand } }
                 HoverHandler { id: gh; cursorShape: Qt.PointingHandCursor }
-                // Teams picks a meeting for it from Home's list.
-                TapHandler { onTapped: root.openTab("home") }
+                TapHandler { onTapped: genDialog.openNow() }
                 Accessible.role: Accessible.Button; Accessible.name: "Generate audio recap"
             }
         }
@@ -239,4 +241,112 @@ Rectangle {
         BusyIndicator { anchors.centerIn: parent; running: root.podcasts === null; visible: running; width: 32; height: 32 }
     }
     function stateForTest() { return JSON.stringify({ tab: tab, days: days.length, meetings: days.reduce((n, d) => n + d.meetings.length, 0), podcasts: podcasts ? podcasts.length : null, loading: loading }) }
+    // Generate audio recap (Teams 26304, measured on winpc 2026-11-19): a
+    // dialog (the window less 32 each side): Style (Executive, Newscast,
+    // Casual, each with its description) and Language, "Select up to 8
+    // meetings" (an info tip "Select up to eight meetings."), All / Missed /
+    // Mentions / Followed and Search for meetings, the meetings you have a
+    // transcript of from the last 30 days (Teams' calendar-three-people
+    // picture and "No meetings were transcribed" when there are none), and
+    // Generate (off until a meeting is picked; at most 8).
+    Popup {
+        id: genDialog
+        parent: Overlay.overlay
+        modal: true; padding: 37
+        x: 32; y: 17
+        width: parent.width - 64; height: parent.height - 34
+        background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
+        property string style: "Executive"
+        property var picked: []
+        property string chip: "All"
+        property string search: ""
+        readonly property var styles: [["Executive", "Two speakers. Essential info with minimal commentary."], ["Newscast", "One speaker. Fast and concise."],
+                                       ["Casual", "Two speakers. Extra color and commentary. Longest format."]]
+        readonly property var meetings: {
+            const cutoff = Date.now() - 30 * 86400000
+            let out = []
+            for (const d of root.days) for (const m of (d.meetings || [])) if (m.transcript && Date.parse(m.start) >= cutoff) out.push(m)
+            if (search) out = out.filter(m => (m.subject || "").toLowerCase().indexOf(search.toLowerCase()) >= 0)
+            return out
+        }
+        function openNow() { picked = []; chip = "All"; search = ""; open(); while (root.next < 42 && !root.loading) { root.loadMore(); break } }
+        contentItem: Column {
+            spacing: 0
+            Item { width: parent.width; height: 34
+                Text { x: -13; text: "Generate audio recap"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+                Rectangle { anchors.right: parent.right; anchors.rightMargin: -12; y: -12; width: 32; height: 32; radius: 4; color: gdx.hovered ? theme.hover : "transparent"
+                    FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.textStrong }
+                    HoverHandler { id: gdx; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: genDialog.close() }
+                    Accessible.role: Accessible.Button; Accessible.name: "Generated audio recaps" } }
+            Item { width: 1; height: 18 }
+            Row {
+                spacing: 20
+                Column { spacing: 8; width: (genDialog.availableWidth - 20) / 2
+                    Text { text: "Style"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                    ComboBox { width: parent.width; model: genDialog.styles.map(s => s[0]); currentIndex: 0; onActivated: i => genDialog.style = genDialog.styles[i][0]; Accessible.name: "Style"
+                               delegate: ItemDelegate { required property int index; width: parent ? parent.width : 300
+                                   contentItem: Column { Text { text: genDialog.styles[index][0]; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                                                         Text { text: genDialog.styles[index][1]; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } } } } }
+                Column { spacing: 8; width: (genDialog.availableWidth - 20) / 2
+                    Text { text: "Language"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                    ComboBox { width: parent.width; model: ["English (US)"]; Accessible.name: "Language" } }
+            }
+            Item { width: 1; height: 24 }
+            Row { spacing: 6
+                Text { text: "Select up to 8 meetings"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                FluentIcon { name: "info-16"; size: 16; color: theme.textStrong; ToolTip.visible: gi.hovered; ToolTip.text: "Select up to eight meetings."; HoverHandler { id: gi } } }
+            Item { width: 1; height: 12 }
+            Item { width: parent.width; height: 32
+                Row { spacing: 8
+                    Repeater { model: ["All", "Missed", "Mentions", "Followed"]
+                        Rectangle { required property var modelData
+                            height: 32; radius: 16; width: chT.implicitWidth + 32
+                            color: genDialog.chip === modelData ? theme.pick("#EBEBFF", "#2B2B40", "#000000") : theme.surface
+                            border.color: genDialog.chip === modelData ? theme.brand : theme.stroke; border.width: 1
+                            Text { id: chT; anchors.centerIn: parent; text: modelData; font.family: theme.font; font.pixelSize: 14; color: genDialog.chip === modelData ? theme.brandForeground1 : theme.text }
+                            TapHandler { onTapped: genDialog.chip = modelData }
+                            Accessible.role: Accessible.Button; Accessible.name: modelData } } }
+                Rectangle { anchors.right: parent.right; width: 280; height: 32; radius: 4; color: theme.input; border.color: theme.stroke; border.width: 1
+                    TextInput { id: genSearch; x: 12; width: parent.width - 24; anchors.verticalCenter: parent.verticalCenter; clip: true; font.family: theme.font; font.pixelSize: 14; color: theme.text
+                                onTextChanged: genDialog.search = text
+                                Text { visible: !parent.text; text: "Search for meetings"; font: parent.font; color: theme.textSecondary } } } }
+            Item { width: 1; height: 12 }
+            Rectangle {
+                width: parent.width; height: genDialog.availableHeight - 34 - 18 - 56 - 24 - 20 - 12 - 32 - 12 - 76
+                radius: 8; color: theme.pick("#FAFAFA", "#1F1F1F", "#000000")
+                Column {
+                    visible: genDialog.meetings.length === 0
+                    anchors.centerIn: parent; spacing: 24
+                    Image { anchors.horizontalCenter: parent.horizontalCenter; width: 128; height: 128; asynchronous: true
+                            source: "https://teams.public.onecdn.static.microsoft/evergreen-assets/illustrations/png/128/calendar-three-people-l-standard-128x128.png" }
+                    Text { anchors.horizontalCenter: parent.horizontalCenter; text: "No meetings were transcribed"; font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text }
+                }
+                ListView {
+                    visible: genDialog.meetings.length > 0
+                    anchors.fill: parent; anchors.margins: 12; clip: true; spacing: 4
+                    model: genDialog.meetings
+                    delegate: Rectangle {
+                        required property var modelData
+                        width: ListView.view.width; height: 48; radius: 4; color: theme.surface
+                        readonly property bool on: genDialog.picked.indexOf(modelData.threadId) >= 0
+                        CheckBox { x: 8; anchors.verticalCenter: parent.verticalCenter; checked: parent.on
+                                   onToggled: { const p = genDialog.picked.filter(t => t !== modelData.threadId); if (checked) p.push(modelData.threadId); genDialog.picked = p } }
+                        Text { x: 48; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 60; elide: Text.ElideRight
+                               text: modelData.subject + "   " + new Date(Date.parse(modelData.start)).toLocaleString(Qt.locale(), "MMM d, h:mm AP"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    }
+                }
+            }
+            Item { width: 1; height: 31 }
+            Item { width: parent.width; height: 45
+                Text { visible: genDialog.picked.length > 8; anchors.verticalCenter: parent.verticalCenter; text: "Select up to 8 meetings (" + genDialog.picked.length + " selected)"; font.family: theme.font; font.pixelSize: 14; color: theme.danger }
+                Rectangle { anchors.right: parent.right; anchors.rightMargin: -12; width: 200; height: 39; radius: 4
+                    readonly property bool usable: genDialog.picked.length > 0 && genDialog.picked.length <= 8
+                    color: !usable ? theme.bgDisabled : genH.hovered ? theme.brandHover : theme.brandFill
+                    Text { anchors.centerIn: parent; text: "Generate"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: parent.usable ? theme.textOnBrand : theme.disabledStrong }
+                    HoverHandler { id: genH }
+                    Accessible.role: Accessible.Button; Accessible.name: "Generate" } }
+        }
+    }
+    function generateDialogForTest(on) { if (on) genDialog.openNow(); else genDialog.close() }
 }

@@ -582,7 +582,10 @@ docs/spec/events.md.
   (hostClient TeamsInMeeting in a call, TeamsCalendarDetailsPage from the
   calendar). Once committed, reserveresource answers with the notes in
   `collab.resources`. OST asks it first for a scheduled meeting (then the
-  meeting-notes service, then the Meet now way).
+  meeting-notes service); a Meet now is made the Meet now way (the leader claim,
+  then the page shared with the call), the meeting-notes service only if the
+  claim fails (TASK-0212: with the service first, both people got the notes
+  from the service and the call never shared them).
 - More actions (Teams gives the notes Loop's host controls): Shared
   locations (the notes and "Open component in" its chat), Copy component,
   See who has access (OneDrive's Manage access), Open in Loop and Add to

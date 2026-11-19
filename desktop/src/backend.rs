@@ -780,6 +780,9 @@ pub mod qobject {
         /// Put text on the clipboard (a code block's Copy) and say so.
         #[qinvokable]
         fn copy_text(self: Pin<&mut Backend>, text: &QString);
+        /// A local file's size in bytes (-1 when it can't be read).
+        #[qinvokable]
+        fn file_size(self: &Backend, path: &QString) -> i64;
         /// Put HTML with its plain text on the clipboard (an event's Copy
         /// join details: the meeting's invitation, as Teams copies it).
         #[qinvokable]
@@ -2900,6 +2903,12 @@ pub struct BackendRust {
     /// else is left (Teams Rooms' auto exit), and someone else was there.
     room_auto_exit: bool,
     room_saw_others: bool,
+    /// Room mode: the ad-hoc meeting had more than one other person in it
+    /// (Teams Rooms' meetingEscalated): then it isn't left at once.
+    room_escalated: bool,
+    /// Room mode: the title Teams Rooms gives the invitation's call
+    /// ([`teams_cli::calling::room_mode::call_title`]), shown once accepted.
+    room_call_title: String,
     room_name: QString,
     room_qr: QString,
     room_meeting_end: QString,
@@ -4310,10 +4319,37 @@ async fn room_incoming(
         tracing::info!(?kind, ?keys, "room mode: meeting details");
     }
     let auto_exit = match &kind {
-        Some(k) => k.adhoc && !k.channel,
+        // A channel's meeting (its chat a @thread.tacv2) waits for its end.
+        Some(k) => k.adhoc && !k.channel && !thread.as_deref().is_some_and(|t| t.ends_with("@thread.tacv2")),
         None => auto_exit,
     };
-    let meeting_end = kind.and_then(|k| k.end).unwrap_or_default();
+    // Teams Rooms' title for the call: from its conversation (the chat's
+    // topic and kind, else who else is in it).
+    let (title, thread_meeting) = match tokio::time::timeout(
+        std::time::Duration::from_secs(4),
+        room_call_title(thread.as_deref(), &peer, &peer_id),
+    )
+    .await
+    {
+        Ok(t) => t,
+        Err(_) => (
+            teams_cli::calling::room_mode::call_title(&teams_cli::calling::room_mode::CallConversation {
+                others: vec![peer.clone()],
+                ..Default::default()
+            }),
+            None,
+        ),
+    };
+    // Without the invitation's meeting details, the chat's meeting.
+    let auto_exit = match (&kind, &thread_meeting) {
+        (None, Some(m)) if !m.meeting_type.is_empty() => m.meeting_type == "Adhoc" && !thread.as_deref().is_some_and(|t| t.ends_with("@thread.tacv2")),
+        _ => auto_exit,
+    };
+    let meeting_end = kind
+        .and_then(|k| k.end)
+        .or_else(|| thread_meeting.as_ref().map(|m| m.end.clone()).filter(|e| !e.is_empty() && !e.starts_with("0001-")))
+        .unwrap_or_default();
+    tracing::info!(%title, %meeting_end, auto_exit, "room mode: call title");
     let accept = match decision {
         Decision::Accept { video } => Some(video),
         Decision::Ring(reason) => {
@@ -4335,12 +4371,71 @@ async fn room_incoming(
         // end-of-meeting auto exit.
         this.as_mut().set_call_thread_id(QString::from(thread.as_deref().unwrap_or_default()));
         this.as_mut().rust_mut().room_saw_others = false;
+        this.as_mut().rust_mut().room_escalated = false;
+        this.as_mut().rust_mut().room_call_title = title;
         this.as_mut().set_call_state(QString::from("ringing"));
         if let Some(video) = accept {
             tracing::info!(video, conference, "room mode: auto-accepting");
             this.as_mut().accept_call(video);
         }
     });
+}
+
+/// Teams Rooms' title for a call in `thread` from `caller`: the thread's
+/// topic and kind (chat service thread properties), else its other
+/// members' names ([`teams_cli::calling::room_mode::call_title`]).
+async fn room_call_title(thread: Option<&str>, caller: &str, caller_id: &str) -> (String, Option<api::ThreadMeeting>) {
+    use teams_cli::calling::room_mode::{call_title, conversation_kind, CallConversation, ConversationKind};
+    let mut conv = CallConversation { others: vec![caller.to_string()], ..Default::default() };
+    let Some(thread) = thread.filter(|t| t.starts_with("19:")) else {
+        return (call_title(&conv), None);
+    };
+    let client = match TeamsClient::new().await {
+        Ok(c) => c,
+        Err(_) => return (call_title(&conv), None),
+    };
+    let props = api::tab_add::thread_properties(&client, thread).await;
+    let kind = match &props {
+        Ok(p) => conversation_kind(thread, p.get("threadType").and_then(|v| v.as_str())),
+        Err(e) => {
+            tracing::info!("room mode: the call's chat: {}", short_error(e));
+            conversation_kind(thread, None)
+        }
+    };
+    conv.kind = Some(kind);
+    // The thread's meeting (Teams Rooms' getMeetingDetails: its type and
+    // scheduled end, and a meeting chat's subject).
+    let meeting = props.as_ref().ok().and_then(api::thread_meeting);
+    if let Ok(p) = &props {
+        conv.topic = p
+            .get("topic")
+            .or_else(|| p.get("spaceThreadTopic"))
+            .and_then(|v| v.as_str())
+            .filter(|t| !t.trim().is_empty())
+            .map(str::to_string)
+            .or_else(|| meeting.as_ref().map(|m| m.subject.clone()).filter(|_| kind == ConversationKind::PrivateMeeting));
+        conv.huddle = p.get("conversationType").and_then(|v| v.as_str()) == Some("huddleGroupCall");
+        let keys: Vec<&String> = p.as_object().map(|o| o.keys().collect()).unwrap_or_default();
+        tracing::info!(?kind, ?keys, "room mode: the call's chat");
+    }
+    if conv.topic.is_none() && matches!(kind, ConversationKind::Group | ConversationKind::Other) {
+        let me = client.object_id().map(|o| format!("8:orgid:{o}").to_ascii_lowercase()).unwrap_or_default();
+        match api::chat_members(&client, thread).await {
+            Ok(members) => {
+                let others: Vec<String> = members
+                    .into_iter()
+                    .filter(|m| !m.me && m.mri != me && !m.name.is_empty())
+                    .map(|m| m.name)
+                    .collect();
+                if !others.is_empty() {
+                    conv.others = others;
+                }
+            }
+            Err(_) if !caller_id.is_empty() => conv.others = vec![caller.to_string()],
+            Err(_) => {}
+        }
+    }
+    (call_title(&conv), meeting)
 }
 
 async fn take_transfer(qt: cxx_qt::CxxQtThread<qobject::Backend>, request: teams_cli::calling::incoming::TransferRequest) {
@@ -8104,6 +8199,12 @@ impl qobject::Backend {
         // (Teams Rooms answers every invitation as itself: the attach and
         // media answer, its conversation request saying it's a room.)
         let room = teams_cli::calling::room_mode::is_active();
+        // Teams Rooms shows the meeting's title once it's in the call (the
+        // ringing console shows who invites the room).
+        if room && !self.rust().room_call_title.is_empty() {
+            let title = QString::from(self.rust().room_call_title.as_str());
+            self.as_mut().set_call_peer(title);
+        }
         let group = runtime().block_on(async {
             let mut slot = call_slot().lock().await;
             let thread = slot.ringing.as_ref().filter(|_| !room).and_then(|c| c.group_thread().map(str::to_string));
@@ -12232,9 +12333,13 @@ impl qobject::Backend {
         // Teams Rooms' auto exit: an ad-hoc meeting nobody else is left in.
         if self.rust().room_mode && self.rust().room_auto_exit && self.rust().call_state.to_string() == "connected" {
             let others = roster.iter().filter(|p| p.id != me && p.active && p.id.starts_with("8:")).count();
+            if teams_cli::calling::room_mode::adhoc_escalated(others) && !self.rust().room_escalated {
+                tracing::info!(others, "room mode: the ad-hoc meeting escalated; it waits for its end");
+                self.as_mut().rust_mut().room_escalated = true;
+            }
             if others > 0 {
                 self.as_mut().rust_mut().room_saw_others = true;
-            } else if self.rust().room_saw_others {
+            } else if self.rust().room_saw_others && !self.rust().room_escalated {
                 tracing::info!("room mode: leaving ad-hoc call because no other participants left in the call");
                 self.as_mut().rust_mut().room_saw_others = false;
                 self.as_mut().hang_up();
@@ -14983,6 +15088,10 @@ impl qobject::Backend {
                 )),
             });
         });
+    }
+
+    pub fn file_size(&self, path: &QString) -> i64 {
+        std::fs::metadata(path.to_string()).map(|m| m.len() as i64).unwrap_or(-1)
     }
 
     pub fn copy_text(mut self: Pin<&mut Self>, text: &QString) {
@@ -19455,6 +19564,55 @@ impl qobject::Backend {
                         Ok(json!({ "pinned": on }))
                     }
                     "emailTemplates" => api::events::email_templates(&client, &s("id")).await,
+                    "emailTemplate" => api::events::email_template(&client, &s("id"), &s("templateId")).await,
+                    "saveEmailTemplate" => {
+                        api::events::update_email_template(&client, &s("id"), &s("templateId"), p.get("template").unwrap_or(&json!({}))).await
+                    }
+                    // Your events policy and Events' ECS gates (email
+                    // editing, immersive collections).
+                    "policy" => {
+                        let pol = api::custom_emoji::effective_policies(&client, &["teamsEventsPolicy"]).await.unwrap_or_default();
+                        let find = |k: &str| -> Option<serde_json::Value> {
+                            fn walk(v: &serde_json::Value, k: &str) -> Option<serde_json::Value> {
+                                match v {
+                                    serde_json::Value::Object(o) => o.iter().find(|(n, _)| n.eq_ignore_ascii_case(k)).map(|(_, x)| x.clone())
+                                        .or_else(|| o.values().find_map(|x| walk(x, k))),
+                                    serde_json::Value::Array(a) => a.iter().find_map(|x| walk(x, k)),
+                                    _ => None,
+                                }
+                            }
+                            walk(&pol, k)
+                        };
+                        let flag = api::ecs::setting("virtualEvents", "enableImmersiveContentManagementInMeetApp");
+                        let immersive = find("immersiveEvents");
+                        let editing = find("allowEmailEditing");
+                        tracing::info!(?flag, ?immersive, ?editing, "events: policy");
+                        Ok(json!({ "immersiveCollections": api::immersive::management_enabled(flag.as_ref(), immersive.as_ref()),
+                                   "emailEditing": editing.as_ref().and_then(|v| v.as_str()).is_some_and(|v| v.eq_ignore_ascii_case("enabled")) }))
+                    }
+                    "theme" => api::events::theme(&client, &s("id")).await,
+                    "setThemeColor" => api::events::set_theme_color(&client, &s("id"), &s("eTag"), &s("color")).await,
+                    "setThemeImage" => {
+                        let path = s("path");
+                        let path = path.strip_prefix("file://").unwrap_or(&path).to_string();
+                        let bytes = std::fs::read(&path).context("The image")?;
+                        api::events::set_theme_image(&client, &s("id"), &s("eTag"), &s("which"), &s("current"), &bytes).await
+                    }
+                    "collections" => api::immersive::list(&client).await,
+                    "collection" => api::immersive::get(&s("id")).await,
+                    "createCollection" => api::immersive::create(&s("name"), &s("description")).await,
+                    "updateCollection" => api::immersive::update(&s("id"), &s("name"), &s("description")).await,
+                    "deleteCollection" => api::immersive::delete(&s("id")).await.map(|_| json!({ "deleted": true })),
+                    "collectionPeople" => api::immersive::people(&client, &s("id")).await,
+                    "addCollectionPeople" => {
+                        let ids = |k: &str| -> Vec<String> {
+                            p.get(k).and_then(|v| v.as_array()).into_iter().flatten().filter_map(|x| x.as_str().map(str::to_string)).collect()
+                        };
+                        api::immersive::add_people(&s("id"), &ids("owners"), &ids("members")).await.map(|_| json!({ "added": true }))
+                    }
+                    "changeCollectionPerson" => {
+                        api::immersive::change_person(&s("id"), &s("user"), &s("what")).await.map(|_| json!({ "changed": true }))
+                    }
                     // Meeting Recaps (Events' View audio recaps).
                     "podcasts" => api::recaps::podcasts(&notes_region(&client)).await,
                     "recapMeetings" => {
@@ -19523,20 +19681,35 @@ impl qobject::Backend {
                                 }
                             }
                         }
-                        // 3. Teams' meeting-notes service.
+                        // 3. A Meet now (no calendar id): as Teams does (its
+                        // meeting-notes service only answers its Copilot bot's
+                        // ping and the meeting chat's notes), claim making
+                        // them, unless someone already did; the page made is
+                        // then shared with the call (collabResources.notes).
+                        if m.i_cal_uid.is_empty() {
+                            if leader && s("force").is_empty() {
+                                return Ok(json!({ "waiting": true }));
+                            }
+                            let claimed = {
+                                let slot = call_slot().lock().await;
+                                match slot.outgoing.as_ref() {
+                                    Some(call) => call.publish_meeting_states(call.notes().claim(), "Meeting notes claim").await,
+                                    None => Err(anyhow::anyhow!("Not in a call")),
+                                }
+                            };
+                            match claimed {
+                                Ok(()) => return Ok(json!({ "create": true, "title": m.meeting_title })),
+                                Err(e) => tracing::info!("meeting notes claim: {}", short_error(&e)),
+                            }
+                        }
+                        // 4. Teams' meeting-notes service.
                         match api::meeting_notes::get_or_create(&m).await {
-                            Ok(url) => return Ok(json!({ "url": url, "source": "service" })),
-                            Err(e) => tracing::info!("meeting notes service: {}", short_error(&e)),
+                            Ok(url) => Ok(json!({ "url": url, "source": "service" })),
+                            Err(e) => {
+                                tracing::info!("meeting notes service: {}", short_error(&e));
+                                Err(e)
+                            }
                         }
-                        // 4. Make them, as Teams does for a Meet now: claim
-                        // making them, unless someone already did.
-                        if leader && s("force").is_empty() {
-                            return Ok(json!({ "waiting": true }));
-                        }
-                        let slot = call_slot().lock().await;
-                        let call = slot.outgoing.as_ref().context("Not in a call")?;
-                        call.publish_meeting_states(call.notes().claim(), "Meeting notes claim").await?;
-                        Ok(json!({ "create": true, "title": m.meeting_title }))
                     }
                     "made" => {
                         let client = TeamsClient::new().await?;

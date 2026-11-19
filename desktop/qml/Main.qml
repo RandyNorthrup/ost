@@ -3198,6 +3198,26 @@ Window {
             for (const k of Object.values(v)) backend.saveVideoFrame(k, window.shotPath.replace(".png", "-burst-" + Date.now() + "-" + k + ".png"))
         }
     }
+    // --join-notes (with --join-test, TASK-0212): 10 s after the call
+    // connects, the call window's Notes as someone else in the meeting
+    // finds them (MEETINGNOTES join lines every 5 s for a minute: how the
+    // pane found the notes, e.g. the call's shared link; join-notes-*.png).
+    Timer {
+        running: Qt.application.arguments.indexOf("--join-notes") >= 0 && backend.callState === "connected"
+        interval: 5000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const st = step++
+            const pane = callWindow.meetingNotesPaneForTest
+            const capCall = tag => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-join-notes-" + tag + ".png")))
+            if (st === 2) callWindow.runControl("MeetingDetailsButton")
+            else if (st > 2 && st <= 14) {
+                console.warn("MEETINGNOTES join", st, backend.callState, pane.stateForTest())
+                if (st === 4) capCall("open")
+                if (st === 12) capCall("ready")
+            }
+        }
+    }
     readonly property int joinStay: Math.round(parseInt((Qt.application.arguments.find(a => a.startsWith("--join-stay=")) || "--join-stay=0").slice(12)) / 2)
     // --join-url=<link>: the test meeting's link when it isn't in the
     // calendar's loaded week.
@@ -6089,7 +6109,11 @@ Window {
     // (/tmp/act/rooms-picked.png); with --rooms-join it joins, logs the
     // room being added (ROOM lines), stays --rooms-stay=<s> (default 40)
     // and leaves (--rooms-end: ends the meeting for everyone). --rooms-nearby
-    // picks the Nearby room instead.
+    // picks the Nearby room instead. --rooms-meeting=<minutes> (TASK-0226)
+    // joins a scheduled meeting of yours instead of a Meet now: the
+    // calendar event "OST TEST 226 room <hh:mm>" from now for that long,
+    // with nobody invited; after leaving it waits --rooms-after=<s>
+    // (default 30) and deletes the event.
     Timer {
         id: roomsTest
         readonly property bool on: Qt.application.arguments.indexOf("--rooms-test") >= 0
@@ -6100,8 +6124,28 @@ Window {
         interval: 2500; repeat: true
         property int step: 0
         property int joinedAt: -1
+        readonly property int meetingMin: parseInt((Qt.application.arguments.find(a => a.startsWith("--rooms-meeting=")) || "=0").split("=")[1])
+        readonly property int after: parseInt((Qt.application.arguments.find(a => a.startsWith("--rooms-after=")) || "=30").split("=")[1])
+        property string subject: ""
+        property var ev: null
+        property int leftAt: -1
         function shot(n) { preJoin.contentItem.grabToImage(r => r.saveToFile("/tmp/act/rooms-" + n + ".png")) }
         onTriggered: {
+            if (meetingMin > 0 && !ev) {
+                const evs = backend.calendarJson ? JSON.parse(backend.calendarJson) : []
+                if (!subject) {
+                    subject = "OST TEST 226 room " + Qt.formatTime(new Date(), "hh:mm")
+                    const s = new Date(); const e = new Date(s.getTime() + meetingMin * 60000)
+                    backend.createEvent(subject, s.toISOString(), e.toISOString(), "", true)
+                    console.warn("ROOM meeting", subject, "until", e.toISOString())
+                    return
+                }
+                ev = evs.find(x => x.subject === subject && x.join_url) || null
+                if (!ev) { if (step++ > 20) { console.warn("ROOM no meeting"); Qt.quit() } return }
+                preJoin.openFor(ev.join_url, subject, ev.start_utc, ev.end_utc)
+                step = 1
+                return
+            }
             const st = step++
             const log = () => console.warn("ROOMS", st, "suggested", JSON.stringify(preJoin.suggestedRooms), "nearby", JSON.stringify(preJoin.nearby), "query", JSON.stringify(preJoin.roomQuery), "searched", JSON.stringify(preJoin.searchedRooms), "room", JSON.stringify(preJoin.room), "canJoin", preJoin.canJoin)
             if (st === 0) preJoin.openMeetNow(joinChannel, "OST rooms test")
@@ -6120,7 +6164,7 @@ Window {
                 log()
             }
             else if (st === 11) shot("picked")
-            else if (st === 12 && !joinChannel) Qt.quit()
+            else if (st === 12 && !joinChannel && !ev) Qt.quit()
             else if (st === 12) { preJoin.close(); preJoin.join(false, false, false); interval = 4000 }
             else if (st > 12) {
                 console.warn("ROOM call", backend.callState, "muted", backend.callMuted)
@@ -6131,8 +6175,18 @@ Window {
                     console.warn("ROOM leaving", end ? "(end meeting)" : "")
                     if (end) backend.endMeeting(); else backend.hangUp()
                 }
-                if (joinedAt >= 0 && backend.callState !== "connected") { console.warn("ROOM left", backend.callState); Qt.quit() }
-                if (st > 200) Qt.quit()
+                if (joinedAt >= 0 && backend.callState !== "connected" && leftAt < 0) {
+                    console.warn("ROOM left", backend.callState)
+                    if (!ev) Qt.quit()
+                    leftAt = st
+                }
+                if (ev && leftAt >= 0 && (st - leftAt) * 4 >= after) {
+                    console.warn("ROOM deleting the meeting", subject)
+                    backend.deleteEvent(ev.id)
+                    ev = null; joinedAt = -1; leftAt = -1; step = 1000
+                }
+                if (st >= 1002) Qt.quit()
+                if (st > 200 && st < 1000) Qt.quit()
             }
         }
     }
@@ -8259,7 +8313,7 @@ Window {
     // is told), shows its page (events-draft.png), cancels it (the draft
     // is deleted) and reloads Manage. Quits unless --events-stay.
     Timer {
-        running: Qt.application.arguments.some(a => a.startsWith("--events-test") && a !== "--events-test=full") && backend.signedIn
+        running: Qt.application.arguments.some(a => a.startsWith("--events-test") && !/^--events-test=(full|invite|myevents|uninvite|calclean|emails|branding|collections)$/.test(a)) && backend.signedIn
         interval: 3000; repeat: true
         property int step: 0
         onTriggered: {
@@ -8382,7 +8436,7 @@ Window {
             case 81: ev.openTab("manage"); break
             case 83: {
                 const m = ev.manageData || {}
-                const all = [].concat((m.drafts || {}).items || [], (m.published || {}).items || [])
+                const all = [].concat((m.drafts || {}).items || [], (m.published || {}).items || [], (m.past || {}).items || [])
                 const ids = all.filter(e => /^OST TEST 212 OST/.test(e.title)).map(e => e.id)
                 for (const id of [copy && copy.id, draft && draft.id].filter(x => !!x)) if (ids.indexOf(id) < 0) ids.push(id)
                 ids.forEach((id, i) => backend.eventsRequest("cancel", "cleanup" + i, JSON.stringify({ id: id })))
@@ -8402,6 +8456,182 @@ Window {
         target: backend
         enabled: Qt.application.arguments.indexOf("--events-test=full") >= 0
         function onEventsReply(id, json) { if (id === "railcheck" || id.indexOf("cleanup") === 0) console.warn("EVENTS reply", id, json.slice(0, 300)) }
+    }
+    // --events-test=invite (TASK-0212, as the organizer): a published event
+    // "OST TEST 212 invite <hh:mm>" (Create from scratch, Specific people,
+    // the form's default time) inviting --events-invitee=<name> (default "OST Test 3") as
+    // its attendee; it's kept for --events-test=myevents (as the invitee:
+    // Discover ▸ Filters ▸ My events, EVENTS lines, events-mine-*.png).
+    // --events-test=uninvite (as the organizer) cancels every "OST TEST 212
+    // invite" event; --events-test=calclean removes "Canceled: OST TEST 212"
+    // entries from your calendar (the last 3 days to 14 ahead).
+    Timer {
+        readonly property string mode: (Qt.application.arguments.find(a => /^--events-test=(invite|myevents|uninvite|calclean)$/.test(a)) || "").slice(14)
+        running: mode !== "" && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        property int waited: 0
+        readonly property string invitee: (Qt.application.arguments.find(a => a.startsWith("--events-invitee=")) || "--events-invitee=OST Test 3").slice(17)
+        property var queue: []
+        onTriggered: {
+            const cap = tag => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-events-" + mode + "-" + tag + ".png")))
+            const ev = eventsView.item
+            const log = (tag, extra) => console.warn("EVENTS", mode, tag, ev ? ev.stateForTest() : "no view", extra !== undefined ? JSON.stringify(extra) : "")
+            const range = () => backend.loadCalendar(new Date(Date.now() - 3 * 86400000).toISOString().slice(0, 19) + "Z", new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 19) + "Z")
+            if (mode === "calclean") {
+                if (step === 0) range()
+                else if (step === 3) {
+                    const old = (backend.calendarJson ? JSON.parse(backend.calendarJson) : []).filter(c => /^Canceled: OST TEST 212/.test(c.subject))
+                    console.warn("EVENTS calclean", old.length, JSON.stringify(old.map(c => c.subject)))
+                    queue = old.map(c => c.id)
+                } else if (step === 4 && queue.length) {
+                    // One at a time: the calendar service drops some of a burst.
+                    backend.deleteEvent(queue.shift()); return
+                } else if (step === 6) range()
+                else if (step === 9) {
+                    console.warn("EVENTS calclean left", JSON.stringify((backend.calendarJson ? JSON.parse(backend.calendarJson) : []).filter(c => /OST TEST 212/.test(c.subject)).map(c => c.subject)))
+                    Qt.quit()
+                }
+                step++; return
+            }
+            switch (step) {
+            case 0: rail.openApp("events"); break
+            case 3:
+                if (mode === "myevents") { log("discover"); cap("discover"); ev.filtersForTest(true, "", null, null) }
+                else if (mode === "uninvite") ev.openTab("manage")
+                else { ev.startCreate() }
+                break
+            case 5:
+                if (mode === "uninvite") {
+                    // How the service keeps a room set to Attendee viewing
+                    // (the draft Teams made on winpc).
+                    const m = ev.manageData || {}
+                    for (const e of [].concat((m.drafts || {}).items || [], (m.published || {}).items || []).filter(e => /^OST TEST 212 room options/.test(e.title)))
+                        ev.call("event", { id: e.id }, v => console.warn("EVENTS room options form", JSON.stringify({ rooms: v.rooms, attendees: v.attendees, presenters: v.presenters }).slice(0, 1500)))
+                }
+                if (mode === "invite") {
+                    ev.startForm(ev.templates[0]); ev.accessForTest("Private")
+                    ev.openSectionsForTest([true, false, true, false])
+                }
+                break
+            case 6:
+                if (mode === "myevents") { log("my events"); cap("list") }
+                else if (mode === "uninvite") {
+                    const m = ev.manageData || {}
+                    const all = [].concat((m.drafts || {}).items || [], (m.published || {}).items || [], (m.past || {}).items || [])
+                    const ids = all.filter(e => /^OST TEST 212 (invite|room options)/.test(e.title)).map(e => e.id)
+                    ids.forEach((id, i) => backend.eventsRequest("cancel", "uninvite" + i, JSON.stringify({ id: id })))
+                    log("cancelling", ids)
+                } else ev.pickerForTest("attendees").typeForTest(invitee)
+                break
+            case 7: if (mode === "myevents") { ev.clearFilters(); Qt.quit() } break
+            case 8: if (mode === "invite") { ev.pickerForTest("attendees").pickFirstForTest(); log("form") } break
+            case 9:
+                if (mode === "invite") {
+                    cap("form")
+                    ev.saveForTest("OST TEST 212 invite " + Qt.formatTime(new Date(), "hh:mm"))
+                } else if (mode === "uninvite") range()
+                break
+            case 10: if (mode === "invite") ev.confirmSaveForTest(); break
+            case 12:
+                if (mode === "invite") { if (!ev.current && waited++ < 20) return; waited = 0; log("saved"); ev.publishCurrentForTest() }
+                else if (mode === "uninvite") {
+                    for (const c of (backend.calendarJson ? JSON.parse(backend.calendarJson) : []).filter(c => /^Canceled: OST TEST 212/.test(c.subject))) { console.warn("EVENTS removing", c.subject); backend.deleteEvent(c.id) }
+                    // --events-unpin: Events off the app bar again (the save
+                    // dialog's "Pin the Events app" pinned it).
+                    if (Qt.application.arguments.indexOf("--events-unpin") >= 0 && ev.pinned) { ev.setPinned(false); console.warn("EVENTS unpinned") }
+                }
+                break
+            case 15: log("published"); cap("published"); ev.eventTab = "people"; ev.loadPeopleTab(); break
+            case 17: log("people"); cap("people"); break
+            case 18: Qt.quit(); break
+            }
+            step++
+        }
+    }
+    Connections {
+        target: backend
+        enabled: Qt.application.arguments.some(a => /^--events-test=(invite|uninvite)$/.test(a))
+        function onEventsReply(id, json) { if (id.indexOf("uninvite") === 0) console.warn("EVENTS reply", id, json.slice(0, 300)) }
+    }
+    // --events-test=emails|branding|collections (TASK-0212, as the
+    // organizer of "--events-title=<start>", default "OST TEST 212 invite"):
+    // emails: People & emails' rows, Edit on the first row (its fields), a
+    // word added to the body and Save (PATCH), Preview; branding: Edit event
+    // banner, Teal and the cover image --events-banner=<png> (cropped as
+    // Teams does), Save; collections: Manage immersive collections, Create
+    // collection "OST TEST 212 collection <hh:mm>", its page until it's
+    // ready, Add people (--events-invitee), Settings, Delete. EVENTS lines,
+    // events-<mode>-*.png.
+    Timer {
+        readonly property string mode: (Qt.application.arguments.find(a => /^--events-test=(emails|branding|collections)$/.test(a)) || "").slice(14)
+        running: mode !== "" && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        property int waited: 0
+        readonly property string title: (Qt.application.arguments.find(a => a.startsWith("--events-title=")) || "--events-title=OST TEST 212 invite").slice(15)
+        readonly property string banner: (Qt.application.arguments.find(a => a.startsWith("--events-banner=")) || "--events-banner=/tmp/ost-test-banner.png").slice(16)
+        readonly property string invitee: (Qt.application.arguments.find(a => a.startsWith("--events-invitee=")) || "--events-invitee=OST Test 3").slice(17)
+        onTriggered: {
+            const cap = tag => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-events-" + mode + "-" + tag + ".png")))
+            const ev = eventsView.item
+            const log = (tag, extra) => console.warn("EVENTS", mode, tag, extra !== undefined ? (typeof extra === "string" ? extra : JSON.stringify(extra)) : "")
+            if (step === 0) { rail.openApp("events"); step++; return }
+            if (step === 3) { ev.openTab("manage"); step++; return }
+            if (mode === "collections") {
+                switch (step) {
+                case 5: log("policy", ev.eventsPolicy); cap("manage"); ev.openCollections(); break
+                case 7: log("list", ev.collectionsStateForTest()); cap("list"); ev.createCollectionForTest("OST TEST 212 collection " + Qt.formatTime(new Date(), "hh:mm"), "OST TEST 212 description"); break
+                case 9: log("created", ev.collectionsStateForTest()); cap("created"); break
+                case 10: { const c = ev.collection || {}; if ((!c.status || c.status === "Provisioning") && waited++ < 100) { if (waited % 10 === 1) log("waiting", c.status || ""); return } waited = 0; log("ready", ev.collectionsStateForTest()); cap("ready"); break }
+                case 11: ev.collectionTab = "members"; ev.addCollectionPeopleForTest(invitee); break
+                case 13: ev.pickCollectionPersonForTest(); break
+                case 14: cap("add"); ev.confirmAddCollectionPeopleForTest(); break
+                case 16: log("members (local)", ev.collectionsStateForTest()); cap("members"); break
+                // The group's members as Graph has them by now.
+                case 22: ev.loadCollectionPeople(ev.collection.collection.id); break
+                case 24: log("members (server)", JSON.stringify(ev.collectionPeople)); ev.collectionTab = "settings"; break
+                case 25: cap("settings"); ev.deleteCollectionForTest(); break
+                case 28: log("deleted", ev.collectionsStateForTest()); cap("after"); break
+                case 29: Qt.quit(); break
+                }
+                step++; return
+            }
+            switch (step) {
+            case 5: {
+                const m = ev.manageData || {}
+                const all = [].concat((m.drafts || {}).items || [], (m.published || {}).items || [], (m.past || {}).items || [])
+                const e = all.find(x => (x.title || "").indexOf(title) === 0)
+                log("event", e ? e.title : "none")
+                if (!e) { Qt.quit(); return }
+                ev.openEvent(e)
+                break
+            }
+            case 7:
+                if (mode === "emails") { ev.eventTab = "people"; ev.loadPeopleTab() }
+                else { ev.brandingForTest() }
+                break
+            case 9:
+                if (mode === "emails") { log("rows", ev.emailEditorStateForTest()); cap("rows"); ev.emailEditorForTest(0, false) }
+                else { log("branding", ev.brandingStateForTest()); cap("branding"); ev.brandingColorForTest("#9EE5DE"); ev.brandingCoverForTest("file://" + banner) }
+                break
+            case 11:
+                if (mode === "emails") { log("editor", ev.emailEditorStateForTest()); cap("editor"); ev.emailEditorTypeForTest(" OST TEST 212 edited") }
+                else { log("crop", ev.brandingStateForTest()); cap("crop"); ev.brandingCropSaveForTest() }
+                break
+            case 12:
+                if (mode === "emails") { ev.emailEditorSaveForTest() }
+                else { log("cropped", ev.brandingStateForTest()); cap("cropped"); ev.brandingSaveForTest() }
+                break
+            case 15:
+                if (mode === "emails") { log("saved", ev.emailEditorStateForTest()); ev.emailEditorForTest(0, true) }
+                else { log("saved", ev.brandingStateForTest()); cap("saved") }
+                break
+            case 17: if (mode === "emails") { cap("preview"); log("preview", ev.emailEditorStateForTest()); ev.emailEditorCloseForTest() } break
+            case 18: Qt.quit(); break
+            }
+            step++
+        }
     }
     // --recaps-test: Meeting Recaps (Events' View audio recaps): Home and
     // Audio recaps (RECAPS lines, recaps-{home,audio}.png).
@@ -8451,7 +8681,7 @@ Window {
                 const link = calendarView.meetNowForTest.link
                 if (!link) { step++; return }
                 ev = { join_url: link }
-                console.warn("MEETINGNOTES meet now made")
+                console.warn("MEETINGNOTES meet now made", link)
                 window.muteOnJoin = true; window.noAudioOnJoin = true; window.cameraOnJoin = false
                 backend.joinMeeting(link, subject)
                 step = 9; return
@@ -12033,7 +12263,7 @@ Window {
             onOpenEventChat: (id, title) => { rail.current = "chat"; window.composing = false; backend.selectChat(id, title) }
             onViewAudioRecaps: { rail.openApp("recaps"); recapsView.openTab("audio") }
             // Manage apps: the event meeting, where its apps are added.
-            onOpenMeetingDetails: (id, title) => { if (id) { rail.current = "chat"; window.composing = false; backend.selectChat(id, title) } }
+            onOpenMeetingDetails: (url, start) => { if (url) { rail.current = "calendar"; calendarView.showMeeting(url, "", start) } }
         }
     }
     // Teams' Meeting Recaps app (Events' View audio recaps).

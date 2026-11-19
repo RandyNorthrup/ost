@@ -285,7 +285,8 @@ pub fn meeting_kind(details: &serde_json::Value) -> MeetingKind {
     MeetingKind {
         adhoc: s("meetingType").as_deref() == Some("Adhoc"),
         channel: details.get("isChannelMeeting").and_then(|v| v.as_bool()).unwrap_or(false),
-        end: ["endTime", "scheduledEndTime", "meetingEndTime"].iter().find_map(|k| s(k)).filter(|e| !e.is_empty()),
+        // Teams Rooms' isValidEndTime: an ad-hoc meeting says 0001-01-01.
+        end: ["endTime", "scheduledEndTime", "meetingEndTime"].iter().find_map(|k| s(k)).filter(|e| !e.is_empty() && !e.starts_with("0001-")),
     }
 }
 
@@ -297,6 +298,108 @@ pub fn meeting_kind(details: &serde_json::Value) -> MeetingKind {
 /// wait for the meeting's end.
 pub fn auto_exits_when_alone(thread: Option<&str>) -> bool {
     thread.is_some_and(|t| t.starts_with("19:") && t.ends_with("@thread.v2") && !t.starts_with("19:meeting_"))
+}
+
+/// What a call's conversation is, for its title (Teams' calling
+/// conversation: `isChannel`, `isGroup`, `isPrivateMeeting`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConversationKind {
+    /// A channel (`@thread.tacv2` / `@thread.skype`, threadType space or topic).
+    Channel,
+    /// A group chat (threadType chat).
+    Group,
+    /// A meeting's own chat (threadType meeting, `19:meeting_…`).
+    PrivateMeeting,
+    /// A breakout room's chat.
+    BreakoutRoom,
+    /// No chat (a 1:1 call) or one Teams couldn't read.
+    Other,
+}
+
+/// The conversation a call is in, as Teams Rooms' call title reads it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CallConversation {
+    pub kind: Option<ConversationKind>,
+    /// The chat's title (`topic`): a meeting's subject, a group chat's
+    /// name, a channel's name.
+    pub topic: Option<String>,
+    /// A channel's display name when the thread has no topic.
+    pub channel_name: Option<String>,
+    /// Everyone else in it (display names).
+    pub others: Vec<String>,
+    /// A huddle (`conversationType` huddleGroupCall).
+    pub huddle: bool,
+}
+
+/// Teams' `numberOfNamesInTitle`.
+const NAMES_IN_TITLE: usize = 3;
+
+/// The title Teams Rooms shows for a call it's in (the console's
+/// meeting-room-in-call-info and the call header): useMeetingTitle in
+/// Teams' bundles gives the calling intent's title, else the call's title
+/// (`callTitleChangedEvent`), else "Microsoft Teams meeting"
+/// (`teams_meeting_text_variant`; Rooms fetches a title for every call,
+/// `enableTitleFetchForAllCalls`). The call's title comes from
+/// callTitleService.getDefaultCallTitle (Rooms' message service has no
+/// meetup titles): with a topic, a channel's is `Meeting in "{topic}"`, a
+/// group chat's "Call with {topic}" ("Meeting in {topic}" for a huddle), a
+/// meeting's the topic itself; without one, a breakout room or a meeting
+/// is "Microsoft Teams meeting", a channel `Meeting in "{channel}"`, and
+/// anything else the other people's names (sorted, ", "; past three
+/// "{first name} and {n} others").
+pub fn call_title(conv: &CallConversation) -> String {
+    const DEFAULT: &str = "Microsoft Teams meeting";
+    let topic = conv.topic.as_deref().map(str::trim).filter(|t| !t.is_empty());
+    match (conv.kind, topic) {
+        (Some(ConversationKind::Channel), Some(t)) => return format!("Meeting in \"{t}\""),
+        (Some(ConversationKind::Group), Some(t)) => {
+            return if conv.huddle { format!("Meeting in {t}") } else { format!("Call with {t}") };
+        }
+        (Some(ConversationKind::PrivateMeeting), Some(t)) => return t.to_string(),
+        (Some(ConversationKind::BreakoutRoom), t) => return t.unwrap_or(DEFAULT).to_string(),
+        (Some(ConversationKind::Channel), None) => {
+            return match conv.channel_name.as_deref().map(str::trim).filter(|c| !c.is_empty()) {
+                Some(c) => format!("Meeting in \"{c}\""),
+                None => DEFAULT.to_string(),
+            };
+        }
+        (Some(ConversationKind::PrivateMeeting), None) => return DEFAULT.to_string(),
+        _ => {}
+    }
+    let mut names: Vec<&str> = conv.others.iter().map(|n| n.trim()).filter(|n| !n.is_empty()).collect();
+    if names.is_empty() {
+        return DEFAULT.to_string();
+    }
+    names.sort_unstable();
+    if names.len() > NAMES_IN_TITLE {
+        let first = names[0].split(' ').next().unwrap_or(names[0]);
+        let n = names.len() - 1;
+        return if n == 1 { format!("{first} and {n} other") } else { format!("{first} and {n} others") };
+    }
+    names.join(", ")
+}
+
+/// The conversation kind of a thread from its id and `threadType`
+/// property.
+pub fn conversation_kind(thread: &str, thread_type: Option<&str>) -> ConversationKind {
+    match thread_type.map(str::to_ascii_lowercase).as_deref() {
+        Some("meeting") => ConversationKind::PrivateMeeting,
+        Some("space") | Some("topic") => ConversationKind::Channel,
+        Some("breakoutroom") | Some("breakout") => ConversationKind::BreakoutRoom,
+        Some("chat") => ConversationKind::Group,
+        _ if thread.starts_with("19:meeting_") => ConversationKind::PrivateMeeting,
+        _ if thread.ends_with("@thread.tacv2") || thread.ends_with("@thread.skype") => ConversationKind::Channel,
+        _ if thread.ends_with("@thread.v2") => ConversationKind::Group,
+        _ => ConversationKind::Other,
+    }
+}
+
+/// Teams Rooms' ad-hoc auto exit (RigelAutoExitMeetingManager): an ad-hoc
+/// meeting is "escalated" once anyone besides the room and one other is
+/// in it (`getInCallParticipants().length > 1`), and then it's no longer
+/// left the moment the others are gone.
+pub fn adhoc_escalated(others_in_call: usize) -> bool {
+    others_in_call > 1
 }
 
 /// Whether a roster participant's endpoint is a Teams Rooms device
@@ -313,6 +416,41 @@ pub fn is_room_participant(participant: &serde_json::Value) -> bool {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn call_titles_follow_teams_rooms() {
+        let conv = |kind, topic: Option<&str>, others: &[&str]| CallConversation {
+            kind,
+            topic: topic.map(str::to_string),
+            channel_name: None,
+            others: others.iter().map(|s| s.to_string()).collect(),
+            huddle: false,
+        };
+        use ConversationKind::*;
+        assert_eq!(call_title(&conv(Some(PrivateMeeting), Some("OST TEST 226 sync"), &["OST Test 1"])), "OST TEST 226 sync");
+        assert_eq!(call_title(&conv(Some(PrivateMeeting), None, &["OST Test 1"])), "Microsoft Teams meeting");
+        assert_eq!(call_title(&conv(Some(Channel), Some("OST layout test"), &[])), "Meeting in \"OST layout test\"");
+        let mut ch = conv(Some(Channel), None, &[]);
+        ch.channel_name = Some("General".into());
+        assert_eq!(call_title(&ch), "Meeting in \"General\"");
+        assert_eq!(call_title(&conv(Some(Group), Some("OST group"), &[])), "Call with OST group");
+        assert_eq!(call_title(&conv(Some(Group), None, &["OST Test 2", "OST Test 1"])), "OST Test 1, OST Test 2");
+        assert_eq!(call_title(&conv(Some(Other), None, &["OST Test 1"])), "OST Test 1");
+        assert_eq!(call_title(&conv(None, None, &["D d", "C c", "B b", "A a"])), "A and 3 others");
+        assert_eq!(call_title(&conv(None, None, &[])), "Microsoft Teams meeting");
+        assert_eq!(call_title(&conv(Some(BreakoutRoom), None, &["x"])), "Microsoft Teams meeting");
+    }
+
+    #[test]
+    fn conversation_kinds() {
+        use ConversationKind::*;
+        assert_eq!(conversation_kind("19:meeting_abc@thread.v2", None), PrivateMeeting);
+        assert_eq!(conversation_kind("19:de4@thread.tacv2", None), Channel);
+        assert_eq!(conversation_kind("19:abc@thread.v2", Some("chat")), Group);
+        assert_eq!(conversation_kind("19:abc@thread.v2", Some("meeting")), PrivateMeeting);
+        assert_eq!(conversation_kind("", None), Other);
+        assert!(adhoc_escalated(2) && !adhoc_escalated(1));
+    }
 
     #[test]
     fn a_proximity_invite_with_a_current_code_is_accepted() {

@@ -397,6 +397,105 @@ days of meetings (`GET {mcps}/user/meetings/contents?top=20&startDateTime=
 Notes` per local day) with Recap; Audio recaps (`GET {mcps}/podcasts?top=10`)
 or "Get started on your first audio recap" / Generate audio recap.
 
+## TASK-0212 leftovers (Teams desktop 26304 bundles and Teams on winpc, 2026-11-19)
+
+**Email notifications** (People & emails): the rows are the event's templates
+(`GET {regional}/events/{id}/emailtemplates` → `{emailTemplates: [{templateId,
+templateType, sendTimeInterval, adO4867893_IsBodyEditableStatusCode}]}`) in Teams'
+order: Registration confirmation, Registration pending, Registration cancellation,
+Cancellation request, Registration after waitlist, Waitlist confirmation,
+Registration rejected, Date and time update, Event cancellation, Event reminder (its
+timing a brand link: "1 day before event", "{n} hours before event" … → Send event
+reminder: 1-23 Hours or 1 Day, "before the event starts."), Event invite, Attendees
+event invitation, Event recording available. Edit shows only with your events policy's
+`allowEmailEditing` Enabled (on for ost-test1, seen on winpc); Preview always. The
+"Send attendee emails" switch (aria "Turn off/on all attendee notifications") changes
+only a draft: PATCH events/{id} `{communicationProperties: {…every prop,
+disableAttendeeEmails}}`.
+- **Edit email template** (600 wide; winpc: Sender's name * (disabled: needs
+  registration and over 3,000 allowed attendees, or Premium), Sender's email
+  (disabled), Email subject * (`{{eventName}}`), Cover image (the theme's banner),
+  Logo ("No logo"), Email body * with the Formatting toolbar and Personalization (Event
+  Name, Event Date Time, Event Description, Organization Name, Event Invite Card for an
+  invite; tokens are read-only chips `itemtype=…VirtualEventsPersonalizationToken
+  itemid=eventName|dateTime|eventDescription|eventOrganization`), Email footer
+  (disabled, "This is set by your IT admin."); Preview, Cancel, Save): `GET
+  …/emailtemplates/{templateId}` → `{subject, body, senderName, senderEmail, footer,
+  sendTimeInterval}`; Save `PATCH …/emailtemplates/{templateId} {subject, body,
+  senderName[, sendTimeInterval]}` (empty values left out); a failed save keeps the
+  dialog open. Preview draws the email with sample values and "The design seen by your
+  recipients may not look like this preview, …". BodyNotEditable / Indeterminate show
+  Teams' domain banners and lock the body.
+
+**Edit event banner** (Overview; organizers; 40 px round button 24 from the banner's top
+right) opens **Branding** (722 wide, seen on winpc): "Choose a PNG or JPG file (max 5
+MB). For best results, image ratio should be at least 796 x 265 pixels." (info: "The
+images you upload will be hosted in a publicly available CDN."), Cover image (3:1,
+Edit image / Upload image), Logo (90 x 90, Upload logo), Theme color (Default #5B5FC7,
+Red #B82F41, Orange #FFA08F, Yellow #FFBA82, Green #9DE3CB, Teal #9EE5DE, Blue #257ACC,
+Pink #D13B6D, Grey #F0F0F0; the chosen one underlined), Cancel / Save. Edit image: a
+670 x 223 crop (logo 300 x 300) with Upload image, Zoom out / level / Zoom in, Back /
+Save; the crop is re-encoded as JPEG. Save, in turn: `PATCH events/{id}/theme
+{primaryColor}`, `PATCH events/{id}/theme/promo {imageId, image: data URL}`, `PATCH
+events/{id}/theme/logo {imageId|"null", image}` (If-Match the event's eTag, the image
+ones with x-skypetoken; the service hosts the image); toasts "Cover image successfully
+updated.", "Logo successfully updated.", "Theme color successfully updated."; errors
+"Choose a PNG or JPG file.", "Choose a file smaller than 5 MB. ", "Something went wrong.
+Please try again.".
+
+**Manage immersive collections** (Manage, after the sections; ECS
+`enableImmersiveContentManagementInMeetApp` and the events policy's immersive events,
+both on for ost-test1, seen on winpc): a card (Teams' archive picture, "Manage
+immersive collections", "Use immersive collections to save and manage templates for
+immersive events.", View immersive collections). The page (winpc): the retirement
+warning ("Changes are coming to Immersive Events in Teams." …, Learn more →
+aka.ms/ImmersiveUpdate, Dismiss), back, "Immersive collections (n)", Create
+collection, the cards or "You don’t have any immersive collections" (folder-favorite
+picture). Data: Graph `me/memberOf?$filter=resourceBehaviorOptions/any(i:i eq
+'teams.immersive')…` (ConsistencyLevel eventual); the immersive worlds service
+(`https://eur.worlds.mesh.cloud.microsoft`, token resource 3016d0ce-…):
+`POST /v3.0/collections {DisplayName, Description?}` (a Microsoft 365 group; 403 →
+"Your organization doesn't allow you to create Microsoft 365 groups…"), `GET
+/v3.0/collections/{id}` (`{collection, privileges, status}`, asked every second until
+Succeeded; "Your collection is being created! …" while Provisioning), PATCH, DELETE
+("Delete this collection?"), owners and members from Graph `groups/{id}/owners|members`,
+changed with `/owners {userId}`, `/owners/remove`, `/members {userIds}`,
+`/members/remove {userId}` (Add people to this collection, Remove person from this
+collection?). The details page: Templates ("Immersive templates (0)", the
+design-from-scatch picture), Members (Owners (n) with Add people, Members (n); Name
+and email, Title, Role), Settings (Collection details with Edit details, Manage ▸
+Delete collection).
+
+**Manage apps** (seen on winpc): a webinar's card says "Manage or add apps for your
+session here."; "here" opens the session meeting's details page
+(entityCommanding.calendar.meetingDetails, its default tab; OST: Calendar's meeting
+details). A town hall's card on winpc lists apps with Add ("Custom Streaming",
+"AI Producer"), which the 26304 bundles on linuxlt don't have (they list Polls under
+"Commonly added:"): not built.
+
+**Room options**: Presenting sends the room in `presenters` (with sessionsProps),
+Attendee viewing in `attendees` (userType Room, no sessionsProps) — Teams' code
+(locationsWithMeetingRole Everyone / Attendees); a draft Teams made on winpc with
+Attendee viewing was read back from the service with the room among its attendees
+(see the notes). With registration on only Presenting is offered.
+
+**Meeting Recaps ▸ Audio recaps**: the empty state's picture is
+`evergreen-assets/podcast/no-podcast.png` (128, seen on winpc), the title 18 bold, the
+text, Generate audio recap → the **Generate audio recap** dialog (the window less 32 px
+each side): Style (Executive "Two speakers. Essential info with minimal commentary.",
+Newscast "One speaker. Fast and concise.", Casual "Two speakers. Extra color and
+commentary. Longest format."), Language (English (US)), "Select up to 8 meetings"
+(info "Select up to eight meetings."), All / Missed / Mentions / Followed, Search for
+meetings, your meetings with a transcript from the last 30 days, else
+`illustrations/png/128/calendar-three-people-l-standard-128x128.png` and "No meetings
+were transcribed"; Generate (off until a meeting is picked). Teams' Generate is an
+AugLoop operation (teams_recap_podcast_generation) with the meetings' transcripts.
+
+**Attendees** card: the picture is `illustrations/v2/people-l-standard.svg` (dark
+`people-d-standard.svg`) at 128, under "When attendees RSVP or register, they'll show up
+here." (winpc). Manage's empty Drafts says "Events you haven’t published yet will show
+up here." (winpc).
+
 ## OST status (live checks 2026-11-16, ost-test1 on linuxlt, `--events-test`)
 - Discover and Manage loaded from the service (both empty for this
   tenant, as in Teams); Create event and the form drawn; a draft saved
@@ -431,6 +530,17 @@ or "Get started on your first audio recap" / Generate audio recap.
   banner; Highlights with a real recording. Room options' Attendee viewing
   sends the room with the attendees (Teams' meeting role Attendees, read
   from its code; not captured on the wire).
+- [x] TASK-0212 leftovers (2026-11-19, linuxlt): My events with real data (OST Test 3
+  invited to "OST TEST 212 invite", listed with Live and Join); Email notifications'
+  rows, Edit (PATCH saved, tokens kept) and Preview; Branding (Teal and a cover image:
+  theme and theme/promo PATCHes, the new banner shown); immersive collections
+  (create, provisioning, add a member, delete, as OST Test 3); Generate audio recap's
+  dialog (empty, as Teams with no transcribed meetings); Manage apps → the meeting's
+  details; a Teams-made draft with Room options' Attendee viewing read back with the
+  room among its attendees; Discover's lists drawn again (they never were).
+- [ ] Left: Highlights with a recording (needs a recorded, transcribed event), a town
+  hall's Manage apps list (newer than the 26304 bundles), Generate audio recap's
+  AugLoop submission (no transcribed meeting to test with), the logo crop's live save.
 - [x] Since TASK-0184 (docs/spec/town-halls-and-webinars.md): the Town hall
   template's form, Publish event with Teams' two dialogs, Upcoming, Join
   and its menu, and the event chat button.

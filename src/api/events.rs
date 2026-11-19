@@ -1164,9 +1164,129 @@ pub async fn email_templates(client: &TeamsClient, id: &str) -> Result<Value> {
     get_json(&format!("{}/events/{id}/emailtemplates", regional_endpoint(client)), false).await
 }
 
+fn template_path(id: &str) -> Result<String> {
+    anyhow::ensure!(!id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'), "Not a template id");
+    Ok(id.to_string())
+}
+
+/// One email template (`GET events/{id}/emailtemplates/{templateId}`):
+/// `{templateId, templateType, subject, body, senderName, senderEmail,
+/// footer, sendTimeInterval, adO4867893_IsBodyEditableStatusCode}`.
+pub async fn email_template(client: &TeamsClient, id: &str, template: &str) -> Result<Value> {
+    let (id, template) = (event_path(id)?, template_path(template)?);
+    get_json(&format!("{}/events/{id}/emailtemplates/{template}", regional_endpoint(client)), false).await
+}
+
+/// Only the fields Teams' email editor saves: `subject`, `body`,
+/// `senderName`, and the reminder's `sendTimeInterval {days, hours}`;
+/// empty values and objects left out, as Teams does.
+pub fn email_template_patch(v: &Value) -> Value {
+    let mut out = serde_json::Map::new();
+    for k in ["subject", "body", "senderName"] {
+        if let Some(s) = v.get(k).and_then(Value::as_str) {
+            out.insert(k.into(), json!(s));
+        }
+    }
+    if let Some(t) = v.get("sendTimeInterval").filter(|t| t.as_object().is_some_and(|o| !o.is_empty())) {
+        let n = |k: &str| t.get(k).and_then(Value::as_i64).unwrap_or(0);
+        out.insert("sendTimeInterval".into(), json!({ "hours": n("hours"), "days": n("days") }));
+    }
+    Value::Object(out)
+}
+
+/// Save an email template (`PATCH events/{id}/emailtemplates/{templateId}`).
+pub async fn update_email_template(client: &TeamsClient, id: &str, template: &str, v: &Value) -> Result<Value> {
+    let (id, template) = (event_path(id)?, template_path(template)?);
+    let r = send(reqwest::Method::PATCH, &format!("{}/events/{id}/emailtemplates/{template}", regional_endpoint(client)),
+                 Some(&email_template_patch(v)), false).await?;
+    Ok(r.json().await.unwrap_or_else(|_| json!({})))
+}
+
+/// The event's eTag and theme (`GET events/{id}`), for the Branding
+/// dialog's `If-Match`.
+pub async fn theme(client: &TeamsClient, id: &str) -> Result<Value> {
+    let id = event_path(id)?;
+    let v = get_json(&format!("{}/events/{id}", regional_endpoint(client)), false).await?;
+    let ams = client.ams_v2_url().unwrap_or_default();
+    let img = |k: &str| v.pointer(&format!("/theme/{k}")).and_then(Value::as_str).unwrap_or_default().to_string();
+    Ok(json!({ "eTag": v.get("eTag").or_else(|| v.get("etag")).cloned().unwrap_or(json!("*")),
+               "primaryColor": v.pointer("/theme/primaryColor").cloned().unwrap_or_default(),
+               "promoImage": img("promoImage"), "logoImage": img("logoImage"),
+               "promoUrl": promo_url(&ams, &img("promoImage")), "logoUrl": promo_url(&ams, &img("logoImage")),
+               "communicationProperties": v.get("communicationProperties").cloned().unwrap_or_default() }))
+}
+
+async fn send_if_match(client: &TeamsClient, method: reqwest::Method, url: &str, body: Option<&Value>, etag: &str, skype: bool) -> Result<Value> {
+    let t = token().await?;
+    let mut req = reqwest::Client::new()
+        .request(method, url)
+        .bearer_auth(t)
+        .header("content-type", "application/json")
+        .header("x-ms-correlation-id", uuid::Uuid::new_v4().to_string())
+        .header("If-Match", if etag.is_empty() { "*" } else { etag });
+    if skype {
+        req = req.header("x-skypetoken", client.skype_token_value()?);
+    }
+    if let Some(b) = body {
+        req = req.json(b);
+    }
+    let resp = req.send().await.context("The events service")?;
+    let status = resp.status();
+    let text = resp.text().await.unwrap_or_default();
+    anyhow::ensure!(status.is_success(), "The events service answered {status}");
+    Ok(serde_json::from_str(&text).unwrap_or_else(|_| json!({})))
+}
+
+/// The Branding dialog's theme colour (`PATCH events/{id}/theme
+/// {primaryColor}` with `If-Match`).
+pub async fn set_theme_color(client: &TeamsClient, id: &str, etag: &str, color: &str) -> Result<Value> {
+    let id = event_path(id)?;
+    anyhow::ensure!(color.len() == 7 && color.starts_with('#') && color[1..].chars().all(|c| c.is_ascii_hexdigit()), "Not a colour");
+    send_if_match(client, reqwest::Method::PATCH, &format!("{}/events/{id}/theme", regional_endpoint(client)),
+                  Some(&json!({ "primaryColor": color })), etag, false).await
+}
+
+/// Teams' image checks: PNG or JPG, at most 5 MB.
+pub const MAX_THEME_IMAGE: usize = 5 * 1024 * 1024;
+
+/// The cover image or logo (`PATCH events/{id}/theme/promo|logo {imageId,
+/// image: data URL}` with `If-Match` and `x-skypetoken`; the service
+/// hosts it): `bytes` a PNG or JPEG, `current` the image it replaces.
+pub async fn set_theme_image(client: &TeamsClient, id: &str, etag: &str, which: &str, current: &str, bytes: &[u8]) -> Result<Value> {
+    let id = event_path(id)?;
+    anyhow::ensure!(which == "promo" || which == "logo", "Not a theme image");
+    anyhow::ensure!(bytes.len() <= MAX_THEME_IMAGE, "Choose a file smaller than 5 MB.");
+    let mime = if bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
+        "image/png"
+    } else if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        "image/jpeg"
+    } else {
+        anyhow::bail!("Choose a PNG or JPG file.")
+    };
+    use base64::Engine as _;
+    let data = format!("data:{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes));
+    let mut body = json!({ "image": data });
+    if !current.is_empty() {
+        body["imageId"] = json!(current);
+    } else if which == "logo" {
+        body["imageId"] = json!("null");
+    }
+    send_if_match(client, reqwest::Method::PATCH, &format!("{}/events/{id}/theme/{which}", regional_endpoint(client)),
+                  Some(&body), etag, true).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn email_template_patch_keeps_the_editor_fields() {
+        let v = json!({ "subject": "S", "body": "<p>{{eventName}}</p>", "senderName": "OST", "footer": "x", "templateId": "t",
+                        "sendTimeInterval": { "hours": 2 } });
+        assert_eq!(email_template_patch(&v), json!({ "subject": "S", "body": "<p>{{eventName}}</p>", "senderName": "OST",
+                                                     "sendTimeInterval": { "hours": 2, "days": 0 } }));
+        assert_eq!(email_template_patch(&json!({ "sendTimeInterval": {}, "subject": "A" })), json!({ "subject": "A" }));
+    }
 
     fn at(s: &str) -> chrono::DateTime<chrono::Utc> {
         chrono::DateTime::parse_from_rfc3339(s).unwrap().with_timezone(&chrono::Utc)

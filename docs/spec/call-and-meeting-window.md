@@ -801,10 +801,27 @@ Window title: "Meeting join | {{meetingTitle}}" (`calling_meeting_window_title`)
     (`callInvitation.invitationData`).
   - Accepting: `acceptCall(call, isVideoAllowed, muted=false)`: the microphone on, the camera on when the meeting policy
     allows IP video (never for Copilot QR). When the call ends it goes back to the home screen.
-  - Auto exit (`autoExitMeetingEnabled`, default on): it leaves an ad-hoc non-channel meeting once nobody else is left;
-    once a meeting's scheduled end has passed and nobody else is in it (no HDMI ingest), after 5 minutes (1 for ad hoc)
-    it shows "About to leave the meeting..." with a bar filling over 15 s and Snooze (again in 15 minutes) / Leave now;
-    the bar filling leaves. OST takes the end from the room's calendar entry for the meeting (RoomAutoExit.qml).
+  - Auto exit (`autoExitMeetingEnabled`, default on; RigelAutoExitMeetingManager, the same in Teams desktop 26304 and
+    the Teams Rooms build): it leaves an ad-hoc non-channel meeting at once when nobody else is left, unless the
+    meeting "escalated" (more than one other person was in it at some point); once a meeting's scheduled end has passed
+    and nobody else is in it (no HDMI ingest, not an instant meeting), after 300 s (60 s for ad hoc) it shows the dialog
+    with a bar filling in 25 ms steps over `autoExitDialogProgressBarCompletionTimeInMs` (15 s) and Snooze (again in
+    900 s) / Leave now; the bar filling leaves. Its strings are Teams Rooms' own (namespace meetingRoomConsole, which
+    Teams desktop doesn't ship: it's in the Teams Rooms build of Teams, MSTeams-Rooms-x64.msix 26198.304 inside the
+    Teams Rooms on Windows 5.7.112 package, go.microsoft.com/fwlink/?linkid=2151817): "About to leave meeting ..."
+    (`meeting_room_auto_exit_dialog_title`), "Snooze", "Leave now". The dialog (MeetingRoomAutoExitDialogRenderer): the
+    surface 45% x 27% of the screen, square; a column of the title (Text largest, bold, one line, grow 1), the large
+    progress bar (grow 1.1) and the buttons (grow 0.8, at the end, large; Leave now with the brand background and 0.8rem
+    either side). OST takes the end from the meeting chat's `meeting` property, the invitation's meeting details, or
+    the room's calendar entry (RoomAutoExit.qml).
+  - The call's title (what the console's meeting-room-in-call-info and the call header show; useMeetingTitle with
+    `enableTitleFetchForAllCalls`, on for Rooms): the calling intent's title, else the call's (callTitleService:
+    Rooms' message service has no meetup titles, so getDefaultCallTitle from the conversation), else "Microsoft Teams
+    meeting". From the conversation: a meeting chat's topic (the subject); a channel `Meeting in "{name}"`; a group
+    chat "Call with {topic}" ("Meeting in {topic}" for a huddle); without a topic a meeting or breakout room "Microsoft
+    Teams meeting", otherwise the other people's names (sorted, ", ", past three "{first name} and {n} others"). OST
+    shows it once the room accepts (the window title), the ringing console showing who invites the room
+    (`room_mode::call_title`).
   - The home screen (meeting-room-front-of-room-home): the date above the clock, the room name with the cast icon, the
     room's QR code (`https://teams.microsoft.com/l/qr_code/?actions=5&identity=<room MRI>&tenant_id=<tenant>&salt=
     <salt>&name=<name>`, encodeURI'd, padded with spaces to 221, error correction H, 160 px, the app icon in the
