@@ -1458,6 +1458,10 @@ pub mod qobject {
         /// "SideBySide", "NewsAnchor" (Reporter).
         #[qinvokable]
         fn set_presenter_mode(self: Pin<&mut Backend>, mode: &QString);
+        /// The screen being shared (the call window's Screen): logical
+        /// width and height, work-area height, device pixel ratio.
+        #[qinvokable]
+        fn set_share_screen(self: Pin<&mut Backend>, width: f64, height: f64, work_height: f64, dpr: f64);
         /// Add background: `{id, url, name}`, or "" for none.
         #[qinvokable]
         fn set_presenter_background(self: Pin<&mut Backend>, json: &QString);
@@ -1515,6 +1519,10 @@ pub mod qobject {
         /// PowerPoint Live's host script (ppt_host.js).
         #[qinvokable]
         fn ppt_host_script(self: &Backend) -> QString;
+        /// The script that gives PowerPoint's frame Cameo's camera
+        /// (ppt_cameo_stream.js).
+        #[qinvokable]
+        fn ppt_cameo_stream_script(self: &Backend) -> QString;
         /// Load the share tray's recent decks and workbooks into
         /// call_content_json's `recent`.
         #[qinvokable]

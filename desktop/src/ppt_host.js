@@ -57,10 +57,13 @@
         const cameoSet = (url, key) => {
             if (!url || !key) {
                 if (cameo.ws) { cameo.ws.close(); cameo.ws = null; }
-                if (cameo.key) cameoFrame(new ArrayBuffer(8));
+                if (cameo.key) { cameoFrame(new ArrayBuffer(8)); post({ m_type: 64, m_bufferName: "" }); }
                 cameo.key = ""; cameo.sent = "";
                 return;
             }
+            // New Teams' slide show opens the camera it is named (UpdateBufferInfoForCameo):
+            // OST's stream (ppt_cameo_stream.js), drawn from the frames below.
+            if (!cameo.key && ready) post({ m_type: 64, m_bufferName: "ost-cameo" });
             cameo.key = key;
             if (!cameo.ws || cameo.url !== url) {
                 if (cameo.ws) cameo.ws.close();

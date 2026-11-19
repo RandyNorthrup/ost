@@ -91,18 +91,55 @@ pub fn whiteboard_content(conversation: &str, message_id: &str, url: &str, initi
     })
 }
 
-/// Annotate's content (RDC `yg`): a board of type "annotation" over the
-/// shared screen; its address follows in the session state.
-pub fn annotation_content(conversation: &str, message_id: &str) -> Value {
+/// Annotate's content, as Teams' sharer starts it (seen live 2026-11-18;
+/// 89637 onSessionStarting): the meeting's annotation board with the
+/// shared screen's facts — `shareUrl` the board's address, `url` the same
+/// with a fresh `geometryId` — and no state until Whiteboard reports.
+pub fn annotation_content(conversation: &str, message_id: &str, share_url: &str, url: &str) -> Value {
     json!({
         "appId": "annotation",
-        "type": "annotation",
         "conversationId": conversation,
-        "messageId": message_id,
-        "url": "",
-        "shareUrl": "",
+        "initialNoteContent": [],
         "loaderLabel": "annotation",
+        "messageId": message_id,
+        "permittedFileUsers": [],
+        "shareUrl": share_url,
+        "type": "annotation",
+        "url": url,
     })
+}
+
+/// The shared screen, as Annotate's board is told about it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SharedScreen {
+    /// Its size in device pixels (Teams: the screen's size × DPR).
+    pub width: u32,
+    pub height: u32,
+    /// A whole screen (Teams' sharingSourceType 1) or a window (2).
+    pub window: bool,
+}
+
+/// Annotate's board address for the session (89637 appendAnnotationInitUrl
+/// and onSessionStarting): the meeting's board (`board`, with its
+/// initiator), `annotation=true` if missing, `sharedScreenWidth`,
+/// `sharedScreenFullHeight`, `isScreenSharerOnT2=true`,
+/// `sharingSourceType` and `osType` (Teams' OS name and version, e.g.
+/// "windowsNT 10.0"; "linux" here). Returns (shareUrl, url): the url adds
+/// `geometryId`.
+pub fn annotation_urls(board: &str, screen: SharedScreen, os_type: &str, geometry_id: &str) -> (String, String) {
+    let mut base = board.to_string();
+    if !base.contains("annotation=true") {
+        base.push_str(if base.contains('?') { "&annotation=true" } else { "?annotation=true" });
+    }
+    base.push_str(&format!(
+        "&sharedScreenWidth={}&sharedScreenFullHeight={}&isScreenSharerOnT2=true&sharingSourceType={}",
+        screen.width,
+        screen.height,
+        if screen.window { 2 } else { 1 }
+    ));
+    let share = format!("{base}&osType={os_type}");
+    let url = format!("{base}&osType={}&geometryId={geometry_id}", os_type.replace(' ', "+"));
+    (share, url)
 }
 
 /// An Excel Live share's content, as Teams presents it (seen live
@@ -633,6 +670,21 @@ mod tests {
         let mut l = SessionLinks { controller: Some("c".into()), ..Default::default() };
         l.merge(SessionLinks { update_state: Some("u".into()), ..Default::default() });
         assert_eq!((l.controller.as_deref(), l.update_state.as_deref()), (Some("c"), Some("u")));
+    }
+
+    #[test]
+    fn annotation_session_as_teams() {
+        let board = "https://app.whiteboard.microsoft.com/meeting?embed=1&encodedShareLink=x&meetingTitle=M&annotation=true&initiatorId=o&initiatorTimestamp=1";
+        let (share, url) = annotation_urls(board, SharedScreen { width: 1920, height: 1080, window: false }, "windowsNT 10.0", "g");
+        assert_eq!(share, format!("{board}&sharedScreenWidth=1920&sharedScreenFullHeight=1080&isScreenSharerOnT2=true&sharingSourceType=1&osType=windowsNT 10.0"));
+        assert_eq!(url, format!("{board}&sharedScreenWidth=1920&sharedScreenFullHeight=1080&isScreenSharerOnT2=true&sharingSourceType=1&osType=windowsNT+10.0&geometryId=g"));
+        let c = annotation_content("19:m", "0", &share, &url);
+        assert_eq!(c["appId"], "annotation");
+        assert_eq!(c["loaderLabel"], "annotation");
+        assert_eq!(c["initialNoteContent"], json!([]));
+        assert_eq!(c["url"], url);
+        let (s2, _) = annotation_urls("https://b/meeting?embed=1", SharedScreen { width: 800, height: 600, window: true }, "linux", "g");
+        assert!(s2.ends_with("?embed=1&annotation=true&sharedScreenWidth=800&sharedScreenFullHeight=600&isScreenSharerOnT2=true&sharingSourceType=2&osType=linux"));
     }
 
     #[test]

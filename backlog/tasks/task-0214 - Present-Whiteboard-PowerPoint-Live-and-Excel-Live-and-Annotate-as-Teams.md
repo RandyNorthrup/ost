@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-17T02:43:00Z'
-updated_date: '2026-11-18T23:54:00Z'
+updated_date: '2026-11-19T00:36:00Z'
 labels:
   - desktop
 dependencies: []
@@ -47,4 +47,10 @@ What TASK-0210 left (docs/spec/call-and-meeting-window.md §9c): starting a Micr
 - Cameo recheck (default profile, --join-content-cameo): frames reach OST's own slide show over the loopback feed, but PowerPoint doesn't draw them in OST's cameo yet (open). Annotate with screenSharerAttributes sent: Teams still shows no annotation layer (open). Test files, boards and the test camera cleaned up.
 
 - Merged 067b8cd (2026-11-18): build OK, 748 lib and 29 desktop tests passed. Open: keys during give control, Annotate seen by Teams, Cameo in OST's own presenter view, Excel from Teams with access.
+- 2026-11-18 (late) follow-ups:
+  - Keys during give control: proved. After a CDP mouse click on the shared picture, Teams' compositor-renderer surface has focus; CDP key events from Teams' page reached OST (30 key events counted and played) and "OST cdp keys" appeared in the test text window on linuxlt. The earlier SendInput attempts never focused that surface.
+  - Annotate seen by Teams: fixed. Captured Teams' own sharer (test-content window, OST Test 3 logging the session; logpoints in Teams' main page): its session content carries the meeting's annotation board address in url/shareUrl with sharedScreenWidth, sharedScreenFullHeight, isScreenSharerOnT2, sharingSourceType, osType (url also geometryId), initialNoteContent/permittedFileUsers, no initial state; its screenSharerAttributes are {source: 1, annotationWindowSize: {width, height (work area), offset 0, fullHeight}} in logical px. OST now matches (annotation_urls/annotation_content, numeric source and work-area size from the call window's Screen); Teams then showed "A participant started annotations…" with its annotation layer over OST Test 3's share.
+  - Excel from Teams with access: done in a meeting scheduled from ost-test1 inviting OST Test 3 (examples/create_event; deleted afterwards): Teams' state permitted both, OST Test 3 opened the workbook ("Welcome to Excel Live", presenter's cursor).
+  - Cameo in OST's own view: not resolved. PowerPoint's SlideShowApp (read over OST's web debugging) ignores array-buffer frames when hostExperience is "react-web-client" (Teams' value) and takes the camera only via UpdateBufferInfoForCameo -> getUserMedia (enableCameoInT2; WebView2's stream renderer on Teams desktop). OST sends 64 with its own id and serves that getUserMedia from its frames in PowerPoint's frame (ppt_cameo_stream.js), but PowerPoint started no capture in OST's presenter view.
+  - Incident: a full-screen test window closed while Teams still shared its screen (16:08:42-16:10:42 PT) — only test accounts in the meeting (chat roster), nobody else joined, no recording/transcript; Teams now shares only the test window.
 <!-- SECTION:NOTES:END -->

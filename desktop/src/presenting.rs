@@ -85,6 +85,23 @@ pub fn control_input(bytes: Vec<u8>) {
     }
 }
 
+/// The screen being shared, as the call window's Screen reports it:
+/// logical width, full and work-area heights, and its device pixel ratio
+/// (Teams' annotationWindowSize and Annotate's shared screen size).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ShareScreen {
+    pub width: f64,
+    pub full_height: f64,
+    pub work_height: f64,
+    pub dpr: f64,
+}
+
+static SHARE_SCREEN: std::sync::Mutex<ShareScreen> = std::sync::Mutex::new(ShareScreen { width: 0.0, full_height: 0.0, work_height: 0.0, dpr: 1.0 });
+
+pub fn share_screen() -> ShareScreen {
+    *SHARE_SCREEN.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 /// Tell the meeting's media control plane, in order (keys and clicks
 /// must reach the presenter as they were made).
 fn command(c: ControlCommand) {
@@ -155,6 +172,11 @@ impl qobject::Backend {
         }
     }
 
+    /// The call window's screen (logical size, work-area height, DPR).
+    pub fn set_share_screen(self: Pin<&mut Self>, width: f64, height: f64, work_height: f64, dpr: f64) {
+        *SHARE_SCREEN.lock().unwrap_or_else(|e| e.into_inner()) = ShareScreen { width, full_height: height, work_height, dpr: if dpr > 0.0 { dpr } else { 1.0 } };
+    }
+
     /// Tray Presenter mode, or the bar's Layout: Teams' setSharingLayoutMode.
     pub fn set_presenter_mode(mut self: Pin<&mut Self>, mode: &QString) {
         let mode = Mode::parse(&mode.to_string());
@@ -207,10 +229,13 @@ impl qobject::Backend {
             // What we share, with the screen's size (viewers size Annotate to it).
             runtime().spawn(async move {
                 tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                let size = if whole_screen { teams_cli::calling::screencast::last_size() } else { None };
+                // Teams: the screen's logical size, its work area's height and
+                // its full height (taskbar adjustment).
+                let s = share_screen();
+                let size = (whole_screen && s.width > 0.0).then_some((s.width.round() as u32, s.work_height.round() as u32, s.full_height.round() as u32));
                 let mut slot = call_slot().lock().await;
                 if let Some(call) = slot.outgoing.as_mut()
-                    && let Err(e) = call.screen_sharer_attributes(if whole_screen { "Monitor" } else { "Window" }, size).await
+                    && let Err(e) = call.screen_sharer_attributes(if whole_screen { 1 } else { 2 }, size).await
                 {
                     tracing::warn!("screen sharer attributes: {}", short_error(&e));
                 }

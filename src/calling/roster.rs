@@ -261,7 +261,10 @@ fn delta_on(json: &str, prefix: &str) -> Option<Vec<Participant>> {
                                 .find(|m| m.get("type").and_then(|t| t.as_str()) == Some("data"))
                                 .and_then(|m| m.get("sourceId")?.as_i64())
                         }),
-                    content_sessions: super::content_sharing::presenter_sessions(p),
+                    content_sessions: {
+                        log_sharer_attributes(&mri, p);
+                        super::content_sharing::presenter_sessions(p)
+                    },
                     on_hold: !streams.is_empty()
                         && streams.iter().all(|m| {
                             m.get("direction").and_then(|d| d.as_str()) == Some("inactive")
@@ -294,6 +297,30 @@ fn delta_on(json: &str, prefix: &str) -> Option<Vec<Participant>> {
 /// Meeting reactions in a call event (Teams' proxied "Reaction" messages on
 /// `conversation/receiveMessage/`): (sender MRI, reaction name such as
 /// "like", "heart", "applause", "laugh", "surprised").
+/// Log a sharer's `screenSharerAttributes` (Teams' participant property
+/// that sizes Annotate for viewers) when it is new, wherever the roster
+/// carries it.
+fn log_sharer_attributes(mri: &str, p: &serde_json::Value) {
+    fn find<'a>(v: &'a serde_json::Value, depth: u8) -> Option<&'a serde_json::Value> {
+        if depth > 5 {
+            return None;
+        }
+        match v {
+            serde_json::Value::Object(m) => m.get("screenSharerAttributes").or_else(|| m.values().find_map(|x| find(x, depth + 1))),
+            serde_json::Value::Array(a) => a.iter().find_map(|x| find(x, depth + 1)),
+            _ => None,
+        }
+    }
+    let Some(a) = find(p, 0) else { return };
+    static SEEN: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+    let key = format!("{mri}{a}");
+    let mut seen = SEEN.lock().unwrap_or_else(|e| e.into_inner());
+    if !seen.contains(&key) {
+        seen.push(key);
+        tracing::info!(%mri, attributes = %a, "screen sharer attributes");
+    }
+}
+
 pub fn meeting_reactions(json: &str) -> Option<Vec<(String, String)>> {
     let v: serde_json::Value = serde_json::from_str(json).ok()?;
     if !v

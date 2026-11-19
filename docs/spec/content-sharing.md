@@ -332,7 +332,12 @@ Captured (presenter "OST TEST 214 deck.pptx", 2026-11-18):
       Excel opened the workbook in OST and said "You don't have access to
       this file" — Teams' state permits only the presenter, and this Meet
       now invites nobody; a scheduled meeting with the viewer invited is
-      needed to see whether Teams grants it.
+      needed to see whether Teams grants it. In a meeting scheduled from
+      ost-test1 that invites OST Test 3 ("OST TEST 214 Excel access",
+      deleted afterwards), Teams' state permitted both (`permittedFileUsers`
+      [ost-test1, OST Test 3]) and OST Test 3 opened the workbook Teams
+      presented: Excel's "Welcome to Excel Live", the presenter's cursor in
+      B1.
     - PowerPoint Live, OST Test 3 presenting a deck with a cameo: Teams'
       Take control took it over; OST showed "Another user took control /
       OST Test 1 is now in control of the presentation. [Take back]" and
@@ -345,9 +350,38 @@ Captured (presenter "OST TEST 214 deck.pptx", 2026-11-18):
       Cameo, Teams showed OST's camera inside the slide's cameo (Teams'
       viewer composites the presenter's video itself). OST's own slide show
       gets the frames over the loopback feed (`cameo frames … 383x287`)
-      but PowerPoint doesn't draw them there yet — open.
+      but PowerPoint doesn't draw them there yet — open. What PowerPoint's
+      own code (SlideShowApp.js, read over OST's web debugging) shows: with
+      the form's `hostExperience` "react-web-client" (Teams' value) its
+      CameoAddon rejects frames posted as array buffers ("this code path is
+      not supported in T2") and takes the camera only from
+      UpdateBufferInfoForCameo (64): with its `enableCameoInT2` setting it
+      calls getUserMedia for the device id it is given (on Teams desktop a
+      stream WebView2's stream renderer registers). OST now sends 64 with
+      its own id and answers that getUserMedia in PowerPoint's frame with a
+      stream drawn from its frames (ppt_cameo_stream.js); the frames arrive
+      (about 500 counted inside the frame in 35 s) but PowerPoint opened no stream in
+      OST's presenter view, so `enableCameoInT2` is likely off
+      for this host — not resolved.
     - Annotate, OST Test 3 sharing with screenSharerAttributes sent: still
-      no annotation layer in Teams — open.
+      no annotation layer in Teams. Captured what Teams' own sharer sends
+      (Teams sharing a full-screen test window, OST Test 3 viewing and
+      logging the session; logpoints in Teams' main page): the session's
+      content carries the board's whole address in `url` and `shareUrl` —
+      the meeting's annotation board (`encodedShareLink`, `shareLinkId`,
+      `meetingTitle`, `annotation=true`, `initiatorId`,
+      `initiatorTimestamp`) plus `sharedScreenWidth`,
+      `sharedScreenFullHeight`, `isScreenSharerOnT2=true`,
+      `sharingSourceType=1` and `osType` ("windowsNT 10.0"), the url also a
+      `geometryId` — with `initialNoteContent: []` and
+      `permittedFileUsers: []`, and no state until Whiteboard reports; its
+      `screenSharerAttributes` are `{source: 1, annotationWindowSize:
+      {width: 1280, height: 680, offset: 0, fullHeight: 720}}` (logical
+      pixels, work area and full height). OST sent empty addresses and
+      `source: "Monitor"`. With both matched (`annotation_urls`,
+      `annotation_content`, `screen_sharer_body`; osType "linux"), Teams
+      showed its annotation layer over OST Test 3's share: "A participant
+      started annotations… To annotate, select any annotation tool."
   - With the same account on both ends Teams treats a session as its own
     (it showed Stop sharing and "This may take a few seconds..." for OST's
     Excel Live, and no annotation layer), so Teams-as-viewer checks of

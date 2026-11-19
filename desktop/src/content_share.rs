@@ -400,6 +400,10 @@ impl qobject::Backend {
         QString::from(include_str!("ppt_host.js"))
     }
 
+    pub fn ppt_cameo_stream_script(&self) -> QString {
+        QString::from(include_str!("ppt_cameo_stream.js"))
+    }
+
     /// Load the share tray's recent decks and workbooks (Office's MRU).
     pub fn content_recent_load(self: Pin<&mut Self>) {
         let qt = self.qt_thread();
@@ -458,7 +462,7 @@ impl qobject::Backend {
                     others.push(k)
                 }
                 None => {
-                    tracing::info!(kind = s.kind(), presenter = %s.presenter, "someone presents content");
+                    tracing::info!(kind = s.kind(), presenter = %s.presenter, content = %if s.kind() == "annotation" { s.content.to_string() } else { String::new() }, state = %if s.kind() == "annotation" { s.state.clone() } else { String::new() }, "someone presents content");
                     fresh.push(s.clone());
                     others.push(s);
                 }
@@ -583,6 +587,13 @@ pub(crate) async fn content_event(json: &str, qt: &cxx_qt::CxxQtThread<qobject::
     false
 }
 
+/// The screen we share, for Annotate (its size in device pixels).
+fn shared_screen() -> cs::SharedScreen {
+    let s = presenting::share_screen();
+    let (w, h) = teams_cli::calling::screencast::last_size().unwrap_or(((s.width * s.dpr) as u32, (s.full_height * s.dpr) as u32));
+    cs::SharedScreen { width: w, height: h, window: false }
+}
+
 /// Find the content and add the session (in the background).
 async fn start_content(kind: &str, args: &serde_json::Value, title: &str, me_oid: &str) -> anyhow::Result<(cs::Session, String)> {
     let client = TeamsClient::new().await?;
@@ -625,8 +636,13 @@ async fn start_content(kind: &str, args: &serde_json::Value, title: &str, me_oid
         // its address sent once Whiteboard reports it.
         "annotation" => {
             let url = api::app_host::meeting_annotation_board(&client, &thread, &organizer, title).await?;
-            board = format!("{url}{}initiatorId={me_oid}&initiatorTimestamp={now}&annotation=true", if url.contains('?') { "&" } else { "?" });
-            (cs::annotation_content(&thread, &message), String::new(), None)
+            let sep = if url.contains('?') { "&" } else { "?" };
+            let with_flag = if url.contains("annotation=true") { url.clone() } else { format!("{url}{sep}annotation=true") };
+            let initiated = format!("{with_flag}&initiatorId={me_oid}&initiatorTimestamp={now}");
+            let screen = shared_screen();
+            let (share_url, content_url) = cs::annotation_urls(&initiated, screen, "linux", &uuid::Uuid::new_v4().to_string());
+            board = share_url.clone();
+            (cs::annotation_content(&thread, &message, &share_url, &content_url), String::new(), None)
         }
         // PowerPoint Live (Teams' startFileSharing1): redeem the deck, ask
         // PowerPoint's snap service for the presentation, then the session

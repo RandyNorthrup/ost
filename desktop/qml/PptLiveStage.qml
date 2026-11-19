@@ -161,6 +161,14 @@ Item {
     }
     Component.onCompleted: {
         web.profile = webAppsProfile.instance()
+        // Cameo's camera in PowerPoint's frame (the host-provided stream).
+        const cs = WebEngine.script()
+        cs.name = "ost-cameo-stream"
+        cs.sourceCode = backend.pptCameoStreamScript()
+        cs.injectionPoint = WebEngineScript.DocumentCreation
+        cs.worldId = WebEngineScript.MainWorld
+        cs.runsOnSubFrames = true
+        web.userScripts.insert(cs)
         const x = new XMLHttpRequest()
         x.onreadystatechange = () => {
             if (x.readyState !== XMLHttpRequest.DONE) return

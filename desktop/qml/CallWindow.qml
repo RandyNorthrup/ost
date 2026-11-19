@@ -61,6 +61,8 @@ Window {
     /// shows) and the Sharing control bar opens; stopping brings the
     /// window back.
     onSharingChanged: {
+        // The shared screen's size (Teams' screen sharer attributes, Annotate's board).
+        if (sharing) backend.setShareScreen(Screen.width, Screen.height, Screen.desktopAvailableHeight, Screen.devicePixelRatio)
         // Stopping the screen share stops Annotate (Teams' stopAnnotationFromSharer).
         if (!sharing && annotating) backend.contentShareStop()
         if (sharing && meeting) showMinimized()

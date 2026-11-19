@@ -475,7 +475,7 @@ impl OutgoingCall {
     /// when screen sharing starts): our `screenSharerAttributes` — the
     /// source ("Monitor" or "Window") and the annotation window's size (the
     /// shared screen's), which viewers need to show Annotate over it.
-    pub async fn screen_sharer_attributes(&mut self, source: &str, size: Option<(u32, u32)>) -> Result<()> {
+    pub async fn screen_sharer_attributes(&mut self, source: u8, size: Option<(u32, u32, u32)>) -> Result<()> {
         let link = self.properties_link.clone().context("This meeting can't update participants")?;
         self.state_seq += 1;
         let op = uuid::Uuid::new_v4().to_string();
@@ -2478,8 +2478,10 @@ fn controller_link(create_response: &str) -> Option<String> {
 
 /// Teams' updateParticipantsProperties body for our own screen sharer
 /// attributes (scope "self").
-fn screen_sharer_body(from: serde_json::Value, source: &str, size: Option<(u32, u32)>, seq: u64, op: &str, status_link: &str) -> serde_json::Value {
-    let size = size.map(|(w, h)| serde_json::json!({ "width": w, "height": h, "offset": 0, "fullHeight": null }));
+/// (Teams sends `source` 1 for a screen, 2 for a window, and the screen's
+/// logical width, work-area height and full height.)
+fn screen_sharer_body(from: serde_json::Value, source: u8, size: Option<(u32, u32, u32)>, seq: u64, op: &str, status_link: &str) -> serde_json::Value {
+    let size = size.map(|(w, h, full)| serde_json::json!({ "width": w, "height": h, "offset": 0, "fullHeight": full }));
     serde_json::json!({
         "from": from.clone(),
         "to": [{
