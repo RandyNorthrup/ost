@@ -206,6 +206,19 @@ config-prod, services-io-collab-object). Test events "OST TEST 212 draft"
 test room invited) and the template "OST TEST 212 template" were made and
 removed again.
 
+Create's templates open the form as (measured on winpc, not saved):
+| card | type | form title | who can attend | registration | large audience | green room | chat tile |
+|---|---|---|---|---|---|---|---|
+| Create from scratch | Webinar | New event | Your organization | Off | Off | Off | Chat |
+| Webinar | Webinar | New webinar | Public | On | Off | On | During event |
+| Town hall | Townhall | New town hall | Your organization | Off | On (3,000) | On | — |
+| All hands | Webinar | New all hands | Your organization | Off | Off | On | Chat |
+| Training | Webinar | New training | Public | On | Off | Off | Chat |
+| Ask me anything | Townhall | New ask me anything | Your organization | Off | On (3,000) | Off | — |
+| Community event | Webinar | New community event | Public | On | Off | On | During event |
+(The card texts aren't in the desktop bundle: Teams loads the Events
+modules from its CDN, `teams-modular-packages`.)
+
 Discover:
 - The sections are "Happening now" (left out while empty), "Upcoming
   events in your org" and "Catch up on past events", each with See more
@@ -415,8 +428,9 @@ or "Get started on your first audio recap" / Generate audio recap.
   published) were made and all cancelled / deleted again.
 - [ ] Left: Manage immersive collections; the email templates' Edit
   (Preview shows the service's template); the promo banner's Edit event
-  banner; Highlights with a real recording; Room options' role isn't sent
-  (Teams' field for it wasn't captured).
+  banner; Highlights with a real recording. Room options' Attendee viewing
+  sends the room with the attendees (Teams' meeting role Attendees, read
+  from its code; not captured on the wire).
 - [x] Since TASK-0184 (docs/spec/town-halls-and-webinars.md): the Town hall
   template's form, Publish event with Teams' two dialogs, Upcoming, Join
   and its menu, and the event chat button.

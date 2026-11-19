@@ -8304,13 +8304,13 @@ Window {
             case 30: ev.openSectionsForTest([false, true, true, false]); break
             case 31: cap("form-people"); break
             case 32: ev.openOptionsForTest(); ev.scrollFormForTest(600); break
-            case 33: log("form options"); cap("form-options"); break
+            case 33: log("form options", ev.stageShotForTest(window.shotPath.replace(".png", "-events-full-stage.png"))); cap("form-options"); break
             case 34: ev.allOptionsForTest(); break
             case 35: log("all options", ev.allOptionsStateForTest()); cap("alloptions"); break
             case 36: ev.closeAllOptionsForTest(); ev.saveForTest("OST TEST 212 OST draft " + stamp); break
             case 37: cap("save"); break
             case 38: ev.confirmSaveForTest(); break
-            case 40: draft = ev.current; log("saved"); cap("overview"); break
+            case 40: if (!ev.current && waited++ < 20) return; waited = 0; draft = ev.current; log("saved"); cap("overview"); break
             case 41: ev.eventTab = "people"; ev.loadPeopleTab(); break
             case 43: log("people"); cap("people"); break
             case 44: ev.eventTab = "insights"; break
@@ -8375,7 +8375,8 @@ Window {
             const cap = tag => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-recaps-" + tag + ".png")))
             if (step === 0) { rail.openApp("events") }
             else if (step === 2) eventsView.item.viewAudioRecaps()
-            else if (step === 5) { console.warn("RECAPS audio", recapsView.item.stateForTest()); cap("audio"); recapsView.openTab("home") }
+            else if (step === 5) { console.warn("RECAPS audio", recapsView.item.stateForTest()); cap("audio") }
+            else if (step === 6) recapsView.openTab("home")
             else if (step === 9) { console.warn("RECAPS home", recapsView.item.stateForTest()); cap("home") }
             else if (step === 10) Qt.quit()
             step++

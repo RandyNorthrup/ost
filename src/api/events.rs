@@ -368,6 +368,20 @@ pub struct Person {
     pub group: bool,
     /// The picker's second line (an alias in capitals, a group's mail).
     pub detail: String,
+    /// A room's Room options "Set up room for": "Presenting" (Teams'
+    /// meeting role Everyone: a presenter) or "AttendeeViewing" (Attendees:
+    /// the room is invited as an attendee).
+    pub room_role: String,
+}
+
+/// The rooms that present (Teams sends them with the presenters).
+fn presenting(rooms: &[Person]) -> impl Iterator<Item = &Person> {
+    rooms.iter().filter(|r| r.room_role != "AttendeeViewing")
+}
+
+/// The rooms set up for attendee viewing (sent with the attendees).
+fn viewing(rooms: &[Person]) -> impl Iterator<Item = &Person> {
+    rooms.iter().filter(|r| r.room_role == "AttendeeViewing")
 }
 
 /// Someone in your organization as an event names them (Teams' owner
@@ -427,6 +441,7 @@ pub fn person_from(v: &Value) -> Person {
         upn: s("/identity/upn"),
         group,
         user_type,
+        room_role: String::new(),
     }
 }
 
@@ -501,8 +516,8 @@ pub fn create_body(e: &NewEvent, owner: &Value, tz: Value, promo: &str) -> Value
         "owner": owner,
         "team": e.team.iter().map(|p| person_body(p, None)).collect::<Vec<_>>(),
         "access": { "accessType": access_type, "inviteOnly": invite_only, "isRegistrationEnabled": e.registration },
-        "presenters": e.presenters.iter().chain(e.rooms.iter()).map(|p| person_body(p, Some(""))).collect::<Vec<_>>(),
-        "attendees": e.attendees.iter().map(|p| person_body(p, None)).collect::<Vec<_>>(),
+        "presenters": e.presenters.iter().chain(presenting(&e.rooms)).map(|p| person_body(p, Some(""))).collect::<Vec<_>>(),
+        "attendees": e.attendees.iter().chain(viewing(&e.rooms)).map(|p| person_body(p, None)).collect::<Vec<_>>(),
         "communicationProperties": {
             "isReminderEmailEnabled": true, "isGroupMailboxEnabled": true, "disableAttendeeEmails": false,
             "isSocialShareEnabled": null, "isSeparateAttendeeInvitesEnabled": false, "enableOneEventsArtifacts": true,
@@ -799,7 +814,9 @@ pub async fn event_form(client: &TeamsClient, id: &str) -> Result<Value> {
     let sessions = sessions.unwrap_or_default();
     let session = sessions.get(0).cloned().unwrap_or_default();
     let presenters = people_from(e.get("presenters"));
-    let (rooms, people): (Vec<Person>, Vec<Person>) = presenters.into_iter().partition(|p| p.user_type == "Room");
+    let (mut rooms, people): (Vec<Person>, Vec<Person>) = presenters.into_iter().partition(|p| p.user_type == "Room");
+    let (viewing_rooms, attendees): (Vec<Person>, Vec<Person>) = people_from(e.get("attendees")).into_iter().partition(|p| p.user_type == "Room");
+    rooms.extend(viewing_rooms.into_iter().map(|r| Person { room_role: "AttendeeViewing".into(), ..r }));
     Ok(json!({
         "id": e.get("id").cloned().unwrap_or_default(),
         "title": e.get("title").cloned().unwrap_or_default(),
@@ -818,7 +835,7 @@ pub async fn event_form(client: &TeamsClient, id: &str) -> Result<Value> {
         "team": people_from(e.get("team")),
         "presenters": people,
         "rooms": rooms,
-        "attendees": people_from(e.get("attendees")),
+        "attendees": attendees,
         "sessionId": session.get("id").cloned().unwrap_or_default(),
         "meetingOptions": session.get("meetingOptions").cloned().unwrap_or(Value::Null),
         "communication": e.get("communicationProperties").cloned().unwrap_or_default(),
@@ -841,8 +858,8 @@ pub fn update_body(e: &NewEvent) -> Value {
         "eventTime": { "startTime": to_ms(&e.start), "endTime": to_ms(&e.end), "timeZoneDetails": tz_for(e) },
         "access": { "isRegistrationEnabled": e.registration, "isDiscoverable": e.discoverable },
         "team": e.team.iter().map(|p| person_body(p, None)).collect::<Vec<_>>(),
-        "presenters": e.presenters.iter().chain(e.rooms.iter()).map(|p| person_body(p, Some(&e.session_id))).collect::<Vec<_>>(),
-        "attendees": e.attendees.iter().map(|p| person_body(p, None)).collect::<Vec<_>>(),
+        "presenters": e.presenters.iter().chain(presenting(&e.rooms)).map(|p| person_body(p, Some(&e.session_id))).collect::<Vec<_>>(),
+        "attendees": e.attendees.iter().chain(viewing(&e.rooms)).map(|p| person_body(p, None)).collect::<Vec<_>>(),
         "meetingOptions": options,
     })
 }
@@ -1015,7 +1032,7 @@ pub async fn search_people(client: &TeamsClient, kind: &str, query: &str) -> Res
         Some(Person {
             name: c.name, email: c.mail.clone(), mri: c.mri, object_id: c.object_id, tenant_id: tenant,
             upn: r.get("userPrincipalName").and_then(Value::as_str).unwrap_or(&c.mail).to_string(),
-            user_type, group: c.group, detail: c.detail,
+            user_type, group: c.group, detail: c.detail, room_role: String::new(),
         })
     }).collect())
 }

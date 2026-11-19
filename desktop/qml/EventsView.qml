@@ -95,13 +95,13 @@ Rectangle {
 
     readonly property string cdn: "https://teams.public.onecdn.static.microsoft/evergreen-assets/illustrations/"
     readonly property var templates: [
-        { key: "scratch", title: "Create from scratch", text: "Mix and match capabilities as you go", img: "webp/192/design-l-standard-192x192.webp", chips: [], type: "Webinar" },
-        { key: "webinar", title: "Webinar", text: "Best for interactive trainings, product demos, or thought leadership sessions", img: "webp/192/person-presentation-l-standard-192x192.webp", chips: ["Registration", "Video on demand", "Waitlist", "Green room"], type: "Webinar" },
-        { key: "townhall", title: "Town hall", text: "Reach a large audience with a professional produced broadcast", img: "v2/person-video-live-l-standard.svg", chips: ["Up to 10K attendees", "Green room", "Video on demand", "HD video stream"], type: "Townhall" },
-        { key: "allhands", title: "All hands", text: "Share organization updates and engage employees at scale", img: "v2/web-meet-l-standard.svg", chips: ["Moderated Q&A", "Real-time reactions", "Green room", "Video on demand"], type: "Townhall" },
-        { key: "training", title: "Training", text: "Teach, onboard, or upskill with an interactive session", img: "v2/book-pencil-l-standard.svg", chips: ["Breakout rooms", "Polls", "Live captions", "Registration", "Video on demand"], type: "Webinar" },
-        { key: "ama", title: "Ask me anything", text: "Open Q&A sessions with moderated audience questions", img: "v2/chat-multiple-l-standard.svg", chips: ["Moderated Q&A", "Polls", "Green room", "Producer controls"], type: "Webinar" },
-        { key: "community", title: "Community event", text: "Bring a community together for virtual experiences", img: "webp/192/people-house-l-standard-192x192.webp", chips: ["Registration", "Event chat", "Highlights", "Green room", "Waitlist"], type: "Webinar" }
+        { key: "scratch", title: "Create from scratch", text: "Mix and match capabilities as you go", img: "webp/192/design-l-standard-192x192.webp", chips: [], type: "Webinar", formTitle: "New event", access: "Organization", registration: false, greenRoom: false, chatLabel: "Chat" },
+        { key: "webinar", title: "Webinar", text: "Best for interactive trainings, product demos, or thought leadership sessions", img: "webp/192/person-presentation-l-standard-192x192.webp", chips: ["Registration", "Video on demand", "Waitlist", "Green room"], type: "Webinar", formTitle: "New webinar", access: "Public", registration: true, greenRoom: true, chatLabel: "During event" },
+        { key: "townhall", title: "Town hall", text: "Reach a large audience with a professional produced broadcast", img: "v2/person-video-live-l-standard.svg", chips: ["Up to 10K attendees", "Green room", "Video on demand", "HD video stream"], type: "Townhall", formTitle: "New town hall", access: "Organization", registration: false, greenRoom: true, large: true, chatLabel: "During event" },
+        { key: "allhands", title: "All hands", text: "Share organization updates and engage employees at scale", img: "v2/web-meet-l-standard.svg", chips: ["Moderated Q&A", "Real-time reactions", "Green room", "Video on demand"], type: "Webinar", formTitle: "New all hands", access: "Organization", registration: false, greenRoom: true, chatLabel: "Chat" },
+        { key: "training", title: "Training", text: "Teach, onboard, or upskill with an interactive session", img: "v2/book-pencil-l-standard.svg", chips: ["Breakout rooms", "Polls", "Live captions", "Registration", "Video on demand"], type: "Webinar", formTitle: "New training", access: "Public", registration: true, greenRoom: false, chatLabel: "Chat" },
+        { key: "ama", title: "Ask me anything", text: "Open Q&A sessions with moderated audience questions", img: "v2/chat-multiple-l-standard.svg", chips: ["Moderated Q&A", "Polls", "Green room", "Producer controls"], type: "Townhall", formTitle: "New ask me anything", access: "Organization", registration: false, greenRoom: false, large: true, chatLabel: "During event" },
+        { key: "community", title: "Community event", text: "Bring a community together for virtual experiences", img: "webp/192/people-house-l-standard-192x192.webp", chips: ["Registration", "Event chat", "Highlights", "Green room", "Waitlist"], type: "Webinar", formTitle: "New community event", access: "Public", registration: true, greenRoom: true, chatLabel: "During event" }
     ]
 
     // Requests to the events service, answered by events_reply.
@@ -320,6 +320,7 @@ Rectangle {
     function connectAppsStateForTest() { return connectApps.items.map(i => i.name) }
     function roomOptionsForTest(on) { if (on) roomOptions.open(); else roomOptions.close() }
     function saveChangesForTest() { form.saveChanges() }
+    function stageShotForTest(path) { stagePreview.grabToImage(r => r.saveToFile(path)); return [stagePreview.visible, stagePreview.mapToItem(root, 0, 0).x, stagePreview.mapToItem(root, 0, 0).y, stagePreview.opacity, stagePreview.parent.visible, stagePreview.parent.height] }
     function scrollCreateForTest() { createPage.contentY = Math.max(0, createPage.contentHeight - createPage.height) }
     function openSectionsForTest(list) { form.open = list; form.contentY = 0 }
     function scrollFormForTest(y) { form.contentY = y }
@@ -949,8 +950,9 @@ Rectangle {
         function refreshRich() { richState = JSON.parse(rich.state(description.cursorPosition) || "{}") }
         function reset(t, s, e) {
             const th = t.type === "Townhall"
-            template = t; start = s; end = e; access = "Organization"; registration = false; greenRoom = th
-            mic = !th; camera = !th; react = true; chat = true; qna = true; capacity = th ? 3000 : 0; large = th; attendeeView = "Off"
+            const big = th && t.large !== false
+            template = t; start = s; end = e; access = t.access || "Organization"; registration = !!t.registration; greenRoom = t.greenRoom !== undefined ? t.greenRoom : th
+            mic = !big; camera = !big; react = true; chat = true; qna = true; capacity = big ? 3000 : th ? 1000 : 0; large = big; attendeeView = "Off"
             open = [true, false, false, false]; nameField.text = "New event"; description.text = ""; contentY = 0
             mode = "new"; sourceId = ""; sessionId = ""; promo = ""; discoverable = false; zone = root.localZone; zoneOpen = false
             team = []; presenters = []; attendees = []; rooms = []; optionChanges = ({}); eventOptions = null
@@ -981,7 +983,7 @@ Rectangle {
             if (d.capacity) capacity = d.capacity
         }
         readonly property string title: mode === "edit" ? (nameField.text.trim() || "Edit event") : mode === "template" ? "Edit template"
-            : mode === "duplicate" ? (nameField.text.trim() || "New event") : townHall && template.key === "townhall" ? "New town hall" : "New event"
+            : mode === "duplicate" ? (nameField.text.trim() || "New event") : (template.formTitle || "New event")
         // The room search's slot: "yyyy-MM-dd HH:mm:ss" in the zone (Teams
         // sends the form's times in its Windows zone name).
         readonly property string windowsZone: {
@@ -1334,18 +1336,6 @@ Rectangle {
                 Column {
                     width: parent.width
                     Item { width: 1; height: 16 }
-                    // The stage preview on the right, beside the participation
-                    // tiles (what attendees' meeting window will look like).
-                    Item {
-                        width: parent.width; height: 0; z: 1
-                        EventStagePreview {
-                            id: stagePreview
-                            visible: form.visible && form.open[3] && parent.width > 1000
-                            x: parent.width - width; y: 104
-                            mic: form.mic; camera: form.camera; react: form.react; chat: form.chat; qna: form.qna
-                            broadcast: form.townHall && form.large
-                        }
-                    }
                     Label { text: "Set your max event capacity" }
                     Text { y: 4; text: "We'll use this info to suggest the best settings for your audience"; font.family: theme.font; font.pixelSize: 12; color: theme.textStrong; height: 18 }
                     Item { width: 1; height: 12 }
@@ -1380,7 +1370,7 @@ Rectangle {
                             model: form.townHall && form.large
                                 ? [["mic", "Mic", "mic-20", "mic-off-20", true], ["camera", "Camera", "video-20", "video-off-20", true], ["qna", "Q&A", "chat-bubbles-question-20", "chat-bubbles-question-20"]]
                                 : [["mic", "Mic", "mic-20", "mic-off-20"], ["camera", "Camera", "video-20", "video-off-20"], ["react", "React", "emoji-20", "emoji-20"],
-                                   ["chat", form.townHall ? "During event" : "Chat", "chat-20", "chat-bubbles-off-20"], ["qna", "Q&A", "chat-bubbles-question-20", "chat-bubbles-question-20"]]
+                                   ["chat", form.template.chatLabel || (form.townHall ? "During event" : "Chat"), "chat-20", "chat-bubbles-off-20"], ["qna", "Q&A", "chat-bubbles-question-20", "chat-bubbles-question-20"]]
                             Rectangle {
                                 id: tile
                                 required property var modelData
@@ -1436,6 +1426,16 @@ Rectangle {
                         }
                     }
                     Item { width: 1; height: 16 }
+                }
+                // The stage preview on the right, beside the participation tiles
+                // (what attendees' meeting window will look like).
+                EventStagePreview {
+                    id: stagePreview
+                    visible: form.visible && form.open[3] && parent.width > 1000
+                    z: 1
+                    x: parent.width - width; y: 120
+                    mic: form.mic; camera: form.camera; react: form.react; chat: form.chat; qna: form.qna
+                    broadcast: form.townHall && form.large
                 }
             }
         }
@@ -1834,7 +1834,7 @@ Rectangle {
                             width: parent.width; spacing: 16
                             Item { width: 1; height: 40 }
                             Text { anchors.horizontalCenter: parent.horizontalCenter; text: "When attendees RSVP or register, they'll show up here."; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
-                            Image { anchors.horizontalCenter: parent.horizontalCenter; width: 100; height: 100; source: root.cdn + "v2/people-community-l-standard.svg"; sourceSize: Qt.size(200, 200); asynchronous: true }
+                            Image { anchors.horizontalCenter: parent.horizontalCenter; width: 100; height: 100; source: root.cdn + "v2/people-l-standard.svg"; sourceSize: Qt.size(200, 200); asynchronous: true }
                             Item { width: 1; height: 40 }
                         }
                     }

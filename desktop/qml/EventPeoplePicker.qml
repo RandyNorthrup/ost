@@ -113,7 +113,7 @@ Item {
         }
         TextInput {
             id: input
-            width: Math.max(80, flow.width - (root.chips && root.picked.length ? 0 : 0))
+            width: root.chips && root.picked.length ? 160 : flow.width
             height: 24
             verticalAlignment: TextInput.AlignVCenter
             font.family: theme.font; font.pixelSize: 14; color: theme.text

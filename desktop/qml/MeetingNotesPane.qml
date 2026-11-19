@@ -100,8 +100,8 @@ Rectangle {
             if (k === "copy") backend.copyText(link)
             else if (k === "loop") Qt.openUrlExternally(link)
             else if (k === "locations") locations.open()
-            else if (k === "access") backend.callNotesRequest("item", "notesitem" + (++root.seq), JSON.stringify({ url: link }))
-            else if (k === "workspace") backend.callNotesRequest("workspace", "notesws" + (++root.seq), JSON.stringify({ url: link }))
+            else if (k === "access") backend.callNotesRequest("item", "nmitem" + (++root.seq), JSON.stringify({ url: link }))
+            else if (k === "workspace") backend.callNotesRequest("workspace", "nmws" + (++root.seq), JSON.stringify({ url: link }))
         }
     }
     Connections {
@@ -109,12 +109,12 @@ Rectangle {
         function onCallNotesReply(id, json) {
             let v = {}
             try { v = JSON.parse(json) } catch (e) {}
-            if (id.indexOf("notesitem") === 0) {
+            if (id.indexOf("nmitem") === 0) {
                 if (v.error) { root.note("access error " + v.error); return }
                 notesShare.openManage({ site: v.site, list: v.list, item: v.item }, v.name, "loop")
                 root.note("access")
-            } else if (id.indexOf("notesws") === 0 && v.url) { Qt.openUrlExternally(v.url); root.note("workspace") }
-            else if (id.indexOf("notestestws") === 0) root.note("workspace url " + (v.url || v.error))
+            } else if (id.indexOf("nmws") === 0 && v.url) { Qt.openUrlExternally(v.url); root.note("workspace") }
+            else if (id.indexOf("nmtestws") === 0) root.note("workspace url " + (v.url || v.error))
         }
     }
     OneDriveShare { id: notesShare }
@@ -140,8 +140,8 @@ Rectangle {
     function menuForTest() { return moreMenu.items.map(i => i.label) }
     // The harness: See who has access as the menu does; Add to Loop
     // workspace's address logged instead of opened.
-    function accessForTest() { backend.callNotesRequest("item", "notesitem" + (++seq), JSON.stringify({ url: root.url || root.sharedUrl })) }
-    function workspaceForTest() { backend.callNotesRequest("workspace", "notestestws" + (++seq), JSON.stringify({ url: root.url || root.sharedUrl })) }
+    function accessForTest() { backend.callNotesRequest("item", "nmitem" + (++seq), JSON.stringify({ url: root.url || root.sharedUrl })) }
+    function workspaceForTest() { backend.callNotesRequest("workspace", "nmtestws" + (++seq), JSON.stringify({ url: root.url || root.sharedUrl })) }
     function locationsForTest(on) { if (on) locations.open(); else locations.close() }
     function closeAccessForTest() { notesShare.close() }
     Loader {
