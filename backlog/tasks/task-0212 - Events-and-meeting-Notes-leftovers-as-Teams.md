@@ -1,10 +1,11 @@
 ---
 id: TASK-0212
 title: Events and meeting Notes leftovers as Teams
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-17T01:27:00Z'
-updated_date: '2026-11-19T06:52:00Z'
+updated_date: '2026-11-19T09:08:00Z'
 labels:
   - desktop
 dependencies: []
@@ -31,4 +32,7 @@ What TASK-0209 left (docs/spec/events.md, docs/spec/call-and-meeting-window.md):
 - Events: Custom range / My events (regional query, Registered/Invited), chips, See more, Connect apps (ECS integrationsThirdParty), saved templates (eventTemplates: Schedule, Edit template, Delete), time zone (Teams' 140 zones, api::events_tz), room search with availability + Room options, description toolbar (FormatBar custom groups + RichText), co-organizer/presenter/invitee pickers (searchV2 flags as Teams), stage preview (Teams' sample videos), All options (meetingTemplates/details in MeetingOptionsDialog), Manage apps, save dialog invite cards, event page tabs (Overview, People & emails, Insights, Highlights), Preview, Edit details (PATCH), Share / success dialog (attendee card, isDiscoverable), Duplicate (POST duplicate), Save as template, Copy join details (scheduler views.html, resource 7557eb47-…), Pin app in Teams' pinned apps (+ app bar Pin/Unpin), template mapping per Teams (All hands = webinar, Ask me anything = town hall, access/registration/green room defaults), Meeting Recaps for View audio recaps.
 - Meeting Notes: scheduled meetings now use Teams' collab object service first (reserveresource → make page → commitresource, hostClient TeamsInMeeting); More actions: Shared locations, Copy component, See who has access (Manage access), Open in Loop, Add to Loop workspace (loop.microsoft.com/p/<base64>).
 - Live (OST Test 3, linuxlt): --events-test=full end to end (draft with OST Test 2 co-organizer, OST Test 1 presenter, OST Test Room; template; duplicate edited + published; pin/unpin synced; all cancelled/deleted); --call-notes-test (collab path committed) and --call-notes-meetnow (service path); --recaps-test. Cleanup: ost-test1's two winpc test events cancelled and their Canceled: entries removed; notes .loop files deleted.
+
+- Merged 9dc657f/95bad95 onto desktop/foundation (2026-11-19), conflicts with TASK-0217 resolved keeping both (one Share/published dialog; Live and "in N mins" badges; typed people lists). 772 lib + 29 desktop tests passed; live smoke on test3: --events-test=full, --call-notes-test, --events-test=townhall.
+- Open: Manage immersive collections, editing email templates, Edit event banner, Highlights with a recording; Meeting Notes shared-link path live; Room options attendee viewing on the wire; Manage apps target; Generate audio recap; Audio recaps empty-state image; My events with real data; leftover Canceled: copies in ost-test1/test2 calendars.
 <!-- SECTION:NOTES:END -->
