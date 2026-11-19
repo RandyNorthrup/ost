@@ -1,11 +1,11 @@
 ---
 id: TASK-0161
 title: Room audio with the tenant's Teams Rooms (search, Nearby, add the room)
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-15T20:59:00Z'
-updated_date: '2026-11-19T06:29:00Z'
+updated_date: '2026-11-19T07:00:00Z'
 labels:
   - calls
   - devices
@@ -23,7 +23,7 @@ Teams' pre-join Room audio also finds the tenant's Teams Rooms: 'Search for a ro
 <!-- AC:BEGIN -->
 - [x] #1 Typing in Room audio's picker finds the tenant's rooms as Teams does
 - [x] #2 Other Suggestions and Nearby list rooms as Teams does, with Teams' hints
-- [ ] #3 Joining with a tenant room adds the room to the meeting as Teams does
+- [x] #3 Joining with a tenant room adds the room to the meeting as Teams does
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -50,3 +50,15 @@ Built so far: Room audio's picker (search box, Connected room devices, Other Sug
 - Tenant: OST Test Room got a known password (Graph, Randy consented User-PasswordProfile.ReadWrite.All for himself) and an authenticator TOTP (security defaults); both in creds.md. linuxlt profile `room` (auth_flow teams-web), signed in once by the user.
 - Live: OST ost-test1 (spatest) picked the room from Nearby (emulated btvirt radio) -> room auto-accepted (Bluetooth, valid salt, in tenant), joined with mic and camera; laptop got addParticipantSuccess. Teams on winpc picked it by search (no token) -> room rang on its console (Salt_not_found), accepted there, Teams' People showed OST Test Room. Room joining from its calendar card: the meeting roster lists its endpoint with deviceType room. QR on the home screen decodes to Teams' qr_code link.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Room audio with the tenant's rooms, and OST as a Teams Rooms device, as Teams.
+
+- Room audio picker: search and Other Suggestions from Outlook findmeetinglocations with presence; Nearby from Teams Rooms Bluetooth beacons; Teams' hints. Joining with a room joins without computer audio and invites the room with Teams' proximity data.
+- Room mode (on for accounts with a Teams Rooms licence, or --room): rotating 60 s beacon code, deviceType "room" on every call request, Teams Rooms' invite rules (auto-accept for a valid recent code from the same tenant within 4 s, otherwise ring on the home screen), mic and camera on join, ad-hoc auto exit and the end-of-meeting Leave now / Snooze dialog, home screen with clock, name, QR code and today's meetings. The laptop side recognises room participants.
+- Live: ost-test1 (OST) picked OST Test Room from Nearby and the room joined by itself (addParticipantSuccess; before the sign-in the same invite failed "user unavailable"); Teams on winpc found it by search ("Available"), invited without a code, the room rang and joined on Accept and Teams listed it.
+- Tenant: room password reset via Graph, authenticator registered (both in creds.md), Teams Rooms Basic ($0) assigned; linuxlt profile "room" signed in once by the user.
+- Tests: 767 lib tests pass. Follow-up TASK-0226.
+<!-- SECTION:FINAL_SUMMARY:END -->
