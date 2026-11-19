@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-17T01:27:00Z'
-updated_date: '2026-11-19T11:46:00Z'
+updated_date: '2026-11-19T12:04:00Z'
 labels:
   - desktop
 dependencies: []
@@ -47,4 +47,6 @@ What TASK-0209 left (docs/spec/events.md, docs/spec/call-and-meeting-window.md):
 
 - Final 2026-11-19: Meet now notes reordered to Teams' way (claim first) - the tenant refuses the claim (updateMeetingStates 400) for Calendar's Meet now, so both people got the service's notes again; the shared-link reception is still unexercised live. Email Save now sends clean HTML (no chip shading, indentation collapsed). Room options: the winpc draft read back through OST with OST Test Room as an attendee (AttendeeViewing). Cleanup: "OST TEST 212 invite" and "room options" cancelled; Canceled: entries removed from ost-test1 (7+2), OST Test 2 (11), OST Test 3 (3); two test collections deleted (soft-deleted M365 groups); Events unpinned again for ost-test1 (the save dialog had pinned it). 776 lib tests pass.
 - Open: Highlights with a recording; town hall Manage apps (Custom Streaming / AI Producer, not in the 26304 bundles); Generate audio recap's AugLoop submit; Meeting Notes shared-link path live.
+
+- Merged 4a78253 (2026-11-19): email template edit, Edit event banner, immersive collections, My events with real data, Discover lists fix, Room options attendee viewing confirmed, Manage apps → meeting details, Generate audio recap dialog, images. Open: Highlights with a recording, a town hall's Manage apps list (Custom Streaming, AI Producer), the Generate submission, the Meeting Notes shared-link path (tenant returns 400 to the claim).
 <!-- SECTION:NOTES:END -->

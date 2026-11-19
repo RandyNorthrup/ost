@@ -1,10 +1,11 @@
 ---
 id: TASK-0226
 title: Teams Rooms mode leftovers
-status: To Do
-assignee: []
+status: Done
+assignee:
+  - '@claude'
 created_date: '2026-11-19T07:00:00Z'
-updated_date: '2026-11-19T10:47:00Z'
+updated_date: '2026-11-19T12:04:00Z'
 labels:
   - calls
 dependencies: []
@@ -18,8 +19,8 @@ Found in TASK-0161: the room's call window shows the caller's name instead of th
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The room's call window shows what a Teams Rooms device shows after accepting an invite, verified live
-- [ ] #2 The end-of-meeting dialog's text and timing come from Teams Rooms' own strings and match it
+- [x] #1 The room's call window shows what a Teams Rooms device shows after accepting an invite, verified live
+- [x] #2 The end-of-meeting dialog's text and timing come from Teams Rooms' own strings and match it
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -32,3 +33,13 @@ Found in TASK-0161: the room's call window shows the caller's name instead of th
 - 2026-11-19 built: room_mode::call_title (Teams Rooms' title rule) shown once the room accepts (window title; the ringing console keeps the inviter); ad-hoc escalation (no instant leave once >1 other was in); end time from the meeting chat's meeting property (0001-01-01 ignored); channel threads wait for the end; RoomAutoExit with Rooms' strings and layout; harness --rooms-meeting, --room-exit-shot, ROOMEXIT lines.
 - Live (linuxlt, btvirt radio; ost-test1 inviting OST Test Room from Nearby): scheduled "OST TEST 226 room 02:12" (3 min) -> room auto-accepted, title "OST TEST 226 room 02:12 | OST" (was the inviter's name); the inviter left; end 10:15:59, ROOMEXIT shown 10:20:59 (300 s), "About to leave meeting ..." with Snooze / Leave now, bar full and left 10:21:14 (15 s); call ended in the room's log; event deleted. Channel Meet now (OST layout test): the room can't read the channel thread (403), so its title is "Microsoft Teams meeting", as Teams Rooms' fallback; meeting ended by the inviter, room's call ended.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Teams Rooms mode leftovers, from Teams Rooms' own build (MSTeams-Rooms 26198.304 in the free Teams Rooms on Windows 5.7.112 installer).
+
+- Call window title as Teams Rooms: scheduled meeting subject, Meeting in "{channel}", "Call with {topic}", the other people's names, or "Microsoft Teams meeting"; the ringing screen still shows the inviter. Live: the room's window read the scheduled meeting's subject.
+- End-of-meeting dialog "About to leave meeting ..." with Snooze / Leave now at 45% x 27%, 300 s after a scheduled end (60 s ad hoc), Snooze 15 min, 15 s bar; ad-hoc meetings left at once unless more than one other person was ever in it; end time from the meeting chat; channel meetings wait for their end. Live: shown 5 min after the end, room left 15 s later.
+- 777 lib tests pass.
+<!-- SECTION:FINAL_SUMMARY:END -->
