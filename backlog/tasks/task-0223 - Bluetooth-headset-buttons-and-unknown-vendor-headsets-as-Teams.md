@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-18T04:41:00Z'
-updated_date: '2026-11-19T03:11:00Z'
+updated_date: '2026-11-19T03:32:00Z'
 labels:
   - calls
 dependencies: []
@@ -35,4 +35,6 @@ What TASK-0156 left: Bluetooth (HFP) headset call buttons aren't handled; a head
 
 - Merged e384d3c/aa012a8 (2026-11-18): build OK, 752 lib tests passed. AC2 and AC3 verified live. AC1: mute works on stock PipeWire; answer/hang-up need the contrib/pipewire patch (stock PipeWire's HFP gateway only talks to ModemManager on the system bus; org.pipewire.Telephony only covers the hands-free role). Patch being prepared for an upstream MR (user approved).
 2026-11-19 (agent, follow-up): org.pipewire.Telephony checked: it only serves PipeWire as the hands-free side of a phone (README-Telephony.md; telephony_ag_new only in rfcomm_hfp_hf); live with the headset connected it lists no objects and ATA gets ERROR. Kept the modem path; contrib/pipewire now has an upstream-ready patch against PipeWire master (builds) with README. On stock PipeWire OST notices the gateway never reads its modem, logs that answer/hang-up aren't offered and shows nothing (Teams logs "Platform not supported" and shows nothing). Live on stock PipeWire: headset AT+VGM=0/15 muted/unmuted the call, AT+CHUP got ERROR (not offered), OST's own mute sent the headset +VGM: 0 and unmute +VGM: 15 (PipeWire forwards it once the headset has reported its gain, as real headsets do at connection). Harness --headset-mute-steps.
+
+- Merged 203bc5a (2026-11-18): build OK, 752 lib tests passed. On stock PipeWire mute works both ways and answer/hang-up are not offered (Teams logs "Platform not supported" in the same case). Answer/hang-up with contrib/pipewire/0001-*.patch; upstream MR pending freedesktop.org fork approval (user filed the verification issue). AC1 stays open until the patch is upstream.
 <!-- SECTION:NOTES:END -->
