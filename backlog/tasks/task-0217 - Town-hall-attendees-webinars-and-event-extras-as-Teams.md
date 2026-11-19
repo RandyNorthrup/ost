@@ -1,10 +1,11 @@
 ---
 id: TASK-0217
 title: Town hall attendees, webinars and event extras as Teams
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-17T06:06:00Z'
-updated_date: '2026-11-19T06:27:00Z'
+updated_date: '2026-11-19T06:48:00Z'
 labels:
   - desktop
 dependencies: []
@@ -37,4 +38,6 @@ What TASK-0184 left (docs/spec/town-halls-and-webinars.md):
 
 - Also verified: Preview as Attendee from OST (ost-test1 organizer of OST TEST 217 town hall 3) joined as a streaming attendee (Waiting bar, curtain). Lib tests 758 passed on linuxlt.
 - Open: (1) when OST is the organizer who starts the event, a streaming attendee lost the call (Teams attendee in run 1, OST Test 2 in run 3) while Teams starting it kept them: compare OST go-live with Teams; (2) Bring on screen with a second presenter not rechecked live (test webinar was not HostMode); (3) webinar registration not built; (4) On with preview and the Manage screen panel not built; (5) Virtual appointment / Live Event not built; (6) the pre-join split menu needs the preheat to finish, not yet seen on screen; (7) OST Test 3 keeps cancelled OST TEST 217 webinar entries.
+
+- Merged 7120e0c/c38329a (2026-11-19): build OK, 758 lib tests passed. Town hall attendee streaming verified live; webinar run live; extras partly built. Open: organizer start drops attendees, Bring on screen, waiting screen, registration, On with preview, Manage screen, New menu items.
 <!-- SECTION:NOTES:END -->
