@@ -3,11 +3,11 @@ id: TASK-0220
 title: >-
   Calendar toolbar extras as Teams: Filter, Time scale, Saved views, Split view,
   propose new time, Event form
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-17T16:27:00Z'
-updated_date: '2026-11-18T23:19:00Z'
+updated_date: '2026-11-19T00:05:00Z'
 labels:
   - calendar
 dependencies: []
@@ -23,11 +23,11 @@ Calendar parts Teams has that OST doesn't yet, found while finishing TASK-0050: 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The calendar toolbar has Teams' Filter menu (Appointments, Meetings, Poll holds, Reservations, Categories, Show as, Recurrence, In-person) and filters events as Teams does, including the 'Filter applied' state
+- [x] #1 The calendar toolbar has Teams' Filter menu (Appointments, Meetings, Poll holds, Reservations, Categories, Show as, Recurrence, In-person) and filters events as Teams does, including the 'Filter applied' state
 - [x] #2 Time scale, Saved views and Split view work as in Teams desktop
 - [x] #3 Propose new time works from an invitation as in Teams, and the organizer sees the proposal
 - [x] #4 New ▾ Event opens Teams' Event form and creates an event as Teams does
-- [ ] #5 The Live meetings dialog's avatar row shows everyone in each live call, as Teams
+- [x] #5 The Live meetings dialog's avatar row shows everyone in each live call, as Teams
 - [x] #6 The calendar's Copilot entry points are shown as in Teams for a Copilot-licensed user
 <!-- AC:END -->
 
@@ -66,3 +66,17 @@ Last three items (2026-11-18):
 - Instructions ›: in the tile menu for a Copilot user, as Outlook's CalendarItemContextMenu has it (calendarInstructions). Create instruction (only when you're not the organizer) opens Copilot's pane with the draft "Always {accept|follow|decline} meeting from {organizer}", or "Automatically delete canceled meetings" / "Help me create calendar instructions". Manage instructions opens Outlook's Calendar settings at Calendar instructions. Verified live: the draft in the pane, unsent, and the settings page. Outlook's command steps now match by visible text, because Fluent tabs keep a hidden copy of their label.
 - AC5 live: test2 and test3 each organized a new meeting with ost-test1 (OST TEST 223 live E and F), with the lobby set to Everyone (examples/meeting_lobby) and put back to EveryoneInCompany afterwards. With OST running as ost-test1 before the calls started, OST got both MeetingStarts and showed "Meetings Started: OST TEST 223 live E +1 / View meetings". The Live meetings dialog had E with O2, two guests and +1 (OST Test 2 admitted three guests) and F with O3. Teams on winpc, idle and running, showed no join bar (no MeetingStart reached it), and restarted calls get no MeetingStart at all. So the avatar overlap is taken from Teams' Griffel CSS (griffel-37c74cd32cb2b4d1.css), not measured live: isRosterParticipantAvatar margin 0 -1rem 0 0, html font-size 10px, so a 10 px overlap; chatLiveRosterList padding-right 1rem; +N is an avatar of the same size. OST already matches.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Calendar extras as Teams desktop (Outlook on the web hosted in Teams), checked live against winpc.
+
+- Filter: all eight groups with Teams' menu behaviour, overflow rule and Outlook's calendar_filters cloud setting (shared with Teams, including the first-run Reservations ▸ Desk default). Poll holds, desk bookings and in-person come from Outlook's own event view (unit-tested; no test account has such events). "…" has Filter, Share, Print and Calendar settings opening Outlook's own dialogs; Print from Outlook's preview goes to a PDF.
+- View menu, Time scale, Saved views (PUT), calendars and groups list, Split view.
+- Tile right-click menu with Outlook's propose form, Print, Forward, Duplicate, .ics, charm, Show as, Categorize, Private and Instructions ›; organizer cards show proposals with Accept. Scheduling sends UTC when the mailbox has no time zone.
+- New ▾ Event hosts Outlook's form with Open in new window and its pop-out.
+- Live meetings: MeetingStart-driven join bar and dialog, several calls watched at once, up to 3 avatars then +N (verified with two fresh meetings, 4 people in one). The 10 px overlap comes from Teams' CSS: Teams on winpc received no MeetingStart to show its bar.
+- Copilot: toolbar button and pane, card prompts, suggestions passed into the pane; "…" takes the toolbar items while the pane is open.
+- Harness: --cal-more, --cal-popout, --cal-print-quiet; examples/meeting_lobby.rs, examples/calendar_admin.rs. 748 lib tests pass.
+<!-- SECTION:FINAL_SUMMARY:END -->
