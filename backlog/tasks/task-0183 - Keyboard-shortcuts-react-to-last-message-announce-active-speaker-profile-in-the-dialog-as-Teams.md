@@ -3,10 +3,11 @@ id: TASK-0183
 title: >-
   Keyboard shortcuts: react to last message, announce active speaker, profile in
   the dialog, as Teams
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-16T04:53:00Z'
-updated_date: '2026-11-19T14:18:00Z'
+updated_date: '2026-11-19T15:45:00Z'
 labels:
   - desktop
 dependencies: []
@@ -53,4 +54,6 @@ OST lacks these two shortcuts and has the profile choice only in Settings ▸ Ge
   - Ctrl+Alt+R in a chat shows the newest message's hover bar with the first quick reaction focused (outlined); Right moves; Escape returns to compose.
   - Teams' Zoom preview shows only the first key of a multi-key command (Alt + A), as OST does.
   - Open: Announce active speaker is not yet pressed in a live call (the ANNOUNCE line via --kb-dialog-call).
+
+- Merged c4696d0 (2026-11-19) into desktop/foundation; 787 lib, 28 vfx, 29 desktop tests passed. See the notes above for what is verified and open. (Voice isolation model is downloaded on first need with a pinned SHA-256, not committed.)
 <!-- SECTION:NOTES:END -->

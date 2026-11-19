@@ -1,10 +1,11 @@
 ---
 id: TASK-0147
 title: View Diagnostic Data (Privacy) as Teams
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-15T04:40:00Z'
-updated_date: '2026-11-19T14:18:00Z'
+updated_date: '2026-11-19T15:45:00Z'
 labels:
   - settings
 dependencies: []
@@ -51,4 +52,6 @@ Teams' Settings > Privacy > View Diagnostic Data > Manage opens its diagnostic d
     - Connect gives "Connection established" with the check icon; the Ost.UpdateCheck event reached the listener; it decodes to the same structure as Teams' records.
   - Incident: Teams' host (ms-teams.exe) crashed once at 05:49:54 while streaming to the listener (C++ exception 0xe06d7363), and restarted itself. Data viewing is now off in Teams.
   - Open: Microsoft's Windows Diagnostic Data Viewer was not used: it may need the Windows Diagnostics setting, which must not be changed.
+
+- Merged c4696d0 (2026-11-19) into desktop/foundation; 787 lib, 28 vfx, 29 desktop tests passed. See the notes above for what is verified and open. (Voice isolation model is downloaded on first need with a pinned SHA-256, not committed.)
 <!-- SECTION:NOTES:END -->

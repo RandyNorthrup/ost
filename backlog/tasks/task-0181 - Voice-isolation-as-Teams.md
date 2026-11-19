@@ -1,10 +1,11 @@
 ---
 id: TASK-0181
 title: Voice isolation as Teams
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-16T04:53:00Z'
-updated_date: '2026-11-19T15:27:00Z'
+updated_date: '2026-11-19T15:45:00Z'
 labels:
   - desktop
 dependencies: []
@@ -56,4 +57,6 @@ Teams' noise suppression offers Voice isolation using your voice profile; OST sh
   - The profile is kept as its recording; its embedding is made once the model is loaded. OST_VOICE_PROFILE_WAV=<file> uses a local recording as the profile (tests).
   - vfx tests that need the model read OST_VOICE_ISOLATION_MODEL and skip without it.
   - Live on linuxlt (spatest, empty cache): download 5.4 s, hash verified, loaded, isolator on in a Make a test call run (decisions 10, frames_suppressed 101); a cached run verified; a corrupted cache file was replaced; an unwritable cache folder left standard noise suppression, no crash.
+
+- Merged c4696d0 (2026-11-19) into desktop/foundation; 787 lib, 28 vfx, 29 desktop tests passed. See the notes above for what is verified and open. (Voice isolation model is downloaded on first need with a pinned SHA-256, not committed.)
 <!-- SECTION:NOTES:END -->

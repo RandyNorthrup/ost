@@ -1,10 +1,11 @@
 ---
 id: TASK-0182
 title: Sign language mode as Teams
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-16T04:53:00Z'
-updated_date: '2026-11-19T14:40:00Z'
+updated_date: '2026-11-19T15:45:00Z'
 labels:
   - desktop
 dependencies: []
@@ -50,4 +51,6 @@ OST saves Teams' sign language setting but doesn't act on it.
   - Open: a two-account run with test2 as Interpreter (camera /dev/video20) checking priority, icon and People line; the interpreter icon name; the alert's icon; the signing badge; HQ video for priority tiles.
 
 - 2026-11-19 two-account run (OST calendar test meeting): ost-test1 as Signer and OST Test 2 as Interpreter (in-call camera). Each published its role and read the other's. With the interpreter's video on, ost-test1's signFirst is [OST Test 2] and the Sign language view features them. People lines: 'Your Sign Language Interpreter' (signer side) and 'Paired to you' (interpreter side). The signer icon shows on OST Test 1's tile in OST Test 2's window. Both accounts were then put back to mode off with no interpreters.
+
+- Merged c4696d0 (2026-11-19) into desktop/foundation; 787 lib, 28 vfx, 29 desktop tests passed. See the notes above for what is verified and open. (Voice isolation model is downloaded on first need with a pinned SHA-256, not committed.)
 <!-- SECTION:NOTES:END -->

@@ -1,10 +1,11 @@
 ---
 id: TASK-0180
 title: Voicemail rules that transfer the caller, as Teams
-status: To Do
-assignee: []
+status: Done
+assignee:
+  - '@claude'
 created_date: '2026-11-16T04:53:00Z'
-updated_date: '2026-11-19T14:40:00Z'
+updated_date: '2026-11-19T15:45:00Z'
 labels:
   - desktop
 dependencies: []
@@ -18,7 +19,7 @@ Teams' voicemail answer rules include two that transfer the caller to a picked p
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Both transfer rules show with Teams' people picker and save where Teams saves them
+- [x] #1 Both transfer rules show with Teams' people picker and save where Teams saves them
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -53,3 +54,14 @@ Teams' voicemail answer rules include two that transfer the caller to a picked p
 
 - 2026-11-19: ost-test1 restored (vmCallAnswerRule null, vmTransferTarget null, read back from the service as unset).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Voicemail transfer rules as Teams.
+
+- Settings ▸ Calls reads voicemail settings from electedSettings and saves the whole object plus the change, as Teams does; all five answer rules; a transfer rule is only saved once a target is picked.
+- VoicemailTransferPicker.qml: Teams' people picker with presence, External phone suggestions formatted as Teams, the chosen-target box with Delete (measured on winpc).
+- Live: OST read the target Teams saved; OST saved OST Test 3 and Teams on winpc showed it; ost-test1 restored to unset.
+- 787 lib tests pass.
+<!-- SECTION:FINAL_SUMMARY:END -->
