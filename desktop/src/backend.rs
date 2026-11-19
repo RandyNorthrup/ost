@@ -106,6 +106,11 @@ pub mod qobject {
         /// A silent renewal of the browser sign-in, loaded in a hidden web
         /// view on the same web profile; empty when none is running.
         #[qproperty(QString, renew_page)]
+        /// OST runs as a Teams Rooms device (the account has a Teams Rooms
+        /// licence, or --room): the front-of-room home instead of the app.
+        #[qproperty(bool, room_mode)]
+        /// The room's name (its account's display name) for the home screen.
+        #[qproperty(QString, room_name)]
         /// "", "ringing", "connecting", "connected" or "ended".
         #[qproperty(QString, call_state)]
         #[qproperty(QString, call_peer)]
@@ -2880,6 +2885,12 @@ pub struct BackendRust {
     browser_sign_in: Option<teams_cli::auth::spa::BrowserSignIn>,
     /// The silent renewal waiting for its return address.
     renew_sign_in_pending: Option<teams_cli::auth::spa::BrowserSignIn>,
+    room_mode: bool,
+    /// Room mode: the call the room is in leaves by itself once nobody
+    /// else is left (Teams Rooms' auto exit), and someone else was there.
+    room_auto_exit: bool,
+    room_saw_others: bool,
+    room_name: QString,
     call_state: QString,
     call_peer: QString,
     call_peer_id: QString,
@@ -4219,6 +4230,72 @@ fn rtt_outbox() -> &'static tokio::sync::mpsc::UnboundedSender<String> {
 /// once it is answered tell them (transferAcceptance, then
 /// transferCompletion code 0) and carry on in the new call; else report
 /// the failure (code 500).
+/// Teams Rooms' handling of an incoming call (RigelCallHandler's
+/// onCallStateNotified, then byomAutoAcceptService.acceptCall): fetch the
+/// full invitation (its invitationData), decide within Teams' 4 seconds,
+/// then accept by itself (the microphone on, the camera when video is
+/// allowed; a meeting's invitation joins as a meeting) or ring on the
+/// room's console for someone in the room to answer.
+async fn room_incoming(
+    qt: cxx_qt::CxxQtThread<qobject::Backend>,
+    call_id: Option<String>,
+    peer: String,
+    peer_id: String,
+    video: bool,
+) {
+    use teams_cli::calling::room_mode::Decision;
+    let (conference, auto_exit) = {
+        let slot = call_slot().lock().await;
+        match slot.ringing.as_ref().filter(|c| c.call_id() == call_id) {
+            Some(c) => (c.is_conference(), teams_cli::calling::room_mode::auto_exits_when_alone(c.thread_id().as_deref())),
+            None => return,
+        }
+    };
+    let checked = tokio::time::timeout(std::time::Duration::from_secs(4), async {
+        let auth = CallAuth::load().await.ok();
+        let mut slot = call_slot().lock().await;
+        let call = slot.ringing.as_mut().filter(|c| c.call_id() == call_id)?;
+        if let Some(auth) = auth {
+            auth.probe_video(call).await;
+        }
+        let tenant = teams_cli::config::Config::load().ok().and_then(|c| c.tenant_id());
+        Some((crate::room_host::decide(call, tenant.as_deref()), call.has_video()))
+    })
+    .await;
+    let (decision, offered) = match checked {
+        Ok(Some(d)) => d,
+        // Taken or gone meanwhile.
+        Ok(None) => return,
+        Err(_) => {
+            tracing::info!("room mode: auto-accept timed out");
+            (Decision::Ring("Timed_out"), video)
+        }
+    };
+    let accept = match decision {
+        Decision::Accept { video } => Some(video),
+        Decision::Ring(reason) => {
+            tracing::info!(reason, "room mode: ringing on the console");
+            None
+        }
+    };
+    let _ = qt.queue(move |mut this| {
+        this.as_mut().set_call_peer(QString::from(peer.as_str()));
+        this.as_mut().set_call_peer_id(QString::from(peer_id.as_str()));
+        this.as_mut().set_call_video_offered(offered);
+        this.as_mut().set_call_meeting(conference);
+        this.as_mut().set_call_scheduled(false);
+        this.as_mut().set_call_adhoc_meeting(false);
+        this.as_mut().rust_mut().roster.clear();
+        this.as_mut().rust_mut().room_auto_exit = auto_exit;
+        this.as_mut().rust_mut().room_saw_others = false;
+        this.as_mut().set_call_state(QString::from("ringing"));
+        if let Some(video) = accept {
+            tracing::info!(video, conference, "room mode: auto-accepting");
+            this.as_mut().accept_call(video);
+        }
+    });
+}
+
 async fn take_transfer(qt: cxx_qt::CxxQtThread<qobject::Backend>, request: teams_cli::calling::incoming::TransferRequest) {
     let auth = match CallAuth::load().await {
         Ok(a) => a,
@@ -6472,19 +6549,26 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         slot.ringing = Some(call);
         drop(slot);
         tracing::info!(video, "incoming call");
-        let _ = qt.queue(move |mut this| {
-            this.as_mut().set_call_peer(QString::from(peer.as_str()));
-            this.as_mut()
-                .set_call_peer_id(QString::from(peer_id.as_str()));
-            this.as_mut().set_call_video_offered(video);
-            this.as_mut().set_call_meeting(false);
-            this.as_mut().set_call_scheduled(false);
-            this.as_mut().set_call_adhoc_meeting(false);
-            this.as_mut().set_call_state(QString::from("ringing"));
-        });
+        // Teams Rooms: the invitation first goes to the room's auto-join
+        // check; it rings on the console only when that doesn't accept it.
+        let room = teams_cli::calling::room_mode::is_active();
+        if room {
+            runtime().spawn(room_incoming(qt.clone(), call_id.clone(), peer.clone(), peer_id.clone(), video));
+        } else {
+            let _ = qt.queue(move |mut this| {
+                this.as_mut().set_call_peer(QString::from(peer.as_str()));
+                this.as_mut()
+                    .set_call_peer_id(QString::from(peer_id.as_str()));
+                this.as_mut().set_call_video_offered(video);
+                this.as_mut().set_call_meeting(false);
+                this.as_mut().set_call_scheduled(false);
+                this.as_mut().set_call_adhoc_meeting(false);
+                this.as_mut().set_call_state(QString::from("ringing"));
+            });
+        }
         // Teams web's calls only say they're video calls in the full
         // invitation: fetch it while ringing (an Accept meanwhile waits).
-        if !video {
+        if !video && !room {
             let (qt, call_id) = (qt.clone(), call_id.clone());
             runtime().spawn(async move {
                 let Ok(auth) = CallAuth::load().await else {
@@ -7967,9 +8051,12 @@ impl qobject::Backend {
         // chat): join its conversation as a group call, as Teams' call
         // window shows it (the chat's roster, meeting controls), instead
         // of answering it as a 1:1 call. Joining stops the ringing here.
+        // (Teams Rooms answers every invitation as itself: the attach and
+        // media answer, its conversation request saying it's a room.)
+        let room = teams_cli::calling::room_mode::is_active();
         let group = runtime().block_on(async {
             let mut slot = call_slot().lock().await;
-            let thread = slot.ringing.as_ref().and_then(|c| c.group_thread().map(str::to_string));
+            let thread = slot.ringing.as_ref().filter(|_| !room).and_then(|c| c.group_thread().map(str::to_string));
             if thread.is_some()
                 && let Some(rung) = slot.ringing.take()
             {
@@ -8049,6 +8136,32 @@ impl qobject::Backend {
                     });
                 }
             }
+        });
+    }
+
+    /// Once signed in: run as a Teams Rooms device when the account is a
+    /// room's (`room_host::wanted`): the beacon, the auto-join check and
+    /// the front-of-room home.
+    fn start_room_mode(self: Pin<&mut Self>) {
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let license = match TeamsClient::new().await {
+                Ok(c) => api::ecs::license(&c).await,
+                Err(_) => None,
+            };
+            if !crate::room_host::wanted(license.as_ref()) {
+                return;
+            }
+            let config = teams_cli::config::Config::load().ok();
+            let Some(oid) = config.as_ref().and_then(|c| c.object_id()) else {
+                return;
+            };
+            let name = config.and_then(|c| c.display_name()).unwrap_or_default();
+            crate::room_host::start(oid);
+            let _ = qt.queue(move |mut this| {
+                this.as_mut().set_room_name(QString::from(name.as_str()));
+                this.as_mut().set_room_mode(true);
+            });
         });
     }
 
@@ -12011,6 +12124,17 @@ impl qobject::Backend {
 
         let json = serde_json::to_string(&roster).unwrap_or_else(|_| "[]".into());
         let me = self.rust().user_mri.to_string().to_ascii_lowercase();
+        // Teams Rooms' auto exit: an ad-hoc meeting nobody else is left in.
+        if self.rust().room_mode && self.rust().room_auto_exit && self.rust().call_state.to_string() == "connected" {
+            let others = roster.iter().filter(|p| p.id != me && p.active && p.id.starts_with("8:")).count();
+            if others > 0 {
+                self.as_mut().rust_mut().room_saw_others = true;
+            } else if self.rust().room_saw_others {
+                tracing::info!("room mode: leaving ad-hoc call because no other participants left in the call");
+                self.as_mut().rust_mut().room_saw_others = false;
+                self.as_mut().hang_up();
+            }
+        }
         let off = self.rust().incoming_video_off;
         let widths = self.rust().video_widths.clone();
         let cameras: Vec<(String, i64, u32)> = roster
@@ -13390,6 +13514,7 @@ impl qobject::Backend {
                         this.as_mut().publish_chats();
                         this.as_mut().set_status_text(QString::default());
                         this.as_mut().start_push();
+                        this.as_mut().start_room_mode();
                         this.as_mut().start_presence();
                         this.as_mut().load_server_unread();
                         this.as_mut().load_teams();

@@ -1,0 +1,106 @@
+//! OST as a Teams Rooms device (room mode): the room's proximity salts and
+//! Bluetooth beacon, and its answer to an invitation
+//! (`teams_cli::calling::room_mode`).
+//!
+//! Room mode is on when the signed-in account has a Teams Rooms licence
+//! (authz `licenseDetails.meetingRoomLicenseCategories`), or with `--room`
+//! / `OST_ROOM=1`.
+
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+
+use teams_cli::calling::incoming::IncomingCall;
+use teams_cli::calling::room_mode::{self, AutoAccept, Decision, Salts, Settings};
+
+static SALTS: Mutex<Option<Salts>> = Mutex::new(None);
+
+/// Whether this OST should run as a Teams Rooms device.
+pub fn wanted(license: Option<&serde_json::Value>) -> bool {
+    if std::env::args().any(|a| a == "--room") || std::env::var("OST_ROOM").is_ok_and(|v| v == "1") {
+        return true;
+    }
+    license
+        .and_then(|l| l.get("meetingRoomLicenseCategories"))
+        .and_then(|c| c.as_array())
+        .is_some_and(|c| c.iter().any(|x| x.as_str().is_some_and(|s| !s.is_empty() && s != "None")))
+}
+
+/// The room's settings: Teams Rooms' defaults, with
+/// `OST_ROOM_AUTO_ACCEPT` (disabled / intenant / all, Teams Rooms'
+/// `byomAutoAcceptSetting`) and `OST_ROOM_VIDEO=0` (no camera).
+pub fn settings() -> Settings {
+    let mut s = Settings::default();
+    if let Ok(v) = std::env::var("OST_ROOM_AUTO_ACCEPT") {
+        s.auto_accept = AutoAccept::parse(&v);
+        s.auto_accept_enabled = s.auto_accept != AutoAccept::Disabled;
+    }
+    if std::env::var("OST_ROOM_VIDEO").is_ok_and(|v| v == "0") {
+        s.video_allowed = false;
+    }
+    s
+}
+
+/// Start running as the room `object_id`: the calling stack says it's a
+/// room, the salt changes every minute and the beacon advertises it.
+pub fn start(object_id: String) {
+    if room_mode::is_active() {
+        return;
+    }
+    room_mode::set_active(true);
+    let salts = Salts::default();
+    let period = salts.update_period();
+    let (tx, rx) = tokio::sync::watch::channel(salts.current());
+    *SALTS.lock().unwrap_or_else(|e| e.into_inner()) = Some(salts);
+    tracing::info!(room = %object_id, "room mode: running as a Teams Rooms device");
+    crate::room_ble::advertise(object_id, rx);
+    crate::backend::runtime().spawn(async move {
+        let mut tick = tokio::time::interval(Duration::from_secs(1).min(period));
+        loop {
+            tick.tick().await;
+            let changed = {
+                let mut g = SALTS.lock().unwrap_or_else(|e| e.into_inner());
+                let Some(s) = g.as_mut() else { return };
+                s.tick(Instant::now()).then(|| s.current())
+            };
+            if let Some(code) = changed
+                && tx.send(code).is_err()
+            {
+                return;
+            }
+        }
+    });
+}
+
+/// Teams Rooms' answer to `call`: accept it by itself, or ring. `tenant`
+/// is the room's tenant (Teams' participant type InTenant when the
+/// caller's is the same).
+pub fn decide(call: &IncomingCall, tenant: Option<&str>) -> Decision {
+    let caller_tenant = call.caller_tenant();
+    let in_tenant = match (&caller_tenant, tenant) {
+        (Some(c), Some(t)) => c.eq_ignore_ascii_case(t),
+        // No tenant on the caller: an organization's user (8:orgid:)
+        // inviting the room into a meeting of the room's tenant.
+        (None, Some(t)) => {
+            call.caller_id().is_some_and(|id| id.starts_with("8:orgid:"))
+                && call
+                    .invitation_data()
+                    .and_then(|d| d.pointer("/meetingInfo/tenantId"))
+                    .and_then(|v| v.as_str())
+                    .is_some_and(|m| m.eq_ignore_ascii_case(t))
+        }
+        _ => false,
+    };
+    tracing::info!(caller_tenant = caller_tenant.is_some(), in_tenant, "room mode: caller");
+    let g = SALTS.lock().unwrap_or_else(|e| e.into_inner());
+    let Some(salts) = g.as_ref() else {
+        return Decision::Ring("Not_a_room");
+    };
+    let d = room_mode::decide(call.invitation_data(), in_tenant, &settings(), salts);
+    tracing::info!(
+        decision = ?d,
+        in_tenant,
+        source = ?call.invitation_data().and_then(room_mode::ProximitySource::of),
+        "room mode: incoming invitation"
+    );
+    d
+}

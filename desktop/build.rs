@@ -23,6 +23,7 @@ fn main() {
         "qml/KeysTest.qml",
         "qml/MentionsView.qml",
         "qml/PreJoin.qml",
+        "qml/RoomHome.qml",
         "qml/OneDriveView.qml",
         "qml/PlannerView.qml",
         "qml/PeopleView.qml",

@@ -180,9 +180,44 @@ pub fn parse_beacon(company: u16, data: &[u8], rssi: i16) -> Option<Beacon> {
     Some(Beacon { mri: mri_for(&guid), rssi, code, adjacent: rssi >= ADJACENT_RSSI })
 }
 
+/// What a Teams Rooms device advertises (the inverse of
+/// [`parse_beacon`]; Teams Rooms' DevicesBLEService._startAdvertising):
+/// Microsoft's manufacturer data `34 F0`, protocol `00`, the room account
+/// `object_id` as a packed GUID and the current salt (big-endian), with
+/// nothing after it (only a Surface Hub appends `20 00`). `None` for an
+/// id that isn't a GUID.
+pub fn beacon_data(object_id: &str, code: u16) -> Option<Vec<u8>> {
+    let hex: String = object_id.chars().filter(|c| *c != '-').collect();
+    if hex.len() != 32 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    let raw: Vec<u8> = (0..16).map(|i| u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).unwrap_or(0)).collect();
+    // A packed GUID: the first three fields little-endian (Windows' order).
+    let mut out = vec![0x34, 0xF0, 0x00];
+    out.extend([raw[3], raw[2], raw[1], raw[0], raw[5], raw[4], raw[7], raw[6]]);
+    out.extend(&raw[8..16]);
+    out.extend(code.to_be_bytes());
+    Some(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_room_advertises_what_teams_reads() {
+        let d = beacon_data("42401e65-4053-40ec-a6bf-61be49524ff6", 0x1234).unwrap();
+        assert_eq!(
+            d,
+            [
+                0x34, 0xF0, 0x00, 0x65, 0x1e, 0x40, 0x42, 0x53, 0x40, 0xec, 0x40, 0xa6, 0xbf, 0x61, 0xbe, 0x49, 0x52,
+                0x4f, 0xf6, 0x12, 0x34
+            ]
+        );
+        let b = parse_beacon(BEACON_COMPANY, &d, -40).unwrap();
+        assert_eq!((b.mri.as_str(), b.code), ("8:orgid:42401e65-4053-40ec-a6bf-61be49524ff6", Some(0x1234)));
+        assert!(beacon_data("not-a-guid", 1).is_none());
+    }
 
     #[test]
     fn bodies_as_teams_sends_them() {

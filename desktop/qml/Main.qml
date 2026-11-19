@@ -1682,14 +1682,15 @@ Window {
     // The incoming call is a banner while it rings.
     readonly property bool ringing: backend.callState === "ringing"
     onRingingChanged: {
-        if (ringing) banners.add({ id: "call", kind: "call", title: backend.callPeer, senderMri: backend.callPeerId, video: backend.callVideoOffered, silent: true })
+        // (A Teams Rooms device rings on its home screen instead.)
+        if (ringing && !backend.roomMode) banners.add({ id: "call", kind: "call", title: backend.callPeer, senderMri: backend.callPeerId, video: backend.callVideoOffered, silent: true })
         else banners.dismiss("call")
     }
     // A video call is often known only after it starts ringing.
     Connections {
         target: backend
         function onCallVideoOfferedChanged() {
-            if (window.ringing) banners.add({ id: "call", kind: "call", title: backend.callPeer, senderMri: backend.callPeerId, video: backend.callVideoOffered, silent: true })
+            if (window.ringing && !backend.roomMode) banners.add({ id: "call", kind: "call", title: backend.callPeer, senderMri: backend.callPeerId, video: backend.callVideoOffered, silent: true })
         }
     }
     // Teams' Rejoin: back into the meeting last joined.
@@ -6049,7 +6050,8 @@ Window {
     // (default "OST") (/tmp/act/rooms-search.png), picks the first result
     // (/tmp/act/rooms-picked.png); with --rooms-join it joins, logs the
     // room being added (ROOM lines), stays --rooms-stay=<s> (default 40)
-    // and leaves.
+    // and leaves (--rooms-end: ends the meeting for everyone). --rooms-nearby
+    // picks the Nearby room instead.
     Timer {
         id: roomsTest
         readonly property bool on: Qt.application.arguments.indexOf("--rooms-test") >= 0
@@ -6071,14 +6073,26 @@ Window {
             else if (st === 6) preJoin.searchRooms(query)
             else if (st === 8) { log(); preJoin.roomPickerForTest() }
             else if (st === 9) shot("search")
-            else if (st === 10) { const r = preJoin.searchedRooms[0] || preJoin.suggestedRooms[0]; if (r) preJoin.pickTenantRoom(r, false); log() }
+            // --rooms-nearby: pick the room heard over Bluetooth (its
+            // proximity code goes with the invitation).
+            else if (st === 10) {
+                const near = Qt.application.arguments.indexOf("--rooms-nearby") >= 0 ? (preJoin.nearby.rooms || [])[0] : null
+                const r = near || preJoin.searchedRooms[0] || preJoin.suggestedRooms[0]
+                if (r) preJoin.pickTenantRoom(r, !!near)
+                log()
+            }
             else if (st === 11) shot("picked")
             else if (st === 12 && !joinChannel) Qt.quit()
             else if (st === 12) { preJoin.close(); preJoin.join(false, false, false); interval = 4000 }
             else if (st > 12) {
                 console.warn("ROOM call", backend.callState, "muted", backend.callMuted)
                 if (backend.callState === "connected" && joinedAt < 0) joinedAt = st
-                if (joinedAt >= 0 && (st - joinedAt) * 4 >= stay && backend.callState === "connected") { console.warn("ROOM leaving"); backend.hangUp() }
+                // --rooms-end: End meeting (for everyone, the room too).
+                if (joinedAt >= 0 && (st - joinedAt) * 4 >= stay && backend.callState === "connected") {
+                    const end = Qt.application.arguments.indexOf("--rooms-end") >= 0
+                    console.warn("ROOM leaving", end ? "(end meeting)" : "")
+                    if (end) backend.endMeeting(); else backend.hangUp()
+                }
                 if (joinedAt >= 0 && backend.callState !== "connected") { console.warn("ROOM left", backend.callState); Qt.quit() }
                 if (st > 200) Qt.quit()
             }
@@ -12456,5 +12470,18 @@ Window {
             font.family: theme.font; font.pixelSize: theme.small
             color: theme.danger
         }
+    }
+    // Room mode: OST runs as a Teams Rooms device; its front-of-room home
+    // covers the app (meetings show in the call window).
+    RoomHome {
+        anchors.fill: parent
+        z: 1000
+        visible: backend.roomMode && backend.signedIn
+        roomName: backend.roomName
+        ringing: backend.callState === "ringing"
+        caller: backend.callPeer
+        meeting: backend.callMeeting
+        onAccept: backend.acceptCall(backend.callVideoOffered)
+        onDecline: backend.declineCall()
     }
 }

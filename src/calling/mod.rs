@@ -56,6 +56,7 @@ pub mod quality_survey;
 pub mod pw_defaults;
 pub mod recorder;
 pub mod room_devices;
+pub mod room_mode;
 pub mod recording;
 #[cfg(feature = "screencast")]
 pub mod remote_input;
@@ -117,6 +118,8 @@ pub struct Participant {
     pub endpoint_id: Option<String>,
     #[serde(rename = "languageId")]
     pub language_id: Option<String>,
+    #[serde(rename = "tenantId", default)]
+    pub tenant_id: Option<String>,
 }
 
 /// Participants block from the invitation.
@@ -162,6 +165,11 @@ pub struct CallInvitation {
     pub links: Option<CallLinks>,
     #[serde(rename = "mediaContent")]
     pub media_content: Option<MediaContent>,
+    /// What the inviter attached to its addParticipant (Teams'
+    /// `participantInvitationData.invitationData`): for a room picked in
+    /// Room audio, how it was found and the proximity code.
+    #[serde(rename = "invitationData", default)]
+    pub invitation_data: Option<serde_json::Value>,
 }
 
 /// Top-level envelope for a call notification pushed via Trouter.

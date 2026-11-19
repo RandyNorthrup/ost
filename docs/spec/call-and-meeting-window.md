@@ -771,8 +771,9 @@ Window title: "Meeting join | {{meetingTitle}}" (`calling_meeting_window_title`)
     isMailAddress=true&…&includeDisabledAccounts=true`); its MRI is the room's id. A room without a Teams account has
     no MRI and isn't listed.
   - Nearby (Teams' BluetoothLEService): advertisements with Microsoft's manufacturer data (company 0x0006) `34 F0`, a
-    protocol byte (type << 5 | version; Teams Rooms 0/0), the room account's object id (packed GUID), the validation code
-    (big-endian) and the device type; kept 30 s after the last one; listed from -75 dBm, "adjacent" from -50 dBm.
+    protocol byte (type << 5 | version; Teams Rooms 0/0), the room account's object id (packed GUID) and the validation
+    code (big-endian; a Surface Hub appends `20 00`); kept 30 s after the last one; listed from -75 dBm, "adjacent" from
+    -50 dBm.
   - The hint under the picker: a room picked: "We'll add the room's audio system to the meeting after you join.";
     else with Bluetooth: on "Requires a room with an audio system.", off "Enable Bluetooth to improve list of available
     rooms." (with the mic blocked too: "Turn on Bluetooth or enable your microphone to detect nearby rooms."); no
@@ -782,6 +783,30 @@ Window title: "Meeting join | {{meetingTitle}}" (`calling_meeting_window_title`)
     {invitationData: {proximitySource: 1 (Bluetooth; also for a searched room) or 2 (ultrasound), deviceType:
     "computer", autoAcceptAuthorization: {token: <validation code>} or null, meetingInfo: {organizerId, tenantId}}}`;
     a Teams Rooms device accepts by itself with a valid code.
+- **The room's side** (Teams Rooms, the meeting-room host "Rigel" in Teams' bundles 89637 and calling-pluginless, read
+  2026-11-18; OST's room mode, `calling::room_mode` and desktop `room_host`, on when the account has a Teams Rooms
+  licence, `licenseDetails.meetingRoomLicenseCategories`, or `--room`):
+  - It says it's a room: the account configuration's `deviceType: "room"` goes into every conversation request it
+    creates, joins or attaches with (`conversationRequest.deviceType`), and the roster lists its endpoint with
+    `endpointDetails[].deviceType: "room"` (participant deviceType Room; laptops mapped to it nest under it).
+  - Its beacon (DevicesBLEService, `bluetoothBeaconEnabled` default on): the data above with a salt from the
+    ProximityValidationService: a random 16-bit number, replaced every `proximitySaltUpdateTime` (60 s) and re-advertised;
+    the replaced one stays in a history of `proximitySaltHistoryLength` (1). `isValidProof(token, proximitySaltLifetime
+    60 s)`: the salt, or a history salt n places back with `(len - n) × 60 s <= 60 s`, so the last two salts.
+  - An incoming meeting (Conference) or 1:1 call goes to the auto-join check (onCallStateNotified). byomAutoAcceptService
+    accepts it when `byomAutoAcceptEnabled` (default true) and `byomAutoAcceptSetting` (disabled / intenant (default) /
+    all; InTenant needs a caller of the room's tenant) allow, the source is allowed (Bluetooth, ultrasound and QR on by
+    default, Copilot QR off), a token is there and valid; within 4 s, else (and in every other case) it rings on the
+    room's console for manual accept. The invitationData is read from the attached invitation
+    (`callInvitation.invitationData`).
+  - Accepting: `acceptCall(call, isVideoAllowed, muted=false)`: the microphone on, the camera on when the meeting policy
+    allows IP video (never for Copilot QR). When the call ends it goes back to the home screen.
+  - Auto exit (`autoExitMeetingEnabled`, default on): it leaves an ad-hoc non-channel meeting once nobody else is left;
+    after a scheduled meeting's end it shows a 15 s Snooze / Leave now dialog when it is alone (OST: the ad-hoc case;
+    the end-of-meeting dialog isn't built).
+  - The home screen (meeting-room-front-of-room-home): the date above the clock, the room name with the cast icon, the
+    room's QR code, its calendar (meeting cards: title, time, organizer, Join; Reserve) and "Add this room to a meeting
+    with your personal device". OST shows the room info panel, the hint and the ringing invitation.
 - A suggested option gets "(suggested)", or "Suggested" in the narrow layout.
   - Room is suggested when a Bluetooth room is detected or BYOD.
   - None is suggested when a room loudspeaker is already in the meeting.

@@ -99,6 +99,52 @@ impl IncomingCall {
         }
     }
 
+    /// The invitation's `invitationData` (a forked call's once attached,
+    /// [`CallAuth::probe_video`]), as Teams' incoming call carries it.
+    pub fn invitation_data(&self) -> Option<&serde_json::Value> {
+        self.notification
+            .as_ref()
+            .or(self.attached.as_ref())
+            .and_then(|n| n.call_invitation.as_ref())
+            .and_then(|i| i.invitation_data.as_ref())
+            .filter(|d| d.is_object())
+    }
+
+    /// The caller's tenant (`callNotification.from.tenantId`, else the
+    /// invitation's `participants.from.tenantId`), for Teams' participant
+    /// type (InTenant / Federated).
+    pub fn caller_tenant(&self) -> Option<String> {
+        self.forked
+            .as_ref()
+            .and_then(|v| str_at(v, "/callNotification/from/tenantId"))
+            .or_else(|| {
+                let n = self.notification.as_ref().or(self.attached.as_ref())?;
+                n.participants.as_ref()?.from.as_ref()?.tenant_id.clone()
+            })
+    }
+
+    /// The conversation's chat (`groupChat.threadId`): a group chat, a
+    /// meeting's chat or a channel.
+    pub fn thread_id(&self) -> Option<String> {
+        self.forked
+            .as_ref()
+            .and_then(|v| str_at(v, "/groupChat/threadId"))
+            .filter(|t| t.starts_with("19:"))
+            .or_else(|| self.group_thread.clone())
+    }
+
+    /// Whether this is an invitation into a meeting or group conversation
+    /// (Teams' teamsCallType Conference), not a 1:1 call.
+    pub fn is_conference(&self) -> bool {
+        self.group_thread.is_some()
+            || self.forked.as_ref().is_some_and(|v| {
+                v.pointer("/conversationInvitation/isMultiParty").and_then(|b| b.as_bool()) == Some(true)
+                    || v.pointer("/callNotification/conversationType")
+                        .and_then(|t| t.as_str())
+                        .is_some_and(|t| !t.eq_ignore_ascii_case("p2p") && !t.is_empty())
+            })
+    }
+
     /// Whether the caller offered video (known up front only for legacy
     /// invitations; forked ones reveal it after attaching).
     pub fn has_video(&self) -> bool {
@@ -798,6 +844,9 @@ async fn attach(
             "waitForResponse": true,
         }],
     });
+    if let Some(input) = body.pointer_mut("/additionalActions/0/input") {
+        super::room_mode::mark_device(input);
+    }
     if let Some(etag) = str_at(forked, "/debugContent/ecsEtag") {
         body["debugContent"] = serde_json::json!({ "ecsEtag": etag });
     }

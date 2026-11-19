@@ -131,7 +131,7 @@ async fn scan() -> zbus::Result<()> {
                 continue;
             }
         };
-        let found = objs.iter().find(|(_, i)| i.contains_key("org.bluez.Adapter1"));
+        let found = pick_adapter(&objs);
         let powered = found
             .and_then(|(_, i)| i["org.bluez.Adapter1"].get("Powered"))
             .and_then(|v| bool::try_from(v).ok())
@@ -182,4 +182,111 @@ async fn scan() -> zbus::Result<()> {
         }
         tokio::time::sleep(Duration::from_secs(2)).await;
     }
+}
+
+/// The adapter OST's Bluetooth uses: `OST_BT_ADAPTER` (such as `hci1`) when
+/// set, otherwise the first one BlueZ has (by name, so always the same).
+#[allow(clippy::type_complexity)]
+fn pick_adapter(objs: &Objects) -> Option<(&OwnedObjectPath, &HashMap<String, HashMap<String, OwnedValue>>)> {
+    let wanted = std::env::var("OST_BT_ADAPTER").ok().map(|a| a.trim().to_string()).filter(|a| !a.is_empty());
+    let mut adapters: Vec<_> = objs.iter().filter(|(_, i)| i.contains_key("org.bluez.Adapter1")).collect();
+    adapters.sort_by(|a, b| a.0.as_str().cmp(b.0.as_str()));
+    match wanted {
+        Some(name) => adapters.into_iter().find(|(p, _)| p.as_str().rsplit('/').next() == Some(name.as_str())),
+        None => adapters.into_iter().next(),
+    }
+}
+
+/// A Teams Rooms device's Bluetooth beacon (Teams Rooms' DevicesBLEService):
+/// Microsoft's manufacturer data naming the room account and its current
+/// proximity validation code, advertised non-connectable, so laptops nearby
+/// list the room under Room audio's Nearby and send the code back as their
+/// invitation's autoAcceptAuthorization.
+struct Advertisement {
+    data: Vec<u8>,
+}
+
+#[zbus::interface(name = "org.bluez.LEAdvertisement1")]
+impl Advertisement {
+    #[zbus(property, name = "Type")]
+    fn kind(&self) -> String {
+        "broadcast".into()
+    }
+    #[zbus(property)]
+    fn manufacturer_data(&self) -> HashMap<u16, OwnedValue> {
+        let mut m = HashMap::new();
+        if let Ok(v) = OwnedValue::try_from(Value::from(self.data.clone())) {
+            m.insert(teams_cli::api::rooms::BEACON_COMPANY, v);
+        }
+        m
+    }
+    /// BlueZ dropped the advertisement (its adapter went away).
+    fn release(&self) {
+        tracing::info!("Teams Rooms beacon released by BlueZ");
+    }
+}
+
+const ADVERT_PATH: &str = "/com/ost/room/beacon";
+
+/// Advertise the room `object_id`'s beacon with each validation code
+/// `codes` sends, until it closes (BlueZ reads an advertisement's data
+/// once, so each new code registers it again).
+pub fn advertise(object_id: String, mut codes: tokio::sync::watch::Receiver<u16>) {
+    crate::backend::runtime().spawn(async move {
+        let mut registered: Option<OwnedObjectPath> = None;
+        loop {
+            let code = *codes.borrow_and_update();
+            match register(&object_id, code, registered.take()).await {
+                Ok(adapter) => {
+                    tracing::debug!(adapter = adapter.as_str(), "Teams Rooms beacon advertised");
+                    registered = Some(adapter);
+                }
+                Err(e) => tracing::info!("Teams Rooms beacon: {e}"),
+            }
+            tokio::select! {
+                r = codes.changed() => if r.is_err() { break },
+                // A failed advertisement is tried again (no adapter yet,
+                // the radio off).
+                _ = tokio::time::sleep(Duration::from_secs(30)), if registered.is_none() => {}
+            }
+        }
+        if let Some(adapter) = registered {
+            let _ = unregister(&adapter).await;
+        }
+    });
+}
+
+async fn system_bus() -> zbus::Result<zbus::Connection> {
+    static BUS: tokio::sync::OnceCell<zbus::Connection> = tokio::sync::OnceCell::const_new();
+    BUS.get_or_try_init(zbus::Connection::system).await.cloned()
+}
+
+async fn unregister(adapter: &OwnedObjectPath) -> zbus::Result<()> {
+    let bus = system_bus().await?;
+    let path = zbus::zvariant::ObjectPath::try_from(ADVERT_PATH)?;
+    let r = bus
+        .call_method(Some("org.bluez"), adapter.as_str(), Some("org.bluez.LEAdvertisingManager1"), "UnregisterAdvertisement", &(path,))
+        .await;
+    let _ = bus.object_server().remove::<Advertisement, _>(ADVERT_PATH).await;
+    r.map(|_| ())
+}
+
+async fn register(object_id: &str, code: u16, previous: Option<OwnedObjectPath>) -> zbus::Result<OwnedObjectPath> {
+    if let Some(p) = previous {
+        let _ = unregister(&p).await;
+    }
+    let data = teams_cli::api::rooms::beacon_data(object_id, code).ok_or_else(|| zbus::Error::Failure("not a room id".into()))?;
+    let bus = system_bus().await?;
+    let objs = objects(&bus).await?;
+    let (adapter, ifaces) = pick_adapter(&objs).ok_or_else(|| zbus::Error::Failure("no Bluetooth adapter".into()))?;
+    if !ifaces.contains_key("org.bluez.LEAdvertisingManager1") {
+        return Err(zbus::Error::Failure("the adapter can't advertise".into()));
+    }
+    let adapter = adapter.clone();
+    bus.object_server().at(ADVERT_PATH, Advertisement { data }).await?;
+    let path = zbus::zvariant::ObjectPath::try_from(ADVERT_PATH)?;
+    let options: HashMap<&str, Value> = HashMap::new();
+    bus.call_method(Some("org.bluez"), adapter.as_str(), Some("org.bluez.LEAdvertisingManager1"), "RegisterAdvertisement", &(path, options))
+        .await?;
+    Ok(adapter)
 }

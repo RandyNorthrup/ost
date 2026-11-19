@@ -120,7 +120,7 @@ pub async fn create_conversation(
 
     // Note: conversationRequest contains only subject/roster/properties/links.
     // Other fields (groupChat, participants, etc.) are siblings, not nested inside.
-    let payload = serde_json::json!({
+    let mut payload = serde_json::json!({
         "conversationRequest": {
             "subject": null,
             "roster": {
@@ -175,6 +175,7 @@ pub async fn create_conversation(
             "causeId": cause_id
         }
     });
+    super::room_mode::mark_device(&mut payload);
 
     tracing::info!("Phase 1: POST {} (create conversation)", epconv_url);
     tracing::debug!(
@@ -271,7 +272,7 @@ pub async fn join_conversation_with_sdp(
 
     // Same structure as phase 1: conversationRequest contains only
     // subject/roster/properties/links. Other fields are siblings.
-    let payload = serde_json::json!({
+    let mut payload = serde_json::json!({
         "conversationRequest": {
             "conversationType": null,
             "subject": "",
@@ -362,6 +363,7 @@ pub async fn join_conversation_with_sdp(
             "causeId": cause_id
         }
     });
+    super::room_mode::mark_device(&mut payload);
 
     tracing::info!("Phase 2: POST {} (join with SDP)", conversation_controller);
     tracing::debug!(
@@ -1330,6 +1332,7 @@ async fn join_conversation_with(
         },
         "debugContent": { "ecsEtag": "\"0\"", "causeId": &params.message_id[..8.min(params.message_id.len())] }
     });
+    super::room_mode::mark_device(&mut payload);
     if let Some(md) = meeting_data {
         payload["groupChat"] = serde_json::Value::Null;
         payload["meetingInfo"] = serde_json::Value::Null;
@@ -1588,6 +1591,7 @@ async fn create_call_with(
     });
 
     let mut payload = payload;
+    super::room_mode::mark_device(&mut payload);
     if let Some(scenario) = opts.scenario {
         payload["scenario"] = scenario.into();
     }
