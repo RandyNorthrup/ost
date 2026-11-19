@@ -182,6 +182,10 @@ pub struct CallNotification {
     pub conversation_request: Option<ConversationRequest>,
     #[serde(rename = "debugContent")]
     pub debug_content: Option<DebugContent>,
+    /// A forked call's meeting, from its attach reply (`meetingDetails`:
+    /// meetingType, schedule).
+    #[serde(skip)]
+    pub meeting_details: Option<serde_json::Value>,
 }
 
 /// Simple call lifecycle state.

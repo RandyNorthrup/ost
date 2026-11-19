@@ -268,6 +268,27 @@ pub fn mark_device(payload: &mut serde_json::Value) {
     }
 }
 
+/// What Teams Rooms' auto exit needs to know about the meeting, from its
+/// `meetingDetails` (RigelAutoExitMeetingManager: `skypeTeamMeetingType =
+/// meetingDetails.meetingType`; ad hoc is "Adhoc"; a channel's meeting is
+/// left alone; the schedule's end).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MeetingKind {
+    pub adhoc: bool,
+    pub channel: bool,
+    /// The scheduled end (ISO 8601), when the details carry one.
+    pub end: Option<String>,
+}
+
+pub fn meeting_kind(details: &serde_json::Value) -> MeetingKind {
+    let s = |k: &str| details.get(k).and_then(|v| v.as_str()).map(str::to_string);
+    MeetingKind {
+        adhoc: s("meetingType").as_deref() == Some("Adhoc"),
+        channel: details.get("isChannelMeeting").and_then(|v| v.as_bool()).unwrap_or(false),
+        end: ["endTime", "scheduledEndTime", "meetingEndTime"].iter().find_map(|k| s(k)).filter(|e| !e.is_empty()),
+    }
+}
+
 /// Teams Rooms' auto exit (RigelAutoExitMeetingManager, on by default)
 /// leaves at once when nobody else is left in an ad-hoc meeting that isn't
 /// a channel's (Meet now and calls in a group chat): `thread` is the
@@ -366,6 +387,15 @@ mod tests {
         mark_device(&mut p);
         set_active(false);
         assert_eq!(p["conversationRequest"]["deviceType"], "room");
+    }
+
+    #[test]
+    fn meeting_kinds_from_details() {
+        let k = meeting_kind(&json!({"meetingType": "Adhoc", "isChannelMeeting": false}));
+        assert!(k.adhoc && !k.channel && k.end.is_none());
+        let k = meeting_kind(&json!({"meetingType": "Scheduled", "endTime": "2026-11-19T07:00:00Z"}));
+        assert_eq!((k.adhoc, k.end.as_deref()), (false, Some("2026-11-19T07:00:00Z")));
+        assert!(meeting_kind(&json!({"meetingType": "MeetNow", "isChannelMeeting": true})).channel);
     }
 
     #[test]

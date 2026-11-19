@@ -45,6 +45,9 @@ pub struct Participant {
     pub weather_person: Option<String>,
     /// An anonymous guest (Teams shows its Unverified trust icon).
     pub guest: bool,
+    /// A Teams Rooms device: an endpoint with `deviceType: "room"` (Teams'
+    /// participant deviceType Room).
+    pub room: bool,
     /// A guest Teams' join shield flagged as a bot (Teams keeps the app
     /// avatar for them).
     pub suspected: bool,
@@ -313,6 +316,10 @@ fn delta_on(json: &str, prefix: &str) -> Option<Vec<Participant>> {
                             m.get("direction").and_then(|d| d.as_str()) == Some("inactive")
                         }),
                     guest: mri.starts_with("8:teamsvisitor:"),
+                    room: p
+                        .get("endpoints")
+                        .and_then(|e| e.as_object())
+                        .is_some_and(|eps| eps.values().any(|ep| ep.get("deviceType").and_then(|d| d.as_str()) == Some(super::room_mode::ROOM_DEVICE_TYPE))),
                     suspected: mri.starts_with("8:teamsvisitor:")
                         && p.pointer("/details/propertyBag/participantScreening/value/isBot")
                             .and_then(|b| b.as_bool())

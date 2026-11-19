@@ -173,7 +173,15 @@ async fn scan() -> zbus::Result<()> {
         // The advertisements heard.
         let now = Instant::now();
         for props in objs.values().filter_map(|i| i.get("org.bluez.Device1")) {
-            let Some(rssi) = props.get("RSSI").and_then(|v| i16::try_from(v).ok()) else { continue };
+            // An emulated radio (btvirt) reports no signal strength:
+            // OST_BT_ASSUMED_RSSI stands in for it on such test rigs.
+            let Some(rssi) = props
+                .get("RSSI")
+                .and_then(|v| i16::try_from(v).ok())
+                .or_else(|| std::env::var("OST_BT_ASSUMED_RSSI").ok().and_then(|v| v.parse().ok()))
+            else {
+                continue;
+            };
             for (company, data) in manufacturer_data(props) {
                 if let Some(b) = parse_beacon(company, &data, rssi) {
                     note_beacon(b, now);

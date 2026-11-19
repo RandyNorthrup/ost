@@ -30,6 +30,8 @@ zbus = "5.19"
 # The tray icon and menu (StatusNotifierItem + DBus menu).
 ksni = { version = "0.3", default-features = false, features = ["async-io"] }
 png = "0.17"
+# The Teams Rooms home screen's QR code (room mode).
+qrcode = { version = "0.14", default-features = false }
 
 [build-dependencies]
 cxx-qt-build = "0.10"

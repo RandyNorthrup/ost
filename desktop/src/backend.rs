@@ -111,6 +111,12 @@ pub mod qobject {
         #[qproperty(bool, room_mode)]
         /// The room's name (its account's display name) for the home screen.
         #[qproperty(QString, room_name)]
+        /// The room's QR code (Teams Rooms' home screen): rows of 0/1
+        /// modules, renewed with each proximity salt.
+        #[qproperty(QString, room_qr)]
+        /// The meeting the room is in: its scheduled end (ISO 8601) from the
+        /// meeting's details, for Teams Rooms' end-of-meeting auto exit.
+        #[qproperty(QString, room_meeting_end)]
         /// "", "ringing", "connecting", "connected" or "ended".
         #[qproperty(QString, call_state)]
         #[qproperty(QString, call_peer)]
@@ -2891,6 +2897,8 @@ pub struct BackendRust {
     room_auto_exit: bool,
     room_saw_others: bool,
     room_name: QString,
+    room_qr: QString,
+    room_meeting_end: QString,
     call_state: QString,
     call_peer: QString,
     call_peer_id: QString,
@@ -4244,13 +4252,14 @@ async fn room_incoming(
     video: bool,
 ) {
     use teams_cli::calling::room_mode::Decision;
-    let (conference, auto_exit) = {
+    let (conference, thread) = {
         let slot = call_slot().lock().await;
         match slot.ringing.as_ref().filter(|c| c.call_id() == call_id) {
-            Some(c) => (c.is_conference(), teams_cli::calling::room_mode::auto_exits_when_alone(c.thread_id().as_deref())),
+            Some(c) => (c.is_conference(), c.thread_id()),
             None => return,
         }
     };
+    let auto_exit = teams_cli::calling::room_mode::auto_exits_when_alone(thread.as_deref());
     let checked = tokio::time::timeout(std::time::Duration::from_secs(4), async {
         let auth = CallAuth::load().await.ok();
         let mut slot = call_slot().lock().await;
@@ -4259,18 +4268,30 @@ async fn room_incoming(
             auth.probe_video(call).await;
         }
         let tenant = teams_cli::config::Config::load().ok().and_then(|c| c.tenant_id());
-        Some((crate::room_host::decide(call, tenant.as_deref()), call.has_video()))
+        Some((crate::room_host::decide(call, tenant.as_deref()), call.has_video(), call.meeting_details().cloned()))
     })
     .await;
-    let (decision, offered) = match checked {
+    let (decision, offered, details) = match checked {
         Ok(Some(d)) => d,
         // Taken or gone meanwhile.
         Ok(None) => return,
         Err(_) => {
             tracing::info!("room mode: auto-accept timed out");
-            (Decision::Ring("Timed_out"), video)
+            (Decision::Ring("Timed_out"), video, None)
         }
     };
+    // Teams Rooms' auto exit goes by the meeting's details (type, channel,
+    // schedule); without them, by its chat.
+    let kind = details.as_ref().map(teams_cli::calling::room_mode::meeting_kind);
+    if let Some(d) = &details {
+        let keys: Vec<&String> = d.as_object().map(|o| o.keys().collect()).unwrap_or_default();
+        tracing::info!(?kind, ?keys, "room mode: meeting details");
+    }
+    let auto_exit = match &kind {
+        Some(k) => k.adhoc && !k.channel,
+        None => auto_exit,
+    };
+    let meeting_end = kind.and_then(|k| k.end).unwrap_or_default();
     let accept = match decision {
         Decision::Accept { video } => Some(video),
         Decision::Ring(reason) => {
@@ -4287,6 +4308,10 @@ async fn room_incoming(
         this.as_mut().set_call_adhoc_meeting(false);
         this.as_mut().rust_mut().roster.clear();
         this.as_mut().rust_mut().room_auto_exit = auto_exit;
+        this.as_mut().set_room_meeting_end(QString::from(meeting_end.as_str()));
+        // The meeting's chat: its calendar entry (end time) for Teams Rooms'
+        // end-of-meeting auto exit.
+        this.as_mut().set_call_thread_id(QString::from(thread.as_deref().unwrap_or_default()));
         this.as_mut().rust_mut().room_saw_others = false;
         this.as_mut().set_call_state(QString::from("ringing"));
         if let Some(video) = accept {
@@ -6433,6 +6458,9 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
     }
     if let Some(delta) = teams_cli::calling::roster::roster_delta(json) {
         tracing::info!(changes = delta.len(), "roster update");
+        for p in delta.iter().filter(|p| p.room) {
+            tracing::info!(room = %p.id, name = %p.name, active = p.active, "roster: a Teams Rooms device (deviceType room)");
+        }
         // Keep each call's merge legs (for a silent merge) up to date.
         let legs = teams_cli::calling::outgoing::roster_legs(json);
         if !legs.is_empty() {
@@ -8156,8 +8184,13 @@ impl qobject::Backend {
             let Some(oid) = config.as_ref().and_then(|c| c.object_id()) else {
                 return;
             };
+            let tenant = config.as_ref().and_then(|c| c.tenant_id()).unwrap_or_default();
             let name = config.and_then(|c| c.display_name()).unwrap_or_default();
-            crate::room_host::start(oid);
+            let (mri, qr_name, qr_qt) = (format!("8:orgid:{oid}"), name.clone(), qt.clone());
+            crate::room_host::start(oid, move |salt| {
+                let rows = crate::room_host::qr_rows(&crate::room_host::qr_link(&mri, &tenant, salt, &qr_name));
+                let _ = qr_qt.queue(move |mut this| this.as_mut().set_room_qr(QString::from(rows.as_str())));
+            });
             let _ = qt.queue(move |mut this| {
                 this.as_mut().set_room_name(QString::from(name.as_str()));
                 this.as_mut().set_room_mode(true);

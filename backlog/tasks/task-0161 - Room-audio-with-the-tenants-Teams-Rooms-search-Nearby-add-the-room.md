@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-15T20:59:00Z'
-updated_date: '2026-11-18T04:41:00Z'
+updated_date: '2026-11-19T06:29:00Z'
 labels:
   - calls
   - devices
@@ -44,4 +44,9 @@ Built so far: Room audio's picker (search box, Connected room devices, Other Sug
 - Live: search "OST" returned OST Test Room (Offline), as Teams; Other Suggestions was empty, as Teams; Nearby listed the room from an emulated beacon.
 - Tenant: Teams Rooms Basic ($0) assigned to OST Test Room.
 - AC3 open: the invite was accepted (202) and then failed "user unavailable", because nothing is signed in as the room. Teams' own join with that room on winpc didn't add it either. Verifying needs the room account signed in somewhere (a one-time password sign-in).
+
+- 2026-11-18/19 (AC3, room side): researched Teams Rooms ("Rigel" host code in Teams' bundles 89637/calling-pluginless): byomAutoAcceptService (auto-accept rules, 4 s), ProximityValidationService salts (random u16, 60 s, history 1, lifetime 60 s), beacon `34 F0 00 <oid> <salt BE>` (no type byte), deviceType "room" in conversationRequest, auto exit (ad-hoc alone; end-of-meeting "About to leave the meeting..." Snooze / Leave now), front-of-room home (clock, room name, QR code, calendar).
+- Built OST room mode (calling::room_mode, desktop room_host/room_ble/RoomHome/RoomAutoExit): on for accounts with a Teams Rooms licence (meetingRoomLicenseCategories) or --room.
+- Tenant: OST Test Room got a known password (Graph, Randy consented User-PasswordProfile.ReadWrite.All for himself) and an authenticator TOTP (security defaults); both in creds.md. linuxlt profile `room` (auth_flow teams-web), signed in once by the user.
+- Live: OST ost-test1 (spatest) picked the room from Nearby (emulated btvirt radio) -> room auto-accepted (Bluetooth, valid salt, in tenant), joined with mic and camera; laptop got addParticipantSuccess. Teams on winpc picked it by search (no token) -> room rang on its console (Salt_not_found), accepted there, Teams' People showed OST Test Room. Room joining from its calendar card: the meeting roster lists its endpoint with deviceType room. QR on the home screen decodes to Teams' qr_code link.
 <!-- SECTION:NOTES:END -->

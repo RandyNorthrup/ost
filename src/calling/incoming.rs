@@ -110,6 +110,11 @@ impl IncomingCall {
             .filter(|d| d.is_object())
     }
 
+    /// The meeting the invitation is into, once attached (`meetingDetails`).
+    pub fn meeting_details(&self) -> Option<&serde_json::Value> {
+        self.attached.as_ref().and_then(|n| n.meeting_details.as_ref())
+    }
+
     /// The caller's tenant (`callNotification.from.tenantId`, else the
     /// invitation's `participants.from.tenantId`), for Teams' participant
     /// type (InTenant / Federated).
@@ -884,7 +889,19 @@ async fn attach(
     {
         links.end = str_at(forked, "/callNotification/links/reject");
     }
+    // The conversation join's answer describes the meeting (its type and
+    // schedule), as a join's does.
+    notification.meeting_details = find_key(&reply, "meetingDetails").filter(|d| d.is_object()).cloned();
     Ok(notification)
+}
+
+/// The first value under `key` anywhere in `v` (depth first).
+fn find_key<'a>(v: &'a serde_json::Value, key: &str) -> Option<&'a serde_json::Value> {
+    match v {
+        serde_json::Value::Object(o) => o.get(key).or_else(|| o.values().find_map(|x| find_key(x, key))),
+        serde_json::Value::Array(a) => a.iter().find_map(|x| find_key(x, key)),
+        _ => None,
+    }
 }
 
 /// An answered call. Dropping it stops the media; call [`ActiveCall::hang_up`]

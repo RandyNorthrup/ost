@@ -12471,17 +12471,34 @@ Window {
             color: theme.danger
         }
     }
+    // --room-shot: in room mode, capture the home screen 15 s after it
+    // shows (/tmp/act/room-home.png) and log ROOMHOME (QR size, today's
+    // meetings).
+    Timer {
+        running: backend.roomMode && backend.signedIn && Qt.application.arguments.indexOf("--room-shot") >= 0
+        interval: 15000
+        onTriggered: {
+            console.warn("ROOMHOME qr", backend.roomQr.split("\n").length, "events", roomHome.today.length, JSON.stringify(roomHome.today.map(e => [e.subject, e.start_utc, !!e.join_url])))
+            roomHome.grabToImage(r => r.saveToFile("/tmp/act/room-home.png"))
+        }
+    }
     // Room mode: OST runs as a Teams Rooms device; its front-of-room home
     // covers the app (meetings show in the call window).
     RoomHome {
+        id: roomHome
         anchors.fill: parent
         z: 1000
         visible: backend.roomMode && backend.signedIn
         roomName: backend.roomName
+        qr: backend.roomQr
+        events: { try { return JSON.parse(backend.calendarJson || "[]") } catch (e) { return [] } }
         ringing: backend.callState === "ringing"
         caller: backend.callPeer
         meeting: backend.callMeeting
         onAccept: backend.acceptCall(backend.callVideoOffered)
         onDecline: backend.declineCall()
+        // Teams Rooms joins a meeting from its calendar at once (no pre-join).
+        onJoin: (url, title) => backend.joinMeeting(url, title)
+        onRefreshCalendar: (s, e) => { if (backend.roomMode) backend.loadCalendar(s, e) }
     }
 }

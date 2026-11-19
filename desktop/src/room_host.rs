@@ -40,9 +40,63 @@ pub fn settings() -> Settings {
     s
 }
 
+/// Teams Rooms' home-screen QR code (MeetingRoomQrCodeRenderer): Teams'
+/// `qr_code` link for the room (action 5, OutOfMeetingDefault; the room's
+/// MRI, tenant, current salt and name, URI-encoded), padded with spaces to
+/// 221 characters, error correction H. A phone's Teams that scans it
+/// invites the room with the salt as its token.
+pub fn qr_link(mri: &str, tenant: &str, salt: u16, name: &str) -> String {
+    let enc = |s: &str| {
+        // encodeURI: keeps letters, digits and ;,/?:@&=+$-_.!~*'()#
+        let mut out = String::new();
+        for b in s.bytes() {
+            if b.is_ascii_alphanumeric() || b";,/?:@&=+$-_.!~*'()#".contains(&b) {
+                out.push(b as char);
+            } else {
+                out.push_str(&format!("%{b:02X}"));
+            }
+        }
+        out
+    };
+    let link = format!(
+        "https://teams.microsoft.com/l/qr_code/?actions=5&identity={}&tenant_id={}&salt={salt}&name={}",
+        enc(mri),
+        enc(tenant),
+        enc(name)
+    );
+    format!("{link:<221}")
+}
+
+/// The QR code of `text` as rows of "0"/"1" modules (dark = 1), with
+/// Teams' quiet zone of 4 modules; empty if it can't be encoded.
+pub fn qr_rows(text: &str) -> String {
+    let Ok(code) = qrcode::QrCode::with_error_correction_level(text.as_bytes(), qrcode::EcLevel::H) else {
+        return String::new();
+    };
+    let w = code.width();
+    let colors = code.to_colors();
+    let pad = 4;
+    let size = w + 2 * pad;
+    let mut rows = Vec::with_capacity(size);
+    for y in 0..size {
+        let mut row = String::with_capacity(size);
+        for x in 0..size {
+            let dark = x >= pad
+                && y >= pad
+                && x < w + pad
+                && y < w + pad
+                && colors[(y - pad) * w + (x - pad)] == qrcode::Color::Dark;
+            row.push(if dark { '1' } else { '0' });
+        }
+        rows.push(row);
+    }
+    rows.join("\n")
+}
+
 /// Start running as the room `object_id`: the calling stack says it's a
-/// room, the salt changes every minute and the beacon advertises it.
-pub fn start(object_id: String) {
+/// room, the salt changes every minute and the beacon advertises it;
+/// `on_salt` gets each salt (the QR code shows it).
+pub fn start(object_id: String, on_salt: impl Fn(u16) + Send + 'static) {
     if room_mode::is_active() {
         return;
     }
@@ -52,6 +106,7 @@ pub fn start(object_id: String) {
     let (tx, rx) = tokio::sync::watch::channel(salts.current());
     *SALTS.lock().unwrap_or_else(|e| e.into_inner()) = Some(salts);
     tracing::info!(room = %object_id, "room mode: running as a Teams Rooms device");
+    on_salt(*rx.borrow());
     crate::room_ble::advertise(object_id, rx);
     crate::backend::runtime().spawn(async move {
         let mut tick = tokio::time::interval(Duration::from_secs(1).min(period));
@@ -62,10 +117,11 @@ pub fn start(object_id: String) {
                 let Some(s) = g.as_mut() else { return };
                 s.tick(Instant::now()).then(|| s.current())
             };
-            if let Some(code) = changed
-                && tx.send(code).is_err()
-            {
-                return;
+            if let Some(code) = changed {
+                on_salt(code);
+                if tx.send(code).is_err() {
+                    return;
+                }
             }
         }
     });

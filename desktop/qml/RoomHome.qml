@@ -2,14 +2,26 @@ import QtQuick
 
 // Room mode: what a Teams Rooms device shows between meetings, in place of
 // the app. Teams Rooms' front-of-room home (meeting-room-front-of-room-home
-// in Teams' bundles): the room info panel (meeting-room-info: the date
-// above the clock, then the room's name with the cast icon), and the hint
-// that people join the room from their own device; while an invitation
-// rings (Teams Rooms' manual accept, when it didn't auto-accept) a card to
-// answer it. A meeting the room is in shows in the call window.
+// in Teams' bundles):
+// - the room info panel (meeting-room-info): the date above the clock, then
+//   the room's name with the cast icon;
+// - the room's QR code (qr-code: Teams' qr_code link with the room's
+//   current proximity salt, renewed every minute) with "Add this room to a
+//   meeting with your personal device";
+// - its calendar (front-of-room-calendar): today's meetings as cards
+//   (calendar-meeting-card-details: the title, "{start} - {end}", the
+//   organizer, Join for a Teams meeting; "Now" while it runs; "All day";
+//   "Private Meeting"); "Available" when nothing is booked;
+// - while an invitation rings (Teams Rooms' manual accept, when it didn't
+//   auto-accept), a card to answer it.
+// A meeting the room is in shows in the call window.
 Rectangle {
     id: root
     property string roomName
+    // Rows of "0"/"1" QR modules.
+    property string qr
+    // The calendar's events (backend.calendarJson).
+    property var events: []
     // The ringing invitation: who invites the room, and whether it's a
     // meeting.
     property bool ringing: false
@@ -17,15 +29,34 @@ Rectangle {
     property bool meeting: false
     signal accept()
     signal decline()
+    signal join(string url, string title)
+    // Ask for today's calendar (and again every 5 minutes).
+    signal refreshCalendar(string startUtc, string endUtc)
     color: theme.pane
 
     property date now: new Date()
     Timer { interval: 1000; running: root.visible; repeat: true; triggeredOnStart: true; onTriggered: root.now = new Date() }
+    function loadToday() {
+        const d = new Date(); d.setHours(0, 0, 0, 0)
+        const e = new Date(d.getTime() + 86400000)
+        root.refreshCalendar(d.toISOString().slice(0, 19) + "Z", e.toISOString().slice(0, 19) + "Z")
+    }
+    Timer { interval: 300000; running: root.visible; repeat: true; triggeredOnStart: true; onTriggered: root.loadToday() }
+
+    readonly property var today: {
+        const start = new Date(root.now); start.setHours(0, 0, 0, 0)
+        const end = start.getTime() + 86400000
+        return (root.events || []).filter(ev => !ev.is_cancelled && Date.parse(ev.end_utc) > root.now.getTime() - 60000
+                && Date.parse(ev.start_utc) < end)
+            .sort((a, b) => Date.parse(a.start_utc) - Date.parse(b.start_utc))
+    }
+    function time(iso) { return new Date(Date.parse(iso)).toLocaleTimeString(Qt.locale(), "h:mm AP") }
 
     Column {
         id: info
         objectName: "meeting-room-info"
         x: 64; y: 64
+        width: parent.width / 2 - 96
         spacing: 4
         Text {
             text: root.now.toLocaleDateString(Qt.locale(), "dddd, MMMM d")
@@ -50,14 +81,128 @@ Rectangle {
         }
     }
 
-    Text {
+    // The QR code (160 px, Teams' size below 1280 px wide; 144 at 1280).
+    Column {
         anchors.left: info.left
         anchors.bottom: parent.bottom; anchors.bottomMargin: 64
-        width: parent.width - 128
-        wrapMode: Text.Wrap
-        text: "Add this room to a meeting with your personal device"
-        font.family: theme.font; font.pixelSize: 16
-        color: theme.textSecondary
+        spacing: 12
+        Rectangle {
+            id: qrBox
+            objectName: "qr-code"
+            visible: root.qr.length > 0
+            width: 160; height: 160
+            color: "#FFFFFF"
+            Canvas {
+                id: qrCanvas
+                anchors.fill: parent
+                onPaint: {
+                    const ctx = getContext("2d")
+                    ctx.fillStyle = "#FFFFFF"; ctx.fillRect(0, 0, width, height)
+                    const rows = root.qr.split("\n")
+                    const n = rows.length
+                    if (!n) return
+                    const m = width / n
+                    ctx.fillStyle = "#000000"
+                    for (let y = 0; y < n; y++)
+                        for (let x = 0; x < rows[y].length; x++)
+                            if (rows[y][x] === "1") ctx.fillRect(Math.floor(x * m), Math.floor(y * m), Math.ceil(m), Math.ceil(m))
+                }
+                Connections { target: root; function onQrChanged() { qrCanvas.requestPaint() } }
+            }
+            // The app icon in the middle, as Teams puts its own (error correction H
+            // keeps the code readable).
+            Rectangle {
+                anchors.centerIn: parent
+                width: 36; height: 36; radius: 6
+                color: "#FFFFFF"
+                Image { anchors.centerIn: parent; width: 28; height: 28; source: "../assets/logo.png"; sourceSize: Qt.size(56, 56) }
+            }
+        }
+        Text {
+            width: 320
+            wrapMode: Text.Wrap
+            text: "Add this room to a meeting with your personal device"
+            font.family: theme.font; font.pixelSize: 16
+            color: theme.textSecondary
+        }
+    }
+
+    // The calendar.
+    Item {
+        objectName: "front-of-room-calendar"
+        x: parent.width / 2; y: 64
+        width: parent.width / 2 - 64; height: parent.height - 128
+        Text {
+            visible: root.today.length === 0
+            text: "Available"
+            font.family: theme.font; font.pixelSize: 24; font.weight: Font.DemiBold
+            color: theme.text
+        }
+        ListView {
+            anchors.fill: parent
+            spacing: 12
+            clip: true
+            model: root.today
+            delegate: Rectangle {
+                id: cardItem
+                required property var modelData
+                readonly property bool live: Date.parse(modelData.start_utc) <= root.now.getTime()
+                readonly property bool isPrivate: (modelData.sensitivity || "").toLowerCase() === "private"
+                width: ListView.view.width
+                height: cardCol.height + 32
+                radius: 8
+                color: theme.surface
+                border.color: live ? theme.brand : theme.stroke; border.width: live ? 2 : 1
+                Column {
+                    id: cardCol
+                    x: 16; y: 16; width: parent.width - 32 - (joinBtn.visible ? joinBtn.width + 16 : 0)
+                    spacing: 4
+                    Text {
+                        objectName: "calendar-meeting-card-details-title"
+                        width: parent.width
+                        elide: Text.ElideRight
+                        text: cardItem.isPrivate ? "Private Meeting"
+                            : (cardItem.modelData.subject || ("Meeting with " + (cardItem.modelData.organizer || "")))
+                        font.family: theme.font; font.pixelSize: 18; font.weight: Font.DemiBold
+                        color: theme.text
+                    }
+                    Text {
+                        objectName: "calendar-meeting-card-details-time"
+                        text: (cardItem.live ? "Now · " : "") + (cardItem.modelData.is_all_day ? "All day"
+                            : root.time(cardItem.modelData.start_utc) + " - " + root.time(cardItem.modelData.end_utc))
+                        font.family: theme.font; font.pixelSize: 14
+                        color: theme.textSecondary
+                    }
+                    Text {
+                        objectName: "calendar-meeting-card-details-organizer"
+                        visible: !cardItem.isPrivate && !!cardItem.modelData.organizer
+                        text: cardItem.modelData.organizer || ""
+                        font.family: theme.font; font.pixelSize: 14
+                        color: theme.textSecondary
+                    }
+                }
+                Rectangle {
+                    id: joinBtn
+                    objectName: "join-button"
+                    visible: !!cardItem.modelData.join_url
+                    anchors.right: parent.right; anchors.rightMargin: 16
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 96; height: 36; radius: 4
+                    color: joinHover.hovered ? theme.brandHover : theme.brandFill
+                    Text {
+                        anchors.centerIn: parent
+                        text: "Join"
+                        font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
+                        color: theme.textOnBrand
+                    }
+                    HoverHandler { id: joinHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: root.join(cardItem.modelData.join_url, cardItem.modelData.subject || "") }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: "Join"
+                    Accessible.onPressAction: root.join(cardItem.modelData.join_url, cardItem.modelData.subject || "")
+                }
+            }
+        }
     }
 
     // The invitation ringing on the console.

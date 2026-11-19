@@ -3071,6 +3071,23 @@ Window {
     // "Join breakout room?" invite, until Later, Join room, or the room
     // closing or a move (Main.qml).
     property var breakoutInvite: null
+    // Room mode: Teams Rooms' auto exit once the meeting is over and the
+    // room is alone. The end comes from the meeting's details, else the
+    // room's calendar entry for the meeting's chat.
+    RoomAutoExit {
+        readonly property var entry: {
+            if (!backend.roomMode || !backend.callThreadId) return null
+            let evs = []
+            try { evs = JSON.parse(backend.calendarJson || "[]") } catch (e) {}
+            return evs.find(ev => ev.join_url && decodeURIComponent(ev.join_url).indexOf(backend.callThreadId) >= 0) || null
+        }
+        active: backend.roomMode && win.meeting && backend.callState === "connected"
+        alone: win.others.filter(p => p.active !== false).length === 0
+        // The meeting's scheduled end: its details, else the room's calendar.
+        endMs: backend.roomMeetingEnd ? Date.parse(backend.roomMeetingEnd) : entry ? Date.parse(entry.end_utc) : 0
+        adhoc: !backend.roomMeetingEnd && !entry
+        onLeave: backend.hangUp()
+    }
     BreakoutInviteAlert {
         visible: !!win.breakoutInvite && !win.breakoutAlert
         x: stage.x + (stage.width - width) / 2

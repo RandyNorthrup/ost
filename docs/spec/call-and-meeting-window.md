@@ -802,11 +802,15 @@ Window title: "Meeting join | {{meetingTitle}}" (`calling_meeting_window_title`)
   - Accepting: `acceptCall(call, isVideoAllowed, muted=false)`: the microphone on, the camera on when the meeting policy
     allows IP video (never for Copilot QR). When the call ends it goes back to the home screen.
   - Auto exit (`autoExitMeetingEnabled`, default on): it leaves an ad-hoc non-channel meeting once nobody else is left;
-    after a scheduled meeting's end it shows a 15 s Snooze / Leave now dialog when it is alone (OST: the ad-hoc case;
-    the end-of-meeting dialog isn't built).
+    once a meeting's scheduled end has passed and nobody else is in it (no HDMI ingest), after 5 minutes (1 for ad hoc)
+    it shows "About to leave the meeting..." with a bar filling over 15 s and Snooze (again in 15 minutes) / Leave now;
+    the bar filling leaves. OST takes the end from the room's calendar entry for the meeting (RoomAutoExit.qml).
   - The home screen (meeting-room-front-of-room-home): the date above the clock, the room name with the cast icon, the
-    room's QR code, its calendar (meeting cards: title, time, organizer, Join; Reserve) and "Add this room to a meeting
-    with your personal device". OST shows the room info panel, the hint and the ringing invitation.
+    room's QR code (`https://teams.microsoft.com/l/qr_code/?actions=5&identity=<room MRI>&tenant_id=<tenant>&salt=
+    <salt>&name=<name>`, encodeURI'd, padded with spaces to 221, error correction H, 160 px, the app icon in the
+    middle; renewed with each salt), its calendar (today's meeting cards: title or "Private Meeting" or "Meeting with
+    {organizer}", "{start} - {end}" or "All day", the organizer, Join for Teams meetings; "Available" when free) and
+    "Add this room to a meeting with your personal device". Join on a card joins at once (no pre-join).
 - A suggested option gets "(suggested)", or "Suggested" in the narrow layout.
   - Room is suggested when a Bluetooth room is detected or BYOD.
   - None is suggested when a room loudspeaker is already in the meeting.

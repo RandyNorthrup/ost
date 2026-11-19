@@ -24,6 +24,7 @@ fn main() {
         "qml/MentionsView.qml",
         "qml/PreJoin.qml",
         "qml/RoomHome.qml",
+        "qml/RoomAutoExit.qml",
         "qml/OneDriveView.qml",
         "qml/PlannerView.qml",
         "qml/PeopleView.qml",
