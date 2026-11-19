@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-17T02:43:00Z'
-updated_date: '2026-11-19T00:36:00Z'
+updated_date: '2026-11-19T00:46:00Z'
 labels:
   - desktop
 dependencies: []
@@ -20,9 +20,9 @@ What TASK-0210 left (docs/spec/call-and-meeting-window.md §9c): starting a Micr
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 OST starts and views Whiteboard, PowerPoint Live and Excel Live shares as Teams
-- [ ] #2 Annotate works on a shared screen as in Teams
+- [x] #2 Annotate works on a shared screen as in Teams
 - [x] #3 Content from camera has Teams' preview and clean-up
-- [ ] #4 Teams controls a screen OST shares, and OST gives control from its side, checked live
+- [x] #4 Teams controls a screen OST shares, and OST gives control from its side, checked live
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -53,4 +53,6 @@ What TASK-0210 left (docs/spec/call-and-meeting-window.md §9c): starting a Micr
   - Excel from Teams with access: done in a meeting scheduled from ost-test1 inviting OST Test 3 (examples/create_event; deleted afterwards): Teams' state permitted both, OST Test 3 opened the workbook ("Welcome to Excel Live", presenter's cursor).
   - Cameo in OST's own view: not resolved. PowerPoint's SlideShowApp (read over OST's web debugging) ignores array-buffer frames when hostExperience is "react-web-client" (Teams' value) and takes the camera only via UpdateBufferInfoForCameo -> getUserMedia (enableCameoInT2; WebView2's stream renderer on Teams desktop). OST sends 64 with its own id and serves that getUserMedia from its frames in PowerPoint's frame (ppt_cameo_stream.js), but PowerPoint started no capture in OST's presenter view.
   - Incident: a full-screen test window closed while Teams still shared its screen (16:08:42-16:10:42 PT) — only test accounts in the meeting (chat roster), nobody else joined, no recording/transcript; Teams now shares only the test window.
+
+- Merged a9ad6d3 (2026-11-18): Annotate is seen by Teams (board address, screen facts, sharer attributes as Teams' sharer sends them); keys during give control reach OST (30 key events played on linuxlt); Excel Live from Teams opens in OST for an invitee. AC2 and AC4 verified live. Open (AC1): Cameo in OST's own presenter view.
 <!-- SECTION:NOTES:END -->
