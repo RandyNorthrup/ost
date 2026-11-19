@@ -1663,4 +1663,7 @@ The chosen layout is saved through `updateUserExperiencePreferences{stageSetting
   WirePlumber setting). PipeWire turns AT+VGM into the headset microphone's volume and a route volume into +VGM, so
   OST's mute zeroes that gain and unmuting puts it back. Only the OST that has the headset's buttons ("Transfer
   controls to this app") offers its calls.
+- Stock PipeWire never reads OST's modem (its org.pipewire.Telephony service is for PipeWire as a phone's hands-free
+  side). Then answer and hang-up aren't offered and nothing is shown, as Teams shows nothing where the platform lacks
+  call control ("Platform not supported" in its log); the gain-based mute still works.
 

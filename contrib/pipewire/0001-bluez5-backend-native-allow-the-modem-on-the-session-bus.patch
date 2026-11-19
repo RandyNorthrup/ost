@@ -1,0 +1,95 @@
+From 9ee54962aa2c511b29975ae8d618a91780cb3cfb Mon Sep 17 00:00:00 2001
+From: Randy Northrup <randy.northrup@gmail.com>
+Date: Wed, 18 Nov 2026 18:34:39 -0800
+Subject: [PATCH] bluez5: backend-native: allow the modem on the session bus
+
+In the HFP Audio Gateway role, a headset's call commands (ATA, AT+CHUP,
+ATD) and the call indicators and RING it gets come from a ModemManager
+modem's Voice interface, looked up on the system bus. A VoIP application
+can't own org.freedesktop.ModemManager1 there, so headsets' answer and
+hang-up buttons do nothing for softphone calls on Linux (on Windows the
+Bluetooth service hands them to the VoIP call coordinator; on macOS to
+CallKit).
+
+Add bluez5.hfphsp-backend-native-modem-bus: with "session", the
+ModemManager client connects to the session bus, where a softphone can
+provide its calls with ModemManager's Modem, Modem3gpp, Voice and Call
+interfaces. The client code is unchanged; it only gets a different
+connection. The default ("system") keeps today's behaviour.
+
+The Telephony service doesn't cover this: it controls a phone's calls
+when PipeWire is the Hands-Free side.
+---
+ doc/dox/config/pipewire-props.7.md  |  9 +++++++++
+ spa/plugins/bluez5/backend-native.c | 21 ++++++++++++++++++++-
+ 2 files changed, 29 insertions(+), 1 deletion(-)
+
+diff --git a/doc/dox/config/pipewire-props.7.md b/doc/dox/config/pipewire-props.7.md
+index 391b0ce..f11ea97 100644
+--- a/doc/dox/config/pipewire-props.7.md
++++ b/doc/dox/config/pipewire-props.7.md
+@@ -1207,6 +1207,15 @@ Default audio channels.
+ HFP/HSP backend (default: native). Available values: any, none, hsphfpd, ofono, native
+ 
+ @PAR@ monitor-prop  bluez5.hfphsp-backend-native-modem   # string
++ModemManager modem whose calls the HFP Audio Gateway role offers to headsets
++(`none`, `any` or a modem device). Default: `none`.
++
++@PAR@ monitor-prop  bluez5.hfphsp-backend-native-modem-bus   # string
++D-Bus bus to look for the ModemManager service on: `system` (default) or
++`session`. On the session bus, a softphone (a VoIP application) can provide
++its calls through ModemManager's Modem, Modem3gpp, Voice and Call interfaces,
++so that a connected headset rings for its incoming calls and its answer and
++hang-up buttons (ATA, AT+CHUP) reach it.
+ 
+ @PAR@ monitor-prop  bluez5.hfphsp-backend-native-pts   # boolean
+ Enable specific workarounds for Bluetooth qualification.
+diff --git a/spa/plugins/bluez5/backend-native.c b/spa/plugins/bluez5/backend-native.c
+index 648cc5b..a7d9b1b 100644
+--- a/spa/plugins/bluez5/backend-native.c
++++ b/spa/plugins/bluez5/backend-native.c
+@@ -128,6 +128,8 @@ struct impl {
+ 	unsigned int battery_level;
+ 
+ 	void *modemmanager;
++	/* The bus the modem (call provider) is on, when not the system bus. */
++	struct spa_dbus_connection *modem_dbus_connection;
+ 	struct spa_source *ring_timer;
+ 	void *upower;
+ 	struct spa_bt_telephony *telephony;
+@@ -4113,6 +4115,7 @@ static int backend_native_free(void *data)
+ 		mm_unregister(backend->modemmanager);
+ 		backend->modemmanager = NULL;
+ 	}
++	spa_clear_ptr(backend->modem_dbus_connection, spa_dbus_connection_destroy);
+ 
+ 	if (backend->upower) {
+ 		upower_unregister(backend->upower);
+@@ -4310,7 +4313,23 @@ struct spa_bt_backend *backend_native_new(struct spa_bt_monitor *monitor,
+ 	}
+ #endif
+ 
+-	backend->modemmanager = mm_register(backend->log, backend->conn, info, &mm_ops, backend);
++	{
++		/* A softphone on the session bus can provide the calls (ModemManager's
++		 * Voice API) instead of a modem on the system bus. */
++		DBusConnection *modem_conn = backend->conn;
++		const char *bus = info ? spa_dict_lookup(info, "bluez5.hfphsp-backend-native-modem-bus") : NULL;
++
++		if (bus && spa_streq(bus, "session")) {
++			backend->modem_dbus_connection = spa_dbus_get_connection(backend->dbus, SPA_DBUS_TYPE_SESSION);
++			if (backend->modem_dbus_connection)
++				modem_conn = spa_dbus_connection_get(backend->modem_dbus_connection);
++			if (modem_conn == NULL) {
++				spa_log_warn(backend->log, "no session bus for the modem, using the system bus");
++				modem_conn = backend->conn;
++			}
++		}
++		backend->modemmanager = mm_register(backend->log, modem_conn, info, &mm_ops, backend);
++	}
+ 	backend->upower = upower_register(backend->log, backend->conn, set_battery_level, backend);
+ 	backend->telephony = telephony_new(backend->log, backend->dbus, info);
+ 
+-- 
+2.53.0
+

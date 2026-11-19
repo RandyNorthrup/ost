@@ -11,6 +11,13 @@
 //! owns the name. Accept and Hangup pass Teams' checks (Sync device
 //! buttons, a Bluetooth hands-free microphone selected, one such device)
 //! or fail, and PipeWire answers the headset ERROR.
+//!
+//! Stock PipeWire looks for the modem on the system bus only (its own
+//! org.pipewire.Telephony service is for PipeWire as the hands-free side
+//! of a phone), so it never reads OST's: then the headset's answer and
+//! hang-up aren't offered, as Teams offers none where the platform lacks
+//! call control (it logs "Platform not supported" and shows nothing), and
+//! the headset's mute still works through its microphone gain.
 
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
@@ -58,6 +65,52 @@ pub fn start(on_action: impl Fn(Action) + Send + Sync + 'static) {
             tracing::info!("hfp: no call service for Bluetooth headsets: {e}");
         }
     });
+}
+
+/// Whether PipeWire's gateway has read OST's modem since OST took the name:
+/// it does when it takes call commands from the session bus. Stock PipeWire
+/// never asks; then the headset's answer and hang-up aren't offered (Teams'
+/// "Platform not supported": no call controls, nothing shown) and only its
+/// mute (the microphone gain) works.
+static GATEWAY_ASKED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// ModemManager's object list (its ObjectManager): the modem.
+struct Modems;
+
+#[zbus::interface(name = "org.freedesktop.DBus.ObjectManager")]
+impl Modems {
+    async fn get_managed_objects(&self) -> HashMap<OwnedObjectPath, HashMap<String, HashMap<String, OwnedValue>>> {
+        GATEWAY_ASKED.store(true, std::sync::atomic::Ordering::SeqCst);
+        fn v<'a>(x: impl Into<zbus::zvariant::Value<'a>>) -> Option<OwnedValue> {
+            OwnedValue::try_from(x.into()).ok()
+        }
+        let props = |list: Vec<(&str, Option<OwnedValue>)>| -> HashMap<String, OwnedValue> {
+            list.into_iter().filter_map(|(k, x)| Some((k.to_string(), x?))).collect()
+        };
+        let mut ifaces = HashMap::new();
+        ifaces.insert(
+            "org.freedesktop.ModemManager1.Modem".to_string(),
+            props(vec![
+                ("State", v(mm::MODEM_STATE_REGISTERED)),
+                ("Manufacturer", v("OST")),
+                ("Model", v("OST calls")),
+                ("Revision", v(env!("CARGO_PKG_VERSION"))),
+                ("EquipmentIdentifier", v("ost")),
+                ("Device", v("ost")),
+                ("OwnNumbers", v(Vec::<String>::new())),
+            ]),
+        );
+        ifaces.insert(
+            "org.freedesktop.ModemManager1.Modem.Modem3gpp".to_string(),
+            props(vec![("RegistrationState", v(mm::REGISTRATION_HOME)), ("OperatorName", v("OST"))]),
+        );
+        ifaces.insert("org.freedesktop.ModemManager1.Modem.Voice".to_string(), HashMap::new());
+        let mut out = HashMap::new();
+        if let Ok(path) = OwnedObjectPath::try_from(mm::MODEM) {
+            out.insert(path, ifaces);
+        }
+        out
+    }
 }
 
 struct Modem;
@@ -217,7 +270,7 @@ fn caller_id(peer: &str) -> String {
 async fn run(mut rx: tokio::sync::watch::Receiver<CallView>, on_action: OnAction) -> zbus::Result<()> {
     let conn = zbus::Connection::session().await?;
     let server = conn.object_server();
-    server.at(mm::ROOT, zbus::fdo::ObjectManager).await?;
+    server.at(mm::ROOT, Modems).await?;
     server.at(mm::MODEM, Modem).await?;
     server.at(mm::MODEM, Modem3gpp).await?;
     server.at(mm::MODEM, Voice { calls: Vec::new() }).await?;
@@ -225,10 +278,12 @@ async fn run(mut rx: tokio::sync::watch::Receiver<CallView>, on_action: OnAction
     // The call object: its path and ModemManager state.
     let mut current: Option<(OwnedObjectPath, i32)> = None;
     let mut next = 1u32;
-    // A call already up when this OST takes the name is announced again
-    // once PipeWire has read the modem (it learns calls only from
-    // CallAdded).
-    let mut announce_at: Option<tokio::time::Instant> = None;
+    // PipeWire's gateway reads the modem when this OST takes the name (if
+    // it takes calls from the session bus at all): then the headset's call
+    // buttons are offered, and a call already up is announced (PipeWire
+    // learns calls only from CallAdded).
+    let mut offered = false;
+    let mut check_at: Option<tokio::time::Instant> = None;
     let mut tick = tokio::time::interval(std::time::Duration::from_secs(1));
     loop {
         tokio::select! {
@@ -239,11 +294,13 @@ async fn run(mut rx: tokio::sync::watch::Receiver<CallView>, on_action: OnAction
         let want = hid_telephony::status().has_control;
         if want && !owned {
             let flags = zbus::fdo::RequestNameFlags::ReplaceExisting | zbus::fdo::RequestNameFlags::AllowReplacement;
+            GATEWAY_ASKED.store(false, std::sync::atomic::Ordering::SeqCst);
+            offered = false;
             match conn.request_name_with_flags(mm::SERVICE, flags).await {
                 Ok(reply) => {
                     owned = matches!(reply, zbus::fdo::RequestNameReply::PrimaryOwner | zbus::fdo::RequestNameReply::AlreadyOwner);
                     if owned {
-                        announce_at = Some(tokio::time::Instant::now() + std::time::Duration::from_millis(1500));
+                        check_at = Some(tokio::time::Instant::now() + std::time::Duration::from_secs(5));
                     }
                     tracing::info!(?reply, "hfp: call service for Bluetooth headsets (ModemManager's Voice API on the session bus)");
                 }
@@ -257,12 +314,18 @@ async fn run(mut rx: tokio::sync::watch::Receiver<CallView>, on_action: OnAction
         let view = rx.borrow_and_update().clone();
         let target = view.phase.mm_state();
         let voice = server.interface::<_, Voice>(mm::MODEM).await?;
-        if announce_at.is_some_and(|t| tokio::time::Instant::now() >= t) {
-            announce_at = None;
+        if owned && !offered && GATEWAY_ASKED.load(std::sync::atomic::Ordering::SeqCst) {
+            offered = true;
+            check_at = None;
+            tracing::info!("hfp: PipeWire's HFP gateway takes call commands from OST: a Bluetooth headset's answer and hang-up are offered");
             if let Some((path, state)) = &current {
                 Voice::call_added(voice.signal_emitter(), path.as_ref()).await?;
-                tracing::info!(call = %path.as_str(), state, "hfp: call announced to the headset (this OST took the buttons)");
+                tracing::info!(call = %path.as_str(), state, "hfp: call announced to the headset");
             }
+        }
+        if check_at.is_some_and(|t| tokio::time::Instant::now() >= t) {
+            check_at = None;
+            tracing::info!("hfp: PipeWire's HFP gateway doesn't take call commands from apps (stock PipeWire; see contrib/pipewire): a Bluetooth headset's answer and hang-up aren't offered, its mute works");
         }
         match (&current, target) {
             (None, None) => {}

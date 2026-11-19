@@ -6125,6 +6125,10 @@ Window {
                 })
             }
             if (st > 0 && st % 5 === 0) console.warn("HEADSET-BUTTON usable", settingsView.transferButtonUsableForTest())
+            // --headset-mute-steps=<n>,<n>…: OST's own mute toggled at
+            // those steps of a connected call (the headset follows it).
+            const muteSteps = (Qt.application.arguments.find(a => a.startsWith("--headset-mute-steps=")) || "=").split("=")[1].split(",").filter(s => s !== "").map(Number)
+            if (muteSteps.indexOf(st) >= 0 && backend.callState === "connected") { backend.toggleMute(); console.warn("HEADSET-APP-MUTE toggled") }
             if (st === at("--headset-transfer-at") + 3 || st === at("--headset-take-at") + 3) window.contentItem.grabToImage(r => r.saveToFile(shots + "-after-" + st + ".png"))
             console.warn("HEADSET", st, backend.headsetStatus(), "call", JSON.stringify(backend.callState), "muted", backend.callMuted, "held", backend.callHeld, "prejoin", preJoin.visible, "prejoinMic", preJoin.micOn)
             if (backend.callState !== "" && backend.callState !== "ended") hadCall = true
