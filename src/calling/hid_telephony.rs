@@ -452,25 +452,79 @@ pub enum Driver {
     HookProtect,
     /// "Safe Mute Only driver": the mute button only.
     MuteOnly,
+    /// "UnSupported": a device on Teams' `hidDevicesBlacklist`; its
+    /// buttons aren't read.
+    Unsupported,
 }
 
-/// Teams' known vendors (`_r`): with no UCQ their devices still get the
-/// hook-protect driver (allowHookByVendorId).
-pub const KNOWN_VENDORS: [u16; 24] = [
-    5013, 1118, 1151, 2830, 2397, 1133, 2216, 27027, 1008, 6127, 1447, 5310, 10470, 16700, 1356, 1446, 3284, 3430,
-    10522, 4983, 14145, 5357, 11225, 9665,
+/// Teams' vendor ids (`_r`) whose devices get the hook-protect driver
+/// with or without a UCQ string: the ones it defaults to it
+/// (`getDriverUsingUCQ(…, true)`: EPOS, Microsoft, Plantronics, Jabra,
+/// Polycom, Yealink, Bose; prod `allowHookByVendorId`) and the ones it
+/// gives it outright (Sony, Cisco, Bang & Olufsen, AudioCodes, Anker,
+/// Sennheiser, Onward, Shure, Legrand).
+pub const HOOK_VENDORS: [u16; 16] = [
+    5013, 1118, 1151, 2830, 2397, 27027, 1447, 1356, 1446, 3284, 3430, 10522, 4983, 14145, 5357, 9665,
 ];
 
-/// Teams' driver choice: a known vendor, or a UCQ string that says
-/// speakerphone (4), wireless (11), headset (6) or handset (5), gets call
-/// controls; anything else mute only.
-pub fn driver_for(vendor: u16, ucq: Option<&str>) -> Driver {
-    if KNOWN_VENDORS.contains(&vendor) {
+/// Teams' vendors whose other devices need a UCQ string for call controls
+/// (Logitech, HP, Lenovo, Dell: `getDriverUsingUCQ(…, !isUcqImplemented)`),
+/// with the products it names a call-control driver for.
+pub const UCQ_VENDOR_PRODUCTS: [(u16, &[u16]); 4] = [
+    // Logitech: H650e, H570e, H820e, Zone Wired, Meetup, ConferenceCam
+    // Connect, Group speaker, Rally, speakerphone dock, Zone Wireless (2),
+    // Zone True Wireless.
+    (1133, &[2630, 2646, 2633, 2733, 2151, 2124, 2135, 2181, 2764, 2704, 2800, 2728]),
+    // HP Slice.
+    (1008, &[3430]),
+    // Lenovo HUB500, HUB700.
+    (6127, &[40983, 40984]),
+    // Dell C2422HE, C2722DE, C3422WE, BT100 audio, HR024.
+    (16700, &[49163, 49165, 49167, 33281, 33282, 33283, 42279]),
+];
+
+/// Teams' prod `hidDevicesBlacklist`: devices it opens no driver for.
+pub const BLACKLIST: [(u16, &[u16]); 4] = [
+    (0x047F, &[0xAF08, 0xC002, 0xCA00, 0xDA41]),
+    (0x0B0E, &[0x235E, 0x24ED, 0xA346]),
+    (0x046D, &[0x0A38, 0x0A3A]),
+    (0x291A, &[0x3301, 0x3523]),
+];
+
+/// The USB string descriptor Teams reads a device's UCQ string from: its
+/// native HID layer answers `property("UCQ")` with HidD_GetIndexedString
+/// of index 0x21.
+pub const UCQ_STRING_INDEX: u8 = 0x21;
+
+/// Teams' driver choice (`hidDeviceDriverFactory.getDeviceDriver` with its
+/// prod config: `useUCQToAssignDeviceDrivers`, `consolidateDrivers` and
+/// `allowHookByVendorId` on): a blacklisted device gets none; one with a
+/// UCQ string (any text at string 0x21) gets the hook-protect driver;
+/// without one, the hook-protect vendors' devices and the named products
+/// still do, and everything else gets mute only.
+pub fn driver_for(vendor: u16, product: u16, ucq: Option<&str>) -> Driver {
+    if BLACKLIST.iter().any(|(v, p)| *v == vendor && p.contains(&product)) {
+        return Driver::Unsupported;
+    }
+    if ucq.is_some_and(|u| !u.is_empty()) {
         return Driver::HookProtect;
     }
-    let Some(u) = ucq.filter(|u| u.len() > 11) else { return Driver::MuteOnly };
-    let at = |i: usize| u.as_bytes().get(i) == Some(&b'1');
-    if at(4) || at(11) || at(6) || at(5) { Driver::HookProtect } else { Driver::MuteOnly }
+    let named = UCQ_VENDOR_PRODUCTS.iter().any(|(v, p)| *v == vendor && p.contains(&product));
+    if HOOK_VENDORS.contains(&vendor) || named { Driver::HookProtect } else { Driver::MuteOnly }
+}
+
+/// What a UCQ string says the device is (Teams' `Pa` positions; Teams logs
+/// them and picks the driver variant from them).
+pub fn ucq_kind(ucq: &str) -> &'static str {
+    let at = |i: usize| ucq.as_bytes().get(i) == Some(&b'1');
+    match () {
+        _ if at(4) && at(11) => "wireless speakerphone",
+        _ if at(4) => "speakerphone",
+        _ if at(11) => "wireless",
+        _ if at(6) => "headset",
+        _ if at(5) => "handset",
+        _ => "other",
+    }
 }
 
 /// What the app is doing, as Teams' HID service keeps it (`appState`).
@@ -507,8 +561,9 @@ pub enum Action {
 
 /// Teams' hook protection: after an off hook or mute from the device, or
 /// the app taking the device off hook, on-hook reports are ignored for a
-/// second (`hookProtectionTimeout`, `aL`).
-pub const HOOK_PROTECT: Duration = Duration::from_millis(1000);
+/// while (`hookProtectionTimeout`: prod `hookProtectionTimeoutConfig`,
+/// 1100 ms; `aL`, 1 s, without it).
+pub const HOOK_PROTECT: Duration = Duration::from_millis(1100);
 
 /// One device's button logic (Teams' driver over its `appState`).
 #[derive(Debug, Clone)]
@@ -635,8 +690,10 @@ pub struct HidDevice {
     pub product: u16,
     pub name: String,
     pub desc: Descriptor,
-    /// Its USB device in sysfs (for the UCQ string), if on USB.
+    /// Its USB device in sysfs, if on USB.
     pub usb_path: Option<std::path::PathBuf>,
+    /// Its USB interface in sysfs (where its hiddev node is), if on USB.
+    pub usb_interface: Option<std::path::PathBuf>,
 }
 
 /// The telephony HID devices (hidraw nodes with a Telephony page).
@@ -669,9 +726,13 @@ pub fn telephony_devices() -> Vec<HidDevice> {
             }
         }
         // …/hidrawN/device is the HID device under its USB interface.
-        let usb_path = (bus == 3)
-            .then(|| std::fs::canonicalize(base.join("..").join("..")).ok())
+        let usb_interface = (bus == 3)
+            .then(|| std::fs::canonicalize(base.join("..")).ok())
             .flatten()
+            .filter(|p| p.join("bInterfaceNumber").exists());
+        let usb_path = usb_interface
+            .as_deref()
+            .and_then(|i| std::fs::canonicalize(i.join("..")).ok())
             .filter(|p| p.join("busnum").exists());
         out.push(HidDevice {
             node: format!("/dev/{}", entry.file_name().to_string_lossy()),
@@ -680,6 +741,7 @@ pub fn telephony_devices() -> Vec<HidDevice> {
             name,
             desc,
             usb_path,
+            usb_interface,
         });
     }
     out.sort_by(|a, b| a.node.cmp(&b.node));
@@ -691,14 +753,89 @@ pub fn telephony_devices() -> Vec<HidDevice> {
     Vec::new()
 }
 
-/// The device's UCQ string (Microsoft's "UC qualification" USB string
-/// descriptor, "UCQ…"), when its USB device can be asked.
+/// Where a device's UCQ string came from, for the log.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UcqSource {
+    /// HIDIOCGSTRING on its hiddev node: the HID class's indexed string,
+    /// as Teams' HidD_GetIndexedString.
+    Hiddev,
+    /// A GET_DESCRIPTOR control transfer through usbfs.
+    Usbfs,
+}
+
+/// The device's UCQ string: USB string descriptor 0x21, read the way
+/// Teams reads it (an indexed string through the HID class driver: on
+/// Linux the hiddev node's HIDIOCGSTRING), else with a control transfer on
+/// its usbfs node. `Err` says why neither could ask the device; `Ok(None)`:
+/// the device has no string 0x21.
 #[cfg(target_os = "linux")]
-fn read_ucq(usb: &std::path::Path) -> Option<String> {
+fn read_ucq(dev: &HidDevice) -> Result<Option<(String, UcqSource)>, String> {
+    let mut why = Vec::new();
+    if let Some(intf) = dev.usb_interface.as_deref() {
+        match hiddev_node(intf) {
+            Some(node) => match hiddev_string(&node, UCQ_STRING_INDEX) {
+                Ok(s) => return Ok(s.map(|s| (s, UcqSource::Hiddev))),
+                Err(e) => why.push(format!("{node}: {e}")),
+            },
+            None => why.push("no hiddev node".into()),
+        }
+    }
+    if let Some(usb) = dev.usb_path.as_deref() {
+        match usbfs_string(usb, UCQ_STRING_INDEX) {
+            Ok(s) => return Ok(s.map(|s| (s, UcqSource::Usbfs))),
+            Err(e) => why.push(e),
+        }
+    }
+    Err(why.join("; "))
+}
+
+/// The hiddev node (`/dev/usb/hiddevN`) of a USB HID interface.
+#[cfg(target_os = "linux")]
+fn hiddev_node(intf: &std::path::Path) -> Option<String> {
+    let dir = std::fs::read_dir(intf.join("usbmisc")).ok()?;
+    let name = dir.flatten().map(|e| e.file_name().to_string_lossy().into_owned()).find(|n| n.starts_with("hiddev"))?;
+    ["/dev/usb/", "/dev/"].iter().map(|d| format!("{d}{name}")).find(|p| std::path::Path::new(p).exists())
+}
+
+/// HIDIOCGSTRING: a string descriptor of a hiddev's USB device, in UTF-8.
+#[cfg(target_os = "linux")]
+fn hiddev_string(node: &str, index: u8) -> Result<Option<String>, String> {
+    use std::os::fd::AsRawFd;
+    #[repr(C)]
+    struct StringDescriptor {
+        index: i32,
+        value: [u8; 256],
+    }
+    let file = std::fs::File::open(node).map_err(|e| e.to_string())?;
+    let mut d = StringDescriptor { index: index as i32, value: [0; 256] };
+    // _IOR('H', 0x04, struct hiddev_string_descriptor)
+    let req = (2u64 << 30) | ((std::mem::size_of::<StringDescriptor>() as u64) << 16) | ((b'H' as u64) << 8) | 0x04;
+    // SAFETY: an open hiddev fd and a buffer of the ioctl's size.
+    let n = unsafe { libc::ioctl(file.as_raw_fd(), req as _, &mut d) };
+    if n < 0 {
+        let e = std::io::Error::last_os_error();
+        // EPIPE / EINVAL: the device stalls the request (no such string).
+        return match e.raw_os_error() {
+            Some(libc::EPIPE) | Some(libc::EINVAL) => Ok(None),
+            _ => Err(e.to_string()),
+        };
+    }
+    let len = d.value.iter().position(|b| *b == 0).unwrap_or(d.value.len());
+    Ok((len > 0).then(|| String::from_utf8_lossy(&d.value[..len]).into_owned()))
+}
+
+/// A string descriptor through usbfs (needs write access to its node).
+#[cfg(target_os = "linux")]
+fn usbfs_string(usb: &std::path::Path, index: u8) -> Result<Option<String>, String> {
     use std::os::fd::AsRawFd;
     let num = |f: &str| std::fs::read_to_string(usb.join(f)).ok()?.trim().parse::<u32>().ok();
-    let path = format!("/dev/bus/usb/{:03}/{:03}", num("busnum")?, num("devnum")?);
-    let file = std::fs::OpenOptions::new().read(true).write(true).open(path).ok()?;
+    let (Some(bus), Some(devnum)) = (num("busnum"), num("devnum")) else { return Err("no usbfs node".into()) };
+    let path = format!("/dev/bus/usb/{bus:03}/{devnum:03}");
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&path)
+        .map_err(|e| format!("{path}: {e}"))?;
     #[repr(C)]
     struct Ctrl {
         request_type: u8,
@@ -726,17 +863,12 @@ fn read_ucq(usb: &std::path::Path) -> Option<String> {
         let n = unsafe { libc::ioctl(file.as_raw_fd(), req as _, &mut c) };
         (n > 0).then(|| buf[..n as usize].to_vec())
     };
-    let langs = get(0, 0)?;
+    let Some(langs) = get(0, 0) else { return Ok(None) };
     let lang = if langs.len() >= 4 { u16::from_le_bytes([langs[2], langs[3]]) } else { 0x0409 };
-    for index in 1..=32u8 {
-        let Some(d) = get(index, lang) else { continue };
-        let units: Vec<u16> = d.get(2..)?.chunks(2).filter(|c| c.len() == 2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
-        let s = String::from_utf16_lossy(&units);
-        if s.starts_with("UCQ") {
-            return Some(s);
-        }
-    }
-    None
+    let Some(d) = get(index, lang) else { return Ok(None) };
+    let units: Vec<u16> = d.get(2..).unwrap_or(&[]).chunks(2).filter(|c| c.len() == 2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+    let s = String::from_utf16_lossy(&units);
+    Ok((!s.is_empty()).then_some(s))
 }
 
 #[cfg(target_os = "linux")]
@@ -1101,11 +1233,23 @@ fn run_linux(rx: mpsc::Receiver<Cmd>, on_action: Box<dyn Fn(Action) + Send>) {
                     on_action(Action::TransferPrompt);
                 }
             } else if let Some(dev) = devices.into_iter().find(|d| Some((d.vendor, d.product)) == want) {
+                // Teams reads the UCQ string with the device's properties,
+                // before it picks a driver.
+                let ucq = read_ucq(&dev);
+                let ucq_text = ucq.as_ref().ok().and_then(|u| u.as_ref().map(|(s, _)| s.clone()));
+                let driver = driver_for(dev.vendor, dev.product, ucq_text.as_deref());
+                match &ucq {
+                    Ok(Some((s, from))) => tracing::info!(device = %dev.name, ucq = %s, kind = ucq_kind(s), ?from, "headset: UCQ string"),
+                    Ok(None) => tracing::info!(device = %dev.name, "headset: no UCQ string"),
+                    Err(e) => tracing::info!(device = %dev.name, "headset: can't read the UCQ string ({e}); needs read access to its hiddev node"),
+                }
+                if driver == Driver::Unsupported {
+                    tracing::info!(device = %dev.name, vendor = format!("{:04x}", dev.vendor), product = format!("{:04x}", dev.product), "headset: not supported (Teams' HID blacklist)");
+                    continue;
+                }
                 match io::open(&dev.node) {
                     Ok(fd) => {
-                        let ucq = dev.usb_path.as_deref().and_then(read_ucq);
-                        let driver = driver_for(dev.vendor, ucq.as_deref());
-                        tracing::info!(device = %dev.name, node = %dev.node, ?driver, ucq = ?ucq, asp = dev.desc.has_asp(), "headset: opened");
+                        tracing::info!(device = %dev.name, node = %dev.node, ?driver, asp = dev.desc.has_asp(), "headset: opened");
                         let mut o = Open { dev, fd, buttons: Buttons::new(driver), last: HashMap::new(), asp: false, asp_attempts: 0 };
                         o.init_asp();
                         // Teams syncs a newly selected device with the app.
@@ -1305,9 +1449,21 @@ mod tests {
 
     #[test]
     fn drivers_as_teams_picks_them() {
-        assert_eq!(driver_for(0x0B0E, None), Driver::HookProtect);
-        assert_eq!(driver_for(0x1234, None), Driver::MuteOnly);
-        assert_eq!(driver_for(0x1234, Some("UCQ01101000100000000")), Driver::HookProtect);
-        assert_eq!(driver_for(0x1234, Some("UCQ00000000000000000")), Driver::MuteOnly);
+        // Jabra with or without a UCQ string.
+        assert_eq!(driver_for(0x0B0E, 0x2400, None), Driver::HookProtect);
+        assert_eq!(driver_for(0x0B0E, 0x2400, Some("UCQ00010000000100000")), Driver::HookProtect);
+        // An unknown vendor: mute only, unless it has a UCQ string
+        // (Teams' prod consolidateDrivers: any UCQ string).
+        assert_eq!(driver_for(0x16C0, 0x0AB1, None), Driver::MuteOnly);
+        assert_eq!(driver_for(0x16C0, 0x0AB1, Some("")), Driver::MuteOnly);
+        assert_eq!(driver_for(0x16C0, 0x0AB1, Some("UCQ00010000000100000")), Driver::HookProtect);
+        assert_eq!(ucq_kind("UCQ00010000000100000"), "headset");
+        assert_eq!(ucq_kind("UCQ01000000000100000"), "speakerphone");
+        // Logitech: its named headsets, others only with a UCQ string.
+        assert_eq!(driver_for(0x046D, 2630, None), Driver::HookProtect);
+        assert_eq!(driver_for(0x046D, 0x0ABC, None), Driver::MuteOnly);
+        assert_eq!(driver_for(0x046D, 0x0ABC, Some("UCQ00010000000100000")), Driver::HookProtect);
+        // Teams' blacklist.
+        assert_eq!(driver_for(0x0B0E, 0x24ED, Some("UCQ00010000000100000")), Driver::Unsupported);
     }
 }

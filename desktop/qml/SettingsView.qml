@@ -3062,6 +3062,15 @@ Rectangle {
     Component.onCompleted: backend.loadReadReceipts()
     function setPropForTest(name, path, value) { setProp(name, path, value) }
     function pageForTest(p, sub) { page = p; subPage = sub || ""; content.contentY = 0 }
+    /// --headset-take-at: Devices' "Transfer controls to this app" as its
+    /// tap does it, when it's enabled; returns whether it was.
+    function transferControlsForTest() {
+        hidRow.refresh()
+        if (!transferBtn.usable) return false
+        backend.headsetTakeControl(); hidRow.refresh()
+        return true
+    }
+    function transferButtonUsableForTest() { hidRow.refresh(); return transferBtn.usable }
     // --work-location-test: the work location card's state and geometry,
     // its dialog, and the stationary location list.
     function workLocationForTest(what) {

@@ -1617,9 +1617,20 @@ The chosen layout is saved through `updateUserExperiencePreferences{stageSetting
 
 ## Headset call controls (TASK-0156; Teams' HID service, read from its bundles 2026-11-17)
 
-- Teams opens the HID device of the selected microphone (matched by its USB ids) on the Telephony page. Its driver:
-  known vendors' devices (Jabra, Poly, EPOS, Logitech, Yealink, …) or ones whose USB "UCQ" string says speakerphone,
-  headset, handset or wireless get "Standard Hook Protect USB"; any other gets "Safe Mute Only" (the mute button only).
+- Teams opens the HID device of the selected microphone (matched by its USB ids) on the Telephony page. Its driver
+  (TASK-0223, `hidDeviceDriverFactory` with the prod config `useUCQToAssignDeviceDrivers`, `consolidateDrivers`,
+  `allowHookByVendorId`):
+  - devices on `hidDevicesBlacklist` (047f:af08/c002/ca00/da41, 0b0e:235e/24ed/a346, 046d:0a38/0a3a,
+    291a:3301/3523) get none ("UnSupported");
+  - a device with a UCQ string gets "Standard Hook Protect USB". Teams' native HID layer answers `property("UCQ")`
+    with HidD_GetIndexedString of USB string descriptor 0x21 and, with `consolidateDrivers`, takes any text there
+    (the UCQ positions 4 speakerphone, 5 handset, 6 headset, 11 wireless only pick the variant without it);
+  - without one: EPOS, Microsoft, Plantronics, Jabra, Polycom, Yealink, Bose, Sony, Cisco, Bang & Olufsen,
+    AudioCodes, Anker, Sennheiser, Onward, Shure and Legrand devices still get it, and so do Logitech, HP, Lenovo
+    and Dell products it names (H650e, Rally, Slice, HUB500, BT100…); any other device gets "Safe Mute Only" (the
+    mute button only).
+  - OST reads string 0x21 the same way through the HID class: HIDIOCGSTRING on the device's hiddev node (falling
+    back to a control transfer on its usbfs node). Hook protection lasts 1100 ms (prod `hookProtectionTimeoutConfig`).
 - Buttons, with Sync device buttons on:
   - Hook Switch 1 (off hook) while a call rings: answer. Hook Switch 0 (on hook) in a call: hang up (ignored while
     ringing and for 1 s after the device or Teams took it off hook or toggled mute: Teams' hook protection).
@@ -1632,4 +1643,24 @@ The chosen layout is saved through `updateUserExperiencePreferences{stageSetting
     a meeting: raise or lower your hand. Without ASP the Teams button does nothing.
 - Lights: Off-Hook while a call is connecting or up, Ring while one rings, Mute with the call's (or the pre-join
   screen's) mute, Hold while held; all off when the call ends.
+
+## Bluetooth (HFP) headset call controls (TASK-0223; Teams' HfpVoipCallCoordinatorImpl, Windows' BTAGService)
+
+- Teams doesn't read a Bluetooth headset. Windows' audio gateway (BTAGService) speaks HFP with it; Teams reports its
+  calls to Windows' VoIP call coordinator: a ringing call (reportIncomingCall: the gateway sends RING and
+  +CIEV callsetup), an answered call as it connects (reportCallAccepted), a placed call (requestStartCall) and its
+  connection (reportOutgoingCallConnected), hold (reportHoldCall) and the end (reportCallEnded).
+- The headset's commands come back as the coordinator's events: ATA answers (AnswerRequested), AT+CHUP rejects a
+  ringing call (RejectRequested) or ends the call (EndRequested), AT+CHLD holds. Windows 11 carries the mute in the
+  microphone gain: AT+VGM=0 mutes and a gain back above 0 unmutes (HfpAtVgmReceivedExpectMuteChange; the first gain
+  only sets the baseline), and Teams' own mute sends the headset +VGM: 0 (HfpAtVgmSentMuteChange).
+- Teams acts on them only with Sync device buttons on (isHFPDeviceSyncEnabled), with a Bluetooth hands-free
+  microphone selected (its connection type Bluetooth) and with one such device present (multi-device mode off);
+  otherwise it fails the action and the gateway answers ERROR. Mute from the device acts on a call.
+- OST: PipeWire's native HFP backend is the gateway. It takes ATA and AT+CHUP to the calls of a ModemManager modem;
+  OST offers its calls as one (ModemManager's Modem, Modem3gpp, Voice and Call interfaces) on the session bus, with
+  PipeWire's `bluez5.hfphsp-backend-native-modem-bus = "session"` (contrib/pipewire: a small bluez5 patch and the
+  WirePlumber setting). PipeWire turns AT+VGM into the headset microphone's volume and a route volume into +VGM, so
+  OST's mute zeroes that gain and unmuting puts it back. Only the OST that has the headset's buttons ("Transfer
+  controls to this app") offers its calls.
 

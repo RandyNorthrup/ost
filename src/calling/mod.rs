@@ -29,6 +29,8 @@ pub mod display;
 pub mod e2ee;
 pub mod echo_report;
 pub mod frames;
+/// Bluetooth (HFP) headset call controls (Teams' VoIP call coordinator).
+pub mod hfp;
 /// Headset call controls over HID telephony (Teams' Sync device buttons).
 pub mod hid_telephony;
 pub mod ice;

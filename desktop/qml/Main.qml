@@ -6103,6 +6103,29 @@ Window {
             if (st === 0) { rail.current = "settings"; settingsView.pageForTest("devices") }
             else if (st === 2) window.contentItem.grabToImage(r => r.saveToFile("/tmp/act/headset-devices.png"))
             else if (st === 3 && mode === "prejoin") preJoin.openMeetNow("", "OST headset test")
+            if (st === 0) console.warn("HEADSET me", backend.userMri)
+            // --headset-transfer-at=<step>: Teams' transfer prompt, if it's
+            // up then, captured and answered "Transfer controls";
+            // --headset-take-at=<step>: Devices' "Transfer controls to this
+            // app". Pictures go to <--headset-shots prefix>-….png.
+            const shots = (Qt.application.arguments.find(a => a.startsWith("--headset-shots=")) || "=/tmp/act/headset").split("=")[1]
+            const at = name => parseInt((Qt.application.arguments.find(a => a.startsWith(name + "=")) || "=-1").split("=")[1])
+            if (st === at("--headset-transfer-at")) {
+                console.warn("HEADSET-PROMPT", hidTransferDialog.visible ? "shown" : "not shown", JSON.stringify(hidTransferDialog.title), JSON.stringify(hidTransferDialog.body), JSON.stringify(hidTransferDialog.confirmText))
+                if (hidTransferDialog.visible) window.contentItem.grabToImage(r => {
+                    r.saveToFile(shots + "-prompt.png")
+                    hidTransferDialog.close(); hidTransferDialog.confirmed()
+                    console.warn("HEADSET-PROMPT answered Transfer controls")
+                })
+            }
+            if (st === at("--headset-take-at")) {
+                window.contentItem.grabToImage(r => {
+                    r.saveToFile(shots + "-before-take.png")
+                    console.warn("HEADSET-TAKE", settingsView.transferControlsForTest() ? "transferred" : "button disabled")
+                })
+            }
+            if (st > 0 && st % 5 === 0) console.warn("HEADSET-BUTTON usable", settingsView.transferButtonUsableForTest())
+            if (st === at("--headset-transfer-at") + 3 || st === at("--headset-take-at") + 3) window.contentItem.grabToImage(r => r.saveToFile(shots + "-after-" + st + ".png"))
             console.warn("HEADSET", st, backend.headsetStatus(), "call", JSON.stringify(backend.callState), "muted", backend.callMuted, "held", backend.callHeld, "prejoin", preJoin.visible, "prejoinMic", preJoin.micOn)
             if (backend.callState !== "" && backend.callState !== "ended") hadCall = true
             if (hadCall && ended < 0 && (backend.callState === "ended" || backend.callState === "")) ended = st

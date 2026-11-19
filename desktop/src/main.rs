@@ -6,6 +6,7 @@ mod backend;
 mod clip_edit;
 mod clip_frames;
 mod help_bundle;
+mod hfp_calls;
 mod key_typer;
 mod launcher_badge;
 mod lock_watch;

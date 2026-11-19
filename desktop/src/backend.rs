@@ -5129,6 +5129,9 @@ fn os_settings_command(kind: &str) -> Option<(&'static str, Vec<&'static str>)> 
 /// (Teams' clientPreferences lockScreenInCall.turnOffMediaOnDeviceLock,
 /// kept on this device), as it was when OST started.
 static LOCK_MEDIA_OFF: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// The current call rang here first (for the Bluetooth headset: Teams
+/// reports an answered call accepted as it connects).
+static HFP_INCOMING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// The screen locked or unlocked. With the setting on, locking during a
 /// call turns off your camera, mic and screen sharing, as Teams does.
@@ -7297,10 +7300,10 @@ fn apply_audio_devices(map: &serde_json::Map<String, serde_json::Value>) {
     // Teams' "Sync device buttons" (on unless turned off, kept on this
     // device as Teams' audioDeviceSyncEnabled) and the microphone whose
     // headset's buttons count.
-    teams_cli::calling::hid_telephony::set_preferences(
-        get("micDevice"),
-        map.get("audioDeviceSyncEnabled").and_then(|v| v.as_str()) != Some("false"),
-    );
+    let sync = map.get("audioDeviceSyncEnabled").and_then(|v| v.as_str()) != Some("false");
+    teams_cli::calling::hid_telephony::set_preferences(get("micDevice"), sync);
+    // The same for a Bluetooth (HFP) headset's call commands.
+    teams_cli::calling::hfp::set_preferences(get("micDevice"), sync);
     // Teams' Secondary Ringer and "Automatically adjust mic sensitivity".
     teams_cli::calling::ringtone::set_secondary(get("secondaryRinger").filter(|d| d != "none"));
     teams_cli::calling::apm::set_auto_gain(map.get("autoGainControl").and_then(|v| v.as_str()) != Some("off"));
@@ -7573,6 +7576,34 @@ impl qobject::Backend {
                 let _ = qt.queue(move |this| this.on_headset_action(action));
             }
         });
+        // A Bluetooth (HFP) headset: its answer and hang-up come through
+        // PipeWire's audio gateway to OST's calls, its mute as its
+        // microphone gain going to zero and back (TASK-0223).
+        crate::hfp_calls::start(|action| {
+            if let Some(qt) = QT_THREAD.get() {
+                let _ = qt.queue(move |this| this.on_headset_action(action));
+            }
+        });
+        teams_cli::calling::hfp::start(Box::new(|mic, muted| {
+            let ctx = teams_cli::calling::hfp::context();
+            if ctx.mic.as_deref() != Some(mic.as_str()) {
+                return;
+            }
+            if let Err(why) = ctx.gate() {
+                tracing::info!(%mic, muted, "hfp: headset mute ignored: {why}");
+                return;
+            }
+            tracing::info!(%mic, muted, "hfp: headset mute");
+            if let Some(qt) = QT_THREAD.get() {
+                let _ = qt.queue(move |this| {
+                    // Teams' mute from the device acts on a call only.
+                    let state = this.call_state.to_string();
+                    if matches!(state.as_str(), "calling" | "connecting" | "connected" | "lobby") {
+                        this.on_headset_action(teams_cli::calling::hid_telephony::Action::SetMuted(muted));
+                    }
+                });
+            }
+        }));
         let frame = std::env::var_os("OST_SYSTEM_FRAME").is_some_and(|v| v != "0");
         self.as_mut().set_system_frame(frame);
         // Teams' default theme is "Follow operating system theme".
@@ -11477,6 +11508,20 @@ impl qobject::Backend {
             prejoin_muted,
             held: !hooked && self.call_held,
         });
+        // The Bluetooth headset's view of the call, and the app's mute as
+        // its microphone gain (Teams' VoIP call coordinator reports).
+        use std::sync::atomic::Ordering;
+        match state.as_str() {
+            "ringing" => HFP_INCOMING.store(true, Ordering::SeqCst),
+            "calling" => HFP_INCOMING.store(false, Ordering::SeqCst),
+            _ => {}
+        }
+        let incoming = HFP_INCOMING.load(Ordering::SeqCst);
+        let phase = teams_cli::calling::hfp::Phase::of(&state, self.call_held, incoming);
+        crate::hfp_calls::set_call(crate::hfp_calls::CallView { phase, incoming, peer: self.call_peer.to_string() });
+        let in_call = matches!(state.as_str(), "calling" | "connecting" | "connected" | "lobby");
+        let muted = in_call && self.call_muted;
+        teams_cli::calling::hfp::sync_app_mute(in_call, muted);
     }
 
     pub fn headset_status(&self) -> QString {
