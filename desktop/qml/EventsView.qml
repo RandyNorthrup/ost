@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls.Basic
+import com.ost.desktop
 
 // Teams' Events app, drawn natively as Teams draws it itself (it is not a
 // hosted page): docs/spec/events.md, measured in Teams on the web as
@@ -53,9 +54,34 @@ Rectangle {
     property bool myEvents: false
     property string dateRange: ""
     property bool welcome: true
+    /// Pinned to the app bar: Teams keeps it in your app entitlements (read
+    /// on load, written by Pin app and the save dialog's Pin the Events app);
+    /// the device setting only remembers it for the bar until then.
     property bool pinned: backend.setting("eventsAppPinned") === "true"
+    /// Custom range's From and To (Filters).
+    property var customFrom: null
+    property var customTo: null
+    /// See more: {section, title, items, total, next} while a whole section
+    /// is shown.
+    property var seeMore: null
+    /// Your saved templates (Create's "Your saved templates").
+    property var savedTemplates: null
+    /// The event page's tab: "overview", "people", "insights", "highlights".
+    property string eventTab: "overview"
+    /// The event page's Preview (what attendees will see).
+    property bool previewOn: false
+    /// People & emails' lists.
+    property var peopleData: null
+    /// Teams' time zones ([key, label]) and this device's.
+    property var zones: []
+    property string localZone: ""
     signal pinToggled(bool on)
     signal viewMeetings()
+    /// The intro card's View audio recaps: Meeting Recaps' Audio recaps.
+    signal viewAudioRecaps()
+    /// Manage apps' "here": the event meeting's details (Teams'
+    /// manageAppsLinkUrl, /l/meeting/{tenant}/{organizer}/{thread}/{message}).
+    signal openMeetingDetails(string threadId, string title)
     signal toast(var d)
     /// The event page's Join: its meeting's pre-join.
     signal joinEvent(string url, string title, string start, string end)
@@ -97,14 +123,73 @@ Rectangle {
             cb(v)
         }
     }
+    // A date range's first and last moment, local days (Teams: From's
+    // midnight to To's 23:59:59.999, sent in UTC with milliseconds).
     function range() {
         if (!dateRange) return {}
-        const now = new Date(), start = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-        let end = new Date(start)
-        if (dateRange === "today") end.setDate(end.getDate() + 1)
-        else if (dateRange === "thisWeek") { start.setDate(start.getDate() - start.getDay()); end = new Date(start); end.setDate(end.getDate() + 7) }
-        else if (dateRange === "thisMonth") { start.setDate(1); end = new Date(start.getFullYear(), start.getMonth() + 1, 1) }
+        const now = new Date()
+        let start = new Date(now.getFullYear(), now.getMonth(), now.getDate()), last = new Date(start)
+        if (dateRange === "thisWeek") { start.setDate(start.getDate() - start.getDay()); last = new Date(start); last.setDate(last.getDate() + 6) }
+        else if (dateRange === "thisMonth") { start.setDate(1); last = new Date(start.getFullYear(), start.getMonth() + 1, 0) }
+        else if (dateRange === "custom") {
+            if (!customFrom || !customTo) return {}
+            start = new Date(customFrom.getFullYear(), customFrom.getMonth(), customFrom.getDate())
+            last = new Date(customTo.getFullYear(), customTo.getMonth(), customTo.getDate())
+        }
+        const end = new Date(last.getFullYear(), last.getMonth(), last.getDate(), 23, 59, 59, 999)
         return { from: start.toISOString(), to: end.toISOString() }
+    }
+    // The filter chip's text: "November 18 - 30, 2026", "Today", …
+    function rangeText() {
+        if (dateRange === "today") return "Today"
+        if (dateRange === "thisWeek") return "This week"
+        if (dateRange === "thisMonth") return "This month"
+        if (dateRange !== "custom" || !customFrom || !customTo) return ""
+        const a = customFrom, b = customTo
+        if (a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth())
+            return Qt.formatDate(a, "MMMM d") + " - " + b.getDate() + ", " + b.getFullYear()
+        if (a.getFullYear() === b.getFullYear()) return Qt.formatDate(a, "MMMM d") + " - " + Qt.formatDate(b, "MMMM d, yyyy")
+        return Qt.formatDate(a, "MMMM d, yyyy") + " - " + Qt.formatDate(b, "MMMM d, yyyy")
+    }
+    function clearFilters() { myEvents = false; dateRange = ""; customFrom = null; customTo = null; discoverData = null; reload() }
+    // Pin app: Teams' pinned apps (and the toast "The Events app has been
+    // pinned."); the header's Pin app goes once pinned (unpinning is the
+    // app bar's Unpin).
+    function setPinned(on) {
+        call("pin", { on: on }, v => {
+            if (v.error) { toast({ text: "Couldn't pin the app. " + v.error, intent: "error" }); return }
+            pinned = on; pinToggled(on)
+            if (on) toast({ text: "The Events app has been pinned.", intent: "success" })
+        })
+    }
+    function openSeeMore(section, title) {
+        seeMore = { section: section, title: title, items: [], total: 0, next: null, loading: true }
+        page = "seeMore"
+        call("seeMore", { section: section }, v => { if (!v.error) seeMore = { section: section, title: title, items: v.items || [], total: v.total || (v.items || []).length, next: v.next, loading: false } })
+    }
+    function moreOfSeeMore() {
+        if (!seeMore || !seeMore.next) return
+        const s = seeMore
+        call("seeMore", { section: s.section, skip: s.next }, v => { if (!v.error) seeMore = Object.assign({}, s, { items: s.items.concat(v.items || []), next: v.next }) })
+    }
+    function loadTemplates() { call("templates", {}, v => { if (!v.error) savedTemplates = Array.isArray(v) ? v : [] }) }
+    // "in 25 mins" while an event starts within the hour.
+    // "in N mins" in the hour before the start (Teams: rounded down to 5,
+    // at least 5; measured 2026-11-18).
+    function soonText(start) {
+        const m = Math.floor((new Date(start) - new Date()) / 60000)
+        return m >= 0 && m <= 59 ? "in " + Math.max(5, Math.floor(m / 5) * 5) + " mins" : ""
+    }
+    // The event's two chats.
+    function openChat(ev, crew) {
+        const id = crew ? ev.backroom_thread_id : (ev.thread_id || ((decodeURIComponent(ev.join_url || "").match(/19:meeting_[^/]+@thread\.v2/) || [""])[0]))
+        if (id) openEventChat(id, ev.title)
+    }
+    function copyJoinDetails(ev) {
+        call("joinDetails", { link: ev.update_link || "" }, v => {
+            if (v.error || !v.html) backend.copyText(joinDetails(ev)); else backend.copyHtml(v.html, joinDetails(ev))
+            toast({ text: "Join details copied successfully", intent: "success" })
+        })
     }
     function reload() {
         loadError = ""
@@ -112,7 +197,7 @@ Rectangle {
         else call("manage", {}, v => { if (v.error) loadError = v.error; else manageData = v })
     }
     function openTab(t) { tab = t; page = ""; filtersOpen = false; reload() }
-    function startCreate() { page = "create"; filtersOpen = false }
+    function startCreate() { page = "create"; filtersOpen = false; loadTemplates() }
     /// Calendar ▸ New ▸ Webinar / Town hall: the form with that template.
     function startFormKey(key) { const t = templates.find(x => x.key === key); if (t) { filtersOpen = false; startForm(t) } }
     function startForm(t) {
@@ -124,15 +209,120 @@ Rectangle {
         page = "form"
         if (!features) call("features", {}, v => { if (!v.error) features = v })
     }
-    function openEvent(card) { current = card; page = "event"; call("overview", { id: card.id }, v => { if (!v.error && v.card) current = Object.assign({}, v.card, { access: v.access, inviteOnly: v.inviteOnly, registration: v.registration }) }) }
-    Component.onCompleted: reload()
+    function openEvent(card) {
+        current = card; page = "event"; eventTab = "overview"; previewOn = false; peopleData = null
+        call("overview", { id: card.id }, v => { if (!v.error && v.card) current = Object.assign({}, v.card, { access: v.access, inviteOnly: v.inviteOnly, registration: v.registration, description: v.description }) })
+        call("people", { id: card.id }, v => { if (!v.error) peopleData = v })
+    }
+    // Edit (a card's, the page's Edit details): the event in the form.
+    function editEvent(card) {
+        current = current && current.id === card.id ? current : card
+        call("event", { id: card.id }, v => {
+            if (v.error) { toast({ text: "Couldn't open the event. " + v.error, intent: "error" }); return }
+            form.fill(v); form.mode = "edit"; form.sourceId = card.id; page = "form"
+            if (!features) call("features", {}, f => { if (!f.error) features = f })
+        })
+    }
+    // Duplicate: the event's details in a new event's form, today's slot.
+    function duplicateEvent(card) {
+        call("event", { id: card.id }, v => {
+            if (v.error) { toast({ text: "Couldn't open the event. " + v.error, intent: "error" }); return }
+            form.fill(v); form.mode = "duplicate"; form.sourceId = card.id; page = "form"
+        })
+    }
+    // A saved template's Schedule: a new event from it (Teams keeps
+    // everything but the date and time).
+    function scheduleFromTemplate(t) {
+        const now = new Date(), s = new Date(now)
+        s.setMinutes(now.getMinutes() < 30 ? 30 : 60, 0, 0)
+        const d = Object.assign({}, t.data, { start: s.toISOString(), end: new Date(s.getTime() + 30 * 60000).toISOString() })
+        form.fill(d); form.mode = "new"; page = "form"
+        if (!features) call("features", {}, f => { if (!f.error) features = f })
+    }
+    function editTemplate(t) {
+        form.fill(t.data); form.mode = "template"; form.sourceId = t.id
+        form.templateName = t.name || ""; form.templateDescription = t.description || ""; page = "form"
+    }
+    // All options: the event template's meeting options (Teams'
+    // meetingTemplates/details) with the event's values, in the meeting
+    // options dialog; Apply keeps them for the save.
+    function openAllOptions() {
+        call("options", { townHall: form.townHall }, v => {
+            if (v.error) { toast({ text: "Couldn't load the meeting options. " + v.error, intent: "error" }); return }
+            // A new event's options as the form sends them (api::events'
+            // defaults), then the event's own, then All options' changes.
+            const defaults = { autoAdmittedUsers: "EveryoneInCompany", usersCanAdmitFromLobby: "OrganizersAndPresentersOnly", allowedUsersForMeetingDetails: "UsersAllowedToByPassTheLobby",
+                               allowPstnUsersToBypassLobby: false, entryExitAnnouncementsEnabled: false, whoCanManageQna: "OrganizersAndCoorganizers", producerOption: "OrganizersAndPresentersOnly",
+                               recorderOption: "OrganizersAndPresentersOnly", autoRecordAndTranscribeMode: "AutoRecordingAndTranscription", copilotMode: "EnabledWithTranscript",
+                               meetingSpokenLanguage: "en-us", whoCanAccessTranscriptAndRecording: "Default", enableMultiLingualMeeting: false, attendanceReportEnabled: true }
+            const cur = Object.assign(defaults, form.eventOptions || {}, form.optionChanges)
+            // The form's own choices win.
+            const restr = form.townHall && form.large ? "DisableAudio,DisableVideo" : form.mic && form.camera ? "UnRestricted" : !form.mic && !form.camera ? "DisableAudio,DisableVideo" : !form.mic ? "DisableAudio" : "DisableVideo"
+            Object.assign(cur, { attendeeRestrictions: restr, allowTeamsMeetingReactions: form.react, allowMeetingChat: form.chat ? (cur.allowMeetingChat && cur.allowMeetingChat !== "Disabled" ? cur.allowMeetingChat : "Enabled") : "Disabled",
+                                 yammerQNAEnabled: form.qna, stagingRoomEnabled: form.greenRoom })
+            const opts = {}
+            for (const o of (v.options || [])) {
+                const key = o.name.charAt(0).toLowerCase() + o.name.slice(1)
+                const copy = Object.assign({}, o)
+                if (cur[key] !== undefined && copy.type !== "PeopleSelection" && copy.type !== "PresenterSelection") copy.currentValue = cur[key]
+                // An event's lobby, recording and Copilot rows are fixed (Teams
+                // shows them off); it has no Accessibility section.
+                if (["AutoAdmittedUsers", "RecorderOption", "CopilotMode"].indexOf(o.name) >= 0) copy.isDisabled = true
+                if (o.name === "CARTExternalFeed") continue
+                opts[o.name] = copy
+            }
+            allOptions.options = opts
+            allOptions.people = { translations: v.translations || {}, people: {}, invitees: [] }
+            allOptions.open()
+        })
+    }
+    Component.onCompleted: {
+        reload()
+        call("pinned", {}, v => { if (!v.error && v.pinned !== pinned) { pinned = v.pinned; pinToggled(v.pinned) } })
+        call("zones", {}, v => { if (!v.error) { zones = v.zones || []; localZone = v.local || "" } })
+    }
     onVisibleChanged: if (visible && page === "") reload()
     function stateForTest() {
         return JSON.stringify({ tab: tab, page: page, error: loadError, discover: discoverData ? { now: (discoverData.now || []).length, upcoming: (discoverData.upcoming || []).length, past: (discoverData.past || []).length } : null,
                                 manage: manageData ? { drafts: manageData.drafts ? manageData.drafts.total : 0, published: manageData.published ? manageData.published.total : 0, past: manageData.past ? manageData.past.total : 0,
                                                        draftTitles: manageData.drafts ? manageData.drafts.items.map(i => i.title) : [] } : null,
-                                current: current ? { id: current.id, title: current.title, state: current.state } : null })
+                                filtered: discoverData && discoverData.filtered ? discoverData.filtered.map(i => i.title + " (" + (i.role || i.by) + ")") : null,
+                                pinned: pinned, zones: zones.length, localZone: localZone,
+                                seeMore: seeMore ? { title: seeMore.title, items: seeMore.items.length, total: seeMore.total } : null,
+                                templates: savedTemplates ? savedTemplates.map(t => t.name) : null,
+                                form: page === "form" ? { mode: form.mode, title: form.title, zone: form.zone, team: form.team.map(p => p.name), presenters: form.presenters.map(p => p.name),
+                                                          attendees: form.attendees.map(p => p.name), rooms: form.rooms.map(p => p.name), options: Object.keys(form.optionChanges),
+                                                          stage: [stagePreview.visible, stagePreview.x, stagePreview.y, stagePreview.width, stagePreview.parent ? stagePreview.parent.width : -1, form.open] } : null,
+                                eventTab: page === "event" ? eventTab : "", preview: previewOn,
+                                people: peopleData ? { organizers: (peopleData.organizerList || []).map(p => p.name), presenters: (peopleData.presenterList || []).map(p => p.name),
+                                                       rooms: (peopleData.roomList || []).map(p => p.name), attendees: (peopleData.attendeeList || []).length } : null,
+                                current: current ? { id: current.id, title: current.title, state: current.state, rooms: current.rooms, location: current.location, by: current.by,
+                                                     discoverable: current.discoverable, description: current.description } : null })
     }
+    // Test helpers (the harness, --events-test).
+    function pickerForTest(kind) { return ({ team: teamPicker, presenters: presenterPicker, attendees: attendeePicker, rooms: roomPicker })[kind] }
+    function descriptionForTest(text) {
+        description.text = ""; description.insert(0, text)
+        const w = text.lastIndexOf(" ") + 1
+        rich.apply(w, text.length, "bold", ""); form.refreshRich()
+    }
+    function zoneForTest(open) { form.zoneOpen = open }
+    function filtersForTest(mine, range, from, to) { myEvents = mine; dateRange = range; customFrom = from; customTo = to; discoverData = null; page = ""; tab = "discover"; reload() }
+    function allOptionsForTest() { openAllOptions() }
+    function allOptionsStateForTest() { return { open: allOptions.opened, options: Object.keys(allOptions.options).length } }
+    function closeAllOptionsForTest() { allOptions.close() }
+    function templateForTest(name) { templateDialog.openFor(current); templateDialog.nameForTest(name) }
+    function saveTemplateForTest() { templateDialog.save() }
+    function shareForTest(success) { shareDialog.openFor(current, success) }
+    function closeShareForTest() { shareDialog.close() }
+    function connectAppsForTest() { connectApps.openNow() }
+    function closeConnectAppsForTest() { connectApps.close() }
+    function connectAppsStateForTest() { return connectApps.items.map(i => i.name) }
+    function roomOptionsForTest(on) { if (on) roomOptions.open(); else roomOptions.close() }
+    function saveChangesForTest() { form.saveChanges() }
+    function scrollCreateForTest() { createPage.contentY = Math.max(0, createPage.contentHeight - createPage.height) }
+    function openSectionsForTest(list) { form.open = list; form.contentY = 0 }
+    function scrollFormForTest(y) { form.contentY = y }
 
     // ---- shared parts ----
     component Btn: Rectangle {
@@ -256,22 +446,43 @@ Rectangle {
         Text { x: ecBadge.visible ? ecBadge.x + ecBadge.width + 4 : 20; y: ecBadge.visible ? 158 : 157; text: root.whenText(ec.modelData.start, ec.modelData.end, false); font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
         Column {
             x: 20; y: 187; spacing: 4
-            Row { spacing: 4; visible: !!ec.modelData.role
+            // Your role ("Organizer"), else the presenter ("By OST Test 3").
+            Row { spacing: 4; visible: !!ec.modelData.role || !!ec.modelData.by
                 FluentIcon { name: "person-16"; size: 16; color: theme.textSecondary }
-                Text { text: ec.modelData.role; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } }
+                Text { text: ec.modelData.role === "Organizer" || !ec.modelData.by ? (ec.modelData.role || "") : "By " + ec.modelData.by; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } }
             Row { spacing: 4
                 FluentIcon { name: "location-20"; size: 16; color: theme.textSecondary }
                 Text { text: ec.modelData.location || "Online"; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } }
         }
-        Btn { x: 20; y: 259; height: 24; text: "Edit"; icon: "edit-16"; outlined: true; fontSize: 12; pad: 8; visible: ec.modelData.state === "Draft" || (ec.published && !ec.joinable && /organizer/i.test(ec.modelData.role || "")); onClicked: root.openEvent(ec.modelData) }
-        // Join (64 x 23, brand, the video glyph), Copy event page link and
-        // More (24 x 23).
+        // Not joinable: Edit (64 x 24, outlined), Share (published), ···
+        // (Chat with participants, Chat with event group, Duplicate).
+        Row {
+            visible: !ec.joinable
+            x: 20; y: 259; spacing: 8
+            readonly property bool organizer: ec.modelData.role === "Organizer" || ec.modelData.role === "CoOrganizer"
+            Btn { visible: parent.organizer && ec.modelData.state !== "Canceled"; height: 24; text: "Edit"; icon: "edit-16"; outlined: true; fontSize: 12; pad: 8; onClicked: root.editEvent(ec.modelData) }
+            Btn { visible: parent.organizer && ec.modelData.state === "Published"; width: 24; height: 24; icon: "share-16"; text: ""; outlined: true; pad: 4; Accessible.name: "Share event"; onClicked: shareDialog.openFor(ec.modelData, false) }
+            Btn {
+                id: cardMore
+                visible: parent.organizer
+                width: 24; height: 24; icon: "more-horizontal-20"; text: ""; pad: 2; Accessible.name: "More actions"
+                onClicked: { cardMenu.ev = ec.modelData; cardMenu.parent = cardMore; cardMenu.x = 0; cardMenu.y = cardMore.height + 4; cardMenu.open() }
+            }
+        }
+        // Joinable (5 minutes before the start to the end): Join (64 x 23,
+        // brand, the video glyph), Copy event page link and More (24 x 23).
         Row {
             visible: ec.joinable
             x: 20; y: 261; spacing: 8
             Btn { height: 23; width: 64; primary: true; icon: "video-16"; text: "Join"; fontSize: 12; pad: 8; onClicked: root.joinEvent(ec.modelData.join_url, ec.modelData.title, ec.modelData.start, ec.modelData.end) }
             Btn { height: 23; width: 24; outlined: true; icon: "link-16"; text: ""; pad: 2; onClicked: { backend.copyText(ec.modelData.site_url || ec.modelData.join_url); root.toast({ text: "Copied", intent: "success" }) }
                   Accessible.name: "Copy event page link" }
+            Btn {
+                id: cardJoinMore
+                visible: ec.modelData.role === "Organizer" || ec.modelData.role === "CoOrganizer"
+                width: 24; height: 23; icon: "more-horizontal-20"; text: ""; pad: 2; Accessible.name: "More actions"
+                onClicked: { cardMenu.ev = ec.modelData; cardMenu.parent = cardJoinMore; cardMenu.x = 0; cardMenu.y = cardJoinMore.height + 4; cardMenu.open() }
+            }
         }
         HoverHandler { cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: root.openEvent(ec.modelData) }
@@ -285,6 +496,16 @@ Rectangle {
         return Qt.formatDate(a, full ? "dddd, MMMM d" : "dddd, MMM d") + ", " + theme.time(a) + " - " + theme.time(b)
     }
 
+    // An event card's ··· (Teams: Chat with participants, Chat with event
+    // group, Duplicate).
+    MenuPopup {
+        id: cardMenu
+        property var ev: ({})
+        items: [{ key: "chat", label: "Chat with participants", icon: "chat-20" },
+                { key: "crew", label: "Chat with event group", icon: "people-team-20" },
+                { key: "dup", label: "Duplicate", icon: "copy-20" }]
+        onPicked: i => { const k = items[i].key; if (k === "dup") root.duplicateEvent(ev); else root.openChat(ev, k === "crew") }
+    }
     // ---- header ----
     Rectangle {
         id: header
@@ -322,7 +543,7 @@ Rectangle {
         }
         Row {
             anchors.right: parent.right; anchors.rightMargin: 20; y: 14; spacing: 8
-            Btn { icon: root.pinned ? "pin-off-20" : "pin-20"; text: root.pinned ? "Unpin app" : "Pin app"; onClicked: { root.pinned = !root.pinned; root.pinToggled(root.pinned) } }
+            Btn { visible: !root.pinned; icon: "pin-20"; text: "Pin app"; onClicked: root.setPinned(true) }
             Btn { visible: root.tab === "discover" && root.page === ""; icon: "filter-20"; text: "Filters"; onClicked: root.filtersOpen = !root.filtersOpen }
             Btn { icon: "calendar-add-20"; text: "Create event"; outlined: true; onClicked: root.startCreate() }
         }
@@ -338,21 +559,66 @@ Rectangle {
         boundsBehavior: Flickable.StopAtBounds
         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
         readonly property real inner: width - 32 - 46
+        // Teams' section titles (oneevents_discover_tab_*_section_title_text)
+        // and See more's sections.
+        readonly property bool filtered: root.tab === "discover" && (root.myEvents || root.dateRange !== "")
         readonly property var lists: root.tab === "discover"
-            ? (root.discoverData ? (root.discoverData.filtered !== undefined ? [["Results", root.discoverData.filtered]] : [["Happening now", root.discoverData.now || []], ["Upcoming", root.discoverData.upcoming || []], ["Past", root.discoverData.past || []]]) : [])
-            : (root.manageData ? [["Drafts", root.manageData.drafts], ["Published", root.manageData.published], ["Past", root.manageData.past]] : [])
+            ? (root.discoverData ? (root.discoverData.filtered !== undefined ? [["", root.discoverData.filtered, ""]]
+                : [["Happening now", root.discoverData.now || [], "now"], ["Upcoming events in your org", root.discoverData.upcoming || [], "upcoming"], ["Catch up on past events", root.discoverData.past || [], "past"]]) : [])
+            : (root.manageData ? [["Drafts", root.manageData.drafts, "Draft"], ["Published", root.manageData.published, "Published"], ["Past", root.manageData.past, "Past"]] : [])
         readonly property bool empty: root.tab === "discover"
-            ? lists.every(l => l[1].length === 0)
+            ? !filtered && lists.every(l => l[1].length === 0)
             : !!root.manageData && (root.manageData.drafts.total + root.manageData.published.total + root.manageData.past.total) === 0
         Column {
             id: tabCol
             x: 32; y: root.tab === "discover" ? 168 : 32
             width: tabPage.inner
             spacing: 0
-            // Manage: Connect apps on the right.
+            // Manage: Connect apps on the right (146 x 32, outlined).
             Item {
                 visible: root.tab === "manage"
                 width: parent.width; height: 64
+                Btn { anchors.right: parent.right; y: 0; outlined: true; icon: "plug-connected-20"; text: "Connect apps"; onClicked: connectApps.openNow() }
+            }
+            // Discover's filters as chips (24 tall, #D1D1D1, radius 4, 12/16
+            // #424242, a dismiss) and Clear all (brand).
+            Row {
+                visible: tabPage.filtered
+                height: visible ? 56 : 0; spacing: 8
+                topPadding: 0
+                Repeater {
+                    model: [root.myEvents ? ["mine", "My events", ""] : null, root.dateRange ? ["range", root.rangeText(), "calendar-20"] : null].filter(x => !!x)
+                    Rectangle {
+                        required property var modelData
+                        height: 24; radius: 4; width: chipRow.implicitWidth + 16; color: "transparent"; border.color: theme.stroke; border.width: 1
+                        Row {
+                            id: chipRow; x: 8; anchors.verticalCenter: parent.verticalCenter; spacing: 4
+                            FluentIcon { visible: !!modelData[2]; name: modelData[2] || "calendar-20"; size: 16; color: theme.textStrong; anchors.verticalCenter: parent.verticalCenter }
+                            Text { text: modelData[1]; font.family: theme.font; font.pixelSize: 12; color: theme.textStrong; anchors.verticalCenter: parent.verticalCenter }
+                            FluentIcon { name: "dismiss-12"; size: 12; color: theme.textStrong; anchors.verticalCenter: parent.verticalCenter }
+                        }
+                        TapHandler { onTapped: { if (modelData[0] === "mine") root.myEvents = false; else { root.dateRange = ""; root.customFrom = null; root.customTo = null } root.discoverData = null; root.reload() } }
+                        Accessible.role: Accessible.Button; Accessible.name: "Remove " + modelData[1]
+                    }
+                }
+                Text {
+                    y: 2; text: "Clear all"; font.family: theme.font; font.pixelSize: 14; color: theme.brand
+                    TapHandler { onTapped: root.clearFilters() }
+                    Accessible.role: Accessible.Button; Accessible.name: text
+                }
+            }
+            // No matches.
+            Row {
+                visible: tabPage.filtered && !!root.discoverData && (root.discoverData.filtered || []).length === 0
+                anchors.horizontalCenter: parent.horizontalCenter
+                height: visible ? 60 : 0; spacing: 8
+                FluentIcon { name: "calendar-clock-20"; size: 20; color: theme.text; y: 20 }
+                Text { y: 20; text: "No events match your filters."; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                Text {
+                    y: 20; text: "Clear all filters"; font.family: theme.font; font.pixelSize: 14; color: theme.brandForeground1; font.underline: true
+                    TapHandler { onTapped: root.clearFilters() }
+                    Accessible.role: Accessible.Button; Accessible.name: text
+                }
             }
             Text { visible: !!root.loadError; text: "Couldn't load events. " + root.loadError; font.family: theme.font; font.pixelSize: 14; color: theme.danger; width: parent.width; wrapMode: Text.Wrap }
             // The empty state.
@@ -362,7 +628,7 @@ Rectangle {
                 Item { width: 1; height: root.tab === "discover" ? 24 : 0 }
                 Image { anchors.horizontalCenter: parent.horizontalCenter; width: 128; height: 128; source: root.cdn + "v2/calendar-add-l-standard.svg"; sourceSize: Qt.size(256, 256); asynchronous: true }
                 Item { width: 1; height: 16 }
-                Text { anchors.horizontalCenter: parent.horizontalCenter; text: root.tab === "discover" && (root.myEvents || root.dateRange) ? "No events match your filters." : "No events have been scheduled yet"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold; color: theme.text }
+                Text { anchors.horizontalCenter: parent.horizontalCenter; text: "No events have been scheduled yet"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold; color: theme.text }
                 Item { width: 1; height: 16 }
                 Text { anchors.horizontalCenter: parent.horizontalCenter; width: 450; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
                        text: "Customize everything from registration to how you want attendees to interact. We’ll walk you through each step."
@@ -378,12 +644,28 @@ Rectangle {
                     required property var modelData
                     readonly property var items: Array.isArray(modelData[1]) ? modelData[1] : ((modelData[1] && modelData[1].items) || [])
                     readonly property int total: Array.isArray(modelData[1]) ? items.length : ((modelData[1] && modelData[1].total) || 0)
+                    readonly property bool manage: root.tab === "manage"
+                    // Discover leaves out an empty Happening now.
+                    visible: manage || modelData[2] !== "now" || items.length > 0
                     width: tabCol.width
-                    Item { width: 1; height: 26 }
-                    Text { text: modelData[0] === "Drafts" && total ? "Drafts (" + total + ")" : modelData[0]; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text; height: 32; verticalAlignment: Text.AlignVCenter }
-                    Item { width: 1; height: 16 }
+                    Item { width: 1; height: modelData[0] ? 26 : 0 }
+                    Item {
+                        visible: !!modelData[0]
+                        width: parent.width; height: visible ? 32 : 0
+                        Text { text: manage && total ? modelData[0] + " (" + total + ")" : modelData[0]; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text; height: 32; verticalAlignment: Text.AlignVCenter }
+                        // See more (brand link) on the right.
+                        Text {
+                            visible: !manage || total > 0
+                            anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                            text: "See more"; font.family: theme.font; font.pixelSize: 14; color: theme.brandForeground1
+                            HoverHandler { cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: root.openSeeMore(modelData[2], modelData[0]) }
+                            Accessible.role: Accessible.Link; Accessible.name: "See more " + modelData[0] + " events"
+                        }
+                    }
+                    Item { width: 1; height: modelData[0] ? 16 : 0 }
                     Row {
-                        visible: items.length === 0
+                        visible: manage && items.length === 0
                         spacing: 12; leftPadding: 0; height: 47
                         FluentIcon { name: "calendar-clock-20"; size: 20; color: theme.textSecondary; anchors.verticalCenter: parent.verticalCenter }
                         Text { anchors.verticalCenter: parent.verticalCenter; text: modelData[0] + " events will show up here."; font.family: theme.font; font.pixelSize: 16; color: theme.textSecondary }
@@ -425,7 +707,11 @@ Rectangle {
             Text { x: 17; y: 39; width: parent.width - 34; wrapMode: Text.Wrap; maximumLineCount: 2
                    text: "Discover what's happening in your org and plan your own professional events, all in one place. You can still access your meetings and audio recaps."
                    font.family: theme.font; font.pixelSize: 16; lineHeight: 22; lineHeightMode: Text.FixedHeight; color: theme.text }
-            Btn { x: 17; y: 99; height: 24; fontSize: 12; pad: 8; outlined: true; text: "View meetings"; onClicked: root.viewMeetings() }
+            Row {
+                x: 17; y: 99; spacing: 10
+                Btn { height: 24; fontSize: 12; pad: 8; outlined: true; text: "View meetings"; onClicked: root.viewMeetings() }
+                Btn { height: 24; fontSize: 12; pad: 8; outlined: true; text: "View audio recaps"; onClicked: root.viewAudioRecaps() }
+            }
         }
     }
 
@@ -439,7 +725,12 @@ Rectangle {
         Rectangle { width: 1; height: parent.height; color: theme.divider }
         property bool mine: root.myEvents
         property string range: root.dateRange
-        onVisibleChanged: if (visible) { mine = root.myEvents; range = root.dateRange }
+        property var from: root.customFrom
+        property var to: root.customTo
+        property bool tried: false
+        onVisibleChanged: if (visible) { mine = root.myEvents; range = root.dateRange; from = root.customFrom; to = root.customTo; tried = false }
+        // Custom range needs both dates ("Select a date." under an empty one).
+        readonly property bool rangeOk: range !== "custom" || (!!from && !!to && to >= from)
         Text { x: 25; y: 22; text: "Filters"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
         Btn { x: parent.width - 56; y: 20; icon: "dismiss-20"; text: ""; pad: 6; onClicked: root.filtersOpen = false; Accessible.name: "Close filters" }
         Rectangle { x: 1; y: 72; width: parent.width - 1; height: 1; color: theme.divider }
@@ -451,7 +742,7 @@ Rectangle {
         Grid {
             x: 25; y: 204; columns: 2; columnSpacing: 0; rowSpacing: 0
             Repeater {
-                model: [["today", "Today"], ["thisWeek", "This week"], ["thisMonth", "This month"]]
+                model: [["today", "Today"], ["thisWeek", "This week"], ["thisMonth", "This month"], ["custom", "Custom range"]]
                 Item {
                     required property var modelData
                     width: 141; height: 36
@@ -464,14 +755,66 @@ Rectangle {
                 }
             }
         }
+        // Custom range: From and To (146 x 32 filled date fields, 14 apart,
+        // labels 14/20 at 24 above them).
+        Row {
+            visible: filters.range === "custom"
+            x: 25; y: 280; spacing: 13
+            Repeater {
+                model: [["From", "from"], ["To", "to"]]
+                Column {
+                    required property var modelData
+                    spacing: 8
+                    Text { text: modelData[0]; font.family: theme.font; font.pixelSize: 14; color: theme.text; height: 20 }
+                    DatePickerField {
+                        width: 146; height: 32; format: "MM/dd/yyyy"
+                        date: filters[modelData[1]] || new Date()
+                        placeholder: "mm/dd/yyyy"
+                        empty: !filters[modelData[1]]
+                        filled: true
+                        onPicked: d => filters[modelData[1]] = d
+                    }
+                    Text { visible: filters.tried && !filters[modelData[1]]; text: "Select a date."; font.family: theme.font; font.pixelSize: 12; color: theme.danger }
+                }
+            }
+        }
         Rectangle { x: 1; y: parent.height - 57; width: parent.width - 1; height: 1; color: theme.divider }
         Text {
             x: 17; y: parent.height - 38; text: "Clear all"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.brand
-            TapHandler { onTapped: { filters.mine = false; filters.range = "" } }
+            TapHandler { onTapped: { filters.mine = false; filters.range = ""; filters.from = null; filters.to = null } }
         }
         Btn { x: parent.width - 216; y: parent.height - 44; width: 96; outlined: true; text: "Cancel"; onClicked: root.filtersOpen = false }
         Btn { x: parent.width - 112; y: parent.height - 44; width: 96; primary: true; text: "Apply"
-              onClicked: { root.myEvents = filters.mine; root.dateRange = filters.range; root.filtersOpen = false; root.discoverData = null; root.reload() } }
+              onClicked: {
+                  filters.tried = true
+                  if (!filters.rangeOk) return
+                  root.myEvents = filters.mine; root.dateRange = filters.range
+                  root.customFrom = filters.range === "custom" ? filters.from : null; root.customTo = filters.range === "custom" ? filters.to : null
+                  root.filtersOpen = false; root.discoverData = null; root.reload()
+              } }
+    }
+
+    // ---- See more: a whole section ----
+    // A back arrow and the section's title (20/28 semibold, 157 down in
+    // Teams' 1280 window), "Showing 1 event" (14/20) 46 under it, then the
+    // cards in rows (16 apart); more load as it scrolls (25 a page).
+    Flickable {
+        id: seeMorePage
+        visible: root.page === "seeMore" && !!root.seeMore
+        anchors { top: header.bottom; left: parent.left; right: parent.right; bottom: parent.bottom }
+        contentHeight: seeFlow.y + seeFlow.height + 32
+        clip: true
+        boundsBehavior: Flickable.StopAtBounds
+        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+        onAtYEndChanged: if (atYEnd && visible) root.moreOfSeeMore()
+        Btn { x: 20; y: 32; icon: "arrow-left-20"; text: ""; pad: 6; onClicked: root.openTab(root.tab); Accessible.name: "Go back" }
+        Text { x: 64; y: 34; text: root.seeMore ? root.seeMore.title : ""; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+        Text { x: 20; y: 84; text: root.seeMore && !root.seeMore.loading ? (root.seeMore.total === 1 ? "Showing 1 event" : "Showing " + root.seeMore.total + " events") : ""; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+        Flow {
+            id: seeFlow
+            x: 22; y: 124; width: seeMorePage.width - 44; spacing: 16
+            Repeater { model: root.seeMore ? root.seeMore.items : []; EventCard {} }
+        }
     }
 
     // ---- Create: choose what you're organizing ----
@@ -479,7 +822,7 @@ Rectangle {
         id: createPage
         visible: root.page === "create"
         anchors { top: header.bottom; left: parent.left; right: parent.right; bottom: parent.bottom }
-        contentHeight: createGrid.y + createGrid.height + 32
+        contentHeight: savedCol.y + savedCol.height + 32
         clip: true
         boundsBehavior: Flickable.StopAtBounds
         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
@@ -492,6 +835,62 @@ Rectangle {
             Repeater {
                 model: root.templates
                 TemplateCard { width: (createGrid.width - 40) / 3; height: 292.4; imageHeight: 106.4; onPicked: root.startForm(modelData) }
+            }
+        }
+        // "Your saved templates" (20/28 semibold, 50 under the cards): your
+        // templates' cards (the promo picture 323 x 108, the name 16/22
+        // semibold, the description, Schedule and ···: Edit template,
+        // Delete), or "Save an event as a template and it will show up here."
+        Column {
+            id: savedCol
+            x: 24; y: createGrid.y + createGrid.height + 40; width: createGrid.width
+            spacing: 0
+            Text { text: "Your saved templates"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text; height: 28 }
+            Item { width: 1; height: 28 }
+            Column {
+                visible: !!root.savedTemplates && root.savedTemplates.length === 0
+                width: parent.width; spacing: 16
+                Image { anchors.horizontalCenter: parent.horizontalCenter; width: 128; height: 128; source: root.cdn + "v2/document-add-l-standard.svg"; sourceSize: Qt.size(256, 256); asynchronous: true }
+                Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Save an event as a template and it will show up here."; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+            }
+            Flow {
+                width: parent.width; spacing: 20
+                Repeater {
+                    model: root.savedTemplates || []
+                    Item {
+                        id: tcard
+                        required property var modelData
+                        width: (createGrid.width - 40) / 3; height: 303
+                        FluentSurface { anchors.fill: parent; depth: 2; radius: 24; color: theme.surface }
+                        Rectangle {
+                            x: 12; y: 12; width: parent.width - 24; height: 108; radius: 16; clip: true; color: "#5B5FC7"
+                            Image { anchors.fill: parent; fillMode: Image.PreserveAspectCrop; asynchronous: true
+                                    source: { backend.emoticonsVersion; return tcard.modelData.promo ? backend.cardImage(tcard.modelData.promo) : "" } }
+                        }
+                        Text { x: 20; y: 130; width: parent.width - 40; elide: Text.ElideRight; text: tcard.modelData.name; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
+                        Text { x: 20; y: 158; width: parent.width - 40; wrapMode: Text.Wrap; maximumLineCount: 3; elide: Text.ElideRight; text: tcard.modelData.description || ""; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                        Row {
+                            x: 20; y: 259; spacing: 8
+                            Btn { height: 24; outlined: true; fontSize: 12; pad: 8; icon: "calendar-add-20"; text: "Schedule"; onClicked: root.scheduleFromTemplate(tcard.modelData) }
+                            Btn {
+                                id: tmore; width: 24; height: 24; icon: "more-horizontal-20"; text: ""; pad: 2; Accessible.name: "More actions"
+                                onClicked: { templateMenu.t = tcard.modelData; templateMenu.parent = tmore; templateMenu.x = 0; templateMenu.y = tmore.height + 4; templateMenu.open() }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        MenuPopup {
+            id: templateMenu
+            property var t: ({})
+            items: [{ key: "edit", label: "Edit template", icon: "edit-20" }, { key: "delete", label: "Delete", icon: "delete-20" }]
+            onPicked: i => {
+                if (items[i].key === "edit") root.editTemplate(t)
+                else root.call("deleteTemplate", { id: t.id }, v => {
+                    if (v.error) { root.toast({ text: "Couldn't delete the template. " + v.error, intent: "error" }); return }
+                    root.toast({ text: "Template deleted", intent: "success" }); root.loadTemplates()
+                })
             }
         }
     }
@@ -526,20 +925,103 @@ Rectangle {
         // feature.") and Q&A, then "Manage what attendees see".
         readonly property bool townHall: template.type === "Townhall"
         property string attendeeView: "Off"
+        /// "new", "edit" (Edit details: Save changes), "duplicate" (Save and
+        /// continue makes the copy) or "template" (Edit template).
+        property string mode: "new"
+        /// The event (edit, duplicate) or template (template) behind it.
+        property string sourceId: ""
+        property string sessionId: ""
+        property string promo: ""
+        property string templateName: ""
+        property string templateDescription: ""
+        property bool discoverable: false
+        property string zone: ""
+        property bool zoneOpen: false
+        property var team: []
+        property var presenters: []
+        property var attendees: []
+        property var rooms: []
+        /// All options' changes (meetingOptions names) over the form's.
+        property var optionChanges: ({})
+        /// The event's own meeting options (Edit details), for All options.
+        property var eventOptions: null
+        property var richState: ({})
+        function refreshRich() { richState = JSON.parse(rich.state(description.cursorPosition) || "{}") }
         function reset(t, s, e) {
             const th = t.type === "Townhall"
             template = t; start = s; end = e; access = "Organization"; registration = false; greenRoom = th
             mic = !th; camera = !th; react = true; chat = true; qna = true; capacity = th ? 3000 : 0; large = th; attendeeView = "Off"
             open = [true, false, false, false]; nameField.text = "New event"; description.text = ""; contentY = 0
+            mode = "new"; sourceId = ""; sessionId = ""; promo = ""; discoverable = false; zone = root.localZone; zoneOpen = false
+            team = []; presenters = []; attendees = []; rooms = []; optionChanges = ({}); eventOptions = null
         }
+        // An event's or template's fields into the form (Edit details,
+        // Duplicate, Schedule, Edit template).
+        function fill(d) {
+            const type = d.type === "Townhall" ? root.templates[2] : root.templates[0]
+            const s = d.start ? new Date(d.start) : start, e = d.end ? new Date(d.end) : end
+            reset(type, s, e)
+            nameField.text = d.title || ""
+            if (d.description) rich.importHtml(d.description, theme.brand)
+            access = d.access === "Public" ? "Public" : d.inviteOnly ? "Private" : "Organization"
+            registration = !!d.registration; discoverable = !!d.discoverable; promo = d.promoImage || ""
+            zone = d.timeZone || root.localZone
+            team = d.team || []; presenters = d.presenters || []; attendees = d.attendees || []; rooms = d.rooms || []
+            sessionId = d.sessionId || ""
+            const o = d.meetingOptions
+            eventOptions = o || null
+            if (o) {
+                const r = String(o.attendeeRestrictions || "UnRestricted")
+                mic = r.indexOf("DisableAudio") < 0 && r !== "DisableAv"; camera = r.indexOf("DisableVideo") < 0 && r !== "DisableAv"
+                if (o.allowTeamsMeetingReactions !== undefined) react = !!o.allowTeamsMeetingReactions
+                if (o.allowMeetingChat) chat = o.allowMeetingChat !== "Disabled"
+                if (o.yammerQNAEnabled !== undefined) qna = !!o.yammerQNAEnabled
+                if (o.stagingRoomEnabled !== undefined) greenRoom = !!o.stagingRoomEnabled
+            }
+            if (d.capacity) capacity = d.capacity
+        }
+        readonly property string title: mode === "edit" ? (nameField.text.trim() || "Edit event") : mode === "template" ? "Edit template"
+            : mode === "duplicate" ? (nameField.text.trim() || "New event") : townHall && template.key === "townhall" ? "New town hall" : "New event"
+        // The room search's slot: "yyyy-MM-dd HH:mm:ss" in the zone (Teams
+        // sends the form's times in its Windows zone name).
+        readonly property string windowsZone: {
+            const z = zone || root.localZone
+            const map = { PacificSt: "Pacific Standard Time", MountainSt: "Mountain Standard Time", CentralSt: "Central Standard Time", EasternSt: "Eastern Standard Time", GMTSt: "GMT Standard Time", WEuropeSt: "W. Europe Standard Time", UTC: "UTC" }
+            return map[z] || (z.endsWith("St") ? z.slice(0, -2).replace(/([a-z])([A-Z])/g, "$1 $2") + " Standard Time" : z)
+        }
+        function slot(d) { return Qt.formatDateTime(d, "yyyy-MM-dd HH:mm:ss") }
         function toggle(i) { const o = open.slice(); o[i] = !o[i]; open = o }
         function setTime(d, hm) { const x = new Date(d); x.setHours(hm[0], hm[1], 0, 0); return x }
         function payload() {
-            return { eventType: template.type, title: nameField.text.trim(), description: description.text ? "<p>" + description.text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/\n/g, "<br>") + "</p>" : "",
+            // Teams' editor writes <strong> / <em> / <u>.
+            const html = description.length > 0 ? rich.exportHtml().replace(/<b>/g, "<strong>").replace(/<\/b>/g, "</strong>").replace(/<i>/g, "<em>").replace(/<\/i>/g, "</em>") : ""
+            return { eventType: template.type, title: nameField.text.trim(), description: html,
                      start: start.toISOString(), end: end.toISOString(), access: access, registration: registration, greenRoom: greenRoom,
                      allowMic: mic, allowCamera: camera, reactions: react, chat: chat, qna: qna,
                      capacity: townHall ? capacity : large ? 10000 : capacity, baseExperience: !townHall && large,
-                     largeAudience: townHall && large, attendeeView: attendeeView }
+                     largeAudience: townHall && large, attendeeView: attendeeView,
+                     timeZone: zone, team: team, presenters: presenters, attendees: attendees, rooms: rooms,
+                     meetingOptions: Object.keys(optionChanges).length ? optionChanges : null,
+                     promoImage: promo, sessionId: sessionId, discoverable: discoverable }
+        }
+        // Save changes (Edit details) and Edit template's Save.
+        function saveChanges() {
+            saving = true
+            if (mode === "template") {
+                root.call("updateTemplate", { id: sourceId, name: templateName, templateDescription: templateDescription, event: payload() }, v => {
+                    saving = false
+                    if (v.error) { root.toast({ text: "Couldn't save the template. " + v.error, intent: "error" }); return }
+                    root.toast({ text: "Template saved", intent: "success" }); root.page = "create"; root.loadTemplates()
+                })
+                return
+            }
+            root.call("update", Object.assign({ id: sourceId }, payload()), v => {
+                saving = false
+                if (v.error) { root.toast({ text: "Couldn't save the event. " + v.error, intent: "error" }); return }
+                root.toast({ text: "Event updated", intent: "success" })
+                root.manageData = null
+                root.openEvent(Object.assign({}, root.current || {}, { id: sourceId, title: nameField.text.trim() }))
+            })
         }
         readonly property var times: {
             const out = []
@@ -547,16 +1029,19 @@ Rectangle {
             return out
         }
         function timeLabel(hm) { const d = new Date(2000, 0, 1, hm[0], hm[1]); return theme.time(d) }
-        Btn { x: 24; y: 32; icon: "arrow-left-20"; text: ""; pad: 6; onClicked: root.page = "create"; Accessible.name: "Go back" }
-        Text { x: 64; y: 34; text: form.townHall && form.template.key === "townhall" ? "New town hall" : "New event"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
-        Btn { anchors.right: parent.right; anchors.rightMargin: 22; y: 32; primary: true; icon: "save-20"; text: "Save and continue"; usable: nameField.text.trim().length > 0 && !form.saving; onClicked: saveDialog.open() }
+        Btn { x: 24; y: 32; icon: "arrow-left-20"; text: ""; pad: 6; onClicked: root.page = form.mode === "edit" ? "event" : "create"; Accessible.name: "Go back" }
+        Text { x: 64; y: 34; text: form.title; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+        Btn { anchors.right: parent.right; anchors.rightMargin: 22; y: 32; primary: true; icon: "save-20"
+              text: form.mode === "edit" ? "Save changes" : form.mode === "template" ? "Save" : "Save and continue"
+              usable: nameField.text.trim().length > 0 && !form.saving
+              onClicked: form.mode === "edit" || form.mode === "template" ? form.saveChanges() : saveDialog.open() }
         Column {
             id: formCol
             x: 20; y: 88; width: form.width - 44
             spacing: 16
             // The welcome card.
             Rectangle {
-                visible: root.welcome
+                visible: root.welcome && form.mode === "new"
                 x: 2; width: parent.width; height: 162; radius: 16
                 color: theme.pick("#F5F5F5", "#292929", "#000000"); border.color: theme.divider; border.width: 1
                 Text { x: 25; y: 30; text: "Welcome! Let's walk through creating your first event."; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
@@ -595,6 +1080,8 @@ Rectangle {
                     Row {
                         spacing: 16
                         readonly property real w: (parent.width - 48 - 48) / 4
+                        enabled: form.mode !== "template"
+                        opacity: enabled ? 1 : 0.5
                         Column { spacing: 12
                             Label { text: "Start date" }
                             DatePickerField { width: parent.parent.w; height: 32; format: theme.regional.shortDate; date: form.start; onPicked: d => { const len = form.end - form.start; const s = new Date(d); s.setHours(form.start.getHours(), form.start.getMinutes()); form.start = s; form.end = new Date(s.getTime() + len) } } }
@@ -611,32 +1098,132 @@ Rectangle {
                             Dropdown { width: parent.parent.w; height: 32; label: theme.time(form.end); accessibleName: "End time"
                                        options: form.times.map(t => [t[0] + ":" + t[1], form.timeLabel(t)])
                                        onPicked: c => form.end = form.setTime(form.end, c.split(":").map(Number)) } }
+                        // The time zone toggle (32 x 32, a 20 px globe in brand,
+                        // #F0F0F0 while the Time zone row shows).
+                        Item {
+                            width: 32; height: 64
+                            Rectangle {
+                                y: 32; width: 32; height: 32; radius: 4
+                                color: form.zoneOpen ? theme.pick("#F0F0F0", "#3D3D3D", "#000000") : hovered2.hovered ? theme.hover : "transparent"
+                                FluentIcon { anchors.centerIn: parent; name: "globe-20"; size: 20; color: theme.brand }
+                                ToolTip.visible: hovered2.hovered; ToolTip.text: "Time zone"
+                                HoverHandler { id: hovered2; cursorShape: Qt.PointingHandCursor }
+                                TapHandler { onTapped: form.zoneOpen = !form.zoneOpen }
+                                Accessible.role: Accessible.Button; Accessible.name: "Time zone"
+                            }
+                        }
+                    }
+                    // Time zone (Teams' list of 140, "(UTC-08:00) Pacific Time (US &
+                    // Canada)"), the form's full width.
+                    Column {
+                        visible: form.zoneOpen
+                        width: parent.width; spacing: 8
+                        Item { width: 1; height: 4 }
+                        Label { text: "Time zone" }
+                        Dropdown {
+                            width: parent.width; height: 32; accessibleName: "Time zone"
+                            options: root.zones
+                            label: (root.zones.find(z => z[0] === (form.zone || root.localZone)) || ["", form.zone])[1]
+                            onPicked: k => form.zone = k
+                        }
                     }
                     Item { width: 1; height: 22 }
                     Label { text: "Location" }
                     Item { width: 1; height: 8 }
-                    Rectangle {
-                        width: parent.width; height: 34; radius: 4; color: theme.input; border.color: theme.stroke; border.width: 1
+                    // Location: the Teams Online Meeting chip, the rooms' chips (a
+                    // 20 px initials disc, the name, a dismiss) and Add a room
+                    // (Teams' room search for the event's time); Room options
+                    // beside it once there's a room.
+                    Item {
+                        width: parent.width; height: 34
                         Rectangle {
-                            x: 13; anchors.verticalCenter: parent.verticalCenter; height: 20; radius: 10; width: chipRow.implicitWidth + 12
-                            color: theme.brandTint
-                            Row { id: chipRow; x: 2; anchors.verticalCenter: parent.verticalCenter; spacing: 8
-                                Rectangle { width: 20; height: 20; radius: 10; color: theme.brandFill
-                                    FluentIcon { anchors.centerIn: parent; name: "video-16"; size: 12; color: theme.textOnBrand } }
-                                Text { anchors.verticalCenter: parent.verticalCenter; text: "Teams Online Meeting"; font.family: theme.font; font.pixelSize: 14; color: theme.brandForeground1 } }
+                            id: locBox
+                            width: parent.width - (form.rooms.length ? 149 : 0); height: 34; radius: 4; color: theme.input; border.color: theme.stroke; border.width: 1
+                            Row {
+                                id: locRow
+                                x: 13; anchors.verticalCenter: parent.verticalCenter; spacing: 4
+                                Rectangle {
+                                    height: 20; radius: 10; width: chipRow.implicitWidth + 12
+                                    color: theme.brandTint
+                                    Row { id: chipRow; x: 2; anchors.verticalCenter: parent.verticalCenter; spacing: 8
+                                        Rectangle { width: 20; height: 20; radius: 10; color: theme.brandFill
+                                            FluentIcon { anchors.centerIn: parent; name: "video-16"; size: 12; color: theme.textOnBrand } }
+                                        Text { anchors.verticalCenter: parent.verticalCenter; text: "Teams Online Meeting"; font.family: theme.font; font.pixelSize: 14; color: theme.brandForeground1 } }
+                                }
+                                Repeater {
+                                    model: form.rooms
+                                    Rectangle {
+                                        id: roomChip
+                                        required property var modelData
+                                        required property int index
+                                        height: 20; radius: 10; width: rcRow.implicitWidth + 10; color: theme.pick("#F5F5F5", "#292929", "#000000")
+                                        Row { id: rcRow; x: 2; anchors.verticalCenter: parent.verticalCenter; spacing: 6
+                                            Avatar { size: 16; name: roomChip.modelData.name; photoId: ""; anchors.verticalCenter: parent.verticalCenter }
+                                            Text { anchors.verticalCenter: parent.verticalCenter; text: roomChip.modelData.name; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                                            FluentIcon { name: "dismiss-12"; size: 12; color: theme.textStrong; anchors.verticalCenter: parent.verticalCenter
+                                                TapHandler { onTapped: { const a = form.rooms.slice(); a.splice(roomChip.index, 1); form.rooms = a } }
+                                                Accessible.role: Accessible.Button; Accessible.name: "Remove " + roomChip.modelData.name } }
+                                    }
+                                }
+                            }
+                            EventPeoplePicker {
+                                id: roomPicker
+                                kind: "rooms"; chips: false; filled: false; bare: true
+                                x: locRow.x + locRow.width + 4; width: locBox.width - x - 4; height: 30
+                                anchors.verticalCenter: parent.verticalCenter
+                                placeholder: "Add a room"
+                                picked: form.rooms
+                                start: form.slot(form.start); end: form.slot(form.end); zone: form.windowsZone
+                                onChanged: list => form.rooms = list
+                            }
+                        }
+                        Btn {
+                            visible: form.rooms.length > 0
+                            anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                            icon: "door-20"; text: "Room options"; onClicked: roomOptions.open()
                         }
                     }
                     Item { width: 1; height: 18 }
                     Label { text: "Description" }
                     Item { width: 1; height: 12 }
+                    // The description editor (Teams' Formatting toolbar: Bold, Italic,
+                    // Underline | Text highlight color, Font color, Font size, Clear
+                    // all formatting | Decrease indent, Increase indent, Bulleted
+                    // list, Numbered list | Insert link; 32 px buttons).
                     Rectangle {
                         width: parent.width; height: 137; radius: 6; color: theme.input; border.color: theme.divider; border.width: 1
-                        TextEdit {
-                            id: description
-                            x: 13; y: 13; width: parent.width - 26; height: parent.height - 26
-                            wrapMode: TextEdit.Wrap; font.family: theme.font; font.pixelSize: 14; color: theme.text; selectByMouse: true; clip: true
-                            Text { visible: !description.text && !description.activeFocus; text: "Add a description to share with attendees"; font: description.font; color: theme.textSecondary }
-                            Accessible.name: "Description"
+                        FormatBar {
+                            id: descBar
+                            x: -6; y: -9; width: parent.width + 6; tierWidth: 640
+                            discard: false
+                            custom: [[{ k: "bold", icon: "fmt-bold", label: "Bold", on: !!form.richState.bold }, { k: "italic", icon: "fmt-italic", label: "Italic", on: !!form.richState.italic },
+                                      { k: "underline", icon: "fmt-underline", label: "Underline", on: !!form.richState.underline }],
+                                     [{ k: "highlight", icon: "fmt-highlight", label: "Text highlight color", popup: true }, { k: "color", icon: "fmt-font-color", label: "Font color", popup: true },
+                                      { k: "size", icon: "fmt-font-size", label: "Font size", popup: true }, { k: "clear", icon: "fmt-clear-format", label: "Clear all formatting" }],
+                                     [{ k: "outdent", icon: "fmt-outdent", label: "Decrease indent" }, { k: "indent", icon: "fmt-indent", label: "Increase indent" },
+                                      { k: "ul", icon: "fmt-bullets", label: "Bulleted list", on: form.richState.list === "ul" }, { k: "ol", icon: "fmt-numbers", label: "Numbered list", on: form.richState.list === "ol" }],
+                                     [{ k: "link", icon: "fmt-link", label: "Insert link", popup: true }]]
+                            st: form.richState
+                            selectedText: description.selectedText
+                            onCommand: (op, arg) => { rich.apply(description.selectionStart, description.selectionEnd, op, arg || ""); description.forceActiveFocus(); form.refreshRich() }
+                            Accessible.name: "Formatting"
+                        }
+                        Flickable {
+                            x: 13; y: 40; width: parent.width - 26; height: parent.height - 46
+                            contentHeight: description.contentHeight; clip: true
+                            boundsBehavior: Flickable.StopAtBounds
+                            TextEdit {
+                                id: description
+                                width: parent.width
+                                textFormat: TextEdit.RichText
+                                wrapMode: TextEdit.Wrap; font.family: theme.font; font.pixelSize: 14; color: theme.text; selectByMouse: true
+                                selectionColor: theme.selectionFill; selectedTextColor: theme.text
+                                onCursorPositionChanged: form.refreshRich()
+                                RichText { id: rich }
+                                Text { visible: description.length === 0 && !description.activeFocus; text: "Add a description to share with attendees"; font: description.font; color: theme.textSecondary }
+                                Accessible.role: Accessible.EditableText
+                                Accessible.name: "Description"
+                            }
                         }
                     }
                 }
@@ -661,6 +1248,24 @@ Rectangle {
                             Avatar { size: 28; name: backend.userName; photoId: backend.userMri }
                             Text { anchors.verticalCenter: parent.verticalCenter; text: backend.userName; font.family: theme.font; font.pixelSize: 14; color: theme.textStrong } }
                     }
+                    Item { width: 1; height: 16 }
+                    Label { text: "Co-organizers" }
+                    Item { width: 1; height: 10 }
+                    EventPeoplePicker {
+                        id: teamPicker
+                        width: parent.width; kind: "team"; placeholder: "Add people to help organize the event"
+                        picked: form.team; onChanged: list => form.team = list
+                    }
+                    Text { text: "They'll receive invites when you save the event."; font.family: theme.font; font.pixelSize: 12; color: theme.text; height: 18; verticalAlignment: Text.AlignBottom }
+                    Item { width: 1; height: 16 }
+                    Label { text: "Presenters" }
+                    Item { width: 1; height: 10 }
+                    EventPeoplePicker {
+                        id: presenterPicker
+                        width: parent.width; kind: "presenters"; placeholder: "Add people to speak at the event"
+                        picked: form.presenters; onChanged: list => form.presenters = list
+                    }
+                    Text { text: "They'll receive invites when you save the event."; font.family: theme.font; font.pixelSize: 12; color: theme.text; height: 18; verticalAlignment: Text.AlignBottom }
                     Item { width: 1; height: 16 }
                 }
             }
@@ -695,6 +1300,22 @@ Rectangle {
                             }
                         }
                     }
+                    Item { width: 1; height: 24 }
+                    // Invite people to attend (Optional): people and groups who get
+                    // the invitation when the event is published.
+                    Label { text: "Invite people to attend (Optional)" }
+                    Item { width: 1; height: 16 }
+                    EventPeoplePicker {
+                        id: attendeePicker
+                        width: parent.width; kind: "attendees"
+                        placeholder: form.access === "Private" ? "Add people and groups who can attend" : "Add people and groups who will receive email invites"
+                        picked: form.attendees; onChanged: list => form.attendees = list
+                    }
+                    Text {
+                        height: 18; verticalAlignment: Text.AlignBottom; textFormat: Text.StyledText
+                        text: "They'll be invited when the event is published. Customize your invite preferences in the <b>People &amp; emails</b> tab."
+                        font.family: theme.font; font.pixelSize: 12; color: theme.text
+                    }
                     Item { width: 1; height: 28 }
                     Item {
                         width: parent.width; height: 40
@@ -713,6 +1334,18 @@ Rectangle {
                 Column {
                     width: parent.width
                     Item { width: 1; height: 16 }
+                    // The stage preview on the right, beside the participation
+                    // tiles (what attendees' meeting window will look like).
+                    Item {
+                        width: parent.width; height: 0; z: 1
+                        EventStagePreview {
+                            id: stagePreview
+                            visible: form.visible && form.open[3] && parent.width > 1000
+                            x: parent.width - width; y: 104
+                            mic: form.mic; camera: form.camera; react: form.react; chat: form.chat; qna: form.qna
+                            broadcast: form.townHall && form.large
+                        }
+                    }
                     Label { text: "Set your max event capacity" }
                     Text { y: 4; text: "We'll use this info to suggest the best settings for your audience"; font.family: theme.font; font.pixelSize: 12; color: theme.textStrong; height: 18 }
                     Item { width: 1; height: 12 }
@@ -787,6 +1420,21 @@ Rectangle {
                         Text { y: 28; width: 334; wrapMode: Text.Wrap; text: "Check audio, video, and screen setup before event starts."; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
                         SettingsParts.Toggle { x: 352; y: 8; stateLabel: false; on: form.greenRoom; accessibleName: "Enable green room"; onToggled: v => form.greenRoom = v }
                     }
+                    // Room under the preview, then All options (the event's
+                    // meeting options dialog) and Manage apps (the event meeting's
+                    // apps; "Available after you save." until it exists).
+                    Item { width: 1; height: Math.max(16, 520 - 330 - (form.townHall ? 96 : 0)) }
+                    Row {
+                        spacing: 12
+                        Btn { outlined: true; text: "All options"; onClicked: root.openAllOptions() }
+                        Btn {
+                            outlined: true; text: "Manage apps"
+                            usable: form.mode === "edit" && !!(root.current && root.current.thread_id)
+                            ToolTip.visible: !usable && maHover.hovered; ToolTip.text: "Available after you save."
+                            HoverHandler { id: maHover }
+                            onClicked: root.openMeetingDetails(root.current.thread_id, root.current.title)
+                        }
+                    }
                     Item { width: 1; height: 16 }
                 }
             }
@@ -830,6 +1478,30 @@ Rectangle {
             Item { width: 1; height: 8 }
             Text { text: "Attendees can't view the event until after you publish it."; font.family: theme.font; font.pixelSize: 14; color: theme.text; height: 20 }
             Item { width: 1; height: 15 }
+            // "Invites will be sent to": Organizers n (Can view and edit) and
+            // Presenters n (Can view), 268 x 111 #FAFAFA radius 8 cards, 15
+            // apart, their 24 px avatars (measured 2026-11-18).
+            Column {
+                visible: form.team.length + form.presenters.length > 0
+                spacing: 10; height: visible ? implicitHeight + 15 : 0
+                Text { text: "Invites will be sent to"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text; height: 22 }
+                Row {
+                    spacing: 15
+                    Repeater {
+                        model: [["Organizers", form.team, "Can view and edit", "edit-16"], ["Presenters", form.presenters, "Can view", "eye-16"]].filter(m => m[1].length > 0)
+                        Rectangle {
+                            required property var modelData
+                            width: 268; height: 111; radius: 8; color: theme.pick("#FAFAFA", "#1F1F1F", "#000000")
+                            Text { x: 12; y: 12; text: modelData[0] + " " + modelData[1].length; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                            Row { x: 12; y: 40; spacing: 4
+                                FluentIcon { name: modelData[3]; size: 14; color: theme.text; anchors.verticalCenter: parent.verticalCenter }
+                                Text { text: modelData[2]; font.family: theme.font; font.pixelSize: 14; color: theme.text } }
+                            Row { x: 12; y: 75; spacing: 4
+                                Repeater { model: modelData[1].slice(0, 9); Avatar { required property var modelData; size: 24; name: modelData.name; photoId: modelData.mri || "" } } }
+                        }
+                    }
+                }
+            }
             Text { text: "These settings will be locked after saving"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text; height: 22 }
             Item { width: 1; height: 8 }
             Row {
@@ -870,11 +1542,12 @@ Rectangle {
                       onClicked: {
                           form.saving = true
                           const pinIt = !root.pinned && saveDialog.pin
-                          root.call("create", form.payload(), v => {
+                          const dup = form.mode === "duplicate"
+                          root.call(dup ? "duplicate" : "create", Object.assign({ sourceId: form.sourceId }, form.payload()), v => {
                               form.saving = false
                               saveDialog.close()
                               if (v.error) { root.toast({ text: "Couldn't save the event. " + v.error, intent: "error" }); return }
-                              if (pinIt) { root.pinned = true; root.pinToggled(true) }
+                              if (pinIt) root.setPinned(true)
                               root.toast({ text: "Draft event created", intent: "success" })
                               root.manageData = null
                               if (v.card) root.openEvent(v.card); else root.openTab("manage")
@@ -884,100 +1557,615 @@ Rectangle {
         }
     }
 
-    // ---- An event's page (overview) ----
+    // ---- An event's page ----
+    // Measured in Teams desktop 26304 (winpc, 2026-11-18, 1280 x 680): the
+    // draft card (#F5F5F5, radius 16, 1025 wide at 155) with Publish event;
+    // the title row 279 down: Go back, the title 20/28 semibold, then Edit
+    // details (outlined, 121 x 31), Share (32 x 31; disabled while a draft:
+    // "Event sharing is available after publishing."), More options (···:
+    // Duplicate, Save as template, Cancel), a divider and Preview (a
+    // switch); the tabs ("Event navigation tabs", 40 tall, 15 in): Overview,
+    // People & emails, Insights, Highlights; Preview on replaces the tabs by
+    // "This is a preview of what attendees will see." and shows the page as
+    // attendees do (Add to calendar, no Manage apps).
+    // Overview: the promo picture (646 x 215, radius 16, Edit event banner),
+    // the title card (24/32 semibold, the description), Presenter cards;
+    // on the right the date / location / access card with Join (split:
+    // Copy join link, Copy join details; "Event isn't published yet." while
+    // a draft) and the chat button (split for a webinar: Chat with
+    // participants, Chat with event group), then Manage apps ("Manage or add
+    // apps for your session here.").
     Flickable {
         id: eventPage
         visible: root.page === "event" && !!root.current
         anchors { top: header.bottom; left: parent.left; right: parent.right; bottom: parent.bottom }
-        contentHeight: 600
+        contentHeight: pageCol.y + pageCol.height + 40
         clip: true
+        boundsBehavior: Flickable.StopAtBounds
+        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
         readonly property var ev: root.current || ({})
         readonly property bool draft: ev.state === "Draft"
-        readonly property real w: Math.min(966, width - 64)
+        readonly property bool canceled: ev.state === "Canceled"
+        readonly property bool organizer: !ev.role || ev.role === "Organizer" || ev.role === "CoOrganizer"
+        readonly property real w: Math.min(1025, width - 64)
         readonly property real x0: (width - w) / 2
+        readonly property var pd: root.peopleData || ({})
+        readonly property var speakers: pd.presenterList || []
         Rectangle {
+            id: draftCard
             visible: eventPage.draft
-            x: eventPage.x0; y: 16; width: eventPage.w; height: 119; radius: 16
+            x: eventPage.x0; y: 16; width: eventPage.w; height: visible ? 119 : 0; radius: 16
             color: theme.pick("#F5F5F5", "#292929", "#000000"); border.color: theme.divider; border.width: 1
-            Image { x: 28; anchors.verticalCenter: parent.verticalCenter; width: 48; height: 48; source: root.cdn + "webp/128/editor-l-standard-128x128.webp"; sourceSize: Qt.size(96, 96) }
+            Image { x: 28; anchors.verticalCenter: parent.verticalCenter; width: 52; height: 52; source: root.cdn + "webp/128/editor-l-standard-128x128.webp"; sourceSize: Qt.size(104, 104) }
             Text { x: 85; y: 24; width: parent.width - 120; text: "This event is a draft. Publish when you’re ready to share with attendees."; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text; elide: Text.ElideRight }
-            Text { x: 85; y: 50; width: parent.width - 360; wrapMode: Text.Wrap; text: "Only organizers and presenters you’ve invited can view this event. Organizers have permission to make edits."; font.family: theme.font; font.pixelSize: 16; lineHeight: 22; lineHeightMode: Text.FixedHeight; color: theme.text }
-            // Publish event (172 x 40, 24 from the card's right).
+            Text { x: 85; y: 50; width: parent.width - 300; wrapMode: Text.Wrap; text: "Only organizers and presenters you’ve invited can view this event. Organizers have permission to make edits."; font.family: theme.font; font.pixelSize: 16; lineHeight: 22; lineHeightMode: Text.FixedHeight; color: theme.text }
             Btn { anchors.right: parent.right; anchors.rightMargin: 24; anchors.verticalCenter: parent.verticalCenter; height: 40; fontSize: 16
                   primary: true; icon: "rocket-20"; text: "Publish event"; onClicked: publishDialog.openFor(root.current) }
         }
         Item {
             id: evHead
-            x: eventPage.x0; y: eventPage.draft ? 167 : 32; width: eventPage.w; height: 32
+            x: eventPage.x0; y: eventPage.draft ? 162 : 32; width: eventPage.w; height: 32
             Btn { icon: "arrow-left-20"; text: ""; pad: 6; onClicked: root.openTab(root.tab); Accessible.name: "Go back" }
-            Text { x: 39; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 120; elide: Text.ElideRight; text: eventPage.ev.title || ""; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
-            Btn {
-                id: evMore; anchors.right: parent.right; icon: "more-horizontal-20"; text: ""; pad: 6
-                Accessible.name: "More options"
-                onClicked: { evMenu.parent = evMore; evMenu.x = evMore.width - evMenu.implicitWidth; evMenu.y = evMore.height + 4; evMenu.open() }
+            Text { x: 42; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 420; elide: Text.ElideRight; text: eventPage.ev.title || ""; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+            Row {
+                anchors.right: parent.right; spacing: 8
+                Btn { visible: eventPage.organizer && !eventPage.canceled; outlined: true; icon: "edit-20"; text: "Edit details"; onClicked: root.editEvent(eventPage.ev) }
+                Btn {
+                    visible: eventPage.organizer && !eventPage.canceled
+                    width: 32; outlined: true; icon: "share-20"; text: ""; pad: 6; usable: !eventPage.draft
+                    Accessible.name: "Share"
+                    ToolTip.visible: shareHover.hovered && eventPage.draft; ToolTip.text: "Event sharing is available after publishing."
+                    HoverHandler { id: shareHover }
+                    onClicked: shareDialog.openFor(eventPage.ev, false)
+                }
+                Btn {
+                    id: evMore; visible: eventPage.organizer && !eventPage.canceled
+                    icon: "more-horizontal-20"; text: ""; pad: 6; Accessible.name: "More options"
+                    onClicked: { evMenu.parent = evMore; evMenu.x = 0; evMenu.y = evMore.height + 4; evMenu.open() }
+                }
+                Rectangle { visible: root.eventTab === "overview" || root.eventTab === "highlights"; width: 1; height: 24; anchors.verticalCenter: parent.verticalCenter; color: theme.divider }
+                Row {
+                    visible: root.eventTab === "overview" || root.eventTab === "highlights"
+                    spacing: 8; anchors.verticalCenter: parent.verticalCenter
+                    Text { anchors.verticalCenter: parent.verticalCenter; text: root.eventTab === "highlights" ? "Preview as published" : "Preview"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    SettingsParts.Toggle { stateLabel: false; on: root.previewOn; accessibleName: "Preview"; onToggled: v => root.previewOn = v }
+                }
             }
         }
-        Rectangle {
-            x: eventPage.x0; y: evHead.y + 90; width: eventPage.w * 0.6; height: 197; radius: 16; clip: true
-            color: eventPage.ev.primary_color || "#5B5FC7"
-            Image { anchors.fill: parent; fillMode: Image.PreserveAspectCrop; asynchronous: true
-                    source: { backend.emoticonsVersion; return eventPage.ev.promo_image ? backend.cardImage(eventPage.ev.promo_image) : "" } }
-        }
-        Item {
-            x: eventPage.x0; y: evHead.y + 303; width: eventPage.w * 0.6; height: 72
-            FluentSurface { anchors.fill: parent; depth: 2; radius: 16; color: theme.surface }
-            Text { x: 21; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 42; elide: Text.ElideRight; text: eventPage.ev.title || ""; font.family: theme.font; font.pixelSize: 24; font.weight: Font.DemiBold; color: theme.text }
-        }
-        Item {
-            x: eventPage.x0 + eventPage.w * 0.6 + 24; y: evHead.y + 90; width: eventPage.w * 0.4 - 24; height: 250
-            FluentSurface { anchors.fill: parent; depth: 2; radius: 16; color: theme.surface }
-            Column {
-                x: 21; y: 21; width: parent.width - 42; spacing: 18
-                // A published event that hasn't started: "Upcoming" (brand on
-                // #E8EBFA, 22 tall, pill).
-                Rectangle { visible: eventPage.ev.state === "Published" && new Date(eventPage.ev.start) > new Date(); height: 22; radius: 11; width: upc.implicitWidth + 16
-                    color: theme.pick("#E8EBFA", "#2F2F4A", "#000000"); border.color: theme.pick("#C5CBFA", "#444791", "#FFFFFF"); border.width: 1
-                    Text { id: upc; anchors.centerIn: parent; text: "Upcoming"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.brand } }
-                Rectangle { visible: eventPage.ev.state === "Canceled"; height: 24; radius: 12; width: cxl.implicitWidth + 20; color: "transparent"; border.color: theme.danger
-                    Text { id: cxl; anchors.centerIn: parent; text: "Canceled"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.danger } }
-                Row { spacing: 8; FluentIcon { name: "calendar-clock-20"; size: 20; color: theme.brand }
-                      Text { text: root.whenText(eventPage.ev.start, eventPage.ev.end, true); font.family: theme.font; font.pixelSize: 14; color: theme.text } }
-                Row { spacing: 8; FluentIcon { name: "location-20"; size: 20; color: theme.brand }
-                      Text { text: eventPage.ev.location || "Online"; font.family: theme.font; font.pixelSize: 14; color: theme.text } }
-                Row { spacing: 8; FluentIcon { name: "people-20"; size: 20; color: theme.brand }
-                      Text { text: eventPage.ev.access === "Public" ? "Anyone can view and join." : eventPage.ev.inviteOnly ? "Only people and groups you choose can view and join." : "Anyone in your org can view and join."; font.family: theme.font; font.pixelSize: 14; color: theme.text } }
-                // Join (the meeting's pre-join; disabled while a draft) with its
-                // menu (Copy join link, Copy join details), then the event chat.
-                Row {
-                    width: parent.width; height: 32; spacing: 8
-                    readonly property bool can: eventPage.ev.state !== "Canceled" && !eventPage.draft && !!eventPage.ev.join_url
-                    Rectangle {
-                        width: parent.width - 40; height: 32; radius: 4; color: parent.can ? (joinHover.hovered ? theme.brandHover : theme.brandFill) : theme.pick("#F0F0F0", "#333333", "#000000")
-                        Row { anchors.centerIn: parent; anchors.horizontalCenterOffset: -12; spacing: 6
-                            FluentIcon { name: "video-20"; size: 20; color: parent.parent.parent.can ? theme.textOnBrand : theme.disabled }
-                            Text { anchors.verticalCenter: parent.verticalCenter; text: "Join"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: parent.parent.parent.can ? theme.textOnBrand : theme.disabled } }
-                        Rectangle { x: parent.width - 25; y: 0; width: 1; height: 32; color: theme.pick("#FFFFFF", "#141414", "#000000"); opacity: 0.5 }
-                        FluentIcon { x: parent.width - 20; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-16"; size: 16; color: parent.parent.can ? theme.textOnBrand : theme.disabled }
-                        HoverHandler { id: joinHover; cursorShape: Qt.PointingHandCursor }
-                        TapHandler { enabled: parent.parent.can; onTapped: (ev) => {
-                            if (ev.position.x > parent.width - 25) { joinMenu.parent = parent; joinMenu.x = parent.width - joinMenu.implicitWidth; joinMenu.y = 36; joinMenu.open() }
-                            else root.joinEvent(eventPage.ev.join_url, eventPage.ev.title, eventPage.ev.start, eventPage.ev.end) } }
-                        Accessible.role: Accessible.Button; Accessible.name: "Join"
-                    }
-                    Btn { width: 32; outlined: true; icon: "chat-20"; text: ""; pad: 6; usable: parent.can; Accessible.name: "Chat with participants"
-                          onClicked: { const m = decodeURIComponent(eventPage.ev.join_url).match(/19:meeting_[^/]+@thread\.v2/); if (m) root.openEventChat(m[0], eventPage.ev.title) } }
+        // The tabs, or Preview's note.
+        Row {
+            id: evTabs
+            visible: !root.previewOn
+            x: eventPage.x0; y: evHead.y + 55; height: 40
+            Repeater {
+                model: [["overview", "Overview"], ["people", "People & emails"], ["insights", "Insights"], ["highlights", "Highlights"]]
+                Item {
+                    required property var modelData
+                    readonly property bool chosen: root.eventTab === modelData[0]
+                    width: tabLabel.implicitWidth + 30; height: 40
+                    Text { id: tabLabel; x: 15; anchors.verticalCenter: parent.verticalCenter; text: parent.modelData[1]; font.family: theme.font; font.pixelSize: 14; font.weight: parent.chosen ? Font.DemiBold : Font.Normal; color: parent.chosen ? theme.text : theme.textStrong }
+                    Rectangle { visible: parent.chosen; x: 12; width: tabLabel.implicitWidth + 6; height: 3; radius: 2; anchors.bottom: parent.bottom; color: theme.brand }
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: { root.eventTab = parent.modelData[0]; if (parent.modelData[0] === "people") root.loadPeopleTab() } }
+                    Accessible.role: Accessible.PageTab; Accessible.name: modelData[1]; Accessible.selected: chosen
                 }
+            }
+        }
+        Text { visible: root.previewOn; x: eventPage.x0; y: evHead.y + 62; width: eventPage.w; horizontalAlignment: Text.AlignHCenter
+               text: "This is a preview of what attendees will see."; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+        Column {
+            id: pageCol
+            x: eventPage.x0; y: evHead.y + 105; width: eventPage.w
+            spacing: 16
+            // Overview (and Preview).
+            Item {
+                visible: root.eventTab === "overview" || root.previewOn
+                width: parent.width; height: visible ? Math.max(leftCol.height, rightCol.height) : 0
+                readonly property real leftW: Math.round(parent.width * 0.64)
+                Column {
+                    id: leftCol
+                    width: parent.leftW; spacing: 16
+                    Rectangle {
+                        width: parent.width; height: 215; radius: 16; clip: true
+                        color: eventPage.ev.primary_color || "#5B5FC7"
+                        Image { anchors.fill: parent; fillMode: Image.PreserveAspectCrop; asynchronous: true
+                                source: { backend.emoticonsVersion; return eventPage.ev.promo_image ? backend.cardImage(eventPage.ev.promo_image) : "" } }
+                    }
+                    Item {
+                        width: parent.width; height: titleCol.height + 40
+                        FluentSurface { anchors.fill: parent; depth: 2; radius: 16; color: theme.surface }
+                        Column {
+                            id: titleCol
+                            x: 20; y: 20; width: parent.width - 40; spacing: 24
+                            Text { width: parent.width; wrapMode: Text.Wrap; text: eventPage.ev.title || ""; font.family: theme.font; font.pixelSize: 24; font.weight: Font.DemiBold; color: theme.text }
+                            Text { visible: !!eventPage.ev.description; width: parent.width; wrapMode: Text.Wrap; textFormat: Text.RichText; text: eventPage.ev.description || ""; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                        }
+                    }
+                    // Presenter cards (48 px avatar, the name 14/20 semibold).
+                    Item {
+                        visible: eventPage.speakers.length > 0
+                        width: parent.width; height: visible ? presCol.height + 40 : 0
+                        FluentSurface { anchors.fill: parent; depth: 2; radius: 16; color: theme.surface }
+                        Column {
+                            id: presCol
+                            x: 20; y: 20; width: parent.width - 40; spacing: 20
+                            Text { text: eventPage.speakers.length === 1 ? "Presenter" : "Presenters"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+                            Flow {
+                                width: parent.width; spacing: 12
+                                Repeater {
+                                    model: eventPage.speakers
+                                    Rectangle {
+                                        required property var modelData
+                                        width: 295; height: 72; radius: 8; color: theme.surface; border.color: theme.divider; border.width: 1
+                                        Avatar { x: 12; anchors.verticalCenter: parent.verticalCenter; size: 48; name: parent.modelData.name; photoId: parent.modelData.mri || "" }
+                                        Text { x: 72; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 84; elide: Text.ElideRight; text: parent.modelData.name; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Column {
+                    id: rightCol
+                    x: parent.leftW + 24; width: parent.width - parent.leftW - 24; spacing: 16
+                    Item {
+                        width: parent.width; height: infoCol.height + 42
+                        FluentSurface { anchors.fill: parent; depth: 2; radius: 16; color: theme.surface }
+                        Column {
+                            id: infoCol
+                            x: 21; y: 21; width: parent.width - 42; spacing: 18
+                            Rectangle { visible: eventPage.ev.state === "Published" && new Date(eventPage.ev.start) > new Date(); height: 22; radius: 11; width: upc.implicitWidth + 16
+                                color: theme.pick("#E8EBFA", "#2F2F4A", "#000000"); border.color: theme.pick("#C5CBFA", "#444791", "#FFFFFF"); border.width: 1
+                                Text { id: upc; anchors.centerIn: parent; text: "Upcoming"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.brand } }
+                            Rectangle { visible: eventPage.canceled; height: 24; radius: 12; width: cxl.implicitWidth + 20; color: "transparent"; border.color: theme.danger
+                                Text { id: cxl; anchors.centerIn: parent; text: "Canceled"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.danger } }
+                            Row { spacing: 8; width: parent.width
+                                FluentIcon { name: "clock-20"; size: 20; color: theme.brand }
+                                Text { width: parent.width - 28; wrapMode: Text.Wrap; text: root.whenText(eventPage.ev.start, eventPage.ev.end, true); font.family: theme.font; font.pixelSize: 14; color: theme.text } }
+                            Row { spacing: 8
+                                FluentIcon { name: "location-20"; size: 20; color: theme.brand }
+                                Text { text: (eventPage.ev.rooms || []).length ? eventPage.ev.rooms.join(", ") + " • Online" : "Online"; font.family: theme.font; font.pixelSize: 14; color: theme.text } }
+                            Row { spacing: 8
+                                FluentIcon { name: "people-20"; size: 20; color: theme.brand }
+                                Text { text: eventPage.ev.access === "Public" ? "Anyone can view and join." : eventPage.ev.inviteOnly ? "Only invited attendees can view and join." : "Anyone in your org can view and join."; font.family: theme.font; font.pixelSize: 14; color: theme.text } }
+                            // Preview: attendees' Add to calendar.
+                            Btn { visible: root.previewOn; width: parent.width; icon: "calendar-add-20"; text: "Add to calendar"; usable: false }
+                            // Join (split) and the chat button.
+                            Row {
+                                visible: !root.previewOn
+                                width: parent.width; height: 32; spacing: 8
+                                readonly property bool can: !eventPage.canceled && !eventPage.draft && !!eventPage.ev.join_url
+                                readonly property bool webinar: eventPage.ev.event_type === "Webinar"
+                                Rectangle {
+                                    width: parent.width - (parent.webinar ? 64 : 40); height: 32; radius: 4; color: parent.can ? (joinHover.hovered ? theme.brandHover : theme.brandFill) : theme.pick("#F0F0F0", "#333333", "#000000")
+                                    Row { anchors.centerIn: parent; anchors.horizontalCenterOffset: -12; spacing: 6
+                                        FluentIcon { name: "video-20"; size: 20; color: parent.parent.parent.can ? theme.textOnBrand : theme.disabled }
+                                        Text { anchors.verticalCenter: parent.verticalCenter; text: "Join"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: parent.parent.parent.can ? theme.textOnBrand : theme.disabled } }
+                                    Rectangle { x: parent.width - 25; y: 0; width: 1; height: 32; color: theme.pick("#FFFFFF", "#141414", "#000000"); opacity: 0.5 }
+                                    FluentIcon { x: parent.width - 20; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-16"; size: 16; color: parent.parent.can ? theme.textOnBrand : theme.disabled }
+                                    HoverHandler { id: joinHover; cursorShape: Qt.PointingHandCursor }
+                                    ToolTip.visible: joinHover.hovered && eventPage.draft; ToolTip.text: "Event isn't published yet."
+                                    TapHandler { enabled: parent.parent.can; onTapped: (e) => {
+                                        if (e.position.x > parent.width - 25) { joinMenu.parent = parent; joinMenu.x = parent.width - joinMenu.implicitWidth; joinMenu.y = 36; joinMenu.open() }
+                                        else root.joinEvent(eventPage.ev.join_url, eventPage.ev.title, eventPage.ev.start, eventPage.ev.end) } }
+                                    Accessible.role: Accessible.Button; Accessible.name: eventPage.draft ? "Join - Event isn't published yet." : "Join"
+                                }
+                                Rectangle {
+                                    id: chatSplit
+                                    width: parent.webinar ? 56 : 32; height: 32; radius: 4; color: chatHover.hovered ? theme.menuHover : theme.surface; border.color: theme.stroke; border.width: 1
+                                    FluentIcon { x: 6; anchors.verticalCenter: parent.verticalCenter; name: "chat-20"; size: 20; color: theme.textStrong }
+                                    FluentIcon { visible: parent.parent.webinar; x: 34; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-16"; size: 16; color: theme.textStrong }
+                                    HoverHandler { id: chatHover; cursorShape: Qt.PointingHandCursor }
+                                    TapHandler { onTapped: (e) => {
+                                        if (chatSplit.parent.webinar && e.position.x > 32) { chatMenu.parent = chatSplit; chatMenu.x = 0; chatMenu.y = 36; chatMenu.open() }
+                                        else root.openChat(eventPage.ev, false) } }
+                                    Accessible.role: Accessible.Button; Accessible.name: "Chat with participants"
+                                }
+                            }
+                        }
+                    }
+                    // Manage apps.
+                    Item {
+                        visible: !root.previewOn && eventPage.organizer
+                        width: parent.width; height: visible ? 104 : 0
+                        Rectangle { anchors.fill: parent; radius: 16; color: theme.pick("#F5F5F5", "#292929", "#000000") }
+                        Text { x: 21; y: 20; text: "Manage apps"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
+                        Text {
+                            x: 21; y: 54; width: parent.width - 42; wrapMode: Text.Wrap; textFormat: Text.StyledText
+                            text: "Manage or add apps for your session <a href='here'>here</a>."; linkColor: theme.brandForeground1
+                            font.family: theme.font; font.pixelSize: 14; color: theme.text
+                            onLinkActivated: root.openMeetingDetails(eventPage.ev.thread_id || "", eventPage.ev.title || "")
+                        }
+                    }
+                }
+            }
+            // People & emails.
+            Column {
+                visible: root.eventTab === "people" && !root.previewOn
+                width: parent.width; spacing: 16
+                PeopleSection {
+                    title: "Email notifications"; key: "emails"
+                    Column {
+                        width: parent.width; spacing: 0
+                        Item {
+                            width: parent.width; height: 40
+                            Text { anchors.verticalCenter: parent.verticalCenter; text: "Attendees"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                            Row { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; spacing: 8
+                                SettingsParts.Toggle { stateLabel: false; on: !eventPage.pd.disableAttendeeEmails; accessibleName: "Send attendee emails"
+                                    onToggled: v => root.call("patch", { id: eventPage.ev.id, body: { communicationProperties: { disableAttendeeEmails: !v } } }, r => { if (!r.error) root.peopleData = Object.assign({}, root.peopleData, { disableAttendeeEmails: !v }) }) }
+                                Text { anchors.verticalCenter: parent.verticalCenter; text: "Send attendee emails"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text } }
+                        }
+                        PeopleTable {
+                            headers: ["Email", "When it's sent", "Actions"]
+                            rows: [["Event invite", "Event is published or updated", ""], ["Event recording available", "As soon as recording is published", ""]]
+                            actions: true
+                        }
+                    }
+                }
+                PeopleSection {
+                    title: "Organizers (" + (eventPage.pd.organizerList || []).length + ")"; key: "organizers"
+                    Column {
+                        width: parent.width; spacing: 12
+                        PeopleTable { headers: ["Name", "Email"]; people: eventPage.pd.organizerList || [] }
+                        Btn { outlined: true; text: "Manage organizers"; onClicked: root.editEvent(eventPage.ev) }
+                    }
+                }
+                PeopleSection {
+                    title: "Presenters (" + eventPage.speakers.length + ")"; key: "presenters"
+                    Column {
+                        width: parent.width; spacing: 12
+                        Text { visible: eventPage.speakers.length === 0; text: "No presenters added yet"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                        PeopleTable { visible: eventPage.speakers.length > 0; headers: ["Name", "Email"]; people: eventPage.speakers }
+                        Btn { outlined: true; text: "Manage presenters"; onClicked: root.editEvent(eventPage.ev) }
+                    }
+                }
+                PeopleSection {
+                    visible: (eventPage.pd.roomList || []).length > 0
+                    title: "Location (" + (eventPage.pd.roomList || []).length + ")"; key: "location"
+                    PeopleTable { headers: ["Name", "Email"]; people: eventPage.pd.roomList || [] }
+                }
+                PeopleSection {
+                    title: "Attendees"; key: "attendees"
+                    Column {
+                        width: parent.width; spacing: 16
+                        PeopleTable { visible: (eventPage.pd.attendeeList || []).length > 0; headers: ["Name", "Email"]; people: eventPage.pd.attendeeList || [] }
+                        Column {
+                            visible: (eventPage.pd.attendeeList || []).length === 0
+                            width: parent.width; spacing: 16
+                            Item { width: 1; height: 40 }
+                            Text { anchors.horizontalCenter: parent.horizontalCenter; text: "When attendees RSVP or register, they'll show up here."; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                            Image { anchors.horizontalCenter: parent.horizontalCenter; width: 100; height: 100; source: root.cdn + "v2/people-community-l-standard.svg"; sourceSize: Qt.size(200, 200); asynchronous: true }
+                            Item { width: 1; height: 40 }
+                        }
+                    }
+                }
+            }
+            // Insights: "No reports yet" until the event ends.
+            Column {
+                visible: root.eventTab === "insights" && !root.previewOn
+                width: parent.width; spacing: 8
+                Image { anchors.horizontalCenter: parent.horizontalCenter; width: 537; height: 200; source: "../assets/illustrations/events-insights-empty.svg"; sourceSize: Qt.size(1074, 400) }
+                Item { width: 1; height: 22 }
+                Text { anchors.horizontalCenter: parent.horizontalCenter; text: "No reports yet"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
+                Text { anchors.horizontalCenter: parent.horizontalCenter; text: "You'll get a set of reports after the event ends."; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+            }
+            // Highlights: the recording bar (Recording used for highlights,
+            // Download, View recap, Included content, Publish; off until the
+            // event has a recording) and "No AI highlights yet".
+            Column {
+                visible: root.eventTab === "highlights" && !root.previewOn
+                width: parent.width; spacing: 0
+                Item {
+                    width: parent.width; height: 40
+                    Text { x: 0; anchors.verticalCenter: parent.verticalCenter; text: "Recording used for highlights:"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                    Rectangle { x: 200; anchors.verticalCenter: parent.verticalCenter; width: 311; height: 30; radius: 4; color: theme.bgDisabled
+                        Text { x: 12; anchors.verticalCenter: parent.verticalCenter; text: "No video is selected"; font.family: theme.font; font.pixelSize: 14; color: theme.disabledStrong } }
+                    Btn { x: 519; anchors.verticalCenter: parent.verticalCenter; width: 64; icon: "arrow-download-20"; text: ""; usable: false; Accessible.name: "Download" }
+                    Row { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; spacing: 8
+                        Btn { width: 32; icon: "video-clip-20"; text: ""; usable: false; Accessible.name: "View recap" }
+                        Btn { text: "Included content"; usable: false }
+                        Btn { width: 96; text: "Publish"; usable: false } }
+                }
+                Rectangle { width: parent.width; height: 1; color: theme.divider }
+                Item { width: 1; height: 32 }
+                Image { anchors.horizontalCenter: parent.horizontalCenter; width: 157; height: 128; source: root.cdn + "v2/ai-video-record-l-standard.svg"; sourceSize: Qt.size(314, 256); asynchronous: true }
+                Item { width: 1; height: 24 }
+                Text { anchors.horizontalCenter: parent.horizontalCenter; text: "No AI highlights yet"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold; color: theme.text }
+                Item { width: 1; height: 8 }
+                Text { anchors.horizontalCenter: parent.horizontalCenter; width: 400; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
+                       text: "Check back after the event has ended to generate them and share with attendees."; font.family: theme.font; font.pixelSize: 14; color: theme.textStrong }
             }
         }
         MenuPopup {
             id: joinMenu
             items: [{ key: "link", label: "Copy join link", icon: "copy-20" }, { key: "details", label: "Copy join details", icon: "text-align-justify-20" }]
-            onPicked: i => { backend.copyText(i.key === "link" ? eventPage.ev.join_url : root.joinDetails(eventPage.ev)); root.toast({ text: "Copied", intent: "success" }) }
+            onPicked: i => {
+                if (items[i].key === "link") { backend.copyText(eventPage.ev.join_url); root.toast({ text: "Join link copied successfully", intent: "success" }) }
+                else root.copyJoinDetails(eventPage.ev)
+            }
         }
         MenuPopup {
+            id: chatMenu
+            items: [{ key: "chat", label: "Chat with participants", icon: "chat-20" }, { key: "crew", label: "Chat with event group", icon: "people-team-20" }]
+            onPicked: i => root.openChat(eventPage.ev, items[i].key === "crew")
+        }
+        // ···: Duplicate, Save as template, Cancel.
+        MenuPopup {
             id: evMenu
-            items: eventPage.ev.state === "Canceled" ? [] : [{ key: "cancel", label: "Cancel", icon: "calendar-cancel-20" }]
-            onPicked: i => cancelDialog.open()
+            items: [{ key: "dup", label: "Duplicate", icon: "copy-20" }, { key: "template", label: "Save as template", icon: "save-20" }, { key: "cancel", label: "Cancel", icon: "calendar-cancel-20" }]
+            onPicked: i => {
+                const k = items[i].key
+                if (k === "dup") root.duplicateEvent(eventPage.ev)
+                else if (k === "template") templateDialog.openFor(eventPage.ev)
+                else cancelDialog.open()
+            }
+        }
+    }
+    function loadPeopleTab() { if (current) call("people", { id: current.id }, v => { if (!v.error) peopleData = v }) }
+    // A People & emails card (white, radius 16, its title 20/28 semibold
+    // with a chevron; open by default).
+    component PeopleSection: Item {
+        id: ps
+        property string title
+        property string key
+        property bool open: true
+        default property alias content: psBody.data
+        width: pageCol.width; height: open ? psBody.y + psBody.childrenRect.height + 24 : 92
+        FluentSurface { anchors.fill: parent; depth: 2; radius: 16; color: theme.surface }
+        Text { x: 24; y: 32; text: ps.title; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+        FluentIcon { x: parent.width - 44; y: 36; name: ps.open ? "chevron-up-20" : "chevron-down-20"; size: 20; color: theme.textStrong }
+        Item { x: 24; y: 24; width: parent.width - 48; height: 44
+               TapHandler { onTapped: ps.open = !ps.open }
+               Accessible.role: Accessible.Button; Accessible.name: ps.title }
+        Item { id: psBody; visible: ps.open; x: 24; y: 76; width: parent.width - 48; height: childrenRect.height }
+    }
+    // A People & emails table: header row (14, 32 tall) then rows 44 tall
+    // with a #E0E0E0 line; a person: 28 px avatar, the name 14/20 semibold;
+    // the email at 325.
+    component PeopleTable: Column {
+        id: pt
+        property var headers: []
+        property var people: []
+        property var rows: []
+        property bool actions: false
+        width: parent ? parent.width : 400
+        Item {
+            width: parent.width; height: 32
+            Repeater { model: pt.headers
+                Text { required property var modelData; required property int index; x: 8 + index * 325; anchors.verticalCenter: parent.verticalCenter; text: modelData; font.family: theme.font; font.pixelSize: 14; color: theme.text } }
+        }
+        Rectangle { width: parent.width; height: 1; color: theme.divider }
+        Repeater {
+            model: pt.people
+            Column {
+                required property var modelData
+                width: pt.width
+                Item {
+                    width: parent.width; height: 44
+                    Avatar { x: 8; anchors.verticalCenter: parent.verticalCenter; size: 28; name: parent.parent.modelData.name; photoId: parent.parent.modelData.user_type === "Room" || parent.parent.modelData.userType === "Room" ? "" : (parent.parent.modelData.mri || "") }
+                    Text { x: 51; anchors.verticalCenter: parent.verticalCenter; text: parent.parent.modelData.name; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                    Text { x: 333; anchors.verticalCenter: parent.verticalCenter; text: parent.parent.modelData.email; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                }
+                Rectangle { width: parent.width; height: 1; color: theme.divider }
+            }
+        }
+        Repeater {
+            model: pt.rows
+            Column {
+                required property var modelData
+                width: pt.width
+                Item {
+                    width: parent.width; height: 44
+                    Text { x: 8; anchors.verticalCenter: parent.verticalCenter; text: parent.parent.modelData[0]; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    Text { x: 333; anchors.verticalCenter: parent.verticalCenter; text: parent.parent.modelData[1]; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    Row {
+                        visible: pt.actions
+                        anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; spacing: 16
+                        Btn { icon: "eye-20"; text: "Preview"; onClicked: emailPreview.openFor(parent.parent.parent.modelData[0]) }
+                        Btn { outlined: true; icon: "edit-20"; text: "Edit"; onClicked: emailPreview.openFor(parent.parent.parent.modelData[0]) }
+                    }
+                }
+                Rectangle { width: parent.width; height: 1; color: theme.divider }
+            }
+        }
+    }
+    // An email's Preview: the event's email template (subject and body, as
+    // the event service keeps it).
+    Popup {
+        id: emailPreview
+        parent: Overlay.overlay
+        modal: true; padding: 24
+        x: (parent.width - width) / 2; y: (parent.height - height) / 2
+        width: 720; height: Math.min(560, parent.height - 80)
+        background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
+        property string kind: ""
+        property var template: null
+        function openFor(k) {
+            kind = k; template = null; open()
+            root.call("emailTemplates", { id: root.current.id }, v => {
+                const list = Array.isArray(v) ? v : (v.value || v.emailTemplates || [])
+                const want = k === "Event invite" ? /invit/i : /record/i
+                template = list.find(t => want.test(JSON.stringify(t.emailType || t.type || t.name || ""))) || list[0] || { error: v.error || "" }
+            })
+        }
+        contentItem: Column {
+            spacing: 12
+            Item { width: parent.width; height: 28
+                Text { text: emailPreview.kind; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+                Btn { anchors.right: parent.right; icon: "dismiss-20"; text: ""; pad: 6; onClicked: emailPreview.close(); Accessible.name: "Close" } }
+            Text { visible: !!emailPreview.template && !!emailPreview.template.subject; text: emailPreview.template ? (emailPreview.template.subject || "") : ""; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
+            Flickable {
+                width: parent.width; height: emailPreview.height - 120; clip: true; contentHeight: bodyText.height
+                Text { id: bodyText; width: parent.width; wrapMode: Text.Wrap; textFormat: Text.RichText
+                       text: !emailPreview.template ? "Loading..." : (emailPreview.template.body || emailPreview.template.htmlBody || emailPreview.template.content || "The design seen by your recipients may not look like this preview, depending on their email service and device.")
+                       font.family: theme.font; font.pixelSize: 14; color: theme.text }
+            }
+        }
+    }
+    // "Save this event as a template?" (722 wide: the promo picture, Name *
+    // with the event's name, Description; Save template).
+    Popup {
+        id: templateDialog
+        parent: Overlay.overlay
+        modal: true; padding: 24
+        x: (parent.width - width) / 2; y: (parent.height - height) / 2
+        width: 722
+        background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
+        property var ev: ({})
+        property bool busy: false
+        function openFor(e) { ev = e || {}; tName.text = ev.title || ""; tDesc.text = ""; busy = false; open() }
+        contentItem: Column {
+            spacing: 0
+            Item { width: parent.width; height: 31
+                Text { anchors.verticalCenter: parent.verticalCenter; text: "Save this event as a template?"; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
+                Btn { anchors.right: parent.right; icon: "dismiss-20"; text: ""; pad: 6; onClicked: templateDialog.close(); Accessible.name: "Close dialog" } }
+            Item { width: 1; height: 16 }
+            Text { text: "We'll save everything except the date and time for you to use again."; font.family: theme.font; font.pixelSize: 12; color: theme.textStrong }
+            Item { width: 1; height: 24 }
+            Rectangle {
+                width: parent.width; height: 219; radius: 8; clip: true; color: templateDialog.ev.primary_color || "#5B5FC7"
+                Image { anchors.fill: parent; fillMode: Image.PreserveAspectCrop; asynchronous: true
+                        source: { backend.emoticonsVersion; return templateDialog.ev.promo_image ? backend.cardImage(templateDialog.ev.promo_image) : "" } }
+            }
+            Item { width: 1; height: 20 }
+            Row { spacing: 2
+                Text { text: "Name"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                Text { text: "*"; font.family: theme.font; font.pixelSize: 14; color: theme.redForeground3 } }
+            Item { width: 1; height: 4 }
+            Rectangle { width: parent.width; height: 32; radius: 4; color: theme.inputFilled
+                TextInput { id: tName; x: 12; width: parent.width - 24; anchors.verticalCenter: parent.verticalCenter; font.family: theme.font; font.pixelSize: 14; color: theme.text; clip: true; selectByMouse: true; Accessible.name: "Name" } }
+            Item { width: 1; height: 12 }
+            Text { text: "Description"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+            Item { width: 1; height: 4 }
+            Rectangle { width: parent.width; height: 80; radius: 4; color: theme.inputFilled
+                TextEdit { id: tDesc; x: 12; y: 8; width: parent.width - 24; height: parent.height - 16; wrapMode: TextEdit.Wrap; font.family: theme.font; font.pixelSize: 14; color: theme.text; selectByMouse: true
+                    Text { visible: !tDesc.text; text: "Type some details about this template"; font: tDesc.font; color: theme.textSecondary }
+                    Accessible.name: "Description" } }
+            Item { width: 1; height: 30 }
+            Btn {
+                anchors.right: parent.right; primary: true; text: "Save template"; usable: tName.text.trim().length > 0 && !templateDialog.busy
+                onClicked: templateDialog.save()
+            }
+        }
+        function nameForTest(n) { tName.text = n }
+        function save() {
+                {
+                    templateDialog.busy = true
+                    root.call("event", { id: templateDialog.ev.id }, d => {
+                        if (d.error) { templateDialog.busy = false; root.toast({ text: "Couldn't save the template. " + d.error, intent: "error" }); return }
+                        form.fill(d)
+                        root.call("saveTemplate", { id: templateDialog.ev.id, name: tName.text.trim(), templateDescription: tDesc.text, event: form.payload() }, v => {
+                            templateDialog.busy = false; templateDialog.close()
+                            if (v.error) { root.toast({ text: "Couldn't save the template. " + v.error, intent: "error" }); return }
+                            root.toast({ text: "Template saved", intent: "success", action: "View your templates", onAction: () => root.startCreate() })
+                        })
+                    })
+                }
+            }
+    }
+    // Room options ("Teams rooms options", 600 wide): each room's Set up room
+    // for (Presenting, Attendee viewing); Save.
+    Popup {
+        id: roomOptions
+        parent: Overlay.overlay
+        modal: true; padding: 24
+        x: (parent.width - width) / 2; y: (parent.height - height) / 2
+        width: 600
+        background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
+        contentItem: Column {
+            spacing: 0
+            Item { width: parent.width; height: 32
+                Row { anchors.verticalCenter: parent.verticalCenter; spacing: 8
+                    FluentIcon { name: "door-20"; size: 20; color: theme.text; anchors.verticalCenter: parent.verticalCenter }
+                    Text { text: "Teams rooms options"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text } }
+                Btn { anchors.right: parent.right; icon: "dismiss-20"; text: ""; pad: 6; onClicked: roomOptions.close(); Accessible.name: "Close" } }
+            Item { width: 1; height: 24 }
+            Item { width: parent.width; height: 32
+                Row { x: 8; anchors.verticalCenter: parent.verticalCenter; spacing: 8
+                    FluentIcon { name: "video-person-20"; size: 16; color: theme.textStrong; anchors.verticalCenter: parent.verticalCenter }
+                    Text { text: "Teams Rooms"; font.family: theme.font; font.pixelSize: 14; color: theme.text } }
+                Row { x: 336; anchors.verticalCenter: parent.verticalCenter; spacing: 8
+                    FluentIcon { name: "people-20"; size: 16; color: theme.textStrong; anchors.verticalCenter: parent.verticalCenter }
+                    Text { text: "Set up room for"; font.family: theme.font; font.pixelSize: 14; color: theme.text } } }
+            Rectangle { width: parent.width; height: 1; color: theme.divider }
+            Repeater {
+                model: form.rooms
+                Column {
+                    required property var modelData
+                    width: roomOptions.width - 48
+                    Item { width: parent.width; height: 44
+                        Text { x: 8; anchors.verticalCenter: parent.verticalCenter; text: parent.parent.modelData.name; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                        Dropdown { x: 336; anchors.verticalCenter: parent.verticalCenter; width: 206; height: 30; accessibleName: "Set up room for"
+                                   options: [["Presenting", "Presenting"], ["AttendeeViewing", "Attendee viewing"]]
+                                   label: parent.parent.modelData.roomRole === "AttendeeViewing" ? "Attendee viewing" : "Presenting"
+                                   onPicked: v => { const a = form.rooms.map(r => r.email === parent.parent.modelData.email ? Object.assign({}, r, { roomRole: v }) : r); form.rooms = a } } }
+                    Rectangle { width: parent.width; height: 1; color: theme.divider }
+                }
+            }
+            Item { width: 1; height: 12 }
+            Btn { anchors.right: parent.right; primary: true; width: 96; text: "Save"; onClicked: roomOptions.close() }
+        }
+    }
+    // Connect apps ("Connect apps and workflows", 900 wide): Teams'
+    // third-party integrations as cards (416 x 142, #D1D1D1, radius 8: the
+    // apps' 28 px logos, the open-in-new glyph, the name 14/20 semibold, the
+    // description 12/16 #616161); a card opens its page in the browser.
+    Popup {
+        id: connectApps
+        parent: Overlay.overlay
+        modal: true; padding: 25
+        x: (parent.width - width) / 2; y: (parent.height - height) / 2
+        width: 900
+        background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
+        property var items: []
+        function openNow() { open(); root.call("integrations", {}, v => { if (!v.error) items = v.items || [] }) }
+        contentItem: Column {
+            spacing: 0
+            Item { width: parent.width; height: 34
+                Text { anchors.verticalCenter: parent.verticalCenter; text: "Connect apps and workflows"; font.family: theme.font; font.pixelSize: 28; font.weight: Font.DemiBold; color: theme.text }
+                Btn { anchors.right: parent.right; y: -16; icon: "dismiss-20"; text: ""; pad: 6; onClicked: connectApps.close(); Accessible.name: "Close" } }
+            Item { width: 1; height: 15 }
+            Text { text: "Save time by sharing event data with your favorite apps."; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+            Item { width: 1; height: 16 }
+            Flow {
+                width: parent.width; spacing: 17
+                Repeater {
+                    model: connectApps.items
+                    Rectangle {
+                        id: integ
+                        required property var modelData
+                        width: 416; height: 142; radius: 8; color: ih.hovered ? theme.menuHover : theme.surface; border.color: theme.stroke; border.width: 1
+                        Row { x: 16; y: 18; spacing: 6
+                            Repeater { model: integ.modelData.icons || []
+                                Image { required property var modelData; width: 28; height: 28; source: modelData; sourceSize: Qt.size(56, 56); asynchronous: true } } }
+                        FluentIcon { x: parent.width - 39; y: 18; name: "open-20"; size: 20; color: theme.text }
+                        Text { x: 16; y: 52; width: parent.width - 32; elide: Text.ElideRight; text: integ.modelData.name; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                        Text { x: 16; y: 78; width: parent.width - 32; wrapMode: Text.Wrap; maximumLineCount: 3; text: integ.modelData.description; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textSecondary }
+                        HoverHandler { id: ih; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: Qt.openUrlExternally(integ.modelData.link) }
+                        Accessible.role: Accessible.Button; Accessible.name: integ.modelData.name
+                    }
+                }
+            }
+        }
+    }
+    // The meeting options dialog for All options (Apply keeps the changes
+    // for the save; the form's own tiles follow them).
+    MeetingOptionsDialog {
+        id: allOptions
+        onApply: changes => {
+            const o = Object.assign({}, form.optionChanges)
+            Object.keys(changes).forEach(k => {
+                const key = k.charAt(0).toLowerCase() + k.slice(1)
+                o[key] = changes[k]
+                if (k === "AttendeeRestrictions") { const r = String(changes[k]); form.mic = r.indexOf("DisableAudio") < 0; form.camera = r.indexOf("DisableVideo") < 0 }
+                else if (k === "AllowTeamsMeetingReactions") form.react = !!changes[k]
+                else if (k === "AllowMeetingChat") form.chat = changes[k] !== "Disabled"
+                else if (k === "YammerQNAEnabled") form.qna = !!changes[k]
+                else if (k === "StagingRoomEnabled") form.greenRoom = !!changes[k]
+            })
+            form.optionChanges = o
+            allOptions.close()
         }
     }
     // "Ready to publish your event?" (800 wide, radius 8, padding 24;
@@ -1031,94 +2219,137 @@ Rectangle {
                               if (v.error) { root.toast({ text: "Couldn't publish the event. " + v.error, intent: "error" }); return }
                               root.current = Object.assign({}, root.current, { state: v.state || "Published" })
                               root.manageData = null
-                              publishedDialog.openWith(v)
+                              shareDialog.openFor(root.current, true, v)
                           })
                       } }
             }
         }
     }
-    // "Success! Your event has been published" (measured in Teams desktop
-    // 2026-11-18: 800 x 454, padding 24, radius 8): the title 20/600 and
-    // "Help your attendees discover it:" centred; on the left a preview of
-    // the event's card (369 x 309, radius 24) with "Here's what attendees
-    // will see." under it; on the right "Show event in Events app"
-    // (Teams' isDiscoverable: PATCH events/{id} with the eTag) and the
-    // copy buttons (369 x 31.33, outlined): Copy join details, Copy event
-    // page link and, for a town hall, Copy embed code (Teams' town hall
-    // player in an iframe).
+    // After Publish ("Success! Your event has been published" / "Help your
+    // attendees discover it:", 20/28 semibold centred) and the page's Share
+    // ("Help attendees discover this event", 24/32 bold): 800 wide; on the
+    // left the card attendees see (369 x 309, radius 24: the promo picture,
+    // the title, "in 25 mins" and the time, "By {presenter}", the location,
+    // Add to calendar and Copy event page link) over "Here's what attendees
+    // will see."; on the right Show event in Events app ("Attendees with
+    // access can view": PATCH events/{id} {"isDiscoverable"} with the
+    // event's eTag, as Teams' toggleDiscoverability), then Copy join
+    // details, Copy event page link and, for a town hall, Copy embed code
+    // (Teams' town hall player in an iframe), 369 x 31, outlined, at the
+    // bottom. The card shows Join (from 5 minutes before the start) or
+    // Add to calendar, and the Live / "in N mins" badge as cards do.
     Popup {
-        id: publishedDialog
+        id: shareDialog
         parent: Overlay.overlay
-        modal: true; padding: 0
+        modal: true; padding: 24
         x: (parent.width - width) / 2; y: (parent.height - height) / 2
-        width: 800; height: 454.4
+        width: 800
+        background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
+        property var ev: ({})
+        property bool success: false
         property bool discoverable: false
         property bool toggling: false
         property string embedCode: ""
-        readonly property var ev: root.current || ({})
-        function openWith(v) { discoverable = !!v.isDiscoverable; embedCode = v.embedCode || ""; open() }
-        background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
+        property real now: Date.now()
+        readonly property real startMs: ev.start ? new Date(ev.start).getTime() : 0
+        readonly property real endMs: ev.end ? new Date(ev.end).getTime() : 0
+        readonly property bool live: now >= startMs && now < endMs
+        readonly property bool joinable: !!ev.join_url && now >= startMs - 300000 && now <= endMs
+        // `reply`: the publish reply (isDiscoverable, embedCode); else the
+        // card's own (Share).
+        function openFor(e, s, reply) {
+            ev = e || {}; success = !!s; now = Date.now()
+            discoverable = reply && reply.isDiscoverable !== undefined ? !!reply.isDiscoverable : !!ev.discoverable
+            embedCode = reply && reply.embedCode ? reply.embedCode : ""
+            if (!embedCode && ev.event_type === "Townhall" && ev.id) root.call("embedCode", { id: ev.id }, v => { if (!v.error && v.code) embedCode = v.code })
+            open()
+        }
         contentItem: Item {
-            Text { x: 24; y: 24.7; width: 752; horizontalAlignment: Text.AlignHCenter; text: "Success! Your event has been published"
-                   font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
-            Text { x: 24; y: 52.7; width: 752; horizontalAlignment: Text.AlignHCenter; text: "Help your attendees discover it:"
-                   font.family: theme.font; font.pixelSize: 14; color: theme.text }
-            Btn { x: 743.3; y: 24.7; width: 32; height: 31.3; icon: "dismiss-20"; text: ""; pad: 6; onClicked: publishedDialog.close(); Accessible.name: "Close" }
-            // The attendees' view of the card.
+            implicitHeight: shareDialog.success ? 406 : 394
             Item {
-                x: 25; y: 93; width: 369; height: 309
-                FluentSurface { anchors.fill: parent; depth: 2; radius: 24; color: theme.surface }
-                Rectangle {
-                    x: 12; y: 12; width: 345; height: 115; radius: 16; clip: true
-                    color: publishedDialog.ev.primary_color || "#5B5FC7"
-                    Image { anchors.fill: parent; fillMode: Image.PreserveAspectCrop; asynchronous: true
-                            source: { theme.dark; backend.emoticonsVersion; return publishedDialog.ev.promo_image ? backend.cardImage(publishedDialog.ev.promo_image) : "" } }
+                width: parent.width; height: shareDialog.success ? 48 : 32
+                Column {
+                    visible: shareDialog.success
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Success! Your event has been published"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+                    Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Help your attendees discover it:"; font.family: theme.font; font.pixelSize: 14; color: theme.text }
                 }
-                Text { x: 19.7; y: 136.8; width: 329; elide: Text.ElideRight; text: publishedDialog.ev.title || ""
-                       font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
-                Text { x: 19.7; y: 162.8; text: root.whenText(publishedDialog.ev.start, publishedDialog.ev.end, false); font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
-                Row { x: 19.7; y: 192.8; spacing: 4
-                    FluentIcon { name: "person-16"; size: 16; color: theme.textSecondary }
-                    Text { text: "By " + backend.userName; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } }
-                Row { x: 19.7; y: 212.8; spacing: 4
-                    FluentIcon { name: "location-20"; size: 16; color: theme.textSecondary }
-                    Text { text: publishedDialog.ev.location || "Online"; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } }
-                Row { x: 19.7; y: 265.4; spacing: 8
-                    Btn { height: 23.3; width: 64; primary: true; icon: "video-16"; text: "Join"; fontSize: 12; pad: 8; usable: false }
-                    Btn { height: 23.3; width: 24; outlined: true; icon: "link-16"; text: ""; pad: 2; usable: false } }
+                Text { visible: !shareDialog.success; y: 8; text: "Help attendees discover this event"; font.family: theme.font; font.pixelSize: 24; font.weight: Font.Bold; color: theme.text }
+                Btn { anchors.right: parent.right; y: shareDialog.success ? 0 : 8; icon: "dismiss-20"; text: ""; pad: 6; onClicked: shareDialog.close(); Accessible.name: "Close" }
             }
-            Text { x: 24.7; y: 413.8; width: 369.3; horizontalAlignment: Text.AlignHCenter; text: "Here’s what attendees will see."
-                   font.family: theme.font; font.pixelSize: 10; color: theme.text }
+            // The attendee card.
+            Item {
+                id: aCard
+                y: shareDialog.success ? 68 : 56; width: 369; height: 309
+                FluentSurface { anchors.fill: parent; depth: 4; radius: 24; color: theme.surface }
+                Rectangle {
+                    x: 12; y: 12; width: parent.width - 24; height: 115; radius: 16; clip: true; color: shareDialog.ev.primary_color || "#5B5FC7"
+                    Image { anchors.fill: parent; fillMode: Image.PreserveAspectCrop; asynchronous: true
+                            source: { backend.emoticonsVersion; return shareDialog.ev.promo_image ? backend.cardImage(shareDialog.ev.promo_image) : "" } }
+                }
+                Text { x: 20; y: 137; width: parent.width - 40; elide: Text.ElideRight; text: shareDialog.ev.title || ""; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
+                Row {
+                    x: 20; y: 163; spacing: 6; height: 20
+                    readonly property string soon: shareDialog.live ? "Live" : root.soonText(shareDialog.ev.start)
+                    Rectangle { visible: !!parent.soon; anchors.verticalCenter: parent.verticalCenter; height: 16; radius: 8; width: sRow.implicitWidth + (shareDialog.live ? 10 : 8)
+                        color: shareDialog.live ? "#D13438" : theme.pick("#E8EBFA", "#2F2F4A", "#000000")
+                        border.width: theme.highContrast ? 1 : 0; border.color: theme.text
+                        Row { id: sRow; x: shareDialog.live ? 4 : 2; anchors.verticalCenter: parent.verticalCenter; spacing: 2
+                            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: shareDialog.live ? "record-20" : "clock-12-filled"; size: shareDialog.live ? 10 : 12; color: shareDialog.live ? "#FFFFFF" : theme.brand }
+                            Text { anchors.verticalCenter: parent.verticalCenter; text: parent.parent.parent.soon; font.family: theme.font; font.pixelSize: 10; font.weight: Font.DemiBold; color: shareDialog.live ? "#FFFFFF" : theme.brand } } }
+                    Text { anchors.verticalCenter: parent.verticalCenter; text: root.whenText(shareDialog.ev.start, shareDialog.ev.end, false); font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
+                }
+                Column {
+                    x: 20; y: 193; spacing: 4
+                    Row { visible: !!shareDialog.ev.by; spacing: 4
+                        FluentIcon { name: "person-16"; size: 16; color: theme.textSecondary }
+                        Text { text: "By " + (shareDialog.ev.by || ""); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } }
+                    Row { spacing: 4
+                        FluentIcon { name: "location-20"; size: 16; color: theme.textSecondary }
+                        Text { text: shareDialog.ev.location || "Online"; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } }
+                }
+                Row {
+                    x: 20; y: 265; spacing: 8
+                    Btn { visible: shareDialog.joinable; height: 23; width: 64; primary: true; icon: "video-16"; text: "Join"; fontSize: 12; pad: 8; usable: false }
+                    Btn { visible: !shareDialog.joinable; height: 24; outlined: true; fontSize: 12; pad: 8; icon: "calendar-add-20"; text: "Add to calendar"; usable: false }
+                    Btn { width: 24; height: 24; outlined: true; icon: "link-20"; text: ""; pad: 2; Accessible.name: "Copy event page link"
+                          onClicked: { backend.copyText(shareDialog.ev.site_url || ""); root.toast({ text: "Event page link copied successfully", intent: "success" }) } }
+                }
+            }
+            Text { x: 0; y: aCard.y + aCard.height + 12; width: 369; horizontalAlignment: Text.AlignHCenter; text: "Here’s what attendees will see."; font.family: theme.font; font.pixelSize: 10; color: theme.text }
             // Show event in Events app.
-            Rectangle { x: 406; y: 97; width: 28; height: 28; radius: 4; color: theme.brandFill
-                FluentIcon { anchors.centerIn: parent; name: "people-community-20"; size: 20; color: "white" } }
-            Text { x: 444; y: 92.7; text: "Show event in Events app"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.text }
-            Text { x: 444; y: 108.7; text: "Attendees with access can view"; font.family: theme.font; font.pixelSize: 12; color: theme.text }
-            SettingsParts.Toggle {
-                x: 727; y: 101; stateLabel: false; on: publishedDialog.discoverable; accessibleName: "Show event in Events app"
-                onToggled: v => {
-                    if (publishedDialog.toggling) return
-                    publishedDialog.toggling = true
-                    publishedDialog.discoverable = v
-                    root.call("discoverable", { id: publishedDialog.ev.id, on: v }, r => {
-                        publishedDialog.toggling = false
-                        if (r.error) { root.toast({ text: "Couldn't change it. " + r.error, intent: "error" }); publishedDialog.discoverable = !v; return }
-                        publishedDialog.discoverable = !!r.isDiscoverable
-                    })
+            Item {
+                x: 381; y: aCard.y; width: 369; height: 36
+                Rectangle { x: 0; y: 4; width: 28; height: 28; radius: 4; color: theme.brandFill
+                    FluentIcon { anchors.centerIn: parent; name: "people-community-20"; size: 20; color: theme.textOnBrand } }
+                Column { x: 38; y: 0
+                    Text { text: "Show event in Events app"; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.text }
+                    Text { text: "Attendees with access can view"; font.family: theme.font; font.pixelSize: 12; color: theme.text } }
+                SettingsParts.Toggle {
+                    anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter
+                    stateLabel: false; on: shareDialog.discoverable; accessibleName: "Show event in Events app"
+                    onToggled: v => {
+                        if (shareDialog.toggling) return
+                        shareDialog.toggling = true
+                        shareDialog.discoverable = v
+                        root.call("discoverable", { id: shareDialog.ev.id, on: v }, r => {
+                            shareDialog.toggling = false
+                            if (r.error) { root.toast({ text: "Couldn't change it. " + r.error, intent: "error" }); shareDialog.discoverable = !v; return }
+                            const now = !!r.isDiscoverable
+                            shareDialog.discoverable = now
+                            shareDialog.ev = Object.assign({}, shareDialog.ev, { discoverable: now })
+                            if (root.current && root.current.id === shareDialog.ev.id) root.current = Object.assign({}, root.current, { discoverable: now })
+                        })
+                    }
                 }
             }
             Column {
-                x: 406; y: 289.8; spacing: 10
-                Repeater {
-                    model: publishedDialog.embedCode ? [["document-20", "Copy join details", "details"], ["link-20", "Copy event page link", "page"], ["code-20", "Copy embed code", "embed"]]
-                                                     : [["document-20", "Copy join details", "details"], ["link-20", "Copy event page link", "page"]]
-                    Btn { required property var modelData; width: 369.3; height: 31.3; outlined: true; icon: modelData[0]; text: modelData[1]
-                          onClicked: {
-                              const ev = publishedDialog.ev
-                              backend.copyText(modelData[2] === "page" ? (ev.site_url || "") : modelData[2] === "embed" ? publishedDialog.embedCode : root.joinDetails(ev))
-                              root.toast({ text: "Copied", intent: "success" })
-                          } }
-                }
+                x: 381; y: aCard.y + aCard.height - (shareDialog.embedCode ? 113 : 72); width: 369; spacing: 10
+                Btn { width: 369; height: 31; outlined: true; icon: "document-20"; text: "Copy join details"; onClicked: root.copyJoinDetails(shareDialog.ev) }
+                Btn { width: 369; height: 31; outlined: true; icon: "link-20"; text: "Copy event page link"
+                      onClicked: { backend.copyText(shareDialog.ev.site_url || ""); root.toast({ text: "Event page link copied successfully", intent: "success" }) } }
+                Btn { visible: !!shareDialog.embedCode; width: 369; height: 31; outlined: true; icon: "code-20"; text: "Copy embed code"
+                      onClicked: { backend.copyText(shareDialog.embedCode); root.toast({ text: "Copied", intent: "success" }) } }
             }
         }
     }

@@ -21,6 +21,8 @@ Rectangle {
     property bool split: false
     property string collabPane: "chats"
     signal collabPicked(string pane)
+    /// The app bar menu's Pin / Unpin (Events).
+    signal pinRequested(string key, bool on)
     function pick(key) {
         if (split && (key === "chat" || key === "teams")) collabPicked(key === "teams" ? "teams" : "chats")
         else current = key
@@ -47,6 +49,7 @@ Rectangle {
         { key: "avatars", icon: "person-20", iconUrl: avatarHost.app.outline || "", label: "Avatars", keys: "" },
         { key: "help", icon: "question-circle-20", label: "Help", keys: "" },
         { key: "events", icon: "ticket-diagonal-20", label: "Events", keys: "" },
+        { key: "recaps", icon: "arrow-counterclockwise-20", label: "Meeting Recaps", keys: "" },
         // A Word, Excel or PowerPoint file open in Office for the web takes
         // the slot as its app (Teams' "Teams" choice).
         { key: "office", icon: "document-20", label: officeLabel || "Office", keys: "" }
@@ -180,6 +183,18 @@ Rectangle {
                 }
                 HoverHandler { id: hover }
                 TapHandler { onTapped: modelData.key === "more" ? moreApps.open() : root.pick(modelData.key) }
+                // Events' entry: Teams' app bar menu Pin / Unpin (kept in
+                // Teams' pinned apps, as the app's Pin app).
+                TapHandler {
+                    enabled: modelData.key === "events"
+                    acceptedButtons: Qt.RightButton
+                    onTapped: { railMenu.parent = parent; railMenu.y = parent.height; railMenu.open() }
+                }
+                MenuPopup {
+                    id: railMenu
+                    items: [{ key: "pin", label: root.pinned.indexOf("events") >= 0 ? "Unpin" : "Pin", icon: root.pinned.indexOf("events") >= 0 ? "pin-off-20" : "pin-20" }]
+                    onPicked: i => root.pinRequested("events", root.pinned.indexOf("events") < 0)
+                }
                 ToolTipLabel { text: modelData.keys ? modelData.label + " (" + modelData.keys + ")" : modelData.label; shown: hover.hovered }
                 Accessible.role: Accessible.Button
                 Accessible.name: modelData.keys ? modelData.label + " (" + modelData.keys + ")" : modelData.label

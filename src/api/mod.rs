@@ -19,6 +19,8 @@ pub mod ecs;
 pub mod emoticons;
 pub mod engagement;
 pub mod events;
+pub mod events_tz;
+pub mod recaps;
 pub mod files;
 pub mod find;
 pub mod search;

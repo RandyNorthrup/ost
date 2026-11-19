@@ -77,6 +77,57 @@ pub async fn meeting_locations(client: &TeamsClient, max: u32, query: Option<&st
     Ok(locations_from(&v))
 }
 
+/// The Events form's room search body (captured 2026-11-18): 25 rooms,
+/// the typed text, and the event's time slot in its Windows zone so each
+/// room comes with its availability.
+pub fn locations_at_body(query: &str, start: &str, end: &str, zone: &str) -> serde_json::Value {
+    serde_json::json!({
+        "MaxCandidates": 25,
+        "ConferenceRoomsOnly": true,
+        "QueryConstraint": { "Query": query },
+        "LocationProvider": "80",
+        "TimeConstraint": { "Timeslots": [{ "Start": { "DateTime": start, "TimeZone": zone }, "End": { "DateTime": end, "TimeZone": zone } }], "Recurrence": null },
+        "ResolveLocationsAvailability": true
+    })
+}
+
+/// Rooms for a time slot: (address, name, availability, object id).
+pub fn locations_at_from(v: &serde_json::Value) -> Vec<(String, String, String, String)> {
+    v["MeetingLocations"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|l| {
+            let m = &l["MeetingLocation"];
+            let email = m["LocationEmailAddress"].as_str().filter(|e| !e.is_empty())?;
+            let s = |k: &str| m[k].as_str().unwrap_or_default().to_string();
+            Some((email.to_string(), s("DisplayName"), s("Availability"), s("UniqueId")))
+        })
+        .collect()
+}
+
+/// The Events form's Add a room: the rooms matching `query` for the
+/// event's slot (`start`/`end` "yyyy-MM-dd HH:mm:ss" in the Windows zone
+/// `zone`, as Teams sends them).
+pub async fn meeting_locations_at(client: &TeamsClient, query: &str, start: &str, end: &str, zone: &str) -> Result<Vec<(String, String, String, String)>> {
+    let token = crate::auth::oauth::access_token_for("https://outlook.office.com/.default").await?;
+    let resp = client
+        .http()
+        .post("https://outlook.office.com/SchedulingB2/api/v1.0/me/findmeetinglocations")
+        .bearer_auth(token)
+        .header("client-request-id", uuid::Uuid::new_v4().to_string())
+        .json(&locations_at_body(query, start, end, zone))
+        .send()
+        .await
+        .context("Find meeting locations")?;
+    let status = resp.status();
+    if !status.is_success() {
+        bail!("Find meeting locations: HTTP {status}");
+    }
+    let v: serde_json::Value = resp.json().await.context("Find meeting locations reply")?;
+    Ok(locations_at_from(&v))
+}
+
 /// Rooms from short profiles: the ones Teams resolved (a known address
 /// and an MRI).
 pub fn rooms_from_profiles(profiles: &[serde_json::Value]) -> Vec<Room> {

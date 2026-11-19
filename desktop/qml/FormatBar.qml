@@ -29,7 +29,11 @@ Item {
     signal redoRequested()
 
     readonly property string styleName: st.heading === 1 ? "Heading 1" : st.heading === 2 ? "Heading 2" : st.heading === 3 ? "Heading 3" : "Paragraph"
+    /// Another bar's groups (the Events form's description: Bold, Italic,
+    /// Underline | highlight, colour, size, clear | indents, lists | link).
+    property var custom: null
     readonly property var groups: {
+        if (custom) return custom
         const g = baseGroups.slice()
         if (post) g.splice(4, 0, [{ k: "announcement", icon: "fmt-announcement", label: "Announcement" }])
         return g

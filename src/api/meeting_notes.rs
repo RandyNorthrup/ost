@@ -158,6 +158,182 @@ pub async fn get_or_create(m: &Meeting) -> Result<String> {
     anyhow::bail!("The meeting-notes service's notes stayed pending")
 }
 
+/// Teams' collab object service for a scheduled meeting's notes
+/// (services-io-collab-object; captured 2026-11-18 from Teams desktop when
+/// it made a scheduled meeting's notes): `POST {mcps}/collab/reserveresource`
+/// claims making them (or returns the ones made), `PATCH …/commitresource`
+/// gives the made page's link. `{mcps}` is the regional meeting artifacts
+/// service (`https://teams.microsoft.com/api/mcps/{region}`; ECS
+/// cmdMeetingArtifactsServiceEndpoint with the region put in).
+pub fn collab_base(region: &str) -> String {
+    let region = if region.is_empty() || !region.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') { "us" } else { region };
+    format!("https://teams.microsoft.com/api/mcps/{region}/collab")
+}
+
+/// Who asks and for which meeting (the reserve and commit requests).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CollabCaller {
+    /// "oid@tid".
+    pub user: String,
+    pub organizer_upn: String,
+}
+
+/// The reserve request as Teams sends it.
+pub fn reserve_body(m: &Meeting, c: &CollabCaller) -> Value {
+    let organizer_id = m.organizer.split('@').next().unwrap_or_default();
+    json!({
+        "type": "notes",
+        "externalEntityKey": m.i_cal_uid,
+        "seriesExternalEntityKey": m.i_cal_uid,
+        "meetingUrl": m.meeting_url,
+        "threadId": m.thread_id,
+        "messageId": "0",
+        "organizerUpn": c.organizer_upn,
+        "organizer": m.organizer,
+        "user": c.user,
+        "organizedByUserId": organizer_id,
+        "organizedByUserUpn": c.organizer_upn,
+    })
+}
+
+/// The reserve answer: whether you make the notes (`isLeader`, with the
+/// secret to commit them), or the notes already made.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Reserve {
+    pub is_leader: bool,
+    pub secret: String,
+    pub state: String,
+    /// The notes already made (`collab.resources[type notes].location`).
+    pub location: String,
+}
+
+pub fn parse_reserve(v: &Value) -> Reserve {
+    let notes = v
+        .pointer("/collab/resources")
+        .and_then(Value::as_array)
+        .and_then(|a| a.iter().find(|r| r.get("type").and_then(Value::as_str).is_some_and(|t| t.eq_ignore_ascii_case("notes"))));
+    Reserve {
+        is_leader: v.get("isLeader").and_then(Value::as_bool).unwrap_or(false),
+        secret: v.get("secret").and_then(Value::as_str).unwrap_or_default().to_string(),
+        state: v.get("resourceState").and_then(Value::as_str).unwrap_or_default().to_ascii_lowercase(),
+        location: notes.and_then(|r| r.get("location")).and_then(Value::as_str).unwrap_or_default().to_string(),
+    }
+}
+
+/// The commit request: the made page's shared link (with its `nav`).
+pub fn commit_body(m: &Meeting, c: &CollabCaller, secret: &str, resource_uri: &str) -> Value {
+    json!({
+        "type": "notes",
+        "externalEntityKey": m.i_cal_uid,
+        "seriesExternalEntityKey": m.i_cal_uid,
+        "organizer": m.organizer,
+        "user": c.user,
+        "secret": secret,
+        "resourceUri": resource_uri,
+        "metadata": { "linkScope": "organization", "hostClient": "TeamsInMeeting" },
+    })
+}
+
+async fn collab_send(method: reqwest::Method, url: &str, body: &Value) -> Result<reqwest::Response> {
+    let token = crate::auth::oauth::access_token_for(&format!("{RESOURCE}/.default")).await?;
+    let resp = reqwest::Client::new()
+        .request(method, url)
+        .bearer_auth(&token)
+        .header("content-type", "application/json;charset=UTF-8")
+        .header("x-ms-correlation-id", uuid::Uuid::new_v4().to_string())
+        .json(body)
+        .send()
+        .await
+        .context("The collab object service")?;
+    let status = resp.status();
+    if !status.is_success() {
+        let text = resp.text().await.unwrap_or_default();
+        tracing::info!("collab object service: HTTP {status}: {}", text.chars().take(400).collect::<String>());
+        anyhow::bail!("The collab object service answered {status}");
+    }
+    Ok(resp)
+}
+
+/// Reserve the notes of a scheduled meeting: made already, yours to make,
+/// or someone else is making them (pending: asked again, as Teams does).
+pub async fn reserve(region: &str, m: &Meeting, c: &CollabCaller) -> Result<Reserve> {
+    anyhow::ensure!(!m.i_cal_uid.is_empty() && !m.organizer.is_empty(), "Not a scheduled meeting");
+    let url = format!("{}/reserveresource", collab_base(region));
+    for attempt in 0..=RETRIES {
+        let r = parse_reserve(&collab_send(reqwest::Method::POST, &url, &reserve_body(m, c)).await?.json().await.context("The reserve answer")?);
+        if !r.location.is_empty() || r.is_leader || attempt == RETRIES {
+            return Ok(r);
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+    }
+    anyhow::bail!("The meeting's notes stayed pending")
+}
+
+/// Commit the made notes (their shared link) for everyone.
+pub async fn commit(region: &str, m: &Meeting, c: &CollabCaller, secret: &str, resource_uri: &str) -> Result<()> {
+    collab_send(reqwest::Method::PATCH, &format!("{}/commitresource", collab_base(region)), &commit_body(m, c, secret, resource_uri)).await?;
+    Ok(())
+}
+
+/// More actions ▸ Add to Loop workspace: Loop's own page for it (the Fluid
+/// host controls' link: `https://loop.microsoft.com/p/<base64 of
+/// {"p":{"u":<link>,"r":false},"a":"AddToWorkspace"}>`).
+pub fn add_to_workspace_url(link: &str) -> String {
+    use base64::Engine as _;
+    // In Teams' key order (its JSON.stringify of {p: {u, r}, a}).
+    let payload = format!(r#"{{"p":{{"u":{},"r":false}},"a":"AddToWorkspace"}}"#, Value::String(link.to_string()));
+    let b64 = base64::engine::general_purpose::STANDARD.encode(payload);
+    let enc: String = url::form_urlencoded::byte_serialize(b64.as_bytes()).collect();
+    // encodeURIComponent keeps none of "+/=": byte_serialize matches it.
+    format!("https://loop.microsoft.com/p/{enc}")
+}
+
+/// The notes' file (for See who has access): its SharePoint site, list and
+/// item, and name, from its link (Graph `shares/u!…/driveItem`).
+pub async fn notes_item(client: &TeamsClient, link: &str) -> Result<Value> {
+    let id = super::drive::share_id(link.split('?').next().unwrap_or(link));
+    let v: Value = client.graph_get(&format!("/shares/{id}/driveItem?$select=name,sharepointIds,webUrl")).await?.json().await?;
+    let s = |p: &str| v.pointer(p).and_then(Value::as_str).unwrap_or_default().to_string();
+    anyhow::ensure!(!s("/sharepointIds/listItemUniqueId").is_empty() || !s("/sharepointIds/listItemId").is_empty(), "The notes' file");
+    Ok(json!({ "site": s("/sharepointIds/siteUrl"), "list": s("/sharepointIds/listId"), "item": s("/sharepointIds/listItemId"), "name": s("/name") }))
+}
+
+/// Test cleanup (the harness): delete the notes pages in your Meetings
+/// folder whose names start with `prefix` ("OST TEST 212"); their names.
+pub async fn delete_test_notes(client: &TeamsClient, prefix: &str) -> Result<Vec<String>> {
+    anyhow::ensure!(prefix.starts_with("OST TEST "), "Only test notes");
+    let v: Value = client.graph_get("/me/drive/special/meetings/children?$select=id,name,parentReference&$top=200").await?.json().await?;
+    let mut gone = Vec::new();
+    for it in v.get("value").and_then(Value::as_array).into_iter().flatten() {
+        let name = it.get("name").and_then(Value::as_str).unwrap_or_default();
+        if !name.starts_with(prefix) || !name.ends_with(".loop") {
+            continue;
+        }
+        let drive = it.pointer("/parentReference/driveId").and_then(Value::as_str).unwrap_or_default();
+        let id = it.get("id").and_then(Value::as_str).unwrap_or_default();
+        if super::drive::delete(client, drive, id).await.is_ok() {
+            gone.push(name.to_string());
+        }
+    }
+    Ok(gone)
+}
+
+/// The meeting organizer's sign-in name (the reserve request's
+/// `organizerUpn`).
+pub async fn organizer_upn(client: &TeamsClient, organizer: &str) -> String {
+    let oid = organizer.split('@').next().unwrap_or_default();
+    if oid.is_empty() || client.object_id().as_deref() == Some(oid) {
+        return client.user_principal_name().unwrap_or_default();
+    }
+    if uuid::Uuid::parse_str(oid).is_err() {
+        return String::new();
+    }
+    match client.graph_get(&format!("/users/{oid}?$select=userPrincipalName")).await {
+        Ok(r) => r.json::<Value>().await.ok().and_then(|v| v.get("userPrincipalName").and_then(Value::as_str).map(str::to_string)).unwrap_or_default(),
+        Err(_) => String::new(),
+    }
+}
+
 /// Where Teams makes a meeting's notes itself: your OneDrive's Meetings
 /// folder.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
@@ -246,6 +422,34 @@ mod tests {
         assert_eq!(retry_delay("2026-11-16T23:00:05Z", now).as_millis(), 5000);
         assert_eq!(retry_delay("2026-11-16T23:05:00Z", now).as_millis(), 30_000);
         assert_eq!(retry_delay("", now).as_millis(), 5000);
+    }
+
+    #[test]
+    fn collab_object_as_teams() {
+        // Captured 2026-11-18 (Teams desktop making a scheduled meeting's notes).
+        let m = Meeting { thread_id: "19:meeting_Z@thread.v2".into(), organizer: "4287@2716".into(), meeting_title: "OST TEST 212".into(),
+                          meeting_url: "https://teams.microsoft.com/l/meetup-join/x".into(), i_cal_uid: "0400".into() };
+        let c = CollabCaller { user: "4287@2716".into(), organizer_upn: "ost-test1@x.com".into() };
+        let r = reserve_body(&m, &c);
+        assert_eq!(r["type"], "notes");
+        assert_eq!(r["externalEntityKey"], "0400");
+        assert_eq!(r["organizedByUserId"], "4287");
+        assert_eq!(r["organizerUpn"], "ost-test1@x.com");
+        let a = parse_reserve(&json!({"isLeader": true, "secret": "s", "resourceState": "pending", "collab": {"resources": []}}));
+        assert!(a.is_leader && a.location.is_empty() && a.state == "pending");
+        let b = parse_reserve(&json!({"isLeader": false, "collab": {"resources": [{"type": "notes", "location": "https://x/:fl:/p"}]}}));
+        assert_eq!(b.location, "https://x/:fl:/p");
+        let k = commit_body(&m, &c, "s", "https://x/:fl:/p?nav=1");
+        assert_eq!(k["metadata"], json!({ "linkScope": "organization", "hostClient": "TeamsInMeeting" }));
+        assert_eq!(collab_base("us"), "https://teams.microsoft.com/api/mcps/us/collab");
+        assert_eq!(collab_base("../x"), "https://teams.microsoft.com/api/mcps/us/collab");
+        let w = add_to_workspace_url("https://x/:fl:/p");
+        assert!(w.starts_with("https://loop.microsoft.com/p/"));
+        let enc = w.trim_start_matches("https://loop.microsoft.com/p/");
+        let b64: String = url::form_urlencoded::parse(format!("x={enc}").as_bytes()).find(|(k, _)| k == "x").unwrap().1.into_owned();
+        use base64::Engine as _;
+        let raw = String::from_utf8(base64::engine::general_purpose::STANDARD.decode(b64).unwrap()).unwrap();
+        assert_eq!(raw, r#"{"p":{"u":"https://x/:fl:/p","r":false},"a":"AddToWorkspace"}"#);
     }
 
     #[test]

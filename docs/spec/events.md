@@ -198,6 +198,192 @@ New event (Create from scratch):
   emails, Insights, Highlights; the promo picture, the title card, the
   date/location/access card with Join, Manage apps.
 
+## The rest (TASK-0212; Teams desktop 26304 on winpc as ost-test1, 2026-11-18)
+Measured over CDP (DOM, network with tokens redacted) and read in Teams'
+desktop bundles (meet-app, events-scheduling-form, services-virtual-events,
+config-prod, services-io-collab-object). Test events "OST TEST 212 draft"
+(draft) and "OST TEST 212 duplicate" (published, only OST Test 2 / 3 and the
+test room invited) and the template "OST TEST 212 template" were made and
+removed again.
+
+Discover:
+- The sections are "Happening now" (left out while empty), "Upcoming
+  events in your org" and "Catch up on past events", each with See more
+  (brand link, right).
+- **Filters ▸ Custom range**: From and To (native date fields, 146 x 32,
+  "mm/dd/yyyy"; "Select a date." under an empty one). Any date range or My
+  events asks the **regional** service once: `GET {regional}/eventOverviews?
+  pageSize=100&sortBy=StartTime&startFrom=<From's local midnight>&startTo=
+  <To's 23:59:59.999>&returnRequesterProperties=true&eventStatus=Published
+  &includeRequesterStatus=Registered&includeRequesterStatus=Invited` (My
+  events; else AllInOrg). The filters show as chips under the intro card
+  (24 tall, #D1D1D1, radius 4, 12/16 #424242, a dismiss: "My events",
+  "November 18 - 30, 2026") with Clear all; no match: "No events match your
+  filters. Clear all filters".
+- **View audio recaps** opens the Meeting Recaps app (below) on Audio recaps.
+- A card: "in 25 mins" (10/10 semibold brand on #E8EBFA with a clock) before
+  the time while it starts within the hour; your role or "By {first
+  presenter}"; "Online", or "In-person and online" when a room is a speaker;
+  Edit (outlined), Share (published) and ··· (Chat with participants, Chat
+  with event group, Duplicate) for organizers.
+
+Manage:
+- Section titles count everything: "Drafts (1)", "Published (1)". **See
+  more** opens the whole section: a back arrow and the title, "Showing 1
+  event" (Teams' events_showing_count_mf), the cards in rows; `GET
+  …/eventOverviews?manageFilterType=<Draft|Published|Past>&pageSize=25&
+  includeTotalCount=true&eventTypes=Townhall,Webinar` (next pages with the
+  reply's skip token).
+- **Connect apps** ("Connect apps and workflows", 900 wide, 28/20 semibold;
+  "Save time by sharing event data with your favorite apps."): ECS
+  `virtualEvents.integrationsThirdParty` as cards (416 x 142, #D1D1D1,
+  radius 8, the apps' 28 px logos, an open-in-new glyph, name 14/20
+  semibold, description 12/16 #616161): Hubspot, Pardot (Zapier), Marketo
+  (Zapier); a card opens its link outside Teams. (Teams also asks Power
+  Automate's gallery `api.flow.microsoft.com/…/teamsworkflowtemplates?
+  $filter=…teamswebinar_marketing_integration…` but shows only the three.)
+
+Create:
+- **Your saved templates** under the templates (20/28 semibold): `GET
+  {regional}/eventTemplates` → `[{id, name, description, eventTemplateData
+  {eventType, title, description, access, team, presenters, attendees,
+  theme, meetingOptions, …}}]`; a card (the promo picture 323 x 108, the
+  name, Schedule, ··· Edit template / Delete). Delete: `DELETE
+  eventTemplates/{id}`, no question, toast "Template deleted"; Edit
+  template: the form titled "Edit template" (date and time off), `PATCH
+  eventTemplates/{id}`; empty: "Save an event as a template and it will
+  show up here." with v2/document-add-l-standard.svg.
+
+The form:
+- Desktop adds a pop-out button left of Save and continue.
+- **Time zone**: the globe (32 x 32 toggle, brand glyph, #F0F0F0 while on,
+  tooltip "Time zone") opens a "Time zone" row: a dropdown of Teams' 140
+  zones ("(UTC-08:00) Pacific Time (US & Canada)"; keys like PacificSt
+  mapped to IANA by Teams' module 331201; OST: `api::events_tz`). Sent as
+  `timeZoneDetails {timeZone, utcOffset (the label's), ianaTimeZone,
+  windowsTimeZone, localizedTimeZoneString}`.
+- **Location ▸ Add a room**: `POST outlook.office.com/SchedulingB2/api/
+  v1.0/me/findmeetinglocations {MaxCandidates 25, ConferenceRoomsOnly,
+  QueryConstraint {Query}, LocationProvider "80", TimeConstraint {Timeslots
+  [{Start/End {DateTime "yyyy-MM-dd HH:mm:ss", TimeZone "Pacific Standard
+  Time"}}]}, ResolveLocationsAvailability true}` per keystroke; rows show
+  the initials, the name and "Available · address" (green) from
+  `Availability`; "We couldn't find any matches.". A room becomes a chip
+  and a presenter `{…, userType "Room", userPurpose "room"}`; **Room
+  options** appears beside the field ("Teams rooms options": per room "Set
+  up room for" Presenting / Attendee viewing; Save).
+- **Description toolbar** ("Formatting", 32 px buttons): Bold, Italic,
+  Underline | Text highlight color (No highlight + 8 swatches), Font color
+  (Automatic + 8), Font size (Large, Medium, Small), Clear all formatting |
+  Decrease indent, Increase indent, Bulleted list, Numbered list | Insert
+  link; the same swatches as the compose box. Sent as HTML
+  (`<p>OST TEST 212 <strong>bold</strong></p>`).
+- **People pickers**: `POST {mt}/beta/users/searchV2?<flags>&source=oneEvents`
+  with the text as the body: Co-organizers `includeDLs=false&enableGuest=
+  false&includeBots=true&skypeTeamsInfo=true`, Presenters `includeDLs=false
+  &enableGuest=true&includeBots=true&includeMTOUsers=true&skypeTeamsInfo=
+  true`, Invite people to attend `includeDLs=true&…` (groups too). Rows 50
+  tall: 32 px avatar, the name 14 #424242 and the alias in capitals (a
+  group's mail) 12 #616161, the typed text bold; picked: tags (20 px
+  avatar, name, ×). "They'll receive invites when you save the event." /
+  "They'll be invited when the event is published. Customize your invite
+  preferences in the **People & emails** tab."
+- Sent: `team: [{email, displayName, identity {mri, objectId, tenantId,
+  upn}, userBio {…}, userType "ADUser", userPurpose "unknown"}]`,
+  `presenters: [… sessionsProps [{allowBypassLobby false}] …]` (with the
+  session's id when editing), rooms as presenters.
+- **Stage preview**: Teams' mini meeting window (598 x 374) beside the
+  participation tiles: title bar, command bar (LIVE pill and running time,
+  Chat, Q&A, Raise, React | Camera, Mic in brand while allowed, Leave), nine
+  tiles playing Teams' sample videos (`evergreen-assets/virtual-events/
+  event-stage-preview/participant-videos/*.mp4`), the chat panel when chat
+  is on; "Approximate preview. Actual event experience may vary based on
+  your set up."
+- **All options**: the event template's meeting options, `GET {mt}//beta/
+  meetingTemplates/details/firstparty_d892ef44-…(webinar)|firstparty_
+  21f91ef7-…(town hall)?isChannelMeeting=false&language=en-us&
+  useCategoriesV2=true` (the meeting options dialog's shape, with
+  `meetingsOptions_*` strings), shown in the Meeting options dialog with the
+  event's values; event-only rows: Who can manage Q&A, Spoken language,
+  Who can record and transcribe, Enable multilingual speech recognition,
+  Who has access to the recording or transcript.
+- **Manage apps**: disabled ("Available after you save.") until the event
+  exists; on the page it is "Manage or add apps for your session here." →
+  Teams' manageAppsLinkUrl `/l/meeting/{tenant}/{organizer}/{thread}/0`.
+- The save dialog lists "Invites will be sent to": Organizers n ("Can view
+  and edit") and Presenters n ("Can view"), 268 x 111 #FAFAFA radius 8
+  cards with 24 px avatars; the Pin the Events app row only while unpinned.
+- Leaving a changed form asks "Unsaved changes" / "Do you want to discard
+  edits or continue editing?" (Continue editing, Discard).
+
+The event page:
+- Title row: Edit details (outlined), Share (32 x 31; off while a draft,
+  tooltip "Event sharing is available after publishing."), ··· (Duplicate,
+  Save as template, Cancel), a divider and Preview (on Overview; "Preview as
+  published" on Highlights).
+- **Tabs** ("Event navigation tabs"): Overview, People & emails, Insights,
+  Highlights.
+  - Overview: the promo (646 x 215, Edit event banner), the title card
+    (24/32 semibold, the description), Presenter cards (48 px avatar, the
+    name), on the right the time / "OST Test Room • Online" / access card
+    with Join (split; "Join - Event isn't published yet.") and the chat
+    button (split for webinars), Manage apps.
+  - People & emails: cards (title 20/28 semibold, a chevron, open):
+    Email notifications (Attendees, Send attendee emails switch =
+    `communicationProperties.disableAttendeeEmails`; Email / When it's
+    sent / Actions: Event invite "Event is published or updated", Event
+    recording available "As soon as recording is published", Preview and
+    Edit), Organizers (n) (Name, Email; Manage organizers), Presenters (n)
+    (Manage presenters), Location (n), Attendees ("When attendees RSVP or
+    register, they'll show up here."). Data: `GET events/{id}` (team,
+    presenters with rooms, attendees), `…/attendees?status=…`, `…/speakers`.
+  - Insights: an inline illustration, "No reports yet" / "You'll get a set
+    of reports after the event ends."
+  - Highlights: "Recording used for highlights:" (No video is selected),
+    Download, View recap, Included content, Publish (all off without a
+    recording), then v2/ai-video-record-l-standard.svg, "No AI highlights
+    yet" / "Check back after the event has ended to generate them and share
+    with attendees."
+- **Preview** on: "This is a preview of what attendees will see." instead of
+  the tabs; the attendee's page (Add to calendar, no banner edit, no Manage
+  apps).
+- **Edit details** (and a card's Edit): the form with the event (`GET
+  events/{id}`, `…/sessions`), "Save changes" → `PATCH events/{id}` {type,
+  description, access {isRegistrationEnabled, isDiscoverable}, presenters
+  (with sessionsProps' sessionId), attendees, meetingOptions}.
+- **Duplicate**: the form with the event's details ("Save and continue") →
+  `POST events/{id}/duplicate` with a new event's body.
+- **Save as template** ("Save this event as a template?", 722 wide: "We'll
+  save everything except the date and time for you to use again.", the
+  promo, Name *, Description; Save template) → `POST events/{id}/
+  saveAsTemplate` {…event, eventTemplateName}; toast "Template saved · View
+  your templates".
+- **Share** ("Help attendees discover this event", 24/32 bold) and, after
+  publishing, "Success! Your event has been published": the attendee card
+  (369 x 309) "Here's what attendees will see.", Show event in Events app
+  ("Attendees with access can view" = `access.isDiscoverable`), Copy join
+  details, Copy event page link. **Copy join details** copies the meeting's
+  invitation HTML: the session's `meetingUpdateLink` (`api.scheduler.teams.
+  microsoft.com/teams/{tid}/{oid}/{thread}/0`) → `views.html` (a data URL);
+  toasts "Join details copied successfully", "Event page link copied
+  successfully", "Join link copied successfully".
+
+**Pin app** is Teams' pinned apps: your entitlements (`POST {mt}/beta/users/
+apps/aggregatedEntitlements?appbarview=userpinned` → `isAppBarPinned`,
+`appBarOrder`) and `POST {mt}/beta/users/apps/pinned {"appBarPinnedApps":
+[{appId, appBarOrder}, …]}` with every pinned app (Events
+a63f7012-8cc9-42d5-99c3-e35f526fab17 added last); toast "The Events app has
+been pinned."; once pinned the header has no Pin app (the app bar's Unpin
+takes it off).
+
+**Meeting Recaps** (View audio recaps): header (28 px tile, "Meeting Recaps"
+16 bold, Home / Audio recaps, Pin to app bar); Home "Good evening, {first
+name}", All / Mentions / Missed / Followed, Search for meetings, list / grid,
+days of meetings (`GET {mcps}/user/meetings/contents?top=20&startDateTime=
+&endDateTime=&includeTypes=Recording,TranscriptV2,MeetingChat,MeetingStage,
+Notes` per local day) with Recap; Audio recaps (`GET {mcps}/podcasts?top=10`)
+or "Get started on your first audio recap" / Generate audio recap.
+
 ## OST status (live checks 2026-11-16, ost-test1 on linuxlt, `--events-test`)
 - Discover and Manage loaded from the service (both empty for this
   tenant, as in Teams); Create event and the form drawn; a draft saved
@@ -211,14 +397,26 @@ New event (Create from scratch):
   page, the New event form (name, dates and times, Online, description,
   access, registration, capacity and large audience, participation tiles,
   green room), the save dialog, the draft's page and Cancel.
-- [ ] Not built: View audio recaps, Connect apps, Custom range, See more,
-  the event card's ··· items, the event page's tabs other than Overview,
-  Edit details, Share, Preview, Duplicate, Save as
-  template; the form's people pickers (co-organizers, presenters,
-  invitees), room locations, the description's formatting toolbar, the
-  time zone picker, the stage preview, All options and Manage apps;
-  Manage immersive collections. Pin app is kept on this device (Teams'
-  pinned-apps setting isn't traced).
+- [x] TASK-0212 (OST Test 3 on linuxlt, 2026-11-18/19, `--events-test=full`,
+  `--recaps-test`): Discover's My events and Custom range (the regional
+  query with Registered/Invited, chips, "No events match your filters"),
+  See more, Connect apps, Create's saved templates (Schedule, Edit
+  template, Delete), the form's time zone, room search with availability
+  and Room options, the description toolbar (sent as `<strong>`),
+  co-organizer / presenter / invitee pickers (Teams' searchV2 flags), the
+  stage preview, All options (the event template's options) and Manage
+  apps; the save dialog's invite cards; the event page's Edit details,
+  Share, ··· (Duplicate, Save as template, Cancel), Preview and its four
+  tabs; Publish's success dialog with the attendee card, Show event in
+  Events app and Copy join details (the scheduler's invitation HTML); Pin
+  app in Teams' pinned apps (and the app bar's Pin / Unpin); Meeting
+  Recaps for View audio recaps. A draft (OST Test 2 co-organizer, OST Test
+  1 presenter, OST Test Room), a template, a duplicate (edited and
+  published) were made and all cancelled / deleted again.
+- [ ] Left: Manage immersive collections; the email templates' Edit
+  (Preview shows the service's template); the promo banner's Edit event
+  banner; Highlights with a real recording; Room options' role isn't sent
+  (Teams' field for it wasn't captured).
 - [x] Since TASK-0184 (docs/spec/town-halls-and-webinars.md): the Town hall
   template's form, Publish event with Teams' two dialogs, Upcoming, Join
   and its menu, and the event chat button.

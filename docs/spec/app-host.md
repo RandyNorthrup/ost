@@ -567,7 +567,29 @@ docs/spec/events.md.
   A scheduled meeting refuses the leader claim (`updateMeetingStates`
   400, subCode 6169 "This meeting does not support electing collab
   leader"): Teams makes those notes through the collab object service
-  instead (not traced; OST doesn't).
+  instead (traced 2026-11-18, TASK-0212, from Teams desktop making a
+  scheduled meeting's notes): `POST https://teams.microsoft.com/api/mcps/
+  {region}/collab/reserveresource` (token for 6bc3b958-…) `{type "notes",
+  externalEntityKey, seriesExternalEntityKey (the iCalUid), meetingUrl,
+  threadId, messageId "0", organizerUpn, organizer ("oid@tid"), user,
+  organizedByUserId, organizedByUserUpn}` → `{isLeader, secret,
+  resourceState "pending", expiry (ticks), collab {id, participants,
+  resources [...]}}`; the leader makes the page (Fluid snapshot in
+  Meetings/<title>.loop, `createLink {"type":"edit","scope":
+  "organization"}`) and `PATCH …/collab/commitresource {type, externalEntityKey,
+  seriesExternalEntityKey, organizer, user, secret, resourceUri (the link
+  with its nav), metadata {linkScope "organization", hostClient}}`
+  (hostClient TeamsInMeeting in a call, TeamsCalendarDetailsPage from the
+  calendar). Once committed, reserveresource answers with the notes in
+  `collab.resources`. OST asks it first for a scheduled meeting (then the
+  meeting-notes service, then the Meet now way).
+- More actions (Teams gives the notes Loop's host controls): Shared
+  locations (the notes and "Open component in" its chat), Copy component,
+  See who has access (OneDrive's Manage access), Open in Loop and Add to
+  Loop workspace (`https://loop.microsoft.com/p/<base64 of {"p":{"u":
+  <link>,"r":false},"a":"AddToWorkspace"}>`, Loop's own page). OST: the
+  same items; See who has access is OST's Manage access for the notes'
+  file (Graph `shares/u!…/driveItem` for its ids).
 - Live (OST on linuxlt, 2026-11-16, a solo scheduled meeting of
   ost-test1's with nobody invited): Notes → the service answered with the
   notes' link at once (committed); Loop's page container framed, loaded,

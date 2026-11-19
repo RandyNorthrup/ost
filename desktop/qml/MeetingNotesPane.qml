@@ -77,21 +77,73 @@ Rectangle {
             }
         }
     }
-    // More actions: Teams lists Shared locations, Copy component, See who
-    // has access, Open in Loop and Add to Loop workspace; OST has the
-    // link's two.
+    // More actions (the Loop host controls Teams gives the notes): Shared
+    // locations (where the notes are shared: the meeting's chat), Copy
+    // component, See who has access (OneDrive's Manage access for the notes'
+    // file), Open in Loop and Add to Loop workspace (Loop's own page for it:
+    // loop.microsoft.com/p/<base64 {"p":{"u":link,"r":false},"a":
+    // "AddToWorkspace"}>).
+    property string meetingTitle: ""
     MenuPopup {
         id: moreMenu
         parent: header
         x: header.width - 16 - 64 - implicitWidth + 32; y: 50
-        items: [{ key: "copy", label: "Copy component", icon: "copy-20" }, { key: "loop", label: "Open in Loop", icon: "open-20" }]
+        items: [{ key: "locations", label: "Shared locations", icon: "apps-20" },
+                { key: "copy", label: "Copy component", icon: "select-object-20" },
+                { key: "access", label: "See who has access", icon: "people-checkmark-20" },
+                { key: "loop", label: "Open in Loop", icon: "open-20" },
+                { key: "workspace", label: "Add to Loop workspace", icon: "add-square-20" }]
         onPicked: i => {
             const link = root.url || root.sharedUrl
             if (!link) return
-            if (items[i].key === "copy") backend.copyText(link)
-            else Qt.openUrlExternally(link)
+            const k = items[i].key
+            if (k === "copy") backend.copyText(link)
+            else if (k === "loop") Qt.openUrlExternally(link)
+            else if (k === "locations") locations.open()
+            else if (k === "access") backend.callNotesRequest("item", "notesitem" + (++root.seq), JSON.stringify({ url: link }))
+            else if (k === "workspace") backend.callNotesRequest("workspace", "notesws" + (++root.seq), JSON.stringify({ url: link }))
         }
     }
+    Connections {
+        target: backend
+        function onCallNotesReply(id, json) {
+            let v = {}
+            try { v = JSON.parse(json) } catch (e) {}
+            if (id.indexOf("notesitem") === 0) {
+                if (v.error) { root.note("access error " + v.error); return }
+                notesShare.openManage({ site: v.site, list: v.list, item: v.item }, v.name, "loop")
+                root.note("access")
+            } else if (id.indexOf("notesws") === 0 && v.url) { Qt.openUrlExternally(v.url); root.note("workspace") }
+            else if (id.indexOf("notestestws") === 0) root.note("workspace url " + (v.url || v.error))
+        }
+    }
+    OneDriveShare { id: notesShare }
+    // Shared locations: the notes' name, then "Open component in" the
+    // meeting's chat.
+    Popup {
+        id: locations
+        parent: header
+        x: header.width - width - 16; y: 50
+        padding: 12; width: 280
+        background: FluentSurface { depth: 16; radius: 8; color: theme.menu }
+        contentItem: Column {
+            spacing: 8
+            Text { text: "Shared locations"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+            Text { width: 256; elide: Text.ElideRight; text: (root.title || root.meetingTitle || "Meeting notes") + ".loop"; font.family: theme.font; font.pixelSize: 14; color: theme.brandForeground1
+                   TapHandler { onTapped: Qt.openUrlExternally(root.url || root.sharedUrl) } }
+            Text { text: "Open component in"; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+            Row { spacing: 8
+                FluentIcon { name: "chat-20"; size: 16; color: theme.textStrong }
+                Text { text: "Teams / Chat · " + (root.meetingTitle || root.title || "Meeting chat"); font.family: theme.font; font.pixelSize: 14; color: theme.text } }
+        }
+    }
+    function menuForTest() { return moreMenu.items.map(i => i.label) }
+    // The harness: See who has access as the menu does; Add to Loop
+    // workspace's address logged instead of opened.
+    function accessForTest() { backend.callNotesRequest("item", "notesitem" + (++seq), JSON.stringify({ url: root.url || root.sharedUrl })) }
+    function workspaceForTest() { backend.callNotesRequest("workspace", "notestestws" + (++seq), JSON.stringify({ url: root.url || root.sharedUrl })) }
+    function locationsForTest(on) { if (on) locations.open(); else locations.close() }
+    function closeAccessForTest() { notesShare.close() }
     Loader {
         id: page
         active: false

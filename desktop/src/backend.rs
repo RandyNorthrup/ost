@@ -780,6 +780,10 @@ pub mod qobject {
         /// Put text on the clipboard (a code block's Copy) and say so.
         #[qinvokable]
         fn copy_text(self: Pin<&mut Backend>, text: &QString);
+        /// Put HTML with its plain text on the clipboard (an event's Copy
+        /// join details: the meeting's invitation, as Teams copies it).
+        #[qinvokable]
+        fn copy_html(self: Pin<&mut Backend>, html: &QString, text: &QString);
         /// Remove someone from the open group chat; the roster reloads after.
         #[qinvokable]
         fn remove_chat_member(self: Pin<&mut Backend>, mri: &QString);
@@ -4204,6 +4208,21 @@ async fn leave_moved_from(call: OutgoingCall) {
 fn call_slot() -> &'static tokio::sync::Mutex<CallSlot> {
     static SLOT: OnceLock<tokio::sync::Mutex<CallSlot>> = OnceLock::new();
     SLOT.get_or_init(Default::default)
+}
+
+/// A scheduled meeting's notes we claimed through Teams' collab object
+/// service and are making: the meeting, who asked, the claim's secret and
+/// the service's region (kept in memory only, until committed).
+type NotesClaim = (api::meeting_notes::Meeting, api::meeting_notes::CollabCaller, String, String);
+fn notes_claim() -> &'static tokio::sync::Mutex<Option<NotesClaim>> {
+    static CLAIM: OnceLock<tokio::sync::Mutex<Option<NotesClaim>>> = OnceLock::new();
+    CLAIM.get_or_init(Default::default)
+}
+
+/// The meeting artifacts service's region (Teams' regional `mcps`): the
+/// region of the events service the tenant was given, else "us".
+fn notes_region(client: &TeamsClient) -> String {
+    api::events::regional_endpoint(client).rsplit('/').next().filter(|r| r.len() <= 8).unwrap_or("us").to_string()
 }
 
 /// Where our own RTT lines are kept apart from everyone else's (Teams
@@ -14922,6 +14941,13 @@ impl qobject::Backend {
         }
     }
 
+    pub fn copy_html(self: Pin<&mut Self>, html: &QString, text: &QString) {
+        if let (Ok(t), Ok(h)) = (std::ffi::CString::new(text.to_string()), std::ffi::CString::new(html.to_string())) {
+            // SAFETY: NUL-terminated strings, copied by Qt before returning.
+            unsafe { ost_set_clipboard(t.as_ptr(), h.as_ptr()) };
+        }
+    }
+
     pub fn remove_chat_member(self: Pin<&mut Self>, mri: &QString) {
         let chat_id = self.rust().current_chat_id.to_string();
         let mri = mri.to_string();
@@ -19323,6 +19349,65 @@ impl qobject::Backend {
                         tracing::info!(discoverable = now, "events: Show event in Events app");
                         Ok(json!({ "isDiscoverable": now }))
                     }
+                    // Share's Copy embed code for a published town hall.
+                    "embedCode" => Ok(json!({ "code": api::events::embed_code(&s("id")) })),
+                    "seeMore" => api::events::see_more(&client, &s("section"), &s("skip")).await,
+                    "event" => api::events::event_form(&client, &s("id")).await,
+                    "update" => {
+                        let e: api::events::NewEvent = serde_json::from_value(p.clone()).unwrap_or_default();
+                        api::events::update(&client, &s("id"), &e).await?;
+                        tracing::info!("events: event updated");
+                        Ok(json!({ "ok": true }))
+                    }
+                    "patch" => {
+                        api::events::patch(&client, &s("id"), &p["body"]).await?;
+                        Ok(json!({ "ok": true }))
+                    }
+                    "duplicate" => {
+                        let e: api::events::NewEvent = serde_json::from_value(p.clone()).unwrap_or_default();
+                        let r = api::events::duplicate(&client, &s("sourceId"), &e).await?;
+                        tracing::info!(state = %r["state"], "events: event duplicated");
+                        Ok(r)
+                    }
+                    "saveTemplate" => {
+                        let e: api::events::NewEvent = serde_json::from_value(p["event"].clone()).unwrap_or_default();
+                        let r = api::events::save_as_template(&client, &s("id"), &e, &s("name"), &s("templateDescription")).await?;
+                        tracing::info!("events: template saved");
+                        Ok(r)
+                    }
+                    "updateTemplate" => {
+                        let e: api::events::NewEvent = serde_json::from_value(p["event"].clone()).unwrap_or_default();
+                        api::events::update_template(&client, &s("id"), &e, &s("name"), &s("templateDescription")).await?;
+                        Ok(json!({ "ok": true }))
+                    }
+                    "templates" => api::events::templates(&client).await,
+                    "deleteTemplate" => {
+                        api::events::delete_template(&client, &s("id")).await?;
+                        tracing::info!("events: template deleted");
+                        Ok(json!({ "ok": true }))
+                    }
+                    "options" => api::events::template_options(&client, p.get("townHall").and_then(|v| v.as_bool()).unwrap_or(false)).await,
+                    "searchPeople" => Ok(json!({ "query": s("query"), "kind": s("kind"),
+                                                 "people": api::events::search_people(&client, &s("kind"), &s("query")).await? })),
+                    "searchRooms" => Ok(json!({ "query": s("query"),
+                                                "rooms": api::events::search_rooms(&client, &s("query"), &s("start"), &s("end"), &s("zone")).await? })),
+                    "joinDetails" => Ok(json!({ "html": api::events::join_details(&s("link")).await? })),
+                    "integrations" => Ok(json!({ "items": api::events::integrations() })),
+                    "zones" => Ok(json!({ "zones": api::events::zones(), "local": api::events::local_zone_key() })),
+                    "pinned" => Ok(json!({ "pinned": api::events::is_pinned(&client).await? })),
+                    "pin" => {
+                        let on = p.get("on").and_then(|v| v.as_bool()).unwrap_or(false);
+                        api::events::set_pinned(&client, on).await?;
+                        tracing::info!(on, "events: app bar pin synced");
+                        Ok(json!({ "pinned": on }))
+                    }
+                    "emailTemplates" => api::events::email_templates(&client, &s("id")).await,
+                    // Meeting Recaps (Events' View audio recaps).
+                    "podcasts" => api::recaps::podcasts(&notes_region(&client)).await,
+                    "recapMeetings" => {
+                        let from = p.get("from").and_then(|v| v.as_i64()).unwrap_or(0);
+                        api::recaps::meetings(&notes_region(&client), from, 14).await
+                    }
                     _ => anyhow::bail!("unknown"),
                 }
             }
@@ -19356,17 +19441,42 @@ impl qobject::Backend {
                         if !shared.is_empty() {
                             return Ok(json!({ "url": shared, "source": "call" }));
                         }
-                        // 2. Teams' meeting-notes service.
+                        // The meeting (its chat thread, organizer, title, calendar id).
                         let mut m: api::meeting_notes::Meeting = serde_json::from_value(ctx.clone()).unwrap_or_default();
                         if let Ok(client) = TeamsClient::new().await {
                             api::meeting_notes::fill_from_chat(&client, &mut m).await;
                         }
+                        // 2. A scheduled meeting (it has a calendar id): Teams'
+                        // collab object service gives the notes made, or the
+                        // claim to make them.
+                        if !m.i_cal_uid.is_empty() {
+                            if let Ok(client) = TeamsClient::new().await {
+                                let region = notes_region(&client);
+                                let caller = api::meeting_notes::CollabCaller {
+                                    user: format!("{}@{}", client.object_id().unwrap_or_default(), client.tenant_id().unwrap_or_default()),
+                                    organizer_upn: api::meeting_notes::organizer_upn(&client, &m.organizer).await,
+                                };
+                                match api::meeting_notes::reserve(&region, &m, &caller).await {
+                                    Ok(r) if !r.location.is_empty() => return Ok(json!({ "url": r.location, "source": "collab" })),
+                                    Ok(r) if r.is_leader => {
+                                        *notes_claim().lock().await = Some((m.clone(), caller, r.secret, region));
+                                        return Ok(json!({ "create": true, "title": m.meeting_title, "via": "collab" }));
+                                    }
+                                    Ok(r) => {
+                                        tracing::info!(state = %r.state, "meeting notes: someone else is making them");
+                                        return Ok(json!({ "waiting": true }));
+                                    }
+                                    Err(e) => tracing::info!("meeting notes collab: {}", short_error(&e)),
+                                }
+                            }
+                        }
+                        // 3. Teams' meeting-notes service.
                         match api::meeting_notes::get_or_create(&m).await {
                             Ok(url) => return Ok(json!({ "url": url, "source": "service" })),
                             Err(e) => tracing::info!("meeting notes service: {}", short_error(&e)),
                         }
-                        // 3. Make them, as Teams does when the service can't:
-                        // claim making them, unless someone already did.
+                        // 4. Make them, as Teams does for a Meet now: claim
+                        // making them, unless someone already did.
                         if leader && s("force").is_empty() {
                             return Ok(json!({ "waiting": true }));
                         }
@@ -19379,10 +19489,29 @@ impl qobject::Backend {
                         let client = TeamsClient::new().await?;
                         let link = api::meeting_notes::edit_link(&client, &s("driveId"), &s("itemId")).await?;
                         let uri = api::meeting_notes::shared_link(&link, &s("componentUrl"));
+                        // A scheduled meeting's notes: commit them to the
+                        // collab object (Teams' commitresource).
+                        if let Some((m, caller, secret, region)) = notes_claim().lock().await.take() {
+                            api::meeting_notes::commit(&region, &m, &caller, &secret, &uri).await?;
+                            tracing::info!("meeting notes: committed to the collab object");
+                            return Ok(json!({ "url": uri, "source": "made" }));
+                        }
                         let slot = call_slot().lock().await;
                         let call = slot.outgoing.as_ref().context("Not in a call")?;
                         call.publish_meeting_states(call.notes().share(&uri), "Meeting notes link").await?;
                         Ok(json!({ "url": uri, "source": "made" }))
+                    }
+                    // More actions: See who has access needs the file's ids;
+                    // Add to Loop workspace opens Loop's page for it.
+                    "item" => {
+                        let client = TeamsClient::new().await?;
+                        api::meeting_notes::notes_item(&client, &s("url")).await
+                    }
+                    "workspace" => Ok(json!({ "url": api::meeting_notes::add_to_workspace_url(&s("url")) })),
+                    // The harness's cleanup of the notes it made.
+                    "cleanup" => {
+                        let client = TeamsClient::new().await?;
+                        Ok(json!({ "deleted": api::meeting_notes::delete_test_notes(&client, &s("prefix")).await? }))
                     }
                     _ => anyhow::bail!("unknown"),
                 }

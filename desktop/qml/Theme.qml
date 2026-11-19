@@ -238,6 +238,7 @@ QtObject {
     readonly property color brandForeground1: pick("#4F52B2", "#7F85F5", "#FFFF00")  // colorBrandForeground1 (links, e.g. the compose hint)
     readonly property color successFg: pick("#0E700E", "#54B054", "#FFFFFF")       // colorStatusSuccessForeground1 (toast)
     readonly property color greenForeground2: pick("#0B5A08", "#9FD89F", "#FFFFFF") // colorPaletteGreenForeground2 (an open breakout room)
+    readonly property color greenForeground1: pick("#0E700E", "#54B054", "#FFFFFF") // colorPaletteGreenForeground1 (a free room's "Available")
     readonly property color cardStroke: pick("#E6E6E6", "#3D3D3D", "#FFFFFF")      // the breakout rooms pane's assignment card
     readonly property color peerNoteFill: pick("#E6E6E6", "#333333", "#000000")    // the status bar over a 1:1's compose box
     readonly property color effectTile: pick("#E6E6E6", "#333333", "#000000")      // a video effect tile (NeutralBackground5)

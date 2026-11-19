@@ -128,6 +128,9 @@ Popup {
         AllowMeetingChat: { Enabled: "On", Disabled: "Off", InMeeting: "In-meeting only" },
         WhoCanStartAnnotations: { ActiveSharer: "Active sharer", Everyone: "Everyone" },
         AutoRecordAndTranscribeMode: { AutoRecordingAndTranscription: "Record and transcribe", AutoTranscriptionOnly: "Transcribe only", Off: "Off" },
+        WhoCanManageQna: { OrganizersAndCoorganizers: "Only organizers and co-organizers", OrganizersAndPresenters: "Organizers, co-organizers, and presenters" },
+        RecorderOption: { OrganizersAndPresentersOnly: "Organizers, co-organizers, and presenters", OrganizerAndCoOrganizersOnly: "Organizers and co-organizers" },
+        WhoCanAccessTranscriptAndRecording: { Default: "Everyone" },
         CopilotMode: { EnabledWithTranscript: "During and after the meeting", Enabled: "Only during the meeting", Disabled: "Off" }
     })
     // The sections and their fields, in Teams' order. kind: "list",
@@ -154,11 +157,16 @@ Popup {
             { name: "AttendeeRestrictions", kind: "video", label: "Allow camera for attendees", desc: "Turn this off to prevent attendees from sharing video. You can allow them to share video individually as needed." },
             { name: "AllowMeetingChat", kind: "list", label: "Meeting chat" },
             { name: "YammerQNAEnabled", kind: "switch", label: "Q&A", desc: "Organizers can customize Q&A to allow anonymous posts, review questions before they are published, and more." },
+            { name: "WhoCanManageQna", kind: "list", label: "Who can manage Q&A" },
             { name: "AllowTeamsMeetingReactions", kind: "switch", label: "Allow reactions" },
             { name: "AttendanceReportEnabled", kind: "switch", label: "Allow attendance report" },
             { name: "WhoCanStartAnnotations", kind: "list", label: "Who can start annotations?" }] },
         { key: "RECORDING_AND_TRANSCRIPTION", title: "Recording & transcription", icon: "mo-recording", fields: [
-            { name: "AutoRecordAndTranscribeMode", kind: "list", label: "Record and transcribe automatically", desc: "Recording and transcription will start automatically when the meeting begins. Your license and admin policy also determine how they turn on." }] },
+            { name: "AutoRecordAndTranscribeMode", kind: "list", label: "Record and transcribe automatically", desc: "Recording and transcription will start automatically when the meeting begins. Your license and admin policy also determine how they turn on." },
+            { name: "MeetingSpokenLanguage", kind: "list", label: "Spoken language in this meeting", desc: "Language that everyone is speaking in this meeting. This setting affects recording, transcription, captions, and Copilot." },
+            { name: "RecorderOption", kind: "list", label: "Who can record and transcribe", desc: "Your meeting role, your org’s license, and admin policy also determine who can record and transcribe." },
+            { name: "EnableMultiLingualMeeting", kind: "switch", label: "Enable multilingual speech recognition", desc: "This allows everyone to be understood in their spoken languages. This also affects recording, transcription, captions, and Copilot." },
+            { name: "WhoCanAccessTranscriptAndRecording", kind: "list", label: "Who has access to the recording or transcript", desc: "Copilot and recap access might be affected by this option." }] },
         { key: "COPILOT", title: "Copilot and other AI", icon: "mo-copilot", fields: [
             { name: "CopilotMode", kind: "list", label: "Allow Copilot" },
             { name: "IsRecapEnabled", kind: "switch", label: "Start Intelligent Recap when Copilot is turned on", desc: "Turn this off if you don’t want a recap with AI-generated content." }] },
@@ -368,8 +376,10 @@ Popup {
                                     enabled: !field.locked
                                     opacity: field.locked ? 0.5 : 1
                                     readonly property var names: root.labels[field.modelData.name] || ({})
-                                    label: names[root.value(field.modelData.name)] || String(root.value(field.modelData.name) || "")
-                                    options: (field.opt.values || []).map(v => [v, names[v] || String(v)])
+                                    // Teams' own value names from the reply's strings when OST has none.
+                                    function nameOf(v) { return names[v] || root.strings["meetingsOptions_" + field.modelData.name + "_" + v] || String(v) }
+                                    label: nameOf(root.value(field.modelData.name) || "")
+                                    options: (field.opt.values || []).map(v => [v, nameOf(v)])
                                     accessibleName: field.modelData.label
                                     onPicked: code => root.change(field.modelData.name, code)
                                 }

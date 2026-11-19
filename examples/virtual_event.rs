@@ -16,7 +16,7 @@ const TEST_ACCOUNTS: [&str; 3] = [
     "ost-test3@scnetsolutions.com",
 ];
 
-async fn person(client: &TeamsClient, upn: &str) -> anyhow::Result<serde_json::Value> {
+async fn person(client: &TeamsClient, upn: &str) -> anyhow::Result<events::Person> {
     ensure!(TEST_ACCOUNTS.contains(&upn.to_lowercase().as_str()), "{upn} is not a test account");
     let u: serde_json::Value = client
         .graph_get(&format!("/users/{upn}?$select=id,displayName,userPrincipalName"))
@@ -24,7 +24,16 @@ async fn person(client: &TeamsClient, upn: &str) -> anyhow::Result<serde_json::V
         .json()
         .await?;
     let id = u["id"].as_str().context("user id")?;
-    Ok(events::person(upn, u["displayName"].as_str().unwrap_or(upn), id, &client.tenant_id().unwrap_or_default()))
+    Ok(events::Person {
+        name: u["displayName"].as_str().unwrap_or(upn).to_string(),
+        email: upn.to_string(),
+        mri: format!("8:orgid:{id}"),
+        object_id: id.to_string(),
+        tenant_id: client.tenant_id().unwrap_or_default(),
+        upn: upn.to_string(),
+        user_type: "ADUser".into(),
+        ..Default::default()
+    })
 }
 
 #[tokio::main]
