@@ -4,7 +4,7 @@ title: Town hall attendees, webinars and event extras as Teams
 status: To Do
 assignee: []
 created_date: '2026-11-17T06:06:00Z'
-updated_date: '2026-11-19T05:59:00Z'
+updated_date: '2026-11-19T06:27:00Z'
 labels:
   - desktop
 dependencies: []
@@ -34,4 +34,7 @@ What TASK-0184 left (docs/spec/town-halls-and-webinars.md):
 - Composition bot hidden by Teams' blacklistedBots list (+ botData.hiddenParticipant).
 - streamingClient bar layout, Waiting/Live/Ended pill and Start event/End event as measured; Preview as Attendee + Join as Organizer/Presenter split (participationPreferences attendee); Calendar New > Webinar/Town hall; published dialog (card preview, Show event in Events app = PATCH isDiscoverable with eTag, Copy embed code); card Live / in N mins badges and Join.
 - Webinar OST TEST 217 webinar run live: OST Test 2 organized in OST (start/end), OST Test 3 presenter in OST, ost-test1 attended in Teams (LIVE, then "The event has concluded. Thank you for attending."). All three test events cancelled.
+
+- Also verified: Preview as Attendee from OST (ost-test1 organizer of OST TEST 217 town hall 3) joined as a streaming attendee (Waiting bar, curtain). Lib tests 758 passed on linuxlt.
+- Open: (1) when OST is the organizer who starts the event, a streaming attendee lost the call (Teams attendee in run 1, OST Test 2 in run 3) while Teams starting it kept them: compare OST go-live with Teams; (2) Bring on screen with a second presenter not rechecked live (test webinar was not HostMode); (3) webinar registration not built; (4) On with preview and the Manage screen panel not built; (5) Virtual appointment / Live Event not built; (6) the pre-join split menu needs the preheat to finish, not yet seen on screen; (7) OST Test 3 keeps cancelled OST TEST 217 webinar entries.
 <!-- SECTION:NOTES:END -->
