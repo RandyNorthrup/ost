@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-17T06:06:00Z'
-updated_date: '2026-11-19T10:09:00Z'
+updated_date: '2026-11-19T11:28:00Z'
 labels:
   - desktop
 dependencies: []
@@ -22,7 +22,7 @@ What TASK-0184 left (docs/spec/town-halls-and-webinars.md):
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Town hall attendees watch the event in OST as in Teams, and the service bot is hidden as Teams hides it
+- [x] #1 Town hall attendees watch the event in OST as in Teams, and the service bot is hidden as Teams hides it
 - [ ] #2 Webinars are scheduled, joined and run in OST, checked live
 - [ ] #3 The event extras listed above work and look as in Teams
 <!-- AC:END -->
@@ -68,4 +68,6 @@ What TASK-0184 left (docs/spec/town-halls-and-webinars.md):
   - Registration: an invited attendee joins from Calendar without registering; "Private" + registration is refused by the service here ("Registration-gated private invite-only events are not currently supported."); an organization webinar with registration made discoverable (PATCH isDiscoverable true answered, overview still says discoverable false) never showed in Teams' Discover upcoming list, so Teams' Register (POST events/{id}/attendee/register) wasn't captured. OST reads your registration (events::my_registration, virtual_event registration <id>); the Register button is open.
   - Webinar Manage what attendees see: no option in the webinar form in this tenant; set it through the meeting's options (ManagedMode HostMode), then People's Bring on screen applies. Bring on screen with a second presenter not rerun live this round.
   - All OST TEST 217 events cancelled and calendar entries purged (ost-test1, OST Test 2, OST Test 3).
+
+- Merged f45a524 (2026-11-19): build OK, 773 lib tests passed. AC1 verified live (stream plays; bot hidden; organizer start no longer drops attendees). Open: Bring on screen rerun live, webinar registration, "On with preview" production layout (Send live), the Join as / Preview menu harness run.
 <!-- SECTION:NOTES:END -->
