@@ -1211,6 +1211,10 @@ fn run_linux(rx: mpsc::Receiver<Cmd>, on_action: Box<dyn Fn(Action) + Send>) {
             set_status(|st| st.has_control = mine);
             if !mine {
                 open = None;
+                // Another app took the buttons ("Transfer controls"): no
+                // prompt to take them straight back; Devices' "Transfer
+                // controls to this app" does that.
+                prompted = true;
             } else {
                 last_scan = None;
                 prompted = false;
