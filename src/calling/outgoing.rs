@@ -117,6 +117,12 @@ pub struct OutgoingCall {
     /// The conversation's updateMeetingLiveState link (Start meeting, End
     /// event).
     live_state_link: Option<String>,
+    /// The conversation's setMeetingLayout link (Send live, "On with
+    /// preview").
+    layout_link: Option<String>,
+    /// The production layout's next sequence number (Teams' production
+    /// studio counts its own and takes a higher one from the service).
+    layout_seq: u64,
     /// The conversation's addParticipantAndModality link ("Call me").
     add_modality_link: Option<String>,
     /// The conversation's addModality link (content-sharing sessions:
@@ -726,6 +732,7 @@ impl OutgoingCall {
         self.add_participant_link = link("addParticipant").or(self.add_participant_link.take());
         self.meeting_states_link = link("updateMeetingStates").or(self.meeting_states_link.take());
         self.live_state_link = link("updateMeetingLiveState").or(self.live_state_link.take());
+        self.layout_link = link("setMeetingLayout").or(self.layout_link.take());
         if let Some(e) = super::live_event::live_event(update) {
             self.event = e;
         }
@@ -1560,7 +1567,28 @@ impl OutgoingCall {
 
     /// Note a conversation update's event facts; true when they changed.
     pub fn apply_event(&mut self, json: &serde_json::Value) -> bool {
-        match super::live_event::live_event(json) {
+        // The production layout comes on its own updates too; an update
+        // without it keeps the last one (Teams keeps meetingLayoutDetails).
+        let layout = super::live_event::production_layout(json);
+        if let Some(l) = &layout {
+            let raw = ["/body/layoutDetails", "/layoutDetails", "/body/conversationUpdate/layoutDetails"]
+                .iter()
+                .find_map(|p| json.pointer(p))
+                .map(|v| v.to_string().chars().take(3000).collect::<String>())
+                .unwrap_or_default();
+            tracing::info!(kind = %l.kind, seq = l.sequence, %raw, sources = ?l.participants.iter().map(|p| format!("{}:{}", p.participant_id, p.modality)).collect::<Vec<_>>(), "event production layout");
+            if let Some(n) = json.pointer("/body/layoutDetails/sequenceNumber").or_else(|| json.pointer("/layoutDetails/sequenceNumber")).and_then(|v| v.as_u64()) {
+                self.layout_seq = self.layout_seq.max(n);
+            }
+        }
+        let parsed = super::live_event::live_event(json).map(|mut e| {
+            if layout.is_none() {
+                e.layout = self.event.layout.clone();
+            }
+            e
+        });
+        let parsed = parsed.or_else(|| layout.map(|l| super::live_event::LiveEvent { layout: l, ..self.event.clone() }));
+        match parsed {
             Some(e) if e != self.event => {
                 tracing::info!(phase = %e.phase, seq = e.seq, town_hall = e.town_hall, "event live state");
                 self.event = e;
@@ -1594,6 +1622,37 @@ impl OutgoingCall {
         self.state_seq += 1;
         let body = serde_json::json!({ "from": self.me.0, "sequenceNumber": self.state_seq, "scope": "specified", "stateIds": [state_id] });
         cc_post(&self.http, &self.skype_token, &link, &body, "Remove state").await?;
+        Ok(())
+    }
+
+    /// Send live ("On with preview"): put these sources on the live
+    /// screen (Teams' setMeetingLayout with the production layout and the
+    /// next layout sequence number, as its production studio counts them).
+    pub async fn set_meeting_layout(&mut self, sources: &[super::live_event::LayoutSource]) -> Result<()> {
+        let link = self.layout_link.clone().context("This meeting can't send a layout live")?;
+        let status = signaling::trouter_callback(&self.callbacks.0, &self.callbacks.1, "conversation/setMeetingLayoutStatus/");
+        let op = uuid::Uuid::new_v4().to_string();
+        let from = super::meeting_options::state_from(&self.me.0);
+        self.layout_seq = self.layout_seq.max(self.event.layout.sequence);
+        let seq = self.layout_seq;
+        self.layout_seq += 1;
+        // Teams names your own source by this call's endpoint (Ue: the
+        // call's participantId and endpointId).
+        let me_id = self.me.0["id"].as_str().unwrap_or_default().to_ascii_lowercase();
+        let sources: Vec<super::live_event::LayoutSource> = sources
+            .iter()
+            .cloned()
+            .map(|mut s| {
+                if s.id.eq_ignore_ascii_case(&me_id) {
+                    s.participant_id = self.me.0["participantId"].as_str().unwrap_or_default().to_string();
+                    s.endpoint_id = self.me.0["endpointId"].as_str().unwrap_or_default().to_string();
+                }
+                s
+            })
+            .collect();
+        let body = super::live_event::set_layout_body(&from, &format!("{}_Preview", self.call_id), &sources, seq, &status, &op);
+        tracing::info!(seq, sources = sources.len(), body = %body, "send live: setting the meeting layout");
+        cc_post(&self.http, &self.skype_token, &link, &body, "Meeting layout").await?;
         Ok(())
     }
 
@@ -3910,6 +3969,8 @@ async fn start_tagged(
             .and_then(|v| super::live_event::live_event(&v))
             .unwrap_or_default(),
         live_state_link: conversation_link(&created.response_body, "updateMeetingLiveState"),
+        layout_link: conversation_link(&created.response_body, "setMeetingLayout"),
+        layout_seq: 0,
         add_modality_link,
         content_link,
         my_content: None,

@@ -416,6 +416,109 @@ appointment" (guest OST Test 2), both deleted afterwards.
   com …/town-halls/), and Close (96 x 32, 600, #D1D1D1 edge) at the
   bottom left.
 
+## 9. Round 3 in Teams desktop (TASK-0217, 2026-11-19)
+
+Measured on winpc (ost-test1, build 26304) with "OST TEST 217 r3 town
+hall" (organizer ost-test1), "OST TEST 217 r3 town hall B" (organizer OST
+Test 2 in OST, presenters OST Test 3 and ost-test1) and "OST TEST 217 r3
+webinar reg" (organizer OST Test 2, organization-wide, registration on).
+
+### Manage what attendees see during a meeting
+- `ManagedMode` saved while the meeting runs (OST's meeting options or
+  Teams' own Meeting options ▸ Apply) doesn't reach the running
+  conversation's `attendeeViewModes`; the next conversation (everyone
+  left, then joining again) has it.
+- A webinar organized by OST Test 2 has no `ManagedMode` option at all
+  (its options stop at ProducerOption); town halls have it.
+
+### "On with preview": Send live
+- The preview is the producer's own (Teams keeps it in its local
+  previewProductionStudioLayout cache): "Add to preview" sends nothing.
+- Send live: the production studio's setProductionLayout ▸
+  convertLayoutToPayload, then calling-electron's setMeetingLayout hands
+  SlimCore `meetingLayoutJson` (the layoutDetails as JSON) and the
+  operation id; SlimCore's CSetMeetingLayoutOperation posts it to the
+  conversation's `setMeetingLayout` link (status callback
+  `conversation/setMeetingLayoutStatus/`). Teams' pluginless stack (the
+  same protocol in JS, aG) posts `{from {id, endpointId, participantId,
+  languageId, displayName}, layoutDetails, operationId, sequenceNumber
+  (meetingLayoutSequenceNumber), links {setMeetingLayoutStatus}}`.
+- The layoutDetails Teams desktop sent (CDP logpoint): `{layout {id
+  "<teamsCallId>_Preview", participants [{id <mri>, participantId,
+  endpointId, modality "VIDEO", isRTMPInVideo false, state null}],
+  nameTag {isEnabled true}, kind "CLASSIC", kindDetails null, background
+  null, action "put"}, sequenceNumber}`, the sequence number being the
+  conversation's (0, then 1 …). An empty preview sent live clears the
+  live screen.
+- Every participant then gets `conversationUpdate` `layoutDetails`
+  `{lastNonScreenshareLayoutKind, lastSideBySideLayoutKind, lastUpdatedBy,
+  layout {action, kind, lastNonScreenshareLayoutKind ("CLASSIC"),
+  lastScreenshareLayoutKind ("SIDEBYSIDE"), …Type, lastUpdatedById,
+  nameTag, operationId, participants [{endpointId, id, isOnStage true,
+  isRTMPInVideo false, modality, participantId}], resolution {1280 x
+  720}, sequenceNumber}, sequenceNumber + 1}` (null before anyone sent
+  one; kind "NONE" at first). OST Test 2 got it about a second after
+  Teams pressed Send live.
+- Kinds: PANELIST, CLASSIC, SPEAKER, GALLERY, SIDEBYSIDE, STACKED,
+  CONTENTONLY, CONTENTSPEAKERFOCUSED (NONE reads as CLASSIC); with a
+  screen share among the sources Teams picks SIDEBYSIDE.
+- The producer's view (1280 x 680): Preview and Live stages 402.9 x 226.6
+  (16:9, the top part's height less 132.1), 32 apart about the middle,
+  each in a 2.67 #FDE300 frame (Live too before the start), the titles
+  16/700 12 above; Send live (96 x 31.3, #FDE300, 0.67 #D1D1D1 edge,
+  14/600 #242424) 24 under the Preview's right edge; on the Live title
+  row, right-aligned, "Last updated by **name**" (13/400, "you" for
+  yourself). The Manage screen strip: a 60 tall header (0.67 #E0E0E0 top
+  edge), tiles 273 x 152 on a 277.3 pitch with an "Add to preview" /
+  "Remove from preview" switch. Three sources on a sub stage: two 196.7
+  x 110.6 tiles side by side, the third centred under them.
+- Two people on the HostMode managed stage (1034.7 x 582.7) sit side by
+  side at 517.3 x 291.
+- The green room's alert for an auto-recorded event is "Recording and
+  transcription will begin when the meeting starts." (Teams' recording
+  UFD RecordingAndTranscriptWaitingForMeetingLive, 318.7 wide).
+
+### Webinar registration
+- OST's "Show event in Events app" sent `{"isDiscoverable": on}`: the
+  service ignores it. Teams' updateVirtualEvent converter puts the flag
+  in `access`: `PATCH events/{id}` `{"access": {"isDiscoverable": on},
+  "meetingOptions": null}`. With that, the organization-wide webinar
+  appeared at once in ost-test1's Discover "Upcoming events in your org"
+  (the r2 event never did because the flag never changed).
+- Discover's card for an event with registration: Register (84 x 23.3,
+  outlined #D1D1D1, the calendar glyph, 12/400) and Copy event page link;
+  registered, "Registered ▾" (117.4, calendar-checkmark) whose menu has
+  Unregister. The card's state is `requesterPropertiesBySession.
+  {session}.registrationStatus`; `registrationInfo` holds the questions
+  and termsOfUseUrl.
+- Register opens a 600 wide dialog (radius 8, padding 24): the title
+  20/600, the date 14 ("Thursday, November 19, 2026, 6:00 AM - 7:00 AM"),
+  a divider, "Registration Information" 14/600, First name / Last name
+  (186.7 x 30.7) and Email (549.3) filled from your profile and disabled,
+  red asterisks, a divider, "I have read and agree to the Microsoft Event
+  Terms and Conditions *" (go.microsoft.com/fwlink/?linkid=2210903),
+  Cancel and Register (96 x 31.3). Teams first reads
+  `GET events/{id}/users/{oid}/registration`.
+- Register: `POST {teamsevents}/events/{id}/attendee/register` (the id
+  URL-encoded) `{"language":"en-us","timeZoneDetails":{"ianaTimeZone":
+  "America/Los_Angeles","windowsTimeZone":"America/Los_Angeles",
+  "localizedTimeZoneString":"GMT-08:00 America/Los_Angeles","utcOffset":
+  -480,"timeZone":"America/Los_Angeles"},"firstName":"OST","lastName":
+  "Test 1","email":"ost-test1@scnetsolutions.com","answers":[],
+  "hasAcceptedTermsOfUse":null}` → `{registrationId, status
+  "Registered", meetingJoinUrl (with prid), …}`; the dialog turns into
+  "You're registered!" (Teams' 192 illustration, 20/600) and "We sent a
+  confirmation email to …", with an "Event Registered" toast.
+- Unregister ▸ "Cancel your registration?" (600 x 168: "You'll be
+  removed from the event if you cancel. You can register again later if
+  you change your mind.", Stay registered, Cancel registration): `POST
+  events/{id}/attendees/{registrationId}/cancel`, no body, 204.
+
+### The pre-join's Join as menu
+- Items 140.9 x 32, 2 apart, 14/400 #424242 6 in, starting 5 right of
+  Join now's left edge and 4.5 under it; the chevron part turns #4F52B2
+  while the menu is open.
+
 ## OST status (see the tasks' notes for the live checks)
 
 - [x] Events: the Town hall template's form (capacity, large audience,
@@ -451,11 +554,14 @@ appointment" (guest OST Test 2), both deleted afterwards.
   and Live Event (the retirement dialog and window); the webinar
   attendee's waiting screen as measured; your registration read
   (`events/{id}/users/{oid}/registration`).
-- [ ] Open: "On with preview" production stages (Preview / Live, Send
-  live = Teams' setMeetingLayout production layout) aren't built; the
-  Register flow (Teams' `POST events/{id}/attendee/register`) wasn't
-  captured: invited attendees join without registering, a Private event
-  can't take registration in this tenant ("Registration-gated private
-  invite-only events are not currently supported."), and an organization
-  event made discoverable didn't show in Discover's upcoming list; the
+- [x] Round 3 (TASK-0217, §9): "On with preview" (Preview and Live
+  stages, Add to preview, Send live through the conversation's
+  setMeetingLayout as Teams sends it, the live layout from
+  layoutDetails, "Last updated by", the Manage screen strip; webinar
+  attendees see only the live layout); Show event in Events app sent as
+  Teams does; Discover's Register / Registered / Unregister with Teams'
+  dialogs; the Join as menu's geometry; two people side by side on the
+  managed stage.
+- [ ] Open: the green room's recording alert for auto-recorded events;
+  registration questions (OST registers events without questions); the
   player's own controls and live stream captions.

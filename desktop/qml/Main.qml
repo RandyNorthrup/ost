@@ -3624,7 +3624,7 @@ Window {
                                               "end", JSON.stringify(callWindow.ubar.end), "attendees", callWindow.attendeeCount, "side", callWindow.side,
                                               "stream", backend.callStreamJson, JSON.stringify(callWindow.streamForTest()), "state", backend.callState,
                                               "manage", callWindow.manageScreen, "onScreen", callWindow.onScreen.length, "split", callWindow.leaveSplitForTest(),
-                                              "alert", callWindow.greenRoomAlertForTest())
+                                              "alert", callWindow.greenRoomAlertForTest(), "production", callWindow.previewMode, JSON.stringify(callWindow.previewForTest()))
                 const endAt = 11 + window.joinStay - 14
                 if (step === 8) { callWindow.side = ""; log("joined"); shot("green") }
                 else if (step === 9 && has("--join-event-qna")) callWindow.runControl("YammerQnaButton")
@@ -3634,12 +3634,38 @@ Window {
                 else if (step === 21 && has("--join-event-start")) { callWindow.runControl("StagingRoomStartMeetingButton"); log("start asked") }
                 else if (step === 22 && has("--join-event-start")) { shot("start-dialog"); callWindow.startEventForTest() }
                 else if (step === 23 && has("--join-event-start")) { log("starting"); shot("starting") }
+                // --join-event-spotlight (Manage what attendees see On):
+                // the Manage screen's Stage presence on for every other
+                // presenter (Bring on screen), off again near the end.
+                else if (step === 26 && has("--join-event-spotlight")) {
+                    for (const p of callWindow.roster.filter(p => p.active !== false && p.id !== callWindow.selfId && (p.role || "").toLowerCase() !== "attendee" && !p.bot))
+                        callWindow.participantAction("spotlight", p.id, p.name || "", "")
+                    log("brought on screen")
+                }
+                else if (step === 30 && has("--join-event-spotlight")) { log("on screen"); shot("on-screen") }
+                else if (step === endAt - 4 && has("--join-event-spotlight")) {
+                    for (const p of callWindow.spotlighted.filter(p => p.id !== callWindow.selfId))
+                        callWindow.participantAction("unspotlight", p.id, p.name || "", p.spotlight || "")
+                    log("taken off screen")
+                }
+                // --join-event-preview ("On with preview"): everyone who
+                // manages the screen onto the preview, Send live, then the
+                // preview emptied and sent live again near the end.
+                else if (step === 26 && has("--join-event-preview")) {
+                    for (const p of callWindow.roster.filter(p => p.active !== false && (p.role || "").toLowerCase() !== "attendee" && !p.bot))
+                        callWindow.togglePreview(p.id === callWindow.selfId ? callWindow.selfEntry : p, true)
+                    log("preview filled"); shot("preview")
+                }
+                else if (step === 27 && has("--join-event-preview")) { callWindow.sendLive(); log("send live") }
+                else if (step === 31 && has("--join-event-preview")) { log("sent live"); shot("sent-live") }
+                else if (step === endAt - 4 && has("--join-event-preview")) { callWindow.previewSources = []; callWindow.sendLive(); log("live cleared") }
+                else if (step === endAt - 2 && has("--join-event-preview")) { log("after clear"); shot("cleared") }
                 else if (step === 32) { log("after start"); shot("live") }
                 else if (step === endAt && has("--join-event-end")) { callWindow.runControl("StagingRoomEndMeetingButton"); log("end asked") }
                 else if (step === endAt + 1 && has("--join-event-end")) { shot("end-dialog"); callWindow.endEventForTest() }
                 else if (step === endAt + 8 && has("--join-event-end")) { log("ended"); shot("ended") }
                 else if (step === 11 + window.joinStay) log("end")
-                else if (step > 23 && step % 5 === 0) { log("wait"); if (callWindow.streaming && step % 15 === 0) shot("stream-" + step) }
+                else if (step > 23 && step % 5 === 0) { log("wait"); if ((callWindow.streaming || callWindow.previewMode || callWindow.manageScreen || callWindow.liveSources.length) && step % 15 === 0) shot("stream-" + step) }
             } else if (step >= 8 && step <= Math.min(100, 11 + window.joinStay) && Qt.application.arguments.indexOf("--join-copilot") >= 0) {
                 // --join-copilot: Copilot in the meeting (TASK-0188, a
                 // Copilot-licensed account): the bar's Copilot, Teams'
@@ -8324,6 +8350,32 @@ Window {
             // the draft named "OST TEST 184 town hall draft <time>".
             const townHall = Qt.application.arguments.indexOf("--events-test=townhall") >= 0
             const live = Qt.application.arguments.indexOf("--events-test=create") >= 0 || townHall
+            // =register:<title> (TASK-0217): Discover's card of that title
+            // ("~" for spaces), Register's dialog, the terms ticked,
+            // Register, "You're registered!", Discover reloaded with the
+            // card Registered; then (--events-unregister) Unregister and
+            // Discover again. EVENTS register lines; -events-reg-*.png.
+            const regArg = Qt.application.arguments.find(a => a.startsWith("--events-test=register:"))
+            if (regArg) {
+                const title = regArg.slice(23).replace(/~/g, " ")
+                const rlog = t => console.warn("EVENTS register", t, ev ? JSON.stringify(ev.registerStateForTest(title)) : "no view")
+                switch (step) {
+                case 0: rail.openApp("events"); break
+                case 3: rlog("discover"); cap("reg-discover"); break
+                case 4: rlog("open " + ev.registerOpenForTest(title)); break
+                case 6: rlog("dialog"); cap("reg-dialog"); break
+                case 7: ev.registerSubmitForTest(); rlog("submitted"); break
+                case 9: rlog("done"); cap("reg-done"); break
+                case 10: ev.registerCloseForTest(); ev.reload(); break
+                case 13: rlog("reloaded"); cap("reg-card"); break
+                case 14: if (Qt.application.arguments.indexOf("--events-unregister") < 0) { Qt.quit(); step = 1000; return } rlog("unregister " + ev.unregisterForTest(title)); break
+                case 15: cap("reg-unregister"); ev.unregisterConfirmForTest(); break
+                case 17: ev.reload(); break
+                case 20: rlog("unregistered"); cap("reg-card-after"); Qt.quit(); step = 1000; return
+                }
+                step++
+                return
+            }
             switch (step) {
             case 0: rail.openApp("events"); break
             case 3: log("discover"); cap("discover"); break

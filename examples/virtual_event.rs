@@ -95,6 +95,21 @@ async fn main() -> anyhow::Result<()> {
             let on = args.get(2).map(String::as_str) == Some("on");
             println!("{}", events::set_discoverable(&client, args.get(1).context("id")?, on).await?);
         }
+        // PATCH an event with a JSON body (Teams' updateVirtualEvent).
+        Some("patch") => {
+            let body: serde_json::Value = serde_json::from_str(args.get(2).context("json body")?)?;
+            events::patch(&client, args.get(1).context("id")?, &body).await?;
+            println!("patched");
+        }
+        // Discover's lists as you see them (titles, ids, discoverable).
+        Some("discover") => {
+            let d = events::discover(&client, &events::DiscoverFilter::default()).await?;
+            for list in ["now", "upcoming", "past"] {
+                for c in d[list].as_array().into_iter().flatten() {
+                    println!("{list}: {} | {} | {}", c["title"].as_str().unwrap_or_default(), c["id"].as_str().unwrap_or_default(), c["start"].as_str().unwrap_or_default());
+                }
+            }
+        }
         // Your registration for an event (Teams' get-virtual-event-
         // attendee-registration-by-user).
         Some("registration") => println!("{:#}", events::my_registration(&client, args.get(1).context("id")?).await?),

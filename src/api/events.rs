@@ -142,6 +142,15 @@ pub struct EventCard {
     pub access: String,
     pub invite_only: bool,
     pub registration: bool,
+    /// Your registration for its first session
+    /// (`requesterPropertiesBySession.{session}.registrationStatus`):
+    /// "Registered", "Canceled", … or "" (Teams' card shows Register or
+    /// Registered by it).
+    pub registration_status: String,
+    /// The registration form's terms of use link (`registrationInfo.
+    /// termsOfUseUrl`) and how many questions it asks.
+    pub terms_url: String,
+    pub questions: usize,
 }
 
 /// The cards in an eventOverviews reply (`results[].eventDetails`).
@@ -196,6 +205,15 @@ pub fn cards_from(reply: &Value, ams_v2: &str) -> Vec<EventCard> {
                 access: s("/access/accessType"),
                 invite_only: e.pointer("/access/inviteOnly").and_then(Value::as_bool).unwrap_or(false),
                 registration: e.pointer("/access/isRegistrationEnabled").and_then(Value::as_bool).unwrap_or(false),
+                registration_status: session
+                    .and_then(|x| x.get("id"))
+                    .and_then(Value::as_str)
+                    .and_then(|sid| r.pointer(&format!("/requesterPropertiesBySession/{sid}/registrationStatus")))
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
+                terms_url: r.pointer("/registrationInfo/termsOfUseUrl").and_then(Value::as_str).unwrap_or_default().to_string(),
+                questions: r.pointer("/registrationInfo/questions").and_then(Value::as_array).map_or(0, Vec::len),
             })
         })
         .collect()
@@ -751,8 +769,57 @@ pub async fn my_registration(client: &TeamsClient, id: &str) -> Result<Value> {
     }
 }
 
+/// Teams' registration form's payload (meet-app Es, then the resolver's
+/// RegisterVirtualEventAttendeeInput converter; captured on winpc
+/// 2026-11-19, Discover's Register): the host locale ("en-us"), the browser's time zone
+/// (its IANA name everywhere, "GMT-08:00 America/Los_Angeles" and the
+/// offset in minutes), your names and email, the answers
+/// (`{Id, Answer}`), the terms of use (null without any). Add to calendar
+/// sends the same with `registrationType` "AddToCalendar".
+pub fn register_body(iana: &str, utc_offset_minutes: i64, first: &str, last: &str, email: &str, answers: &[(String, Value)], terms: Option<bool>) -> Value {
+    let sign = if utc_offset_minutes < 0 { '-' } else { '+' };
+    let off = utc_offset_minutes.abs();
+    let localized = if off == 0 { format!("GMT {iana}") } else { format!("GMT{sign}{:02}:{:02} {iana}", off / 60, off % 60) };
+    json!({
+        "language": "en-us",
+        "timeZoneDetails": {
+            "ianaTimeZone": iana, "windowsTimeZone": iana, "localizedTimeZoneString": localized,
+            "utcOffset": utc_offset_minutes, "timeZone": iana
+        },
+        "firstName": first,
+        "lastName": last,
+        "email": email,
+        "answers": answers.iter().map(|(id, a)| json!({ "Id": id, "Answer": a })).collect::<Vec<_>>(),
+        "hasAcceptedTermsOfUse": terms,
+    })
+}
+
+/// Register for an event (Teams' register-virtual-event-attendee, `POST
+/// events/{id}/attendee/register`): `{registrationId, status,
+/// meetingJoinUrl, registrationType}`.
+pub async fn register(client: &TeamsClient, id: &str, body: &Value) -> Result<Value> {
+    let id = event_path(id)?;
+    let r = send(reqwest::Method::POST, &format!("{}/events/{}/attendee/register", regional_endpoint(client), urlencoding(&id)), Some(body), false).await?;
+    r.json().await.context("The registration")
+}
+
+/// Unregister (the Registered button's Unregister ▸ Cancel registration,
+/// captured 2026-11-19): `POST events/{id}/attendees/{registrationId}/
+/// cancel`, no body, 204.
+pub async fn unregister(client: &TeamsClient, id: &str, registration_id: &str) -> Result<()> {
+    let id = event_path(id)?;
+    anyhow::ensure!(
+        !registration_id.is_empty() && registration_id.chars().all(|c| c.is_ascii_hexdigit() || c == '-'),
+        "Not a registration"
+    );
+    send(reqwest::Method::POST, &format!("{}/events/{id}/attendees/{registration_id}/cancel", regional_endpoint(client)), None, false).await?;
+    Ok(())
+}
+
 /// The published dialog's "Show event in Events app" (Teams'
-/// toggleDiscoverability): `PATCH events/{id}` `{"isDiscoverable": on}`
+/// toggleDiscoverability ▸ updateVirtualEvent, whose input converter puts
+/// the flag in `access`): `PATCH events/{id}` `{"access": {"isDiscoverable":
+/// on}, "meetingOptions": null}`
 /// with the event's eTag as If-Match (Teams' updateVirtualEvent, read
 /// 2026-11-18). On, people in your organization with access see the event
 /// on Events' Discover page.
@@ -767,14 +834,14 @@ pub async fn set_discoverable(client: &TeamsClient, id: &str, on: bool) -> Resul
         .bearer_auth(t)
         .header("content-type", "application/json")
         .header("x-ms-correlation-id", uuid::Uuid::new_v4().to_string())
-        .json(&json!({ "isDiscoverable": on }));
+        .json(&json!({ "access": { "isDiscoverable": on }, "meetingOptions": null }));
     if !etag.is_empty() {
         req = req.header("If-Match", etag);
     }
     let r = req.send().await.context("The events service")?;
     anyhow::ensure!(r.status().is_success(), "The events service answered {}", r.status());
     let v: Value = r.json().await.unwrap_or_default();
-    Ok(v.get("isDiscoverable").and_then(Value::as_bool).unwrap_or(on))
+    Ok(v.pointer("/access/isDiscoverable").or_else(|| v.get("isDiscoverable")).and_then(Value::as_bool).unwrap_or(on))
 }
 
 /// Teams' "Copy embed code" for a published town hall (the share dialog's
@@ -1290,6 +1357,32 @@ mod tests {
 
     fn at(s: &str) -> chrono::DateTime<chrono::Utc> {
         chrono::DateTime::parse_from_rfc3339(s).unwrap().with_timezone(&chrono::Utc)
+    }
+
+    #[test]
+    fn registers_as_teams_does() {
+        // Teams desktop's Register (Discover, captured 2026-11-19).
+        let b = register_body("America/Los_Angeles", -480, "OST", "Test 1", "ost-test1@scnetsolutions.com", &[], None);
+        assert_eq!(
+            b,
+            json!({"language": "en-us", "timeZoneDetails": {"ianaTimeZone": "America/Los_Angeles", "windowsTimeZone": "America/Los_Angeles",
+                "localizedTimeZoneString": "GMT-08:00 America/Los_Angeles", "utcOffset": -480, "timeZone": "America/Los_Angeles"},
+                "firstName": "OST", "lastName": "Test 1", "email": "ost-test1@scnetsolutions.com", "answers": [], "hasAcceptedTermsOfUse": null})
+        );
+        let a = register_body("Asia/Kolkata", 330, "a", "b", "c", &[("q1".into(), json!("yes"))], Some(true));
+        assert_eq!(a["timeZoneDetails"]["localizedTimeZoneString"], "GMT+05:30 Asia/Kolkata");
+        assert_eq!(a["answers"], json!([{"Id": "q1", "Answer": "yes"}]));
+        assert_eq!(a["hasAcceptedTermsOfUse"], true);
+    }
+
+    #[test]
+    fn reads_your_registration_on_a_card() {
+        let r = json!({"results": [{"eventDetails": {"id": "e1", "access": {"isRegistrationEnabled": true, "isDiscoverable": true}},
+            "eventSessions": [{"id": "s1"}], "registrationInfo": {"questions": [], "termsOfUseUrl": null},
+            "requesterPropertiesBySession": {"s1": {"registrationStatus": "Registered", "roles": []}}}]});
+        let c = &cards_from(&r, "")[0];
+        assert!(c.registration && c.discoverable);
+        assert_eq!((c.registration_status.as_str(), c.questions, c.terms_url.as_str()), ("Registered", 0, ""));
     }
 
     #[test]

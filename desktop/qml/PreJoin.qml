@@ -842,25 +842,28 @@ Window {
                 Connections { target: win; function onJoinMenuOpenForTest() { joinMenu.visible = true } }
                 Item {
                     id: joinMenu
-                    // Under the split button, right-aligned to it (Teams' menu:
-                    // 141 wide, 4 padding, items 32 tall, 14 px, no glyphs).
+                    // Under the split button, from its left edge (Teams' menu,
+                    // measured 2026-11-19: its items 1 + 4 in from Join now's
+                    // left, 4.5 under it, 140.9 x 32, 2 apart, 14/400 #424242
+                    // 6 in; no glyphs).
                     visible: false
                     z: 100
-                    x: parent.width - width; y: parent.height + 4
+                    x: -parent.x + 1; y: parent.height + 0.5
                     width: joinMenuCol.width + 8; height: joinMenuCol.height + 8
                     FluentSurface { anchors.fill: parent; depth: 16; radius: 4; color: theme.surface }
                     Column {
                         id: joinMenuCol
                         x: 4; y: 4
+                        spacing: 2
                         Repeater {
                             model: win.eventJoin ? ["Join as " + win.eventJoin.joinAs, "Preview as Attendee"] : []
                             Rectangle {
                                 required property string modelData
                                 required property int index
-                                width: Math.max(133, jmText.implicitWidth + 12); height: 32; radius: 4
+                                width: Math.max(140.9, jmText.implicitWidth + 12); height: 32; radius: 4
                                 color: jmiHover.hovered ? theme.rowHover : "transparent"
                                 Text { id: jmText; x: 6; anchors.verticalCenter: parent.verticalCenter; text: parent.modelData
-                                       font.family: theme.font; font.pixelSize: 14; color: theme.textStrong }
+                                       font.family: theme.font; font.pixelSize: 14; color: theme.pick("#424242", "#D6D6D6", "#FFFFFF") }
                                 HoverHandler { id: jmiHover; cursorShape: Qt.PointingHandCursor }
                                 TapHandler { onTapped: { joinMenu.visible = false; if (parent.index === 0) win.joinNow(); else win.joinAsAttendee() } }
                                 Accessible.role: Accessible.MenuItem

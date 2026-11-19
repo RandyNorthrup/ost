@@ -52,6 +52,9 @@ pub struct LiveEvent {
     pub qna: bool,
     /// Attendees may react (`allowTeamsMeetingReactions`).
     pub reactions: bool,
+    /// What is live on screen with "On with preview" (the conversation's
+    /// `layoutDetails`).
+    pub layout: ProductionLayout,
 }
 
 impl LiveEvent {
@@ -63,6 +66,13 @@ impl LiveEvent {
     /// Presenters manage what attendees see (Bring on screen).
     pub fn managed(&self) -> bool {
         matches!(self.attendee_view.as_str(), "HostMode" | "AdvancedHostMode")
+    }
+
+    /// "On with preview": presenters put people on a preview and send it
+    /// live (Teams' isPreviewEnabled: AdvancedHostMode with
+    /// enablePreviewQueueInAdvancedManagedMode).
+    pub fn preview(&self) -> bool {
+        self.attendee_view == "AdvancedHostMode"
     }
 
     /// Teams' stagingRoomEventPhase: "prelive", "active", "ended", or ""
@@ -118,6 +128,7 @@ pub fn live_event(json: &Value) -> Option<LiveEvent> {
         attendee_view: cap.get("attendeeViewModes").and_then(Value::as_str).unwrap_or("Default").to_string(),
         qna: flag("yammerQNAEnabled"),
         reactions: flag("allowTeamsMeetingReactions"),
+        layout: production_layout(json).unwrap_or_default(),
     })
 }
 
@@ -151,6 +162,120 @@ pub fn live_state_body(from: &Value, live: bool, seq: u64, status_link: &str, op
     })
 }
 
+/// One source on an event's production layout ("On with preview"): a
+/// person's video (`VIDEO`) or screen share (`VBSS`) on the live screen.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LayoutSource {
+    /// Their MRI.
+    pub id: String,
+    pub participant_id: String,
+    pub endpoint_id: String,
+    /// "VIDEO" or "VBSS".
+    pub modality: String,
+}
+
+/// What attendees see in an event with "On with preview" (Manage what
+/// attendees see: AdvancedHostMode): the conversation's `layoutDetails`
+/// (Teams' meetingLayoutDetails, kept from every conversation update)
+/// `{layout {kind, participants […], …}, sequenceNumber}`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProductionLayout {
+    /// Teams' layout kinds: CLASSIC, PANELIST, SPEAKER, GALLERY,
+    /// SIDEBYSIDE, STACKED, CONTENTONLY, CONTENTSPEAKERFOCUSED.
+    pub kind: String,
+    pub participants: Vec<LayoutSource>,
+    pub sequence: u64,
+    /// Who sent it live last (`layout.lastUpdatedById`): Teams' "Last updated
+    /// by" over the Live stage.
+    pub updated_by: String,
+}
+
+/// The production layout in a conversation response or update.
+pub fn production_layout(json: &Value) -> Option<ProductionLayout> {
+    let d = [
+        "/layoutDetails",
+        "/conversationResponse/layoutDetails",
+        "/conversationUpdate/layoutDetails",
+        "/conversation/layoutDetails",
+        "/body/layoutDetails",
+        "/body/conversationUpdate/layoutDetails",
+    ]
+    .iter()
+    .find_map(|p| json.pointer(p))
+    .filter(|v| v.is_object())?;
+    let layout = d.get("layout").unwrap_or(&Value::Null);
+    let s = |v: &Value, k: &str| v.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
+    let participants = layout
+        .get("participants")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        // Teams (hI): only who is on stage.
+        .filter(|p| p.get("isOnStage").and_then(Value::as_bool) != Some(false))
+        .map(|p| LayoutSource {
+            id: s(p, "id"),
+            participant_id: s(p, "participantId"),
+            endpoint_id: s(p, "endpointId"),
+            modality: s(p, "modality"),
+        })
+        .collect();
+    Some(ProductionLayout {
+        kind: match s(layout, "kind").as_str() {
+            "" | "NONE" => "CLASSIC".into(),
+            k => k.to_string(),
+        },
+        participants,
+        sequence: d.get("sequenceNumber").and_then(Value::as_u64).unwrap_or(0),
+        updated_by: s(layout, "lastUpdatedById").to_ascii_lowercase(),
+    })
+}
+
+/// Teams' layout kind for these sources (getUpdatedLayoutKind): side by
+/// side with a screen share among them, else classic.
+pub fn layout_kind(sources: &[LayoutSource]) -> &'static str {
+    if sources.iter().any(|s| s.modality == "VBSS") { "SIDEBYSIDE" } else { "CLASSIC" }
+}
+
+/// Send live (Teams' production studio setProductionLayout ▸
+/// convertLayoutToPayload, then the calling stack's setMeetingLayout,
+/// pluginless payload builder): `from`, `layoutDetails {layout {…,
+/// action "put", kind, participants}, sequenceNumber}`, the operation id,
+/// the conversation's layout sequence number and the status callback.
+/// The layout is what Teams desktop sent pressing Send live (logged on
+/// winpc 2026-11-19): `{id "<call>_Preview", participants [{id,
+/// participantId, endpointId, modality, isRTMPInVideo false, state
+/// null}], nameTag {isEnabled true}, kind, kindDetails null, background
+/// null, action "put"}` with the conversation's sequence number.
+pub fn set_layout_body(from: &Value, layout_id: &str, sources: &[LayoutSource], seq: u64, status_link: &str, operation_id: &str) -> Value {
+    let participants: Vec<Value> = sources
+        .iter()
+        .map(|p| {
+            json!({ "id": p.id, "participantId": p.participant_id, "endpointId": p.endpoint_id, "modality": p.modality,
+                    "isRTMPInVideo": false, "state": null })
+        })
+        .collect();
+    json!({
+        "from": from,
+        "layoutDetails": {
+            "layout": {
+                "id": layout_id,
+                "participants": participants,
+                "nameTag": { "isEnabled": true },
+                "kind": layout_kind(sources),
+                "kindDetails": null,
+                "background": null,
+                "action": "put",
+            },
+            "sequenceNumber": seq,
+        },
+        "operationId": operation_id,
+        "sequenceNumber": 0,
+        "links": { "setMeetingLayoutStatus": status_link },
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -176,6 +301,44 @@ mod tests {
         let plain = live_event(&json!({"meetingDetails": {"meetingCapability": {}}})).unwrap();
         assert_eq!(plain.event_phase(), "");
         assert!(!plain.is_event() && !plain.managed());
+    }
+
+    #[test]
+    fn reads_the_live_layout_as_the_service_sends_it() {
+        // The conversation update after Teams desktop's Send live (trimmed;
+        // captured 2026-11-19, "OST TEST 217 r3 town hall").
+        let j = json!({"callAgentPath": "conversation/conversationUpdate/", "body": {"layoutDetails": {"lastNonScreenshareLayoutKind": null,
+            "lastSideBySideLayoutKind": null, "lastUpdatedBy": null, "layout": {"action": "put", "kind": "CLASSIC", "lastNonScreenshareLayoutKind": "CLASSIC",
+            "lastUpdatedById": "8:orgid:4287", "nameTag": {"isEnabled": true}, "operationId": "98c0", "participants": [{"endpointId": "f2a6", "id": "8:orgid:9edc", "isOnStage": true,
+            "isRTMPInVideo": false, "modality": "VIDEO", "participantId": "9c84"}], "resolution": {"height": 720, "width": 1280}, "sequenceNumber": 0},
+            "sequenceNumber": 1}}});
+        let l = production_layout(&j).unwrap();
+        assert_eq!((l.kind.as_str(), l.sequence, l.updated_by.as_str()), ("CLASSIC", 1, "8:orgid:4287"));
+        assert_eq!(l.participants, vec![LayoutSource { id: "8:orgid:9edc".into(), participant_id: "9c84".into(), endpoint_id: "f2a6".into(), modality: "VIDEO".into() }]);
+        // As the meeting starts: no layout yet ("NONE", null participants);
+        // and a conversation without one.
+        let none = json!({"body": {"layoutDetails": {"layout": {"kind": "NONE", "participants": null, "sequenceNumber": 0}, "sequenceNumber": 0}}});
+        let n = production_layout(&none).unwrap();
+        assert!(n.participants.is_empty() && n.kind == "CLASSIC");
+        assert_eq!(production_layout(&json!({"body": {"layoutDetails": null}})), None);
+        // Off stage (isOnStage false) isn't shown.
+        let off = json!({"layoutDetails": {"layout": {"participants": [{"id": "a", "isOnStage": false}]}}});
+        assert!(production_layout(&off).unwrap().participants.is_empty());
+    }
+
+    #[test]
+    fn sends_live_as_teams_does() {
+        let src = vec![LayoutSource { id: "8:orgid:9edc".into(), participant_id: "9c84".into(), endpoint_id: "f2a6".into(), modality: "VIDEO".into() }];
+        let b = set_layout_body(&json!({"id": "8:orgid:me"}), "112_Preview", &src, 1, "https://cb/conversation/setMeetingLayoutStatus/", "op");
+        // Teams desktop's layoutDetails for Send live (logged 2026-11-19).
+        assert_eq!(b["layoutDetails"], json!({"layout": {"id": "112_Preview", "participants": [{"id": "8:orgid:9edc", "participantId": "9c84",
+            "endpointId": "f2a6", "modality": "VIDEO", "isRTMPInVideo": false, "state": null}], "nameTag": {"isEnabled": true}, "kind": "CLASSIC",
+            "kindDetails": null, "background": null, "action": "put"}, "sequenceNumber": 1}));
+        assert_eq!(b["operationId"], "op");
+        assert_eq!(b["links"]["setMeetingLayoutStatus"], "https://cb/conversation/setMeetingLayoutStatus/");
+        let share = vec![LayoutSource { modality: "VBSS".into(), ..src[0].clone() }];
+        assert_eq!(layout_kind(&share), "SIDEBYSIDE");
+        assert_eq!(set_layout_body(&json!({}), "1_Preview", &[], 2, "", "")["layoutDetails"]["layout"]["participants"], json!([]));
     }
 
     #[test]

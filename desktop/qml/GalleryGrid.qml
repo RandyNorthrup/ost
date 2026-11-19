@@ -17,7 +17,10 @@ Item {
         let bestCols = 1, bestW = 0
         for (let c = 1; c <= count; c++) {
             const w = Math.min(width / c, height / Math.ceil(count / c) * 16 / 9)
-            if (w > bestW + 0.01) { bestW = w; bestCols = c }
+            // Near ties go to more columns (Teams put two people side
+            // by side at 517.3 wide on a 1034.7 x 582.7 stage, 2026-11-19,
+            // where one column would give 518).
+            if (w > bestW * 1.01 || (w >= bestW * 0.99 && w > 0)) { bestW = Math.max(w, bestW); bestCols = c }
         }
         return bestCols
     }

@@ -318,6 +318,26 @@ Rectangle {
     function saveTemplateForTest() { templateDialog.save() }
     function shareForTest(success) { shareDialog.openFor(current, success) }
     function closeShareForTest() { shareDialog.close() }
+    // Register (TASK-0217): the Discover card titled so, its dialog, the
+    // terms ticked, Register; the card's state; Unregister.
+    function cardForTest(title) {
+        const d = discoverData || {}
+        for (const k of ["now", "upcoming", "past", "filtered"])
+            for (const c of (d[k] || [])) if ((c.title || "").indexOf(title) === 0) return c
+        return null
+    }
+    function registerOpenForTest(title) { const c = cardForTest(title); if (c) registerDialog.openFor(c); return !!c }
+    function registerSubmitForTest() { registerDialog.agreed = true; registerDialog.submit() }
+    function registerStateForTest(title) {
+        const c = cardForTest(title) || {}
+        return { open: registerDialog.opened, done: registerDialog.done, busy: registerDialog.busy, me: registerDialog.me, card: c.registration_status || "", local: regState[c.id] }
+    }
+    function registerCloseForTest() { registerDialog.close() }
+    function unregisterForTest(title) { const c = cardForTest(title); if (c) unregisterDialog.openFor(c); return !!c }
+    function unregisterConfirmForTest() {
+        const e = unregisterDialog.ev
+        call("unregister", { id: e.id }, v => { unregisterDialog.close(); if (!v.error) setRegState(e.id, "") })
+    }
     function connectAppsForTest() { connectApps.openNow() }
     function closeConnectAppsForTest() { connectApps.close() }
     function connectAppsStateForTest() { return connectApps.items.map(i => i.name) }
@@ -473,6 +493,42 @@ Rectangle {
                 onClicked: { cardMenu.ev = ec.modelData; cardMenu.parent = cardMore; cardMenu.x = 0; cardMenu.y = cardMore.height + 4; cardMenu.open() }
             }
         }
+        // An attendee's card for an event with registration (Teams'
+        // Discover, measured 2026-11-19): Register (84 x 23.3, outlined,
+        // the calendar glyph, 12/400) or, once registered, Registered
+        // (117.4, calendar-checkmark, a chevron opening Unregister), then
+        // Copy event page link (24 x 23.3) 8 after it.
+        Row {
+            readonly property bool organizer: ec.modelData.role === "Organizer" || ec.modelData.role === "CoOrganizer"
+            visible: !ec.joinable && !organizer && !!ec.modelData.registration && ec.published
+            x: 20; y: 257.3; spacing: 8
+            readonly property bool registered: (root.regState[ec.modelData.id] !== undefined ? root.regState[ec.modelData.id] : ec.modelData.registration_status) === "Registered"
+            Btn {
+                id: regBtn
+                visible: !parent.registered
+                height: 23.3; width: 84; outlined: true; icon: "calendar-ltr-16"; text: "Register"; fontSize: 12; pad: 8
+                onClicked: registerDialog.openFor(ec.modelData)
+            }
+            Rectangle {
+                id: registeredBtn
+                visible: parent.registered
+                width: 117.4; height: 23.3; radius: 4
+                color: rbh.hovered || unregisterMenu.visible ? theme.menuHover : theme.surface
+                border.width: 1; border.color: theme.stroke
+                Row {
+                    anchors.centerIn: parent; spacing: 6
+                    FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "calendar-checkmark-16"; size: 16; color: theme.textStrong }
+                    Text { anchors.verticalCenter: parent.verticalCenter; text: "Registered"; font.family: theme.font; font.pixelSize: 12; color: theme.text }
+                    FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-12"; size: 12; color: theme.textStrong }
+                }
+                HoverHandler { id: rbh; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: { unregisterMenu.ev = ec.modelData; unregisterMenu.parent = registeredBtn; unregisterMenu.x = 5; unregisterMenu.y = registeredBtn.height + 4.4; unregisterMenu.open() } }
+                Accessible.role: Accessible.Button; Accessible.name: "Registered"
+            }
+            Btn { height: 23.3; width: 24; outlined: true; icon: "link-16"; text: ""; pad: 2
+                  onClicked: { backend.copyText(ec.modelData.site_url || ec.modelData.join_url); root.toast({ text: "Copied", intent: "success" }) }
+                  Accessible.name: "Copy event page link" }
+        }
         // Joinable (5 minutes before the start to the end): Join (64 x 23,
         // brand, the video glyph), Copy event page link and More (24 x 23).
         Row {
@@ -509,6 +565,173 @@ Rectangle {
                 { key: "crew", label: "Chat with event group", icon: "people-team-20" },
                 { key: "dup", label: "Duplicate", icon: "copy-20" }]
         onPicked: i => { const k = items[i].key; if (k === "dup") root.duplicateEvent(ev); else root.openChat(ev, k === "crew") }
+    }
+    /// Registrations made or cancelled here ({event id: "Registered" | ""})
+    /// over what Discover last said.
+    property var regState: ({})
+    function setRegState(id, status) { const m = Object.assign({}, regState); m[id] = status; regState = m }
+    // Registered ▾ (Teams: one item, Unregister, 128.7 wide, a glyph slot).
+    MenuPopup {
+        id: unregisterMenu
+        property var ev: ({})
+        items: [{ key: "unregister", label: "Unregister", icon: "calendar-cancel-20" }]
+        onPicked: i => unregisterDialog.openFor(ev)
+    }
+    // "Cancel your registration?" (Teams, 600 x 168: the title 20/600, the
+    // text 14/400, Stay registered and the brand Cancel registration).
+    Popup {
+        id: unregisterDialog
+        parent: Overlay.overlay
+        modal: true; padding: 24
+        x: (parent.width - width) / 2; y: (parent.height - height) / 2
+        width: 600
+        background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
+        property var ev: ({})
+        property bool busy: false
+        function openFor(e) { ev = e; busy = false; open() }
+        contentItem: Column {
+            spacing: 6
+            Item { width: parent.width; height: 31.3
+                Text { anchors.verticalCenter: parent.verticalCenter; text: "Cancel your registration?"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+                Btn { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; width: 32; height: 31.3; icon: "dismiss-20"; text: ""; pad: 6; onClicked: unregisterDialog.close(); Accessible.name: "Close" } }
+            Text { width: parent.width; wrapMode: Text.Wrap; text: "You'll be removed from the event if you cancel. You can register again later if you change your mind."
+                   font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
+            Row {
+                anchors.right: parent.right; spacing: 8
+                Btn { height: 31.3; outlined: true; text: "Stay registered"; onClicked: unregisterDialog.close() }
+                Btn {
+                    height: 31.3; primary: true; text: "Cancel registration"; usable: !unregisterDialog.busy
+                    onClicked: {
+                        unregisterDialog.busy = true
+                        const e = unregisterDialog.ev
+                        root.call("unregister", { id: e.id }, v => {
+                            unregisterDialog.busy = false; unregisterDialog.close()
+                            if (v.error) { root.toast({ text: "Couldn't cancel your registration. " + v.error, intent: "error" }); return }
+                            root.setRegState(e.id, "")
+                        })
+                    }
+                }
+            }
+        }
+    }
+    // Register (Teams' registration dialog, measured 2026-11-19: 600 wide,
+    // radius 8, padding 24): the event's name (20/600), its date (14), a
+    // divider, "Registration Information" (14/600), First name / Last name
+    // (186.7 x 30.7, 200 apart) and Email (549.3) from your profile and not
+    // editable, each label with a red "*", a divider, "I have read and
+    // agree to the Microsoft Event Terms and Conditions *" (14 #616161,
+    // the link #4F52B2), Cancel and Register (96 x 31.3). Then "You're
+    // registered!" (Teams' illustration 192, 20/600) and "We sent a
+    // confirmation email to …".
+    Popup {
+        id: registerDialog
+        parent: Overlay.overlay
+        modal: true; padding: 24
+        x: (parent.width - width) / 2; y: (parent.height - height) / 2
+        width: 600
+        background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
+        property var ev: ({})
+        property var me: ({})
+        property bool agreed: false
+        property bool busy: false
+        property bool done: false
+        property bool nag: false
+        function submit() {
+            if (!agreed) { nag = true; return }
+            busy = true
+            const e = ev, m = me
+            root.call("register", { id: e.id, firstName: m.firstName || "", lastName: m.lastName || "", email: m.email || "" }, v => {
+                registerDialog.busy = false
+                if (v.error) { root.toast({ text: "Couldn't register. " + v.error, intent: "error" }); return }
+                root.setRegState(e.id, v.status || "Registered")
+                registerDialog.done = true
+                root.toast({ text: "Event Registered", intent: "success" })
+            })
+        }
+        function openFor(e) {
+            ev = e; agreed = false; busy = false; done = false; nag = false; open()
+            root.call("me", {}, v => { if (!v.error) registerDialog.me = v })
+        }
+        component Field: Column {
+            property string label
+            property string value
+            property real fieldWidth: 186.7
+            spacing: 2.7
+            Row { spacing: 4
+                Text { text: parent.parent.label; font.family: theme.font; font.pixelSize: 14; lineHeight: 24; lineHeightMode: Text.FixedHeight; color: theme.text }
+                Text { text: "*"; font.family: theme.font; font.pixelSize: 14; color: "#D13438"; y: 2.7 } }
+            Rectangle {
+                width: parent.fieldWidth; height: 30.7; radius: 4; color: theme.surface
+                border.width: 1; border.color: theme.stroke
+                Text { x: 10; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 20; elide: Text.ElideRight; text: parent.parent.value
+                       font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                Accessible.role: Accessible.EditableText; Accessible.name: parent.parent.label
+            }
+        }
+        contentItem: Item {
+            implicitHeight: registerDialog.done ? 326.7 : 336
+            // The form.
+            Item {
+                anchors.fill: parent
+                visible: !registerDialog.done
+                Text { y: 0; width: parent.width - 40; elide: Text.ElideRight; text: registerDialog.ev.title || ""; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; lineHeight: 28; lineHeightMode: Text.FixedHeight; color: theme.text }
+                Btn { x: parent.width - 32; y: 0; width: 32; height: 31.3; icon: "dismiss-20"; text: ""; pad: 6; onClicked: registerDialog.close(); Accessible.name: "Close" }
+                Text { y: 36; text: registerDialog.ev.start ? Qt.formatDate(new Date(registerDialog.ev.start), "dddd, MMMM d, yyyy") + ", " + theme.time(new Date(registerDialog.ev.start)) + " - " + theme.time(new Date(registerDialog.ev.end || registerDialog.ev.start)) : ""
+                       font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                Rectangle { y: 64; width: parent.width; height: 1; color: theme.dividerSoft }
+                Text { y: 76.6; text: "Registration Information"; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; lineHeight: 22; lineHeightMode: Text.FixedHeight; color: theme.text }
+                Field { y: 110.6; label: "First name"; value: registerDialog.me.firstName || "" }
+                Field { x: 200; y: 110.6; label: "Last name"; value: registerDialog.me.lastName || "" }
+                Field { y: 180.6; label: "Email"; value: registerDialog.me.email || ""; fieldWidth: 549.3 }
+                Rectangle { y: 251; width: parent.width; height: 1; color: theme.dividerSoft }
+                Row {
+                    y: 261.3; spacing: 0
+                    Item { width: 32; height: 32
+                        Rectangle {
+                            anchors.centerIn: parent; width: 16; height: 16; radius: 2
+                            color: registerDialog.agreed ? theme.brandFill : "transparent"
+                            border.width: registerDialog.agreed ? 0 : 1; border.color: registerDialog.nag ? "#D13438" : theme.textSecondary
+                            FluentIcon { anchors.centerIn: parent; visible: registerDialog.agreed; name: "checkmark-12"; size: 12; color: "white" }
+                        }
+                        TapHandler { onTapped: { registerDialog.agreed = !registerDialog.agreed; registerDialog.nag = false } }
+                        Accessible.role: Accessible.CheckBox; Accessible.checked: registerDialog.agreed
+                        Accessible.name: "I have read and agree to the Microsoft Event Terms and Conditions"
+                    }
+                    Text { anchors.verticalCenter: parent.verticalCenter; text: "I have read and agree to the "; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: "Microsoft Event Terms and Conditions"; font.underline: termsHover.hovered
+                        font.family: theme.font; font.pixelSize: 14; color: theme.pick("#4F52B2", "#7F85F5", "#FFFF00")
+                        HoverHandler { id: termsHover; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: Qt.openUrlExternally("https://go.microsoft.com/fwlink/?linkid=2210903") }
+                        Accessible.role: Accessible.Link; Accessible.name: text
+                    }
+                    Text { anchors.verticalCenter: parent.verticalCenter; text: " *"; font.family: theme.font; font.pixelSize: 14; color: "#D13438" }
+                }
+                Row {
+                    anchors.right: parent.right; y: 304; spacing: 8
+                    Btn { width: 96; height: 31.3; outlined: true; text: "Cancel"; onClicked: registerDialog.close() }
+                    Btn {
+                        width: 96; height: 31.3; primary: true; text: "Register"; usable: !registerDialog.busy && !!registerDialog.me.email
+                        onClicked: registerDialog.submit()
+                    }
+                }
+            }
+            // You're registered!
+            Item {
+                anchors.fill: parent
+                visible: registerDialog.done
+                Btn { x: parent.width - 32; y: 0.7; width: 32; height: 31.3; icon: "dismiss-20"; text: ""; pad: 6; onClicked: registerDialog.close(); Accessible.name: "Close" }
+                Image {
+                    x: (parent.width - 192) / 2; y: 40; width: 192; height: 192; asynchronous: true
+                    sourceSize: Qt.size(384, 384); fillMode: Image.PreserveAspectFit
+                    source: "https://teams.public.onecdn.static.microsoft/teams-modular-packages/hashed-assets/7f12bffeb0847f995f97e987b0aa6ee1.png"
+                }
+                Text { anchors.horizontalCenter: parent.horizontalCenter; y: 248; text: "You're registered!"; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; lineHeight: 28; lineHeightMode: Text.FixedHeight; color: theme.text }
+                Text { anchors.horizontalCenter: parent.horizontalCenter; y: 292; text: "We sent a confirmation email to " + (registerDialog.me.email || "") + "."
+                       font.family: theme.font; font.pixelSize: 14; color: theme.text }
+            }
+        }
     }
     // ---- header ----
     Rectangle {
@@ -646,11 +869,20 @@ Rectangle {
                 model: tabPage.empty ? [] : tabPage.lists
                 Column {
                     required property var modelData
-                    // Discover's lists are arrays, Manage's {items, total}
-                    // (a Repeater hands nested arrays over as sequences, not
-                    // Arrays, so tell them apart by `items`).
-                    readonly property var items: modelData[1] && modelData[1].items !== undefined ? modelData[1].items : (modelData[1] || [])
-                    readonly property int total: modelData[1] && modelData[1].total !== undefined ? modelData[1].total : items.length
+                    // Discover's lists are arrays, Manage's {items, total}.
+                    // A list nested in the model's rows comes back as a
+                    // sequence that isn't a JS Array (Qt 6.10), so it's
+                    // copied out by index.
+                    readonly property bool paged: !!modelData[1] && modelData[1].items !== undefined
+                    readonly property var items: {
+                        const l = modelData[1]
+                        if (!l) return []
+                        if (paged) return l.items || []
+                        const out = []
+                        for (let i = 0; i < (l.length || 0); i++) out.push(l[i])
+                        return out
+                    }
+                    readonly property int total: paged ? (modelData[1].total || 0) : items.length
                     readonly property bool manage: root.tab === "manage"
                     // Discover leaves out an empty Happening now.
                     visible: manage || modelData[2] !== "now" || items.length > 0

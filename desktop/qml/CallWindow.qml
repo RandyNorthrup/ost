@@ -834,6 +834,48 @@ Window {
     /// The Manage screen panel's filter: "All", "Live", "People" or
     /// "Content".
     property string manageFilter: "All"
+    /// "On with preview" (Manage what attendees see: AdvancedHostMode)
+    /// and you manage the screen: Teams' production view (measured in
+    /// Teams desktop 2026-11-19): the Preview and Live stages side by side,
+    /// Send live under the Preview, the Manage screen strip along the
+    /// bottom with an "Add to preview" switch on each tile.
+    readonly property bool previewMode: manageScreen && !!liveEvent.preview
+    /// The preview's sources (Teams keeps the preview on the producer's
+    /// side until Send live): {id, participantId, endpointId, modality}.
+    property var previewSources: []
+    /// What is live for attendees (the conversation's production layout).
+    readonly property var liveSources: liveEvent.layout && liveEvent.layout.participants ? liveEvent.layout.participants : []
+    /// An attendee of a webinar with "On with preview": the stage shows
+    /// only what was sent live (Teams renders the production layout).
+    readonly property bool liveOnly: meeting && !!liveEvent.preview && !manageScreen && !streaming && myRole === "attendee"
+    /// The stage shows only who is on screen (managing it, or watching
+    /// the live layout).
+    readonly property bool stageOnly: manageScreen || liveOnly
+    readonly property var shownOnly: liveOnly ? sourcePeople(liveSources) : onScreen
+    /// A layout's sources as tiles (you as your own tile).
+    function sourcePeople(list) {
+        const out = []
+        for (const s of list) {
+            if (s.modality && s.modality !== "VIDEO") continue
+            const p = s.id === selfId ? selfEntry : roster.find(r => r.id === s.id)
+            if (p) out.push(p)
+        }
+        return out
+    }
+    /// Add someone to the preview or take them off it (the tile's switch).
+    function togglePreview(p, on) {
+        const id = p.self ? selfId : p.id
+        const rest = previewSources.filter(s => s.id !== id)
+        if (!on) { previewSources = rest; return }
+        const r = roster.find(x => x.id === id) || {}
+        previewSources = rest.concat([{ id: id, participantId: r.participant_id || "", endpointId: r.endpoint_id || "", modality: "VIDEO" }])
+    }
+    /// Send live: the preview becomes what attendees see.
+    function sendLive() { backend.sendLive(JSON.stringify(previewSources)) }
+    /// Teams' production view, for the harness.
+    function previewForTest() {
+        return { preview: previewSources.map(s => s.id), live: liveSources.map(s => s.id), busy: liveEvent.busy || "", failed: liveEvent.failed || "" }
+    }
     /// Teams' enableTownhallDelayMessage: on in Teams desktop (measured
     /// 2026-11-18: a town hall streaming to its attendees says "Start
     /// event", "Start the event for everyone?" and "1 attendee will enter
@@ -2093,7 +2135,7 @@ Window {
         // presenters on screen and share content that you want attendees
         // to see." (18/700 #252423 on #F5F5F5, centred).
         Rectangle {
-            visible: win.manageScreen && !tiles.visible && !stagingScreen.visible
+            visible: win.manageScreen && !win.previewMode && !tiles.visible && !stagingScreen.visible
             x: 240; width: parent.width - 240; height: parent.height
             radius: parent.radius; color: theme.pane
             Text {
@@ -2113,7 +2155,7 @@ Window {
         // switch at the top right.
         Item {
             id: manageScreenPane
-            visible: win.manageScreen && !stagingScreen.visible
+            visible: win.manageScreen && !win.previewMode && !stagingScreen.visible
             width: 240; height: parent.height
             readonly property var people: {
                 const all = win.roster.filter(p => p.active !== false && (p.role || "").toLowerCase() !== "attendee" && !p.bot)
@@ -2190,6 +2232,192 @@ Window {
             }
             Accessible.role: Accessible.Pane; Accessible.name: "Manage screen"
         }
+        // "On with preview" (measured in Teams desktop 2026-11-19, a town
+        // hall's green room, 1280 x 680): the stage's top part (all but
+        // 224) holds the Preview and Live stages 32 apart about the middle,
+        // each 16:9 and 132.1 shorter than that part (402.9 x 226.6 here),
+        // a 2.67 frame, its title 12 above (16/700, 8 in), Send live (96 x
+        // 31.3, #FDE300, 14/600 #242424) 24 under the Preview's right edge;
+        // then the Manage screen strip: a 60 tall header ("Manage screen"
+        // 18/700, the info button, the hint 12 #424242, the pills, Add
+        // Videos at the right) and a row of 273 x 152 tiles 4 apart, each
+        // with its "Add to preview" switch at the top right.
+        Item {
+            id: production
+            anchors.fill: parent
+            visible: win.previewMode && !stagingScreen.visible
+            readonly property real topH: height - 224
+            readonly property real subH: Math.max(90, Math.min(topH - 132.1, (width / 2 - 24) * 9 / 16))
+            readonly property real subW: subH * 16 / 9
+            readonly property color ink: theme.pick("#252423", "#FFFFFF", "#FFFFFF")
+            component SubStage: Item {
+                id: sub
+                property string title
+                property color edge
+                property var people: []
+                property string empty
+                /// Teams' "Last updated by <b>name</b>" (13/400, the name
+                /// bold) at the title row's right end.
+                property string updatedBy
+                width: production.subW; height: 58.8 + production.subH
+                Text { x: 8; y: 20; text: sub.title; color: production.ink; font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold }
+                Text {
+                    visible: sub.updatedBy !== ""
+                    anchors.right: parent.right; y: 22.1; width: Math.min(implicitWidth, parent.width / 2 - 12)
+                    elide: Text.ElideRight; textFormat: Text.StyledText
+                    text: "Last updated by <b>" + sub.updatedBy.replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</b>"
+                    color: production.ink; font.family: theme.font; font.pixelSize: 13; lineHeight: 18.6; lineHeightMode: Text.FixedHeight
+                }
+                Rectangle {
+                    y: 58.8; width: parent.width; height: production.subH
+                    color: "transparent"; border.width: 2.67; border.color: sub.edge; radius: 2
+                    Rectangle {
+                        anchors { fill: parent; margins: 2.67 }
+                        color: theme.pick("#F5F5F5", "#1F1F1F", "#000000")
+                        visible: sub.people.length === 0
+                        Text {
+                            anchors.centerIn: parent; width: parent.width - 20
+                            horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
+                            text: sub.empty; color: production.ink
+                            font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold
+                            lineHeight: 25.7; lineHeightMode: Text.FixedHeight
+                        }
+                    }
+                    // Teams' CLASSIC layout (measured with three sources
+                    // sent live, 2026-11-19): a grid of equal 16:9 tiles,
+                    // ceil(sqrt(n)) a row, 2 apart across and none down, the
+                    // last row centred (397.6 x 221.3 inside: two 196.7 x
+                    // 110.6 tiles, the third under them).
+                    Item {
+                        id: grid
+                        anchors { fill: parent; margins: 2.67 }
+                        visible: sub.people.length > 0
+                        readonly property int n: sub.people.length
+                        readonly property int cols: Math.max(1, Math.ceil(Math.sqrt(n)))
+                        readonly property int rows: Math.max(1, Math.ceil(n / cols))
+                        readonly property real tw: Math.min((width - 2 * (cols - 1)) / cols, height / rows * 16 / 9)
+                        readonly property real th: tw * 9 / 16
+                        Repeater {
+                            model: sub.people
+                            MeetingTile {
+                                required property var modelData
+                                required property int index
+                                readonly property int row: Math.floor(index / grid.cols)
+                                readonly property int inRow: row === grid.rows - 1 ? grid.n - row * grid.cols : grid.cols
+                                x: (grid.width - (inRow * grid.tw + 2 * (inRow - 1))) / 2 + (index % grid.cols) * (grid.tw + 2)
+                                y: (grid.height - grid.rows * grid.th) / 2 + row * grid.th
+                                width: grid.tw; height: grid.th
+                                call: win; person: modelData
+                            }
+                        }
+                    }
+                    Accessible.role: Accessible.Pane; Accessible.name: sub.title + " stage"
+                }
+            }
+            SubStage {
+                id: previewStage
+                x: production.width / 2 - 16 - width; y: 0
+                title: "Preview"; edge: "#FDE300"
+                people: win.sourcePeople(win.previewSources)
+                empty: "Bring presenters on screen and share content that you want attendees to see."
+            }
+            SubStage {
+                x: production.width / 2 + 16; y: 0
+                title: "Live"; edge: (win.liveEvent.eventPhase || "") === "active" ? "#D13438" : "#FDE300"
+                people: win.sourcePeople(win.liveSources)
+                updatedBy: {
+                    const id = win.liveEvent.layout ? win.liveEvent.layout.updatedBy || "" : ""
+                    if (!id) return ""
+                    if (id === win.selfId) return "you"
+                    const p = win.roster.find(r => r.id === id)
+                    return p ? p.name : ""
+                }
+                empty: (win.liveEvent.eventPhase || "") === "prelive" ? "The event hasn't started yet." : "Bring presenters on screen and share content that you want attendees to see."
+            }
+            Rectangle {
+                id: sendLiveButton
+                readonly property bool busy: (win.liveEvent.busy || "") === "sendingLive"
+                x: previewStage.x + previewStage.width - width; y: previewStage.y + previewStage.height + 24
+                width: 96; height: 31.3; radius: 4
+                color: busy ? theme.pick("#F0F0F0", "#141414", "#000000") : sendLiveHover.hovered ? "#E6CE00" : "#FDE300"
+                Text { anchors.centerIn: parent; text: "Send live"; color: sendLiveButton.busy ? theme.disabled : "#242424"
+                       font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold }
+                HoverHandler { id: sendLiveHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { enabled: !sendLiveButton.busy; onTapped: win.sendLive() }
+                ToolTip.visible: sendLiveHover.hovered; ToolTip.text: sendLiveButton.busy ? "Sending to live..." : "Send the preview to the live screen"
+                Accessible.role: Accessible.Button; Accessible.name: "Send the preview to the live screen"
+            }
+            // The Manage screen strip.
+            Item {
+                y: production.topH; width: parent.width; height: 224
+                Text { x: 20; y: 18; text: "Manage screen"; color: production.ink; font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; lineHeight: 24; lineHeightMode: Text.FixedHeight }
+                FluentIcon {
+                    x: 158; y: 22; name: "info-16"; size: 16; color: production.ink
+                    HoverHandler { id: prodInfoHover }
+                    ToolTip.visible: prodInfoHover.hovered
+                    ToolTip.text: "Choose who and what attendees see. Only organizers and presenters can manage the screen."
+                    Accessible.role: Accessible.Button; Accessible.name: "More information"
+                }
+                Text {
+                    x: 186; y: 26; text: "Attendees can still hear your audio when you're off screen."
+                    color: theme.pick("#424242", "#D6D6D6", "#FFFFFF"); font.family: theme.font; font.pixelSize: 12; lineHeight: 14; lineHeightMode: Text.FixedHeight
+                }
+                Row {
+                    x: 512; y: 18; spacing: 4
+                    Repeater {
+                        model: ["All", "Live", "People", "Content"]
+                        Rectangle {
+                            id: ppill
+                            required property string modelData
+                            readonly property bool chosen: win.manageFilter === modelData
+                            width: ppText.implicitWidth + 13.3; height: 24; radius: 12
+                            color: chosen ? theme.brand : ppHover.hovered ? theme.hover : "transparent"
+                            Text { id: ppText; anchors.centerIn: parent; text: ppill.modelData
+                                   color: ppill.chosen ? "white" : theme.pick("#424242", "#D6D6D6", "#FFFFFF")
+                                   font.family: theme.font; font.pixelSize: 12; font.weight: ppill.chosen ? Font.DemiBold : Font.Normal }
+                            HoverHandler { id: ppHover; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: win.manageFilter = ppill.modelData }
+                            Accessible.role: Accessible.RadioButton; Accessible.name: ppill.modelData; Accessible.checked: ppill.chosen
+                        }
+                    }
+                }
+                Rectangle {
+                    x: parent.width - 46; y: 14; width: 32; height: 32; radius: 4
+                    color: prodAddHover.hovered ? theme.hover : "transparent"
+                    FluentIcon { anchors.centerIn: parent; name: "video-add-20"; size: 20; color: theme.pick("#424242", "#D6D6D6", "#FFFFFF") }
+                    HoverHandler { id: prodAddHover; cursorShape: Qt.PointingHandCursor }
+                    ToolTip.visible: prodAddHover.hovered; ToolTip.text: "Add Videos"
+                    Accessible.role: Accessible.Button; Accessible.name: "Add Videos"
+                }
+                ListView {
+                    x: 4; y: 64; width: parent.width - 8; height: 156
+                    orientation: ListView.Horizontal; spacing: 4; clip: true
+                    model: {
+                        const ids = win.previewSources.map(s => s.id)
+                        const live = win.liveSources.map(s => s.id)
+                        const all = win.roster.filter(p => p.active !== false && (p.role || "").toLowerCase() !== "attendee" && !p.bot)
+                            .map(p => p.id === win.selfId ? Object.assign({}, win.selfEntry, { role: p.role }) : p)
+                        if (win.manageFilter === "Live") return all.filter(p => live.indexOf(p.self ? win.selfId : p.id) >= 0)
+                        if (win.manageFilter === "Content") return []
+                        return all
+                    }
+                    delegate: Item {
+                        id: prodTile
+                        required property var modelData
+                        readonly property bool inPreview: win.previewSources.some(s => s.id === (modelData.self ? win.selfId : modelData.id))
+                        width: 277; height: 156
+                        MeetingTile { x: 2; y: 2; width: 273; height: 152; call: win; person: prodTile.modelData }
+                        SettingsParts.Toggle {
+                            x: 277 - 2 - width - 8; y: 12; stateLabel: false
+                            on: prodTile.inPreview
+                            accessibleName: on ? "Remove from preview" : "Add to preview"
+                            onToggled: v => win.togglePreview(prodTile.modelData, v)
+                        }
+                    }
+                }
+            }
+            Accessible.role: Accessible.Pane; Accessible.name: "Production view"
+        }
         // Alone with your video on (measured on Teams desktop, a Meet now,
         // 2026-11-17): your own video (myself-video) fills the stage at
         // 16:9 (1031.8 x 578.7 in a 1274.7 x 582.7 stage, 2 from the top),
@@ -2257,7 +2485,7 @@ Window {
         // divider with a 1 px #D1D1D1 line resizes it.
         Item {
             id: tiles
-            visible: win.manageScreen ? win.onScreen.length > 0 || win.contentShown
+            visible: win.previewMode ? false : win.stageOnly ? win.shownOnly.length > 0 || win.contentShown
                      : win.meeting && (win.others.length > 0 || win.contentShown) && (win.layout !== "focus" || win.presenting || win.contentShown)
             // Managing the screen: the stage right of the Manage screen
             // panel shows only who is on screen.
@@ -2265,12 +2493,12 @@ Window {
             // Spotlight (for everyone) and Pin for me put that person on
             // the stage, everyone else in the side gallery.
             readonly property var featured: {
-                if (win.manageScreen) return null
+                if (win.stageOnly) return null
                 const sp = win.spotlighted.length ? win.spotlighted[0] : null
                 if (sp) return sp.id === win.selfId ? win.selfEntry : sp
                 return win.others.find(p => p.id === win.pinnedId) || null
             }
-            readonly property bool speakerView: !win.manageScreen && (win.layout === "speaker" || !!featured)
+            readonly property bool speakerView: !win.stageOnly && (win.layout === "speaker" || !!featured)
             readonly property var speaker: {
                 if (featured) return featured
                 const pool = win.speakerMeInGallery && !win.hideMe ? win.others.concat([win.selfEntry]) : win.others
@@ -2284,8 +2512,8 @@ Window {
             // Teams (updateShouldMeBeInOverlay, live): with at most two
             // people tiles, the other person fills the stage and you float
             // over it, bottom right.
-            readonly property bool meOverlay: !content && win.others.length === 1 && !win.hideMe && !win.manageScreen
-            readonly property var side: win.manageScreen ? (content && win.layout !== "focus" ? win.onScreen : [])
+            readonly property bool meOverlay: !content && win.others.length === 1 && !win.hideMe && !win.stageOnly
+            readonly property var side: win.stageOnly ? (content && win.layout !== "focus" ? win.shownOnly : [])
                 : content
                 ? (win.layout === "focus" ? [] : win.othersOrdered.concat(win.hideMe ? [] : [win.selfEntry]))
                 : meOverlay ? []
@@ -2293,7 +2521,7 @@ Window {
                 ? win.othersOrdered.filter(p => p !== speaker).concat(win.hideMe || speaker.self ? [] : [win.selfEntry])
                 : (win.hideMe || win.meInGallery ? [] : [win.selfEntry])
             // Everyone in the gallery, in pages of the gallery size.
-            readonly property var galleryAll: win.manageScreen ? win.onScreen
+            readonly property var galleryAll: win.stageOnly ? win.shownOnly
                 : (win.hideMe || !win.meInGallery ? [] : [win.selfEntry]).concat(win.othersOrdered)
             readonly property int pageCount: Math.max(1, Math.ceil(galleryAll.length / win.gallerySize))
             readonly property int page: Math.min(win.galleryPage, pageCount - 1)

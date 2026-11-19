@@ -76,6 +76,11 @@ pub struct Participant {
     /// stream-derived fields as they were.
     #[serde(skip)]
     pub streams_known: bool,
+    /// The endpoint in the call (the first with a call modality, else the
+    /// first) and its participant id: what a production layout names
+    /// (Teams' layout participant {id, participantId, endpointId, modality}).
+    pub endpoint_id: String,
+    pub participant_id: String,
 }
 
 /// The meeting's call recorder (transcription and recording).
@@ -338,6 +343,8 @@ fn delta_on(json: &str, prefix: &str) -> Option<Vec<Participant>> {
                         .filter(|m| m.get("type").and_then(|t| t.as_str()) == Some("data"))
                         .filter_map(|m| m.get("sourceId")?.as_i64())
                         .collect(),
+                    endpoint_id: call_endpoint(p).0,
+                    participant_id: call_endpoint(p).1,
                 }
             })
             .collect(),
@@ -559,6 +566,20 @@ pub fn versioned_processing_updates(json: &serde_json::Value) -> Vec<(String, Op
         .collect()
 }
 
+/// Someone's endpoint in the call and its participant id (the roster's
+/// endpoints are keyed by endpoint id; each names its participantId).
+fn call_endpoint(p: &serde_json::Value) -> (String, String) {
+    let eps: Vec<(&String, &serde_json::Value)> = p.get("endpoints").and_then(|e| e.as_object()).map(|e| e.iter().collect()).unwrap_or_default();
+    eps.iter()
+        .find(|(_, ep)| ep.get("call").is_some())
+        .or_else(|| eps.first())
+        .map(|(id, ep)| {
+            let pid = ep.get("participantId").and_then(|v| v.as_str()).unwrap_or_default();
+            (id.to_string(), pid.to_string())
+        })
+        .unwrap_or_default()
+}
+
 /// Apply a delta to a roster kept in join order.
 pub fn apply(roster: &mut Vec<Participant>, delta: Vec<Participant>) {
     for mut p in delta {
@@ -576,6 +597,10 @@ pub fn apply(roster: &mut Vec<Participant>, delta: Vec<Participant>) {
                     p.devices = x.devices;
                     p.on_hold = x.on_hold;
                     p.streams_known = x.streams_known;
+                }
+                if p.endpoint_id.is_empty() {
+                    p.endpoint_id = std::mem::take(&mut x.endpoint_id);
+                    p.participant_id = std::mem::take(&mut x.participant_id);
                 }
                 *x = p
             }

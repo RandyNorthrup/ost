@@ -1020,6 +1020,13 @@ pub mod qobject {
         /// or "stopSpotlights".
         #[qinvokable]
         fn meeting_action(self: Pin<&mut Backend>, action: &QString);
+        /// Send live ("On with preview"): the preview's sources, a JSON
+        /// array of {id, participantId, endpointId, modality}, become what
+        /// attendees see (Teams' setMeetingLayout). The live layout comes
+        /// back in call_event_json's `layout`; `failed` is "sendLive" when
+        /// it didn't work.
+        #[qinvokable]
+        fn send_live(self: Pin<&mut Backend>, sources: &QString);
         /// Disable or allow mic and camera for attendees: the restriction
         /// bits to set (mic 1, camera 2).
         #[qinvokable]
@@ -3975,6 +3982,7 @@ fn event_json(e: &teams_cli::calling::live_event::LiveEvent, busy: &str, failed:
     let mut v = serde_json::to_value(e).unwrap_or_default();
     v["eventPhase"] = serde_json::json!(e.event_phase());
     v["managed"] = serde_json::json!(e.managed());
+    v["preview"] = serde_json::json!(e.preview());
     v["busy"] = serde_json::json!(busy);
     v["failed"] = serde_json::json!(failed);
     v.to_string()
@@ -6436,7 +6444,7 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         }
     }
     // The meeting locked or unlocked, or changed what attendees may do.
-    if json.contains("conversationUpdate") || json.contains("meetingCapability") {
+    if json.contains("conversationUpdate") || json.contains("meetingCapability") || json.contains("layoutDetails") {
         tracing::debug!(event = %json.chars().take(3000).collect::<String>(), "conversation update");
         if let Ok(v) = serde_json::from_str::<serde_json::Value>(json) {
             let changed = call_slot()
@@ -10489,6 +10497,49 @@ impl qobject::Backend {
                 let _ = qt.queue(move |this| {
                     this.meeting_action_failed(QString::from(failed.as_str()))
                 });
+            }
+        });
+    }
+
+    pub fn send_live(self: Pin<&mut Self>, sources: &QString) {
+        let qt = self.qt_thread();
+        let sources: Vec<teams_cli::calling::live_event::LayoutSource> = serde_json::from_str::<serde_json::Value>(&sources.to_string())
+            .ok()
+            .and_then(|v| v.as_array().cloned())
+            .unwrap_or_default()
+            .iter()
+            .map(|p| {
+                let s = |k: &str| p.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                teams_cli::calling::live_event::LayoutSource {
+                    id: s("id"),
+                    participant_id: s("participantId"),
+                    endpoint_id: s("endpointId"),
+                    modality: if s("modality").is_empty() { "VIDEO".into() } else { s("modality") },
+                }
+            })
+            .collect();
+        runtime().spawn(async move {
+            let show = |busy: &'static str, failed: &'static str, e: teams_cli::calling::live_event::LiveEvent| {
+                let text = event_json(&e, busy, failed);
+                let _ = qt.queue(move |mut this| this.as_mut().set_call_event_json(QString::from(text.as_str())));
+            };
+            let e = {
+                let slot = call_slot().lock().await;
+                let Some(call) = slot.outgoing.as_ref() else { return };
+                call.event()
+            };
+            show("sendingLive", "", e);
+            let (r, e) = {
+                let mut slot = call_slot().lock().await;
+                let Some(call) = slot.outgoing.as_mut() else { return };
+                (call.set_meeting_layout(&sources).await, call.event())
+            };
+            match r {
+                Ok(()) => show("", "", e),
+                Err(err) => {
+                    tracing::warn!("send live: {}", short_error(&err));
+                    show("", "sendLive", e)
+                }
             }
         });
     }
@@ -19510,6 +19561,37 @@ impl qobject::Backend {
                         let now = api::events::set_discoverable(&client, &s("id"), on).await?;
                         tracing::info!(discoverable = now, "events: Show event in Events app");
                         Ok(json!({ "isDiscoverable": now }))
+                    }
+                    // Discover's Register (Teams' registration dialog): your
+                    // names and email as the dialog shows them, the local
+                    // time zone, no answers (the form's questions aren't
+                    // asked by OST's dialog yet when there are none).
+                    "register" => {
+                        let iana = std::env::var("TZ").ok().filter(|z| z.contains('/')).or_else(|| {
+                            std::fs::read_link("/etc/localtime").ok().and_then(|p| p.to_string_lossy().split("zoneinfo/").nth(1).map(str::to_string))
+                        });
+                        let iana = iana.unwrap_or_else(|| "UTC".into());
+                        let offset = chrono::Local::now().offset().local_minus_utc() as i64 / 60;
+                        let body = api::events::register_body(&iana, offset, &s("firstName"), &s("lastName"), &s("email"), &[], None);
+                        let r = api::events::register(&client, &s("id"), &body).await?;
+                        tracing::info!(status = %r["status"], "events: registered");
+                        Ok(r)
+                    }
+                    // The registration dialog's names and email (your
+                    // profile, as Teams fills them in).
+                    "me" => {
+                        let v: serde_json::Value = client.graph_get("/me?$select=givenName,surname,mail,userPrincipalName").await?.json().await?;
+                        Ok(json!({
+                            "firstName": v["givenName"], "lastName": v["surname"],
+                            "email": v["mail"].as_str().filter(|m| !m.is_empty()).or(v["userPrincipalName"].as_str()).unwrap_or_default(),
+                        }))
+                    }
+                    "unregister" => {
+                        let reg = api::events::my_registration(&client, &s("id")).await?;
+                        let rid = reg.get("registrationId").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                        api::events::unregister(&client, &s("id"), &rid).await?;
+                        tracing::info!("events: registration cancelled");
+                        Ok(json!({ "ok": true }))
                     }
                     // Share's Copy embed code for a published town hall.
                     "embedCode" => Ok(json!({ "code": api::events::embed_code(&s("id")) })),

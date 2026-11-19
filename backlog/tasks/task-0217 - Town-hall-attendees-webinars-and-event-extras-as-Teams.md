@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-17T06:06:00Z'
-updated_date: '2026-11-19T11:28:00Z'
+updated_date: '2026-11-19T13:46:00Z'
 labels:
   - desktop
 dependencies: []
@@ -70,4 +70,31 @@ What TASK-0184 left (docs/spec/town-halls-and-webinars.md):
   - All OST TEST 217 events cancelled and calendar entries purged (ost-test1, OST Test 2, OST Test 3).
 
 - Merged f45a524 (2026-11-19): build OK, 773 lib tests passed. AC1 verified live (stream plays; bot hidden; organizer start no longer drops attendees). Open: Bring on screen rerun live, webinar registration, "On with preview" production layout (Send live), the Join as / Preview menu harness run.
+
+- 2026-11-19 round 3 (agent TASK-0217 r3), progress:
+  - Send live = Teams' production studio setProductionLayout -> convertLayoutToPayload {layoutDetails {layout {...layoutDetails, action "put", kind, participants}, sequenceNumber}, operationId} -> calling-electron setMeetingLayout (meetingLayoutJson = JSON of layoutDetails) -> SlimCore CSetMeetingLayoutOperation, POST to the conversation's setMeetingLayout link; the pluginless twin (aG) posts {from {id, endpointId, participantId, languageId, displayName}, layoutDetails, operationId, sequenceNumber (meetingLayoutSequenceNumber), links {setMeetingLayoutStatus}}. Conversations carry layoutDetails {lastNonScreenshareLayoutKind, lastSideBySideLayoutKind, lastUpdatedBy, layout {kind, operationId, participants, sequenceNumber, ...}, sequenceNumber}. The preview stays local (Teams' previewProductionStudioLayout cache) until Send live. Bundles on linuxlt ~/teams-26304: 527114 (ProductionStudioMixin), 119108 (use-production-studio-layout), calling-app (PreviewSubStageContainer). CDP logpoint tool: scratchpad th3/logpoint.mjs.
+  - Item 4 (OST TEST 217 r3 town hall, ost-test1 organizer in OST, linuxlt ~/th217r3/M4b*): the split's menu showed Join as Organizer / Preview as Attendee and Preview joined as attendee. Teams' menu measured: items 140.9 x 32, 2 apart, 14/400 #424242, from Join now's left edge +5, 4.5 under it; OST's menu moved to match.
+  - Item 1b verified: Teams (ost-test1 organizing, HostMode town hall) flipped OST Test 2's Stage presence; OST Test 2 in OST showed itself on stage (onScreen 1, its switch on; ~/th217r3/P1-event-stream-60.png).
+  - ManagedMode changed during the meeting (MT options, also through Teams' own Meeting options Apply) does not reach the running conversation's attendeeViewModes; the next conversation gets it.
+
+- 2026-11-19 r3, Send live captured and built:
+  - Teams desktop's Send live, logged on winpc with a CDP logpoint in calling-electron setMeetingLayout: layoutDetails {layout {id "<teamsCallId>_Preview", participants [{id, participantId, endpointId, modality "VIDEO", isRTMPInVideo false, state null}], nameTag {isEnabled true}, kind "CLASSIC", kindDetails null, background null, action "put"}, sequenceNumber = the conversation's layout sequence}, operationId. The service answers with conversationUpdate layoutDetails (layout adds lastUpdatedById, operationId, resolution 1280x720, participants with isOnStage true; outer sequenceNumber +1). An empty preview sent live clears the live screen.
+  - OST builds it (live_event::set_layout_body / production_layout, OutgoingCall::set_meeting_layout, Backend send_live, CallWindow production view: Preview and Live stages, Send live, Manage screen strip with Add to preview switches; webinar attendees in AdvancedHostMode see only the live layout).
+  - Verified live (OST TEST 217 r3 town hall B, AdvancedHostMode): OST Test 2 organizing in OST put itself, OST Test 3 and ost-test1 on the preview and sent it live (setMeetingLayout 202, layout seq 1); Teams desktop (ost-test1, presenter) showed the three on its Live stage (2 + 1 grid of 196.7 x 110.6 tiles, "Last updated by OST Test 2"); OST Test 3 in OST showed them on its Live stage. Earlier Teams' own Send live (organizer ost-test1, town hall r3) reached OST Test 2's Live stage within a second.
+  - Teams measured: Live and Preview frames 2.67 #FDE300 before the start; Send live has a 0.67 #D1D1D1 border; the strip's header has a 0.67 #E0E0E0 top border; "Last updated by <b>name</b>" (13/400, "you" for yourself) right-aligned on the Live title row.
+  - Registration: OST's discoverable PATCH was wrong: Teams' updateVirtualEvent converter sends {"access": {"isDiscoverable": on}, "meetingOptions": null}; top-level isDiscoverable is ignored, which is why the r2 org-wide webinar never reached Discover. Fixed. Teams' Register payload (meet-app Es + resolver jt): {language, timeZoneDetails {ianaTimeZone, windowsTimeZone, localizedTimeZoneString "GMT-08:00 <iana>", utcOffset, timeZone}, firstName, lastName, email, answers [{Id, Answer}], hasAcceptedTermsOfUse}; no registrationType (Add to calendar sends "AddToCalendar").
+  - Webinars by OST Test 2 have no ManagedMode meeting option (town halls do), so the Bring on screen check uses a town hall.
+
+- 2026-11-19 r3, more:
+  - Item 1 (Bring on screen with a second presenter) verified live on "OST TEST 217 r3 town hall B" (HostMode): OST Test 2 organizing in OST turned Stage presence on for OST Test 3 and ost-test1 (Spotlight 200 x2); Teams desktop (ost-test1, presenter) showed both On stage and on its managed stage (517.3 x 291 side by side); OST Test 3 in OST showed 2 on screen; taken off again (Stop spotlight 200). Teams side: Teams organizer flipping OST Test 2's Stage presence put OST Test 2 on its own OST stage (see above).
+  - Registration captured in Teams desktop (Discover ▸ Register on "OST TEST 217 r3 webinar reg", ost-test1): POST {teamsevents}/events/{id}/attendee/register (body in spec section 9), the dialog and success view measured, Unregister = POST events/{id}/attendees/{registrationId}/cancel (204). ost-test1 is unregistered again in Teams; OST's own Register run follows.
+  - Build note: abuild.sh's cp -al shares target/debug/.cargo-lock between build folders (5 hard links), so one agent's cargo blocks the others'; replaced ost-build-th3's lock with its own file.
+
+- 2026-11-19 r3, wrap-up:
+  - Registration built and verified: OST (ost-test1) registered from Discover's card (Register dialog, terms, "You're registered!", "Event Registered" toast; events: registered status Registered); Teams desktop's Discover card then said Registered. OST's Unregister ("Cancel your registration?" ▸ Cancel registration, POST .../attendees/{id}/cancel) put it back; Teams then showed Register.
+  - Fixed on the way: Discover's lists rendered no cards on Qt 6.10 (a list nested in the Repeater's rows isn't a JS Array, so items came out empty); now copied out by index.
+  - "On with preview" rechecked live with the final layout: OST Test 2 started the event, sent itself, ost-test1 and OST Test 3 live; OST's view matched Teams' (2 + 1 grid, "Last updated by you", the Live frame #D13438 once live, as Teams measured); ended the event; everyone left (hung up 202 in both OST logs, Teams out of the call).
+  - Gallery: near ties go to more columns (two people side by side on the managed stage, as Teams).
+  - Cleanup: OST TEST 217 r3 town hall, town hall B, webinar and webinar reg cancelled; their calendar entries purged for ost-test1, OST Test 2 and OST Test 3.
+  - Open: the green room's recording alert for auto-recorded events ("Recording and transcription will begin when the meeting starts."); registration forms with questions (OST sends no answers); Discover's attendee card lacks "By <presenter>" (pre-existing).
 <!-- SECTION:NOTES:END -->
