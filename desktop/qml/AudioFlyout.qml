@@ -34,7 +34,14 @@ Popup {
     property bool roomAudio: false
     property bool musicMode: false
     property bool musicInFlyout: false
+    /// A 1:1 call (Teams' P2P call type): Spatial audio shows off and
+    /// disabled there.
+    property bool oneToOne: false
+    property bool spatialCapable: false
+    property bool spatialOn: false
     onOpened: {
+        spatialCapable = backend.spatialAudioCapable()
+        spatialOn = backend.setting("spatialAudio") === "true"
         musicMode = backend.setting("musicMode") === "on"
         musicInFlyout = backend.setting("musicModeInFlyout") === "on"
         noiseSuppression = backend.setting("noiseSuppression") !== "off"
@@ -43,6 +50,15 @@ Popup {
         speaker = backend.setting("speakerDevice") || ""
         volume = backend.speakerVolume()
         flick.contentY = 0
+    }
+    function spatialRowForTest() {
+        const p = spatialItem.mapToItem(col, 0, 0)
+        return { usable: spatialItem.usable, on: spatialItem.shownOn, capable: root.spatialCapable, oneToOne: root.oneToOne, setting: backend.setting("spatialAudio"), y: p.y, h: spatialItem.height }
+    }
+    function toggleSpatialForTest() {
+        if (!spatialItem.usable) return
+        root.spatialOn = !root.spatialOn
+        backend.setSetting("spatialAudio", root.spatialOn ? "true" : "false")
     }
     // The meter follows the microphone while the flyout is open.
     Timer { running: root.opened; interval: 100; repeat: true; onTriggered: root.level = root.muted ? 0 : backend.micLevel() }
@@ -149,6 +165,52 @@ Popup {
             Item { width: 268; height: 10.7 }
             Rectangle { width: 268; height: 1 / Screen.devicePixelRatio; color: theme.divider }
             Item { width: 268; height: 14.7 }
+            // Teams' Spatial audio row, first in the flyout's effects
+            // section (SpatialAudioContainer at FLYOUT: no description, no
+            // info button; measured on winpc 2026-11-19): a 36 px row,
+            // "Spatial audio" 14/20 #242424 8.67 down, the 40 x 20 switch
+            // 228 in and 8 down, Noise suppression's row right under it.
+            // Teams shows it wherever spatial audio is available (desktop);
+            // off and disabled when the speaker can't play it (not stereo,
+            // or Bluetooth) or in a 1:1 call. Its switch is the device
+            // setting Settings ▸ Devices keeps; mid-meeting the call
+            // switches at once (calling::spatial, x-much2 renegotiated).
+            Item {
+                id: spatialItem
+                readonly property bool usable: root.spatialCapable && !root.oneToOne
+                readonly property bool shownOn: usable && root.spatialOn
+                width: 268; height: 36
+                Text {
+                    y: 8.67; height: 18.67
+                    verticalAlignment: Text.AlignVCenter
+                    text: qsTr("Spatial audio")
+                    font.family: theme.font; font.pixelSize: 14
+                    color: theme.text
+                }
+                Rectangle {
+                    x: 228; y: 8
+                    width: 40; height: 20; radius: 10
+                    color: spatialItem.shownOn ? (spHover.hovered ? theme.brandHover : theme.brandFill) : "transparent"
+                    border.color: spatialItem.shownOn ? "transparent" : spatialItem.usable ? theme.textStrong : theme.divider
+                    Rectangle {
+                        width: 14; height: 14; radius: 7
+                        anchors.verticalCenter: parent.verticalCenter
+                        x: spatialItem.shownOn ? parent.width - width - 3 : 3
+                        color: spatialItem.shownOn ? theme.hc("white", "#000000") : spatialItem.usable ? theme.textStrong : theme.disabled
+                    }
+                }
+                HoverHandler { id: spHover; enabled: spatialItem.usable; cursorShape: Qt.PointingHandCursor }
+                TapHandler {
+                    enabled: spatialItem.usable
+                    onTapped: {
+                        root.spatialOn = !root.spatialOn
+                        backend.setSetting("spatialAudio", root.spatialOn ? "true" : "false")
+                    }
+                }
+                Accessible.role: Accessible.CheckBox
+                Accessible.name: qsTr("Spatial audio")
+                Accessible.checked: spatialItem.shownOn
+            }
             // Noise suppression (Fluent Switch with its label before it).
             Item {
                 width: 268; height: 36

@@ -3954,6 +3954,9 @@ Window {
         id: audioFlyout
         muted: win.muted || !win.hasAudio
         roomAudio: win.roomDeviceJoined
+        // Teams' Spatial audio row is off and disabled in a 1:1 call
+        // (Teams' P2P call type; its test call is not one: measured).
+        oneToOne: !win.meeting && !win.testCall
         onToggleMute: win.toggleMute()
         // Teams opens its Audio settings pane (TASK-0062); OST's device settings for now.
         onMoreAudioSettings: win.side = "audio"
@@ -3966,6 +3969,9 @@ Window {
     function openAudioOptions(button) { audioFlyout.parent = button; audioFlyout.open() }
     /// The Mic flyout opened at the top right (harness pictures).
     function openAudioOptionsForTest() { audioFlyout.parent = contentItem; audioFlyout.open(); audioFlyout.x = contentItem.width - audioFlyout.width - 8; audioFlyout.y = 60 }
+    /// The Mic flyout's Spatial audio row (harness): its state and place.
+    function audioFlyoutSpatialForTest() { return audioFlyout.spatialRowForTest() }
+    function toggleFlyoutSpatialForTest() { audioFlyout.toggleSpatialForTest() }
     AiPopover {
         id: aiPopover
         aiOn: win.aiOn && win.aiAvailable

@@ -6747,6 +6747,10 @@ Window {
             if (Qt.application.arguments.indexOf("--vi-audio-ui") >= 0) {
                 if (secs === 10) w.side = "audio"
                 else if (secs === 20) { w.side = ""; w.openAudioOptionsForTest() }
+                // The flyout's Spatial audio row (TASK-0231); with
+                // --vi-spatial-toggle it is switched at 25 s and back at 40 s.
+                if (secs >= 20 && secs <= 45) console.warn("VITEST spatial row", JSON.stringify(w.audioFlyoutSpatialForTest()))
+                if (Qt.application.arguments.indexOf("--vi-spatial-toggle") >= 0 && (secs === 25 || secs === 40)) { w.openAudioOptionsForTest(); w.toggleFlyoutSpatialForTest(); console.warn("VITEST spatial toggled", JSON.stringify(w.audioFlyoutSpatialForTest())) }
             }
             if (Qt.application.arguments.indexOf("--vi-shots") >= 0) callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-vi-" + secs + ".png")))
             if (Qt.application.arguments.indexOf("--vi-announce") >= 0) {
