@@ -104,7 +104,7 @@ pub use chat::{
 };
 pub use me::whoami_data;
 pub use presence::get_presence_data;
-pub use teams::list_teams_data;
+pub use teams::{list_teams_data, tui_teams};
 
 /// List recent chats (native Teams API)
 pub async fn list_chats(limit: usize) -> Result<()> {

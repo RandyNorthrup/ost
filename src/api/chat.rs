@@ -929,6 +929,9 @@ pub struct ChatInfo {
     pub backroom: String,
     /// A backroom chat's own title (its name without Teams' prefix).
     pub topic: String,
+    /// Unread as Teams counts it: someone else's message newer than your
+    /// read horizon, or marked unread (see `messages::is_unread`).
+    pub unread: bool,
 }
 
 /// Teams' backroom chat kind from the thread's properties (its
@@ -1006,7 +1009,6 @@ pub fn backroom_title(kind: &str, title: &str) -> String {
         "meeting" => crate::i18n::fill(&crate::i18n::tr_id("Planning group: %1", "messaging:k21d43hht"), &[title]),
         _ => title.to_string(),
     }
-}
 
 /// Your notes-to-self chat's name, as Teams lists it: "{you} (You)"
 /// (chat_self_chat_header_title, in the app language).
@@ -1098,14 +1100,23 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
         }
     };
 
-    let body: ConversationsResponse = resp
+    let raw: serde_json::Value = resp
         .json()
         .await
         .context("Failed to parse conversations response")?;
+    let body: ConversationsResponse =
+        serde_json::from_value(raw.clone()).context("Failed to parse conversations response")?;
 
     let conversations = body.conversations.unwrap_or_default();
+    // The same conversations as JSON, for the unread rule.
+    let raw_convs: Vec<serde_json::Value> = raw
+        .get("conversations")
+        .and_then(|c| c.as_array())
+        .cloned()
+        .unwrap_or_default();
 
     let own_oid = client.object_id();
+    let me = own_oid.as_deref().map(|o| format!("8:orgid:{o}")).unwrap_or_default();
     let now_secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -1120,11 +1131,14 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
     let kinds = futures::future::join_all(meeting_ids.iter().map(|id| meeting_backroom(client, id))).await;
     let backrooms: std::collections::HashMap<String, String> = meeting_ids.into_iter().zip(kinds).collect();
     let mut chats = Vec::new();
-    for conv in &conversations {
+    for (i, conv) in conversations.iter().enumerate() {
         let id = conv.id.as_deref().unwrap_or("").to_string();
         if id.is_empty() {
             continue;
         }
+        let unread = raw_convs
+            .get(i)
+            .is_some_and(|c| super::messages::is_unread(c, &me));
 
         let is_group = id.contains("thread") || id.contains("meeting");
         let mut name = conversation_name(conv);
@@ -1225,6 +1239,7 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
                 .and_then(|p| p.extra.get("isCreator"))
                 .and_then(|c| c.as_bool())
                 .unwrap_or(false),
+            unread,
             activity_ms: {
                 let message = conv
                     .last_message

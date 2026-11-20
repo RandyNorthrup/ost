@@ -81,6 +81,12 @@ pub struct MessagesState {
     pub all_loaded: bool,
     /// How many messages there were before the last load.
     pub loaded_before: usize,
+    /// The load under way is a pushed update of the open conversation:
+    /// keep the selection where it was (or on the newest message, if it
+    /// was there).
+    pub live_reload: bool,
+    /// A push came while a load was under way: reload once it's done.
+    pub reload_pending: bool,
 }
 
 /// Messages loaded at first, and how many more each scroll past the top
@@ -100,6 +106,8 @@ impl Default for MessagesState {
             loading_older: false,
             all_loaded: false,
             loaded_before: 0,
+            live_reload: false,
+            reload_pending: false,
         }
     }
 }
@@ -107,6 +115,14 @@ impl Default for MessagesState {
 impl MessagesState {
     /// Update messages from API response.
     pub fn update_messages(&mut self, header: &str, api_messages: Vec<api::MessageInfo>) {
+        // A pushed update: remember what was selected, and whether it was
+        // the newest message.
+        let live = std::mem::take(&mut self.live_reload) && !self.loading_older;
+        let at_newest = self.selected + 1 >= self.messages.len();
+        let key = self
+            .messages
+            .get(self.selected)
+            .map(|m| (m.sender.clone(), m.timestamp.clone(), m.content.clone()));
         self.channel_header = header.to_string();
         self.messages = api_messages
             .into_iter()
@@ -125,7 +141,21 @@ impl MessagesState {
         let count = self.messages.len();
         self.expanded_threads = vec![true; count];
         self.scroll_offset = 0;
-        if std::mem::take(&mut self.loading_older) {
+        if live {
+            // New messages came in below: follow them from the newest one,
+            // else stay on the message you were reading.
+            self.selected = if at_newest {
+                count.saturating_sub(1)
+            } else {
+                key.and_then(|(s, t, c)| {
+                    self.messages
+                        .iter()
+                        .rposition(|m| m.sender == s && m.timestamp == t && m.content == c)
+                })
+                .unwrap_or(self.selected)
+                .min(count.saturating_sub(1))
+            };
+        } else if std::mem::take(&mut self.loading_older) {
             // Older messages came in above: stay on the one that was at the
             // top (nothing new means there's nothing older).
             let added = count.saturating_sub(self.loaded_before);
@@ -158,6 +188,8 @@ impl MessagesState {
         self.loading_older = false;
         self.all_loaded = false;
         self.loaded_before = 0;
+        self.live_reload = false;
+        self.reload_pending = false;
     }
 
     /// Move selection up by one message.

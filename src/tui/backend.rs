@@ -19,6 +19,9 @@ pub enum BackendCommand {
     SendMessage { chat_id: String, message: String },
     LoadUserInfo,
     LoadPresence,
+    /// Mark a chat or channel read up to its newest message (Teams'
+    /// consumption horizon), as opening it in Teams does.
+    MarkRead { chat_id: String },
 }
 
 /// Responses from the async backend to the TUI.
@@ -34,6 +37,16 @@ pub enum BackendResponse {
     Presence(Result<api::PresenceInfo>),
     /// Initial client creation failed (auth issue).
     ClientError(String),
+    /// Teams pushed chat-service events (Trouter): the conversations they
+    /// changed, and those with a new message from someone else.
+    Push {
+        changed: Vec<String>,
+        new_from_others: Vec<String>,
+    },
+    /// The push channel (re)connected.
+    PushConnected,
+    /// Push events were dropped: reload everything.
+    PushLagged,
 }
 
 /// Handle for interacting with the backend from the TUI side.
@@ -89,6 +102,8 @@ async fn backend_loop(
         }
     };
 
+    start_push(&client, resp_tx.clone());
+
     while let Some(cmd) = cmd_rx.recv().await {
         let client = Arc::clone(&client);
         let resp_tx = resp_tx.clone();
@@ -97,7 +112,7 @@ async fn backend_loop(
         tokio::spawn(async move {
             match cmd {
                 BackendCommand::LoadTeams => {
-                    let result = api::list_teams_data(&client).await;
+                    let result = api::tui_teams(&client).await;
                     let _ = resp_tx.send(BackendResponse::Teams(result));
                 }
                 BackendCommand::LoadChats { limit } => {
@@ -120,7 +135,99 @@ async fn backend_loop(
                     let result = api::get_presence_data(&client).await;
                     let _ = resp_tx.send(BackendResponse::Presence(result));
                 }
+                BackendCommand::MarkRead { chat_id } => {
+                    if let Err(e) = api::messages::mark_chat_read_to_latest(&client, &chat_id).await {
+                        tracing::warn!("mark read failed: {:#}", e);
+                    }
+                }
             }
         });
+    }
+}
+
+/// Connect to Teams' push channel (Trouter), as the desktop app does, and
+/// hand its chat events to the TUI.
+fn start_push(client: &TeamsClient, resp_tx: mpsc::UnboundedSender<BackendResponse>) {
+    use crate::event_hub::{self, EventKind};
+    use tokio::sync::broadcast::error::RecvError;
+
+    let mut events = event_hub::subscribe();
+    tokio::spawn(async {
+        let opts = crate::trouter::ListenOptions::EMBEDDED;
+        if let Err(e) = crate::trouter::listen(opts, std::future::pending).await {
+            tracing::warn!("push channel stopped: {:#}", e);
+        }
+    });
+    let me = client
+        .object_id()
+        .map(|o| format!("8:orgid:{o}"))
+        .unwrap_or_default();
+    tokio::spawn(async move {
+        loop {
+            let ev = match events.recv().await {
+                Ok(ev) => ev,
+                Err(RecvError::Lagged(n)) => {
+                    tracing::warn!("missed {n} push events; reloading");
+                    if resp_tx.send(BackendResponse::PushLagged).is_err() {
+                        return;
+                    }
+                    continue;
+                }
+                Err(RecvError::Closed) => return,
+            };
+            let response = match ev.kind {
+                EventKind::Connected => BackendResponse::PushConnected,
+                EventKind::Call => continue,
+                EventKind::Chat => {
+                    let changed = event_hub::conversation_ids(&ev.json);
+                    if changed.is_empty() {
+                        continue;
+                    }
+                    let new_from_others = new_from_others(&ev.json, &me);
+                    tracing::debug!(chats = changed.len(), "chat push");
+                    BackendResponse::Push { changed, new_from_others }
+                }
+            };
+            if resp_tx.send(response).is_err() {
+                return;
+            }
+        }
+    });
+}
+
+/// The conversations (a channel for its replies too) that a pushed event
+/// brings someone else's new message to.
+fn new_from_others(json: &str, me: &str) -> Vec<String> {
+    let mut ids: Vec<String> = Vec::new();
+    for m in crate::event_hub::message_events(json) {
+        let mine = !me.is_empty() && m.sender_mri.eq_ignore_ascii_case(me);
+        if !mine && !ids.contains(&m.conversation_id) {
+            ids.push(m.conversation_id);
+        }
+    }
+    ids
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn own_messages_are_not_new_from_others() {
+        let ev = |from: &str, conv: &str| {
+            format!(
+                r#"{{"resourceType":"NewMessage","resourceLink":"https://x/v1/users/ME/conversations/{conv}/messages/2","resource":{{"id":"2","messagetype":"Text","content":"hi","from":"https://x/v1/users/ME/contacts/{from}","conversationLink":"https://x/v1/users/ME/conversations/{conv}"}}}}"#
+            )
+        };
+        let batch = format!(
+            r#"{{"eventMessages":[{},{},{}]}}"#,
+            ev("8:orgid:me", "19:a@thread.v2"),
+            ev("8:orgid:other", "19:b@thread.v2"),
+            ev("8:orgid:other", "19:c@thread.tacv2;messageid=1")
+        );
+        assert_eq!(
+            new_from_others(&batch, "8:orgid:me"),
+            vec!["19:b@thread.v2".to_string(), "19:c@thread.tacv2".to_string()]
+        );
     }
 }

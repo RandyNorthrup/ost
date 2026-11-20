@@ -4,6 +4,7 @@ title: 'TUI: live messages and unread counts'
 status: To Do
 assignee: []
 created_date: '2026-11-20T01:21:00Z'
+updated_date: '2026-11-20T18:24:00Z'
 labels:
   - tui
 dependencies: []
@@ -20,3 +21,11 @@ Split from TASK-0002, which was marked Done with these two criteria never met: t
 - [ ] #1 Incoming messages appear in the TUI in real time via Teams' push (trouter), as in the desktop app
 - [ ] #2 Unread counts on channels and chats in the TUI sidebar reflect the real unread state
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+- 2026-11-20 (agent tuiF): Teams' rule (bundles 26304): a chat row is bold when unread (consumption horizon behind someone else's last text message, or marked unread) and gets a dot when it counts toward the badge (unread and not muted); Teams has no per-chat number (its unreadMessageCount is a fixed 50/100 placeholder); channels are bold when unread (CSA isMessageRead false); a team row is bold only while collapsed with an unread channel; the Chat badge = unread unmuted chats.
+- Built: TUI backend connects Trouter (ListenOptions::EMBEDDED, as the desktop) and forwards chat pushes; the open conversation reloads in place (keeps your place, follows new messages at the bottom), other conversations with someone else's new message turn unread, chat/team lists reload (folded while one runs); opening a chat/channel marks it read (consumption horizon), only while the terminal has focus (focus reports); chat list unread from messages::is_unread, channels from Teams' CSA team list (shown channels, isCollapsed); sidebar: bold + dot, CHATS (N) header = unread unmuted chats, selection kept by id across reloads.
+- Verified live (TUI on this PC as ost-test1, tmux; OST Test 3 posted with examples/post_text): post 1 while another chat was open -> OST Test 3 chat appeared at the top, bold with a dot, CHATS (1); opening it cleared the dot and moved the server horizon to the message; post 2 appeared live in the open chat and stayed read (horizon = it); a channel post made OST test channel bold, its collapsed team bold; opening it marked it read (CSA isMessageRead true). Deletions showed live too. Test posts deleted.
+<!-- SECTION:NOTES:END -->

@@ -20,8 +20,8 @@ pub struct Channel {
     pub name: String,
     /// The real channel/thread ID from the API.
     pub id: String,
-    /// Number of unread messages (0 = no badge)
-    pub unread: u32,
+    /// Messages you haven't read (Teams' isMessageRead false): bold.
+    pub unread: bool,
 }
 
 /// A team containing channels.
@@ -43,8 +43,11 @@ pub struct Chat {
     pub id: String,
     /// true = group chat (shows a different icon)
     pub is_group: bool,
-    /// Number of unread messages (0 = no badge, use dot for "some")
-    pub unread: u32,
+    /// Unread as Teams counts it (someone else's message newer than your
+    /// read horizon, or marked unread): bold, with a dot unless muted.
+    pub unread: bool,
+    /// You muted it: no dot, and it doesn't count on the Chats header.
+    pub muted: bool,
     /// Whether this contact is online (show presence dot)
     pub online: bool,
 }
@@ -71,26 +74,36 @@ impl Default for SidebarState {
 }
 
 impl SidebarState {
-    /// Update teams data from API response.
-    pub fn update_teams(&mut self, teams: Vec<api::TeamInfo>) {
+    /// Update teams data from API response. A reload keeps the teams you
+    /// expanded or collapsed here, the selection on the same row, and
+    /// `read` (the conversation you have open) read.
+    pub fn update_teams(&mut self, teams: Vec<api::TeamInfo>, read: Option<&str>) {
+        let selected = self.selected_key();
+        let first_load = self.teams.is_empty();
+        let old: std::collections::HashMap<String, bool> =
+            self.teams.iter().map(|t| (t.id.clone(), t.expanded)).collect();
         self.teams = teams
             .into_iter()
             .map(|t| Team {
+                expanded: if first_load {
+                    t.expanded
+                } else {
+                    old.get(&t.id).copied().unwrap_or(t.expanded)
+                },
                 name: t.name,
                 id: t.id,
-                expanded: true,
                 channels: t
                     .channels
                     .into_iter()
                     .map(|c| Channel {
+                        unread: c.unread && read != Some(c.id.as_str()),
                         name: c.name,
                         id: c.id,
-                        unread: 0,
                     })
                     .collect(),
             })
             .collect();
-        self.clamp_selection();
+        self.restore_selection(selected);
     }
 
     /// Update chats data from API response.
@@ -101,17 +114,73 @@ impl SidebarState {
         }
     }
 
-    pub fn update_chats(&mut self, chats: Vec<api::ChatInfo>) {
+    /// Update chats data (Teams' order changes as messages arrive); the
+    /// selection stays on the same row and `read` (the open chat) stays
+    /// read.
+    pub fn update_chats(&mut self, chats: Vec<api::ChatInfo>, read: Option<&str>) {
+        let selected = self.selected_key();
         self.chats = chats
             .into_iter()
             .map(|c| Chat {
+                unread: c.unread && read != Some(c.id.as_str()),
+                muted: c.muted,
                 name: c.name,
                 id: c.id,
                 is_group: c.is_group,
-                unread: 0,
                 online: false,
             })
             .collect();
+        self.restore_selection(selected);
+    }
+
+    /// Set a chat's or channel's unread flag; whether anything changed.
+    pub fn set_unread(&mut self, id: &str, unread: bool) -> bool {
+        let mut changed = false;
+        for c in self.chats.iter_mut().filter(|c| c.id == id) {
+            changed |= c.unread != unread;
+            c.unread = unread;
+        }
+        for ch in self.teams.iter_mut().flat_map(|t| t.channels.iter_mut()).filter(|c| c.id == id) {
+            changed |= ch.unread != unread;
+            ch.unread = unread;
+        }
+        changed
+    }
+
+    /// Whether `id` is one of the listed channels.
+    pub fn is_channel(&self, id: &str) -> bool {
+        self.teams.iter().flat_map(|t| &t.channels).any(|c| c.id == id)
+    }
+
+    /// Unread chats that aren't muted: Teams' Chat badge count.
+    pub fn unread_chats(&self) -> usize {
+        self.chats.iter().filter(|c| c.unread && !c.muted).count()
+    }
+
+    /// What the selection is on, to find it again after a reload.
+    fn selected_key(&self) -> Option<(u8, String)> {
+        match self.flat_items().get(self.selected)? {
+            SidebarItem::Team(ti) => Some((0, self.teams[*ti].id.clone())),
+            SidebarItem::Channel(ti, ci) => Some((1, self.teams[*ti].channels[*ci].id.clone())),
+            SidebarItem::Chat(ci) => Some((2, self.chats[*ci].id.clone())),
+            _ => None,
+        }
+    }
+
+    /// Put the selection back on the row it was on (it may have moved).
+    fn restore_selection(&mut self, key: Option<(u8, String)>) {
+        if let Some((kind, id)) = key {
+            let items = self.flat_items();
+            let found = items.iter().position(|item| match (kind, item) {
+                (0, SidebarItem::Team(ti)) => self.teams[*ti].id == id,
+                (1, SidebarItem::Channel(ti, ci)) => self.teams[*ti].channels[*ci].id == id,
+                (2, SidebarItem::Chat(ci)) => self.chats[*ci].id == id,
+                _ => false,
+            });
+            if let Some(i) = found {
+                self.selected = i;
+            }
+        }
         self.clamp_selection();
     }
 
@@ -407,11 +476,16 @@ fn render_item(buf: &mut Buffer, ctx: &RowCtx, item: &SidebarItem, state: &Sideb
             let cursor = if ctx.selected { "\u{25BA}" } else { " " };
             let label = format!("{}{} {}", cursor, indicator, team.name);
 
+            // Teams bolds a team only while it is collapsed and one of its
+            // channels is unread.
+            let unread = !team.expanded && team.channels.iter().any(|c| c.unread);
             let style = if ctx.selected {
                 Style::default()
                     .fg(Color::White)
                     .bg(Color::DarkGray)
                     .add_modifier(Modifier::BOLD)
+            } else if unread {
+                Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::White)
             };
@@ -423,25 +497,21 @@ fn render_item(buf: &mut Buffer, ctx: &RowCtx, item: &SidebarItem, state: &Sideb
             let channel = &state.teams[*ti].channels[*ci];
             let cursor = if ctx.selected { "\u{25BA}" } else { " " };
             let label = format!("  {}# {}", cursor, channel.name);
-            let badge = if channel.unread > 0 {
-                format!("{}", channel.unread)
-            } else {
-                String::new()
-            };
-
-            let style = item_style(ctx.selected, channel.unread > 0);
-            let bstyle = if channel.unread > 0 {
-                badge_style(ctx.selected)
-            } else {
-                style
-            };
-
-            render_row(buf, ctx.area, &label, &badge, style, bstyle);
+            // Teams shows an unread channel in bold (no count).
+            let style = item_style(ctx.selected, channel.unread);
+            render_row(buf, ctx.area, &label, "", style, style);
         }
 
         SidebarItem::ChatsHeader => {
-            // Render a separator line: " -- CHATS --------"
-            let prefix = " -- CHATS ";
+            // Render a separator line: " -- CHATS --------", with Teams'
+            // Chat badge (unread chats that aren't muted).
+            let unread = state.unread_chats();
+            let prefix = if unread > 0 {
+                format!(" -- CHATS ({unread}) ")
+            } else {
+                " -- CHATS ".to_string()
+            };
+            let prefix = prefix.as_str();
             let dashes = w.saturating_sub(prefix.len());
             let label = format!("{}{}", prefix, "-".repeat(dashes));
             let style = Style::default().fg(Color::DarkGray);
@@ -457,16 +527,18 @@ fn render_item(buf: &mut Buffer, ctx: &RowCtx, item: &SidebarItem, state: &Sideb
             };
             let cursor = if ctx.selected { "\u{25BA}" } else { " " };
             let label = format!("{}{} {}", cursor, icon, chat.name);
-            let badge = if chat.unread > 0 {
-                format!("{}", chat.unread)
+            // Teams: an unread chat is bold, with a dot unless it's muted.
+            let dot = chat.unread && !chat.muted;
+            let badge = if dot {
+                "\u{25CF}".to_string()
             } else if chat.online {
                 "*".to_string()
             } else {
                 String::new()
             };
 
-            let style = item_style(ctx.selected, chat.unread > 0);
-            let bstyle = if chat.unread > 0 {
+            let style = item_style(ctx.selected, chat.unread);
+            let bstyle = if dot {
                 badge_style(ctx.selected)
             } else if chat.online {
                 Style::default().fg(Color::Green)

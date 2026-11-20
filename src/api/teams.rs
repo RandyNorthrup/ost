@@ -62,12 +62,46 @@ pub struct TeamInfo {
     pub id: String,
     pub name: String,
     pub channels: Vec<ChannelInfo>,
+    /// Expanded in the list (Teams keeps isCollapsed per team).
+    pub expanded: bool,
 }
 
 /// Channel metadata for TUI display.
 pub struct ChannelInfo {
     pub id: String,
     pub name: String,
+    /// Teams' isMessageRead is false: messages you haven't read.
+    pub unread: bool,
+}
+
+/// Your teams for the TUI as Teams' chat list has them (the channels you
+/// show, unread flags, collapsed teams), or from Graph when Teams' list
+/// can't be read (no unread state then).
+pub async fn tui_teams(client: &TeamsClient) -> Result<Vec<TeamInfo>> {
+    match list_teams_csa(client).await {
+        Ok(list) => Ok(list
+            .into_iter()
+            .map(|t| TeamInfo {
+                id: t.id,
+                name: t.name,
+                expanded: t.expanded,
+                channels: t
+                    .channels
+                    .into_iter()
+                    .filter(|c| c.shown)
+                    .map(|c| ChannelInfo {
+                        id: c.id,
+                        name: c.name,
+                        unread: c.unread,
+                    })
+                    .collect(),
+            })
+            .collect()),
+        Err(e) => {
+            tracing::warn!("Teams' team list failed ({:#}); using Graph", e);
+            list_teams_data(client).await
+        }
+    }
 }
 
 /// List joined teams with their channels and return structured data.
@@ -98,6 +132,7 @@ pub async fn list_teams_data(client: &TeamsClient) -> Result<Vec<TeamInfo>> {
                     .map(|ch| ChannelInfo {
                         name: ch.display_name.unwrap_or_else(|| ch.id.clone()),
                         id: ch.id,
+                        unread: false,
                     })
                     .collect()
             }
@@ -111,6 +146,7 @@ pub async fn list_teams_data(client: &TeamsClient) -> Result<Vec<TeamInfo>> {
             id: team.id.clone(),
             name: team_name,
             channels,
+            expanded: true,
         });
     }
 

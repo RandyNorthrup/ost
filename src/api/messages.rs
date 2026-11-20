@@ -4507,7 +4507,10 @@ pub async fn unread_chat_ids(client: &TeamsClient) -> Result<Vec<String>> {
         .collect())
 }
 
-fn is_unread(conv: &serde_json::Value, me: &str) -> bool {
+/// Teams' unread rule for a conversation (a `/users/ME/conversations`
+/// row): its last message is someone else's text newer than your
+/// consumption horizon, or you marked it unread.
+pub fn is_unread(conv: &serde_json::Value, me: &str) -> bool {
     let id = conv.get("id").and_then(|i| i.as_str()).unwrap_or_default();
     if !id.starts_with("19:") {
         return false;
