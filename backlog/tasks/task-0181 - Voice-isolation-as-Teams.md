@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-16T04:53:00Z'
-updated_date: '2026-11-20T00:35:00Z'
+updated_date: '2026-11-20T01:09:00Z'
 labels:
   - desktop
 dependencies: []
@@ -19,7 +19,7 @@ Teams' noise suppression offers Voice isolation using your voice profile; OST sh
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 With a voice profile, Voice isolation can be chosen and keeps only your voice in calls
+- [x] #1 With a voice profile, Voice isolation can be chosen and keeps only your voice in calls
 <!-- AC:END -->
 
 ## Implementation Notes

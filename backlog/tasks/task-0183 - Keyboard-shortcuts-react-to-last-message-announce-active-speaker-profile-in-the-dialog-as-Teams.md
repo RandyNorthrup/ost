@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-16T04:53:00Z'
-updated_date: '2026-11-20T00:35:00Z'
+updated_date: '2026-11-20T01:09:00Z'
 labels:
   - desktop
 dependencies: []
@@ -22,7 +22,7 @@ OST lacks these two shortcuts and has the profile choice only in Settings ▸ Ge
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 Both shortcuts work as Teams'
-- [ ] #2 The Keyboard shortcuts dialog offers the profile choice as Teams'
+- [x] #2 The Keyboard shortcuts dialog offers the profile choice as Teams'
 <!-- AC:END -->
 
 ## Implementation Notes

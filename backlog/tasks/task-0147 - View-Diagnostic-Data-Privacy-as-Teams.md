@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-15T04:40:00Z'
-updated_date: '2026-11-20T00:35:00Z'
+updated_date: '2026-11-20T01:09:00Z'
 labels:
   - settings
 dependencies: []
@@ -20,7 +20,7 @@ Teams' Settings > Privacy > View Diagnostic Data > Manage opens its diagnostic d
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Privacy shows 'View Diagnostic Data' with a Manage button as Teams
+- [x] #1 Privacy shows 'View Diagnostic Data' with a Manage button as Teams
 - [ ] #2 Manage opens a viewer laid out as Teams' diagnostic data viewer, listing exactly the diagnostic data OST sends
 <!-- AC:END -->
 

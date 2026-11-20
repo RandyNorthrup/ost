@@ -1,10 +1,11 @@
 ---
 id: TASK-0142
 title: OST's text in Teams' app languages
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-15T01:31:00Z'
-updated_date: '2026-11-20T01:04:00Z'
+updated_date: '2026-11-20T01:09:00Z'
 labels:
   - desktop
   - settings
@@ -47,4 +48,6 @@ Built so far: Teams' full list of 109 app languages is stored, and Save and rest
 
 - Merged 6799365 (2026-11-19): translations fetched at runtime from Teams' CDN (pinned to Teams 26304.1201.5310.7985) and built into ~/.cache/ost/i18n; no Microsoft strings in the repo or its history. 796 lib + 29 desktop tests passed; de-de and ar-sa verified from an empty cache; offline stays English.
 - AC2 open: the engine's chat system messages and call durations stay English (no translator in the engine yet); the "(You)" suffix; strings Teams has that OST still words differently. Strings OST has that Teams doesn't stay English by design (untranslated.txt).
+
+Built so far: all 109 app languages offered; OST's text in each language in Teams' own wording, fetched at runtime from Teams' CDN and built locally (no Microsoft strings in the repo); right to left for Arabic, Hebrew and others, verified live in de-de and ar-sa against Teams on winpc. Missing: the engine's chat system messages and call durations, the "(You)" suffix, and OST wordings that still differ from Teams' (in progress).
 <!-- SECTION:NOTES:END -->
