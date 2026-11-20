@@ -3156,6 +3156,10 @@ pub struct BackendRust {
     /// and the high-quality stream.
     video_focus: Vec<String>,
     call_lobby_json: QString,
+    /// Who waits in the lobby, from the roster (Teams' InLobby partition)
+    /// and the lobby list Teams' service gives; callLobbyJson shows it to
+    /// those who can let people in.
+    lobby_people: Vec<teams_cli::calling::outgoing::LobbyPerson>,
     call_thread_id: QString,
     user_mri: QString,
     roster: Vec<teams_cli::calling::roster::Participant>,
@@ -6140,24 +6144,30 @@ async fn load_messages(
 }
 
 /// Fetch who waits in the lobby of the current meeting into callLobbyJson.
+/// A roster update can say the lobby changed while the join is still
+/// finishing (the organizer's first updates carry the lobby count before
+/// the call is ours): then ask once the call is in place.
 async fn refresh_lobby(qt: cxx_qt::CxxQtThread<qobject::Backend>) {
-    let people = match call_slot().lock().await.outgoing.as_ref() {
-        Some(call) => call.lobby().await,
-        None => return,
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
+    let people = loop {
+        {
+            let slot = call_slot().lock().await;
+            if let Some(call) = slot.outgoing.as_ref() {
+                break call.lobby().await;
+            }
+        }
+        if tokio::time::Instant::now() >= deadline {
+            tracing::info!("lobby list: no meeting call to ask");
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     };
     match people {
         Ok(list) => {
-            let json = serde_json::to_string(
-                &list
-                    .iter()
-                    .map(|p| json!({ "id": p.id, "name": p.name, "suspected": p.suspected }))
-                    .collect::<Vec<_>>(),
-            )
-            .unwrap_or_else(|_| "[]".into());
             tracing::info!(waiting = list.len(), "lobby");
             let _ = qt.queue(move |mut this| {
-                this.as_mut()
-                    .set_call_lobby_json(QString::from(json.as_str()))
+                this.as_mut().rust_mut().lobby_people = list;
+                this.as_mut().publish_lobby();
             });
         }
         Err(e) => tracing::warn!("lobby list failed: {}", short_error(&e)),
@@ -8972,6 +8982,7 @@ impl qobject::Backend {
         self.as_mut().set_call_signing_json(QString::from("[]"));
         self.as_mut().set_call_muted_by_meeting(false);
         self.as_mut().set_call_share_mri(QString::default());
+        self.as_mut().rust_mut().lobby_people.clear();
         self.as_mut().set_call_lobby_json(QString::from("[]"));
         self.as_mut().set_call_invite_url(QString::default());
         self.as_mut()
@@ -10587,6 +10598,7 @@ impl qobject::Backend {
         self.as_mut().set_call_signing_json(QString::from("[]"));
         self.as_mut().set_call_muted_by_meeting(false);
         self.as_mut().set_call_share_mri(QString::default());
+        self.as_mut().rust_mut().lobby_people.clear();
         self.as_mut().set_call_lobby_json(QString::from("[]"));
         self.as_mut().set_call_invite_url(QString::default());
         self.as_mut()
@@ -12800,6 +12812,15 @@ impl qobject::Backend {
             .filter(|p| !p.active)
             .filter_map(|p| roster.iter().find(|r| r.id == p.id).cloned())
             .collect();
+        // Who waits in the lobby, from the roster as Teams keeps it: the
+        // join response already lists people who waited before you.
+        if self.rust().call_meeting {
+            let mut lobby = std::mem::take(&mut self.as_mut().rust_mut().lobby_people);
+            if teams_cli::calling::roster::apply_lobby(&mut lobby, &delta) {
+                tracing::info!(waiting = lobby.len(), "lobby from the roster");
+            }
+            self.as_mut().rust_mut().lobby_people = lobby;
+        }
         teams_cli::calling::roster::apply(&mut roster, delta);
 
         let json = serde_json::to_string(&roster).unwrap_or_else(|_| "[]".into());
@@ -12885,6 +12906,8 @@ impl qobject::Backend {
         self.as_mut().rust_mut().roster = roster;
         self.as_mut()
             .set_call_roster_json(QString::from(json.as_str()));
+        // Your role may have changed who sees the lobby.
+        self.as_mut().publish_lobby();
         // Whiteboard, PowerPoint Live, Excel Live and Annotate others present.
         self.as_mut().content_from_roster();
         // The recording indicator names its starters from the roster.
@@ -12917,6 +12940,27 @@ impl qobject::Backend {
                     }
                 });
             });
+        }
+    }
+
+    /// callLobbyJson from the people waiting, for those Teams shows the
+    /// lobby to (not an attendee, not anonymous; your role from the roster).
+    fn publish_lobby(mut self: Pin<&mut Self>) {
+        let me = self.rust().user_mri.to_string().to_ascii_lowercase();
+        let role = self.rust().roster.iter().find(|p| p.id == me).map(|p| p.role.clone());
+        let shown = teams_cli::calling::roster::sees_lobby(role.as_deref(), me.starts_with("8:teamsvisitor:"));
+        let people: Vec<serde_json::Value> = if shown {
+            self.rust()
+                .lobby_people
+                .iter()
+                .map(|p| json!({ "id": p.id, "name": p.name, "suspected": p.suspected }))
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let text = serde_json::to_string(&people).unwrap_or_else(|_| "[]".into());
+        if self.rust().call_lobby_json.to_string() != text {
+            self.as_mut().set_call_lobby_json(QString::from(text.as_str()));
         }
     }
 

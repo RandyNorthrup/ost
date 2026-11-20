@@ -43,6 +43,10 @@ pub struct Participant {
     pub role: String,
     /// Still in the meeting.
     pub active: bool,
+    /// Waiting in the meeting's lobby: every endpoint is in the lobby
+    /// modality (Teams' remote participant state InLobby, which its People
+    /// pane's "Waiting in lobby" lists).
+    pub in_lobby: bool,
     /// Muted by the meeting (server mute) on every endpoint.
     pub server_muted: bool,
     /// How many of their devices are in the call (endpoints with a call):
@@ -281,6 +285,7 @@ fn delta_on(json: &str, prefix: &str) -> Option<Vec<Participant>> {
                     // Someone waiting in the lobby (endpoints only in the
                     // lobby modality) isn't in the meeting yet.
                     active: s("/state") == "active" && !lobby_only(p),
+                    in_lobby: s("/state") == "active" && lobby_only(p),
                     server_muted: !streams.is_empty()
                         && streams
                             .iter()
@@ -643,6 +648,36 @@ pub fn apply(roster: &mut Vec<Participant>, delta: Vec<Participant>) {
     roster.retain(|p| p.active);
 }
 
+/// Who waits in the lobby, kept from the roster as Teams keeps it (its
+/// People pane partitions the roster by InLobby): someone in the lobby
+/// joins the list, someone admitted, denied or gone leaves it. The join
+/// response's roster already lists those who waited before you joined.
+/// Returns whether the list changed.
+pub fn apply_lobby(lobby: &mut Vec<super::outgoing::LobbyPerson>, delta: &[Participant]) -> bool {
+    let before = lobby.clone();
+    for p in delta {
+        if p.in_lobby {
+            let person = super::outgoing::LobbyPerson { id: p.id.clone(), name: p.name.clone(), suspected: p.suspected };
+            match lobby.iter_mut().find(|w| w.id == p.id) {
+                Some(w) => *w = person,
+                None => lobby.push(person),
+            }
+        } else if p.streams_known || !p.active {
+            // In the call (their endpoints say so) or gone. An update that
+            // only names someone (no endpoints) says nothing either way.
+            lobby.retain(|w| w.id != p.id);
+        }
+    }
+    *lobby != before
+}
+
+/// Teams shows the lobby (Waiting in lobby, its toast) to people who can
+/// let others in: not an attendee and not anonymous. `role` is your own
+/// meeting role from the roster (None while it hasn't listed you).
+pub fn sees_lobby(role: Option<&str>, anonymous: bool) -> bool {
+    role.is_some_and(|r| !r.eq_ignore_ascii_case("attendee")) && !anonymous
+}
+
 /// Everyone in a conversation the join response's `roster` lists, with
 /// their streams (later roster updates may name people without them).
 pub fn joined(create_response: &str) -> Vec<Participant> {
@@ -908,6 +943,49 @@ mod tests {
             meeting_reactions(r#"{"callAgentPath":"conversation/rosterUpdate/","body":{}}"#)
                 .is_none()
         );
+    }
+
+    #[test]
+    fn people_waiting_before_the_organizer_are_in_its_join_roster() {
+        // The organizer's join response (OST calendar test, 2026-11-19):
+        // OST Test 2 and OST Test 3 waited before it joined.
+        let waiting = |name: &str| {
+            serde_json::json!({"state":"active","advancedMeetingRole":"presenter","details":{"displayName":name},
+                "endpoints":{"e1":{"lobby":{"mediaStreams":[]},"modalityJoined":"Lobby","endpointJoinTime":"x"}}})
+        };
+        let resp = serde_json::json!({"roster":{"participants":{
+            "8:orgid:test3":waiting("OST Test 3"), "8:orgid:test2":waiting("OST Test 2")}}});
+        let mut lobby = Vec::new();
+        assert!(apply_lobby(&mut lobby, &joined(&resp.to_string())));
+        // An update naming them only (as the call's participant list
+        // does) leaves them waiting.
+        let named = r#"{"callAgentPath":"conversation/rosterUpdate/","body":{"participants":{
+            "8:orgid:test2":{"state":"active","details":{"displayName":"OST Test 2"}}}}}"#;
+        assert!(!apply_lobby(&mut lobby, &roster_delta(named).unwrap()));
+        let mut names: Vec<&str> = lobby.iter().map(|w| w.name.as_str()).collect();
+        names.sort();
+        assert_eq!(names, ["OST Test 2", "OST Test 3"]);
+        // Admitted: the roster moves them to the call; they leave the list.
+        let admitted = r#"{"callAgentPath":"conversation/rosterUpdate/","body":{"participants":{
+            "8:orgid:test2":{"state":"active","details":{"displayName":"OST Test 2"},"endpoints":{"e1":{"call":{"mediaStreams":[]}}}}}}}"#;
+        assert!(apply_lobby(&mut lobby, &roster_delta(admitted).unwrap()));
+        assert_eq!(lobby.len(), 1);
+        // Denied (or gone): inactive.
+        let gone = r#"{"callAgentPath":"conversation/rosterUpdate/","body":{"participants":{
+            "8:orgid:test3":{"state":"inactive","details":{"displayName":"OST Test 3"}}}}}"#;
+        assert!(apply_lobby(&mut lobby, &roster_delta(gone).unwrap()));
+        assert!(lobby.is_empty());
+        assert!(!apply_lobby(&mut lobby, &roster_delta(gone).unwrap()));
+    }
+
+    #[test]
+    fn only_people_who_can_admit_see_the_lobby() {
+        assert!(sees_lobby(Some("organizer"), false));
+        assert!(sees_lobby(Some("presenter"), false));
+        assert!(!sees_lobby(Some("attendee"), false));
+        assert!(!sees_lobby(Some("presenter"), true));
+        // Not listed yet.
+        assert!(!sees_lobby(None, false));
     }
 
     #[test]

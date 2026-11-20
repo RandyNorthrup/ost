@@ -1007,7 +1007,7 @@ In-call, live, with `enableAVFramework` the Devices item is hidden from More. Th
   - "Speaker": device list, then a volume slider.
   - Divider, then "Microphone": device list, then a level meter.
   - Divider, then the effects section, only if audio effects exist and it isn't an immersive event:
-    - "Spatial audio" (only applies to non-P2P calls; `setSpatialAudio`).
+    - "Spatial audio" (only applies to non-P2P calls; `setSpatialAudio`). `SpatialAudioContainer` at FLYOUT with no description and no info button; shown wherever spatial audio is available (desktop, `isSpatialAudioAvailable`), off and disabled when the speaker isn't spatial capable or the call is P2P (Teams' test call is not P2P: enabled there). Measured on winpc 2026-11-19 (meeting and test call): a 36 px row first in the section, "Spatial audio" 14/20 #242424 (8.67 down), the 40 × 20 switch 228 in and 8 down (off: 0.67 #616161 ring and knob), Noise suppression's 36 px row right under it.
     - "Noise suppression": an On/Off switch plus the radios "Background noise only" / "Voice isolation" (`updateNoiseSuppression`).
     - "High fidelity music mode", if supported and the user turned on "Display in the microphone dropdown menu".
   - Divider, then "More audio settings", which opens the `audiosettings` pane.
@@ -1225,6 +1225,8 @@ Services:
   - `admitAllParticipants1(teamsCallId, participantIds)`; the list is empty when `enableLobbyAdmitAllScopeAll` (true)
   - `denyParticipant(teamsCallId, participantId)`; Deny all sends one per person
 - Failsafe 100 s. The XL lobby list refreshes every 5 s.
+- **Who is listed** (TASK-0230): Teams' People pane partitions the call's roster by participant state (`partition(participants, isInLobby)`; a remote participant is InLobby when every endpoint `isLobby`), so the people who waited before you joined are listed at once: the join response's roster names them with endpoints only in the lobby modality. The `getAllParticipants` `scope: "lobby"` query is the XL drill-in's. Seen live 2026-11-19: Teams on winpc joined OST calendar test as organizer with OST Test 2 and 3 waiting and showed "Waiting in the lobby" / View Lobby and "Waiting in lobby (2)" at once.
+- **OST** (`roster::apply_lobby`, `Backend::publish_lobby`): the lobby list is kept from every roster delta (the join roster too) as Teams keeps it, and refreshed from the lobby query when `participantCounts.lobbyParticipants` changes (a refresh asked while the join is still finishing waits for the call). It is shown, as in Teams, to people who aren't attendees.
 
 ## 7. Raise hand (414673, 527114, 710637, 615280)
 - Bar button `raisehands-button`, label "Raise". Standalone, because `showRaiseHandInReactionMenu` is false. Title "Raise your hand" / "Lower your hand"; shown in the active state while raised. Visibility: §1.4 (never in P2P).
