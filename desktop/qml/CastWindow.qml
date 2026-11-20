@@ -364,7 +364,7 @@ Window {
                             Rectangle {
                                 id: fileRow
                                 required property var modelData
-                                readonly property bool chosen: !!win.content && win.content.kind === "ppt" && win.content.file === modelData
+                                readonly property bool chosen: !!win.content && win.content.kind === "ppt" && !!win.content.file && win.content.file.url === modelData.url
                                 width: parent.width; height: 36; radius: 4
                                 color: chosen ? "#3D3D3D" : fileHover.hovered ? "#2E2E2E" : "transparent"
                                 border.width: chosen ? 1 : 0; border.color: "#7F85F5"
@@ -462,7 +462,8 @@ Window {
 
     // Teams' isCastOptionsList: the cards, scrolling, centred.
     component OptionList: ListView {
-        width: parent.width
+        x: (parent.width - 536) / 2
+        width: 536
         clip: true
         spacing: 8
         boundsBehavior: Flickable.StopAtBounds
@@ -479,7 +480,6 @@ Window {
         property bool nearbyMark: false
         property bool selected: false
         signal picked()
-        x: (ListView.view ? ListView.view.width : 536) / 2 - 268
         width: 536; height: 80; radius: 2
         color: oiHover.hovered ? "#2E2E2E" : "#292929"
         border.width: 1; border.color: oi.selected ? "#7F85F5" : "#141414"

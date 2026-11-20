@@ -1536,7 +1536,7 @@ mod tests {
             json!({"displayName": "guest@example.com", "identity": {}}),
             p("A", json!({})),
         ];
-        assert_eq!(card_presenters(&list, Some(&owner)), vec!["A", "Guest Speaker", "B"]);
+        assert_eq!(card_presenters(&list, Some(&owner)), vec!["Guest Speaker", "A", "B"]);
         // The card reads the event's owner from the reply.
         let r = json!({"results": [{"eventDetails": {"id": "e1", "owner": owner}, "eventSessions": [{"id": "s1", "speakers": []}]}]});
         assert_eq!(cards_from(&r, "")[0].by_names, vec!["OST Test 2"]);

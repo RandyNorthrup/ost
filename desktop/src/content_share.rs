@@ -485,7 +485,14 @@ impl qobject::Backend {
             // answered (a Teams Rooms device).
             let slot = &mut *slot;
             if slot.outgoing.is_none() {
-                let Some(call) = slot.active.as_mut() else { return };
+                let Some(call) = slot.active.as_mut() else {
+                    // Not answered yet (a room's invitation: the roster can
+                    // come before the answer): seen again as new next time,
+                    // so it's joined then.
+                    let ids: Vec<String> = fresh.iter().map(|s| s.correlation_id.clone()).collect();
+                    let _ = qt.queue(move |mut this| this.as_mut().rust_mut().content.others.retain(|o| !ids.contains(&o.correlation_id)));
+                    return;
+                };
                 for g in &gone {
                     call.forget_content(g);
                 }
