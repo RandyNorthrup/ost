@@ -5,8 +5,8 @@ title: >-
   messages'
 status: Done
 assignee: []
-created_date: '2026-02-05 23:11'
-updated_date: '2026-02-05 23:50'
+created_date: 2026-02-05 23:11
+updated_date: '2026-11-20T01:22:00Z'
 labels:
   - bug
   - tui
@@ -23,10 +23,16 @@ When selecting a channel that has no messages (e.g. 'ProjectX > #Planning'), the
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Selected channel with no messages shows 'No messages yet' or similar distinct empty state
-- [ ] #2 The 'Select a channel or chat' placeholder only appears when no channel is selected
-- [ ] #3 Compose box correctly reflects the selected channel name
+- [x] #1 Selected channel with no messages shows 'No messages yet' or similar distinct empty state
+- [x] #2 The 'Select a channel or chat' placeholder only appears when no channel is selected
+- [x] #3 Compose box correctly reflects the selected channel name
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-11-19 audit: criteria checked to match the Done status and final summary.
+<!-- SECTION:NOTES:END -->
 
 ## Final Summary
 

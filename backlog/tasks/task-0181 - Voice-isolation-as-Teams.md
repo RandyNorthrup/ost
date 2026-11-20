@@ -1,11 +1,11 @@
 ---
 id: TASK-0181
 title: Voice isolation as Teams
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-16T04:53:00Z'
-updated_date: '2026-11-20T01:09:00Z'
+updated_date: '2026-11-20T01:22:00Z'
 labels:
   - desktop
 dependencies: []
@@ -73,3 +73,14 @@ Teams' noise suppression offers Voice isolation using your voice profile; OST sh
 
 - Merged cc5e866 (2026-11-19): see the agent notes above; 791 lib tests passed on linuxlt.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Voice isolation as Teams, with a native model in place of Teams' Windows-only one.
+
+- With a voice profile, Noise suppression offers Background noise only / Voice isolation (Settings ▸ Devices, test call, the in-call Mic flyout and Audio settings pane), disabled as Teams disables it.
+- Isolation: an open CAM++ speaker model (Apache-2.0, downloaded on first need with a pinned SHA-256, never committed) embeds the profile's enrolment recording; after AEC and noise suppression other voices are faded to -60 dB.
+- Live: in a 1:1 call your voice was kept (-0.8..+0.4 dB) and another voice dropped 54-60 dB after about 0.6 s; the control (Background noise only) passed.
+- Open polish: the radios' spacing uses Fluent defaults until measured on winpc (the settings agent is on it).
+<!-- SECTION:FINAL_SUMMARY:END -->

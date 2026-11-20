@@ -1,11 +1,11 @@
 ---
 id: TASK-0199
 title: Meeting chat Q&A, Meeting Whiteboard and Breakout Rooms with rooms as Teams
-status: To Do
+status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-16T09:43:00Z'
-updated_date: '2026-11-16T17:31:00Z'
+updated_date: '2026-11-20T01:22:00Z'
 labels:
   - desktop
 dependencies:

@@ -3,8 +3,8 @@ id: TASK-0004
 title: 'Fix title bar left-truncation: shows " OST Client" instead of full name'
 status: Done
 assignee: []
-created_date: '2026-02-05 23:11'
-updated_date: '2026-02-05 23:50'
+created_date: 2026-02-05 23:11
+updated_date: '2026-11-20T01:22:00Z'
 labels:
   - bug
   - tui
@@ -20,9 +20,15 @@ The TUI title bar truncates the first character of the application name. Every f
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Title bar renders the full application name without truncation on startup
-- [ ] #2 Title bar remains correct after resize and focus changes
+- [x] #1 Title bar renders the full application name without truncation on startup
+- [x] #2 Title bar remains correct after resize and focus changes
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-11-19 audit: criteria checked to match the Done status and final summary.
+<!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
