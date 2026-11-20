@@ -35,6 +35,10 @@ Item {
     /// closed, error…), for the harness.
     property var events: []
     signal created(string componentUrl)
+    /// The component's title as Teams reads it when it is sent
+    /// (requestTitle; "" when it has none or isn't drawn).
+    signal titleText(string title)
+    function requestTitle() { if (root.state_ === "ready") bridge.askTitle(); else root.titleText("") }
     signal failed(string message)
     readonly property string hostTheme: theme.highContrast ? "contrast" : theme.dark ? "dark" : "default"
     property string channelJs: ""
@@ -79,6 +83,7 @@ Item {
         property string config: ""
         readonly property string theme: root.hostTheme
         signal reply(string id, string json)
+        signal askTitle()
         function request(kind, id, json) {
             // Only what the Loop host may ask.
             if (["token"].indexOf(kind) < 0) return
@@ -91,6 +96,7 @@ Item {
             if (name === "error") console.warn("LOOPHOST", root.kind, "error", d.stage || "", (d.message || "").slice(0, 200))
             else console.info("LOOPHOST", root.kind, name)
             if (name === "title") { root.componentTitle = d.title || ""; return }
+            if (name === "titleText") { root.titleText(String(d.title || "")); return }
             if (name === "rendered") root.state_ = "ready"
             else if (name === "error" || (name === "closed" && d.errorType)) { root.error = d.message || d.errorType || "error"; root.state_ = "error"; root.failed(root.error) }
             else if (name === "created" && d.componentUrl) { root.createdInfo = d; root.created(d.componentUrl) }

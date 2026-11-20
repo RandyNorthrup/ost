@@ -37,6 +37,44 @@ extern "C" bool ost_save_clipboard_image(const char *path)
     return !image.isNull() && image.save(QString::fromUtf8(path), "PNG");
 }
 
+#include <QtCore/QMimeData>
+
+// A picture pasted into the compose box: when the clipboard holds a
+// picture and no text, save it as a PNG at `path` and give its size.
+// 1 saved, 0 no picture to paste (text goes in as text), -1 a picture
+// that couldn't be read or saved.
+extern "C" int ost_save_clipboard_picture(const char *path, int *width, int *height)
+{
+    const QMimeData *mime = QGuiApplication::clipboard()->mimeData();
+    if (!mime || !mime->hasImage() || mime->hasText())
+        return 0;
+    const QImage image = qvariant_cast<QImage>(mime->imageData());
+    if (image.isNull() || !image.save(QString::fromUtf8(path), "PNG"))
+        return -1;
+    *width = image.width();
+    *height = image.height();
+    return 1;
+}
+
+// The picture at `path` scaled to fit `side` x `side`, as RGBA bytes into
+// `out` (room for `cap`), its size in `width` / `height`. Whether it could
+// be read.
+extern "C" bool ost_image_rgba(const char *path, int side, unsigned char *out, size_t cap, int *width, int *height)
+{
+    QImage image(QString::fromUtf8(path));
+    if (image.isNull())
+        return false;
+    image = image.scaled(side, side, Qt::KeepAspectRatio, Qt::SmoothTransformation).convertToFormat(QImage::Format_RGBA8888);
+    const size_t need = size_t(image.width()) * size_t(image.height()) * 4;
+    if (need > cap)
+        return false;
+    for (int y = 0; y < image.height(); ++y)
+        memcpy(out + size_t(y) * size_t(image.width()) * 4, image.constScanLine(y), size_t(image.width()) * 4);
+    *width = image.width();
+    *height = image.height();
+    return true;
+}
+
 #include <QtGui/QFont>
 #include <QtGui/QFontMetricsF>
 #include <QtGui/QPixmap>

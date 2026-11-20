@@ -64,18 +64,24 @@ Popup {
     /// link line, Give access): no Back, "People currently in this chat"
     /// (scope 4) among the choices, and Apply hands the choice back.
     property bool chatMode: false
+    /// Choices the opener leaves out (a Loop component's Link settings, as
+    /// Teams' sharing dialog shows them for one: no Anyone, no People you
+    /// choose).
+    property var hiddenScopes: []
     signal linkChosen(int scope, bool edit, string expiration, string password)
     /// Anyone but the owners has access.
     readonly property bool shared: !!info && (info.links.length > 0 || info.people.some(p => p.role !== 3))
 
-    function openLinkSettings(itemRef, name, type, scope, edit, expiry, pass) {
+    function openLinkSettings(itemRef, name, type, scope, edit, expiry, pass, hidden) {
         openFor(itemRef, name, type)
         chatMode = true
+        hiddenScopes = hidden || []
         pendScope = scope; pendEdit = edit; pendExpiration = expiry || ""; pendPassword = pass || ""
         view = "settings"
     }
     function openFor(itemRef, name, type) {
         chatMode = false
+        hiddenScopes = []
         item = itemRef; fileName = name || ""; fileType = type || ""
         info = null; view = "main"; picked = []; query = ""; suggestions = []; message = ""; copied = ""; error = ""
         sending = false; tab = "people"; filter = ""; person = null; ask = null; expiration = ""; password = ""
@@ -493,7 +499,7 @@ Popup {
                     ].concat(root.chatMode ? [{ scope: 4, name: qsTr("People currently in this chat"), line: "", noInfo: true }] : []).concat([
                         { scope: 3, name: qsTr("Only people with existing access"), line: qsTr("Reshare with people in your organization who already have access.") },
                         { scope: 2, name: qsTr("People you choose"), line: qsTr("Share with specific people you choose inside or outside of %1, using their name, group, or email.").arg(root.org()) }
-                    ])
+                    ]).filter(o => root.hiddenScopes.indexOf(o.scope) < 0)
                     Column {
                         id: srow
                         required property var modelData

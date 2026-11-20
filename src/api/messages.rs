@@ -1234,29 +1234,47 @@ pub fn backroom_event_text(e: &ChatEvent, name: &dyn Fn(&str) -> String, kind: &
     let event = kind == "event";
     let ts = &e.targets;
     let self_join = e.kind == "MemberJoined" || (ts.len() == 1 && ts[0] == e.actor);
+    // Teams' module 121919 `Ma` shows the rich sentence (its Aria twin is
+    // only read aloud): tmp_messages_memberJoinedOneMember{Event,Meeting}
+    // Backroom, else addMemberSystemMessage{OneTarget,TwoTargets,
+    // ManyTargets}{Event,Meeting}Backroom by how many were added.
     if self_join {
         let text = if event {
-            tr_id("%1 joined the Event Group Chat: %2 for organizers, presenters, and people helping with the event.", "messaging:k69befoe9")
+            tr_id("%1 joined the Event Group Chat: %2 for organizers, presenters, and people helping with the event.", "messaging:kc2rbbia0")
         } else {
-            tr_id("%1 joined the Planning Group: %2 for organizers, presenters, and people helping with the meeting.", "messaging:k59mdytpy")
+            tr_id("%1 joined the Planning Group: %2 for organizers, presenters, and people helping with the meeting.", "messaging:k8tfy1qp9")
         };
         return Some(fill(&text, &[&name(&ts[0]), title]));
     }
     let actor = name(&e.actor);
-    let (one, two, many) = if event {
-        ("messaging:k899lqo1k", "messaging:kd1b5sjah", "messaging:k7kl5h3i0")
-    } else {
-        ("messaging:kc7do3qud", "messaging:k8bbbov2", "messaging:k5ke58ztx")
-    };
-    let group = if event { "Event Group Chat" } else { "Planning Group" };
-    let tail = if event { "event" } else { "meeting" };
-    Some(match ts.len() {
-        1 => fill(&tr_id(&format!("%1 and %2 joined the {group}: %3 for organizers, presenters, and people helping with the {tail}."), one), &[&actor, &name(&ts[0]), title]),
-        2 => fill(&tr_id(&format!("%1 and %2 and %3 joined the {group}: %4 for organizers, presenters, and people helping with the {tail}."), two), &[&actor, &name(&ts[0]), &name(&ts[1]), title]),
-        n => fill(
-            &tr_id(&format!("%1 and %2 and %3 joined the {group}: %4 for organizers, presenters, and people helping with the {tail}."), many),
-            &[&actor, &name(&ts[0]), &tr_id_n("%n others", "messaging:k7xsi91tl_mf", (n - 1) as i64), title],
+    Some(match (ts.len(), event) {
+        (1, true) => fill(
+            &tr_id("%1 and %2 joined the Event Group Chat: %3 for organizers, presenters, and people helping with the event.", "messaging:kd2pf534f"),
+            &[&actor, &name(&ts[0]), title],
         ),
+        (1, false) => fill(
+            &tr_id("%1 and %2 joined the Planning Group: %3 for organizers, presenters, and people helping with the meeting.", "messaging:kd4z24g30"),
+            &[&actor, &name(&ts[0]), title],
+        ),
+        (2, true) => fill(
+            &tr_id("%1 and %2 and %3 joined the Event Group Chat: %4 for organizers, presenters, and people helping with the event.", "messaging:kcux3ubsg"),
+            &[&actor, &name(&ts[0]), &name(&ts[1]), title],
+        ),
+        (2, false) => fill(
+            &tr_id("%1 and %2 and %3 joined the Planning Group: %4 for organizers, presenters, and people helping with the meeting.", "messaging:k5hlqlh91"),
+            &[&actor, &name(&ts[0]), &name(&ts[1]), title],
+        ),
+        // {{otherTargets}}: everyone after the first, as
+        // tmp_messages_otherTargets_mf counts them.
+        (n, event) => {
+            let others = tr_id_n("%n others", "messaging:k7xsi91tl_mf", (n - 1) as i64);
+            let text = if event {
+                tr_id("%1 and %2 and %3 joined the Event Group Chat: %4 for organizers, presenters, and people helping with the event.", "messaging:k69ip80jz")
+            } else {
+                tr_id("%1 and %2 and %3 joined the Planning Group: %4 for organizers, presenters, and people helping with the meeting.", "messaging:kajtcnui4")
+            };
+            fill(&text, &[&actor, &name(&ts[0]), &others, title])
+        }
     })
 }
 
@@ -3988,6 +4006,9 @@ pub struct ComposeMedia {
     /// "image": the local PNG to upload first.
     #[serde(default)]
     pub path: String,
+    /// "pasted": the picture file's size in bytes.
+    #[serde(default)]
+    pub file_size: u64,
 }
 
 /// Teams' HTML for a picked emoticon, GIF or sticker (captured from Teams'
@@ -4022,6 +4043,18 @@ pub fn compose_media_html(m: &ComposeMedia) -> String {
                 id = escape(&m.id),
             )
         }
+        // A picture pasted into the box (measured on winpc 2026-11-20, "OST
+        // TEST 203 pasted picture"): in its own paragraph at its own size,
+        // uploaded to AMS (`id` the object, `url` its imgo view), with
+        // Teams' inline-image attributes and the file's size.
+        "pasted" => format!(
+            "</p><p><img src=\"{u}\" itemtype=\"http://schema.skype.com/AMSImage\" itemscope=\"png\" data-loading-state=\"success\" data-inline-image=\"true\" data-file-size=\"{size}\" width=\"{w}\" height=\"{h}\" alt=\"image\" aria-description=\"has context menu\" id=\"{id}\" itemid=\"{id}\" href=\"{u}\" target-src=\"{u}\"></p><p>",
+            u = escape(&m.url),
+            id = escape(&m.id),
+            size = m.file_size,
+            w = m.width,
+            h = m.height,
+        ),
         // A custom emoji (CustomEmojiSerializer): `id` "{name};{documentId}",
         // `url` its imgt2_anim view, `title` its name.
         "custom" => format!(

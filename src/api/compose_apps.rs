@@ -89,7 +89,22 @@ pub fn compose_entry(def: &Value) -> Option<Value> {
     }))
 }
 
-/// Your installed apps with compose commands, in the catalog's order.
+/// Teams' order for the picker's recent section (shared worker
+/// `sortExtensibilityAppPickerCategory`, sort ["MRU", "Alphabetical"]):
+/// by place in your apps' most-recently-used list (the middle tier's apps
+/// usage, which Teams shares), the rest by name as JavaScript compares
+/// strings (lodash `lt`: code units, case-sensitive).
+pub fn sort_recent(apps: &mut [Value], mru: &[String]) {
+    let pos = |a: &Value| {
+        let id = a.get("id").and_then(Value::as_str).unwrap_or_default();
+        mru.iter().position(|m| m.eq_ignore_ascii_case(id)).unwrap_or(usize::MAX)
+    };
+    let name = |a: &Value| a.get("name").and_then(Value::as_str).unwrap_or_default().encode_utf16().collect::<Vec<u16>>();
+    apps.sort_by(|a, b| pos(a).cmp(&pos(b)).then_with(|| name(a).cmp(&name(b))));
+}
+
+/// Your installed apps with compose commands, most recently used first
+/// (then by name), as Teams' "+" lists them.
 pub async fn installed(client: &TeamsClient) -> Result<Vec<Value>> {
     let ents = super::app_details::entitlements(client).await?;
     let mut ids: Vec<String> = ents
@@ -103,7 +118,86 @@ pub async fn installed(client: &TeamsClient) -> Result<Vec<Value>> {
         let defs = super::app_details::definitions(client, chunk).await.unwrap_or_default();
         out.extend(defs.iter().filter_map(compose_entry));
     }
+    let mru = super::tab_add::apps_usage(client).await;
+    sort_recent(&mut out, &mru);
     Ok(out)
+}
+
+/// How many store apps Teams' "Add a new app" shows.
+const SUGGESTED: usize = 10;
+
+/// Teams' "Add a new app" (the picker's suggested section): Store apps
+/// (collection `app:co:all`) whose message extension has compose commands
+/// and that you haven't installed, sorted AISuggested / TenantAppRanking /
+/// Alphabetical (by name here), the first ten; each with its Store rating
+/// and agent mark, short description, and Privacy / Terms of use links.
+pub async fn suggested(client: &TeamsClient) -> Result<Vec<Value>> {
+    let catalog = super::app_details::catalog(client).await?;
+    let ents = super::app_details::entitlements(client).await.unwrap_or_default();
+    let ranked = super::store_content::ranked(client, &["all".to_string()]).await.unwrap_or_default();
+    let by_id: std::collections::HashMap<String, &super::store_content::Ranked> =
+        ranked.values().flatten().map(|r| (r.id.to_lowercase(), r)).collect();
+    let mut apps: Vec<(Vec<u16>, Value)> = catalog
+        .iter()
+        .filter(|d| {
+            let id = d.get("id").and_then(Value::as_str).unwrap_or_default().to_lowercase();
+            !ents.get(&id).is_some_and(|st| super::link_unfurl::installed_state(st))
+        })
+        .filter_map(|d| {
+            compose_entry(d)?;
+            let id = d.get("id").and_then(Value::as_str).unwrap_or_default().to_lowercase();
+            let app = super::store_content::store_app(d, by_id.get(&id).copied());
+            let s = |k: &str| d.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
+            let v = json!({
+                "id": app.id, "name": app.name, "short": app.short, "icon": app.icon,
+                "average": app.average, "count": app.count, "averageText": app.average_text, "countText": app.count_text,
+                "agent": app.agent,
+                "privacy": super::tabs::https_only(&s("privacyUrl")), "terms": super::tabs::https_only(&s("termsOfUseUrl")),
+            });
+            Some((app.name.encode_utf16().collect(), v))
+        })
+        .collect();
+    apps.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(apps.into_iter().take(SUGGESTED).map(|(_, v)| v).collect())
+}
+
+/// Your use of an app, kept where Teams keeps it (the middle tier's apps
+/// usage: the app first in `appsMru` with the time, and in `apps`), so the
+/// order is the same in Teams.
+pub async fn record_usage(client: &TeamsClient, app_id: &str) -> Result<()> {
+    let (base, token) = super::tabs::middle_tier(client).await?;
+    let url = format!("{base}/beta/users/apps/usage");
+    let v: Value = client.http().get(&url).bearer_auth(&token).send().await?.error_for_status()?.json().await?;
+    let mut usage = v.get("value").filter(|x| x.is_object()).cloned().unwrap_or_else(|| json!({}));
+    let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
+    bump_usage(&mut usage, app_id, &now);
+    client.http().post(&url).bearer_auth(&token).json(&usage).send().await?.error_for_status()?;
+    Ok(())
+}
+
+/// `usage` with `app_id` used at `now`: first in `appsMru` (with its time)
+/// and in `apps`, the lists kept to Teams' sizes (apps 300, appsMru 150,
+/// appActions / appCommands / appScenes 75).
+pub fn bump_usage(usage: &mut Value, app_id: &str, now: &str) {
+    if !usage.is_object() {
+        *usage = json!({});
+    }
+    let list = |u: &mut Value, k: &str| -> Vec<Value> { u.get(k).and_then(Value::as_array).cloned().unwrap_or_default() };
+    let mut mru = list(usage, "appsMru");
+    mru.retain(|e| !e.get("appId").and_then(Value::as_str).is_some_and(|a| a.eq_ignore_ascii_case(app_id)));
+    mru.insert(0, json!({ "appId": app_id, "lastUsedTimeStamp": now }));
+    mru.truncate(150);
+    let mut apps = list(usage, "apps");
+    apps.retain(|e| !e.as_str().is_some_and(|a| a.eq_ignore_ascii_case(app_id)));
+    apps.insert(0, json!(app_id));
+    apps.truncate(300);
+    usage["appsMru"] = json!(mru);
+    usage["apps"] = json!(apps);
+    for (k, n) in [("appActions", 75), ("appCommands", 75), ("appScenes", 75)] {
+        let mut l = list(usage, k);
+        l.truncate(n);
+        usage[k] = json!(l);
+    }
 }
 
 /// A bot is addressed by its id only (no `28:` in the path).
@@ -160,6 +254,30 @@ pub async fn invoke(client: &TeamsClient, bot: &str, app_id: &str, kind: &str, c
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recent_apps_in_teams_order() {
+        let mut apps = vec![json!({"id": "p", "name": "Polly"}), json!({"id": "c", "name": "Clipchamp"}), json!({"id": "w", "name": "Workflows"}), json!({"id": "v", "name": "Viva Learning"}), json!({"id": "b", "name": "Power BI"})];
+        // never used: by name
+        sort_recent(&mut apps, &[]);
+        let names = |a: &[Value]| a.iter().map(|x| x["name"].as_str().unwrap().to_string()).collect::<Vec<_>>();
+        assert_eq!(names(&apps), ["Clipchamp", "Polly", "Power BI", "Viva Learning", "Workflows"]);
+        // used ones first, newest first
+        sort_recent(&mut apps, &["W".into(), "p".into()]);
+        assert_eq!(names(&apps), ["Workflows", "Polly", "Clipchamp", "Power BI", "Viva Learning"]);
+    }
+
+    #[test]
+    fn usage_puts_the_app_first() {
+        let mut u = json!({"apps": ["a", "b"], "appsMru": [{"appId": "a", "lastUsedTimeStamp": "t1"}, {"appId": "b", "lastUsedTimeStamp": "t0"}], "appActions": [], "appCommands": [], "appScenes": []});
+        bump_usage(&mut u, "B", "t2");
+        assert_eq!(u["apps"], json!(["B", "a"]));
+        assert_eq!(u["appsMru"][0], json!({"appId": "B", "lastUsedTimeStamp": "t2"}));
+        assert_eq!(u["appsMru"].as_array().unwrap().len(), 2);
+        let mut empty = Value::Null;
+        bump_usage(&mut empty, "x", "t");
+        assert_eq!(empty["appsMru"][0]["appId"], "x");
+    }
 
     #[test]
     fn lists_compose_commands_only() {

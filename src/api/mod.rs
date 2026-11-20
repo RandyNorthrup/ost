@@ -5,6 +5,7 @@ pub mod app_details;
 pub mod app_host;
 pub mod attendance;
 pub mod biometric;
+pub mod blurhash;
 pub mod breakout_rooms;
 pub mod calendar;
 mod chat;

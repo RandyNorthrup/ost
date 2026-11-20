@@ -765,7 +765,7 @@ Rectangle {
     // since then writes the chat's draft, so another view of the same chat
     // (a call's chat pane) never puts back an older copy.
     property string draftShown: ""
-    function draftKey(d) { return JSON.stringify([d.text, d.html.replace(/codeBlockEditor-[0-9a-f-]+/g, ""), d.media]) }
+    function draftKey(d) { return JSON.stringify([d.text, d.html.replace(/codeBlockEditor-[0-9a-f-]+/g, ""), d.media, d.loop]) }
     // The compose box kept as the chat's draft, formatting and all (Teams
     // keeps a draft's formatting when you switch chats and restart).
     function saveDraft(chat) {
@@ -4830,6 +4830,8 @@ Rectangle {
         // policy allowing them, and not in your notes to self.
         previewsAllowed: root.previewsShown && root.chatId !== "48:notes"
         chatId: root.chatId
+        // (Names a sent Loop component without a title.)
+        chatTitle: root.chatTopic || root.chatName
         // Teams' "Saved draft": Discard or "Use this version".
         onConflictResolved: useIt => { if (root.draftChat) { root.saveDraft(root.draftChat); backend.resolveDraftConflict(root.draftChat, useIt) } }
         // The app card's settings button: Settings ▸ Privacy (Teams).
@@ -4874,6 +4876,8 @@ Rectangle {
         loopHost: !root.popout && !root.threadRoot && !root.pane
         onComposeAppCommand: (app, cmd, anchor) => root.runComposeCommand(app, cmd, anchor)
         onGetMoreAppsRequested: root.getMoreApps()
+        // A suggested app's Permissions: its details.
+        onAppPermissionsRequested: id => root.openAppDetails(id)
         onCloudRemoved: key => cloudAttach.remove(key)
         onCloudLinkRequested: key => cloudAttach.openLink(key)
         onAttachRequested: a => root.openAttach(a)
@@ -4927,6 +4931,10 @@ Rectangle {
             target: compose.editor
             function onTextChanged() { draftSave.restart() }
         }
+        // A Loop component put in or taken out (a box with one keeps no
+        // draft).
+        onLoopChanged: draftSave.restart()
+        onLoopLinkRequested: (fileRef, fileName, scope, edit) => cloudAttach.openLoopLink(compose, fileRef, fileName, scope, edit)
     }
     // A channel meeting's Attendance view, over the channel (Teams leaves
     // the header band empty above its toolbar).

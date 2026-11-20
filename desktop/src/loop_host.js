@@ -31,6 +31,8 @@
     const pending = new Map();
     let seq = 0;
     let cfg = null;
+    let rendered = null;
+    let titleText = async () => "";
     const post = m => window.postMessage(Object.assign({ ostLoop: true }, m), location.origin);
     const native = (kind, payload) => new Promise(resolve => {
         const id = "l" + (++seq);
@@ -49,6 +51,8 @@
             start().catch(err => fail("start", err));
         } else if (d.dir === "theme" && styling) {
             styling.setTheme(d.theme);
+        } else if (d.dir === "titleText") {
+            titleText().then(t => emit("titleText", { title: t }), () => emit("titleText", { title: "" }));
         }
     });
     const fail = (stage, err) => {
@@ -334,7 +338,22 @@
             layoutMode, maxContentWidth: vp.maxContentWidth
         };
         if (cfg.kind !== "channelPages") { renderOptions.visualSpacingLeft = 0; renderOptions.visualSpacingRight = 0 }
+        // Teams' title read when a compose component is sent (fluid compose
+        // 997266 `lt`): ComponentWithTitle.getTitleText(), else the canvas
+        // component's (ComponentCanvasProvider.getCanvasComponent()).
+        titleText = async () => {
+            const c = rendered;
+            if (!c) return "";
+            let t;
+            if (c.ComponentWithTitle !== undefined) t = await c.ComponentWithTitle.getTitleText();
+            else if (c.ComponentCanvasProvider) {
+                const g = await c.ComponentCanvasProvider.getCanvasComponent();
+                if (g && g.ComponentWithTitle !== undefined) t = await g.ComponentWithTitle.getTitleText();
+            }
+            return String(t || "");
+        };
         const render = async component => {
+            rendered = component;
             if (component.ComponentInitializer) await component.ComponentInitializer.initialize();
             const v = await (component.HTMLViewable && component.HTMLViewable.getView());
             if (!v || !v.HTMLView) throw new Error("Requested component loaded but did not provide a renderer");

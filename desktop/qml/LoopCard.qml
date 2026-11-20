@@ -31,6 +31,14 @@ Rectangle {
     readonly property alias page: loop.item
     /// The component is loaded (a compose box sets it while one is in it).
     property bool live: true
+    /// Which compose component it is; another one loads afresh.
+    property string loopKey: ""
+    property bool resetting: false
+    onLoopKeyChanged: { resetting = true; Qt.callLater(() => resetting = false) }
+    /// Teams' title read when the component is sent: answered by
+    /// titleRead ("" when it has none).
+    signal titleRead(string title)
+    function requestTitle() { if (loop.item) loop.item.requestTitle(); else root.titleRead("") }
     signal discardRequested()
     signal linkSettingsRequested()
     signal created(var info)
@@ -118,7 +126,7 @@ Rectangle {
         width: parent.width - 5.33; height: 320
         // Only while shown (a compose box keeps its card hidden until a
         // component is inserted).
-        active: root.live && (root.mode === "compose" || root.componentUrl.length > 0)
+        active: root.live && !root.resetting && (root.mode === "compose" || root.componentUrl.length > 0)
         sourceComponent: LoopPage {
             kind: root.mode
             create: root.mode === "compose"
@@ -126,6 +134,7 @@ Rectangle {
             componentUrl: root.mode === "compose" ? "" : root.componentUrl
             onCreated: url => root.created(createdInfo)
             onComponentTitleChanged: root.titleChanged(componentTitle)
+            onTitleText: t => root.titleRead(t)
         }
     }
     // Loop's loading indicator while the component isn't drawn.

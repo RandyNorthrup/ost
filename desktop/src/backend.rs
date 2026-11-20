@@ -47,6 +47,11 @@ unsafe extern "C" {
     fn ost_set_clipboard_image(path: *const core::ffi::c_char) -> bool;
     /// Save the clipboard's picture as a PNG (src/native.cpp).
     fn ost_save_clipboard_image(path: *const core::ffi::c_char) -> bool;
+    /// A picture-only clipboard saved as a PNG for the compose box (1),
+    /// none (0) or unreadable (-1), with its size (src/native.cpp).
+    fn ost_save_clipboard_picture(path: *const core::ffi::c_char, width: *mut i32, height: *mut i32) -> i32;
+    /// A picture scaled to fit `side`, as RGBA (src/native.cpp).
+    fn ost_image_rgba(path: *const core::ffi::c_char, side: i32, out: *mut u8, cap: usize, width: *mut i32, height: *mut i32) -> bool;
     /// Teams' taskbar badge on the window icon (src/native.cpp): the
     /// unread count, or with none, the presence glyph of `kind`.
     fn ost_set_taskbar_badge(count: i32, kind: *const core::ffi::c_char);
@@ -739,6 +744,11 @@ pub mod qobject {
         /// Paste the clipboard's picture into `dir`; its path, or "".
         #[qinvokable]
         fn paste_clipboard_image(self: &Backend, dir: &QString) -> QString;
+        /// A picture pasted into the compose box (Ctrl+V with a picture and
+        /// no text on the clipboard): `{path, width, height}`, `{failed}`
+        /// when it can't be read, or "" when there's no picture to paste.
+        #[qinvokable]
+        fn paste_compose_picture(self: &Backend) -> QString;
         /// Save an edited scheduled message (its text, media and time).
         #[qinvokable]
         fn edit_scheduled(
@@ -3255,6 +3265,8 @@ pub struct BackendRust {
     next_loop: Option<teams_cli::api::outbox::LoopEmbed>,
     /// The media-store objects the next message carries (a recorded clip).
     next_ams_refs: Vec<String>,
+    /// The next message's pasted pictures' BlurHash (hash, AMS id).
+    next_blur_hash: Vec<(String, String)>,
     /// The next channel post's subject, headline and banner colour.
     next_post: Option<NextPost>,
     last_typing_sent: Option<std::time::Instant>,
@@ -14687,6 +14699,26 @@ impl qobject::Backend {
         QString::from(dir.display().to_string().as_str())
     }
 
+    pub fn paste_compose_picture(&self) -> QString {
+        let base = std::env::var_os("XDG_CACHE_HOME")
+            .map(std::path::PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".cache")))
+            .unwrap_or_else(std::env::temp_dir);
+        let dir = base.join("ost").join("pasted");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join(format!("{}.png", uuid::Uuid::new_v4()));
+        let Ok(c) = std::ffi::CString::new(path.display().to_string()) else { return QString::default() };
+        let (mut w, mut h) = (0i32, 0i32);
+        // SAFETY: a NUL-terminated path and two live ints, written by Qt.
+        let r = unsafe { ost_save_clipboard_picture(c.as_ptr(), &mut w, &mut h) };
+        let out = match r {
+            1 => json!({ "path": format!("file://{}", path.display()), "width": w, "height": h }),
+            -1 => json!({ "failed": true }),
+            _ => return QString::default(),
+        };
+        QString::from(out.to_string().as_str())
+    }
+
     pub fn paste_clipboard_image(&self, dir: &QString) -> QString {
         let dir = std::path::PathBuf::from(dir.to_string());
         let n = std::fs::read_dir(&dir).map(|d| d.count()).unwrap_or(0) + 1;
@@ -15319,6 +15351,7 @@ impl qobject::Backend {
         let importance = std::mem::take(&mut self.as_mut().rust_mut().next_importance);
         let mut o = self.outgoing(&chat_id, conversation, content, mentions, quote, importance);
         o.ams_references = std::mem::take(&mut self.as_mut().rust_mut().next_ams_refs);
+        o.blur_hash = std::mem::take(&mut self.as_mut().rust_mut().next_blur_hash);
         // The compose Loop component goes with this message only.
         o.loop_component = self.as_mut().rust_mut().next_loop.take();
         self.as_mut().apply_next_post(&mut o);
@@ -15384,6 +15417,7 @@ impl qobject::Backend {
             shared_in_main: false,
             threads_layout: false,
             ams_references: Vec::new(),
+            blur_hash: Vec::new(),
             // Compose sets it before each send (none when it has none).
             url_preview: self.rust().next_url_preview.clone(),
             url_preview_on_send: self.rust().next_url_preview_on_send && self.rust().next_app_card.is_none(),
@@ -20148,9 +20182,39 @@ impl qobject::Backend {
                 "composeLink" => {
                     let r = async { api::loop_page::compose_link(&TeamsClient::new().await?, &s("driveId"), &s("itemId"), &s("url")).await }.await;
                     match r {
-                        Ok((url, desc)) => json!({ "componentUrl": url, "description": desc }).to_string(),
+                        Ok((url, desc, share)) => json!({ "componentUrl": url, "description": desc, "shareId": share }).to_string(),
                         Err(e) => {
                             tracing::warn!("Loop component link failed: {}", short_error(&e));
+                            json!({ "error": short_error(&e) }).to_string()
+                        }
+                    }
+                }
+                // The header's Link settings: its file for the dialog, then
+                // the chosen link.
+                "composeFileRef" => {
+                    let r = async { api::loop_page::compose_file_ref(&TeamsClient::new().await?, &s("driveId"), &s("itemId")).await }.await;
+                    match r {
+                        Ok((r, name)) => json!({ "site": r.site, "list": r.list, "item": r.item, "name": name }).to_string(),
+                        Err(e) => json!({ "error": short_error(&e) }).to_string(),
+                    }
+                }
+                "composeRelink" => {
+                    let r = async {
+                        let client = TeamsClient::new().await?;
+                        let scope = p["scope"].as_i64().unwrap_or(1);
+                        let people: Vec<serde_json::Value> = if scope == 4 {
+                            api::cloud_attach::chat_people(&client, &s("chatId")).await.iter().map(|(e, n, o)| api::sharing::picker_entry(e, n, o)).collect()
+                        } else {
+                            Vec::new()
+                        };
+                        let body = api::sharing::compose_link_body(scope, p["edit"].as_bool().unwrap_or(true), &s("expiration"), &s("password"), &people);
+                        api::loop_page::compose_relink(&client, &s("driveId"), &s("itemId"), &s("url"), &s("shareId"), (scope != 3).then_some(&body)).await
+                    }
+                    .await;
+                    match r {
+                        Ok((url, share)) => json!({ "componentUrl": url, "shareId": share }).to_string(),
+                        Err(e) => {
+                            tracing::warn!("changing the Loop component's link failed: {}", short_error(&e));
                             json!({ "error": short_error(&e) }).to_string()
                         }
                     }
@@ -20163,7 +20227,7 @@ impl qobject::Backend {
                     json!({ "ok": r.is_ok() }).to_string()
                 }
                 "composeRename" => {
-                    let r = async { api::loop_page::compose_rename(&TeamsClient::new().await?, &s("driveId"), &s("itemId"), &s("title")).await }.await;
+                    let r = async { api::loop_page::compose_rename(&TeamsClient::new().await?, &s("driveId"), &s("itemId"), &s("title"), &s("chatTitle"), &s("kindName")).await }.await;
                     if let Err(e) = &r {
                         tracing::warn!("naming the Loop component failed: {}", short_error(e));
                     }
@@ -20196,6 +20260,12 @@ impl qobject::Backend {
                 let client = TeamsClient::new().await?;
                 match kind.as_str() {
                     "list" => Ok(json!({ "apps": api::compose_apps::installed(&client).await? })),
+                    // Teams' "Add a new app" (Store apps with compose commands).
+                    "suggested" => Ok(json!({ "apps": api::compose_apps::suggested(&client).await? })),
+                    // An app picked: its use goes where Teams keeps it.
+                    "usage" => api::compose_apps::record_usage(&client, &s("appId")).await.map(|_| json!({ "ok": true })),
+                    // Add: the app installed for you (Teams' personal install).
+                    "add" => api::store_content::add_app(&client, &s("appId"), None).await.map(|_| json!({ "ok": true })),
                     "invoke" => api::compose_apps::invoke(&client, &s("bot"), &s("appId"), &s("kind"), &s("command"), p.get("args").unwrap_or(&json!({})), &s("conversation")).await,
                     _ => anyhow::bail!("unknown"),
                 }
@@ -23375,8 +23445,9 @@ impl qobject::Backend {
     pub fn send_rich_media(self: Pin<&mut Self>, editor_html: &QString, media_json: &QString) {
         let mut media: Vec<api::messages::ComposeMedia> =
             serde_json::from_str(&media_json.to_string()).unwrap_or_default();
-        // Captioned stickers are pictures we drew: upload them to AMS first.
-        if media.iter().any(|m| m.kind == "image" && m.id.is_empty()) {
+        // Captioned stickers are pictures we drew, and pasted pictures are
+        // the clipboard's: upload them to AMS first.
+        if media.iter().any(|m| (m.kind == "image" || m.kind == "pasted") && m.id.is_empty()) {
             let chat_id = self.rust().current_chat_id.to_string();
             let editor_html = editor_html.to_string();
             let qt = self.qt_thread();
@@ -23384,24 +23455,37 @@ impl qobject::Backend {
                 let result = async {
                     let client = TeamsClient::new().await?;
                     let base = client.ams_url().context("No media store address")?;
-                    for m in media.iter_mut().filter(|m| m.kind == "image" && m.id.is_empty()) {
+                    let mut hashes = Vec::new();
+                    for m in media.iter_mut().filter(|m| (m.kind == "image" || m.kind == "pasted") && m.id.is_empty()) {
                         let path = m.path.trim_start_matches("file://").to_string();
-                        let bytes = std::fs::read(&path).context("Reading the sticker picture")?;
-                        let id = client.ams_upload_image(&chat_id, bytes, "sticker.png").await?;
+                        let bytes = std::fs::read(&path).context("Reading the picture")?;
+                        m.file_size = bytes.len() as u64;
+                        let pasted = m.kind == "pasted";
+                        let id = client.ams_upload_image(&chat_id, bytes, if pasted { "image.png" } else { "sticker.png" }).await?;
                         m.url = format!("{base}/v1/objects/{id}/views/imgo");
+                        if pasted && let Some(h) = picture_blur_hash(&path) {
+                            hashes.push((h, id.clone()));
+                        }
                         m.id = id;
                         let _ = std::fs::remove_file(&path);
                     }
-                    anyhow::Ok(media)
+                    anyhow::Ok((media, hashes))
                 }
                 .await;
                 let _ = qt.queue(move |mut this| match result {
-                    Ok(media) => {
-                        let json = serde_json::to_string(&media.iter().map(|m| json!({"src": m.src, "kind": m.kind, "id": m.id, "title": m.title, "unicode": m.unicode, "url": m.url, "width": m.width, "height": m.height})).collect::<Vec<_>>()).unwrap_or_default();
+                    Ok((media, hashes)) => {
+                        // Teams lists the pasted pictures in amsreferences
+                        // with their BlurHash.
+                        let pasted: Vec<String> = media.iter().filter(|m| m.kind == "pasted").map(|m| m.id.clone()).collect();
+                        if !pasted.is_empty() {
+                            this.as_mut().rust_mut().next_ams_refs = pasted;
+                            this.as_mut().rust_mut().next_blur_hash = hashes;
+                        }
+                        let json = serde_json::to_string(&media.iter().map(|m| json!({"src": m.src, "kind": m.kind, "id": m.id, "title": m.title, "unicode": m.unicode, "url": m.url, "width": m.width, "height": m.height, "file_size": m.file_size})).collect::<Vec<_>>()).unwrap_or_default();
                         this.as_mut().send_rich_media(&QString::from(editor_html.as_str()), &QString::from(json.as_str()));
                     }
                     Err(e) => this.as_mut().set_status_text(QString::from(
-                        tr("Couldn't send the sticker: %1").replace("%1", &short_error(&e)).as_str(),
+                        tr("Couldn't send the picture: %1").replace("%1", &short_error(&e)).as_str(),
                     )),
                 });
             });
@@ -23872,4 +23956,20 @@ async fn exclude_from_capture_once(title: &str) -> anyhow::Result<()> {
     let _: Result<bool, _> = scripting.call("unloadScript", &(name.as_str(),)).await;
     let _ = std::fs::remove_file(&path);
     Ok(())
+}
+
+/// A pasted picture's BlurHash as Teams sends it (4 x 3 components), from
+/// the picture scaled to fit 64 px.
+fn picture_blur_hash(path: &str) -> Option<String> {
+    const SIDE: i32 = 64;
+    let c = std::ffi::CString::new(path).ok()?;
+    let mut buf = vec![0u8; (SIDE * SIDE * 4) as usize];
+    let (mut w, mut h) = (0i32, 0i32);
+    // SAFETY: a NUL-terminated path, a buffer of `buf.len()` bytes and two
+    // live ints; Qt writes at most that many bytes.
+    let ok = unsafe { ost_image_rgba(c.as_ptr(), SIDE, buf.as_mut_ptr(), buf.len(), &mut w, &mut h) };
+    if !ok || w <= 0 || h <= 0 {
+        return None;
+    }
+    teams_cli::api::blurhash::encode(&buf, w as usize, h as usize, 4, 3)
 }

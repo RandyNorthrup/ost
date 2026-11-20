@@ -108,7 +108,15 @@ Item {
         if (d.startsWith("Specific people") || d.startsWith("Only the people")) return { scope: 2, edit: write }
         return { scope: 3, edit: write }
     }
+    /// A compose box's Loop component whose Link settings are open.
+    property var loopBox: null
+    function openLoopLink(box, fileRef, name, scope, edit) {
+        loopBox = box
+        linkKey = ""
+        linkDialog.openLinkSettings(fileRef, name, "loop", scope, edit, "", "", [0, 2])
+    }
     function openLink(key) {
+        loopBox = null
         const c = pending.find(x => x.key === key)
         if (!c || !c.file) return
         linkKey = key
@@ -127,6 +135,12 @@ Item {
     OneDriveShare {
         id: linkDialog
         onLinkChosen: (scope, edit, expiration, password) => {
+            if (ca.loopBox) {
+                const box = ca.loopBox
+                ca.loopBox = null
+                box.applyLoopLink(scope, edit, expiration, password, ca.lineFor(scope, edit))
+                return
+            }
             const key = ca.linkKey
             const c = ca.pending.find(x => x.key === key)
             if (!c || !c.file) return

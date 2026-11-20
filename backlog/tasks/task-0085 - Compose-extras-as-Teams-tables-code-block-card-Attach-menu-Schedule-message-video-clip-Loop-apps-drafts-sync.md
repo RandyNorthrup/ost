@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-09T23:01:00Z'
-updated_date: '2026-11-20T19:24:00Z'
+updated_date: '2026-11-20T19:59:00Z'
 labels:
   - desktop
   - messages
@@ -26,7 +26,7 @@ What TASK-0044 left of Teams' compose box (docs/spec/messages-and-composer.md §
 - [x] #2 Code blocks show Teams' card menu and syntax colours
 - [x] #3 Attach offers Teams' menu (OneDrive / cloud files, browse channels, upload) and sends what it picks as Teams does
 - [x] #4 Drafts sync with Teams, and Teams' pre-send checks run
-- [x] #5 Verified side by side with Teams on winpc
+- [ ] #5 Verified side by side with Teams on winpc
 - [x] #6 Schedule message and Record video clip work as in Teams
 - [ ] #7 Loop components and installed apps' compose actions work as in Teams
 <!-- AC:END -->
@@ -90,4 +90,11 @@ What TASK-0044 left of Teams' compose box (docs/spec/messages-and-composer.md §
 - Installed apps in "+": built (api::compose_apps installed apps with compose commands, the list under Teams' items with recency, Get more apps, ComposeAppPanel for search commands, task modules for fetchTask / taskInfo actions, submitAction, a picked result as Teams' InputExtension card); `--compose-apps-test` added; not yet run live.
 
 - 2026-11-20 later: installed apps verified live with `--compose-apps-test`: "+" lists Clipchamp, Praise, Workflows, Updates, Polly, Viva Learning, Power BI and Polls (Power Automate Actions, with no compose command, left out as Teams does); Polls' action asked composeExtension/fetchTask and opened Microsoft Forms' page in Teams' task module (framed, initialize, success; closed without posting); Power BI's search panel asked composeExtension/query and showed Teams' "Unable to reach app. Please try again." for the bot's 502. Not yet compared side by side on winpc: the rows' icons and the order before anything is used (Teams keeps its own recent order). Test messages OST TEST 85 (Teams' and OST's) and the stray empty message were deleted from OST group test; the .loop files stay in ost-test1's Microsoft Teams Chat Files.
+
+- 2026-11-20 (chatB), measured on winpc:
+  - "+" in OST group test now: Teams' items, then installed apps Clipchamp, Praise, Workflows, Polly, Power BI, Polls, Updates, Viva Learning. Teams' order (shared worker `sortExtensibilityAppPickerCategory`): the recent section sorts ["MRU", "Alphabetical"]; MRU is the middle tier's `GET beta/users/apps/usage` appsMru (lastUsedTimeStamp, newest first) — so before first use apps are alphabetical, and usage is shared with Teams (POST beta/users/apps/usage).
+  - "Add a new app" = the "suggested" section: store apps (collection app:co:all) with compose commands that you haven't installed, sorted AISuggested/TenantAppRanking/Alphabetical (alphabetical here), 10 rows: 36 px round icon (#FAFAFA) at 26, name 14/600 at 74 (+ a 16 px #616161 "Agent" mark 4 after for agents), description 12 #616161 (194.8 wide, ellipsis), Add (39.2 x 24, white, radius 4, 12 px) at 280.8, the rating (16 px star: #C7C7C7 outline "No ratings yet", or #5B5FC7 filled with "4.9" 12/700 + " (318 ratings)"), Privacy | Terms of use | Permissions 10/14 #424242 with #D1D1D1 bars; rows 90 apart; heading "Add a new app" 14 #424242 centred between lines.
+  - Loop link settings: the description opens SharePoint's sharedialog.aspx Link settings (Teams embeds it) with only "People in {tenant}", "People currently in this chat" and "Only people with existing access", the file name ("Loop paragraph 1.loop") under the title; Apply = ShareLink {createLink, linkKind 3/scope 1…}; the header then reads "People currently in this chat with the link can edit" / "People in Secure Coast Network Solutions with the link can edit".
+  - Drafts: Teams does NOT keep a box that holds a Loop component: switching chats drops the whole draft (text too, typed for real over VNC, three tries); the .loop file stays. A text-only draft is kept.
+  - Rename: a component without a title is named after the chat: "OST group test Loop paragraph" (Teams' message "OST TEST 85 loop without title"), as fluid compose 997266 `lt` reads ComponentWithTitle.getTitleText(), else "{chat title} {kind name}".
 <!-- SECTION:NOTES:END -->

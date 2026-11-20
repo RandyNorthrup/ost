@@ -80,6 +80,10 @@ pub struct Outgoing {
     /// a video clip's.
     #[serde(default)]
     pub ams_references: Vec<String>,
+    /// Pasted pictures' BlurHash (Teams' `properties.blurHash`,
+    /// `[{blurhash, imageId}]`); empty for none.
+    #[serde(default)]
+    pub blur_hash: Vec<(String, String)>,
     /// The first link's preview (Teams' `properties.links`), shown or
     /// removed in compose; None when there is none.
     #[serde(default)]
@@ -441,6 +445,10 @@ pub fn post_body(o: &Outgoing) -> serde_json::Value {
             "formatVariant": "TEAMS",
         },
     });
+    if !o.blur_hash.is_empty() {
+        let list: Vec<serde_json::Value> = o.blur_hash.iter().map(|(h, id)| serde_json::json!({ "blurhash": h, "imageId": id })).collect();
+        body["properties"]["blurHash"] = serde_json::Value::Array(list).to_string().into();
+    }
     if let Some(l) = &o.loop_component {
         body["content"] = format!("{}{}", body["content"].as_str().unwrap_or_default(), loop_embed_span(&l.card_client_id)).into();
         body["properties"]["cards"] = loop_embed_cards(l).into();
@@ -1076,6 +1084,7 @@ mod tests {
             shared_in_main: false,
             threads_layout: false,
             ams_references: Vec::new(),
+            blur_hash: Vec::new(),
             url_preview: None,
             url_preview_on_send: false,
             app_card: None,
@@ -1142,6 +1151,7 @@ mod tests {
             conversation_id: "19:c@thread.tacv2".into(),
             threads_layout: true,
             ams_references: Vec::new(),
+            blur_hash: Vec::new(),
             url_preview: None,
             url_preview_on_send: false,
             app_card: None,
@@ -1205,6 +1215,7 @@ mod tests {
             shared_in_main: false,
             threads_layout: false,
             ams_references: Vec::new(),
+            blur_hash: Vec::new(),
             url_preview: None,
             url_preview_on_send: false,
             app_card: None,

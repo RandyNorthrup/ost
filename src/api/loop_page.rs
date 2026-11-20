@@ -313,7 +313,7 @@ fn plain_id(s: &str) -> bool {
 /// "scope":"organization"}`) with the component's `nav`, and the link's
 /// description for the card ("People in your organization with the link
 /// can edit").
-pub async fn compose_link(client: &TeamsClient, drive_id: &str, item_id: &str, page_link: &str) -> Result<(String, String)> {
+pub async fn compose_link(client: &TeamsClient, drive_id: &str, item_id: &str, page_link: &str) -> Result<(String, String, String)> {
     anyhow::ensure!(plain_id(drive_id) && plain_id(item_id), "Not a Loop component");
     // As Teams: SharePoint's own v2.1 createLink (its answer names the link
     // in the user's language, `localizedDescription`); Graph's otherwise.
@@ -339,7 +339,59 @@ pub async fn compose_link(client: &TeamsClient, drive_id: &str, item_id: &str, p
     };
     let web = v.pointer("/link/webUrl").and_then(Value::as_str).context("The component's link")?;
     let desc = v.pointer("/link/localizedDescription").and_then(Value::as_str).unwrap_or_default().to_string();
-    Ok((super::meeting_notes::shared_link(web, page_link), desc))
+    // The link's share id (its permission's id), which Teams deletes when
+    // Link settings replace the link.
+    let share = v.get("shareId").or_else(|| v.get("id")).and_then(Value::as_str).unwrap_or_default().to_string();
+    Ok((super::meeting_notes::shared_link(web, page_link), desc, share))
+}
+
+/// A compose Loop component's file as SharePoint names it (site, list and
+/// item unique id), for the link settings Teams' header opens, and its
+/// current organization link's share id.
+pub async fn compose_file_ref(client: &TeamsClient, drive_id: &str, item_id: &str) -> Result<(super::sharing::ItemRef, String)> {
+    anyhow::ensure!(plain_id(drive_id) && plain_id(item_id), "Not a Loop component");
+    let v: Value = client.graph_get(&format!("/drives/{drive_id}/items/{item_id}?$select=id,name,sharepointIds")).await?.json().await?;
+    let ids = v.get("sharepointIds").context("The component's file")?;
+    let g = |k: &str| ids.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
+    let r = super::sharing::ItemRef { site: g("siteUrl"), list: g("listId"), item: g("listItemUniqueId") };
+    anyhow::ensure!(!r.site.is_empty() && !r.list.is_empty() && !r.item.is_empty(), "The component's file");
+    Ok((r, v.get("name").and_then(Value::as_str).unwrap_or_default().to_string()))
+}
+
+/// The component's link changed in its header's Link settings, as Teams'
+/// fluid compose permission button does (525430 `onFilePermissionChange`):
+/// the chosen link is made (SharePoint's ShareLink, with the chat's people
+/// for "People currently in this chat"), the component's link becomes it
+/// with the component's `nav` kept, and the old link, when it was a
+/// different one, is deleted (Teams' deleteShareLink: `DELETE
+/// drives/{d}/items/{i}/permissions/{shareId}`). Returns the component's
+/// new link and the new share id.
+pub async fn compose_relink(
+    client: &TeamsClient,
+    drive_id: &str,
+    item_id: &str,
+    component_url: &str,
+    old_share_id: &str,
+    body: Option<&Value>,
+) -> Result<(String, String)> {
+    let (url, share_id) = match body {
+        Some(body) => {
+            let (r, _) = compose_file_ref(client, drive_id, item_id).await?;
+            super::sharing::create_link_for(&r, body).await?
+        }
+        // "People with existing access": no link, the file's own address.
+        None => {
+            anyhow::ensure!(plain_id(drive_id) && plain_id(item_id), "Not a Loop component");
+            let v: Value = client.graph_get(&format!("/drives/{drive_id}/items/{item_id}?$select=id,webUrl")).await?.json().await?;
+            (v.get("webUrl").and_then(Value::as_str).context("The component's file")?.to_string(), String::new())
+        }
+    };
+    if !old_share_id.is_empty() && !old_share_id.eq_ignore_ascii_case(&share_id) && plain_id(&old_share_id.replace('-', "")) {
+        if let Err(e) = client.graph_delete(&format!("/drives/{drive_id}/items/{item_id}/permissions/{old_share_id}")).await {
+            tracing::warn!("deleting the Loop component's old link failed: {e:#}");
+        }
+    }
+    Ok((super::meeting_notes::shared_link(&url, component_url), share_id))
 }
 
 /// Discard (Teams' "The Loop component will be deleted."): the file goes.
@@ -349,17 +401,64 @@ pub async fn compose_discard(client: &TeamsClient, drive_id: &str, item_id: &str
     Ok(())
 }
 
-/// The file's name once the component is sent: its title (Teams renames
-/// "Loop paragraph.loop" to "{title}.loop", conflictBehavior rename).
-pub fn compose_file_name(title: &str) -> Option<String> {
-    let clean: String = title.chars().filter(|c| !"\"*:<>?/\\|#%".contains(*c) && !c.is_control()).collect();
-    let clean = clean.trim().trim_end_matches('.').trim();
-    (!clean.is_empty()).then(|| format!("{clean}.loop"))
+/// The first `n` UTF-16 units of `s` (JavaScript's slice(0, n)).
+fn js_slice(s: &str, n: usize) -> &str {
+    let mut units = 0;
+    for (i, c) in s.char_indices() {
+        units += c.len_utf16();
+        if units > n {
+            return &s[..i];
+        }
+    }
+    s
 }
 
-pub async fn compose_rename(client: &TeamsClient, drive_id: &str, item_id: &str, title: &str) -> Result<()> {
+/// The file's name once the component is sent, as Teams' fluid compose
+/// (997266 `lt`, at send) picks it: the component's title (its first 60
+/// characters); a component without one is named after the chat ("{chat
+/// title} Loop paragraph"); then ".loop", and ODSP's file-name rules (the
+/// shared worker's `rj`: no ~ " # % & * : < > ? / \ { | } or line breaks,
+/// "_vti_" as "vti", trimmed, no reserved names). None: Teams keeps the
+/// name it made ("Loop paragraph.loop").
+pub fn compose_file_name(title: &str, chat_title: &str, kind_name: &str) -> Option<String> {
+    const MAX: usize = 60;
+    let mut p = js_slice(title.trim(), MAX).trim().to_string();
+    if p.is_empty() && !chat_title.trim().is_empty() {
+        p = format!("{} {}", js_slice(chat_title.trim(), MAX), js_slice(kind_name, MAX));
+    }
+    if p.is_empty() {
+        return None;
+    }
+    let clean: String = p.chars().filter(|c| !"~\"#%&*:<>?/\\{|}\r\n".contains(*c)).collect();
+    let clean = vti(&clean);
+    let clean = clean.trim();
+    const RESERVED: [&str; 24] = [
+        "con", "prn", "aux", "nul", "com0", "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8", "com9", "lpt0", "lpt1",
+        "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9",
+    ];
+    (!clean.is_empty() && !RESERVED.contains(&clean.to_lowercase().as_str())).then(|| format!("{clean}.loop"))
+}
+
+/// ODSP's "_vti_" (any case) as "vti".
+fn vti(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while !rest.is_empty() {
+        if rest.len() >= 5 && rest.is_char_boundary(5) && rest[..5].eq_ignore_ascii_case("_vti_") {
+            out.push_str("vti");
+            rest = &rest[5..];
+        } else {
+            let c = rest.chars().next().unwrap();
+            out.push(c);
+            rest = &rest[c.len_utf8()..];
+        }
+    }
+    out
+}
+
+pub async fn compose_rename(client: &TeamsClient, drive_id: &str, item_id: &str, title: &str, chat_title: &str, kind_name: &str) -> Result<()> {
     anyhow::ensure!(plain_id(drive_id) && plain_id(item_id), "Not a Loop component");
-    let Some(name) = compose_file_name(title) else { return Ok(()) };
+    let Some(name) = compose_file_name(title, chat_title, kind_name) else { return Ok(()) };
     client
         .graph_patch(&format!("/drives/{drive_id}/items/{item_id}?@microsoft.graph.conflictBehavior=rename"), &json!({ "name": name }))
         .await?;
@@ -382,9 +481,16 @@ mod tests {
 
     #[test]
     fn compose_names_as_teams() {
-        assert_eq!(compose_file_name("OST TEST 85 loop").as_deref(), Some("OST TEST 85 loop.loop"));
-        assert_eq!(compose_file_name("  a/b: c?  ").as_deref(), Some("ab c.loop"));
-        assert_eq!(compose_file_name("   "), None);
+        let n = |t: &str, c: &str| compose_file_name(t, c, "Loop paragraph");
+        assert_eq!(n("OST TEST 85 loop", "OST group test").as_deref(), Some("OST TEST 85 loop.loop"));
+        assert_eq!(n("  a/b: c? {x} ~1 & 2  ", "").as_deref(), Some("ab c x 1  2.loop"));
+        assert_eq!(n("my _VTI_ page", "").as_deref(), Some("my vti page.loop"));
+        // no title: the chat's, then the component's kind
+        assert_eq!(n("   ", "OST group test").as_deref(), Some("OST group test Loop paragraph.loop"));
+        assert_eq!(n("", ""), None);
+        assert_eq!(n("con", ""), None);
+        // the title's first 60 characters
+        assert_eq!(n(&"x".repeat(70), "").unwrap(), format!("{}.loop", "x".repeat(60)));
         assert_eq!(Kind::parse("compose").category(), "messaging");
         assert_eq!(category_defaults(Kind::Message), json!({}));
     }

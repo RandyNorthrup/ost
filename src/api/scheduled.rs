@@ -209,6 +209,7 @@ mod tests {
             shared_in_main: false,
             threads_layout: false,
             ams_references: Vec::new(),
+            blur_hash: Vec::new(),
             url_preview: None,
             url_preview_on_send: false,
             app_card: None,

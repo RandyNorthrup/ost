@@ -315,7 +315,9 @@ Item {
     /// The card's link description: Teams' Link settings for that file.
     signal cloudLinkRequested(string key)
     /// The Loop component's link description: its link settings.
-    signal loopLinkRequested()
+    /// The Loop component's Link settings (its file and current choice:
+    /// scope as OneDriveShare numbers them, edit).
+    signal loopLinkRequested(var fileRef, string fileName, int scope, bool edit)
     /// "+" ▸ Record video clip (offered where `canRecordClip`).
     signal recordClipRequested()
     property bool canRecordClip: false
@@ -493,20 +495,24 @@ Item {
     function escapeHtml(t) { return t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>") }
     function setPlain(t) { input.clear(); if (t) input.insert(0, escapeHtml(t)) }
     function setHtml(h) { input.clear(); if (h) input.insert(0, h); input.cursorPosition = input.length }
-    // (A Loop component left in the box stays in your chat files, as a
-    // Teams draft's does; OST doesn't keep it in the draft yet.)
     function clear() { input.clear(); media = []; urlPreview = null; appCard = null; previewUrl = ""; loop = null }
     // The box as a draft, which Teams keeps with its formatting: the text
     // (the Drafts list's preview), RichText's HTML and the pictures in it.
+    // A box holding a Loop component isn't kept as a draft: Teams drops
+    // the whole draft (its text too) when you leave the chat, and the
+    // component's file stays in your chat files (seen on winpc
+    // 2026-11-20, OST group test, three times).
     function draftState() {
         const text = plainText()
-        return { text: text, html: text.trim() ? formattedText() : "", media: text.trim() ? mediaInUse() : [] }
+        if (root.loop) return { text: "", html: "", media: [], loop: true }
+        return { text: text, html: text.trim() ? formattedText() : "", media: text.trim() ? mediaInUse() : [], loop: false }
     }
     // A kept draft back in the box, as it was typed ({text, html, media};
     // a draft from before formatting was kept has only text).
     function setDraftState(d) {
         input.clear()
         media = d && d.media ? d.media : []
+        root.loop = null
         // One taken from another device (Teams' roamed draft) is in a sent
         // message's form, so it loads as editing one does.
         if (d && d.editHtml) { setMessage({ edit_html: d.editHtml, edit_media: d.editMedia || [] }); refreshRichState(); return }
@@ -536,6 +542,11 @@ Item {
         } else if (m.kind === "sticker") { w = 180; h = 180 }
         else if (m.kind === "image") {
             const s = Math.min(1, 240 / Math.max(1, m.width), 180 / Math.max(1, m.height))
+            w = Math.floor(m.width * s); h = Math.round(m.height * s)
+        } else if (m.kind === "pasted") {
+            // A pasted picture at its own size, at most as wide as the box
+            // (Teams' max-width 100%).
+            const s = Math.min(1, Math.max(40, input.width - 4) / Math.max(1, m.width))
             w = Math.floor(m.width * s); h = Math.round(m.height * s)
         }
         input.insert(input.cursorPosition, "<img src=\"" + m.src + "\" width=\"" + w + "\" height=\"" + h + "\">")
@@ -1094,16 +1105,20 @@ Item {
             LoopCard {
                 id: loopCard
                 z: 2
+                // (A sent one stays loaded, hidden, until its title is read.)
+                readonly property var shown: root.loop || root.loopSending
                 visible: !!root.loop
                 x: 16.7; y: root.textBottom + 20.5
                 width: parent.width - 33.3
                 mode: "compose"
-                live: !!root.loop
+                live: !!shown
+                loopKey: shown ? shown.key : ""
                 conversation: String(root.chatId || backend.currentChatId)
-                componentUrl: root.loop ? root.loop.url : ""
-                name: root.loop && root.loop.title ? root.loop.title : qsTr("Loop paragraph")
-                description: root.loop ? root.loop.description : ""
-                linking: !!root.loop && root.loop.linking
+                componentUrl: shown ? shown.url : ""
+                name: shown && shown.title ? shown.title : qsTr("Loop paragraph")
+                description: shown ? shown.description : ""
+                linking: !!shown && shown.linking
+                onTitleRead: t => root.loopTitleRead(t)
                 // Only one at a time; a new one starts over.
                 Component.onCompleted: {}
                 onCreated: info => {
@@ -1113,7 +1128,7 @@ Item {
                 }
                 onTitleChanged: t => root.setLoop({ title: t })
                 onDiscardRequested: loopDiscardDialog.open()
-                onLinkSettingsRequested: root.loopLinkRequested()
+                onLinkSettingsRequested: root.openLoopLinkSettings()
             }
             Flow {
                 id: cloudCards
@@ -1208,7 +1223,7 @@ Item {
                     text: root.placeholder
                     font: input.font; color: theme.textSecondary
                 }
-                onTextChanged: { if (length > 0) root.typed(); else root.grown = false; root.checkMention(); root.refreshRichState(); root.checkSpelling(); linkWatch.restart() }
+                onTextChanged: { if (length > 0) root.typed(); else root.grown = false; if (root.pastedPictures === "failed") root.pastedPictures = ""; root.checkMention(); root.refreshRichState(); root.checkSpelling(); linkWatch.restart() }
                 onCursorPositionChanged: { root.checkMention(); root.refreshRichState() }
                 // The formatting bar's commands act on this text's document.
                 RichText { id: rich }
@@ -1263,7 +1278,12 @@ Item {
                 onActiveFocusChanged: if (activeFocus) root.enterKey = backend.setting("enterKey") || "send"
                 Keys.onPressed: event => {
                     if (event.key === Qt.Key_Space && !(event.modifiers & Qt.ControlModifier)) { root.autoLinkBeforeCursor(); return }
-                    if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_V) { root.pasteFrom = input.selectionStart; Qt.callLater(root.autoLinkPaste); return }
+                    if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_V) {
+                        // A picture (and no text) on the clipboard goes in
+                        // as a picture, as Teams' box takes it.
+                        if (!root.textOnly && !root.editing && root.pastePicture()) { event.accepted = true; return }
+                        root.pasteFrom = input.selectionStart; Qt.callLater(root.autoLinkPaste); return
+                    }
                     if (!(event.modifiers & Qt.ControlModifier)) return
                     const shift = event.modifiers & Qt.ShiftModifier
                     const alt = event.modifiers & Qt.AltModifier
@@ -1444,25 +1464,69 @@ Item {
         if (!root.loop || !root.loop.url) return ""
         return JSON.stringify({ component_url: root.loop.url, card_client_id: root.loop.cardId })
     }
-    /// After the message went: Teams names the file after the title.
+    /// The chat's title, which names a sent component without one.
+    property string chatTitle: ""
+    /// A sent component whose title is being read (its card kept loaded).
+    property var loopSending: null
+    /// After the message went: Teams reads the component's title
+    /// (ComponentWithTitle) and names the file after it, or after the chat
+    /// ("{chat} Loop paragraph") when it has none.
     function loopSent() {
         const l = root.loop
+        if (root.loopSending) root.loopTitleRead("")
+        if (!l || !l.itemId) { root.loop = null; return }
+        // (Kept before the box lets go of it, so its page stays loaded.)
+        root.loopSending = Object.assign({}, l, { chatTitle: root.chatTitle })
         root.loop = null
-        if (l && l.itemId && l.title.trim()) backend.loopHostRequest("composeRename", "compose-rename", JSON.stringify({ driveId: l.driveId, itemId: l.itemId, title: l.title }))
+        loopTitleWait.restart()
+        loopCard.requestTitle()
     }
+    function loopTitleRead(title) {
+        const l = root.loopSending
+        if (!l) return
+        loopTitleWait.stop()
+        root.loopSending = null
+        console.info("LOOPCOMPOSE title", JSON.stringify(title))
+        backend.loopHostRequest("composeRename", "compose-rename", JSON.stringify({ driveId: l.driveId, itemId: l.itemId, title: title, chatTitle: l.chatTitle, kindName: qsTr("Loop paragraph") }))
+    }
+    Timer { id: loopTitleWait; interval: 5000; onTriggered: root.loopTitleRead("") }
     function discardLoop() {
         const l = root.loop
         root.loop = null
         if (l && l.itemId) backend.loopHostRequest("composeDiscard", "compose-discard", JSON.stringify({ driveId: l.driveId, itemId: l.itemId }))
     }
+    // The header's link description opens Link settings, as Teams'
+    // (fluid compose's file permission button, the attachment card's
+    // dialog); the choice becomes the component's link (Teams deletes the
+    // old one).
+    function openLoopLinkSettings() {
+        if (!root.loop || !root.loop.itemId || root.loop.linking) return
+        backend.loopHostRequest("composeFileRef", root.loop.key + ":ref", JSON.stringify({ driveId: root.loop.driveId, itemId: root.loop.itemId }))
+    }
+    function applyLoopLink(scope, edit, expiration, password, line) {
+        const l = root.loop
+        if (!l || !l.itemId) return
+        root.setLoop({ linking: true, wantLine: line, linkScope: scope, linkEdit: edit })
+        backend.loopHostRequest("composeRelink", l.key + ":relink", JSON.stringify({ driveId: l.driveId, itemId: l.itemId, url: l.url, shareId: l.shareId || "",
+            scope: scope, edit: edit, expiration: expiration || "", password: password || "", chatId: String(root.chatId || backend.currentChatId) }))
+    }
     Connections {
         target: backend
         function onLoopHostReply(id, json) {
-            if (!root.loop || id !== root.loop.key + ":link") return
+            if (!root.loop || id.indexOf(root.loop.key + ":") !== 0) return
             let r = {}
             try { r = JSON.parse(json) } catch (e) {}
-            if (r.componentUrl) root.setLoop({ url: r.componentUrl, description: r.description || "", linking: false })
-            else root.setLoop({ linking: false, error: r.error || "error" })
+            const what = id.slice(root.loop.key.length + 1)
+            if (what === "link") {
+                if (r.componentUrl) root.setLoop({ url: r.componentUrl, description: r.description || "", shareId: r.shareId || "", linking: false })
+                else root.setLoop({ linking: false, error: r.error || "error" })
+            } else if (what === "ref") {
+                if (r.site) root.loopLinkRequested({ site: r.site, list: r.list, item: r.item }, r.name || "", root.loop.linkScope !== undefined ? root.loop.linkScope : 1,
+                                                    root.loop.linkEdit !== undefined ? root.loop.linkEdit : true)
+            } else if (what === "relink") {
+                if (r.componentUrl) root.setLoop({ url: r.componentUrl, shareId: r.shareId || "", description: root.loop.wantLine || root.loop.description, linking: false })
+                else { console.warn("LOOPCOMPOSE relink failed", r.error || ""); root.setLoop({ linking: false }) }
+            }
         }
     }
     function loopCardForTest() { return loopCard.visible ? loopCard : null }
@@ -1580,6 +1644,20 @@ Item {
     /// Pictures pasted into the box still loading or failed (Teams' 4):
     /// "loading", "initializing", "failed" or "".
     property string pastedPictures: ""
+    // Ctrl+V with a picture: Teams' states while it is read
+    // ("initializing"), then the picture in the box; one that can't be
+    // read stays "failed" until the box changes.
+    function pastePicture() {
+        root.pastedPictures = "initializing"
+        const r = backend.pasteComposePicture()
+        if (!r) { root.pastedPictures = ""; return false }
+        const p = JSON.parse(r)
+        if (p.failed) { root.pastedPictures = "failed"; return true }
+        root.pastedPictures = ""
+        root.insertMedia({ kind: "pasted", src: p.path, path: p.path, title: "image", width: p.width, height: p.height })
+        return true
+    }
+    function pictureForTest(path, w, h) { root.insertMedia({ kind: "pasted", src: path, path: path, title: "image", width: w, height: h }) }
     function preSendCheck() {
         const text = root.plainText().replace(/[\u00a0\ufffc\ufdd0\ufdd1]/g, " ")
         const html = root.formattedText()
@@ -1693,7 +1771,7 @@ Item {
         readonly property bool plain: root.newConversation
         parent: Overlay.overlay
         width: plain ? 234.3 : 341.3; padding: 0
-        readonly property real listH: itemsCol.height + (appsCol.visible ? 10.7 + appsCol.height : 0)
+        readonly property real listH: itemsCol.height + (appsCol.visible ? 10.7 + appsCol.height : 0) + (newApps.visible ? newApps.height : 0)
         readonly property real footerH: plain ? 0 : 48
         height: plain ? 12.7 + itemsCol.height + 12.6 : Math.min(480, 62.7 + listH + 14.7 + footerH)
         x: !anchorItem ? 0 : plain ? anchorItem.mapToItem(Overlay.overlay, 0, 0).x + anchorItem.width - 2.7 - width
@@ -1702,6 +1780,7 @@ Item {
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
         onOpened: { search.text = ""; listFlick.contentY = 0; if (!plain) { search.forceActiveFocus(); root.loadComposeApps() } }
+        readonly property var suggested: root.suggestedApps.filter(a => String(a.name || "").toLowerCase().indexOf(search.text.trim().toLowerCase()) >= 0)
         readonly property var apps: root.composeApps.filter(a => String(a.name || "").toLowerCase().indexOf(search.text.trim().toLowerCase()) >= 0)
         readonly property var items: [
             { key: "schedule", label: qsTr("Schedule message"), icon: "send-clock-20", hidden: !root.scheduleAllowed },
@@ -1791,6 +1870,110 @@ Item {
                 }
             }
         }
+        // "Add a new app" (measured on winpc 2026-11-20): Store apps with
+        // compose commands you haven't added, 90 apart: the 36 px round
+        // icon (#FAFAFA) at 26, the name 14/600 at 74 (an agent's 16 px
+        // mark 4 after it), the description 12 #616161 (194.8 wide), Add
+        // (39.2 x 24, radius 4) at 280.8, the rating (a 16 px star:
+        // outline #C7C7C7 "No ratings yet", or #5B5FC7 "4.9" bold and
+        // " (318 ratings)"), then Privacy | Terms of use | Permissions
+        // (10/14 #424242, #D1D1D1 bars); the heading 14 #424242 centred
+        // between lines.
+        Item {
+            id: newApps
+            visible: !plusFlyout.plain && plusFlyout.suggested.length > 0
+            x: 0; y: itemsCol.height + (appsCol.visible ? 10.7 + appsCol.height : 0)
+            width: plusFlyout.width; height: 58 + 90 * plusFlyout.suggested.length
+            Rectangle { x: 14.7; y: 10; width: (parent.width - 29.4 - heading.implicitWidth) / 2 - 12; height: 0.67; color: theme.divider }
+            Rectangle { x: parent.width - 14.7 - width; y: 10; width: (parent.width - 29.4 - heading.implicitWidth) / 2 - 12; height: 0.67; color: theme.divider }
+            Text {
+                id: heading
+                anchors.horizontalCenter: parent.horizontalCenter; y: 0
+                text: qsTr("Add a new app")
+                lineHeight: 20; lineHeightMode: Text.FixedHeight
+                font.family: theme.font; font.pixelSize: 14; color: theme.pick("#424242", "#D6D6D6", "#FFFFFF")
+                Accessible.role: Accessible.Heading; Accessible.name: text
+            }
+            Repeater {
+                model: plusFlyout.suggested
+                Item {
+                    id: sug
+                    required property var modelData
+                    required property int index
+                    x: 0; y: 58 + 90 * index; width: newApps.width; height: 90
+                    Rectangle {
+                        x: 26; y: 0; width: 36; height: 36; radius: 18; clip: true
+                        color: theme.pick("#FAFAFA", "#1F1F1F", "#000000")
+                        Image { anchors.fill: parent; sourceSize: Qt.size(72, 72); source: sug.modelData.icon || ""; asynchronous: true; fillMode: Image.PreserveAspectFit }
+                    }
+                    Row {
+                        x: 74; y: 0; spacing: 4
+                        Text {
+                            width: Math.min(implicitWidth, 194.8 - (agentMark.visible ? 20 : 0)); elide: Text.ElideRight
+                            text: sug.modelData.name || ""
+                            lineHeight: 20; lineHeightMode: Text.FixedHeight
+                            font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text
+                        }
+                        FluentIcon { id: agentMark; visible: !!sug.modelData.agent; y: 2; name: "sparkle-20"; size: 16; color: theme.textSecondary; Accessible.name: qsTr("Agent") }
+                    }
+                    Text {
+                        x: 74; y: 20; width: 194.8; elide: Text.ElideRight
+                        text: sug.modelData.short || ""
+                        lineHeight: 16; lineHeightMode: Text.FixedHeight
+                        font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary
+                    }
+                    Rectangle {
+                        x: 280.8; y: 6; width: 39.2; height: 24; radius: 4
+                        color: addHover.hovered ? theme.menuHover : theme.surface
+                        border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF"); border.width: 0.67
+                        opacity: root.addingApp === sug.modelData.id ? 0.5 : 1
+                        Text { anchors.centerIn: parent; text: qsTr("Add"); font.family: theme.font; font.pixelSize: 12; color: theme.text }
+                        HoverHandler { id: addHover; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: root.addSuggestedApp(sug.modelData, plusFlyout.anchorItem) }
+                        Accessible.role: Accessible.Button
+                        Accessible.name: qsTr("Add") + " " + (sug.modelData.name || "")
+                    }
+                    Row {
+                        x: 74; y: 39.5; spacing: 3
+                        FluentIcon { name: sug.modelData.count > 0 ? "star-16-filled" : "star-16"; size: 16; color: sug.modelData.count > 0 ? theme.pick("#5B5FC7", "#7F85F5", "#FFFF00") : theme.pick("#C7C7C7", "#666666", "#FFFFFF") }
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            textFormat: Text.StyledText
+                            text: sug.modelData.count > 0 ? "<b>" + sug.modelData.averageText + "</b> " + qsTr("(%1 ratings)").arg(sug.modelData.countText) : qsTr("No ratings yet")
+                            lineHeight: 16; lineHeightMode: Text.FixedHeight
+                            font.family: theme.font; font.pixelSize: 12; color: theme.text
+                        }
+                    }
+                    Row {
+                        x: 74; y: 60; spacing: 4
+                        Repeater {
+                            model: [{ k: "privacy", t: qsTr("Privacy") }, { k: "terms", t: qsTr("Terms of use") }, { k: "permissions", t: qsTr("Permissions") }]
+                            Row {
+                                id: lnk
+                                required property var modelData
+                                required property int index
+                                spacing: 4
+                                Text { visible: lnk.index > 0; text: "|"; font.family: theme.font; font.pixelSize: 10; color: theme.pick("#D1D1D1", "#666666", "#FFFFFF") }
+                                Text {
+                                    text: lnk.modelData.t
+                                    lineHeight: 14; lineHeightMode: Text.FixedHeight
+                                    font.family: theme.font; font.pixelSize: 10; font.underline: lnkHover.hovered
+                                    color: theme.pick("#424242", "#D6D6D6", "#FFFFFF")
+                                    HoverHandler { id: lnkHover; cursorShape: Qt.PointingHandCursor }
+                                    TapHandler {
+                                        onTapped: {
+                                            if (lnk.modelData.k === "permissions") { plusFlyout.close(); root.appPermissionsRequested(sug.modelData.id) }
+                                            else if (sug.modelData[lnk.modelData.k]) Qt.openUrlExternally(sug.modelData[lnk.modelData.k])
+                                        }
+                                    }
+                                    Accessible.role: Accessible.Link; Accessible.name: text
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
         }
         // Get more apps: Teams' app store.
         Rectangle {
@@ -1811,41 +1994,64 @@ Item {
         }
     }
     // Your installed apps' compose commands (backend.composeAppRequest
-    // "list"), most recently used first (kept on this device, as Teams).
+    // "list"), most recently used first by the apps usage Teams keeps on
+    // the server, then by name; and "Add a new app" ("suggested").
     property var composeApps: []
+    property var suggestedApps: []
     property bool composeAppsLoading: false
+    property string addingApp: ""
     signal getMoreAppsRequested()
+    signal appPermissionsRequested(string appId)
     /// An app's compose command was picked: the conversation opens its
     /// task module (action) or Teams' search panel (query).
     signal composeAppCommand(var app, var command, Item anchor)
-    Settings { id: appRecency; location: StandardPaths.writableLocation(StandardPaths.AppConfigLocation) + "/compose-apps.ini"; category: "recent"; property string order: "[]" }
-    function sortedApps(list) {
-        let order = []
-        try { order = JSON.parse(appRecency.order) } catch (e) {}
-        const rank = a => { const i = order.indexOf(String(a.id).toLowerCase()); return i < 0 ? 1e6 : i }
-        return list.slice().sort((a, b) => rank(a) - rank(b))
-    }
     function loadComposeApps() {
         if (root.composeAppsLoading) return
         root.composeAppsLoading = true
         backend.composeAppRequest("list", "compose-apps", "{}")
+        backend.composeAppRequest("suggested", "compose-apps-suggested", "{}")
+    }
+    // Add (a suggested app): installed for you, then its compose command
+    // opens as an installed app's would.
+    property var addAnchor: null
+    function addSuggestedApp(app, anchor) {
+        if (root.addingApp) return
+        root.addingApp = app.id
+        root.addAnchor = anchor
+        backend.composeAppRequest("add", "compose-apps-add", JSON.stringify({ appId: app.id }))
     }
     Connections {
         target: backend
         function onComposeAppReply(id, json) {
-            if (id !== "compose-apps") return
-            root.composeAppsLoading = false
             let r = {}
             try { r = JSON.parse(json) } catch (e) {}
-            if (r.apps) root.composeApps = root.sortedApps(r.apps)
+            if (id === "compose-apps-suggested") { if (r.apps) root.suggestedApps = r.apps; return }
+            if (id === "compose-apps-add") {
+                const added = root.addingApp
+                root.addingApp = ""
+                if (r.error) { root.showBanner(r.error, true, 3000); return }
+                root.pendingOpen = added
+                root.composeAppsLoading = false
+                root.loadComposeApps()
+                return
+            }
+            if (id !== "compose-apps") return
+            root.composeAppsLoading = false
+            if (r.apps) {
+                root.composeApps = r.apps
+                const open = root.pendingOpen ? r.apps.find(a => String(a.id).toLowerCase() === String(root.pendingOpen).toLowerCase()) : null
+                root.pendingOpen = ""
+                if (open) { plusFlyout.close(); root.openComposeApp(open, root.addAnchor) }
+            }
         }
     }
+    property string pendingOpen: ""
     function openComposeApp(app, anchor) {
-        let order = []
-        try { order = JSON.parse(appRecency.order) } catch (e) {}
+        // Teams records the use where its "+" order comes from (the apps
+        // usage it shares with this account's other devices).
+        backend.composeAppRequest("usage", "compose-apps-usage", JSON.stringify({ appId: app.id }))
         const id = String(app.id).toLowerCase()
-        appRecency.order = JSON.stringify([id].concat(order.filter(x => x !== id)).slice(0, 50))
-        root.composeApps = root.sortedApps(root.composeApps)
+        root.composeApps = [app].concat(root.composeApps.filter(a => String(a.id).toLowerCase() !== id))
         const cmds = app.commands || []
         // One command: straight to it; several: Teams' list of them.
         if (cmds.length === 1) root.composeAppCommand(app, cmds[0], anchor)
