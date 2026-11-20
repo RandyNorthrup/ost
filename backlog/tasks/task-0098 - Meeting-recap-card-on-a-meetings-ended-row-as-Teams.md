@@ -4,7 +4,7 @@ title: Meeting recap card on a meeting's ended row, as Teams
 status: To Do
 assignee: []
 created_date: '2026-11-10T17:18:00Z'
-updated_date: '2026-11-20T16:51:00Z'
+updated_date: '2026-11-20T19:24:00Z'
 labels:
   - desktop
   - messages
@@ -25,7 +25,7 @@ It is built from the call-end XML (MeetingDetails) plus the recording messages f
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A meeting chat's ended row shows the recap card with Teams' layout, title, date range, transcript chip and recordings thumbnail/count
+- [x] #1 A meeting chat's ended row shows the recap card with Teams' layout, title, date range, transcript chip and recordings thumbnail/count
 - [ ] #2 View recap, the transcript chip and the thumbnail open what Teams opens
 - [ ] #3 Verified side by side with Teams on winpc
 <!-- AC:END -->
