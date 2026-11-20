@@ -89,6 +89,70 @@ Item {
         })
         return out
     }
+    /// OneDrive's responsive columns for a grid `t` wide (its
+    /// ODBMyFilesResponsiveBehavior and layout module 4377): DocIcon 40,
+    /// Name 210-800, Modified 130-200, Modified By 130-260, File size
+    /// 85-110, Sharing 75-110, Activity 113-550. Too narrow: columns drop by
+    /// priority (Sharing, File size, Activity, Modified By, Modified); spare
+    /// width is shared evenly up to each maximum, then among all but DocIcon.
+    /// [DocIcon, Name, Modified, Modified By, File size, Sharing, Activity];
+    /// 0 for a dropped column.
+    function responsiveWidths(t) {
+        const cols = [[40, 40, 1, false, false], [210, 800, 1, false, true], [130, 200, 2, true, true], [130, 260, 3, true, true],
+                      [85, 110, 5, true, true], [75, 110, 6, true, true], [113, 550, 4, true, true]]
+            .map(c => ({ min: c[0], max: c[1], priority: c[2], hide: c[3], unlimited: c[4], grow: 1 }))
+        if (t <= 0) return cols.map(() => 0)
+        const a = cols.map(c => c.min), n = cols.map(c => c.grow), shown = cols.map(() => true)
+        let o = a.reduce((x, y) => x + y, 0), i = cols.length, s = cols.filter(c => c.min !== c.max).length, l = cols.filter(c => c.unlimited).length
+        const hideable = cols.map((c, idx) => ({ c: c, idx: idx })).filter(x => x.c.hide).sort((x, y) => y.c.priority - x.c.priority)
+        if (o > t) {
+            for (let d = 0; d < hideable.length && o > t; d++) {
+                const k = hideable[d].idx
+                o -= cols[k].min; shown[k] = false; a[k] = 0; i -= n[k]; n[k] = 0; s--
+                if (cols[k].unlimited) l--
+            }
+        }
+        let d = t - o
+        const growable = () => cols.some((c, k) => a[k] < c.max && n[k] > 0 || a[k] >= c.max && c.unlimited)
+        for (let guard = 0; d > 1 && s > 0 && growable() && i !== 0 && guard < 50; guard++) {
+            const per = d / i
+            let full = 0
+            for (let k = 0; k < cols.length; k++) {
+                if (!shown[k]) { a[k] = 0; continue }
+                if (a[k] >= cols[k].max) { full++; continue }
+                if (a[k] + per * n[k] > cols[k].max) { d -= cols[k].max - a[k]; a[k] = cols[k].max; s--; i -= n[k]; n[k] = 0 }
+                else { a[k] += per * n[k]; d -= per * n[k] }
+            }
+            if (full === cols.length) break
+        }
+        const m = a.reduce((x, y) => x + y, 0)
+        if (l > 0) {
+            const p = (t - m) / l
+            for (let k = 0; k < cols.length; k++) if (shown[k] && cols[k].unlimited) a[k] += p * cols[k].grow
+        }
+        return a
+    }
+    /// Column widths you set (Column settings ▸ Widen / Narrow, or a drag):
+    /// Teams keeps them on this device for each library's view, by the
+    /// column's name (OneDrive's spcolumnsize-unsaved-{view} in the page's
+    /// local storage). OST keeps them in the device setting
+    /// "oneDriveColumnWidths" by library.
+    property var allColumnWidths: {
+        try { return JSON.parse(backend.setting("oneDriveColumnWidths") || "{}") } catch (e) { return {} }
+    }
+    readonly property var columnWidths: allColumnWidths[here.drive_id || "me"] || ({})
+    function colLabel(k) { return ({ name: "Name", modified: "Modified", modified_by: "Modified By", size: "File size", sharing: "Sharing", activity: "Activity" })[k] || k }
+    function setColumnWidth(k, px) {
+        const drive = here.drive_id || "me"
+        if (!drive) return
+        const all = Object.assign({}, allColumnWidths)
+        all[drive] = Object.assign({}, all[drive] || {})
+        all[drive][colLabel(k)] = String(px)
+        allColumnWidths = all
+        backend.setSetting("oneDriveColumnWidths", JSON.stringify(all))
+    }
+    /// Widen / Narrow: the column's width (whole pixels) ± 32.
+    function resizeColumn(k, wider) { setColumnWidth(k, Math.floor(table.w(k)) + (wider ? 32 : -32)) }
     readonly property var sortFields: [{ key: "kind", label: qsTr("Type") }, { key: "name", label: qsTr("Name") }, { key: "modified", label: qsTr("Modified") },
                                        { key: "modified_by", label: qsTr("Modified By") }, { key: "size", label: qsTr("File size") }]
     function sortMenuItems() {
@@ -610,11 +674,41 @@ Item {
                 // wide): Name and Modified only, rows 63 tall with "Modified
                 // by … · size" under the name.
                 readonly property bool narrow: width < 640
-                readonly property real wName: narrow ? Math.max(120, width - 56 - 40 - 189.33) : Math.max(200, width - 56 - 40 - 136 - 136 - 91 - 81 - 119)
+                // The columns' widths (TASK-0189, measured 2026-11-19): OneDrive's
+                // responsive layout over the grid (the width after the 56 px
+                // selection column), then the widths you set with Column
+                // settings ▸ Widen / Narrow or the header's dividers, never
+                // under the responsive one. Activity, the last, fills the rest.
+                // The grid can then be wider than the view and scrolls sideways.
+                // (The grid: the card less the 56 px selection column and
+                // the 9.4 px scroll gutter, as Teams measures.)
+                readonly property var base: root.responsiveWidths(width - 56 - 9.4)
+                readonly property var keys: ["name", "modified", "modified_by", "size", "sharing", "activity"]
+                readonly property var widths: {
+                    const stored = root.view === "folder" ? root.columnWidths : ({})
+                    const out = {}
+                    let used = 40
+                    for (let i = 0; i < keys.length - 1; i++) {
+                        const b = base[i + 1]
+                        if (!b) { out[keys[i]] = 0; continue }
+                        const s = parseFloat(stored[root.colLabel(keys[i])])
+                        out[keys[i]] = isNaN(s) ? b : Math.max(s, b)
+                        used += out[keys[i]]
+                    }
+                    const b = base[keys.length]
+                    const s = parseFloat(stored[root.colLabel("activity")])
+                    out.activity = b ? Math.max(isNaN(s) ? b : s, width - 56 - 9.4 - used) : 0
+                    return out
+                }
+                function w(k) { return narrow ? (k === "modified" ? 189.33 : 0) : widths[k] || 0 }
+                function shows(k) { return w(k) > 0 }
+                readonly property real wName: narrow ? Math.max(120, width - 56 - 40 - 189.33) : widths.name
+                readonly property real gridWidth: narrow ? width : 56 + 40 + keys.reduce((a, k) => a + (widths[k] || 0), 0)
                 Item {
                     id: head
                     visible: root.listView !== "tiles" || root.view !== "folder"
-                    width: parent.width; height: 49
+                    x: -files.contentX
+                    width: Math.max(parent.width, table.gridWidth); height: 49
                     Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: root.hairline }
                     HoverHandler { id: headHover }
                     // "Select all rows": on hover, or filled once all are picked.
@@ -632,15 +726,48 @@ Item {
                         Accessible.checked: all
                     }
                     Row {
+                        id: headRow
                         height: parent.height
                         Item { width: 56; height: 49 }
                         Item { width: 40; height: 49; FluentIcon { x: 13.5; y: 16.17; name: "document-16"; size: 16; color: theme.onFill(card, root.ink) } }
-                        ListHead { label: qsTr("Name"); field: root.view === "folder" ? "name" : ""; width: table.wName }
-                        ListHead { label: root.view === "recent" ? qsTr("Opened") : qsTr("Modified"); field: root.view === "folder" ? "modified" : ""; width: table.narrow ? 189.33 : 136 }
-                        ListHead { visible: !table.narrow; label: root.view === "shared" ? qsTr("Shared by") : qsTr("Modified By"); field: root.view === "folder" ? "modified_by" : ""; width: 136 }
-                        ListHead { visible: !table.narrow; label: qsTr("File size"); field: root.view === "folder" ? "size" : ""; width: 91 }
-                        ListHead { visible: !table.narrow; label: qsTr("Sharing"); width: 81 }
-                        ListHead { visible: !table.narrow; label: qsTr("Activity"); width: 119 }
+                        ListHead { label: qsTr("Name"); field: root.view === "folder" ? "name" : ""; col: "name"; width: table.wName }
+                        ListHead { label: root.view === "recent" ? qsTr("Opened") : qsTr("Modified"); field: root.view === "folder" ? "modified" : ""; col: "modified"; width: table.w("modified") }
+                        ListHead { visible: table.shows("modified_by"); label: root.view === "shared" ? qsTr("Shared by") : qsTr("Modified By"); field: root.view === "folder" ? "modified_by" : ""; col: "modified_by"; width: table.w("modified_by") }
+                        ListHead { visible: table.shows("size"); label: qsTr("File size"); field: root.view === "folder" ? "size" : ""; col: "size"; width: table.w("size") }
+                        ListHead { visible: table.shows("sharing"); label: qsTr("Sharing"); col: "sharing"; width: table.w("sharing") }
+                        ListHead { visible: table.shows("activity"); label: qsTr("Activity"); width: table.w("activity") }
+                    }
+                    // The dividers: 16 x 36, 8 down, centred on each column's
+                    // right edge (Name … Sharing); a drag sets the column to
+                    // its left (not under its responsive width), kept as
+                    // Teams keeps it. Hover: a 1 px #605E5C line, 28 tall.
+                    Repeater {
+                        model: root.view === "folder" && !table.narrow ? ["name", "modified", "modified_by", "size", "sharing"] : []
+                        Item {
+                            id: divider
+                            required property string modelData
+                            required property int index
+                            visible: table.shows(modelData)
+                            readonly property real edge: 96 + table.keys.slice(0, index + 1).reduce((a, k) => a + table.w(k), 0)
+                            x: edge - 8; y: 8; width: 16; height: 36
+                            Rectangle {
+                                visible: dvh.hovered || dvDrag.active
+                                anchors.centerIn: parent; width: 1; height: 28
+                                color: theme.pick("#605E5C", "#ADADAD", "#FFFFFF")
+                            }
+                            HoverHandler { id: dvh; cursorShape: Qt.SizeHorCursor }
+                            property real startWidth: 0
+                            DragHandler {
+                                id: dvDrag
+                                target: null
+                                xAxis.enabled: true; yAxis.enabled: false
+                                cursorShape: Qt.SizeHorCursor
+                                onActiveChanged: if (active) divider.startWidth = table.w(divider.modelData)
+                                onTranslationChanged: if (active) root.setColumnWidth(divider.modelData, Math.max(table.base[table.keys.indexOf(divider.modelData) + 1], divider.startWidth + translation.x))
+                            }
+                            Accessible.role: Accessible.Separator
+                            Accessible.name: qsTr("Resize %1").arg(root.colLabel(modelData))
+                        }
                     }
                 }
                 ListView {
@@ -650,7 +777,11 @@ Item {
                     model: root.shown
                     visible: root.listView !== "tiles" || root.view !== "folder"
                     boundsBehavior: Flickable.StopAtBounds
+                    // Wider columns than the view scroll sideways, as Teams' grid.
+                    contentWidth: Math.max(width, table.gridWidth)
+                    flickableDirection: contentWidth > width ? Flickable.HorizontalAndVerticalFlick : Flickable.VerticalFlick
                     ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                    ScrollBar.horizontal: ScrollBar { policy: ScrollBar.AsNeeded }
                     delegate: Item {
                         id: frow
                         required property var modelData
@@ -661,7 +792,7 @@ Item {
                         // Compact List: 34 tall rows, 20 px icons.
                         readonly property bool compact: root.listView === "compact" && !table.narrow && root.view === "folder"
                         readonly property real ty: compact ? 7.67 : 14
-                        width: files.width; height: table.narrow ? 63 : compact ? 34 : 49
+                        width: Math.max(files.width, table.gridWidth); height: table.narrow ? 63 : compact ? 34 : 49
                         Rectangle {
                             id: hcFill6
                             x: 8; width: parent.width - 16; height: parent.height - 1; radius: 8
@@ -736,14 +867,15 @@ Item {
                             x: 96 + table.wName; height: 49
                             RowCell {
                                 ty: frow.ty
-                                width: table.narrow ? 189.33 : 136; text: frow.modelData.modified_text || ""
+                                width: table.w("modified"); text: frow.modelData.modified_text || ""
                                 tip: frow.modelData.modified_title || ""
                             }
-                            RowCell { ty: frow.ty; visible: !table.narrow; width: 136; text: frow.modelData.modified_by || root.userName }
-                            RowCell { ty: frow.ty; visible: !table.narrow; width: 91; text: frow.modelData.is_folder ? root.itemCount(frow.modelData.child_count) : root.size(frow.modelData.size) }
+                            RowCell { ty: frow.ty; visible: table.shows("modified_by"); width: table.w("modified_by"); text: frow.modelData.modified_by || root.userName }
+                            RowCell { ty: frow.ty; visible: table.shows("size"); width: table.w("size"); text: frow.modelData.is_folder ? root.itemCount(frow.modelData.child_count) : root.size(frow.modelData.size) }
                             Item {
-                                visible: !table.narrow
-                                width: 81; height: 49
+                                visible: table.shows("sharing")
+                                width: table.w("sharing"); height: 49
+                                clip: true
                                 Row {
                                     x: 12; y: frow.ty + 0.67; spacing: 4
                                     FluentIcon { visible: frow.modelData.sharing === "Shared"; y: 2.5; name: "people-16"; size: 14; color: theme.onFill([hcFill6, card], root.strong) }
@@ -751,8 +883,8 @@ Item {
                                 }
                             }
                             Item {
-                                width: 119; height: 49
-                                visible: !!frow.modelData.activity && !table.narrow
+                                width: table.w("activity"); height: 49
+                                visible: !!frow.modelData.activity && table.shows("activity")
                                 FluentIcon {
                                     x: 12; y: frow.ty + 1.83; size: 16; color: theme.onFill([hcFill6, card], root.strong)
                                     name: frow.modelData.activity ? root.activityIcon(frow.modelData.activity.kind) : ""
@@ -948,25 +1080,41 @@ Item {
     // The table's header cell: 14/600 #616161 at 10.67, 49 tall. A sortable
     // column shows ↑ / ↓ when sorted and a chevron; a click opens its menu
     // (Ascending, Descending).
+    // Teams' menus (OneDrive's wording per column, measured 2026-11-19):
+    // Name: Ascending / Descending; Modified: Older to newer / Newer to
+    // older; Modified By: A to Z / Z to A; File size: Smaller to larger /
+    // Larger to smaller; then Column settings ▸ (Widen column, Narrow
+    // column), which Sharing has alone and Activity not at all.
     component ListHead: Item {
         id: lh
         property string label
         property string field: ""
+        /// The column, for Column settings ▸ (in a folder).
+        property string col: ""
+        readonly property bool settings: !!col && root.view === "folder" && !table.narrow
+        readonly property bool hasMenu: !!field || settings
+        readonly property var sortWords: ({ name: [qsTr("Ascending"), qsTr("Descending")], modified: [qsTr("Older to newer"), qsTr("Newer to older")],
+                                            modified_by: [qsTr("A to Z"), qsTr("Z to A")], size: [qsTr("Smaller to larger"), qsTr("Larger to smaller")] })[field] || [qsTr("Ascending"), qsTr("Descending")]
         height: 49
         Row {
             x: 10.67; y: 14.83; spacing: 6
-            Text { text: lh.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: root.ink }
+            Text { text: lh.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: root.ink; width: Math.min(implicitWidth, lh.width - 40); elide: Text.ElideRight }
             FluentIcon { visible: !!lh.field && root.sortField === lh.field; y: 3; size: 12; name: root.sortAsc ? "arrow-up-12" : "arrow-down-12"; color: theme.pick("#605E5C", "#D6D6D6", "#FFFFFF") }
-            FluentIcon { visible: !!lh.field; y: 4; size: 10; name: "chevron-down-12"; color: theme.pick("#605E5C", "#D6D6D6", "#FFFFFF") }
+            FluentIcon { visible: lh.hasMenu; y: 4; size: 10; name: "chevron-down-12"; color: theme.pick("#605E5C", "#D6D6D6", "#FFFFFF") }
         }
-        HoverHandler { enabled: !!lh.field; cursorShape: Qt.PointingHandCursor }
-        TapHandler { enabled: !!lh.field; onTapped: headMenu.open() }
+        HoverHandler { enabled: lh.hasMenu; cursorShape: Qt.PointingHandCursor }
+        TapHandler { enabled: lh.hasMenu; onTapped: headMenu.open() }
+        function openMenuForTest() { headMenu.open(); return headMenu.items.map(i => i.separator ? "-" : i.label + (i.submenu ? " ▸ " + i.submenu.map(s => s.label).join(", ") : "")) }
+        function pickForTest(i, j) { if (j === undefined) headMenu.picked(i); else headMenu.subPicked(i, j); headMenu.close() }
         MenuPopup {
             id: headMenu
             fabric: true; fabricWidth: 232
             x: 2; y: 46
-            items: [{ label: qsTr("Ascending"), checked: root.sortField === lh.field && root.sortAsc }, { label: qsTr("Descending"), checked: root.sortField === lh.field && !root.sortAsc }]
-            onPicked: i => { root.sortField = lh.field; root.sortAsc = i === 0 }
+            items: (lh.field ? [{ label: lh.sortWords[0], checked: root.sortField === lh.field && root.sortAsc }, { label: lh.sortWords[1], checked: root.sortField === lh.field && !root.sortAsc }] : [])
+                .concat(lh.field && lh.settings ? [{ separator: true }] : [])
+                .concat(lh.settings ? [{ label: qsTr("Column settings"), submenu: [{ label: qsTr("Widen column") }, { label: qsTr("Narrow column") }] }] : [])
+            onPicked: i => { if (lh.field && i < 2) { root.sortField = lh.field; root.sortAsc = i === 0 } }
+            onSubPicked: (i, j) => root.resizeColumn(lh.col, j === 0)
         }
         Accessible.role: lh.field ? Accessible.Button : Accessible.ColumnHeader
         Accessible.name: root.sortField === field && field ? (root.sortAsc ? qsTr("%1, sorted ascending") : qsTr("%1, sorted descending")).arg(label) : label
@@ -1130,6 +1278,15 @@ Item {
         onDetails: it => details.item = it
     }
     function previewForTest() { return viewer.stateForTest() }
+    function previewBarForTest() { return viewer.barForTest() }
+    function previewHookForTest() { return viewer }
+    // Column settings (TASK-0189).
+    function columnsForTest() { return { width: table.width, base: table.base.map(x => Math.round(x * 100) / 100), widths: table.widths, grid: table.gridWidth, stored: columnWidths, narrow: table.narrow } }
+    function columnHeadForTest(col) { for (let i = 0; i < headRow.children.length; i++) { const h = headRow.children[i]; if (h.col === col || (!col && h.label === qsTr("Activity"))) return h } return null }
+    function columnMenuForTest(col) { const h = columnHeadForTest(col); return h ? (h.hasMenu ? h.openMenuForTest() : []) : null }
+    function columnResizeForTest(col, wider) { resizeColumn(col, wider) }
+    function columnDragForTest(col, px) { setColumnWidth(col, Math.max(table.base[table.keys.indexOf(col) + 1], px)) }
+    function columnResetForTest() { const all = Object.assign({}, allColumnWidths); delete all[here.drive_id || "me"]; allColumnWidths = all; backend.setSetting("oneDriveColumnWidths", JSON.stringify(all)) }
     function previewStepForTest(d) { viewer.step(d) }
     function previewCloseForTest() { viewer.close() }
 

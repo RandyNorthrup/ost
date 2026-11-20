@@ -224,6 +224,7 @@ fn main() {
         "qml/FileActions.qml",
         "qml/DetailsPane.qml",
         "qml/FilePreview.qml",
+        "qml/PlaylistPicker.qml",
         "qml/SiteTile.qml",
         "qml/ShareFileDialog.qml",
         "qml/SearchPreview.qml",

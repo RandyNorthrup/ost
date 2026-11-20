@@ -73,7 +73,16 @@ and Open in app (OneDrive's wording; not yet seen in Teams).
   - Teams' request is SharePoint's list-item update (`POST …/GetListUsingPath(DecodedUrl=@a1)/items(@a2)` with `{"__metadata":{"type":"SP.Data.DocumentsItem"},"FileLeafRef":"<name>"}`, sent as MERGE). OST renames through Graph (`PATCH /drives/{d}/items/{i}` `{name}`), which does the same.
   - For some files (a .txt, not an .mp4) Teams adds Copilot's **Suggested names** under the box: a folded 390.67 x 44 row (Copilot glyph, "Suggested names", a chevron) at 133, 25 above the buttons. Expanded, it shows three loading pills ("Loading suggestions"), then three name pills, plus "AI-generated content may be incorrect" (12 px) with Helpful / Not helpful thumbs. On failure: "Something went wrong. Try again".
   - The names come from OneDrive's AugLoop LLM service (`llmScenarioGuid` f44f84d5-dd13-4369-9939-c8cb945fe62f, `augloopFlights` with `enableAnalyzeImagePlugin:true`, the file's `{fileName, siteId, webId, listId, uniqueId}` and a prompt asking for 3 names as NDJSON `{"type":"suggestion","name":…}` lines then `{"type":"done"}`, or `{"type":"error","code":"InsufficientContent|FileNotAvailable|Confidential|UnknownError"}`). Before asking, OneDrive reads the file's `sensitivityLabel` from Graph and skips "Highly Confidential" / "Restricted" protected files.
-  - On 2026-11-12 Teams answered "Something went wrong." for OST Test 1, so there is nothing yet to match. OST leaves the row out (TASK-0125) and is 240 tall, as Teams is without it.
+  - It is offered for OneDrive's document, text and picture types (doc, docx, docm, dot, dotx, dotm, xls, xlsx, xlsm, xlt, xltx, xltm, ppt, pptx, pptm, pot, potx, potm, pdf, txt, rtf, csv, tsv, json, md, odt, ods, odp, jpg, jpeg, png, bmp, tiff, tif) with Copilot. A protected file's row is greyed: "This file is confidential, so its content can’t be accessed".
+  - Measured on winpc 2026-11-19 (TASK-0125): the accordion is 390.67 wide (radius 4), 12 under the box. Its 44 tall header has the 16 px Copilot glyph at 10, 14, "Suggested names" (14/20 #424242) at 34, and a 20 px chevron 10 from the right.
+  - Open, the names are pills 28 tall (12/16 #242424, 1 px #D1D1D1, radius 14, padding 19, 8 apart), 6 under the header. Loading shows three skeleton pills (150 x 34). Then "AI-generated content may be incorrect" (12/16) with the 24 px Helpful / Not helpful thumbs, 12 from the bottom.
+  - With three names, a 28 px "Get new suggestions" button (arrow-sync) sits 32 from the header's right. A pill puts its name in the box and folds the row.
+  - Messages (12/16): "This file doesn't have enough content to suggest names.", "This file is no longer available.", or "Something went wrong." with a brand "Try again".
+  - The exchange (captured): one AugLoop session per request at `wss://augloop.svc.cloud.microsoft/` (appName "odsp", appPlatform "Web", releaseAudienceGroup "Production", sessionId `alproxy_{guid}`):
+    - a SyncMessage with the `AugLoop_OdspCopilot_ODSPCopilotInputSignal` ("main": queryId, the prompt, isNewConversation, `dataSources.dataSources.files` = the file with braced GUIDs, llmScenarioGuid);
+    - the "doc" seed, the activation of `AugLoop_OdspCopilot_ODSPCopilotOutputAnnotation`, the token, and the "context" `ODSPCopilotScopeContext` (the file as entity constraint and selection);
+    - annotations stream back: Progress messages, then `chatResponse.basinWrite` pieces (each a JSON string) of the NDJSON; status 13 while partial, 0 at the end.
+  - OST does the same natively (`api::rename_suggestions`, `examples/rename_suggest`) with its own AugLoop token. The thumbs toggle as Teams' do; OST sends no rating. Harness `--rename-suggest-test`.
 - **Duplicate** is SharePoint's copy job on the file's site: `POST {site}/_api/site/CreateCopyJobs` with `{"exportObjectUris":[<file>],"destinationUri":<its folder>,"options":{"IgnoreVersionHistory":true,"AllowSchemaMismatch":true,"BypassSharedLock":true,"SameWebCopyMoveOptimization":true,"NameConflictBehavior":2,"CustomizedItemName":{"results":["<stem> Copy.<ext>"]}}}`. Then `GetCopyJobProgress` with the job's `{EncryptionKey, JobId, JobQueueUri}` until `JobState` is 0. Failures are `JobError` / `JobFatalError` events in `Logs`. OST does the same (`api::copy_jobs`).
 - **Move to / Copy to** open OneDrive's picker over the window:
   - 1140 x 720 at most, #F5F5F5.
@@ -151,8 +160,23 @@ Measured on winpc on 2026-11-12, as OST Test 1.
     /search/query` (`driveItem`, 25 rows, with the managed properties
     IsContainer, SiteTitle, SPWebUrl, SiteTemplateId and ParentLink); a
     folder opens in the picker.
-  - Not in OST yet: the Person filter and the site / person pictures in
-    Location (TASK-0128).
+  - The Person filter, from OneDrive's code (odsp-web-prod_2026-11-06.005).
+    Teams' own picker still stops at its "Please sign in" on winpc: the
+    substrate token is fetched in a popup that WebView2 blocks.
+    - A pill 32 tall (radius 16, padding 5 14, 14/600, a 1 px stroke, a
+      chevron) reading "Person", or the person's 20 px picture and name on
+      the brand tint once picked. One person at most.
+    - Its menu (320 wide, radius 8): a round 32 px "Search for a person"
+      box; people rows (a check slot, the 20 px picture, the name; 104 tall
+      before typing, 168 after); "Loading people…" / "No people found"; Clear
+      (12/600).
+    - Picking appends ` AND (ModifiedBy:"{name}" OR author:"{name}")` to the
+      query. OST finds the people with Graph's `/me/people` (organization
+      users and guests).
+  - Location's picture, 16 px before the name: another site's logo
+    (OneDrive's `siteiconmanager/getsitelogo?siteUrl='…'` on your OneDrive),
+    or the picture of the person whose OneDrive it is (that drive's owner).
+    Harness `--picker-person-test`.
   - On 2026-11-12 search failed tenant-wide: Teams stayed on its loading
     placeholders, and SharePoint search, Graph search and `sharedWithMe` all
     answered 500 to 504. OST shows "Sorry, something went wrong." in the list
@@ -349,10 +373,50 @@ with the same places as Teams' picker.
 ## Not yet in OST
 
 - Preview, Version history and Details are in `docs/spec/file-preview.md`, `docs/spec/version-history.md` and `docs/spec/details-pane.md`.
-- Add to playlist (videos): TASK-0123. It opens OneDrive's file picker (`FilePicker.aspx`, scenario `StreamPlaylist.AddToPlaylist`) over your Stream playlists: My lists, Recent lists and Favorites. OST Test 1 has no playlist yet.
-- Copilot's Suggested names in Rename (AugLoop): TASK-0125.
 - Favorites on folders: Graph's followed items hold files only.
 - A team site's file shows "Open in SharePoint" in OST. Teams' wording in channel Files hasn't been captured yet.
+
+## Add to playlist (a video's)
+
+Measured on winpc 2026-11-19 (TASK-0123) with "OST TEST 123 clip.mp4" and a
+playlist made with Teams' own New playlist.
+
+- The menu item comes after Duplicate (also in the selection bar's ···). It
+  opens OneDrive's picker in its playlist mode (`FilePicker.aspx`, scenario
+  `StreamPlaylist.AddToPlaylist`) in the Move picker's frame:
+  - left: "Add to playlist" (20/600 #242424 at 24, 20); My lists, Recent
+    lists and Favorites (204 x 40 from 12, 74.67, a 16 px glyph at 24);
+    "Quick access" (14/600) with your sites (a 24 px tile, the name at 56);
+    "More places...";
+  - right: the place's name (18/600), Search, and the list on a white card:
+    Type, Name and Modified (Recent lists: Accessed). Rows are 59 tall with
+    the 32 px playlist icon. Empty: "This folder is empty"; Favorites:
+    "Items you favorite will show up here";
+  - the tray, 24 from the bottom right: New playlist, Done (primary,
+    disabled until a playlist is picked) and Cancel.
+  - Teams' picker is 720 tall in a 632 frame at 1280 x 680, so its tray is
+    cut off there (a Teams bug). OST keeps it inside the window.
+- Lists:
+  - My lists: `GET {my host}/_api/SP.PersonalListsProxy.GetPersonalListsProxy?templateTypeId='3a867b4a-7429-0e1a-b02e-bf4b240ff1ce'`;
+  - Recent lists: `sp.RecentListProxy.GetRecentListsProxy` with the same template;
+  - Favorites: `sp.FavoriteItemCollection.GetFavoriteItems?top=500`.
+- New playlist opens Microsoft Lists' form: Name * ("Playlist"), Description
+  ("What is your list about?"), Save to * (My lists), Create (#892FFF) and
+  Cancel.
+  - Create sends `SiteScriptUtility.ApplyListDesign()` with
+    `{listDesignId: 3a867b4a-…, store: 1, runtimeParameters: {Playlist_listName, Playlist_description, Playlist_color: 0, Playlist_addNavLink: false, Playlist_icon: 12}}`.
+  - The list is `{personal}/Lists/{name}`, and the video is added to it.
+- Adding sends `POST {personal}/_api/web/GetList(@a1)/AddValidateUpdateItemUsingPath()` with:
+  - Thumbnail: `{host}/_api/v2.0/drives/{d}/items/{i}/thumbnails/0/c90x150/content?prefer=noredirect,closestavailablesize&cb={eTag}`;
+  - Title (the name without its extension), Owner (the person JSON), Duration ("00:00:06");
+  - VideoIdentifiers (`{UniqueId, Id, WebAbsoluteUrl, ListFullUrl, WebDavUrl}`) and ContentType Item.
+  - Owner is left out if the list refuses it.
+- Notices: "Adding to the playlist", then "Added to the playlist" with View
+  (the list's `AllItems.aspx?env=WebViewList`). On failure: "Couldn't add to
+  the playlist." over "Sorry, there was a problem adding to this playlist,
+  please try again." (refused: "Sorry, you do not have permission to add to
+  this playlist. Select a different one.").
+- OST: `api::playlists`, PlaylistPicker.qml; harness `--playlist-test`.
 
 ## Opening Word, PowerPoint and Excel files
 

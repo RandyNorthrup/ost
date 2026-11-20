@@ -74,7 +74,10 @@ Popup {
     /// 0 keeps the default.
     property real rowHeight: 0
     function rowLabelX(i) { return radioColumn ? 52 : i.tag ? 56 : checkColumn ? (i.icon ? 54 : 30) : perItemIcons ? (i.icon ? 30 : 6) : labelX }
-    padding: newStyle ? 12.67 : viewStyle ? 16.67 : fabric ? 0 : 4
+    /// OneDrive's viewer menus (Preview's Share ▾ and ···): a dark Fabric
+    /// callout, #1B1A19, padding 4, rows 36 tall with radius 2, #F3F2F1.
+    property bool darkCallout: false
+    padding: darkCallout ? 4 : newStyle ? 12.67 : viewStyle ? 16.67 : fabric ? 0 : 4
     /// Rows at least this wide (Teams' More menu and its submenus: 230).
     property real minRowWidth: 0
     /// Fluent's hasCheckmarks (Teams' tab dropdown): every row keeps a
@@ -90,7 +93,7 @@ Popup {
     implicitWidth: fabric ? fabricWidth : Math.min(290, Math.max(widest.value, minRowWidth)) + 2 * padding
     /// The pointer is over the menu (for menus that open on hover).
     readonly property bool hovered: surfaceHover.hovered
-    background: FluentSurface { depth: 16; radius: 4; HoverHandler { id: surfaceHover } }
+    background: FluentSurface { depth: 16; radius: 4; color: root.darkCallout ? theme.hc("#1B1A19", "#000000") : theme.menu; HoverHandler { id: surfaceHover } }
     // advanceWidth() is a call, not a property: a menu measured before
     // Selawik finished loading kept the fallback font's narrower widths and
     // elided its labels. Measure again each time the menu opens.
@@ -135,7 +138,8 @@ Popup {
                 viewStyle: Qt.binding(() => root.viewStyle),
                 newStyle: Qt.binding(() => root.newStyle),
                 fabric: Qt.binding(() => root.fabric),
-                fabricWidth: 232,
+                darkCallout: Qt.binding(() => root.darkCallout),
+                fabricWidth: Qt.binding(() => root.darkCallout ? root.fabricWidth : 232),
                 minRowWidth: Qt.binding(() => root.submenuMinWidth >= 0 ? root.submenuMinWidth : root.width - 2 * root.padding) })
             subMenu.picked.connect(i => {
                 const s = root.subIndex, it = subMenu.items[i]
@@ -240,7 +244,7 @@ Popup {
                 required property var modelData
                 required property int index
                 readonly property bool on: modelData.enabled !== false && !modelData.heading && !modelData.group
-                readonly property color ink: !on ? theme.disabled : mh.hovered ? theme.text : theme.textStrong
+                readonly property color ink: !on ? theme.disabled : root.darkCallout ? theme.hc("#F3F2F1", "#FFFFFF") : mh.hovered ? theme.text : theme.textStrong
                 width: root.width - 2 * root.padding
                 // A divider takes 1 px plus 4 above and below (the column's
                 // 2 px gaps count towards those).
@@ -277,8 +281,8 @@ Popup {
                 Rectangle {
                     id: hcFill1
                     visible: !row.modelData.separator && !row.modelData.heading && !row.modelData.group
-                    anchors.fill: parent; radius: root.fabric ? 0 : 4
-                    color: (mh.hovered || (row.modelData.outlined && root.subIndex === row.index)) && row.on && !row.modelData.toggle && !row.modelData.split ? theme.menuHover : "transparent"
+                    anchors.fill: parent; radius: root.darkCallout ? 2 : root.fabric ? 0 : 4
+                    color: (mh.hovered || (row.modelData.outlined && root.subIndex === row.index)) && row.on && !row.modelData.toggle && !row.modelData.split ? (root.darkCallout ? theme.hc("#323130", "#1AEBFF") : theme.menuHover) : "transparent"
                     border.width: row.modelData.outlined ? 0.67 : 0
                     border.color: theme.hc("#BDBDBD", "#FFFFFF")
                     // A split row: the label part and the chevron part

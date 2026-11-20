@@ -4,6 +4,7 @@ title: 'Picker search: Person filter and Location pictures as Teams'
 status: To Do
 assignee: []
 created_date: '2026-11-13T16:48:00Z'
+updated_date: '2026-11-20T09:04:00Z'
 labels:
   - files
 dependencies: []
@@ -21,3 +22,13 @@ Teams' Move/Copy picker search has a Person pill ("Filter by people": a people s
 - [ ] #1 The picker's search has the Person filter as Teams draws it, and choosing people narrows the results
 - [ ] #2 Location shows a site's or person's picture before their name as Teams does
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+- 2026-11-19: Teams' picker search All files still stops at its "Please sign in" (OneDrive's substrate token, client 08e18876, is fetched in a blocked popup); Sign In / Not now / X do nothing. Person filter taken from OneDrive's code (spofilepickerwebpack 283/2490, odsp-web-prod_2026-11-06.005): a 32-tall pill (radius 18, padding 5 14, 600, 1 px stroke; active = brand-2 fill) labelled Person (max one person) with a chevron, or the person's 20 px picture and name; its menu (320-380 wide, radius 8, padding-top 4): a round 32 px "Search for a person" box, rows 32+ (padding 4 8, radius 8; a check slot, 20 px picture, name 14), "Loading people…", "No people found", then a footer with Clear (12/600). Query: QueryString + ' AND (ModifiedBy:"{name}" OR author:"{name}")' plus a People QueryAnnotation.
+
+- 2026-11-20 built: Person pill + menu in the picker search (Graph /me/people), people clause in drive::folder_query, Location pictures (getsitelogo / drive owner); harness --picker-person-test. Pending: run.
+
+- 2026-11-20 verified (--picker-person-test): people listed and typed, OST Test 1 picked narrows My files (drops SharePoint App's Recordings), Clear restores; All files shows OST Test Team's logo in Location (getsitelogo). A person's-OneDrive picture wasn't seen live (no such folders reachable).
+<!-- SECTION:NOTES:END -->

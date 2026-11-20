@@ -5438,7 +5438,8 @@ pub fn compose_copilot_state(license: Option<&serde_json::Value>) -> serde_json:
     // Copilot in meetings (Teams' MeetingCollabButton: Calling's
     // enableMeetingCollab with the licence check, useAIFeatureLicense).
     let meeting = licensed && on("calling", "enableMeetingCollab", true);
-    serde_json::json!({"allowed": allowed, "proofread": allowed && on("compose", "enableComposeRewriteProofread", false), "meeting": meeting})
+    // OneDrive's Suggested names in Rename ask the same Copilot licence.
+    serde_json::json!({"allowed": allowed, "proofread": allowed && on("compose", "enableComposeRewriteProofread", false), "meeting": meeting, "rename": licensed})
 }
 
 /// Editor's options by language, as its service lists them.
@@ -21240,6 +21241,44 @@ impl qobject::Backend {
             return;
         }
         let qt = self.qt_thread();
+        // Rename's Suggested names: "<tag>:rename_check" (whether the file's
+        // label keeps Copilot out) and "<tag>:rename_suggest" (the names as
+        // they stream as "…:rename_suggest_part", then the outcome).
+        let kind = op.rsplit(':').next().unwrap_or_default().to_string();
+        if kind == "rename_check" || kind == "rename_suggest" {
+            let lang = app_locale().to_lowercase();
+            runtime().spawn(async move {
+                let result: anyhow::Result<serde_json::Value> = async {
+                    let client = TeamsClient::new().await?;
+                    let (info, origin, confidential) = api::rename_suggestions::file_info(&client, &item.drive_id, &item.id).await?;
+                    if kind == "rename_check" || confidential {
+                        return Ok(json!({ "confidential": confidential }));
+                    }
+                    let part_op = format!("{op}_part");
+                    let q = qt.clone();
+                    let outcome = api::rename_suggestions::suggest(&info, &origin, &lang, move |names| {
+                        let v = json!({ "names": names }).to_string();
+                        let o = part_op.clone();
+                        let _ = q.queue(move |mut this| this.as_mut().drive_action_done(QString::from(o.as_str()), QString::from(v.as_str()), QString::default()));
+                    })
+                    .await?;
+                    Ok(match outcome {
+                        Ok(names) => json!({ "names": names }),
+                        Err(code) => json!({ "error": code }),
+                    })
+                }
+                .await;
+                let (v, e) = match result {
+                    Ok(v) => (v.to_string(), String::new()),
+                    Err(e) => {
+                        tracing::warn!("rename suggestions: {}", short_error(&e));
+                        (String::new(), short_error(&e))
+                    }
+                };
+                let _ = qt.queue(move |mut this| this.as_mut().drive_action_done(QString::from(op.as_str()), QString::from(v.as_str()), QString::from(e.as_str())));
+            });
+            return;
+        }
         runtime().spawn(async move {
             let s = |k: &str| args[k].as_str().unwrap_or_default().to_string();
             let sp = api::sharing::ItemRef { site: item.sp_site.clone(), list: item.sp_list.clone(), item: item.sp_item.clone() };
@@ -21371,6 +21410,42 @@ impl qobject::Backend {
                         api::item_details::add_comment(&item, &s("text")).await?;
                         json!(null)
                     }
+                    // Add to playlist (a video's): your playlists (My lists
+                    // or Recent lists), New playlist (made, then the video
+                    // added) and the add itself.
+                    "playlists" | "playlist_create" | "playlist_add" => {
+                        let me_root = api::drive::root(&client, "").await?;
+                        let personal = if me_root.sp_site.is_empty() { me_root.web_url.rsplit_once('/').map(|(a, _)| a.to_string()).unwrap_or_default() } else { me_root.sp_site.clone() };
+                        match kind.as_str() {
+                            "playlists" => {
+                                let lists = if s("place") == "recent" { api::playlists::recent_lists(&personal).await? } else { api::playlists::my_lists(&personal).await? };
+                                json!({ "place": s("place"), "lists": lists })
+                            }
+                            _ => {
+                                let list = if kind == "playlist_create" {
+                                    api::playlists::create(&personal, &s("name"), &s("description")).await?
+                                } else {
+                                    serde_json::from_value::<serde_json::Value>(args["list"].clone()).map(|l| api::playlists::Playlist {
+                                        title: l["title"].as_str().unwrap_or_default().into(),
+                                        id: l["id"].as_str().unwrap_or_default().into(),
+                                        url: l["url"].as_str().unwrap_or_default().into(),
+                                        web: l["web"].as_str().unwrap_or_default().into(),
+                                        when: String::new(),
+                                    })?
+                                };
+                                let video = api::playlists::video(&client, &item.drive_id, &item.id).await?;
+                                api::playlists::add(&list, &video).await?;
+                                json!({ "list": list })
+                            }
+                        }
+                    }
+                    // The viewer's Show comments pane.
+                    "comments" => {
+                        let me = client.user_principal_name().unwrap_or_default();
+                        let list = api::item_details::comments(&item, &me).await?;
+                        let emails: Vec<String> = list.iter().map(|a| a.author_email.clone()).filter(|e| !e.is_empty()).collect();
+                        json!({ "comments": list, "oids": api::sharing::object_ids(&client, &emails).await })
+                    }
                     // The Details pane with nothing selected: the folder's
                     // activity.
                     "folder_details" => {
@@ -21492,7 +21567,19 @@ impl qobject::Backend {
                         json!({ "file": f, "thumbnail": thumb.map(|p| format!("file://{}", p.display())).unwrap_or_default() })
                     }
                     "picker_search" => json!({ "query": s("query"), "all": args["all"].as_bool().unwrap_or(false), "dates": s("dates"),
-                        "items": api::drive::search_folders(&client, &s("query"), args["all"].as_bool().unwrap_or(false), api::drive::date_filter_days(&s("dates"))).await? }),
+                        "people": args["people"].clone(),
+                        "items": api::drive::search_folders(&client, &s("query"), args["all"].as_bool().unwrap_or(false), api::drive::date_filter_days(&s("dates")),
+                            &args["people"].as_array().into_iter().flatten().filter_map(|p| p["name"].as_str().map(str::to_string)).collect::<Vec<_>>()).await? }),
+                    // The picker search's Person filter: people as you type
+                    // (Graph's people, your most relevant first when empty).
+                    "picker_people" => json!({ "query": s("query"), "people": api::drive::people_search(&client, &s("query")).await? }),
+                    // Search hits' Location picture (a site's logo, or the
+                    // person whose OneDrive it is).
+                    "location_picture" => {
+                        let mut v = api::drive::location_picture(&client, &s("web"), s("kind") == "person").await?;
+                        v["web"] = json!(s("web"));
+                        v
+                    }
                     "picker_new_folder" => json!(api::drive::new_folder(&client, &s("drive_id"), &s("item_id"), &s("name")).await?),
                     // The cloud file picker's command bar: Create a folder
                     // (with its colour) and Upload (files, or a folder and

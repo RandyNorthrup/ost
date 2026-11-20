@@ -62,6 +62,8 @@ pub mod store_content;
 pub mod channels;
 pub mod editor;
 pub mod compose_copilot;
+pub mod rename_suggestions;
+pub mod playlists;
 pub mod meeting_copilot;
 pub mod regional;
 pub mod teams_strings;

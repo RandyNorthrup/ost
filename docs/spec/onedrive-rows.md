@@ -218,12 +218,50 @@ selected") are **Sort ▾**, the view switch and **Details**.
   (`docs/spec/details-pane.md`). The button shows pressed while the pane is
   open.
 
-OST sorts in the app, on the same fields, with folders first. Column settings
-▸ isn't in OST yet. File pictures in Tiles are Graph's "medium" thumbnails.
+OST sorts in the app, on the same fields, with folders first. File pictures
+in Tiles are Graph's "medium" thumbnails.
+
+### Column headers and Column settings (TASK-0189)
+
+Measured on winpc on 2026-11-19 (OneDrive's spartan list,
+odsp-web-prod_2026-11-06.005), in a 1212 wide frame.
+
+- Each header opens OneDrive's menu (232 wide, rows 36), in its own words:
+  - Name: Ascending, Descending, then Column settings ▸;
+  - Modified: Older to newer, Newer to older, Filter by, Column settings ▸;
+  - Modified By: A to Z, Z to A, Filter by, Column settings ▸;
+  - File size: Smaller to larger, Larger to smaller, Column settings ▸;
+  - Sharing: Column settings ▸ alone. Activity has no menu.
+- Column settings ▸ has only **Widen column** and **Narrow column**: the
+  column's width (whole pixels) plus or minus 32. Teams has no show/hide or
+  move here.
+- Each boundary from Name|Modified to Sharing|Activity has a 16 x 36 resize
+  divider, 8 below the header's top and centred on the edge (ew-resize). On
+  hover it shows a 1 px #605E5C line, 28 tall. A drag sets the width of the
+  column to its left.
+- The widths you set are kept on this device only, in the SharePoint page's
+  local storage: key `spcolumnsize-unsaved-{viewId}`, value
+  `{"<column name>": "<px>"}`. Nothing goes to the server. They apply to
+  every folder of that library's view.
+- A column is never narrower than its responsive width: Narrow below it, or
+  a drag past it, is stored but doesn't show. Wider columns make the grid
+  scroll sideways.
+- The responsive widths are OneDrive's `ODBMyFilesResponsiveBehavior` laid
+  out by its module 4377:
+  - min-max: DocIcon 40-40, Name 210-800, Modified 130-200, Modified By
+    130-260, File size 85-110, Sharing 75-110, Activity 113-550;
+  - too narrow: columns drop by priority (Sharing, File size, Activity,
+    Modified By, Modified);
+  - spare width is shared evenly up to each maximum, then among all but
+    DocIcon;
+  - at a 1212 frame: 40, 213.6, 133.6, 133.6, 88.6, 78.6, 116.6.
+- OST draws the same menus and widths. It keeps your widths in the device
+  setting `oneDriveColumnWidths` by library and column name. Harness
+  `--column-settings-test`.
+- Not in OST: Filter by (OneDrive's filters pane).
 
 ## Not yet in OST
 
-- The column headers' Column settings ▸.
 - Add shortcut ▸, Version history and a folder's Request files: TASK-0115 and
   TASK-0116. They are left out of the bar, as they are of the item menu.
 - Download of several items or a folder. Teams makes one zip with OneDrive's

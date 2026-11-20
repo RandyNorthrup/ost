@@ -27,6 +27,10 @@ Item {
 
     /// This view's tag on backend replies.
     readonly property string tag: "fa" + Math.floor(Math.random() * 1e9) + ":"
+    /// Rename offers Copilot's Suggested names with a Copilot licence.
+    readonly property bool renameSuggestions: {
+        try { return !!JSON.parse(backend.composeCopilotJson || "{}").rename } catch (e) { return false }
+    }
     property var item: null
     readonly property bool menuOpen: menu.opened
 
@@ -37,6 +41,7 @@ Item {
     readonly property color line: theme.pick("#D1D1D1", "#666666")
 
     readonly property var textKinds: ["txt", "md", "json", "xml", "log", "csv", "css", "js", "ts", "html", "htm", "yaml", "yml", "ini", "cfg"]
+    readonly property var videoKinds: ["mp4", "mov", "m4v", "wmv", "avi", "webm", "mkv", "mpg", "mpeg", "3gp", "mts", "m2ts", "ts", "asf"]
     readonly property var officeKinds: ["doc", "docx", "xls", "xlsx", "ppt", "pptx", "vsdx", "one"]
 
     /// Open the menu for `it` at (x, y) in `source`'s coordinates.
@@ -80,6 +85,8 @@ Item {
         if (canWrite && sp) L.push({ label: qsTr("Move to"), icon: "folder-arrow-right-16" })
         if (sp) L.push({ label: qsTr("Copy to"), icon: "copy-16" })
         if (canWrite && sp) L.push({ label: qsTr("Duplicate"), icon: "add-square-16" })
+        // A video: Add to playlist (Stream playlists), after Duplicate.
+        if (!it.is_folder && sp && videoKinds.indexOf(String(it.kind || "").toLowerCase()) >= 0) L.push({ label: qsTr("Add to playlist"), icon: "video-clip-multiple-16" })
         if (canWrite && sp && it.is_folder) L.push({ label: qsTr("Folder color"), icon: "paint-bucket-16", flyout: true, dot: colorFor(it.folder_color).hex })
         if (!it.is_folder && sp) { L.push({ separator: true }); L.push({ label: qsTr("Version history"), icon: "history-16" }) }
         if (sp) { L.push({ separator: true }); L.push({ label: qsTr("Details"), icon: "info-16" }) }
@@ -97,7 +104,8 @@ Item {
                         "Other locations": qsTr("Other locations"), "Download": qsTr("Download"), "Rename": qsTr("Rename"),
                         "Open in OneDrive": qsTr("Open in OneDrive"), "Open in SharePoint": qsTr("Open in SharePoint"),
                         "Move to": qsTr("Move to"), "Copy to": qsTr("Copy to"), "Duplicate": qsTr("Duplicate"),
-                        "Folder color": qsTr("Folder color"), "Version history": qsTr("Version history"), "Details": qsTr("Details") }
+                        "Folder color": qsTr("Folder color"), "Version history": qsTr("Version history"), "Details": qsTr("Details"),
+                        "Add to playlist": qsTr("Add to playlist") }
         if (names[label] !== undefined) return label
         for (const k in names) if (names[k] === label) return k
         return label
@@ -208,6 +216,7 @@ Item {
         else if (label === "Other locations") { picker.shortcut = true; picker.openFor(it, false) }
         else if (label === "Details") detailsItem(it)
         else if (label === "Preview") previewItem(it)
+        else if (label === "Add to playlist") playlists.openFor(it)
         else if (label === "Duplicate") { jobCount = 1; notice("progress", qsTr("Copying 1 item")); backend.driveAction(tag + "duplicate", JSON.stringify(it), "{}") }
     }
 
@@ -244,6 +253,11 @@ Item {
             // older one is dropped.
             const m = /^(\d+):(.*)$/.exec(kind)
             if (m) { if (Number(m[1]) === picker.seq) picker.reply(m[2], v, error); return }
+            if (kind === "playlists" || kind === "playlist_create" || kind === "playlist_add") { playlists.reply(kind, v, error); return }
+            if (kind === "pic:location_picture") { if (v && v.web) { const m = Object.assign({}, picker.locationPics); m[v.web] = v; picker.locationPics = m } return }
+            if (kind === "people:picker_people") { if (v && v.query === picker.peopleQuery) { picker.peopleFound = v.people || []; picker.peopleLoading = false } else if (error) picker.peopleLoading = false; return }
+            const rs = /^r(\d+):(.*)$/.exec(kind)
+            if (rs) { renameDialog.suggReply(Number(rs[1]), rs[2], v, error); return }
             if (kind === "libraries") { picker.reply(kind, v, error); return }
             if (kind === "thumb") { if (!error && v && v.path) { const t = Object.assign({}, picker.thumbs); t[v.id] = v.path; picker.thumbs = t } return }
             if (kind === "quick_access") { if (!error) root.quickAccess = v || []; return }
@@ -292,8 +306,9 @@ Item {
     // OneDrive's notice under the list: 390 wide, #292929, radius 4,
     // padding 12; a 20 px state glyph, the text (13/17 #F0F0F0) at 48 and
     // a 24 px dismiss; 23 above the view's bottom.
-    function notice(state, title, detail) {
+    function notice(state, title, detail, link, linkUrl) {
         toast.state2 = state; toast.title = title; toast.detail = detail || ""
+        toast.link = link || ""; toast.linkUrl = linkUrl || ""
         toast.visible = true
         hideTimer.restart()
     }
@@ -302,6 +317,9 @@ Item {
         property string state2: "done"
         property string title
         property string detail
+        /// An action under the words (Add to playlist's "View").
+        property string link
+        property string linkUrl
         visible: false
         z: 10
         width: 390; height: Math.max(48, toastText.implicitHeight + 24)
@@ -319,6 +337,16 @@ Item {
             topPadding: 3.5
             Text { width: parent.width; wrapMode: Text.Wrap; text: toast.title; font.family: theme.font; font.pixelSize: 13; lineHeight: 17; lineHeightMode: Text.FixedHeight; color: theme.hc("#F0F0F0", "#FFFFFF") }
             Text { visible: !!toast.detail; width: parent.width; topPadding: 4; wrapMode: Text.Wrap; text: toast.detail; font.family: theme.font; font.pixelSize: 13; lineHeight: 17; lineHeightMode: Text.FixedHeight; color: theme.hc("#F0F0F0", "#FFFFFF") }
+            Text {
+                visible: !!toast.link
+                topPadding: 4
+                text: toast.link
+                font.family: theme.font; font.pixelSize: 13; lineHeight: 17; lineHeightMode: Text.FixedHeight; color: theme.hc("#7F85F5", "#1AEBFF")
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: { if (toast.linkUrl) Qt.openUrlExternally(toast.linkUrl); toast.visible = false } }
+                Accessible.role: Accessible.Link
+                Accessible.name: text
+            }
         }
         Rectangle {
             id: hcFill1
@@ -823,16 +851,54 @@ Item {
         property var target: null
         property string ext: ""
         title: qsTr("Rename"); okText: qsTr("Update")
-        // 240 tall, as Teams' Rename without Copilot's Suggested names.
-        bodyHeight: 128.67
+        // 240 tall, as Teams' Rename without Copilot's Suggested names; with
+        // the folded row 266.67, growing as it opens (25 + 8.67 under it).
+        bodyHeight: sugg.visible ? sugg.y + sugg.height + 33.67 : 128.67
         okEnabled: nameInput.text.trim().length > 0
+        // Copilot's Suggested names (OneDrive's RenameSuggestions): offered
+        // for OneDrive's document, text and picture types with a Copilot
+        // licence; asked the first time the row opens.
+        property bool suggOffered: false
+        property bool suggOpen: false
+        property bool suggLoading: false
+        property bool suggConfidential: false
+        property var suggNames: []
+        property string suggError: ""
+        property string suggThumb: ""
+        property int suggReq: 0
+        readonly property var suggExts: ["doc", "docx", "docm", "dot", "dotx", "dotm", "xls", "xlsx", "xlsm", "xlt", "xltx", "xltm", "ppt", "pptx", "pptm", "pot", "potx", "potm",
+            "pdf", "txt", "rtf", "csv", "tsv", "json", "md", "odt", "ods", "odp", "jpg", "jpeg", "png", "bmp", "tiff", "tif"]
         function openFor(it) {
             target = it
             const dot = it.is_folder ? -1 : it.name.lastIndexOf(".")
             ext = dot > 0 ? it.name.slice(dot) : ""
             nameInput.text = dot > 0 ? it.name.slice(0, dot) : it.name
+            suggReq++
+            suggOpen = false; suggLoading = false; suggConfidential = false; suggNames = []; suggError = ""; suggThumb = ""
+            suggOffered = root.renameSuggestions && dot > 0 && suggExts.indexOf(ext.slice(1).toLowerCase()) >= 0
+            if (suggOffered) backend.driveAction(root.tag + "r" + suggReq + ":rename_check", JSON.stringify(it), "{}")
             open()
             nameInput.selectAll(); nameInput.forceActiveFocus()
+        }
+        function suggest() {
+            suggReq++
+            suggLoading = true; suggNames = []; suggError = ""; suggThumb = ""
+            backend.driveAction(root.tag + "r" + suggReq + ":rename_suggest", JSON.stringify(target), "{}")
+        }
+        function toggleSugg() {
+            if (suggConfidential) return
+            suggOpen = !suggOpen
+            if (suggOpen && !suggLoading && !suggNames.length && !suggError) suggest()
+        }
+        function suggReply(n, kind, v, error) {
+            if (n !== suggReq) return
+            if (kind === "rename_check") { suggConfidential = !error && !!v && !!v.confidential; return }
+            if (kind === "rename_suggest_part") { if (v && v.names) suggNames = v.names; return }
+            suggLoading = false
+            if (error || !v) { suggNames = []; suggError = "Generic"; return }
+            if (v.confidential) { suggConfidential = true; suggOpen = false; return }
+            if (v.error) { suggNames = []; suggError = v.error; return }
+            suggNames = v.names || []
         }
         onAccepted: {
             const n = nameInput.text.trim() + ext
@@ -862,6 +928,155 @@ Item {
             leftPadding: 5; rightPadding: 5; topPadding: 10
             text: renameDialog.ext
             font.family: theme.font; font.pixelSize: 14; color: root.ink
+        }
+        // Suggested names (measured on winpc 2026-11-19): a 390.67 wide
+        // accordion, radius 4, 12 under the box; its 44 tall header has the
+        // Copilot glyph (16, at 10), "Suggested names" (14/20 #424242, at 34)
+        // and a 20 px chevron 10 from the right. Open: the names as 28 tall
+        // pills (12/16 #242424, 1 px #D1D1D1, radius 14, padding 19, 8
+        // apart), 6 under the header, or a 12/16 message; then "AI-generated
+        // content may be incorrect" (12/16) with the Helpful / Not helpful
+        // thumbs (24, 2 apart), 12 from the bottom.
+        Rectangle {
+            id: sugg
+            visible: renameDialog.suggOffered
+            y: 77.67; width: 390.67; radius: 4
+            height: renameDialog.suggOpen ? suggBody.y + suggBody.height + 12 : 44
+            color: theme.surface
+            clip: true
+            readonly property color fg: renameDialog.suggConfidential ? theme.pick("#BDBDBD", "#5C5C5C", "#3FF23F") : theme.pick("#424242", "#D6D6D6", "#FFFFFF")
+            Rectangle {
+                id: hcFillSg
+                width: parent.width; height: 44; radius: 4
+                color: sgHead.hovered && !renameDialog.suggConfidential ? theme.pick("#EBEBEB", "#3D3D3D", "#1AEBFF") : "transparent"
+                FluentIcon { x: 10; y: 14; size: 16; name: "copilot-16"; color: theme.onFill(hcFillSg, sugg.fg) }
+                Text {
+                    x: 34; y: 12; text: qsTr("Suggested names")
+                    font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
+                    color: theme.onFill(hcFillSg, sugg.fg)
+                }
+                FluentIcon { x: parent.width - 30; y: 12; size: 20; name: renameDialog.suggOpen ? "chevron-up-20" : "chevron-down-20"; color: theme.onFill(hcFillSg, sugg.fg) }
+                HoverHandler { id: sgHead; cursorShape: renameDialog.suggConfidential ? Qt.ArrowCursor : Qt.PointingHandCursor }
+                TapHandler { onTapped: renameDialog.toggleSugg() }
+                Accessible.role: Accessible.Button
+                Accessible.name: qsTr("Suggested names")
+                Accessible.description: renameDialog.suggConfidential ? qsTr("This file is confidential, so its content can’t be accessed") : ""
+                ToolTip.visible: sgHead.hovered && renameDialog.suggConfidential
+                ToolTip.text: qsTr("This file is confidential, so its content can’t be accessed")
+            }
+            // Get new suggestions: 28 x 28, 32 from the right, once there are three.
+            Rectangle {
+                id: hcFillRs
+                visible: renameDialog.suggOpen && renameDialog.suggNames.length >= 3 && !renameDialog.suggLoading
+                x: parent.width - 32 - 28; y: 8; width: 28; height: 28; radius: 6
+                color: rsh.hovered ? theme.pick("#EBEBEB", "#3D3D3D", "#1AEBFF") : "transparent"
+                FluentIcon { anchors.centerIn: parent; size: 16; name: "arrow-sync-16"; color: theme.onFill(hcFillRs, rsh.hovered ? theme.pick("#242424", "#FFFFFF") : sugg.fg) }
+                HoverHandler { id: rsh; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: renameDialog.suggest() }
+                ToolTip.visible: rsh.hovered
+                ToolTip.text: qsTr("Get new suggestions")
+                Accessible.role: Accessible.Button
+                Accessible.name: qsTr("Get new suggestions")
+            }
+            Column {
+                id: suggBody
+                visible: renameDialog.suggOpen
+                x: 12; y: 44; width: parent.width - 24
+                spacing: 0
+                // The names, or three loading pills.
+                Flow {
+                    visible: renameDialog.suggLoading && !renameDialog.suggNames.length || renameDialog.suggNames.length > 0
+                    width: parent.width; spacing: 8
+                    topPadding: 6; bottomPadding: 6
+                    Repeater {
+                        model: renameDialog.suggNames.length ? renameDialog.suggNames : (renameDialog.suggLoading ? 3 : 0)
+                        Rectangle {
+                            id: pill
+                            required property var modelData
+                            readonly property bool skeleton: typeof modelData === "number"
+                            width: skeleton ? 150 : Math.min(pillText.implicitWidth + 40, suggBody.width)
+                            height: skeleton ? 34 : 28; radius: height / 2
+                            color: !skeleton && ph.hovered ? theme.pick("#EBEBEB", "#3D3D3D", "#1AEBFF") : "transparent"
+                            border.width: 1; border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF")
+                            Rectangle {
+                                visible: pill.skeleton
+                                anchors.centerIn: parent; width: 110; height: 10; radius: 4
+                                color: theme.pick("#E6E6E6", "#3D3D3D", "#FFFFFF")
+                            }
+                            Text {
+                                id: pillText
+                                visible: !pill.skeleton
+                                anchors.centerIn: parent; width: Math.min(implicitWidth, pill.width - 40)
+                                text: pill.skeleton ? "" : pill.modelData
+                                elide: Text.ElideRight
+                                font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight
+                                color: theme.onFill(pill, theme.pick("#242424", "#FFFFFF"))
+                            }
+                            HoverHandler { id: ph; enabled: !pill.skeleton; cursorShape: Qt.PointingHandCursor }
+                            TapHandler {
+                                enabled: !pill.skeleton
+                                onTapped: { nameInput.text = pill.modelData; renameDialog.suggOpen = false; nameInput.forceActiveFocus() }
+                            }
+                            Accessible.role: Accessible.Button
+                            Accessible.name: pill.skeleton ? qsTr("Loading suggestions") : qsTr("Suggestion: %1").arg(pill.modelData)
+                        }
+                    }
+                }
+                // OneDrive's messages; a retryable one has "Try again".
+                Text {
+                    visible: !renameDialog.suggLoading && !renameDialog.suggNames.length && !!renameDialog.suggError
+                    width: parent.width; wrapMode: Text.Wrap
+                    textFormat: Text.StyledText
+                    readonly property string message: ({
+                        InsufficientContent: qsTr("This file doesn't have enough content to suggest names."),
+                        FileNotAvailable: qsTr("This file is no longer available."),
+                        Confidential: qsTr("This file is confidential, so its content can’t be accessed")
+                    })[renameDialog.suggError] || qsTr("Something went wrong.")
+                    readonly property bool retry: ["InsufficientContent", "FileNotAvailable", "Confidential"].indexOf(renameDialog.suggError) < 0
+                    text: retry ? message + " <a href=\"retry\" style=\"color:" + theme.brand + ";text-decoration:none\">" + qsTr("Try again") + "</a>" : message
+                    font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight
+                    color: theme.pick("#242424", "#FFFFFF")
+                    onLinkActivated: renameDialog.suggest()
+                    HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
+                    Accessible.role: Accessible.AlertMessage
+                    Accessible.name: message
+                }
+                Item { width: 1; height: renameDialog.suggError && !renameDialog.suggNames.length && !renameDialog.suggLoading ? 12 : 8 }
+                Row {
+                    height: 24; spacing: 8
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: qsTr("AI-generated content may be incorrect")
+                        font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight
+                        color: theme.pick("#5E5E5D", "#ADADAD", "#FFFFFF")
+                    }
+                    Row {
+                        spacing: 2
+                        Repeater {
+                            model: [["like", qsTr("Helpful")], ["dislike", qsTr("Not helpful")]]
+                            Rectangle {
+                                id: hcFillTh
+                                required property var modelData
+                                readonly property bool pressed: renameDialog.suggThumb === modelData[0]
+                                width: 24; height: 24
+                                color: thh.hovered ? theme.pick("#EBEBEB", "#3D3D3D", "#1AEBFF") : "transparent"
+                                FluentIcon {
+                                    anchors.centerIn: parent; size: 16
+                                    name: "thumb-" + hcFillTh.modelData[0] + "-16" + (hcFillTh.pressed ? "-filled" : "")
+                                    color: theme.onFill(hcFillTh, hcFillTh.pressed ? theme.brand : thh.hovered ? theme.pick("#242424", "#FFFFFF") : theme.pick("#5E5E5D", "#ADADAD", "#FFFFFF"))
+                                }
+                                HoverHandler { id: thh; cursorShape: Qt.PointingHandCursor }
+                                TapHandler { onTapped: renameDialog.suggThumb = hcFillTh.pressed ? "" : hcFillTh.modelData[0] }
+                                ToolTip.visible: thh.hovered
+                                ToolTip.text: modelData[1]
+                                Accessible.role: Accessible.Button
+                                Accessible.name: modelData[1]
+                                Accessible.checked: pressed
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -1007,6 +1222,7 @@ Item {
     }
 
     MovePicker { id: picker }
+    PlaylistPicker { id: playlists; actions: root }
 
     // Move to / Copy to: OneDrive's picker over the window (1140 x 720 at
     // most, #F5F5F5): the places on the left (My files, then your teams'
@@ -1082,9 +1298,27 @@ Item {
             if (!searching) dates = "all"
             query = q; searchAll = all; searching = true; loading = true
             if (pkSearch.text !== q) pkSearch.text = q
-            ask("picker_search", { query: q, all: all, dates: dates })
+            if (!searching) searchPeople = []
+            ask("picker_search", { query: q, all: all, dates: dates, people: searchPeople })
+        }
+        /// The Person filter (OneDrive's people pill): at most one person
+        /// ({name, email, id}); results are theirs (modified or authored).
+        property var searchPeople: []
+        property var peopleFound: []
+        property bool peopleLoading: false
+        property string peopleQuery: ""
+        function findPeople(q) { peopleQuery = q; peopleLoading = true; backend.driveAction(root.tag + "people:picker_people", "{}", JSON.stringify({ query: q })) }
+        function setPerson(p) { searchPeople = p ? [p] : []; search(query, searchAll) }
+        /// Location pictures by web address: {path} (a site's logo) or {oid}.
+        property var locationPics: ({})
+        function locationPicture(web, kind) {
+            if (!web || locationPics[web] !== undefined) return
+            const m = Object.assign({}, locationPics); m[web] = null; locationPics = m
+            backend.driveAction(root.tag + "pic:location_picture", "{}", JSON.stringify({ web: web, kind: kind }))
         }
         function datesMenuForTest(o) { if (o) datesMenu.open(); else datesMenu.close() }
+        function personMenuForTest(o) { if (o) { personMenu.open(); personSearch.text = ""; findPeople("") } else personMenu.close() }
+        function personTypeForTest(t) { personSearch.text = t }
         /// Location opens the folder a result is in (its library when it is
         /// at the top).
         function openLocation(h) {
@@ -1105,7 +1339,7 @@ Item {
             // The service's own text (an HTTP status and address) is in the
             // log; the list says what OneDrive says.
             if (error) { shown = { drive_id: "", item_id: "", items: [], error: qsTr("Sorry, something went wrong.") }; return }
-            if (kind === "picker_search") { if (v.query === query && v.dates === dates) shown = { drive_id: "", item_id: "", items: v.items, search: true }; return }
+            if (kind === "picker_search") { if (v.query === query && v.dates === dates && JSON.stringify((v.people || []).map(p => p.name)) === JSON.stringify(searchPeople.map(p => p.name))) shown = { drive_id: "", item_id: "", items: v.items, search: true }; return }
             if (kind === "picker_place") { shown = { drive_id: "", item_id: "", items: v.items || [], people: v.people || null }; return }
             shown = v
         }
@@ -1365,6 +1599,9 @@ Item {
                     }
                 }
                 }
+                // The date pill, then Person, 10.67 apart.
+                Row {
+                spacing: 10.67
                 Rectangle {
                     id: datesButton
                     y: -1; width: 18.6 + datesText.implicitWidth + 10 + 16 + 18.7; height: 32; radius: 16
@@ -1383,6 +1620,119 @@ Item {
                         items: pk.dateFilters.map(d => ({ label: d[1], checked: d[0] === pk.dates }))
                         onPicked: i => { pk.dates = pk.dateFilters[i][0]; pk.search(pk.query, pk.searchAll) }
                     }
+                }
+                // Person (OneDrive's people pill, its spofilepicker code): 32
+                // tall, radius 16, padding 5 14, 14/600, a chevron; "Person",
+                // or the person's 20 px picture and name, on brand-2 once
+                // picked. Its menu: a round "Search for a person" box, people
+                // rows (a check slot, the 20 px picture, the name), "Loading
+                // people…" / "No people found", and Clear.
+                Rectangle {
+                    id: personButton
+                    readonly property var person: pk.searchPeople.length ? pk.searchPeople[0] : null
+                    y: -1; width: 14 + (person ? 20 + 6 : 0) + Math.min(220, personText.implicitWidth) + 6 + 16 + 14; height: 32; radius: 16
+                    color: person || personMenu.opened ? theme.pick("#E1E3F7", "#2B2C3F", "#000000") : pph.hovered ? theme.menuHover : theme.pick("#FAFAFA", "#1F1F1F", "#000000")
+                    border.width: 1; border.color: person || personMenu.opened ? theme.pick("#4F52B2", "#7F85F5", "#1AEBFF") : theme.pick("#D1D1D1", "#666666", "#FFFFFF")
+                    Avatar { visible: !!personButton.person; x: 14; anchors.verticalCenter: parent.verticalCenter; size: 20; name: personButton.person ? personButton.person.name : ""; photoId: personButton.person && personButton.person.id ? "8:orgid:" + personButton.person.id : "" }
+                    Text {
+                        id: personText
+                        x: personButton.person ? 40 : 14; width: Math.min(220, implicitWidth); anchors.verticalCenter: parent.verticalCenter; anchors.verticalCenterOffset: -1
+                        elide: Text.ElideRight
+                        text: personButton.person ? personButton.person.name : qsTr("Person")
+                        font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(personButton, theme.pick("#242424", "#FFFFFF"))
+                    }
+                    FluentIcon { x: personText.x + personText.width + 6; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-16"; size: 16; color: theme.onFill(personButton, theme.pick("#242424", "#FFFFFF")) }
+                    HoverHandler { id: pph; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: { personMenu.open(); personSearch.text = ""; pk.findPeople("") } }
+                    ToolTip.visible: pph.hovered
+                    ToolTip.text: personText.text
+                    Accessible.role: Accessible.Button
+                    Accessible.name: qsTr("Filter by people") + " " + personText.text
+                    Popup {
+                        id: personMenu
+                        x: 0; y: parent.height + 4
+                        width: 320; padding: 0; topPadding: 4
+                        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
+                        background: FluentSurface { depth: 16; radius: 8; color: theme.surface }
+                        contentItem: Column {
+                            spacing: 4
+                            Item {
+                                width: 320; height: 32
+                                Rectangle {
+                                    x: 8; width: 304; height: 32; radius: 16
+                                    color: theme.surface; border.width: 1; border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF")
+                                    TextInput {
+                                        id: personSearch
+                                        x: 10; width: parent.width - 20; anchors.verticalCenter: parent.verticalCenter; clip: true
+                                        font.family: theme.font; font.pixelSize: 14; color: theme.pick("#242424", "#FFFFFF")
+                                        onTextChanged: if (personMenu.opened) personDelay.restart()
+                                        Text { visible: !personSearch.text; text: qsTr("Search for a person"); font: personSearch.font; color: theme.pick("#616161", "#ADADAD", "#FFFFFF") }
+                                        Accessible.role: Accessible.EditableText
+                                        Accessible.name: qsTr("Search for a person")
+                                    }
+                                    Timer { id: personDelay; interval: 300; onTriggered: pk.findPeople(personSearch.text) }
+                                }
+                            }
+                            Text {
+                                visible: pk.peopleLoading && !pk.peopleFound.length
+                                width: 320; horizontalAlignment: Text.AlignHCenter; topPadding: 12; bottomPadding: 12
+                                text: qsTr("Loading people…")
+                                font.family: theme.font; font.pixelSize: 14; color: theme.pick("#616161", "#ADADAD", "#FFFFFF")
+                            }
+                            Text {
+                                visible: !pk.peopleLoading && !pk.peopleFound.length
+                                width: 320; horizontalAlignment: Text.AlignHCenter; topPadding: 12; bottomPadding: 12
+                                text: qsTr("No people found")
+                                font.family: theme.font; font.pixelSize: 14; color: theme.pick("#616161", "#ADADAD", "#FFFFFF")
+                            }
+                            ListView {
+                                id: peopleList
+                                visible: pk.peopleFound.length > 0
+                                width: 320; height: Math.min(contentHeight, personSearch.text ? 168 : 104)
+                                clip: true; spacing: 0
+                                model: pk.peopleFound
+                                delegate: Rectangle {
+                                    id: prow
+                                    required property var modelData
+                                    readonly property bool on: !!personButton.person && personButton.person.id === modelData.id
+                                    x: 4; width: 312; height: 32; radius: 8
+                                    color: prh.hovered ? theme.pick("#F0F0F0", "#2E2E2E", "#1AEBFF") : "transparent"
+                                    FluentIcon { visible: prow.on; x: 10; anchors.verticalCenter: parent.verticalCenter; size: 16; name: "checkmark-16"; color: theme.onFill(prow, theme.pick("#424242", "#D6D6D6", "#FFFFFF")) }
+                                    Avatar { x: 36; anchors.verticalCenter: parent.verticalCenter; size: 20; name: prow.modelData.name; photoId: prow.modelData.id ? "8:orgid:" + prow.modelData.id : "" }
+                                    Text {
+                                        x: 64; width: parent.width - 72; anchors.verticalCenter: parent.verticalCenter; elide: Text.ElideRight
+                                        text: prow.modelData.name
+                                        font.family: theme.font; font.pixelSize: 14; color: theme.onFill(prow, theme.pick("#242424", "#FFFFFF"))
+                                    }
+                                    HoverHandler { id: prh; cursorShape: Qt.PointingHandCursor }
+                                    TapHandler { onTapped: { personMenu.close(); pk.setPerson(prow.on ? null : prow.modelData) } }
+                                    Accessible.role: Accessible.ListItem
+                                    Accessible.name: prow.modelData.name
+                                    Accessible.selected: prow.on
+                                }
+                            }
+                            Rectangle {
+                                width: 320; height: 33
+                                color: "transparent"
+                                Rectangle { width: parent.width; height: 1; color: theme.pick("#D1D1D1", "#666666", "#FFFFFF") }
+                                Row {
+                                    x: 14; y: 8.5; spacing: 11; height: 16
+                                    FluentIcon { anchors.verticalCenter: parent.verticalCenter; size: 12; name: "dismiss-12"; color: clh.hovered ? theme.pick("#424242", "#D6D6D6", "#FFFFFF") : theme.pick("#616161", "#ADADAD", "#FFFFFF") }
+                                    Text {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: qsTr("Clear")
+                                        font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold
+                                        color: clh.hovered ? theme.pick("#424242", "#D6D6D6", "#FFFFFF") : theme.pick("#616161", "#ADADAD", "#FFFFFF")
+                                    }
+                                    HoverHandler { id: clh; cursorShape: Qt.PointingHandCursor }
+                                    TapHandler { onTapped: { personMenu.close(); if (pk.searchPeople.length) pk.setPerson(null) } }
+                                    Accessible.role: Accessible.Button
+                                    Accessible.name: qsTr("Clear")
+                                }
+                            }
+                        }
+                    }
+                }
                 }
             }
             Row {
@@ -1576,6 +1926,23 @@ Item {
                                 visible: frow.locParts.length > 0
                                 x: pkFound.nameW + 200 + 215.9 + 12; width: 198.9 - 24; height: 18.67; anchors.verticalCenter: parent.verticalCenter
                                 spacing: 4; clip: true
+                                // Another site's logo, or the picture of the
+                                // person whose OneDrive it is, before its name.
+                                readonly property var pic: frow.modelData.location_kind ? pk.locationPics[frow.modelData.location_web] : null
+                                Component.onCompleted: if (frow.modelData.location_kind) pk.locationPicture(frow.modelData.location_web, frow.modelData.location_kind)
+                                Image {
+                                    visible: frow.modelData.location_kind === "site" && !!locRow.pic && !!locRow.pic.path
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: visible ? 16 : 0; height: 16; sourceSize: Qt.size(32, 32)
+                                    source: locRow.pic && locRow.pic.path ? locRow.pic.path : ""
+                                    fillMode: Image.PreserveAspectCrop
+                                }
+                                Avatar {
+                                    visible: frow.modelData.location_kind === "person"
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    size: 16; name: frow.locParts[0] ? String(frow.locParts[0]).replace(/'s OneDrive$/, "") : ""
+                                    photoId: locRow.pic && locRow.pic.oid ? "8:orgid:" + locRow.pic.oid : ""
+                                }
                                 Repeater {
                                     model: frow.locParts
                                     Row {
@@ -1910,12 +2277,19 @@ Item {
     function pickerIntoForTest(name) { const f = (picker.shown && picker.shown.items || []).find(i => i.name === name); if (f) picker.into(f); return !!f }
     function pickerDoneForTest() { picker.done() }
     function renameForTest(name) { nameInput.text = name; renameDialog.accepted() }
+    function playlistsForTest() { return playlists }
+    function pickerHookForTest() { return picker }
+    function renameOpenForTest(it) { item = it; renameDialog.openFor(it) }
+    function renameSuggestionsForTest() { return { offered: renameDialog.suggOffered, open: renameDialog.suggOpen, loading: renameDialog.suggLoading, confidential: renameDialog.suggConfidential, names: renameDialog.suggNames, error: renameDialog.suggError, height: renameDialog.height, name: nameInput.text } }
+    function renameToggleSuggestionsForTest() { renameDialog.toggleSugg() }
+    function renamePickSuggestionForTest(i) { if (renameDialog.suggNames[i]) { nameInput.text = renameDialog.suggNames[i]; renameDialog.suggOpen = false } }
+    function renameResuggestForTest() { renameDialog.suggest() }
     function submenuForTest() { menu.openSubmenuForTest(0) }
     function fileRequestForTest(it, name) { fileRequest.openFor(it); frName.text = name; fileRequest.next() }
     function fileRequestStateForTest() { return { open: fileRequest.opened, step: fileRequest.step, url: fileRequest.url ? "(link)" : "", share_id: fileRequest.shareId } }
     function shortcutForTest(it, place) { addShortcut(it, place, place === "shortcuts" ? "Shortcuts" : "My files", {}) }
     function colorForTest(it, code) { item = it; backend.driveAction(tag + "folder_color", JSON.stringify(it), JSON.stringify({ code: code })) }
-    function closeAllForTest() { menu.close(); fileRequest.close(); colorPicker.close(); renameDialog.close(); deleteDialog.close(); copyLink.close(); picker.close(); versions.close(); share.close() }
+    function closeAllForTest() { menu.close(); fileRequest.close(); colorPicker.close(); renameDialog.close(); deleteDialog.close(); copyLink.close(); picker.close(); versions.close(); share.close(); playlists.close() }
     function shareOpenForTest() { return share.opened }
     function quickForTest() { return root.quickAccess.map(q => q.label + (q.pinned ? " (pinned)" : "") + (q.drive_id ? "" : " (no drive)")) }
     function pinForTest(label, pin) { const q = root.quickAccess.find(x => x.label === label); if (q) root.pinLibrary(q, pin); return !!q }

@@ -406,6 +406,17 @@ fn comments_url(item: &DriveItem, tail: &str) -> String {
     format!("{}/_api/web/lists(@a1)/GetItemByUniqueId(@a2)/{tail}?@a1={}&@a2={}", item.sp_site.trim_end_matches('/'), q(&item.sp_list), q(&item.sp_item))
 }
 
+/// The item's comments alone, newest first, as the viewer's Show comments
+/// asks for them (`GetComments()` with the first ten replies of each).
+pub async fn comments(item: &DriveItem, me: &str) -> Result<Vec<FeedItem>> {
+    if !host(&item.sp_site).starts_with("https://") || item.sp_list.is_empty() || item.sp_item.is_empty() {
+        bail!("No comments for this item");
+    }
+    let url = comments_url(item, "GetComments()") + "&$top=25&$expand=replies,likedBy,replies/likedBy&$filter=NumReplies%20eq%2010&$select=*,contentAnchor";
+    let reply = get_with(&url, &[]).await?;
+    Ok(comment_cards(&reply, me, Local::now()))
+}
+
 /// Delete one of the item's comments.
 pub async fn delete_comment(item: &DriveItem, id: &str) -> Result<()> {
     super::sharing::delete(&comments_url(item, &format!("Comments({})", check_id(id)?))).await

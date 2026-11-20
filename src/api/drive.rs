@@ -759,6 +759,10 @@ pub struct FolderHit {
     pub same_site: bool,
     /// The folder it is in, which its Location opens.
     pub parent_id: String,
+    /// Location's picture: the site ("site": its logo) or the person
+    /// whose OneDrive it is ("person"); none in your own OneDrive.
+    pub location_web: String,
+    pub location_kind: String,
 }
 
 /// The picker's date filter: All dates, Today, Last 7 days, Last 30 days,
@@ -779,10 +783,15 @@ pub fn date_filter_days(key: &str) -> Option<i64> {
 /// folders only (no OneNote notebooks or Site Assets), My files limited to
 /// your OneDrive's library (`docs`), and the date filter as " AND
 /// (LastModifiedTime>=…)" from midnight UTC that many days back.
-fn folder_query(q: &str, docs: Option<&str>, since_ms: Option<i64>) -> (String, String) {
+fn folder_query(q: &str, docs: Option<&str>, people: &[String], since_ms: Option<i64>) -> (String, String) {
     let mut query = q.to_string();
     if let Some(d) = docs {
         query += &format!(" (path:\"{d}\" OR ParentLink:\"{d}*\" OR DocumentLink:\"{d}*\")");
+    }
+    // The Person filter (OneDrive's): each name as editor or author.
+    if !people.is_empty() {
+        let names: Vec<String> = people.iter().map(|n| format!("ModifiedBy:\"{n}\" OR author:\"{n}\"")).collect();
+        query += &format!(" AND ({})", names.join(" OR "));
     }
     if let Some(ms) = since_ms {
         let day = ms - ms.rem_euclid(86_400_000);
@@ -850,6 +859,8 @@ fn hit(h: &serde_json::Value, personal: &str, now: chrono::DateTime<chrono::Loca
         location,
         same_site,
         parent_id: r["parentReference"]["id"].as_str().unwrap_or_default().to_string(),
+        location_kind: if same_site || web.is_empty() { String::new() } else if template == 21 { "person".into() } else { "site".into() },
+        location_web: web,
         item,
     })
 }
@@ -857,7 +868,7 @@ fn hit(h: &serde_json::Value, personal: &str, now: chrono::DateTime<chrono::Loca
 /// Search for the Move/Copy picker, as Teams': folders only, in your
 /// OneDrive ("My files") or everything you can reach ("All files"), 25 by
 /// relevance; `days` is the date filter (see `date_filter_days`).
-pub async fn search_folders(client: &TeamsClient, query: &str, all: bool, days: Option<i64>) -> Result<Vec<FolderHit>> {
+pub async fn search_folders(client: &TeamsClient, query: &str, all: bool, days: Option<i64>, people: &[String]) -> Result<Vec<FolderHit>> {
     let q = query.trim();
     if q.is_empty() {
         return Ok(Vec::new());
@@ -869,7 +880,7 @@ pub async fn search_folders(client: &TeamsClient, query: &str, all: bool, days: 
     let docs = format!("{personal}/Documents");
     let now = chrono::Local::now();
     let since = days.map(|d| now.timestamp_millis() - 86_400_000 * d);
-    let (query_string, template) = folder_query(q, (!all).then_some(docs.as_str()), since);
+    let (query_string, template) = folder_query(q, (!all).then_some(docs.as_str()), people, since);
     let body = serde_json::json!({ "requests": [{
         "entityTypes": ["driveItem"],
         "query": { "queryString": query_string, "queryTemplate": template },
@@ -884,6 +895,66 @@ pub async fn search_folders(client: &TeamsClient, query: &str, all: bool, days: 
         .flatten()
         .filter_map(|h| hit(h, &personal, now))
         .collect())
+}
+
+/// People for the picker search's Person filter: your organization's people
+/// (and guests) matching what you type, or your most relevant ones before
+/// you type (OneDrive asks its people picker for 30 at most).
+pub async fn people_search(client: &TeamsClient, query: &str) -> Result<Vec<serde_json::Value>> {
+    let q = query.trim().replace('"', "");
+    let path = if q.is_empty() {
+        "/me/people?$top=10&$select=id,displayName,scoredEmailAddresses,userPrincipalName,personType".to_string()
+    } else {
+        format!(
+            "/me/people?$search=%22{}%22&$top=30&$select=id,displayName,scoredEmailAddresses,userPrincipalName,personType",
+            url::form_urlencoded::byte_serialize(q.as_bytes()).collect::<String>()
+        )
+    };
+    let v: serde_json::Value = client.graph_get(&path).await?.error_for_status()?.json().await?;
+    Ok(v["value"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|p| p["personType"]["class"] == "Person" && matches!(p["personType"]["subclass"].as_str(), Some("OrganizationUser") | Some("Guest")))
+        .map(|p| {
+            serde_json::json!({ "name": p["displayName"], "id": p["id"],
+                "email": p["scoredEmailAddresses"][0]["address"].as_str().or_else(|| p["userPrincipalName"].as_str()).unwrap_or_default() })
+        })
+        .collect())
+}
+
+/// Location's picture for a search hit (OneDrive's): a site's logo from
+/// your OneDrive's `siteiconmanager/getsitelogo` (saved in OST's cache), or
+/// the directory id of the person whose OneDrive it is (their drive's owner).
+pub async fn location_picture(client: &TeamsClient, web: &str, person: bool) -> Result<serde_json::Value> {
+    let web = web.trim_end_matches('/');
+    let host = web.split('/').take(3).collect::<Vec<_>>().join("/");
+    if person {
+        let hostname = host.trim_start_matches("https://");
+        let path = web.strip_prefix(&host).unwrap_or_default();
+        let v: serde_json::Value = client.graph_get(&format!("/sites/{hostname}:{path}:/drive?$select=owner")).await?.error_for_status()?.json().await?;
+        return Ok(serde_json::json!({ "oid": v["owner"]["user"]["id"], "name": v["owner"]["user"]["displayName"] }));
+    }
+    let personal = super::quick_access::personal_site(client).await?;
+    let q: String = url::form_urlencoded::byte_serialize(format!("'{web}'").as_bytes()).collect();
+    let url = format!("{}/_api/siteiconmanager/getsitelogo?siteUrl={q}", personal.trim_end_matches('/'));
+    let phost = url.split('/').take(3).collect::<Vec<_>>().join("/");
+    let token = crate::auth::oauth::access_token_for(&format!("{phost}/.default")).await?;
+    let resp = reqwest::Client::new().get(&url).bearer_auth(token).send().await?.error_for_status()?;
+    let bytes = resp.bytes().await?;
+    if bytes.is_empty() {
+        bail!("No logo");
+    }
+    let dir = std::env::var_os("XDG_CACHE_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))
+        .context("No cache folder")?
+        .join("ost/sitelogos");
+    std::fs::create_dir_all(&dir)?;
+    let name: String = web.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).collect();
+    let path = dir.join(format!("{name}.img"));
+    std::fs::write(&path, &bytes)?;
+    Ok(serde_json::json!({ "path": format!("file://{}", path.display()) }))
 }
 
 /// Open in app: a copy of the file in OST's cache (replaced each time), for
@@ -924,13 +995,16 @@ mod tests {
 
     #[test]
     fn picker_search_asks_for_folders_as_teams_does() {
-        let (q, t) = folder_query("Recordings", Some("https://x-my.sharepoint.com/personal/a_b_com/Documents"), None);
+        let (q, t) = folder_query("Recordings", Some("https://x-my.sharepoint.com/personal/a_b_com/Documents"), &[], None);
         assert_eq!(q, "Recordings (path:\"https://x-my.sharepoint.com/personal/a_b_com/Documents\" OR ParentLink:\"https://x-my.sharepoint.com/personal/a_b_com/Documents*\" OR DocumentLink:\"https://x-my.sharepoint.com/personal/a_b_com/Documents*\")");
         assert_eq!(t, "({searchterms}) ContentTypeId:0x0120* NOT HtmlFileType:\"OneNote.Notebook\" NOT ParentLink:SiteAssets");
         // Last 7 days from 2026-11-13 16:20 UTC: from midnight on the 6th.
         let now = chrono::DateTime::parse_from_rfc3339("2026-11-13T16:20:00Z").unwrap().timestamp_millis();
-        let (q, _) = folder_query("ost", None, Some(now - 7 * 86_400_000));
+        let (q, _) = folder_query("ost", None, &[], Some(now - 7 * 86_400_000));
         assert_eq!(q, "ost AND (LastModifiedTime>=2026-11-06T00:00:00.000Z )");
+        // The Person filter, as OneDrive's search builds it.
+        let (q, _) = folder_query("ost", None, &["OST Test 2".to_string()], None);
+        assert_eq!(q, "ost AND (ModifiedBy:\"OST Test 2\" OR author:\"OST Test 2\")");
         assert_eq!(date_filter_days("last3Months"), Some(90));
         assert_eq!(date_filter_days("all"), None);
     }
