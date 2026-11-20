@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-09T23:01:00Z'
-updated_date: '2026-11-20T18:18:00Z'
+updated_date: '2026-11-20T19:01:00Z'
 labels:
   - desktop
   - messages
@@ -88,4 +88,6 @@ What TASK-0044 left of Teams' compose box (docs/spec/messages-and-composer.md §
   - Left: the title watch (Loop's page container gives no ComponentTitle events here, so a sent component keeps "Loop paragraph" unless it has a title Teams would rename it to; OST renames only when Loop reports one); the card's link description doesn't open link settings yet; a Loop component isn't kept in a chat's draft when you switch chats (it stays in your chat files).
   - Test messages: "OST TEST 85 loop component from Teams" (Teams), "OST TEST 85 loop from OST" (OST), and an empty "<h1>" message from a slip while measuring, all in OST group test, to delete; their .loop files are in ost-test1's Microsoft Teams Chat Files.
 - Installed apps in "+": built (api::compose_apps installed apps with compose commands, the list under Teams' items with recency, Get more apps, ComposeAppPanel for search commands, task modules for fetchTask / taskInfo actions, submitAction, a picked result as Teams' InputExtension card); `--compose-apps-test` added; not yet run live.
+
+- 2026-11-20 later: installed apps verified live with `--compose-apps-test`: "+" lists Clipchamp, Praise, Workflows, Updates, Polly, Viva Learning, Power BI and Polls (Power Automate Actions, with no compose command, left out as Teams does); Polls' action asked composeExtension/fetchTask and opened Microsoft Forms' page in Teams' task module (framed, initialize, success; closed without posting); Power BI's search panel asked composeExtension/query and showed Teams' "Unable to reach app. Please try again." for the bot's 502. Not yet compared side by side on winpc: the rows' icons and the order before anything is used (Teams keeps its own recent order). Test messages OST TEST 85 (Teams' and OST's) and the stray empty message were deleted from OST group test; the .loop files stay in ost-test1's Microsoft Teams Chat Files.
 <!-- SECTION:NOTES:END -->
