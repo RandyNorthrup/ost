@@ -380,6 +380,7 @@ Rectangle {
 
     // ---- Pending invites ----
     property var invitations: []
+    readonly property var peopleNames: backend.peopleNamesJson ? JSON.parse(backend.peopleNamesJson) : ({})
     property bool invitationsLoaded: false
     onTabChanged: if (tab === "pending") backend.channelAction("invitations", "", "", "")
     Connections {
@@ -389,6 +390,8 @@ Rectangle {
             if (r.op !== "invitations") return
             page.invitationsLoaded = true
             page.invitations = r.ok ? r.data || [] : []
+            const who = page.invitations.map(i => i.inviter_mri).filter(m => !!m)
+            if (who.length) backend.resolveNames(JSON.stringify(who))
         }
     }
     Item {
@@ -460,13 +463,86 @@ Rectangle {
                                 Row {
                                     x: 12; anchors.verticalCenter: parent.verticalCenter; spacing: 16
                                     Text { width: 220; elide: Text.ElideRight; text: inv.modelData.channel + (inv.modelData.channel_tenant && inv.modelData.channel_tenant !== backend.tenantId() ? qsTr(" (External)") : ""); font.family: theme.font; font.pixelSize: 14; color: theme.text }
-                                    Text { width: 180; elide: Text.ElideRight; text: inv.modelData.inviter; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                                    Text { width: 180; elide: Text.ElideRight; text: inv.modelData.inviter || page.peopleNames[inv.modelData.inviter_mri] || ""; font.family: theme.font; font.pixelSize: 14; color: theme.text }
                                     Text { width: 160; elide: Text.ElideRight; text: inv.modelData.organization; font.family: theme.font; font.pixelSize: 14; color: theme.text }
                                     Text { width: 120; text: page.expiresIn(inv.modelData.expires); font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                                }
+                                // Needs action: Teams' Accept (pick one of your
+                                // teams) and Decline.
+                                Row {
+                                    visible: ["Validating", "Sent", "Revoked"].indexOf(inv.modelData.state) >= 0
+                                    anchors.right: parent.right; anchors.rightMargin: 12; anchors.verticalCenter: parent.verticalCenter
+                                    spacing: 8
+                                    InviteButton { text: qsTr("Decline"); onClicked: backend.channelAction("invitation-answer", "", "", JSON.stringify({ id: inv.modelData.id })) }
+                                    InviteButton { text: qsTr("Accept"); primary: true; onClicked: acceptDialog.start(inv.modelData) }
                                 }
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+    // An invite's answer: the list read again.
+    Connections {
+        target: backend
+        function onChannelActionResultChanged() {
+            const r = JSON.parse(backend.channelActionResult || "{}")
+            if (r.op !== "invitation-answer") return
+            acceptDialog.close()
+            if (r.ok) backend.channelAction("invitations", "", "", "")
+            else page.inviteError = r.error || ""
+        }
+    }
+    property string inviteError: ""
+    component InviteButton: Rectangle {
+        id: ib
+        property string text
+        property bool primary: false
+        signal clicked()
+        width: Math.max(96, ibText.implicitWidth + 24); height: 32; radius: 4
+        color: !enabled ? theme.bgDisabled : primary ? (ibh.hovered ? theme.brandHover : theme.brandFill) : (ibh.hovered ? theme.menuHover : theme.surface)
+        border.color: primary || !enabled ? "transparent" : theme.stroke; border.width: 0.67
+        Text { id: ibText; anchors.centerIn: parent; text: ib.text; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(ib, !ib.enabled ? theme.disabled : ib.primary ? theme.textOnBrand : theme.text) }
+        HoverHandler { id: ibh; enabled: ib.enabled; cursorShape: Qt.PointingHandCursor }
+        TapHandler { enabled: ib.enabled; onTapped: ib.clicked() }
+        Accessible.role: Accessible.Button
+        Accessible.name: text
+    }
+    // Accept: "Pick a team to give access to the {channel} channel" with
+    // Teams' "Select a team" (the teams you own), then Accept.
+    Popup {
+        id: acceptDialog
+        property var invitation: null
+        property string team: ""
+        function start(i) { invitation = i; team = ""; open() }
+        parent: Overlay.overlay
+        anchors.centerIn: Overlay.overlay
+        modal: true; focus: true; width: 480; padding: 24
+        background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
+        Overlay.modal: Rectangle { color: Qt.rgba(0, 0, 0, 0.4) }
+        readonly property var ownTeams: page.allTeams.filter(t => t.owner === true && !t.archived)
+        contentItem: Column {
+            spacing: 16
+            Text {
+                width: parent.width; wrapMode: Text.Wrap
+                text: qsTr("Pick a team to give access to the %1 channel").arg(acceptDialog.invitation ? acceptDialog.invitation.channel : "")
+                font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; lineHeight: 28; lineHeightMode: Text.FixedHeight
+                color: theme.text
+            }
+            Dropdown {
+                width: parent.width
+                label: (acceptDialog.ownTeams.find(t => t.thread_id === acceptDialog.team) || {}).name || qsTr("Select a team")
+                options: acceptDialog.ownTeams.map(t => [t.thread_id, t.name])
+                accessibleName: qsTr("Select a team")
+                onPicked: code => acceptDialog.team = code
+            }
+            Row {
+                anchors.right: parent.right; spacing: 8
+                InviteButton { text: qsTr("Cancel"); onClicked: acceptDialog.close() }
+                InviteButton {
+                    text: qsTr("Accept"); primary: true; enabled: acceptDialog.team.length > 0
+                    onClicked: backend.channelAction("invitation-answer", "", "", JSON.stringify({ id: acceptDialog.invitation.id, thread: acceptDialog.team }))
                 }
             }
         }

@@ -63,13 +63,15 @@ Microsoft branding.
   GNOME, KDE and others), OST sends it as Teams' screen-sharing stream
   (H.264, up to 1280x720), shows "You're presenting", and Share becomes
   Stop sharing. Closing the shared window stops it too.
-- **View more apps** lists Teams' apps for the account, in Teams'
-  order: Shifts, Planner, OneNote, Help, Clipchamp, Whiteboard, Events,
-  People. Planner, OneNote and People are native; Whiteboard, Shifts and
-  Clipchamp are the apps' own pages in OST's TeamsJS host, signed in as
-  Teams hosts them (docs/spec/app-host.md "Personal apps"); Help is
-  embedded. Events (a module Teams draws itself) still opens Teams on the
-  web. An app opened there takes the rail's one extra slot, as in Teams.
+- **App bar and View more apps** come from your apps as Teams keeps them
+  (aggregated entitlements with their app bar order): the pinned apps in
+  Teams' order (Copilot included), Store, then View more apps with your
+  other apps in your usage order. Each tile and row has Teams' menu: Open
+  in new window, About, Share app, Move up / Move down, Pin / Unpin,
+  Uninstall ("Remove {app}") and Customize app bar (Settings ▸ Appearance);
+  changes go to Teams' pinned apps, so they show in Teams too. Hosted apps
+  open in OST's TeamsJS host (docs/spec/store.md §8); People and Events
+  are native. An app opened there takes the bar's one extra slot.
 - **Copilot, Share to Outlook, Immersive Reader, Office files**: the chat
   list's Copilot row opens Copilot as Teams hosts it; a message's ··· ▸
   Share to Outlook opens Teams' Outlook dialog on a draft of the
@@ -387,6 +389,9 @@ account.
 | `--manage-apps-test` | With `--shots`: Manage your apps (MANAGEAPPS rows), Praise expanded, the Sort menu, A-Z (MANAGEAPPS az), Upload an app; `manage-apps-*.png`. Nothing is removed or submitted. |
 | `--tab-settings-test=<tab>` | With `--open-chat=<channel id> --shots`: that app tab's menu (TABSETTINGS menu), its Settings dialog with the app's configuration page after 20 s; once the page is valid (pick its item, e.g. over `QTWEBENGINE_REMOTE_DEBUGGING`; up to 3 minutes) it saves as Teams and logs the tab's address before and after (TABSETTINGS saved); `tab-settings-*.png`. `--tab-settings-stay` keeps OST open. |
 | `--app-window-test=<key>` | With `--shots`: a hosted app (planner, onenote, whiteboard, shifts, clipchamp) from the app bar, then its window of its own (the app bar menu's Open in new window); APPWINDOW line after 30 s (title, size, host events, header); `app-window.png`. `--app-window-stay` keeps it open. |
+| `--app-bar-test[=<ops>]` | With `--shots`: the app bar and View more apps from your apps (TASK-0238). Comma-separated ops, one every 4 s, each logged as APPBAR lines with the bar (name=order), Store and the flyout afterwards: `menus` (every tile's and flyout row's menu), `shot:<app>` (its menu open, `app-bar-<app>.png`), `flyout` (`app-bar-flyout.png`), `pin:<app>`, `unpin:<app>`, `up:<app>`, `down:<app>`, `uninstall:<app>` (picked from the menu, Remove confirmed), `move:<app>:<order>`, `storeunpin`, `storepin`, `customize` (`app-bar-customize.png`). `--app-bar-stay` keeps OST open. |
+| `--profile-org-test=<object id>` | With `--shots`: that person's profile card on Organization, Teams' org chart from Loki (TASK-0133): PROFILEORG lines (manager chain, the person in focus with reports, their reports, works with), `profile-org-1.png`; then the first manager or report as the person in focus (`profile-org-2.png`), Back. `--profile-org-stay` keeps OST open. |
+| `--channel-share-test=<ops>` | Shared and private channel membership as Teams (TASK-0087) on `--share-team=<team name>` (default OST Test Team), one op every 6 s, CHSHARE lines with each answer: `create:<Private|Shared>:<name>`, `members:<channel>:<mri>` (addChannelMembers), `invite:<channel>:<owner mri>` (Share with a team), `own:<channel>:<team>` (Share with a team you own), `sharedwith:<channel>`, `invites`, `accept:<invitation id>:<team>`, `decline:<invitation id>`, `answer:<channel>:<invitation id>:<approve|deny>` (the host's side), `manage:<channel>` (Manage channel, with a picture), `mtab:<members|invites|…>`, `shot:<name>` (picture `<shot>-share-<name>.png`), `createteam:<name>`, `deleteteam:<name>`, `delete:<channel>`. `--share-stay` keeps OST open. |
 | `--add-tab-test` | With `--open-chat=<chat or channel id> --shots=<dir>`: Teams' Add a tab ("+"; a channel's menu, then Apps): the picker (ADDTAB picker line: grid and collections; See all), Website's configuration with an invalid URL. With `--add-tab-url=<https url>` (and `--add-tab-name=<name>`) it saves the tab for real, posting "I added a tab…" unless `--add-tab-nopost`, logs ADDTAB result and the tabs, and captures the new tab's menu; `--add-tab-remove` removes it again. Pictures `add-tab-*.png` `--add-tab-app=<name>` opens that app's own configuration page instead (in OST's TeamsJS host) and after 20 s logs ADDTAB app config (Teams' validity and settings it reported) with `add-tab-config-app.png`; nothing is saved unless `--add-tab-save`: it then waits up to 3 minutes for the page to report a valid setup (pick its item yourself, e.g. over `QTWEBENGINE_REMOTE_DEBUGGING`), saves as Teams (settings.save, then the tab), and logs and captures as for a website (`--add-tab-nopost`, `--add-tab-remove` apply). |
 | `--add-tab-choice=<newList\|existingList\|existingPage>` | With `--open-chat=<channel id> --shots=<dir>`: a channel's "+" choice as Teams. New list / Existing list add the Lists tab and open SharePoint's page in OST's TeamsJS host; Existing page needs `--add-tab-link=<Loop link>` (looked up, its card, then Confirm). ADDTAB choice lines: the tabs, the result, the tabs after, the page's host events after 20 s. `--add-tab-remove` removes the new tab; `--add-tab-stay` keeps OST open. Pictures `add-tab-choice-{menu,page-dialog,page-card,added,page-20s}.png`. |
 | `--task-dialog-test=<findmeetingtime\|createaplanner\|remindme>` | With `--open-chat=<chat id> --shots=<dir>`: the workflow suggestion's Workflows dialog (Teams' task module, 800 x 600) in OST's TeamsJS host, TASKDIALOG state lines (size, title, frame, host events) after 15 and 30 s with `task-dialog-{15s,30s}.png`, then Close; nothing is submitted. |

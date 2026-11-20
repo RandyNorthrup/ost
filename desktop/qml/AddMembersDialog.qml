@@ -36,6 +36,9 @@ Popup {
     property string channelId: ""
     property string channelName: ""
     readonly property bool channelMode: channelId.length > 0
+    /// A shared channel's Share with people (Teams: "Share the {channel}
+    /// channel", anyone in the org, Cancel / Share; 600 x 449).
+    property bool shareMode: false
     /// Opened right after Create team (Teams offers Skip instead of Cancel).
     property bool afterCreate: false
     signal finished()
@@ -115,7 +118,7 @@ Popup {
         interval: 300
         onTriggered: {
             if (!dlg.query) return
-            backend.channelAction(dlg.channelMode ? "tag-member-search" : "add-member-search", dlg.teamId, dlg.teamThread, dlg.query)
+            backend.channelAction(dlg.channelMode && !dlg.shareMode ? "tag-member-search" : "add-member-search", dlg.teamId, dlg.teamThread, dlg.query)
         }
     }
     Connections {
@@ -155,7 +158,7 @@ Popup {
         Text {
             x: 0.7; y: 0.7; width: 550
             elide: Text.ElideRight
-            text: dlg.channelMode ? qsTr("Add members to the %1 channel").arg(dlg.channelName) : qsTr("Add members to %1").arg(dlg.teamName)
+            text: dlg.shareMode ? qsTr("Share the %1 channel").arg(dlg.channelName) : dlg.channelMode ? qsTr("Add members to the %1 channel").arg(dlg.channelName) : qsTr("Add members to %1").arg(dlg.teamName)
             font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold
             lineHeight: 28; lineHeightMode: Text.FixedHeight
             color: theme.text
@@ -163,7 +166,8 @@ Popup {
         Text {
             visible: dlg.channelMode
             x: 0.7; y: 36; width: 543.5
-            text: qsTr("Start typing a name of a person you want to add to this private channel.")
+            wrapMode: Text.Wrap
+            text: dlg.shareMode ? qsTr("Type the name of someone in your org you want to add to this channel. You can also add people outside your org by typing their email address.") : qsTr("Start typing a name of a person you want to add to this private channel.")
             font.family: theme.font; font.pixelSize: 14
             lineHeight: 20; lineHeightMode: Text.FixedHeight
             color: theme.text
@@ -185,7 +189,7 @@ Popup {
         // The picker.
         Rectangle {
             id: box
-            x: 0; y: dlg.channelMode ? 69.3 : 128.7; width: 550.7; height: 33.3; radius: 4
+            x: 0; y: dlg.shareMode ? 89 : dlg.channelMode ? 69.3 : 128.7; width: 550.7; height: 33.3; radius: 4
             color: theme.pick("#F0F0F0", "#141414", "#000000")
             Rectangle {
                 visible: picker.activeFocus
@@ -306,10 +310,10 @@ Popup {
         Row {
             x: 351.3; y: dlg.channelMode ? 369.4 : 403
             spacing: 8
-            DialogButton { text: dlg.outcome ? qsTr("Close") : dlg.channelMode || dlg.afterCreate ? qsTr("Skip") : qsTr("Cancel"); onClicked: dlg.close() }
+            DialogButton { text: dlg.outcome ? qsTr("Close") : (dlg.channelMode && !dlg.shareMode) || dlg.afterCreate ? qsTr("Skip") : qsTr("Cancel"); onClicked: dlg.close() }
             DialogButton {
                 visible: !dlg.outcome
-                text: dlg.adding ? qsTr("Adding...") : qsTr("Add"); primary: true
+                text: dlg.adding ? qsTr("Adding...") : dlg.shareMode ? qsTr("Share") : qsTr("Add"); primary: true
                 enabled: dlg.staged.length > 0 && !dlg.adding && dlg.staged.every(s => !s.group || s.people !== null)
                 onClicked: dlg.add()
             }

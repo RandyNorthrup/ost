@@ -182,7 +182,7 @@ Popup {
         Flickable {
             id: body
             y: 194; width: parent.width; height: parent.height - y
-            contentHeight: (root.tab === "overview" ? overview.height : root.tab === "profile" ? profileTab.height : root.tab === "linkedin" ? linkedInTab.height : orgTab.y + orgTab.height) + 32
+            contentHeight: (root.tab === "overview" ? overview.height : root.tab === "profile" ? profileTab.height : root.tab === "linkedin" ? linkedInTab.height : (orgChart.visible ? orgChart.y + orgChart.height : orgTab.y + orgTab.height)) + 32
             clip: true
             boundsBehavior: Flickable.StopAtBounds
             ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
@@ -350,7 +350,7 @@ Popup {
             // text at 48 (14/20 #424242).
             Rectangle {
                 visible: root.tab === "organization"
-                y: -1.3; width: body.width; height: Math.max(body.height, orgTab.y + orgTab.height + 32) + 1.3
+                y: -1.3; width: body.width; height: Math.max(body.height, (orgChart.visible ? orgChart.y + orgChart.height : orgTab.y + orgTab.height) + 32) + 1.3
                 color: theme.pick("#FAFAFA", "#1F1F1F", "#000000")
             }
             Row {
@@ -375,9 +375,185 @@ Popup {
                 NavButton { icon: "chevron-left-20"; label: qsTr("Back to previous profile"); can: root.historyAt > 0; onGo: root.stepTo(root.historyAt - 1) }
                 NavButton { icon: "chevron-right-20"; label: qsTr("Next profile"); can: root.historyAt < root.history.length - 1; onGo: root.stepTo(root.historyAt + 1) }
             }
+            // Teams' org chart (Loki OrgExplorer; measured on winpc
+            // 2026-11-20, OST Test 2 with one report), in the 750.67 wide
+            // area 40 in, under the navigation (42 down):
+            // - the manager chain, top first, then the person in focus: a
+            //   495.4 x 156.7 card 127.6 in (0.67 #E0E0E0, radius 4): the 64
+            //   px picture with presence at 16.7, the name (16/22 semibold) at
+            //   92.7, their job title under it; under a #F0F0F0 line (100
+            //   down) "View profile" (127 x 31.3, 0.67 #D1D1D1, a 16 px
+            //   contact-card glyph, 14/20 semibold) and at the right "{n}
+            //   report(s)" / "{n} direct" (10/14 semibold);
+            // - "People reporting to **{name}**" (14/20 #424242) centred
+            //   between rules, 16 under the card; their cards 369.3 x 85.3 in
+            //   two columns 56 under it (the 48 px picture at 12, the name 14
+            //   semibold, job title and location at 72; a 24 px View profile
+            //   glyph at the top right);
+            // - "**{name}** also works with" (i), 16 under: 128.6 x 140 tiles
+            //   (the 48 px picture 16.7 down, the name centred under it).
+            // A person's card makes them the person in focus.
+            Item {
+                id: orgChart
+                readonly property var org: root.card.org || null
+                visible: root.tab === "organization" && !!org && !!org.focus && !!org.focus.name
+                x: 40; y: 42; width: 750.67
+                height: worksCol.y + worksCol.height + 24
+                component OrgRule: Item {
+                    id: rule
+                    property string lead
+                    property string bold
+                    property string tail
+                    property bool info: false
+                    width: orgChart.width; height: 20
+                    Rectangle { anchors.verticalCenter: parent.verticalCenter; x: 0; width: ruleText.x - 16; height: 1; color: theme.divider }
+                    Rectangle { anchors.verticalCenter: parent.verticalCenter; x: ruleText.x + ruleText.width + (rule.info ? 28 : 0) + 16; width: parent.width - x; height: 1; color: theme.divider }
+                    Text {
+                        id: ruleText
+                        x: (parent.width - width - (rule.info ? 28 : 0)) / 2
+                        textFormat: Text.StyledText
+                        text: rule.lead + "<b>" + rule.bold + "</b>" + rule.tail
+                        font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
+                        color: theme.textStrong
+                    }
+                    FluentIcon { visible: rule.info; x: ruleText.x + ruleText.width + 8; anchors.verticalCenter: parent.verticalCenter; size: 16; name: "info-20"; color: theme.textStrong }
+                }
+                component PersonCard: Rectangle {
+                    id: pc
+                    property var person: ({})
+                    property bool inFocus: false
+                    width: 495.4; height: inFocus ? 156.7 : 84
+                    radius: 4; color: theme.surface
+                    border.width: 0.67; border.color: theme.stroke
+                    Avatar { x: pc.inFocus ? 16.7 : 12.7; y: pc.inFocus ? 16.7 : 18; size: pc.inFocus ? 64 : 48; name: pc.person.name || ""; photoId: pc.person.mri || ""; presence: pc.person.availability || "" }
+                    Column {
+                        x: pc.inFocus ? 92.7 : 72.7; y: pc.inFocus ? 16.7 : (pc.height - height) / 2; width: parent.width - x - (pc.inFocus ? 16 : 60)
+                        Text { width: parent.width; elide: Text.ElideRight; text: pc.person.name || ""; font.family: theme.font; font.pixelSize: pc.inFocus ? 16 : 14; font.weight: Font.DemiBold; lineHeight: pc.inFocus ? 22 : 20; lineHeightMode: Text.FixedHeight; color: theme.text }
+                        Text { visible: !!pc.person.jobTitle; width: parent.width; elide: Text.ElideRight; text: pc.person.jobTitle || ""; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.textStrong }
+                        Text { visible: !!pc.person.location; width: parent.width; elide: Text.ElideRight; text: pc.person.location || ""; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.textStrong }
+                    }
+                    // A manager's card: their reports count with a people glyph.
+                    Row {
+                        visible: !pc.inFocus && (pc.person.reports || 0) > 0
+                        x: 454.3; y: 45.8; spacing: 2
+                        FluentIcon { size: 16; name: "people-20"; color: theme.textStrong }
+                        Text { anchors.verticalCenter: parent.verticalCenter; text: String(pc.person.reports || 0); font.family: theme.font; font.pixelSize: 12; color: theme.textStrong }
+                    }
+                    Rectangle { visible: pc.inFocus; x: 0.67; y: 100; width: parent.width - 1.33; height: 0.67; color: theme.pick("#F0F0F0", "#2E2E2E", "#FFFFFF") }
+                    Rectangle {
+                        id: viewProfile
+                        visible: pc.inFocus
+                        x: 16.7; y: 112.7; width: 127.1; height: 31.3; radius: 4
+                        color: vph.hovered ? theme.menuHover : theme.surface
+                        border.width: 0.67; border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF")
+                        Row {
+                            anchors.centerIn: parent; spacing: 8
+                            FluentIcon { anchors.verticalCenter: parent.verticalCenter; size: 16; name: "contact-card-20"; color: theme.onFill(viewProfile, theme.text) }
+                            Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("View profile"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(viewProfile, theme.text) }
+                        }
+                        HoverHandler { id: vph; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: root.tab = "overview" }
+                        Accessible.role: Accessible.Button
+                        Accessible.name: qsTr("View profile")
+                    }
+                    Column {
+                        visible: pc.inFocus && (pc.person.reports || 0) > 0
+                        anchors.right: parent.right; anchors.rightMargin: 16; y: 114.3
+                        Text { anchors.right: parent.right; text: (pc.person.reports === 1 ? qsTr("1 report") : qsTr("%1 reports").arg(pc.person.reports || 0)); font.family: theme.font; font.pixelSize: 10; font.weight: Font.DemiBold; lineHeight: 14; lineHeightMode: Text.FixedHeight; color: theme.text }
+                        Text { anchors.right: parent.right; text: qsTr("%1 direct").arg(pc.person.directs || 0); font.family: theme.font; font.pixelSize: 10; font.weight: Font.DemiBold; lineHeight: 14; lineHeightMode: Text.FixedHeight; color: theme.text }
+                    }
+                    HoverHandler { enabled: !pc.inFocus; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { enabled: !pc.inFocus; onTapped: if (pc.person.mri) root.visit(pc.person.mri) }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: (pc.person.name || "") + (pc.person.reports ? ", " + (pc.person.reports === 1 ? qsTr("1 report") : qsTr("%1 reports").arg(pc.person.reports)) : "")
+                }
+                Column {
+                    id: chainCol
+                    width: parent.width
+                    // The manager chain, top first, each linked down to the next.
+                    Repeater {
+                        model: orgChart.org ? orgChart.org.managers || [] : []
+                        Item {
+                            required property var modelData
+                            width: chainCol.width; height: 84 + 16
+                            PersonCard { x: 127.6; person: modelData }
+                            Rectangle { x: chainCol.width / 2; y: 84; width: 1; height: 16; color: theme.stroke }
+                        }
+                    }
+                    PersonCard { x: 127.6; inFocus: true; person: orgChart.org ? orgChart.org.focus : ({}) }
+                }
+                Rectangle {
+                    visible: reportsCol.visible
+                    x: parent.width / 2; y: chainCol.height; width: 1; height: 16 + 10; color: theme.stroke
+                }
+                Column {
+                    id: reportsCol
+                    readonly property var people: orgChart.org ? orgChart.org.directs || [] : []
+                    visible: people.length > 0
+                    y: chainCol.height + 16
+                    width: parent.width
+                    height: visible ? implicitHeight : 0
+                    spacing: 32
+                    OrgRule { lead: qsTr("People reporting to") + " "; bold: orgChart.org ? orgChart.org.focus.name || "" : ""; tail: "" }
+                    Grid {
+                        columns: 2; columnSpacing: 12; rowSpacing: 12
+                        Repeater {
+                            model: reportsCol.people
+                            Rectangle {
+                                id: rc
+                                required property var modelData
+                                width: 369.3; height: 85.3; radius: 4
+                                color: rch.hovered ? theme.menuHover : theme.surface
+                                border.width: 0.67; border.color: theme.stroke
+                                Avatar { x: 12; anchors.verticalCenter: parent.verticalCenter; size: 48; name: rc.modelData.name || ""; photoId: rc.modelData.mri || ""; presence: rc.modelData.availability || "" }
+                                Column {
+                                    x: 72; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 72 - 44
+                                    Text { width: parent.width; elide: Text.ElideRight; text: rc.modelData.name || ""; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.onFill(rc, theme.text) }
+                                    Text { visible: !!rc.modelData.jobTitle; width: parent.width; elide: Text.ElideRight; text: rc.modelData.jobTitle || ""; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.onFill(rc, theme.textStrong) }
+                                    Text { visible: !!rc.modelData.location; width: parent.width; elide: Text.ElideRight; text: rc.modelData.location || ""; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.onFill(rc, theme.textStrong) }
+                                }
+                                FluentIcon { x: parent.width - 12 - 20; y: 16; size: 16; name: "contact-card-20"; color: theme.onFill(rc, theme.textStrong) }
+                                HoverHandler { id: rch; cursorShape: Qt.PointingHandCursor }
+                                TapHandler { onTapped: if (rc.modelData.mri) root.visit(rc.modelData.mri) }
+                                Accessible.role: Accessible.Button
+                                Accessible.name: qsTr("%1, currently: %2").arg(rc.modelData.name || "").arg(root.statusLabels[rc.modelData.availability] || rc.modelData.availability || "")
+                            }
+                        }
+                    }
+                }
+                Column {
+                    id: worksCol
+                    readonly property var people: orgChart.org ? orgChart.org.worksWith || [] : []
+                    visible: people.length > 0
+                    y: (reportsCol.visible ? reportsCol.y + reportsCol.height : chainCol.height) + 16
+                    width: parent.width
+                    height: visible ? implicitHeight : 0
+                    spacing: 30
+                    OrgRule { lead: ""; bold: orgChart.org && orgChart.org.focus.isMe ? qsTr("You") : orgChart.org ? orgChart.org.focus.name || "" : ""; tail: " " + (orgChart.org && orgChart.org.focus.isMe ? qsTr("work with") : qsTr("also works with")); info: true }
+                    Flow {
+                        x: 2; width: parent.width - 4; spacing: 12
+                        Repeater {
+                            model: worksCol.people
+                            Rectangle {
+                                id: wc
+                                required property var modelData
+                                width: 128.6; height: 140; radius: 4
+                                color: wch.hovered ? theme.menuHover : theme.surface
+                                border.width: 0.67; border.color: theme.stroke
+                                Avatar { anchors.horizontalCenter: parent.horizontalCenter; y: 16.7; size: 48; name: wc.modelData.name || ""; photoId: wc.modelData.mri || ""; presence: wc.modelData.availability || "" }
+                                Text { x: 8; y: 72.7; width: parent.width - 16; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; maximumLineCount: 2; elide: Text.ElideRight; text: wc.modelData.name || ""; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.onFill(wc, theme.text) }
+                                HoverHandler { id: wch; cursorShape: Qt.PointingHandCursor }
+                                TapHandler { onTapped: if (wc.modelData.mri) root.visit(wc.modelData.mri) }
+                                Accessible.role: Accessible.Button
+                                Accessible.name: qsTr("%1, currently: %2").arg(wc.modelData.name || "").arg(root.statusLabels[wc.modelData.availability] || wc.modelData.availability || "")
+                            }
+                        }
+                    }
+                }
+            }
             Column {
                 id: orgTab
-                visible: root.tab === "organization"
+                visible: root.tab === "organization" && !orgChart.visible
                 readonly property bool noOrg: !root.card.loading && !root.card.manager && !(root.card.reports || []).length
                 x: 40; y: 40.6; width: 758.67; spacing: 12
                 Rectangle {

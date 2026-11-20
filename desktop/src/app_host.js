@@ -333,7 +333,7 @@
                 return;
             }
             case "settings.getSettings":
-                respond(source, from, d, [cfg.settings || { entityId: ctx.entityId, contentUrl: fill(cfg.url) }]);
+                respond(source, from, d, [cfg.settings || cfg.tabSettings || { entityId: ctx.entityId, contentUrl: fill(cfg.url) }]);
                 return;
             case "settings.setValidityState":
                 ost.event("validity", JSON.stringify({ valid: !!args[0] }));

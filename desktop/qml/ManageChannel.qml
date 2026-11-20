@@ -48,7 +48,19 @@ Rectangle {
         generalSetting = -1
         if (general) backend.channelAction("moderation-load", teamId, channelId, "")
     }
-    onChannelIdChanged: { tab = "settings"; loadModeration(); detailsOpen = true; moderationOpen = true }
+    readonly property int channelType: channel.channel_type || 0
+    onChannelIdChanged: { tab = channelType > 0 ? "members" : "settings"; loadModeration(); detailsOpen = true; moderationOpen = true; loadMembers() }
+    onChannelTypeChanged: if (channelType > 0 && tab === "settings") { tab = "members"; loadMembers() }
+    // Members (private and shared channels): the channel's people (Graph)
+    // and, shared, the teams it's shared with and its sent invites.
+    property var members: []
+    property var sharedTeams: []
+    property var sentInvites: []
+    function loadMembers() {
+        if (!channelId || channelType === 0) return
+        backend.channelAction("channel-members", teamId, channelId, "")
+        if (channelType === 2) backend.channelAction("shared-with", teamId, channelId, "")
+    }
     onGeneralChanged: loadModeration()
     Component.onCompleted: loadModeration()
     Connections {
@@ -56,7 +68,14 @@ Rectangle {
         function onChannelActionResultChanged() {
             const r = JSON.parse(backend.channelActionResult || "{}")
             if (r.channel !== page.channelId) return
-            if (r.op === "moderation-load" && r.ok) page.generalSetting = r.data.general
+            if (r.op === "channel-members" && r.ok) page.members = r.data.members || []
+            else if (r.op === "shared-with" && r.ok) {
+                page.sharedTeams = (r.data.teams && r.data.teams.linkedTeams) || []
+                // Declined, approved and withdrawn ones drop off, as in Teams.
+                page.sentInvites = ((r.data.invitations && r.data.invitations.invitations) || []).filter(i => i.state === "Sent" || i.state === "Pending")
+            }
+            else if (["channel-add-members", "share-team-owner", "share-own-team", "channel-invitation"].indexOf(r.op) >= 0 && r.ok) page.loadMembers()
+            else if (r.op === "moderation-load" && r.ok) page.generalSetting = r.data.general
             else if (r.op === "moderation") {
                 page.savingModeration = false
                 if (r.ok) page.generalSetting = r.data.general
@@ -89,7 +108,12 @@ Rectangle {
         Row {
             x: title.x + title.width + 2; y: 2; height: 56.3
             Repeater {
-                model: [["settings", qsTr("Settings")], ["analytics", qsTr("Analytics")]]
+                // Teams' tabs (measured 2026-11-20): a private channel's
+                // Members, Settings, Analytics; a shared one's Members,
+                // Invites and requests, Settings.
+                model: page.channelType === 2 ? [["members", qsTr("Members")], ["invites", qsTr("Invites and requests")], ["settings", qsTr("Settings")]]
+                    : page.channelType === 1 ? [["members", qsTr("Members")], ["settings", qsTr("Settings")], ["analytics", qsTr("Analytics")]]
+                    : [["settings", qsTr("Settings")], ["analytics", qsTr("Analytics")]]
                 Item {
                     id: tabItem
                     required property var modelData
@@ -143,7 +167,7 @@ Rectangle {
         id: flick
         anchors { top: header.bottom; left: parent.left; right: parent.right; bottom: parent.bottom }
         contentWidth: width
-        contentHeight: page.tab === "settings" ? settings.height + 40 : analytics.implicitHeight
+        contentHeight: page.tab === "settings" ? settings.height + 40 : page.tab === "members" ? membersTab.height + 40 : page.tab === "invites" ? invitesTab.height + 40 : analytics.implicitHeight
         clip: true
         boundsBehavior: Flickable.StopAtBounds
         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
@@ -214,6 +238,179 @@ Rectangle {
                         Radio { value: 1; label: qsTr("Anyone can post; show alert that posting will notify everyone (recommended for large teams)") }
                         Radio { value: 2; label: qsTr("Only owners can post messages") }
                     }
+                }
+            }
+        }
+
+        // Members (Teams, measured on winpc 2026-11-20): the action 20 in
+        // ("+ Add member" for a private channel; a shared one's "Share with
+        // people" split button whose chevron offers Share with people, Share
+        // with a team, Share with a team you own), "Search members" at the
+        // right; then Owners (n), Members (n) ("Members and guests" in a
+        // private channel) and, shared, Teams (n), each a section with
+        // Name / Title / Location / Tags / Channel role columns.
+        Column {
+            id: membersTab
+            visible: page.tab === "members"
+            x: 20; y: 20; width: flick.width - 40
+            spacing: 12
+            Item {
+                width: parent.width; height: 32
+                Rectangle {
+                    id: shareAction
+                    height: 32; radius: 4
+                    width: actionRow.implicitWidth + 16
+                    color: actHover.hovered ? theme.hover : "transparent"
+                    Row {
+                        id: actionRow
+                        x: 8; anchors.verticalCenter: parent.verticalCenter; spacing: 8
+                        FluentIcon { anchors.verticalCenter: parent.verticalCenter; size: 20; name: page.channelType === 2 ? "share-20" : "add-20"; color: theme.onFill(shareAction, theme.text) }
+                        Text { anchors.verticalCenter: parent.verticalCenter; text: page.channelType === 2 ? qsTr("Share with people") : qsTr("Add member"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(shareAction, theme.text) }
+                    }
+                    HoverHandler { id: actHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: page.share("people") }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: page.channelType === 2 ? qsTr("Share with people") : qsTr("Add member")
+                }
+                Rectangle {
+                    id: shareChevron
+                    visible: page.channelType === 2
+                    x: shareAction.width; width: 24; height: 32; radius: 4
+                    color: chevHover.hovered ? theme.hover : "transparent"
+                    FluentIcon { anchors.centerIn: parent; size: 16; name: "chevron-down-20"; color: theme.onFill(shareChevron, theme.textStrong) }
+                    HoverHandler { id: chevHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: { shareMenu.parent = shareAction; shareMenu.x = 0; shareMenu.y = shareAction.height + 4; shareMenu.open() } }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: qsTr("More ways to share")
+                }
+                MenuPopup {
+                    id: shareMenu
+                    items: [{ key: "people", label: qsTr("Share with people") }, { key: "team", label: qsTr("Share with a team") }, { key: "own", label: qsTr("Share with a team you own") }]
+                    onPicked: i => page.share(items[i].key)
+                }
+                Rectangle {
+                    anchors.right: parent.right
+                    width: 280; height: 32; radius: 4
+                    color: theme.input; border.width: 0.67; border.color: memberSearch.activeFocus ? theme.brand : theme.stroke
+                    TextInput {
+                        id: memberSearch
+                        x: 12; width: parent.width - 24; anchors.verticalCenter: parent.verticalCenter
+                        font.family: theme.font; font.pixelSize: 14; color: theme.text; clip: true
+                        Text { visible: !memberSearch.text; text: qsTr("Search members"); font: memberSearch.font; color: theme.textSecondary }
+                        Accessible.name: qsTr("Search members")
+                    }
+                }
+            }
+            Repeater {
+                model: {
+                    const q = memberSearch.text.trim().toLowerCase()
+                    const m = page.members.filter(x => !q || (x.name || "").toLowerCase().indexOf(q) >= 0)
+                    const out = [[qsTr("Owners (%1)").arg(m.filter(x => x.owner).length), m.filter(x => x.owner)],
+                                 [(page.channelType === 2 ? qsTr("Members (%1)") : qsTr("Members and guests (%1)")).arg(m.filter(x => !x.owner).length), m.filter(x => !x.owner)]]
+                    if (page.channelType === 2) out.push([qsTr("Teams (%1)").arg(page.sharedTeams.length), page.sharedTeams.map(t => ({ name: t.displayName, team: true, host: t.isHostTeam, count: t.memberCount }))])
+                    return out
+                }
+                Column {
+                    id: memSec
+                    required property var modelData
+                    required property int index
+                    property bool open: index === 0
+                    width: membersTab.width
+                    Rectangle {
+                        width: parent.width; height: 44; radius: 4
+                        color: msHover.hovered ? theme.hover : "transparent"
+                        FluentIcon { x: 10; anchors.verticalCenter: parent.verticalCenter; name: memSec.open ? "chevron-down-20" : "chevron-right-20"; size: 20; color: theme.text }
+                        Text { x: 38; anchors.verticalCenter: parent.verticalCenter; text: memSec.modelData[0]; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                        HoverHandler { id: msHover; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: memSec.open = !memSec.open }
+                        Accessible.role: Accessible.Button
+                        Accessible.name: memSec.modelData[0]
+                    }
+                    Item {
+                        visible: memSec.open && memSec.modelData[1].length > 0
+                        width: parent.width; height: visible ? 40 : 0
+                        Repeater {
+                            model: [[qsTr("Name"), 0], [qsTr("Title"), 0.18], [qsTr("Location"), 0.36], [qsTr("Tags"), 0.54], [qsTr("Channel role"), 0.72]]
+                            Text { required property var modelData; x: 22 + (memSec.width - 44) * modelData[1]; anchors.verticalCenter: parent.verticalCenter; text: modelData[0]; font.family: theme.font; font.pixelSize: 12; color: theme.textStrong }
+                        }
+                    }
+                    Repeater {
+                        model: memSec.open ? memSec.modelData[1] : []
+                        Item {
+                            id: mrow
+                            required property var modelData
+                            width: memSec.width; height: 52
+                            Avatar { x: 22; anchors.verticalCenter: parent.verticalCenter; size: 32; name: mrow.modelData.name || ""; photoId: mrow.modelData.team ? "" : (mrow.modelData.mri || ""); square: !!mrow.modelData.team; squareRadius: 4 }
+                            Text { x: 64; anchors.verticalCenter: parent.verticalCenter; width: (memSec.width - 44) * 0.18 + 22 - 64 + 120; elide: Text.ElideRight; text: mrow.modelData.name || ""; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                            Text {
+                                x: 22 + (memSec.width - 44) * 0.72; anchors.verticalCenter: parent.verticalCenter
+                                text: mrow.modelData.team ? (mrow.modelData.host ? qsTr("Host team") : qsTr("Member team")) : mrow.modelData.owner ? qsTr("Owner") : mrow.modelData.guest ? qsTr("Guest") : qsTr("Member")
+                                font.family: theme.font; font.pixelSize: 14; color: theme.text
+                            }
+                            Rectangle { anchors.bottom: parent.bottom; x: 16; width: parent.width - 32; height: 0.67; color: theme.divider }
+                        }
+                    }
+                }
+            }
+        }
+        // Invites and requests (a shared channel): "Sent invites (n team(s))"
+        // with each invited team owner and when the invite expires.
+        Column {
+            id: invitesTab
+            visible: page.tab === "invites"
+            x: 20; y: 20; width: flick.width - 40
+            Item {
+                width: parent.width; height: 44
+                FluentIcon { x: 10; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-20"; size: 20; color: theme.text }
+                Text {
+                    x: 38; anchors.verticalCenter: parent.verticalCenter
+                    text: page.sentInvites.length === 1 ? qsTr("Sent invites (1 team)") : qsTr("Sent invites (%1 teams)").arg(page.sentInvites.length)
+                    font.family: theme.font; font.pixelSize: 14; color: theme.text
+                }
+            }
+            Item {
+                visible: page.sentInvites.length > 0
+                width: parent.width; height: 40
+                Text { x: 22; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Name"); font.family: theme.font; font.pixelSize: 12; color: theme.textStrong }
+                Text { x: 22 + (parent.width - 44) * 0.34; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Expires in"); font.family: theme.font; font.pixelSize: 12; color: theme.textStrong }
+            }
+            Repeater {
+                model: page.sentInvites
+                Item {
+                    id: irow
+                    required property var modelData
+                    readonly property var person: page.names[modelData.inviteeMri || ""] ? ({ name: page.names[modelData.inviteeMri] }) : null
+                    width: invitesTab.width; height: 52
+                    Avatar { x: 22; anchors.verticalCenter: parent.verticalCenter; size: 32; name: irow.person ? irow.person.name : ""; photoId: irow.modelData.inviteeMri || "" }
+                    Text { x: 64; anchors.verticalCenter: parent.verticalCenter; text: irow.person ? irow.person.name : (irow.modelData.inviteeMri || ""); font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    Text {
+                        x: 22 + (parent.width - 44) * 0.34 + 16; anchors.verticalCenter: parent.verticalCenter
+                        text: { const d = Math.ceil(((Date.parse(irow.modelData.systemExpirationDateTime) || Date.now()) - Date.now()) / 86400000); return d > 0 ? qsTr("%1 days").arg(d) : "" }
+                        font.family: theme.font; font.pixelSize: 14; color: theme.text
+                    }
+                    // An invite the team owner accepted waits for this
+                    // channel's owner (Teams' approve / deny).
+                    Row {
+                        visible: irow.modelData.state === "Pending"
+                        anchors.right: parent.right; anchors.rightMargin: 16; anchors.verticalCenter: parent.verticalCenter
+                        spacing: 8
+                        Repeater {
+                            model: [["deny", qsTr("Deny")], ["approve", qsTr("Approve")]]
+                            Rectangle {
+                                id: ab
+                                required property var modelData
+                                width: 96; height: 31.3; radius: 4
+                                color: modelData[0] === "approve" ? (abh.hovered ? theme.brandHover : theme.brandFill) : (abh.hovered ? theme.menuHover : theme.surface)
+                                border.color: modelData[0] === "approve" ? "transparent" : theme.stroke; border.width: 0.67
+                                Text { anchors.centerIn: parent; text: ab.modelData[1]; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(ab, ab.modelData[0] === "approve" ? theme.textOnBrand : theme.text) }
+                                HoverHandler { id: abh; cursorShape: Qt.PointingHandCursor }
+                                TapHandler { onTapped: backend.channelAction("channel-invitation", page.teamId, page.channelId, JSON.stringify({ id: irow.modelData.id, action: ab.modelData[0] })) }
+                                Accessible.role: Accessible.Button
+                                Accessible.name: ab.modelData[1]
+                            }
+                        }
+                    }
+                    Rectangle { anchors.bottom: parent.bottom; x: 16; width: parent.width - 32; height: 0.67; color: theme.divider }
                 }
             }
         }
@@ -293,6 +490,19 @@ Rectangle {
     }
 
     ChannelEditDialog { id: editDialog; teamId: page.teamId }
+    // Names for invited people (the directory, as the rest of OST knows
+    // them).
+    readonly property var names: backend.peopleNamesJson ? JSON.parse(backend.peopleNamesJson) : ({})
+    onSentInvitesChanged: if (sentInvites.length) backend.resolveNames(JSON.stringify(sentInvites.map(i => i.inviteeMri).filter(m => !!m)))
+    // Share with people (or, private, Add member), Share with a team, Share
+    // with a team you own.
+    function share(kind) {
+        const thread = page.team ? page.team.thread_id || "" : ""
+        if (kind === "people") { shareMembers.shareMode = page.channelType === 2; shareMembers.startChannel(page.teamId, thread, page.teamName, page.channelId, page.channel.name || "") }
+        else shareDialog.start(kind, page.channel, page.teamId, thread)
+    }
+    AddMembersDialog { id: shareMembers; parent: Overlay.overlay; onFinished: page.loadMembers() }
+    ShareChannelDialog { id: shareDialog; sharedTeamIds: page.sharedTeams.map(t => t.groupId) }
 
     // Test hooks.
     function analyticsForTest() { return analytics }

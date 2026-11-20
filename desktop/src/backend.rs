@@ -2193,7 +2193,9 @@ pub mod qobject {
         /// `devices` ({key}: a Devices page), `device` ({id}: its details),
         /// `manageApps` ({sort}: Manage your apps' list), `uninstall` ({app,
         /// thread}: Remove an app from you or a team), `submitApp` ({file}:
-        /// an app package for your admin).
+        /// an app package for your admin), `appBar` (your personal apps for
+        /// the app bar and View more apps), `appBarChange` ({app, op: pin |
+        /// unpin | move, target}: Teams' pinned apps).
         #[qinvokable]
         fn store_request(self: Pin<&mut Backend>, kind: &QString, id: &QString, payload: &QString);
         /// Settings ▸ App permissions' apps (api::app_details::permission_apps)
@@ -18595,6 +18597,37 @@ impl qobject::Backend {
                     "devices" => json!(api::devices::collection(&c, &s("key")).await?),
                     "device" => json!(api::devices::details(&c, &s("id")).await?),
                     "manageApps" => json!({ "sort": s("sort"), "apps": api::manage_apps::installed(&c, &s("sort")).await? }),
+                    "appBar" | "appBarChange" => {
+                        let mut apps = if kind == "appBar" {
+                            api::app_bar::load(&c).await?
+                        } else {
+                            let target = p.get("target").and_then(|t| t.as_i64()).unwrap_or(0);
+                            api::app_bar::change(&c, &s("app"), &s("op"), target).await?
+                        };
+                        // The app CDN sends icons as application/octet-stream,
+                        // which Qt's image loader won't decode: the bar's and
+                        // the flyout's icons come from the private image cache.
+                        let shown: Vec<usize> = apps.iter().enumerate().filter(|(_, a)| !a.core && (a.flyout || a.order.is_some())).map(|(i, _)| i).collect();
+                        let fetches = shown.iter().map(|&i| {
+                            let (icon, outline) = (apps[i].icon.clone(), apps[i].outline.clone());
+                            let c = &c;
+                            async move {
+                                let f = |u: String| async move {
+                                    if !u.starts_with("https://") {
+                                        return u;
+                                    }
+                                    public_image_file(c, &u).await.map(|p| format!("file://{}", p.display())).unwrap_or(u)
+                                };
+                                (f(icon).await, f(outline).await)
+                            }
+                        });
+                        let files = futures::future::join_all(fetches).await;
+                        for (&i, (icon, outline)) in shown.iter().zip(files) {
+                            apps[i].icon = icon;
+                            apps[i].outline = outline;
+                        }
+                        json!({ "apps": apps })
+                    }
                     "uninstall" => {
                         api::manage_apps::uninstall(&c, &s("app"), &s("thread")).await?;
                         json!({ "ok": true })
@@ -19629,7 +19662,7 @@ impl qobject::Backend {
             arg.to_string(),
         );
         // Your teams and channels' ops are about all your teams.
-        if !channel.ends_with("@thread.tacv2") && !matches!(op.as_str(), "quick-saved" | "quick-followed" | "quick-unsave" | "quick-unfollow" | "notify-tagged" | "notify-on" | "notify-off" | "people-list" | "people-list-add" | "people-list-remove" | "meeting-chat-report-info" | "chat-apps" | "chat-app-remove" | "cross-team-analytics" | "invitations" | "create-team" | "team-templates" | "team-template" | "my-groups" | "teams-suggested" | "teams-find" | "team-join" | "team-join-code") {
+        if !channel.ends_with("@thread.tacv2") && !matches!(op.as_str(), "quick-saved" | "quick-followed" | "quick-unsave" | "quick-unfollow" | "notify-tagged" | "notify-on" | "notify-off" | "people-list" | "people-list-add" | "people-list-remove" | "meeting-chat-report-info" | "chat-apps" | "chat-app-remove" | "cross-team-analytics" | "invitations" | "invitation-answer" | "create-team" | "team-templates" | "team-template" | "my-groups" | "teams-suggested" | "teams-find" | "team-join" | "team-join-code") {
             return;
         }
         // The team's thread id and the channel's facts, from the list.
@@ -19925,8 +19958,44 @@ impl qobject::Backend {
                             .filter_map(|u| Some((u["mri"].as_str()?.to_string(), u["owner"].as_bool().unwrap_or(false))))
                             .collect();
                         let ch = a["channel"].as_str().unwrap_or_default().to_string();
-                        api::channels::add_private_channel_members(&client, &team_thread, &ch, &users).await?;
+                        api::channels::add_private_channel_members(&client, &team, &ch, &users).await?;
                         Ok(json!({ "added": users.len() }))
+                    }
+                    // Share channel ▸ Share with a team: arg {users: [owner mri]}.
+                    "share-team-owner" => {
+                        let a: serde_json::Value = serde_json::from_str(&arg).context("Invite")?;
+                        let owners: Vec<String> = a["users"].as_array().into_iter().flatten().filter_map(|u| u.as_str().map(str::to_string)).collect();
+                        let errors = api::channels::share_with_team_owner(&client, &channel, &owners).await?;
+                        Ok(json!({ "errors": errors }))
+                    }
+                    // Share channel ▸ Share with a team you own: arg {team, thread}.
+                    "share-own-team" => {
+                        let a: serde_json::Value = serde_json::from_str(&arg).context("Team")?;
+                        api::channels::share_with_own_team(&client, &channel, a["team"].as_str().unwrap_or_default(), a["thread"].as_str().unwrap_or_default()).await?;
+                        Ok(serde_json::Value::Null)
+                    }
+                    "channel-members" => Ok(json!({ "members": api::channels::channel_members(&client, &team, &channel).await? })),
+                    "shared-with" => Ok(json!({
+                        "teams": api::channels::shared_with_teams(&client, &channel).await?,
+                        "invitations": api::channels::channel_invitations(&client, &channel).await.unwrap_or_default(),
+                    })),
+                    // arg: the team's group id.
+                    "stop-sharing" => {
+                        api::channels::stop_sharing_with_team(&client, &channel, &arg).await?;
+                        Ok(serde_json::Value::Null)
+                    }
+                    // A sent invite: arg {id, action: approve | deny | remove}.
+                    "channel-invitation" => {
+                        let a: serde_json::Value = serde_json::from_str(&arg).context("Invite")?;
+                        api::channels::answer_channel_invitation(&client, &channel, a["id"].as_str().unwrap_or_default(), a["action"].as_str().unwrap_or_default()).await?;
+                        Ok(serde_json::Value::Null)
+                    }
+                    // Pending invites: arg {id, thread} accepts for that team, {id} declines.
+                    "invitation-answer" => {
+                        let a: serde_json::Value = serde_json::from_str(&arg).context("Invite")?;
+                        let thread = a["thread"].as_str().filter(|t| !t.is_empty());
+                        api::channels::answer_invitation(&client, a["id"].as_str().unwrap_or_default(), thread).await?;
+                        Ok(serde_json::Value::Null)
                     }
                     // Manage team ▸ Apps.
                     "team-apps" => {
@@ -22842,6 +22911,13 @@ impl qobject::Backend {
                         "availability": p.availability, "activity": p.activity, "lastActive": p.last_active,
                         "note": p.note_text, "noteHtml": p.note_html, "outOfOffice": p.out_of_office, "workLocation": p.work_location,
                     });
+                }
+                // Teams' org chart (Loki); the Graph manager and reports stay
+                // for Overview when Loki can't answer.
+                let smtp = card["mail"].as_str().or(card["userPrincipalName"].as_str()).unwrap_or_default().to_string();
+                match api::profile::org_chart(&client, &oid, &smtp).await {
+                    Ok(org) => card["org"] = org,
+                    Err(e) => tracing::warn!("org chart: {}", short_error(&e)),
                 }
                 if let Some(start) = card["schedule"]["start"].as_str().and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
                     && let Some(view) = card["schedule"]["view"].as_str()

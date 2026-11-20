@@ -1119,17 +1119,15 @@ pub async fn tab_store(
     }
     ids.retain(|id| defs.get(&id.to_lowercase()).is_some_and(|d| kind.supports(d)));
     sort_by_mru(&mut ids, &apps_usage(client).await);
-    let ctx = tabs::TabContext {
-        tenant: client.tenant_id().unwrap_or_default(),
-        upn: client.user_principal_name().unwrap_or_default(),
-        ..Default::default()
-    };
+    // The configuration page's address stays a template: the host fills it
+    // from the tab's context (the team's site for SharePoint's
+    // `https://{teamSiteDomain}{teamSitePath}/…`), as Teams does.
     let installed: Vec<StoreApp> = ids
         .iter()
         .filter_map(|id| defs.get(&id.to_lowercase()))
         .map(|d| {
             let mut a = store_content::store_app(d, None);
-            a.config_url = tabs::https_only(&tabs::fill(&a.config_url, &ctx, ""));
+            a.config_url = tabs::https_template(&a.config_url);
             a
         })
         .collect();

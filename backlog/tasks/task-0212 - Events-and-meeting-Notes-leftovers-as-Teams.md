@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-17T01:27:00Z'
-updated_date: '2026-11-19T12:04:00Z'
+updated_date: '2026-11-20T23:40:00Z'
 labels:
   - desktop
 dependencies: []
@@ -49,4 +49,7 @@ What TASK-0209 left (docs/spec/events.md, docs/spec/call-and-meeting-window.md):
 - Open: Highlights with a recording; town hall Manage apps (Custom Streaming / AI Producer, not in the 26304 bundles); Generate audio recap's AugLoop submit; Meeting Notes shared-link path live.
 
 - Merged 4a78253 (2026-11-19): email template edit, Edit event banner, immersive collections, My events with real data, Discover lists fix, Room options attendee viewing confirmed, Manage apps → meeting details, Generate audio recap dialog, images. Open: Highlights with a recording, a town hall's Manage apps list (Custom Streaming, AI Producer), the Generate submission, the Meeting Notes shared-link path (tenant returns 400 to the claim).
+
+- 2026-11-20 (teamsB, with TASK-0238): Events' Pin app writes Teams' pinned apps (beta/users/apps/pinned), and OST's app bar now reloads from them when it changes, so Events appears or leaves the bar in OST and in Teams alike.
+- Still open (not attempted this round): Highlights with a recording; a town hall's Manage apps list (Custom Streaming, AI Producer, not in the 26304 bundles); the Generate audio recap AugLoop submission; the Meeting Notes shared-link path live (the tenant answers 400 to the Meet now leader claim); the scheduled-meeting notes service; the notes panel's other ··· items.
 <!-- SECTION:NOTES:END -->

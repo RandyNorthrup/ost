@@ -372,27 +372,50 @@ async fn create_private_channel(
     bail!("The channel was made but hasn't shown up yet")
 }
 
-/// Add people to a private channel (its member step; Teams'
-/// `PUT {mt}/beta/teams/{teamThread}/channels/{channel}/members` with
-/// `{"value": [{mri, role}]}`, role 0 member, 1 owner).
-pub async fn add_private_channel_members(client: &TeamsClient, team_thread: &str, channel: &str, users: &[(String, bool)]) -> Result<()> {
+/// Teams' body for adding people to a private or shared channel (worker
+/// `ADt` / provisioning `addChannelMembers`): each `8:orgid:{oid}` person as
+/// `{id: "OID:{oid}@{tenant}", role}`, role 1 member, 2 owner (Teams' NW:
+/// User 1, Admin 2, Guest 3).
+pub fn channel_members_body(users: &[(String, bool)], tenant: &str) -> serde_json::Value {
+    let list: Vec<serde_json::Value> = users
+        .iter()
+        .filter_map(|(mri, owner)| {
+            let oid = mri.rsplit(':').next().filter(|o| uuid::Uuid::parse_str(o).is_ok())?;
+            Some(serde_json::json!({ "id": format!("OID:{oid}@{tenant}"), "role": if *owner { 2 } else { 1 } }))
+        })
+        .collect();
+    serde_json::json!({ "users": list })
+}
+
+/// Add people to a private or shared channel as Teams does (its member
+/// step, Manage channel ▸ Members ▸ Add): `POST {teamsAndChannelsProvisioning
+/// Service}/teams/{team group}/channels/OID:{channel group}@{tenant}/users?
+/// forceSync=false` with [`channel_members_body`]; a person refused comes
+/// back in the answer's `multipleStatus`.
+pub async fn add_private_channel_members(client: &TeamsClient, group_id: &str, channel: &str, users: &[(String, bool)]) -> Result<()> {
     if users.is_empty() {
         return Ok(());
     }
-    let (base, token) = middle_tier(client).await?;
-    let value: Vec<serde_json::Value> = users
-        .iter()
-        .map(|(mri, owner)| serde_json::json!({ "mri": mri, "role": u8::from(*owner) }))
-        .collect();
-    client
+    anyhow::ensure!(uuid::Uuid::parse_str(group_id).is_ok(), "Not a team");
+    let thread_url = format!("{}/v1/threads/{}?view=msnp24Equivalent", client.chat_service_url(), enc(channel));
+    let thread: serde_json::Value = client.chat_get(&thread_url).await?.json().await.context("Channel")?;
+    let own = private_channel_group(&thread["properties"]).context("Not a private or shared channel")?;
+    let tenant = own.rsplit('@').next().unwrap_or_default().to_string();
+    let (base, token) = provisioning(client).await?;
+    let resp = client
         .http()
-        .put(format!("{base}/beta/teams/{}/channels/{}/members", enc(team_thread), enc(channel)))
+        .post(format!("{base}/teams/{group_id}/channels/{}/users?forceSync=false", enc(&own)))
         .bearer_auth(&token)
-        .json(&serde_json::json!({ "value": value }))
+        .json(&channel_members_body(users, &tenant))
         .send()
-        .await?
-        .error_for_status()
-        .context("Add channel members")?;
+        .await?;
+    let status = resp.status();
+    let v: serde_json::Value = resp.json().await.unwrap_or_default();
+    anyhow::ensure!(status.is_success(), "Add channel members: {status}");
+    if let Some(bad) = v.get("multipleStatus").and_then(|m| m.as_array()).filter(|m| !m.is_empty()) {
+        let codes: Vec<String> = bad.iter().filter_map(|s| s.get("statusSubCode").map(|c| c.to_string())).collect();
+        bail!("Some people couldn't be added ({})", codes.join(", "));
+    }
     Ok(())
 }
 
@@ -1808,9 +1831,13 @@ pub struct ChannelInvitation {
     /// Declined (waiting for the channel owner).
     pub state: String,
     pub channel: String,
+    /// The shared channel's thread.
+    pub channel_thread: String,
     pub organization: String,
     pub channel_tenant: String,
     pub inviter: String,
+    /// Who sent it (8:orgid:…), named from the directory.
+    pub inviter_mri: String,
     pub expires: String,
 }
 
@@ -1822,12 +1849,17 @@ pub fn invitations_from(v: &serde_json::Value) -> Vec<ChannelInvitation> {
         .into_iter()
         .flatten()
         .map(|i| {
-            let prefixed = s(i, "/channelInvitation/channelPrefixedId");
+            // Teams' service answers these at the top (the worker nests them
+            // under channelInvitation for its own model).
+            let f = |top: &str, nested: &str| Some(s(i, top)).filter(|x| !x.is_empty()).unwrap_or_else(|| s(i, nested));
+            let prefixed = f("/channelPrefixedId", "/channelInvitation/channelPrefixedId");
             ChannelInvitation {
                 id: s(i, "/id"),
                 state: s(i, "/state"),
-                channel: s(i, "/channelInvitation/channelDisplayName"),
-                organization: s(i, "/channelInvitation/channelOrganizationName"),
+                channel: f("/channelDisplayName", "/channelInvitation/channelDisplayName"),
+                channel_thread: f("/channelThreadId", "/channelInvitation/channelThreadId"),
+                organization: f("/channelOrganizationName", "/channelInvitation/channelOrganizationName"),
+                inviter_mri: s(i, "/inviterMri"),
                 // OID:{group}@{tenant}
                 channel_tenant: prefixed.rsplit_once('@').map(|(_, t)| t.to_string()).unwrap_or_default(),
                 inviter: Some(s(i, "/inviter/displayName")).filter(|n| !n.is_empty()).unwrap_or_else(|| s(i, "/inviter/decoratedDisplayName")),
@@ -1835,6 +1867,192 @@ pub fn invitations_from(v: &serde_json::Value) -> Vec<ChannelInvitation> {
             }
         })
         .collect()
+}
+
+/// A shared channel's own group as the provisioning service names it
+/// (`OID:{group}@{tenant}`), from its thread.
+pub async fn channel_group(client: &TeamsClient, channel: &str) -> Result<String> {
+    let thread_url = format!("{}/v1/threads/{}?view=msnp24Equivalent", client.chat_service_url(), enc(channel));
+    let thread: serde_json::Value = client.chat_get(&thread_url).await?.json().await.context("Channel")?;
+    private_channel_group(&thread["properties"]).context("Not a private or shared channel")
+}
+
+/// A private or shared channel's people for Manage channel ▸ Members
+/// (Graph `GET /teams/{group}/channels/{channel}/members`): {name, mri,
+/// owner, guest, email}.
+pub async fn channel_members(client: &TeamsClient, group_id: &str, channel: &str) -> Result<Vec<serde_json::Value>> {
+    anyhow::ensure!(uuid::Uuid::parse_str(group_id).is_ok() && channel.starts_with("19:"), "Not a channel");
+    let v: serde_json::Value = client
+        .graph_get(&format!("/teams/{group_id}/channels/{}/members", enc(channel)))
+        .await?
+        .json()
+        .await
+        .context("Channel members")?;
+    Ok(v["value"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|m| {
+            let roles: Vec<&str> = m["roles"].as_array().into_iter().flatten().filter_map(|r| r.as_str()).collect();
+            serde_json::json!({
+                "name": m["displayName"],
+                "mri": m["userId"].as_str().map(|o| format!("8:orgid:{o}")),
+                "email": m["email"],
+                "owner": roles.contains(&"owner"),
+                "guest": roles.contains(&"guest"),
+            })
+        })
+        .collect())
+}
+
+/// Share with a team: invite a team owner, who accepts for one of their
+/// teams (Teams' createShareWithTeamInvitations: `POST {provisioning}/
+/// channels/OID:{channel group}@{tenant}/invitations {channelGroupId,
+/// userPrefixedIds: ["OID:{owner}@{tenant}"]}`). Returns the errors Teams
+/// shows (`errors[].errorCode`), empty when sent.
+pub async fn share_with_team_owner(client: &TeamsClient, channel: &str, owner_mris: &[String]) -> Result<Vec<String>> {
+    let own = channel_group(client, channel).await?;
+    let tenant = own.rsplit('@').next().unwrap_or_default().to_string();
+    let ids: Vec<String> = owner_mris
+        .iter()
+        .filter_map(|m| m.rsplit(':').next().filter(|o| uuid::Uuid::parse_str(o).is_ok()).map(|o| format!("OID:{o}@{tenant}")))
+        .collect();
+    anyhow::ensure!(!ids.is_empty(), "Pick a team owner");
+    let (base, token) = provisioning(client).await?;
+    let resp = client
+        .http()
+        .post(format!("{base}/channels/{}/invitations", enc(&own)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({ "channelGroupId": own, "userPrefixedIds": ids }))
+        .send()
+        .await?;
+    let status = resp.status();
+    let v: serde_json::Value = resp.json().await.unwrap_or_default();
+    anyhow::ensure!(status.is_success(), "We couldn't send the invite. ({status})");
+    Ok(v["errors"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|e| e.get("errorCode").map(|c| c.as_str().map(str::to_string).unwrap_or_else(|| c.to_string())))
+        .collect())
+}
+
+/// Share with a team you own (Teams' linkChannelWithTeam: `POST
+/// {provisioning}/channels/OID:{channel group}@{tenant}/linkedTeams?
+/// forceSync=false&allowAllTeams=true {teamPrefixedId: "OID:{team group}@
+/// {tenant}", teamThreadId}`).
+pub async fn share_with_own_team(client: &TeamsClient, channel: &str, team_group: &str, team_thread: &str) -> Result<()> {
+    anyhow::ensure!(uuid::Uuid::parse_str(team_group).is_ok() && team_thread.starts_with("19:"), "Not a team");
+    let own = channel_group(client, channel).await?;
+    let tenant = own.rsplit('@').next().unwrap_or_default().to_string();
+    let (base, token) = provisioning(client).await?;
+    client
+        .http()
+        .post(format!("{base}/channels/{}/linkedTeams?forceSync=false&allowAllTeams=true", enc(&own)))
+        .bearer_auth(&token)
+        .json(&serde_json::json!({ "teamPrefixedId": format!("OID:{team_group}@{tenant}"), "teamThreadId": team_thread }))
+        .send()
+        .await?
+        .error_for_status()
+        .context("Share channel")?;
+    Ok(())
+}
+
+/// The teams a shared channel is shared with (Teams' sharedWithTeams with
+/// the channel's thread: `GET {provisioning}/channels/internal/{thread}/
+/// sharedWithTeams` → `{linkedTeams: [{teamThreadId, isHostTeam, …}]}`).
+pub async fn shared_with_teams(client: &TeamsClient, channel: &str) -> Result<serde_json::Value> {
+    anyhow::ensure!(channel.starts_with("19:") && channel.len() < 200, "Not a channel");
+    let (base, token) = provisioning(client).await?;
+    client
+        .http()
+        .get(format!("{base}/channels/internal/{}/sharedWithTeams", enc(channel)))
+        .bearer_auth(&token)
+        .send()
+        .await?
+        .error_for_status()
+        .context("Shared with")?
+        .json()
+        .await
+        .context("Shared with")
+}
+
+/// Stop sharing a channel with a team (Teams' stopSharingChannelWithTeam:
+/// `DELETE {provisioning}/channels/OID:{channel group}@{tenant}/linkedTeams/
+/// OID:{team group}@{tenant}`).
+pub async fn stop_sharing_with_team(client: &TeamsClient, channel: &str, team_group: &str) -> Result<()> {
+    anyhow::ensure!(uuid::Uuid::parse_str(team_group).is_ok(), "Not a team");
+    let own = channel_group(client, channel).await?;
+    let tenant = own.rsplit('@').next().unwrap_or_default().to_string();
+    let (base, token) = provisioning(client).await?;
+    client
+        .http()
+        .delete(format!("{base}/channels/{}/linkedTeams/{}", enc(&own), enc(&format!("OID:{team_group}@{tenant}"))))
+        .bearer_auth(&token)
+        .send()
+        .await?
+        .error_for_status()
+        .context("Remove shared channel from team")?;
+    Ok(())
+}
+
+/// A shared channel's sent invites (Teams' getSharedChannelInvitations:
+/// `GET {provisioning}/channels/OID:{group}@{tenant}/invitations`).
+pub async fn channel_invitations(client: &TeamsClient, channel: &str) -> Result<serde_json::Value> {
+    let own = channel_group(client, channel).await?;
+    let (base, token) = provisioning(client).await?;
+    client
+        .http()
+        .get(format!("{base}/channels/{}/invitations", enc(&own)))
+        .bearer_auth(&token)
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .send()
+        .await?
+        .error_for_status()
+        .context("Sent invites")?
+        .json()
+        .await
+        .context("Sent invites")
+}
+
+/// Approve or deny a team's invite to a shared channel (host side; Teams'
+/// approve/denySharedChannelInvitation: `POST {provisioning}/channels/
+/// OID:{group}@{tenant}/invitations/{id}/approve|deny`), or withdraw it
+/// (`DELETE …/invitations/{id}`).
+pub async fn answer_channel_invitation(client: &TeamsClient, channel: &str, invitation: &str, action: &str) -> Result<()> {
+    anyhow::ensure!(!invitation.is_empty() && !invitation.contains(['/', '?', '#']), "Not an invitation");
+    let own = channel_group(client, channel).await?;
+    let (base, token) = provisioning(client).await?;
+    let url = format!("{base}/channels/{}/invitations/{}", enc(&own), enc(invitation));
+    let rq = match action {
+        "approve" | "deny" => client.http().post(format!("{url}/{action}")).header(reqwest::header::CONTENT_TYPE, "application/json"),
+        "remove" => client.http().delete(url),
+        _ => bail!("unknown"),
+    };
+    rq.bearer_auth(&token).send().await?.error_for_status().context("Invitation")?;
+    Ok(())
+}
+
+/// Accept an invite to a shared channel for one of your teams, or decline
+/// it (Teams' acceptInvitationByInvitee: `POST {provisioning}/users/me/
+/// invitations/{id}/accept {targetTeamThreadMri: <team thread>}` → state
+/// Pending (the channel's owner approves);
+/// declineInvitationByInvitee: `…/decline`).
+pub async fn answer_invitation(client: &TeamsClient, invitation: &str, accept_for_team_thread: Option<&str>) -> Result<()> {
+    anyhow::ensure!(!invitation.is_empty() && !invitation.contains(['/', '?', '#']), "Not an invitation");
+    let (base, token) = provisioning(client).await?;
+    let rq = match accept_for_team_thread {
+        Some(thread) => {
+            anyhow::ensure!(thread.starts_with("19:"), "Pick a team");
+            client.http().post(format!("{base}/users/me/invitations/{}/accept", enc(invitation))).json(&serde_json::json!({ "targetTeamThreadMri": thread }))
+        }
+        None => client
+            .http()
+            .post(format!("{base}/users/me/invitations/{}/decline", enc(invitation)))
+            .header(reqwest::header::CONTENT_TYPE, "application/json"),
+    };
+    rq.bearer_auth(&token).send().await?.error_for_status().context("Invitation")?;
+    Ok(())
 }
 
 /// Shared-channel invitations to your teams, as Teams reads them:
@@ -1961,6 +2179,18 @@ mod tests {
             "channelInvitation": {"channelDisplayName": "Design", "channelOrganizationName": "Contoso", "channelPrefixedId": "OID:g@t2"}}]});
         let i = &invitations_from(&v)[0];
         assert_eq!((i.state.as_str(), i.channel.as_str(), i.inviter.as_str(), i.channel_tenant.as_str()), ("Sent", "Design", "Someone", "t2"));
+    }
+
+    #[test]
+    fn channel_members_go_as_teams_sends_them() {
+        let b = channel_members_body(
+            &[("8:orgid:1b2c3d4e-0000-4000-8000-000000000001".into(), false), ("8:orgid:1b2c3d4e-0000-4000-8000-000000000002".into(), true), ("bad".into(), false)],
+            "tid",
+        );
+        assert_eq!(b, serde_json::json!({ "users": [
+            { "id": "OID:1b2c3d4e-0000-4000-8000-000000000001@tid", "role": 1 },
+            { "id": "OID:1b2c3d4e-0000-4000-8000-000000000002@tid", "role": 2 }
+        ] }));
     }
 
     #[test]

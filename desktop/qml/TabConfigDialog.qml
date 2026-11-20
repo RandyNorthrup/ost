@@ -232,11 +232,14 @@ Popup {
         x: 24.7; y: root.update ? 93.9 : 75.9; width: 550.7; height: root.update ? 412 : 452.8
         sourceComponent: WebApp {
             showHeader: false; appName: root.app ? root.app.name : ""; appId: root.app ? root.app.id : ""
-            home: root.app && !root.update ? root.app.config_url : ""
-            // Settings: the page with the tab's own context (its entity),
-            // its address filled from that context as Teams fills it.
-            homeTemplate: root.update ? root.app.config_url : ""
+            // The page's address filled from the tab's context as Teams
+            // fills it (the team's site for SharePoint); Settings adds the
+            // tab's own entity.
+            homeTemplate: root.app ? root.app.config_url : ""
             hostContext: root.update ? ({ entityId: root.updating.entity_id || "", subEntityId: "" }) : ({})
+            // Settings: the page asks for the tab's current settings
+            // (settings.getSettings), as Teams answers them.
+            hostTabSettings: root.update ? ({ entityId: root.updating.entity_id || "", contentUrl: root.updating.content_url || "", websiteUrl: root.updating.website_url || "", suggestedDisplayName: root.updating.name || "" }) : null
             hostTabId: root.update ? root.updating.id : ""
             teamsHost: true; frameContext: "settings"; hostThread: root.conversationId; hostTeamThread: root.teamThread
             onHostEvent: (name, json) => {

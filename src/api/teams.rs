@@ -285,7 +285,14 @@ pub fn list_teams_from(v: &serde_json::Value) -> Vec<ListTeam> {
                         .or_else(|| c.get("creationTime").and_then(|v| v.as_str()))
                         .unwrap_or_default()
                         .to_string(),
-                    channel_type: c.get("channelType").and_then(|v| v.as_u64()).unwrap_or(0).min(2) as u8,
+                    // CSA says channelType 1 for private and shared alike;
+                    // threadSubType / isShared tell them apart.
+                    channel_type: match s(c, "threadSubType").as_str() {
+                        "SharedChannel" => 2,
+                        "PrivateChannel" => 1,
+                        _ if b(c, "isShared") => 2,
+                        _ => c.get("channelType").and_then(|v| v.as_u64()).unwrap_or(0).min(1) as u8,
+                    },
                     archived: b(c, "isArchived"),
                     // A private or shared channel's own site (Teams names
                     // a file's team from it in search).

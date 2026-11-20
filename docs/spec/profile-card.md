@@ -82,3 +82,31 @@ the 1:1 chat header.
   - The LinkedIn tab and button (an embedded linkedin.com page).
   - Teams' full org chart layout on the Organization tab.
   - Opening from search results.
+
+## Organization tab: Teams' org chart (TASK-0133, measured on winpc 2026-11-20)
+
+- **Data:** Loki, not Graph: `POST https://nam.loki.delve.office.com/api/v2/graphql?
+  operationName=useOrgExplorerQueryRef_OrganizationQuery` with a Loki token (Teams'
+  lokiTokenResourceUrl `https://loki.delve.office.com/`, aud 394866fc…), headers
+  `x-clientfeature: LivePersonaCard`, `x-clienttype: Teams`, `x-clientscenario:
+  GetOrgExplorerV2`; variables `{personIds {aadObjectId, smtp}, directsToLoad 20,
+  worksWithToLoad 25, …}`. The answer is multipart (`@defer`): `orgexplorer.
+  personInFocusV2` with `managerChainTopToBottom`, `directs`, `workingWith` and
+  presence. A manager set in Entra took about a day to reach Loki.
+- **Layout** (the 750.67 area 40 in, under the #FAFAFA navigation bar with Home /
+  Back to previous profile / Next profile):
+  - each manager (top first): a 495.4 x 84 card 127.6 in (0.67 #E0E0E0, radius 4),
+    the 48 px picture at 12.7, 18, the name 14/20 semibold, their reports count
+    with a people glyph at the right (12 px #424242); linked down to the next;
+  - the person in focus: 495.4 x 156.7 (the 64 px picture at 16.7, the name 16/22
+    semibold at 92.7; under a #F0F0F0 line at 100, "View profile" 127 x 31.3 with
+    a contact-card glyph, and "{n} report(s)" / "{n} direct" 10/14 semibold at the
+    right when they have reports);
+  - "People reporting to **{name}**" between rules, 16 under, then 369.3 x 85.3
+    report cards in two columns (48 px picture, name 14 semibold, job title,
+    location; a View profile glyph at the top right);
+  - "**{name}** also works with" (your own card: "**You** work with") with an info
+    button, then 128.6 x 140 tiles 12 apart.
+  - A card or tile makes that person the one in focus; View profile opens Overview.
+- OST: `api::profile::org_chart` (the query cut to the drawn fields), `ProfileCard`
+  Organization, `--profile-org-test`.

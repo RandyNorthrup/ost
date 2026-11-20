@@ -106,6 +106,8 @@ Item {
                 ? { key: "show", label: qsTr("Show"), icon: "eye-20" }
                 : { key: "hide", label: qsTr("Hide"), icon: "eye-off-20" },
             { separator: true },
+            // A private channel's owners (Teams, measured 2026-11-20).
+            root.channel.channel_type === 1 && (root.channel.owner === true || root.teamOwner) ? { key: "addMembers", label: qsTr("Add members"), icon: "person-add-20" } : null,
             { key: "edit", label: qsTr("Edit channel"), icon: "edit-20" },
             root.threads ? null : { key: "manage", label: qsTr("Manage channel"), icon: "settings-20" },
             { key: "link", label: qsTr("Copy link"), icon: "link-20" },
@@ -128,6 +130,7 @@ Item {
             else if (k === "window") root.openInNewWindow()
             else if (k === "reorder") root.startReordering(root.reorderGroup, root.channel.id)
             else if (k === "hide" || k === "show") root.act(k)
+            else if (k === "addMembers") { const team = JSON.parse(backend.teamsJson || "[]").find(x => x.id === root.teamId) || {}; shareMembers.shareMode = false; shareMembers.startChannel(root.teamId, team.thread_id || "", root.teamName, root.channel.id, root.channel.name) }
             else if (k === "edit") editDialog.start(root.channel)
             else if (k === "manage") root.manageChannel()
             else if (k === "link") root.act("copy-link", root.channel.name)
@@ -144,6 +147,8 @@ Item {
         }
     }
     SectionDialog { id: sectionDialog; existing: root.folderList.map(f => f.title) }
+    // A private channel's Add members (Teams' item before Edit channel).
+    AddMembersDialog { id: shareMembers; parent: Overlay.overlay }
 
     // Manage notifications ▸
     Popup {

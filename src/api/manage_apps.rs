@@ -103,7 +103,10 @@ pub fn merge(
         .iter()
         .filter_map(|(id, _)| definitions.get(id)?.get("officeAssetId")?.as_str().map(str::to_string))
         .collect();
-    for d in shared {
+    // Teams keeps shared apps in its store by id, so that's their order.
+    let mut shared_sorted: Vec<&serde_json::Value> = shared.iter().collect();
+    shared_sorted.sort_by_key(|d| d.get("id").and_then(|v| v.as_str()).unwrap_or_default().to_lowercase());
+    for d in shared_sorted {
         if d.get("state").and_then(|v| v.as_str()).is_some_and(|s| s != "Installed") {
             continue;
         }
@@ -166,6 +169,25 @@ pub fn merge(
         !a.id.is_empty() && !hidden.iter().any(|h| h.eq_ignore_ascii_case(&a.id) || (!bot.is_empty() && h.to_lowercase().trim_start_matches("28:") == bot))
     });
     out
+}
+
+/// A team's apps from an aggregatedEntitlements answer asked with team
+/// threads: each `teamsEntitlements[thread]` entry's definition with its
+/// state.
+pub fn team_apps_from(agg: &serde_json::Value, thread: &str) -> Vec<serde_json::Value> {
+    let defs = agg.pointer("/value/definitions").cloned().unwrap_or_default();
+    agg.pointer("/value/teamsEntitlements")
+        .and_then(|t| t.get(thread))
+        .and_then(|l| l.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|e| {
+            let id = e.get("id")?.as_str()?;
+            let mut d = defs.get(id).cloned().filter(|d| d.is_object()).unwrap_or_else(|| serde_json::json!({ "id": id }));
+            d["state"] = e.get("state").cloned().unwrap_or_default();
+            Some(d)
+        })
+        .collect()
 }
 
 /// Teams' sorts: "Recently used" (the usage order, the rest after in
@@ -244,19 +266,33 @@ pub async fn installed(client: &TeamsClient, how: &str) -> Result<Vec<InstalledA
         if !thread.starts_with("19:") || thread.len() > 200 {
             continue;
         }
-        let enc = tabs::encode_uri_component(&thread);
-        let apps: Vec<serde_json::Value> = async {
-            let v: serde_json::Value = client.http().get(format!("{base}/beta/chats/{enc}/apps/entitlements")).bearer_auth(&token).send().await?.error_for_status()?.json().await?;
-            anyhow::Ok(v.as_array().cloned().unwrap_or_default())
-        }
-        .await
-        .unwrap_or_default();
         let place = AppPlace {
             thread,
             name: t.get("displayName").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
             group_id: group,
         };
-        teams.push((place, apps));
+        teams.push((place, Vec::new()));
+    }
+    // The apps installed in your teams, as Teams' teamInstalledAppsManager
+    // gets them: the same aggregated entitlements with the teams' threads
+    // as the body (`teamsEntitlements`: thread → [{id, state}], with their
+    // definitions).
+    let threads: Vec<String> = teams.iter().map(|(p, _)| p.thread.clone()).collect();
+    if !threads.is_empty() {
+        let agg: serde_json::Value = client
+            .http()
+            .post(format!("{base}/beta/users/apps/aggregatedEntitlements?appbarview=userpinned"))
+            .bearer_auth(&token)
+            .json(&threads)
+            .send()
+            .await?
+            .error_for_status()
+            .context("Your teams' apps")?
+            .json()
+            .await?;
+        for (place, apps) in teams.iter_mut() {
+            *apps = team_apps_from(&agg, &place.thread);
+        }
     }
     // Teams hides the multimodal AI bot (ECS calling.enableMultiModalAiHideBot,
     // on; multiModalAiBotId, Teams' default below when ECS leaves it out).
@@ -351,5 +387,19 @@ mod tests {
         assert_eq!(apps[0].name, "Surveys");
         sort(&mut apps, "az", &[]);
         assert_eq!(apps[0].name, "Lists");
+    }
+
+    #[test]
+    fn team_apps_come_with_their_definitions() {
+        let agg = serde_json::json!({ "value": {
+            "teamsEntitlements": { "19:t@thread.tacv2": [{ "id": "l1", "state": "Installed" }, { "id": "x", "state": "NotInstalled" }] },
+            "definitions": { "l1": { "id": "l1", "name": "Lists", "developerName": "Microsoft Corporation" } }
+        }});
+        let apps = team_apps_from(&agg, "19:t@thread.tacv2");
+        assert_eq!(apps.len(), 2);
+        assert_eq!(apps[0]["name"], "Lists");
+        assert_eq!(apps[0]["state"], "Installed");
+        assert_eq!(apps[1]["id"], "x");
+        assert!(team_apps_from(&agg, "19:other@thread.tacv2").is_empty());
     }
 }

@@ -181,6 +181,7 @@ fn main() {
         "qml/ChannelModeration.qml",
         "qml/ModeratorsDialog.qml",
         "qml/AddMembersDialog.qml",
+        "qml/ShareChannelDialog.qml",
         "qml/TagsView.qml",
         "qml/TagDialog.qml",
         "qml/TeamActionDialog.qml",

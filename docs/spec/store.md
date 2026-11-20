@@ -263,12 +263,68 @@ OST: `api::devices`, `StoreView.qml` (device pages, the band, the filter),
   InstalledAndFavorited / PreConsented, apps shared with you (`GET
   {mt}/beta/users/apps/entitlements`, enableSharedInstalledAppsInManageApps;
   a shared copy of an Office asset you have shows once), and apps installed
-  in your teams (`GET {mt}/beta/chats/{team thread}/apps/entitlements`,
-  Installed / AdminPreInstalled / InstalledAndFavorited); the multimodal AI
-  bot hidden. Sorted by your apps usage (`beta/users/apps/usage`), the rest
-  after. Expanded: "Recently used" (i) then "Personal app" and each team
+  in your teams (TASK-0237: the same `aggregatedEntitlements` POST with your
+  teams' threads as the body answers `teamsEntitlements` {thread: [{id,
+  state}]} with the definitions; `GET {mt}/beta/chats/{team thread}/apps/
+  entitlements` only gives the tenant's permanent apps, so SharePoint Pages,
+  Forms, Lists and the SharePoint tab app were missing; Installed /
+  AdminPreInstalled / InstalledAndFavorited); the multimodal AI bot hidden.
+  Sorted by your apps usage (`beta/users/apps/usage` `apps`, the order
+  Teams keeps), the rest after in Teams' insertion order (shared, personal,
+  then your teams' apps), updates first. Expanded: "Recently used" (i) then "Personal app" and each team
   with Remove (`DELETE {mt}/beta/{users|teams/{thread}}/apps/entitlements/{app}`
   after "Remove {app}?").
 - Upload an app: a 600 wide dialog with one card, "Submit an app to your
   org" (a .zip for your admin: `POST {mt}/beta/users/tenantapps/definitions/
   appPackage`, uploadTenantStagedApp). Not submitted from OST in tests.
+
+## 8. App bar and View more apps (measured on winpc 2026-11-20, TASK-0238)
+
+**Data.** The bar and its flyout are your personal apps: `POST {mt}/beta/users/
+apps/aggregatedEntitlements?appbarview=userpinned` (body `[]`), each
+entitlement with `isAppBarPinned` and `appBarOrder`. The bar shows the pinned
+ones by order (Activity 1, Chat 3, Chat-separate 4, Teams 5, Calendar 6, Calls
+7, OneDrive 8, Copilot 9 for ost-test1), View more apps the rest. Core ids
+(async-entry module 318854): activity 14d6962d…, chat (separate view)
+86fcd49b…, simple collab (unified Chat) 3b64df9d…, channel (Teams)
+2a84919f…, calendar ef56c0de…, calling 20c3440d…, files 5af6a76b…, Events
+a63f7012…, People 7831feaf…, Meeting Recaps 981bbfd0…, Store ac40aa4a…,
+Copilot b5abf2ae… (a platform app). Store keeps its own place after the
+pinned apps; Copilot opens the Microsoft 365 Copilot app's page full screen.
+
+**Pinning** (worker `appBarManager`; captured): Pin gives the app the highest
+order + 1; Unpin removes it and moves every app after it up one; Move up /
+Move down give the app its visible neighbour's order (`reorderApp`: the apps
+in between shift one). Each change posts `POST {mt}/beta/users/apps/pinned
+{"appBarPinnedApps": [{appId, appBarOrder}, …]}` with the changed apps first,
+then every other pinned app; unpinned ones are left out. E.g. Calendar 6 ▸
+Move up (unified view, neighbour Chat 3): Calendar 3, Chat 4, Chat-separate 5,
+Teams 6.
+
+**Store's Unpin** is the appBar client preference `isStoreUnpinned` (kept on
+the device); Store then is the flyout's last row under a divider, with Pin.
+
+**The tile menu** (TileContextMenu, 180 wide here; beside the bar, centred
+on the tile): groups split by dividers — Open in new window | About, Share
+app, the app's own actions (Chat: New message Ctrl+N, New message in new
+window Ctrl+Shift+N; bots: Block bot conversation) | Move up, Move down (not at
+the ends), Pin or Unpin | Uninstall | Customize app bar. About and Share app
+only for platform apps (OneDrive, Copilot, Word…), not core ones; Uninstall
+only when Teams' canBeUnacquired: not core and the state isn't
+InstalledAndPermanent, AdminPreInstalled or RequireConsent. View more apps'
+rows have the same menu without moves and Customize app bar (Events: Open in
+new window, Pin; People and Meeting Recaps: Pin). Icons: open-window,
+info, share-invite, arrow-up, arrow-down, pin / pin-off, delete, settings.
+
+**Uninstall** asks "Remove {app}" / "Are you sure you want to remove {app}?"
+(Cancel, Remove; 420 wide), then `DELETE {mt}/beta/users/apps/entitlements/
+{app}` and reloads your apps.
+
+**Customize app bar** opens Settings ▸ Appearance (`openSettingPage`,
+settingId `app-bar-settings`) with the App bar card in view and focus on Show
+app names' switch (its focus outline drawn).
+
+**The flyout**: 300 wide, centred on View more apps, a 268 x 32 search box 15
+in and 13 down, rows 269 x 40 on a 42 px pitch from 55 (eight in view, the rest
+scroll): a platform app's colour icon (24), a core app's glyph in a bordered
+28 px tile, the name at 42.

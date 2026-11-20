@@ -137,6 +137,17 @@ Item {
         property bool stateLabel: true
         signal toggled(bool on)
         width: 40 + (stateLabel ? 12 + stateText.implicitWidth : 0); height: 20
+        activeFocusOnTab: usable
+        Keys.onSpacePressed: if (usable) toggled(!on)
+        // Teams' focus outline (a 2 px strokeFocus2 edge 9 px around the
+        // state text and the switch, radius 4), as Customize app bar shows
+        // it on Show app names.
+        Rectangle {
+            visible: tg.activeFocus
+            anchors.fill: parent; anchors.margins: -9
+            radius: 4; color: "transparent"
+            border.width: 2; border.color: theme.hc("#000000", "#FFFFFF")
+        }
         Text {
             id: stateText
             visible: tg.stateLabel
@@ -207,6 +218,7 @@ Item {
             on: sr.on; usable: sr.usable; accessibleName: sr.label
             onToggled: v => sr.toggled(v)
         }
+        function focusSwitch() { toggle.forceActiveFocus(Qt.TabFocusReason) }
     }
 
     // Fluent's Checkbox, 16 px.

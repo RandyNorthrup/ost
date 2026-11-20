@@ -1022,10 +1022,12 @@ Rectangle {
 
             // Teams' App bar card (measured on winpc 2026-11-14).
             SettingsParts.Card {
+                id: appBarCard
                 visible: root.page === "appearance"
                 icon: "panel-left-text-20"; title: qsTr("App bar")
                 subtitle: qsTr("Customize your app bar layout and properties")
                 SettingsParts.SwitchRow {
+                    id: appBarNamesRow
                     label: qsTr("Show app names")
                     on: window.appBarNames
                     onToggled: v => { backend.setSetting("appBarShowNames", v ? "true" : "false"); window.appBarNames = v }
@@ -3363,6 +3365,17 @@ Rectangle {
     function showGreenScreen() {
         page = "devices"; subPage = ""
         Qt.callLater(() => { content.contentY = Math.max(0, greenScreenRow.mapToItem(content.contentItem, 0, 0).y - 40) })
+    }
+    /// Teams' openSettingPage({settingCategory, settingId}): the page,
+    /// scrolled to the setting, its first control focused (Customize app
+    /// bar: Appearance, "app-bar-settings", Show app names).
+    function showSetting(category, settingId) {
+        page = category; subPage = ""
+        Qt.callLater(() => {
+            if (settingId !== "app-bar-settings") return
+            content.contentY = Math.max(0, Math.min(pageCol.y + appBarCard.y - 12, content.contentHeight - content.height))
+            appBarNamesRow.focusSwitch()
+        })
     }
     function oofForTest() { return oofPage }
     function scrollForTest() { content.contentY = Math.max(0, content.contentHeight - content.height) }

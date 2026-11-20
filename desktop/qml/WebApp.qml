@@ -102,6 +102,10 @@ Item {
     /// The tab's (or dialog's) part of the app's context: entityId,
     /// subEntityId…; OST adds the user's, the channel's and the team's.
     property var hostContext: ({})
+    /// A tab's current settings, for its Settings page's settings.getSettings
+    /// (Teams answers with the tab's entityId, contentUrl, websiteUrl and
+    /// name).
+    property var hostTabSettings: null
     /// TeamsJS frameContext: content (a tab), settings (its configuration
     /// page), remove, task (a dialog), sidePanel, meetingStage.
     property string frameContext: "content"
@@ -224,7 +228,7 @@ Item {
                                              frameContext: root.frameContext, hostClientType: root.hostClientType, deepNaa: root.deepNaa, context: c,
                                              ssr: root.ssr, allow: root.frameAllow, supports: root.runtimeSupports, shortcuts: root.hostShortcuts,
                                              meetingBoard: root.meetingBoard ? { organizer: root.meetingBoard.organizer || "" } : null,
-                                             video: root.videoApp, extensibleAppContext: root.extensibleAppContext, cart: root.marketplaceCart,
+                                             video: root.videoApp, extensibleAppContext: root.extensibleAppContext, cart: root.marketplaceCart, tabSettings: root.hostTabSettings,
                                              launchDomains: root.launchDomains, launchMicrosoftOwned: root.launchMicrosoftOwned })
         root.hostLoading = true
         web.loadHtml(backend.appHostPage(root.appName), "https://teams.cloud.microsoft/")
