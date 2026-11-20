@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-16T04:53:00Z'
-updated_date: '2026-11-20T01:09:00Z'
+updated_date: '2026-11-20T01:18:00Z'
 labels:
   - desktop
 dependencies: []
@@ -62,4 +62,6 @@ OST lacks these two shortcuts and has the profile choice only in Settings ▸ Ge
 - 2026-11-19 live (linuxlt, real key events via --voice-isolation-test --vi-announce): in the OST calendar test meeting Ctrl+Alt+Shift+S announced "Latest speaker: OST Test 1" (known_speaker) every 5 s; with sign language mode (OST Test 2 Signer, OST Test 1 Interpreter speaking through a virtual mic) OST Test 2's press announced "Latest speaker: You voiced by OST Test 1" (paired_signer), Teams' tethered case. Not yet compared side by side with Teams on winpc (needs the user's OK for winpc GUI/CDP).
 
 - Merged cc5e866 (2026-11-19): see the agent notes above; 791 lib tests passed on linuxlt.
+
+- 2026-11-19 winpc (Teams, CDP key events, aria-live watched): in Teams' Make a test call, Ctrl+Alt+Shift+S announced "Latest speaker: Unknown" (assertive) each time: Teams looks the dominant speaker up in its participants and the Echo bot has no roster displayName. OST said "Latest speaker: Echo" (it names the bot from its profile), so Participant now carries roster_named and the announcement uses only the roster's name. A 1:1 call from OST Test 2 to Teams wasn't answered in time and went to ost-test1's voicemail (a synthetic-voice voicemail is left there).
 <!-- SECTION:NOTES:END -->

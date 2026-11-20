@@ -235,7 +235,9 @@ Popup {
                     color: theme.textStrong
                 }
             }
-            Item { width: 268; height: root.musicInFlyout ? 10 : 5.3 }
+            // 10 before the divider (under the radios, measured on winpc
+            // 2026-11-19; under the music mode row too).
+            Item { width: 268; height: 10 }
             Rectangle { width: 268; height: 1 / Screen.devicePixelRatio; color: theme.divider }
             Item { width: 268; height: 13.3 }
             // More audio settings (a subtle button at the content's edge).

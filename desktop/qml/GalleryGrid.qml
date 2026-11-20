@@ -14,6 +14,10 @@ Item {
     // The column count giving the largest 16:9 tiles. Plain numbers: Qt
     // 6.10's QML compiler crashes on an object literal returned here.
     readonly property int cols: {
+        // Teams' fixed aspect strategy (795066): two people side by side
+        // once the area is at least 1.25 wide for its height
+        // (oneByTwoGridSizeAspectRatioBreakpoint).
+        if (count === 2 && height > 0 && width / height >= 1.25) return 2
         let bestCols = 1, bestW = 0
         for (let c = 1; c <= count; c++) {
             const w = Math.min(width / c, height / Math.ceil(count / c) * 16 / 9)

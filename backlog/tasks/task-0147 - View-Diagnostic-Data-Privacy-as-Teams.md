@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-15T04:40:00Z'
-updated_date: '2026-11-20T01:09:00Z'
+updated_date: '2026-11-20T01:18:00Z'
 labels:
   - settings
 dependencies: []
@@ -58,4 +58,6 @@ Teams' Settings > Privacy > View Diagnostic Data > Manage opens its diagnostic d
 - 2026-11-19 (set2): Microsoft's doc (support.microsoft.com cf761ce9) says Office/Teams data viewing needs DDV v3+ on Windows 10 1803+ and only DDV's own "Office diagnostic data viewing" setting; no Windows privacy setting is mentioned. DDV 4.2209.62104.0 installed on winpc with winget (msstore 9N8WTRRSQ8F7) over ssh. It doesn't run on Linux (UWP). Running it needs winpc's GUI (asked).
 
 - Merged cc5e866 (2026-11-19): see the agent notes above; 791 lib tests passed on linuxlt.
+
+- 2026-11-19 real Diagnostic Data Viewer on winpc: DDV's own Settings > Office data settings (Office diagnostic data viewing on, Remote Office diagnostic data viewing on, port 8000, connection string 10.10.11.64:8000); no Windows privacy setting was needed or touched. OST's first Connect failed: its empty POST had no Content-Length, DDV answered 411 and then stopped answering anyone until restarted. wire.rs now sends Content-Length (0 too), title-cased headers, one connection per request. Then OST connected, and DDV listed the device randy-lt with Ost.UpdateCheck decoded in full (ver 3.0, iKey o:ost, deviceClass Linux.Desktop, timezone -08:00, data.properties AppInfo.ClientType ost, AppInfo.Version 0.1.0, status 200, url, userAgent). Afterwards both DDV toggles were turned off and DDV closed; Teams' own data viewing was never touched.
 <!-- SECTION:NOTES:END -->

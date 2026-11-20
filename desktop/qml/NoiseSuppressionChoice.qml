@@ -13,9 +13,12 @@ import QtQuick.Controls
 // only; unset is Voice isolation once there is a profile), acted on by
 // OST's isolator (calling::voice_isolation, TASK-0181).
 //
-// Fluent v9 Radio: the 16 px indicator with 8 px margins (so the label,
-// whose start padding Teams zeroes, sits 32 in), the 14/20 label with 8 px
-// above and below: 36 px rows.
+// Measured in Teams on winpc in a test call (2026-11-19, flyout and pane
+// alike): Fluent v9 radios in 32 px rows right under the switch row, the
+// 16 px indicator 8 in and 8 down (0.67 px ring: brand when picked,
+// #E0E0E0 when disabled), the 14/20 text 36 in and 6 down (#242424,
+// disabled #BDBDBD), the pane's 24 px info button right after the text,
+// 4 down.
 Column {
     id: root
     /// The Noise suppression switch.
@@ -66,13 +69,13 @@ Column {
         property bool checked
         property bool usable: true
         signal picked()
-        width: root.width; height: 36
-        // Fluent's indicator: 1 px ring (brand when picked, #616161 not,
+        width: root.width; height: 32
+        // Fluent's indicator: a thin ring (brand when picked, #616161 not,
         // the disabled stroke when off) and the 10 px dot.
         Rectangle {
-            x: 8; y: 10; width: 16; height: 16; radius: 8
+            x: 8; y: 8; width: 16; height: 16; radius: 8
             color: "transparent"
-            border.width: 1
+            border.width: 0.67
             border.color: !ch.usable ? theme.divider : ch.checked ? theme.checkedFill : hover.hovered ? theme.textStrong : theme.textSecondary
             Rectangle {
                 visible: ch.checked
@@ -83,12 +86,12 @@ Column {
         // The radio itself (indicator and label) takes the click; the
         // info button after the label keeps its own.
         Item {
-            width: 32 + labelText.implicitWidth; height: parent.height
+            width: 36 + labelText.implicitWidth; height: parent.height
             HoverHandler { id: hover; enabled: ch.usable; cursorShape: Qt.PointingHandCursor }
             TapHandler { enabled: ch.usable && !ch.checked; onTapped: ch.picked() }
         }
         Row {
-            x: 32; y: 8
+            x: 36; y: 6
             Text {
                 id: labelText
                 height: 20

@@ -35,6 +35,10 @@ pub struct Participant {
     /// `8:orgid:<oid>` for people in a tenant.
     pub id: String,
     pub name: String,
+    /// The roster itself names them (Teams' participant displayName); the
+    /// test call's Echo bot is named from its profile instead, and Teams'
+    /// Announce active speaker calls it "Unknown".
+    pub roster_named: bool,
     /// Teams' meeting role: "organizer", "presenter", "attendee"… (may be empty).
     pub role: String,
     /// Still in the meeting.
@@ -261,6 +265,7 @@ fn delta_on(json: &str, prefix: &str) -> Option<Vec<Participant>> {
                     });
                 Participant {
                     id: mri.to_ascii_lowercase(),
+                    roster_named: !s("/details/displayName").is_empty(),
                     // The test call's Echo bot is named in its profile
                     // ("Echo"), not always in the roster.
                     name: Some(s("/details/displayName"))

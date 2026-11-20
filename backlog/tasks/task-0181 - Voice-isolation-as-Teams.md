@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-16T04:53:00Z'
-updated_date: '2026-11-20T01:22:00Z'
+updated_date: '2026-11-20T01:18:00Z'
 labels:
   - desktop
 dependencies: []
@@ -72,6 +72,8 @@ Teams' noise suppression offers Voice isolation using your voice profile; OST sh
 - 2026-11-19 the choice in a live meeting (linuxlt, OST_VOICE_PROFILE_WAV, --vi-audio-ui): Audio settings pane: Noise suppression switch (no info), Background noise only (i) / Voice isolation (i), Voice isolation picked; Mic flyout: the same radios without info buttons. Geometry is Fluent v9's; winpc measurement pending the user's OK.
 
 - Merged cc5e866 (2026-11-19): see the agent notes above; 791 lib tests passed on linuxlt.
+
+- 2026-11-19 measured on winpc (Teams test call, DOM): flyout and pane alike, radios in 32 px rows right under the 36 px switch row; indicator 16 px at (8,8), 0.67 px ring (brand #5B5FC7 picked, #E0E0E0 disabled); text 14/20 at x 36, y 6 (#242424, disabled #BDBDBD); the pane's 24 px info buttons right after the text, 4 down; flyout: 10 to the divider below. Voice isolation disabled there (no profile). OST's NoiseSuppressionChoice set to these. Teams' flyout also has a Spatial audio row above Noise suppression (not in OST's flyout: follow-up).
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

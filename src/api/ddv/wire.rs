@@ -173,18 +173,30 @@ fn url(target: (std::net::Ipv4Addr, Option<u16>)) -> String {
 
 fn post(http: &reqwest::Client, url: &str, body: Vec<u8>) -> reqwest::RequestBuilder {
     let host = std::fs::read_to_string("/etc/hostname").map(|h| h.trim().to_string()).unwrap_or_default();
+    // The viewer wants the length even of the empty Connect POST (Teams
+    // sends "Content-Length: 0"); without it Microsoft's Diagnostic Data
+    // Viewer answers 411 and then stops answering anyone (seen on winpc,
+    // DDV 4.2209, 2026-11-19).
+    let len = body.len();
     http.post(url)
         .header("Accept", "*/*")
         .header("App-Name", APP_NAME)
         .header("App-Platform", APP_PLATFORM)
         .header("Content-Type", "Application/bond-compact-binary")
         .header("Machine-Identifier", host)
+        .header("Content-Length", len)
         .header("Cache-Control", "no-cache")
         .body(body)
 }
 
+/// Each request on a connection of its own, its headers title-cased as
+/// Teams' host sends them.
 fn client() -> Result<reqwest::Client> {
-    Ok(reqwest::Client::builder().timeout(std::time::Duration::from_secs(10)).build()?)
+    Ok(reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .http1_title_case_headers()
+        .pool_max_idle_per_host(0)
+        .build()?)
 }
 
 /// Teams' Connect: the viewer answers a GET and an empty POST.

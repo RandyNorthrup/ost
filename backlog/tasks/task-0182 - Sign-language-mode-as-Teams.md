@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-16T04:53:00Z'
-updated_date: '2026-11-20T00:35:00Z'
+updated_date: '2026-11-20T01:49:00Z'
 labels:
   - desktop
 dependencies: []
@@ -65,4 +65,7 @@ OST saves Teams' sign language setting but doesn't act on it.
 - 2026-11-19 live two-account run (OST calendar test meeting, linuxlt): OST Test 2 = Signer naming OST Test 1, camera a v4l2loopback device (/dev/video22, removed after) playing the CC BY-SA ASL demo clip; OST Test 1 = Interpreter. OST Test 2 detected signing and sent 259 data id 25 events (start / still signing / stop); OST Test 1 received them (active signers 1), showed the waveform badge (tethered: OST Test 1; tooltip "Voice interpretation in progress" as the interpreter) and the speaking outline, with OST Test 2 featured in the Sign language view and their video focused (HQ). On the signer's side the badge tooltip read "OST Test 1 is voice interpreting". Both left (hung up 202); both accounts put back to mode off with no interpreters.
 
 - Merged cc5e866 (2026-11-19): see the agent notes above; 791 lib tests passed on linuxlt.
+
+- 2026-11-19 three-account pin area check (linuxlt, OST calendar test meeting): ost-test1 pinned OST Test 2 and OST Test 3 (--vi-pin-all=2): both went to the pin area (pins/featured in pin order), their videos were focused (video focus count 2) and took slots; unpinned 30 s later (pins []). Two pinned on an 864x560 area first stacked 2x1; GalleryGrid now follows Teams' 1x2 rule for two people (aspect >= 1.25, oneByTwoGridSizeAspectRatioBreakpoint) and showed them side by side. All three left (hung up 202). test3's sign language settings were not touched.
+- Open (OST bug seen, not this task): people who join before the organizer wait in the lobby and the organizer's lobby list stays empty, so they are never admitted.
 <!-- SECTION:NOTES:END -->

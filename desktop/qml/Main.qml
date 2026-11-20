@@ -6715,6 +6715,7 @@ Window {
         interval: 5000; repeat: true
         property int live: 0
         property var keys: null
+        property int pinnedAt: 0
         function num(n) { return parseInt((Qt.application.arguments.find(a => a.startsWith("--vi-" + n + "-at=")) || "=0").split("=")[1]) || 0 }
         onTriggered: {
             if (!callWindow.live) { if (live > 0) console.warn("VITEST call", backend.callState); return }
@@ -6734,6 +6735,13 @@ Window {
                 signing: w.signingIds, camera: backend.callCameraOn,
                 badges: w.others.concat([w.selfEntry]).filter(p => w.isSigning(p.self ? w.selfId : p.id)).map(p => [p.name, w.tetheredOf(p).map(q => q.name), w.signingTooltip(w.tetheredOf(p))]),
                 stage: w.stageForTest() }))
+            // --vi-pin-all=<n>: once <n> others are in the call, Pin for me
+            // on each of them (the pin area); 30 s later they are unpinned.
+            const pinAll = parseInt((Qt.application.arguments.find(a => a.startsWith("--vi-pin-all=")) || "=0").split("=")[1]) || 0
+            if (pinAll > 0) {
+                if (!pinnedAt && w.others.length >= pinAll) { w.others.forEach(p => w.pinPerson(p.id)); pinnedAt = secs }
+                else if (pinnedAt && secs === pinnedAt + 30) w.others.forEach(p => w.unpinPerson(p.id))
+            }
             // --vi-audio-ui: the Audio settings pane (10 s), then the Mic
             // flyout (20 s), with their noise suppression choice.
             if (Qt.application.arguments.indexOf("--vi-audio-ui") >= 0) {

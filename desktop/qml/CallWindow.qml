@@ -4294,6 +4294,12 @@ Window {
         enabled: lobbyToast.visible && win.lobby.length === 1 && !win.lobby[0].suspected
         onActivated: win.admitLobby(win.lobby[0].id, win.lobby[0].name, false)
     }
+    /// The stage as laid out (harness lines): the speaker tile, the
+    /// focused or pin area, whose video is focused.
+    function stageForTest() {
+        return { speaker: tiles.speaker ? tiles.speaker.name || "" : "", featured: tiles.featuredList.map(p => p.name || ""),
+                 focus: videoFocus, pins: pinnedIds, layout: layout }
+    }
     // Teams' "Announce active speaker (screen reader)" (calling-app nz):
     // Ctrl+Alt+Shift+S, Ctrl+2 with Zoom's shortcuts; the screen reader
     // says "Latest speaker: <name>" (Unknown with no name), or "Nobody is
@@ -4304,17 +4310,14 @@ Window {
     // language interpreter tethered to a signer (Teams' tethering: the
     // signer's interpreterIds), it is "<signer> voiced by <interpreter>",
     // with "You" when you are that signer.
-    /// The stage as laid out (harness lines): the speaker tile, the
-    /// focused or pin area, whose video is focused.
-    function stageForTest() {
-        return { speaker: tiles.speaker ? tiles.speaker.name || "" : "", featured: tiles.featuredList.map(p => p.name || ""),
-                 focus: videoFocus, pins: pinnedIds, layout: layout }
-    }
     function announceActiveSpeaker() {
         const id = win.speakerId
         const p = !id ? null : (id === win.selfId ? { name: win.selfName } : win.others.find(o => o.id === id))
         const named = n => (n || "").trim() || qsTr("Unknown")
-        let who = p ? (p.name || "").trim() : ""
+        // Teams reads the roster's display name: the test call's Echo bot
+        // has none there (OST names it from its profile), so Teams says
+        // "Unknown" (seen on winpc, 2026-11-19).
+        let who = p && p.roster_named !== false ? (p.name || "").trim() : ""
         let kase = !p ? "nobody_speaking" : who ? "known_speaker" : "unknown_speaker"
         if (p && p.sign_role === "signLanguageInterpreter") {
             let signer = ""
