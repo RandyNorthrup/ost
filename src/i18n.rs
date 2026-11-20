@@ -51,7 +51,17 @@ pub const IDS: &str = include_str!("../desktop/i18n/ids.json");
 pub fn install(catalogue: Option<&str>, locale: &str) -> anyhow::Result<()> {
     let cat = Catalogue::new(IDS, catalogue, locale)?;
     *CATALOGUE.write().unwrap() = Some(Arc::new(cat));
+    *LOCALE.write().unwrap() = if catalogue.is_some() { locale.to_string() } else { String::new() };
     Ok(())
+}
+
+static LOCALE: RwLock<String> = RwLock::new(String::new());
+
+/// The app language's string locale ("de-de") while a translated catalogue
+/// is in use; empty in English. Services that word text for Teams (meeting
+/// options' `translations`) are asked in it, as Teams' Accept-Language.
+pub fn locale() -> String {
+    LOCALE.read().unwrap().clone()
 }
 
 impl Catalogue {

@@ -13,10 +13,14 @@ are kept in the repository.
 
     l10n.py strings <hashed-assets dir> <strings.json>
         Read Teams' string resources (teams_strings.py) into one file.
+    l10n.py extra <strings.json> <hashed-assets dir> <cache dir>
+        Read the string tables of Teams' other bundles (extra_strings.py,
+        extra_sources.json: the clip recorder, OneDrive's web apps) into
+        <strings>-extra.json, which `gen` then uses too.
     l10n.py gen <strings.json> [<hashed-assets dir> <Teams version>]
         Key OST's strings to Teams ids (ids.json, untranslated.txt) and,
         given the assets, list each locale's resource files
-        (teams_resources.json).
+        (teams_resources.json, its `extra` from <strings>-extra.json).
     l10n.py find <strings.json> <text>
         Teams' en-us strings containing <text> (to pick ids by hand).
     l10n.py flips <hashed-assets dir>
@@ -366,11 +370,27 @@ def choose(teams, cands, locales):
 TEAMS_CDN = "https://statics.teams.cdn.office.net/teams-modular-packages/hashed-assets/"
 
 
+def extra_path(strings_path):
+    return os.path.splitext(strings_path)[0] + "-extra.json"
+
+
 def gen(strings_path, assets_dir=None, teams_version=""):
     teams = json.load(open(strings_path, encoding="utf-8"))
     locales = sorted(teams)
+    # Teams' other bundles ("x.…" namespaces): only for text its main
+    # table doesn't have.
+    extra = {"strings": {}, "files": {}}
+    if os.path.exists(extra_path(strings_path)):
+        extra = json.load(open(extra_path(strings_path), encoding="utf-8"))
+        for loc, nss in extra["strings"].items():
+            if loc in teams:
+                # Their texts aren't ICU: an apostrophe is just one
+                # ("Filter by '{0}'"), so it is quoted as ICU's ''.
+                teams[loc].update({ns: {k: v.replace("'", "''") for k, v in t.items()} for ns, t in nss.items()})
     by_text = index_en(teams)
     found = qml_strings()
+    srcs = json.load(open(os.path.join(HERE, "extra_sources.json"), encoding="utf-8"))["sources"]
+    used_in = {ns: set(cfg.get("usedIn", [])) for ns, cfg in srcs.items()}
     ids = []
     missing = []
     for (source, dis) in sorted(found):
@@ -384,6 +404,13 @@ def gen(strings_path, assets_dir=None, teams_version=""):
         else:
             for form in teams_forms(source):
                 cands = by_text.get(form)
+                if cands and any(not c.startswith("x.") for c in cands):
+                    cands = [c for c in cands if not c.startswith("x.")]
+                # another bundle's text only on the screens that bundle is
+                # (OneDrive's for OneDrive's views, Outlook's for Calendar)
+                if cands:
+                    where = {w.split(":")[0] for w in found[(source, dis)]}
+                    cands = [c for c in cands if not c.startswith("x.") or where <= used_in.get(c.split(":")[0], set())]
                 if cands:
                     # By text, Teams' plain-text strings first (its rich-text
                     # ones, with <0></0> components, are named by id).
@@ -428,6 +455,8 @@ def gen(strings_path, assets_dir=None, teams_version=""):
                 if loc != "en-us" and needed & set(nss):
                     files[loc].append(f[:-3] if f.endswith(".gz") else f)
         manifest = {"teamsVersion": teams_version, "base": TEAMS_CDN, "files": {k: sorted(v) for k, v in sorted(files.items())}}
+        used = {sid.split(":", 1)[0] for _, _, sid in ids if sid.startswith("x.")}
+        manifest["extra"] = {ns: {**e, "files": dict(sorted(e["files"].items()))} for ns, e in sorted(extra["files"].items()) if ns in used}
         with open(os.path.join(HERE, "teams_resources.json"), "w", encoding="utf-8") as out:
             json.dump(manifest, out, indent=1)
             out.write("\n")
@@ -480,6 +509,13 @@ if __name__ == "__main__":
         res = teams_strings.read_dir(sys.argv[2])
         with open(sys.argv[3], "w", encoding="utf-8") as out:
             json.dump(res, out, ensure_ascii=False)
+    elif cmd == "extra":
+        import extra_strings
+
+        teams = json.load(open(sys.argv[2], encoding="utf-8"))
+        s, f = extra_strings.collect(sorted(teams), sys.argv[3], sys.argv[4])
+        with open(extra_path(sys.argv[2]), "w", encoding="utf-8") as out:
+            json.dump({"strings": s, "files": f}, out, ensure_ascii=False)
     elif cmd == "gen":
         gen(sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else None, sys.argv[4] if len(sys.argv) > 4 else "")
     elif cmd == "find":

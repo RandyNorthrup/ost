@@ -89,10 +89,14 @@ impl MeetingOptions {
 pub async fn get(client: &TeamsClient, tenant: &str, organizer: &str, thread: &str, message: &str) -> Result<MeetingOptions> {
     check_ids(tenant, organizer, thread, message)?;
     let (base, token) = super::tabs::middle_tier(client).await?;
-    let v: Value = client
-        .http()
-        .get(format!("{base}{}", options_path(tenant, organizer, thread, message)))
-        .bearer_auth(&token)
+    // Teams asks in its app language: the reply's `translations` (the
+    // dialog's labels and descriptions) come back in it.
+    let mut req = client.http().get(format!("{base}{}", options_path(tenant, organizer, thread, message))).bearer_auth(&token);
+    let lang = crate::i18n::locale();
+    if !lang.is_empty() {
+        req = req.header("accept-language", lang);
+    }
+    let v: Value = req
         .send()
         .await?
         .error_for_status()

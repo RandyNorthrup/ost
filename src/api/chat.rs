@@ -1009,6 +1009,7 @@ pub fn backroom_title(kind: &str, title: &str) -> String {
         "meeting" => crate::i18n::fill(&crate::i18n::tr_id("Planning group: %1", "messaging:k21d43hht"), &[title]),
         _ => title.to_string(),
     }
+}
 
 /// Your notes-to-self chat's name, as Teams lists it: "{you} (You)"
 /// (chat_self_chat_header_title, in the app language).

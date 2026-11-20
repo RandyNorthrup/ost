@@ -17,6 +17,12 @@
 //!   "other": …}`), its count `%n`;
 //! - Teams' product name becomes OST (`ostify`), for strings that name it.
 //!
+//! Text Teams shows from its other bundles (the clip recorder, OneDrive's
+//! and Stream's web apps, …) keeps its translations outside that table:
+//! webpack chunks whose modules are JSON string tables, one chunk per
+//! language (teams_resources.json's `extra`, also pinned to the build that
+//! Teams 26304 loads). Their ids are `x.<source>:<module>.<key path>`.
+//!
 //! The catalogue is cached (written atomically); the desktop's translator
 //! reads it.
 
@@ -37,6 +43,29 @@ pub struct Resources {
     pub teams_version: String,
     pub base: String,
     pub files: HashMap<String, Vec<String>>,
+    /// String tables from Teams' other bundles, by namespace (`x.…`).
+    #[serde(default)]
+    pub extra: HashMap<String, ExtraSource>,
+}
+
+/// One of Teams' other string bundles: a webpack chunk of JSON modules per
+/// language.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ExtraSource {
+    /// Where its files are.
+    pub base: String,
+    /// Its keys start with the module's id (the same in every language's
+    /// chunk); else only the key path counts.
+    #[serde(default)]
+    pub ids: bool,
+    /// "json": modules holding `JSON.parse('…')` tables (OneDrive's resx
+    /// chunks); "esm": an ES module exporting object literals
+    /// (`const n={…};…e.common=n`, the clip recorder's); "flatjson": a
+    /// plain JSON table (Outlook's calendar).
+    #[serde(default)]
+    pub kind: String,
+    /// Each locale's file (under `base`).
+    pub files: HashMap<String, String>,
 }
 
 /// Teams' strings by namespace and key.
@@ -93,6 +122,194 @@ pub fn parse_chunk(js: &str, out: &mut Strings) {
             table.insert(key, v);
         }
         from = i;
+    }
+}
+
+/// The strings in a webpack chunk whose modules are JSON tables
+/// (`7680(f){f.exports=JSON.parse('{"a":"Add Comment",…}')}`), by
+/// `<module>.<key path>` (or the key path alone without `with_ids`).
+pub fn parse_json_modules(js: &str, with_ids: bool) -> HashMap<String, String> {
+    const MARK: &str = ".exports=JSON.parse(";
+    let mut out = HashMap::new();
+    let mut from = 0;
+    while let Some(p) = js[from..].find(MARK) {
+        let at = from + p;
+        from = at + MARK.len();
+        let Some((text, end)) = matches!(js.as_bytes().get(from), Some(b'\'' | b'"' | b'`')).then(|| js_string(js, from)).flatten() else {
+            continue;
+        };
+        from = end;
+        let Ok(v) = serde_json::from_str::<Value>(&text) else { continue };
+        let prefix = if with_ids {
+            match module_id(&js[..at]) {
+                Some(id) => id.to_string(),
+                None => continue,
+            }
+        } else {
+            String::new()
+        };
+        flatten(&v, prefix, &mut out);
+    }
+    out
+}
+
+/// The strings an ES module exports as object literals: `const n={a:"…",
+/// b:{c:"…"}},t={…};…e.common=n,e.header=t` gives `common.a`,
+/// `common.b.c`, `header.…`.
+pub fn parse_esm_tables(js: &str) -> HashMap<String, String> {
+    let b = js.as_bytes();
+    let ident = |c: u8| c.is_ascii_alphanumeric() || c == b'_' || c == b'$';
+    // every `<name>={` object literal, by its variable
+    let mut objects: HashMap<&str, Value> = HashMap::new();
+    let mut i = 0;
+    while let Some(p) = js[i..].find("={") {
+        let eq = i + p;
+        i = eq + 1;
+        let mut s = eq;
+        while s > 0 && ident(b[s - 1]) {
+            s -= 1;
+        }
+        if s == eq || (s > 0 && b[s - 1] == b'.') {
+            continue;
+        }
+        if let Some((v, end)) = object_literal(js, eq + 1) {
+            objects.insert(&js[s..eq], v);
+            i = end;
+        }
+    }
+    // `e.<export>=<variable>` names them
+    let mut out = HashMap::new();
+    let mut i = 0;
+    while let Some(p) = js[i..].find('=') {
+        let eq = i + p;
+        i = eq + 1;
+        let mut v = eq + 1;
+        while v < b.len() && ident(b[v]) {
+            v += 1;
+        }
+        let Some(obj) = objects.get(&js[eq + 1..v]) else { continue };
+        if !matches!(b.get(v), Some(b',' | b'}' | b';')) {
+            continue;
+        }
+        let mut s = eq;
+        while s > 0 && ident(b[s - 1]) {
+            s -= 1;
+        }
+        if s == eq || s < 2 || b[s - 1] != b'.' || !ident(b[s - 2]) {
+            continue;
+        }
+        flatten(obj, js[s..eq].to_string(), &mut out);
+    }
+    out
+}
+
+/// A JS object literal of strings and nested objects at `i` (its `{`);
+/// other values (numbers, `!0`) are skipped. None if it isn't one.
+fn object_literal(js: &str, i: usize) -> Option<(Value, usize)> {
+    let b = js.as_bytes();
+    let ws = |j: &mut usize| {
+        while *j < b.len() && b[*j].is_ascii_whitespace() {
+            *j += 1;
+        }
+    };
+    if b.get(i) != Some(&b'{') {
+        return None;
+    }
+    let mut j = i + 1;
+    let mut map = Map::new();
+    loop {
+        ws(&mut j);
+        match *b.get(j)? {
+            b'}' => return Some((Value::Object(map), j + 1)),
+            b',' => {
+                j += 1;
+                continue;
+            }
+            _ => {}
+        }
+        let key = if matches!(b[j], b'"' | b'\'') {
+            let (k, n) = js_string(js, j)?;
+            j = n;
+            k
+        } else {
+            let s = j;
+            while j < b.len() && (b[j].is_ascii_alphanumeric() || b[j] == b'_' || b[j] == b'$') {
+                j += 1;
+            }
+            if j == s {
+                return None;
+            }
+            js[s..j].to_string()
+        };
+        ws(&mut j);
+        if b.get(j) != Some(&b':') {
+            return None;
+        }
+        j += 1;
+        ws(&mut j);
+        match *b.get(j)? {
+            b'"' | b'\'' | b'`' => {
+                let (v, n) = js_string(js, j)?;
+                // a template with substitutions isn't a plain string
+                if b[j] == b'`' && v.contains("${") {
+                    j = n;
+                    continue;
+                }
+                map.insert(key, Value::String(v));
+                j = n;
+            }
+            b'{' => {
+                let (v, n) = object_literal(js, j)?;
+                map.insert(key, v);
+                j = n;
+            }
+            _ => {
+                // skip a simple value
+                while j < b.len() && !matches!(b[j], b',' | b'}') {
+                    j += 1;
+                }
+            }
+        }
+    }
+}
+
+/// The webpack module id just before `…{f.exports`: the digits before the
+/// `(f)` or `:function(e)` that start the module.
+fn module_id(before: &str) -> Option<&str> {
+    let mut start = before.len().saturating_sub(64);
+    while !before.is_char_boundary(start) {
+        start += 1;
+    }
+    let tail = &before[start..];
+    let b = tail.as_bytes();
+    // the last "<digits>(" or "<digits>:" in the tail
+    let mut i = b.len();
+    while i > 0 {
+        i -= 1;
+        if b[i] == b'(' || b[i] == b':' {
+            let mut j = i;
+            while j > 0 && b[j - 1].is_ascii_digit() {
+                j -= 1;
+            }
+            if j < i && (j == 0 || !(b[j - 1].is_ascii_alphanumeric() || b[j - 1] == b'_' || b[j - 1] == b'$')) {
+                return Some(&tail[j..i]);
+            }
+        }
+    }
+    None
+}
+
+fn flatten(v: &Value, prefix: String, out: &mut HashMap<String, String>) {
+    match v {
+        Value::Object(m) => {
+            for (k, x) in m {
+                flatten(x, if prefix.is_empty() { k.clone() } else { format!("{prefix}.{k}") }, out);
+            }
+        }
+        Value::String(s) => {
+            out.insert(prefix, s.clone());
+        }
+        _ => {}
     }
 }
 
@@ -510,6 +727,41 @@ pub async fn fetch(client: &reqwest::Client, res: &Resources, ids: &[IdRow], ids
     for b in &bodies {
         parse_chunk(b, &mut strings);
     }
+    // Teams' other bundles: a language a bundle lacks (or one that won't
+    // download) leaves its text in English, as in Teams.
+    let extras = res.extra.iter().filter_map(|(ns, src)| {
+        let file = src.files.get(locale)?;
+        let url = format!("{}{}", src.base, file);
+        Some(async move {
+            let got = async {
+                let r = client.get(&url).send().await?.error_for_status()?;
+                anyhow::Ok(decode_body(&r.bytes().await?)?)
+            }
+            .await;
+            (ns, src.ids, src.kind.as_str(), url, got)
+        })
+    });
+    for (ns, ids, kind, url, got) in futures::future::join_all(extras).await {
+        match got {
+            Ok(body) => {
+                let table = match kind {
+                    "esm" => parse_esm_tables(&body),
+                    "flatjson" => {
+                        let mut t = HashMap::new();
+                        if let Ok(v) = serde_json::from_str::<Value>(&body) {
+                            flatten(&v, String::new(), &mut t);
+                        }
+                        t
+                    }
+                    _ => parse_json_modules(&body, ids),
+                };
+                // Their texts aren't ICU: an apostrophe is just one
+                // ("Filter by '{0}'"), so it is quoted as ICU's ''.
+                strings.entry(ns.clone()).or_default().extend(table.into_iter().map(|(k, v)| (k, v.replace('\'', "''"))));
+            }
+            Err(e) => tracing::warn!("app language {locale}: {url}: {e:#}"),
+        }
+    }
     let cat = build(ids, &strings, locale);
     if cat.is_empty() {
         anyhow::bail!("Teams' {locale} resources held none of OST's strings");
@@ -537,6 +789,28 @@ fn decode_body(b: &[u8]) -> anyhow::Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn json_module_chunks() {
+        let js = r#"(self.odspNextWebpackJsonp=self.odspNextWebpackJsonp||[]).push([["ondemand.resx"],{7680(f){f.exports=JSON.parse('{"a":"Add Comment","b":"Don\u0027t {0}"}')},10655(f){f.exports=JSON.parse('{"x":{"y":"Deep"}}')}}]);"#;
+        let m = parse_json_modules(js, true);
+        assert_eq!(m.get("7680.a").map(String::as_str), Some("Add Comment"));
+        assert_eq!(m.get("7680.b").map(String::as_str), Some("Don't {0}"));
+        assert_eq!(m.get("10655.x.y").map(String::as_str), Some("Deep"));
+        // multibyte text just before a module (German quotes)
+        let de = format!(r#"push([["x"],{{1(f){{f.exports=JSON.parse('{{"a":"{}"}}')}},22(f){{f.exports=JSON.parse('{{"b":"c"}}')}}}}]);"#, "„Zitat“".repeat(20));
+        assert_eq!(parse_json_modules(&de, true).get("22.b").map(String::as_str), Some("c"));
+        let teams =r#"(self.webpackChunk=self.webpackChunk||[]).push([[752149],{204247:function(e){"use strict";e.exports=JSON.parse('{"common":{"addMusic":"Musik hinzufügen"}}')}}]);"#;
+        let m = parse_json_modules(teams, false);
+        assert_eq!(m.get("common.addMusic").map(String::as_str), Some("Musik hinzufügen"));
+        assert_eq!(parse_json_modules(teams, true).get("204247.common.addMusic").map(String::as_str), Some("Musik hinzufügen"));
+        let esm = r#"push([[752149],{204247:(Xe,e)=>{Object.defineProperty(e,Symbol.toStringTag,{value:"Module"});const n={direction:"ltr","_direction.comment":"x",addMusic:"Musik hinzufügen",n:1,deep:{a:'Tief'}},t={title:"Kopf"};e.common=n,e.header=t}}]);"#;
+        let m = parse_esm_tables(esm);
+        assert_eq!(m.get("common.addMusic").map(String::as_str), Some("Musik hinzufügen"));
+        assert_eq!(m.get("common.deep.a").map(String::as_str), Some("Tief"));
+        assert_eq!(m.get("header.title").map(String::as_str), Some("Kopf"));
+        assert!(!m.contains_key("common.n"));
+    }
 
     #[test]
     fn reads_teams_locale_chunks() {
