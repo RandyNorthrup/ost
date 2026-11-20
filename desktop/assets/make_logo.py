@@ -49,7 +49,7 @@ BRAND = {"60": "#444791", "70": "#4F52B2", "80": "#5B5FC7", "90": "#6D71D8", "10
 # the body (x, y, w, h, radius), the strength of the light on it, and which
 # of the plate's shadows fall on it.
 LAYOUTS = {
-    # A (the default): three people standing symmetrically behind a wide,
+    # A (the default, chosen by the user 2026-11-19): three people standing symmetrically behind a wide,
     # centred plate.
     "a": {
         "plate": (78, 220, 356, 240, 54), "cap": 108,
@@ -181,7 +181,7 @@ if __name__ == "__main__":
     import os
 
     ap = argparse.ArgumentParser(description="Make OST's logo.")
-    ap.add_argument("--layout", choices=sorted(LAYOUTS), default="b")
+    ap.add_argument("--layout", choices=sorted(LAYOUTS), default="a")
     ap.add_argument("--out", help="write logo.svg and logo-{512,256,48,24}.png into this "
                     "folder instead of the app's assets, to try a layout")
     args = ap.parse_args()
