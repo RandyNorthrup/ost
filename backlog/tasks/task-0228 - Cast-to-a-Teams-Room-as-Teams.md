@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-20T01:10:00Z'
-updated_date: '2026-11-20T08:26:00Z'
+updated_date: '2026-11-20T15:31:00Z'
 labels:
   - calls
 dependencies: []
@@ -53,4 +53,6 @@ Built so far: the Cast wizard (rooms with presence and nearby mark, meetings, co
 - Item 3 verified: Just cast is a Meet now (meetingType MeetNow, endTime 0001-01-01T00:00:00 from the room's meeting details): Teams Rooms 26198 neither treats it as ad hoc nor ever reaches its end, so the room stays after a plain leave (c1, as Teams Rooms); a channel Meet now (Adhoc) is left at once now (j3: "leaving ad-hoc call because no other participants left", Call end 202), as Teams Rooms has no channel rule.
 - Open: the laptop doesn't get the room's camera in a meeting the room was invited into (the processor never asks for it; no media description sent from an answered call).
 - Tests: 809 lib tests pass (linuxlt). Cleanup: room and test window stopped, btvirt pair down, restore token deleted from the portal store, trouter dumps and pcap removed; winpc: Teams back on Chat, theme back to Follow OS, helper files and task removed.
+
+- 2026-11-20 winpc Bluetooth (linuxlt 3 ft away): linuxlt hci0 is the real Realtek radio (USB, HCI 5.1), not a virtual one; its room beacon was legacy ADV_NONCONN_IND, 0 dBm, non-resolvable random address, the same type and address kind as Windows' own Microsoft (0x0006) beacons that winpc does receive. Plain test adverts from linuxlt hci0 (OSTTEST non-connectable, OSTTESTC connectable on the public address) were heard by this PC but never by winpc's watcher (active scan, ssh session and interactive session alike). A Windows beacon nearby (2C:AC:1D:90:C7:85) reads -41 dBm at linuxlt and -82 dBm at winpc; an advert published from winpc (0xFFFF test data, status Started) was heard by neither linuxlt nor this PC. winpc's Intel AX201 Bluetooth (8087:0026, driver 23.40, LE/central/extended advertising supported) is on; its Wi-Fi side reads 99%. So winpc's Bluetooth radio path is about 40 dB down in both directions: an antenna/hardware problem, not a Windows setting or a beacon format. Teams on winpc can't list any room until that is fixed (antenna leads on the AX201, or a USB Bluetooth adapter). All winpc helpers, tasks and linuxlt test adverts removed.
 <!-- SECTION:NOTES:END -->
