@@ -1,10 +1,11 @@
 ---
 id: TASK-0230
 title: 'Lobby: organizer sees people who joined before them'
-status: To Do
-assignee: []
+status: Done
+assignee:
+  - '@claude'
 created_date: '2026-11-20T02:13:00Z'
-updated_date: '2026-11-20T03:27:00Z'
+updated_date: '2026-11-20T03:37:00Z'
 labels:
   - calls
 dependencies: []
@@ -19,7 +20,7 @@ Found in TASK-0182's live runs: people who join a meeting before its organizer w
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 When the organizer joins after people are waiting, OST's lobby list shows them and Admit works, as in Teams, verified live
+- [x] #1 When the organizer joins after people are waiting, OST's lobby list shows them and Admit works, as in Teams, verified live
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -33,3 +34,14 @@ Found in TASK-0182's live runs: people who join a meeting before its organizer w
 - Also re-verified with the final build (v2 run): "lobby from the roster waiting=2" at join, both admitted, 1 then 0 as the roster moved them; everyone left. 798 lib tests pass.
 - Open: the scope-lobby query that follows an Admit can still briefly return the people just admitted (seen before this change too); the next roster update corrects it.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+The organizer now sees people who waited in the lobby before they joined, as Teams does.
+
+- Cause: the first roster updates after Join reported the waiting count about 0.2 s before the preheated call was stored; the lobby fetch then gave up and the count never changed again, so the list stayed empty.
+- Fix: like Teams' People pane, OST keeps the lobby list from every roster update, including the join roster (src/calling/roster.rs), shown only to non-attendees; the lobby-list request now waits up to 10 s for the call instead of giving up.
+- Live: OST Test 2 and OST Test 3 waited, ost-test1 joined as organizer in OST, saw both at once and admitted them (twice); Teams on winpc as organizer with the two OST accounts waiting behaved the same.
+- Tests: 798 lib + desktop crate tests pass.
+<!-- SECTION:FINAL_SUMMARY:END -->

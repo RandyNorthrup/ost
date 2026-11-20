@@ -1,10 +1,11 @@
 ---
 id: TASK-0231
 title: 'Mic flyout: Spatial audio row as Teams'
-status: To Do
-assignee: []
+status: Done
+assignee:
+  - '@claude'
 created_date: '2026-11-20T02:13:00Z'
-updated_date: '2026-11-20T03:27:00Z'
+updated_date: '2026-11-20T03:37:00Z'
 labels:
   - calls
 dependencies: []
@@ -18,7 +19,7 @@ Found in TASK-0181: Teams' in-call Mic flyout has a Spatial audio row above Nois
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 OST's Mic flyout shows the Spatial audio row exactly when and as Teams does, and it switches spatial audio
+- [x] #1 OST's Mic flyout shows the Spatial audio row exactly when and as Teams does, and it switches spatial audio
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -31,3 +32,14 @@ Found in TASK-0181: Teams' in-call Mic flyout has a Spatial audio row above Nois
 - Verified live (linuxlt): meeting OST calendar test (ost-test1 organizer, OST Test 2 + 3 admitted): row shown above Noise suppression, usable (Built-in Audio Analog Stereo is capable), switched on at 25 s (spatial audio: renegotiating, per_speaker=true taken) and off at 40 s (back to mixed). 1:1 call OST Test 2 -> OST Test 3: row shown off and disabled, the switch does nothing. OST test call (Echo): enabled, as Teams' test call. All calls left (202 / ended by the other side). 798 lib tests pass.
 - Open: Teams' Audio settings pane also has the row (SETTINGS_PANEL, info button shown, no description); OST's pane doesn't yet. The flyout's gap from the microphone divider to the effects section is 10 in Teams with new meeting controls on (OST 14.7), not changed here.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Spatial audio row in the Mic flyout as Teams.
+
+- First row of the effects section ("Spatial audio" + switch, no description), shown where spatial audio is available, off and disabled in 1:1 calls (enabled in the test call), measured on winpc (36 px row, switch 40x20).
+- The switch is the same setting as Settings ▸ Devices and renegotiates the meeting audio at once.
+- Live: on/off in a meeting renegotiated per-speaker/mixed audio; disabled in a 1:1 call; enabled in the test call.
+- Follow-up TASK-0232: the row in the Audio settings pane and the flyout's divider gap.
+<!-- SECTION:FINAL_SUMMARY:END -->
