@@ -4891,7 +4891,7 @@ Window {
             case 6: c.closePlusForTest(); { const a = app("Polls"); if (a) conversation.runComposeCommand(a, a.commands[0], c) } break
             case 12: { const d = conversation.composeAppsForTest().task; log("task", d ? d.stateForTest() : null); cap("task"); if (d) d.close() } break
             case 13: { const a = app("Power BI"); if (a) conversation.runComposeCommand(a, a.commands.find(k => k.type === "query") || a.commands[0], c) } break
-            case 17: { const p = t.panel; log("panel", { open: p.opened, error: p.error, results: p.results.length }); cap("search"); p.close() } break
+            case 17: { const p = t.panel; log("panel", { open: p.opened, error: p.error, results: p.results.length }); cap("search"); p.close(); log("suggested later", c.suggestedApps.map(a => a.name + " " + (a.count > 0 ? a.averageText + " (" + a.countText + ")" : "none") + (a.agent ? " agent" : ""))) } break
             case 18: Qt.quit(); return
             }
             step++
@@ -4937,7 +4937,9 @@ Window {
                 if (!l || !l.url) { Qt.quit(); return }
                 break
             }
-            case 5: page().typeForTest("OST TEST 85 loop OST\nLoop body typed in OST"); break
+            // --loop-compose-title: a title first (the file is named after it).
+            case 5: if (args.indexOf("--loop-compose-title") >= 0) page().typeTitleForTest("OST TEST 85 titled from OST"); break
+            case 7: page().typeForTest("OST TEST 85 loop OST\nLoop body typed in OST"); break
             case 9: { const p = page(); p.textForTest(t => log("typed", t.slice(0, 200))); log("title", c.loop.title); cap("typed"); break }
             case 10: {
                 // --loop-compose-link: the description opens Link settings
@@ -5090,7 +5092,7 @@ Window {
             const c = conversation.composeForTest()
             switch (step) {
             case 0: { const ch = chatList.chats.find(x => x.name === "OST group test"); backend.selectChat(ch.id, ch.name); break }
-            case 2: { let t = ""; for (let i = 1; i <= 30; i++) t += (i > 1 ? "\n" : "") + "OST_TEST_203_line_" + i; c.focusEditor(); c.insertText(t); break }
+            case 2: { let t = ""; for (let i = 1; i <= 30; i++) t += (i > 1 ? "<br>" : "") + "OST_TEST_203_line_" + i; c.focusEditor(); c.insertText(t); break }
             case 3: {
                 const p = c.mapToItem(window.contentItem, 0, 0)
                 console.warn("COMPOSEHEIGHT", JSON.stringify({ box: { x: p.x, y: p.y, w: c.width, h: c.height }, window: [window.width, window.height] }))

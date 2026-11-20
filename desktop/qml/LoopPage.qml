@@ -73,6 +73,15 @@ Item {
                 typer.typeText("\u0001" + text)
             })
     }
+    // The component's title ("Add a title": Loop's first editable line).
+    function typeTitleForTest(text) {
+        web.runJavaScript("(() => { const f = document.querySelector('iframe'); const d = f && f.contentDocument;"
+            + " const c = d && d.querySelector('[contenteditable=true]'); if (!c) return false; c.focus(); return true })()", ok => {
+                if (!ok) { console.warn("LOOPHOST type: no title"); return }
+                web.forceActiveFocus()
+                typer.typeText(text)
+            })
+    }
     function textForTest(cb) {
         web.runJavaScript("(() => { const f = document.querySelector('iframe'); const d = f && f.contentDocument; return d ? d.body.innerText.slice(0, 2000) : '' })()", cb)
     }

@@ -281,7 +281,7 @@ Item {
     property bool compact: false
     signal appCardSettingsRequested()
     signal appCardPermissionsRequested(string appId)
-    readonly property bool multiline: !!loop || appCardShown || !!sendTo || scheduleAt > 0 || post || editing || compact || formatting || files.length > 0 || cloudFiles.length > 0 || !!quote || !!clip || grown || previewShown
+    readonly property bool multiline: !!loop || hasPastedPicture || appCardShown || !!sendTo || scheduleAt > 0 || post || editing || compact || formatting || files.length > 0 || cloudFiles.length > 0 || !!quote || !!clip || grown || previewShown
     // Teams' channel post composer.
     property bool post: false
     property bool announcement: false
@@ -1644,6 +1644,8 @@ Item {
     /// Pictures pasted into the box still loading or failed (Teams' 4):
     /// "loading", "initializing", "failed" or "".
     property string pastedPictures: ""
+    /// A pasted picture is in the box (Teams' box goes to its tall form).
+    readonly property bool hasPastedPicture: media.some(m => m.kind === "pasted") && input.length > 0
     // Ctrl+V with a picture: Teams' states while it is read
     // ("initializing"), then the picture in the box; one that can't be
     // read stays "failed" until the box changes.
@@ -2008,8 +2010,9 @@ Item {
     function loadComposeApps() {
         if (root.composeAppsLoading) return
         root.composeAppsLoading = true
-        backend.composeAppRequest("list", "compose-apps", "{}")
-        backend.composeAppRequest("suggested", "compose-apps-suggested", "{}")
+        const here = JSON.stringify({ conversation: String(root.chatId || backend.currentChatId) })
+        backend.composeAppRequest("list", "compose-apps", here)
+        backend.composeAppRequest("suggested", "compose-apps-suggested", here)
     }
     // Add (a suggested app): installed for you, then its compose command
     // opens as an installed app's would.

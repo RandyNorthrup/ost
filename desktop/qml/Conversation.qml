@@ -628,13 +628,19 @@ Rectangle {
     // ended row's message: the recording and the meeting.
     function recapRef(m, recap) {
         const rec = (recap.recordings || [])[0] || {}
-        return { thread_id: "", ical_uid: recap.ical_uid || "", organizer_id: "", tenant_id: backend.tenantId(), call_id: m.call_id || "",
+        // A meeting chat (an event's group chat too) is the meeting's own
+        // thread; its organizer is the meeting's (what Teams' recap
+        // sharing names).
+        const mt = root.meeting || {}
+        return { thread_id: root.chatId.indexOf("19:meeting_") === 0 ? root.chatId : "", ical_uid: recap.ical_uid || mt.ical_uid || "", organizer_id: mt.organizer_id || "",
+                 tenant_id: mt.tenant_id || backend.tenantId(), call_id: m.call_id || "",
                  drive_id: rec.drive_id || "", item_id: rec.item_id || "", file_url: rec.odb_url || "", subject: recap.subject || root.chatTopic || root.chatName,
                  start_ms: new Date(recap.start || 0).getTime(), end_ms: new Date(recap.end || recap.start || 0).getTime(),
                  recap_type: recap.transcript && (recap.recordings || []).length ? "RecordingAndTranscript" : recap.transcript ? "Transcript" : "Recording" }
     }
     function openRecap(m, recap, part) {
-        const w = recapWindow.createObject(null, { recap: root.recapRef(m, recap), startTab: part === "transcript" ? "transcript" : "", hasAttendance: root.hasAttendanceReport })
+        // (Teams' Shared files list the meeting's attendance report.)
+        const w = recapWindow.createObject(null, { recap: root.recapRef(m, recap), startTab: part === "transcript" ? "transcript" : "", hasAttendance: root.hasAttendanceReport || !!m.call_id })
         w.goToChat.connect(() => {})
         w.openAttendance.connect(() => root.openAttendance(m.call_id || ""))
         w.show(); w.raise(); w.requestActivate()
@@ -4491,7 +4497,9 @@ Rectangle {
                 return
             }
             if (refresh) return
-            if (error) root.setCardFooter(key, { error: true, text: qsTr("Something went wrong. Please try again.") })
+            // The bot couldn't be reached (the service answered with an
+            // error): Teams' red bar under the card (OST TEST 169, winpc).
+            if (error) root.setCardFooter(key, { error: true, text: qsTr("Unable to reach app. Please try again.") })
             else if (v && v.kind === "message") root.setCardFooter(key, { text: v.message })
             else if (v && v.kind === "error") root.setCardFooter(key, { error: true, text: v.message })
             else root.setCardFooter(key, { text: qsTr("Your response was sent to the app") })

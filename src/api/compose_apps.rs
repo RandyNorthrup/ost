@@ -103,16 +103,30 @@ pub fn sort_recent(apps: &mut [Value], mru: &[String]) {
     apps.sort_by(|a, b| pos(a).cmp(&pos(b)).then_with(|| name(a).cmp(&name(b))));
 }
 
-/// Your installed apps with compose commands, most recently used first
-/// (then by name), as Teams' "+" lists them.
-pub async fn installed(client: &TeamsClient) -> Result<Vec<Value>> {
+/// The apps you have here: yours, and the conversation's (Teams' `Be`:
+/// a personal or in-context entitlement that is installed), lowercase ids.
+async fn usable_ids(client: &TeamsClient, conversation: &str) -> Result<Vec<String>> {
     let ents = super::app_details::entitlements(client).await?;
     let mut ids: Vec<String> = ents
         .iter()
         .filter(|(_, st)| super::link_unfurl::installed_state(st))
-        .map(|(id, _)| id.clone())
+        .map(|(id, _)| id.to_lowercase())
         .collect();
+    if conversation.ends_with("@thread.v2") || conversation.ends_with("@unq.gbl.spaces") {
+        for (id, st) in super::store_content::chat_apps(client, conversation).await.unwrap_or_default() {
+            if super::link_unfurl::installed_state(&st) && !ids.contains(&id.to_lowercase()) {
+                ids.push(id.to_lowercase());
+            }
+        }
+    }
     ids.sort();
+    Ok(ids)
+}
+
+/// Your apps with compose commands here (yours and the conversation's),
+/// most recently used first (then by name), as Teams' "+" lists them.
+pub async fn installed(client: &TeamsClient, conversation: &str) -> Result<Vec<Value>> {
+    let ids = usable_ids(client, conversation).await?;
     let mut out = Vec::new();
     for chunk in ids.chunks(40) {
         let defs = super::app_details::definitions(client, chunk).await.unwrap_or_default();
@@ -131,9 +145,9 @@ const SUGGESTED: usize = 10;
 /// and that you haven't installed, sorted AISuggested / TenantAppRanking /
 /// Alphabetical (by name here), the first ten; each with its Store rating
 /// and agent mark, short description, and Privacy / Terms of use links.
-pub async fn suggested(client: &TeamsClient) -> Result<Vec<Value>> {
+pub async fn suggested(client: &TeamsClient, conversation: &str) -> Result<Vec<Value>> {
     let catalog = super::app_details::catalog(client).await?;
-    let ents = super::app_details::entitlements(client).await.unwrap_or_default();
+    let have = usable_ids(client, conversation).await.unwrap_or_default();
     let ranked = super::store_content::ranked(client, &["all".to_string()]).await.unwrap_or_default();
     let by_id: std::collections::HashMap<String, &super::store_content::Ranked> =
         ranked.values().flatten().map(|r| (r.id.to_lowercase(), r)).collect();
@@ -141,7 +155,7 @@ pub async fn suggested(client: &TeamsClient) -> Result<Vec<Value>> {
         .iter()
         .filter(|d| {
             let id = d.get("id").and_then(Value::as_str).unwrap_or_default().to_lowercase();
-            !ents.get(&id).is_some_and(|st| super::link_unfurl::installed_state(st))
+            !have.contains(&id)
         })
         .filter_map(|d| {
             compose_entry(d)?;

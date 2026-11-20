@@ -20259,9 +20259,9 @@ impl qobject::Backend {
             let r = async {
                 let client = TeamsClient::new().await?;
                 match kind.as_str() {
-                    "list" => Ok(json!({ "apps": api::compose_apps::installed(&client).await? })),
+                    "list" => Ok(json!({ "apps": api::compose_apps::installed(&client, &s("conversation")).await? })),
                     // Teams' "Add a new app" (Store apps with compose commands).
-                    "suggested" => Ok(json!({ "apps": api::compose_apps::suggested(&client).await? })),
+                    "suggested" => Ok(json!({ "apps": api::compose_apps::suggested(&client, &s("conversation")).await? })),
                     // An app picked: its use goes where Teams keeps it.
                     "usage" => api::compose_apps::record_usage(&client, &s("appId")).await.map(|_| json!({ "ok": true })),
                     // Add: the app installed for you (Teams' personal install).
@@ -20477,7 +20477,9 @@ impl qobject::Backend {
                         if r.tenant_id.is_empty() {
                             r.tenant_id = client.tenant_id().unwrap_or_default();
                         }
-                        if let Err(e) = api::recaps::resolve(&notes_region(&client), &mut r).await {
+                        if (r.thread_id.is_empty() || r.organizer_id.is_empty())
+                            && let Err(e) = api::recaps::resolve(&notes_region(&client), &mut r).await
+                        {
                             tracing::warn!("recap's meeting: {}", short_error(&e));
                         }
                         let player = api::recaps::player_url(&client, &r.drive_id, &r.item_id).await;
@@ -20495,7 +20497,7 @@ impl qobject::Backend {
                         if r.tenant_id.is_empty() {
                             r.tenant_id = client.tenant_id().unwrap_or_default();
                         }
-                        if r.thread_id.is_empty()
+                        if (r.thread_id.is_empty() || r.organizer_id.is_empty())
                             && let Err(e) = api::recaps::resolve(&notes_region(&client), &mut r).await
                         {
                             tracing::warn!("recap's meeting: {}", short_error(&e));
@@ -20509,7 +20511,7 @@ impl qobject::Backend {
                         if r.tenant_id.is_empty() {
                             r.tenant_id = client.tenant_id().unwrap_or_default();
                         }
-                        if r.thread_id.is_empty() {
+                        if r.thread_id.is_empty() || r.organizer_id.is_empty() {
                             api::recaps::resolve(&notes_region(&client), &mut r).await?;
                         }
                         let oids: Vec<String> = p.get("people").and_then(|v| v.as_array()).into_iter().flatten().filter_map(|x| x.as_str().map(str::to_string)).collect();
