@@ -1016,6 +1016,11 @@ pub struct ChatEvent {
     /// A link the row offers (a saved recording's "Remove expiration").
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub link: String,
+    /// AddMember: the one who added was among those added (Teams' `p` in
+    /// module 121919: an event's group chat says "{them} and {others}
+    /// joined…" only then).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub actor_added: bool,
     /// The names in the row that belong to unverified visitors
     /// (`8:teamsvisitor:`), which Teams follows with its Unverified badge.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1124,6 +1129,7 @@ pub fn chat_event(message_type: &str, content: &str) -> Option<ChatEvent> {
             && members.iter().all(|m| m["meetingMemberType"].as_str() == Some("temp"));
         return (matches!(kind, "MemberJoined" | "MemberLeft" | "AddMember" | "DeleteMember") && !targets.is_empty()).then(|| ChatEvent {
             kind: if lobby { "LobbyJoined".into() } else { kind.into() },
+            actor_added: targets.contains(&actor),
             actor,
             targets,
             names,
@@ -1170,6 +1176,7 @@ pub fn chat_event(message_type: &str, content: &str) -> Option<ChatEvent> {
         names: names.clone(),
         link: String::new(),
         unverified: Vec::new(),
+        actor_added: false,
     };
     match kind {
         "AddMember" => {
@@ -1177,6 +1184,7 @@ pub fn chat_event(message_type: &str, content: &str) -> Option<ChatEvent> {
                 return None;
             }
             let joined = targets.iter().all(|t| *t == actor);
+            let actor_added = targets.iter().any(|t| *t == actor);
             targets.retain(|t| *t != actor);
             if joined {
                 return Some(ev("MemberJoined", vec![actor.clone()], String::new(), None));
@@ -1185,7 +1193,7 @@ pub fn chat_event(message_type: &str, content: &str) -> Option<ChatEvent> {
             let share: i64 = first("sharehistorytime").parse().unwrap_or(-1);
             let days = (share >= 0 && event_time >= 0)
                 .then(|| ((event_time - share) as f64 / 86_400_000.0).round() as i64);
-            Some(ev("AddMember", targets, String::new(), days))
+            Some(ChatEvent { actor_added, ..ev("AddMember", targets, String::new(), days) })
         }
         "DeleteMember" => {
             (!targets.is_empty()).then(|| ev("DeleteMember", targets, String::new(), None))
@@ -1234,6 +1242,13 @@ pub fn backroom_event_text(e: &ChatEvent, name: &dyn Fn(&str) -> String, kind: &
     let event = kind == "event";
     let ts = &e.targets;
     let self_join = e.kind == "MemberJoined" || (ts.len() == 1 && ts[0] == e.actor);
+    // Someone added by another (not adding themselves too): Teams' plain
+    // meeting-chat line, without shared history ("OST Test 1 added OST
+    // Test 3 to the chat.", seen on winpc 2026-11-20).
+    if !self_join && !e.actor_added {
+        let plain = ChatEvent { history_days: None, ..e.clone() };
+        return Some(event_text(&plain, name, true));
+    }
     // Teams' module 121919 `Ma` shows the rich sentence (its Aria twin is
     // only read aloud): tmp_messages_memberJoinedOneMember{Event,Meeting}
     // Backroom, else addMemberSystemMessage{OneTarget,TwoTargets,
@@ -5587,6 +5602,37 @@ mod paging_and_event_tests {
         assert_eq!(duration_text("history", 65), "1m 5s");
         assert_eq!(duration_text("history", 3), "3s");
         assert_eq!(duration_text("attendance", 90061), "1d 1h 1m 1s");
+    }
+
+    #[test]
+    fn event_group_join_lines_as_teams() {
+        let names = |m: &str| match m {
+            "8:orgid:a" => "Ann".to_string(),
+            "8:orgid:b" => "Bo".to_string(),
+            "8:orgid:c" => "Cy".to_string(),
+            _ => "Di".to_string(),
+        };
+        let t = "OST TEST 217 town hall 2";
+        let joined = ChatEvent { kind: "MemberJoined".into(), actor: "8:orgid:a".into(), targets: vec!["8:orgid:a".into()], ..Default::default() };
+        assert_eq!(
+            backroom_event_text(&joined, &names, "event", t).unwrap(),
+            "Ann joined the Event Group Chat: OST TEST 217 town hall 2 for organizers, presenters, and people helping with the event."
+        );
+        // added together with the one who added them (Teams' `p`)
+        let with = ChatEvent { kind: "AddMember".into(), actor: "8:orgid:a".into(), targets: vec!["8:orgid:b".into()], actor_added: true, ..Default::default() };
+        assert_eq!(
+            backroom_event_text(&with, &names, "meeting", t).unwrap(),
+            "Ann and Bo joined the Planning Group: OST TEST 217 town hall 2 for organizers, presenters, and people helping with the meeting."
+        );
+        let many = ChatEvent { targets: vec!["8:orgid:b".into(), "8:orgid:c".into(), "8:orgid:d".into()], ..with.clone() };
+        assert_eq!(
+            backroom_event_text(&many, &names, "event", t).unwrap(),
+            "Ann and Bo and 2 others joined the Event Group Chat: OST TEST 217 town hall 2 for organizers, presenters, and people helping with the event."
+        );
+        // added by someone else: the chat's plain line, no shared history
+        // (winpc: "OST Test 1 added OST Test 3 to the chat.")
+        let added = ChatEvent { actor_added: false, history_days: Some(0), ..with };
+        assert_eq!(backroom_event_text(&added, &names, "event", t).unwrap(), "Ann added Bo to the chat.");
     }
 
     #[test]
