@@ -4,7 +4,7 @@ title: Town hall Event group chats as Teams
 status: To Do
 assignee: []
 created_date: '2026-11-20T04:10:00Z'
-updated_date: '2026-11-20T16:49:00Z'
+updated_date: '2026-11-20T21:52:00Z'
 labels:
   - chat
 dependencies: []
@@ -29,4 +29,6 @@ Found in TASK-0142's winpc comparison: Teams handles a town hall's Event group c
   - Joining: "{name} joined the Event Group Chat: {title} for organizers, presenters, and people helping with the event." (tmp_messages_memberJoinedOneMemberEventBackroom, k69befoe9 plain / kc2rbbia0 rich); added by someone: OneTarget k899lqo1k, TwoTargets kd1b5sjah, ManyTargets k7kl5h3i0; the meeting variants ("…the Planning Group: … helping with the meeting.") k59mdytpy / kc7do3qud / k8bbbov2 / k5ke58ztx.
   - Calls: "{title} has started." (tmp_messages_backroom_call_event_started, k15ntfp7n; meeting kd3dbdxsw) and "{title} has ended." + the bold duration (k-ids kqok16p0 / meeting k3flolqwp), after the time as other call rows.
 - Built: api::chat::backroom_kind / backroom_title / backroom_of (ChatInfo.backroom + topic, chat JSON backroom/topic), messages::backroom_event_text, Conversation call rows, the calendar-lock avatar in the chat list and header. Strings carry Teams' ids (l10n gen still to be run for ids.json).
+
+- 2026-11-20 (chatB): the join lines are now Teams' shown (rich) strings, picked as Teams' module 121919 `Ma` does: self-join tmp_messages_memberJoinedOneMember{Event,Meeting}Backroom (kc2rbbia0 / k8tfy1qp9), added by someone addMemberSystemMessage{OneTarget,TwoTargets,ManyTargets}{Event,Meeting}Backroom (kd2pf534f, kcux3ubsg, k69ip80jz / kd4z24g30, k5hlqlh91, kajtcnui4), "{n} others" from tmp_messages_otherTargets_mf. They were written with format!() before, so l10n gen never keyed them; now literal and in ids.json, translated in all 63 of Teams' string locales. Checked in German on linuxlt (ost-test1, app language de-de): "OST Test 1 ist dem Veranstaltungsgruppenchat OST TEST 217 town hall 2 für Personen, die organisieren, präsentieren und bei der Veranstaltung helfen, beigetreten." and the title "Ereignisgruppe: OST TEST 217 town hall 2".
 <!-- SECTION:NOTES:END -->

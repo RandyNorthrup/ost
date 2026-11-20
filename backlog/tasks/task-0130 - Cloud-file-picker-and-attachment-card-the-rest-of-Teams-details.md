@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-13T21:53:00Z'
-updated_date: '2026-11-20T18:22:00Z'
+updated_date: '2026-11-20T22:08:00Z'
 labels:
   - desktop
   - files
@@ -37,4 +37,6 @@ Built so far (1050c4e, merged as 8229940): command bar (New folder with Teams' C
 Left: Media's layout menu, compact toggle, zoom and date headings (measured in the spec, date-grouping rule unknown); People's files you shared (only in OneDrive's picker cache); the Created folder toast; Tiles thumbnails; Home's AllItems.aspx row and repeated Loop entries.
 
 - 2026-11-20 (chat agent): not worked on in this pass (time went to TASK-0085's Loop components and installed apps, 0098, 0203, 0234, 0202). AC1 and AC5 stay as the notes above say.
+
+- 2026-11-20 (chatB): AC1 rechecked live (`--attach-link-test`, ost-test1): the card's link description opens Link settings, "People currently in this chat" makes the link (ShareLink with the chat's people) and the card reads "People currently in this chat with the link can edit"; that this link is what's sent was checked earlier (OST TEST 173 in Teams). The same dialog now serves a compose Loop component's Link settings (with Teams' three choices there). AC5 (Media's layout menu, compact, zoom, date headings; People's files you shared) not worked on this pass.
 <!-- SECTION:NOTES:END -->

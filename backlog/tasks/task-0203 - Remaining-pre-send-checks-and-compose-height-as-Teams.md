@@ -4,7 +4,7 @@ title: Remaining pre-send checks and compose height as Teams
 status: To Do
 assignee: []
 created_date: '2026-11-16T14:25:00Z'
-updated_date: '2026-11-20T20:00:00Z'
+updated_date: '2026-11-20T21:52:00Z'
 labels:
   - desktop
 dependencies: []
@@ -32,4 +32,10 @@ TASK-0085 built Teams' pre-send checks that apply to an existing chat or post (s
   - Reply drafts (AC3): a thread view now keeps its reply's draft as "{channel};messageid={post}" (Teams' -4.{post} reply chain) and roams it with innerThreadId `{channel};messageid={post}` when roaming is on; roamed reply drafts come back to that key.
 
 - 2026-11-20 (chatB), measured on winpc: a pasted picture sits in Teams' box at its own size (data-tid image-with-loader, a blob: until sent). Sent ("OST TEST 203 pasted picture", OST group test): `<p><img src="{ams}/v1/objects/{id}/views/imgo" itemtype="http://schema.skype.com/AMSImage" itemscope="png" data-loading-state="success" data-inline-image="true" data-file-size="8410" width="320" height="180" alt="image" aria-description="has context menu" id="{id}" itemid="{id}" href="...imgo" target-src="...imgo"></p><p>text</p>`, amsreferences [id], properties.blurHash [{blurhash (4x3 components), imageId}].
+
+- 2026-11-20 (chatB):
+  - Pasted pictures built as Teams: Ctrl+V with a picture and no text on the clipboard puts it in the box at its own size (at most the box's width; the box takes its tall form), states initializing / failed ("Cannot paste this image. Try different source.") feed the InlineImageContent check; at send it is uploaded to AMS (image.png) and sent in Teams' inline form (`itemtype AMSImage itemscope png data-inline-image data-file-size width height alt "image" id itemid href target-src`), with amsreferences and properties.blurHash (4x3 BlurHash, api::blurhash). Checked live: OST's "OST TEST 203 pasted picture from OST" is stored exactly like Teams' "OST TEST 203 pasted picture" (same content form, blurHash, amsreferences); both messages deleted. `--paste-picture-test [--paste-picture-send]`.
+  - Compose height (AC2) compared: Teams on winpc with 30 lines (typed over VNC) keeps the editor viewport at 270 px (scrollHeight 638, scrolling), box 340 to 653 in its 680 px window; OST stops its text at the same 270 and scrolls (`--compose-height-test`).
+  - Nearby (AC1): there is no tenant setting for it. Teams offers @Nearby only with ECS People.enableAtNearbyMention, which isn't in this tenant's ECS (fetched 13:45 today: only presence enableNearbyInGroupChat / enableNearbyInOneOnOneChat and places enableNearbyMentionNewBadge, which are the roster's Nearby badges) and defaults to false outside Microsoft's own builds; the work-location policy it relies on was already on (tenant-changes). Nothing changed in the tenant, nothing to revert.
+  - Reply drafts (AC3) roam with innerThreadId as built (OST_ROAM_DRAFTS); Teams' own roaming stays off for this tenant.
 <!-- SECTION:NOTES:END -->
