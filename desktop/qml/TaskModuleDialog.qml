@@ -27,6 +27,10 @@ Popup {
     property string hostTeamThread: ""
     /// TeamsJS context for the page (subEntityId, chatId…).
     property var hostContext: ({})
+    /// The launch's own valid domains and Microsoft ownership (Teams'
+    /// launch input; the NAA broker trusts these origins).
+    property var validDomains: []
+    property bool microsoftOwned: false
     property string hostSessionId: ""
     signal finished(string callId, var error, var result)
     signal messageForParent(var message)
@@ -107,6 +111,8 @@ Popup {
                 teamsHost: true; frameContext: "task"; deepNaa: false
                 hostThread: dlg.hostThread; hostTeamThread: dlg.hostTeamThread; hostSessionId: dlg.hostSessionId
                 hostContext: Object.assign({ entityId: "", subEntityId: "", dialogParameters: {} }, dlg.hostContext)
+                launchDomains: dlg.validDomains
+                launchMicrosoftOwned: dlg.microsoftOwned
                 onHostEvent: (name, json) => {
                     if (name === "completeTask") {
                         // dialog.url.submit: Teams hands the result back as

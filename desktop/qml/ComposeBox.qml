@@ -1,4 +1,5 @@
 import QtQuick
+import QtCore
 import QtQuick.Controls.Basic
 import com.ost.desktop
 
@@ -140,7 +141,7 @@ Item {
     // The Enter setting: "send" (Teams' Default) or "newline".
     property string enterKey: backend.setting("enterKey") || "send"
     readonly property alias editor: input
-    readonly property bool empty: input.length === 0 && files.length === 0 && cloudFiles.length === 0 && !quote && !clip
+    readonly property bool empty: input.length === 0 && files.length === 0 && cloudFiles.length === 0 && !quote && !clip && !loop
     // Once the text wraps the box stays multiline until it is empty again
     // (Teams 461103 / 458473).
     property bool grown: false
@@ -163,7 +164,8 @@ Item {
     property var appCard: null
     /// The conversation the link's app is asked from.
     property string chatId: ""
-    readonly property bool appCardShown: !!appCard && !appCard.removed && !appCard.collapsed && previewsAllowed && !editing && cloudFiles.length === 0 && !clip
+    // (An app's compose action can put its card here too: `fromApp`.)
+    readonly property bool appCardShown: !!appCard && !appCard.removed && !appCard.collapsed && (previewsAllowed || appCard.fromApp === true) && !editing && cloudFiles.length === 0 && !clip
     readonly property bool appCardCollapsedShown: !!appCard && !appCard.removed && appCard.collapsed === true && !!appCard.preview
     readonly property var shownPreview: appCardCollapsedShown ? Object.assign({}, appCard.preview, { enabled: true }) : urlPreview
     function firstLink() {
@@ -183,7 +185,7 @@ Item {
             if (url === root.previewUrl) return
             root.previewUrl = url
             root.urlPreview = null
-            root.appCard = null
+            if (!(root.appCard && root.appCard.fromApp)) root.appCard = null
             if (url) backend.fetchLinkPreview(url, root.chatId)
         }
     }
@@ -194,7 +196,7 @@ Item {
             try { root.urlPreview = JSON.parse(json) } catch (e) {}
         }
         function onAppLinkCardFetched(url, json) {
-            if (url !== root.previewUrl || !json) return
+            if (url !== root.previewUrl || !json || (root.appCard && root.appCard.fromApp)) return
             try { root.appCard = JSON.parse(json) } catch (e) {}
         }
     }
@@ -215,6 +217,11 @@ Item {
     /// The app card that goes with the message (as its card, or collapsed as
     /// its preview), or "".
     function appCardForSend() {
+        if (appCard && appCard.fromApp && !appCard.removed && !editing) {
+            const a = Object.assign({}, appCard)
+            delete a.removed; delete a.fromApp
+            return JSON.stringify(a)
+        }
         if (!previewsAllowed || editing || !appCard || appCard.removed || firstLink() !== previewUrl) return ""
         const c = Object.assign({}, appCard)
         delete c.removed
@@ -274,7 +281,7 @@ Item {
     property bool compact: false
     signal appCardSettingsRequested()
     signal appCardPermissionsRequested(string appId)
-    readonly property bool multiline: appCardShown || !!sendTo || scheduleAt > 0 || post || editing || compact || formatting || files.length > 0 || cloudFiles.length > 0 || !!quote || !!clip || grown || previewShown
+    readonly property bool multiline: !!loop || appCardShown || !!sendTo || scheduleAt > 0 || post || editing || compact || formatting || files.length > 0 || cloudFiles.length > 0 || !!quote || !!clip || grown || previewShown
     // Teams' channel post composer.
     property bool post: false
     property bool announcement: false
@@ -307,6 +314,8 @@ Item {
     signal cloudRemoved(string key)
     /// The card's link description: Teams' Link settings for that file.
     signal cloudLinkRequested(string key)
+    /// The Loop component's link description: its link settings.
+    signal loopLinkRequested()
     /// "+" ▸ Record video clip (offered where `canRecordClip`).
     signal recordClipRequested()
     property bool canRecordClip: false
@@ -326,6 +335,22 @@ Item {
     height: bannerShownH + boxHeight + 2 + (post ? 0 : 16)
 
     function plainText() { return input.getText(0, input.length) }
+    // Teams' editor viewport stops growing at 270 (27rem, the editor's
+    // 18 of padding included) and scrolls (measured on winpc 2026-11-20:
+    // compose-editor-viewport max-height 27rem, overflow-y auto), so the
+    // box and its banners stay in view. The post composer grows as before.
+    readonly property real textMaxH: root.post ? 1e6 : 270 - 18
+    readonly property real textH: Math.min(input.contentHeight, textMaxH)
+    readonly property real inputTop: clipCardBox.visible ? clipCardBox.y + clipCardBox.height + 2 : quoteCard.visible ? 14 + quoteCard.height + 4 : fileChips.visible ? fileChips.y + fileChips.height + 8 : 10
+    readonly property real textBottom: inputTop + textH
+    property real textScroll: 0
+    readonly property real maxTextScroll: Math.max(0, input.contentHeight - textH)
+    onMaxTextScrollChanged: if (textScroll > maxTextScroll) textScroll = maxTextScroll
+    function keepCursorInView() {
+        const r = input.cursorRectangle
+        if (r.y < textScroll) textScroll = Math.max(0, r.y)
+        else if (r.y + r.height > textScroll + textH) textScroll = Math.min(maxTextScroll, r.y + r.height - textH)
+    }
     // Teams' Editor: this box's text is checked as you type (one tile of
     // the Editor session); misspellings are squiggled and clicking one
     // opens Teams' Editor card.
@@ -468,7 +493,9 @@ Item {
     function escapeHtml(t) { return t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>") }
     function setPlain(t) { input.clear(); if (t) input.insert(0, escapeHtml(t)) }
     function setHtml(h) { input.clear(); if (h) input.insert(0, h); input.cursorPosition = input.length }
-    function clear() { input.clear(); media = []; urlPreview = null; appCard = null; previewUrl = "" }
+    // (A Loop component left in the box stays in your chat files, as a
+    // Teams draft's does; OST doesn't keep it in the draft yet.)
+    function clear() { input.clear(); media = []; urlPreview = null; appCard = null; previewUrl = ""; loop = null }
     // The box as a draft, which Teams keeps with its formatting: the text
     // (the Drafts list's preview), RichText's HTML and the pictures in it.
     function draftState() {
@@ -869,14 +896,31 @@ Item {
         // The editor: across the box (multiline) or left of the side toolbar.
         Item {
             id: editorArea
+            // Text scrolled out of Teams' viewport is covered (above the
+            // text, under the cards and quote).
+            Rectangle {
+                visible: root.maxTextScroll > 0
+                z: 1; width: parent.width; height: Math.max(0, root.inputTop)
+                color: box.color
+            }
+            Rectangle {
+                visible: root.maxTextScroll > 0
+                z: 1; y: root.textBottom; width: parent.width; height: Math.max(0, input.contentHeight - root.textScroll - root.textH + 8)
+                color: box.color
+            }
+            WheelHandler {
+                enabled: root.maxTextScroll > 0
+                onWheel: e => { root.textScroll = Math.max(0, Math.min(root.maxTextScroll, root.textScroll - e.angleDelta.y / 2)); e.accepted = true }
+            }
             x: root.post ? 11.3 : 0.67
             y: root.headerH + (root.fmtOn ? 43 : 0.67) + root.subjectRowH
             width: root.post ? parent.width - 11.3 : root.multiline ? parent.width - 1.33 : parent.width - 1.33 - sideTools.width
-            height: cloudCards.visible ? cloudCards.y + cloudCards.height + 13.9
+            height: loopCard.visible ? loopCard.y + loopCard.height + 10
+                : cloudCards.visible ? cloudCards.y + cloudCards.height + 13.9
                 : previewCard.visible ? previewCard.y + previewCard.height + 6
                 : appLinkCard.visible ? appLinkCard.y + appLinkCard.height + 8
-                : clipCardBox.visible ? input.y + input.contentHeight + 8
-                : Math.max(root.fmtOn ? 104 : 38, quoteCard.visible ? 14.7 + quoteCard.height + 4 + input.contentHeight + 8 : input.contentHeight + 18)
+                : clipCardBox.visible ? root.textBottom + 8
+                : Math.max(root.fmtOn ? 104 : 38, quoteCard.visible ? 14.7 + quoteCard.height + 4 + root.textH + 8 : root.textH + 18)
             // Teams' quote box and code card behind the text's quote and
             // code runs (RichText marks them; their margins make room).
             Repeater {
@@ -943,6 +987,7 @@ Item {
             }
             QuoteCard {
                 id: quoteCard
+                z: 2
                 visible: !!root.quote
                 x: 12.67; y: 14
                 quote: root.quote
@@ -956,6 +1001,7 @@ Item {
             // follows 2 under it.
             Loader {
                 id: clipCardBox
+                z: 2
                 visible: !!root.clip
                 active: !!root.clip
                 x: 14; y: quoteCard.visible ? 14 + quoteCard.height + 4 + 22 : 32
@@ -972,6 +1018,7 @@ Item {
             }
             Flow {
                 id: fileChips
+                z: 2
                 visible: root.files.length > 0
                 x: 12; y: (quoteCard.visible ? 14 + quoteCard.height + 4 : 10); width: parent.width - 28
                 spacing: 8
@@ -1005,8 +1052,9 @@ Item {
             // winpc 2026-11-15): 11.4 in, 11 under the text.
             UrlPreviewCard {
                 id: previewCard
+                z: 2
                 visible: root.previewShown
-                x: 11.4; y: input.y + input.contentHeight + 11
+                x: 11.4; y: root.textBottom + 11
                 preview: root.shownPreview
                 removable: true
                 // A collapsed app card: Expand preview beside the X.
@@ -1021,8 +1069,9 @@ Item {
             // measured on winpc 2026-11-16): 16.67 in, 16.4 under the text.
             AppLinkCard {
                 id: appLinkCard
+                z: 2
                 visible: root.appCardShown
-                x: 16.67; y: input.y + input.contentHeight + 16.4
+                x: 16.67; y: root.textBottom + 16.4
                 compose: true
                 appCard: root.appCard
                 onCollapseRequested: root.setAppCard({ collapsed: true })
@@ -1039,10 +1088,38 @@ Item {
             // description (12 #424242 at 60, 25) and Remove attachment
             // (32 x 30 at 274.7, 13); then the file's picture (179.3 tall,
             // #F5F5F5 behind it).
+            // Teams' Loop component in the box (measured 2026-11-20): under
+            // the text (16.7 in, 20.5 under its line), as wide as the box
+            // less 33.3; the box ends 10 under it.
+            LoopCard {
+                id: loopCard
+                z: 2
+                visible: !!root.loop
+                x: 16.7; y: root.textBottom + 20.5
+                width: parent.width - 33.3
+                mode: "compose"
+                live: !!root.loop
+                conversation: String(root.chatId || backend.currentChatId)
+                componentUrl: root.loop ? root.loop.url : ""
+                name: root.loop && root.loop.title ? root.loop.title : qsTr("Loop paragraph")
+                description: root.loop ? root.loop.description : ""
+                linking: !!root.loop && root.loop.linking
+                // Only one at a time; a new one starts over.
+                Component.onCompleted: {}
+                onCreated: info => {
+                    if (!root.loop) return
+                    root.setLoop({ driveId: info.driveId || "", itemId: info.itemId || "", linking: true })
+                    backend.loopHostRequest("composeLink", root.loop.key + ":link", JSON.stringify({ driveId: info.driveId, itemId: info.itemId, url: info.componentUrl }))
+                }
+                onTitleChanged: t => root.setLoop({ title: t })
+                onDiscardRequested: loopDiscardDialog.open()
+                onLinkSettingsRequested: root.loopLinkRequested()
+            }
             Flow {
                 id: cloudCards
+                z: 2
                 visible: root.cloudFiles.length > 0
-                x: 13; y: input.y + input.contentHeight + 15
+                x: 13; y: root.textBottom + 15
                 width: parent.width - 30
                 spacing: 8
                 Repeater {
@@ -1114,7 +1191,8 @@ Item {
             TextEdit {
                 id: input
                 x: 12
-                y: clipCardBox.visible ? clipCardBox.y + clipCardBox.height + 2 : quoteCard.visible ? 14 + quoteCard.height + 4 : fileChips.visible ? fileChips.y + fileChips.height + 8 : 10
+                y: root.inputTop - root.textScroll
+                onCursorRectangleChanged: root.keepCursorInView()
                 width: parent.width - 12 - 16
                 wrapMode: TextEdit.Wrap
                 textFormat: TextEdit.RichText
@@ -1328,8 +1406,79 @@ Item {
         { id: "UnifiedFunPicker", icon: "emoji-20", label: qsTr("Emoji, GIFs and Stickers"), hidden: root.textOnly },
         { id: "FilePicker", icon: "attach-20", label: qsTr("Attach files") + " (Alt+Shift+O)", hidden: root.editing || root.textOnly },
         { id: "open-compose-copilot", icon: "pen-sparkle-20", label: qsTr("Write with Copilot") + " (Alt+A)", hidden: root.editing || root.textOnly || !root.copilotAllowed, pressed: copilotPopover.opened },
+        { id: "popup-semo", icon: "loop-page-20", label: qsTr("Loop components"), hidden: root.editing || root.textOnly || !root.loopAllowed, pressed: !!root.loop },
         { id: "message-extension-flyout-command", icon: "add-20", label: qsTr("Actions and apps"), hidden: root.editing || root.textOnly }
     ].filter(t => !t.hidden)
+    /// This box can send a Loop component (the main compose box).
+    property bool loopHost: true
+    // Teams' Loop components (measured on winpc 2026-11-20): the toolbar's
+    // 5th button puts Loop's paragraph in the box at once (Loop's own
+    // insert row offers Table, Bulleted list, Checklist, Task list and
+    // more); Teams makes it in your OneDrive's chat files (a channel's
+    // folder in a channel) and gives it the organization edit link. Where
+    // messaging's fluid settings allow compose (composeEnabledComponents;
+    // composeInChannelEnabled in channels), not in a new chat or an edit.
+    readonly property bool loopAllowed: {
+        if (root.newConversation || !root.loopHost) return false
+        // (Read again once the chat list has come: Teams' settings are in
+        // by then.)
+        if (!backend.chatsJson) return false
+        let f = {}
+        try { f = JSON.parse(backend.ecsSetting("messaging", "fluid") || "{}") } catch (e) {}
+        if ((f.composeEnabledComponents || []).indexOf("paragraph") < 0) return false
+        return String(root.chatId || backend.currentChatId).indexOf("@thread.tacv2") < 0 || f.composeInChannelEnabled === true
+    }
+    /// The compose Loop component: {key, url (its link once made), driveId,
+    /// itemId, description, title, linking}.
+    property var loop: null
+    function setLoop(changes) { root.loop = root.loop ? Object.assign({}, root.loop, changes) : null }
+    function insertLoop() {
+        if (root.loop || !root.loopAllowed) return
+        // The card's id: a random UUID, as Teams' cardClientId.
+        const hex = n => Array.from({ length: n }, () => Math.floor(Math.random() * 16).toString(16)).join("")
+        const cardId = hex(8) + "-" + hex(4) + "-4" + hex(3) + "-" + "89ab"[Math.floor(Math.random() * 4)] + hex(3) + "-" + hex(12)
+        root.loop = { key: "loop" + Date.now().toString(36), cardId: cardId, url: "", driveId: "", itemId: "", description: "", title: "", linking: false }
+    }
+    /// What the message carries ("" without a made component).
+    function loopForSend() {
+        if (!root.loop || !root.loop.url) return ""
+        return JSON.stringify({ component_url: root.loop.url, card_client_id: root.loop.cardId })
+    }
+    /// After the message went: Teams names the file after the title.
+    function loopSent() {
+        const l = root.loop
+        root.loop = null
+        if (l && l.itemId && l.title.trim()) backend.loopHostRequest("composeRename", "compose-rename", JSON.stringify({ driveId: l.driveId, itemId: l.itemId, title: l.title }))
+    }
+    function discardLoop() {
+        const l = root.loop
+        root.loop = null
+        if (l && l.itemId) backend.loopHostRequest("composeDiscard", "compose-discard", JSON.stringify({ driveId: l.driveId, itemId: l.itemId }))
+    }
+    Connections {
+        target: backend
+        function onLoopHostReply(id, json) {
+            if (!root.loop || id !== root.loop.key + ":link") return
+            let r = {}
+            try { r = JSON.parse(json) } catch (e) {}
+            if (r.componentUrl) root.setLoop({ url: r.componentUrl, description: r.description || "", linking: false })
+            else root.setLoop({ linking: false, error: r.error || "error" })
+        }
+    }
+    function loopCardForTest() { return loopCard.visible ? loopCard : null }
+    function loopDiscardDialogForTest() { return loopDiscardDialog }
+    // Teams' "Discard draft message" (measured): 600 wide, the title 20/28
+    // 600, "The Loop component will be deleted." 14/20, Close and Discard
+    // (brand), 96 x 31.3.
+    ConfirmDialog {
+        id: loopDiscardDialog
+        dialogWidth: 600
+        title: qsTr("Discard draft message")
+        body: qsTr("The Loop component will be deleted.")
+        confirmText: qsTr("Discard")
+        cancelText: qsTr("Close")
+        onConfirmed: root.discardLoop()
+    }
     // Write with Copilot (Teams' compose Copilot): for a Microsoft 365
     // Copilot licence where Teams' settings turn it on, between Attach
     // files and Loop components, in chats, channel posts and replies.
@@ -1378,6 +1527,7 @@ Item {
         else if (id === "UnifiedFunPicker") root.emojiRequested(item)
         else if (id === "FilePicker") root.attachRequested(item)
         else if (id === "open-compose-copilot") root.openCopilot(item)
+        else if (id === "popup-semo") root.insertLoop()
         else if (id === "message-extension-flyout-command") { plusFlyout.anchorItem = item; plusFlyout.open() }
         else if (id === "discard-draft") root.requestCancel()
         else if (id === "send") root.trySubmit()
@@ -1419,25 +1569,51 @@ Item {
     property bool dryRun: false
     // Teams' checks before a message goes (its draft validation, module
     // 198077, run in this order; the first that fails names the problem in
-    // a compose banner and the message stays in the box). Loop components,
-    // Nearby mentions and Teams for life invitations don't apply in OST.
+    // a compose banner and the message stays in the box). Teams for life
+    // invitations (11) don't apply in OST.
     /// Teams' maxMessageContentSize (live 90112 bytes of the sent HTML).
     property var sizeCheck: html => backend.composeTooLarge(html, JSON.stringify(root.mediaInUse()))
+    /// The new chat form's checks (Teams' 6, 7 and 12): "" when the
+    /// recipients are fine, else the problem, in Teams' order.
+    property var recipientCheck: null
+    /// Pictures pasted into the box still loading or failed (Teams' 4):
+    /// "loading", "initializing", "failed" or "".
+    property string pastedPictures: ""
     function preSendCheck() {
         const text = root.plainText().replace(/[\u00a0\ufffc\ufdd0\ufdd1]/g, " ")
         const html = root.formattedText()
-        // FileEvaluator and VideoMessageEvaluator: uploads still going.
-        if (root.cloudFiles.some(c => c.loading || c.linking) || (root.clip && (root.clip.uploading || (!root.clip.id && !root.newConversation)))) return qsTr("Uploading... Please wait.")
-        // EmptyContentEvaluator: nothing but spaces (files and cards count).
-        if (!text.trim() && root.mediaInUse().length === 0 && root.files.length === 0 && root.cloudFiles.length === 0 && !root.clip && !root.appCard)
+        // 1 FileEvaluator: files still uploading.
+        if (root.cloudFiles.some(c => c.loading || c.linking)) return qsTr("Uploading... Please wait.")
+        // 2 fluidComponentSyncingEvaluator: a Loop component not made yet.
+        if (root.loop && !root.loop.itemId && !root.loop.error) return qsTr("Syncing... Please wait.")
+        // 3 EmptyContentEvaluator: nothing but spaces (files, a Loop
+        // component and cards count).
+        if (!text.trim() && root.mediaInUse().length === 0 && root.files.length === 0 && root.cloudFiles.length === 0 && !root.clip && !root.appCard && !root.loop)
             return qsTr("Please type a message to continue.")
-        // AnnouncementPostEvaluator: an announcement needs its headline.
+        // 4 InlineImageContentEvaluator: pasted pictures.
+        if (root.pastedPictures === "loading") return qsTr("The images are being loaded... Please wait.")
+        if (root.pastedPictures === "initializing") return qsTr("The images are being initialized... Please wait.")
+        if (root.pastedPictures === "failed") return qsTr("Cannot paste this image. Try different source.")
+        // 5 AnnouncementPostEvaluator: an announcement needs its headline.
         if (root.post && root.announcement && !root.headline.trim() && !root.bannerImage) return qsTr("You'll need to add a headline to post your announcement.")
-        // exceedsMaxSizeEvaluator.
+        // 6, 7 noRecipientEvaluator, notEnoughGroupParticipantsEvaluator.
+        const who = root.recipientCheck ? root.recipientCheck("before-size") : ""
+        if (who) return who
+        // 8 exceedsMaxSizeEvaluator.
         if (root.sizeCheck(html)) return qsTr("Message is too large to send.")
-        // scheduledSendTimeInThePastEvaluator (10 s of grace).
+        // 9 scheduledSendTimeInThePastEvaluator (10 s of grace).
         if (root.scheduleAt > 0 && Date.now() > root.scheduleAt + 10000) return qsTr("This message was scheduled for a time in the past.")
-        // VideoMessageEvaluator: a clip is kept for 7 days.
+        // 10 scheduledMessageWithNearbyMentionEvaluator: only with Teams'
+        // @Nearby mention (People.enableAtNearbyMention, which this
+        // tenant's ECS leaves off, so Teams offers neither); OST's mention
+        // picker has no @Nearby, so a draft can't carry one.
+        // 12 exceedsMaxChatRosterSizeEvaluator.
+        const roster = root.recipientCheck ? root.recipientCheck("roster") : ""
+        if (roster) return roster
+        // 14 FluidPermissionsEvaluator: the Loop component's link.
+        if (root.loop && root.loop.linking) return qsTr("Checking permissions... Please wait.")
+        // 15 VideoMessageEvaluator: a clip still uploading; kept 7 days.
+        if (root.clip && (root.clip.uploading || (!root.clip.id && !root.newConversation))) return qsTr("Uploading... Please wait.")
         if (root.clip && root.clip.created && Date.now() - root.clip.created > 604800000) return qsTr("The video clip might not exist or is no longer available.")
         // ShareToL1WithBotMentionEvaluator: a reply also sent to the channel
         // can't @mention a bot.
@@ -1500,8 +1676,12 @@ Item {
     }
 
     // "+" Actions and apps (measured): 341.3 wide, a search box, then Teams'
-    // own items as 36 px rows (20 px icon 8 in, the label at 40). Installed
-    // apps' actions are not built yet.
+    // own items as 36 px rows (20 px icon 8 in, the label at 40). Then your
+    // installed apps with compose commands (measured 2026-11-20: a line,
+    // then 36 px rows, the app's 20 px icon 8 in, most recently used
+    // first); the menu is at most 480 tall and scrolls, with "Get more
+    // apps" (144.8 x 32, 16 from the right and the bottom) in a 48 px
+    // footer.
     // In the new chat form (measured on winpc 2026-11-16) it is a short
     // menu with no search: 234.3 x 133.3 for its three rows, right on top
     // of the button and ending 2.7 before its right edge; rows 218 wide
@@ -1512,13 +1692,16 @@ Item {
         readonly property bool plain: root.newConversation
         parent: Overlay.overlay
         width: plain ? 234.3 : 341.3; padding: 0
-        height: plain ? 12.7 + itemsCol.height + 12.6 : 62.7 + itemsCol.height + 14.7
+        readonly property real listH: itemsCol.height + (appsCol.visible ? 10.7 + appsCol.height : 0)
+        readonly property real footerH: plain ? 0 : 48
+        height: plain ? 12.7 + itemsCol.height + 12.6 : Math.min(480, 62.7 + listH + 14.7 + footerH)
         x: !anchorItem ? 0 : plain ? anchorItem.mapToItem(Overlay.overlay, 0, 0).x + anchorItem.width - 2.7 - width
             : Math.min(Overlay.overlay.width - width - 8, anchorItem.mapToItem(Overlay.overlay, 0, 0).x + anchorItem.width - width)
         y: anchorItem ? anchorItem.mapToItem(Overlay.overlay, 0, 0).y - height - (plain ? 0 : 8) : 0
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
-        onOpened: { search.text = ""; if (!plain) search.forceActiveFocus() }
+        onOpened: { search.text = ""; listFlick.contentY = 0; if (!plain) { search.forceActiveFocus(); root.loadComposeApps() } }
+        readonly property var apps: root.composeApps.filter(a => String(a.name || "").toLowerCase().indexOf(search.text.trim().toLowerCase()) >= 0)
         readonly property var items: [
             { key: "schedule", label: qsTr("Schedule message"), icon: "send-clock-20", hidden: !root.scheduleAllowed },
             { key: "delivery", label: qsTr("Set delivery options"), icon: "important-20", hidden: !root.deliveryOptions },
@@ -1541,9 +1724,17 @@ Item {
                 Accessible.name: qsTr("Search for apps")
             }
         }
+        Flickable {
+            id: listFlick
+            x: 0; y: plusFlyout.plain ? 12.7 : 62.7
+            width: parent.width; height: plusFlyout.height - y - (plusFlyout.plain ? 12.6 : 14.7 + plusFlyout.footerH)
+            contentHeight: plusFlyout.listH
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            ScrollBar.vertical: ScrollBar { policy: listFlick.contentHeight > listFlick.height ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff }
         Column {
             id: itemsCol
-            x: plusFlyout.plain ? 7.7 : 14.7; y: plusFlyout.plain ? 12.7 : 62.7
+            x: plusFlyout.plain ? 7.7 : 14.7
             Repeater {
                 model: plusFlyout.items
                 Rectangle {
@@ -1568,6 +1759,96 @@ Item {
                 }
             }
         }
+        Rectangle {
+            visible: appsCol.visible
+            x: 14.7; y: itemsCol.height + 5; width: 310; height: 0.67
+            color: theme.divider
+        }
+        Column {
+            id: appsCol
+            visible: !plusFlyout.plain && plusFlyout.apps.length > 0
+            x: 14.7; y: itemsCol.height + 10.7
+            Repeater {
+                model: plusFlyout.apps
+                Rectangle {
+                    id: appRow
+                    required property var modelData
+                    width: 310; height: 36; radius: 4
+                    color: appHover.hovered ? theme.menuHover : "transparent"
+                    Image { x: 8; y: 8; width: 20; height: 20; sourceSize: Qt.size(40, 40); source: appRow.modelData.icon || ""; asynchronous: true; fillMode: Image.PreserveAspectFit }
+                    Text { x: 40; width: parent.width - 48; elide: Text.ElideRight; anchors.verticalCenter: parent.verticalCenter; text: appRow.modelData.name || ""; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(appRow, theme.text) }
+                    HoverHandler { id: appHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler {
+                        onTapped: {
+                            const anchor = plusFlyout.anchorItem
+                            plusFlyout.close()
+                            root.openComposeApp(appRow.modelData, anchor)
+                        }
+                    }
+                    Accessible.role: Accessible.MenuItem
+                    Accessible.name: modelData.name || ""
+                }
+            }
+        }
+        }
+        // Get more apps: Teams' app store.
+        Rectangle {
+            visible: !plusFlyout.plain
+            anchors { right: parent.right; rightMargin: 16; bottom: parent.bottom; bottomMargin: 16 }
+            width: 144.8; height: 32; radius: 4
+            color: moreHover.hovered ? theme.menuHover : theme.surface
+            border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF"); border.width: 0.67
+            Row {
+                anchors.centerIn: parent; spacing: 6
+                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "add-square-20"; size: 20; color: theme.text }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Get more apps"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+            }
+            HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: { plusFlyout.close(); root.getMoreAppsRequested() } }
+            Accessible.role: Accessible.Button
+            Accessible.name: qsTr("Get more apps")
+        }
+    }
+    // Your installed apps' compose commands (backend.composeAppRequest
+    // "list"), most recently used first (kept on this device, as Teams).
+    property var composeApps: []
+    property bool composeAppsLoading: false
+    signal getMoreAppsRequested()
+    /// An app's compose command was picked: the conversation opens its
+    /// task module (action) or Teams' search panel (query).
+    signal composeAppCommand(var app, var command, Item anchor)
+    Settings { id: appRecency; location: StandardPaths.writableLocation(StandardPaths.AppConfigLocation) + "/compose-apps.ini"; category: "recent"; property string order: "[]" }
+    function sortedApps(list) {
+        let order = []
+        try { order = JSON.parse(appRecency.order) } catch (e) {}
+        const rank = a => { const i = order.indexOf(String(a.id).toLowerCase()); return i < 0 ? 1e6 : i }
+        return list.slice().sort((a, b) => rank(a) - rank(b))
+    }
+    function loadComposeApps() {
+        if (root.composeAppsLoading) return
+        root.composeAppsLoading = true
+        backend.composeAppRequest("list", "compose-apps", "{}")
+    }
+    Connections {
+        target: backend
+        function onComposeAppReply(id, json) {
+            if (id !== "compose-apps") return
+            root.composeAppsLoading = false
+            let r = {}
+            try { r = JSON.parse(json) } catch (e) {}
+            if (r.apps) root.composeApps = root.sortedApps(r.apps)
+        }
+    }
+    function openComposeApp(app, anchor) {
+        let order = []
+        try { order = JSON.parse(appRecency.order) } catch (e) {}
+        const id = String(app.id).toLowerCase()
+        appRecency.order = JSON.stringify([id].concat(order.filter(x => x !== id)).slice(0, 50))
+        root.composeApps = root.sortedApps(root.composeApps)
+        const cmds = app.commands || []
+        // One command: straight to it; several: Teams' list of them.
+        if (cmds.length === 1) root.composeAppCommand(app, cmds[0], anchor)
+        else root.composeAppCommand(app, null, anchor)
     }
     // Schedule message (measured on winpc 2026-11-10): 245.3 wide, radius
     // 4, shadow16, padding 16 / 12; "Send this message on" (14 #616161),

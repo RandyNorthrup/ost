@@ -201,6 +201,11 @@ Item {
         else
             backend.appHostRequest(root.appId, root.hostThread, root.hostTeamThread, root.hostTabId, "context", root.hostId + ":ctx", JSON.stringify({ mySite: root.ssr }))
     }
+    /// Valid domains the launch itself names (Teams passes `validDomains`
+    /// and `isMicrosoftOwned` with a task module it launches, as for the
+    /// workflow suggestion's Workflows dialog): its NAA broker trusts them.
+    property var launchDomains: []
+    property bool launchMicrosoftOwned: false
     function loadHostPage(ctx) {
         // A personal app's context: its tab's entity, full screen or not;
         // the server-rendering host feature for Copilot (measured).
@@ -219,7 +224,8 @@ Item {
                                              frameContext: root.frameContext, hostClientType: root.hostClientType, deepNaa: root.deepNaa, context: c,
                                              ssr: root.ssr, allow: root.frameAllow, supports: root.runtimeSupports, shortcuts: root.hostShortcuts,
                                              meetingBoard: root.meetingBoard ? { organizer: root.meetingBoard.organizer || "" } : null,
-                                             video: root.videoApp, extensibleAppContext: root.extensibleAppContext, cart: root.marketplaceCart })
+                                             video: root.videoApp, extensibleAppContext: root.extensibleAppContext, cart: root.marketplaceCart,
+                                             launchDomains: root.launchDomains, launchMicrosoftOwned: root.launchMicrosoftOwned })
         root.hostLoading = true
         web.loadHtml(backend.appHostPage(root.appName), "https://teams.cloud.microsoft/")
     }

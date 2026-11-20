@@ -1770,6 +1770,10 @@ pub mod qobject {
         #[qsignal]
         fn loop_host_reply(self: Pin<&mut Backend>, id: QString, json: QString);
 
+        /// An installed app's compose action answered (compose_app_request).
+        #[qsignal]
+        fn compose_app_reply(self: Pin<&mut Backend>, id: QString, json: QString);
+
         /// The Events app's request answered (events_request).
         #[qsignal]
         fn events_reply(self: Pin<&mut Backend>, id: QString, json: QString);
@@ -2377,6 +2381,12 @@ pub mod qobject {
         /// the same `id`.
         #[qinvokable]
         fn loop_host_request(self: Pin<&mut Backend>, kind: &QString, id: &QString, payload: &QString);
+        /// Installed apps' compose actions ("+"): `kind` "list" (your apps
+        /// with compose commands) or "invoke" ({bot, appId, kind
+        /// fetchTask | submitAction | query | fetchCommands, command, args,
+        /// conversation}); answered by compose_app_reply with the same `id`.
+        #[qinvokable]
+        fn compose_app_request(self: Pin<&mut Backend>, kind: &QString, id: &QString, payload: &QString);
         /// The Events app (docs/spec/events.md): `kind` discover, manage,
         /// features, create, overview or cancel; answered by events_reply
         /// with the same `id`.
@@ -2728,6 +2738,10 @@ pub mod qobject {
         /// or "".
         #[qinvokable]
         fn set_next_app_card(self: Pin<&mut Backend>, json: &QString);
+        /// The next message's compose Loop component ({component_url,
+        /// card_client_id}), or "".
+        #[qinvokable]
+        fn set_next_loop(self: Pin<&mut Backend>, json: &QString);
         /// Read your work-location detection policy.
         #[qinvokable]
         fn load_work_location_policy(self: Pin<&mut Backend>);
@@ -3213,6 +3227,8 @@ pub struct BackendRust {
     next_url_preview_on_send: bool,
     /// The next message's app link card (compose's).
     next_app_card: Option<teams_cli::api::link_unfurl::AppCard>,
+    /// The next message's compose Loop component.
+    next_loop: Option<teams_cli::api::outbox::LoopEmbed>,
     /// The media-store objects the next message carries (a recorded clip).
     next_ams_refs: Vec<String>,
     /// The next channel post's subject, headline and banner colour.
@@ -5162,6 +5178,8 @@ async fn load_overview() -> anyhow::Result<(String, Vec<serde_json::Value>)> {
                 "hidden": c.hidden,
                 "isCreator": c.is_creator,
                 "meeting": c.id.starts_with("19:meeting_"),
+                "backroom": c.backroom,
+                "topic": c.topic,
                 "peerMri": outgoing::callee_mri_for_chat(&c.id, &my_oid),
                 "favorite": fav_rank(&c.id).is_some(),
                 "favoriteRank": fav_rank(&c.id),
@@ -5964,6 +5982,7 @@ async fn load_thread(thread: &str) -> anyhow::Result<()> {
     for m in timeline.iter_mut() {
         localize_banner(&client, m).await;
         localize_videos(&client, m).await;
+        localize_recap(&client, m).await;
         localize_custom_emoji(&client, m).await;
         localize_emoticons(m).await;
         localize_edit_images(m);
@@ -6082,6 +6101,7 @@ async fn load_messages(
     for m in timeline.iter_mut() {
         localize_banner(&client, m).await;
         localize_videos(&client, m).await;
+        localize_recap(&client, m).await;
         localize_custom_emoji(&client, m).await;
         localize_emoticons(m).await;
         localize_edit_images(m);
@@ -7454,6 +7474,19 @@ async fn localize_videos(client: &TeamsClient, m: &mut api::messages::MessageVie
         match cached_image(client, &img).await {
             Ok(path) => v.thumb_local = format!("file://{}", path.display()),
             Err(e) => tracing::warn!("clip poster download failed: {}", short_error(&e)),
+        }
+    }
+}
+
+/// A recap card's recording thumbnails, cached (`thumb_local`).
+async fn localize_recap(client: &TeamsClient, m: &mut api::messages::MessageView) {
+    let mid = m.id.clone();
+    let Some(r) = m.recap.as_mut() else { return };
+    for (i, rec) in r.recordings.iter_mut().enumerate().filter(|(_, x)| !x.thumbnail_url.is_empty()) {
+        let img = api::messages::InlineImage { id: format!("{mid}-recap{i}"), url: rec.thumbnail_url.clone(), width: 0, height: 0, local_path: String::new() };
+        match cached_image(client, &img).await {
+            Ok(path) => rec.thumb_local = format!("file://{}", path.display()),
+            Err(e) => tracing::warn!("recap thumbnail download failed: {}", short_error(&e)),
         }
     }
 }
@@ -14322,6 +14355,7 @@ impl qobject::Backend {
         self.as_mut().rust_mut().next_url_preview = None;
         self.as_mut().rust_mut().next_url_preview_on_send = false;
         self.as_mut().rust_mut().next_app_card = None;
+        self.as_mut().rust_mut().next_loop = None;
         self.as_mut().rust_mut().next_post = None;
         self.as_mut().rust_mut().next_schedule_ms = None;
         self.as_mut().rust_mut().typing_generation += 1;
@@ -15261,6 +15295,8 @@ impl qobject::Backend {
         let importance = std::mem::take(&mut self.as_mut().rust_mut().next_importance);
         let mut o = self.outgoing(&chat_id, conversation, content, mentions, quote, importance);
         o.ams_references = std::mem::take(&mut self.as_mut().rust_mut().next_ams_refs);
+        // The compose Loop component goes with this message only.
+        o.loop_component = self.as_mut().rust_mut().next_loop.take();
         self.as_mut().apply_next_post(&mut o);
         // Sent: the draft for this chat is done.
         self.as_mut()
@@ -15333,6 +15369,7 @@ impl qobject::Backend {
                 .clone()
                 .map(|c| (c, api::link_unfurl::new_card_client_id())),
             bot_message_back: false,
+            loop_component: None,
         }
     }
 
@@ -17335,9 +17372,11 @@ impl qobject::Backend {
                         Ok(None)
                     }
                     (Some((content, mentions)), id) => {
+                        // A thread view's draft: the channel and its post.
+                        let (conv, reply_to) = chat.split_once(";messageid=").unwrap_or((chat.as_str(), ""));
                         let o = api::drafts::Outgoing {
-                            chat: &chat,
-                            reply_to: "",
+                            chat: conv,
+                            reply_to,
                             client_message_id: &cmid,
                             content,
                             mentions,
@@ -17400,7 +17439,11 @@ impl qobject::Backend {
             .filter_map(|m| Some((m["id"].as_str()?.to_string(), m.clone())))
             .collect();
         let mut roamed = api::drafts::roamed_from(page);
-        roamed.retain(|r| r.reply_to.is_empty());
+        // A channel reply's draft is kept as "{channel};messageid={post}"
+        // (Teams' -4.{post} reply chain), as the thread view keeps it.
+        for r in roamed.iter_mut().filter(|r| !r.reply_to.is_empty()) {
+            r.chat = format!("{};messageid={}", r.chat, r.reply_to);
+        }
         roamed.sort_by_key(|r| std::cmp::Reverse(r.time_ms));
         let now = chrono::Utc::now().timestamp_millis() as u64;
         let view = |r: &api::drafts::Roamed| -> Option<RemoteDraft> {
@@ -18283,7 +18326,14 @@ impl qobject::Backend {
                     // Origins an app adds count for Microsoft's own apps
                     // only (Teams' isRestrictedToMicrosoftOwnedApps).
                     let requested = facts.microsoft_owned && p.get("requestedTrust").and_then(|v| v.as_bool()).unwrap_or(false);
-                    let trusted = requested || api::app_host::origin_valid_for_app(&origin, &facts.valid_domains);
+                    // A Microsoft-owned launch's own valid domains (Teams'
+                    // launch input for the workflow suggestion's dialog).
+                    let launch: Vec<String> = p
+                        .get("launchDomains")
+                        .and_then(|a| a.as_array())
+                        .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+                        .unwrap_or_default();
+                    let trusted = requested || api::app_host::origin_valid_for_app(&origin, &facts.valid_domains) || api::app_host::origin_valid_for_app(&origin, &launch);
                     teams_cli::auth::broker::execute(&s("request"), &origin, trusted).await
                 }
                 "sso" => {
@@ -20028,6 +20078,15 @@ impl qobject::Backend {
                             cfg["create"] = json!({ "siteUrl": t.site_url, "driveId": t.drive_id, "filePath": t.file_path,
                                                     "fileName": api::meeting_notes::file_name(&s("title")), "blueprintId": "meeting",
                                                     "noShareLink": true });
+                        } else if s("mode") == "create" && page_kind == api::loop_page::Kind::Compose {
+                            // A compose Loop component (Teams' "Loop
+                            // components"): Loop's paragraph in the chat's
+                            // files folder (a channel's folder in a
+                            // channel), no share link yet; Teams makes the
+                            // organization link once it exists.
+                            let t = api::loop_page::compose_target(&client, &s("channel")).await?;
+                            cfg["create"] = json!({ "siteUrl": t.site_url, "driveId": t.drive_id, "filePath": t.file_path,
+                                                    "fileName": "Loop paragraph.loop", "blueprintId": "paragraph", "noShareLink": true });
                         } else if s("mode") == "create" {
                             let t = api::loop_page::channel_page_target(&client, &s("channel")).await?;
                             cfg["create"] = json!({ "siteUrl": t.site_url, "driveId": t.drive_id, "filePath": t.file_path,
@@ -20060,6 +20119,32 @@ impl qobject::Backend {
                         }
                     }
                 }
+                // A compose Loop component once made: its organization
+                // edit link and the link's description.
+                "composeLink" => {
+                    let r = async { api::loop_page::compose_link(&TeamsClient::new().await?, &s("driveId"), &s("itemId"), &s("url")).await }.await;
+                    match r {
+                        Ok((url, desc)) => json!({ "componentUrl": url, "description": desc }).to_string(),
+                        Err(e) => {
+                            tracing::warn!("Loop component link failed: {}", short_error(&e));
+                            json!({ "error": short_error(&e) }).to_string()
+                        }
+                    }
+                }
+                "composeDiscard" => {
+                    let r = async { api::loop_page::compose_discard(&TeamsClient::new().await?, &s("driveId"), &s("itemId")).await }.await;
+                    if let Err(e) = &r {
+                        tracing::warn!("discarding the Loop component failed: {}", short_error(e));
+                    }
+                    json!({ "ok": r.is_ok() }).to_string()
+                }
+                "composeRename" => {
+                    let r = async { api::loop_page::compose_rename(&TeamsClient::new().await?, &s("driveId"), &s("itemId"), &s("title")).await }.await;
+                    if let Err(e) = &r {
+                        tracing::warn!("naming the Loop component failed: {}", short_error(e));
+                    }
+                    json!({ "ok": r.is_ok() }).to_string()
+                }
                 "pageName" => {
                     let r = async { api::loop_page::page_name(&TeamsClient::new().await?, &s("url")).await }.await;
                     json!({ "name": r.unwrap_or_default() }).to_string()
@@ -20074,6 +20159,32 @@ impl qobject::Backend {
                 _ => json!({ "error": "unknown" }).to_string(),
             };
             let _ = qt.queue(move |mut this| this.as_mut().loop_host_reply(QString::from(id.as_str()), QString::from(answer.as_str())));
+        });
+    }
+
+    pub fn compose_app_request(self: Pin<&mut Self>, kind: &QString, id: &QString, payload: &QString) {
+        let (kind, id, payload) = (kind.to_string(), id.to_string(), payload.to_string());
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let p: serde_json::Value = serde_json::from_str(&payload).unwrap_or_default();
+            let s = |k: &str| p.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string();
+            let r = async {
+                let client = TeamsClient::new().await?;
+                match kind.as_str() {
+                    "list" => Ok(json!({ "apps": api::compose_apps::installed(&client).await? })),
+                    "invoke" => api::compose_apps::invoke(&client, &s("bot"), &s("appId"), &s("kind"), &s("command"), p.get("args").unwrap_or(&json!({})), &s("conversation")).await,
+                    _ => anyhow::bail!("unknown"),
+                }
+            }
+            .await;
+            let answer = match r {
+                Ok(v) => v.to_string(),
+                Err(e) => {
+                    tracing::warn!("compose app {kind} failed: {}", short_error(&e));
+                    json!({ "error": short_error(&e) }).to_string()
+                }
+            };
+            let _ = qt.queue(move |mut this| this.as_mut().compose_app_reply(QString::from(id.as_str()), QString::from(answer.as_str())));
         });
     }
 
@@ -22405,6 +22516,10 @@ impl qobject::Backend {
         self.as_mut().rust_mut().next_app_card = serde_json::from_str(&json.to_string()).ok();
     }
 
+    pub fn set_next_loop(mut self: Pin<&mut Self>, json: &QString) {
+        self.as_mut().rust_mut().next_loop = serde_json::from_str(&json.to_string()).ok();
+    }
+
     pub fn set_next_url_preview(mut self: Pin<&mut Self>, json: &QString) {
         let json = json.to_string();
         self.as_mut().rust_mut().next_url_preview_on_send = json == "fetch";
@@ -23200,7 +23315,8 @@ impl qobject::Backend {
         let (html, mentions) =
             api::messages::teams_html_with_media(&editor_html.to_string(), &media);
         let chat_id = self.rust().current_chat_id.to_string();
-        if chat_id.is_empty() || html.trim().is_empty() {
+        // A Loop component goes even without text.
+        if chat_id.is_empty() || (html.trim().is_empty() && self.rust().next_loop.is_none()) {
             return;
         }
         let mentions = if mentions.is_empty() {

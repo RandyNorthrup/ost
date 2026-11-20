@@ -171,7 +171,8 @@
         const vp = fs.viewProperties || {};
         Object.assign(persisted, {
             hostCorrelationId: correlation,
-            hostScenarioName: cfg.kind === "channelPages" ? scenario + "_Page_ChannelTab" : cfg.kind === "meetingNotes" ? scenario + "_Page_MeetingNotes" : scenario + "_Page_Chat",
+            hostScenarioName: cfg.kind === "channelPages" ? scenario + "_Page_ChannelTab" : cfg.kind === "meetingNotes" ? scenario + "_Page_MeetingNotes"
+                : cfg.kind === "compose" ? "Create_Component_Compose" : cfg.kind === "message" ? "Load_Component_Message" : scenario + "_Page_Chat",
             hostName: cfg.hostName,
             hostScenarioStartTime: Date.now(),
             loopAudience: cfg.audience,
@@ -336,6 +337,16 @@
             if (!v || !v.HTMLView) throw new Error("Requested component loaded but did not provide a renderer");
             await v.HTMLView.render(div, renderOptions);
             emit("rendered", {});
+            // The component's title (Loop components' ComponentTitle: its
+            // title, and "titleChanged" as it is typed); a compose
+            // component's file is named after it when it is sent.
+            const t = component.ComponentTitle;
+            if (t) {
+                const send = x => emit("title", { title: String(x || "").slice(0, 400) });
+                if (t.title !== undefined) send(t.title);
+                else if (t.titlePromise && t.titlePromise.promise) t.titlePromise.promise.then(send, () => {});
+                if (typeof t.on === "function") t.on("titleChanged", send);
+            }
         };
         const watch = c => {
             c.on("closed", err => emit("closed", { errorType: String(err && err.errorType || ""), message: String(err && err.message || "").slice(0, 200) }));

@@ -33,6 +33,8 @@ Popup {
     property string title: qsTr("End the meeting?")
     property string body: qsTr("You'll end the meeting for everyone.")
     property string confirmText: qsTr("End")
+    /// The dismissing button ("Close" in Teams' Discard draft message).
+    property string cancelText: qsTr("Cancel")
     /// A glyph before the title ("alert-warning-16-filled").
     property string titleIcon: ""
     property bool fixedButtons: false
@@ -142,7 +144,7 @@ Popup {
             Accessible.name: db.label
         }
         DialogButton {
-            label: qsTr("Cancel")
+            label: root.cancelText
             height: Math.max(31.33, confirmButton.height)
             onClicked: { root.close(); root.cancelled() }
         }

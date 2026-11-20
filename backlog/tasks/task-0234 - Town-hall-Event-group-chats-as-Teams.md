@@ -4,6 +4,7 @@ title: Town hall Event group chats as Teams
 status: To Do
 assignee: []
 created_date: '2026-11-20T04:10:00Z'
+updated_date: '2026-11-20T16:49:00Z'
 labels:
   - chat
 dependencies: []
@@ -19,3 +20,13 @@ Found in TASK-0142's winpc comparison: Teams handles a town hall's Event group c
 <!-- AC:BEGIN -->
 - [ ] #1 A town hall's Event group chat shows Teams' title, join line and started/ended rows, in every app language, verified against Teams
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+- 2026-11-20 (chat agent), measured on winpc ("Event group: OST TEST 217 town hall 2") and read from Teams' code:
+  - A backroom chat is a thread with `meetingChatType` "Backroom"; a town hall's or webinar's (meeting templateDetails.id = the town hall or webinar template, Teams' isTownhall / isWebinar) is titled "Event group: {title}" (messaging:k6wwmex4q, event_backroom_chat_title_prefix), a meeting's "Planning group: {title}" (k21d43hht). Its avatar is the calendar-lock glyph (data-testid backroom-chat-icon).
+  - Joining: "{name} joined the Event Group Chat: {title} for organizers, presenters, and people helping with the event." (tmp_messages_memberJoinedOneMemberEventBackroom, k69befoe9 plain / kc2rbbia0 rich); added by someone: OneTarget k899lqo1k, TwoTargets kd1b5sjah, ManyTargets k7kl5h3i0; the meeting variants ("…the Planning Group: … helping with the meeting.") k59mdytpy / kc7do3qud / k8bbbov2 / k5ke58ztx.
+  - Calls: "{title} has started." (tmp_messages_backroom_call_event_started, k15ntfp7n; meeting kd3dbdxsw) and "{title} has ended." + the bold duration (k-ids kqok16p0 / meeting k3flolqwp), after the time as other call rows.
+- Built: api::chat::backroom_kind / backroom_title / backroom_of (ChatInfo.backroom + topic, chat JSON backroom/topic), messages::backroom_event_text, Conversation call rows, the calendar-lock avatar in the chat list and header. Strings carry Teams' ids (l10n gen still to be run for ids.json).
+<!-- SECTION:NOTES:END -->

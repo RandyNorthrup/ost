@@ -213,6 +213,7 @@ mod tests {
             url_preview_on_send: false,
             app_card: None,
             bot_message_back: false,
+            loop_component: None,
         }
     }
 

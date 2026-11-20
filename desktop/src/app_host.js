@@ -291,7 +291,8 @@
                 ost.event("failure", JSON.stringify({ reason: String((args[0] && args[0].reason) || args[0] || "") }));
                 return;
             case "nestedAppAuth.execute": {
-                const r = await native("naa", { request: typeof d.data === "string" ? d.data : "", origin: from, requestedTrust: trusted.has(from), nested });
+                const r = await native("naa", { request: typeof d.data === "string" ? d.data : "", origin: from, requestedTrust: trusted.has(from), nested,
+                                                launchDomains: cfg.launchMicrosoftOwned ? (cfg.launchDomains || []) : [] });
                 respond(source, from, d, [null, r]);
                 return;
             }

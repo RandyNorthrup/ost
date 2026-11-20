@@ -19,6 +19,9 @@ Rectangle {
     /// A meeting's chat: Teams' #C5CBFA circle with the 16 px calendar
     /// glyph in brand (measured on winpc at 20 and 32 px).
     property bool meeting: false
+    /// The meeting glyph: an event's or meeting's group chat (Teams'
+    /// backroom-chat-icon) has the calendar with a lock.
+    property string meetingIcon: "meeting-chat-20"
     /// The glyph's size: 16 in lists and cards, 32 (filling it) in the
     /// chat header.
     property int meetingGlyph: 16
@@ -157,7 +160,7 @@ Rectangle {
     FluentIcon {
         visible: root.meeting
         anchors.centerIn: parent
-        name: "meeting-chat-20"; size: root.meetingGlyph
+        name: root.meetingIcon; size: root.meetingGlyph
         color: root.hc ? "#FFFFFF" : "#5B5FC7"
     }
     FluentIcon {

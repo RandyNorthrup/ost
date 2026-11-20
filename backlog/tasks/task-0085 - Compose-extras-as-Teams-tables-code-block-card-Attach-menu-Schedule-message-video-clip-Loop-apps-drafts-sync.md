@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-09T23:01:00Z'
-updated_date: '2026-11-16T14:25:00Z'
+updated_date: '2026-11-20T16:15:00Z'
 labels:
   - desktop
   - messages
@@ -73,4 +73,11 @@ What TASK-0044 left of Teams' compose box (docs/spec/messages-and-composer.md §
 - 2026-11-16 (subagent, c854fa1, merged):
   - Drafts follow Teams' protocol: kept on the device, and roamed to v1/users/ME/drafts (RegularDraft) only when Teams' enableRoamMessageDraft is on, with Teams' conflict banner and Saved draft dialog. The setting is off for ost-test1 (Teams on winpc sends no drafts and ignores server drafts), so OST, like Teams, keeps drafts on the device here. The roaming was checked OST-to-OST via the server (OST_ROAM_DRAFTS=1). Teams-to-OST sync can only be checked once Microsoft turns the setting on.
   - Pre-send checks: Teams' 16 checks measured from its code; the ones for chats and posts are built with Teams' wording and banner (empty or spaces, upload running, missing headline, over 90112 bytes, past schedule time, old video clip, bot mention in a reply). The empty-message banner was compared on winpc. The rest is in TASK-0203.
+
+- 2026-11-20 (chat agent), measured on winpc (OST group test):
+  - Loop components (the toolbar's 5th, data-tid popup-semo) puts Loop's paragraph in the box at once: a white radius-12 card (box width - 33.3, 16.7 in, 20.5 under the text; 48 header + 320 frame). Teams makes it at once: `{OneDrive}/_api/v2.1/drives/{d}/items/root:%2FMicrosoft%20Teams%20Chat%20Files/Loop%20paragraph.loop:/opStream/snapshots/snapshot` (no share link), then createLink {type edit, scope organization}. The header reads "Loop paragraph | People in your organization with the link can edit", with a trash Discard ("Discard draft message" / "The Loop component will be deleted.", Close / Discard; DELETE graph drives/{d}/items/{i}).
+  - Send ("OST TEST 85 loop component from Teams"): content `<p>text</p> \n        <span itemtype="http://schema.skype.com/FluidEmbedCard" itemid="{uuid}"></span>`, cards [{appId FluidEmbedCard, cardClientId, contentType application/vnd.microsoft.card.fluidEmbedCard, content {componentUrl: the createLink webUrl + ?nav=…, sourceType Compose}}]; then PATCH graph item ?@microsoft.graph.conflictBehavior=rename {name: "{title}.loop"}.
+  - Received: a 616.7 card in a 648 bubble; the header has the file name and Shared locations / Copy component / See who has access; frame 320 (messaging.fluid viewProperties growHeight, maxHeight 20rem).
+  - "+" lists installed apps with compose commands (Polly, Workflows, Polls, Clipchamp, Power BI, Praise, Updates, Viva Learning; most recent first), then "Add a new app" store suggestions with Add, and a Get more apps footer; 340 x 480, scrolling. Polls/Polly: composeExtension/fetchTask → task module. Praise/Clipchamp: static taskInfo pages. Power BI: query panel ("Search here", initialRun; Unauthorized here → "Unable to reach app. Please try again."). Workflows/Updates: fetchCommands.
+- Built, not yet verified: LoopCard.qml (compose + message), Kind::Compose/Message in loop_page, compose_target/compose_link/discard/rename, outbox LoopEmbed, `--loop-compose-test`; api::compose_apps + ComposeAppPanel + task module launch/submitAction, the "+" apps list and Get more apps.
 <!-- SECTION:NOTES:END -->

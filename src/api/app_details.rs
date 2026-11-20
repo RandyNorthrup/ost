@@ -1314,6 +1314,26 @@ pub async fn entitlements(client: &TeamsClient) -> Result<HashMap<String, String
         .collect())
 }
 
+/// Several apps' definitions at once (Teams' batchedDefinitions).
+pub async fn definitions(client: &TeamsClient, app_ids: &[String]) -> Result<Vec<serde_json::Value>> {
+    let base = client
+        .middle_tier_url()
+        .context("No Teams middle-tier endpoint")?;
+    let token = super::directory::middle_tier_token().await?;
+    let v: serde_json::Value = client
+        .http()
+        .post(format!("{base}/beta/users/apps/batchedDefinitions"))
+        .bearer_auth(token)
+        .json(&app_ids)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let list = v.get("value").cloned().unwrap_or(v);
+    Ok(list.as_array().cloned().unwrap_or_default())
+}
+
 /// An app's definition from the middle tier (Teams' batchedDefinitions).
 pub async fn definition(client: &TeamsClient, app_id: &str) -> Result<serde_json::Value> {
     let base = client

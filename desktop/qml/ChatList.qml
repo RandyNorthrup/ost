@@ -936,6 +936,7 @@ Rectangle {
             photoId: row.chat.peerMri || (row.chat.isGroup === true && !root.isMeeting(row.chat) ? "chat:" + row.chat.id : "")
             group: row.chat.isGroup === true && !row.chat.peerMri
             meeting: root.isMeeting(row.chat)
+            meetingIcon: row.chat.backroom ? "calendar-lock-20" : "meeting-chat-20"
             presence: row.chat.presence || ""
         }
         // Muted: Teams swaps the picture for a 20 px #E6E6E6 circle with the

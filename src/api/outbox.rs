@@ -96,6 +96,34 @@ pub struct Outgoing {
     /// message that isn't fanned out to bots (`skipfanouttobots`).
     #[serde(default)]
     pub bot_message_back: bool,
+    /// A Loop component made in the compose box (Teams' FluidEmbedCard).
+    #[serde(default)]
+    pub loop_component: Option<LoopEmbed>,
+}
+
+/// A compose Loop component as the message carries it: its link (the
+/// organization edit link with the component's `nav`) and the card's id.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct LoopEmbed {
+    pub component_url: String,
+    pub card_client_id: String,
+}
+
+/// The message's FluidEmbedCard span (as Teams writes it after the text,
+/// captured 2026-11-20, "OST TEST 85 loop component from Teams").
+pub fn loop_embed_span(card_client_id: &str) -> String {
+    format!(" \n        <span itemtype=\"http://schema.skype.com/FluidEmbedCard\" itemid=\"{card_client_id}\"></span>")
+}
+
+/// `properties.cards` for a compose Loop component.
+pub fn loop_embed_cards(l: &LoopEmbed) -> String {
+    serde_json::json!([{
+        "appId": "FluidEmbedCard",
+        "cardClientId": l.card_client_id,
+        "contentType": "application/vnd.microsoft.card.fluidEmbedCard",
+        "content": { "componentUrl": l.component_url, "sourceType": "Compose" },
+    }])
+    .to_string()
 }
 
 /// An announcement banner's picture.
@@ -413,6 +441,10 @@ pub fn post_body(o: &Outgoing) -> serde_json::Value {
             "formatVariant": "TEAMS",
         },
     });
+    if let Some(l) = &o.loop_component {
+        body["content"] = format!("{}{}", body["content"].as_str().unwrap_or_default(), loop_embed_span(&l.card_client_id)).into();
+        body["properties"]["cards"] = loop_embed_cards(l).into();
+    }
     if o.bot_message_back {
         body["messagetype"] = "Text".into();
         body["properties"]["skipfanouttobots"] = true.into();
@@ -1048,6 +1080,7 @@ mod tests {
             url_preview_on_send: false,
             app_card: None,
             bot_message_back: false,
+            loop_component: None,
         };
         // An app's link card as Teams sent it (OST TEST 168a), and collapsed
         // as its preview (OST TEST 168b).
@@ -1113,6 +1146,7 @@ mod tests {
             url_preview_on_send: false,
             app_card: None,
             bot_message_back: false,
+            loop_component: None,
             ..o.clone()
         };
         let b = post_body(&root);
@@ -1175,6 +1209,7 @@ mod tests {
             url_preview_on_send: false,
             app_card: None,
             bot_message_back: false,
+            loop_component: None,
         };
         let b = post_body(&o);
         assert_eq!(b["properties"]["subject"], "OST TEST 75 subject");

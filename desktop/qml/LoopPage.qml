@@ -12,9 +12,13 @@ import com.ost.desktop
 // the call window's meeting notes.
 Item {
     id: root
-    /// "fluidThread" (a chat's Notes), "channelPages" (a channel's Page) or
-    /// "meetingNotes" (the call window's Notes).
+    /// "fluidThread" (a chat's Notes), "channelPages" (a channel's Page),
+    /// "meetingNotes" (the call window's Notes), "compose" (a Loop
+    /// component made in the compose box; `channel` is the conversation)
+    /// or "message" (a Loop component in a message).
     property string kind: "fluidThread"
+    /// The component's title as Loop reports it (Loop components).
+    property string componentTitle: ""
     /// The page's link (its `nav` names the file); empty with `create`.
     property string componentUrl: ""
     /// Make a new page in `channel`'s folder (a channel's New page) and
@@ -59,7 +63,7 @@ Item {
     KeyTyper { id: typer }
     function typeForTest(text) {
         web.runJavaScript("(() => { const f = document.querySelector('iframe'); const d = f && f.contentDocument;"
-            + " const c = d && [...d.querySelectorAll('[contenteditable=true]')].pop(); if (!c) return false; c.focus(); return true })()", ok => {
+            + " const c = d && ([...d.querySelectorAll('[contenteditable=true]')].pop() || d.querySelector('.scriptor-edit-context, [role=textbox]')); if (!c) return false; c.focus(); return true })()", ok => {
                 if (!ok) { console.warn("LOOPHOST type: no canvas"); return }
                 web.forceActiveFocus()
                 typer.typeText("\u0001" + text)
@@ -86,6 +90,7 @@ Item {
             try { d = JSON.parse(json) } catch (e) {}
             if (name === "error") console.warn("LOOPHOST", root.kind, "error", d.stage || "", (d.message || "").slice(0, 200))
             else console.info("LOOPHOST", root.kind, name)
+            if (name === "title") { root.componentTitle = d.title || ""; return }
             if (name === "rendered") root.state_ = "ready"
             else if (name === "error" || (name === "closed" && d.errorType)) { root.error = d.message || d.errorType || "error"; root.state_ = "error"; root.failed(root.error) }
             else if (name === "created" && d.componentUrl) { root.createdInfo = d; root.created(d.componentUrl) }
@@ -102,7 +107,8 @@ Item {
                 c.mode = root.create ? "create" : "load"
                 c.componentUrl = root.componentUrl
                 c.theme = root.hostTheme
-                c.iframeTitle = ""
+                // Teams titles a Loop component's frame "Loop component".
+                c.iframeTitle = root.kind === "compose" || root.kind === "message" ? qsTr("Loop component") : ""
                 bridge.config = JSON.stringify(c)
                 root.hostLoading = true
                 web.loadHtml(backend.loopHostPage(), "https://teams.cloud.microsoft/")

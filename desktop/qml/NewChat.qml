@@ -342,6 +342,21 @@ Rectangle {
         scheduleAllowed: false
         placeholder: qsTr("Type a message")
         newConversation: true
+        // Teams' new-chat checks (its noRecipient, notEnoughGroupParticipants
+        // and exceedsMaxChatRosterSize evaluators; the limit is Teams'
+        // maxRosterSizeInGroupChat, 250).
+        recipientCheck: stage => {
+            const n = root.picked.length
+            if (stage === "before-size") {
+                if (n === 0) return qsTr("The contact info doesn't look right. Enter the info again, then select from the list.")
+                if (nameField.text.trim() && n < 2) return qsTr("You need to add at least 2 people to start group chat.")
+                return ""
+            }
+            const max = Number(backend.ecsSetting("messaging", "maxRosterSizeInGroupChat")) || 250
+            if (n < max) return ""
+            return n === max ? qsTr("You've hit the %1-person limit for group chats. You'll need to remove someone before you send your message.").arg(max)
+                : qsTr("There's a %1-person limit in group chats. You'll need to remove some people before you send your message.").arg(max)
+        }
         files: root.pendingFiles
         cloudFiles: cloudAttach.pending
         onFileRemoved: path => root.pendingFiles = root.pendingFiles.filter(p => p !== path)

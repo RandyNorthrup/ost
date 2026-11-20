@@ -922,6 +922,57 @@ pub struct ChatInfo {
     pub hidden: bool,
     /// You created it (meeting chats: the creator can't leave).
     pub is_creator: bool,
+    /// A meeting's group chat for its organizers and helpers (Teams'
+    /// `meetingChatType` "Backroom"): "event" for a town hall's or a
+    /// webinar's (Teams' "Event group"), "meeting" for a meeting's
+    /// ("Planning group"), else "".
+    pub backroom: String,
+    /// A backroom chat's own title (its name without Teams' prefix).
+    pub topic: String,
+}
+
+/// Teams' backroom chat kind from the thread's properties (its
+/// `meetingChatType` and the meeting's template, the chat's `isTownhall`
+/// / `isWebinar`).
+pub fn backroom_kind(thread: &std::collections::HashMap<String, serde_json::Value>) -> &'static str {
+    let backroom = thread.get("meetingChatType").and_then(|v| v.as_str()).is_some_and(|t| t.eq_ignore_ascii_case("backroom"));
+    if !backroom {
+        return "";
+    }
+    let meeting: serde_json::Value = match thread.get("meeting") {
+        Some(serde_json::Value::String(s)) => serde_json::from_str(s).unwrap_or_default(),
+        Some(v) => v.clone(),
+        None => serde_json::Value::Null,
+    };
+    let template = ["/templateDetails/id", "/templateDetails/templateId"]
+        .iter()
+        .find_map(|p| meeting.pointer(p).and_then(|v| v.as_str()))
+        .unwrap_or_default()
+        .to_lowercase();
+    if template == crate::calling::live_event::TOWNHALL_TEMPLATE || template == crate::calling::live_event::WEBINAR_TEMPLATE {
+        "event"
+    } else {
+        "meeting"
+    }
+}
+
+/// The backroom chats seen in the chat list: chat id → (kind, title).
+static BACKROOMS: std::sync::RwLock<Option<std::collections::HashMap<String, (String, String)>>> = std::sync::RwLock::new(None);
+
+/// A chat's backroom kind and own title, if the chat list said it is one.
+pub fn backroom_of(chat_id: &str) -> Option<(String, String)> {
+    BACKROOMS.read().ok()?.as_ref()?.get(chat_id).cloned()
+}
+
+/// A backroom chat's title as Teams shows it: "Event group: {title}"
+/// (event_backroom_chat_title_prefix) or "Planning group: {title}"
+/// (meeting_backroom_chat_title_prefix), in the app language.
+pub fn backroom_title(kind: &str, title: &str) -> String {
+    match kind {
+        "event" => crate::i18n::fill(&crate::i18n::tr_id("Event group: %1", "messaging:k6wwmex4q"), &[title]),
+        "meeting" => crate::i18n::fill(&crate::i18n::tr_id("Planning group: %1", "messaging:k21d43hht"), &[title]),
+        _ => title.to_string(),
+    }
 }
 
 /// Your notes-to-self chat's name, as Teams lists it: "{you} (You)"
@@ -1036,6 +1087,13 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
 
         let is_group = id.contains("thread") || id.contains("meeting");
         let mut name = conversation_name(conv);
+        let backroom = conv.thread_properties.as_ref().map(|p| backroom_kind(&p.extra)).unwrap_or_default().to_string();
+        let mut topic = String::new();
+        if !backroom.is_empty() && has_topic(conv) {
+            topic = name.clone();
+            name = backroom_title(&backroom, &name);
+            BACKROOMS.write().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(Default::default).insert(id.clone(), (backroom.clone(), topic.clone()));
+        }
         // A 1:1 chat has no topic, and its last sender may be the signed-in
         // user; name it after the other person instead.
         if !is_group
@@ -1115,6 +1173,8 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
                     .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
                     .map(|t| t.timestamp_millis()),
             ),
+            backroom,
+            topic,
             is_creator: conv
                 .thread_properties
                 .as_ref()

@@ -714,6 +714,10 @@ pub struct MessageView {
     pub call_started_at: String,
     #[serde(default)]
     pub call_conversation_url: String,
+    /// The meeting's recap card on its ended row (Teams' recap chiclet):
+    /// the call's recordings and transcript folded in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recap: Option<Recap>,
     /// A rejoin's start posted as a new root that Teams folds into the
     /// meeting's post (`properties.linkedRootMessageId`).
     #[serde(default)]
@@ -822,6 +826,165 @@ pub struct MessageView {
     /// properties.links), when it is shown.
     #[serde(default)]
     pub url_preview: Option<super::url_preview::UrlPreview>,
+}
+
+/// A meeting's recap card (Teams' recap chiclet, meeting-recap-chiclet-app,
+/// measured on winpc 2026-11-20): built from the call-end XML (subject,
+/// start, end, iCalUid) and the call's recording and transcript messages
+/// (by callId).
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Recap {
+    pub subject: String,
+    pub start: String,
+    pub end: String,
+    pub ical_uid: String,
+    pub recordings: Vec<RecapRecording>,
+    pub transcript: bool,
+    /// A recording still being saved ("Saving...").
+    pub saving: bool,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct RecapRecording {
+    /// The AMS thumbnail (`URIObject@url_thumbnail`) and its cached copy.
+    pub thumbnail_url: String,
+    #[serde(default)]
+    pub thumb_local: String,
+    pub duration_seconds: u64,
+    /// Days left before it expires (Teams' policy, 120 from its start), or
+    /// None when it can't expire.
+    pub expires_days: Option<i64>,
+    pub odb_url: String,
+    pub drive_id: String,
+    pub item_id: String,
+    #[serde(skip)]
+    doc_id: String,
+    #[serde(skip)]
+    timestamp: String,
+}
+
+fn xml_attr(content: &str, tag: &str, name: &str) -> Option<String> {
+    let start = content.find(&format!("<{tag} "))?;
+    let head = &content[start..start + content[start..].find('>')?];
+    let key = format!(" {name}=\"");
+    let i = head.find(&key)? + key.len();
+    Some(head[i..i + head[i..].find('"')?].to_string())
+}
+
+fn xml_text(content: &str, tag: &str) -> String {
+    content
+        .split(&format!("<{tag}>"))
+        .nth(1)
+        .and_then(|r| r.split('<').next())
+        .unwrap_or_default()
+        .trim()
+        .to_string()
+}
+
+/// A recording's `RecordingContent@duration` ("0:47:40.1234") in seconds.
+pub fn recording_seconds(d: &str) -> u64 {
+    // "d.hh:mm:ss.fffffff": days only before the first ":".
+    let (days, rest) = match d.split_once('.') {
+        Some((a, b)) if !a.contains(':') => (a.parse::<u64>().unwrap_or(0), b),
+        _ => (0, d),
+    };
+    let hms = rest.split('.').next().unwrap_or_default();
+    let parts: Vec<u64> = hms.split(':').map(|x| x.parse().unwrap_or(0)).collect();
+    let s = parts.iter().fold(0u64, |acc, x| acc * 60 + x);
+    days * 86_400 + s
+}
+
+/// The id a recording or transcript message names its call by.
+fn call_id_of(content: &str) -> String {
+    content
+        .split("<Id type=\"callId\" value=\"")
+        .nth(1)
+        .and_then(|r| r.split('"').next())
+        .unwrap_or_default()
+        .to_string()
+}
+
+/// Fold each call's recordings and transcript into its ended row as
+/// Teams' recap card (only calls that have either get one).
+pub fn attach_recaps(raw: &[serde_json::Value], out: &mut [MessageView], now: chrono::DateTime<chrono::Utc>) {
+    use std::collections::HashMap;
+    let mut recaps: HashMap<String, Recap> = HashMap::new();
+    let mut ends: HashMap<String, (String, String, String, String)> = HashMap::new();
+    for m in raw {
+        let kind = m.get("messagetype").and_then(|v| v.as_str()).unwrap_or_default();
+        let content = m.get("content").and_then(|v| v.as_str()).unwrap_or_default();
+        if kind == "Event/Call" && content.contains("<ended/>") {
+            let id = xml_text(content, "callId");
+            ends.insert(id, (xml_text(content, "Subject"), xml_text(content, "StartTime"), xml_text(content, "EndTime"), xml_text(content, "ICalUid")));
+            continue;
+        }
+        if kind != "RichText/Media_CallRecording" && kind != "RichText/Media_CallTranscript" {
+            continue;
+        }
+        let id = call_id_of(content);
+        if id.is_empty() {
+            continue;
+        }
+        let r = recaps.entry(id).or_default();
+        let status = xml_attr(content, "RecordingStatus", "status").unwrap_or_default();
+        let types = xml_attr(content, "RecordingContent", "contentTypes").unwrap_or_default();
+        if status != "Success" {
+            if types.contains("Recording") && status != "Failure" {
+                r.saving = true;
+            }
+            continue;
+        }
+        if types.contains("Transcript") || kind == "RichText/Media_CallTranscript" {
+            r.transcript = true;
+        }
+        if !types.contains("Recording") {
+            continue;
+        }
+        let doc = content.split("<Id type=\"AMSDocumentID\" value=\"").nth(1).and_then(|x| x.split('"').next()).unwrap_or_default().to_string();
+        if !doc.is_empty() && r.recordings.iter().any(|x| x.doc_id == doc) {
+            continue;
+        }
+        let item = content.split("type=\"onedriveForBusinessVideo\"").nth(1).unwrap_or_default();
+        let item_attr = |name: &str| {
+            let key = format!("{name}=\"");
+            item.split('>').next().and_then(|h| h.split(&key).nth(1)).and_then(|x| x.split('"').next()).unwrap_or_default().replace("&amp;", "&")
+        };
+        let timestamp = xml_attr(content, "RecordingContent", "timestamp").unwrap_or_default();
+        let can_expire = xml_attr(content, "RecordingContent", "canVideoExpire").is_some_and(|v| v.eq_ignore_ascii_case("true"));
+        let expires_days = can_expire
+            .then(|| chrono::DateTime::parse_from_rfc3339(&timestamp).ok())
+            .flatten()
+            .map(|t| ((t.with_timezone(&chrono::Utc) + chrono::Duration::days(120) - now).num_seconds() + 86_399) / 86_400)
+            .map(|d| d.max(0));
+        let thumb = xml_attr(content, "URIObject", "url_thumbnail").filter(|u| u.starts_with("https://")).unwrap_or_default();
+        r.recordings.push(RecapRecording {
+            thumbnail_url: thumb.replace("&amp;", "&"),
+            thumb_local: String::new(),
+            duration_seconds: recording_seconds(&xml_attr(content, "RecordingContent", "duration").unwrap_or_default()),
+            expires_days,
+            odb_url: item_attr("uri"),
+            drive_id: item_attr("driveId"),
+            item_id: item_attr("driveItemId"),
+            doc_id: doc,
+            timestamp,
+        });
+    }
+    for m in out.iter_mut().filter(|m| m.kind == "call" && m.call_state == "ended") {
+        let Some(mut r) = recaps.get(&m.call_id).cloned() else { continue };
+        if r.recordings.is_empty() && !r.transcript {
+            continue;
+        }
+        r.recordings.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+        if let Some((subject, start, end, ical)) = ends.get(&m.call_id) {
+            r.subject = subject.clone();
+            // Teams reads these times as UTC (it appends " +00:00").
+            let utc = |t: &str| if t.is_empty() || t.ends_with('Z') || t.contains('+') { t.to_string() } else { format!("{t}Z") };
+            r.start = utc(start);
+            r.end = utc(end);
+            r.ical_uid = ical.clone();
+        }
+        m.recap = Some(r);
+    }
 }
 
 /// A chat's system event (ThreadActivity/*), as Teams parses it (module
@@ -1048,6 +1211,46 @@ pub fn chat_event(message_type: &str, content: &str) -> Option<ChatEvent> {
 /// Teams' sentence for an event (module 75579's strings, in the app
 /// language), with names. Teams picks the sentence by how many people it
 /// names: one, two, or the first and "N others".
+/// People joining an event's or meeting's group chat (Teams' backroom
+/// chat), as Teams words it: "{name} joined the Event Group Chat: {title}
+/// for organizers, presenters, and people helping with the event." (a
+/// meeting's: "…the Planning Group: … helping with the meeting."), or
+/// "{initiator} and {target} joined …" when someone added them. None for
+/// other events.
+pub fn backroom_event_text(e: &ChatEvent, name: &dyn Fn(&str) -> String, kind: &str, title: &str) -> Option<String> {
+    use crate::i18n::{fill, tr_id, tr_id_n};
+    if !matches!(e.kind.as_str(), "AddMember" | "MemberJoined") || e.targets.is_empty() {
+        return None;
+    }
+    let event = kind == "event";
+    let ts = &e.targets;
+    let self_join = e.kind == "MemberJoined" || (ts.len() == 1 && ts[0] == e.actor);
+    if self_join {
+        let text = if event {
+            tr_id("%1 joined the Event Group Chat: %2 for organizers, presenters, and people helping with the event.", "messaging:k69befoe9")
+        } else {
+            tr_id("%1 joined the Planning Group: %2 for organizers, presenters, and people helping with the meeting.", "messaging:k59mdytpy")
+        };
+        return Some(fill(&text, &[&name(&ts[0]), title]));
+    }
+    let actor = name(&e.actor);
+    let (one, two, many) = if event {
+        ("messaging:k899lqo1k", "messaging:kd1b5sjah", "messaging:k7kl5h3i0")
+    } else {
+        ("messaging:kc7do3qud", "messaging:k8bbbov2", "messaging:k5ke58ztx")
+    };
+    let group = if event { "Event Group Chat" } else { "Planning Group" };
+    let tail = if event { "event" } else { "meeting" };
+    Some(match ts.len() {
+        1 => fill(&tr_id(&format!("%1 and %2 joined the {group}: %3 for organizers, presenters, and people helping with the {tail}."), one), &[&actor, &name(&ts[0]), title]),
+        2 => fill(&tr_id(&format!("%1 and %2 and %3 joined the {group}: %4 for organizers, presenters, and people helping with the {tail}."), two), &[&actor, &name(&ts[0]), &name(&ts[1]), title]),
+        n => fill(
+            &tr_id(&format!("%1 and %2 and %3 joined the {group}: %4 for organizers, presenters, and people helping with the {tail}."), many),
+            &[&actor, &name(&ts[0]), &tr_id_n("%n others", "messaging:k7xsi91tl_mf", (n - 1) as i64), title],
+        ),
+    })
+}
+
 pub fn event_text(e: &ChatEvent, name: &dyn Fn(&str) -> String, meeting: bool) -> String {
     use crate::i18n::{fill, tr_id, tr_id_n};
     let ts = &e.targets;
@@ -1365,6 +1568,9 @@ pub async fn read_timeline_page(
         .filter_map(|m| view_of(m, &me, &own_name))
         .collect();
     sort_by_arrival(&mut out);
+    if let Some(raw) = v.get("messages").and_then(|m| m.as_array()) {
+        attach_recaps(raw, &mut out, chrono::Utc::now());
+    }
     name_events(client, chat_id, &mut out).await;
     let older = v.get("_metadata").and_then(backward_token);
     Ok(TimelinePage {
@@ -1472,9 +1678,13 @@ async fn name_events(client: &TeamsClient, chat_id: &str, out: &mut [MessageView
             .cloned()
             .unwrap_or_else(|| crate::i18n::tr_id("Unknown user", "messaging:kmddh5x4"))
     };
+    let backroom = super::chat::backroom_of(chat_id);
     for m in out.iter_mut() {
         if let Some(e) = &mut m.event {
-            m.text = event_text(e, &name, meeting);
+            m.text = backroom
+                .as_ref()
+                .and_then(|(kind, title)| backroom_event_text(e, &name, kind, title))
+                .unwrap_or_else(|| event_text(e, &name, meeting));
             e.unverified = e
                 .targets
                 .iter()
@@ -5467,6 +5677,28 @@ mod paging_and_event_tests {
         assert_eq!(HorizonChange::UnreadFrom(1794313462720).body(), serde_json::json!({"chb": 1794313462719_i64}));
         assert_eq!(HorizonChange::ClearBookmark.body(), serde_json::json!({"chb": 0}));
         assert_eq!(HorizonChange::ReadTo(9).body(), serde_json::json!({"ch": 9}));
+    }
+
+    #[test]
+    fn recap_folds_recordings_into_the_ended_row() {
+        assert_eq!(recording_seconds("0:47:40.1234"), 2860);
+        assert_eq!(recording_seconds("1:00:01"), 3601);
+        let rec = r#"<URIObject type="Video.2/CallRecording.1" url_thumbnail="https://ams/v1/objects/0-x/views/thumbnail"><RecordingStatus status="Success" code="0"></RecordingStatus><RecordingContent contentTypes="RecordingAndTranscript" timestamp="2026-11-19T04:44:00Z" duration="0:47:40.1" canVideoExpire="True"><item type="onedriveForBusinessVideo" uri="https://x-my.sharepoint.com/rec.mp4" driveId="b!d" driveItemId="01I" /></RecordingContent><Identifiers><Id type="callId" value="c1"/><Id type="AMSDocumentID" value="0-x"/></Identifiers></URIObject>"#;
+        let end = "<ended/><callId>c1</callId><MeetingDetails><Subject>OST TEST</Subject><StartTime>2026-11-19T04:40:00Z</StartTime><EndTime>2026-11-19T05:40:00Z</EndTime><ICalUid>040</ICalUid></MeetingDetails>";
+        let raw = vec![
+            serde_json::json!({"messagetype": "RichText/Media_CallRecording", "content": rec}),
+            serde_json::json!({"messagetype": "Event/Call", "content": end}),
+        ];
+        let mut out = vec![MessageView { kind: "call".into(), call_state: "ended".into(), call_id: "c1".into(), ..Default::default() }];
+        let now = chrono::DateTime::parse_from_rfc3339("2026-11-20T16:00:00Z").unwrap().with_timezone(&chrono::Utc);
+        attach_recaps(&raw, &mut out, now);
+        let r = out[0].recap.as_ref().unwrap();
+        assert_eq!(r.subject, "OST TEST");
+        assert!(r.transcript);
+        assert_eq!(r.recordings.len(), 1);
+        assert_eq!(r.recordings[0].duration_seconds, 2860);
+        assert_eq!(r.recordings[0].expires_days, Some(119));
+        assert_eq!(r.recordings[0].drive_id, "b!d");
     }
 
     #[test]

@@ -618,6 +618,17 @@ Rectangle {
     // when the call's start isn't among the loaded messages.
     readonly property var liveCall: { const c = (backend.chatsJson ? JSON.parse(backend.chatsJson) : []).find(c => c.id === root.chatId); return c && c.liveCall ? c.liveCall : null }
     readonly property bool chatMuted: { const c = (backend.chatsJson ? JSON.parse(backend.chatsJson) : []).find(c => c.id === root.chatId); return !!(c && c.muted) }
+    /// An event's or meeting's group chat (Teams' backroom chat): "event", "meeting" or "".
+    readonly property string backroom: { const c = (backend.chatsJson ? JSON.parse(backend.chatsJson) : []).find(c => c.id === root.chatId); return c && c.backroom ? c.backroom : "" }
+    readonly property bool chatIsCreator: { const c = (backend.chatsJson ? JSON.parse(backend.chatsJson) : []).find(c => c.id === root.chatId); return !!(c && c.isCreator) }
+    /// The chat's Recap (Teams' recap card: View recap, the transcript chip
+    /// and the recording open the meeting's Recap view).
+    function openRecapTab(part) {
+        const i = root.tabNames.indexOf("Recap")
+        if (i >= 0) root.tab = "Recap"
+        console.info("RECAPCARD open", part || "recap", i >= 0)
+    }
+    readonly property string chatTopic: { const c = (backend.chatsJson ? JSON.parse(backend.chatsJson) : []).find(c => c.id === root.chatId); return c && c.topic ? c.topic : "" }
     // Watching the chat's call while we aren't in it (Teams subscribes to
     // its conversation without joining): who is in it, for the header.
     readonly property var liveRosterPeople: JSON.parse(backend.chatLiveRosterJson || "[]")
@@ -661,7 +672,7 @@ Rectangle {
     /// your messaging policy allowing them.
     readonly property bool previewsShown: { const st = backend.settingsJson ? JSON.parse(backend.settingsJson) : {}; return (st.props || {}).controllerConnectedServicesEnabled !== "false" && !backend.urlPreviewsBlocked }
     readonly property var cardKinds: ["application/vnd.microsoft.card.adaptive", "application/vnd.microsoft.card.hero", "application/vnd.microsoft.card.thumbnail",
-        "application/vnd.microsoft.teams.card.list", "application/vnd.microsoft.teams.card.o365connector"]
+        "application/vnd.microsoft.teams.card.list", "application/vnd.microsoft.teams.card.o365connector", "application/vnd.microsoft.card.fluidEmbedCard"]
     function jumpToMessage(id) {
         const i = (list.model || []).findIndex(m => m.id === id)
         if (i >= 0) list.positionViewAtIndex(i, ListView.Center)
@@ -717,10 +728,10 @@ Rectangle {
         openedAt = new Date()
         tab = ""; finding = false; findMark = { id: "", terms: [] }; seekId = ""; participants.visible = false; posting = false
         editingId = ""
-        // A thread pane keeps no draft (its channel's draft is the channel's).
-        if (root.threadRoot) { draftChat = ""; root.setPlain(""); return }
+        // A thread view keeps its reply's draft as Teams does (its post's
+        // reply chain, "{channel};messageid={post}"), roamed with it.
         if (draftChat) root.saveDraft(draftChat)
-        draftChat = chatId
+        draftChat = root.threadRoot ? root.threadChannel + ";messageid=" + root.threadRoot : chatId
         root.loadDraft()
     }
     // The chat's kept draft into the box, and another device's different
@@ -738,7 +749,7 @@ Rectangle {
     Connections {
         target: backend
         function onDraftArrived(chat) {
-            if (!root.draftChat || chat !== root.draftChat || root.threadRoot) return
+            if (!root.draftChat || chat !== root.draftChat) return
             if (root.draftKey(compose.draftState()) !== root.draftShown) {
                 const kept = backend.draftJson(chat)
                 const d = kept ? JSON.parse(kept) : null
@@ -993,6 +1004,7 @@ Rectangle {
             // Teams: the calendar glyph filling a 32 px #C5CBFA circle.
             meeting: root.isMeetingChat
             meetingGlyph: 32
+            meetingIcon: root.backroom ? "calendar-lock-20" : "meeting-chat-20"
         }
         Avatar {
             visible: root.isChannel
@@ -1970,9 +1982,13 @@ Rectangle {
             readonly property string sharedHead: !modelData.shared_in_main || modelData.id === modelData.root_id ? ""
                 : root.threadsLayout ? "thread" : root.threadPane ? "channel" : ""
             // Teams' Attendance card under an ended meeting (28 down, 49.3).
-            readonly property bool attendanceCard: isCall && root.isMeetingChat && root.canSeeAttendance
+            // Teams' recap card (the call's recordings or transcript) takes
+            // the place of the attendance card: the row 28, the card 14
+            // under it, 162 tall.
+            readonly property bool recapCard: isCall && modelData.call_state === "ended" && !!modelData.recap
+            readonly property bool attendanceCard: isCall && root.isMeetingChat && root.canSeeAttendance && !recapCard
                 && modelData.call_state !== "started" && modelData.call_state !== "missed" && !!modelData.call_id
-            height: isRow ? topPad + (isCall ? (attendanceCard ? 28 + 49.3 : 36) : 28)
+            height: isRow ? topPad + (isCall ? (recapCard ? 28 + 14 + 162 : attendanceCard ? 28 + 49.3 : 36) : 28)
                 : editingThis ? topPad + (editLoader.item ? editLoader.item.height : 0)
                 : bubbleY + bubble.height + (reactions.length > 0 ? reactionRow.height - 4.3 + 4 : 0) + threadLineH + repliesDivH
             readonly property int maxBubble: root.postsLayout ? Math.min(900, list.width - 144) : root.compact ? list.width - 64 - root.gutR : Math.min(640, list.width * 0.7)
@@ -2081,6 +2097,13 @@ Rectangle {
                         // Meet now (Teams: "You started a meeting." /
                         // "{{initiator}} started a meeting.", then
                         // "Meeting ended" with the duration).
+                        // An event's or meeting's group chat (Teams' backroom
+                        // chat, measured 2026-11-20 in "Event group: OST TEST
+                        // 217 town hall 2"): "{title} has started." and
+                        // "{title} has ended. {duration}".
+                        const brTitle = root.backroom ? root.escapeHtml(root.chatTopic || root.chatName) : ""
+                        if (brTitle && msg.modelData.call_state === "started")
+                            return root.backroom === "event" ? qsTr("%1 has started.", "messaging:k15ntfp7n").arg(brTitle) : qsTr("%1 has started.", "messaging:kd3dbdxsw").arg(brTitle)
                         if (msg.modelData.call_state === "started")
                             return msg.mine ? qsTr("You started a meeting.") : qsTr("%1 started a meeting.").arg(root.escapeHtml(msg.modelData.sender || root.memberName(msg.modelData.sender_mri) || qsTr("Someone")))
                         if (msg.modelData.call_state === "missed") return qsTr("Call missed")
@@ -2091,6 +2114,7 @@ Rectangle {
                         const parts = root.escapeHtml(backend.durationText("call", s))
                         // A meeting chat says "Meeting ended: {duration}" (seen in OST
                         // calendar test on winpc, 2026-11-10).
+                        if (brTitle) return (root.backroom === "event" ? qsTr("%1 has ended.", "messaging:kqok16p0").arg(brTitle) : qsTr("%1 has ended.", "messaging:k3flolqwp").arg(brTitle)) + "&nbsp;<b>" + parts + "</b>"
                         if (root.isMeetingChat) return qsTr("Meeting ended:") + "&nbsp;<b>" + parts + "</b>"
                         return (msg.modelData.call_huddle ? qsTr("Meeting ended", "messaging:k1wmbpk3x") : qsTr("Call ended", "messaging:k4276a36f")) + "&nbsp;<b>" + parts + "</b>"
                     }
@@ -2103,6 +2127,23 @@ Rectangle {
                 visible: msg.attendanceCard
                 x: root.gutContent; y: msg.topPad + 28
                 onClicked: root.openAttendance(msg.modelData.call_id)
+            }
+            Loader {
+                active: msg.recapCard
+                x: root.gutContent; y: msg.topPad + 28 + 14
+                sourceComponent: RecapCard {
+                    width: Math.min(646, list.width - root.gutContent - 32)
+                    // Teams: a group chat with a topic (an event group) is titled by its
+                    // topic, a meeting by its subject.
+                    recap: root.backroom && root.chatTopic ? Object.assign({}, msg.modelData.recap, { subject: root.chatTopic }) : msg.modelData.recap
+                    fallbackTitle: root.chatTopic || root.chatName
+                    // Teams: Highlights for a town hall's or webinar's
+                    // organizers (its event group chat's creator here).
+                    highlights: root.backroom === "event" && root.chatIsCreator
+                    onOpenRecap: t => root.openRecapTab(t)
+                    onOpenHighlights: root.openRecapTab("")
+                    onShare: root.openRecapTab("")
+                }
             }
             Rectangle {
                 visible: root.compact && msg.mine && !msg.grouped && !msg.isRow
@@ -2318,7 +2359,10 @@ Rectangle {
                 // Teams' app link card sits 15.67 in and the bubble ends 8.67
                 // under it (measured, OST TEST 168a).
                 readonly property bool linkCardFirst: cards.length > 0 && cards[0].link_card === true
-                readonly property real cardW: list.width >= 720 ? (cards.some(c => c.content_type !== "application/vnd.microsoft.card.adaptive") ? 452 : 448) : 360
+                // A Loop component fills the bubble (Teams: 616.7 in a 648 bubble).
+                readonly property bool loopCard: cards.some(c => c.content_type === "application/vnd.microsoft.card.fluidEmbedCard")
+                readonly property real cardW: loopCard ? msg.maxBubble - 2 * 15.7
+                    : list.width >= 720 ? (cards.some(c => c.content_type !== "application/vnd.microsoft.card.adaptive") ? 452 : 448) : 360
                 // Text shows unless the message is only a picture, only files
                 // or only cards.
                 readonly property bool showBody: !imageOnly && !(inFlow && !(msg.modelData.html || "").length) && (msg.modelData.deleted || ((msg.modelData.text || "").length > 0 && !(cards.length > 0 && !(msg.modelData.html || "").length)))
@@ -2441,7 +2485,7 @@ Rectangle {
                 Column {
                     id: cardCol
                     visible: bubble.cards.length > 0
-                    x: bubble.botCard ? 0 : bubble.linkCardFirst ? 15.67 : 17.3; y: bubble.cardsTop
+                    x: bubble.botCard ? 0 : bubble.linkCardFirst || bubble.loopCard ? 15.67 : 17.3; y: bubble.cardsTop
                     width: bubble.cardW
                     spacing: 8
                     Repeater {
@@ -2451,9 +2495,32 @@ Rectangle {
                             required property var modelData
                             required property int index
                             sourceComponent: modelData.link_card ? linkComp
+                                : modelData.content_type === "application/vnd.microsoft.card.fluidEmbedCard" ? loopComp
                                 : modelData.content_type === "application/vnd.microsoft.card.adaptive" ? adaptiveComp
                                 : modelData.content_type === "application/vnd.microsoft.teams.card.list" ? listComp
                                 : modelData.content_type === "application/vnd.microsoft.teams.card.o365connector" ? connectorComp : heroComp
+                            // A Loop component (Teams' FluidEmbedCard, measured
+                            // 2026-11-20): Loop's own component in Teams' card,
+                            // its file's name in the header.
+                            Component {
+                                id: loopComp
+                                LoopCard {
+                                    id: msgLoop
+                                    mode: "message"
+                                    width: bubble.cardW
+                                    componentUrl: String((modelData.content || {}).componentUrl || "")
+                                    Component.onCompleted: backend.loopHostRequest("pageName", "msgloop:" + msg.modelData.id, JSON.stringify({ url: componentUrl }))
+                                    Connections {
+                                        target: backend
+                                        function onLoopHostReply(id, json) {
+                                            if (id !== "msgloop:" + msg.modelData.id) return
+                                            let r = {}
+                                            try { r = JSON.parse(json) } catch (e) {}
+                                            if (r.name) msgLoop.name = r.name
+                                        }
+                                    }
+                                }
+                            }
                             Component {
                                 id: adaptiveComp
                                 AdaptiveCard {
@@ -3313,6 +3380,67 @@ Rectangle {
             if (page) root.openWorkflowDialog(page, r.workflow.prefilledInputs)
         }
     }
+    // Installed apps' compose actions from "+" (api::compose_apps): a
+    // search command opens Teams' panel, an action its task module (the
+    // app's fetchTask answer or the command's own taskInfo), whose submit
+    // goes back as submitAction; the app's cards go into the box (Teams'
+    // InputExtension card), its messages show as a toast.
+    ComposeAppPanel {
+        id: appPanel
+        conversation: root.chatId
+        onCommandPicked: c => root.runComposeCommand(appPanel.app, c, appPanel.anchorItem)
+        onResultPicked: a => root.insertAppAttachment(appPanel.app, a)
+    }
+    property var appTask: null
+    function runComposeCommand(app, cmd, anchor) {
+        console.info("COMPOSEAPP command", app.name, cmd ? cmd.id + " " + cmd.type : "(list)")
+        if (!cmd || cmd.type === "query") { appPanel.openFor(app, cmd, anchor); return }
+        root.appTask = { app: app, cmd: cmd }
+        if (cmd.fetchTask) backend.composeAppRequest("invoke", "compose-app-task", JSON.stringify({ bot: app.botId, appId: app.id, kind: "fetchTask", command: cmd.id, args: {}, conversation: root.chatId }))
+        else if (cmd.taskInfo && cmd.taskInfo.url) root.openAppTask(app, cmd, cmd.taskInfo)
+    }
+    function insertAppAttachment(app, a) {
+        if (!a || !a.contentType) return
+        compose.appCard = { url: "", app_id: String(app.id), app_name: String(app.name || ""), app_icon: String(app.icon || ""), content_type: a.contentType, content: a.content || {}, anonymous: false, fromApp: true }
+        compose.focusEditor()
+    }
+    function appAnswer(json) {
+        let r = {}
+        try { r = JSON.parse(json) } catch (e) {}
+        const t = root.appTask
+        if (!t) return
+        console.info("COMPOSEAPP answer", JSON.stringify(Object.keys(r)), r.task ? r.task.type : "", r.composeExtension ? r.composeExtension.type : "")
+        if (r.error || r.errorCode) { root.toastRequested({ text: qsTr("Unable to reach app. Please try again.") }); return }
+        if (r.task && r.task.type === "continue" && r.task.value) { root.openAppTask(t.app, t.cmd, r.task.value); return }
+        if (r.task && r.task.type === "message") { root.toastRequested({ text: String(r.task.value || "") }); return }
+        const ce = r.composeExtension
+        if (ce && ce.type === "message" && ce.text) { root.toastRequested({ text: String(ce.text) }); return }
+        if (ce && (ce.type === "result" || ce.type === "botMessagePreview")) {
+            const a = ce.type === "botMessagePreview" ? ((ce.activityPreview || {}).attachments || [])[0] : (ce.attachments || [])[0]
+            root.insertAppAttachment(t.app, a)
+        }
+    }
+    Connections {
+        target: backend
+        function onComposeAppReply(id, json) {
+            if (id === "compose-app-task" || id === "compose-app-submit") root.appAnswer(json)
+        }
+    }
+    function openAppTask(app, cmd, info) {
+        const c = Qt.createComponent("TaskModuleDialog.qml")
+        if (c.status !== Component.Ready) { console.warn("app task", c.errorString()); return }
+        const d = c.createObject(root, { appId: String(app.id), appName: String(app.name || ""), appIcon: String(app.icon || ""), taskInfo: info, hostThread: root.chatId })
+        d.finished.connect((callId, error, result) => {
+            console.info("COMPOSEAPP task closed", error ? String(error) : "submitted")
+            if (!error && result !== undefined && result !== null)
+                backend.composeAppRequest("invoke", "compose-app-submit", JSON.stringify({ bot: app.botId, appId: app.id, kind: "submitAction", command: cmd.id, args: { data: result }, conversation: root.chatId }))
+            Qt.callLater(() => d.destroy())
+        })
+        root.appTaskDialog = d
+        d.open()
+    }
+    property var appTaskDialog: null
+    function composeAppsForTest() { return { apps: compose.composeApps, panel: appPanel, task: root.appTaskDialog } }
     property var workflowDialog: null
     function openWorkflowDialog(page, prefilled) {
         const c = Qt.createComponent("TaskModuleDialog.qml")
@@ -3323,7 +3451,13 @@ Rectangle {
             taskInfo: { width: 800, height: 600,
                         url: "https://automations.teams.cloud.microsoft/webapps/workflows/prod/suggestedAction/" + page + "?theme={theme}&locale={locale}&ringId={ringId}" },
             hostThread: root.chatId,
-            hostContext: prefilled ? { subEntityId: JSON.stringify(prefilled) } : {} })
+            // Teams' launch input (chat-app 142420): Microsoft-owned, with
+            // its own valid domains, which its NAA broker trusts.
+            microsoftOwned: true,
+            validDomains: ["automations.teams.cloud.microsoft", "flow.microsoft.com", "preview.flow.microsoft.com", "*.consent.azure-apihub.net",
+                           "*.consent.azure-apim.net", "make.powerautomate.com", "make.preview.powerautomate.com", "make.preprod.powerautomate.com",
+                           "make.gov.powerautomate.us", "make.high.powerautomate.us", "make.powerautomate.appsplatform.us"],
+            hostContext: Object.assign({ chatId: root.chatId }, prefilled ? { subEntityId: JSON.stringify(prefilled) } : {}) })
         d.finished.connect(() => { if (root.workflowDialog === d) root.workflowDialog = null; Qt.callLater(() => d.destroy()) })
         root.workflowDialog = d
         d.open()
@@ -4469,6 +4603,7 @@ Rectangle {
         // properties.links), shown or removed.
         backend.setNextUrlPreview(compose.previewForSend())
         backend.setNextAppCard(compose.appCardForSend())
+        backend.setNextLoop(compose.loopForSend())
         if (root.popout) {
             // A chat window sends to its own chat.
             if (root.hasFiles) {
@@ -4525,6 +4660,10 @@ Rectangle {
         } else if (compose.mediaInUse().length > 0) {
             // Picked emoticons, GIFs and stickers go in Teams' own form.
             backend.sendRichMedia(input.getFormattedText(0, input.length), JSON.stringify(compose.mediaInUse()))
+        } else if (compose.loop || (compose.appCard && compose.appCard.fromApp)) {
+            // A Loop component goes as Teams' HTML (the text, then the
+            // FluidEmbedCard span), even with no text.
+            backend.sendRich(root.plainText().trim().length > 0 ? compose.formattedText() : "")
         } else if (root.plainText().trim().length > 0) {
             // Formatted text goes as Teams HTML; plain text as before.
             // Formatting goes as Teams HTML; plain text as before.
@@ -4532,6 +4671,8 @@ Rectangle {
             if (/<(b|i|u|s|ul|ol|h[123]|hr|blockquote|pre|code|span|a|table)[ >]|margin-left/.test(html)) backend.sendRich(html)
             else root.send(root.plainText())
         }
+        // The component is the message's now: Teams names its file.
+        if (compose.loop) compose.loopSent()
         compose.clear()
         root.quoting = null
         compose.formatting = false
@@ -4728,6 +4869,10 @@ Rectangle {
         onFileRemoved: path => root.pendingFiles = root.pendingFiles.filter(p => p !== path)
         onEmojiRequested: a => root.openEmojiFor(compose)
         cloudFiles: root.pendingCloud
+        // Loop components from the chat's or channel's own box.
+        loopHost: !root.popout && !root.threadRoot && !root.pane
+        onComposeAppCommand: (app, cmd, anchor) => root.runComposeCommand(app, cmd, anchor)
+        onGetMoreAppsRequested: root.getMoreApps()
         onCloudRemoved: key => cloudAttach.remove(key)
         onCloudLinkRequested: key => cloudAttach.openLink(key)
         onAttachRequested: a => root.openAttach(a)

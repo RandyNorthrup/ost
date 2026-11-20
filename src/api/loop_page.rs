@@ -38,6 +38,10 @@ pub enum Kind {
     ChannelPage,
     /// A meeting's notes in the call window's Notes panel.
     MeetingNotes,
+    /// A Loop component in the compose box (Teams' "Loop components").
+    Compose,
+    /// A Loop component in a message (Teams' FluidEmbedCard).
+    Message,
 }
 
 impl Kind {
@@ -45,6 +49,8 @@ impl Kind {
         match s {
             "channelPages" => Kind::ChannelPage,
             "meetingNotes" => Kind::MeetingNotes,
+            "compose" => Kind::Compose,
+            "message" => Kind::Message,
             _ => Kind::ChatNotes,
         }
     }
@@ -53,6 +59,8 @@ impl Kind {
             Kind::ChatNotes => "fluidThread",
             Kind::ChannelPage => "channelPages",
             Kind::MeetingNotes => "meetingNotes",
+            Kind::Compose => "compose",
+            Kind::Message => "message",
         }
     }
     /// Teams' settings category for the page (its fluid settings; the
@@ -61,6 +69,10 @@ impl Kind {
         match self {
             Kind::ChatNotes | Kind::MeetingNotes => "fluidThread",
             Kind::ChannelPage => "channelPages",
+            // Loop components in compose and messages take messaging's
+            // own fluid settings (view properties growHeight, maxHeight
+            // 20rem, viewType Large).
+            Kind::Compose | Kind::Message => "messaging",
         }
     }
 }
@@ -157,6 +169,8 @@ fn category_defaults(kind: Kind) -> Value {
             d["sizeLimitValueBytes"] = json!(0xa00000);
             d["viewProperties"] = vp("Large");
         }
+        // Messaging's settings are ECS's `messaging.fluid` as they are.
+        Kind::Compose | Kind::Message => return json!({}),
     }
     d
 }
@@ -269,6 +283,89 @@ fn percent_decode(s: &str) -> String {
         .unwrap_or_else(|| s.to_string())
 }
 
+/// Where Teams makes a Loop component from the compose box: in a chat,
+/// your OneDrive's "Microsoft Teams Chat Files" folder (as Teams' chat
+/// file uploads); in a channel, the channel's folder (measured 2026-11-20:
+/// `POST {OneDrive}/_api/v2.1/drives/{d}/items/root:%2FMicrosoft%20Teams%20Chat%20Files/Loop%20paragraph.loop:/opStream/snapshots/snapshot`,
+/// no share link yet).
+pub async fn compose_target(client: &TeamsClient, conversation: &str) -> Result<PageTarget> {
+    if conversation.ends_with("@thread.tacv2") {
+        return channel_page_target(client, conversation).await;
+    }
+    let drive: Value = client.graph_get("/me/drive?$select=id,webUrl").await?.json().await?;
+    let drive_id = drive.get("id").and_then(Value::as_str).unwrap_or_default().to_string();
+    let site = super::meeting_notes::site_of(drive.get("webUrl").and_then(Value::as_str).unwrap_or_default()).context("Your OneDrive")?;
+    anyhow::ensure!(!drive_id.is_empty(), "Your OneDrive");
+    Ok(PageTarget { site_url: site, drive_id, file_path: CHAT_FILES_FOLDER.to_string() })
+}
+
+/// The folder Teams keeps a chat's files in, in the sender's OneDrive.
+pub const CHAT_FILES_FOLDER: &str = "Microsoft Teams Chat Files";
+
+/// A drive or item id as Graph hands them out (nothing that could change
+/// the request's path).
+fn plain_id(s: &str) -> bool {
+    !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || "!-_".contains(c))
+}
+
+/// A compose Loop component's link, as Teams makes it once the component
+/// exists: the item's organization edit link (`createLink {"type":"edit",
+/// "scope":"organization"}`) with the component's `nav`, and the link's
+/// description for the card ("People in your organization with the link
+/// can edit").
+pub async fn compose_link(client: &TeamsClient, drive_id: &str, item_id: &str, page_link: &str) -> Result<(String, String)> {
+    anyhow::ensure!(plain_id(drive_id) && plain_id(item_id), "Not a Loop component");
+    // As Teams: SharePoint's own v2.1 createLink (its answer names the link
+    // in the user's language, `localizedDescription`); Graph's otherwise.
+    let host = url::Url::parse(page_link).ok().and_then(|u| u.host_str().map(str::to_string)).unwrap_or_default();
+    let body = json!({ "type": "edit", "scope": "organization" });
+    let sp: Option<Value> = async {
+        anyhow::ensure!(host.ends_with(".sharepoint.com"), "not SharePoint");
+        let token = crate::auth::oauth::access_token_for(&format!("https://{host}/.default")).await?;
+        let r = reqwest::Client::new()
+            .post(format!("https://{host}/_api/v2.1/drives/{drive_id}/items/{item_id}/createLink"))
+            .bearer_auth(token)
+            .json(&body)
+            .send()
+            .await?
+            .error_for_status()?;
+        anyhow::Ok(r.json::<Value>().await?)
+    }
+    .await
+    .ok();
+    let v: Value = match sp {
+        Some(v) => v,
+        None => client.graph_post(&format!("/drives/{drive_id}/items/{item_id}/createLink"), &body).await?.json().await?,
+    };
+    let web = v.pointer("/link/webUrl").and_then(Value::as_str).context("The component's link")?;
+    let desc = v.pointer("/link/localizedDescription").and_then(Value::as_str).unwrap_or_default().to_string();
+    Ok((super::meeting_notes::shared_link(web, page_link), desc))
+}
+
+/// Discard (Teams' "The Loop component will be deleted."): the file goes.
+pub async fn compose_discard(client: &TeamsClient, drive_id: &str, item_id: &str) -> Result<()> {
+    anyhow::ensure!(plain_id(drive_id) && plain_id(item_id), "Not a Loop component");
+    client.graph_delete(&format!("/drives/{drive_id}/items/{item_id}")).await?;
+    Ok(())
+}
+
+/// The file's name once the component is sent: its title (Teams renames
+/// "Loop paragraph.loop" to "{title}.loop", conflictBehavior rename).
+pub fn compose_file_name(title: &str) -> Option<String> {
+    let clean: String = title.chars().filter(|c| !"\"*:<>?/\\|#%".contains(*c) && !c.is_control()).collect();
+    let clean = clean.trim().trim_end_matches('.').trim();
+    (!clean.is_empty()).then(|| format!("{clean}.loop"))
+}
+
+pub async fn compose_rename(client: &TeamsClient, drive_id: &str, item_id: &str, title: &str) -> Result<()> {
+    anyhow::ensure!(plain_id(drive_id) && plain_id(item_id), "Not a Loop component");
+    let Some(name) = compose_file_name(title) else { return Ok(()) };
+    client
+        .graph_patch(&format!("/drives/{drive_id}/items/{item_id}?@microsoft.graph.conflictBehavior=rename"), &json!({ "name": name }))
+        .await?;
+    Ok(())
+}
+
 /// The name Teams' page header shows: the page's file name without
 /// `.loop` (Graph's shares lookup of its link).
 pub async fn page_name(client: &TeamsClient, component_url: &str) -> Result<String> {
@@ -281,6 +378,15 @@ mod tests {
 
     fn s(v: &[&str]) -> Vec<String> {
         v.iter().map(|x| x.to_string()).collect()
+    }
+
+    #[test]
+    fn compose_names_as_teams() {
+        assert_eq!(compose_file_name("OST TEST 85 loop").as_deref(), Some("OST TEST 85 loop.loop"));
+        assert_eq!(compose_file_name("  a/b: c?  ").as_deref(), Some("ab c.loop"));
+        assert_eq!(compose_file_name("   "), None);
+        assert_eq!(Kind::parse("compose").category(), "messaging");
+        assert_eq!(category_defaults(Kind::Message), json!({}));
     }
 
     #[test]
