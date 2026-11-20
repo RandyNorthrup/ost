@@ -1,10 +1,10 @@
 ---
 id: TASK-0098
 title: Meeting recap card on a meeting's ended row, as Teams
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-11-10T17:18:00Z'
-updated_date: '2026-11-20T19:24:00Z'
+updated_date: '2026-11-20T19:52:00Z'
 labels:
   - desktop
   - messages
