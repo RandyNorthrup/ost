@@ -763,6 +763,9 @@ pub struct FolderHit {
     /// whose OneDrive it is ("person"); none in your own OneDrive.
     pub location_web: String,
     pub location_kind: String,
+    /// For a person's OneDrive, whose picture Location shows: the hit's
+    /// author account (OneDrive reads `AuthorOWSUSER`, "account|name|…").
+    pub location_author: String,
 }
 
 /// The picker's date filter: All dates, Today, Last 7 days, Last 30 days,
@@ -861,6 +864,7 @@ fn hit(h: &serde_json::Value, personal: &str, now: chrono::DateTime<chrono::Loca
         parent_id: r["parentReference"]["id"].as_str().unwrap_or_default().to_string(),
         location_kind: if same_site || web.is_empty() { String::new() } else if template == 21 { "person".into() } else { "site".into() },
         location_web: web,
+        location_author: st("authorOWSUSER").split('|').next().unwrap_or_default().trim().to_string(),
         item,
     })
 }
@@ -886,7 +890,7 @@ pub async fn search_folders(client: &TeamsClient, query: &str, all: bool, days: 
         "query": { "queryString": query_string, "queryTemplate": template },
         "from": 0, "size": 25,
         "fields": ["id", "name", "size", "webUrl", "parentReference", "lastModifiedDateTime", "lastModifiedBy", "createdBy", "folder", "file", "sharepointIds",
-            "IsContainer", "SiteTitle", "SPWebUrl", "SPSiteURL", "SiteTemplateId", "ParentLink"]
+            "IsContainer", "SiteTitle", "SPWebUrl", "SPSiteURL", "SiteTemplateId", "ParentLink", "AuthorOWSUSER"]
     }] });
     let v: serde_json::Value = client.graph_post("/search/query", &body).await?.json().await.context("Search reply")?;
     Ok(v["value"][0]["hitsContainers"][0]["hits"]
@@ -926,9 +930,16 @@ pub async fn people_search(client: &TeamsClient, query: &str) -> Result<Vec<serd
 /// Location's picture for a search hit (OneDrive's): a site's logo from
 /// your OneDrive's `siteiconmanager/getsitelogo` (saved in OST's cache), or
 /// the directory id of the person whose OneDrive it is (their drive's owner).
-pub async fn location_picture(client: &TeamsClient, web: &str, person: bool) -> Result<serde_json::Value> {
+pub async fn location_picture(client: &TeamsClient, web: &str, person: bool, author: &str) -> Result<serde_json::Value> {
     let web = web.trim_end_matches('/');
     let host = web.split('/').take(3).collect::<Vec<_>>().join("/");
+    // OneDrive's picker shows the hit's author (AuthorOWSUSER's account) for
+    // a person's OneDrive; the drive's owner when that's missing (a drive
+    // you can't open whole has no owner to read).
+    if person && !author.is_empty() && !author.contains('/') {
+        let v: serde_json::Value = client.graph_get(&format!("/users/{}?$select=id,displayName", url::form_urlencoded::byte_serialize(author.as_bytes()).collect::<String>())).await?.error_for_status()?.json().await?;
+        return Ok(serde_json::json!({ "oid": v["id"], "name": v["displayName"] }));
+    }
     if person {
         let hostname = host.trim_start_matches("https://");
         let path = web.strip_prefix(&host).unwrap_or_default();

@@ -1311,10 +1311,10 @@ Item {
         function setPerson(p) { searchPeople = p ? [p] : []; search(query, searchAll) }
         /// Location pictures by web address: {path} (a site's logo) or {oid}.
         property var locationPics: ({})
-        function locationPicture(web, kind) {
+        function locationPicture(web, kind, author) {
             if (!web || locationPics[web] !== undefined) return
             const m = Object.assign({}, locationPics); m[web] = null; locationPics = m
-            backend.driveAction(root.tag + "pic:location_picture", "{}", JSON.stringify({ web: web, kind: kind }))
+            backend.driveAction(root.tag + "pic:location_picture", "{}", JSON.stringify({ web: web, kind: kind, author: author || "" }))
         }
         function datesMenuForTest(o) { if (o) datesMenu.open(); else datesMenu.close() }
         function personMenuForTest(o) { if (o) { personMenu.open(); personSearch.text = ""; findPeople("") } else personMenu.close() }
@@ -1929,7 +1929,7 @@ Item {
                                 // Another site's logo, or the picture of the
                                 // person whose OneDrive it is, before its name.
                                 readonly property var pic: frow.modelData.location_kind ? pk.locationPics[frow.modelData.location_web] : null
-                                Component.onCompleted: if (frow.modelData.location_kind) pk.locationPicture(frow.modelData.location_web, frow.modelData.location_kind)
+                                Component.onCompleted: if (frow.modelData.location_kind) pk.locationPicture(frow.modelData.location_web, frow.modelData.location_kind, frow.modelData.location_author)
                                 Image {
                                     visible: frow.modelData.location_kind === "site" && !!locRow.pic && !!locRow.pic.path
                                     anchors.verticalCenter: parent.verticalCenter

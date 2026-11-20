@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-13T16:48:00Z'
-updated_date: '2026-11-20T15:35:00Z'
+updated_date: '2026-11-20T20:24:00Z'
 labels:
   - files
 dependencies: []
@@ -34,4 +34,8 @@ Teams' Move/Copy picker search has a Person pill ("Filter by people": a people s
 - 2026-11-20 verified (--picker-person-test): people listed and typed, OST Test 1 picked narrows My files (drops SharePoint App's Recordings), Clear restores; All files shows OST Test Team's logo in Location (getsitelogo). A person's-OneDrive picture wasn't seen live (no such folders reachable).
 
 Built so far: the picker search's Person pill and menu; picking a person adds the modified-by/author clause (taken from OneDrive's code, since Teams' picker shows a stuck "Please sign in" on winpc); Location shows a site's logo or the owner's picture. Verified live: Person narrowed My files; All files showed the OST Test Team logo. Missing: the person-picture case seen live (needs a folder in someone else's OneDrive reachable to ost-test1); people are found via Graph /me/people, not OneDrive's own people search.
+
+- 2026-11-20 (agent tuiF): Teams' picker All files on winpc still shows the stuck "Please sign in" (checked again), so Teams' Location pictures can't be measured live; the expected layout is taken from OneDrive's bundle code (spofilepickerwebpack, odsp-web-prod_2026-11-06.005): another site's logo (siteiconmanager/getsitelogo) or the OneDrive owner's picture, 16 px before the name. Test data: OST Test 3 created "OST TEST 128 shared folder" in its OneDrive and shared it with ost-test1 (edit, no mail) to check the person case in OST.
+
+- 2026-11-20 AC2 (agent tuiF): OneDrive's picker code (spofilepickerwebpack 283) shows, before another site's Location, its SiteLogo, and for a person's OneDrive (SiteTemplateId 21 with AuthorOWSUSER) the hit's author picture (AuthorOWSUSER "account|name", a Large user coin), not the drive owner. OST now asks Graph search for AuthorOWSUSER and shows that person (resolved by account to their directory id; the drive owner only when the field is missing). Verified live (linuxlt, ost-test1, --picker-person-test --picker-person-all --picker-person-query="OST TEST 128"): "OST TEST 128 shared folder" in OST Test 3's OneDrive shows OST Test 3's picture before "OST Test 3's OneDrive"; the site-logo case was verified before. Teams' own picker still stops at "Please sign in" on winpc, so the layout comes from the bundle code. Test folder deleted.
 <!-- SECTION:NOTES:END -->
