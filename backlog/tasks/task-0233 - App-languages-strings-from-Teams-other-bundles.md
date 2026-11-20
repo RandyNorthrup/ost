@@ -1,10 +1,10 @@
 ---
 id: TASK-0233
 title: 'App languages: strings from Teams'' other bundles'
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-11-20T04:10:00Z'
-updated_date: '2026-11-20T20:08:00Z'
+updated_date: '2026-11-20T21:06:00Z'
 labels:
   - desktop
 dependencies: []
@@ -18,7 +18,7 @@ Found in TASK-0142: about 800 OST strings stay English because Teams keeps their
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 OST's text for the Stream player, recorder, file preview and mirrored web-app screens appears in the chosen language with Teams' wording, fetched at runtime like the main catalogue (no Microsoft strings in the repo)
+- [x] #1 OST's text for the Stream player, recorder, file preview and mirrored web-app screens appears in the chosen language with Teams' wording, fetched at runtime like the main catalogue (no Microsoft strings in the repo)
 - [ ] #2 untranslated.txt lists only text that Teams itself has no translation for
 <!-- AC:END -->
 
@@ -37,4 +37,6 @@ Found in TASK-0142: about 800 OST strings stay English because Teams keeps their
 
 - 2026-11-20 verified (agent tuiF, linuxlt, ost-test1, isolated XDG_CONFIG_HOME, app language de-de): the catalogue built from Teams' CDN plus the other bundles (4,345 strings, 365 from them: OneDrive 218, Outlook calendar 70, OneCamera 34, OnePlayer 28, Planner 15); OneDrive's screens showed OneDrive's German (Filter by pane, menus, "Eigene Dateien"). A bundle's text is only used on its own screens (extra_sources.json usedIn), so a generic word never takes another app's wording. untranslated.txt: 843 -> 484.
 - Open: the Downloads panel (Edge/WebView2 runtime strings, no CDN), most of OneNote (OneNote for the web's bundle needs a signed-in page to find), Events' templates (not in Teams 26304), meeting options' labels (OST now asks with Accept-Language; mapping OST's fallbacks to the reply's translations keys needs a live reply), and strings whose OST wording differs from the bundles'.
+
+- 2026-11-20 merged as 29f89fc; AC1 met for the Stream player, recorder, file preview and OneDrive/Outlook/Planner screens. AC2 open: Downloads panel, OneNote, Events templates, meeting-options labels.
 <!-- SECTION:NOTES:END -->

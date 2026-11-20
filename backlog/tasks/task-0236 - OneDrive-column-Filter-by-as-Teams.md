@@ -1,10 +1,10 @@
 ---
 id: TASK-0236
 title: OneDrive column Filter by as Teams
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-11-20T15:35:00Z'
-updated_date: '2026-11-20T20:07:00Z'
+updated_date: '2026-11-20T21:06:00Z'
 labels:
   - files
 dependencies: []
@@ -18,7 +18,7 @@ Found in TASK-0189: the Modified and Modified By column menus in Teams have Filt
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Filter by in the Modified and Modified By column menus works as in Teams, verified against Teams on winpc
+- [x] #1 Filter by in the Modified and Modified By column menus works as in Teams, verified against Teams on winpc
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -37,4 +37,12 @@ Found in TASK-0189: the Modified and Modified By column menus in Teams have Filt
 - 2026-11-20 built (agent tuiF): Filter by in the Modified / Modified By menus ("Filter by (N)" ticked when filtered), header funnel, the right pane (Modified By: people box via ClientPeoplePickerSearchUser, @Me, editors; Modified: dates) from RenderListFilterData, Apply / Clear all, the chip bar with Clear; filtered rows from RenderListDataAsStream with OneDrive's FilterField/FilterValues params (OverrideViewXml CAML with @Me). api::list_rows filter_request/filter_values/filter_people (+ tests), backend drive_set_filters / drive_filter_values / drive_filter_people, harness --filter-by-test; spec docs/spec/onedrive-rows.md. Pending: live run.
 
 - 2026-11-20 verified live (agent tuiF, linuxlt, ost-test1, --filter-by-test at 1280x680): menus "Filter by" / "Filter by (1)" ticked; Modified By pane listed @Me, OST Test 1, SharePoint App (RenderListFilterData); SharePoint App applied -> only Recordings (as Teams on winpc); +OST Test 1 -> all 11; Modified pane listed the 7 dates 11/5..11/16/2026 (same as Teams) and 11/5 + both editors -> Microsoft Teams Chat Files, Notebooks; the box found OST Test 2 and added it ticked; @Me applied (CAML <UserID/> merged into OST's ViewXml: SharePoint ignores OverrideViewXml next to a ViewXml); chip X and Clear restored all rows. Bar, chips, [Me], funnel and pane match the winpc captures. German run: pane in OneDrive's German ("Filtern nach \"Geändert von\" (3)", "Einen Namen oder eine E-Mail-Adresse eingeben", "Anwenden", "Alle löschen"). Fixes found live: RenderListFilterData answers HTML (sharing::send_text), font.pixelSize must be int.
+
+- 2026-11-20 merged as a6bfc48.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+OneDrive column Filter by as Teams: Modified and Modified By menus get Filter by / Filter by (N), opening Teams' 340-wide pane (people box, @Me and editors; or the folder's dates) with Apply and Clear all; a chip bar and the column funnel show active filters. Requests as Teams' (spec in docs/spec/onedrive-rows.md); SharePoint's HTML filter-values reply handled and the @Me clause merged into OST's view. Harness --filter-by-test. Verified live on linuxlt against winpc: every filter combination returned the same rows as Teams.
+<!-- SECTION:FINAL_SUMMARY:END -->
