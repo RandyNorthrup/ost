@@ -35,6 +35,20 @@ Item {
         ? ((driveData.people || []).find(p => p.name === person) || { items: [] }).items
         : driveData.items || []
     readonly property var deleted: driveData.deleted || []
+    // Filter by (TASK-0236): the folder's column filters as the backend
+    // applied them ([{field: "Modified"|"Editor", values, labels}]).
+    readonly property var filters: view === "folder" ? (driveData.filters || []) : []
+    function filterOf(field) { return filters.find(f => f.field === field) || { field: field, values: [], labels: [] } }
+    function setFilter(field, values, labels) {
+        const out = filters.filter(f => f.field !== field)
+        if (values.length) out.push({ field: field, values: values, labels: labels })
+        backend.driveSetFilters(JSON.stringify(out))
+    }
+    function removeFilterValue(field, value) {
+        const f = filterOf(field)
+        const i = f.values.indexOf(value)
+        setFilter(field, f.values.filter((v, j) => j !== i), (f.labels || []).filter((v, j) => j !== i))
+    }
     readonly property var people: driveData.people || []
     readonly property var libraries: driveData.libraries || []
     readonly property bool canWrite: view === "folder"
@@ -704,9 +718,85 @@ Item {
                 function shows(k) { return w(k) > 0 }
                 readonly property real wName: narrow ? Math.max(120, width - 56 - 40 - 189.33) : widths.name
                 readonly property real gridWidth: narrow ? width : 56 + 40 + keys.reduce((a, k) => a + (widths[k] || 0), 0)
+                // Filter by's bar (OneDrive's, measured 2026-11-20): 42.67 tall
+                // above the header; "Modified:" / "Modified By:" (14,
+                // #424242) and a chip per value (24 tall, radius 12, a 24 px
+                // picture for a person, 13.33 px text, a 16 px X), 8 apart;
+                // a "Clear" pill (22 tall, 1 px border) at the right clears all.
+                Item {
+                    id: fbar
+                    visible: root.filters.length > 0
+                    width: parent.width; height: visible ? 42.67 : 0
+                    Row {
+                        x: 25; y: 10; spacing: 20
+                        // chips stop short of the Clear pill
+                        width: Math.min(implicitWidth, fbar.width - 25 - clearPill.width - 17 - 12); clip: true
+                        Repeater {
+                            model: ["Modified", "Editor"].map(f => root.filterOf(f)).filter(f => f.values.length > 0)
+                            Row {
+                                id: fgroup
+                                required property var modelData
+                                spacing: 8
+                                Text {
+                                    y: 2.5
+                                    text: (fgroup.modelData.field === "Modified" ? qsTr("Modified") : qsTr("Modified By")) + ":"
+                                    font.family: theme.font; font.pixelSize: 14; color: theme.pick("#424242", "#D6D6D6", "#FFFFFF")
+                                }
+                                Repeater {
+                                    model: fgroup.modelData.values
+                                    Rectangle {
+                                        id: chip
+                                        required property string modelData
+                                        required property int index
+                                        readonly property bool person: fgroup.modelData.field === "Editor"
+                                        readonly property string label: modelData === "@Me" ? qsTr("[Me]") : ((fgroup.modelData.labels || [])[index] || modelData)
+                                        height: 24; radius: 12
+                                        width: (person ? 32 : 8) + chipText.implicitWidth + 10 + 16 + 8
+                                        color: chiph.hovered ? theme.rowHover : theme.surface
+                                        Rectangle {
+                                            visible: chip.person
+                                            width: 24; height: 24; radius: 12
+                                            color: theme.pick("#C8C6C4", "#605E5C", "#000000")
+                                            FluentIcon { anchors.centerIn: parent; name: "person-16"; size: 16; color: theme.pick("#FFFFFF", "#D6D6D6", "#FFFFFF") }
+                                        }
+                                        Text {
+                                            id: chipText
+                                            x: chip.person ? 32 : 8; y: 3
+                                            text: chip.label
+                                            font.family: theme.font; font.pixelSize: 13; color: theme.pick("#424242", "#D6D6D6", "#FFFFFF")
+                                        }
+                                        FluentIcon {
+                                            x: chipText.x + chipText.implicitWidth + 10; y: 4
+                                            name: "dismiss-12"; size: 16; color: theme.pick("#424242", "#D6D6D6", "#FFFFFF")
+                                        }
+                                        HoverHandler { id: chiph; cursorShape: Qt.PointingHandCursor }
+                                        TapHandler { onTapped: root.removeFilterValue(fgroup.modelData.field, chip.modelData) }
+                                        Accessible.role: Accessible.Button
+                                        Accessible.name: chip.label
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Rectangle {
+                        id: clearPill
+                        anchors.right: parent.right; anchors.rightMargin: 17; y: 11
+                        height: 22; radius: 12
+                        width: 9 + clearText.implicitWidth + 10 + 16 + 8
+                        color: clearPillHover.hovered ? theme.rowHover : "transparent"
+                        border.width: 1; border.color: theme.pick("#424242", "#D6D6D6", "#FFFFFF")
+                        Text { id: clearText; x: 9; y: 2; text: qsTr("Clear"); font.family: theme.font; font.pixelSize: 13; color: theme.pick("#424242", "#D6D6D6", "#FFFFFF") }
+                        FluentIcon { x: clearText.x + clearText.implicitWidth + 10; y: 3; name: "dismiss-12"; size: 16; color: theme.pick("#424242", "#D6D6D6", "#FFFFFF") }
+                        HoverHandler { id: clearPillHover; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: backend.driveSetFilters("[]") }
+                        Accessible.role: Accessible.Button
+                        Accessible.name: qsTr("Clear")
+                    }
+                }
                 Item {
                     id: head
                     visible: root.listView !== "tiles" || root.view !== "folder"
+                    y: fbar.height
                     x: -files.contentX
                     width: Math.max(parent.width, table.gridWidth); height: 49
                     Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: root.hairline }
@@ -1092,6 +1182,9 @@ Item {
         /// The column, for Column settings ▸ (in a folder).
         property string col: ""
         readonly property bool settings: !!col && root.view === "folder" && !table.narrow
+        /// Filter by's field ("Modified", "Editor"), in a folder.
+        readonly property string filterField: root.view !== "folder" ? "" : field === "modified" ? "Modified" : field === "modified_by" ? "Editor" : ""
+        readonly property int filterCount: filterField ? root.filterOf(filterField).values.length : 0
         readonly property bool hasMenu: !!field || settings
         readonly property var sortWords: ({ name: [qsTr("Ascending"), qsTr("Descending")], modified: [qsTr("Older to newer"), qsTr("Newer to older")],
                                             modified_by: [qsTr("A to Z"), qsTr("Z to A")], size: [qsTr("Smaller to larger"), qsTr("Larger to smaller")] })[field] || [qsTr("Ascending"), qsTr("Descending")]
@@ -1100,6 +1193,8 @@ Item {
             x: 10.67; y: 14.83; spacing: 6
             Text { text: lh.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: root.ink; width: Math.min(implicitWidth, lh.width - 40); elide: Text.ElideRight }
             FluentIcon { visible: !!lh.field && root.sortField === lh.field; y: 3; size: 12; name: root.sortAsc ? "arrow-up-12" : "arrow-down-12"; color: theme.pick("#605E5C", "#D6D6D6", "#FFFFFF") }
+            // A filtered column shows OneDrive's funnel after its name.
+            FluentIcon { visible: lh.filterCount > 0; y: 1; size: 16; name: "funnel-16"; color: theme.pick("#605E5C", "#D6D6D6", "#FFFFFF") }
             FluentIcon { visible: lh.hasMenu; y: 4; size: 10; name: "chevron-down-12"; color: theme.pick("#605E5C", "#D6D6D6", "#FFFFFF") }
         }
         HoverHandler { enabled: lh.hasMenu; cursorShape: Qt.PointingHandCursor }
@@ -1110,10 +1205,16 @@ Item {
             id: headMenu
             fabric: true; fabricWidth: 232
             x: 2; y: 46
+            // Modified and Modified By add Filter by ("Filter by (N)", ticked,
+            // once filtered), as OneDrive's column menu.
             items: (lh.field ? [{ label: lh.sortWords[0], checked: root.sortField === lh.field && root.sortAsc }, { label: lh.sortWords[1], checked: root.sortField === lh.field && !root.sortAsc }] : [])
+                .concat(lh.filterField ? [{ separator: true }, { label: lh.filterCount ? qsTr("Filter by (%1)", "x.odsp.fb.i:695.columnMenuFilterByWithNumber").arg(lh.filterCount) : qsTr("Filter by"), checked: lh.filterCount > 0 }] : [])
                 .concat(lh.field && lh.settings ? [{ separator: true }] : [])
                 .concat(lh.settings ? [{ label: qsTr("Column settings"), submenu: [{ label: qsTr("Widen column") }, { label: qsTr("Narrow column") }] }] : [])
-            onPicked: i => { if (lh.field && i < 2) { root.sortField = lh.field; root.sortAsc = i === 0 } }
+            onPicked: i => {
+                if (lh.field && i < 2) { root.sortField = lh.field; root.sortAsc = i === 0 }
+                else if (lh.filterField && i === 3) filterPane.openFor(lh.filterField, lh.label)
+            }
             onSubPicked: (i, j) => root.resizeColumn(lh.col, j === 0)
         }
         Accessible.role: lh.field ? Accessible.Button : Accessible.ColumnHeader
@@ -1281,6 +1382,197 @@ Item {
     function previewBarForTest() { return viewer.barForTest() }
     function previewHookForTest() { return viewer }
     // Column settings (TASK-0189).
+    // Filter by's pane (OneDrive's, measured on winpc 2026-11-20): 340 wide
+    // at the right, full height, white with Fluent's panel shadow. Title
+    // "Filter by '<column>'" (+ " (N)" with N ticked) 20/600 at 24,20, a
+    // 32 px Close 30 from the right; Modified By has a people box
+    // ("Enter a name or email address", 290x34 at 25,50) and @Me (a 32 row)
+    // before each editor (40 rows, 24 px pictures); Modified lists the
+    // dates (32 rows). Apply (80x32) and Clear all (84x32) sit 16 from the
+    // bottom; Clear all only unticks, nothing changes until Apply, which
+    // closes the pane. A person picked in the box is added, ticked.
+    Item {
+        id: filterPane
+        property string field: ""
+        property string title: ""
+        property bool open: false
+        /// The rows: [{value, label}] (@Me and people the box added first).
+        property var options: []
+        property var picked: []
+        property var pickedLabels: []
+        readonly property var current: root.filterOf(field)
+        readonly property bool changed: JSON.stringify(picked) !== JSON.stringify(current.values)
+        readonly property var served: {
+            try { const v = JSON.parse(backend.driveFilterValuesJson || "{}"); return v.field === field ? v : {} } catch (e) { return {} }
+        }
+        readonly property var people: {
+            try { const v = JSON.parse(backend.driveFilterPeopleJson || "{}"); return v.query === peopleBox.text && peopleBox.text.length ? v.people || [] : [] } catch (e) { return [] }
+        }
+        property var added: []
+        readonly property var rows: (field === "Editor" ? [{ value: "@Me", label: qsTr("@Me", "x.odsp.fb.i:2011.FilterByMeFilterOptionLabel") }] : [])
+            .concat((served.values || []).filter(o => !added.some(a => a.value === o.value)))
+            .concat(added)
+            .concat(current.values.filter(v => v !== "@Me" && !(served.values || []).some(o => o.value === v) && !added.some(a => a.value === v))
+                        .map(v => ({ value: v, label: (current.labels || [])[current.values.indexOf(v)] || v })))
+        function openFor(f, label) {
+            field = f; title = label; added = []
+            picked = current.values.slice(); pickedLabels = (current.labels || []).slice()
+            peopleBox.text = ""
+            backend.driveFilterValues(f)
+            open = true
+        }
+        function toggle(o) {
+            const i = picked.indexOf(o.value)
+            if (i >= 0) { picked = picked.filter((v, j) => j !== i); pickedLabels = pickedLabels.filter((v, j) => j !== i) }
+            else { picked = picked.concat([o.value]); pickedLabels = pickedLabels.concat([o.label]) }
+        }
+        function apply() { root.setFilter(field, picked, pickedLabels); open = false }
+        visible: open
+        anchors.fill: parent
+        z: 50
+        // A click outside closes it (Fluent's light-dismiss panel).
+        MouseArea { anchors.fill: parent; onClicked: filterPane.open = false }
+        FluentSurface {
+            id: panel
+            anchors { right: parent.right; top: parent.top; bottom: parent.bottom }
+            width: 340
+            depth: 64; radius: 0
+            color: theme.surface
+            MouseArea { anchors.fill: parent }
+            Text {
+                x: 24; y: 20; width: 240
+                text: filterPane.picked.length ? qsTr("Filter by '%1' (%2)", "x.odsp.fb.o:8282.FilterSelectPanelTitleWithNumber").arg(filterPane.title).arg(filterPane.picked.length) : qsTr("Filter by '%1'", "x.odsp.fb.o:8282.FilterSelectPanelTitle").arg(filterPane.title)
+                elide: Text.ElideRight
+                font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.pick("#616161", "#D6D6D6", "#FFFFFF")
+            }
+            Rectangle {
+                x: 278; y: 18; width: 32; height: 32; radius: 4
+                color: closeh.hovered ? theme.rowHover : "transparent"
+                FluentIcon { anchors.centerIn: parent; name: "dismiss-16"; size: 16; color: theme.pick("#424242", "#D6D6D6", "#FFFFFF") }
+                HoverHandler { id: closeh; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: filterPane.open = false }
+                Accessible.role: Accessible.Button
+                Accessible.name: qsTr("Close")
+            }
+            Rectangle {
+                id: boxFrame
+                visible: filterPane.field === "Editor"
+                x: 25; y: 50; width: 290; height: 34
+                color: theme.surface
+                border.width: peopleBox.activeFocus ? 2 : 1
+                border.color: peopleBox.activeFocus ? root.accent : theme.pick("#605E5C", "#ADADAD", "#FFFFFF")
+                TextField {
+                    id: peopleBox
+                    anchors.fill: parent; anchors.margins: 2
+                    leftPadding: 6; background: null
+                    placeholderText: qsTr("Enter a name or email address")
+                    font.family: theme.font; font.pixelSize: 13
+                    onTextEdited: if (text.length) backend.driveFilterPeople(text)
+                }
+            }
+            Column {
+                x: 25; y: filterPane.field === "Editor" ? 97 : 49
+                width: 290
+                Repeater {
+                    model: filterPane.rows
+                    Item {
+                        id: frowItem
+                        required property var modelData
+                        readonly property bool person: filterPane.field === "Editor" && modelData.value !== "@Me"
+                        readonly property bool ticked: filterPane.picked.indexOf(modelData.value) >= 0
+                        width: 290; height: person ? 40 : 32
+                        Rectangle {
+                            id: box
+                            x: 8; y: (parent.height - 16) / 2; width: 16; height: 16; radius: 2
+                            color: frowItem.ticked ? root.accent : theme.surface
+                            border.width: frowItem.ticked ? 0 : 1; border.color: theme.pick("#424242", "#D6D6D6", "#FFFFFF")
+                            FluentIcon { visible: frowItem.ticked; anchors.centerIn: parent; name: "checkmark-12"; size: 12; color: theme.onFill(box, "white") }
+                        }
+                        Avatar { visible: frowItem.person; x: 36; y: 8; size: 24; name: frowItem.modelData.label; colorful: true }
+                        Text {
+                            x: frowItem.person ? 72 : 32; y: (parent.height - height) / 2
+                            text: frowItem.modelData.label
+                            font.family: theme.font; font.pixelSize: 14; color: theme.pick("#616161", "#D6D6D6", "#FFFFFF")
+                        }
+                        TapHandler { onTapped: filterPane.toggle(frowItem.modelData) }
+                        Accessible.role: Accessible.CheckBox
+                        Accessible.name: frowItem.modelData.label
+                        Accessible.checked: frowItem.ticked
+                    }
+                }
+            }
+            // The box's suggestions: 260 wide, 54 rows, 40 px pictures.
+            Rectangle {
+                visible: filterPane.field === "Editor" && peopleBox.activeFocus && filterPane.people.length > 0
+                x: 25; y: 88; width: 260; height: filterPane.people.length * 54
+                color: theme.surface; radius: 4; z: 5
+                border.width: 1; border.color: theme.pick("#E0E0E0", "#3D3D3D", "#FFFFFF")
+                Column {
+                    Repeater {
+                        model: filterPane.people
+                        Rectangle {
+                            id: sug
+                            required property var modelData
+                            width: 260; height: 54
+                            color: sugh.hovered ? theme.pick("#F0F0F0", "#3D3D3D", "#1AEBFF") : "transparent"
+                            Avatar { x: 12; y: 7; size: 40; name: sug.modelData.name; colorful: true }
+                            Text { x: 60; y: 17; text: sug.modelData.name; font.family: theme.font; font.pixelSize: 14; color: theme.pick("#616161", "#D6D6D6", "#FFFFFF") }
+                            HoverHandler { id: sugh; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: filterPane.pickPerson(sug.modelData) }
+                            Accessible.role: Accessible.Button
+                            Accessible.name: sug.modelData.name
+                        }
+                    }
+                }
+            }
+            Rectangle {
+                id: applyBtn
+                x: 25; anchors.bottom: parent.bottom; anchors.bottomMargin: 16
+                width: 80; height: 32; radius: 4
+                readonly property bool on: filterPane.changed
+                color: on ? (aph.hovered ? theme.pick("#4F52B2", "#7579EB") : root.accent) : theme.surface
+                border.width: on ? 0 : 1; border.color: theme.pick("#EBEBEB", "#3D3D3D", "#FFFFFF")
+                Text { anchors.centerIn: parent; text: qsTr("Apply", "x.odsp.fb.o:8282.ApplyFilterButtonLabel"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: applyBtn.on ? theme.onFill(applyBtn, "white") : theme.pick("#D1D1D1", "#5C5C5C", "#3FF23F") }
+                HoverHandler { id: aph; enabled: applyBtn.on; cursorShape: Qt.PointingHandCursor }
+                TapHandler { enabled: applyBtn.on; onTapped: filterPane.apply() }
+                Accessible.role: Accessible.Button
+                Accessible.name: qsTr("Apply", "x.odsp.fb.o:8282.ApplyFilterButtonLabel")
+            }
+            Rectangle {
+                id: clearBtn
+                x: 25 + 80 + 8; anchors.bottom: parent.bottom; anchors.bottomMargin: 16
+                width: 84; height: 32; radius: 4
+                readonly property bool on: filterPane.picked.length > 0
+                color: clh.hovered && on ? theme.rowHover : theme.surface
+                border.width: 1; border.color: on ? theme.pick("#D1D1D1", "#666666", "#FFFFFF") : theme.pick("#EBEBEB", "#3D3D3D", "#FFFFFF")
+                Text { anchors.centerIn: parent; text: qsTr("Clear all", "x.odsp.fb.o:8282.ClearAllButtonLabel"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: clearBtn.on ? theme.pick("#242424", "#FFFFFF", "#FFFFFF") : theme.pick("#D1D1D1", "#5C5C5C", "#3FF23F") }
+                HoverHandler { id: clh; enabled: clearBtn.on; cursorShape: Qt.PointingHandCursor }
+                TapHandler { enabled: clearBtn.on; onTapped: { filterPane.picked = []; filterPane.pickedLabels = [] } }
+                Accessible.role: Accessible.Button
+                Accessible.name: qsTr("Clear all", "x.odsp.fb.o:8282.ClearAllButtonLabel")
+            }
+        }
+        function pickPerson(p) {
+            const o = { value: p.name, label: p.name }
+            if (!rows.some(r => r.value === o.value)) added = added.concat([o])
+            if (picked.indexOf(o.value) < 0) toggle(o)
+            peopleBox.text = ""
+        }
+    }
+    // Filter by (TASK-0236).
+    function filterPaneForTest(field) {
+        const lh = field === "Modified" ? columnHeadForTest("modified") : columnHeadForTest("modified_by")
+        if (lh) lh.pickForTest(3)
+        return filterPane.open
+    }
+    function filterPaneStateForTest() { return { open: filterPane.open, field: filterPane.field, rows: filterPane.rows, picked: filterPane.picked, changed: filterPane.changed, served: filterPane.served } }
+    function filterTickForTest(value) { const o = filterPane.rows.find(r => r.value === value); if (o) filterPane.toggle(o); return filterPane.picked }
+    function filterTypeForTest(text) { peopleBox.text = text; backend.driveFilterPeople(text) }
+    function filterPickPersonForTest(name) { const p = filterPane.people.find(x => x.name === name); if (p) filterPane.pickPerson(p); return !!p }
+    function filterApplyForTest() { filterPane.apply() }
+    function filterClearAllForTest() { filterPane.picked = []; filterPane.pickedLabels = [] }
+    function filtersForTest() { return { filters: root.filters, shown: root.shown.map(i => i.name) } }
+
     function columnsForTest() { return { width: table.width, base: table.base.map(x => Math.round(x * 100) / 100), widths: table.widths, grid: table.gridWidth, stored: columnWidths, narrow: table.narrow } }
     function columnHeadForTest(col) { for (let i = 0; i < headRow.children.length; i++) { const h = headRow.children[i]; if (h.col === col || (!col && h.label === qsTr("Activity"))) return h } return null }
     function columnMenuForTest(col) { const h = columnHeadForTest(col); return h ? (h.hasMenu ? h.openMenuForTest() : []) : null }

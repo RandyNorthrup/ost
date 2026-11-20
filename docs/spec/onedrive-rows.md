@@ -258,7 +258,51 @@ odsp-web-prod_2026-11-06.005), in a 1212 wide frame.
 - OST draws the same menus and widths. It keeps your widths in the device
   setting `oneDriveColumnWidths` by library and column name. Harness
   `--column-settings-test`.
-- Not in OST: Filter by (OneDrive's filters pane).
+
+### Filter by (TASK-0236)
+
+Measured on winpc on 2026-11-20 (Teams' OneDrive app, My files,
+odsp-web-prod_2026-11-06.005).
+
+- Modified and Modified By have **Filter by** in their menus; once that
+  column is filtered it reads **Filter by (N)**, ticked, and the header shows
+  a funnel after its name.
+- Filter by opens a pane on the right: 340 wide, full height, white, Fluent's
+  depth-64 shadow. Its title "Filter by '<column>'" (20/600 #616161 at
+  24,20) gains " (N)" while N values are ticked. Close (32 px) sits 30 from
+  the right. A click outside closes it.
+  - Modified By: a people box "Enter a name or email address" (290x34 at
+    25,50), then **@Me** (a 32 row), then each person who modified something
+    in the folder (40 rows, 24 px pictures). The box asks SharePoint's
+    `ClientPeoplePickerSearchUser` on each keystroke (QueryString, 30
+    suggestions, PrincipalType 13, PrincipalSource 15, UseSubstrateSearch,
+    no e-mail addresses). Suggestions: 260 wide, 54 rows, 40 px pictures. A
+    picked person is added to the list, ticked, and the box empties.
+  - Modified: the folder's distinct dates, M/D/YYYY, 32 rows.
+  - The values come from `POST …/RenderListFilterData?FieldInternalName=
+    'Editor'|'Modified'&RootFolder=…` plus the filters already set; its reply
+    is an HTML `<SELECT>` (base64) whose `<OPTION Value>`s are the values
+    (dates as YYYY-MM-DD).
+  - **Apply** (80x32, primary once something changed) and **Clear all**
+    (84x32) sit 16 from the bottom. Clear all only unticks; nothing changes
+    until Apply, which closes the pane.
+- The list is asked again (`RenderListDataAsStream`) with
+  `FilterField1=Editor&FilterValue1=<name>&FilterType1=User` for one value,
+  `FilterFields1=…&FilterValues1=a;#b&FilterTypes1=…` for several, a date as
+  `FilterField1=Modified&FilterValue1=2026-11-11&FilterType1=DateTime&
+  FilterDisplay1=11/11/2026`; columns are numbered in column order (Modified
+  1, Modified By 2). With @Me there are no such parameters: the body carries
+  `OverrideViewXml` `<View><Query><Where><Or id="Editor">…</Or></Where>
+  </Query></View>`, values in the order ticked, @Me as `<UserID/>`.
+- A bar above the header (42.67 tall, from x 25) shows "Modified:" /
+  "Modified By:" (14, #424242) and a chip per value: 24 tall, radius 12, a
+  24 px picture for a person, 13.33 px text ("[Me]" for @Me), an X that
+  removes it. A **Clear** pill (22 tall, 1 px border, radius 12) at the right
+  removes every filter.
+- OST does the same (OneDriveView.qml's pane, chips and menus;
+  `api::list_rows` filter_request / filter_values / filter_people; the
+  backend keeps the folder's filters until another folder opens). Its words
+  are OneDrive's (`x.odsp.*` ids, TASK-0233). Harness `--filter-by-test`.
 
 ## Not yet in OST
 

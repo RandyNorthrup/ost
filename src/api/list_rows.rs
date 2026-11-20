@@ -307,9 +307,167 @@ pub fn parse_row(row: &Value, me: &str, now: DateTime<Local>) -> Option<(String,
 /// `FriendlyDisplay` only for browsers.
 const VIEW_XML: &str = r#"<View><ViewFields><FieldRef Name="UniqueId"/><FieldRef Name="Modified"/><FieldRef Name="Created_x0020_Date"/><FieldRef Name="_activity"/><FieldRef Name="PrincipalCount"/><FieldRef Name="_ColorHex"/></ViewFields><RowLimit Paged="TRUE">500</RowLimit></View>"#;
 
+// ------------------------------------------------------------- Filter by
+
+/// One column's Filter by (Teams' OneDrive list: Modified and Modified By),
+/// its chosen values in the order they were ticked: dates as SharePoint
+/// gives them ("2026-11-11", shown "11/11/2026") or people's names, and
+/// "@Me" for you.
+#[derive(Debug, Clone, Default, PartialEq, serde::Deserialize, Serialize)]
+pub struct ColumnFilter {
+    /// The field's internal name: "Modified" or "Editor".
+    pub field: String,
+    pub values: Vec<String>,
+    /// What each value shows ("11/11/2026", a name).
+    #[serde(default)]
+    pub labels: Vec<String>,
+}
+
+/// The token for "@Me" (you, whoever you are: CAML's `<UserID/>`).
+pub const ME: &str = "@Me";
+
+fn filter_type(field: &str) -> &'static str {
+    if field == "Modified" { "DateTime" } else { "User" }
+}
+
+/// OneDrive's filters in its column order (Modified before Modified By),
+/// empty ones left out.
+fn ordered(filters: &[ColumnFilter]) -> Vec<&ColumnFilter> {
+    let rank = |f: &str| match f {
+        "Modified" => 0,
+        "Editor" => 1,
+        _ => 2,
+    };
+    let mut v: Vec<&ColumnFilter> = filters.iter().filter(|f| !f.values.is_empty()).collect();
+    v.sort_by_key(|f| rank(&f.field));
+    v
+}
+
+fn enc(s: &str) -> String {
+    url::form_urlencoded::byte_serialize(s.as_bytes()).collect::<String>().replace('+', "%20")
+}
+
+fn xml_escape(s: &str) -> String {
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+}
+
+/// How OneDrive asks SharePoint for a filtered list: query parameters
+/// (`FilterField1=Editor&FilterValue1=…&FilterType1=User`; with several
+/// values `FilterFields1=…&FilterValues1=a;#b&FilterTypes1=…`; a date also
+/// `FilterDisplay1`), or, once "@Me" is chosen, none of those but a CAML
+/// `<Where>` (`OverrideViewXml`), an `<Or>` per column.
+pub fn filter_request(filters: &[ColumnFilter]) -> (String, Option<String>) {
+    let cols = ordered(filters);
+    if cols.iter().any(|c| c.values.iter().any(|v| v == ME)) {
+        let eq = |field: &str, v: &str| {
+            let value = if v == ME { "<UserID/>".to_string() } else { xml_escape(v) };
+            format!(r#"<Eq><FieldRef Name="{field}"/><Value Type="{}">{value}</Value></Eq>"#, filter_type(field))
+        };
+        let col = |c: &ColumnFilter| {
+            let mut it = c.values.iter();
+            let mut acc = eq(&c.field, it.next().map(String::as_str).unwrap_or_default());
+            let rest: Vec<&String> = it.collect();
+            for (i, v) in rest.iter().enumerate() {
+                let id = if i + 1 == rest.len() { format!(r#" id="{}""#, c.field) } else { String::new() };
+                acc = format!("<Or{id}>{acc}{}</Or>", eq(&c.field, v));
+            }
+            acc
+        };
+        let mut where_ = String::new();
+        for (i, c) in cols.iter().enumerate() {
+            where_ = if i == 0 { col(c) } else { format!("<And>{where_}{}</And>", col(c)) };
+        }
+        return (String::new(), Some(format!("<View><Query><Where>{where_}</Where></Query></View>")));
+    }
+    let mut q = String::new();
+    for (i, c) in cols.iter().enumerate() {
+        let n = i + 1;
+        let t = filter_type(&c.field);
+        if c.values.len() == 1 {
+            q.push_str(&format!("&FilterField{n}={}&FilterValue{n}={}&FilterType{n}={t}", c.field, enc(&c.values[0])));
+            if t == "DateTime"
+                && let Some(l) = c.labels.first()
+            {
+                q.push_str(&format!("&FilterDisplay{n}={}", enc(l)));
+            }
+        } else {
+            q.push_str(&format!("&FilterFields{n}={}&FilterValues{n}={}&FilterTypes{n}={t}", c.field, enc(&c.values.join(";#"))));
+        }
+    }
+    (q, None)
+}
+
+/// The values a column's Filter by pane offers (SharePoint's
+/// `RenderListFilterData`: an HTML `<SELECT>`, base64 in its reply): each
+/// `(value, label)`, (All) left out.
+pub fn filter_options(html: &str) -> Vec<(String, String)> {
+    let unescape = |s: &str| s.replace("&quot;", "\"").replace("&#39;", "'").replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&");
+    let mut out = Vec::new();
+    let mut rest = html;
+    while let Some(p) = rest.find("<OPTION") {
+        rest = &rest[p + 7..];
+        let Some(gt) = rest.find('>') else { break };
+        let attrs = &rest[..gt];
+        let value = attrs.find("Value=\"").and_then(|v| attrs[v + 7..].find('"').map(|e| attrs[v + 7..v + 7 + e].to_string())).unwrap_or_default();
+        let body = &rest[gt + 1..];
+        let label = body.find("</OPTION>").map(|e| body[..e].to_string()).unwrap_or_default();
+        if !value.is_empty() {
+            out.push((unescape(&value), unescape(label.trim())));
+        }
+    }
+    out
+}
+
+/// A folder's Filter by values for `field` ("Modified" or "Editor"), with
+/// the filters already chosen (as OneDrive asks).
+pub async fn filter_values(site: &str, list: &str, folder: &str, field: &str, filters: &[ColumnFilter]) -> Result<Vec<(String, String)>> {
+    let list = list.trim_matches(|c| c == '{' || c == '}');
+    if list.is_empty() || !list.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-') {
+        anyhow::bail!("Not a list id");
+    }
+    let (q, _) = filter_request(filters);
+    let mut url = format!("{}/_api/web/lists(guid'{list}')/RenderListFilterData?FieldInternalName='{field}'", site.trim_end_matches('/'));
+    if !folder.is_empty() {
+        url.push_str(&format!("&RootFolder={}", enc(folder)));
+    }
+    url.push_str(&q);
+    // The reply is the HTML itself, or (as OneDrive's page gets it) JSON
+    // holding it base64-encoded.
+    let text = super::sharing::send_text(reqwest::Method::POST, &url, &json!({}), &[("accept", "application/json;odata=nometadata"), ("user-agent", super::client::TEAMS_WEB_UA)]).await?;
+    let html = if text.contains("<OPTION") {
+        text
+    } else {
+        let v: Value = serde_json::from_str(&text).unwrap_or_default();
+        let b64 = v.as_str().or_else(|| v["value"].as_str()).or_else(|| v["d"]["RenderListFilterData"].as_str()).unwrap_or_default();
+        use base64::Engine;
+        base64::engine::general_purpose::STANDARD.decode(b64.trim()).ok().and_then(|b| String::from_utf8(b).ok()).unwrap_or_default()
+    };
+    Ok(filter_options(&html))
+}
+
+/// The people Filter by's box suggests for `query` (OneDrive's people
+/// picker, as its Modified By pane asks: people only, no e-mail addresses).
+pub async fn filter_people(site: &str, query: &str) -> Result<Vec<Value>> {
+    let url = format!("{}/_api/SP.UI.ApplicationPages.ClientPeoplePickerWebServiceInterface.ClientPeoplePickerSearchUser", site.trim_end_matches('/'));
+    let reply = super::sharing::post(
+        &url,
+        &json!({"queryParams": {
+            "QueryString": query, "MaximumEntitySuggestions": 30, "AllowEmailAddresses": false,
+            "PrincipalType": 13, "PrincipalSource": 15, "UseSubstrateSearch": true, "SharePointGroupID": 0
+        }}),
+    )
+    .await?;
+    Ok(super::sharing::parse_picker(&reply))
+}
+
 /// The rows of a library folder (`folder` is its server-relative path; empty
 /// for the library's top).
 pub async fn folder(site: &str, list: &str, folder: &str, me: &str) -> Result<HashMap<String, RowInfo>> {
+    folder_filtered(site, list, folder, me, &[]).await
+}
+
+/// `folder`'s rows that pass the column filters (OneDrive's Filter by).
+pub async fn folder_filtered(site: &str, list: &str, folder: &str, me: &str, filters: &[ColumnFilter]) -> Result<HashMap<String, RowInfo>> {
     let list = list.trim_matches(|c| c == '{' || c == '}');
     if list.is_empty() || !list.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-') {
         anyhow::bail!("Not a list id");
@@ -322,7 +480,15 @@ pub async fn folder(site: &str, list: &str, folder: &str, me: &str) -> Result<Ha
     if !folder.is_empty() {
         params["FolderServerRelativeUrl"] = json!(folder);
     }
-    let url = format!("{}/_api/web/lists(guid'{list}')/RenderListDataAsStream", site.trim_end_matches('/'));
+    let (q, caml) = filter_request(filters);
+    // OneDrive sends @Me's CAML as OverrideViewXml over its view; OST asks
+    // with its own ViewXml (which OverrideViewXml doesn't apply to), so the
+    // same <Query> goes into that.
+    if let Some(caml) = caml {
+        let query = caml.trim_start_matches("<View>").trim_end_matches("</View>");
+        params["ViewXml"] = json!(VIEW_XML.replacen("<View>", &format!("<View>{query}"), 1));
+    }
+    let url = format!("{}/_api/web/lists(guid'{list}')/RenderListDataAsStream{}", site.trim_end_matches('/'), q.replacen('&', "?", 1));
     let reply = super::sharing::post_with(&url, &json!({ "parameters": params }), &[("user-agent", super::client::TEAMS_WEB_UA)]).await?;
     let now = Local::now();
     Ok(reply["Row"].as_array().into_iter().flatten().filter_map(|r| parse_row(r, me, now)).collect())
@@ -340,6 +506,27 @@ pub async fn for_folder(client: &super::client::TeamsClient, drive_id: &str, ite
     };
     let me = client.user_principal_name().unwrap_or_default();
     folder(&here.sp_site, &here.sp_list, &path, &me).await
+}
+
+/// `for_folder` with OneDrive's column filters; also the folder's site,
+/// list and path (its Filter by panes ask there).
+pub async fn for_folder_filtered(client: &super::client::TeamsClient, drive_id: &str, item_id: &str, filters: &[ColumnFilter]) -> Result<HashMap<String, RowInfo>> {
+    let (site, list, path) = folder_place(client, drive_id, item_id).await?;
+    let me = client.user_principal_name().unwrap_or_default();
+    folder_filtered(&site, &list, &path, &me, filters).await
+}
+
+/// A OneDrive app folder's SharePoint site, list id and server-relative
+/// path (empty at the library's top).
+pub async fn folder_place(client: &super::client::TeamsClient, drive_id: &str, item_id: &str) -> Result<(String, String, String)> {
+    if item_id.is_empty() {
+        let r = super::drive::root(client, drive_id).await?;
+        Ok((r.sp_site, r.sp_list, String::new()))
+    } else {
+        let f = super::drive::item(client, drive_id, item_id).await?;
+        let p = server_path(&f.web_url);
+        Ok((f.sp_site, f.sp_list, p))
+    }
 }
 
 /// A drive item as the OneDrive app's table shows it: Graph's fields plus
@@ -372,6 +559,40 @@ pub fn decorate(item: &super::drive::DriveItem, row: Option<&RowInfo>, now: Date
 pub fn server_path(web_url: &str) -> String {
     let rest = web_url.splitn(4, '/').nth(3).unwrap_or_default();
     super::copy_jobs::folder_url(&format!("/{rest}"))
+}
+
+#[cfg(test)]
+mod filter_tests {
+    use super::*;
+
+    fn col(field: &str, values: &[&str], labels: &[&str]) -> ColumnFilter {
+        ColumnFilter { field: field.into(), values: values.iter().map(|s| s.to_string()).collect(), labels: labels.iter().map(|s| s.to_string()).collect() }
+    }
+
+    #[test]
+    fn filters_as_onedrive_asks() {
+        // as captured from Teams' OneDrive app on winpc (2026-11-20)
+        assert_eq!(filter_request(&[col("Editor", &["SharePoint App"], &[])]).0, "&FilterField1=Editor&FilterValue1=SharePoint%20App&FilterType1=User");
+        assert_eq!(
+            filter_request(&[col("Editor", &["SharePoint App", "OST Test 1"], &[]), col("Modified", &["2026-11-11"], &["11/11/2026"])]).0,
+            "&FilterField1=Modified&FilterValue1=2026-11-11&FilterType1=DateTime&FilterDisplay1=11%2F11%2F2026&FilterFields2=Editor&FilterValues2=SharePoint%20App%3B%23OST%20Test%201&FilterTypes2=User"
+        );
+        let (q, caml) = filter_request(&[col("Editor", &["SharePoint App", ME, "OST Test 2"], &[])]);
+        assert_eq!(q, "");
+        assert_eq!(
+            caml.unwrap(),
+            r#"<View><Query><Where><Or id="Editor"><Or><Eq><FieldRef Name="Editor"/><Value Type="User">SharePoint App</Value></Eq><Eq><FieldRef Name="Editor"/><Value Type="User"><UserID/></Value></Eq></Or><Eq><FieldRef Name="Editor"/><Value Type="User">OST Test 2</Value></Eq></Or></Where></Query></View>"#
+        );
+        assert_eq!(filter_request(&[col("Editor", &[], &[])]), (String::new(), None));
+    }
+
+    #[test]
+    fn filter_pane_values() {
+        let html = r#"<SELECT id="diidFilterModified"><OPTION  Value="">(All)</OPTION><OPTION Value="2026-11-05" >11/5/2026</OPTION><OPTION Value="2026-11-11"  SELECTED>11/11/2026</OPTION></SELECT><br><a>Modified</a>"#;
+        assert_eq!(filter_options(html), vec![("2026-11-05".into(), "11/5/2026".into()), ("2026-11-11".into(), "11/11/2026".into())]);
+        let people = r#"<OPTION  Value="">(All)</OPTION><OPTION Value="OST Test 1" >OST Test 1</OPTION><OPTION Value="Smith &amp; Co"  SELECTED>Smith &amp; Co</OPTION>"#;
+        assert_eq!(filter_options(people)[1], ("Smith & Co".into(), "Smith & Co".into()));
+    }
 }
 
 #[cfg(test)]

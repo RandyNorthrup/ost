@@ -171,6 +171,12 @@ pub(crate) async fn post_with(url: &str, body: &Value, headers: &[(&str, &str)])
 /// A SharePoint REST call with a body, by any method (OneDrive edits a
 /// comment with PATCH).
 pub(crate) async fn send_with(method: reqwest::Method, url: &str, body: &Value, headers: &[(&str, &str)]) -> Result<Value> {
+    let text = send_text(method, url, body, headers).await?;
+    Ok(serde_json::from_str(&text).unwrap_or_default())
+}
+
+/// `send_with`'s reply as text (SharePoint answers some calls with HTML).
+pub(crate) async fn send_text(method: reqwest::Method, url: &str, body: &Value, headers: &[(&str, &str)]) -> Result<String> {
     let host = url.split('/').take(3).collect::<Vec<_>>().join("/");
     if !host.starts_with("https://") {
         bail!("Not a SharePoint address: {url}");
@@ -201,7 +207,7 @@ pub(crate) async fn send_with(method: reqwest::Method, url: &str, body: &Value, 
             .unwrap_or_else(|| text.chars().take(200).collect());
         bail!("SharePoint {status}: {msg}");
     }
-    Ok(serde_json::from_str(&text).unwrap_or_default())
+    Ok(text)
 }
 
 /// The file's sharing: who has access, its links and the default link.

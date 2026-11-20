@@ -234,6 +234,11 @@ pub mod qobject {
         /// The OneDrive view last loaded: {view, drive_id, item_id, items, libraries, error}.
         #[qproperty(QString, drive_json)]
         #[qproperty(bool, drive_busy)]
+        /// OneDrive Filter by: a pane's values {field, values: [{value,
+        /// label}], error} and its people box's suggestions {query, people:
+        /// [{name, email}]}.
+        #[qproperty(QString, drive_filter_values_json)]
+        #[qproperty(QString, drive_filter_people_json)]
         /// The current call can carry our video, and whether the camera is on.
         #[qproperty(bool, call_can_video)]
         #[qproperty(bool, call_camera_on)]
@@ -2469,6 +2474,21 @@ pub mod qobject {
             item_id: &QString,
         );
 
+        /// OneDrive Filter by: the folder's column filters ([{field,
+        /// values, labels}], OneDrive's order of ticking); reloads it.
+        #[qinvokable]
+        fn drive_set_filters(self: Pin<&mut Backend>, filters_json: &QString);
+
+        /// OneDrive Filter by: the values a column's pane offers ("Modified"
+        /// or "Editor") into drive_filter_values_json.
+        #[qinvokable]
+        fn drive_filter_values(self: Pin<&mut Backend>, field: &QString);
+
+        /// OneDrive Filter by: people for the Modified By pane's box into
+        /// drive_filter_people_json.
+        #[qinvokable]
+        fn drive_filter_people(self: Pin<&mut Backend>, query: &QString);
+
         /// OneDrive: download a file (a DriveItem as JSON) to Downloads.
         #[qinvokable]
         fn drive_download(self: Pin<&mut Backend>, item_json: &QString);
@@ -3011,6 +3031,10 @@ pub struct BackendRust {
     contacts_busy: bool,
     /// The OneDrive view last asked for, to reload after a change.
     drive_view: (String, String, String),
+    /// Its column filters (Filter by), kept while the folder is shown.
+    drive_filters: Vec<api::list_rows::ColumnFilter>,
+    drive_filter_values_json: QString,
+    drive_filter_people_json: QString,
     call_can_video: bool,
     call_camera_on: bool,
     call_roster_json: QString,
@@ -20765,7 +20789,14 @@ impl qobject::Backend {
     ) {
         let (view, drive_id, item_id) =
             (view.to_string(), drive_id.to_string(), item_id.to_string());
-        self.as_mut().rust_mut().drive_view = (view.clone(), drive_id.clone(), item_id.clone());
+        // Another folder or view starts unfiltered (OneDrive's filters
+        // belong to the folder shown).
+        let place = (view.clone(), drive_id.clone(), item_id.clone());
+        if self.rust().drive_view != place {
+            self.as_mut().rust_mut().drive_filters.clear();
+        }
+        let filters = self.rust().drive_filters.clone();
+        self.as_mut().rust_mut().drive_view = place;
         self.as_mut().set_drive_busy(true);
         let qt = self.qt_thread();
         runtime().spawn(async move {
@@ -20814,7 +20845,14 @@ impl qobject::Backend {
                 // Teams' columns from SharePoint's rows (friendly Modified,
                 // Sharing, the "new" mark, Activity); other views word
                 // Graph's times the same way.
-                let rows = if view == "folder" {
+                let rows = if view == "folder" && !filters.is_empty() {
+                    // Filter by: only the rows SharePoint gives back.
+                    let rows = api::list_rows::for_folder_filtered(&client, &drive_id, &item_id, &filters).await?;
+                    if let Some(items) = out.get_mut("items").and_then(|i| i.as_array_mut()) {
+                        items.retain(|it| it["sp_item"].as_str().is_some_and(|id| rows.contains_key(&id.to_ascii_lowercase())));
+                    }
+                    rows
+                } else if view == "folder" {
                     api::list_rows::for_folder(&client, &drive_id, &item_id)
                         .await
                         .unwrap_or_else(|e| {
@@ -20824,6 +20862,7 @@ impl qobject::Backend {
                 } else {
                     Default::default()
                 };
+                out["filters"] = json!(filters);
                 if let Some(items) = out.get("items").cloned() {
                     let now = chrono::Local::now();
                     let items: Vec<api::drive::DriveItem> =
@@ -20854,6 +20893,62 @@ impl qobject::Backend {
                 };
                 this.as_mut().set_drive_json(QString::from(text.as_str()));
             });
+        });
+    }
+
+    pub fn drive_set_filters(mut self: Pin<&mut Self>, filters_json: &QString) {
+        let filters: Vec<api::list_rows::ColumnFilter> = serde_json::from_str(&filters_json.to_string()).unwrap_or_default();
+        self.as_mut().rust_mut().drive_filters = filters.into_iter().filter(|f| !f.values.is_empty()).collect();
+        self.drive_reload();
+    }
+
+    pub fn drive_filter_values(mut self: Pin<&mut Self>, field: &QString) {
+        let field = field.to_string();
+        let (_, drive_id, item_id) = self.rust().drive_view.clone();
+        let filters = self.rust().drive_filters.clone();
+        self.as_mut().set_drive_filter_values_json(QString::from(json!({ "field": field, "loading": true }).to_string().as_str()));
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                let (site, list, path) = api::list_rows::folder_place(&client, &drive_id, &item_id).await?;
+                api::list_rows::filter_values(&site, &list, &path, &field, &filters).await
+            }
+            .await;
+            let text = match result {
+                Ok(v) => json!({ "field": field, "values": v.into_iter().map(|(value, label)| json!({ "value": value, "label": label })).collect::<Vec<_>>() }),
+                Err(e) => {
+                    tracing::warn!("OneDrive filter values: {e:#}");
+                    json!({ "field": field, "values": [], "error": short_error(&e) })
+                }
+            }
+            .to_string();
+            let _ = qt.queue(move |mut this| this.as_mut().set_drive_filter_values_json(QString::from(text.as_str())));
+        });
+    }
+
+    pub fn drive_filter_people(self: Pin<&mut Self>, query: &QString) {
+        let query = query.to_string();
+        let (_, drive_id, item_id) = self.rust().drive_view.clone();
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                let (site, _, _) = api::list_rows::folder_place(&client, &drive_id, &item_id).await?;
+                api::list_rows::filter_people(&site, &query).await
+            }
+            .await;
+            let people: Vec<serde_json::Value> = result
+                .unwrap_or_else(|e| {
+                    tracing::warn!("OneDrive filter people: {e:#}");
+                    Vec::new()
+                })
+                .into_iter()
+                .filter(|e| e["EntityType"].as_str().is_none_or(|t| t == "User"))
+                .map(|e| json!({ "name": e["DisplayText"], "email": e["EntityData"]["Email"].as_str().or(e["Description"].as_str()).unwrap_or_default() }))
+                .collect();
+            let text = json!({ "query": query, "people": people }).to_string();
+            let _ = qt.queue(move |mut this| this.as_mut().set_drive_filter_people_json(QString::from(text.as_str())));
         });
     }
 
@@ -21465,7 +21560,7 @@ impl qobject::Backend {
                     // Search hits' Location picture (a site's logo, or the
                     // person whose OneDrive it is).
                     "location_picture" => {
-                        let mut v = api::drive::location_picture(&client, &s("web"), s("kind") == "person").await?;
+                        let mut v = api::drive::location_picture(&client, &s("web"), s("kind") == "person", &s("author")).await?;
                         v["web"] = json!(s("web"));
                         v
                     }

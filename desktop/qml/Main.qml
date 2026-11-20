@@ -7911,6 +7911,57 @@ Window {
             step++
         }
     }
+    // --filter-by-test (TASK-0236): My files' Filter by as Teams' OneDrive
+    // app: the Modified By and Modified menus, the Modified By pane (its
+    // editors and @Me), SharePoint App ticked and applied (the bar, the
+    // funnel, the narrowed rows), OST Test 1 added (two values), the
+    // Modified pane with one date added, the people box typed
+    // (--filter-person=<name>, default OST Test 2) and that person picked
+    // with @Me, a chip's X, then Clear. FILTERBY lines; pictures
+    // filter-by-*.png.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--filter-by-test")) && backend.signedIn
+        interval: 1500; repeat: true
+        property int step: 0
+        property int wait: 0
+        property int rows: 0
+        onTriggered: {
+            const shots = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=/tmp").slice(8)
+            const cap = t => window.contentItem.grabToImage(r => r.saveToFile(shots + "/filter-by-" + t + ".png"))
+            const person = (Qt.application.arguments.find(a => a.startsWith("--filter-person=")) || "--filter-person=OST Test 2").slice(16)
+            const log = (t, x) => console.warn("FILTERBY", t, JSON.stringify(x === undefined ? oneDrive.filtersForTest() : x))
+            const pane = oneDrive.filterPaneStateForTest()
+            const d = oneDrive.driveData
+            const served = () => pane.served && pane.served.values !== undefined
+            const until = (ok, t) => { if (!ok && ++wait < 20) return false; if (!ok) log("timed out " + t, pane); wait = 0; return true }
+            if (step === 0) { rail.current = "onedrive"; oneDrive.open("myfiles") }
+            else if (step === 2 && !(d.items || []).length) return
+            else if (step === 2) { rows = d.items.length; log("start"); log("menu modified_by", oneDrive.columnMenuForTest("modified_by")); log("menu modified", oneDrive.columnMenuForTest("modified")) }
+            else if (step === 3) { cap("menu-modified"); oneDrive.filterPaneForTest("Editor") }
+            else if (step === 4) { if (!until(served(), "editor values")) return; log("editor pane", pane); cap("pane-editor") }
+            else if (step === 5) { log("ticked", oneDrive.filterTickForTest("SharePoint App")); cap("pane-ticked") }
+            else if (step === 6) oneDrive.filterApplyForTest()
+            else if (step === 7) { if (!until(!backend.driveBusy && oneDrive.filtersForTest().filters.length > 0, "apply")) return; log("filtered"); log("menu modified_by", oneDrive.columnMenuForTest("modified_by")) }
+            else if (step === 8) { cap("filtered"); oneDrive.filterPaneForTest("Editor") }
+            else if (step === 9) { if (!until(served(), "editor values 2")) return; oneDrive.filterTickForTest("OST Test 1"); oneDrive.filterApplyForTest() }
+            else if (step === 10) { if (!until(!backend.driveBusy, "apply 2")) return; log("two editors") }
+            else if (step === 11) { cap("two-editors"); oneDrive.filterPaneForTest("Modified") }
+            else if (step === 12) { if (!until(served(), "dates")) return; log("modified pane", pane); cap("pane-modified") }
+            else if (step === 13) { const v = (pane.served.values || [])[0]; log("ticked date", v ? oneDrive.filterTickForTest(v.value) : null); oneDrive.filterApplyForTest() }
+            else if (step === 14) { if (!until(!backend.driveBusy, "apply date")) return; log("date and editors") }
+            else if (step === 15) { cap("date-and-editors"); oneDrive.filterPaneForTest("Editor") }
+            else if (step === 16) { if (!until(served(), "editor values 3")) return; oneDrive.filterTypeForTest(person) }
+            else if (step === 17) { if (!until(oneDrive.filterPickPersonForTest(person), "people")) return; log("picked " + person, pane); cap("pane-person") }
+            else if (step === 18) { oneDrive.filterTickForTest("@Me"); log("with @Me", pane); oneDrive.filterApplyForTest() }
+            else if (step === 19) { if (!until(!backend.driveBusy, "apply me")) return; log("with me and a person") }
+            else if (step === 20) { cap("me"); const f = oneDrive.filtersForTest().filters.find(x => x.field === "Modified"); if (f) oneDrive.removeFilterValue("Modified", f.values[0]) }
+            else if (step === 21) { if (!until(!backend.driveBusy, "chip")) return; log("date chip removed") }
+            else if (step === 22) backend.driveSetFilters("[]")
+            else if (step === 23) { if (!until(!backend.driveBusy, "clear")) return; log("cleared", { filters: oneDrive.filtersForTest().filters, rows: (oneDrive.driveData.items || []).length, before: rows }); cap("cleared") }
+            else if (step === 24) Qt.quit()
+            step++
+        }
+    }
     // --preview-bar-test (TASK-0190): Preview of ost-share-test.txt at
     // --size: the bar (which left items show, the title, the right group),
     // ··· and Share ▾, Show comments (the pane, a comment typed when
@@ -8009,7 +8060,7 @@ Window {
             if (step === 0) { rail.current = "onedrive"; oneDrive.open("myfiles") }
             else if (step === 2 && !it) return
             else if (step === 2) fa.actForTest(it, "Copy to")
-            else if (step === 4) fa.pickerSearchForTest("OST", Qt.application.arguments.indexOf("--picker-person-all") >= 0)
+            else if (step === 4) fa.pickerSearchForTest((Qt.application.arguments.find(a => a.startsWith("--picker-person-query=")) || "--picker-person-query=OST").slice(22), Qt.application.arguments.indexOf("--picker-person-all") >= 0)
             else if (step === 5) { if (pp.loading && ++wait < 30) return; wait = 0; log("results", results()); step = 59 }
             else if (step === 62) { log("locations", (pp.shown && pp.shown.items || []).filter(i => i.location_kind).map(i => [i.name, i.location_kind, (i.location || []).join("/"), pp.locationPics[i.location_web] || null])); cap("results") }
             else if (step === 63) step = 5
