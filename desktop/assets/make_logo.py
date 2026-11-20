@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Make OST's logo: a wide "OST" plate in front of three people, drawn in
 the style of Fluent's 2023 app icons. Everything is rounded and shaded with
-smooth gradients in Fluent UI's brand purples: the plate runs from #5B5FC7
-down to #444791, the middle figure is a mid purple and the two side figures
-lighter tints. A soft white light falls from the top left on heads and
+smooth gradients in Fluent UI's brand purples: the plate runs from #4F52B2
+down to #33357A, and the people are pale lavender tints so they stand apart
+from it; a white gap cuts the plate out from the people (the user's choice,
+2026-11-19, for contrast). A soft white light falls from the top left on heads and
 bodies, and the plate casts a soft shadow on the people behind it. That
 depth is built from linear and radial gradients laid over the shapes, with
 no filters or clip paths, so Qt's SVG renderer draws it the same as resvg.
@@ -142,13 +143,13 @@ def svg(layout="a"):
   <title>OST</title>
   <defs>
     <linearGradient id="side" x1="0" y1="0" x2="0.3" y2="1">
-      <stop offset="0" stop-color="{b['140']}"/><stop offset="1" stop-color="{b['110']}"/>
+      <stop offset="0" stop-color="#E3E6FE"/><stop offset="1" stop-color="{b['140']}"/>
     </linearGradient>
     <linearGradient id="centre" x1="0" y1="0" x2="0.3" y2="1">
-      <stop offset="0" stop-color="{b['120']}"/><stop offset="0.55" stop-color="{b['icon']}"/><stop offset="1" stop-color="{b['90']}"/>
+      <stop offset="0" stop-color="#D3D8FC"/><stop offset="0.55" stop-color="{b['120']}"/><stop offset="1" stop-color="{b['110']}"/>
     </linearGradient>
     <linearGradient id="plate" x1="0" y1="0" x2="0.85" y2="1">
-      <stop offset="0" stop-color="{b['80']}"/><stop offset="0.5" stop-color="{b['70']}"/><stop offset="1" stop-color="{b['60']}"/>
+      <stop offset="0" stop-color="{b['70']}"/><stop offset="0.5" stop-color="{b['60']}"/><stop offset="1" stop-color="{b['deep']}"/>
     </linearGradient>
     <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.14"/><stop offset="0.4" stop-color="#FFFFFF" stop-opacity="0"/>
@@ -164,6 +165,8 @@ def svg(layout="a"):
   </defs>
   <!-- {lay["about"]} -->
   {people}
+  <!-- A white gap cuts the plate out from the people behind it -->
+  <rect x="{x - 10}" y="{y - 10}" width="{w + 20}" height="{h + 20}" rx="{r + 10}" fill="#FFFFFF"/>
   <!-- The plate and its wordmark -->
   <rect x="{x}" y="{y}" width="{w}" height="{h}" rx="{r}" fill="url(#plate)"/>
   <rect x="{x}" y="{y}" width="{w}" height="{h}" rx="{r}" fill="url(#sheen)"/>
