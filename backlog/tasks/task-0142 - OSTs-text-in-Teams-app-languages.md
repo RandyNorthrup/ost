@@ -20,9 +20,9 @@ Teams offers 109 app languages (Settings ▸ General ▸ Language and regional f
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 App language offers every language Teams lists
+- [x] #1 App language offers every language Teams lists
 - [ ] #2 After Save and restart, OST's own text appears in the chosen language, with Teams' wording for that language
-- [ ] #3 Right-to-left languages lay out right to left as in Teams
+- [x] #3 Right-to-left languages lay out right to left as in Teams
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -44,4 +44,7 @@ Built so far: Teams' full list of 109 app languages is stored, and Save and rest
 2026-11-19 (user decision: no Microsoft translations in the repo): catalogues removed from history; OST now keeps only ids.json (ids + en-us placeholder order + OST English plural forms) and teams_resources.json (per-locale resource file names on https://statics.teams.cdn.office.net/teams-modular-packages/hashed-assets/, Teams 26304.1201.5310.7985; content hash in each name). On first use of a non-en-us language OST downloads them at start, builds the catalogue (src/api/teams_strings.rs) into ~/.cache/ost/i18n/<locale>.json atomically; offline it logs and stays English LTR. Rebased onto 58868f5.
 
 2026-11-19 runtime catalogue verified on linuxlt: empty ~/.cache/ost/i18n, --regional-test de-de and ar-sa (Save and restart) downloaded 39 files and built 3,560 strings (1.7 s / 2.8 s) and showed Teams wording (ar-sa right to left). Offline (unshare -n): logs 'Teams strings unavailable ... showing English', no cache written, English LTR. Gotcha: Teams CDN sends some resources gzipped regardless of Accept-Encoding (decoded with flate2). Tests: lib 796 ok, desktop 29 ok.
+
+- Merged 6799365 (2026-11-19): translations fetched at runtime from Teams' CDN (pinned to Teams 26304.1201.5310.7985) and built into ~/.cache/ost/i18n; no Microsoft strings in the repo or its history. 796 lib + 29 desktop tests passed; de-de and ar-sa verified from an empty cache; offline stays English.
+- AC2 open: the engine's chat system messages and call durations stay English (no translator in the engine yet); the "(You)" suffix; strings Teams has that OST still words differently. Strings OST has that Teams doesn't stay English by design (untranslated.txt).
 <!-- SECTION:NOTES:END -->
