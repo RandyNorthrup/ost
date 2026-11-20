@@ -28,7 +28,7 @@ Item {
     property bool highlights: false
     signal openRecap(string tab)
     signal openHighlights()
-    signal share()
+    signal share(Item anchor)
     width: 646; height: 162
     readonly property var recs: (recap && recap.recordings) || []
     readonly property bool hasRec: recs.length > 0 || !!(recap && recap.saving)
@@ -65,7 +65,7 @@ Item {
         color: shareHover.hovered ? theme.menuHover : "transparent"
         FluentIcon { anchors.centerIn: parent; name: "share-20"; size: 20; color: theme.onFill(shareBtn, theme.pick("#424242", "#D6D6D6", "#FFFFFF")) }
         HoverHandler { id: shareHover; cursorShape: Qt.PointingHandCursor }
-        TapHandler { onTapped: root.share() }
+        TapHandler { onTapped: root.share(shareBtn) }
         ToolTip.visible: shareHover.hovered; ToolTip.text: qsTr("Share", "meetingRecap:k6u0o3ifj"); ToolTip.delay: 500
         Accessible.role: Accessible.Button
         Accessible.name: qsTr("Share", "meetingRecap:k6u0o3ifj")

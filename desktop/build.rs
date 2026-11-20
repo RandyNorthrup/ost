@@ -248,6 +248,8 @@ fn main() {
         "qml/LoopPage.qml",
         "qml/LoopCard.qml",
         "qml/RecapCard.qml",
+        "qml/RecapWindow.qml",
+        "qml/RecapShareDialog.qml",
         "qml/ComposeAppPanel.qml",
         "qml/ChannelPageTab.qml",
         "qml/RecapTab.qml",

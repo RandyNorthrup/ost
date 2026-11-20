@@ -3439,7 +3439,7 @@ fn attr(tag: &str, name: &str) -> Option<String> {
 
 /// Escape text that is going into HTML. Input text is already entity
 /// encoded by Teams, so only stray `<` / `>` / `"` need it.
-fn escape(t: &str) -> String {
+pub(crate) fn escape(t: &str) -> String {
     t.replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")

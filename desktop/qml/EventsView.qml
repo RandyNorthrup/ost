@@ -211,6 +211,20 @@ Rectangle {
         page = "form"
         if (!features) call("features", {}, v => { if (!v.error) features = v })
     }
+    // A recap card's Highlights (Teams' viewOneEventById, entry
+    // recapChiclet): the event's page, found among your events by its
+    // title and start.
+    function openEventByTitle(title, startMs) {
+        call("manage", {}, v => {
+            if (v.error) { toast({ text: qsTr("Couldn't open the event.") + " " + v.error, intent: "error" }); return }
+            manageData = v
+            const all = [].concat(v.past ? v.past.items : [], v.published ? v.published.items : [], v.drafts ? v.drafts.items : [])
+            const near = c => Math.abs(new Date(c.start).getTime() - startMs) < 36e5
+            const card = all.find(c => c.title === title && near(c)) || all.find(c => c.title === title)
+            if (card) openEvent(card)
+            else console.warn("EVENTS highlights: no event", title)
+        })
+    }
     function openEvent(card) {
         current = card; page = "event"; eventTab = "overview"; previewOn = false; peopleData = null
         call("overview", { id: card.id }, v => { if (!v.error && v.card) current = Object.assign({}, v.card, { access: v.access, inviteOnly: v.inviteOnly, registration: v.registration, description: v.description }) })

@@ -623,6 +623,39 @@ Rectangle {
     readonly property bool chatIsCreator: { const c = (backend.chatsJson ? JSON.parse(backend.chatsJson) : []).find(c => c.id === root.chatId); return !!(c && c.isCreator) }
     /// The chat's Recap (Teams' recap card: View recap, the transcript chip
     /// and the recording open the meeting's Recap view).
+    signal openEventHighlights(string title, real startMs)
+    // A recap card's recap (Teams' intelligent recap window), from its
+    // ended row's message: the recording and the meeting.
+    function recapRef(m, recap) {
+        const rec = (recap.recordings || [])[0] || {}
+        return { thread_id: "", ical_uid: recap.ical_uid || "", organizer_id: "", tenant_id: backend.tenantId(), call_id: m.call_id || "",
+                 drive_id: rec.drive_id || "", item_id: rec.item_id || "", file_url: rec.odb_url || "", subject: recap.subject || root.chatTopic || root.chatName,
+                 start_ms: new Date(recap.start || 0).getTime(), end_ms: new Date(recap.end || recap.start || 0).getTime(),
+                 recap_type: recap.transcript && (recap.recordings || []).length ? "RecordingAndTranscript" : recap.transcript ? "Transcript" : "Recording" }
+    }
+    function openRecap(m, recap, part) {
+        const w = recapWindow.createObject(null, { recap: root.recapRef(m, recap), startTab: part === "transcript" ? "transcript" : "", hasAttendance: root.hasAttendanceReport })
+        w.goToChat.connect(() => {})
+        w.openAttendance.connect(() => root.openAttendance(m.call_id || ""))
+        w.show(); w.raise(); w.requestActivate()
+        root.lastRecapWindow = w
+        console.info("RECAPCARD open", part || "recap")
+    }
+    property var lastRecapWindow: null
+    Component { id: recapWindow; RecapWindow {} }
+    // Share on the card: Teams' menu (Share recap access, Copy link).
+    function openRecapShare(m, recap, anchor) {
+        recapShareMenu.ref = root.recapRef(m, recap)
+        recapShareMenu.popup(anchor, 0, anchor.height + 4)
+    }
+    Menu {
+        id: recapShareMenu
+        property var ref: null
+        MenuItem { text: qsTr("Share recap access"); onTriggered: recapShare.openFor(recapShareMenu.ref) }
+        MenuItem { text: qsTr("Copy link"); onTriggered: recapShare.copyLink(recapShareMenu.ref) }
+    }
+    RecapShareDialog { id: recapShare }
+    function recapShareForTest() { return recapShare }
     function openRecapTab(part) {
         const i = root.tabNames.indexOf("Recap")
         if (i >= 0) root.tab = "Recap"
@@ -2141,9 +2174,9 @@ Rectangle {
                     // Teams: Highlights for a town hall's or webinar's
                     // organizers (its event group chat's creator here).
                     highlights: root.backroom === "event" && root.chatIsCreator
-                    onOpenRecap: t => root.openRecapTab(t)
-                    onOpenHighlights: root.openRecapTab("")
-                    onShare: root.openRecapTab("")
+                    onOpenRecap: t => root.openRecap(msg.modelData, recap, t)
+                    onOpenHighlights: root.openEventHighlights(recap.subject || root.chatTopic || root.chatName, new Date(recap.start || 0).getTime())
+                    onShare: anchor => root.openRecapShare(msg.modelData, recap, anchor)
                 }
             }
             Rectangle {

@@ -20470,6 +20470,72 @@ impl qobject::Backend {
                         let from = p.get("from").and_then(|v| v.as_i64()).unwrap_or(0);
                         api::recaps::meetings(&notes_region(&client), from, 14).await
                     }
+                    // A recap card's recap: the meeting it belongs to, the
+                    // recording's player and its transcript.
+                    "recapOpen" => {
+                        let mut r: api::recaps::RecapRef = serde_json::from_value(p.get("recap").cloned().unwrap_or_default()).unwrap_or_default();
+                        if r.tenant_id.is_empty() {
+                            r.tenant_id = client.tenant_id().unwrap_or_default();
+                        }
+                        if let Err(e) = api::recaps::resolve(&notes_region(&client), &mut r).await {
+                            tracing::warn!("recap's meeting: {}", short_error(&e));
+                        }
+                        let player = api::recaps::player_url(&client, &r.drive_id, &r.item_id).await;
+                        let transcript = api::recaps::transcript(&client, &r.drive_id, &r.item_id).await.unwrap_or_default();
+                        Ok(json!({
+                            "recap": r, "link": api::recaps::recap_link(&r),
+                            "player": player.as_ref().map(String::as_str).unwrap_or_default(),
+                            "playerError": player.as_ref().err().map(|e| short_error(e)).unwrap_or_default(),
+                            "transcript": transcript,
+                        }))
+                    }
+                    // Share > Copy link: Teams' recap link.
+                    "recapLink" => {
+                        let mut r: api::recaps::RecapRef = serde_json::from_value(p.get("recap").cloned().unwrap_or_default()).unwrap_or_default();
+                        if r.tenant_id.is_empty() {
+                            r.tenant_id = client.tenant_id().unwrap_or_default();
+                        }
+                        if r.thread_id.is_empty()
+                            && let Err(e) = api::recaps::resolve(&notes_region(&client), &mut r).await
+                        {
+                            tracing::warn!("recap's meeting: {}", short_error(&e));
+                        }
+                        Ok(json!({ "link": api::recaps::recap_link(&r), "recap": r }))
+                    }
+                    // Share recap access's Give access, and (Notify them in
+                    // chat) the message in each one's 1:1 chat.
+                    "recapShare" => {
+                        let mut r: api::recaps::RecapRef = serde_json::from_value(p.get("recap").cloned().unwrap_or_default()).unwrap_or_default();
+                        if r.tenant_id.is_empty() {
+                            r.tenant_id = client.tenant_id().unwrap_or_default();
+                        }
+                        if r.thread_id.is_empty() {
+                            api::recaps::resolve(&notes_region(&client), &mut r).await?;
+                        }
+                        let oids: Vec<String> = p.get("people").and_then(|v| v.as_array()).into_iter().flatten().filter_map(|x| x.as_str().map(str::to_string)).collect();
+                        let given = api::recaps::share_access(&notes_region(&client), &r, &oids).await?;
+                        if p.get("notify").and_then(|v| v.as_bool()).unwrap_or(false) {
+                            let me = client.object_id().unwrap_or_default();
+                            let (content, links) = api::recaps::share_message(&r, &s("day"), &s("when"));
+                            for oid in &given {
+                                let mut pair = [me.clone(), oid.clone()];
+                                pair.sort();
+                                let chat = format!("19:{}_{}@unq.gbl.spaces", pair[0], pair[1]);
+                                let url = format!("{}/v1/users/ME/conversations/{}/messages", client.chat_service_url(), chat);
+                                let body = json!({
+                                    "type": "Message", "conversationid": chat, "content": content,
+                                    "messagetype": "RichText/Html", "contenttype": "Text",
+                                    "imdisplayname": client.display_name().unwrap_or_default(),
+                                    "clientmessageid": api::outbox::new_client_message_id(),
+                                    "properties": { "importance": "", "subject": "", "title": "", "cards": "[]", "links": links, "mentions": "[]", "files": "[]", "formatVariant": "TEAMS" },
+                                });
+                                if let Err(e) = client.chat_post(&url, &body).await {
+                                    tracing::warn!("recap share message: {}", short_error(&e));
+                                }
+                            }
+                        }
+                        Ok(json!({ "given": given }))
+                    }
                     _ => anyhow::bail!("unknown"),
                 }
             }
