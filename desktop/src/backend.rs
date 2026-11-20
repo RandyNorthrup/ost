@@ -8561,10 +8561,32 @@ impl qobject::Backend {
                     tracing::info!(has_audio, can_video, camera, can_share, e2ee, "call answered");
                     call_slot().lock().await.active = Some(active);
                     spawn_call_stats_logger(qt.clone());
+                    // What roster updates before the answer said is
+                    // presented (they can be newer than the attach's roster).
+                    let (tx, rx) = tokio::sync::oneshot::channel();
+                    let _ = qt.queue(move |this| {
+                        let seen: Vec<(String, Vec<String>)> =
+                            this.rust().roster.iter().map(|p| (p.id.clone(), p.content_sessions.clone())).collect();
+                        let _ = tx.send(seen);
+                    });
+                    let seen = rx.await.unwrap_or_default();
                     if let Some(ev) = initial_roster {
                         tracing::info!("the conversation's roster at the attach");
                         on_call_event(&qt, &ev.to_string()).await;
                     }
+                    // Then what is presented counts as new, now that there is
+                    // a call to join it with.
+                    let _ = qt.queue(move |mut this| {
+                        for p in this.as_mut().rust_mut().roster.iter_mut() {
+                            if p.content_sessions.is_empty()
+                                && let Some((_, s)) = seen.iter().find(|(id, s)| id == &p.id && !s.is_empty())
+                            {
+                                p.content_sessions = s.clone();
+                            }
+                        }
+                        this.as_mut().rust_mut().content.others.clear();
+                        this.as_mut().content_from_roster();
+                    });
                     let _ = qt.queue(move |mut this| {
                         this.as_mut().set_call_has_audio(has_audio);
                         this.as_mut().set_call_can_video(can_video);

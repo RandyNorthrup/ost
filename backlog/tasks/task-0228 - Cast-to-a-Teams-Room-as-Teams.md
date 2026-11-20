@@ -4,7 +4,7 @@ title: Cast to a Teams Room as Teams
 status: To Do
 assignee: []
 created_date: '2026-11-20T01:10:00Z'
-updated_date: '2026-11-20T05:34:00Z'
+updated_date: '2026-11-20T06:42:00Z'
 labels:
   - calls
 dependencies: []
@@ -30,4 +30,9 @@ OST's Cast window searches and reports no rooms (TASK-0166). Since TASK-0161 OST
 
 - Room side fix: a room invited into a meeting answers it as an incoming call, which had neither the meeting's roster at the attach nor content-sharing joins, so a cast PowerPoint only reached it when the caster left. Now the attach's join answer (roster.participants) goes through the roster pipeline, and ActiveCall joins content sessions (POST sessionInformation.contentSharingController with its own callbacks) and takes their updates/ends, as a meeting join does. Also PptLiveStage's late-XHR start race guarded.
 - Verified live (linuxlt, emulated btvirt pair: room OST_PROFILE=room advertising on hci1, ost-test1 scanning on hci2): Cast listed "OST Test Room" (Available, nearby glyph, picked by itself), no meetings step (none within the hour), content = PowerPoint Live "OST TEST 228 cast.pptx" (a test deck in ost-test1's OneDrive; the Office recent list was empty, harness --cast-ppt-file); Cast: Meet now titled "OST Test Room", joined without audio/camera, PPT Live presented (content sharing 202), room added with the live beacon code; the room auto-accepted (Bluetooth, valid salt, in tenant), got the roster at the attach, joined the PPT session (200) and showed the deck ("OST TEST 228 cast", 1 of 2) in its call window titled "OST Test Room | OST". --cast-end ended the meeting; the room's call ended (logs). Earlier run without --cast-end: the room stays in an empty Meet now (its auto exit only leaves ad hoc meetings / after a valid end time), ended by the organizer.
+
+- 2026-11-19 "Cast and join" (scheduled "OST TEST 228 cast and join" in ost-test1's calendar, listed in the meetings step and picked): the laptop joined it, presented the deck, the room auto-accepted with the meeting's title "OST TEST 228 cast and join"; ended with --cast-end, room's call ended. Found: the room's roster updates can arrive before its answer (and the attach roster is older), so the presented session was known before there was a call to join it with; now the attach roster only adds people not heard of yet and, once answered, what is presented is joined afresh.
+
+- Final run (cast10, after the roster fix): "Cast and join" OST TEST 228 cast and join -> the room auto-accepted, learned the deck from its roster, joined the PowerPoint Live session (content sharing: joined) and showed it; ended with --cast-end, the room's call ended. Cleanup: the meeting deleted, the test deck removed from ost-test1's OneDrive, rooms stopped, btvirt pair taken down.
+- Open: (1) Teams side-by-side on winpc not done (winpc was in use); wizard card/check colours follow Teams' v0 dark theme structure, not measured; (2) screen/window content on Linux goes through the desktop's portal picker after Cast (KDE's can't be driven here, so live runs used PowerPoint Live); (3) the room stays in an emptied Meet now (its auto exit leaves only ad hoc meetings or after a valid end), as the Teams Rooms rule OST copies.
 <!-- SECTION:NOTES:END -->
