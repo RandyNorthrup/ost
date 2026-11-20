@@ -481,6 +481,32 @@ impl qobject::Backend {
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let mut slot = call_slot().lock().await;
+            // A meeting we joined, or one we were invited into and
+            // answered (a Teams Rooms device).
+            let slot = &mut *slot;
+            if slot.outgoing.is_none() {
+                let Some(call) = slot.active.as_mut() else { return };
+                for g in &gone {
+                    call.forget_content(g);
+                }
+                for s in fresh {
+                    match call.join_content(s).await {
+                        Ok(joined) => {
+                            let _ = qt.queue(move |mut this| {
+                                if let Some(o) = this.as_mut().rust_mut().content.others.iter_mut().find(|o| o.correlation_id == joined.correlation_id) {
+                                    if !joined.state.is_empty() {
+                                        o.state = joined.state.clone();
+                                    }
+                                    o.sequence = joined.sequence;
+                                }
+                                this.as_mut().show_content();
+                            });
+                        }
+                        Err(e) => tracing::warn!("joining a content share: {}", short_error(&e)),
+                    }
+                }
+                return;
+            }
             let Some(call) = slot.outgoing.as_mut() else { return };
             for g in &gone {
                 call.forget_content(g);
@@ -527,6 +553,28 @@ pub(crate) async fn content_event(json: &str, qt: &cxx_qt::CxxQtThread<qobject::
     }
     let Ok(v) = serde_json::from_str::<serde_json::Value>(json) else { return false };
     let mut slot = call_slot().lock().await;
+    // An answered call (a room invited into a meeting): the updates and
+    // ends of the sessions it joined.
+    if slot.outgoing.is_none()
+        && let Some(call) = slot.active.as_mut()
+    {
+        let Some((corr, state)) = call.content_event(&v) else { return false };
+        drop(slot);
+        let _ = qt.queue(move |mut this| {
+            let c = &mut this.as_mut().rust_mut().content;
+            match state {
+                Some(st) => {
+                    if let Some(o) = c.others.iter_mut().find(|o| o.correlation_id == corr) {
+                        o.state = st;
+                        o.sequence += 1;
+                    }
+                }
+                None => c.others.retain(|o| o.correlation_id != corr),
+            }
+            this.as_mut().show_content();
+        });
+        return true;
+    }
     let Some(call) = slot.outgoing.as_mut() else { return false };
     // Someone took control of a presentation (ours, or one we view).
     if let Some((corr, presenter, taken)) = call.content_presenter(&v) {

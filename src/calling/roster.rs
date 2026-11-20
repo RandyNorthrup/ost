@@ -505,6 +505,12 @@ pub struct Processing {
     /// Live captions run (`closedCaptions`, started for anyone who turned
     /// them on).
     pub captions: bool,
+    /// The recording waits for the meeting to go live (`recording` in the
+    /// state "WaitingForMeetingLive": an auto-recorded event's green room).
+    pub recording_waiting: bool,
+    /// The transcript waits for the meeting to go live (the same state
+    /// for `realTimeTranscript`).
+    pub transcript_waiting: bool,
 }
 
 impl Processing {
@@ -514,6 +520,24 @@ impl Processing {
             recording: self.recording.or_else(|| other.recording.clone()),
             copilot: self.copilot || other.copilot,
             captions: self.captions || other.captions,
+            recording_waiting: self.recording_waiting || other.recording_waiting,
+            transcript_waiting: self.transcript_waiting || other.transcript_waiting,
+        }
+    }
+
+    /// Teams' alert while the recorder waits for the meeting to go live
+    /// (527114's recording and transcript alerts): both waiting,
+    /// RecordingAndTranscriptWaitingForMeetingLive ("Recording and
+    /// transcription will begin when the meeting starts"); only the
+    /// transcript, TranscriptWaitingForMeetingLive; only the recording
+    /// (and nothing running), RecordingWaitingForMeetingLive. "" when
+    /// nothing waits.
+    pub fn waiting_alert(&self) -> &'static str {
+        match (self.recording_waiting, self.transcript_waiting) {
+            (true, true) => "RecordingAndTranscript",
+            (false, true) => "Transcript",
+            (true, false) if self.transcript.is_none() => "Recording",
+            _ => "",
         }
     }
 
@@ -590,6 +614,7 @@ pub fn versioned_processing_updates(json: &serde_json::Value) -> Vec<(String, Op
                 (m.get("state").and_then(|s| s.as_str()) == Some("Active"))
                     .then(|| m.get("userId").and_then(|u| u.as_str()).unwrap_or_default().to_string())
             };
+            let waiting = |k: &str| modes.pointer(&format!("/{k}/state")).and_then(|s| s.as_str()) == Some("WaitingForMeetingLive");
             Some((
                 id,
                 Some(Processing {
@@ -597,6 +622,8 @@ pub fn versioned_processing_updates(json: &serde_json::Value) -> Vec<(String, Op
                     recording: started_by("recording"),
                     copilot: started_by("copilot").is_some(),
                     captions: started_by("closedCaptions").is_some(),
+                    recording_waiting: waiting("recording"),
+                    transcript_waiting: waiting("realTimeTranscript"),
                 }),
                 version,
             ))
@@ -755,6 +782,15 @@ mod tests {
         assert_eq!(u[0].1, Some(Processing::default()));
         let u = processing_updates(&bot("inactive", "Inactive"));
         assert_eq!(u[0].1, None);
+        // An auto-recorded event's green room: the recorder waits for the
+        // meeting to go live.
+        let mut green = bot("active", "WaitingForMeetingLive");
+        green["body"]["participants"]["28:BDD75849-e0a6"]["endpoints"]["fca2"]["endpointMetadata"]["processingModes"]["recording"]["state"] = "WaitingForMeetingLive".into();
+        let w = processing_updates(&green)[0].1.clone().unwrap();
+        assert!(w.recording_waiting && w.transcript_waiting && w.transcript.is_none());
+        assert_eq!(w.waiting_alert(), "RecordingAndTranscript");
+        assert_eq!(processing_updates(&bot("active", "WaitingForMeetingLive"))[0].1.clone().unwrap().waiting_alert(), "Transcript");
+        assert_eq!(processing_updates(&bot("active", "Active"))[0].1.clone().unwrap().waiting_alert(), "");
         // A join response's roster.
         let joined = serde_json::json!({"roster": {"participants": bot("active", "Active")["body"]["participants"].clone()}});
         assert!(processing_updates(&joined)[0].1.clone().unwrap().transcript.is_some());
@@ -771,7 +807,7 @@ mod tests {
             "8:orgid:b" => "Randy".to_string(),
             _ => String::new(),
         };
-        let p = |r: Option<&str>, t: Option<&str>| Processing { recording: r.map(Into::into), transcript: t.map(Into::into), copilot: false, captions: false };
+        let p = |r: Option<&str>, t: Option<&str>| Processing { recording: r.map(Into::into), transcript: t.map(Into::into), ..Default::default() };
         assert_eq!(p(None, Some("8:orgid:a")).indicator_state(), "Transcribing");
         assert_eq!(p(None, Some("8:orgid:a")).indicator_tooltip(name), "Transcription started by OST Test 1.");
         assert_eq!(p(Some("8:orgid:a"), Some("8:orgid:a")).indicator_tooltip(name), "Recording and transcription started by OST Test 1.");

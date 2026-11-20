@@ -176,6 +176,9 @@ Item {
         const x = new XMLHttpRequest()
         x.onreadystatechange = () => {
             if (x.readyState !== XMLHttpRequest.DONE) return
+            // The stage may be gone by the time the file arrives (the
+            // presentation ended at once).
+            if (!root || typeof root.start !== "function") return
             root.channelJs = x.responseText
             root.start()
         }

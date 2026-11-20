@@ -20,8 +20,13 @@ Item {
     property bool richText: false
     signal dismissed()
     signal action()
-    width: 320
-    height: Math.max(41.33, body.y + body.height + (actionText ? 8 + 32 : 0) + 10.67)
+    /// Teams' recording alerts' layout (ufd_RecordingAndTranscript…,
+    /// measured on winpc 2026-11-19): 318.7 wide, the glyph 12 in and
+    /// centred, the text 40 in and 11 down (252.7 wide), the 20 px dismiss
+    /// glyph 30.1 from the end and 13 down.
+    property bool recordingLayout: false
+    width: recordingLayout ? 318.7 : 320
+    height: Math.max(41.33, body.y + body.height + (actionText ? 8 + 32 : 0) + (recordingLayout ? 11 : 10.67))
     RectangularShadow { anchors.fill: surface; radius: 8; offset.y: 0.6; blur: 1.8; color: theme.shadowAmbient }
     RectangularShadow { anchors.fill: surface; radius: 8; offset.y: 3.2; blur: 7.2; color: theme.shadowKey }
     Rectangle {
@@ -32,7 +37,9 @@ Item {
     }
     FluentIcon {
         visible: root.icon.length > 0
-        x: 14.67; y: 10.67; size: 20
+        x: root.recordingLayout ? 12 : 14.67
+        y: root.recordingLayout ? (root.height - 20) / 2 : 10.67
+        size: 20
         name: root.icon
         color: theme.textStrong
     }
@@ -49,8 +56,9 @@ Item {
     }
     Text {
         id: body
-        x: root.icon.length > 0 ? 44 : 12.67; y: root.title.length > 0 ? heading.y + heading.height : 10.67
-        width: root.width - x - 44
+        x: root.recordingLayout ? 40 : root.icon.length > 0 ? 44 : 12.67
+        y: root.title.length > 0 ? heading.y + heading.height : root.recordingLayout ? 11 : 10.67
+        width: root.recordingLayout ? 252.7 : root.width - x - 44
         wrapMode: Text.Wrap
         lineHeight: 20; lineHeightMode: Text.FixedHeight
         // Alerts whose text Teams gives as HTML (a span at 600, a link).
@@ -82,7 +90,9 @@ Item {
     }
     Rectangle {
         id: hcFill1
-        x: root.width - 36; y: 6.67; width: 28; height: 28; radius: 4
+        x: root.recordingLayout ? root.width - 34.1 : root.width - 36
+        y: root.recordingLayout ? 9 : 6.67
+        width: 28; height: 28; radius: 4
         color: dismissHover.hovered ? theme.menuHover : "transparent"
         FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.onFill(hcFill1, theme.textSecondary) }
         HoverHandler { id: dismissHover; cursorShape: Qt.PointingHandCursor }

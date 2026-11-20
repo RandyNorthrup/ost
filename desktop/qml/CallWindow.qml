@@ -3244,6 +3244,8 @@ Window {
             id: audioSettingsPane
             visible: win.side === "audio"
             roomAudio: win.roomDeviceJoined
+            // Teams' P2P call type (as the Mic flyout's).
+            oneToOne: !win.meeting && !win.testCall
             anchors.fill: parent
             muted: win.muted || !win.hasAudio
             onToggleMute: win.toggleMute()
@@ -5721,6 +5723,7 @@ Window {
     function endEventForTest() { endEventDialog.close(); backend.setEventLive(false) }
     function leaveSplitForTest() { return leaveButton.split }
     function greenRoomAlertForTest() { return greenRoomAlert.visible }
+    function greenRoomAlertTextForTest() { return { visible: greenRoomAlert.visible, text: greenRoomAlert.text, icon: greenRoomAlert.icon, waiting: win.recordingWaiting, w: greenRoomAlert.width, h: greenRoomAlert.height } }
     ConfirmDialog {
         id: eventFailedDialog
         property bool starting: true
@@ -5740,19 +5743,39 @@ Window {
     }
     // "Start the meeting whenever you're ready." (Teams' green room alert,
     // info, dismissable) while presenters wait in the green room.
+    // Teams' calling alerts show one alert at a time, the latest on top:
+    // in an auto-recorded event the call recorder joins the green room
+    // waiting for the meeting to go live (its processing modes in the
+    // state "WaitingForMeetingLive"), and Teams' recording alert
+    // (RecordingAndTranscriptWaitingForMeetingLive, a dismissable warning
+    // with the record glyph: "Recording and transcription will begin when
+    // the meeting starts", or the recording's or the transcript's own)
+    // covers the start alert, for a webinar's waiting attendees too
+    // (measured on winpc 2026-11-19).
+    property bool recordingWaitingClosed: false
+    readonly property string recordingWaiting: backend.callRecordingWaiting
+    onRecordingWaitingChanged: recordingWaitingClosed = false
     CallAlert {
         id: greenRoomAlert
         readonly property bool ended: win.liveEvent.eventPhase === "ended" && win.myRole !== "attendee"
-        visible: (win.ubarFacts.greenRoom || ended) && !win.liveEvent.busy && !win.greenRoomAlertClosed && !win.breakoutAlert
+        readonly property bool recording: win.recordingWaiting !== "" && !win.recordingWaitingClosed && !ended
+        readonly property bool waitingRoom: win.ubarFacts.greenRoom || (stagingScreen.visible && stagingScreen.phase === "prelive")
+        visible: (recording ? waitingRoom : (win.ubarFacts.greenRoom || ended) && !win.greenRoomAlertClosed) && !win.liveEvent.busy && !win.breakoutAlert
         x: stage.x + (stage.width - width) / 2
         y: win.belowBar + 10.7
         z: 6
+        recordingLayout: recording
         // Back in the green room after the end (Teams' info alert).
-        text: !ended ? qsTr("Start the meeting whenever you're ready.")
+        text: recording ? (win.recordingWaiting === "Recording" ? qsTr("Recording will begin when the meeting starts")
+                           : win.recordingWaiting === "Transcript" ? qsTr("Transcription will begin when the meeting starts")
+                           : qsTr("Recording and transcription will begin when the meeting starts"))
+            : !ended ? qsTr("Start the meeting whenever you're ready.")
             : win.isEvent ? qsTr("The event has ended for attendees. If recording was enabled, it has now stopped.")
             : qsTr("The meeting has ended for attendees and recording has stopped.")
-        icon: "info-20"
-        onDismissed: win.greenRoomAlertClosed = true
+        // Teams' alert icon map (263640): the record glyph for the
+        // recording's alerts, the transcript's for its own.
+        icon: recording ? (win.recordingWaiting === "Transcript" ? "call-transcript-20" : "record-20") : "info-20"
+        onDismissed: { if (recording) win.recordingWaitingClosed = true; else win.greenRoomAlertClosed = true }
         onEndedChanged: if (ended) win.greenRoomAlertClosed = false
     }
     ConfirmDialog {

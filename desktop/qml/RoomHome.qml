@@ -72,7 +72,19 @@ Rectangle {
         Row {
             objectName: "meeting-room-info-name"
             spacing: 8
-            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "cast-20"; size: 20; color: theme.text }
+            // Teams Rooms' cast tooltip (809529, front of room): "Cast to
+            // this room with:" (24) over "Teams Cast" (24 bold, the cast
+            // glyph 5 before it), shown while the room's Bluetooth beacon
+            // advertises it (room mode always does); Miracast would sit
+            // before it, 35 apart, where the device offers it.
+            FluentIcon {
+                id: castIcon
+                anchors.verticalCenter: parent.verticalCenter; name: "cast-20"; size: 20; color: theme.text
+                HoverHandler { id: castHover }
+                TapHandler { onTapped: castTip.shown = !castTip.shown }
+                Accessible.role: Accessible.Button
+                Accessible.name: qsTr("Cast to this room with:") + " " + qsTr("Teams Cast")
+            }
             Text {
                 text: root.roomName
                 font.family: theme.font; font.pixelSize: 20
@@ -261,5 +273,29 @@ Rectangle {
                 RingButton { label: qsTr("Accept"); primary: true; onClicked: root.accept() }
             }
         }
+    }
+
+    Rectangle {
+        id: castTip
+        property bool shown: false
+        objectName: "meeting-room-cast-tooltip"
+        visible: castHover.hovered || shown
+        readonly property point at: castIcon.mapToItem(root, 0, castIcon.height)
+        x: Math.min(root.width - width - 8, at.x - 12); y: at.y + 8
+        z: 10
+        width: tipCol.width + 24; height: tipCol.height + 24; radius: 8
+        color: theme.surface
+        border.width: 1; border.color: theme.stroke
+        Column {
+            id: tipCol
+            x: 12; y: 12; spacing: 8
+            Text { text: qsTr("Cast to this room with:"); font.family: theme.font; font.pixelSize: 24; color: theme.text }
+            Row {
+                spacing: 5
+                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "cast-20"; size: 20; color: theme.text }
+                Text { text: qsTr("Teams Cast"); font.family: theme.font; font.pixelSize: 24; font.weight: Font.Bold; color: theme.text }
+            }
+        }
+        Timer { running: castTip.shown; interval: 5000; onTriggered: castTip.shown = false }
     }
 }

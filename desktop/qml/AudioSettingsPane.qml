@@ -14,6 +14,12 @@ import QtQuick.Controls
 // - Advanced settings: Noise suppression (and, with music mode, its
 //   switch shows off), High fidelity music mode with "Recommended for
 //   studio environment." and its two checkboxes.
+// Advanced settings starts with Spatial audio (audio-settings-panel 311594:
+// SpatialAudioContainer at SETTINGS_PANEL, shouldHideDescription with the
+// info button; 358966): its label, the info button (Teams' AVF tooltip with
+// Learn more) and the switch at the end; off and disabled where the
+// speaker can't play it or in a 1:1 call (Teams' P2P), as in the Mic
+// flyout (TASK-0231).
 // Teams leaves out Spatial audio where the media stack can't render it
 // (isSpatialAudioAvailable) and the Background noise only / Voice
 // isolation choice where voice isolation isn't supported; Noise
@@ -40,6 +46,12 @@ Rectangle {
     property bool musicInFlyout: false
     property bool musicEcho: true
     property var expanded: ({ speaker: true, microphone: true, advanced: true })
+    /// A 1:1 call (Teams' P2P call type): Spatial audio shows off and
+    /// disabled there.
+    property bool oneToOne: false
+    property bool spatialCapable: false
+    property bool spatialOn: false
+    readonly property bool spatialUsable: spatialCapable && !oneToOne
 
     function reload() {
         devices = JSON.parse(backend.audioDevices())
@@ -50,6 +62,22 @@ Rectangle {
         musicMode = backend.setting("musicMode") === "on"
         musicInFlyout = backend.setting("musicModeInFlyout") === "on"
         musicEcho = backend.setting("musicModeEcho") !== "off"
+        spatialCapable = backend.spatialAudioCapable()
+        spatialOn = backend.setting("spatialAudio") === "true"
+    }
+    // Teams' setSpatialAudio: the device setting Settings ▸ Devices and the
+    // Mic flyout keep; mid-meeting the call switches at once
+    // (calling::spatial).
+    function setSpatial(on) {
+        if (!spatialUsable) return
+        spatialOn = on
+        backend.setSetting("spatialAudio", on ? "true" : "false")
+    }
+    function spatialRowForTest() {
+        const p = spatialSwitchRow.mapToItem(col, 0, 0)
+        const n = noiseRow.mapToItem(col, 0, 0)
+        return { shown: spatialSwitchRow.visible, usable: spatialUsable, on: spatialSwitchRow.checked, capable: spatialCapable, oneToOne: oneToOne,
+                 setting: backend.setting("spatialAudio"), y: p.y, h: spatialSwitchRow.height, noiseY: n.y, info: spatialSwitchRow.info.length > 0 }
     }
     onVisibleChanged: if (visible) { reload(); flick.contentY = 0 }
     function scrollToEndForTest() { flick.contentY = Math.max(0, flick.contentHeight - flick.height) }
@@ -224,6 +252,17 @@ Rectangle {
                 // Teams moves its info to Background noise only: the
                 // switch row has none, and the choice follows it.
                 SwitchRow {
+                    id: spatialSwitchRow
+                    label: qsTr("Spatial audio")
+                    info: qsTr("Enable this to experience audio to come from where the person speaking is positioned on your screen. Works well with Together mode, gallery and speaker view. Not available on wireless headphones yet. <0>Learn more</0>").replace("<0>", "<a href=\"https://support.microsoft.com/en-us/office/spatial-audio-in-teams-meetings-547b5f81-1825-4ee1-a1cf-f02e12db4fdb\">").replace("</0>", "</a>")
+                    // Teams' avfTooltipInfoText: 12/16 NeutralForeground2.
+                    infoColor: theme.textStrong
+                    checked: root.spatialUsable && root.spatialOn
+                    usable: root.spatialUsable
+                    onToggled: root.setSpatial(!root.spatialOn)
+                }
+                SwitchRow {
+                    id: noiseRow
                     label: qsTr("Noise suppression")
                     checked: root.noiseSuppression
                     onToggled: root.setNoise(!root.noiseSuppression)
@@ -323,12 +362,15 @@ Rectangle {
 
     // A label (with Fluent's 24 px info button after it) and a Fluent
     // switch: its 40 x 20 indicator ends at the column's edge; on, brand
-    // with a white thumb; off, a #616161 outline and thumb.
+    // with a white thumb; off, a #616161 outline and thumb; disabled, a
+    // #E0E0E0 outline and #BDBDBD thumb (the label stays, as Teams').
     component SwitchRow: Item {
         id: sr
         property string label
         property string info: ""
         property bool checked: false
+        property bool usable: true
+        property color infoColor: theme.text
         signal toggled()
         width: 305.33; height: 36
         Row {
@@ -341,26 +383,26 @@ Rectangle {
                 font.family: theme.font; font.pixelSize: 14
                 color: theme.text
             }
-            InfoButton { y: -2.67; visible: sr.info.length > 0; info: sr.info }
+            InfoButton { y: -2.67; visible: sr.info.length > 0; info: sr.info; textColor: sr.infoColor }
         }
         Rectangle {
             x: 265.33; y: 8; width: 40; height: 20; radius: 10
             color: sr.checked ? (swHover.hovered ? theme.brandHover : theme.checkedFill) : "transparent"
-            border.color: sr.checked ? "transparent" : theme.textSecondary
+            border.color: sr.checked ? "transparent" : sr.usable ? theme.textSecondary : theme.divider
             border.width: 0.67
             Rectangle {
                 width: 14.4; height: 14.4; radius: 7.2
                 anchors.verticalCenter: parent.verticalCenter
                 x: (sr.checked ? 20.67 : 0.67) + 9 - 7.2
-                color: sr.checked ? theme.hc("white", "#1AEBFF") : theme.textSecondary
+                color: sr.checked ? theme.hc("white", "#1AEBFF") : sr.usable ? theme.textSecondary : theme.disabled
             }
-            HoverHandler { id: swHover; cursorShape: Qt.PointingHandCursor }
-            TapHandler { onTapped: sr.toggled() }
+            HoverHandler { id: swHover; enabled: sr.usable; cursorShape: Qt.PointingHandCursor }
+            TapHandler { enabled: sr.usable; onTapped: sr.toggled() }
         }
         Accessible.role: Accessible.CheckBox
         Accessible.name: sr.label
         Accessible.checked: sr.checked
-        Accessible.onToggleAction: sr.toggled()
+        Accessible.onToggleAction: if (sr.usable) sr.toggled()
     }
 
     // Fluent's checkbox row (32 tall, starting 7 left of the column): the
@@ -402,6 +444,7 @@ Rectangle {
     component InfoButton: Rectangle {
         id: ib
         property string info
+        property color textColor: theme.text
         width: 24; height: 24; radius: 4
         color: "transparent"
         // Regular at rest; filled and brand on hover and while open.
@@ -430,7 +473,7 @@ Rectangle {
                 wrapMode: Text.Wrap
                 font.family: theme.font; font.pixelSize: 12
                 lineHeight: 16; lineHeightMode: Text.FixedHeight
-                color: theme.text
+                color: ib.textColor
                 onLinkActivated: link => Qt.openUrlExternally(link)
                 HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
             }

@@ -318,6 +318,10 @@ pub mod qobject {
         #[qproperty(QString, call_recording_state)]
         /// Its tooltip ("Transcription started by …").
         #[qproperty(QString, call_recording_tip)]
+        /// What the call recorder waits to start once the meeting goes
+        /// live (an auto-recorded event's green room): "RecordingAndTranscript",
+        /// "Recording", "Transcript" or "".
+        #[qproperty(QString, call_recording_waiting)]
         /// Teams' Meeting info pane: {title, hours, schedule, location,
         /// body (HTML), canCopy}, or "" before it's loaded.
         #[qproperty(QString, call_meeting_info_json)]
@@ -3096,6 +3100,7 @@ pub struct BackendRust {
     call_ai_on: bool,
     call_recording_state: QString,
     call_recording_tip: QString,
+    call_recording_waiting: QString,
     call_meeting_info_json: QString,
     call_phone_json: QString,
     call_event_json: QString,
@@ -7859,6 +7864,10 @@ fn save_settings(map: &serde_json::Map<String, serde_json::Value>) -> anyhow::Re
 /// room it hears).
 static ROOM_NAMES: std::sync::Mutex<std::collections::BTreeMap<String, (String, String)>> =
     std::sync::Mutex::new(std::collections::BTreeMap::new());
+/// The rooms' presence activity and when it was read (Cast's room list
+/// shows it: "In a meeting", "Presenting"; refreshed every 30 s).
+static ROOM_ACTIVITY: std::sync::Mutex<std::collections::BTreeMap<String, (String, std::time::Instant)>> =
+    std::sync::Mutex::new(std::collections::BTreeMap::new());
 
 fn room_names() -> std::collections::BTreeMap<String, (String, String)> {
     ROOM_NAMES.lock().unwrap_or_else(|e| e.into_inner()).clone()
@@ -8523,6 +8532,9 @@ impl qobject::Backend {
             let Some(call) = call_slot().lock().await.ringing.take() else {
                 return;
             };
+            // The meeting's roster from the attach (a room invited into a
+            // meeting: what is presented there already).
+            let initial_roster = call.initial_roster_event();
             let result = async {
                 let auth = CallAuth::load().await?;
                 auth.answer(call, with_video, true).await
@@ -8549,6 +8561,10 @@ impl qobject::Backend {
                     tracing::info!(has_audio, can_video, camera, can_share, e2ee, "call answered");
                     call_slot().lock().await.active = Some(active);
                     spawn_call_stats_logger(qt.clone());
+                    if let Some(ev) = initial_roster {
+                        tracing::info!("the conversation's roster at the attach");
+                        on_call_event(&qt, &ev.to_string()).await;
+                    }
                     let _ = qt.queue(move |mut this| {
                         this.as_mut().set_call_has_audio(has_audio);
                         this.as_mut().set_call_can_video(can_video);
@@ -10756,6 +10772,10 @@ impl qobject::Backend {
         }
         if self.rust().call_recording_tip != tip {
             self.as_mut().set_call_recording_tip(tip);
+        }
+        let waiting = QString::from(self.rust().processing.waiting_alert());
+        if self.rust().call_recording_waiting != waiting {
+            self.as_mut().set_call_recording_waiting(waiting);
         }
     }
 
@@ -20077,15 +20097,21 @@ impl qobject::Backend {
                     }
                     // Discover's Register (Teams' registration dialog): your
                     // names and email as the dialog shows them, the local
-                    // time zone, no answers (the form's questions aren't
-                    // asked by OST's dialog yet when there are none).
+                    // time zone, the form's answers (`values` by question
+                    // id, sent as Teams sends them) and, where the
+                    // organizer set terms of use, whether you accepted
+                    // them.
                     "register" => {
                         let iana = std::env::var("TZ").ok().filter(|z| z.contains('/')).or_else(|| {
                             std::fs::read_link("/etc/localtime").ok().and_then(|p| p.to_string_lossy().split("zoneinfo/").nth(1).map(str::to_string))
                         });
                         let iana = iana.unwrap_or_else(|| "UTC".into());
                         let offset = chrono::Local::now().offset().local_minus_utc() as i64 / 60;
-                        let body = api::events::register_body(&iana, offset, &s("firstName"), &s("lastName"), &s("email"), &[], None);
+                        let questions: Vec<serde_json::Value> = p.get("questions").and_then(|q| q.as_array()).cloned().unwrap_or_default();
+                        let answers = api::events::registration_answers(&questions, p.get("values").unwrap_or(&serde_json::Value::Null));
+                        let terms = (!s("termsUrl").is_empty()).then(|| p.get("terms").and_then(|v| v.as_bool()).unwrap_or(false));
+                        let body = api::events::register_body(&iana, offset, &s("firstName"), &s("lastName"), &s("email"), &answers, terms);
+                        tracing::info!(answers = answers.len(), "events: registering");
                         let r = api::events::register(&client, &s("id"), &body).await?;
                         tracing::info!(status = %r["status"], "events: registered");
                         Ok(r)
@@ -21627,6 +21653,22 @@ impl qobject::Backend {
                         Ok(json!({}))
                     }
                     "meetNow" => Ok(json!({ "joinUrl": api::calendar::meet_now(&client, &s("subject")).await?, "subject": s("subject") })),
+                    // Cast's meetings step: your Teams meetings from an hour
+                    // ago to an hour ahead (Teams' cast wizard).
+                    "castMeetings" => {
+                        let now = chrono::Utc::now();
+                        let from = (now - chrono::Duration::minutes(60)).format("%Y-%m-%dT%H:%M:%SZ").to_string();
+                        let to = (now + chrono::Duration::minutes(60)).format("%Y-%m-%dT%H:%M:%SZ").to_string();
+                        let events = api::calendar::calendar_view(&client, &from, &to).await?;
+                        let list: Vec<serde_json::Value> = api::calendar::cast_meetings(&events, now)
+                            .into_iter()
+                            .map(|e| json!({ "subject": e.subject, "start": e.start_utc, "end": e.end_utc, "allDay": e.is_all_day, "joinUrl": e.join_url }))
+                            .collect();
+                        Ok(json!({ "meetings": list }))
+                    }
+                    // Cast's "Just cast": an instant meeting (Teams'
+                    // createAndGetInstantMeetingEventJoinInfo, a Meet now).
+                    "castMeetNow" => Ok(json!({ "joinUrl": api::calendar::meet_now(&client, &s("subject")).await?, "subject": s("subject") })),
                     // As Teams: the calling service finds the meeting from
                     // its ID and passcode (meetingData); then its join link.
                     "joinById" => {
@@ -22010,17 +22052,42 @@ impl qobject::Backend {
         crate::room_ble::set_scanning(scan);
         let (state, beacons) = crate::room_ble::snapshot();
         let names = room_names();
+        let activity = ROOM_ACTIVITY.lock().unwrap_or_else(|e| e.into_inner()).clone();
         let unknown: Vec<String> = beacons.iter().map(|b| b.mri.clone()).filter(|m| !names.contains_key(m)).collect();
-        if !unknown.is_empty() {
+        // Known rooms' presence is read again after 30 s (Teams' list
+        // follows the rooms' presence).
+        let stale: Vec<String> = beacons
+            .iter()
+            .map(|b| b.mri.clone())
+            .filter(|m| names.contains_key(m) && activity.get(m).is_none_or(|(_, at)| at.elapsed() > std::time::Duration::from_secs(30)))
+            .collect();
+        if !stale.is_empty() {
+            // Marked read now so the next poll doesn't ask again.
+            let mut a = ROOM_ACTIVITY.lock().unwrap_or_else(|e| e.into_inner());
+            for m in &stale {
+                let old = a.get(m).map(|x| x.0.clone()).unwrap_or_default();
+                a.insert(m.clone(), (old, std::time::Instant::now()));
+            }
+        }
+        if !unknown.is_empty() || !stale.is_empty() {
             runtime().spawn(async move {
                 let Ok(client) = TeamsClient::new().await else { return };
-                if let Ok(found) = teams_cli::api::directory::short_profiles(&client, &unknown).await {
-                    let presences = teams_cli::api::presence::get_presences(client.http(), &unknown).await.unwrap_or_default();
-                    let mut cache = ROOM_NAMES.lock().unwrap_or_else(|e| e.into_inner());
-                    for (mri, name) in found {
-                        let status = presences.iter().find(|p| p.mri == mri).map(|p| p.availability.clone()).unwrap_or_default();
-                        cache.insert(mri, (name, status));
+                let all: Vec<String> = unknown.iter().chain(stale.iter()).cloned().collect();
+                let presences = teams_cli::api::presence::get_presences(client.http(), &all).await.unwrap_or_default();
+                let found = if unknown.is_empty() { Vec::new() } else { teams_cli::api::directory::short_profiles(&client, &unknown).await.unwrap_or_default() };
+                let mut cache = ROOM_NAMES.lock().unwrap_or_else(|e| e.into_inner());
+                for (mri, name) in found {
+                    let status = presences.iter().find(|p| p.mri == mri).map(|p| p.availability.clone()).unwrap_or_default();
+                    cache.insert(mri, (name, status));
+                }
+                for mri in &stale {
+                    if let (Some(p), Some(entry)) = (presences.iter().find(|p| &p.mri == mri), cache.get_mut(mri)) {
+                        entry.1 = p.availability.clone();
                     }
+                }
+                let mut a = ROOM_ACTIVITY.lock().unwrap_or_else(|e| e.into_inner());
+                for p in &presences {
+                    a.insert(p.mri.clone(), (p.activity.clone(), std::time::Instant::now()));
                 }
             });
         }
@@ -22028,7 +22095,8 @@ impl qobject::Backend {
             .iter()
             .filter_map(|b| {
                 let (name, status) = names.get(&b.mri)?;
-                Some(serde_json::json!({"mri": b.mri, "name": name, "status": status, "code": b.code, "adjacent": b.adjacent, "rssi": b.rssi}))
+                let activity = activity.get(&b.mri).map(|a| a.0.clone()).unwrap_or_default();
+                Some(serde_json::json!({"mri": b.mri, "name": name, "status": status, "activity": activity, "code": b.code, "adjacent": b.adjacent, "rssi": b.rssi}))
             })
             .collect();
         let v = serde_json::json!({"supported": state.supported, "radioOn": state.radio_on, "rooms": rooms});

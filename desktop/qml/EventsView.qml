@@ -330,9 +330,11 @@ Rectangle {
     function registerSubmitForTest() { registerDialog.agreed = true; registerDialog.submit() }
     function registerStateForTest(title) {
         const c = cardForTest(title) || {}
-        return { open: registerDialog.opened, done: registerDialog.done, busy: registerDialog.busy, me: registerDialog.me, card: c.registration_status || "", local: regState[c.id] }
+        return { open: registerDialog.opened, done: registerDialog.done, busy: registerDialog.busy, me: registerDialog.me, card: c.registration_status || "", local: regState[c.id], role: c.role || "", by: roleLine(c), byTip: byTooltip(c), byNames: c.by_names || [] }
     }
     function registerCloseForTest() { registerDialog.close() }
+    function registerFormForTest() { return registerDialog.formForTest() }
+    function registerAnswerForTest(answers) { registerDialog.answerForTest(answers, true) }
     function unregisterForTest(title) { const c = cardForTest(title); if (c) unregisterDialog.openFor(c); return !!c }
     function unregisterConfirmForTest() {
         const e = unregisterDialog.ev
@@ -470,10 +472,20 @@ Rectangle {
         Text { x: ecBadge.visible ? ecBadge.x + ecBadge.width + 4 : 20; y: ecBadge.visible ? 158 : 157; text: root.whenText(ec.modelData.start, ec.modelData.end, false); font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
         Column {
             x: 20; y: 187; spacing: 4
-            // Your role ("Organizer"), else the presenter ("By OST Test 3").
-            Row { spacing: 4; visible: !!ec.modelData.role || !!ec.modelData.by
+            // Your role ("Organizer", "Co-organizer"), else who presents
+            // (meet-app's Or): "By A, B", "By A, B +N" with them all in
+            // the tooltip, or the owner when there are no presenters.
+            Row { spacing: 4; visible: byText.text !== ""
                 FluentIcon { name: "person-16"; size: 16; color: theme.textSecondary }
-                Text { text: ec.modelData.role === "Organizer" ? qsTr("Organizer") : !ec.modelData.by ? (ec.modelData.role || "") : qsTr("By %1").arg(ec.modelData.by); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } }
+                Text {
+                    id: byText
+                    text: root.roleLine(ec.modelData)
+                    font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary
+                    HoverHandler { id: byHover }
+                    ToolTip.visible: byHover.hovered && root.byTooltip(ec.modelData) !== ""
+                    ToolTip.text: root.byTooltip(ec.modelData)
+                    ToolTip.delay: 300
+                } }
             Row { spacing: 4
                 FluentIcon { name: "location-20"; size: 16; color: theme.textSecondary }
                 Text { text: ec.modelData.location || qsTr("Online"); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } }
@@ -566,6 +578,21 @@ Rectangle {
                 { key: "dup", label: qsTr("Duplicate"), icon: "copy-20" }]
         onPicked: i => { const k = items[i].key; if (k === "dup") root.duplicateEvent(ev); else root.openChat(ev, k === "crew") }
     }
+    // The card's role line (meet-app's Or, read 2026-11-19): organizers
+    // see their role; everyone else "By" the session's presenters, two of
+    // them and "+N" past two, or the owner.
+    function roleLine(c) {
+        if (c.role === "Organizer") return qsTr("Organizer")
+        if (c.role === "CoOrganizer") return qsTr("Co-organizer")
+        const n = c.by_names || (c.by ? [c.by] : [])
+        if (n.length === 0) return ""
+        return n.length > 2 ? qsTr("By %1 +%2").arg(n.slice(0, 2).join(", ")).arg(n.length - 2) : qsTr("By %1").arg(n.join(", "))
+    }
+    function byTooltip(c) {
+        if (c.role === "Organizer" || c.role === "CoOrganizer") return ""
+        const n = c.by_names || []
+        return n.length > 1 ? qsTr("By %1").arg(n.join(", ")) : ""
+    }
     /// Registrations made or cancelled here ({event id: "Registered" | ""})
     /// over what Discover last said.
     property var regState: ({})
@@ -618,11 +645,22 @@ Rectangle {
     // radius 8, padding 24): the event's name (20/600), its date (14), a
     // divider, "Registration Information" (14/600), First name / Last name
     // (186.7 x 30.7, 200 apart) and Email (549.3) from your profile and not
-    // editable, each label with a red "*", a divider, "I have read and
-    // agree to the Microsoft Event Terms and Conditions *" (14 #616161,
-    // the link #4F52B2), Cancel and Register (96 x 31.3). Then "You're
-    // registered!" (Teams' illustration 192, 20/600) and "We sent a
+    // editable, each label with a red "*", the form's questions, a divider,
+    // "I have read and agree to the Microsoft Event Terms and Conditions *"
+    // (14 #616161, the link #4F52B2), Cancel and Register (96 x 31.3). Then
+    // "You're registered!" (Teams' illustration 192, 20/600) and "We sent a
     // confirmation email to …".
+    // The questions (meet-app's registration form, read 2026-11-19) follow
+    // the fields 12 below, 16 apart, in their order: Fluent fields with the
+    // question (or a predefined field's own label) and a red "*" when
+    // required: Text an input (255 characters at most), Note a 4-row text
+    // area (1,000), SingleChoice radios, MultiChoice checkboxes 8 apart,
+    // Boolean and PromoEmailConsent a checkbox with the question beside it
+    // (ticked when the organizer chose so). Register checks them as Teams
+    // does ("This field is required.", "Max number of characters
+    // reached.", under the field) and sends the answers (Boolean as true /
+    // false, MultiChoice as a list, the rest as text). The dialog scrolls
+    // within 90% of the window.
     Popup {
         id: registerDialog
         parent: Overlay.overlay
@@ -636,23 +674,76 @@ Rectangle {
         property bool busy: false
         property bool done: false
         property bool nag: false
+        /// Register was pressed once: fields check themselves from then on.
+        property bool tried: false
+        property bool failed: false
+        /// The questions in their order, and the form's values by id.
+        readonly property var questions: (ev.questions || []).slice().sort((a, b) => (a.order || 0) - (b.order || 0))
+        property var values: ({})
         // Teams' sentence, its <0></0> the terms link.
         readonly property string terms: qsTr("I have read and agree to the <0>Microsoft Event Terms and Conditions</0>", "virtualEvents:kca0feqjt")
+        // A predefined question's label (Teams' view data), else its text.
+        function label(q) {
+            if (q.category === "Predefined" && q.internalName) {
+                const l = ({ Address: qsTr("Address"), City: qsTr("City"), State: qsTr("State"), ZipCode: qsTr("ZIP/Post code"),
+                             Country: qsTr("Country/Region"), Industry: qsTr("Industry"), JobTitle: qsTr("Job title"),
+                             Organization: qsTr("Organization"), PhoneNumber: qsTr("Phone number") })[q.internalName]
+                if (l) return l
+            }
+            return q.displayText || ""
+        }
+        function setValue(id, v) { const o = Object.assign({}, values); o[id] = v; values = o }
+        // Teams' rules (meet-app ii): required, and the length limits.
+        function error(q) {
+            if (!tried) return ""
+            const v = values[q.id]
+            if (q.type === "Text" && typeof v === "string" && v.length > 255) return qsTr("Max number of characters reached.")
+            if (q.type === "Note" && typeof v === "string" && v.length > 1000) return qsTr("Max number of characters reached.")
+            if (!q.isRequired || q.type === "PromoEmailConsent") return ""
+            const empty = q.type === "MultiChoice" ? !(Array.isArray(v) && v.length > 0)
+                        : q.type === "Boolean" ? v !== true
+                        : !(typeof v === "string" && v !== "")
+            return empty ? qsTr("This field is required.") : ""
+        }
         function submit() {
-            if (!agreed) { nag = true; return }
+            tried = true; failed = false
+            const bad = questions.some(q => error(q) !== "")
+            if (!agreed) nag = true
+            if (bad || !agreed) return
             busy = true
             const e = ev, m = me
-            root.call("register", { id: e.id, firstName: m.firstName || "", lastName: m.lastName || "", email: m.email || "" }, v => {
+            root.call("register", { id: e.id, firstName: m.firstName || "", lastName: m.lastName || "", email: m.email || "",
+                                    questions: questions, values: values, termsUrl: e.terms_url || "", terms: agreed }, v => {
                 registerDialog.busy = false
-                if (v.error) { root.toast({ text: qsTr("Couldn't complete request.", "virtualEvents:kbdzfv1zo") + " " + v.error, intent: "error" }); return }
+                if (v.error) { registerDialog.failed = true; console.warn("events: register failed", v.error); return }
                 root.setRegState(e.id, v.status || "Registered")
                 registerDialog.done = true
                 root.toast({ text: qsTr("Event Registered"), intent: "success" })
             })
         }
         function openFor(e) {
-            ev = e; agreed = false; busy = false; done = false; nag = false; open()
+            ev = e; agreed = false; busy = false; done = false; nag = false; tried = false; failed = false
+            // Teams' defaults: text empty, a checkbox as the organizer set
+            // it, multiple choice unset.
+            const v = {}
+            ;(e.questions || []).forEach(q => {
+                if (q.type === "Boolean" || q.type === "PromoEmailConsent") v[q.id] = !!q.isCheckedByDefault
+                else if (q.type !== "MultiChoice") v[q.id] = ""
+            })
+            values = v
+            open()
             root.call("me", {}, v => { if (!v.error) registerDialog.me = v })
+        }
+        // The harness: answer by question order ({index: value}) and press
+        // Register.
+        function answerForTest(answers, agree) {
+            Object.keys(answers).forEach(i => { const q = questions[parseInt(i)]; if (q) setValue(q.id, answers[i]) })
+            agreed = agree
+            submit()
+        }
+        function formForTest() {
+            return { questions: questions.map(q => ({ id: q.id, type: q.type, label: label(q), required: !!q.isRequired, choices: q.choices || [], value: values[q.id], error: error(q) })),
+                     agreed: agreed, nag: nag, tried: tried, failed: failed, busy: busy, done: done, height: registerDialog.height }
         }
         component Field: Column {
             property string label
@@ -670,53 +761,236 @@ Rectangle {
                 Accessible.role: Accessible.EditableText; Accessible.name: parent.parent.label
             }
         }
+        // Fluent's field label (14, the red "*" 4 after it when required).
+        component QLabel: Row {
+            property string text
+            property bool required: false
+            spacing: 4
+            Text { text: parent.text; width: Math.min(implicitWidth, 549.3 - 12); wrapMode: Text.Wrap; font.family: theme.font; font.pixelSize: 14; lineHeight: 24; lineHeightMode: Text.FixedHeight; color: theme.text }
+            Text { visible: parent.required; text: "*"; font.family: theme.font; font.pixelSize: 14; color: "#D13438"; y: 2.7 }
+        }
+        // Fluent's validation message: the 12 px error glyph and 12/16 red text.
+        component QError: Row {
+            property string text
+            visible: text !== ""
+            spacing: 4
+            FluentIcon { y: 2; name: "error-circle-12-filled"; size: 12; color: theme.pick("#B10E1C", "#DC626D", "#FFFFFF") }
+            Text { text: parent.text; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.pick("#B10E1C", "#DC626D", "#FFFFFF") }
+        }
+        // Fluent's checkbox (32 tall: the 16 px box 8 in, its label 32 in).
+        component QCheck: Item {
+            id: qc
+            property string text
+            property bool checked: false
+            property bool required: false
+            property bool invalid: false
+            signal toggled()
+            width: 549.3; height: Math.max(32, qcText.implicitHeight + 12)
+            Rectangle {
+                x: 8; y: 8; width: 16; height: 16; radius: 2
+                color: qc.checked ? theme.brandFill : "transparent"
+                border.width: qc.checked ? 0 : 1; border.color: qc.invalid ? "#D13438" : theme.textSecondary
+                FluentIcon { anchors.centerIn: parent; visible: qc.checked; name: "checkmark-12"; size: 12; color: "white" }
+            }
+            Text {
+                id: qcText
+                x: 32; y: 6; width: parent.width - 32
+                wrapMode: Text.Wrap; textFormat: Text.StyledText
+                text: qc.text.replace(/&/g, "&amp;").replace(/</g, "&lt;") + (qc.required ? " <font color=\"#D13438\">*</font>" : "")
+                font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text
+            }
+            HoverHandler { cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: qc.toggled() }
+            Accessible.role: Accessible.CheckBox; Accessible.name: qc.text; Accessible.checked: qc.checked
+            Accessible.onToggleAction: qc.toggled()
+        }
+        // Fluent's input (32 tall, the bottom edge #616161, brand while
+        // typing); Note's text area is 4 rows.
+        component QInput: Rectangle {
+            id: qi
+            property string value
+            property bool multiline: false
+            property bool invalid: false
+            property string name
+            signal edited(string text)
+            width: 549.3; height: multiline ? 94 : 32; radius: 4
+            color: theme.surface
+            border.width: 1; border.color: qi.invalid ? "#D13438" : theme.stroke
+            clip: true
+            Rectangle { x: 1; width: parent.width - 2; height: 1; anchors.bottom: parent.bottom; color: qi.invalid ? "#D13438" : theme.textSecondary }
+            Rectangle {
+                visible: qiEdit.activeFocus
+                x: 0; width: parent.width; height: 2; anchors.bottom: parent.bottom; radius: 1; color: theme.brand
+            }
+            TextEdit {
+                id: qiEdit
+                x: 10; y: qi.multiline ? 6 : (qi.height - height) / 2; width: parent.width - 20
+                height: qi.multiline ? qi.height - 12 : contentHeight
+                wrapMode: qi.multiline ? TextEdit.Wrap : TextEdit.NoWrap
+                text: qi.value
+                font.family: theme.font; font.pixelSize: 14; color: theme.text
+                selectByMouse: true; selectionColor: theme.brand
+                Keys.onReturnPressed: e => { if (qi.multiline) e.accepted = false; else e.accepted = true }
+                onTextChanged: if (text !== qi.value) qi.edited(text)
+                Accessible.role: Accessible.EditableText; Accessible.name: qi.name
+            }
+        }
         contentItem: Item {
-            implicitHeight: registerDialog.done ? 326.7 : 336
+            implicitHeight: registerDialog.done ? 326.7 : Math.min(regForm.height, Overlay.overlay ? Overlay.overlay.height * 0.9 - 48 : regForm.height)
             // The form.
-            Item {
+            Flickable {
                 anchors.fill: parent
                 visible: !registerDialog.done
-                Text { y: 0; width: parent.width - 40; elide: Text.ElideRight; text: registerDialog.ev.title || ""; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; lineHeight: 28; lineHeightMode: Text.FixedHeight; color: theme.text }
-                Btn { x: parent.width - 32; y: 0; width: 32; height: 31.3; icon: "dismiss-20"; text: ""; pad: 6; onClicked: registerDialog.close(); Accessible.name: qsTr("Close") }
-                Text { y: 36; text: registerDialog.ev.start ? theme.fmtDate(new Date(registerDialog.ev.start), "dddd, MMMM d, yyyy") + ", " + theme.time(new Date(registerDialog.ev.start)) + " - " + theme.time(new Date(registerDialog.ev.end || registerDialog.ev.start)) : ""
-                       font.family: theme.font; font.pixelSize: 14; color: theme.text }
-                Rectangle { y: 64; width: parent.width; height: 1; color: theme.dividerSoft }
-                Text { y: 76.6; text: qsTr("Registration Information"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; lineHeight: 22; lineHeightMode: Text.FixedHeight; color: theme.text }
-                Field { y: 110.6; label: qsTr("First name"); value: registerDialog.me.firstName || "" }
-                Field { x: 200; y: 110.6; label: qsTr("Last name"); value: registerDialog.me.lastName || "" }
-                Field { y: 180.6; label: qsTr("Email"); value: registerDialog.me.email || ""; fieldWidth: 549.3 }
-                Rectangle { y: 251; width: parent.width; height: 1; color: theme.dividerSoft }
-                Row {
-                    y: 261.3; spacing: 0
-                    Item { width: 32; height: 32
-                        Rectangle {
-                            anchors.centerIn: parent; width: 16; height: 16; radius: 2
-                            color: registerDialog.agreed ? theme.brandFill : "transparent"
-                            border.width: registerDialog.agreed ? 0 : 1; border.color: registerDialog.nag ? "#D13438" : theme.textSecondary
-                            FluentIcon { anchors.centerIn: parent; visible: registerDialog.agreed; name: "checkmark-12"; size: 12; color: "white" }
+                contentHeight: regForm.height
+                clip: true
+                boundsBehavior: Flickable.StopAtBounds
+                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                Item {
+                    id: regForm
+                    width: parent.width
+                    height: footer.y + footer.height
+                    Text { y: 0; width: parent.width - 40; elide: Text.ElideRight; text: registerDialog.ev.title || ""; font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; lineHeight: 28; lineHeightMode: Text.FixedHeight; color: theme.text }
+                    Btn { x: parent.width - 32; y: 0; width: 32; height: 31.3; icon: "dismiss-20"; text: ""; pad: 6; onClicked: registerDialog.close(); Accessible.name: qsTr("Close") }
+                    Text { y: 36; text: registerDialog.ev.start ? theme.fmtDate(new Date(registerDialog.ev.start), "dddd, MMMM d, yyyy") + ", " + theme.time(new Date(registerDialog.ev.start)) + " - " + theme.time(new Date(registerDialog.ev.end || registerDialog.ev.start)) : ""
+                           font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    Rectangle { y: 64; width: parent.width; height: 1; color: theme.dividerSoft }
+                    Text { y: 76.6; text: qsTr("Registration Information"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; lineHeight: 22; lineHeightMode: Text.FixedHeight; color: theme.text }
+                    Field { y: 110.6; label: qsTr("First name"); value: registerDialog.me.firstName || "" }
+                    Field { x: 200; y: 110.6; label: qsTr("Last name"); value: registerDialog.me.lastName || "" }
+                    Field { y: 180.6; label: qsTr("Email"); value: registerDialog.me.email || ""; fieldWidth: 549.3 }
+                    // The questions, 12 under the email field, 16 apart.
+                    Column {
+                        id: questionCol
+                        y: 251; width: parent.width; spacing: 16
+                        visible: registerDialog.questions.length > 0
+                        Repeater {
+                            model: registerDialog.questions
+                            Column {
+                                id: qrow
+                                required property var modelData
+                                readonly property var q: modelData
+                                readonly property string err: registerDialog.error(q)
+                                readonly property bool check: q.type === "Boolean" || q.type === "PromoEmailConsent"
+                                width: parent.width; spacing: 2.7
+                                QLabel { visible: !qrow.check; text: registerDialog.label(qrow.q); required: !!qrow.q.isRequired }
+                                QInput {
+                                    visible: qrow.q.type === "Text" || qrow.q.type === "Note"
+                                    multiline: qrow.q.type === "Note"
+                                    name: registerDialog.label(qrow.q)
+                                    value: registerDialog.values[qrow.q.id] || ""
+                                    invalid: qrow.err !== ""
+                                    onEdited: t => registerDialog.setValue(qrow.q.id, t)
+                                }
+                                // Single choice: Fluent's radios, 32 apart.
+                                Column {
+                                    visible: qrow.q.type === "SingleChoice"
+                                    Repeater {
+                                        model: qrow.q.type === "SingleChoice" ? (qrow.q.choices || []) : []
+                                        Item {
+                                            id: rad
+                                            required property var modelData
+                                            readonly property bool on: registerDialog.values[qrow.q.id] === modelData
+                                            width: 549.3; height: Math.max(32, radText.implicitHeight + 12)
+                                            Rectangle {
+                                                x: 8; y: 8; width: 16; height: 16; radius: 8
+                                                color: "transparent"
+                                                border.width: 1; border.color: rad.on ? theme.brand : (qrow.err !== "" ? "#D13438" : theme.textSecondary)
+                                                Rectangle { visible: rad.on; anchors.centerIn: parent; width: 10; height: 10; radius: 5; color: theme.brand }
+                                            }
+                                            Text { id: radText; x: 32; y: 6; width: parent.width - 32; wrapMode: Text.Wrap; text: rad.modelData; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
+                                            HoverHandler { cursorShape: Qt.PointingHandCursor }
+                                            TapHandler { onTapped: registerDialog.setValue(qrow.q.id, rad.modelData) }
+                                            Accessible.role: Accessible.RadioButton; Accessible.name: rad.modelData; Accessible.checked: rad.on
+                                        }
+                                    }
+                                }
+                                // Multiple choice: checkboxes 8 apart.
+                                Column {
+                                    visible: qrow.q.type === "MultiChoice"
+                                    spacing: 8
+                                    Repeater {
+                                        model: qrow.q.type === "MultiChoice" ? (qrow.q.choices || []) : []
+                                        QCheck {
+                                            required property var modelData
+                                            readonly property var picked: registerDialog.values[qrow.q.id] || []
+                                            text: modelData
+                                            checked: picked.indexOf(modelData) >= 0
+                                            invalid: qrow.err !== ""
+                                            onToggled: registerDialog.setValue(qrow.q.id, checked ? picked.filter(c => c !== modelData) : picked.concat([modelData]))
+                                        }
+                                    }
+                                }
+                                // A checkbox with the question beside it
+                                // (PromoEmailConsent 8 lower, never required).
+                                Item {
+                                    visible: qrow.check
+                                    width: 549.3; height: qbox.height + (qrow.q.type === "PromoEmailConsent" ? 8 : 0)
+                                    QCheck {
+                                        id: qbox
+                                        y: qrow.q.type === "PromoEmailConsent" ? 8 : 0
+                                        text: registerDialog.label(qrow.q)
+                                        required: qrow.q.type === "Boolean" && !!qrow.q.isRequired
+                                        checked: registerDialog.values[qrow.q.id] === true
+                                        invalid: qrow.err !== ""
+                                        onToggled: registerDialog.setValue(qrow.q.id, !checked)
+                                    }
+                                }
+                                QError { text: qrow.err }
+                            }
                         }
-                        TapHandler { onTapped: { registerDialog.agreed = !registerDialog.agreed; registerDialog.nag = false } }
-                        Accessible.role: Accessible.CheckBox; Accessible.checked: registerDialog.agreed
-                        Accessible.name: registerDialog.terms.replace(/<\/?0>/g, "")
                     }
-                    Text { anchors.verticalCenter: parent.verticalCenter; text: registerDialog.terms.split("<0>")[0]; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
-                    Text {
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: (registerDialog.terms.split("<0>")[1] || "").split("</0>")[0]; font.underline: termsHover.hovered
-                        font.family: theme.font; font.pixelSize: 14; color: theme.pick("#4F52B2", "#7F85F5", "#FFFF00")
-                        HoverHandler { id: termsHover; cursorShape: Qt.PointingHandCursor }
-                        TapHandler { onTapped: Qt.openUrlExternally("https://go.microsoft.com/fwlink/?linkid=2210903") }
-                        Accessible.role: Accessible.Link; Accessible.name: text
+                    Rectangle { id: termsDivider; y: questionCol.visible ? questionCol.y + questionCol.height + 12 : 251; width: parent.width; height: 1; color: theme.dividerSoft }
+                    Row {
+                        id: termsRow
+                        y: termsDivider.y + 10.3; spacing: 0
+                        Item { width: 32; height: 32
+                            Rectangle {
+                                anchors.centerIn: parent; width: 16; height: 16; radius: 2
+                                color: registerDialog.agreed ? theme.brandFill : "transparent"
+                                border.width: registerDialog.agreed ? 0 : 1; border.color: registerDialog.nag ? "#D13438" : theme.textSecondary
+                                FluentIcon { anchors.centerIn: parent; visible: registerDialog.agreed; name: "checkmark-12"; size: 12; color: "white" }
+                            }
+                            TapHandler { onTapped: { registerDialog.agreed = !registerDialog.agreed; registerDialog.nag = false } }
+                            Accessible.role: Accessible.CheckBox; Accessible.checked: registerDialog.agreed
+                            Accessible.name: registerDialog.terms.replace(/<\/?0>/g, "")
+                        }
+                        Text { anchors.verticalCenter: parent.verticalCenter; text: registerDialog.terms.split("<0>")[0]; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: (registerDialog.terms.split("<0>")[1] || "").split("</0>")[0]; font.underline: termsHover.hovered
+                            font.family: theme.font; font.pixelSize: 14; color: theme.pick("#4F52B2", "#7F85F5", "#FFFF00")
+                            HoverHandler { id: termsHover; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: Qt.openUrlExternally("https://go.microsoft.com/fwlink/?linkid=2210903") }
+                            Accessible.role: Accessible.Link; Accessible.name: text
+                        }
+                        Text { visible: text !== ""; anchors.verticalCenter: parent.verticalCenter; text: registerDialog.terms.split("</0>")[1] || ""; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
+                        Text { anchors.verticalCenter: parent.verticalCenter; text: " *"; font.family: theme.font; font.pixelSize: 14; color: "#D13438" }
                     }
-                    Text { visible: text !== ""; anchors.verticalCenter: parent.verticalCenter; text: registerDialog.terms.split("</0>")[1] || ""; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
-                    Text { anchors.verticalCenter: parent.verticalCenter; text: " *"; font.family: theme.font; font.pixelSize: 14; color: "#D13438" }
-                }
-                Row {
-                    anchors.right: parent.right; y: 304; spacing: 8
-                    Btn { width: 96; height: 31.3; outlined: true; text: qsTr("Cancel"); onClicked: registerDialog.close() }
-                    Btn {
-                        width: 96; height: 31.3; primary: true; text: qsTr("Register"); usable: !registerDialog.busy && !!registerDialog.me.email
-                        onClicked: registerDialog.submit()
+                    QError { id: termsError; y: termsRow.y + 32 + 2; text: registerDialog.nag ? qsTr("This field is required.") : "" }
+                    // Teams' error bar when Register fails ("Couldn't
+                    // complete request." / "Try again in a moment.").
+                    Rectangle {
+                        id: failBar
+                        visible: registerDialog.failed
+                        y: (termsError.visible ? termsError.y + 16 : termsRow.y + 32) + 12
+                        width: parent.width; height: 36; radius: 4
+                        color: theme.pick("#FDF3F4", "#3F1011", "#000000"); border.width: 1; border.color: theme.pick("#EEACB2", "#8E192E", "#FFFFFF")
+                        Row {
+                            x: 12; anchors.verticalCenter: parent.verticalCenter; spacing: 8
+                            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "error-circle-20-filled"; size: 20; color: theme.pick("#BC2F32", "#DC626D", "#FFFFFF") }
+                            Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Couldn't complete request.", "virtualEvents:kbdzfv1zo"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                            Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Try again in a moment."); font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                        }
+                    }
+                    Row {
+                        id: footer
+                        anchors.right: parent.right; spacing: 8
+                        y: failBar.visible ? failBar.y + failBar.height + 24 : termsError.visible ? termsError.y + 16 + 24 : termsRow.y + 32 + 10.7
+                        Btn { width: 96; height: 31.3; outlined: true; text: qsTr("Cancel"); onClicked: registerDialog.close() }
+                        Btn {
+                            width: 96; height: 31.3; primary: true; text: qsTr("Register"); usable: !registerDialog.busy && !!registerDialog.me.email
+                            onClicked: registerDialog.submit()
+                        }
                     }
                 }
             }
@@ -3531,7 +3805,7 @@ Rectangle {
                     x: 20; y: 193; spacing: 4
                     Row { visible: !!shareDialog.ev.by; spacing: 4
                         FluentIcon { name: "person-16"; size: 16; color: theme.textSecondary }
-                        Text { text: qsTr("By %1").arg(shareDialog.ev.by || ""); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } }
+                        Text { text: root.roleLine(Object.assign({}, shareDialog.ev, { role: "" })); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } }
                     Row { spacing: 4
                         FluentIcon { name: "location-20"; size: 16; color: theme.textSecondary }
                         Text { text: shareDialog.ev.location || qsTr("Online"); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } }

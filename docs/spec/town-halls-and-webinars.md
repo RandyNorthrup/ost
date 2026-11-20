@@ -519,6 +519,61 @@ webinar reg" (organizer OST Test 2, organization-wide, registration on).
   Join now's left edge and 4.5 under it; the chevron part turns #4F52B2
   while the menu is open.
 
+## 10. Leftovers (TASK-0227, read in Teams' bundles 2026-11-19)
+
+### The green room's recording notice
+- The call recorder joins an auto-recorded event's green room with its
+  processing modes `recording` and `realTimeTranscript` in the state
+  "WaitingForMeetingLive"; Teams' recording alerts (527114) then show
+  RecordingAndTranscriptWaitingForMeetingLive "Recording and transcription
+  will begin when the meeting starts" (only the transcript waiting:
+  "Transcription will begin when the meeting starts"; only the recording:
+  "Recording will begin when the meeting starts"), a dismissable warning
+  with the record glyph (Teams' alert icon map 263640). Teams' alert
+  service shows one alert: it covers "Start the meeting whenever you're
+  ready." for organizers and presenters, and shows on a webinar
+  attendee's waiting screen too. Measured: 318.7 x 62 at the stage's top,
+  the glyph 12 in and centred, the text 14/20 #616161 40 in, 11 down,
+  252.7 wide (two lines), the 20 px dismiss glyph 30.1 from the end.
+
+### Registration forms with questions
+- The organizer's Registration form (events-scheduling-form): predefined
+  fields (Address, City, State, ZIP/Post code, Country/Region, Industry,
+  Job title, Organization; type Text, category Predefined, `internalName`)
+  and custom questions (Text, Choice = SingleChoice, or MultiChoice with
+  "Multiple select", Boolean; category UserCreated), each with Required.
+  New questions go without an id (the form's "predefined-…" / "custom-…"
+  ids are dropped); stored in `registrationInfo.questions` (POST events,
+  or PATCH events/{id}/registration), each `{id, category, type,
+  displayText, isRequired, order, choices, internalName,
+  isCheckedByDefault}`; types also Note and PromoEmailConsent.
+- The attendee's Register dialog (meet-app) lists them after Email, 12
+  below, 16 apart, by `order`: Fluent fields labelled with the question
+  (a predefined field's own label) and a red "*" when required. Text: an
+  input (255 characters, "Max number of characters reached."). Note: a
+  4-row text area (1,000). SingleChoice: radios. MultiChoice: checkboxes 8
+  apart (required: at least one). Boolean: a checkbox with the question
+  beside it (ticked when `isCheckedByDefault`). PromoEmailConsent: a
+  checkbox 8 lower, never required. Register checks them ("This field is
+  required.", 12/16 red with the 12 px error glyph under the field) and
+  sends `answers` `[{Id, Answer}]` (Boolean as true/false, MultiChoice a
+  list, the rest text; unset multiple choices left out), with
+  `hasAcceptedTermsOfUse` only when the organizer set terms of use. A
+  failed Register shows the error bar "Couldn't complete request." / "Try
+  again in a moment.". The dialog scrolls within 90% of the window.
+- The organizer reads the answers in the registrations (`events/{id}/
+  attendees?status=…`: `answers [{id, displayName, answer}]`; a single
+  choice comes back as a one-item list).
+
+### "By" on attendees' cards
+- meet-app's card (Or / dr): organizers see "Organizer" / "Co-organizer";
+  everyone else "By" the session's presenters: those without lobby bypass,
+  then those with it; hidden ones, rooms and nameless ones left out; an
+  external presenter whose name is an email shows as "Guest Speaker".
+  Two names, then "+N" ("By {{presenters}} +{{count}}"), with all of them
+  in the tooltip when there are more than one. With no presenters the
+  event's owner ("By OST Test 2").
+
 ## OST status (see the tasks' notes for the live checks)
 
 - [x] Events: the Town hall template's form (capacity, large audience,
@@ -562,6 +617,6 @@ webinar reg" (organizer OST Test 2, organization-wide, registration on).
   Teams does; Discover's Register / Registered / Unregister with Teams'
   dialogs; the Join as menu's geometry; two people side by side on the
   managed stage.
-- [ ] Open: the green room's recording alert for auto-recorded events;
-  registration questions (OST registers events without questions); the
-  player's own controls and live stream captions.
+- [x] TASK-0227 (§10): the green room's recording alert, registration
+  forms with questions, "By" on attendees' cards.
+- [ ] Open: the player's own controls and live stream captions.

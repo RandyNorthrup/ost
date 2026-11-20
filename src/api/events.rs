@@ -131,6 +131,13 @@ pub struct EventCard {
     pub rooms: Vec<String>,
     /// The attendee card's "By {name}": the first presenter.
     pub by: String,
+    /// Who the attendee card names after "By" (meet-app's dr, read
+    /// 2026-11-19): the session's presenters in Teams' order (those without
+    /// lobby bypass, then the rest) leaving out hidden ones, rooms and
+    /// nameless ones, an external presenter whose name is an email shown as
+    /// "Guest Speaker"; with none, the event's owner. The card shows two
+    /// and "+N".
+    pub by_names: Vec<String>,
     /// The event's chat and its event group's chat (Teams' backroom).
     pub thread_id: String,
     pub backroom_thread_id: String,
@@ -148,9 +155,94 @@ pub struct EventCard {
     /// Registered by it).
     pub registration_status: String,
     /// The registration form's terms of use link (`registrationInfo.
-    /// termsOfUseUrl`) and how many questions it asks.
+    /// termsOfUseUrl`) and its questions in their order (Teams'
+    /// RegistrationQuestion: id, category Standard / Predefined /
+    /// UserCreated, type Text / Note / SingleChoice / MultiChoice / Boolean
+    /// / PromoEmailConsent, displayText, isRequired, order, choices,
+    /// internalName, isCheckedByDefault).
     pub terms_url: String,
-    pub questions: usize,
+    pub questions: Vec<Value>,
+}
+
+/// The attendee card's presenters (see `EventCard::by_names`).
+pub fn card_presenters(speakers: &[Value], owner: Option<&Value>) -> Vec<String> {
+    let bypass = |p: &Value| {
+        p.get("sessionsProps")
+            .and_then(Value::as_array)
+            .is_some_and(|a| a.iter().any(|x| x.get("allowBypassLobby").and_then(Value::as_bool) == Some(true)))
+    };
+    let s = |p: &Value, k: &str| p.pointer(k).and_then(Value::as_str).unwrap_or_default().to_string();
+    let external = |p: &Value| {
+        s(p, "/identity/tenantId").is_empty() || (p.get("isGroup").and_then(Value::as_bool) != Some(true) && s(p, "/identity/mri").is_empty())
+    };
+    let email = |n: &str| {
+        let (a, b) = n.split_once('@').unwrap_or(("", ""));
+        !a.is_empty() && !n.contains(char::is_whitespace) && b.split_once('.').is_some_and(|(x, y)| !x.is_empty() && !y.is_empty() && !b.contains('@'))
+    };
+    let shown = |p: &&Value| {
+        !s(p, "/displayName").is_empty()
+            && p.get("isHidden").and_then(Value::as_bool) != Some(true)
+            && s(p, "/userPurpose").to_ascii_lowercase() != "room"
+    };
+    let names: Vec<String> = speakers
+        .iter()
+        .filter(|p| !bypass(p))
+        .chain(speakers.iter().filter(|p| bypass(p)))
+        .filter(shown)
+        .map(|p| {
+            let n = s(p, "/displayName");
+            if external(p) && email(&n) { crate::i18n::tr("Guest Speaker") } else { n }
+        })
+        .collect();
+    if !names.is_empty() {
+        return names;
+    }
+    owner
+        .and_then(|o| o.get("displayName"))
+        .and_then(Value::as_str)
+        .filter(|n| !n.is_empty())
+        .map(|n| vec![n.to_string()])
+        .unwrap_or_default()
+}
+
+/// A registration form's questions in Teams' order (by `order`).
+pub fn registration_questions(info: Option<&Value>) -> Vec<Value> {
+    let mut q: Vec<Value> = info
+        .and_then(|i| i.get("questions"))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|x| x.is_object())
+        .collect();
+    q.sort_by_key(|x| x.get("order").and_then(Value::as_i64).unwrap_or(0));
+    q
+}
+
+/// The answers Teams sends for a registration form (meet-app's ei): for
+/// each question that has a value, Boolean as a bool, MultiChoice as a
+/// list, the others as text. `values` holds the form's values by question
+/// id.
+pub fn registration_answers(questions: &[Value], values: &Value) -> Vec<(String, Value)> {
+    questions
+        .iter()
+        .filter_map(|q| {
+            let id = q.get("id").and_then(Value::as_str)?;
+            let v = values.get(id).filter(|v| !v.is_null())?;
+            let answer = match q.get("type").and_then(Value::as_str).unwrap_or_default() {
+                "Boolean" => Value::Bool(v.as_bool().unwrap_or(false)),
+                "MultiChoice" => match v {
+                    Value::Array(a) => Value::Array(a.clone()),
+                    other => json!([other.as_str().map(str::to_string).unwrap_or_else(|| other.to_string())]),
+                },
+                "Text" | "Note" | "SingleChoice" | "PromoEmailConsent" => {
+                    Value::String(v.as_str().map(str::to_string).unwrap_or_else(|| v.to_string()))
+                }
+                _ => return None,
+            };
+            Some((id.to_string(), answer))
+        })
+        .collect()
 }
 
 /// The cards in an eventOverviews reply (`results[].eventDetails`).
@@ -177,6 +269,7 @@ pub fn cards_from(reply: &Value, ams_v2: &str) -> Vec<EventCard> {
             let is_room = |p: &Value| p.get("userType").and_then(Value::as_str) == Some("Room") || p.get("userPurpose").and_then(Value::as_str) == Some("room");
             let rooms: Vec<String> = speakers.iter().filter(|p| is_room(p)).filter_map(|p| p.get("displayName").and_then(Value::as_str).map(str::to_string)).collect();
             let by = speakers.iter().find(|p| !is_room(p)).and_then(|p| p.get("displayName")).and_then(Value::as_str).unwrap_or_default().to_string();
+            let by_names = card_presenters(&speakers, e.get("owner"));
             let ctx = |k: &str| session.and_then(|x| x.pointer(&format!("/meetingContext/{k}"))).and_then(Value::as_str).unwrap_or_default().to_string();
             Some(EventCard {
                 id: s("/id"),
@@ -201,6 +294,7 @@ pub fn cards_from(reply: &Value, ams_v2: &str) -> Vec<EventCard> {
                 site_url: s("/siteUrl"),
                 rooms,
                 by,
+                by_names,
                 thread_id: ctx("threadId"),
                 backroom_thread_id: ctx("backroomThreadId"),
                 update_link: ctx("meetingUpdateLink"),
@@ -217,7 +311,7 @@ pub fn cards_from(reply: &Value, ams_v2: &str) -> Vec<EventCard> {
                     .unwrap_or_default()
                     .to_string(),
                 terms_url: r.pointer("/registrationInfo/termsOfUseUrl").and_then(Value::as_str).unwrap_or_default().to_string(),
-                questions: r.pointer("/registrationInfo/questions").and_then(Value::as_array).map_or(0, Vec::len),
+                questions: registration_questions(r.get("registrationInfo")),
             })
         })
         .collect()
@@ -373,6 +467,12 @@ pub struct NewEvent {
     /// Edit details: whether the event shows in the Events app (sent back
     /// as it is).
     pub discoverable: bool,
+    /// The registration form's questions (Teams' RegistrationQuestionInput:
+    /// category, type, displayText, isRequired, order, choices,
+    /// internalName, isCheckedByDefault; new ones without an id, as Teams'
+    /// registration converter drops its form ids "predefined-…" /
+    /// "custom-…"), sent as the event's `registrationInfo`.
+    pub questions: Vec<Value>,
 }
 
 /// Someone (or a room or group) from the form's pickers.
@@ -554,6 +654,7 @@ pub fn create_body(e: &NewEvent, owner: &Value, tz: Value, promo: &str) -> Value
             "isCommentStreamEnabled": town_hall, "isPolicyAndLicenseCheckEnabled": town_hall, "isSeparateBackroomChatThreadEnabled": town_hall,
             "useBackroomChatAsMainThread": false, "useStreamingThreadForApps": town_hall
         },
+        "registrationInfo": registration_info(&e.questions),
         "eventCapacityProperties": if e.capacity > 0 {
             json!({ "maxEventCapacity": e.capacity, "isBaseEventExperience": e.base_experience })
         } else {
@@ -563,6 +664,21 @@ pub fn create_body(e: &NewEvent, owner: &Value, tz: Value, promo: &str) -> Value
         "meetingOptions": meeting_options,
         "clientTags": { "version": "2.0" },
         "theme": { "primaryColor": "#5B5FC7", "promoImage": promo }
+    })
+}
+
+/// A form's registration (Teams' UpdateRegistrationInput converter):
+/// its properties and questions; null without questions.
+pub fn registration_info(questions: &[Value]) -> Value {
+    if questions.is_empty() {
+        return Value::Null;
+    }
+    json!({
+        "registrationProperties": {
+            "isManualApprovalEnabled": false, "isWaitlistEnabled": false,
+            "registrationOpenTime": {}, "isRegistrationOpenTimeEnabled": false
+        },
+        "questions": questions,
     })
 }
 
@@ -695,6 +811,7 @@ pub async fn overview(client: &TeamsClient, id: &str) -> Result<Value> {
     let ams = client.ams_v2_url().unwrap_or_default();
     let card = cards_from(&json!({ "results": [{ "eventDetails": v.get("event").cloned().unwrap_or_default(),
                                                  "eventSessions": v.get("sessions").cloned().unwrap_or_default(),
+                                                 "registrationInfo": v.get("registrationInfo").or_else(|| v.get("registration")).cloned().unwrap_or_default(),
                                                  "roles": v.get("roles").cloned().unwrap_or_default() }] }), &ams)
         .pop();
     Ok(json!({ "card": card, "description": v.pointer("/event/description").cloned().unwrap_or_default(),
@@ -743,6 +860,14 @@ pub async fn people(client: &TeamsClient, id: &str) -> Result<Value> {
         "invited": names("attendees"),
         "registered": attendees.ok().and_then(|a| a.get("totalCount").or_else(|| a.get("count")).cloned()).unwrap_or(json!(0)),
     }))
+}
+
+/// The event's registrations as its organizers read them (People &
+/// emails' `…/attendees?status=…`): each registrant with their answers.
+pub async fn registrations(client: &TeamsClient, id: &str) -> Result<Value> {
+    let id = event_path(id)?;
+    let statuses = "Waitlisted,PendingApproval,Registered,Canceled";
+    get_json(&format!("{}/events/{}/attendees?status={statuses}&pageSize=20&skip=0&count=true", regional_endpoint(client), urlencoding(&id)), false).await
 }
 
 /// Publish an event (the draft card's Publish event ▸ "Ready to publish
@@ -1386,7 +1511,53 @@ mod tests {
             "requesterPropertiesBySession": {"s1": {"registrationStatus": "Registered", "roles": []}}}]});
         let c = &cards_from(&r, "")[0];
         assert!(c.registration && c.discoverable);
-        assert_eq!((c.registration_status.as_str(), c.questions, c.terms_url.as_str()), ("Registered", 0, ""));
+        assert_eq!((c.registration_status.as_str(), c.questions.len(), c.terms_url.as_str()), ("Registered", 0, ""));
+    }
+
+    #[test]
+    fn card_names_presenters_as_teams() {
+        let p = |n: &str, extra: Value| {
+            let mut v = json!({"displayName": n, "identity": {"tenantId": "t", "mri": format!("8:orgid:{n}")}});
+            for (k, x) in extra.as_object().unwrap() {
+                v[k] = x.clone();
+            }
+            v
+        };
+        let owner = json!({"displayName": "OST Test 2"});
+        // No presenters: the owner.
+        assert_eq!(card_presenters(&[], Some(&owner)), vec!["OST Test 2"]);
+        // Rooms, hidden ones and nameless ones are left out; bypassing
+        // ones come last; an external email name is a guest speaker.
+        let list = vec![
+            p("B", json!({"sessionsProps": [{"allowBypassLobby": true}]})),
+            p("OST Test Room", json!({"userPurpose": "Room"})),
+            p("Hidden", json!({"isHidden": true})),
+            p("", json!({})),
+            json!({"displayName": "guest@example.com", "identity": {}}),
+            p("A", json!({})),
+        ];
+        assert_eq!(card_presenters(&list, Some(&owner)), vec!["A", "Guest Speaker", "B"]);
+        // The card reads the event's owner from the reply.
+        let r = json!({"results": [{"eventDetails": {"id": "e1", "owner": owner}, "eventSessions": [{"id": "s1", "speakers": []}]}]});
+        assert_eq!(cards_from(&r, "")[0].by_names, vec!["OST Test 2"]);
+    }
+
+    #[test]
+    fn registration_answers_as_teams() {
+        let info = json!({"questions": [
+            {"id": "q2", "type": "SingleChoice", "order": 2, "choices": ["Red", "Blue"]},
+            {"id": "q1", "type": "Text", "order": 1},
+            {"id": "q3", "type": "MultiChoice", "order": 3},
+            {"id": "q4", "type": "Boolean", "order": 4},
+            {"id": "q5", "type": "Note", "order": 5}
+        ]});
+        let q = registration_questions(Some(&info));
+        assert_eq!(q.iter().map(|x| x["id"].as_str().unwrap()).collect::<Vec<_>>(), vec!["q1", "q2", "q3", "q4", "q5"]);
+        // Unset questions (a multiple choice nobody ticked) are left out.
+        let a = registration_answers(&q, &json!({"q1": "OST", "q2": "Blue", "q4": false, "q5": null}));
+        assert_eq!(a, vec![("q1".into(), json!("OST")), ("q2".into(), json!("Blue")), ("q4".into(), json!(false))]);
+        let a = registration_answers(&q, &json!({"q3": ["x", "y"], "q4": true}));
+        assert_eq!(a, vec![("q3".into(), json!(["x", "y"])), ("q4".into(), json!(true))]);
     }
 
     #[test]

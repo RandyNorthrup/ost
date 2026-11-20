@@ -1360,6 +1360,25 @@ pub async fn schedule(client: &TeamsClient, form: &MeetingForm, me: &Me) -> Resu
     Ok(post(url, body).await?.get("value").cloned().unwrap_or_default())
 }
 
+/// Cast's meetings step (cast-app's CastWizard, read 2026-11-19): your
+/// Teams meetings from 60 minutes ago to 60 minutes ahead (Teams reads its
+/// calendar cache for that window), all-day ones first, then by start and
+/// subject; cancelled ones and ones without a Teams link left out.
+pub fn cast_meetings(events: &[CalendarEvent], now: chrono::DateTime<chrono::Utc>) -> Vec<&CalendarEvent> {
+    let at = |s: &str| chrono::DateTime::parse_from_rfc3339(s).ok().map(|d| d.with_timezone(&chrono::Utc));
+    let (from, to) = (now - chrono::Duration::minutes(60), now + chrono::Duration::minutes(60));
+    let mut out: Vec<&CalendarEvent> = events
+        .iter()
+        .filter(|e| !e.is_cancelled && e.join_url.as_deref().is_some_and(|u| !u.is_empty()))
+        .filter(|e| match (at(&e.start_utc), at(&e.end_utc)) {
+            (Some(s), Some(en)) => s < to && en > from,
+            _ => false,
+        })
+        .collect();
+    out.sort_by(|a, b| b.is_all_day.cmp(&a.is_all_day).then(a.start_utc.cmp(&b.start_utc)).then(a.subject.cmp(&b.subject)));
+    out
+}
+
 /// The calendar's Meet now ("Start a meeting now" ▸ Start meeting, or Get
 /// a link to share): a meeting made now (`POST
 /// {mt}/beta/me/calendarEvents/privateMeeting/schedulingService/create`,
@@ -1508,6 +1527,29 @@ pub async fn cancel_meeting(client: &TeamsClient, ev: &serde_json::Value, team_i
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn cast_lists_meetings_as_teams() {
+        let ev = |subject: &str, start: &str, end: &str, all_day: bool, link: bool| super::CalendarEvent {
+            subject: subject.into(),
+            start_utc: start.into(),
+            end_utc: end.into(),
+            is_all_day: all_day,
+            join_url: link.then(|| "https://teams.microsoft.com/l/meetup-join/x".to_string()),
+            ..Default::default()
+        };
+        let now = chrono::DateTime::parse_from_rfc3339("2026-11-20T10:00:00Z").unwrap().with_timezone(&chrono::Utc);
+        let list = vec![
+            ev("B later", "2026-11-20T10:30:00Z", "2026-11-20T11:00:00Z", false, true),
+            ev("A earlier", "2026-11-20T09:30:00Z", "2026-11-20T10:30:00Z", false, true),
+            ev("No link", "2026-11-20T10:00:00Z", "2026-11-20T10:30:00Z", false, false),
+            ev("Too late", "2026-11-20T11:00:00Z", "2026-11-20T11:30:00Z", false, true),
+            ev("Over", "2026-11-20T08:00:00Z", "2026-11-20T09:00:00Z", false, true),
+            ev("All day", "2026-11-20T00:00:00Z", "2026-11-21T00:00:00Z", true, true),
+        ];
+        let got: Vec<&str> = super::cast_meetings(&list, now).iter().map(|e| e.subject.as_str()).collect();
+        assert_eq!(got, vec!["All day", "A earlier", "B later"]);
+    }
+
     #[test]
     fn scheduling_bodies_match_teams_form() {
         let me = super::Me { name: "OST Test 1".into(), mail: "t1@x.com".into(), mri: "8:orgid:1".into() };

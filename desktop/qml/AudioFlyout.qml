@@ -53,7 +53,9 @@ Popup {
     }
     function spatialRowForTest() {
         const p = spatialItem.mapToItem(col, 0, 0)
-        return { usable: spatialItem.usable, on: spatialItem.shownOn, capable: root.spatialCapable, oneToOne: root.oneToOne, setting: backend.setting("spatialAudio"), y: p.y, h: spatialItem.height }
+        const d = micDivider.mapToItem(col, 0, 0)
+        return { usable: spatialItem.usable, on: spatialItem.shownOn, capable: root.spatialCapable, oneToOne: root.oneToOne, setting: backend.setting("spatialAudio"), y: p.y, h: spatialItem.height,
+                 dividerGap: p.y - d.y - micDivider.height }
     }
     function toggleSpatialForTest() {
         if (!spatialItem.usable) return
@@ -163,8 +165,15 @@ Popup {
                 }
             }
             Item { width: 268; height: 10.7 }
-            Rectangle { width: 268; height: 1 / Screen.devicePixelRatio; color: theme.divider }
-            Item { width: 268; height: 14.7 }
+            Rectangle { id: micDivider; width: 268; height: 1 / Screen.devicePixelRatio; color: theme.divider }
+            // 10 from the microphone divider to the effects section
+            // (measured on winpc 2026-11-19): Teams' flyout is a column
+            // with a 10 px row gap (audioFlyoutFlex); the microphone
+            // section adds its own 4 px padding-top (microphoneSelection:
+            // the 14.7 under the speaker divider), the effects section none
+            // (audio-flyout-effects-section, 693727; its visual-refresh
+            // class is ECS enableUbarVisualRefresh only).
+            Item { width: 268; height: 10 }
             // Teams' Spatial audio row, first in the flyout's effects
             // section (SpatialAudioContainer at FLYOUT: no description, no
             // info button; measured on winpc 2026-11-19): a 36 px row,

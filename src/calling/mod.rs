@@ -188,6 +188,11 @@ pub struct CallNotification {
     /// meetingType, schedule).
     #[serde(skip)]
     pub meeting_details: Option<serde_json::Value>,
+    /// A forked call's conversation roster from its attach reply (the
+    /// join's `roster.participants`): who is already in, with what they
+    /// present, as a join's answer gives it.
+    #[serde(skip)]
+    pub initial_roster: Option<serde_json::Value>,
 }
 
 /// Simple call lifecycle state.

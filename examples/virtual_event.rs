@@ -5,6 +5,9 @@
 //!   saves a draft (green room and Q&A on, Teams' defaults otherwise) and
 //!   prints its id and join link. Without `--open` it is Private (only the
 //!   people named); with it, people in your organization.
+//!   `--question <Text|Note|SingleChoice|MultiChoice|Boolean>:<text>[:required][:<a>|<b>…]`
+//!   and `--predefined <JobTitle|Organization|City|…>[:required]` add
+//!   registration questions as Teams' Registration form does.
 //! - `virtual_event publish|overview|cancel <id>`; `virtual_event manage`.
 use anyhow::{Context, bail, ensure};
 use teams_cli::api::{client::TeamsClient, events};
@@ -70,6 +73,42 @@ async fn main() -> anyhow::Result<()> {
                         i += 1;
                         e.attendees.push(person(&client, args.get(i).context("upn")?).await?);
                     }
+                    // A registration question as Teams' form adds it
+                    // (UserCreated; a new question goes without its form
+                    // id, as Teams' converter sends it).
+                    "--question" => {
+                        i += 1;
+                        let spec = args.get(i).context("question")?;
+                        let mut parts = spec.splitn(4, ':');
+                        let kind = parts.next().unwrap_or_default().to_string();
+                        let text = parts.next().context("question text")?.to_string();
+                        ensure!(["Text", "Note", "SingleChoice", "MultiChoice", "Boolean"].contains(&kind.as_str()), "question type {kind}");
+                        let required = parts.next() == Some("required");
+                        let choices: Vec<String> = parts.next().map(|c| c.split('|').map(str::to_string).collect()).unwrap_or_default();
+                        let n = e.questions.len();
+                        e.questions.push(serde_json::json!({
+                            "category": "UserCreated", "type": kind, "choices": choices,
+                            "displayText": text, "isRequired": required, "order": n + 1, "internalName": "", "isCheckedByDefault": false
+                        }));
+                    }
+                    // A predefined question.
+                    "--predefined" => {
+                        i += 1;
+                        let spec = args.get(i).context("predefined question")?;
+                        let (name, required) = spec.split_once(':').map_or((spec.as_str(), false), |(a, b)| (a, b == "required"));
+                        let n = e.questions.len();
+                        let label = match name {
+                            "JobTitle" => "Job title",
+                            "ZipCode" => "ZIP/Post code",
+                            "Country" => "Country/Region",
+                            "PhoneNumber" => "Phone number",
+                            other => other,
+                        };
+                        e.questions.push(serde_json::json!({
+                            "category": "Predefined", "type": "Text", "choices": [],
+                            "displayText": label, "isRequired": required, "order": n + 1, "internalName": name, "isCheckedByDefault": false
+                        }));
+                    }
                     "--presenter" => {
                         i += 1;
                         e.presenters.push(person(&client, args.get(i).context("upn")?).await?);
@@ -106,13 +145,28 @@ async fn main() -> anyhow::Result<()> {
             let d = events::discover(&client, &events::DiscoverFilter::default()).await?;
             for list in ["now", "upcoming", "past"] {
                 for c in d[list].as_array().into_iter().flatten() {
-                    println!("{list}: {} | {} | {}", c["title"].as_str().unwrap_or_default(), c["id"].as_str().unwrap_or_default(), c["start"].as_str().unwrap_or_default());
+                    println!("{list}: {} | {} | {} | by {}", c["title"].as_str().unwrap_or_default(), c["id"].as_str().unwrap_or_default(), c["start"].as_str().unwrap_or_default(), c["by_names"]);
                 }
             }
         }
         // Your registration for an event (Teams' get-virtual-event-
         // attendee-registration-by-user).
         Some("registration") => println!("{:#}", events::my_registration(&client, args.get(1).context("id")?).await?),
+        // A Meet now for a call test ("OST TEST …"): its join link.
+        Some("meetnow") => {
+            let subject = args.get(1).context("subject")?;
+            ensure!(subject.starts_with("OST TEST"), "test meetings are named OST TEST ...");
+            println!("{}", teams_cli::api::calendar::meet_now(&client, subject).await?);
+        }
+        // The registrations with their answers (organizers).
+        Some("registrations") => println!("{:#}", events::registrations(&client, args.get(1).context("id")?).await?),
+        // Cancel your registration (Teams' Unregister).
+        Some("unregister") => {
+            let id = args.get(1).context("id")?;
+            let reg = events::my_registration(&client, id).await?;
+            events::unregister(&client, id, reg["registrationId"].as_str().unwrap_or_default()).await?;
+            println!("unregistered");
+        }
         // Remove the calendar entries test events left (cancelled copies
         // included) whose subject contains the given "OST TEST …" text.
         Some("purge") => {
@@ -127,7 +181,7 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
         }
-        _ => bail!("create | publish | overview | cancel | manage | discoverable | registration | purge"),
+        _ => bail!("create | publish | overview | cancel | manage | discoverable | registration | registrations | unregister | meetnow | purge"),
     }
     Ok(())
 }

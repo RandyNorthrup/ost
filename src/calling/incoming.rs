@@ -111,6 +111,13 @@ impl IncomingCall {
     }
 
     /// The meeting the invitation is into, once attached (`meetingDetails`).
+    /// The conversation's roster when the call was attached, as a roster
+    /// update (`conversation/rosterUpdate/`) carries it.
+    pub fn initial_roster_event(&self) -> Option<serde_json::Value> {
+        let participants = self.attached.as_ref().and_then(|n| n.initial_roster.clone())?;
+        Some(serde_json::json!({ "callAgentPath": "conversation/rosterUpdate/", "body": { "type": "Delta", "participants": participants } }))
+    }
+
     pub fn meeting_details(&self) -> Option<&serde_json::Value> {
         self.attached.as_ref().and_then(|n| n.meeting_details.as_ref())
     }
@@ -892,6 +899,9 @@ async fn attach(
     // The conversation join's answer describes the meeting (its type and
     // schedule), as a join's does.
     notification.meeting_details = find_key(&reply, "meetingDetails").filter(|d| d.is_object()).cloned();
+    // And who is in it already (a Teams Rooms device invited into a
+    // meeting learns this way what is being presented there).
+    notification.initial_roster = find_key(&reply, "roster").and_then(|r| r.get("participants")).filter(|p| p.is_object()).cloned();
     Ok(notification)
 }
 
@@ -928,6 +938,9 @@ pub struct ActiveCall {
     /// Each remote person's merge leg from roster events (their
     /// `callLinks.replacement`), keyed by lowercase MRI.
     remote_legs: std::collections::HashMap<String, serde_json::Value>,
+    /// Content-sharing sessions others present that we joined (PowerPoint
+    /// Live, Whiteboard: their state updates come to us), by correlation id.
+    joined_content: std::collections::HashMap<String, super::content_sharing::Session>,
 }
 
 impl Drop for ActiveCall {
@@ -939,6 +952,84 @@ impl Drop for ActiveCall {
 }
 
 impl ActiveCall {
+    /// Join a content-sharing session someone in the call presents (from
+    /// the roster), to get its state updates, as a meeting join does:
+    /// `POST sessionInformation.contentSharingController`. A Teams Rooms
+    /// device invited into a meeting shows a cast PowerPoint this way.
+    pub async fn join_content(&mut self, mut session: super::content_sharing::Session) -> Result<super::content_sharing::Session> {
+        use super::content_sharing as cs;
+        if let Some(s) = self.joined_content.get(&session.correlation_id) {
+            return Ok(s.clone());
+        }
+        let me = self.me.clone().context("Not in a conversation")?;
+        let link = session.join_link.clone().context("The session has no join link")?;
+        if !is_service_link(&link) {
+            anyhow::bail!("content sharing: not a Teams service link");
+        }
+        let body = cs::join_body(&me.json(), &|p| me.callback(p));
+        let config = crate::config::Config::load()?;
+        let ic3 = config.get_ic3_token().context("No calling (IC3) token")?.token;
+        let resp = reqwest::Client::new()
+            .post(&link)
+            .bearer_auth(ic3)
+            .header(cs::CHAIN_ID_HEADER, &session.correlation_id)
+            .header("x-microsoft-skype-chain-id", self.call_id().unwrap_or_default())
+            .header("x-microsoft-skype-message-id", uuid::Uuid::new_v4().to_string())
+            .header("x-microsoft-skype-client", signaling::SKYPE_CLIENT_HEADER)
+            .header("ms-teams-partition", signaling::TEAMS_PARTITION)
+            .header("ms-teams-region", signaling::TEAMS_REGION)
+            .header("ms-teams-ring", signaling::TEAMS_RING)
+            .json(&body)
+            .send()
+            .await
+            .context("content sharing")?;
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        tracing::info!(method = "POST", %status, "content sharing request");
+        if !status.is_success() {
+            anyhow::bail!("content sharing: {status}");
+        }
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
+            let c = v.get("contentSharing").unwrap_or(&v);
+            session.links = cs::SessionLinks::from(c.get("links").unwrap_or(&serde_json::Value::Null));
+            if let Some(st) = c.get("sessionState").and_then(|s| s.as_str()).filter(|s| !s.is_empty()) {
+                session.state = st.to_string();
+            }
+            if let Some(n) = c.get("sequenceNumber").and_then(|n| n.as_u64()) {
+                session.sequence = n;
+            }
+        }
+        tracing::info!(correlation = %session.correlation_id, kind = session.kind(), "content sharing: joined");
+        self.joined_content.insert(session.correlation_id.clone(), session.clone());
+        Ok(session)
+    }
+
+    /// Forget a session that ended.
+    pub fn forget_content(&mut self, correlation: &str) {
+        self.joined_content.remove(correlation);
+    }
+
+    /// A state update for a session we joined (newer than the last), or
+    /// its end: (correlation id, Some(new state)) or (correlation id, None).
+    pub fn content_event(&mut self, event: &serde_json::Value) -> Option<(String, Option<String>)> {
+        use super::content_sharing as cs;
+        if let Some((corr, state, seq)) = cs::session_update(event) {
+            if let Some(s) = self.joined_content.get_mut(&corr) {
+                if seq != 0 && seq <= s.sequence {
+                    return None;
+                }
+                s.sequence = seq;
+                s.state = state.clone();
+            }
+            return Some((corr, Some(state)));
+        }
+        if let Some(corr) = cs::session_end(event) {
+            self.joined_content.remove(&corr);
+            return Some((corr, None));
+        }
+        None
+    }
+
     /// Record each remote person's merge leg from a roster event, for a
     /// later silent merge (Teams' `setParticipantCallLinks`).
     pub fn note_roster_legs(&mut self, json: &str) {
@@ -1513,6 +1604,7 @@ pub async fn answer(
         transfer_link: leg.transfer,
         renegotiation_link: leg.renegotiation,
         remote_legs: std::collections::HashMap::new(),
+        joined_content: std::collections::HashMap::new(),
     })
 }
 
@@ -1587,6 +1679,7 @@ async fn answer_webrtc(
         transfer_link: leg.transfer,
         renegotiation_link: leg.renegotiation,
         remote_legs: std::collections::HashMap::new(),
+        joined_content: std::collections::HashMap::new(),
     })
 }
 
