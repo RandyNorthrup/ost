@@ -110,6 +110,13 @@ impl MuchMixer {
                 continue;
             }
             let Some(sp) = self.speakers.get_mut(&s.source) else { continue };
+            // Interpreter's balance: the interpreter against everyone else.
+            let gain = super::ai_interpreter::gain_for(s.source);
+            let pcm: Vec<i16> = if (gain - 1.0).abs() < f32::EPSILON {
+                pcm
+            } else {
+                pcm.iter().map(|&x| (f32::from(x) * gain) as i16).collect()
+            };
             let placed = sp.place.process(&pcm, place(s.source));
             if mix.len() < placed.len() {
                 mix.resize(placed.len(), [0, 0]);

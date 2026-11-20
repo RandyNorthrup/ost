@@ -3873,6 +3873,7 @@ Rectangle {
         }
     }
     // A meeting chat's Breakout Rooms tab (native, as Teams draws it).
+    function breakoutTabForTest() { return breakoutTabLoader.item }
     Loader {
         id: breakoutTabLoader
         active: root.isMeetingChat && root.tab === "Breakout Rooms" && !!root.meeting

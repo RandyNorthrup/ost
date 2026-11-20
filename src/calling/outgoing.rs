@@ -79,6 +79,12 @@ pub struct OutgoingCall {
     /// The conversation's updateMeetingSettings link (Lock the meeting,
     /// attendee mic and camera).
     settings_link: Option<String>,
+    /// The conversation's joinMeetingGroup and leaveMeetingGroup links
+    /// (Interpreter's language groups).
+    group_links: (Option<String>, Option<String>),
+    /// What the meeting says of Interpreter (on, for all, its language
+    /// groups).
+    interpretation: super::ai_interpreter::MeetingState,
     /// What the meeting last said about itself (locked, attendee
     /// restrictions).
     capability: super::meeting_options::MeetingCapability,
@@ -761,6 +767,7 @@ impl OutgoingCall {
         self.properties_link = link("updateParticipantProperties");
         self.role_link = link("updateParticipantRole");
         self.settings_link = link("updateMeetingSettings");
+        self.group_links = (link("joinMeetingGroup").or(self.group_links.0.take()), link("leaveMeetingGroup").or(self.group_links.1.take()));
         self.mute_link = link("mute");
         self.metadata_link = link("updateEndpointMetadata").or(self.metadata_link.take());
         self.add_participant_link = link("addParticipant").or(self.add_participant_link.take());
@@ -1703,6 +1710,21 @@ impl OutgoingCall {
         Ok(())
     }
 
+    /// A conversation update's Interpreter state; whether it changed.
+    pub fn apply_interpretation(&mut self, json: &serde_json::Value) -> bool {
+        match super::ai_interpreter::meeting_state(json) {
+            Some(s) if s != self.interpretation => {
+                self.interpretation = s;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    pub fn interpretation(&self) -> &super::ai_interpreter::MeetingState {
+        &self.interpretation
+    }
+
     pub fn apply_capability(&mut self, json: &serde_json::Value) -> bool {
         match super::meeting_options::meeting_capability(json) {
             Some(c) if c != self.capability => {
@@ -1726,6 +1748,80 @@ impl OutgoingCall {
         // Teams' calling stack PUTs this one.
         cc_send(&self.http, reqwest::Method::PUT, &self.skype_token, &link, &body, "Meeting settings").await?;
         Ok(())
+    }
+
+    /// Teams' Interpreter: turn it on for the meeting, or off for everyone
+    /// (the organizer's Turn off for all).
+    pub async fn set_ai_interpretation(&mut self, on: bool) -> Result<()> {
+        self.update_meeting_settings(super::ai_interpreter::settings(on)).await
+    }
+
+    /// Listen to a language's interpretation: join its meeting group
+    /// (Teams' joinMeetingGroup), retrying as Teams does on 404/6011 and
+    /// 500/5406 (6 times, 1.5 s apart). Returns the operation id; the
+    /// result comes back as a joinMeetingGroupStatus event.
+    pub async fn join_meeting_group(&self, label: &str) -> Result<String> {
+        let link = self.group_links.0.clone().context("This meeting has no language groups")?;
+        let op = uuid::Uuid::new_v4().to_string();
+        let status = signaling::trouter_callback(&self.callbacks.0, &self.callbacks.1, "conversation/joinMeetingGroupStatus/");
+        let body = super::ai_interpreter::join_group_body(&self.me.0, label, &status, &op);
+        let mut tries = 0;
+        loop {
+            match cc_post(&self.http, &self.skype_token, &link, &body, "Join meeting group").await {
+                Ok(_) => break,
+                Err(e) => {
+                    let t = format!("{e:#}");
+                    let again = (t.contains("404") && t.contains("6011")) || (t.contains("500") && t.contains("5406"));
+                    if !again || tries >= 6 {
+                        return Err(e);
+                    }
+                    tries += 1;
+                    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+                }
+            }
+        }
+        tracing::info!(label, %op, "joined the meeting group");
+        Ok(op)
+    }
+
+    /// Stop listening to the interpretation: leave the language group.
+    pub async fn leave_meeting_group(&self, group: &str) -> Result<()> {
+        let link = self.group_links.1.clone().context("This meeting has no language groups")?;
+        let op = uuid::Uuid::new_v4().to_string();
+        let status = signaling::trouter_callback(&self.callbacks.0, &self.callbacks.1, "conversation/leaveMeetingGroupStatus/");
+        let body = super::ai_interpreter::leave_group_body(&self.me.0, group, &status, &op);
+        cc_post(&self.http, &self.skype_token, &link, &body, "Leave meeting group").await?;
+        Ok(())
+    }
+
+    /// Our AI voice choice for Interpreter (Teams' aiVoiceConsent
+    /// participant property, scope self).
+    pub async fn set_ai_voice_consent(&mut self, value: &str) -> Result<()> {
+        let link = self.properties_link.clone().context("This meeting can't update participants")?;
+        self.state_seq += 1;
+        let op = uuid::Uuid::new_v4().to_string();
+        let from = serde_json::json!({
+            "id": self.me.0["id"],
+            "endpointId": self.me.0["endpointId"],
+            "participantId": self.me.0["participantId"],
+        });
+        let body = serde_json::json!({
+            "from": from.clone(),
+            "to": [{ "id": from["id"], "propertyBag": super::ai_interpreter::voice_consent_property(value, self.state_seq) }],
+            "scope": "self",
+            "links": { "updateParticipantPropertiesStatus": signaling::trouter_callback(&self.callbacks.0, &self.callbacks.1, "conversation/updateParticipantPropertiesStatus/") },
+            "operationId": op,
+        });
+        cc_post(&self.http, &self.skype_token, &link, &body, "AI voice consent").await?;
+        Ok(())
+    }
+
+    /// Our MRI and endpoint id (for finding ourselves in the roster).
+    pub fn my_endpoint(&self) -> (String, String) {
+        (
+            self.me.0["id"].as_str().unwrap_or_default().to_string(),
+            self.me.0["endpointId"].as_str().unwrap_or_default().to_string(),
+        )
     }
 
     /// Clear a state for everyone (Teams' removeState, scope "all"): Lower
@@ -2554,7 +2650,7 @@ fn endpoint_state_body(from: &serde_json::Value, muted: bool, seq: u64) -> serde
 /// 1047 "Invalid MediaDescriptions"). Off, a line is "recvonly"; a shared
 /// screen is "sendonly", tagged with the call's id and the share's number
 /// (Teams: "<callId>;ss_<n>"). `mids`: the camera's and sharing line's.
-fn media_descriptions_body(
+pub(crate) fn media_descriptions_body(
     camera: bool,
     sharing: Option<&str>,
     request_id: u64,
@@ -3770,6 +3866,18 @@ async fn start_tagged(
     let properties_link = conversation_link(&created.response_body, "updateParticipantProperties");
     let role_link = conversation_link(&created.response_body, "updateParticipantRole");
     let settings_link = conversation_link(&created.response_body, "updateMeetingSettings");
+    if meeting_join {
+        let names: Vec<String> = serde_json::from_str::<serde_json::Value>(&created.response_body)
+            .ok()
+            .and_then(|v| {
+                v.pointer("/links")
+                    .or_else(|| v.pointer("/conversationResponse/links"))
+                    .and_then(|l| l.as_object())
+                    .map(|o| o.keys().cloned().collect())
+            })
+            .unwrap_or_default();
+        tracing::info!(?names, "conversation links");
+    }
     let capability = serde_json::from_str::<serde_json::Value>(&created.response_body)
         .ok()
         .and_then(|v| super::meeting_options::meeting_capability(&v));
@@ -3968,6 +4076,14 @@ async fn start_tagged(
         properties_link,
         role_link,
         settings_link,
+        group_links: (
+            conversation_link(&created.response_body, "joinMeetingGroup"),
+            conversation_link(&created.response_body, "leaveMeetingGroup"),
+        ),
+        interpretation: serde_json::from_str::<serde_json::Value>(&created.response_body)
+            .ok()
+            .and_then(|v| super::ai_interpreter::meeting_state(&v))
+            .unwrap_or_default(),
         capability: capability.unwrap_or_default(),
         processing: serde_json::from_str::<serde_json::Value>(&created.response_body)
             .map(|v| {

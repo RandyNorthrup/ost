@@ -2098,11 +2098,14 @@ Window {
         interval: 4000
         onTriggered: {
             if (step === "ring") {
-                (banners.callCardItem() || banners.contentItem).grabToImage(r => {
+                // --accept-video: answer with video when it's offered.
+                const answer = () => backend.acceptCall(Qt.application.arguments.indexOf("--accept-video") >= 0 && backend.callVideoOffered)
+                // (A Teams Rooms console rings on its home screen: no toast
+                // to capture, so it answers at once.)
+                if (!(banners.callCardItem() || banners.contentItem).grabToImage(r => {
                     r.saveToFile(window.shotPath.replace(".png", "-toast.png"))
-                    // --accept-video: answer with video when it's offered.
-                    backend.acceptCall(Qt.application.arguments.indexOf("--accept-video") >= 0 && backend.callVideoOffered)
-                })
+                    answer()
+                })) answer()
             } else if (step === "talk" && window.callPanes) {
                 // --call-panes: open Chat, then People, capturing each.
                 callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-call.png")))
@@ -11970,6 +11973,78 @@ Window {
             else if (step === 17 && recap && recap.meeting) recap.moreForTest()
             else if (step === 18 && recap && recap.meeting) shot("more")
             else if (step === 19) Qt.quit()
+            step++
+        }
+    }
+
+    // --join-interpreter=<language> (with --join-test --join-stay=<s>,
+    // TASK-0225): once in the meeting, INTERP lines every 5 s with the
+    // Interpreter state (call_interpreter_json) and the More menu's
+    // Interpreter row; 10 s in, Turn on for me in that language (the
+    // settings dialog's choice, the voice from --join-interpreter-voice,
+    // default "1"); --join-interpreter-off=<s> turns it off for me that
+    // many seconds in (--join-interpreter-off-all: for everyone, as the
+    // organizer). Pictures -interp-<s>.png every 20 s.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--join-interpreter=")) && backend.callState === "connected"
+        interval: 5000; repeat: true
+        property int t: 0
+        onTriggered: {
+            const arg = k => (Qt.application.arguments.find(a => a.startsWith(k + "=")) || "").slice(k.length + 1)
+            const has = k => Qt.application.arguments.indexOf(k) >= 0
+            t += 5
+            const row = (callWindow.barMoreItems || []).reduce((a, it) => a.concat(it.submenu || []), []).find(x => x.name === "AiInterpretationButtonForAll")
+            console.warn("INTERP", t, backend.callInterpreterJson.replace(/"languages":\[[^\]]*\],?/, ""), "row", JSON.stringify(row || null))
+            if (t === 10) backend.interpreterAction("turnOn", JSON.stringify({ language: arg("--join-interpreter"), voice: arg("--join-interpreter-voice") || "1", balance: 0.8 }))
+            const off = parseInt(arg("--join-interpreter-off")) || 0
+            if (off > 0 && t === off) backend.interpreterAction(has("--join-interpreter-off-all") ? "offForAll" : "offForMe", "{}")
+            if (t % 20 === 0) callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-interp-" + t + ".png")))
+        }
+    }
+
+    // --breakout-tab-test with --open-chat=<meeting chat id> --shots=<dir>
+    // (TASK-0199): the meeting chat's Breakout Rooms tab as its organizer:
+    // makes 2 rooms when there are none, then captures the cards, a
+    // card's menu, Breakout rooms settings, Remove rooms?, the CSV
+    // overwrite question and (with chat members) Assign participants'
+    // first step and table; with --breakout-tab-assign everyone is
+    // assigned automatically and the cards captured again. BRTAB lines with the
+    // tab's state; pictures breakout-tab-*.png. Removes the rooms it made
+    // (all of them with --breakout-tab-clean) and quits.
+    Timer {
+        running: Qt.application.arguments.indexOf("--breakout-tab-test") >= 0 && backend.signedIn
+        interval: 2500; repeat: true
+        property int step: 0
+        property bool made: false
+        onTriggered: {
+            const arg = k => (Qt.application.arguments.find(a => a.startsWith(k + "=")) || "").slice(k.length + 1)
+            const has = k => Qt.application.arguments.indexOf(k) >= 0
+            const id = arg("--open-chat")
+            const dir = (arg("--shots") || ".") + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "breakout-tab-" + n + ".png"))
+            if (backend.currentChatId !== id) { backend.selectChat(id, (chatList.chats.find(c => c.id === id) || { name: "OST breakout tab test" }).name); return }
+            const tab = conversation.breakoutTabForTest()
+            const st = () => tab ? JSON.stringify({ rooms: tab.rooms.map(r => ({ name: r.name, n: (r.participants || []).length, options: !!r.options_url })), people: tab.people.map(p => p.name), busy: tab.busy, error: tab.state_ ? tab.state_.error : null, settings: tab.state_ ? tab.state_.settings : null }) : "no tab"
+            if (step === 1) { console.warn("BRTAB tabs", JSON.stringify(conversation.tabNames)); conversation.tab = "Breakout Rooms" }
+            else if (step === 4) { console.warn("BRTAB open", st()); shot("open"); if (tab && !tab.rooms.length) { made = true; tab.act("create", { rooms: [{ name: "Room 1", participants: [] }, { name: "Room 2", participants: [] }] }) } }
+            else if (step === 7) { console.warn("BRTAB rooms", st()); shot("rooms") }
+            else if (step === 8) tab.roomMenuForTest(0)
+            else if (step === 9) shot("menu")
+            else if (step === 10) { tab.closeAllForTest(); tab.settingsForTest() }
+            else if (step === 11) shot("settings")
+            else if (step === 12) { tab.closeAllForTest(); tab.removeForTest() }
+            else if (step === 13) shot("remove")
+            else if (step === 14) { tab.closeAllForTest(); tab.importForTest() }
+            else if (step === 15) shot("csv")
+            else if (step === 16) { tab.closeAllForTest(); if (tab.people.length) tab.assignTypeForTest() }
+            else if (step === 17) { if (tab.people.length) shot("assign-type") }
+            else if (step === 18) { tab.closeAllForTest(); if (tab.people.length) tab.assignForTest() }
+            else if (step === 19) { if (tab.people.length) shot("assign"); tab.closeAllForTest() }
+            else if (step === 20 && has("--breakout-tab-assign") && tab.people.length && tab.rooms.length) tab.assignAutomatically()
+            else if (step === 23) { console.warn("BRTAB after", st()); shot("after") }
+            else if (step === 24 && (made || has("--breakout-tab-clean"))) tab.act("delete_all", {})
+            else if (step === 27) { console.warn("BRTAB end", st()); shot("end") }
+            else if (step === 28) Qt.quit()
             step++
         }
     }

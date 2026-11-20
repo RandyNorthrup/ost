@@ -336,6 +336,11 @@ pub mod qobject {
         /// tollAria, …} or null, state: "" | "connecting" | "connected" |
         /// "failed", number (as shown), error (Teams' message)}.
         #[qproperty(QString, call_phone_json)]
+        /// Teams' Interpreter in the meeting (calling::ai_interpreter):
+        /// {available, on, forAll, groups: [{id, label}], myGroup,
+        /// myLanguage, language, voice, balance, interpreter (sources in
+        /// our group), busy, error}.
+        #[qproperty(QString, call_interpreter_json)]
         /// A town hall or webinar (calling::live_event): {townHall,
         /// webinar, staging, phase, seq, attendeeView, qna, reactions,
         /// busy ("" | "starting" | "ending"), failed ("" | "start" | "end")},
@@ -1150,6 +1155,12 @@ pub mod qobject {
         /// same actions on meeting `thread` (organized by `organizer`, an
         /// object id), sent as Teams' tab sends them (no newVersion). The
         /// rooms come back in meeting_breakout_json.
+        /// Interpreter (Teams' More ▸ Language and speech ▸ Interpreter):
+        /// "turnOn" {language, voice, balance} (turns it on for the
+        /// meeting when it isn't, then joins that language's group),
+        /// "save" {language, voice, balance}, "offForMe", "offForAll".
+        #[qinvokable]
+        fn interpreter_action(self: Pin<&mut Backend>, action: &QString, args_json: &QString);
         #[qinvokable]
         fn meeting_breakout_action(
             self: Pin<&mut Backend>,
@@ -3096,6 +3107,7 @@ pub struct BackendRust {
     call_recording_waiting: QString,
     call_meeting_info_json: QString,
     call_phone_json: QString,
+    call_interpreter_json: QString,
     call_event_json: QString,
     call_stream_json: QString,
     prejoin_phone_json: QString,
@@ -3462,7 +3474,7 @@ impl MediaCall<'_> {
     /// A meeting's (or group call's) camera and screen go on and off by
     /// media descriptions, as Teams does, not re-offers.
     fn describes_media(&self) -> bool {
-        matches!(self, MediaCall::Placed(c) if c.describes_media())
+        either!(self, c => c.describes_media())
     }
 
     fn can_share(&self) -> bool {
@@ -3506,12 +3518,270 @@ impl MediaCall<'_> {
     }
 }
 
+/// What to tell a meeting about our camera and sharing lines: a meeting
+/// we joined describes them itself; one we were invited into gets the
+/// request made now (no call slot is held across the post).
+enum Describe<'a> {
+    Placed(&'a OutgoingCall),
+    Answered(String, serde_json::Value),
+    Nothing,
+}
+
+fn describe_of(slot: &CallSlot) -> Describe<'_> {
+    match (slot.active.as_ref(), slot.outgoing.as_ref()) {
+        (Some(a), _) => match a.media_descriptions_request() {
+            Some((link, body)) => Describe::Answered(link, body),
+            None => Describe::Nothing,
+        },
+        (None, Some(o)) => Describe::Placed(o),
+        (None, None) => Describe::Nothing,
+    }
+}
+
+/// Interpreter in the meeting we're in (calling::ai_interpreter), as this
+/// client sees it.
+#[derive(Default)]
+struct Interp {
+    /// We may turn it on (Teams' useAiInterpretationAvailable).
+    available: bool,
+    meeting: teams_cli::calling::ai_interpreter::MeetingState,
+    /// Our language group's id once the roster puts us in it.
+    my_group: Option<String>,
+    /// The interpreter's audio sources in our group.
+    sources: Vec<u32>,
+    /// The language to join once the meeting has it on (Turn on for me).
+    pending: Option<String>,
+    busy: bool,
+    error: String,
+}
+
+fn interp() -> &'static std::sync::Mutex<Interp> {
+    static I: OnceLock<std::sync::Mutex<Interp>> = OnceLock::new();
+    I.get_or_init(Default::default)
+}
+
+/// Teams' saved choices: the user preference aiInterpretationSettings
+/// (targetLanguage, interpretedVoice) and the balance, which Teams keeps in
+/// the browser's storage (ai_interpretation_volume_rate); OST keeps both
+/// on this device.
+fn interpreter_prefs() -> (String, String, f32) {
+    let s = load_settings();
+    let p = s.get("aiInterpretationSettings").cloned().unwrap_or_default();
+    let language = p["targetLanguage"].as_str().unwrap_or_default().to_string();
+    let voice = p["interpretedVoice"].as_str().unwrap_or_default().to_string();
+    let balance = s
+        .get("ai_interpretation_volume_rate")
+        .and_then(|v| v.as_f64())
+        .map(|v| v as f32)
+        .unwrap_or(teams_cli::calling::ai_interpreter::DEFAULT_BALANCE);
+    (language, voice, balance)
+}
+
+fn save_interpreter_prefs(language: &str, voice: &str, balance: f32) {
+    let mut s = load_settings();
+    s.insert("aiInterpretationSettings".into(), json!({ "targetLanguage": language, "interpretedVoice": voice, "aiInterpretationMode": "SIMULTANEOUS" }));
+    s.insert("ai_interpretation_volume_rate".into(), json!(balance));
+    if let Err(e) = save_settings(&s) {
+        tracing::warn!("interpreter settings: {}", short_error(&e));
+    }
+}
+
+fn interpreter_json() -> String {
+    let i = interp().lock().unwrap_or_else(|e| e.into_inner());
+    let (language, voice, balance) = interpreter_prefs();
+    let my_language = i
+        .my_group
+        .as_ref()
+        .and_then(|g| i.meeting.groups.iter().find(|(id, _)| id == g))
+        .map(|(_, l)| l.clone())
+        .unwrap_or_default();
+    json!({
+        "available": i.available,
+        "on": i.meeting.enabled,
+        "forAll": i.meeting.for_all,
+        "groups": i.meeting.groups.iter().map(|(id, l)| json!({"id": id, "label": l})).collect::<Vec<_>>(),
+        "myGroup": i.my_group,
+        "myLanguage": my_language,
+        "language": language,
+        "voice": voice,
+        "balance": balance,
+        "interpreter": i.sources,
+        "busy": i.busy,
+        "error": i.error,
+        "languages": teams_cli::calling::ai_interpreter::LANGUAGES
+            .iter()
+            .map(|c| json!({"code": c, "name": teams_cli::calling::ai_interpreter::language_name(c)}))
+            .collect::<Vec<_>>(),
+    })
+    .to_string()
+}
+
+fn emit_interpreter(qt: &cxx_qt::CxxQtThread<qobject::Backend>) {
+    let text = interpreter_json();
+    let _ = qt.queue(move |mut this| this.as_mut().set_call_interpreter_json(QString::from(text.as_str())));
+}
+
+/// Balance the interpretation while we're in a group with an interpreter
+/// (x-much2 asked for, or given up, by re-offering the audio).
+async fn apply_interpreter_listening() {
+    let (listening, sources) = {
+        let i = interp().lock().unwrap_or_else(|e| e.into_inner());
+        (i.my_group.is_some(), i.sources.clone())
+    };
+    let was = teams_cli::calling::ai_interpreter::listening();
+    let (_, _, balance) = interpreter_prefs();
+    teams_cli::calling::ai_interpreter::set_listening(listening.then_some((sources, balance)));
+    if was != listening {
+        sync_unmixed_audio().await;
+    }
+}
+
+/// Whether Interpreter is ours to turn on in this meeting (Teams'
+/// useAiInterpretationAvailable): ECS enableAiInterpretation, and the
+/// meeting policy's aiInterpreter "Enabled" with a Microsoft 365 Copilot
+/// licence, or the meeting has it on for everyone (with the policy
+/// "Enabled" or unset).
+async fn interpreter_available(for_all: bool) -> bool {
+    let ecs = |k: &str, d: bool| api::ecs::setting("calling", k).and_then(|v| v.as_bool()).unwrap_or(d);
+    if !ecs("enableAiInterpretation", true) {
+        return false;
+    }
+    if ecs("aiInterpretationPolicyAndLicenseBypass", false) {
+        return true;
+    }
+    let Ok(client) = TeamsClient::new().await else { return false };
+    let policy = api::custom_emoji::effective_policies(&client, &["teamsMeetingPolicy"])
+        .await
+        .ok()
+        .and_then(|v| {
+            fn find(v: &serde_json::Value) -> Option<String> {
+                match v {
+                    serde_json::Value::Object(o) => o
+                        .iter()
+                        .find(|(k, _)| k.eq_ignore_ascii_case("aiInterpreter"))
+                        .and_then(|(_, x)| x.as_str().map(str::to_string))
+                        .or_else(|| o.values().find_map(find)),
+                    serde_json::Value::Array(a) => a.iter().find_map(find),
+                    _ => None,
+                }
+            }
+            find(&v)
+        });
+    let enabled = policy.as_deref() == Some("Enabled");
+    let copilot = api::ecs::license(&client).await.and_then(|l| l["isCopilot"].as_bool()).unwrap_or(false);
+    tracing::info!(?policy, copilot, for_all, "interpreter: availability");
+    (enabled && copilot) || (for_all && ecs("enableAiInterpretationEnabledForAllParticipants", true) && (enabled || policy.is_none()))
+}
+
+/// The meeting turned Interpreter on or off, or its groups changed.
+async fn interpreter_meeting_changed(qt: &cxx_qt::CxxQtThread<qobject::Backend>, m: teams_cli::calling::ai_interpreter::MeetingState) {
+    let join = {
+        let mut i = interp().lock().unwrap_or_else(|e| e.into_inner());
+        let on = m.enabled;
+        i.meeting = m;
+        if !on {
+            i.my_group = None;
+            i.sources.clear();
+        }
+        if on { i.pending.take() } else { None }
+    };
+    let for_all = interp().lock().unwrap_or_else(|e| e.into_inner()).meeting.for_all;
+    let available = interpreter_available(for_all).await;
+    interp().lock().unwrap_or_else(|e| e.into_inner()).available = available;
+    apply_interpreter_listening().await;
+    emit_interpreter(qt);
+    if let Some(language) = join {
+        interpreter_join(qt, &language).await;
+    }
+}
+
+/// Join a language's group (Turn on for me, or a new language).
+async fn interpreter_join(qt: &cxx_qt::CxxQtThread<qobject::Backend>, language: &str) {
+    let r = {
+        let slot = call_slot().lock().await;
+        match slot.outgoing.as_ref() {
+            Some(c) => c.join_meeting_group(language).await.map(|_| ()),
+            None => Err(anyhow::anyhow!("Not in a meeting")),
+        }
+    };
+    {
+        let mut i = interp().lock().unwrap_or_else(|e| e.into_inner());
+        i.busy = false;
+        i.error = match &r {
+            Ok(()) => String::new(),
+            Err(e) => {
+                tracing::warn!("interpreter: join group: {}", short_error(e));
+                "join".into()
+            }
+        };
+    }
+    emit_interpreter(qt);
+}
+
+/// A roster update (or a group join's result): are we in a language group,
+/// and which sources are the interpreter's there.
+async fn interpreter_roster(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(json) else { return };
+    if let Some((op, code)) = teams_cli::calling::ai_interpreter::group_response(&v) {
+        tracing::info!(%op, code, "interpreter: meeting group result");
+    }
+    let me = call_slot().lock().await.outgoing.as_ref().map(|c| c.my_endpoint());
+    let Some((mri, endpoint)) = me else { return };
+    let body = v.get("body").unwrap_or(&v);
+    let changed = {
+        let mut i = interp().lock().unwrap_or_else(|e| e.into_inner());
+        let mut changed = false;
+        if let Some(group) = teams_cli::calling::ai_interpreter::self_group(body, &mri, &endpoint)
+            && group != i.my_group
+        {
+            tracing::info!(?group, "interpreter: our language group");
+            i.my_group = group;
+            changed = true;
+        }
+        if let Some(g) = i.my_group.clone() {
+            let sources = teams_cli::calling::ai_interpreter::interpreter_sources(body, &g);
+            if !sources.is_empty() && sources != i.sources {
+                tracing::info!(?sources, "interpreter: the interpreter's audio in our group");
+                i.sources = sources;
+                changed = true;
+            }
+        } else if !i.sources.is_empty() {
+            i.sources.clear();
+            changed = true;
+        }
+        changed
+    };
+    if changed {
+        apply_interpreter_listening().await;
+        emit_interpreter(qt);
+    }
+}
+
+/// A meeting joined: Interpreter's state from the join, and whether we may
+/// turn it on.
+async fn interpreter_joined(qt: cxx_qt::CxxQtThread<qobject::Backend>) {
+    let m = call_slot().lock().await.outgoing.as_ref().map(|c| c.interpretation().clone());
+    let Some(m) = m else { return };
+    {
+        let mut i = interp().lock().unwrap_or_else(|e| e.into_inner());
+        *i = Interp { meeting: m.clone(), ..Default::default() };
+    }
+    let available = interpreter_available(m.for_all).await;
+    interp().lock().unwrap_or_else(|e| e.into_inner()).available = available;
+    teams_cli::calling::ai_interpreter::set_listening(None);
+    emit_interpreter(&qt);
+}
+
 /// Tell a meeting what our camera and sharing lines now do, as Teams
-/// does when either changes.
-async fn describe_media(call: Option<&OutgoingCall>) -> anyhow::Result<()> {
-    match call {
-        Some(o) => o.describe_media(o.camera_on(), o.is_sharing()).await,
-        None => Ok(()),
+/// does when either changes (a meeting we joined, or one we were invited
+/// into).
+async fn describe_media(d: Describe<'_>) -> anyhow::Result<()> {
+    match d {
+        Describe::Placed(o) => o.describe_media(o.camera_on(), o.is_sharing()).await,
+        Describe::Answered(link, body) => {
+            teams_cli::calling::incoming::post_media_descriptions(&CallAuth::load().await?, &link, &body).await
+        }
+        Describe::Nothing => Ok(()),
     }
 }
 
@@ -3556,7 +3826,7 @@ async fn offer_capture(
     let mut call = MediaCall::of(slot).context("The call has ended")?;
     if call.describes_media() {
         call.start_share(capture, frames)?;
-        if let Err(e) = describe_media(slot.outgoing.as_ref()).await {
+        if let Err(e) = describe_media(describe_of(slot)).await {
             if let Some(mut call) = MediaCall::of(slot) {
                 call.stop_share();
             }
@@ -3594,7 +3864,7 @@ async fn stop_screen() -> anyhow::Result<()> {
     let mut call = MediaCall::of(slot).context("The call has ended")?;
     call.stop_share();
     if call.describes_media() {
-        return describe_media(slot.outgoing.as_ref()).await;
+        return describe_media(describe_of(slot)).await;
     }
     call.offer_media(Reoffer::Share(false)).await
 }
@@ -6638,6 +6908,9 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
     }
     // The meeting's call recorder started or stopped its transcript
     // (Teams' AI indicator turns on and off with it).
+    if json.contains("conversation/rosterUpdate") || json.contains("MeetingGroupStatus") {
+        interpreter_roster(qt, json).await;
+    }
     if json.contains("conversation/rosterUpdate")
         && let Ok(v) = serde_json::from_str::<serde_json::Value>(json)
     {
@@ -6733,6 +7006,17 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
             if let Some(cap) = changed {
                 tracing::info!(?cap, "meeting capability changed");
                 let _ = qt.queue(move |mut this| this.as_mut().show_capability(cap, true));
+            }
+            // Interpreter turned on or off, or its language groups changed.
+            let interp = call_slot()
+                .lock()
+                .await
+                .outgoing
+                .as_mut()
+                .and_then(|call| call.apply_interpretation(&v).then(|| call.interpretation().clone()));
+            if let Some(m) = interp {
+                tracing::info!(?m, "interpreter: the meeting's state");
+                interpreter_meeting_changed(qt, m).await;
             }
             // A town hall or webinar started or ended for attendees.
             let event = call_slot()
@@ -8578,6 +8862,18 @@ impl qobject::Backend {
                     let e2ee = active.is_e2ee();
                     let e2ee_numbers = active.e2ee_numbers().join(" ");
                     tracing::info!(has_audio, can_video, camera, can_share, e2ee, "call answered");
+                    // Invited into a meeting: Teams' answer describes what
+                    // our lines do, so the meeting knows our camera sends
+                    // (the others' clients then ask for it).
+                    if let Some((link, body)) = active.media_descriptions_request() {
+                        let described = async {
+                            teams_cli::calling::incoming::post_media_descriptions(&CallAuth::load().await?, &link, &body).await
+                        }
+                        .await;
+                        if let Err(e) = described {
+                            tracing::warn!("media descriptions: {}", short_error(&e));
+                        }
+                    }
                     call_slot().lock().await.active = Some(active);
                     spawn_call_stats_logger(qt.clone());
                     // What roster updates before the answer said is
@@ -9759,6 +10055,105 @@ impl qobject::Backend {
         });
     }
 
+    pub fn interpreter_action(self: Pin<&mut Self>, action: &QString, args_json: &QString) {
+        let action = action.to_string();
+        let args: serde_json::Value = serde_json::from_str(&args_json.to_string()).unwrap_or(json!({}));
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let (old_language, old_voice, old_balance) = interpreter_prefs();
+            let language = args["language"].as_str().map(str::to_string).unwrap_or(old_language);
+            let voice = args["voice"].as_str().map(str::to_string).unwrap_or(old_voice.clone());
+            let balance = args["balance"].as_f64().map(|b| b as f32).unwrap_or(old_balance);
+            if matches!(action.as_str(), "turnOn" | "save") {
+                save_interpreter_prefs(&language, &voice, balance);
+            }
+            {
+                let mut i = interp().lock().unwrap_or_else(|e| e.into_inner());
+                i.busy = true;
+                i.error.clear();
+            }
+            emit_interpreter(&qt);
+            let result: anyhow::Result<()> = async {
+                match action.as_str() {
+                    "turnOn" | "save" => {
+                        // The voice others hear (Teams' aiVoiceConsent).
+                        if !voice.is_empty() && voice != old_voice {
+                            let mut slot = call_slot().lock().await;
+                            if let Some(c) = slot.outgoing.as_mut()
+                                && let Err(e) = c.set_ai_voice_consent(&voice).await
+                            {
+                                tracing::warn!("interpreter: voice: {}", short_error(&e));
+                            }
+                        }
+                        let (on, my_group, my_label) = {
+                            let i = interp().lock().unwrap_or_else(|e| e.into_inner());
+                            let label = i
+                                .my_group
+                                .as_ref()
+                                .and_then(|g| i.meeting.groups.iter().find(|(id, _)| id == g))
+                                .map(|(_, l)| l.clone());
+                            (i.meeting.enabled, i.my_group.clone(), label)
+                        };
+                        if action == "save" && my_group.is_none() {
+                            apply_interpreter_listening().await;
+                            return Ok(());
+                        }
+                        if language.is_empty() {
+                            anyhow::bail!("No interpretation language");
+                        }
+                        // "original" leaves the group (Teams' JoinOriginalGroup).
+                        if language == "original" {
+                            if let Some(g) = my_group {
+                                let slot = call_slot().lock().await;
+                                slot.outgoing.as_ref().context("Not in a meeting")?.leave_meeting_group(&g).await?;
+                            }
+                            return Ok(());
+                        }
+                        if my_label.as_deref() == Some(language.as_str()) {
+                            apply_interpreter_listening().await;
+                            return Ok(());
+                        }
+                        if on {
+                            interpreter_join(&qt, &language).await;
+                        } else {
+                            interp().lock().unwrap_or_else(|e| e.into_inner()).pending = Some(language.clone());
+                            let mut slot = call_slot().lock().await;
+                            slot.outgoing.as_mut().context("Not in a meeting")?.set_ai_interpretation(true).await?;
+                            tracing::info!(%language, "interpreter: turned on for the meeting; joining once it says so");
+                        }
+                        Ok(())
+                    }
+                    "offForMe" => {
+                        let g = interp().lock().unwrap_or_else(|e| e.into_inner()).my_group.clone();
+                        if let Some(g) = g {
+                            let slot = call_slot().lock().await;
+                            slot.outgoing.as_ref().context("Not in a meeting")?.leave_meeting_group(&g).await?;
+                        }
+                        Ok(())
+                    }
+                    "offForAll" => {
+                        let mut slot = call_slot().lock().await;
+                        slot.outgoing.as_mut().context("Not in a meeting")?.set_ai_interpretation(false).await
+                    }
+                    other => anyhow::bail!("Unknown interpreter action {other}"),
+                }
+            }
+            .await;
+            {
+                let mut i = interp().lock().unwrap_or_else(|e| e.into_inner());
+                if !(action == "turnOn" && result.is_ok() && i.pending.is_some()) {
+                    i.busy = false;
+                }
+                if let Err(e) = &result {
+                    tracing::warn!("interpreter {action}: {}", short_error(e));
+                    i.error = action.clone();
+                    i.pending = None;
+                }
+            }
+            emit_interpreter(&qt);
+        });
+    }
+
     pub fn meeting_breakout_action(
         mut self: Pin<&mut Self>,
         thread: &QString,
@@ -9781,7 +10176,50 @@ impl qobject::Backend {
                 let tenant = client.tenant_id().unwrap_or_default();
                 // A chat meeting's own coordinates: message "0".
                 let main = api::breakout_rooms::Coords::new(&tenant, &organizer, &thread, "0")?;
-                breakout_run_at(&action, &args, &main, "").await
+                let mut state = breakout_run_at(&action, &args, &main, "").await?;
+                // Teams' card menu ▸ Room options: the room's own Meeting
+                // options page (meetingOptionsUrl, the thread's ":" as "_").
+                let language = app_locale().to_lowercase();
+                if let Some(rooms) = state["rooms"].as_array_mut() {
+                    for r in rooms {
+                        let room_thread = r["thread"].as_str().unwrap_or_default().replace(':', "_");
+                        r["options_url"] = json!(format!(
+                            "https://teams.microsoft.com/meetingOptions?language={language}&tenantId={tenant}&organizerId={organizer}&threadId={room_thread}&messageId=0"
+                        ));
+                    }
+                }
+                // Who Assign participants places before the meeting (and
+                // whose pictures sit beside it): the meeting chat's members
+                // but the organizer, as Teams' tab lists them (its
+                // unassignableMRIsRegex leaves guests and others out); their
+                // meeting roles from the meeting's options (presenters can
+                // manage rooms).
+                let organizer_mri = format!("8:orgid:{organizer}").to_ascii_lowercase();
+                let members = api::chat_members(&client, &thread).await.unwrap_or_default();
+                let invitees = api::meeting_options::get(&client, &main.tenant, &main.organizer, &main.thread, &main.message)
+                    .await
+                    .map(|o| o.invitees)
+                    .unwrap_or_default();
+                state["people"] = json!(members
+                    .iter()
+                    .filter(|m| m.mri.starts_with("8:orgid:") && m.mri.to_ascii_lowercase() != organizer_mri)
+                    .map(|m| {
+                        let role = invitees
+                            .iter()
+                            .find(|i| i["mri"].as_str().is_some_and(|x| x.eq_ignore_ascii_case(&m.mri)))
+                            .map(|i| i["meetingRole"].clone())
+                            .unwrap_or_default();
+                        json!({
+                            "id": m.mri,
+                            "name": m.name,
+                            "upn": m.mail,
+                            "objectId": m.mri.trim_start_matches("8:orgid:"),
+                            "tenantId": main.tenant,
+                            "role": role,
+                        })
+                    })
+                    .collect::<Vec<_>>());
+                anyhow::Ok(state)
             }
             .await;
             let _ = qt.queue(move |mut this| {
@@ -10685,6 +11123,8 @@ impl qobject::Backend {
         self.as_mut().set_call_copilot_only(false);
         self.as_mut().set_call_copilot_running(false);
         self.as_mut().set_call_ai_facilitator(false);
+        self.as_mut().set_call_interpreter_json(QString::default());
+        teams_cli::calling::ai_interpreter::set_listening(None);
         self.as_mut().set_call_ai_facilitator_voice(false);
         self.as_mut().set_call_ai_on(false);
         self.as_mut().show_processing(Default::default());
@@ -10703,6 +11143,7 @@ impl qobject::Backend {
     fn show_joined(mut self: Pin<&mut Self>, v: JoinedView, in_lobby: bool) {
         self.as_mut().set_call_invite_url(QString::from(v.invite.as_str()));
         self.as_mut().show_capability(v.capability, false);
+        runtime().spawn(interpreter_joined(self.qt_thread()));
         self.as_mut().rust_mut().timer_skew_ms = 0;
         self.as_mut().show_timers(v.timers, false);
         self.as_mut().show_processing(v.processing);
@@ -12118,7 +12559,7 @@ impl qobject::Backend {
                 // A meeting: the camera starts (or stops), then the
                 // meeting is told.
                 match either!(&mut call, c => c.set_camera(on, device)) {
-                    Ok(()) => match describe_media(slot.outgoing.as_ref()).await {
+                    Ok(()) => match describe_media(describe_of(slot)).await {
                         Ok(()) => Ok(Some(on)),
                         Err(e) => {
                             if on && let Some(mut call) = MediaCall::of(slot) {

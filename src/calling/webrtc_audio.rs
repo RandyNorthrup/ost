@@ -371,12 +371,19 @@ pub fn reanswer(ours: &str, offer: &str, version: u64, setup: &str) -> String {
         let peer_rejected = m_line.split_whitespace().nth(1) == Some("0");
         match kept.filter(|_| !peer_rejected) {
             Some((m, ob)) => {
-                let dir = match section_direction(&theirs) {
+                let mut dir = match section_direction(&theirs) {
                     "sendonly" => "recvonly",
                     "recvonly" => "sendonly",
                     "inactive" => "inactive",
                     _ => "sendrecv",
                 };
+                // A meeting's receive slots (SSRC range 1-1) only ever
+                // receive: a processor's re-offer names no directions, and
+                // answering them sendrecv makes their 1-1 ranges overlap
+                // (410 "x-ssrc-range must be unique/non-overlapping").
+                if dir != "inactive" && ob.lines().any(|l| l.trim_end() == "a=x-ssrc-range:1-1") {
+                    dir = "recvonly";
+                }
                 for l in ob.split_inclusive('\n') {
                     let t = l.trim_end();
                     if matches!(t, "a=sendrecv" | "a=sendonly" | "a=recvonly" | "a=inactive") {
@@ -3836,6 +3843,25 @@ m=x-data 59842 RTP/SAVP 127 126\r\na=mid:2\r\n";
         assert!(a.contains("a=setup:active") && !a.contains("actpass"));
         assert!(a.contains("m=x-data 0 RTP/SAVP 127\r\nc=IN IP4 0.0.0.0\r\na=mid:4\r\na=inactive"));
         assert!(a.contains("a=group:BUNDLE 0\r\n") && !a.contains("BUNDLE 0 4"));
+    }
+
+    #[test]
+    fn reanswers_keep_a_meetings_receive_slots_receive_only() {
+        // Invited into a meeting (TASK-0235): the mixer's mid-call re-offer
+        // names no directions; the camera stays sendrecv and the receive
+        // slots (range 1-1) stay recvonly, else their ranges overlap (410).
+        let ours = "v=0\r\no=- 5 2 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\na=group:BUNDLE 2 5\r\n\
+            m=video 4000 RTP/SAVP 107\r\na=setup:active\r\na=mid:2\r\na=sendrecv\r\na=x-ssrc-range:802367173-802367173\r\n\
+            m=video 4000 RTP/SAVP 107\r\na=setup:active\r\na=mid:5\r\na=recvonly\r\na=x-ssrc-range:1-1\r\n";
+        let reoffer = "v=0\r\no=- 9 1 IN IP4 127.0.0.1\r\na=group:BUNDLE 2 5\r\n\
+            m=video 3478 RTP/SAVP 107\r\na=mid:2\r\na=x-ssrc-range:67004-67103\r\n\
+            m=video 3478 RTP/SAVP 107\r\na=mid:5\r\na=x-ssrc-range:67104-67203\r\n";
+        let a = reanswer(ours, reoffer, 3, "active");
+        assert!(a.contains("a=mid:2\r\na=sendrecv"), "{a}");
+        assert!(a.contains("a=mid:5\r\na=recvonly"), "{a}");
+        // An inactive offer still turns a slot off.
+        let off = reanswer(ours, &reoffer.replace("a=mid:5\r\n", "a=mid:5\r\na=inactive\r\n"), 4, "active");
+        assert!(off.contains("a=mid:5\r\na=inactive"), "{off}");
     }
 
     #[test]

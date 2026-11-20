@@ -1021,6 +1021,37 @@ Window {
             if (!transcribing) { facilitatorAsk = true; copilotAsk.visible = true }
         } else if (name === "FacilitatorVoice") backend.meetingAction(backend.callAiFacilitatorVoice ? "facilitatorVoiceOff" : "facilitatorVoiceOn")
     }
+    // Interpreter (Teams' AiInterpretationButtonForAll in More ▸ Language
+    // and speech): shown when we may turn it on, or while it is on; with
+    // Teams' enableAiInterpretationTurnOnOpensSettingsDialog, Turn on opens
+    // the settings first. In a group: Turn off for me, Turn off for all
+    // (organizer), Interpreter settings.
+    readonly property var interpreter: backend.callInterpreterJson ? JSON.parse(backend.callInterpreterJson) : ({})
+    readonly property bool interpreterInGroup: !!interpreter.myGroup
+    readonly property bool interpreterShown: meeting && !e2ee && (!!interpreter.available || !!interpreter.on)
+    readonly property var interpreterItems: interpreterInGroup
+        ? [{ name: "InterpreterOffForMe", label: qsTr("Turn off for me") }]
+          .concat(organizer ? [{ name: "InterpreterOffForAll", label: qsTr("Turn off for all") }] : [])
+          .concat([{ name: "InterpreterSettings", label: qsTr("Interpreter settings"), icon: "settings-20" }])
+        : (organizer && interpreter.on ? [{ name: "InterpreterTurnOn", label: qsTr("Turn on for me") }, { name: "InterpreterOffForAll", label: qsTr("Turn off for all") }] : [])
+    function interpreterAction(name) {
+        if (name === "AiInterpretationButtonForAll" || name === "InterpreterTurnOn") interpreterDialog.show(true)
+        else if (name === "InterpreterSettings") interpreterDialog.show(false)
+        else if (name === "InterpreterOffForMe") backend.interpreterAction("offForMe", "{}")
+        else if (name === "InterpreterOffForAll") interpreterOffAsk.open()
+    }
+    AiInterpreterDialog {
+        id: interpreterDialog
+        state_: win.interpreter
+        onConfirmed: (language, voice, balance) => backend.interpreterAction(setup ? "turnOn" : "save", JSON.stringify({ language: language, voice: voice, balance: balance }))
+    }
+    ConfirmDialog {
+        id: interpreterOffAsk
+        title: qsTr("Turn off Interpreter for all?")
+        body: qsTr("This will turn off Interpreter for everyone.")
+        confirmText: qsTr("Turn off")
+        onConfirmed: backend.interpreterAction("offForAll", "{}")
+    }
     TextMetrics { id: resumeMetrics; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; text: qsTr("Resume") }
     // Each control's slot (button 48 + 4 either side; split buttons 74).
     TextMetrics { id: joinRoomMetrics; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; text: qsTr("Join room") }
@@ -1203,6 +1234,12 @@ Window {
             ? { label: qsTr("Stop transcription"), icon: "call-transcript-stop-20" }
             : { label: qsTr("Start transcription"), icon: "call-transcript-20" }
         if (n === "LanguageSpeechMenuControl") return { label: qsTr("Language and speech"), icon: "local-language-20" }
+        if (n === "AiInterpretationButtonForAll") {
+            if (!interpreterShown) return null
+            const row = { label: qsTr("Interpreter"), icon: "sound-wave-circle-sparkle-20", endCheck: interpreterInGroup }
+            if (interpreterItems.length > 0) row.submenu = interpreterItems
+            return row
+        }
         if (n === "SettingsMenuControl") return { label: qsTr("Settings"), icon: "settings-20" }
         if (n === "AccessibilitySettingsButton") return { label: qsTr("Accessibility settings"), icon: "accessibility-20" }
         // Teams toggles the pane (toggle_call_health_on/off).
@@ -1613,6 +1650,7 @@ Window {
     }
     function recordControl(name) {
         if (name === "FacilitatorToggle" || name === "FacilitatorVoice") facilitatorAction(name)
+        else if (name === "AiInterpretationButtonForAll") interpreterAction(name)
         else if (name === "PstnButton") openPhoneAudio()
         else if (name === "ClosedCaptionsButton") setCaptions(!captionsOn)
         else if (name === "RealTimeTextButton") { if (!rttOn) rttAsk.open() }
@@ -4401,6 +4439,7 @@ Window {
             win.runControl(it.name)
         }
         onSubPicked: (i, j) => win.recordControl(win.barMoreItems[i].submenu[j].name)
+        onSubSubPicked: (i, j, k) => win.interpreterAction(win.barMoreItems[i].submenu[j].submenu[k].name)
     }
 
     // ── Teams' New meeting controls: More's grid and list, the arrange
@@ -4418,6 +4457,8 @@ Window {
                                                  icon: "transcript-panel-20", checked: side === "transcript" }]
         }
         else if (name === "MeetingFacilitatorTimerButton") e = timerCanView ? { label: qsTr("Timer"), icon: "nmc-timer", checked: timerVisible } : null
+        // Interpreter (Teams' More grid, measured on winpc 2026-11-20).
+        else if (name === "AiInterpretationButtonForAll") e = interpreterShown ? { label: qsTr("Interpreter"), icon: "sound-wave-circle-sparkle-20", checked: interpreterInGroup } : null
         else if (name === "MeetingDetailsButton") e = { label: qsTr("Notes"), icon: "nmc-notes", checked: side === "notes" }
         else if (name === "ClosedCaptionsButton") e = { label: qsTr("Captions"), icon: "nmc-captions", checked: captionsOn }
         else if (name === "StartBreakoutRoomButton") e = { label: qsTr("Rooms"), icon: "nmc-rooms", checked: side === "rooms" }

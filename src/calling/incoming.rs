@@ -941,6 +941,13 @@ pub struct ActiveCall {
     /// Content-sharing sessions others present that we joined (PowerPoint
     /// Live, Whiteboard: their state updates come to us), by correlation id.
     joined_content: std::collections::HashMap<String, super::content_sharing::Session>,
+    /// A meeting we were invited into: where the meeting is told what our
+    /// camera and sharing lines do (the acceptance's
+    /// `updateMediaDescriptions`), and the requests' count.
+    media_descriptions: Option<(String, std::sync::atomic::AtomicU64)>,
+    /// What the last description said of sharing, and the shares so far.
+    described_sharing: std::sync::atomic::AtomicBool,
+    shares: std::sync::atomic::AtomicU64,
 }
 
 impl Drop for ActiveCall {
@@ -1217,6 +1224,37 @@ impl ActiveCall {
     /// Whether we can change our media with re-offers (camera, screen).
     pub fn can_reoffer(&self) -> bool {
         self.me.is_some() && self.renegotiation_link.is_some() && self.webrtc.is_some()
+    }
+
+    /// Whether this call's camera and screen go on and off by media
+    /// descriptions (a meeting we were invited into), not re-offers.
+    pub fn describes_media(&self) -> bool {
+        self.media_descriptions.is_some() && self.webrtc.is_some()
+    }
+
+    /// In a meeting we were invited into: what to tell it about our
+    /// camera and sharing lines (where, and Teams' UpdateMediaDescriptions
+    /// body), as Teams' answer to the meeting's offer describes them and
+    /// its later changes do (the roster then shows our camera sending, so
+    /// the others' clients ask the processor for it). Post it with
+    /// [`post_media_descriptions`].
+    pub fn media_descriptions_request(&self) -> Option<(String, serde_json::Value)> {
+        use std::sync::atomic::Ordering::Relaxed;
+        let (Some((link, seq)), Some(w)) = (&self.media_descriptions, &self.webrtc) else {
+            return None;
+        };
+        let (camera, sharing) = (w.camera_on(), w.is_sharing());
+        let request_id = seq.fetch_add(1, Relaxed) + 1;
+        let was_sharing = self.described_sharing.swap(sharing, Relaxed);
+        let tag = sharing.then(|| {
+            let n = if was_sharing { self.shares.load(Relaxed) } else { self.shares.fetch_add(1, Relaxed) + 1 };
+            format!("{};ss_{n}", self.call_id().unwrap_or_default())
+        });
+        use super::meeting_media::{CAMERA_MID, SHARE_MID};
+        let mids = (w.wire_mid(CAMERA_MID), w.wire_mid(SHARE_MID));
+        tracing::info!(camera, sharing, request_id, "describing our media to the meeting");
+        let body = super::outgoing::media_descriptions_body(camera, tag.as_deref(), request_id, (&mids.0, &mids.1));
+        Some((link.clone(), body))
     }
 
     /// Offer a change to what we send (camera or screen on or off); the
@@ -1638,6 +1676,9 @@ pub async fn answer(
         renegotiation_link: leg.renegotiation,
         remote_legs: std::collections::HashMap::new(),
         joined_content: std::collections::HashMap::new(),
+        media_descriptions: None,
+        described_sharing: Default::default(),
+        shares: Default::default(),
     })
 }
 
@@ -1713,6 +1754,9 @@ async fn answer_webrtc(
         renegotiation_link: leg.renegotiation,
         remote_legs: std::collections::HashMap::new(),
         joined_content: std::collections::HashMap::new(),
+        media_descriptions: None,
+        described_sharing: Default::default(),
+        shares: Default::default(),
     })
 }
 
@@ -1800,7 +1844,17 @@ async fn answer_meeting_offer(
         renegotiation_link: leg.renegotiation,
         remote_legs: std::collections::HashMap::new(),
         joined_content: std::collections::HashMap::new(),
+        media_descriptions: leg.media_descriptions.map(|l| (l, Default::default())),
+        described_sharing: Default::default(),
+        shares: Default::default(),
     })
+}
+
+/// Post a meeting's media descriptions
+/// ([`ActiveCall::media_descriptions_request`]).
+pub async fn post_media_descriptions(auth: &CallAuth, link: &str, body: &serde_json::Value) -> Result<()> {
+    cc_request(&auth.http, &auth.skype_token, reqwest::Method::POST, link, body, "Media descriptions").await?;
+    Ok(())
 }
 
 /// Accept the call and, for forked calls, keep the accepted leg alive.
@@ -1995,6 +2049,7 @@ async fn accept_v2(
         hold: str_at(ack, "/links/hold"),
         transfer: str_at(ack, "/links/transfer"),
         renegotiation: str_at(ack, "/links/mediaRenegotiation").filter(|l| is_service_link(l)),
+        media_descriptions: str_at(ack, "/links/updateMediaDescriptions").filter(|l| is_service_link(l)),
         keep_alive_secs: ack.get("callKeepAliveInterval").and_then(|v| v.as_u64()),
     })
 }
@@ -2009,6 +2064,9 @@ struct CallLeg {
     transfer: Option<String>,
     /// Where our re-offers go (`links.mediaRenegotiation`).
     renegotiation: Option<String>,
+    /// Where a meeting is told what our lines do
+    /// (`links.updateMediaDescriptions`).
+    media_descriptions: Option<String>,
     keep_alive_secs: Option<u64>,
 }
 

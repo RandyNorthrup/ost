@@ -158,6 +158,8 @@ fn main() {
         "qml/MeetingNotesPane.qml",
         "qml/PhoneAudioDialog.qml",
         "qml/ExistingPageDialog.qml",
+        "qml/AiInterpreterDialog.qml",
+        "qml/BreakoutSettingsDialog.qml",
         "qml/BreakoutTab.qml",
         "qml/TabWindow.qml",
         "qml/AppWindow.qml",

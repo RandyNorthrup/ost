@@ -100,9 +100,10 @@ pub fn set_capable(on: bool) {
 
 /// Whether a meeting joined now asks for each speaker's own audio
 /// (x-much2), as Teams does while spatial audio is on and the speaker can
-/// play it (its MUCHv2 codec selection).
+/// play it (its MUCHv2 codec selection), or while Interpreter balances the
+/// interpretation against the meeting (enableLiveInterpretation).
 pub fn wants_unmixed() -> bool {
-    enabled() && CAPABLE.load(std::sync::atomic::Ordering::Relaxed)
+    enabled() && CAPABLE.load(std::sync::atomic::Ordering::Relaxed) || super::ai_interpreter::listening()
 }
 
 /// Where a packet with these contributing sources is heard: the mean of
