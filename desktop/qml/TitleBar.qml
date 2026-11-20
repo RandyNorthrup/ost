@@ -240,6 +240,10 @@ Rectangle {
     // glyph (16) 8.67 in, "60 days left" / "Get Premium" (14 semibold) 6
     // after it, then ··· (20) 6 after that, 8.67 from the right edge, which
     // stays where the plain button's is.
+    // The label is Teams' more_options_menu_premium_trial_days ("{{days}}
+    // days left"), which has no singular: Teams fills it with {days}, not an
+    // i18next count, so its last day reads "1 days left" too (async-entry's
+    // dnt(), Teams 26304).
     Rectangle {
         id: premiumPill
         visible: root.premiumMode === "trial" || root.premiumMode === "canceled"

@@ -11,7 +11,7 @@
 "%1 and"		AppDetailsDialog.qml:576	
 "%1 by %2"		FindPane.qml:762	
 "%1 bytes"		CloudPicker.qml:966 DetailsPane.qml:629 FileActions.qml:1851	
-"%1 didn't open: %2"		backend.rs:22862	
+"%1 didn't open: %2"		backend.rs:22880	
 "%1 in the channel %2"		CalendarView.qml:1604	
 "%1 invited you."		CalendarView.qml:1604	
 "%1 is presenting"		CallWindow.qml:2944 CallWindow.qml:3027	
@@ -82,8 +82,8 @@
 "Add to Dictionary"		EditorCard.qml:60	
 "Add to Loop workspace"		MeetingNotesPane.qml:95	
 "Added %1 as a shortcut to %2."		FileActions.qml:260	
-"Added a shortcut in your OneDrive"		backend.rs:20449	
-"Adding people…"		backend.rs:15554	
+"Added a shortcut in your OneDrive"		backend.rs:20467	
+"Adding people…"		backend.rs:15572	
 "All events in the series"		CalendarView.qml:2121 MeetingForm.qml:433	
 "All files"		FileActions.qml:1348	
 "All hands"		EventsView.qml:103	
@@ -132,13 +132,13 @@
 "CSV files (*.csv)"		BreakoutCsvDialog.qml:133	
 "Calendar settings"		CalendarView.qml:1999	
 "Call %1"		CallsView.qml:355	
-"Calling %1…"		CallWindow.qml:5058	
-"Calls are available in 1:1 chats"		backend.rs:8655	
-"Calls merged"		backend.rs:12722	
+"Calling %1…"		CallWindow.qml:5061	
+"Calls are available in 1:1 chats"		backend.rs:8659	
+"Calls merged"		backend.rs:12729	
 "Camera settings"		CameraSettingsDialog.qml:37	
 "Cameras"		ContentCameraDialog.qml:450	
 "Cancel this meeting for everyone?"		CalendarView.qml:1721	
-"Cancelling…"		backend.rs:21500	
+"Cancelling…"		backend.rs:21518	
 "Capture screenshot"		FeedbackWindow.qml:153	
 "Car"		CalendarView.qml:262	
 "Catalan (Spain)"		SettingsView.qml:2782	
@@ -178,8 +178,8 @@
 "Confirm trim"		VideoClipRecorder.qml:1067	
 "Connect your account"		ProfileCard.qml:472	
 "Connected without audio"		CallWindow.qml:3059	
-"Consult: %1"		backend.rs:12590	
-"Consult: not someone you can call"		backend.rs:12545	
+"Consult: %1"		backend.rs:12597	
+"Consult: not someone you can call"		backend.rs:12552	
 "Copied %1 item"		FileActions.qml:284 FileActions.qml:285	
 "Copied %1 items"		FileActions.qml:284 FileActions.qml:285	
 "Copilot and other AI"		MeetingOptionsDialog.qml:172	
@@ -198,21 +198,21 @@
 "Couldn't cancel your registration."		EventsView.qml:609	
 "Couldn't change it."		EventsView.qml:3565	
 "Couldn't download %1. Try again."		FileActions.qml:270	
-"Couldn't join the meeting"		backend.rs:10261	
-"Couldn't join the meeting: %1"		backend.rs:10334 backend.rs:11808	
+"Couldn't join the meeting"		backend.rs:10265	
+"Couldn't join the meeting: %1"		backend.rs:10338 backend.rs:11815	
 "Couldn't load events."		EventsView.qml:853	
 "Couldn't load the meeting options."		EventsView.qml:253	
 "Couldn't load this profile."		ProfileCard.qml:493	
 "Couldn't open the event."		EventsView.qml:223 EventsView.qml:231	
-"Couldn't post your review"		backend.rs:18911	
+"Couldn't post your review"		backend.rs:18929	
 "Couldn't publish the event."		EventsView.qml:3447	
-"Couldn't report the review"		backend.rs:18876	
+"Couldn't report the review"		backend.rs:18894	
 "Couldn't save your setting. Try again."		SettingsView.qml:3313	
-"Couldn't send the sticker: %1"		backend.rs:23154	
+"Couldn't send the sticker: %1"		backend.rs:23172	
 "Couldn't share to Outlook."		ShareToOutlookDialog.qml:35	
-"Couldn't start the call: %1"		backend.rs:9031	
+"Couldn't start the call: %1"		backend.rs:9035	
 "Couldn't update the link settings. Please try again."		CloudAttach.qml:66	
-"Couldn't upload the picture: %1"		backend.rs:16281	
+"Couldn't upload the picture: %1"		backend.rs:16299	
 "Create a folder"		ChannelFiles.qml:194 CloudPicker.qml:772 OneDriveView.qml:1066	
 "Create a new event."		CalendarView.qml:1011	
 "Create a plan"		PlannerView.qml:82 PlannerView.qml:87 PlannerView.qml:365	
@@ -247,8 +247,8 @@
 "Deleted %1"		OneDriveView.qml:574	
 "Deleted by"		OneDriveView.qml:533	
 "Desk"		CalendarView.qml:250	
-"Dial %1"		CallWindow.qml:4970	
-"Dial pad: %1"		backend.rs:12772	
+"Dial %1"		CallWindow.qml:4973	
+"Dial pad: %1"		backend.rs:12779	
 "Direct Access"		OneDriveShare.qml:933 OneDriveShare.qml:933 OneDriveShare.qml:939	
 "Direct Access grants access permissions without the use of a link"		OneDriveShare.qml:945	
 "Display details about the meeting like title and start time, number of others joined, and presence of the organizer."		MeetingOptionsDialog.qml:144	
@@ -257,8 +257,8 @@
 "Do you want to delete this comment?"		DetailsPane.qml:580	
 "Domains"		ChannelEmailDialog.qml:147	
 "Download this file to your device"		FilePreview.qml:127	
-"Downloaded %1"		backend.rs:22637	
-"Downloading %1…"		backend.rs:9476	
+"Downloaded %1"		backend.rs:22655	
+"Downloading %1…"		backend.rs:9480	
 "Draft to %1"		DraftsView.qml:116	
 "Drag and drop files here or paste an image from your clipboard"		FeedbackWindow.qml:134	
 "During and after the meeting"		MeetingOptionsDialog.qml:135	
@@ -271,7 +271,7 @@
 "Email address"		ChannelEmailDialog.qml:116	
 "Email organizer"		CalendarView.qml:1648 CalendarView.qml:1651	
 "Enable Green room"		MeetingOptionsDialog.qml:156	
-"End consult"		CallWindow.qml:5068	
+"End consult"		CallWindow.qml:5071	
 "End trim handle"		VideoClipRecorder.qml:997	
 "Energetic"		VideoClipRecorder.qml:1101	
 "Enter a description"		FileActions.qml:619	
@@ -337,7 +337,7 @@
 "Here's the link people can use to upload files"		FileActions.qml:642	
 "Hide navigation"		CalendarView.qml:914	
 "High Tech"		VideoClipRecorder.qml:1103	
-"Hold: %1"		backend.rs:12128	
+"Hold: %1"		backend.rs:12135	
 "How do I modify this link?"		OneDriveShare.qml:918	
 "I'm an attendee"		CalendarView.qml:240	
 "I'm the organizer"		CalendarView.qml:239	
@@ -424,7 +424,7 @@
 "New community event"		EventsView.qml:106	
 "New event | Calendar"		CalendarView.qml:2599 CalendarView.qml:2618	
 "New folder name"		FileActions.qml:1443	
-"New group chat"		backend.rs:17819	
+"New group chat"		backend.rs:17837	
 "New training"		EventsView.qml:104	
 "Next decade"		DatePickerField.qml:144	
 "Next profile"		ProfileCard.qml:376	
@@ -470,7 +470,7 @@
 "Only the people you specified can view."		OneDriveShare.qml:126	
 "Open File"		FileActions.qml:501 FileActions.qml:502	
 "Open Q&A sessions with moderated audience questions"		EventsView.qml:105	
-"Open chat with %1"		CallWindow.qml:5028	
+"Open chat with %1"		CallWindow.qml:5031	
 "Open component in"		MeetingNotesPane.qml:134	
 "Open containing folder"		DownloadsFlyout.qml:171	
 "Open downloads folder"		DownloadsFlyout.qml:99	
@@ -494,7 +494,7 @@
 "Package delivery"		CalendarView.qml:264	
 "Page text"		OneNoteView.qml:240	
 "Page title"		OneNoteView.qml:225 OneNoteView.qml:226	
-"Parked call"		backend.rs:8672	
+"Parked call"		backend.rs:8676	
 "Password field"		OneDriveShare.qml:631	
 "Path"		DetailsPane.qml:525	
 "Pause Video Recording"		VideoClipRecorder.qml:539	
@@ -583,10 +583,10 @@
 "Save as .ics"		CalendarView.qml:1903	
 "Save current view"		CalendarView.qml:280 CalendarView.qml:2390	
 "Save page"		OneNoteView.qml:253	
-"Saved %1 to %2"		backend.rs:9153 backend.rs:9487	
+"Saved %1 to %2"		backend.rs:9157 backend.rs:9491	
 "Saved views"		CalendarView.qml:289	
 "Schedule 1 hour of focus time"		CalendarView.qml:893	
-"Scheduled %1"		backend.rs:21684	
+"Scheduled %1"		backend.rs:21702	
 "Screen recording"		VideoClipRecorder.qml:378	
 "Script"		VideoClipRecorder.qml:637	
 "Scroll speed"		VideoClipRecorder.qml:861	
@@ -613,9 +613,9 @@
 "Send file request"		FileActions.qml:595	
 "Send file request email failed."		FileActions.qml:574	
 "Send reply"		ChannelPosts.qml:612	
-"Sending update…"		backend.rs:21499	
-"Sending your proposal…"		backend.rs:21501	
-"Sending your response…"		backend.rs:21497	
+"Sending update…"		backend.rs:21517	
+"Sending your proposal…"		backend.rs:21519	
+"Sending your response…"		backend.rs:21515	
 "Set expiration date"		OneDriveShare.qml:605	
 "Set expiration date (MM/DD/YYYY)"		OneDriveShare.qml:591	
 "Set password"		OneDriveShare.qml:629	
@@ -660,13 +660,13 @@
 "Split Clip"		VideoClipRecorder.qml:1039	
 "Split view"		CalendarView.qml:286	
 "Sprint"		CalendarView.qml:266	
-"Start a call with %1"		CallWindow.qml:5038	
+"Start a call with %1"		CallWindow.qml:5041	
 "Start an instant Teams meeting."		CalendarView.qml:988	
 "Start screen recording"		VideoClipRecorder.qml:499 VideoClipRecorder.qml:505	
 "Start trim handle"		VideoClipRecorder.qml:997	
 "Start typing"		OneNoteView.qml:239	
 "Stop and review"		VideoClipRecorder.qml:532	
-"Stop consulting and resume"		CallWindow.qml:5120	
+"Stop consulting and resume"		CallWindow.qml:5123	
 "Submit comment"		DetailsPane.qml:290 DetailsPane.qml:357 DetailsPane.qml:472	
 "Submit feedback to OST"		FeedbackWindow.qml:76	
 "Switch view options"		FileActions.qml:1328 OneDriveView.qml:856	
@@ -688,7 +688,7 @@
 "The version wasn't restored"		FileActions.qml:413	
 "They may still have access to this item through a group or link."		OneDriveShare.qml:978	
 "This allows everyone to be understood in their spoken languages. This also affects recording, transcription, captions, and Copilot."		MeetingOptionsDialog.qml:170	
-"This app isn't available in OST yet."		Main.qml:12298	
+"This app isn't available in OST yet."		Main.qml:12306	
 "This camera has no settings to change."		CameraSettingsDialog.qml:64	
 "This event"		CalendarView.qml:2121 MeetingForm.qml:433	
 "This file can't be opened"		FileViewer.qml:40	
@@ -712,7 +712,7 @@
 "Toggle noise suppression on and off"		VideoClipCard.qml:504	
 "Training"		EventsView.qml:104	
 "Transcribe only"		MeetingOptionsDialog.qml:131	
-"Transfer to %1"		CallWindow.qml:5038 CallWindow.qml:5112	
+"Transfer to %1"		CallWindow.qml:5041 CallWindow.qml:5115	
 "Travel"		EmojiPicker.qml:46	
 "Trim"		VideoClipRecorder.qml:1035	
 "Trophy"		CalendarView.qml:260	
@@ -775,7 +775,7 @@
 "You, %1 and %2"		SearchView.qml:926	
 "Your Teams"		FileActions.qml:1480	
 "Your calls will show up here."		CallsView.qml:365	
-"Your current status message: %1"		TitleBar.qml:841	
+"Your current status message: %1"		TitleBar.qml:845	
 "Your favorite files will show up here"		OneDriveView.qml:827	
 "Your feedback opens as a public issue on GitHub (%1)."		SmartReplyFeedback.qml:143	
 "Your file request was created!"		FileActions.qml:784	
@@ -798,4 +798,4 @@
 "yesterday"		SearchView.qml:1143	
 "your organization"		OneDriveShare.qml:125 ShareFileDialog.qml:135	
 "…"		i18n.rs:4	
-"…"	<ns>:<key>	i18n.rs:76	
+"…"	<ns>:<key>	i18n.rs:79	

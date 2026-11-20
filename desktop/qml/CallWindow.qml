@@ -5270,7 +5270,11 @@ Window {
             onClicked: win.runControl("RosterButton")
         }
     }
-    Component { id: cRaise; BarButton { icon: "call-raise"; label: qsTr("Raise", "calling:k9th2ytq2"); checked: win.handRaised; tip: win.handRaised ? qsTr("Lower your hand") : qsTr("Raise your hand"); shortcut: "Ctrl+Shift+K"; enabled: win.controlEnabled("RaiseHandsButton"); onClicked: win.runControl("RaiseHandsButton") } }
+    // Teams' raise-hand button (unified-bar-container-manager's Y2): its
+    // label is always calling_raise_hand_icon_label ("Raise"), shown active
+    // while your hand is up; only its tooltip (and aria label) says Lower.
+    // Full screen is the same: one "Full screen" label, toggled.
+    Component { id: cRaise;BarButton { icon: "call-raise"; label: qsTr("Raise", "calling:k9th2ytq2"); checked: win.handRaised; tip: win.handRaised ? qsTr("Lower your hand") : qsTr("Raise your hand"); shortcut: "Ctrl+Shift+K"; enabled: win.controlEnabled("RaiseHandsButton"); onClicked: win.runControl("RaiseHandsButton") } }
     // The new controls: React holds Raise hand too; its glyph is the
     // emoji-hand, filled in brand while your hand is up.
     Component { id: cReact; BarButton { icon: !win.newControls ? "call-react" : win.handRaised ? "nmc-react-filled" : "nmc-react"; label: qsTr("React"); checked: reactMenu.visible

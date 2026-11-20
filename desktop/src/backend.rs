@@ -688,6 +688,10 @@ pub mod qobject {
         /// The repo feedback goes to ("owner/name").
         #[qinvokable]
         fn feedback_repo(self: &Backend) -> QString;
+        /// OST's English for a text shown in the app language (feedback
+        /// context: reports to GitHub stay English).
+        #[qinvokable]
+        fn english_text(self: &Backend, text: &QString) -> QString;
         /// Teams' suggested-reply feedback categories for these kinds of
         /// suggestions (a JSON list of kinds in, of labels out).
         #[qinvokable]
@@ -11086,10 +11090,13 @@ impl qobject::Backend {
             sharing: self.rust().call_sharing,
             watching_share: !self.rust().call_share_mri.is_empty(),
         };
-        let report = health_sampler()
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .report(&teams_cli::calling::call_health::current(), &state);
+        // In English: the values go into the report sent to GitHub.
+        let report = teams_cli::i18n::in_english(|| {
+            health_sampler()
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .report(&teams_cli::calling::call_health::current(), &state)
+        });
         let json = serde_json::json!({ "values": report.values }).to_string();
         if self.rust().call_health_json.to_string() != json {
             self.as_mut().set_call_health_json(QString::from(json.as_str()));
@@ -14413,7 +14420,11 @@ impl qobject::Backend {
     }
 
     pub fn feedback_issue_url(self: Pin<&mut Self>, report_json: &QString) -> QString {
-        let report: teams_cli::feedback::Report = serde_json::from_str(&report_json.to_string()).unwrap_or_default();
+        let mut report: teams_cli::feedback::Report = serde_json::from_str(&report_json.to_string()).unwrap_or_default();
+        // The report goes to GitHub in English, whatever the app language:
+        // where it was sent from, as OST's English.
+        report.area = teams_cli::i18n::english(&report.area);
+        report.context = teams_cli::i18n::english(&report.context);
         let logs = if report.share_logs {
             std::fs::read_to_string(crate::log_path())
                 .map(|l| teams_cli::feedback::masked_tail(&l, 400))
@@ -14439,6 +14450,10 @@ impl qobject::Backend {
             unsafe { ost_set_clipboard_image(p.as_ptr()) };
         }
         QString::from(url.as_str())
+    }
+
+    pub fn english_text(&self, text: &QString) -> QString {
+        QString::from(teams_cli::i18n::english(&text.to_string()).as_str())
     }
 
     pub fn feedback_repo(&self) -> QString {
@@ -14512,10 +14527,13 @@ impl qobject::Backend {
             sharing: true,
             watching_share: true,
         };
-        let report = health_sampler()
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .report(&teams_cli::calling::call_health::current(), &state);
+        // In English: the values go into the report sent to GitHub.
+        let report = teams_cli::i18n::in_english(|| {
+            health_sampler()
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .report(&teams_cli::calling::call_health::current(), &state)
+        });
         let mut metrics: Vec<(String, String)> = report.values.into_iter().map(|(k, v)| (k, v.value)).collect();
         metrics.sort();
         self.as_mut().rust_mut().cqf_metrics = metrics;

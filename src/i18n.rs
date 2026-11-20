@@ -28,6 +28,8 @@ struct Catalogue {
     /// The digits a count is written in (Teams formats `#` in its
     /// language's own numbering system: Arabic-Indic for ar, Persian for fa).
     zero: char,
+    /// A translated text back to OST's English (for reports to GitHub).
+    english: HashMap<String, String>,
 }
 
 static CATALOGUE: RwLock<Option<Arc<Catalogue>>> = RwLock::new(None);
@@ -67,6 +69,7 @@ fn new(ids: &str, catalogue: Option<&str>, locale: &str) -> anyhow::Result<Self>
     let rows_in: Vec<Vec<Value>> = serde_json::from_str(ids)?;
     let mut index = HashMap::with_capacity(rows_in.len() * 2);
     let mut rows = Vec::with_capacity(rows_in.len());
+    let mut english = HashMap::new();
     for (i, r) in rows_in.iter().enumerate() {
         let s = |k: usize| r.get(k).and_then(Value::as_str).unwrap_or_default();
         let (source, dis, id) = (s(0), s(1), s(2));
@@ -75,6 +78,11 @@ fn new(ids: &str, catalogue: Option<&str>, locale: &str) -> anyhow::Result<Self>
         index.insert(key(source, dis), i);
         // the id names the string too: tr_id("…", "<ns>:<key>")
         index.insert(key(source, id), i);
+        if let Some(Value::String(t)) = strings.get(id)
+            && !source.contains('%')
+        {
+            english.entry(t.clone()).or_insert_with(|| source.to_string());
+        }
     }
     let base = locale.split('-').next().unwrap_or_default();
     let lang = if locale == "pt-br" { "pt-br".to_string() } else { base.to_string() };
@@ -83,7 +91,7 @@ fn new(ids: &str, catalogue: Option<&str>, locale: &str) -> anyhow::Result<Self>
         "fa" => '\u{6f0}',
         _ => '0',
     };
-    Ok(Catalogue { index, rows, lang, zero })
+    Ok(Catalogue { index, rows, lang, zero, english })
 }
 
 fn lookup(&self, source: &str, dis: &str, n: Option<i64>) -> Option<String> {
@@ -107,7 +115,40 @@ fn lookup(&self, source: &str, dis: &str, n: Option<i64>) -> Option<String> {
 }
 }
 
+thread_local! {
+    static ENGLISH: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// OST's English (en-us, plural forms included) for what `f` builds on
+/// this thread: reports to GitHub stay English whatever the app language,
+/// so maintainers can read them.
+pub fn in_english<R>(f: impl FnOnce() -> R) -> R {
+    struct Reset(bool);
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            ENGLISH.with(|e| e.set(self.0));
+        }
+    }
+    let _reset = Reset(ENGLISH.with(|e| e.replace(true)));
+    f()
+}
+
+fn english_catalogue() -> Option<Arc<Catalogue>> {
+    static EN: std::sync::OnceLock<Option<Arc<Catalogue>>> = std::sync::OnceLock::new();
+    EN.get_or_init(|| Catalogue::new(IDS, None, "en-us").ok().map(Arc::new)).clone()
+}
+
+/// OST's English for a whole text shown in the app language (a window
+/// title, a label), for reports; the text itself when it isn't one of
+/// OST's translated strings.
+pub fn english(text: &str) -> String {
+    current().and_then(|c| c.english.get(text).cloned()).unwrap_or_else(|| text.to_string())
+}
+
 fn current() -> Option<Arc<Catalogue>> {
+    if ENGLISH.with(|e| e.get()) {
+        return english_catalogue();
+    }
     let installed = CATALOGUE.read().unwrap().clone();
     match installed {
         Some(c) => Some(c),
@@ -369,6 +410,16 @@ mod tests {
         assert_eq!(t(&ar, "%n others", "", Some(5)).unwrap(), "٥ آخرين");
         assert_eq!(number_in(2026, ar.zero), "٢٠٢٦");
         assert!(Catalogue::new(TEST_IDS, Some(r#"{"strings":{}}"#), "de-de").is_err());
+    }
+
+    #[test]
+    fn reports_in_english() {
+        let cat = r#"{"strings":{"calling:ka":"Anruf beendet"}}"#;
+        let de = Catalogue::new(TEST_IDS, Some(cat), "de-de").unwrap();
+        assert_eq!(de.english.get("Anruf beendet").map(String::as_str), Some("Call ended"));
+        // in_english: OST's English on this thread, whatever is installed
+        assert_eq!(in_english(|| tr_id_n("%n others", "messaging:k7xsi91tl_mf", 1)), "1 other");
+        assert_eq!(english("not translated"), "not translated");
     }
 
     #[test]

@@ -160,7 +160,7 @@ Rectangle {
     function isMe(mri) { return (mri || "").toLowerCase() === (backend.userMri || "").toLowerCase() }
     function presenceOf(mri) { const m = members.find(m => (m.mri || "").toLowerCase() === (mri || "").toLowerCase()); return m ? m.presence || "" : "" }
     function feedback(kind) {
-        backend.requestFeedback(kind, "Search", "Search: “" + query + "” (" + tabNames[tab] + (hasFilters ? ", filtered" : "") + ")")
+        backend.requestFeedback(kind, "Search", "Search: “" + query + "” (" + backend.englishText(tabNames[tab]) + (hasFilters ? ", filtered" : "") + ")")
     }
     function openHit(h) {
         const ch = channelOf(h.thread)

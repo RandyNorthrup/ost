@@ -816,11 +816,11 @@ Rectangle {
         color: theme.pick("#FAFAFA", "#1A1A1A", "#000000")
         function context() {
             const bits = [pane.files ? "Files" : "Messages"]
-            if (pane.dateKey) bits.push(pane.dateLabel())
+            if (pane.dateKey) bits.push(backend.englishText(pane.dateLabel()))
             if (pane.person) bits.push("From " + pane.person.name)
             if (pane.attachment) bits.push("Attachment")
             if (pane.mentions) bits.push("Mentions")
-            if (pane.fileType) bits.push(pane.typeNames[pane.fileType])
+            if (pane.fileType) bits.push(backend.englishText(pane.typeNames[pane.fileType]))
             const n = pane.result ? pane.result.total : 0
             return "Find in " + pane.place + (pane.query ? ": \u201c" + pane.query + "\u201d" : "") + " (" + bits.join(", ") + "), " + n + (n === 1 ? " result" : " results")
         }
