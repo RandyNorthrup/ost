@@ -1,10 +1,10 @@
+<p align="center"><img src="docs/banner.png" alt="OST banner: the OST logo and a mouse whose body is a computer mouse, with a USB cable for a tail, sniffing a wedge of cheese" width="100%"></p>
+
 # OST client := Open Source Teams client
 
 A command-line client for Microsoft Teams written in Rust.
 
 *Ost* means cheese in Danish.
-
-![OST Logo](docs/logo_ost.jpg)
 
 ![TUI Screenshot](docs/tui-screenshot.svg)
 
