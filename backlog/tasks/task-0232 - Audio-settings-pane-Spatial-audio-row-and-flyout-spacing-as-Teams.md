@@ -1,10 +1,11 @@
 ---
 id: TASK-0232
 title: 'Audio settings pane: Spatial audio row and flyout spacing as Teams'
-status: To Do
-assignee: []
+status: Done
+assignee:
+  - '@claude'
 created_date: '2026-11-20T03:37:00Z'
-updated_date: '2026-11-20T05:28:00Z'
+updated_date: '2026-11-20T06:51:00Z'
 labels:
   - calls
 dependencies: []
@@ -18,8 +19,8 @@ Found in TASK-0231: Teams' in-call Audio settings pane also has the Spatial audi
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The Audio settings pane shows the Spatial audio row as Teams does and it switches spatial audio
-- [ ] #2 The Mic flyout's effects section spacing matches Teams' measurements
+- [x] #1 The Audio settings pane shows the Spatial audio row as Teams does and it switches spatial audio
+- [x] #2 The Mic flyout's effects section spacing matches Teams' measurements
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -31,3 +32,13 @@ Found in TASK-0231: Teams' in-call Audio settings pane also has the Spatial audi
 
 - Verified live (linuxlt, ost-test1 alone in Meet now "OST TEST 232 audio pane", --vi-audio-ui --vi-spatial-pane): the pane showed Spatial audio first in Advanced settings with its info button (row 36, Noise suppression right under it), usable (Built-in Audio Analog Stereo capable, not P2P); switched on from the pane at 15 s (spatial audio: renegotiating, Unmixed(true), taken) and off at 20 s (Unmixed(false)); the flyout then reported dividerGap 10. Left the call (202). 1:1 disabled state shares the flyout's oneToOne rule (verified in TASK-0231).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Spatial audio in the Audio settings pane and the Mic flyout's spacing as Teams.
+
+- The pane's Advanced settings start with Spatial audio (info button with Teams' tooltip, same switch layout as Noise suppression, disabled where the speaker can't play it or in a 1:1 call); it renegotiates the meeting audio at once (live in a Meet now).
+- The flyout's sections sit 10 px apart as in Teams (measured 10 live).
+- 806 lib + 29 desktop tests pass.
+<!-- SECTION:FINAL_SUMMARY:END -->

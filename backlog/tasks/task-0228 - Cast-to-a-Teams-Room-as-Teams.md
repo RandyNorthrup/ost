@@ -1,10 +1,11 @@
 ---
 id: TASK-0228
 title: Cast to a Teams Room as Teams
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-20T01:10:00Z'
-updated_date: '2026-11-20T06:42:00Z'
+updated_date: '2026-11-20T06:51:00Z'
 labels:
   - calls
 dependencies: []
@@ -18,7 +19,7 @@ OST's Cast window searches and reports no rooms (TASK-0166). Since TASK-0161 OST
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Cast finds the nearby Teams Room as Teams does
+- [x] #1 Cast finds the nearby Teams Room as Teams does
 - [ ] #2 Casting to the room shows the content on the room as Teams does, verified live with OST in room mode and against Teams
 <!-- AC:END -->
 
@@ -35,4 +36,6 @@ OST's Cast window searches and reports no rooms (TASK-0166). Since TASK-0161 OST
 
 - Final run (cast10, after the roster fix): "Cast and join" OST TEST 228 cast and join -> the room auto-accepted, learned the deck from its roster, joined the PowerPoint Live session (content sharing: joined) and showed it; ended with --cast-end, the room's call ended. Cleanup: the meeting deleted, the test deck removed from ost-test1's OneDrive, rooms stopped, btvirt pair taken down.
 - Open: (1) Teams side-by-side on winpc not done (winpc was in use); wizard card/check colours follow Teams' v0 dark theme structure, not measured; (2) screen/window content on Linux goes through the desktop's portal picker after Cast (KDE's can't be driven here, so live runs used PowerPoint Live); (3) the room stays in an emptied Meet now (its auto exit leaves only ad hoc meetings or after a valid end), as the Teams Rooms rule OST copies.
+
+Built so far: the Cast wizard (rooms with presence and nearby mark, meetings, content), Teams' cast flow (join with devices off, start sharing, invite the room with the nearby-room invite), and the room joining PowerPoint Live and Whiteboard sessions it hears of. Verified live with OST in room mode: Just cast and Cast and join both showed the deck on the room. Missing: side-by-side comparison with Teams on winpc (colours of the wizard not measured), casting a screen or window (the KDE picker on linuxlt can't be driven), and the room staying in an empty Meet now when the laptop leaves.
 <!-- SECTION:NOTES:END -->
