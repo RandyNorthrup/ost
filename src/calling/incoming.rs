@@ -952,6 +952,32 @@ impl Drop for ActiveCall {
 }
 
 impl ActiveCall {
+    /// Invited into a meeting: show these cameras (roster `main-video`
+    /// sourceIds, most wanted first); sourceId -> frame key for each that
+    /// got a receive slot. Empty for a 1:1 call.
+    pub fn show_videos(&self, sources: &[(i64, u32)]) -> std::collections::HashMap<i64, String> {
+        self.webrtc.as_ref().map(|w| w.show_videos(sources)).unwrap_or_default()
+    }
+
+    /// Invited into a meeting: receive this presenter's screen, or stop.
+    pub fn show_share(&self, source: Option<i64>) {
+        if let Some(w) = &self.webrtc {
+            w.show_share(source);
+        }
+    }
+
+    /// The processor asks for one of our streams (controlVideoStreaming).
+    pub fn control_video(&self, source_id: i64, fmt_params: &str) {
+        if let Some(w) = &self.webrtc {
+            w.control_video(source_id, fmt_params);
+        }
+    }
+
+    /// Our data source id in a meeting we were invited into.
+    pub fn data_source_id(&self) -> Option<u32> {
+        self.webrtc.as_ref().and_then(|w| w.data_source_id())
+    }
+
     /// Join a content-sharing session someone in the call presents (from
     /// the roster), to get its state updates, as a meeting join does:
     /// `POST sessionInformation.contentSharingController`. A Teams Rooms
@@ -1431,7 +1457,14 @@ pub async fn answer(
 
     // WebRTC callers (Teams web) secure media with DTLS-SRTP.
     if let Some(offer) = blob.as_deref().and_then(webrtc_audio::WebRtcOffer::parse) {
-        debug_dump("sdp-offer", blob.as_deref().unwrap_or_default());
+        let raw = blob.as_deref().unwrap_or_default();
+        debug_dump("sdp-offer", raw);
+        // Invited into a meeting (a Teams Rooms device a cast adds, someone
+        // added to a meeting): the meeting's media processor offers its
+        // meeting lines, which are answered as a meeting join's are.
+        if let Some(map) = webrtc_audio::MidMap::for_meeting_offer(raw) {
+            return answer_meeting_offer(http, skype_token, notification, me, raw, map, with_video, microphone_on).await;
+        }
         return answer_webrtc(
             http,
             skype_token,
@@ -1683,6 +1716,93 @@ async fn answer_webrtc(
     })
 }
 
+/// Answer a meeting's media processor inviting us into the meeting (its
+/// offer has the camera line, the receive slots, screen sharing and the
+/// data line, as it offers a meeting join on the processor's move): the
+/// same meeting answer a join makes, with the processor's mids, so the
+/// meeting's cameras and a presenter's screen reach us over the receive
+/// slots and the media control plane, as Teams answers such an invite.
+#[allow(clippy::too_many_arguments)]
+async fn answer_meeting_offer(
+    http: &reqwest::Client,
+    skype_token: &str,
+    notification: CallNotification,
+    me: Option<LocalParticipant>,
+    raw: &str,
+    map: webrtc_audio::MidMap,
+    with_video: bool,
+    microphone_on: bool,
+) -> Result<ActiveCall> {
+    let canonical = map.to_ours(raw);
+    let mut parsed = webrtc_audio::WebRtcOffer::parse(&canonical).context("Meeting offer without DTLS-SRTP")?;
+    let mut local = webrtc_audio::LocalAudio::prepare().await?;
+    local.meeting = true;
+    local.receive_video = true;
+    local.camera_on = cfg!(feature = "video") && with_video;
+    local.twcc_id = super::twcc::offered_extension_id(raw).unwrap_or(super::twcc::EXTENSION_ID);
+    let ours = local.answer_sdp_meeting(&canonical, &parsed);
+    let slot_pt = parsed.slots.first().and_then(|s| webrtc_audio::answered_pt(&ours, &s.mid));
+    let share_pt = parsed.share_slot.as_ref().and_then(|s| webrtc_audio::answered_pt(&ours, &s.mid));
+    if let (Some(a), Some(b)) = (slot_pt.or(share_pt), share_pt.or(slot_pt)) {
+        local.answered_pts = Some((a, b));
+    }
+    for s in parsed.slots.iter_mut().chain(parsed.share_slot.iter_mut()) {
+        if let Some(pt) = webrtc_audio::answered_pt(&ours, &s.mid) {
+            s.pt = pt;
+        }
+    }
+    tracing::info!(
+        slots = parsed.slots.len(),
+        data = ?parsed.data_stream,
+        share = parsed.share_slot.is_some(),
+        "answering the meeting's invitation as a meeting"
+    );
+    let sdp = map.to_wire(&ours);
+    debug_dump("sdp-answer", &sdp);
+    match &me {
+        Some(me) => send_meeting_media_answer(http, skype_token, &notification, me, &sdp, local.camera_on).await,
+        None => signaling::send_media_answer(http, skype_token, &notification, &sdp).await,
+    }
+    .context("Media answer failed")?;
+    let camera_on = local.camera_on;
+    let media = tokio::spawn(webrtc_audio::WebRtcAudioSession::start(local, parsed));
+    let (leg, keep_alive) =
+        accept_with_keep_alive(http, skype_token, &notification, me.as_ref(), camera_on, microphone_on).await?;
+    let webrtc = match media.await {
+        Ok(Ok(session)) => {
+            session.set_muted(!microphone_on);
+            session.set_local_sdp(&sdp);
+            session.set_mid_map(map);
+            Some(session)
+        }
+        Ok(Err(e)) => {
+            tracing::warn!("meeting media failed: {:#}", e);
+            None
+        }
+        Err(e) => {
+            tracing::warn!("meeting media task failed: {e}");
+            None
+        }
+    };
+    Ok(ActiveCall {
+        notification,
+        forked: me.is_some(),
+        call_leg: leg.url,
+        keep_alive,
+        audio: None,
+        webrtc,
+        video: None,
+        started: Instant::now(),
+        me,
+        hold_link: leg.hold,
+        resume_link: None,
+        transfer_link: leg.transfer,
+        renegotiation_link: leg.renegotiation,
+        remote_legs: std::collections::HashMap::new(),
+        joined_content: std::collections::HashMap::new(),
+    })
+}
+
 /// Accept the call and, for forked calls, keep the accepted leg alive.
 async fn accept_with_keep_alive(
     http: &reqwest::Client,
@@ -1793,6 +1913,35 @@ async fn send_media_answer_v2(
         "Media answer",
     )
     .await?;
+    Ok(())
+}
+
+/// A meeting's answer also names our media controller callbacks
+/// (`clientContentForMediaController`), as Teams' meeting answers do, so
+/// the processor can ask for our streams.
+async fn send_meeting_media_answer(
+    http: &reqwest::Client,
+    skype_token: &str,
+    n: &CallNotification,
+    me: &LocalParticipant,
+    sdp: &str,
+    video: bool,
+) -> Result<()> {
+    let url = invitation_link(n, |l| l.media_answer.clone()).context("No mediaAnswer link")?;
+    let body = serde_json::json!({
+        "mediaAnswer": {
+            "callModalities": modalities(video),
+            "sender": me.json(),
+            "links": { "mediaAcknowledgement": me.callback("call/mediaAcknowledgement/") },
+            "mediaContent": { "blob": sdp, "contentType": "application/sdp" },
+            "clientContentForMediaController": {
+                "controlVideoStreaming": me.callback("call/controlVideoStreaming/"),
+                "csrcInfo": me.callback("call/csrcInfo/"),
+            },
+        },
+        "debugContent": { "endpointId": me.endpoint_id },
+    });
+    cc_request(http, skype_token, reqwest::Method::POST, &url, &body, "Media answer").await?;
     Ok(())
 }
 

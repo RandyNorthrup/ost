@@ -4399,16 +4399,17 @@ async fn room_incoming(
             (Decision::Ring("Timed_out"), video, None)
         }
     };
-    // Teams Rooms' auto exit goes by the meeting's details (type, channel,
-    // schedule); without them, by its chat.
+    // Teams Rooms' auto exit goes by the meeting's details (its type and
+    // schedule; a channel's Meet now is ad hoc too); without them, by its
+    // chat.
     let kind = details.as_ref().map(teams_cli::calling::room_mode::meeting_kind);
     if let Some(d) = &details {
         let keys: Vec<&String> = d.as_object().map(|o| o.keys().collect()).unwrap_or_default();
-        tracing::info!(?kind, ?keys, "room mode: meeting details");
+        let (meeting_type, end_time) = (d.get("meetingType").cloned(), d.get("endTime").cloned());
+        tracing::info!(?kind, ?meeting_type, ?end_time, ?keys, "room mode: meeting details");
     }
     let auto_exit = match &kind {
-        // A channel's meeting (its chat a @thread.tacv2) waits for its end.
-        Some(k) => k.adhoc && !k.channel && !thread.as_deref().is_some_and(|t| t.ends_with("@thread.tacv2")),
+        Some(k) => k.adhoc,
         None => auto_exit,
     };
     // Teams Rooms' title for the call: from its conversation (the chat's
@@ -4430,7 +4431,7 @@ async fn room_incoming(
     };
     // Without the invitation's meeting details, the chat's meeting.
     let auto_exit = match (&kind, &thread_meeting) {
-        (None, Some(m)) if !m.meeting_type.is_empty() => m.meeting_type == "Adhoc" && !thread.as_deref().is_some_and(|t| t.ends_with("@thread.tacv2")),
+        (None, Some(m)) if !m.meeting_type.is_empty() => m.meeting_type == "Adhoc",
         _ => auto_exit,
     };
     let meeting_end = kind
@@ -6513,10 +6514,13 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
     // watching our screen): its limits, and a keyframe.
     let requests = teams_cli::calling::meeting_media::video_control_requests(json);
     if !requests.is_empty() {
-        if let Some(call) = call_slot().lock().await.outgoing.as_ref() {
-            for (source, params) in &requests {
-                tracing::info!(source, params, "video control request");
-                call.control_video(*source, params);
+        let slot = call_slot().lock().await;
+        for (source, params) in &requests {
+            tracing::info!(source, params, "video control request");
+            match (slot.outgoing.as_ref(), slot.active.as_ref()) {
+                (Some(call), _) => call.control_video(*source, params),
+                (None, Some(call)) => call.control_video(*source, params),
+                (None, None) => {}
             }
         }
         return;
@@ -12872,8 +12876,10 @@ impl qobject::Backend {
         let json = serde_json::to_string(&roster).unwrap_or_else(|_| "[]".into());
         let me = self.rust().user_mri.to_string().to_ascii_lowercase();
         // Teams Rooms' auto exit: an ad-hoc meeting nobody else is left in.
+        // Its getInCallParticipants: everyone connected (people, guests,
+        // phone numbers) but calling bots and the room's own endpoints.
         if self.rust().room_mode && self.rust().room_auto_exit && self.rust().call_state.to_string() == "connected" {
-            let others = roster.iter().filter(|p| p.id != me && p.active && p.id.starts_with("8:")).count();
+            let others = roster.iter().filter(|p| p.id != me && p.active && !p.id.starts_with("28:")).count();
             if teams_cli::calling::room_mode::adhoc_escalated(others) && !self.rust().room_escalated {
                 tracing::info!(others, "room mode: the ad-hoc meeting escalated; it waits for its end");
                 self.as_mut().rust_mut().room_escalated = true;
@@ -12964,12 +12970,21 @@ impl qobject::Backend {
             let qt = self.qt_thread();
             runtime().spawn(async move {
                 let sources: Vec<(i64, u32)> = cameras.iter().map(|c| (c.1, c.2)).collect();
-                let shown = match call_slot().lock().await.outgoing.as_ref() {
-                    Some(call) => {
-                        call.show_share(share_source);
-                        call.show_videos(&sources)
+                let shown = {
+                    let slot = call_slot().lock().await;
+                    match (slot.outgoing.as_ref(), slot.active.as_ref()) {
+                        (Some(call), _) => {
+                            call.show_share(share_source);
+                            call.show_videos(&sources)
+                        }
+                        // Invited into the meeting (a Teams Rooms device
+                        // a cast added): the same, over its answer.
+                        (None, Some(call)) => {
+                            call.show_share(share_source);
+                            call.show_videos(&sources)
+                        }
+                        (None, None) => return,
                     }
-                    None => return,
                 };
                 let keys: serde_json::Map<String, serde_json::Value> = cameras
                     .iter()

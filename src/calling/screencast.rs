@@ -57,6 +57,8 @@ impl ScreenCapture {
             .await
             .context("The desktop's screen-sharing portal isn't available")?;
         let session = proxy.create_session(Default::default()).await?;
+        let restore = RestoreFile::from_env();
+        let token = restore.as_ref().and_then(RestoreFile::token);
         proxy
             .select_sources(
                 &session,
@@ -64,7 +66,8 @@ impl ScreenCapture {
                     .set_cursor_mode(CursorMode::EMBEDDED)
                     .set_sources(sources)
                     .set_multiple(false)
-                    .set_persist_mode(PersistMode::DoNot),
+                    .set_persist_mode(if restore.is_some() { PersistMode::ExplicitlyRevoked } else { PersistMode::DoNot })
+                    .set_restore_token(token.as_deref()),
             )
             .await?
             .response()
@@ -74,6 +77,9 @@ impl ScreenCapture {
             .await?
             .response()
             .context("Sharing was cancelled")?;
+        if let Some(file) = &restore {
+            file.keep(streams.restore_token());
+        }
         let node = streams
             .streams()
             .first()
@@ -153,6 +159,36 @@ impl Drop for ScreenCapture {
             rt.spawn(async move {
                 let _ = session.close().await;
             });
+        }
+    }
+}
+
+/// The portal's restore token for a source picked before
+/// (`OST_SCREENCAST_RESTORE=<file>`, for test runs): the portal shares that
+/// source again without its picker, and gives a new token each time (a
+/// token is good once), which is kept in the file for the next share.
+/// Without it OST asks the portal not to remember anything, so the picker
+/// asks every time, as Teams' share tray does.
+struct RestoreFile(std::path::PathBuf);
+
+impl RestoreFile {
+    fn from_env() -> Option<Self> {
+        std::env::var_os("OST_SCREENCAST_RESTORE").filter(|p| !p.is_empty()).map(|p| Self(p.into()))
+    }
+
+    fn token(&self) -> Option<String> {
+        std::fs::read_to_string(&self.0)
+            .ok()
+            .map(|t| t.trim().to_string())
+            .filter(|t| !t.is_empty())
+    }
+
+    fn keep(&self, token: Option<&str>) {
+        tracing::info!(restorable = token.is_some(), "screen capture source kept for the next share");
+        if let Some(t) = token
+            && let Err(e) = std::fs::write(&self.0, t)
+        {
+            tracing::warn!("couldn't keep the screen capture restore token: {e}");
         }
     }
 }

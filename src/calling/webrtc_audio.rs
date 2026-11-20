@@ -454,6 +454,16 @@ impl OfferedVideo {
     }
 }
 
+/// The direction that answers an offered one.
+fn answer_to(offered: &str) -> &'static str {
+    match offered {
+        "sendonly" => "recvonly",
+        "recvonly" => "sendonly",
+        "inactive" => "inactive",
+        _ => "sendrecv",
+    }
+}
+
 /// The m-line section of `sdp` whose `a=mid` is `mid`.
 fn section_with_mid<'a>(sdp: &'a str, mid: &str) -> Option<&'a str> {
     let mut start = None;
@@ -1021,10 +1031,15 @@ impl LocalAudio {
                 Some(self.audio_section(port, &addr, mid, "active", offer.dtmf_pt, Some(offer)))
             } else if kind == "video" && (mid == mm::CAMERA_MID || slots.contains(mid) || mid == mm::SHARE_MID) {
                 h264().map(|v| {
+                    // Our camera and sharing lines answer what the
+                    // processor offers: a meeting we're invited into while
+                    // someone presents offers its sharing line send-only
+                    // (it only sends the screen), answered receive-only.
+                    let offered = section_with_mid(canonical, mid).map(section_direction).unwrap_or("sendrecv");
                     let (direction, label, ssrc) = if mid == mm::CAMERA_MID {
-                        ("sendrecv", "main-video", self.video_ssrc)
+                        (answer_to(offered), "main-video", self.video_ssrc)
                     } else if mid == mm::SHARE_MID {
-                        ("sendrecv", "applicationsharing-video", self.share_ssrc)
+                        (answer_to(offered), "applicationsharing-video", self.share_ssrc)
                     } else {
                         ("recvonly", "main-video", 1)
                     };
@@ -3939,6 +3954,20 @@ m=x-data 59842 RTP/SAVP 127 126\r\na=mid:2\r\n";
              a=x-ssrc-range:44902-45001\r\na=x-data-protocol:rtp sctp\r\n",
         );
         s
+    }
+
+    #[test]
+    fn an_invitation_sharing_line_offered_send_only_is_answered_receive_only() {
+        // A meeting someone presents in, inviting us (a cast to a room):
+        // its processor only sends the screen.
+        let offer = processor_move_offer().replace("a=label:applicationsharing-video\r\n", "a=label:applicationsharing-video\r\na=sendonly\r\n");
+        let map = MidMap::for_meeting_offer(&offer).expect("a meeting offer");
+        let canonical = map.to_ours(&offer);
+        let share = section_with_mid(&canonical, super::super::meeting_media::SHARE_MID).expect("the sharing line");
+        assert_eq!(answer_to(section_direction(share)), "recvonly");
+        assert_eq!(answer_to("sendrecv"), "sendrecv");
+        assert_eq!(answer_to("recvonly"), "sendonly");
+        assert_eq!(answer_to("inactive"), "inactive");
     }
 
     #[test]

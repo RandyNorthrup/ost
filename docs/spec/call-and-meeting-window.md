@@ -800,10 +800,18 @@ Window title: "Meeting join | {{meetingTitle}}" (`calling_meeting_window_title`)
     room's console for manual accept. The invitationData is read from the attached invitation
     (`callInvitation.invitationData`).
   - Accepting: `acceptCall(call, isVideoAllowed, muted=false)`: the microphone on, the camera on when the meeting policy
-    allows IP video (never for Copilot QR). When the call ends it goes back to the home screen.
+    allows IP video (never for Copilot QR). When the call ends it goes back to the home screen. An invitation into a
+    meeting (a cast, Room audio) comes from the meeting's media processor with its meeting lines (audio, camera, nine
+    receive slots, the sharing line, data; send-only sharing while someone presents); OST answers it as a meeting join
+    does (receive slots and the media control plane), so the room shows the cameras and a presented screen.
+  - Cast: Teams Rooms has no cast rule of its own. "Just cast" makes a Meet now (meetingType "MeetNow", endTime
+    0001-01-01), which is neither ad hoc nor ends, so the room stays in it after the caster leaves until someone ends
+    it or the room leaves (Teams Rooms 26198 RigelAutoExitMeetingManager; verified with OST in room mode).
   - Auto exit (`autoExitMeetingEnabled`, default on; RigelAutoExitMeetingManager, the same in Teams desktop 26304 and
-    the Teams Rooms build): it leaves an ad-hoc non-channel meeting at once when nobody else is left, unless the
-    meeting "escalated" (more than one other person was in it at some point); once a meeting's scheduled end has passed
+    the Teams Rooms build): it leaves an ad-hoc meeting (`meetingDetails.meetingType` exactly "Adhoc": a group chat's
+    call or a channel's Meet now; a Meet now made from a chat or the calendar is "MeetNow") at once when nobody else
+    is left, unless the meeting "escalated" (more than one other person was in it at some point). Nobody else: no
+    one connected but calling bots and the room's own endpoints (phone numbers and guests count). Once a meeting's scheduled end has passed
     and nobody else is in it (no HDMI ingest, not an instant meeting), after 300 s (60 s for ad hoc) it shows the dialog
     with a bar filling in 25 ms steps over `autoExitDialogProgressBarCompletionTimeInMs` (15 s) and Snooze (again in
     900 s) / Leave now; the bar filling leaves. Its strings are Teams Rooms' own (namespace meetingRoomConsole, which

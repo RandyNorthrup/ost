@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-20T01:10:00Z'
-updated_date: '2026-11-20T06:51:00Z'
+updated_date: '2026-11-20T08:26:00Z'
 labels:
   - calls
 dependencies: []
@@ -38,4 +38,19 @@ OST's Cast window searches and reports no rooms (TASK-0166). Since TASK-0161 OST
 - Open: (1) Teams side-by-side on winpc not done (winpc was in use); wizard card/check colours follow Teams' v0 dark theme structure, not measured; (2) screen/window content on Linux goes through the desktop's portal picker after Cast (KDE's can't be driven here, so live runs used PowerPoint Live); (3) the room stays in an emptied Meet now (its auto exit leaves only ad hoc meetings or after a valid end), as the Teams Rooms rule OST copies.
 
 Built so far: the Cast wizard (rooms with presence and nearby mark, meetings, content), Teams' cast flow (join with devices off, start sharing, invite the room with the nearby-room invite), and the room joining PowerPoint Live and Whiteboard sessions it hears of. Verified live with OST in room mode: Just cast and Cast and join both showed the deck on the room. Missing: side-by-side comparison with Teams on winpc (colours of the wizard not measured), casting a screen or window (the KDE picker on linuxlt can't be driven), and the room staying in an empty Meet now when the laptop leaves.
+
+- 2026-11-20 (agent cast-finish) progress: Teams on winpc Cast window measured (Settings and more > Cast): 626x713 CSS, dark even with Teams in light theme (cast app isThemePinnedToDarkOrHighContrast), band #292929 60 tall, tile #4F52B2 radius 3 (OST had 4, fixed), "Didn't find any Teams Rooms nearby that we can cast to." at y 141, Next 96x32 disabled #1F1F1F/#5C5C5C.
+- Teams Rooms 26198 auto exit read again (449162 handleEventChanges): no cast rule and no channel rule; ad hoc = meetingType "Adhoc" exactly (a Meet now is "MeetNow"); in-call = everyone connected but calling bots and the room's own endpoints. OST: channel exemption dropped, phone/guest participants count (bots 28: excluded).
+- Screen/window cast: OST_SCREENCAST_RESTORE=<file> (persist mode 2 + restore token, new token kept). KDE restores a window by app id + title; a token for the test window is seeded in the portal permission store (linuxlt ~/cast228/seed seedcast).
+
+- Proximity on winpc: Teams on winpc never listed the room. A WinRT BLE watcher on winpc (C# blewatch, 15-30 s) heard other devices at -84..-99 dBm but not the room's beacon from linuxlt hci0 (btmon: legacy ADV_NONCONN_IND, 1.28 s, 0 dBm, Microsoft 0x0006 34F000<oid><code>), nor the same beacon relayed from this PC's radio; a beacon published from winpc itself isn't heard by its own scanner. Teams lists rooms at -75 dBm or better, so Teams on winpc needs a radio near it; none of ours is. Cast's room list is only the native BLE nearbyRooms subscription (no search, no recent rooms).
+- Teams' Cast window measured again (searching / none found) in light and in dark: identical apart from the html theme class (theme pinned dark).
+- Live (linuxlt, btvirt hci1 room / hci2 laptop): window cast with OST_SCREENCAST_RESTORE: no picker, KDE restored "OST cast test window" (968x572), sharer 202, room auto-accepted. Found: the room's stage stayed empty: the processor's invite is a meeting offer (camera + 9 receive slots + applicationsharing-video + data) but the room answered it as a 1:1 call (no slots, no control plane), and the roster only fed show_share/show_videos to outgoing calls. Fixing: incoming meeting offers answered as a meeting join (MidMap, answer_sdp_meeting), ActiveCall show_videos/show_share/control_video.
+- Just cast Meet now to the room: meetingType MeetNow, endTime not valid -> not ad hoc; the laptop left (plain leave) and the room stayed alone, as Teams Rooms 26198 (no cast or end rule applies); left with its Leave button (Call end 202).
+
+- 2026-11-20 room fixed: the meeting's invitation is now answered as a meeting join (src/calling/incoming.rs answer_meeting_offer: MidMap, answer_sdp_meeting, clientContentForMediaController; the sharing line answered to the offered direction: send-only -> receive-only, which the processor needs: answered sendrecv it never ran ICE). ActiveCall show_videos/show_share/control_video; the roster and video control requests reach an answered meeting call too.
+- Live (cast c6, linuxlt btvirt): Just cast with Window, the portal restored "OST cast test window" with no picker (OST_SCREENCAST_RESTORE), the room auto-accepted, "answering the meeting's invitation as a meeting slots=9 share=true", ICE connected, control plane open, decoded the 968x572 share and showed the test window (clock running) on its stage; --cast-end ended it, the room's call ended.
+- Item 3 verified: Just cast is a Meet now (meetingType MeetNow, endTime 0001-01-01T00:00:00 from the room's meeting details): Teams Rooms 26198 neither treats it as ad hoc nor ever reaches its end, so the room stays after a plain leave (c1, as Teams Rooms); a channel Meet now (Adhoc) is left at once now (j3: "leaving ad-hoc call because no other participants left", Call end 202), as Teams Rooms has no channel rule.
+- Open: the laptop doesn't get the room's camera in a meeting the room was invited into (the processor never asks for it; no media description sent from an answered call).
+- Tests: 809 lib tests pass (linuxlt). Cleanup: room and test window stopped, btvirt pair down, restore token deleted from the portal store, trouter dumps and pcap removed; winpc: Teams back on Chat, theme back to Follow OS, helper files and task removed.
 <!-- SECTION:NOTES:END -->

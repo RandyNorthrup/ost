@@ -269,13 +269,14 @@ pub fn mark_device(payload: &mut serde_json::Value) {
 }
 
 /// What Teams Rooms' auto exit needs to know about the meeting, from its
-/// `meetingDetails` (RigelAutoExitMeetingManager: `skypeTeamMeetingType =
-/// meetingDetails.meetingType`; ad hoc is "Adhoc"; a channel's meeting is
-/// left alone; the schedule's end).
+/// `meetingDetails` (RigelAutoExitMeetingManager in Teams Rooms 26198:
+/// `meetingType = meetingDetails.meetingType`, ad hoc is exactly "Adhoc",
+/// so a Meet now ("MeetNow", as Cast's "Just cast" makes) is not; a
+/// channel's Meet now is "Adhoc" like any other, as there is no channel
+/// rule; and the schedule's end).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct MeetingKind {
     pub adhoc: bool,
-    pub channel: bool,
     /// The scheduled end (ISO 8601), when the details carry one.
     pub end: Option<String>,
 }
@@ -284,18 +285,17 @@ pub fn meeting_kind(details: &serde_json::Value) -> MeetingKind {
     let s = |k: &str| details.get(k).and_then(|v| v.as_str()).map(str::to_string);
     MeetingKind {
         adhoc: s("meetingType").as_deref() == Some("Adhoc"),
-        channel: details.get("isChannelMeeting").and_then(|v| v.as_bool()).unwrap_or(false),
         // Teams Rooms' isValidEndTime: an ad-hoc meeting says 0001-01-01.
         end: ["endTime", "scheduledEndTime", "meetingEndTime"].iter().find_map(|k| s(k)).filter(|e| !e.is_empty() && !e.starts_with("0001-")),
     }
 }
 
 /// Teams Rooms' auto exit (RigelAutoExitMeetingManager, on by default)
-/// leaves at once when nobody else is left in an ad-hoc meeting that isn't
-/// a channel's (Meet now and calls in a group chat): `thread` is the
-/// conversation's chat. A channel's meeting (`@thread.tacv2`) or a
-/// meeting's own chat (`19:meeting_…`, scheduled) doesn't qualify; those
-/// wait for the meeting's end.
+/// leaves at once when nobody else is left in an ad-hoc meeting. This is
+/// the guess from the conversation's chat (`thread`) when the meeting's
+/// details are missing: a group chat's call is ad hoc; a meeting's own chat
+/// (`19:meeting_…`) is scheduled or a Meet now, and a channel
+/// (`@thread.tacv2`) holds both kinds, so those wait for the meeting's end.
 pub fn auto_exits_when_alone(thread: Option<&str>) -> bool {
     thread.is_some_and(|t| t.starts_with("19:") && t.ends_with("@thread.v2") && !t.starts_with("19:meeting_"))
 }
@@ -541,11 +541,12 @@ mod tests {
 
     #[test]
     fn meeting_kinds_from_details() {
-        let k = meeting_kind(&json!({"meetingType": "Adhoc", "isChannelMeeting": false}));
-        assert!(k.adhoc && !k.channel && k.end.is_none());
+        let k = meeting_kind(&json!({"meetingType": "Adhoc", "isChannelMeeting": true}));
+        assert!(k.adhoc && k.end.is_none());
         let k = meeting_kind(&json!({"meetingType": "Scheduled", "endTime": "2026-11-19T07:00:00Z"}));
         assert_eq!((k.adhoc, k.end.as_deref()), (false, Some("2026-11-19T07:00:00Z")));
-        assert!(meeting_kind(&json!({"meetingType": "MeetNow", "isChannelMeeting": true})).channel);
+        // Cast's "Just cast" Meet now isn't ad hoc to Teams Rooms.
+        assert!(!meeting_kind(&json!({"meetingType": "MeetNow", "endTime": "0001-01-01T00:00:00"})).adhoc);
     }
 
     #[test]

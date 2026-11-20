@@ -5,7 +5,7 @@ import QtQuick.Controls.Basic
 // 2026-11-15, the wizard read in Teams' cast-app and its theme, 2026-11-19):
 // a 626 x 713 window, always dark, under Teams' child-window title row
 // ("Cast"). A #292929 band (y 32-92) with the brand Cast tile (32 px,
-// #4F52B2, radius 4, the white 20 px cast glyph) 20 in and "Cast" (16.38/
+// #4F52B2, radius 3, the white 20 px cast glyph) 20 in and "Cast" (16.38/
 // 23.4 bold in Teams; 16 here, Qt sizes are whole pixels) at 64; on
 // #1F1F1F the wizard's step (12 under the band), and its footer: Back
 // (52 in, from the second step), what's picked so far (the room, then the
@@ -134,7 +134,7 @@ Window {
         color: theme.hc("#292929", "#000000")
         Rectangle {
             id: hcFill1
-            x: 20; y: 14; width: 32; height: 32; radius: 4
+            x: 20; y: 14; width: 32; height: 32; radius: 3
             color: theme.hc("#4F52B2", "#FFFFFF")
             FluentIcon { anchors.centerIn: parent; name: "cast-20"; size: 20; color: theme.onFill(hcFill1, "#FFFFFF") }
         }
