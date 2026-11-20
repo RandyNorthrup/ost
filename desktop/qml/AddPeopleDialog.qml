@@ -73,7 +73,7 @@ Popup {
                         validator: IntValidator { bottom: 1; top: 999 }
                         font.family: theme.font; font.pixelSize: 12; color: theme.text
                         onTextEdited: { const n = parseInt(text); if (n >= 1 && n <= 999) { root.days = n; root.history = 1 } }
-                        Accessible.name: qsTr("Number of days")
+                        Accessible.name: qsTr("Include history from the past %n days.", "messaging:k1st1c5ls_mf", root.days)
                     }
                 }
                 TapHandler { onTapped: root.history = parent.modelData.v }

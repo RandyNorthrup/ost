@@ -84,7 +84,7 @@ Popup {
                 background: null
                 font.family: theme.font; font.pixelSize: 14; color: theme.text
                 Keys.onReturnPressed: root.confirm()
-                Accessible.name: qsTr("Section name")
+                Accessible.name: qsTr("Enter a section name")
             }
         }
         Text {

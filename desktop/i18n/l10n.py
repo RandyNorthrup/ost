@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """OST's text in Teams' app languages: the developer side.
 
-OST's QML marks its text with qsTr("…") and its Rust with tr("…"). Each
-such string is keyed to the Teams string id whose en-us text it is (OST in
-place of Teams). OST ships only those ids (ids.json) and where Teams' own
+OST's QML marks its text with qsTr("…") and its Rust (the desktop's and
+the engine's) with tr("…") / tr_n("…%n…", n) / tr_id("…", "<ns>:<key>") /
+tr_id_n("…%n…", "<ns>:<key>", n) (teams_cli::i18n, the one translator the
+QML's qsTr also asks). Each such string is keyed to the Teams string id
+whose en-us text it is (OST in place of Teams). OST ships only those ids (ids.json) and where Teams' own
 string resources are (teams_resources.json); on first use of an app
 language it downloads that locale's resources from Teams' CDN and builds
 its catalogue on the device (src/api/teams_strings.rs). No translations
@@ -28,7 +30,9 @@ folder and the Teams version, and commit ids.json, teams_resources.json
 and untranslated.txt (OST's strings with no Teams string; they stay
 English).
 
-Teams' texts use {{name}} / {0} placeholders and ICU plural messages;
+Teams' texts use {{name}} / {0} placeholders, empty rich-text components
+(<0></0>, filled with names or links by its React code) and ICU plural
+messages;
 OST's sources use Qt's form: %1, %2… in en-us order, %n for the count
 (qsTr("…%n…", "", count) for a plural message, keyed by its 'other' form).
 
@@ -56,9 +60,24 @@ from qmltok import tokens  # noqa: E402
 def parse_message(s):
     """Teams' message syntax -> a list of parts: str, ('arg', name),
     ('plural', name, {selector: parts}), ('select', name, {k: parts}),
-    ('hash',) for a plural's #."""
-    parts, i = _parse(s, 0, False)
+    ('hash',) for a plural's #. Teams' empty rich-text components
+    (`<0></0>`, `<1/>`: names and links its React code fills) are
+    placeholders named "<0>", "<1>"."""
+    parts, i = _parse(components(s), 0, False)
     return parts
+
+
+def components(s):
+    """`<0></0>` / `<0/>` as `{{<0>}}`; a component wrapping only one
+    (`<0><0></0></0>`) is that placeholder."""
+    if "<" not in s:
+        return s
+    t = re.sub(r"<(\d+)>\s*</\1>|<(\d+)\s*/>", lambda m: "{{<%s>}}" % (m.group(1) or m.group(2)), s)
+    while True:
+        n = re.sub(r"<(\d+)>(\{\{<\d+>\}\})</\1>", r"\2", t)
+        if n == t:
+            return t
+        t = n
 
 
 def _parse(s, i, in_plural):
@@ -260,14 +279,18 @@ def qml_strings():
                 if i + 4 < len(toks) and toks[i + 3][1] == "," and toks[i + 4][0] == "str":
                     dis = toks[i + 4][1]
                 found[(toks[i + 2][1], dis)].append(f"{f}:{src.count(chr(10), 0, a) + 1}")
-    # Rust: tr("…") / tr_n("…", n) / tr_id("…", "ns:key")
-    pat = re.compile(r'\btr(?:_n)?\(\s*"((?:[^"\\]|\\.)*)"(?:\s*,\s*"([^"]*)")?')
+    # Rust: tr("…") / tr_n("…", n) / tr_id("…", "ns:key") / tr_id_n("…", "ns:key", n)
+    pat = re.compile(r'\btr(?:_n|_id|_id_n)?\(\s*"((?:[^"\\]|\\.)*)"(?:\s*,\s*"([^"]*)")?')
     for root in RUST:
         for d, _, files in os.walk(root):
             for f in files:
                 if not f.endswith(".rs"):
                     continue
                 src = open(os.path.join(d, f), encoding="utf-8").read()
+                # not the tests' strings
+                cut = src.find("#[cfg(test)]\nmod tests")
+                if cut >= 0:
+                    src = src[:cut]
                 for m in pat.finditer(src):
                     s = m.group(1).encode().decode("unicode_escape").encode("latin-1").decode("utf-8")
                     found[(s, m.group(2) or "")].append(f"{f}:{src.count(chr(10), 0, m.start()) + 1}")
@@ -339,7 +362,10 @@ def gen(strings_path, assets_dir=None, teams_version=""):
             for form in teams_forms(source):
                 cands = by_text.get(form)
                 if cands:
-                    sid = choose(teams, cands, locales)
+                    # By text, Teams' plain-text strings first (its rich-text
+                    # ones, with <0></0> components, are named by id).
+                    plain = [c for c in cands if "<" not in lookup(teams, "en-us", c)]
+                    sid = choose(teams, plain or cands, locales)
                     break
         if not sid:
             missing.append((source, dis, found[(source, dis)][:3], ""))

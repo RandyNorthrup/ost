@@ -190,19 +190,35 @@ pub fn echo_bot_active(json: &str) -> Option<bool> {
     Some(bot.get("state").and_then(|s| s.as_str()) == Some("active"))
 }
 
+/// A report line in the app language (the report keeps Teams' English).
+fn shown(line: &str) -> String {
+    use crate::i18n::tr_id;
+    match line {
+        NOT_FOUND => tr_id("None found", "calling:k1rtppmbu"),
+        MUTED => tr_id("Muted", "calling:k1o7odb5c"),
+        DIDNT_WORK => tr_id("Didn’t work", "calling:k1q73vjhd"),
+        NEED_PERMISSION => tr_id("OST needs permission to use this device", "calling:kbjwrznk4"),
+        CALL_DROP => tr_id("Call drop detected", "calling:kd1cxyrd8"),
+        POOR_CONNECTION => tr_id("Poor connection", "calling:k4akbphhr"),
+        other => other.to_string(),
+    }
+}
+
 /// The screen's rows: (name, the device's label, its problems), as
 /// Teams' `X` builds them: "Microphone - <device>", "Speaker - <device>",
-/// "Camera - <device>", "Network".
+/// "Camera - <device>", "Network" (in the app language).
 pub fn rows(report: &Report, mic: Option<&str>, speaker: Option<&str>, camera: Option<&str>) -> serde_json::Value {
-    let label = |name: &str, device: Option<&str>| match device.filter(|d| !d.is_empty()) {
+    use crate::i18n::tr_id;
+    let label = |name: String, device: Option<&str>| match device.filter(|d| !d.is_empty()) {
         Some(d) => format!("{name} - {d}"),
-        None => name.to_string(),
+        None => name,
     };
+    let lines = |l: &[String]| l.iter().map(|s| shown(s)).collect::<Vec<_>>();
     serde_json::json!([
-        { "kind": "microphone", "title": label("Microphone", mic), "problems": report.microphone },
-        { "kind": "speaker", "title": label("Speaker", speaker), "problems": report.speaker },
-        { "kind": "camera", "title": label("Camera", camera), "problems": report.camera },
-        { "kind": "network", "title": "Network", "problems": report.network },
+        { "kind": "microphone", "title": label(tr_id("Microphone", "calling:k8na7uq9h"), mic), "problems": lines(&report.microphone) },
+        { "kind": "speaker", "title": label(tr_id("Speaker", "calling:k22bd50bo"), speaker), "problems": lines(&report.speaker) },
+        { "kind": "camera", "title": label(tr_id("Camera", "calling:kaagk5138"), camera), "problems": lines(&report.camera) },
+        { "kind": "network", "title": tr_id("Network", "calling:kazcc6i6j"), "problems": lines(&report.network) },
     ])
 }
 

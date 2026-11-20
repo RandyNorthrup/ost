@@ -162,7 +162,65 @@ pub fn questionnaire(kind: CallKind, with_video: bool, mut rand: impl FnMut(usiz
     for c in &mut cats {
         shuffle(&mut c.items, &mut rand);
     }
-    serde_json::json!({ "question": kind.question(), "categories": cats })
+    // Shown in the app language (the report keeps the English).
+    let cats: Vec<serde_json::Value> = cats
+        .iter()
+        .map(|c| {
+            let items: Vec<serde_json::Value> =
+                c.items.iter().map(|i| serde_json::json!({ "id": i.id, "label": item_label(i) })).collect();
+            serde_json::json!({ "id": c.id, "label": category_label(c), "items": items })
+        })
+        .collect();
+    let question = match kind {
+        CallKind::ScreenshareFromChat => crate::i18n::tr_id("How was the screen share quality?", "calling:k23er1l9k"),
+        _ => crate::i18n::tr_id("How was the call quality?", "calling:kdvbsnqen"),
+    };
+    serde_json::json!({ "question": question, "categories": cats })
+}
+
+/// A category's name as Teams' survey shows it (calling_cqf_category_*).
+fn category_label(c: &Category) -> String {
+    use crate::i18n::tr_id;
+    match c.id {
+        "audio" => tr_id("Audio", "calling:k983ku35h"),
+        "video" => tr_id("Video", "calling:k9axev4ju"),
+        "screenshare" => tr_id("Screenshare", "calling:k4ywi5k9m"),
+        _ => c.label.to_string(),
+    }
+}
+
+/// An item as Teams' survey shows it (`calling_cqf_item_${id}`).
+fn item_label(i: &Item) -> String {
+    use crate::i18n::tr_id;
+    match i.id {
+        "audio_nolocal" => tr_id("I could not hear any sound", "calling:k3kkga19p"),
+        "audio_noremote" => tr_id("The other side could not hear any sound", "calling:k7qu0inyw"),
+        "audio_quality_echo" => tr_id("I heard echo in the call", "calling:k1hc1xh6u"),
+        "audio_quality_noise" => tr_id("I heard noise in the call", "calling:kbpog2xrd"),
+        "audio_quality_volume" => tr_id("Volume was low", "calling:k90whlwoj"),
+        "audio_dropped" => tr_id("The call ended unexpectedly", "calling:k5jsbvff7"),
+        "audio_quality_distorted" => tr_id("Speech was not natural or sounded distorted", "calling:k4hzq4rg1"),
+        "audio_quality_delay" => tr_id("We kept interrupting each other", "calling:kbobdcld6"),
+        "reliability_join" => tr_id("People had trouble joining the call", "calling:k3gscsjpj"),
+        "reliability_invite" => tr_id("I could not invite someone into the call", "calling:k8jcn7w6m"),
+        "video_nolocal" => tr_id("I could not see any video", "calling:k35v95yea"),
+        "video_noremote" => tr_id("The other side could not see my video", "calling:kadks0ed3"),
+        "video_quality_poor" => tr_id("Image quality was poor", "calling:k67ej9daa"),
+        "video_quality_freezing" => tr_id("Video kept freezing", "calling:k3vn0znc4"),
+        "video_dropped" => tr_id("Video stopped unexpectedly", "calling:k5534rcjs"),
+        "video_quality_dark" => tr_id("The other side was too dark", "calling:k67e320jm"),
+        "video_quality_sync" => tr_id("Video was ahead or behind audio", "calling:k67endli3"),
+        "video_quality_backgroundblur" => tr_id("Video blurring didn't work as expected", "calling:k9fnjkkoh"),
+        "ss_nolocal" => tr_id("I could not see any presented content", "calling:k8bb61ph7"),
+        "ss_noremote" => tr_id("The other side could not see my presented content", "calling:kbp9nhpdu"),
+        "ss_quality_start" => tr_id("I couldn't present my content", "calling:k4jcpy44n"),
+        "ss_quality_freezing" => tr_id("The presented content kept freezing", "calling:k1kn7dx3j"),
+        "ss_quality_poor" => tr_id("The image quality of the presented content was poor", "calling:kcgik9ed9"),
+        "ss_dropped" => tr_id("The presentation stopped unexpectedly", "calling:kaaj1n3mp"),
+        "ss_quality_sync" => tr_id("There was a large delay in the presented content", "calling:kcgiodml2"),
+        "ss_quality_systemaudio" => tr_id("System audio didn't work as expected", "calling:kayk5093w"),
+        _ => i.label.to_string(),
+    }
 }
 
 /// Report a problem's details for "Had issues": the reasons ticked and

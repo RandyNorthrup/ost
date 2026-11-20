@@ -1010,7 +1010,7 @@ Window {
     /// More ▸ Facilitator ▸: Turn on / Turn off Facilitator, Enable /
     /// Disable voice (Teams' FacilitatorButton menu, measured 2026-11-16).
     readonly property var facilitatorItems: [
-        { name: "FacilitatorToggle", label: aiFacilitator ? qsTr("Turn off Facilitator") : qsTr("Turn on Facilitator"), icon: "ai-facilitator", enabled: organizer },
+        { name: "FacilitatorToggle", label: aiFacilitator ? qsTr("Turn off %1", "calling:k2hy66cyv").arg("Facilitator") : qsTr("Turn on %1", "calling:k4o9pjbg6").arg("Facilitator"), icon: "ai-facilitator", enabled: organizer },
         { name: "FacilitatorVoice", label: backend.callAiFacilitatorVoice ? qsTr("Disable voice") : qsTr("Enable voice"), icon: "sound-wave-circle-20", enabled: aiFacilitator && organizer }
     ]
     function facilitatorAction(name) {
@@ -1753,11 +1753,18 @@ Window {
             border.width: theme.highContrast ? 1 : 0; border.color: theme.text
             readonly property color ink: theme.highContrast ? theme.text : phase === "active" ? "#FFFFFF" : !attendeeView ? "#242424" : theme.pick("#616161", "#D6D6D6", "#FFFFFF")
             readonly property string label: phase === "active" ? qsTr("Live") : phase === "ended" ? qsTr("Ended") : attendeeView ? qsTr("Waiting") : qsTr("Not started")
+            // As Teams' live tile: the tooltip from its tooltipKey, the
+            // aria-label from its descriptionKey.
             readonly property string tip: attendeeView
-                ? (phase === "active" ? qsTr("Live state.") : phase === "ended" ? qsTr("Ended state.") : qsTr("Pre-live state."))
-                : phase === "active" ? (win.attendeeCount === 1 ? qsTr("1 attendee watching at a delay") : qsTr("%1 attendees watching at a delay").arg(win.attendeeCount))
+                ? (phase === "active" ? qsTr("The event is live.") : phase === "ended" ? qsTr("The event has ended.") : qsTr("Waiting for the event to start."))
+                : phase === "active" ? (win.liveEvent.townHall ? qsTr("%n attendees watching. Some may watch with a delay", "", win.attendeeCount) : qsTr("%n attendees watching", "", win.attendeeCount))
                 : phase === "ended" ? qsTr("%n attendees remain", "", win.attendeeCount)
-                : (win.attendeeCount === 1 ? qsTr("1 person has joined") : qsTr("%1 people have joined").arg(win.attendeeCount))
+                : qsTr("%n attendees waiting", "", win.attendeeCount)
+            readonly property string desc: attendeeView
+                ? (phase === "active" ? qsTr("Live state.") : phase === "ended" ? qsTr("Ended state.") : qsTr("Pre-live state."))
+                : phase === "active" ? (win.liveEvent.townHall ? qsTr("Live state. %n attendees watching at a delay", "", win.attendeeCount) : qsTr("Live state. %n attendees", "", win.attendeeCount))
+                : phase === "ended" ? qsTr("Ended state. %n attendees", "", win.attendeeCount)
+                : qsTr("Pre-live state. %n people have joined", "", win.attendeeCount)
             Row {
                 id: liveRow
                 x: 8; anchors.verticalCenter: parent.verticalCenter; spacing: 0
@@ -1773,7 +1780,7 @@ Window {
             }
             HoverHandler { id: liveHover }
             IndicatorTip { target: liveIndicator; text: liveIndicator.tip; shown: liveHover.hovered }
-            Accessible.role: Accessible.StaticText; Accessible.name: liveIndicator.label + ". " + liveIndicator.tip
+            Accessible.role: Accessible.StaticText; Accessible.name: liveIndicator.desc
         }
         Text {
             id: timerText
@@ -2271,7 +2278,7 @@ Window {
                 x: 121; y: 22; name: "info-16"; size: 16; color: theme.pick("#252423", "#FFFFFF", "#FFFFFF")
                 HoverHandler { id: manageInfoHover }
                 ToolTip.visible: manageInfoHover.hovered
-                ToolTip.text: qsTr("Choose who and what attendees see. Only organizers and presenters can manage the screen.")
+                ToolTip.text: qsTr("Only organizers and presenters can manage the screen.")
                 Accessible.role: Accessible.Button; Accessible.name: qsTr("More information")
             }
             Rectangle {
@@ -2366,7 +2373,7 @@ Window {
                     visible: sub.updatedBy !== ""
                     anchors.right: parent.right; y: 22.1; width: Math.min(implicitWidth, parent.width / 2 - 12)
                     elide: Text.ElideRight; textFormat: Text.StyledText
-                    text: qsTr("Last updated by <b>%1</b>").arg(sub.updatedBy.replace(/&/g, "&amp;").replace(/</g, "&lt;"))
+                    text: qsTr("Last updated by <0>%1</0>").replace("<0>", "<b>").replace("</0>", "</b>").arg(sub.updatedBy.replace(/&/g, "&amp;").replace(/</g, "&lt;"))
                     color: production.ink; font.family: theme.font; font.pixelSize: 13; lineHeight: 18.6; lineHeightMode: Text.FixedHeight
                 }
                 Rectangle {
@@ -2445,7 +2452,7 @@ Window {
                        font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold }
                 HoverHandler { id: sendLiveHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { enabled: !sendLiveButton.busy; onTapped: win.sendLive() }
-                ToolTip.visible: sendLiveHover.hovered; ToolTip.text: sendLiveButton.busy ? qsTr("Sending to live...") : qsTr("Send the preview to the live screen")
+                ToolTip.visible: sendLiveHover.hovered; ToolTip.text: sendLiveButton.busy ? qsTr("Waiting for previous action to complete.") : qsTr("Send the preview to the live screen")
                 Accessible.role: Accessible.Button; Accessible.name: qsTr("Send the preview to the live screen")
             }
             // The Manage screen strip.
@@ -2456,7 +2463,7 @@ Window {
                     x: 158; y: 22; name: "info-16"; size: 16; color: production.ink
                     HoverHandler { id: prodInfoHover }
                     ToolTip.visible: prodInfoHover.hovered
-                    ToolTip.text: qsTr("Choose who and what attendees see. Only organizers and presenters can manage the screen.")
+                    ToolTip.text: qsTr("Only organizers and presenters can manage the screen.")
                     Accessible.role: Accessible.Button; Accessible.name: qsTr("More information")
                 }
                 Text {
@@ -2562,7 +2569,7 @@ Window {
                         FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "mic-off-24"; size: 16; color: "white"; visible: win.muted || !win.hasAudio }
                     }
                     Accessible.role: Accessible.StaticText
-                    Accessible.name: qsTr("Myself video, %1, video is on").arg(win.selfName || qsTr("You"))
+                    Accessible.name: [qsTr("Myself video", "calling:k3zq2w8xc"), win.selfName || qsTr("You"), qsTr("video is on")].join(", ")
                 }
             }
         }
@@ -2574,7 +2581,7 @@ Window {
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
                 // (Teams: an organizer or presenter is asked to invite.)
-                text: win.state === "connected" ? (win.canMuteAll ? qsTr("Invite people to join you") : qsTr("Waiting for others to join...")) : win.state === "ended" ? qsTr("You left the meeting") : qsTr("Connecting…")
+                text: win.state === "connected" ? (win.canMuteAll ? qsTr("Invite people to join you") : qsTr("Waiting for others to join...")) : win.state === "ended" ? qsTr("You left the meeting") : qsTr("Connecting...", "calling:kdhfq8tet")
                 color: theme.text
                 font.family: theme.font; font.pixelSize: 24; font.weight: Font.DemiBold
             }
@@ -3046,7 +3053,7 @@ Window {
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: win.state === "calling" ? qsTr("Calling…")
-                    : win.state === "connecting" ? qsTr("Connecting…")
+                    : win.state === "connecting" ? qsTr("Connecting...", "calling:kdya2sghq")
                     : win.state === "ended" ? qsTr("Call ended")
                     : win.held || win.heldByPeer ? ""
                     : !win.hasAudio ? qsTr("Connected without audio") : ""
@@ -3062,7 +3069,7 @@ Window {
                 spacing: 8
                 FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "pause"; size: 20; color: theme.text }
                 Text {
-                    text: win.held ? qsTr("On hold %1").arg(win.clock(win.heldSeconds)) : qsTr("On hold")
+                    text: win.held ? qsTr("On hold") + " " + win.clock(win.heldSeconds) : qsTr("On hold")
                     color: theme.text
                     font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold
                 }
@@ -3775,7 +3782,7 @@ Window {
                 Avatar { anchors.horizontalCenter: parent.horizontalCenter; size: 153; name: win.selfName; photoId: "me" }
                 Text {
                     anchors.horizontalCenter: parent.horizontalCenter
-                    text: qsTr("On hold %1").arg(win.clock(win.mainHeldSeconds))
+                    text: qsTr("On hold") + " " + win.clock(win.mainHeldSeconds)
                     font.family: theme.font; font.pixelSize: 24; font.weight: Font.DemiBold
                     color: theme.text
                 }
@@ -4227,8 +4234,8 @@ Window {
                { k: "gallerySize", label: qsTr("Gallery size"), icon: "view-gallery-size-20", submenu: [4, 9, 16, 49].map(n => ({ label: qsTr("%n people", "calling:k8syueuxc_mf", n), checked: win.gallerySize === n })) },
                { k: "videosFirst", label: qsTr("Show videos first"), icon: "view-videos-first-20", checked: win.videosFirst }] : [])
               .concat([{ k: "more", label: qsTr("More options"), submenu: moreOptions }])
-            : [{ k: "fullscreen", label: win.visibility === Window.FullScreen ? qsTr("Exit full screen") : qsTr("Full screen"), icon: "full-screen-maximize-20" },
-               { k: "incoming", label: win.incomingVideoOff ? qsTr("Turn on incoming video") : qsTr("Turn off incoming video"), icon: "video-off-20" }]
+            : [{ k: "fullscreen", label: qsTr("Full screen", "calling:k5hqewcjf"), icon: "full-screen-maximize-20", checked: win.visibility === Window.FullScreen },
+               { k: "incoming", label: win.incomingVideoOff ? qsTr("Turn on other videos") : qsTr("Turn off other videos"), icon: "video-off-20" }]
         onPicked: i => {
             const k = items[i].k
             if (k === "gallery") win.layout = "gallery"
@@ -4413,7 +4420,7 @@ Window {
         else if (name === "RosterButton") e = { label: qsTr("People"), icon: "nmc-people", checked: side === "people" }
         else if (name === "MeetingCollabButton") e = { label: qsTr("Copilot"), icon: side === "copilot" ? "copilot-filled-48" : "ai-copilot", checked: side === "copilot" }
         else if (name === "ReactionButton") e = { label: qsTr("React"), icon: handRaised ? "nmc-react-filled" : "nmc-react", checked: handRaised }
-        else if (name === "RaiseHandsButton") e = { label: handRaised ? qsTr("Lower") : qsTr("Raise"), icon: "nmc-raise", checked: handRaised }
+        else if (name === "RaiseHandsButton") e = { label: qsTr("Raise", "calling:k9th2ytq2"), icon: "nmc-raise", checked: handRaised }
         else if (name === "OrganizerControlButton") e = { label: qsTr("Controls"), icon: "nmc-controls", chevron: true }
         else if (name === "PopoutContentButton") e = { label: qsTr("Pop out"), icon: "call-popout" }
         else if (name === "CallTransferButtonV2") e = { label: qsTr("Transfer"), icon: "call-transfer" }
@@ -4982,7 +4989,7 @@ Window {
         contentItem: Column {
             spacing: 8
             Text {
-                text: picker.mode === "transfer" ? qsTr("Transfer to") : qsTr("Consult with")
+                text: picker.mode === "transfer" ? qsTr("Transfer the call") : qsTr("Choose a person to consult")
                 font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text
             }
             Rectangle {
@@ -4995,7 +5002,7 @@ Window {
                     Text { visible: !who.text; text: qsTr("Type a name"); color: theme.textTertiary; font: who.font }
                     onTextChanged: win.searchPeople(text)
                     Keys.onEscapePressed: picker.close()
-                    Accessible.name: picker.mode === "transfer" ? qsTr("Transfer to") : qsTr("Consult with")
+                    Accessible.name: picker.mode === "transfer" ? qsTr("Transfer the call") : qsTr("Choose a person to consult")
                 }
             }
             Repeater {
@@ -5052,9 +5059,9 @@ Window {
             Text {
                 anchors.verticalCenter: parent.verticalCenter
                 text: parent.parent.consultState === "calling" ? qsTr("Calling %1…").arg(parent.parent.who)
-                    : parent.parent.consultState === "transferring" ? qsTr("Transferring to %1…").arg(parent.parent.who)
-                    : parent.parent.consultState === "merging" ? qsTr("Merging calls…")
-                    : qsTr("Consulting %1").arg(parent.parent.who)
+                    : parent.parent.consultState === "transferring" ? qsTr("Transferring to %1").arg(parent.parent.who)
+                    : parent.parent.consultState === "merging" ? qsTr("Merging calls...")
+                    : qsTr("Consulting with %1", "calling:kbasbnmza").arg(parent.parent.who)
                 font.family: theme.font; font.pixelSize: theme.base; color: theme.text
             }
             Repeater {
@@ -5097,7 +5104,7 @@ Window {
         Row {
             id: consultRow
             anchors.centerIn: parent; spacing: 12
-            Text { anchors.verticalCenter: parent.verticalCenter; text: win.consulting ? qsTr("Consulting %1").arg(win.consulting.name) : ""; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
+            Text { anchors.verticalCenter: parent.verticalCenter; text: win.consulting ? qsTr("Consulting with %1", "calling:kbasbnmza").arg(win.consulting.name) : ""; font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
             Rectangle {
                 id: hcFill11
                 width: 84; height: 28; radius: theme.radius; color: theme.brandFill
@@ -5263,7 +5270,7 @@ Window {
             onClicked: win.runControl("RosterButton")
         }
     }
-    Component { id: cRaise; BarButton { icon: "call-raise"; label: win.handRaised ? qsTr("Lower") : qsTr("Raise"); checked: win.handRaised; tip: win.handRaised ? qsTr("Lower your hand") : qsTr("Raise your hand"); shortcut: "Ctrl+Shift+K"; enabled: win.controlEnabled("RaiseHandsButton"); onClicked: win.runControl("RaiseHandsButton") } }
+    Component { id: cRaise; BarButton { icon: "call-raise"; label: qsTr("Raise", "calling:k9th2ytq2"); checked: win.handRaised; tip: win.handRaised ? qsTr("Lower your hand") : qsTr("Raise your hand"); shortcut: "Ctrl+Shift+K"; enabled: win.controlEnabled("RaiseHandsButton"); onClicked: win.runControl("RaiseHandsButton") } }
     // The new controls: React holds Raise hand too; its glyph is the
     // emoji-hand, filled in brand while your hand is up.
     Component { id: cReact; BarButton { icon: !win.newControls ? "call-react" : win.handRaised ? "nmc-react-filled" : "nmc-react"; label: qsTr("React"); checked: reactMenu.visible

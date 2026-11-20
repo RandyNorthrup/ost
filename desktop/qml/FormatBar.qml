@@ -47,7 +47,7 @@ Item {
         [{ k: "quote", icon: "fmt-quote", label: qsTr("Quote"), on: !!st.quote }, { k: "link", icon: "fmt-link", label: qsTr("Insert link"), popup: true },
          { k: "codeblock", icon: "fmt-code-block", label: qsTr("Code block"), on: !!st.codeBlock }],
         [{ k: "rich", icon: "fmt-rich-style", label: root.styleName, wide: true, popup: true, menuLabel: root.styleName },
-         { k: "code", icon: "fmt-inline-code", label: qsTr("Code"), menuLabel: qsTr("Code (Ctrl+Shift+C)"), on: !!st.code },
+         { k: "code", icon: "fmt-inline-code", label: qsTr("Code"), menuLabel: qsTr("%1 (%2)").arg(qsTr("Code")).arg("Ctrl+Shift+C"), on: !!st.code },
          { k: "clear", icon: "fmt-clear-format", label: qsTr("Clear all formatting") }],
         [{ k: "outdent", icon: "fmt-outdent", label: qsTr("Decrease indent") }, { k: "indent", icon: "fmt-indent", label: qsTr("Increase indent") }],
         [{ k: "hr", icon: "fmt-rule", label: qsTr("Insert horizontal rule") }],

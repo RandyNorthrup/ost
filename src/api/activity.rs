@@ -18,7 +18,7 @@ pub struct ActivityItem {
     pub title: String,
     /// Message preview (may be empty).
     pub preview: String,
-    /// "In chat with you", "Teams call", a channel name, …
+    /// "In chat with you", "OST call", a channel name, …
     pub context: String,
     pub time: String,
     pub unread: bool,
@@ -110,6 +110,7 @@ fn item_of(m: &serde_json::Value) -> Option<ActivityItem> {
     let topic = s("sourceThreadTopic");
     let thread_type = s("sourceThreadType");
     let is_app = actor_mri.starts_with("28:");
+    use crate::i18n::{fill, tr_id};
     let who = if actor.is_empty() {
         "Someone".to_string()
     } else {
@@ -119,15 +120,15 @@ fn item_of(m: &serde_json::Value) -> Option<ActivityItem> {
         ("teamMembershipChange", "addedToTeam") => (
             "addedToTeam",
             if is_app || actor.is_empty() {
-                format!("A team owner added you to {topic}")
+                fill(&tr_id("A team owner added you to %1", "activity:kblxnh5e8"), &[&topic])
             } else {
-                format!("{who} added you to {topic}")
+                fill(&tr_id("%1 added you to %2", "activity:kd00tkje3"), &[&who, &topic])
             },
             String::new(),
         ),
         ("reactionInChat" | "reaction", _) => (
             "reaction",
-            format!("{who} reacted to your message"),
+            fill(&tr_id("%1 reacted to your message", "activity:ku1d8rgk"), &[&who]),
             in_where(&thread_type, &topic),
         ),
         // A tag you are in (Teams' mention_tag processor: "{name}
@@ -142,13 +143,13 @@ fn item_of(m: &serde_json::Value) -> Option<ActivityItem> {
                     None => serde_json::Value::Null,
                 };
                 let tag = ctx.get("tagname").and_then(|t| t.as_str()).unwrap_or_default();
-                format!("{who} mentioned {tag}")
+                fill(&tr_id("%1 mentioned %2", "activity:k20ny01cj"), &[&who, tag])
             },
             in_where(&thread_type, &topic),
         ),
         ("mention" | "mentionInChat", _) => (
             "mention",
-            format!("{who} mentioned you"),
+            fill(&tr_id("%1 mentioned you", "activity:k75li603v"), &[&who]),
             in_where(&thread_type, &topic),
         ),
         ("reply" | "replyToReply", _) => (
@@ -158,10 +159,10 @@ fn item_of(m: &serde_json::Value) -> Option<ActivityItem> {
         ),
         ("call", "missedCall") => (
             "missedCall",
-            format!("Missed call from {who}"),
-            "Teams call".into(),
+            fill(&tr_id("Missed call from %1", "activity:kdp1gq3h3"), &[&who]),
+            tr_id("OST call", "activity:kcgixikhw"),
         ),
-        ("call", "voicemail") => ("voicemail", format!("Voicemail from {who}"), String::new()),
+        ("call", "voicemail") => ("voicemail", fill(&tr_id("Voicemail from %1", "activity:k8rphovyq"), &[&who]), String::new()),
         _ => {
             let k = if kind_raw.is_empty() {
                 "activity"
@@ -219,7 +220,7 @@ fn item_of(m: &serde_json::Value) -> Option<ActivityItem> {
 /// "In chat with you" for chats, the channel or team name otherwise.
 fn in_where(thread_type: &str, topic: &str) -> String {
     match thread_type {
-        "chat" => "In chat with you".into(),
+        "chat" => crate::i18n::tr_id("In chat with you", "activity:k39mhg4c0"),
         _ if !topic.is_empty() => topic.to_string(),
         _ => String::new(),
     }
@@ -267,7 +268,7 @@ mod tests {
         assert!(items[0].unread && items[1].unread && !items[2].unread);
         assert_eq!(items[1].context, "In chat with you");
         assert_eq!(items[1].thread_id, "19:x@unq.gbl.spaces");
-        assert_eq!(items[2].context, "Teams call");
+        assert_eq!(items[2].context, "OST call");
         assert!(parse_feed("not json").is_empty());
     }
 

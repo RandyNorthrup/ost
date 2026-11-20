@@ -122,7 +122,7 @@ Rectangle {
             onTextChanged: root.nameFilter = text.trim().toLowerCase()
             Keys.onEscapePressed: { text = ""; root.filtering = false }
             Text { visible: !actFilter.text; text: qsTr("Filter"); color: theme.textTertiary; font: actFilter.font }
-            Accessible.name: qsTr("Filter activity")
+            Accessible.name: qsTr("Type to filter")
         }
     }
 
@@ -275,7 +275,7 @@ Rectangle {
         Text {
             visible: root.shown.length === 0
             x: 20; y: 8
-            text: root.items.length === 0 ? qsTr("Nothing new yet") : qsTr("Nothing matches")
+            text: root.items.length === 0 ? qsTr("You will see @mentions, reactions and other notifications here.") : qsTr("We didn't find any matches.", "activity:k53gfg4hr")
             font.family: theme.font; font.pixelSize: theme.base
             color: theme.textSecondary
         }

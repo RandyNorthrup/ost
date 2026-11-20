@@ -87,19 +87,22 @@ Popup {
     Timer { id: closeTimer; interval: 500; onTriggered: if (!cardHover.hovered) root.close() }
 
     readonly property var statusLabels: ({ Available: qsTr("Available"), Busy: qsTr("Busy"), DoNotDisturb: qsTr("Do not disturb"), BeRightBack: qsTr("Be right back"), Away: qsTr("Away"), Offline: qsTr("Offline"), OffWork: qsTr("Offline") })
+    // Teams' profile card time ago: "%d %u ago" with its short units ("22 h
+    // ago", "5 m ago"), "Yesterday" from a day, then the date.
     function relative(iso) {
         const t = Date.parse(iso || ""); if (!t) return ""
+        const ago = (n, u) => qsTr("%d %u ago", "livePersonaCard:k36g9nwlf").replace(/%d %u/i, n + " " + u)
         const m = Math.round((Date.now() - t) / 60000)
-        if (m < 60) return m <= 1 ? qsTr("1 min") : qsTr("%1 min").arg(m)
-        const h = Math.round(m / 60); if (h < 24) return qsTr("%1 h").arg(h)
-        const d = Math.round(h / 24); return qsTr("%n days", "", d)
+        if (m < 60) return ago(Math.max(m, 1), qsTr("m", "livePersonaCard:k5r9cziff"))
+        const h = Math.round(m / 60); if (h < 24) return ago(h, qsTr("h", "livePersonaCard:k8ch74srv"))
+        return h < 48 ? qsTr("Yesterday", "livePersonaCard:kax87tkxj") : theme.dateMaybeYear(t)
     }
     // Teams' compact card: "Last seen 22 h ago" (the full card says "22
     // hours").
     readonly property string availability: {
         const a = p.availability || ""
         const offline = !a || a === "Offline" || a === "PresenceUnknown"
-        let s = offline ? (p.lastActive ? qsTr("Last seen %1").arg(qsTr("%1 ago").arg(relative(p.lastActive))) : qsTr("Offline")) : (statusLabels[a] || a)
+        let s = offline ? (p.lastActive ? qsTr("Last seen %1").arg(relative(p.lastActive)) : qsTr("Offline")) : (statusLabels[a] || a)
         if (p.outOfOffice) s = qsTr("Out of office")
         return s
     }
@@ -132,7 +135,7 @@ Popup {
                 Repeater {
                     model: [
                         { icon: "chat-20", label: qsTr("Start a chat with %1"), act: "chat" },
-                        { icon: "org-20", label: qsTr("Navigate to the org chart of %1"), act: "org" },
+                        { icon: "org-20", label: qsTr("Navigate to %1's org chart"), act: "org" },
                         { icon: "video-20", label: qsTr("Start a video call with %1"), act: "video" },
                         { icon: "call-20", label: qsTr("Start an audio call with %1"), act: "call" },
                         // LinkedIn's logo, as the full card's: its people search.

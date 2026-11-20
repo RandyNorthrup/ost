@@ -129,6 +129,8 @@ Rectangle {
     property string sort: "az"
     property string query: ""
     readonly property var filterNames: ({ "": qsTr("All"), OWNED: qsTr("Teams you own"), HIDDEN: qsTr("Teams with channels hidden"), SHOWN: qsTr("Teams with channels shown"), ARCHIVED: qsTr("Archived Teams") })
+    // Teams' own "…, Selected" names for the chosen tag.
+    readonly property var filterSelectedNames: ({ "": qsTr("All, Selected"), OWNED: qsTr("Teams you own, Selected"), HIDDEN: qsTr("Teams with channels hidden, Selected"), SHOWN: qsTr("Teams with channels shown, Selected"), ARCHIVED: qsTr("Archived Teams, Selected") })
     readonly property var sortNames: ({ az: "A-Z", za: "Z-A", type: qsTr("Team type"), membership: qsTr("Membership Type"), visibility: qsTr("Visibility Type") })
     function anyShown(t) { return (t.channels || []).some(c => c.shown !== false) }
     function roleName(r) { return r === "admin" ? qsTr("Owner") : r === "guest" ? qsTr("Guest") : qsTr("Member") }
@@ -167,6 +169,7 @@ Rectangle {
         property bool chosen: false
         property bool chevron: false
         property bool menuOpen: false
+        property string selectedName
         signal clicked()
         width: Math.max(96, pillRow.implicitWidth + 24); height: chosen || menuOpen ? 31.3 : 30; radius: height / 2
         y: chosen || menuOpen ? 0 : 0.7
@@ -181,7 +184,7 @@ Rectangle {
         HoverHandler { id: pillHover; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: pill.clicked() }
         Accessible.role: Accessible.Button
-        Accessible.name: chosen ? qsTr("%1, Selected").arg(label) : label
+        Accessible.name: chosen ? (selectedName || label) : label
     }
     Item {
         id: teamsTab
@@ -190,11 +193,12 @@ Rectangle {
         Row {
             id: pills
             x: 48; y: 24.3; spacing: 12
-            Pill { label: qsTr("All"); chosen: page.filter === ""; onClicked: page.filter = "" }
+            Pill { label: qsTr("All"); selectedName: page.filterSelectedNames[""]; chosen: page.filter === ""; onClicked: page.filter = "" }
             // Teams you own until another filter is chosen; then that one.
             Pill {
                 readonly property string key: page.filter === "" ? "OWNED" : page.filter
                 label: page.filterNames[key]
+                selectedName: page.filterSelectedNames[key]
                 chosen: page.filter === key
                 onClicked: page.filter = key
             }
@@ -218,13 +222,13 @@ Rectangle {
                 Row {
                     id: sortRow
                     anchors.centerIn: parent; spacing: 4
-                    Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Sort: %1").arg(page.sortNames[page.sort]); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(sortButton, sortMenu.opened ? theme.brandForeground1 : theme.textStrong) }
+                    Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Sort: %1", "teamsAndChannels:k9bigtxd6").arg(page.sortNames[page.sort]); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(sortButton, sortMenu.opened ? theme.brandForeground1 : theme.textStrong) }
                     FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-12"; size: 12; color: theme.onFill(sortButton, sortMenu.opened ? theme.brandForeground1 : theme.textStrong) }
                 }
                 HoverHandler { id: sortHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: sortMenu.open() }
                 Accessible.role: Accessible.Button
-                Accessible.name: qsTr("Sort: %1 is selected").arg(page.sortNames[page.sort])
+                Accessible.name: qsTr("%1 is selected", "teamsAndChannels:kasgi8g9x").arg(qsTr("Sort: %1", "teamsAndChannels:k9bigtxd6").arg(page.sortNames[page.sort]))
                 MenuPopup {
                     id: sortMenu
                     x: 4.8; y: parent.height + 4
@@ -305,7 +309,7 @@ Rectangle {
                         lineHeight: 20; lineHeightMode: Text.FixedHeight
                         color: theme.onFill(row, theme.text)
                         Accessible.role: Accessible.Button
-                        Accessible.name: qsTr("Team %1, Go to Manage team channels").arg(text)
+                        Accessible.name: qsTr("Team %1, Go to Manage channels").arg(text)
                     }
                     FluentIcon { visible: !!row.modelData.archived; anchors.verticalCenter: parent.verticalCenter; name: "archive-20"; size: 16; color: theme.onFill(row, theme.text) }
                 }

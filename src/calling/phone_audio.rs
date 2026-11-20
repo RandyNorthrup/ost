@@ -441,14 +441,15 @@ pub fn call_me_back_result(event: &Value, phone_mri: &str) -> Option<Result<(), 
                 .and_then(Value::as_object)
                 .and_then(|m| m.iter().find(|(k, _)| same(k)).map(|(_, v)| v))
         }?;
-        return Some(Err(failure_text(end).to_string()));
+        return Some(Err(failure_text(end)));
     }
     None
 }
 
 /// Teams' message for a failed Call me (`getAddParticipantMessageErrorType`
 /// and the dialog's `$t`).
-pub fn failure_text(end: &Value) -> &'static str {
+pub fn failure_text(end: &Value) -> String {
+    use crate::i18n::tr_id;
     let code = end.get("code").and_then(Value::as_i64);
     let sub = end.get("subCode").and_then(Value::as_i64);
     let categories: Vec<&str> = end
@@ -459,12 +460,12 @@ pub fn failure_text(end: &Value) -> &'static str {
         .filter_map(Value::as_str)
         .collect();
     if sub.is_some_and(|s| (10500..=10549).contains(&s)) {
-        return "Call not allowed in this location.";
+        return tr_id("Call not allowed in this location.", "calling:k23wqw4bs");
     }
     if categories.contains(&"EntitlementFailure") || (code == Some(403) && sub.is_some_and(|s| (510566..=510569).contains(&s))) {
-        return "You are not allowed to dial-out to this destination. Please contact your administrator.";
+        return tr_id("You are not allowed to dial-out to this destination. Please contact your administrator.", "calling:kbs0fkxwh");
     }
-    "We could not complete the call. The user is unavailable at the moment."
+    tr_id("We could not complete the call. The user is unavailable at the moment.", "calling:k1vxu82o3")
 }
 
 #[cfg(test)]

@@ -114,14 +114,14 @@ Popup {
         x: 34.67; y: 492
         Repeater {
             model: [
-                qsTr("Email addresses must match what participants use to join the meeting, no distribution lists."),
-                qsTr("You can create up to 100 breakout rooms with a maximum of 1000 participants."),
-                qsTr("Participants not listed in the CSV will remain in the main meeting.")
+                qsTr("• Email addresses must match what participants use to join the meeting, no distribution lists."),
+                qsTr("• You can create up to %1 breakout rooms with a maximum of %2 participants.").arg(100).arg(1000),
+                qsTr("• Participants not listed in the CSV will remain in the main meeting.")
             ]
             Text {
                 required property string modelData
                 width: 550.67; height: 16
-                text: "• " + modelData
+                text: modelData
                 font.family: theme.font; font.pixelSize: 12
                 color: theme.textSecondary
             }

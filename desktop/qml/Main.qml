@@ -5735,7 +5735,7 @@ Window {
             else if (st === 7) shot("group")
             else if (st === 8) {
                 newChat.naming = false
-                const s2 = newChat.suggestions.find(x => !/\(You\)$/.test(x.name)) || newChat.suggestions[0]
+                const s2 = newChat.suggestions.find(x => !x.you) || newChat.suggestions[0]
                 if (s2) newChat.pick(s2)
             }
             else if (st === 9) { console.warn("NEWCHAT two", JSON.stringify(newChat.picked.map(x => x.name)), "history", newChat.history); shot("two") }
@@ -7110,6 +7110,9 @@ Window {
     // 01:01 - 23:59 chosen, then Save and restart; after the restart the
     // formats are in effect (chat list and a chat captured), then your
     // settings are put back. Logs REGIONAL lines.
+    // --regional-chats=<name>|<name>…: after the restart also open each of
+    // these chats, capture it and log its event rows (system messages, calls)
+    // and the chat list's names and previews.
     Timer {
         running: Qt.application.arguments.indexOf("--regional-test") >= 0 && backend.signedIn && chatList.chats.some(c => /^OST TEST/.test(c.name) || c.name === "OST Test 2")
         interval: 2500; repeat: true
@@ -7117,6 +7120,8 @@ Window {
         readonly property bool restarted: backend.setting("regionalTest") !== ""
         // --regional-lang=<code>: the app language to pick (default en-gb).
         readonly property string lang: (Qt.application.arguments.find(a => a.startsWith("--regional-lang=")) || "--regional-lang=en-gb").slice(16)
+        readonly property var chats: (Qt.application.arguments.find(a => a.startsWith("--regional-chats=")) || "--regional-chats=").slice(17).split("|").filter(s => s.length > 0)
+        property int cstep: 0
         onTriggered: {
             const log = (...a) => console.warn("REGIONAL", ...a.map(x => typeof x === "string" ? x : JSON.stringify(x)))
             const cap = tag => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-" + tag + ".png")))
@@ -7134,8 +7139,18 @@ Window {
                 case 8: backend.setSetting("regionalTest", JSON.stringify(keys.map(k => backend.setting(k)))); card().followOs = false; backend.saveRegionalAndRestart(false, lang, "yyyy-MM-dd", "hh:mm tt"); return
                 }
             } else {
+                if (step === 1 && cstep < 3 * chats.length) {
+                    const i = Math.floor(cstep / 3), c = chatList.chats.find(x => x.name === chats[i])
+                    if (cstep % 3 === 0 && c) backend.selectChat(c.id, c.name)
+                    if (cstep % 3 === 2) {
+                        cap("after-chat-" + i)
+                        log("rows", chats[i], c ? JSON.parse(backend.messagesJson || "[]").filter(m => m.event || m.call_state).map(m => m.event ? m.text : m.call_state + " " + m.call_seconds + "s") : "no such chat")
+                    }
+                    cstep++
+                    return
+                }
                 switch (step) {
-                case 0: log("after restart", theme.regional, "now", theme.dateTime(new Date()), theme.dateMaybeYear(new Date(2025, 2, 4)), theme.time(new Date(2026, 0, 31, 16, 9))); break
+                case 0: log("after restart", theme.regional, "now", theme.dateTime(new Date()), theme.dateMaybeYear(new Date(2025, 2, 4)), theme.time(new Date(2026, 0, 31, 16, 9))); log("chat list", chatList.chats.slice(0, 12).map(c => c.name + " | " + (c.preview || ""))); break
                 case 1: { const c = chatList.chats.find(c => /^OST TEST/.test(c.name)) || chatList.chats.find(c => c.name === "OST Test 2"); backend.selectChat(c.id, c.name); break }
                 case 3: cap("after-chat"); break
                 case 4: rail.current = "settings"; settingsView.pageForTest("general"); break

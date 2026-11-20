@@ -40,7 +40,7 @@ Popup {
             [qsTr("Paste"), "Ctrl+V", "Paste"], [qsTr("Select all"), "Ctrl+A", "SelectAll"] ] },
         { title: qsTr("Messaging"), items: [
             [qsTr("Find in current chat or channel"), "Ctrl+F", "SlashCommandSearchIn"], [qsTr("React to the last message"), "Ctrl+Alt+R", "ReactToLastMessage"],
-            [qsTr("Jump to newest message"), "Ctrl+J", "UnreadThreadNavigation"],
+            [qsTr("Jump to last read or newest message"), "Ctrl+J", "UnreadThreadNavigation"],
             [qsTr("Mark all as read"), "Shift+Esc", "MarkAllAsRead"], [qsTr("Clear all filters"), "Ctrl+Alt+Z", "SimpleCollabClearAllFilters"],
             [qsTr("See all chat conversations"), "Ctrl+Alt+C", "SimpleCollabToggleChatsFilter"], [qsTr("See all channel conversations"), "Ctrl+Alt+A", "SimpleCollabToggleChannelsFilter"],
             [qsTr("See all unread items"), "Ctrl+Alt+U", "SimpleCollabToggleUnreadFilter"], [qsTr("Toggle details pane"), "Alt+P", "ToggleInfoPane"],

@@ -431,8 +431,8 @@ Rectangle {
                      : modelData === "from" ? (on && pane.person ? pane.person.name : "")
                      : pane.wide && on && (modelData === "attachment" || modelData === "mentions") ? text : ""
                 typeIcon: modelData === "type" && on ? pane.typeIcons[pane.fileType] : ""
-                name: ({ date: on ? qsTr("Date %1").arg(pane.dateLabel()) : qsTr("Date filter"), from: on && pane.person ? qsTr("From %1").arg(pane.person.name) : qsTr("From filter"),
-                         attachment: qsTr("Attachment"), mentions: qsTr("Mentions"), type: on ? qsTr("File type %1 selected").arg(pane.typeNames[pane.fileType]) : qsTr("File type") })[modelData]
+                name: ({ date: on ? qsTr("Date %1.").arg(pane.dateLabel()) : qsTr("Date filter"), from: on && pane.person ? qsTr("From %1").arg(pane.person.name) : qsTr("From filter"),
+                         attachment: qsTr("Attachment"), mentions: qsTr("Mentions"), type: on ? qsTr("File type %1 selected").arg(pane.typeNames[pane.fileType]) : qsTr("File Type filter") })[modelData]
                 onClicked: {
                     if (modelData === "attachment") { pane.attachment = !pane.attachment; pane.setActive("attachment", pane.attachment); pane.run() }
                     else if (modelData === "mentions") { pane.mentions = !pane.mentions; pane.setActive("mentions", pane.mentions); pane.run() }
@@ -493,7 +493,7 @@ Rectangle {
         DatePickerField {
             x: 15.7; y: 181.7; width: 222.7
             filled: true; format: "dddd, MMMM d, yyyy"; iconSize: 16; iconRight: 6
-            empty: !datePop.fromSet; placeholder: qsTr("Select a date")
+            empty: !datePop.fromSet; placeholder: qsTr("Select a Date")
             date: datePop.fromDate; maxDate: datePop.toDate
             onPicked: d => { datePop.fromDate = d; datePop.fromSet = true }
         }
@@ -587,7 +587,7 @@ Rectangle {
                     Text {
                         x: 60; y: 7; width: parent.width - 68
                         textFormat: Text.StyledText; elide: Text.ElideRight
-                        text: prow.me ? qsTr("%1 (You)").arg(pane.boldPrefix(prow.modelData.name || "", who.text)) : pane.boldPrefix(prow.modelData.name || "", who.text)
+                        text: prow.me ? ("%1 " + qsTr("(You)", "autosuggest:k9m83y7y2")).arg(pane.boldPrefix(prow.modelData.name || "", who.text)) : pane.boldPrefix(prow.modelData.name || "", who.text)
                         font.family: theme.font; font.pixelSize: 14; color: theme.onFill(prow, theme.textStrong)
                     }
                     Text {
@@ -761,7 +761,7 @@ Rectangle {
             Accessible.role: heading ? Accessible.Heading : Accessible.ListItem
             Accessible.name: heading ? modelData.heading : isFile ? qsTr("%1 by %2").arg(modelData.file_name || "").arg(modelData.sender_name || "")
                                     : (me ? qsTr("You") : modelData.sender_name || "") + ", " + pane.when(modelData.time) + ", " + (modelData.text || "")
-            Accessible.description: qsTr("Press enter to open message, then Escape to return")
+            Accessible.description: qsTr("Press enter to open message, then Escape to return back to the search results")
         }
         footer: Item {
             width: list.width; height: pane.result && pane.result.loading && pane.hits.length ? 40 : 8

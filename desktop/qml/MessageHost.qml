@@ -426,8 +426,8 @@ Item {
         const urgent = { color: red, icon: "badge-urgent-16", tip: qsTr("Urgent") }
         if (m.pinned) return { color: theme.pick("#237B4B", "#92C353"), icon: "badge-pin-16", tip: qsTr("Pinned") }
         const k = m.mention_kind || ""
-        if (k === "me") return m.importance === "high" ? important : m.importance === "urgent" ? urgent : { color: orange, icon: "badge-mention-16", tip: qsTr("Mentions you") }
-        if (k === "everyone") return { color: orange, icon: "badge-everyone-16", tip: qsTr("Mentions everyone") }
+        if (k === "me") return m.importance === "high" ? important : m.importance === "urgent" ? urgent : { color: orange, icon: "badge-mention-16", tip: qsTr("%1 mentioned you.").arg(m.sender || "") }
+        if (k === "everyone") return { color: orange, icon: "badge-everyone-16", tip: qsTr("%1 mentioned Everyone", "messaging:kbf6tsfba").arg(m.sender || "") }
         if (m.importance === "high") return important
         if (m.importance === "urgent") return urgent
         if (k === "channel") return { color: orange, icon: "badge-channel-16", tip: qsTr("Channel message") }

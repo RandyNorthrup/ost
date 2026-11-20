@@ -170,7 +170,7 @@ Rectangle {
         Text {
             visible: root.state_ === "error"
             width: 300; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
-            text: qsTr("Couldn't open the meeting's notes.") + " " + root.error
+            text: qsTr("We couldn't load meeting notes.") + " " + root.error
             font.family: theme.font; font.pixelSize: 14; color: theme.text
         }
         Text {

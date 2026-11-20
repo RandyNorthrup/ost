@@ -243,7 +243,7 @@ Rectangle {
     Rectangle {
         id: premiumPill
         visible: root.premiumMode === "trial" || root.premiumMode === "canceled"
-        readonly property string label: root.premiumMode === "trial" ? (root.premiumDaysLeft === 1 ? qsTr("1 day left") : qsTr("%1 days left").arg(root.premiumDaysLeft)) : qsTr("Get Premium")
+        readonly property string label: root.premiumMode === "trial" ? qsTr("%1 days left").arg(root.premiumDaysLeft) : qsTr("Get Premium")
         anchors.right: moreButton.right
         anchors.verticalCenter: parent.verticalCenter
         width: pillRow.implicitWidth + 17.33; height: 31.33; radius: 4

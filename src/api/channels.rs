@@ -759,23 +759,25 @@ pub struct Edit {
 /// Teams' channel-name rules (the Edit and Create dialogs' messages, from
 /// Teams' teamsAndChannels strings). An empty name only disables Save; the
 /// field takes at most 50 characters.
-pub fn name_error(name: &str, general: bool) -> Option<&'static str> {
+pub fn name_error(name: &str, general: bool) -> Option<String> {
+    use crate::i18n::tr_id;
     let n = name.trim();
     if general || n.is_empty() {
         return None;
     }
     if n.starts_with('_') || n.starts_with('.') {
-        return Some("Channel name cannot start with an underscore (_) or a period (.)");
+        return Some(tr_id("Channel name cannot start with an underscore (_) or a period (.)", "teamsAndChannels:k65hc6wcd"));
     }
+    // (Teams' braces in this one read as a placeholder: no translation.)
     if n.chars().any(|c| "~#%&*{}+/\\:<>?|'\"".contains(c)) || n.contains("..") {
-        return Some("We don't support these characters: ~#%&*{}+/\\:<>?|'\"..");
+        return Some("We don't support these characters: ~#%&*{}+/\\:<>?|'\"..".into());
     }
     if n.ends_with('.') {
-        return Some("Channel name cannot end with a period (.)");
+        return Some(tr_id("Channel name cannot end with a period (.)", "teamsAndChannels:kvvs0wwn"));
     }
     let lower = n.to_lowercase();
     if lower.contains("http://") || lower.contains("https://") || lower.contains("www.") {
-        return Some("Links are not allowed in the channel name");
+        return Some(tr_id("Links are not allowed in the channel name", "teamsAndChannels:k1i8l94au"));
     }
     None
 }
@@ -2066,14 +2068,14 @@ mod tests {
     fn edits_send_only_what_changed() {
         let e = Edit { layout: Some("Conversational".into()), ..Default::default() };
         assert_eq!(serde_json::to_string(&e).unwrap(), r#"{"chatModalityType":"Conversational"}"#);
-        assert_eq!(name_error("", false), None);
-        assert_eq!(name_error("a/b", false), Some("We don't support these characters: ~#%&*{}+/\\:<>?|'\".."));
-        assert_eq!(name_error("a..b", false), name_error("a/b", false));
-        assert_eq!(name_error("_x", false), Some("Channel name cannot start with an underscore (_) or a period (.)"));
-        assert_eq!(name_error("x.", false), Some("Channel name cannot end with a period (.)"));
-        assert_eq!(name_error("see www.example.com", false), Some("Links are not allowed in the channel name"));
-        assert_eq!(name_error("Weekly sync", false), None);
-        assert_eq!(name_error("x/", true), None);
+        assert_eq!(name_error("", false).as_deref(), None);
+        assert_eq!(name_error("a/b", false).as_deref(), Some("We don't support these characters: ~#%&*{}+/\\:<>?|'\".."));
+        assert_eq!(name_error("a..b", false).as_deref(), name_error("a/b", false).as_deref());
+        assert_eq!(name_error("_x", false).as_deref(), Some("Channel name cannot start with an underscore (_) or a period (.)"));
+        assert_eq!(name_error("x.", false).as_deref(), Some("Channel name cannot end with a period (.)"));
+        assert_eq!(name_error("see www.example.com", false).as_deref(), Some("Links are not allowed in the channel name"));
+        assert_eq!(name_error("Weekly sync", false).as_deref(), None);
+        assert_eq!(name_error("x/", true).as_deref(), None);
         let v = serde_json::json!({"emailAddressDetails":{"emailId":"8156404b.scnetsolutions.com@amer.teams.ms"},"allowedSenders":{"allowedSenderType":"members"}});
         assert_eq!(email_from(&v).unwrap().allowed, "members");
         assert_eq!(senders_body("domains", &["a.com".into()]), serde_json::json!({"allowedSenders":{"allowedSenderType":"domains","allowedDomains":["a.com"]}}));

@@ -78,7 +78,7 @@ Rectangle {
         Accessible.role: Accessible.ToolBar; Accessible.name: qsTr("Room action buttons")
         ToolButton32 { icon: "add-20"; tip: qsTr("Add room"); enabled: root.hasRooms && !root.busy; onClicked: root.act("add", { name: "Room " + (root.rooms.length + 1) }) }
         ToolButton32 { icon: "delete-20"; tip: qsTr("Remove rooms"); enabled: root.hasRooms && !root.busy; onClicked: root.act("delete_all") }
-        ToolButton32 { icon: "settings-20"; tip: qsTr("Room settings"); enabled: !root.busy; onClicked: settingsNote.open() }
+        ToolButton32 { icon: "settings-20"; tip: qsTr("Rooms settings"); enabled: !root.busy; onClicked: settingsNote.open() }
     }
 
     // No rooms yet.

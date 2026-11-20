@@ -569,11 +569,11 @@ Rectangle {
                 // settings (KDE or GNOME), 15 under the switch.
                 SettingsParts.Link {
                     visible: backend.hasOsSettings("region")
-                    text: qsTr("Manage system settings"); font.pixelSize: 14
+                    text: qsTr("Manage OS settings", "framework:k2ui0wj94"); font.pixelSize: 14
                     height: 16.1; verticalAlignment: Text.AlignVCenter
                     onClicked: backend.openOsSettings("region")
                     Accessible.role: Accessible.Link
-                    Accessible.name: qsTr("Link to Manage your OS language and region settings")
+                    Accessible.name: text
                 }
                 SettingsParts.Gap { size: backend.hasOsSettings("region") ? 15 : 4 }
                 SettingsParts.SubHeading { text: qsTr("App language") }
@@ -629,7 +629,7 @@ Rectangle {
                 // and time settings (KDE or GNOME).
                 SettingsParts.Link {
                     visible: backend.hasOsSettings("timezone")
-                    text: qsTr("Manage system settings"); font.pixelSize: 14
+                    text: qsTr("Manage OS settings", "framework:k7ikk1urg"); font.pixelSize: 14
                     height: 16.1; verticalAlignment: Text.AlignVCenter
                     onClicked: backend.openOsSettings("timezone")
                     Accessible.role: Accessible.Link
@@ -684,7 +684,7 @@ Rectangle {
                 SettingsParts.Gap { size: 10 }
                 OutlineDropdown {
                     width: 294; height: 31.3
-                    options: [{ label: qsTr("Ask me before translating") }, { label: qsTr("Auto-translate all messages") }, { label: qsTr("Never translate") }]
+                    options: [{ label: qsTr("Ask me before translating") }, { label: qsTr("Auto-translate all messages") }, { label: qsTr("Never Translate") }]
                     current: Math.max(0, translationCard.modes.indexOf(translationCard.settings.mode))
                     accessibleName: qsTr("How to handle messages in other languages")
                     onPicked: i => translationCard.save("translationMode", translationCard.modes[i])
@@ -998,7 +998,11 @@ Rectangle {
                 Row {
                     x: -8; spacing: 0
                     Repeater {
-                        model: [qsTr("None"), qsTr("Light"), qsTr("Medium light"), qsTr("Medium"), qsTr("Medium dark"), qsTr("Dark")]
+                        // Teams' radio names: its emoji skin tone words with
+                        // the first letter capitalised.
+                        model: [qsTr("none", "messaging:k1e57n758"), qsTr("light", "messaging:kdditzq3h"), qsTr("medium light", "messaging:k1ay2emet"),
+                            qsTr("medium", "messaging:kcv8hdqb2"), qsTr("medium dark", "messaging:kbkrx29m7"), qsTr("dark", "messaging:k2kcmet5z")]
+                            .map(t => t.length ? t[0].toUpperCase() + t.slice(1) : t)
                         Item {
                             required property string modelData
                             required property int index
@@ -1132,7 +1136,7 @@ Rectangle {
             SettingsParts.Card {
                 visible: root.page === "chats"
                 icon: "eye-20"; title: qsTr("Read receipts")
-                subtitle: qsTr("Let people know when you’ve seen their messages and know when they’ve seen yours. When this is off, you won't see read receipts from others.")
+                subtitle: qsTr("Let people know when you’ve seen their messages and know when they’ve seen yours. Close and reopen any chat windows for the setting to take effect in those chats.")
                 trailing: Component { SettingsParts.Toggle { on: backend.readReceipts; accessibleName: qsTr("Read receipts"); onToggled: v => backend.changeReadReceipts(v) } }
             }
             SettingsParts.Card {
@@ -1200,12 +1204,12 @@ Rectangle {
                 Item {
                     width: parent.width; height: soundRow.height
                     SettingsParts.CheckRow { id: soundRow; rowHeight: 44; labelWidth: 332.3; label: qsTr("Play sounds with notifications"); checked: root.prop("userPersonalSettings", ["soundsSettings", "alertSound"], "All") !== "Off"; onToggled: v => root.setProp("userPersonalSettings", "soundsSettings.alertSound", v ? "All" : "Off") }
-                    SoundPicker { y: 2.6; setting: "alertSoundType"; dflt: "Default"; keys: ["Default", "Vibe", "Nudge", "Tap", "Flick", "Pluck", "Summon", "Ping"]; accessibleName: qsTr("Notification sound") }
+                    SoundPicker { y: 2.6; setting: "alertSoundType"; dflt: "Default"; keys: ["Default", "Vibe", "Nudge", "Tap", "Flick", "Pluck", "Summon", "Ping"]; accessibleName: soundRow.label }
                 }
                 Item {
                     width: parent.width; height: urgentRow.height
                     SettingsParts.CheckRow { id: urgentRow; rowHeight: 44; labelWidth: 332.3; label: qsTr("Play sounds with urgent and priority contact notifications"); checked: notif.ts("PlayNotificationSoundsForUrgentAndPriority", "On") !== "Off"; onToggled: v => notif.setTs("PlayNotificationSoundsForUrgentAndPriority", v ? "On" : "Off") }
-                    SoundPicker { y: 2.6; setting: "alertUrgentSoundType"; dflt: "DefaultUrgent"; keys: ["DefaultUrgent", "Prioritize", "Escalate", "Alarm"]; accessibleName: qsTr("Urgent and priority contact notification sound") }
+                    SoundPicker { y: 2.6; setting: "alertUrgentSoundType"; dflt: "DefaultUrgent"; keys: ["DefaultUrgent", "Prioritize", "Escalate", "Alarm"]; accessibleName: urgentRow.label }
                 }
                 SettingsParts.CheckRow { rowHeight: 44; labelWidth: 332.3; label: qsTr("Play sounds with incoming calls, requests to join, and meeting start notifications"); checked: root.prop("userPersonalSettings", ["soundsSettings", "incomingCallsAndMeetingStartSound"], "On") !== "Off"; onToggled: v => root.setProp("userPersonalSettings", "soundsSettings.incomingCallsAndMeetingStartSound", v ? "On" : "Off") }
                 SettingsParts.CheckRow { rowHeight: 44; labelWidth: 332.3; label: qsTr("Play sounds when I'm busy or in a meeting"); checked: notif.ts("PlayNotificationSoundsWhenBusyOrInMeetings", "On") !== "Off"; onToggled: v => notif.setTs("PlayNotificationSoundsWhenBusyOrInMeetings", v ? "On" : "Off") }
@@ -1222,7 +1226,8 @@ Rectangle {
                 OutlineDropdown {
                     width: 293.3; height: 30
                     readonly property var secs: [5, 7, 15, 30, 60, 300]
-                    options: [{ label: qsTr("5 seconds (Default)") }, { label: qsTr("%n seconds", "settings:k1z6j877l_mf", 7) }, { label: qsTr("15 seconds") }, { label: qsTr("30 seconds") }, { label: qsTr("1 minute") }, { label: qsTr("%n minutes", "settings:kdf2mzr5x_mf", 5) }]
+                    // Teams' one plural message per unit (its "=5" form is "5 seconds (Default)").
+                    options: [{ label: qsTr("%n seconds", "settings:k1z6j877l_mf", 5) }, { label: qsTr("%n seconds", "settings:k1z6j877l_mf", 7) }, { label: qsTr("%n seconds", "settings:k1z6j877l_mf", 15) }, { label: qsTr("%n seconds", "settings:k1z6j877l_mf", 30) }, { label: qsTr("%n minutes", "settings:kdf2mzr5x_mf", 1) },{ label: qsTr("%n minutes", "settings:kdf2mzr5x_mf", 5) }]
                     current: Math.max(0, secs.indexOf(parseInt(root.local("toastSeconds", "5"))))
                     accessibleName: qsTr("Dismiss notifications after this amount of time")
                     onPicked: i => backend.setSetting("toastSeconds", String(secs[i]))
@@ -1321,7 +1326,7 @@ Rectangle {
                     notif.setLevel(["Global_Mention"], v ? 0 : 2)
                     for (const r of rows) notif.setLevel(r.keys, r.off ? (v ? 1 : 2) : (v ? 0 : 1))
                 }
-                trailing: Component { SettingsParts.Toggle { on: mentionsCard.on; accessibleName: qsTr("@Mentions %1").arg(mentionsCard.on ? qsTr("On") : qsTr("Off")); onToggled: v => mentionsCard.setAll(v) } }
+                trailing: Component { SettingsParts.Toggle { on: mentionsCard.on; accessibleName: mentionsCard.title + " " + (mentionsCard.on ? qsTr("On", "settings:k9vpf66yr") : qsTr("Off", "settings:k3jiar193")); onToggled: v => mentionsCard.setAll(v) } }
                 Repeater {
                     model: mentionsCard.rows
                     Item {
@@ -1405,7 +1410,7 @@ Rectangle {
                 // Mute / Unmute / Mute until I join or send a message).
                 Repeater {
                     model: [{ key: "meetingChatNotificationForAcceptedMeetings", label: qsTr("Meeting chat notifications for meetings I've accepted"), dflt: "MeetingsUserIsInvitedTo" },
-                            { key: "meetingChatNotificationForTentativeMeetings", label: qsTr("Meeting chat notifications for meetings marked as tentative or without a response"), dflt: "MeetingsUserParticipatesIn" }]
+                            { key: "meetingChatNotificationForTentativeMeetings", label: qsTr("Meeting chat notifications for meetings marked as tentative or no response"), dflt: "MeetingsUserParticipatesIn" }]
                     Item {
                         id: mcRow
                         required property var modelData
@@ -1724,7 +1729,7 @@ Rectangle {
                     HoverHandler { id: manageHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: Qt.openUrlExternally("https://myaccount.microsoft.com/?login_hint=" + encodeURIComponent(backend.userMail)) }
                     Accessible.role: Accessible.Link
-                    Accessible.name: qsTr("Manage Account for %1 (opens in browser)").arg(backend.userName)
+                    Accessible.name: qsTr("Manage Account for %1 (opens in new tab)").arg(backend.userName)
                 }
                 Rectangle { y: 72; width: parent.width; height: 0.67; color: theme.pick("#D1D1D1", "#3D3D3D", "#000000") }
                 Rectangle {
@@ -1791,7 +1796,8 @@ Rectangle {
                 trailing: detection ? workLocationToggle : null
                 Component {
                     id: workLocationToggle
-                    SettingsParts.Toggle { on: workLocationCard.autoOn; accessibleName: qsTr("Automatically set my work location"); onToggled: v => workLocationCard.setAuto(v) }
+                    SettingsParts.Toggle { on: workLocationCard.autoOn; // Teams' switch is labelled by its card's title and subtitle.
+                        accessibleName: workLocationCard.title + " " + qsTr("Automatically set my location across all devices when connecting to my organization's networks and devices.") + " " + qsTr("Learn about automatically setting a work location"); onToggled: v => workLocationCard.setAuto(v) }
                 }
                 SettingsParts.Button {
                     visible: workLocationCard.stationary
@@ -2697,10 +2703,12 @@ Rectangle {
                 SettingsParts.SwitchRow {
                     rowHeight: 36
                     label: qsTr("Automatically activate meeting room mode when in a meeting")
-                    sublabel: qsTr("Optimizes meeting setup for connected audio/video devices and room displays. Attendees see only meeting content on the room display.")
+                    // Teams' one sentence with its Learn More link (<0>).
+                    readonly property string msg: qsTr("Optimizes meeting setup for connected audio/video devices and room displays. Attendees see only meeting content on the room display. <0>Learn More</0>")
+                    sublabel: msg.replace(/\s*<0>[\s\S]*<\/0>\s*/, " ").trim()
                     on: root.local("pushToRoomAudio", "true") !== "false"
                     onToggled: v => backend.setSetting("pushToRoomAudio", v ? "true" : "false")
-                    link: qsTr("Learn More"); centred: true
+                    link: (msg.match(/<0>([\s\S]*)<\/0>/) || ["", qsTr("Learn More")])[1]; centred: true
                     onLinkActivated: Qt.openUrlExternally("https://aka.ms/meetingroommode")
                 }
             }
@@ -2937,7 +2945,7 @@ Rectangle {
             }
             Text {
                 visible: root.page === "calls"
-                text: qsTr("Out-of-office voicemail")
+                text: qsTr("Manage out-of-office voicemail")
                 font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; lineHeight: 22; lineHeightMode: Text.FixedHeight
                 color: theme.text
                 Accessible.role: Accessible.Heading
@@ -2945,7 +2953,7 @@ Rectangle {
             }
             SettingsParts.Card {
                 visible: root.page === "calls"
-                icon: "voicemail-arrow-back-20"; title: qsTr("Out-of-office voicemail")
+                icon: "voicemail-arrow-back-20"; title: qsTr("Manage out-of-office voicemail")
                 SettingsParts.SubHeading { text: qsTr("When should your greeting play") }
                 SettingsParts.Gap { size: 15 }
                 SettingsParts.CheckRow { label: qsTr("All the time"); checked: calls.vm.vmUseOof === true; onToggled: v => calls.setVm("vmUseOof", v) }
@@ -3237,7 +3245,7 @@ Rectangle {
                     width: 293.3; height: 30
                     options: linksPref.browsers.map(b => ({ label: b.label }))
                     current: Math.max(0, linksPref.browsers.findIndex(b => b.key === linksPref.choice))
-                    accessibleName: qsTr("Always open web links in")
+                    accessibleName: qsTr("Always open web links in:")
                     onPicked: i => backend.setSetting("linkBrowser", linksPref.browsers[i].key)
                 }
                 

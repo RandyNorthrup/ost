@@ -138,7 +138,7 @@ Item {
                 maximumLength: 60; clip: true; selectByMouse: true
                 onTextChanged: if (backend.customEmojiResult === "duplicate" || backend.customEmojiResult === "error") backend.customEmojiResult = ""
                 Keys.onReturnPressed: if (addButton.can) addButton.add()
-                Text { visible: !nameField.text; text: qsTr("(Enter a name for your emoji)"); font: nameField.font; color: theme.textSecondary }
+                Text { visible: !nameField.text; text: "(" + qsTr("Enter a name for your emoji") + ")"; font: nameField.font; color: theme.textSecondary }
                 Accessible.role: Accessible.EditableText
                 Accessible.name: qsTr("Name")
             }

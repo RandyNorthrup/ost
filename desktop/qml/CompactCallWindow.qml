@@ -77,7 +77,7 @@ Window {
                 { icon: cw.call.cameraOn ? "call-camera-filled" : "call-camera-off-filled", tip: cw.call.cameraOn ? qsTr("Turn camera off") : qsTr("Turn camera on"), strong: true, act: "camera" },
                 { icon: cw.call.muted || !cw.call.hasAudio ? "call-mic-off-filled" : "call-mic-filled", tip: cw.call.muted ? qsTr("Unmute mic") : qsTr("Mute mic"), strong: true, act: "mic" },
                 { icon: cw.call.sharing ? "call-share-stop-filled" : "call-share-filled", tip: qsTr("Share"), strong: true, act: "share" },
-                { icon: "call-raise", tip: cw.call.handRaised ? qsTr("Lower") : qsTr("Raise"), act: "raise" },
+                { icon: "call-raise", tip: cw.call.handRaised ? qsTr("Lower your hand") : qsTr("Raise your hand"), act: "raise" },
                 { icon: "call-react", tip: qsTr("React"), act: "react" },
                 { icon: "call-people", tip: qsTr("People"), act: "people", count: cw.call.roster.filter(p => p.active !== false).length }
             ] : []

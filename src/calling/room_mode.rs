@@ -337,44 +337,56 @@ const NAMES_IN_TITLE: usize = 3;
 /// The title Teams Rooms shows for a call it's in (the console's
 /// meeting-room-in-call-info and the call header): useMeetingTitle in
 /// Teams' bundles gives the calling intent's title, else the call's title
-/// (`callTitleChangedEvent`), else "Microsoft Teams meeting"
+/// (`callTitleChangedEvent`), else "OST meeting" (Teams' "Microsoft Teams meeting")
 /// (`teams_meeting_text_variant`; Rooms fetches a title for every call,
 /// `enableTitleFetchForAllCalls`). The call's title comes from
 /// callTitleService.getDefaultCallTitle (Rooms' message service has no
 /// meetup titles): with a topic, a channel's is `Meeting in "{topic}"`, a
 /// group chat's "Call with {topic}" ("Meeting in {topic}" for a huddle), a
 /// meeting's the topic itself; without one, a breakout room or a meeting
-/// is "Microsoft Teams meeting", a channel `Meeting in "{channel}"`, and
+/// is "OST meeting", a channel `Meeting in "{channel}"`, and
 /// anything else the other people's names (sorted, ", "; past three
 /// "{first name} and {n} others").
 pub fn call_title(conv: &CallConversation) -> String {
-    const DEFAULT: &str = "Microsoft Teams meeting";
+    use crate::i18n::{fill, tr_id};
+    // Teams' strings, in the app language ("Teams" in them reads "OST").
+    let default = || tr_id("OST meeting", "calling:k7f4r2l46");
+    let in_channel = |c: &str| fill(&tr_id("Meeting in \"%1\"", "calling:k81e9cufd"), &[c]).trim_end().to_string();
     let topic = conv.topic.as_deref().map(str::trim).filter(|t| !t.is_empty());
     match (conv.kind, topic) {
-        (Some(ConversationKind::Channel), Some(t)) => return format!("Meeting in \"{t}\""),
+        (Some(ConversationKind::Channel), Some(t)) => return in_channel(t),
         (Some(ConversationKind::Group), Some(t)) => {
-            return if conv.huddle { format!("Meeting in {t}") } else { format!("Call with {t}") };
-        }
-        (Some(ConversationKind::PrivateMeeting), Some(t)) => return t.to_string(),
-        (Some(ConversationKind::BreakoutRoom), t) => return t.unwrap_or(DEFAULT).to_string(),
-        (Some(ConversationKind::Channel), None) => {
-            return match conv.channel_name.as_deref().map(str::trim).filter(|c| !c.is_empty()) {
-                Some(c) => format!("Meeting in \"{c}\""),
-                None => DEFAULT.to_string(),
+            return if conv.huddle {
+                fill(&tr_id("Meeting in %1", "calling:k4836zld9"), &[t])
+            } else {
+                fill(&tr_id("Call with %1", "calling:k5s9mvdcx"), &[t])
             };
         }
-        (Some(ConversationKind::PrivateMeeting), None) => return DEFAULT.to_string(),
+        (Some(ConversationKind::PrivateMeeting), Some(t)) => return t.to_string(),
+        (Some(ConversationKind::BreakoutRoom), t) => return t.map(str::to_string).unwrap_or_else(default),
+        (Some(ConversationKind::Channel), None) => {
+            return match conv.channel_name.as_deref().map(str::trim).filter(|c| !c.is_empty()) {
+                Some(c) => in_channel(c),
+                None => default(),
+            };
+        }
+        (Some(ConversationKind::PrivateMeeting), None) => return default(),
         _ => {}
     }
     let mut names: Vec<&str> = conv.others.iter().map(|n| n.trim()).filter(|n| !n.is_empty()).collect();
     if names.is_empty() {
-        return DEFAULT.to_string();
+        return default();
     }
     names.sort_unstable();
     if names.len() > NAMES_IN_TITLE {
         let first = names[0].split(' ').next().unwrap_or(names[0]);
         let n = names.len() - 1;
-        return if n == 1 { format!("{first} and {n} other") } else { format!("{first} and {n} others") };
+        let text = if n == 1 {
+            tr_id("%1 and %2 other", "calling:k2foouxfo")
+        } else {
+            tr_id("%1 and %2 others", "calling:kch21kbpc")
+        };
+        return fill(&text, &[first, &n.to_string()]);
     }
     names.join(", ")
 }
@@ -428,7 +440,7 @@ mod tests {
         };
         use ConversationKind::*;
         assert_eq!(call_title(&conv(Some(PrivateMeeting), Some("OST TEST 226 sync"), &["OST Test 1"])), "OST TEST 226 sync");
-        assert_eq!(call_title(&conv(Some(PrivateMeeting), None, &["OST Test 1"])), "Microsoft Teams meeting");
+        assert_eq!(call_title(&conv(Some(PrivateMeeting), None, &["OST Test 1"])), "OST meeting");
         assert_eq!(call_title(&conv(Some(Channel), Some("OST layout test"), &[])), "Meeting in \"OST layout test\"");
         let mut ch = conv(Some(Channel), None, &[]);
         ch.channel_name = Some("General".into());
@@ -437,8 +449,8 @@ mod tests {
         assert_eq!(call_title(&conv(Some(Group), None, &["OST Test 2", "OST Test 1"])), "OST Test 1, OST Test 2");
         assert_eq!(call_title(&conv(Some(Other), None, &["OST Test 1"])), "OST Test 1");
         assert_eq!(call_title(&conv(None, None, &["D d", "C c", "B b", "A a"])), "A and 3 others");
-        assert_eq!(call_title(&conv(None, None, &[])), "Microsoft Teams meeting");
-        assert_eq!(call_title(&conv(Some(BreakoutRoom), None, &["x"])), "Microsoft Teams meeting");
+        assert_eq!(call_title(&conv(None, None, &[])), "OST meeting");
+        assert_eq!(call_title(&conv(Some(BreakoutRoom), None, &["x"])), "OST meeting");
     }
 
     #[test]

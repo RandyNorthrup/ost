@@ -118,7 +118,7 @@ Rectangle {
             Text {
                 visible: root.drafts.length === 0
                 x: 32; y: 8
-                text: qsTr("No drafts")
+                text: qsTr("You have no draft messages.")
                 font.family: theme.font; font.pixelSize: theme.base
                 color: theme.textSecondary
             }

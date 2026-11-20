@@ -98,7 +98,7 @@ pub fn create_body(name: &str, description: &str) -> Value {
 }
 
 pub async fn create(name: &str, description: &str) -> Result<Value> {
-    anyhow::ensure!(!name.trim().is_empty(), "Collection name is required");
+    anyhow::ensure!(!name.trim().is_empty(), crate::i18n::tr_id("Collection name is required", "immersiveContent:kd4bhsueb"));
     worlds(reqwest::Method::POST, "/v3.0/collections", Some(&create_body(name, description))).await
 }
 

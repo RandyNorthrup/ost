@@ -154,7 +154,8 @@ Rectangle {
             Text {
                 visible: root.shown.length === 0
                 x: 32; y: 8
-                text: root.mentions.length === 0 ? qsTr("No mentions yet") : qsTr("No mentions match")
+                // Teams' Mentions view empty states (its chats/channels filters' own).
+                text: root.chip === "channels" ? qsTr("No new channel mentions") : root.chip === "chats" ? qsTr("No new chat mentions") : qsTr("No new @mentions", "simpleCollab:ka6crawig")
                 font.family: theme.font; font.pixelSize: theme.base
                 color: theme.textSecondary
             }

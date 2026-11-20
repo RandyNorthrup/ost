@@ -268,7 +268,7 @@ Popup {
                 RotationAnimator on rotation { from: 0; to: 360; duration: 1500; loops: Animation.Infinite; running: root.page === "pending" && root.opened }
             }
             Accessible.role: Accessible.ProgressBar
-            Accessible.name: qsTr("Getting your trial ready")
+            Accessible.name: qsTr("Getting your trial ready...")
         }
     }
 
@@ -317,11 +317,11 @@ Popup {
             wrapMode: Text.Wrap
             textFormat: Text.RichText
             readonly property int days: root.st.daysLeft || 0
-            text: qsTr("You’ve got <0><0></0></0> left to enjoy your free trial of Teams Premium").replace("<0><0></0></0>", "<span style=\"color:#2A5FC6\">" + qsTr("%n days", "", days) + "</span>")
+            text: qsTr("You’ve got %1 left to enjoy your free trial of Teams Premium").arg("<span style=\"color:#2A5FC6\">" + qsTr("%n days", "", days) + "</span>")
             font.family: theme.font; font.pixelSize: 24; font.weight: Font.Bold; lineHeight: 32; lineHeightMode: Text.FixedHeight
             color: theme.text
             Accessible.role: Accessible.Heading
-            Accessible.name: qsTr("You’ve got <0><0></0></0> left to enjoy your free trial of Teams Premium").replace("<0><0></0></0>", qsTr("%n days", "", days))
+            Accessible.name: qsTr("You’ve got %1 left to enjoy your free trial of Teams Premium").arg(qsTr("%n days", "", days))
         }
         Line { x: 20; y: 269.67; width: 560; text: qsTr("How's your trial going? Request a license anytime to keep using premium features."); lineHeight: 18.67 }
         Cards { y: 312 }
@@ -368,6 +368,17 @@ Popup {
                 property string title
                 property string text
                 property var points: []
+                /// Teams' whole section message: the text, then its points
+                /// as <0><0>…</0><1>…</1>…</0>; fills text and points.
+                property string message
+                onMessageChanged: {
+                    const i = message.indexOf("<0>")
+                    text = (i < 0 ? message : message.slice(0, i)).trim()
+                    const pts = [], re = /<(\d+)>([^<]*)<\/\1>/g
+                    let m
+                    while ((m = re.exec(message))) pts.push(m[2])
+                    points = pts
+                }
                 property string url
                 property bool shaded: false
                 /// The picture's offset from the title (measured per section).
@@ -399,14 +410,12 @@ Popup {
             }
             Section {
                 sectionTop: 79.3; picture: "premium-benefits-protected.svg"; title: qsTr("More protected")
-                text: qsTr("Expand security in meetings & calls with added controls and features")
-                points: [qsTr("End-to-end encryption for up to 200 participants"), qsTr("Watermarks for video, audio, and shared content"), qsTr("Designate who can record in meetings"), qsTr("Real-time sensitive content detection"), qsTr("Meeting sensitivity labels*"), qsTr("Turn off copy and paste of meeting chat*")]
+                message: qsTr("Expand security in meetings & calls with added controls and features <0><0>End-to-end encryption for up to 200 participants</0><1>Watermarks for video, audio, and shared content</1><2>Designate who can record in meetings</2><3>Real-time sensitive content detection</3><4>Meeting sensitivity labels*</4><5>Turn off copy and paste of meeting chat*</5></0>")
                 url: "https://support.microsoft.com/en-us/office/advanced-meeting-protection-in-microsoft-teams-premium-46e39bcb-40e0-4617-84be-14be9dd99780"
             }
             Section {
                 sectionTop: 340.7; pictureLeft: false; shaded: true; pictureDy: 58.6; picture: "premium-benefits-engaging.svg"; title: qsTr("More engaging")
-                text: qsTr("Create rich, personalized experiences for stronger connections with colleagues and customers")
-                points: [qsTr("Queues app with shared call history across the queue, silent coaching features, and rich analytics in Teams Phone"), qsTr("Manage customer appointments end-to-end, from scheduling to follow-up with Advanced Bookings"), qsTr("Bring your brand into every meeting with your organization’s logo, colors, branded reactions, and custom backgrounds"), qsTr("Turn every interview, QBR, and exec review into a consistent experience with admin-approved templates*")]
+                message: qsTr("Create rich, personalized experiences for stronger connections with colleagues and customers <0><0>Queues app with shared call history across the queue, silent coaching features, and rich analytics in Teams Phone</0><1>Manage customer appointments end-to-end, from scheduling to follow-up with Advanced Bookings</1><2>Bring your brand into every meeting with your organization’s logo, colors, branded reactions, and custom backgrounds</2><3>Turn every interview, QBR, and exec review into a consistent experience with admin-approved templates*</3></0>")
                 url: "https://support.microsoft.com/en-us/office/engaging-meeting-experiences-in-microsoft-teams-premium-b48c2174-0faa-4cf9-800b-75e030c115e3"
             }
             Section {

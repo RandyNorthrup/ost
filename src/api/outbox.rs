@@ -299,48 +299,50 @@ pub fn classify(
     (failure, pipeline.map(str::to_string))
 }
 
-/// The failed message's text (533020 `v`, send variant).
-pub fn failure_text(pipeline: Option<&str>) -> &'static str {
+/// The failed message's text (533020 `v`, send variant), in the app
+/// language (the desktop adds "Report a problem" to the 404 text, which it
+/// knows by the same translation).
+pub fn failure_text(pipeline: Option<&str>) -> String {
+    use crate::i18n::tr_id;
     match pipeline {
-        Some("MessageTooLong") => "Failed to send. Message too large.",
-        Some("CONVERSATION_DELETED") => {
-            "Message didn't send. Check your connection or try again later."
-        }
+        Some("MessageTooLong") => tr_id("Failed to send. Message too large.", "messaging:kcem7052n"),
+        Some("CONVERSATION_DELETED") => tr_id("Message didn't send. Check your connection or try again later.", "messaging:k15klm2m"),
         Some("TENANT_MESSAGE_SEND_LIMIT_EXCEEDED" | "MOERA_TENANT_MESSAGE_SEND_LIMIT_EXCEEDED") => {
-            "Message limit reached"
+            tr_id("Message limit reached", "messaging:kbk4x8bad")
         }
         Some("SPAM_MESSAGE_DETECTED") => {
-            "This message might not meet Teams standards. Edit it, and try again."
+            "This message might not meet Teams standards. Edit it, and try again.".into()
         }
         Some("QUARANTINE_URLS_BLOCKED") => {
-            "You can't send links in this message until the invite is accepted."
+            tr_id("You can't send links in this message until the invite is accepted.", "messaging:ksqxfhn0")
         }
         Some("THREADED_CHAT_NOT_ELIGIBLE_FOR_CONVERSION") => {
-            "This chat doesn't support threading yet."
+            tr_id("This chat doesn't support threading yet.", "messaging:kqnrat5b")
         }
-        _ => "Failed to send.",
+        _ => tr_id("Failed to send.", "messaging:kmkig6iv"),
     }
 }
 
-/// The pending icon's tooltip (533020 `u`).
-pub fn pending_tooltip(state: SendState, pipeline: Option<&str>) -> &'static str {
+/// The pending icon's tooltip (533020 `u`), in the app language.
+pub fn pending_tooltip(state: SendState, pipeline: Option<&str>) -> String {
+    use crate::i18n::tr_id;
     if state == SendState::Sending {
-        return "Sending...";
+        return tr_id("Sending...", "messaging:kcoyozfhd");
     }
     match pipeline {
         Some("REJECT_HTTP_ERROR") => {
-            "Retrying... Message delayed due to connection issues. Please check your network."
+            tr_id("Retrying... Message delayed due to connection issues. Please check your network.", "messaging:k39ouat4l")
         }
         Some("DEPENDENT_OAM_ACTION") => {
-            "Waiting for another message action to complete. We'll send this soon."
+            tr_id("Waiting for another message action to complete. We'll send this soon.", "messaging:k892tawaq")
         }
         Some("SERVICE_THROTTLED") => {
-            "Retrying... You've reached the current limit. Please wait a moment."
+            tr_id("Retrying... You've reached the current limit. Please wait a moment.", "messaging:k3nvk42ug")
         }
         Some("SERVICE_ISSUE_GENERIC") => {
-            "The service is temporarily unavailable. We'll retry when it's back."
+            tr_id("The service is temporarily unavailable. We'll retry when it's back.", "messaging:k9evf3jg0")
         }
-        _ => "Retrying...",
+        _ => tr_id("Retrying...", "messaging:k87q18ol3"),
     }
 }
 
@@ -611,7 +613,7 @@ pub fn lie_view(o: &Outgoing) -> MessageView {
             pending_tooltip(o.state, o.pipeline_status.as_deref()),
         ),
         SendState::Error => ("failed", failure_text(o.pipeline_status.as_deref())),
-        SendState::Delivered => ("", ""),
+        SendState::Delivered => ("", String::new()),
     };
     MessageView {
         id: o
@@ -629,7 +631,7 @@ pub fn lie_view(o: &Outgoing) -> MessageView {
         html,
         importance: o.importance.clone(),
         send_state: send_state.into(),
-        send_note: send_note.into(),
+        send_note,
         can_retry: o.state == SendState::Error && can_retry(o.pipeline_status.as_deref()),
         subject: o.subject.clone(),
         announcement: o.banner_theme.as_ref().map(|t| super::messages::Announcement {
@@ -983,17 +985,17 @@ mod tests {
         let big = r#"{"message":"{\"subCode\":\"MessageSizeExceeded\"}"}"#;
         let (f, p) = classify(Some(400), big, false);
         assert_eq!(
-            (f, failure_text(p.as_deref())),
+            (f, failure_text(p.as_deref()).as_str()),
             (Failure::Terminal, "Failed to send. Message too large.")
         );
         let (f, p) = classify(Some(413), "", false);
         assert_eq!(
-            (f, failure_text(p.as_deref())),
+            (f, failure_text(p.as_deref()).as_str()),
             (Failure::Terminal, "Failed to send.")
         );
         let (f, p) = classify(Some(404), "", false);
         assert_eq!(
-            (f, failure_text(p.as_deref())),
+            (f, failure_text(p.as_deref()).as_str()),
             (
                 Failure::Terminal,
                 "Message didn't send. Check your connection or try again later."

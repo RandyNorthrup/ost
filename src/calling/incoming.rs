@@ -82,7 +82,7 @@ impl IncomingCall {
     pub fn caller_name(&self) -> String {
         self.caller_field("displayName")
             .filter(|n| !n.trim().is_empty())
-            .unwrap_or_else(|| "Unknown caller".to_string())
+            .unwrap_or_else(|| crate::i18n::tr_id("Unknown caller", "calling:k7mbq3lf2"))
     }
 
     /// The caller's MRI (for example `8:orgid:<oid>`).

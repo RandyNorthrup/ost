@@ -79,16 +79,18 @@ impl Catalog {
     }
 
     /// A reaction's name as Teams shows it: the six classic ones by name,
-    /// otherwise the emoticon's description (226455).
+    /// otherwise the emoticon's description (226455); the six in the app
+    /// language (`icons_${id}_reactions`).
     pub fn reaction_name(&self, key: &str) -> String {
+        use crate::i18n::tr_id;
         let (id, _) = parse_key(key);
         match id.as_str() {
-            "like" | "yes" => "Like".into(),
-            "heart" => "Heart".into(),
-            "laugh" => "Laugh".into(),
-            "surprised" => "Surprised".into(),
-            "sad" => "Sad".into(),
-            "angry" => "Angry".into(),
+            "like" | "yes" => tr_id("Like", "messaging:k4e5xa0ih"),
+            "heart" => tr_id("Heart", "messaging:kaxpfkm2m"),
+            "laugh" => tr_id("Laugh", "messaging:kbg81yub9"),
+            "surprised" => tr_id("Surprised", "messaging:k7tq6d4o3"),
+            "sad" => tr_id("Sad", "messaging:kbhybxwjq"),
+            "angry" => tr_id("Angry", "messaging:k27xecwgd"),
             _ => self.get(&id).map(|e| e.description.clone()).unwrap_or(id),
         }
     }

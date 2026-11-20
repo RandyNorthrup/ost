@@ -579,11 +579,15 @@ pub fn parse_recipients(reply: &serde_json::Value, my_oid: &str) -> Vec<serde_js
                     } else {
                         r["EmailAddresses"][0].as_str().map(str::to_string).unwrap_or(upn.clone())
                     };
-                    let mut name = s(&r["DisplayName"]);
+                    let plain = s(&r["DisplayName"]);
+                    // You: "<name> (You)" (Teams' self tag, in the app
+                    // language); `plain_name` is the name alone.
                     if !my_oid.is_empty() && oid == my_oid.to_ascii_lowercase() {
-                        name.push_str(" (You)");
+                        let name = format!("{plain} {}", crate::i18n::tr_id("(You)", "autosuggest:k9m83y7y2"));
+                        serde_json::json!({ "kind": "person", "oid": oid, "name": name, "plain_name": plain, "you": true, "sub": sub, "upn": upn, "guest": guest })
+                    } else {
+                        serde_json::json!({ "kind": "person", "oid": oid, "name": plain, "sub": sub, "upn": upn, "guest": guest })
                     }
-                    serde_json::json!({ "kind": "person", "oid": oid, "name": name, "sub": sub, "upn": upn, "guest": guest })
                 }
                 "Chat" => serde_json::json!({ "kind": "chat", "id": s(&r["ThreadId"]), "name": s(&r["Name"]), "sub": "", "thread_type": s(&r["ThreadType"]) }),
                 "Channel" => serde_json::json!({ "kind": "chat", "id": s(&r["ThreadId"]), "name": s(&r["Name"]), "sub": s(&r["TeamName"]), "thread_type": "channel", "group": s(&r["GroupId"]) }),

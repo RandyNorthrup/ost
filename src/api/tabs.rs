@@ -42,7 +42,8 @@ pub struct MenuItem {
     /// renameTab, updateTab, devicePermissions, aboutTab, moveLeft,
     /// moveRight, removeTab, or divider.
     pub key: &'static str,
-    pub label: &'static str,
+    /// In the app language.
+    pub label: String,
     pub enabled: bool,
 }
 
@@ -164,6 +165,7 @@ pub fn menus(
     if kind == Posts {
         return (Vec::new(), Vec::new());
     }
+    use crate::i18n::tr_id;
     let item = |key, label| MenuItem {
         key,
         label,
@@ -171,7 +173,7 @@ pub fn menus(
     };
     let divider = || MenuItem {
         key: "divider",
-        label: "",
+        label: String::new(),
         enabled: true,
     };
     // Per item: the tab kinds that keep it (module 542104).
@@ -192,20 +194,20 @@ pub fn menus(
             all.push((m, submenu_only));
         }
     };
-    push(item("popOut", "Open tab in new window"), false, popout);
-    push(item("expandTab", "Expand tab"), true, reload_expand);
-    push(item("reloadTab", "Reload tab"), true, reload_expand);
-    push(item("goToWebsite", "Open in browser"), false, website);
-    push(item("copyLink", "Copy link to tab"), false, copy_link);
+    push(item("popOut", tr_id("Open tab in new window", "extensibility:kb8ixr8m0")), false, popout);
+    push(item("expandTab", tr_id("Expand tab", "extensibility:k9oizye16")), true, reload_expand);
+    push(item("reloadTab", tr_id("Reload tab", "extensibility:k1eoad9j9")), true, reload_expand);
+    push(item("goToWebsite", tr_id("Open in browser", "extensibility:k9hj5pgm9")), false, website);
+    push(item("copyLink", tr_id("Copy link to tab", "extensibility:k6hbp3jub")), false, copy_link);
     // The divider before Rename shows with Rename (ConfigDivider).
     push(divider(), false, rename);
-    push(item("renameTab", "Rename"), false, rename);
-    push(item("devicePermissions", "App permissions"), false, perms);
-    push(item("aboutTab", "About this tab"), false, about);
+    push(item("renameTab", tr_id("Rename", "extensibility:k52ozwndw")), false, rename);
+    push(item("devicePermissions", tr_id("App permissions", "extensibility:k3bpq3z6e")), false, perms);
+    push(item("aboutTab", tr_id("About this tab", "extensibility:k9tl9vpwx")), false, about);
     push(
         MenuItem {
             key: "moveLeft",
-            label: "Move left",
+            label: tr_id("Move left", "framework:k2nw9flpz"),
             enabled: can_left,
         },
         false,
@@ -214,14 +216,14 @@ pub fn menus(
     push(
         MenuItem {
             key: "moveRight",
-            label: "Move right",
+            label: tr_id("Move right", "framework:k4ow0360"),
             enabled: can_right,
         },
         false,
         true,
     );
     push(divider(), false, remove);
-    push(item("removeTab", "Remove"), false, remove);
+    push(item("removeTab", tr_id("Remove", "extensibility:k5w6otyxa")), false, remove);
     let menu = all.iter().map(|(m, _)| m.clone()).collect();
     let context = all
         .iter()
@@ -827,18 +829,19 @@ async fn patch_pinned(
 }
 
 /// Why a new tab name can't be used, as Teams' Rename dialog says it
-/// (none when it can).
-pub fn rename_error(name: &str, others: &[String]) -> Option<&'static str> {
+/// (none when it can), in the app language.
+pub fn rename_error(name: &str, others: &[String]) -> Option<String> {
+    use crate::i18n::tr_id;
     let trimmed = name.trim();
     if trimmed.is_empty() {
-        Some("Name is required")
+        Some(tr_id("Name is required", "extensibility:k7hld280c"))
     } else if name.chars().count() > 128 {
-        Some("Tab name cannot exceed 128 characters.")
+        Some("Tab name cannot exceed 128 characters.".into())
     } else if others
         .iter()
         .any(|o| o.trim().to_lowercase() == trimmed.to_lowercase())
     {
-        Some("You already have a tab with that name. Try a different one.")
+        Some(tr_id("You already have a tab with that name. Try a different one.", "extensibility:k7gfc5tqi"))
     } else {
         None
     }
@@ -1137,16 +1140,16 @@ mod tests {
     #[test]
     fn rename_errors_are_teams_own() {
         let others = vec!["Notes".to_string(), "Page".to_string()];
-        assert_eq!(rename_error("  ", &others), Some("Name is required"));
+        assert_eq!(rename_error("  ", &others).as_deref(), Some("Name is required"));
         assert_eq!(
-            rename_error(&"x".repeat(129), &others),
+            rename_error(&"x".repeat(129), &others).as_deref(),
             Some("Tab name cannot exceed 128 characters.")
         );
         assert_eq!(
-            rename_error(" notes ", &others),
+            rename_error(" notes ", &others).as_deref(),
             Some("You already have a tab with that name. Try a different one.")
         );
-        assert_eq!(rename_error("Plans", &others), None);
+        assert_eq!(rename_error("Plans", &others).as_deref(), None);
     }
 
     #[test]

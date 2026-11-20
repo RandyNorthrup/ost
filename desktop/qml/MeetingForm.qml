@@ -102,10 +102,17 @@ Item {
     function allMails() { return required.concat(optional).map(p => (p.address || "").toLowerCase()).filter(m => m) }
     function fmtTime(d) { return theme.fmtTime(d, "h:mm AP") }
     function fmtDate(d) { return theme.fmtDate(d, "M/d/yyyy") }
+    // Teams' scheduling form duration: "1d 2h 30m" (its calendar_meeting_
+    // duration_in_* strings), read as "1 day 2 hours 30 minutes".
     function durLabel(min) {
-        if (min < 60) return qsTr("%1m").arg(min)
-        const h = Math.floor(min / 60), m = min % 60
-        return m ? qsTr("%1h").arg(h) + " " + qsTr("%1m").arg(m) : qsTr("%1h").arg(h)
+        const d = Math.floor(min / 1440), h = Math.floor(min % 1440 / 60), m = min % 60
+        return [d ? qsTr("%1d", "calendar:k1fh6unlv").arg(d) : "", h ? qsTr("%1h", "calendar:k4xp2r11v").arg(h) : "",
+                m || !d && !h ? qsTr("%1m", "calendar:kdur9xdkr").arg(m) : ""].filter(t => t).join(" ")
+    }
+    function durSpoken(min) {
+        const d = Math.floor(min / 1440), h = Math.floor(min % 1440 / 60), m = min % 60
+        return [d ? qsTr("%n days", "calendar:kaltotpef_mf", d) : "", h ? qsTr("%n hours", "calendar:kbbf4ppcb_mf", h) : "",
+                m || !d && !h ? qsTr("%n minutes", "calendar:k7zo3w10z_mf", m) : ""].filter(t => t).join(" ")
     }
     function nextSlot() {
         const s = new Date(); s.setSeconds(0, 0)
@@ -193,23 +200,34 @@ Item {
         r.range = { startDate: start, endDate: end }
         return r
     }
+    // Teams' weekday list: "Monday, Tuesday and Thursday".
     function daysText(days) {
-        const d = days.slice().sort()
-        // A run of three or more: "Monday through Friday".
-        const run = d.length >= 3 && d[d.length - 1] - d[0] === d.length - 1
-        if (run) return qsTr("%1 through %2").arg(dayLabels[d[0]]).arg(dayLabels[d[d.length - 1]])
-        if (d.length <= 1) return dayLabels[d[0] === undefined ? 0 : d[0]]
-        return qsTr("%1 and %2").arg(d.slice(0, -1).map(i => dayLabels[i]).join(", ")).arg(dayLabels[d[d.length - 1]])
+        const names = days.slice().sort().map(i => dayLabels[i])
+        if (names.length <= 1) return names[0] || dayLabels[0]
+        const head = names.slice(0, -1).reduce((a, b) => qsTr("%1, %2", "calendar:knwjgmlv").arg(a).arg(b))
+        return qsTr("%1 and %2", "calendar:k4zyer6mh").arg(head).arg(names[names.length - 1])
     }
+    // Teams' recurrence summary (its calendar meeting_recurrence_new_
+    // summary_pattern_* sentences): every day of the week weekly is daily,
+    // Monday to Friday weekly is "every Monday through Friday", a yearly
+    // one names no start.
     function summary(r) {
         if (!r) return qsTr("Does not repeat")
-        const n = r.interval
-        let what
-        if (r.unit === "day") what = n === 1 ? qsTr("every day") : qsTr("every %1 days").arg(n)
-        else if (r.unit === "week") what = n === 1 ? qsTr("every %1").arg(daysText(r.days)) : qsTr("every %1 weeks on %2").arg(n).arg(daysText(r.days))
-        else if (r.unit === "month") what = n === 1 ? qsTr("every month on day %1").arg(r.start.getDate()) : qsTr("every %1 months on day %2").arg(n).arg(r.start.getDate())
-        else what = n === 1 ? qsTr("every year on %1 %2").arg(monthLabels[r.start.getMonth()]).arg(r.start.getDate()) : qsTr("every %1 years on %2 %3").arg(n).arg(monthLabels[r.start.getMonth()]).arg(r.start.getDate())
-        return r.end ? qsTr("Occurs %1 until %2").arg(what).arg(fmtDate(r.end)) : qsTr("Occurs %1 starting %2").arg(what).arg(fmtDate(r.start))
+        const n = r.interval, s = fmtDate(r.start), e = r.end ? fmtDate(r.end) : ""
+        const d = r.days.slice().sort()
+        if (r.unit === "day" || r.unit === "week" && n === 1 && d.length === 7)
+            return e ? qsTr("Occurs every %n days starting %1 until %2", "calendar:k6iew97jq_mf", n).arg(s).arg(e)
+                     : qsTr("Occurs every %n days starting %1", "calendar:k46d649ty_mf", n).arg(s)
+        if (r.unit === "week" && n === 1 && d.join() === "1,2,3,4,5")
+            return e ? qsTr("Occurs every Monday through Friday until %1").arg(e) : qsTr("Occurs every Monday through Friday")
+        if (r.unit === "week")
+            return e ? qsTr("Occurs every %n weeks on %1 starting %2 until %3", "calendar:k6ebbtba8_mf", n).arg(daysText(d)).arg(s).arg(e)
+                     : qsTr("Occurs every %n weeks on %1 starting %2", "calendar:k5i6xu768_mf", n).arg(daysText(d)).arg(s)
+        if (r.unit === "month")
+            return e ? qsTr("Occurs every %n months on day %1 starting %2 until %3", "calendar:kcfcx7stk_mf", n).arg(r.start.getDate()).arg(s).arg(e)
+                     : qsTr("Occurs every %n months on day %1 starting %2", "calendar:kdvq913fc_mf", n).arg(r.start.getDate()).arg(s)
+        return e ? qsTr("Occurs every year on day %1 of %2 until %3").arg(r.start.getDate()).arg(monthLabels[r.start.getMonth()]).arg(e)
+                 : qsTr("Occurs every year on day %1 of %2").arg(r.start.getDate()).arg(monthLabels[r.start.getMonth()])
     }
 
     // ── the form, as submit() sends it ──────────────────────────────
@@ -400,7 +418,7 @@ Item {
             BarButton2 {
                 id: categoryBtn
                 visible: !root.readOnly
-                label: qsTr("Category: None"); chevron: true
+                label: qsTr("Category: %n selected", "calendar:k2kxygcv5_mf", 0); chevron: true
                 enabledState: !root.channel
                 onClicked: categoryMenu.open()
                 MenuPopup { id: categoryMenu; y: categoryBtn.height; items: [{ label: qsTr("None"), checked: true }] }
@@ -493,7 +511,7 @@ Item {
                         required property int index
                         icon: index === 0 ? "clipboard-20" : ""; height: 31
                         Repeater {
-                            model: [["name", qsTr("External guest name *")], ["email", qsTr("Email *")]]
+                            model: [["name", qsTr("External guest name") + " *"], ["email", qsTr("Email", "calendar:k35rkn32l") + " *"]]
                             FieldBox {
                                 id: guestBox
                                 required property var modelData
@@ -585,7 +603,7 @@ Item {
                         LinkButton {
                             visible: !root.readOnly && !root.showOptional
                             anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter
-                            label: qsTr("+ Optional")
+                            label: "+ " + qsTr("Optional", "calendar:k3udpyy3u")
                             onClicked: { root.showOptional = true; optionalInput.forceActiveFocus() }
                         }
                     }
@@ -700,7 +718,7 @@ Item {
                             anchors.verticalCenter: parent.verticalCenter
                             text: root.durLabel(root.durationMin)
                             font.family: theme.font; font.pixelSize: 14; font.weight: Font.Medium; color: theme.textSecondary
-                            Accessible.name: qsTr("Meeting duration %1 minutes").arg(root.durationMin)
+                            Accessible.name: qsTr("Meeting duration %1").arg(root.durSpoken(root.durationMin))
                         }
                         Row {
                             anchors.verticalCenter: parent.verticalCenter
@@ -814,7 +832,7 @@ Item {
                         Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Send personal invites"); font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
                         FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "info-16"; size: 16; color: theme.textSecondary
                             Accessible.role: Accessible.StaticText
-                            Accessible.name: qsTr("Channel members get the meeting in their own calendars.") }
+                            Accessible.name: qsTr("Meeting invitations will be added to the personal calendars of all channel members.") }
                     }
                 }
             }
@@ -1045,7 +1063,7 @@ Item {
             HoverHandler { id: collapseHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.paneOpen = !root.paneOpen }
             Accessible.role: Accessible.Button
-            Accessible.name: (root.existing ? qsTr("Tracking") : qsTr("Options")) + (root.paneOpen ? qsTr(", Visible") : qsTr(", Hidden"))
+            Accessible.name: (root.existing ? qsTr("Tracking") : qsTr("Options")) + ", " + (root.paneOpen ? qsTr("Visible", "calendar:k6nd3g73t") : qsTr("Hidden", "calendar:k3fucthaz"))
         }
         // Options
         Column {
@@ -1069,7 +1087,7 @@ Item {
                 Text { text: qsTr("Who can bypass the lobby?"); font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
                 FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "info-16"; size: 16; color: theme.textSecondary
                     Accessible.role: Accessible.StaticText
-                    Accessible.name: qsTr("Who can bypass the lobby?. More information") }
+                    Accessible.name: qsTr("Who can bypass the lobby?", "calendar:kcogvhd7i") + ". " + qsTr("More information") }
             }
             PaneDropdown {
                 id: lobbyDrop
@@ -1123,7 +1141,7 @@ Item {
                         { key: "tentativelyAccepted", label: qsTr("Tentative") },
                         { key: "declined", label: qsTr("Declined") },
                         { key: "following", label: qsTr("Following") },
-                        { key: "none", label: qsTr("Didn't respond") }
+                        { key: "none", label: qsTr("No response", "calendar:k65z5m1zz") }
                     ]
                     Column {
                         id: group

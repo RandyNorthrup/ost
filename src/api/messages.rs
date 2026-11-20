@@ -1045,90 +1045,161 @@ pub fn chat_event(message_type: &str, content: &str) -> Option<ChatEvent> {
     }
 }
 
-/// Teams' sentence for an event (module 75579's strings), with names.
+/// Teams' sentence for an event (module 75579's strings, in the app
+/// language), with names. Teams picks the sentence by how many people it
+/// names: one, two, or the first and "N others".
 pub fn event_text(e: &ChatEvent, name: &dyn Fn(&str) -> String, meeting: bool) -> String {
-    let others = |n: usize| {
-        if n == 1 {
-            "1 other".to_string()
-        } else {
-            format!("{n} others")
-        }
-    };
-    // <1>, <1> and <2>, or <1> and N others.
-    let list = |ts: &[String]| -> String {
-        match ts.len() {
-            0 => String::new(),
-            1 => name(&ts[0]),
-            2 => format!("{} and {}", name(&ts[0]), name(&ts[1])),
-            n => format!("{} and {}", name(&ts[0]), others(n - 1)),
-        }
-    };
+    use crate::i18n::{fill, tr_id, tr_id_n};
+    let ts = &e.targets;
+    let n = ts.len();
+    let t = |i: usize| ts.get(i).map(|m| name(m)).unwrap_or_default();
+    // Teams' {{otherTargets}}: everyone after the first.
+    let others = || tr_id_n("%n others", "messaging:k7xsi91tl_mf", n.saturating_sub(1) as i64);
     let actor = name(&e.actor);
+    // A sentence naming the targets, (one, two, many) as Teams words them,
+    // after `lead` (the initiator) when given.
+    let targets = |one: String, two: String, many: String, lead: Option<&str>| -> String {
+        let mut args: Vec<String> = lead.map(str::to_string).into_iter().collect();
+        let text = match n {
+            0 | 1 => {
+                args.push(t(0));
+                one
+            }
+            2 => {
+                args.extend([t(0), t(1)]);
+                two
+            }
+            _ => {
+                args.extend([t(0), others()]);
+                many
+            }
+        };
+        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        fill(&text, &refs)
+    };
     match e.kind.as_str() {
         "AddMember" => {
-            let base = format!("{actor} added {} to the chat", list(&e.targets));
-            match e.history_days {
-                None => format!("{base}."),
-                Some(0) => format!("{base} and shared all chat history."),
-                Some(1) => format!("{base} and shared chat history from the past day."),
-                Some(d) => format!("{base} and shared chat history from the past {d} days."),
+            let a = Some(actor.as_str());
+            match (e.history_days, meeting) {
+                (None, false) => targets(
+                    tr_id("%1 added %2 to the chat.", "messaging:k1xbadgkh"),
+                    tr_id("%1 added %2 and %3 to the chat.", "messaging:ke0fw4e3g"),
+                    tr_id("%1 added %2 and %3 to the chat.", "messaging:kcbe2kbc1"),
+                    a,
+                ),
+                (None, true) => targets(
+                    tr_id("%1 added %2 to the chat.", "messaging:kb6s4fm2d"),
+                    tr_id("%1 added %2 and %3 to the chat.", "messaging:k6s8xcc48"),
+                    tr_id("%1 added %2 and %3 to the chat.", "messaging:k5kbme8np"),
+                    a,
+                ),
+                (Some(d), false) => targets(
+                    tr_id_n("%1 added %2 to the chat and shared chat history from the past %n days.", "messaging:k792viyfy_mf", d),
+                    tr_id_n("%1 added %2 and %3 to the chat and shared chat history from the past %n days.", "messaging:kdmtgu1af_mf", d),
+                    tr_id_n("%1 added %2 and %3 to the chat and shared chat history from the past %n days.", "messaging:k4nx62cv2_mf", d),
+                    a,
+                ),
+                (Some(d), true) => targets(
+                    tr_id_n("%1 added %2 to the chat and shared chat history from the past %n days.", "messaging:k2pmdi3ui_mf", d),
+                    tr_id_n("%1 added %2 and %3 to the chat and shared chat history from the past %n days.", "messaging:k84c6snrv_mf", d),
+                    tr_id_n("%1 added %2 and %3 to the chat and shared chat history from the past %n days.", "messaging:kc0p2glne_mf", d),
+                    a,
+                ),
             }
         }
         "DeleteMember" => {
-            if e.targets.len() == 1 && e.targets[0] == e.actor {
-                format!("{actor} left the chat.")
+            if n == 1 && ts[0] == e.actor {
+                let text = if meeting {
+                    tr_id("%1 left the chat.", "messaging:k9cj8pww5")
+                } else {
+                    tr_id("%1 left the chat.", "messaging:kdqyjg7h6")
+                };
+                fill(&text, &[&actor])
             } else if !e.actor.starts_with("8:") {
-                let verb = if e.targets.len() == 1 { "was" } else { "were" };
-                format!("{} {verb} removed from the chat.", list(&e.targets))
+                targets(
+                    tr_id("%1 was removed from the chat.", "messaging:k7brep05k"),
+                    tr_id("%1 and %2 were removed from the chat.", "messaging:k60k3ka6p"),
+                    tr_id("%1 and %2 were removed from the chat.", "messaging:k30qn5jeo"),
+                    None,
+                )
+            } else if meeting {
+                targets(
+                    tr_id("%1 removed %2 from the chat.", "messaging:k4d5lvwtt"),
+                    tr_id("%1 removed %2 and %3 from the chat.", "messaging:k3u7d9nyw"),
+                    tr_id("%1 removed %2 and %3 from the chat.", "messaging:kbujpbm7d"),
+                    Some(&actor),
+                )
             } else {
-                format!("{actor} removed {} from the chat.", list(&e.targets))
+                targets(
+                    tr_id("%1 removed %2 from the chat.", "messaging:k7cu8ni8u"),
+                    tr_id("%1 removed %2 and %3 from the chat.", "messaging:k89lpmj2b"),
+                    tr_id("%1 removed %2 and %3 from the chat.", "messaging:kdw0r96u"),
+                    Some(&actor),
+                )
             }
         }
         "TopicUpdate" if e.value.is_empty() => {
-            format!("{actor} removed the group name for this conversation.")
+            fill(&tr_id("%1 removed the group name for this conversation.", "messaging:k15gdmlel"), &[&actor])
         }
-        "TopicUpdate" if meeting => format!("{actor} named the meeting {}.", e.value),
-        "TopicUpdate" => format!("{actor} changed the group name to {}.", e.value),
-        "ModalityUpdate" if e.value == "Conversational" => "The layout was changed to threads.".into(),
-        "ModalityUpdate" => "The layout was changed to posts.".into(),
-        "PictureUpdate" => format!("{actor} changed the group profile picture."),
-        "MemberJoined" => {
-            let verb = match (e.targets.len(), meeting) {
-                (1, true) => "was invited to the meeting",
-                (_, true) => "were invited to the meeting",
-                _ => "joined the conversation",
-            };
-            format!("{} {verb}.", list(&e.targets))
+        "TopicUpdate" if meeting => fill(&tr_id("%1 named the meeting %2.", "messaging:k1lv3xtga"), &[&actor, &e.value]),
+        "TopicUpdate" => fill(&tr_id("%1 changed the group name to %2.", "messaging:k3gjqxx0p"), &[&actor, &e.value]),
+        "ModalityUpdate" if e.value == "Conversational" => tr_id("The layout was changed to threads.", "channels:k3wdxw87c"),
+        "ModalityUpdate" => tr_id("The layout was changed to posts.", "channels:k2aqdncie"),
+        "PictureUpdate" => fill(&tr_id("%1 changed the group profile picture.", "messaging:k73iwuyt6"), &[&actor]),
+        "MemberJoined" if meeting => targets(
+            tr_id("%1 was invited to the meeting.", "messaging:kvs1jklf"),
+            tr_id("%1 and %2 were invited to the meeting.", "messaging:kamffwoum"),
+            tr_id("%1 and %2 were invited to the meeting.", "messaging:k6bdhq3p5"),
+            None,
+        ),
+        "MemberJoined" => targets(
+            tr_id("%1 joined the conversation.", "messaging:k6pfb94o4"),
+            tr_id("%1 and %2 joined the conversation.", "messaging:k8x71szs5"),
+            tr_id("%1 and %2 joined the conversation.", "messaging:k1gpt16py"),
+            None,
+        ),
+        "LobbyJoined" => targets(
+            tr_id("%1 is in the lobby.", "messaging:kcidl3hga"),
+            tr_id("%1 and %2 are in the lobby.", "messaging:kbm1m6zlz"),
+            tr_id("%1 and %2 are in the lobby.", "messaging:k34873eb0"),
+            None,
+        ),
+        "MemberLeft" if meeting => targets(
+            tr_id("%1 left the chat.", "messaging:k6453g69"),
+            tr_id("%1 and %2 left the chat.", "messaging:k1f3u8vqg"),
+            tr_id("%1 and %2 left the chat.", "messaging:k7bi3v5xj"),
+            None,
+        ),
+        "MemberLeft" => targets(
+            tr_id("%1 no longer has access to the chat.", "messaging:k7zr2lj2"),
+            tr_id("%1 and %2 no longer have access to the chat.", "messaging:k1c3c454j"),
+            tr_id("%1 and %2 no longer have access to the chat.", "messaging:k3ux2uy0g"),
+            None,
+        ),
+        "MemberRenamed" => fill(&tr_id("%1 changed their display name to %2.", "messaging:k4yt96aoj"), &[&actor, &e.value]),
+        "AddCustomApp" => fill(&tr_id("%1 added %2 here.", "messaging:k4xrrdiu9"), &[&actor, &e.value]),
+        "DeleteCustomApp" => fill(&tr_id("%1 removed %2 from the chat.", "messaging:k7cu8ni8u"), &[&actor, &e.value]),
+        "NotesCreated" => tr_id("Notes have been created in this chat.", "messaging:kb4iz28jx"),
+        "Transcript" => tr_id("Transcript", "messaging:k42649b7m"),
+        "RecordingStarted" if e.value == "auto" => {
+            tr_id("Recording started automatically per the organizer's setting.", "messaging:k31yglod4")
         }
-        // Teams: "{{targetOne}} is in the lobby." / "… and … are in the lobby."
-        "LobbyJoined" => {
-            let verb = if e.targets.len() == 1 { "is" } else { "are" };
-            format!("{} {verb} in the lobby.", list(&e.targets))
-        }
-        "MemberLeft" => {
-            let verb = match (e.targets.len(), meeting) {
-                (_, true) => "left the chat",
-                (1, false) => "no longer has access to the chat",
-                _ => "no longer have access to the chat",
-            };
-            format!("{} {verb}.", list(&e.targets))
-        }
-        "MemberRenamed" => format!("{actor} changed their display name to {}.", e.value),
-        "AddCustomApp" => format!("{actor} added {} here.", e.value),
-        "DeleteCustomApp" => format!("{actor} removed {} from the chat.", e.value),
-        "NotesCreated" => "Notes have been created in this chat.".into(),
-        "Transcript" => "Transcript".into(),
-        "RecordingStarted" if e.value == "auto" => "Recording started automatically per the organizer's setting.".into(),
-        "RecordingStarted" if e.actor.is_empty() => "Recording has started".into(),
-        "RecordingStarted" => format!("{actor} started recording."),
-        "RecordingStopped" if e.actor.is_empty() => "Recording stopped.".into(),
-        "RecordingStopped" => format!("{actor} stopped recording."),
+        "RecordingStarted" if e.actor.is_empty() => tr_id("Recording has started", "messaging:k8xknh78u"),
+        "RecordingStarted" => fill(&tr_id("%1 started recording.", "messaging:k200fm25m"), &[&actor]),
+        "RecordingStopped" if e.actor.is_empty() => tr_id("Recording stopped.", "messaging:k264iktk2"),
+        "RecordingStopped" => fill(&tr_id("%1 stopped recording.", "messaging:k5nuhgy7r"), &[&actor]),
         "RecordingSaved" => {
-            let to = if e.actor.is_empty() { "OneDrive".to_string() } else { format!("{actor}'s OneDrive") };
-            match e.value.as_str() {
-                "" => format!("Recording has been saved to {to}."),
-                "1" => format!("Recording has been saved to {to} and will expire in 1 day."),
-                d => format!("Recording has been saved to {to} and will expire in {d} days."),
+            let saved = if e.actor.is_empty() {
+                tr_id("Recording has been saved to OneDrive", "messaging:k109bb8vc")
+            } else {
+                fill(&tr_id("Recording has been saved to %1's OneDrive", "messaging:k6nyvxe9l"), &[&actor])
+            };
+            // Teams follows it with its expiry as it stands
+            // (calling_recording_saved_message_will_expire_mf, whose forms
+            // start with a space: module 102719 appends it as is).
+            match e.value.parse::<i64>() {
+                Ok(d) => format!("{saved} {}", tr_id_n("and will expire in %n days.", "messaging:ktajw8v_mf", d)),
+                Err(_) => saved,
             }
         }
         _ => String::new(),
@@ -1358,7 +1429,7 @@ async fn name_events(client: &TeamsClient, chat_id: &str, out: &mut [MessageView
         .flat_map(|m| m.reactions.iter_mut())
         .flat_map(|r| r.users.iter_mut())
     {
-        u.name = cached_name(&u.mri).unwrap_or_else(|| "Unknown user".into());
+        u.name = cached_name(&u.mri).unwrap_or_else(|| crate::i18n::tr_id("Unknown user", "messaging:kmddh5x4"));
     }
     for f in out.iter_mut().filter_map(|m| m.forward.as_mut()) {
         if f.sender_name.is_empty() {
@@ -1371,7 +1442,7 @@ async fn name_events(client: &TeamsClient, chat_id: &str, out: &mut [MessageView
         names
             .get(id)
             .cloned()
-            .unwrap_or_else(|| "Unknown user".into())
+            .unwrap_or_else(|| crate::i18n::tr_id("Unknown user", "messaging:kmddh5x4"))
     };
     for m in out.iter_mut() {
         if let Some(e) = &mut m.event {
@@ -5249,6 +5320,18 @@ mod paging_and_event_tests {
             event_text(&many, &names, false),
             "Ann added Bo and 2 others to the chat and shared chat history from the past 3 days."
         );
+        // Teams' plural message: its =0 and =1 forms, and one other
+        let all = ChatEvent { targets: many.targets[..2].to_vec(), history_days: Some(0), ..many.clone() };
+        assert_eq!(event_text(&all, &names, false), "Ann added Bo and Cy to the chat and shared all chat history.");
+        let day = ChatEvent { history_days: Some(1), ..many.clone() };
+        assert_eq!(event_text(&day, &names, true), "Ann added Bo and 2 others to the chat and shared chat history from the past day.");
+        let removed = ChatEvent { kind: "DeleteMember".into(), targets: vec!["8:orgid:b".into(), "8:orgid:c".into()], history_days: None, ..many.clone() };
+        assert_eq!(event_text(&removed, &names, false), "Ann removed Bo and Cy from the chat.");
+        let other = ChatEvent { kind: "MemberLeft".into(), targets: vec!["8:orgid:b".into(), "8:orgid:c".into()], ..removed.clone() };
+        assert_eq!(event_text(&other, &names, false), "Bo and Cy no longer have access to the chat.");
+        let one_other = ChatEvent { kind: "MemberJoined".into(), targets: vec!["8:orgid:b".into(), "8:orgid:c".into(), "8:orgid:d".into()], ..removed.clone() };
+        assert_eq!(event_text(&ChatEvent { targets: one_other.targets[..2].to_vec(), ..one_other.clone() }, &names, false), "Bo and Cy joined the conversation.");
+        assert_eq!(event_text(&one_other, &names, false), "Bo and 2 others joined the conversation.");
         let topic = chat_event(
             "ThreadActivity/TopicUpdate",
             "<topicupdate><eventtime>1</eventtime><initiator>8:orgid:a</initiator><value>OST group test</value></topicupdate>",

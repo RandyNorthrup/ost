@@ -139,13 +139,13 @@ Rectangle {
                 if (!collapsed.attendees) sorted(attendees).forEach(p => out.push({ kind: "person", p: p, level: 1 }))
             }
         } else {
-            out.push({ kind: "section", key: "here", title: (meeting ? qsTr("In this meeting (%1)") : qsTr("In this call (%1)")).arg(here.length), action: muteAll, level: 0 })
+            out.push({ kind: "section", key: "here", title: qsTr("%1 (%2)", "calling:k63z7tn13").arg(meeting ? qsTr("In this meeting", "calling:k7zs2oxna") : qsTr("Currently in this call")).arg(here.length), action: muteAll, level: 0 })
             if (!collapsed.here) sorted(here).forEach(p => out.push({ kind: "person", p: p, level: 1 }))
         }
         const inCall = people.map(p => (p.id || "").toLowerCase())
         const away = chatMembers.filter(m => !m.me && inCall.indexOf((m.mri || "").toLowerCase()) < 0 && matches(m.name))
         if (meeting && away.length > 0) {
-            out.push({ kind: "section", key: "chat", title: qsTr("People added to the chat (%1)").arg(away.length), action: "", level: 0 })
+            out.push({ kind: "section", key: "chat", title: qsTr("%1 (%2)", "calling:k63z7tn13").arg(qsTr("People added to the chat")).arg(away.length), action: "", level: 0 })
             if (!collapsed.chat) away.forEach(m => out.push({ kind: "person", p: { id: m.mri, name: m.name, presence: m.presence || "", chatOnly: true }, level: 1 }))
         }
         return out

@@ -174,7 +174,7 @@ Popup {
     // channel's team picture, a group chat's people.
     component Picture: Avatar {
         property var who: null
-        name: who ? who.name.replace(/ \(You\)$/, "") : ""
+        name: who ? (who.plain_name || who.name) : ""
         photoId: !who ? "" : who.kind === "person" ? "8:orgid:" + who.oid : who.group ? "team:" + who.group : ""
         meeting: !!who && who.thread_type === "Meeting"
         group: !!who && who.kind === "chat" && !who.group && who.thread_type !== "Meeting"
@@ -231,7 +231,7 @@ Popup {
                     required property int index
                     width: pillName.implicitWidth + 31 + 4 + 19; height: 25.33; radius: 12.67; color: theme.surface
                     Picture { x: 1; y: 0.67; size: 24; who: pill.modelData }
-                    Text { id: pillName; x: 33; anchors.verticalCenter: parent.verticalCenter; text: pill.modelData.name.replace(/ \(You\)$/, ""); font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    Text { id: pillName; x: 33; anchors.verticalCenter: parent.verticalCenter; text: (pill.modelData.plain_name || pill.modelData.name); font.family: theme.font; font.pixelSize: 14; color: theme.text }
                     Item {
                         x: parent.width - 19; width: 19; height: parent.height
                         FluentIcon { anchors.centerIn: parent; size: 12; name: "dismiss-20"; color: theme.textStrong }

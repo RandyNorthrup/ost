@@ -132,7 +132,7 @@ Window {
                 icon: "scb-give-control"
                 label: bar.someoneControls ? qsTr("Take back") : qsTr("Give control")
                 enabled: bar.someoneControls || bar.canGive
-                tip: bar.someoneControls ? qsTr("Take back control")
+                tip: bar.someoneControls ? qsTr("Take back", "calling:k4myjqbw1")
                     : (bar.mode === "SideBySide" || bar.mode === "NewsAnchor") ? qsTr("Unavailable with this layout.")
                     : !bar.canGive ? qsTr("Participants are not allowed to control the shared content") : ""
                 onClicked: {

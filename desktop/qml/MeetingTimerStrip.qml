@@ -125,8 +125,10 @@ Rectangle {
             ToolTip.delay: 250
             ToolTip.text: qsTr("Timer controls")
             Accessible.role: root.viewOnly ? Accessible.StaticText : Accessible.Button
+            // Teams writes ", … remaining" in English after its translated
+            // label (lazy-meeting-timer: `${label}, ${time} remaining`).
             Accessible.name: root.viewOnly ? root.display
-                : root.cancelled ? qsTr("Timer controls") : qsTr("Timer controls, %1 remaining").arg(root.spoken(root.remaining))
+                : root.cancelled ? qsTr("Timer controls") : qsTr("Timer controls") + ", " + root.spoken(root.remaining) + " remaining"
         }
         Item {
             visible: !root.viewOnly

@@ -87,22 +87,24 @@ where
 
 /// Teams' `duration_full_mf` without days' seconds: "30 minutes",
 /// "1 hour 30 minutes", "1 day 2 hours". Empty when it has no hours or
-/// minutes (Teams then shows no hours line).
+/// minutes (Teams then shows no hours line). In the app language, each
+/// part as Teams' calendar words a meeting's days, hours and minutes
+/// (duration_full_mf's several plurals have no Qt form).
 fn duration_text(seconds: i64) -> String {
+    use crate::i18n::tr_id_n;
     let (days, hours, mins) = (seconds / 86_400, seconds % 86_400 / 3600, seconds % 3600 / 60);
     if hours == 0 && mins == 0 {
         return String::new();
     }
-    let part = |n: i64, one: &str, many: &str| match n {
-        0 => None,
-        1 => Some(format!("1 {one}")),
-        n => Some(format!("{n} {many}")),
-    };
-    [part(days, "day", "days"), part(hours, "hour", "hours"), part(mins, "minute", "minutes")]
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>()
-        .join(" ")
+    [
+        (days > 0).then(|| tr_id_n("%n days", "calendar:kaltotpef_mf", days)),
+        (hours > 0).then(|| tr_id_n("%n hours", "calendar:kbbf4ppcb_mf", hours)),
+        (mins > 0).then(|| tr_id_n("%n minutes", "calendar:k7zo3w10z_mf", mins)),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join(" ")
 }
 
 /// "3:00 PM - 3:30 PM (30 minutes)" in `tz`.
@@ -127,14 +129,6 @@ const MONTHS: [&str; 12] = [
     "January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
     "November", "December",
 ];
-
-fn plural_interval(n: i64, one: &str, two: &str, many: impl Fn(i64) -> String) -> String {
-    match n {
-        1 => one.to_string(),
-        2 => two.to_string(),
-        n => many(n),
-    }
-}
 
 /// Teams' week-day range ("Mon - Fri") for three or more days that run
 /// together (wrapping over the weekend), else None.
@@ -167,33 +161,45 @@ fn day_range(days: &[usize]) -> Option<String> {
     Some(format!("{} - {}", SHORT_DAYS[first], SHORT_DAYS[last]))
 }
 
-/// "Mon", "Mon and Wed", "Mon, Wed and Fri".
+/// "Mon", "Mon and Wed", "Mon, Wed and Fri" (Teams' comma and "and"
+/// separators, in the app language).
 fn day_list(days: &[usize]) -> String {
+    use crate::i18n::{fill, tr_id};
     let names: Vec<&str> = days.iter().map(|&d| SHORT_DAYS[d]).collect();
     match names.len() {
         0 => String::new(),
         1 => names[0].to_string(),
-        n => format!("{} and {}", names[..n - 1].join(", "), names[n - 1]),
+        n => {
+            let mut list = names[0].to_string();
+            for d in &names[1..n - 1] {
+                list = fill(&tr_id("%1, %2", "recurrence:kxaa4ql9"), &[&list, d]);
+            }
+            fill(&tr_id("%1 and %2", "recurrence:kdonowwbn"), &[&list, names[n - 1]])
+        }
     }
 }
 
-fn week_index(i: &str) -> &'static str {
+fn week_index(i: &str) -> String {
+    use crate::i18n::tr_id;
     match i {
-        "second" => "Second",
-        "third" => "Third",
-        "fourth" => "Fourth",
-        "last" => "Last",
-        _ => "First",
+        "second" => tr_id("Second", "recurrence:k1s4mfu6g"),
+        "third" => tr_id("Third", "recurrence:k9kc2048j"),
+        "fourth" => tr_id("Fourth", "recurrence:kt5ryo2a"),
+        "last" => tr_id("Last", "recurrence:ka7w0x6ny"),
+        _ => tr_id("First", "recurrence:k6h4a5rp0"),
     }
 }
 
 /// Teams' recurrence pattern text for a Graph event's `recurrence`
 /// (`pattern` and `range`), with its start time and end date: "Occurs
 /// every Mon - Fri @ 9:00 AM until December 31". None for no pattern.
+/// Teams' recurrence strings in the app language (its weekday and month
+/// names come from Intl, here as the code writes them).
 pub fn recurrence_text<Tz: TimeZone>(recurrence: &Value, start: DateTime<Utc>, tz: &Tz) -> Option<String>
 where
     Tz::Offset: std::fmt::Display,
 {
+    use crate::i18n::{fill, tr_id, tr_id_n};
     let p = recurrence.get("pattern")?;
     let interval = p.get("interval").and_then(Value::as_i64).filter(|&i| i > 0).unwrap_or(1);
     let day_of = |name: &str| WEEKDAYS.iter().position(|d| d.eq_ignore_ascii_case(name));
@@ -211,32 +217,27 @@ where
     let index = week_index(p.get("index").and_then(Value::as_str).unwrap_or("first"));
     let first_day = days.first().map(|&d| LONG_DAYS[d]).unwrap_or("Sunday");
     let text = match p.get("type").and_then(Value::as_str)? {
-        "daily" => plural_interval(interval, "Occurs daily", "Occurs every other day", |n| {
-            format!("Occurs every {n} days")
-        }),
+        "daily" => tr_id_n("Occurs every %n days", "recurrence:kax6eqmkn_mf", interval),
         "weekly" => {
             let d = day_range(&days).unwrap_or_else(|| day_list(&days));
-            plural_interval(
-                interval,
-                &format!("Occurs every {d}"),
-                &format!("Occurs every other {d}"),
-                |n| format!("Occurs every {n} weeks on {d}"),
-            )
+            fill(&tr_id_n("Occurs every %n weeks on %1", "recurrence:k9cj429mj_mf", interval), &[&d])
         }
-        "absoluteMonthly" => plural_interval(
-            interval,
-            &format!("Occurs every month on day {day_of_month}"),
-            &format!("Occurs every other month on day {day_of_month}"),
-            |n| format!("Occurs every {n} months on day {day_of_month}"),
+        "absoluteMonthly" => fill(
+            &tr_id_n("Occurs every %n months on day %1", "recurrence:k17bm8z5f_mf", interval),
+            &[&day_of_month.to_string()],
         ),
-        "relativeMonthly" => plural_interval(
-            interval,
-            &format!("Occurs every month on {index} {first_day}"),
-            &format!("Occurs every other month on {index} {first_day}"),
-            |n| format!("Occurs every {n} months on {index} {first_day}"),
+        "relativeMonthly" => fill(
+            &tr_id_n("Occurs every %n months on %1 %2", "recurrence:k2inp9epr_mf", interval),
+            &[&index, first_day],
         ),
-        "absoluteYearly" => format!("Occurs every {} {day_of_month}", MONTHS[month? as usize - 1]),
-        "relativeYearly" => format!("Occurs every {index} {first_day} of {}", MONTHS[month? as usize - 1]),
+        "absoluteYearly" => fill(
+            &tr_id("Occurs every %1", "recurrence:k4dxpwamm"),
+            &[&format!("{} {day_of_month}", MONTHS[month? as usize - 1])],
+        ),
+        "relativeYearly" => fill(
+            &tr_id("Occurs every %1 %2 of %3", "recurrence:k4fo3tb6i"),
+            &[&index, first_day, MONTHS[month? as usize - 1]],
+        ),
         _ => return None,
     };
     let starttime = time_of_day(&start.with_timezone(tz));
@@ -247,8 +248,11 @@ where
         .and_then(|_| recurrence.pointer("/range/endDate")?.as_str())
         .and_then(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok());
     Some(match until {
-        Some(u) => format!("{text} @ {starttime} until {} {}", MONTHS[u.month0() as usize], u.day()),
-        None => format!("{text} @ {starttime}"),
+        Some(u) => fill(
+            &tr_id("%1 @ %2 until %3", "recurrence:k25q6lwga"),
+            &[&text, &starttime, &format!("{} {}", MONTHS[u.month0() as usize], u.day())],
+        ),
+        None => fill(&tr_id("%1 @ %2", "recurrence:k8avt3h4l"), &[&text, &starttime]),
     })
 }
 

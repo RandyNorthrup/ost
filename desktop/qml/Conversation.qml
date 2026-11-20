@@ -123,8 +123,9 @@ Rectangle {
     readonly property string peerNoteText: {
         const n = peerNote
         if (!n || isGroup || isChannel || isSelf) return ""
-        if (n.pinned && n.text) return qsTr("Status of %1: %2").arg(chatName).arg(n.text)
-        if (n.ooo) return qsTr("%1 is out of office and may not respond").arg(chatName)
+        // Teams' banner messages for one member (their =1 forms).
+        if (n.pinned && n.text) return qsTr("3 or more members are out of office or have a status message.", "messaging:k5uuqna1t_mf", 1).arg(chatName).arg(n.text)
+        if (n.ooo) return qsTr("3 or more chat members are out of office and may not respond", "messaging:k6ffnk3uq_mf", 1).arg(chatName)
         return ""
     }
     readonly property bool peerNoteShown: peerNoteText !== "" && compose.visible && !dismissedPeerNotes[chatId + "|" + peerNoteText]
@@ -2056,7 +2057,7 @@ Rectangle {
                         if (msg.recordingRow) {
                             const e = msg.modelData.event
                             const t = root.escapeHtml(msg.modelData.text)
-                            return e.kind === "RecordingSaved" && e.value && e.link ? t + " <a href=\"" + e.link.replace(/"/g, "&quot;") + "\" style=\"text-decoration: none; color: " + theme.brandForeground1 + "\">" + qsTr("Remove expiration") + "</a>" : t
+                            return e.kind === "RecordingSaved" && e.value && e.link ? t + " <a href=\"" + e.link.replace(/"/g, "&quot;") + "\" style=\"text-decoration: none; color: " + theme.brandForeground1 + "\">" + qsTr("Remove expiration", "messaging:kads6v9uz") + "</a>" : t
                         }
                         // "{name} added <b>{app}</b> here." (Teams bolds the app).
                         if (msg.appAdded) {
@@ -2069,7 +2070,7 @@ Rectangle {
                             for (const n of unverified) { const e = root.escapeHtml(n), i = t.indexOf(e); if (i >= 0) t = t.slice(0, i + e.length) + badge + t.slice(i + e.length) }
                             return t
                         }
-                        if (notesRow) return qsTr("<0><0></0></0> have been created in this chat.").replace("<0><0></0></0>", "<a href=\"ost:notes-tab\" style=\"text-decoration: none; color: " + theme.textSecondary + "\">" + qsTr("Notes") + "</a>")
+                        if (notesRow) return qsTr("%1 have been created in this chat.", "messaging:kctkghgyc").arg("<a href=\"ost:notes-tab\" style=\"text-decoration: none; color: " + theme.textSecondary + "\">" + qsTr("Notes", "messaging:k9lem59qr") + "</a>")
                         if (msg.isEvent) return msg.modelData.text
                         // Meet now (Teams: "You started a meeting." /
                         // "{{initiator}} started a meeting.", then
@@ -2080,12 +2081,13 @@ Rectangle {
                         const s = msg.modelData.call_seconds
                         // Teams leaves out whole days ("d.hh:mm:ss" reads as
                         // its hours): a 25h 28m meeting shows "1h 28m 28s".
-                        const parts = [[Math.floor(s / 3600) % 24, "h"], [Math.floor(s / 60) % 60, "m"], [s % 60, "s"]]
-                            .filter(p => p[0] > 0).map(p => p[0] + p[1]).join(" ")
+                        // Each part is its calling_duration_* string.
+                        const parts = [[Math.floor(s / 3600) % 24, qsTr("%1h", "messaging:k7gf07fy9")], [Math.floor(s / 60) % 60, qsTr("%1m", "messaging:k2r3m66s9")], [s % 60, qsTr("%1s", "messaging:k8v6yafyl")]]
+                            .filter(p => p[0] > 0).map(p => p[1].arg(p[0])).join(" ")
                         // A meeting chat says "Meeting ended: {duration}" (seen in OST
                         // calendar test on winpc, 2026-11-10).
                         if (root.isMeetingChat) return qsTr("Meeting ended:") + "&nbsp;<b>" + parts + "</b>"
-                        return (msg.modelData.call_huddle ? qsTr("Meeting ended") : qsTr("Call ended")) + "&nbsp;<b>" + parts + "</b>"
+                        return (msg.modelData.call_huddle ? qsTr("Meeting ended", "messaging:k1wmbpk3x") : qsTr("Call ended", "messaging:k4276a36f")) + "&nbsp;<b>" + parts + "</b>"
                     }
                     font.family: theme.font; font.pixelSize: theme.small
                     color: theme.textSecondary
@@ -2142,7 +2144,7 @@ Rectangle {
                 // (CONVERSATION_DELETED; docs/spec/send-pipeline.md): OST's
                 // feedback window, sent to OST's GitHub.
                 Text {
-                    visible: msg.sendFailed && (msg.modelData.send_note || "").indexOf("Message didn't send.") === 0
+                    visible: msg.sendFailed && msg.modelData.send_note === qsTr("Message didn't send. Check your connection or try again later.", "messaging:k15klm2m")
                     text: qsTr("Report a problem")
                     font.family: theme.font; font.pixelSize: theme.small
                     font.underline: reportHover.hovered
@@ -2939,7 +2941,7 @@ Rectangle {
                 text: "@"
                 font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold
                 color: theme.mentionMe
-                Accessible.name: qsTr("Mentions you")
+                Accessible.name: qsTr("You were mentioned.")
             }
             // Teams' reaction summary: overlapping the bubble's bottom edge by
             // 4, 15.7 in from its start (at its end on your messages).
@@ -2966,7 +2968,8 @@ Rectangle {
                 Text {
                     id: divLabel
                     anchors.centerIn: parent
-                    text: msg.repliesCount + (msg.repliesCount === 1 ? " reply" : " replies")
+                    // Teams' reply summary divider (messages_replySummary*).
+                    text: msg.repliesCount === 1 ? qsTr("%1 reply", "messaging:kdmfi556l").arg(msg.repliesCount) : qsTr("%1 replies", "messaging:k7ju1u9nn").arg(msg.repliesCount)
                     font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary
                     Accessible.role: Accessible.Separator
                 }
@@ -2981,7 +2984,7 @@ Rectangle {
                 Avatar { anchors.verticalCenter: parent.verticalCenter; size: 20; name: msg.modelData.thread_last_sender || ""; photoId: msg.modelData.thread_last_mri || "" }
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
-                    text: msg.modelData.thread_replies + (msg.modelData.thread_replies === 1 ? " reply" : " replies")
+                    text: qsTr("%n replies", "messaging:k5c0r4z0x_mf", msg.modelData.thread_replies)
                     // Bold while the thread has unread replies (Teams).
                     font.family: theme.font; font.pixelSize: 12; color: theme.brandForeground1
                     font.weight: (msg.modelData.thread_unread || 0) > 0 ? Font.Bold : Font.Normal
@@ -3018,7 +3021,7 @@ Rectangle {
                 size: 16; color: theme.redForeground3
                 x: msg.mine ? bubble.x - 4 - 16 : bubble.x + bubble.width + 4
                 y: bubble.y + 12
-                Accessible.name: msg.modelData.importance === "urgent" ? qsTr("Urgent badge") : qsTr("Important badge")
+                Accessible.name: msg.modelData.importance === "urgent" ? qsTr("Urgent message.", "messaging:kdf8pu9nr") : qsTr("Important badge")
             }
             // Sent tick on your newest message, "Seen" eye on the newest one
             // the other person has read.
@@ -3570,7 +3573,7 @@ Rectangle {
                 Text { text: qsTr("Files"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
                 Text {
                     visible: sharedPane.files.length === 0
-                    text: qsTr("Files shared in this chat appear here.")
+                    text: qsTr("Start sharing files in this chat, and they will appear here")
                     font.family: theme.font; font.pixelSize: theme.base; color: theme.textSecondary
                 }
                 Repeater {
@@ -3605,7 +3608,7 @@ Rectangle {
                 Text { text: qsTr("Links"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.text }
                 Text {
                     visible: sharedPane.links.length === 0
-                    text: qsTr("Links shared in this chat appear here.")
+                    text: qsTr("Start sharing links in this chat, and they will appear here")
                     font.family: theme.font; font.pixelSize: theme.base; color: theme.textSecondary
                 }
                 Repeater {
@@ -4061,7 +4064,7 @@ Rectangle {
         }
         Text {
             x: 15.7; y: 17.7; height: 16; verticalAlignment: Text.AlignVCenter
-            text: root.isChannel ? qsTr("People in this channel") : qsTr("People (%1)").arg(participants.members.length)
+            text: root.isChannel ? qsTr("People in the channel") : qsTr("People (%1)").arg(participants.members.length)
             font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.textSecondary
         }
         Column {

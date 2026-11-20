@@ -95,7 +95,7 @@ Item {
                   onClicked: player.playbackState === MediaPlayer.PlayingState ? player.pause() : player.play() }
             Ctl { icon: "skip-back-10-20"; tip: qsTr("Skip backward 10 seconds"); onClicked: if (player.seekable) player.position = Math.max(0, player.position - 10000) }
             Ctl { icon: "skip-forward-10-20"; tip: qsTr("Skip forward 10 seconds (Alt+L)"); onClicked: if (player.seekable) player.position = Math.min(player.duration, player.position + 10000) }
-            Ctl { icon: root.muted ? "speaker-mute-20" : "speaker-2-20"; tip: root.muted ? qsTr("Unmute (Alt+M)") : qsTr("Mute (Alt+M)"); onClicked: root.muted = !root.muted }
+            Ctl { icon: root.muted ? "speaker-mute-20" : "speaker-2-20"; tip: qsTr("Mute (Alt+M)"); onClicked: root.muted = !root.muted }
             Item { width: 10; height: 1 }
             Text {
                 anchors.verticalCenter: parent.verticalCenter

@@ -295,12 +295,16 @@ Popup {
         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.divider }
     }
     // "Powered by Microsoft AppSource | View Terms".
+    // Teams' one sentence (app_details_reviews_powered_by), split at its
+    // two links.
     component PoweredBy: Row {
         spacing: 0
-        Text { text: qsTr("Powered by "); font.family: theme.font; font.pixelSize: 14; color: theme.textStrong }
-        LinkText { text: qsTr("Microsoft AppSource"); url: "https://appsource.microsoft.com/en-us/?exp=ubp8" }
-        Text { text: " | "; font.family: theme.font; font.pixelSize: 14; color: theme.textStrong }
-        LinkText { text: qsTr("View Terms"); url: "https://learn.microsoft.com/en-us/legal/marketplace/marketplace-terms" }
+        readonly property var parts: (/^([^]*)<0>([^]*)<\/0>([^]*)<1>([^]*)<\/1>([^]*)$/.exec(qsTr("Powered by <0>Microsoft AppSource</0> | <1>View Terms</1>")) || ["", "Powered by ", "Microsoft AppSource", " | ", "View Terms", ""]).slice(1)
+        Text { text: parent.parts[0]; font.family: theme.font; font.pixelSize: 14; color: theme.textStrong }
+        LinkText { text: parent.parts[1]; url: "https://appsource.microsoft.com/en-us/?exp=ubp8" }
+        Text { text: parent.parts[2]; font.family: theme.font; font.pixelSize: 14; color: theme.textStrong }
+        LinkText { text: parent.parts[3]; url: "https://learn.microsoft.com/en-us/legal/marketplace/marketplace-terms" }
+        Text { visible: text !== ""; text: parent.parts[4]; font.family: theme.font; font.pixelSize: 14; color: theme.textStrong }
     }
 
     contentItem: Item {

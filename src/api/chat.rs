@@ -243,11 +243,12 @@ struct NativeMessage {
 /// added", "Sent an image", …, flagged `true` so they show in italics);
 /// anything else is its text.
 pub fn list_preview(content: &str, messagetype: &str, properties: Option<&serde_json::Value>) -> (String, bool) {
-    let own = |s: &str| (s.to_string(), true);
+    use crate::i18n::tr_id;
+    let own = |s: String| (s, true);
     let forwarded = content.is_empty()
         && properties.and_then(|p| p.get("forwardTemplateId")).is_some_and(|v| !v.is_null());
     match messagetype {
-        "RichText/Media_Card" if content.is_empty() => return own("Sent a card"),
+        "RichText/Media_Card" if content.is_empty() => return own(tr_id("Sent a card", "messaging:k8dmn31tp")),
         "RichText/Media_Card" => return (strip_html(content), false),
         "RichText/Media_CallRecording" | "RichText/Media_CallLocalRecording" => {
             let recording = content.contains("<RecordingContent") && content.contains("contentTypes=\"Recording");
@@ -255,11 +256,15 @@ pub fn list_preview(content: &str, messagetype: &str, properties: Option<&serde_
                 return (String::new(), true);
             }
             return if content.contains("status=\"Initial\"") {
-                own("Recording has started")
+                own(tr_id("Recording has started", "messaging:k7i54d3hc"))
             } else if content.contains("status=\"ChunkFinished\"") {
-                own("Recording has stopped")
+                own(tr_id("Recording has stopped", "messaging:k2z6nhw6a"))
             } else if content.contains("status=\"Success\"") {
-                own(if messagetype == "RichText/Media_CallRecording" { "Recording is ready" } else { "Recording has stopped" })
+                own(if messagetype == "RichText/Media_CallRecording" {
+                    tr_id("Recording is ready", "messaging:k2v2b538c")
+                } else {
+                    tr_id("Recording has stopped", "messaging:k2z6nhw6a")
+                })
             } else {
                 (String::new(), true)
             };
@@ -274,25 +279,29 @@ pub fn list_preview(content: &str, messagetype: &str, properties: Option<&serde_
                 .filter(|t| *t != initiator.trim())
                 .collect();
             if !initiator.is_empty() && targets.is_empty() {
-                return own("User joined");
+                return own(tr_id("User joined", "messaging:k1rwm6emd"));
             }
-            return if targets.iter().any(|t| t.starts_with("28:")) { own("Bot added") } else { own("User added") };
+            return if targets.iter().any(|t| t.starts_with("28:")) {
+                own(tr_id("Bot added", "messaging:kklbpo3c"))
+            } else {
+                own(tr_id("User added", "messaging:k2vd59ni8"))
+            };
         }
-        "RichText/Media_CallTranscript" => return own("Transcript is available"),
+        "RichText/Media_CallTranscript" => return own(tr_id("Transcript is available", "messaging:k7gd0qafj")),
         "RichText/Media_Collaborate" => return (String::new(), true),
         // A Loop component with no text.
-        "RichText/Media_Embed" if content.is_empty() => return own("Loop component"),
+        "RichText/Media_Embed" if content.is_empty() => return own(tr_id("Loop component", "messaging:kdnv8u7ph")),
         _ => {}
     }
     let trimmed = content.trim();
     if trimmed.starts_with("<img") && trimmed.ends_with('>') && trimmed.matches('<').count() == 1 {
-        return own("Sent an image");
+        return own(tr_id("Sent an image", "messaging:k8l5b8qq8"));
     }
     if content.contains("<video") && content.contains("</video>") {
-        return own("🎥 Video");
+        return own(tr_id("🎥 Video", "messaging:kmpyz4yc"));
     }
     if forwarded {
-        return own("Forwarded a message");
+        return own(tr_id("Forwarded a message", "messaging:k9d6qptd8"));
     }
     (strip_html(content), false)
 }
@@ -324,22 +333,23 @@ pub fn recording_summary(content: &str, organizer: Option<&str>) -> Option<Strin
     let name_of = |mri: Option<String>| {
         mri.and_then(|m| super::messages::cached_name(&m)).filter(|n| !n.is_empty())
     };
+    use crate::i18n::{fill, tr_id};
     let status = attr("RecordingStatus", "status").unwrap_or_default();
     if status == "Initial" {
         let auto = attr("RecordingInitiatorId", "isAutoRecording").as_deref() == Some("True");
         return Some(if auto {
-            "Recording started automatically per the organizer's setting.".to_string()
+            tr_id("Recording started automatically per the organizer's setting.", "messaging:k31yglod4")
         } else {
             match name_of(attr("RecordingInitiatorId", "value")) {
-                Some(n) => format!("{n} started recording."),
-                None => "Recording has started".to_string(),
+                Some(n) => fill(&tr_id("%1 started recording.", "messaging:k200fm25m"), &[&n]),
+                None => tr_id("Recording has started", "messaging:k8xknh78u"),
             }
         });
     }
     if status == "ChunkFinished" {
         return Some(match name_of(attr("RecordingTerminatorId", "value")) {
-            Some(n) => format!("{n} stopped recording. Saving recording…"),
-            None => "Recording stopped. Saving recording…".to_string(),
+            Some(n) => fill(&tr_id("%1 stopped recording. Saving recording…", "messaging:kc7tejk6o"), &[&n]),
+            None => tr_id("Recording stopped. Saving recording…", "messaging:kdx0yyor8"),
         });
     }
     let title = between(content, "<Title>", "</Title>").map(|t| strip_html(t).trim().to_string());
@@ -914,9 +924,10 @@ pub struct ChatInfo {
     pub is_creator: bool,
 }
 
-/// Your notes-to-self chat's name, as Teams lists it: "{you} (You)".
+/// Your notes-to-self chat's name, as Teams lists it: "{you} (You)"
+/// (chat_self_chat_header_title, in the app language).
 pub fn notes_name(my_name: &str) -> String {
-    format!("{my_name} (You)")
+    crate::i18n::fill(&crate::i18n::tr_id("%1 (You)", "messaging:kdq26mx1z"), &[my_name])
 }
 
 /// The chats as Teams lists them: your notes-to-self chat (48:notes) first

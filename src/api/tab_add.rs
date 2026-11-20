@@ -47,16 +47,16 @@ pub fn add_order(orders: &[f64]) -> f64 {
 /// only `https://` in lower case, a host of letters, digits, dots and
 /// hyphens, no spaces; `https://x` and `https://localhost` pass). An
 /// empty field shows no error (Save just stays off).
-pub fn website_url_error(url: &str) -> Option<&'static str> {
-    const ERR: &str = "That isn't a valid URL.";
+pub fn website_url_error(url: &str) -> Option<String> {
+    let err = || Some(crate::i18n::tr_id("That isn't a valid URL.", "extensibility:k3yoii7hk"));
     if url.is_empty() {
         return None;
     }
     let Some(rest) = url.strip_prefix("https://") else {
-        return Some(ERR);
+        return err();
     };
     if url.chars().any(|c| c.is_whitespace() || c.is_control()) {
-        return Some(ERR);
+        return err();
     }
     let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
     let (host, port) = match rest[..end].rsplit_once(':') {
@@ -72,17 +72,17 @@ pub fn website_url_error(url: &str) -> Option<&'static str> {
     if host_ok && port_ok && path_ok && reqwest::Url::parse(url).is_ok() {
         None
     } else {
-        Some(ERR)
+        err()
     }
 }
 
 /// Why a new tab's name can't be used (Teams' "Tab name": required, at
-/// most 128 characters).
-pub fn tab_name_error(name: &str) -> Option<&'static str> {
+/// most 128 characters), in the app language.
+pub fn tab_name_error(name: &str) -> Option<String> {
     if name.trim().is_empty() {
-        Some("Name is required")
+        Some(crate::i18n::tr_id("Name is required", "extensibility:k7hld280c"))
     } else if name.chars().count() > 128 {
-        Some("Tab name cannot exceed 128 characters.")
+        Some("Tab name cannot exceed 128 characters.".into())
     } else {
         None
     }
@@ -847,7 +847,7 @@ pub async fn add_website(
         bail!(e);
     }
     if url.is_empty() {
-        bail!("That isn't a valid URL.");
+        bail!(crate::i18n::tr_id("That isn't a valid URL.", "extensibility:k3yoii7hk"));
     }
     if let Some(e) = website_url_error(url) {
         bail!(e);
@@ -1239,15 +1239,15 @@ mod tests {
     #[test]
     fn website_urls_as_teams_judges_them() {
         for ok in ["https://example.com", "https://example", "https://x", "https://localhost", "https://example.com/x?y=1", "https://a-b.example.com:8443/p"] {
-            assert_eq!(website_url_error(ok), None, "{ok}");
+            assert_eq!(website_url_error(ok).as_deref(), None, "{ok}");
         }
         for bad in ["http://example", "example.com", "www.example.com", "HTTPS://example.com", "https://", "https://a b.com", "https://ex<ample.com", "https://example.com ", "https://exa%mple.com"] {
-            assert_eq!(website_url_error(bad), Some("That isn't a valid URL."), "{bad}");
+            assert_eq!(website_url_error(bad).as_deref(), Some("That isn't a valid URL."), "{bad}");
         }
-        assert_eq!(website_url_error(""), None);
-        assert_eq!(tab_name_error(" "), Some("Name is required"));
-        assert_eq!(tab_name_error(&"x".repeat(129)), Some("Tab name cannot exceed 128 characters."));
-        assert_eq!(tab_name_error("Website"), None);
+        assert_eq!(website_url_error("").as_deref(), None);
+        assert_eq!(tab_name_error(" ").as_deref(), Some("Name is required"));
+        assert_eq!(tab_name_error(&"x".repeat(129)).as_deref(), Some("Tab name cannot exceed 128 characters."));
+        assert_eq!(tab_name_error("Website").as_deref(), None);
     }
 
     #[test]

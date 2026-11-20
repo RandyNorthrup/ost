@@ -184,7 +184,7 @@ Rectangle {
                         HoverHandler { id: editHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: editDialog.start(page.channel) }
                         Accessible.role: Accessible.Button
-                        Accessible.name: qsTr("Edit channel name, description")
+                        Accessible.name: qsTr("Edit channel name, description, and layout")
                     }
                 }
             }

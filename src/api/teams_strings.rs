@@ -9,8 +9,10 @@
 //! by the content hash in their names), and turns the ids it needs into a
 //! catalogue in Qt's form:
 //!
-//! - Teams' `{{name}}` / `{name}` / `{0}` placeholders become `%1`, `%2`…
-//!   in the order the id's en-us text has them (ids.json carries it);
+//! - Teams' `{{name}}` / `{name}` / `{0}` placeholders and its empty
+//!   rich-text components (`<0></0>`: a name or link its React code fills)
+//!   become `%1`, `%2`… in the order the id's en-us text has them
+//!   (ids.json carries it);
 //! - an ICU plural message becomes its forms (`{"=1": …, "one": …,
 //!   "other": …}`), its count `%n`;
 //! - Teams' product name becomes OST (`ostify`), for strings that name it.
@@ -169,9 +171,41 @@ enum Part {
 /// Teams' message syntax: `{{name}}` placeholders and ICU `{arg}`,
 /// `{n, plural, …}` (`#` its count) and `{x, select, …}`.
 fn parse_message(s: &str) -> Option<Vec<Part>> {
+    let s = components(s);
     let chars: Vec<char> = s.chars().collect();
     let (parts, _) = parse_parts(&chars, 0, false)?;
     Some(parts)
+}
+
+/// Teams' empty rich-text components (`<0></0>`, `<1/>`: a name, a link,
+/// filled by its React code) are placeholders: `{{<0>}}`. A component that
+/// only wraps one (`<0><0></0></0>`) is that placeholder too.
+fn components(s: &str) -> std::borrow::Cow<'_, str> {
+    use std::sync::OnceLock;
+    static EMPTY: OnceLock<regex::Regex> = OnceLock::new();
+    static WRAP: OnceLock<regex::Regex> = OnceLock::new();
+    if !s.contains('<') {
+        return s.into();
+    }
+    let empty = EMPTY.get_or_init(|| regex::Regex::new(r"<(\d+)>\s*</(\d+)>|<(\d+)\s*/>").unwrap());
+    let wrap = WRAP.get_or_init(|| regex::Regex::new(r"<(\d+)>(\{\{<\d+>\}\})</(\d+)>").unwrap());
+    let mut t = empty
+        .replace_all(s, |c: &regex::Captures| match (c.get(1), c.get(2), c.get(3)) {
+            (Some(a), Some(b), _) if a.as_str() == b.as_str() => format!("{{{{<{}>}}}}", a.as_str()),
+            (_, _, Some(a)) => format!("{{{{<{}>}}}}", a.as_str()),
+            _ => c[0].to_string(),
+        })
+        .into_owned();
+    loop {
+        let next = wrap
+            .replace_all(&t, |c: &regex::Captures| if c[1] == c[3] { c[2].to_string() } else { c[0].to_string() })
+            .into_owned();
+        if next == t {
+            break;
+        }
+        t = next;
+    }
+    t.into()
 }
 
 fn parse_parts(c: &[char], mut i: usize, in_plural: bool) -> Option<(Vec<Part>, usize)> {
@@ -509,6 +543,12 @@ mod tests {
         assert_eq!(to_qt("{g, select, m{er} other{sie}}", &[]), None);
         assert_eq!(message_args("{c, plural, one{{{a}} #} other{{{a}} und {{b}}}}"), a(&["a", "b"]));
         assert_eq!(to_qt("{{unbekannt}}", &a(&["name"])), None);
+        // Teams' empty components are placeholders too
+        assert_eq!(message_args("<0></0> added <1></1> and {otherTargets} to the chat."), a(&["<0>", "<1>", "otherTargets"]));
+        assert_eq!(to_qt("<0></0> hat <1></1> zum Chat hinzugefügt.", &a(&["<0>", "<1>"])), Some(Value::String("%1 hat %2 zum Chat hinzugefügt.".into())));
+        assert_eq!(to_qt("قام <1/> بإضافة <0></0>", &a(&["<0>", "<1>"])), Some(Value::String("قام %2 بإضافة %1".into())));
+        assert_eq!(to_qt("<0><0></0></0> wurden erstellt", &a(&["<0>"])), Some(Value::String("%1 wurden erstellt".into())));
+        assert_eq!(to_qt("<0>Link</0> und <b>", &[]), Some(Value::String("<0>Link</0> und <b>".into())));
     }
 
     #[test]

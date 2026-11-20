@@ -116,7 +116,7 @@ Popup {
             Repeater {
                 model: [
                     { icon: "chat-20", label: qsTr("Start a chat with %1"), act: "chat" },
-                    { icon: "org-20", label: qsTr("Navigate to the org chart of %1"), act: "org" },
+                    { icon: "org-20", label: qsTr("Navigate to %1's org chart"), act: "org" },
                     { icon: "video-20", label: qsTr("Start a video call with %1"), act: "video" },
                     { icon: "call-20", label: qsTr("Start an audio call with %1"), act: "call" },
                     // LinkedIn's logo (16 px, #1177B3): its people search for the name.

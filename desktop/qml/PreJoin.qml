@@ -369,7 +369,7 @@ Window {
                 y: (329 - 44 - height) / 2
                 spacing: 8
                 FluentIcon { anchors.horizontalCenter: parent.horizontalCenter; name: "video-off"; size: 20; color: theme.textStrong }
-                Text { text: win.cameraOn ? qsTr("Starting your camera…") : qsTr("Your camera is turned off"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.textStrong }
+                Text { text: win.cameraOn ? qsTr("Starting camera...") : qsTr("Your camera is turned off"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold; color: theme.textStrong }
             }
             Rectangle { y: 329 - 44; width: parent.width; height: 1; color: theme.dividerSoft }
             Row {
@@ -420,7 +420,7 @@ Window {
                     Accessible.role: Accessible.Button
                     Accessible.name: win.avatarsOffered
                         ? (win.effectsOpen ? qsTr("Hide effects and avatars options") : win.cameraOn ? qsTr("Camera is on, show effects and avatars options") : qsTr("Camera is off, show effects and avatars options"))
-                        : (win.effectsOpen ? qsTr("Hide video effects") : qsTr("Show video effects"))
+                        : (win.effectsOpen ? qsTr("Hide video effect options") : win.effectsPaneOpen ? qsTr("Hide video effects panel") : qsTr("Show video effect options"))
                 }
             }
             // Teams' quick picker (video-effects-quick-picker): "Backgrounds"
@@ -856,7 +856,7 @@ Window {
                         x: 4; y: 4
                         spacing: 2
                         Repeater {
-                            model: win.eventJoin ? [win.eventJoin.joinAs === "Organizer" ? qsTr("Join as Organizer") : win.eventJoin.joinAs === "Presenter" ? qsTr("Join as Presenter") : qsTr("Join as %1").arg(win.eventJoin.joinAs), qsTr("Preview as Attendee")] : []
+                            model: win.eventJoin ? [win.eventJoin.joinAs === "Organizer" ? qsTr("Join as Organizer") : qsTr("Join as Presenter"), qsTr("Preview as Attendee")] : []
                             Rectangle {
                                 required property string modelData
                                 required property int index

@@ -52,7 +52,7 @@ Popup {
     readonly property string nameError: {
         const v = nameField.text
         if (v.trim() === "") return qsTr("Name is required")
-        if (v.length > 128) return qsTr("Tab name cannot exceed 128 characters.")
+        if (v.length > 128) return qsTr("Tab name cannot exceed %1 characters.").arg(128)
         return ""
     }
     readonly property string urlError: backend.websiteUrlError(urlField.text)

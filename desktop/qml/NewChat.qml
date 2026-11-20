@@ -75,7 +75,7 @@ Rectangle {
     }
 
     function pick(p) {
-        if (!picked.some(x => x.id === p.id)) picked = picked.concat([{ id: p.id, name: p.name.replace(/ \(You\)$/, ""), mail: p.guest ? (p.sub || "") : (p.upn || p.mail || "") }])
+        if (!picked.some(x => x.id === p.id)) picked = picked.concat([{ id: p.id, name: (p.plain_name || p.name), mail: p.guest ? (p.sub || "") : (p.upn || p.mail || "") }])
         field.text = ""
         root.search("")
         highlight = -1
@@ -406,7 +406,7 @@ Rectangle {
                     readonly property string second: person.modelData.sub || ""
                     width: suggestCol.width; height: guest ? 52 : 50; radius: 4
                     color: hover.hovered || root.highlight === index ? theme.hc(theme.menuHover, theme.hcHighlight) : "transparent"
-                    Avatar { x: 12; anchors.verticalCenter: parent.verticalCenter; size: 32; name: person.modelData.name.replace(/ \(You\)$/, ""); photoId: person.modelData.id || "" }
+                    Avatar { x: 12; anchors.verticalCenter: parent.verticalCenter; size: 32; name: (person.modelData.plain_name || person.modelData.name); photoId: person.modelData.id || "" }
                     Text {
                         id: personName
                         x: 60; y: person.guest ? 8 : 6.5

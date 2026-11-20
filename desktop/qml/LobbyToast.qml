@@ -64,7 +64,7 @@ Item {
             font.family: theme.font; font.pixelSize: 12
             color: theme.text
         }
-        ToastButton { x: 263.1; y: 14; icon: "alert-snooze-20"; label: qsTr("Mute lobby notifications"); onClicked: root.mute() }
+        ToastButton { x: 263.1; y: 14; icon: "alert-snooze-20"; label: qsTr("Mute these notifications"); onClicked: root.mute() }
         ToastButton { x: 290.6; y: 14; icon: "dismiss-20"; label: qsTr("Dismiss"); onClicked: root.dismissedFor = root.signature }
 
         // Who: the first name, their badge, and " +n" for the others.

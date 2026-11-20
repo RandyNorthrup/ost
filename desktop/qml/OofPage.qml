@@ -82,7 +82,7 @@ Rectangle {
             Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Out of office message"); font.family: theme.font; font.pixelSize: 14; color: root.on ? theme.text : theme.disabled }
             FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "info-20"; size: 20; color: root.on ? theme.textSecondary : theme.disabled
                 HoverHandler { id: infoHover }
-                ToolTip.visible: infoHover.hovered; ToolTip.text: qsTr("Your automatic reply is sent to people who message or mention you.") }
+                ToolTip.visible: infoHover.hovered; ToolTip.text: qsTr("Your message will appear when people contact you in OST or open your profile. It'll also be sent as an automatic reply in Outlook.") }
         }
         SettingsParts.Gap { size: 7 }
         MessageArea { id: internal; x: -16; width: 649; usable: root.on; label: qsTr("Out of office message") }

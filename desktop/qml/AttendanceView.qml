@@ -57,10 +57,19 @@ Rectangle {
         const parts = [[Math.floor(s / 3600), "h"], [Math.floor(s / 60) % 60, "m"], [s % 60, "s"]].filter(p => p[0] > 0)
         return parts.length ? parts : [[0, "s"]]
     }
-    function durationText(sec) { return duration(sec).map(p => p[0] + p[1]).join(" ") }
+    // Teams' duration parts (its calling_duration_hours/minutes/seconds:
+    // "{{count}}h"), with "%1" for the number.
+    function unitText(u) {
+        return u === "h" ? qsTr("%1h", "messaging:k7gf07fy9") : u === "m" ? qsTr("%1m", "messaging:k2r3m66s9") : qsTr("%1s", "messaging:k8v6yafyl")
+    }
+    function durationText(sec) { return duration(sec).map(p => unitText(p[1]).arg(p[0])).join(" ") }
     // Big numbers with small units, as Teams' summary cards.
     function big(parts) {
-        return parts.map(p => "<span style=\"font-size:32px\">" + p[0] + "</span><span style=\"font-size:20px\">" + p[1] + "</span>").join("<span style=\"font-size:20px\">&nbsp;</span>")
+        const small = t => t ? "<span style=\"font-size:20px\">" + t + "</span>" : ""
+        return parts.map(p => {
+            const t = unitText(p[1]), i = t.indexOf("%1")
+            return small(t.slice(0, i)) + "<span style=\"font-size:32px\">" + p[0] + "</span>" + small(t.slice(i + 2))
+        }).join("<span style=\"font-size:20px\">&nbsp;</span>")
     }
     function bigTime(iso) {
         const t = time(iso), i = t.lastIndexOf(" ")
@@ -158,7 +167,7 @@ Rectangle {
             spacing: 0
             Text {
                 visible: root.mine && !!root.att.error
-                text: qsTr("The attendance report isn't available right now.")
+                text: qsTr("Attendance info isn't available yet. Check again later")
                 font.family: theme.font; font.pixelSize: 14
                 color: theme.textSecondary
             }

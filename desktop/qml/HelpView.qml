@@ -75,7 +75,7 @@ Rectangle {
             HoverHandler { id: mhh; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: helpMenu.open() }
             Accessible.role: Accessible.Button
-            Accessible.name: qsTr("More Help actions")
+            Accessible.name: qsTr("More %1 actions").arg(qsTr("Help"))
             MenuPopup {
                 id: helpMenu
                 x: parent.width - width; y: parent.height + 4

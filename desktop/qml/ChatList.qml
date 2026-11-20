@@ -503,7 +503,8 @@ Rectangle {
         Keys.onRightPressed: root.setWidthPx(root.width + 20)
         Rectangle { anchors.fill: parent; visible: resizeHandle.activeFocus || resizeDrag.active; color: theme.brand; opacity: 0.6 }
         Accessible.role: Accessible.Slider
-        Accessible.name: qsTr("Resize left panel")
+        // Teams' divider: "Resize {direction} panel", the side it grows from.
+        Accessible.name: qsTr("Resize %1 panel").arg(Qt.application.layoutDirection === Qt.RightToLeft ? qsTr("right", "framework:k1zo9i9g2") : qsTr("left", "framework:k3z7dwz65"))
         Accessible.description: Math.round(root.width) + "px"
     }
 
@@ -1105,7 +1106,8 @@ Rectangle {
             onConfirmed: removeHistory => { backend.leaveChat(row.chat.id); if (removeHistory) backend.removeChatHistory(row.chat.id) }
         }
         Accessible.role: Accessible.Button
-        Accessible.name: (row.chat.name || "") + (row.unread ? qsTr(", unread") : "") + (row.chat.muted ? qsTr(", muted") : "") + (row.chat.liveCall ? qsTr(", call in progress") : "")
+        // Teams' chat item support texts (Unread message, Muted, Meeting in progress).
+        Accessible.name: [row.chat.name || ""].concat(row.unread ? [qsTr("Unread message", "simpleCollab:k6punc3yb")] : [], row.chat.muted ? [qsTr("Muted", "simpleCollab:k6txiz02a")] : [], row.chat.liveCall ? [qsTr("Meeting in progress", "simpleCollab:kaxe10mlq")] : []).join(", ")
     }
 
     // A meeting chat's Report a concern: Teams' "Report a security concern"
@@ -1262,7 +1264,8 @@ Rectangle {
             onTapped: point => root.openChannelMenu(chRow.channel, chRow.team, chRow, point.position.x, point.position.y, chRow.dragGroup)
         }
         Accessible.role: Accessible.Button
-        Accessible.name: qsTr("Channel %1 in %2").arg(chRow.channel.name).arg(chRow.team.name) + (chRow.unread ? qsTr(", unread") : "")
+        // Teams' channel item: name, type name (Channel) and Unread.
+        Accessible.name: [chRow.channel.name, qsTr("Channel", "simpleCollab:k3vac73tj")].concat(chRow.unread ? [qsTr("Unread", "simpleCollab:k213k6al8")] : []).join(", ")
     }
 
     // Start reordering's Move Up and Move Down (Teams' subtle 24 x 23.3
@@ -1386,7 +1389,9 @@ Rectangle {
                 onTapped: point => root.openTeamMenu(teamRows.team, parent, point.position.x, point.position.y)
             }
             Accessible.role: Accessible.Button
-            Accessible.name: qsTr("Team %1").arg(teamRows.team.name) + (teamRows.open ? qsTr(", expanded") : qsTr(", collapsed"))
+            // Teams' team header: name and type name (Team); Teams' open state is
+            // aria-expanded, which Qt's Accessible lacks, so it is spoken here.
+            Accessible.name: [teamRows.team.name, qsTr("Team", "simpleCollab:k2af5wske")].join(", ") + (teamRows.open ? qsTr(", expanded") : qsTr(", collapsed"))
         }
         Repeater {
             model: teamRows.open ? teamRows.team.channels : []

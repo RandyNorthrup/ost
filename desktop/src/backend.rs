@@ -4844,6 +4844,19 @@ fn download_dir() -> Option<std::path::PathBuf> {
         .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join("Downloads")))
 }
 
+/// Teams' notification for a finished download, "1 file was downloaded."
+/// (files_fileDownloadCountSingular, with `number: "1"` as Teams fills
+/// it): the calling namespace's in a meeting (its attendance report), the
+/// files namespace's for files.
+fn file_downloaded(in_meeting: bool) -> String {
+    let text = if in_meeting {
+        teams_cli::i18n::tr_id("%1 file was downloaded.", "calling:kcpihy7is")
+    } else {
+        teams_cli::i18n::tr_id("%1 file was downloaded.", "files:k1vnhy54b")
+    };
+    teams_cli::i18n::fill(&text, &["1"])
+}
+
 /// Teams' test call report while the test call runs (sampled each
 /// second by the call's stats logger, finished in end_call_ui).
 fn echo_watch() -> &'static std::sync::Mutex<Option<teams_cli::calling::echo_report::Watch>> {
@@ -5150,7 +5163,8 @@ async fn load_overview() -> anyhow::Result<(String, Vec<serde_json::Value>)> {
     let notes = chats.iter().find(|c| c.id == "48:notes");
     let mut list: Vec<serde_json::Value> = vec![json!({
         "id": "48:notes",
-        "name": format!("{} (You)", me.display_name),
+        "name": api::notes_name(&me.display_name),
+        "plain_name": me.display_name,
         "isGroup": false,
         "isSelf": true,
         "time": notes.and_then(|c| c.last_message_time.clone()),
@@ -5591,26 +5605,54 @@ fn regional_in_effect() -> &'static (String, api::regional::Formats) {
 /// shows its English, as Teams does without its strings, left to right.
 pub fn install_app_language() -> &'static str {
     unsafe extern "C" {
-        fn ost_install_translator(catalogue: *const core::ffi::c_char, lang: *const core::ffi::c_char, culture: *const core::ffi::c_char, rtl: bool) -> bool;
+        fn ost_install_translator(culture: *const core::ffi::c_char, rtl: bool);
     }
     let culture = regional_in_effect().0.clone();
     let wanted = api::regional::string_locale(&culture);
     let catalogue = if wanted == "en-us" { None } else { app_language_catalogue(wanted) };
-    let strings = if catalogue.is_some() { wanted } else { "en-us" };
-    let rtl = catalogue.is_some() && api::regional::is_rtl(strings);
-    let path = catalogue.map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
-    let (Ok(p), Ok(l), Ok(c)) = (std::ffi::CString::new(path), std::ffi::CString::new(strings), std::ffi::CString::new(culture.replace('_', "-"))) else {
+    // OST's one translator (QML, backend and engine): Teams' wording from
+    // the catalogue, else OST's English.
+    let installed = catalogue.as_ref().and_then(|p| match std::fs::read_to_string(p).map_err(anyhow::Error::from).and_then(|t| teams_cli::i18n::install(Some(&t), wanted)) {
+        Ok(()) => Some(()),
+        Err(e) => {
+            tracing::warn!("app language {wanted}: its catalogue didn't load ({}); showing English", short_error(&e));
+            None
+        }
+    });
+    let strings = if installed.is_some() { wanted } else { "en-us" };
+    if installed.is_none() {
+        let _ = teams_cli::i18n::install(None, "en-us");
+    }
+    let rtl = installed.is_some() && api::regional::is_rtl(strings);
+    let Ok(c) = std::ffi::CString::new(culture.replace('_', "-")) else {
         return "en-us";
     };
-    // SAFETY: plain Qt calls with NUL-terminated strings, on the GUI
+    // SAFETY: plain Qt calls with a NUL-terminated string, on the GUI
     // thread, after the application exists and before the QML engine.
-    let ok = unsafe { ost_install_translator(p.as_ptr(), l.as_ptr(), c.as_ptr(), rtl) };
-    tracing::info!("app language {culture}: strings {strings}{}{}", if rtl { ", right to left" } else { "" }, if ok { "" } else { " (no catalogue)" });
+    unsafe { ost_install_translator(c.as_ptr(), rtl) };
+    tracing::info!("app language {culture}: strings {strings}{}", if rtl { ", right to left" } else { "" });
     strings
 }
 
-/// OST's strings keyed to Teams' ids (desktop/i18n/ids.json).
-const APP_LANGUAGE_IDS: &str = include_str!("../i18n/ids.json");
+/// The translator's answer for a qsTr() (src/i18n.cpp): the text in UTF-8
+/// written to `out`, its length returned (larger than `cap`: call again
+/// with that much room; 0: no translation, Qt keeps the English).
+///
+/// # Safety
+/// `source` and `disambiguation` are NUL-terminated; `out` has `cap` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ost_i18n_lookup(source: *const core::ffi::c_char, disambiguation: *const core::ffi::c_char, n: i32, out: *mut core::ffi::c_char, cap: usize) -> usize {
+    // SAFETY: the caller passes NUL-terminated strings.
+    let (s, d) = unsafe { (std::ffi::CStr::from_ptr(source), std::ffi::CStr::from_ptr(disambiguation)) };
+    let (Ok(s), Ok(d)) = (s.to_str(), d.to_str()) else { return 0 };
+    let Some(t) = teams_cli::i18n::lookup(s, d, (n >= 0).then_some(n as i64)) else { return 0 };
+    if t.len() <= cap {
+        // SAFETY: `out` has room for `cap` >= t.len() bytes.
+        unsafe { std::ptr::copy_nonoverlapping(t.as_ptr(), out.cast(), t.len()) };
+    }
+    t.len()
+}
+
 /// Where Teams' string resources are (desktop/i18n/teams_resources.json).
 const APP_LANGUAGE_RESOURCES: &str = include_str!("../i18n/teams_resources.json");
 
@@ -5626,7 +5668,7 @@ fn app_language_catalogue(locale: &str) -> Option<std::path::PathBuf> {
             return None;
         }
     };
-    let fp = ts::fingerprint(APP_LANGUAGE_IDS);
+    let fp = ts::fingerprint(teams_cli::i18n::IDS);
     let path = cache_base().join("i18n").join(format!("{locale}.json"));
     let current = std::fs::read_to_string(&path)
         .ok()
@@ -5635,7 +5677,7 @@ fn app_language_catalogue(locale: &str) -> Option<std::path::PathBuf> {
     if current {
         return Some(path);
     }
-    let ids: Vec<ts::IdRow> = match serde_json::from_str(APP_LANGUAGE_IDS) {
+    let ids: Vec<ts::IdRow> = match serde_json::from_str(teams_cli::i18n::IDS) {
         Ok(i) => i,
         Err(e) => {
             tracing::warn!("app language: ids.json: {e}");
@@ -5677,31 +5719,13 @@ fn app_language_catalogue(locale: &str) -> Option<std::path::PathBuf> {
 /// OST's text from Rust in the app language (as qsTr in QML): Teams' own
 /// wording where desktop/i18n has the string, else the English.
 pub fn tr(source: &str) -> String {
-    tr_with(source, "", -1)
+    teams_cli::i18n::tr(source)
 }
 
 /// `tr` for a count: "%n" in `source` and the translation is the number,
 /// and the plural form is the language's for it.
 pub fn tr_n(source: &str, n: i32) -> String {
-    tr_with(source, "", n)
-}
-
-fn tr_with(source: &str, disambiguation: &str, n: i32) -> String {
-    unsafe extern "C" {
-        fn ost_translate(source: *const core::ffi::c_char, disambiguation: *const core::ffi::c_char, n: i32, out: *mut core::ffi::c_char, cap: usize) -> usize;
-    }
-    let (Ok(s), Ok(d)) = (std::ffi::CString::new(source), std::ffi::CString::new(disambiguation)) else {
-        return source.to_string();
-    };
-    let mut buf = vec![0u8; source.len() * 4 + 256];
-    // SAFETY: NUL-terminated inputs; the C++ side writes at most `cap`
-    // bytes into `buf`. QCoreApplication::translate is thread-safe.
-    let len = unsafe { ost_translate(s.as_ptr(), d.as_ptr(), n, buf.as_mut_ptr().cast(), buf.len()) };
-    if len == 0 {
-        return source.replace("%n", &n.to_string());
-    }
-    buf.truncate(len);
-    String::from_utf8(buf).unwrap_or_else(|_| source.to_string())
+    teams_cli::i18n::tr_n(source, n as i64)
 }
 
 /// Your translation settings (Settings ▸ General ▸ Translation), kept on
@@ -7064,12 +7088,12 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
                 }
                 let _ = qt.queue(|mut this| {
                     this.as_mut()
-                        .set_status_text(QString::from(tr("Call transferred")));
+                        .set_status_text(QString::from(tr("Call has been transferred")));
                     this.as_mut().end_call_ui();
                 });
             }
             Err(phrase) => {
-                tracing::info!("transfer failed");
+                tracing::info!(%phrase, "transfer failed");
                 {
                     let mut slot = call_slot().lock().await;
                     let (next, _) = slot.consult_state.step(teams_cli::calling::consult::Event::Failed);
@@ -7077,9 +7101,7 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
                     publish_consult(qt, &slot);
                 }
                 let _ = qt.queue(move |mut this| {
-                    this.as_mut().set_status_text(QString::from(
-                        tr("Transfer failed: %1").replace("%1", &phrase).as_str(),
-                    ))
+                    this.as_mut().set_status_text(QString::from(tr("Transfer failed").as_str()))
                 });
             }
         }
@@ -8678,7 +8700,8 @@ impl qobject::Backend {
             drop(slot);
             tracing::info!(ok = result.is_ok(), "park requested");
             if let Err(e) = result {
-                let msg = tr("Park: %1").replace("%1", &short_error(&e));
+                tracing::warn!("park: {}", short_error(&e));
+                let msg = tr("Call couldn't be parked");
                 let _ = qt.queue(move |mut this| this.as_mut().set_status_text(QString::from(msg.as_str())));
             }
         });
@@ -10065,7 +10088,7 @@ impl qobject::Backend {
         }
         let Some(link) = outgoing::MeetingLink::parse(&join_url.to_string()) else {
             self.as_mut().set_status_text(QString::from(
-                tr("That isn't a Teams meeting link OST can join"),
+                tr("Looks like the meeting URL is incorrect. Please check the URL and try again."),
             ));
             return;
         };
@@ -11815,9 +11838,12 @@ impl qobject::Backend {
         let msg = match teams_cli::api::files::save_unique(&dir, "meetingAttendanceList.csv", &bytes) {
             Ok(path) => {
                 tracing::info!(path = %path.display(), "attendance list saved");
-                tr("Saved %1 to %2").replace("%1", &path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()).replace("%2", &dir.display().to_string())
+                file_downloaded(true)
             }
-            Err(e) => tr("Couldn't save the attendance list: %1").replace("%1", &short_error(&e)),
+            Err(e) => {
+                tracing::warn!("attendance list: {}", short_error(&e));
+                teams_cli::i18n::tr_id("The file didn't download.", "calling:k7tmqi8qv")
+            }
         };
         self.as_mut().set_status_text(QString::from(msg.as_str()));
     }
@@ -11906,9 +11932,12 @@ impl qobject::Backend {
             let msg = match result {
                 Ok(path) => {
                     tracing::info!(path = %path.display(), "attendance report saved");
-                    tr("Saved %1 to %2").replace("%1", &path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()).replace("%2", &dir.display().to_string())
+                    file_downloaded(true)
                 }
-                Err(e) => tr("Couldn't download the attendance report: %1").replace("%1", &short_error(&e)),
+                Err(e) => {
+                    tracing::warn!("attendance report: {}", short_error(&e));
+                    teams_cli::i18n::tr_id("The file didn't download.", "calling:k7tmqi8qv")
+                }
             };
             let _ = qt.queue(move |mut this| this.as_mut().set_status_text(QString::from(msg.as_str())));
         });
@@ -12037,9 +12066,7 @@ impl qobject::Backend {
                 Ok(None) => {}
                 Err(e) => {
                     tracing::info!("camera: {}", short_error(&e));
-                    this.as_mut().set_status_text(QString::from(
-                        tr("Camera: %1").replace("%1", &short_error(&e)).as_str(),
-                    ));
+                    this.as_mut().set_status_text(QString::from(tr("Your camera failed").as_str()));
                 }
             });
         });
@@ -12235,7 +12262,7 @@ impl qobject::Backend {
                 Err(e) => {
                     tracing::warn!("content from camera: {}", short_error(&e));
                     let _ = qt.queue(move |mut this| {
-                        this.as_mut().set_status_text(QString::from(tr("Share: %1").replace("%1", &short_error(&e)).as_str()));
+                        this.as_mut().set_status_text(QString::from(tr("Couldn't share your content").as_str()));
                     });
                 }
             }
@@ -12273,9 +12300,7 @@ impl qobject::Backend {
             } else if let Err(e) = result {
                 tracing::warn!("share: {}", short_error(&e));
                 let _ = qt.queue(move |mut this| {
-                    this.as_mut().set_status_text(QString::from(
-                        tr("Share: %1").replace("%1", &short_error(&e)).as_str(),
-                    ));
+                    this.as_mut().set_status_text(QString::from(tr("Couldn't share your content").as_str()));
                 });
             } else if !on {
                 let _ = qt.queue(|mut this| this.as_mut().set_call_sharing(false));
@@ -12440,7 +12465,12 @@ impl qobject::Backend {
                 let _ = qt.queue(move |mut this| {
                     this.as_mut().set_call_hand_raised(!up);
                     this.as_mut().set_status_text(QString::from(
-                        tr("Raise: %1").replace("%1", &short_error(&e)).as_str(),
+                        if up {
+                            tr("Couldn't raise your hand. Try again.")
+                        } else {
+                            tr("Couldn't lower your hand. Try again.")
+                        }
+                        .as_str(),
                     ));
                 });
             }
@@ -12494,8 +12524,11 @@ impl qobject::Backend {
             };
             drop(slot);
             let text = match &result {
-                Ok(()) => tr("Transferring…"),
-                Err(e) => tr("Transfer: %1").replace("%1", &short_error(e)),
+                Ok(()) => tr("Transferring..."),
+                Err(e) => {
+                    tracing::warn!("transfer: {}", short_error(e));
+                    tr("Transfer failed")
+                }
             };
             tracing::info!(ok = result.is_ok(), "transfer requested");
             let _ = qt
@@ -12589,7 +12622,7 @@ impl qobject::Backend {
                 let (next, _) = slot.consult_state.step(Event::Failed);
                 slot.consult_state = next;
                 publish_consult(&qt, &slot);
-                let msg = tr("Transfer: %1").replace("%1", &short_error(&e));
+                let msg = tr("Transfer failed");
                 let _ = qt.queue(move |mut this| this.as_mut().set_status_text(QString::from(msg.as_str())));
             }
         });
@@ -12694,7 +12727,7 @@ impl qobject::Backend {
                     let (next, _) = slot.consult_state.step(Event::Failed);
                     slot.consult_state = next;
                     publish_consult(&qt, &slot);
-                    let msg = tr("Merge: %1").replace("%1", &short_error(&e));
+                    let msg = tr("Couldn't merge calls");
                     let _ = qt.queue(move |mut this| this.as_mut().set_status_text(QString::from(msg.as_str())));
                 }
             }
@@ -14663,7 +14696,7 @@ impl qobject::Backend {
             None
         };
         let qt = self.qt_thread();
-        self.as_mut().set_status_text(QString::from(if op == "download" { tr("Downloading…") } else { String::new() }));
+        self.as_mut().set_status_text(QString::from(if op == "download" { teams_cli::i18n::tr_id("Downloading...", "files:k9b1qlyvw") } else { String::new() }));
         runtime().spawn(async move {
             let result = async {
                 let client = TeamsClient::new().await?;
@@ -14671,11 +14704,12 @@ impl qobject::Backend {
                 match dir {
                     Some(dir) => {
                         let path = api::drive::download(&client, &item, &dir).await?;
-                        Ok(tr("Saved %1 to %2").replace("%1", &item.name).replace("%2", &path.parent().map(|p| p.display().to_string()).unwrap_or_default()))
+                        tracing::info!(path = %path.display(), "file downloaded");
+                        Ok(file_downloaded(false))
                     }
                     None => {
                         api::drive::set_favorite(&client, &item.drive_id, &item.id, true).await?;
-                        Ok(tr("Added %1 to Favorites").replace("%1", &item.name))
+                        Ok(tr("Added \"%1\" to OneDrive Favorites").replace("%1", &item.name))
                     }
                 }
             }
@@ -15021,7 +15055,7 @@ impl qobject::Backend {
         }
         if html.len() > api::outbox::MAX_MESSAGE_CONTENT_SIZE {
             self.as_mut()
-                .set_status_text(QString::from(api::outbox::TOO_LARGE_TO_SEND));
+                .set_status_text(QString::from(&teams_cli::i18n::tr_id("Message is too large to send.", "messaging:k9etc63g")));
             return;
         }
         let mentions = if mentions.is_empty() {
@@ -15090,7 +15124,7 @@ impl qobject::Backend {
         }
         if html.len() > api::outbox::MAX_MESSAGE_CONTENT_SIZE {
             self.as_mut()
-                .set_status_text(QString::from(api::outbox::TOO_LARGE_TO_SEND));
+                .set_status_text(QString::from(&teams_cli::i18n::tr_id("Message is too large to send.", "messaging:k9etc63g")));
             return;
         }
         let mentions = if mentions.is_empty() {
@@ -15140,7 +15174,7 @@ impl qobject::Backend {
         let schedule = self.as_mut().rust_mut().next_schedule_ms.take();
         if content.len() > api::outbox::MAX_MESSAGE_CONTENT_SIZE {
             // Teams' words for each.
-            let text = if schedule.is_some() { tr("Failed to schedule. Message too large.") } else { api::outbox::TOO_LARGE_TO_SEND.to_string() };
+            let text = if schedule.is_some() { tr("Failed to schedule. Message too large.") } else { teams_cli::i18n::tr_id("Message is too large to send.", "messaging:k9etc63g") };
             self.as_mut().set_status_text(QString::from(text));
             return;
         }
@@ -15532,9 +15566,12 @@ impl qobject::Backend {
                     // Its picture shows its members.
                     this.as_mut().forget_photos(&format!("chat:{chat_id}"));
                 }
-                Err(e) => this.as_mut().set_status_text(QString::from(
-                    tr("Couldn't add people: %1").replace("%1", &short_error(&e)).as_str(),
-                )),
+                Err(e) => {
+                    tracing::warn!("add chat members: {}", short_error(&e));
+                    this.as_mut().set_status_text(QString::from(
+                        tr("We couldn't add one or more people to the chat").as_str(),
+                    ))
+                }
             });
         });
     }
@@ -15577,9 +15614,12 @@ impl qobject::Backend {
                     this.as_mut().load_chat_members();
                     this.as_mut().forget_photos(&format!("chat:{chat_id}"));
                 }
-                Err(e) => this.as_mut().set_status_text(QString::from(
-                    tr("Couldn't remove them: %1").replace("%1", &short_error(&e)).as_str(),
-                )),
+                Err(e) => {
+                    tracing::warn!("remove chat member: {}", short_error(&e));
+                    this.as_mut().set_status_text(QString::from(
+                        tr("We couldn't remove one or more people from the chat").as_str(),
+                    ))
+                }
             });
         });
     }
@@ -18454,7 +18494,7 @@ impl qobject::Backend {
                 }
                 Err(e) => {
                     tracing::warn!("leave chat failed: {}", short_error(&e));
-                    this.as_mut().toast(&tr("Couldn't leave the chat"), "error");
+                    this.as_mut().toast(&tr("Unable to leave the chat"), "error");
                 }
             });
         });
@@ -20884,7 +20924,7 @@ impl qobject::Backend {
 
     fn run_drive_download(mut self: Pin<&mut Self>, item: api::drive::DriveItem, dir: std::path::PathBuf, target: Option<std::path::PathBuf>) {
         self.as_mut().set_status_text(QString::from(
-            tr("Downloading %1…").replace("%1", &item.name).as_str(),
+            teams_cli::i18n::tr_id("Downloading...", "files:k9b1qlyvw").as_str(),
         ));
         let qt = self.qt_thread();
         runtime().spawn(async move {
@@ -20895,7 +20935,10 @@ impl qobject::Backend {
             }
             .await;
             let msg = match result {
-                Ok(path) => tr("Saved %1 to %2").replace("%1", &item.name).replace("%2", &path.parent().map(|p| p.display().to_string()).unwrap_or_default()),
+                Ok(path) => {
+                    tracing::info!(path = %path.display(), "file downloaded");
+                    file_downloaded(false)
+                }
                 Err(e) => short_error(&e),
             };
             let _ = qt
@@ -20920,8 +20963,14 @@ impl qobject::Backend {
         if paths.is_empty() {
             return;
         }
+        // Teams' Files list announcement: one file, or the count.
         self.as_mut().set_status_text(QString::from(
-            tr("Uploading %1 file(s)…").replace("%1", &paths.len().to_string()).as_str(),
+            if paths.len() == 1 {
+                tr("Uploading 1 file")
+            } else {
+                tr("Uploading %1 files").replace("%1", &paths.len().to_string())
+            }
+            .as_str(),
         ));
         let qt = self.qt_thread();
         runtime().spawn(async move {
@@ -20930,13 +20979,15 @@ impl qobject::Backend {
                 for p in &paths {
                     api::drive::upload(&client, &drive_id, &folder_id, p).await?;
                 }
-                anyhow::Ok(paths.len())
+                let names: Vec<&str> = paths.iter().filter_map(|p| p.file_name().and_then(|n| n.to_str())).collect();
+                anyhow::Ok(names.join(", "))
             }
             .await;
             let _ = qt.queue(move |mut this| match result {
-                Ok(n) => {
+                Ok(names) => {
+                    // Teams' toast for an upload done ("Uploaded <name>").
                     this.as_mut()
-                        .set_status_text(QString::from(tr("Uploaded %1 file(s)").replace("%1", &n.to_string()).as_str()));
+                        .set_status_text(QString::from(tr("Uploaded %1").replace("%1", &names).as_str()));
                     this.as_mut().drive_reload();
                 }
                 Err(e) => this
@@ -21444,7 +21495,7 @@ impl qobject::Backend {
         };
         let busy = match op.as_str() {
             "respond" => tr("Sending your response…"),
-            "schedule" => tr("Scheduling…"),
+            "schedule" => tr("Scheduling..."),
             "update" => tr("Sending update…"),
             "cancel" => tr("Cancelling…"),
             "propose" => tr("Sending your proposal…"),
@@ -21611,7 +21662,7 @@ impl qobject::Backend {
             .map(|a| a.trim().to_string())
             .filter(|a| !a.is_empty())
             .collect();
-        self.as_mut().set_status_text(QString::from(tr("Scheduling…")));
+        self.as_mut().set_status_text(QString::from(tr("Scheduling...")));
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let result = async {
@@ -23024,7 +23075,7 @@ impl qobject::Backend {
         let shared: Vec<String> = parts.iter().filter_map(|p| if let Part::Cloud(f) = p { Some(f.name.clone()) } else { None }).collect();
         if !names.is_empty() {
             self.as_mut().set_status_text(QString::from(
-                tr("Uploading %1…").replace("%1", &names.join(", ")).as_str(),
+                tr("Uploading %1").replace("%1", &names.join(", ")).as_str(),
             ));
         }
         let qt = self.qt_thread();
@@ -23136,7 +23187,7 @@ impl qobject::Backend {
 
     fn run_file_download(mut self: Pin<&mut Self>, file: api::files::FileAttachment, dir: std::path::PathBuf, target: Option<std::path::PathBuf>) {
         self.as_mut().set_status_text(QString::from(
-            tr("Downloading %1…").replace("%1", &file.name).as_str(),
+            teams_cli::i18n::tr_id("Downloading...", "files:k9b1qlyvw").as_str(),
         ));
         let qt = self.qt_thread();
         runtime().spawn(async move {
@@ -23147,7 +23198,10 @@ impl qobject::Backend {
             }
             .await;
             let msg = match result {
-                Ok(path) => tr("Saved %1 to %2").replace("%1", &file.name).replace("%2", &path.parent().map(|p| p.display().to_string()).unwrap_or_default()),
+                Ok(path) => {
+                    tracing::info!(path = %path.display(), "file downloaded");
+                    file_downloaded(false)
+                }
                 Err(e) => short_error(&e),
             };
             let _ = qt

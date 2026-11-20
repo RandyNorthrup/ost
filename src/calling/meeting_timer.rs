@@ -426,17 +426,20 @@ pub fn countdown(remaining_ms: i64) -> String {
     format!("{}{m:02}:{s:02}", if neg { "-" } else { "" })
 }
 
-/// The spoken form ("4 min, 30 sec", "5 min", "10 sec"; seconds rounded up).
+/// The spoken form ("4 min, 30 sec", "5 min", "10 sec"; seconds rounded
+/// up), Teams' mt_time_format_* in the app language.
 pub fn spoken(ms: i64) -> String {
+    use crate::i18n::{fill, tr_id};
+    let secs = |s: i64| fill(&tr_id("%1 sec", "calling:k3zzip4rk"), &[&s.to_string()]);
     if ms <= 0 {
-        return "0 sec".into();
+        return secs(0);
     }
     let total_s = (ms + 999) / 1000;
     let (m, s) = (total_s / 60, total_s % 60);
     match (m, s) {
-        (0, s) => format!("{s} sec"),
-        (m, 0) => format!("{m} min"),
-        (m, s) => format!("{m} min, {s} sec"),
+        (0, s) => secs(s),
+        (m, 0) => fill(&tr_id("%1 min", "calling:k3kcwva6c"), &[&m.to_string()]),
+        (m, s) => fill(&tr_id("%1 min, %2 sec", "calling:k19ns95p7"), &[&m.to_string(), &s.to_string()]),
     }
 }
 

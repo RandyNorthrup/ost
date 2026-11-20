@@ -225,35 +225,37 @@ pub fn describe(a: &Value, me: &str, name: &str) -> Option<(String, String)> {
 
 const COMMENT: &str = "comment";
 
-/// OneDrive's date groups for the activity list.
+/// OneDrive's date groups for the activity list (in the app language
+/// where Teams has the words: its search's date groups).
 pub fn group(t: DateTime<Local>, now: DateTime<Local>) -> String {
+    use crate::i18n::tr_id;
     let day = |d: DateTime<Local>| d.date_naive();
     let today = now.date_naive();
     let start = |d: chrono::NaiveDate| Local.from_local_datetime(&d.and_hms_opt(0, 0, 0).unwrap()).earliest().unwrap_or(now);
     let sunday = start(today) - Duration::days(i64::from(today.weekday().num_days_from_sunday()));
     if day(t) == today {
-        return "Today".into();
+        return tr_id("Today", "search:k5qg9bmr");
     }
     if day(t) == today - Duration::days(1) {
-        return "Yesterday".into();
+        return tr_id("Yesterday", "search:kd4t3tzrw");
     }
     if t > sunday {
-        return "This week".into();
+        return tr_id("This week", "search:kaxicfa6c");
     }
     if t > sunday - Duration::days(7) {
-        return "Last week".into();
+        return tr_id("Last week", "search:kbfpcdkuk");
     }
     if t > start(today) - Duration::days(14) {
-        return "Two weeks ago".into();
+        return tr_id("Two weeks ago", "search:k5n4pt2tw");
     }
     if t > start(today) - Duration::days(21) {
         return "Three weeks ago".into();
     }
     if t.year() == now.year() && t.month() == now.month() {
-        return "This month".into();
+        return tr_id("This month", "search:krbukwec");
     }
     if t.year() == now.year() && now.month() - t.month() == 1 {
-        return "Last month".into();
+        return tr_id("Last month", "search:kaud11jto");
     }
     if t.year() == now.year() {
         return t.format("%B").to_string();

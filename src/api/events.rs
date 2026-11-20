@@ -188,7 +188,11 @@ pub fn cards_from(reply: &Value, ams_v2: &str) -> Vec<EventCard> {
                 promo_image: promo_url(ams_v2, &promo),
                 primary_color: s("/theme/primaryColor"),
                 role,
-                location: if rooms.is_empty() { "Online".into() } else { "In-person and online".into() },
+                location: if rooms.is_empty() {
+                    crate::i18n::tr_id("Online", "virtualEvents:kc7y4avmb")
+                } else {
+                    crate::i18n::tr_id("In-person and online", "virtualEvents:k5k2j4pka")
+                },
                 join_url: session
                     .and_then(|x| x.pointer("/meetingContext/joinLink"))
                     .and_then(Value::as_str)
@@ -1000,7 +1004,7 @@ pub fn template_body(e: &NewEvent, name: &str, description: &str) -> Value {
 
 pub async fn save_as_template(client: &TeamsClient, id: &str, e: &NewEvent, name: &str, description: &str) -> Result<Value> {
     let id = event_path(id)?;
-    anyhow::ensure!(!name.trim().is_empty(), "Template name is required");
+    anyhow::ensure!(!name.trim().is_empty(), crate::i18n::tr_id("Template name is required", "virtualEvents:k8tdaiazv"));
     let r = send(reqwest::Method::POST, &format!("{}/events/{id}/saveAsTemplate", regional_endpoint(client)), Some(&template_body(e, name, description)), false).await?;
     let v: Value = r.json().await.context("The template")?;
     Ok(json!({ "id": v.get("id").cloned().unwrap_or_default(), "name": v.get("name").cloned().unwrap_or_default() }))

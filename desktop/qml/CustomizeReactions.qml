@@ -36,7 +36,9 @@ Popup {
     property int picking: -1
     readonly property bool changed: tone !== startTone || JSON.stringify(slots) !== JSON.stringify(startSlots)
     readonly property bool saving: backend.reactionPrefsResult === "saving"
-    readonly property var toneNames: [qsTr("None"), qsTr("Light"), qsTr("Medium light"), qsTr("Medium"), qsTr("Medium dark"), qsTr("Dark")]
+    // Teams' names: its emoticon_skintone_* strings, first letter capitalised.
+    readonly property var toneNames: [qsTr("none", "messaging:k1e57n758"), qsTr("light", "messaging:kdditzq3h"), qsTr("medium light", "messaging:k1ay2emet"), qsTr("medium", "messaging:kcv8hdqb2"), qsTr("medium dark", "messaging:kbkrx29m7"), qsTr("dark", "messaging:k2kcmet5z")]
+        .map(s => s.length ? s[0].toUpperCase() + s.slice(1) : s)
     // Teams' tone circles: radial gradients lit from the lower left.
     readonly property var toneStops: [["#FCD53F", "#FFB02E"], ["#F4BFAA", "#B77C6C"], ["#E8B192", "#A0685B"], ["#B28876", "#794E54"], ["#875D59", "#4E2C32"], ["#26131B", "#503B3B"]]
 

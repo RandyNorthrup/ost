@@ -797,7 +797,7 @@ Window {
                 visible: !root.compact
                 x: 16; y: 158; width: 328; height: 16
                 horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
-                text: cc.toast && cc.toast.video ? qsTr("is video calling you") : qsTr("is calling you")
+                text: qsTr("is calling you")  // Teams says it for video calls too
                 font.family: theme.font; font.pixelSize: 14
                 color: "white"
             }
@@ -824,7 +824,7 @@ Window {
                 visible: root.compact
                 x: 74; y: 37.33; width: 274; height: 16
                 verticalAlignment: Text.AlignVCenter
-                text: cc.toast && cc.toast.video ? qsTr("is video calling you") : qsTr("is calling you")
+                text: qsTr("is calling you")  // Teams says it for video calls too
                 font.family: theme.font; font.pixelSize: 14
                 color: "white"
             }

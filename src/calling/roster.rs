@@ -523,22 +523,26 @@ impl Processing {
         }
     }
 
-    /// The recording indicator's tooltip (Teams' strings), naming who
-    /// started each with `name` (an MRI to a display name, "" if unknown).
+    /// The recording indicator's tooltip (Teams' strings, in the app
+    /// language), naming who started each with `name` (an MRI to a display
+    /// name, "" if unknown).
     pub fn indicator_tooltip(&self, name: impl Fn(&str) -> String) -> String {
+        use crate::i18n::{fill, tr_id};
         let who = |id: &Option<String>| id.as_deref().map(&name).unwrap_or_default();
         let (rec, tr) = (who(&self.recording), who(&self.transcript));
         let same = self.recording.as_deref().map(str::to_ascii_lowercase)
             == self.transcript.as_deref().map(str::to_ascii_lowercase);
         match (!rec.is_empty(), !tr.is_empty()) {
-            (true, true) if same => format!("Recording and transcription started by {tr}."),
-            (true, true) => format!("Recording started by {rec}. Transcription started by {tr}."),
-            (true, false) => format!("Recording started by {rec}."),
-            (false, true) => format!("Transcription started by {tr}."),
+            (true, true) if same => fill(&tr_id("Recording and transcription started by %1.", "calling:k7htcmvot"), &[&tr]),
+            (true, true) => {
+                fill(&tr_id("Recording started by %1. Transcription started by %2.", "calling:k4nbj3ibx"), &[&rec, &tr])
+            }
+            (true, false) => fill(&tr_id("Recording started by %1.", "calling:k6ptwcn2g"), &[&rec]),
+            (false, true) => fill(&tr_id("Transcription started by %1.", "calling:k5tqwoq2b"), &[&tr]),
             (false, false) => match self.indicator_state() {
-                "Transcribing" => "Transcription started".into(),
+                "Transcribing" => tr_id("Transcription started", "calling:k22fflw0f"),
                 "" => String::new(),
-                _ => "Recording started".into(),
+                _ => tr_id("Recording started", "calling:kd5hrbi0s"),
             },
         }
     }

@@ -260,7 +260,7 @@ Rectangle {
             HoverHandler { id: rowHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: pane.openThread(row.modelData.id) }
             Accessible.role: Accessible.ListItem
-            Accessible.name: (row.modelData.text || "") + ", " + qsTr("%n replies", "", row.modelData.thread_replies) + (row.modelData.following === true ? ", " + qsTr("followed") : "")
+            Accessible.name: (row.modelData.text || "") + ", " + qsTr("%n replies", "", row.modelData.thread_replies) + (row.modelData.following === true ? ", " + qsTr("Followed", "simpleCollab:k4vha2p5n") : "")
         }
     }
 }

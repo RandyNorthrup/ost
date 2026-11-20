@@ -56,26 +56,28 @@ fn items(v: &Value, key: &str) -> Vec<Value> {
     v.get(key).and_then(Value::as_array).cloned().unwrap_or_default()
 }
 
-/// A hero, thumbnail or sign-in card (Teams' `_` with images and buttons).
+/// A hero, thumbnail or sign-in card (Teams' `_` with images and buttons;
+/// its labels, botcards_aria_label_*, in the app language).
 fn rich_card(c: &Value) -> String {
+    use crate::i18n::{fill, tr_id};
     let mut s = String::new();
     if let Some(t) = text(c, "title") {
-        s += &field("Card title", Some(t), true);
+        s += &field(&tr_id("Card title", "extensibility:k2ijjo685"), Some(t), true);
     }
     if let Some(t) = text(c, "subtitle") {
-        s += &field("Card subtitle", Some(t), true);
+        s += &field(&tr_id("Card subtitle", "extensibility:k8l4foksj"), Some(t), true);
     }
     if let Some(t) = text(c, "text") {
-        s += &field("Card text content", Some(t), true);
+        s += &field(&tr_id("Card text content", "extensibility:k7ilh3scw"), Some(t), true);
     }
     for (i, _) in items(c, "images").iter().enumerate() {
-        s += &field(&format!("Image {i}"), None, false);
+        s += &field(&fill(&tr_id("Image %1", "extensibility:k2h24475o"), &[&i.to_string()]), None, false);
     }
     for (i, b) in items(c, "buttons").iter().enumerate() {
-        s += &field(&format!("Button {}", i + 1), None, false);
-        s += &field("Button title", text(b, "title"), false);
+        s += &field(&fill(&tr_id("Button %1", "extensibility:kbzcck3o9"), &[&(i + 1).to_string()]), None, false);
+        s += &field(&tr_id("Button title", "extensibility:k9q77qg7z"), text(b, "title"), false);
         if b.get("type").and_then(Value::as_str) == Some("openUrl") {
-            s += &field("Button value", text(b, "value"), false);
+            s += &field(&tr_id("Button value", "extensibility:k9qgnmda4"), text(b, "value"), false);
         }
     }
     s
@@ -84,29 +86,30 @@ fn rich_card(c: &Value) -> String {
 /// An Office 365 connector card (Teams' `b`: no facts, pictures or
 /// buttons in this reading).
 fn connector_card(c: &Value) -> String {
+    use crate::i18n::{fill, tr_id};
     let mut s = String::new();
     if let Some(t) = text(c, "title") {
-        s += &field("Card title", Some(t), false);
+        s += &field(&tr_id("Card title", "extensibility:k2ijjo685"), Some(t), false);
     }
     if let Some(t) = text(c, "text") {
-        s += &field("Card text content", Some(t), false);
+        s += &field(&tr_id("Card text content", "extensibility:k7ilh3scw"), Some(t), false);
     }
     for (i, sec) in items(c, "sections").iter().enumerate() {
-        s += &field(&format!("Section {}", i + 1), None, false);
+        s += &field(&fill(&tr_id("Section %1", "extensibility:k4xy4e1nr"), &[&(i + 1).to_string()]), None, false);
         if let Some(t) = text(sec, "title") {
-            s += &field("Section title", Some(t), false);
+            s += &field(&tr_id("Section title", "extensibility:k69fise5l"), Some(t), false);
         }
         if let Some(t) = text(sec, "text") {
-            s += &field("Section text", Some(t), false);
+            s += &field(&tr_id("Section text", "extensibility:kh56lnq4"), Some(t), false);
         }
         if let Some(t) = text(sec, "activityTitle") {
-            s += &field("Activity title", Some(t), false);
+            s += &field(&tr_id("Activity title", "extensibility:k6ydkp59e"), Some(t), false);
         }
         if let Some(t) = text(sec, "activitySubtitle") {
-            s += &field("Activity subtitle", Some(t), false);
+            s += &field(&tr_id("Activity subtitle", "extensibility:k81ml4x3m"), Some(t), false);
         }
         if let Some(t) = text(sec, "activityText") {
-            s += &field("Activity text", Some(t), false);
+            s += &field(&tr_id("Activity text", "extensibility:k14gw10xb"), Some(t), false);
         }
     }
     s

@@ -159,7 +159,7 @@ Item {
                         MenuPopup {
                             id: rowMenu
                             x: -200; y: parent.height; width: 230
-                            items: (crow.modelData.email ? [{ key: "send", label: qsTr("Send email"), icon: "mail-20" }, { key: "copy", label: qsTr("Copy email"), icon: "copy-20" }] : [])
+                            items: (crow.modelData.email ? [{ key: "send", label: qsTr("Email", "jana:kucshyc6"), icon: "mail-20" }, { key: "copy", label: qsTr("Copy email"), icon: "copy-20" }] : [])
                                 .concat([{ key: crow.modelData.favorite ? "unfavorite" : "favorite", label: crow.modelData.favorite ? qsTr("Remove from favorites") : qsTr("Add to favorites"), icon: "star-20" },
                                          { separator: true }, { key: "delete", label: qsTr("Delete"), icon: "delete-20" }])
                             onPicked: i => {
@@ -192,8 +192,8 @@ Item {
             }
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
-                text: root.view === "favorites" ? qsTr("Your favorite contacts will show up here")
-                    : root.view === "all" ? qsTr("You haven't added any contacts yet") : qsTr("No contacts in this category")
+                text: root.view === "favorites" ? qsTr("People you favorite will show up here")
+                    : root.view === "all" ? qsTr("You haven't added any contacts yet") : qsTr("Your category folder is empty")
                 font.family: theme.font; font.pixelSize: theme.base + 1; font.weight: Font.DemiBold; color: theme.text
             }
             Rectangle {
@@ -241,7 +241,7 @@ Item {
                 Field { id: last; width: 190; hint: qsTr("Last name") }
             }
             Field { id: email; width: 392; hint: qsTr("Email") }
-            Field { id: mobile; width: 392; hint: qsTr("Mobile phone") }
+            Field { id: mobile; width: 392; hint: qsTr("Mobile", "livePersonaEditor:kb7ypfpxi") }
             Field { id: company; width: 392; hint: qsTr("Company") }
             Field { id: job; width: 392; hint: qsTr("Job title") }
             Row {
@@ -282,8 +282,8 @@ Item {
         background: Rectangle { radius: 8; color: theme.menu; border.color: theme.dividerSoft }
         contentItem: Column {
             spacing: 16
-            Text { text: qsTr("Delete contact?"); font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text }
-            Text { width: 352; wrapMode: Text.Wrap; text: qsTr("%1 will be removed from your contacts.").arg(deleteDialog.contact ? deleteDialog.contact.name : ""); font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
+            Text { text: qsTr("Delete contact", "jana:k7je5fz68"); font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text }
+            Text { width: 352; wrapMode: Text.Wrap; text: qsTr("Do you want to delete the contact %1?").arg(deleteDialog.contact ? deleteDialog.contact.name : ""); font.family: theme.font; font.pixelSize: theme.base; color: theme.text }
             Row {
                 spacing: 8; layoutDirection: Qt.RightToLeft; width: 352
                 Rectangle {

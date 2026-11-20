@@ -454,7 +454,7 @@ Rectangle {
                     Avatar { x: 12; anchors.verticalCenter: parent.verticalCenter; size: 32; name: parent.modelData.name || ""; photoId: parent.modelData.mri || "" }
                     Column {
                         x: 56; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 64
-                        Text { width: parent.width; elide: Text.ElideRight; text: (root.isMe(parent.parent.modelData.mri) ? qsTr("%1 (You)") : "%1").arg(parent.parent.modelData.name || ""); font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill4, theme.text) }
+                        Text { width: parent.width; elide: Text.ElideRight; text: (root.isMe(parent.parent.modelData.mri) ? ("%1 " + qsTr("(You)", "autosuggest:k9m83y7y2")) : "%1").arg(parent.parent.modelData.name || ""); font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill4, theme.text) }
                         Text { width: parent.width; elide: Text.ElideRight; text: parent.parent.modelData.mail || parent.parent.modelData.upn || ""; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(hcFill4, theme.textSecondary) }
                     }
                     HoverHandler { id: pph; cursorShape: Qt.PointingHandCursor }
@@ -724,7 +724,7 @@ Rectangle {
         hit: root.preview
         terms: root.terms
         place: root.preview ? root.channelOf(root.preview.thread) : null
-        chatName: root.preview ? (String(root.preview.thread).startsWith("48:") ? qsTr("%1 (You)").arg(backend.userName) : root.chatName(root.preview.thread) || root.preview.sender_name || "") : ""
+        chatName: root.preview ? (String(root.preview.thread).startsWith("48:") ? qsTr("%1 (You)", "messaging:kdq26mx1z").arg(backend.userName) : root.chatName(root.preview.thread) || root.preview.sender_name || "") : ""
         onClosed: root.preview = null
         onGoTo: { const h = root.preview; root.preview = null; root.openHit(h) }
         onPopOut: {
@@ -848,7 +848,7 @@ Rectangle {
                     x: 52; y: 17; width: parent.width - 52 - 16 - (mch2.hovered ? 220 : 0); height: 17.1
                     textFormat: Text.StyledText; elide: Text.ElideRight
                     text: mc.place ? root.bold(mc.place.team.name) + " &nbsp;›&nbsp; " + root.bold(mc.place.channel.name)
-                        : mc.notes ? qsTr("%1 (You)").arg(root.escaped(backend.userName)) : root.bold(root.chatName(mc.h.thread) || mc.h.sender_name || "")
+                        : mc.notes ? qsTr("%1 (You)", "messaging:kdq26mx1z").arg(root.escaped(backend.userName)) : root.bold(root.chatName(mc.h.thread) || mc.h.sender_name || "")
                     font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary
                 }
                 Row {
@@ -875,7 +875,7 @@ Rectangle {
                     id: who
                     x: 52; y: 56; height: 20
                     textFormat: Text.StyledText
-                    text: (root.isMe(mc.h.sender_mri) ? qsTr("%1 (You)") : "%1").arg(root.bold(mc.h.sender_name || ""))
+                    text: (root.isMe(mc.h.sender_mri) ? ("%1 " + qsTr("(You)", "autosuggest:k9m83y7y2")) : "%1").arg(root.bold(mc.h.sender_name || ""))
                     font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
                 }
                 Text { x: who.x + who.implicitWidth + 12; y: 57.4; text: root.when(mc.h.time); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
@@ -921,7 +921,9 @@ Rectangle {
         const others = (c.members || []).filter(n => n !== backend.userName)
         if (!others.length) return qsTr("You")
         const first = others.map(n => n.split(" ")[0])
-        return first.length === 1 ? qsTr("You and %1").arg(first[0]) : qsTr("You, %1 and %2").arg(first.slice(0, -1).join(", ")).arg(first[first.length - 1])
+        // Teams' groupChatContext_mf for one or two others (its =1 and =2 forms).
+        if (first.length <= 2) return qsTr("You, %1, %2%3", "search:kbs4wjktu_mf", first.length).arg(first[0]).arg(first[1] || "").arg("")
+        return qsTr("You, %1 and %2").arg(first.slice(0, -1).join(", ")).arg(first[first.length - 1])
     }
     // A channel row (Channels tab: 64 tall).
     // A Viva Engage community (Teams' Communities tab; the service's
@@ -980,7 +982,7 @@ Rectangle {
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
             }
             Accessible.role: Accessible.ListItem
-            Accessible.name: qsTr("%1 channel in %2 team").arg(c.name).arg(c.team)
+            Accessible.name: qsTr("%1 channel in %2 team. Press enter to select the card.").arg(c.name).arg(c.team)
         }
     }
     // All: group chats and channels side by side (294 x 82, 8 apart).
@@ -1025,7 +1027,7 @@ Rectangle {
                         TapHandler { onTapped: root.openChannel(parent.modelData.thread, parent.modelData.name, "", "", []) }
                         HoverHandler { cursorShape: Qt.PointingHandCursor }
                         Accessible.role: Accessible.ListItem
-                        Accessible.name: qsTr("%1 channel in %2 team").arg(modelData.name).arg(modelData.team)
+                        Accessible.name: qsTr("%1 channel in %2 team. Press enter to select the card.").arg(modelData.name).arg(modelData.team)
                     }
                 }
             }
@@ -1158,7 +1160,7 @@ Rectangle {
                 height: 64
                 // Teams: hovering the picture opens the person's card.
                 Avatar { x: 16; y: 16; size: 32; name: parent.parent.p.name; photoId: parent.parent.p.mri; presence: root.presenceOf(parent.parent.p.mri); opensProfile: true }
-                Text { x: 60; y: 11.3; width: parent.width - 76; elide: Text.ElideRight; textFormat: Text.StyledText; text: (root.isMe(parent.parent.p.mri) ? qsTr("%1 (You)") : "%1").arg(root.bold(parent.parent.p.name)); font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                Text { x: 60; y: 11.3; width: parent.width - 76; elide: Text.ElideRight; textFormat: Text.StyledText; text: (root.isMe(parent.parent.p.mri) ? ("%1 " + qsTr("(You)", "autosuggest:k9m83y7y2")) : "%1").arg(root.bold(parent.parent.p.name)); font.family: theme.font; font.pixelSize: 14; color: theme.text }
                 Text { x: 60; y: 32; width: parent.width - 76; elide: Text.ElideRight; text: [parent.parent.p.title, parent.parent.p.department, parent.parent.p.mail].filter(x => !!x).join(" · "); font.family: theme.font; font.pixelSize: 12; color: theme.text }
                 TapHandler { onTapped: root.openPerson(parent.parent.p.mri, parent.parent.p.name) }
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
@@ -1232,7 +1234,13 @@ Rectangle {
                         TapHandler { onTapped: parent.modelData.file_name ? backend.openFile(parent.modelData.url, parent.modelData.file_name, "") : root.openHit(parent.modelData) }
                         HoverHandler { cursorShape: Qt.PointingHandCursor }
                         Accessible.role: Accessible.ListItem
-                        Accessible.name: qsTr("image shared by %1").arg(modelData.sender_name || "")
+                        // Teams' image card label (image_card_aria_label_with/without_location).
+                        Accessible.name: {
+                            const loc = root.chatName(modelData.thread)
+                            const title = modelData.file_name || "", by = modelData.sender_name || "", when = root.shortDate(modelData.time), body = modelData.text || ""
+                            return loc ? qsTr("%1 shared by %2 in %3 on %4 %5").arg(title).arg(by).arg(loc).arg(when).arg(body)
+                                       : qsTr("%1 shared by %2 on %3 %4").arg(title).arg(by).arg(when).arg(body)
+                        }
                     }
                 }
             }

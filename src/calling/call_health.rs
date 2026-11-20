@@ -484,7 +484,7 @@ impl Sampler {
         put(
             "video-send-resolution",
             res(Kind::VideoSend)
-                .map(|v| format!("{v} px"))
+                .map(|v| px(&v.to_string()))
                 .unwrap_or_default(),
             cam,
         );
@@ -518,7 +518,7 @@ impl Sampler {
         put(
             "screen-sharing-send-resolution",
             res(Kind::ShareSend)
-                .map(|v| format!("{v} px"))
+                .map(|v| px(&v.to_string()))
                 .unwrap_or_default(),
             sharing,
         );
@@ -557,7 +557,7 @@ impl Sampler {
         put(
             "screen-sharing-received-resolution",
             res(Kind::ShareRecv)
-                .map(|v| format!("{v} px"))
+                .map(|v| px(&v.to_string()))
                 .unwrap_or_default(),
             watching,
         );
@@ -618,12 +618,18 @@ fn trimmed(v: f64) -> String {
     if s == "-0" { "0".into() } else { s.into() }
 }
 
+/// Teams' value suffixes (call_health_tab_value_suffix_*), in the app
+/// language.
+fn px(v: &str) -> String {
+    crate::i18n::fill(&crate::i18n::tr_id("%1 px", "calling:k8zqoy2ur"), &[v])
+}
+
 /// Teams' `convertToMs`: none for 0.
 pub fn ms(v: f64) -> String {
     if v == 0.0 || v.is_nan() {
         String::new()
     } else {
-        format!("{v:.2} ms")
+        crate::i18n::fill(&crate::i18n::tr_id("%1 ms", "calling:kac1ob4uw"), &[&format!("{v:.2}")])
     }
 }
 
@@ -638,7 +644,7 @@ pub fn kbps(bits: f64) -> String {
     if b == 0.0 {
         String::new()
     } else {
-        format!("{} Kbps", trimmed(b / 1000.0))
+        crate::i18n::fill(&crate::i18n::tr_id("%1 Kbps", "calling:k390feyvg"), &[&trimmed(b / 1000.0)])
     }
 }
 
@@ -648,7 +654,7 @@ pub fn mbps(bits: f64) -> String {
     if b == 0.0 {
         String::new()
     } else {
-        format!("{} Mbps", trimmed(b / 1e6))
+        crate::i18n::fill(&crate::i18n::tr_id("%1 Mbps", "calling:k390i3c5e"), &[&trimmed(b / 1e6)])
     }
 }
 
@@ -657,7 +663,7 @@ pub fn fps_text(v: f64) -> String {
     if v == 0.0 || v.is_nan() {
         String::new()
     } else {
-        format!("{v:.2} fps")
+        crate::i18n::fill(&crate::i18n::tr_id("%1 fps", "calling:k6vnwbmb7"), &[&format!("{v:.2}")])
     }
 }
 
@@ -666,7 +672,7 @@ pub fn packets_text(n: u64) -> String {
     if n == 0 {
         String::new()
     } else {
-        format!("{n} packets")
+        crate::i18n::fill(&crate::i18n::tr_id("%1 packets", "calling:k9hhqqyk5"), &[&n.to_string()])
     }
 }
 
@@ -678,11 +684,11 @@ pub fn processing_type(codec: &str) -> String {
     if c.contains("INVALID") || codec.is_empty() {
         String::new()
     } else if sw && hw {
-        "Hardware + Software".into()
+        crate::i18n::tr_id("Hardware + Software", "calling:k2y9hw7sx")
     } else if sw {
-        "Software enabled".into()
+        crate::i18n::tr_id("Software enabled", "calling:k77xxmkh5")
     } else if hw {
-        "Hardware enabled".into()
+        crate::i18n::tr_id("Hardware enabled", "calling:k6ra6ecm")
     } else {
         String::new()
     }

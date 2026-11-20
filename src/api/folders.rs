@@ -39,16 +39,19 @@ pub struct Folders {
     pub folders: Vec<Folder>,
 }
 
+/// A section's name: Teams' own sections (named by the server in English)
+/// in the app language, yours as you named them.
 fn title_of(kind: &str, name: &str) -> String {
+    use crate::i18n::tr_id;
     match kind {
-        "QuickViews" => "Quick views".into(),
-        "Favorites" => "Favorites".into(),
-        "RecentChats" => "Chats".into(),
-        "TeamsAndChannels" => "Teams and channels".into(),
-        "EngageCommunities" => "Communities".into(),
-        "MeetingChats" => "Meeting chats".into(),
+        "QuickViews" => tr_id("Quick views", "simpleCollab:k19o1krqn"),
+        "Favorites" => tr_id("Favorites", "simpleCollab:ka8q200ui"),
+        "RecentChats" => tr_id("Chats", "simpleCollab:k5swxlvro"),
+        "TeamsAndChannels" => tr_id("Teams and channels", "simpleCollab:keudj7lf"),
+        "EngageCommunities" => tr_id("Communities", "simpleCollab:kyr2wxvu"),
+        "MeetingChats" => tr_id("Meeting chats", "simpleCollab:k7mu02oak"),
         "MutedChats" => "Muted chats".into(),
-        "HiddenChannels" => "Hidden channels".into(),
+        "HiddenChannels" => tr_id("Hidden channels", "simpleCollab:kaqad9yse"),
         _ => name.into(),
     }
 }

@@ -622,7 +622,7 @@ Popup {
                         y: root.areaH - 20
                         height: 20; verticalAlignment: Text.AlignVCenter
                         textFormat: Text.StyledText
-                        text: qsTr("<0></0> (only you can see this)").replace("<0></0>", "<b>" + qsTr("Preview") + "</b>")
+                        text: qsTr("%1 (only you can see this)").arg("<b>" + qsTr("Preview") + "</b>")
                         font.family: theme.font; font.pixelSize: 14
                         color: theme.text
                     }

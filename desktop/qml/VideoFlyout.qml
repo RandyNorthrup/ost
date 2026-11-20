@@ -137,7 +137,7 @@ Popup {
             Text {
                 visible: !preview.visible
                 anchors.centerIn: parent
-                text: root.tab === "avatars" ? (videoEffects.avatarId ? "" : qsTr("Select an avatar")) : root.cameras.length === 0 ? qsTr("No camera is connected") : qsTr("Starting your camera…")
+                text: root.tab === "avatars" ? (videoEffects.avatarId ? "" : qsTr("Select an avatar")) : root.cameras.length === 0 ? qsTr("No camera is connected") : qsTr("Starting camera...")
                 font.family: theme.font; font.pixelSize: 14
                 color: theme.textSecondary
             }

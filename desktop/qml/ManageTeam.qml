@@ -221,13 +221,13 @@ Rectangle {
             Row {
                 id: sortRow
                 anchors.centerIn: parent; spacing: 4
-                Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Sort: %1").arg(page.sortNames[page.sort]); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(sortButton, theme.textStrong) }
+                Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Sort: %1", "teamsAndChannels:k9bigtxd6").arg(page.sortNames[page.sort]); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(sortButton, theme.textStrong) }
                 FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-12"; size: 12; color: theme.onFill(sortButton, theme.textStrong) }
             }
             HoverHandler { id: sortHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: sortMenu.open() }
             Accessible.role: Accessible.Button
-            Accessible.name: qsTr("Sort: %1 is selected").arg(page.sortNames[page.sort])
+            Accessible.name: qsTr("%1 is selected", "teamsAndChannels:kcu55c7ro").arg(qsTr("Sort: %1", "teamsAndChannels:k9bigtxd6").arg(page.sortNames[page.sort]))
             MenuPopup {
                 id: sortMenu
                 y: parent.height + 5
