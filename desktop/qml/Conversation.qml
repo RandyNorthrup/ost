@@ -2081,9 +2081,8 @@ Rectangle {
                         const s = msg.modelData.call_seconds
                         // Teams leaves out whole days ("d.hh:mm:ss" reads as
                         // its hours): a 25h 28m meeting shows "1h 28m 28s".
-                        // Each part is its calling_duration_* string.
-                        const parts = [[Math.floor(s / 3600) % 24, qsTr("%1h", "messaging:k7gf07fy9")], [Math.floor(s / 60) % 60, qsTr("%1m", "messaging:k2r3m66s9")], [s % 60, qsTr("%1s", "messaging:k8v6yafyl")]]
-                            .filter(p => p[0] > 0).map(p => p[1].arg(p[0])).join(" ")
+                        // Teams' tmp_calling_duration_mf ("11m", "11Min.", "١١د").
+                        const parts = root.escapeHtml(backend.durationText("call", s))
                         // A meeting chat says "Meeting ended: {duration}" (seen in OST
                         // calendar test on winpc, 2026-11-10).
                         if (root.isMeetingChat) return qsTr("Meeting ended:") + "&nbsp;<b>" + parts + "</b>"

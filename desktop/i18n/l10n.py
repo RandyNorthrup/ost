@@ -178,12 +178,14 @@ def _render(parts, args, plural_var):
     out = []
     for p in parts:
         if isinstance(p, str):
-            out.append(p.replace("%", "%%") if False else p)
+            out.append(p)
         elif p[0] == "hash":
+            # `#`: the language's digits (Teams' ICU number format)
             out.append("%n")
         elif p[0] == "arg":
             if p[1] == plural_var:
-                out.append("%n")
+                # the count named as an argument ({days}): written as it is
+                out.append("%N")
             elif p[1] in args:
                 out.append("%" + str(args.index(p[1]) + 1))
             else:
@@ -193,10 +195,21 @@ def _render(parts, args, plural_var):
     return "".join(out)
 
 
+def _forms(pl, before, after, args, trim):
+    forms = {}
+    for sel, body in pl[2].items():
+        r = _render(before + body + after, args, pl[1])
+        if r is None:
+            return None
+        forms[sel] = r.strip() if trim else r
+    return forms if "other" in forms else None
+
+
 def to_qt(text, args=None):
-    """A Teams message in Qt's form: a string, or {selector: string} for a
-    plural message; None for what it can't express (selects, several
-    plurals). `args` fixes placeholder numbering (en-us order)."""
+    """A Teams message in Qt's form: a string, {selector: string} for a
+    plural message, or for several plurals a list of segments (text, and
+    {"var": name, "forms": {…}} per count); None for what it can't express
+    (selects). `args` fixes placeholder numbering (en-us order)."""
     try:
         parts = parse_message(text)
     except (ValueError, IndexError):
@@ -204,21 +217,26 @@ def to_qt(text, args=None):
     if args is None:
         args = [a for a in arg_order(parts)]
     plurals = [p for p in parts if not isinstance(p, str) and p[0] == "plural"]
-    if any(not isinstance(p, str) and p[0] == "select" for p in parts) or len(plurals) > 1:
+    if any(not isinstance(p, str) and p[0] == "select" for p in parts):
         return None
     if not plurals:
         return _render(parts, args, None)
-    pl = plurals[0]
-    k = parts.index(pl)
-    forms = {}
-    for sel, body in pl[2].items():
-        r = _render(parts[:k] + body + parts[k + 1 :], args, pl[1])
-        if r is None:
-            return None
-        forms[sel] = r.strip()
-    if "other" not in forms:
-        return None
-    return forms
+    if len(plurals) == 1:
+        k = parts.index(plurals[0])
+        return _forms(plurals[0], parts[:k], parts[k + 1 :], args, True)
+    segs = []
+    for p in parts:
+        if not isinstance(p, str) and p[0] == "plural":
+            f = _forms(p, [], [], args, False)
+            if f is None:
+                return None
+            segs.append({"var": p[1], "forms": f})
+        else:
+            r = _render([p], args, None)
+            if r is None:
+                return None
+            segs.append(r)
+    return segs
 
 
 def qt_args(text):
@@ -250,7 +268,9 @@ def ostify(text, locale="en-us"):
     """Teams' product name in a translation as OST: "Microsoft Teams" and
     "Teams", inflected forms included."""
     if isinstance(text, dict):
-        return {k: ostify(v, locale) for k, v in text.items()}
+        return {k: v if k == "var" else ostify(v, locale) for k, v in text.items()}
+    if isinstance(text, list):
+        return [ostify(v, locale) for v in text]
     if text is None:
         return None
     joiner = _SUFFIX_JOINER.get(locale.split("-")[0], "")
@@ -280,7 +300,7 @@ def qml_strings():
                     dis = toks[i + 4][1]
                 found[(toks[i + 2][1], dis)].append(f"{f}:{src.count(chr(10), 0, a) + 1}")
     # Rust: tr("…") / tr_n("…", n) / tr_id("…", "ns:key") / tr_id_n("…", "ns:key", n)
-    pat = re.compile(r'\btr(?:_n|_id|_id_n)?\(\s*"((?:[^"\\]|\\.)*)"(?:\s*,\s*"([^"]*)")?')
+    pat = re.compile(r'\btr(?:_n|_id|_id_n|_id_counts)?\(\s*"((?:[^"\\]|\\.)*)"(?:\s*,\s*"([^"]*)")?')
     for root in RUST:
         for d, _, files in os.walk(root):
             for f in files:
@@ -304,9 +324,12 @@ def _norm(v):
     """A Teams en-us text in Qt's form, for matching (the 'other' form of a
     plural)."""
     q = to_qt(v)
+    if isinstance(q, list):
+        return None
     if isinstance(q, dict):
-        return q.get("other")
-    return q
+        q = q.get("other")
+    # OST's sources write a count as %n either way
+    return q.replace("%N", "%n") if q else q
 
 
 def index_en(teams):
@@ -381,7 +404,7 @@ def gen(strings_path, assets_dir=None, teams_version=""):
         en_text = lookup(teams, "en-us", sid)
         row = [source, dis, sid, qt_args(en_text) or []]
         q = to_qt(en_text)
-        if isinstance(q, dict):
+        if isinstance(q, (dict, list)):
             row.append(ostify(q) if "OST" in source else q)
         rows.append(row)
     with open(os.path.join(HERE, "ids.json"), "w", encoding="utf-8") as out:

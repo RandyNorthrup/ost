@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-15T01:31:00Z'
-updated_date: '2026-11-20T03:19:00Z'
+updated_date: '2026-11-20T04:00:00Z'
 labels:
   - desktop
   - settings
@@ -78,4 +78,12 @@ Built so far: all 109 app languages offered; OST's text in each language in Team
 - Pending: Teams on winpc in de-de/ar-sa side by side (call durations' digits in Arabic, the German recording row, system messages), waiting for winpc to be free.
 
 Built so far: all 109 app languages; OST's text, the engine's chat system messages, call durations and "(You)" in each language in Teams' own wording (runtime catalogue from Teams' CDN, ids matched to Teams' key hashes); right to left; reports to GitHub stay English. Verified live in de-de and ar-sa on linuxlt (801 lib tests). Missing: the side-by-side check against Teams on winpc; text from web apps outside Teams' main string table stays English.
+
+2026-11-19 winpc comparison (Teams de-de and ar-sa via read-only CDP, settings changed with VNC clicks; afterwards Teams went back to English (United States) with Follow OS on, as it was):
+- "(You)": Teams "OST Test 1 (Sie)" / "(أنت)" = OST.
+- German recording row: Teams "Die Aufzeichnung wurde auf dem OneDrive von OST Test 2 gespeichert. und läuft in 120 Tagen ab." (stray period included) = OST. System messages ("... hat die Besprechung ... genannt.", recording started/stopped) = OST.
+- Call durations differed. Teams formats a chat's call rows with messaging:tmp_calling_duration_mf, a message with several plurals: "11Min." / "5Min. 54Sek." in German, "١١د" / "٥د ٥٤ث" (Arabic-Indic digits from ICU #) in Arabic. Fixed: l10n.py and teams_strings.rs keep a message with several plurals as segments, i18n::tr_id_counts() renders them, and api::messages::duration_text("call"|"history"|"attendance") uses Teams' messages for chat and channel call rows (tmp_calling_duration_mf), Calls history (call_history_call_duration_long/short_mf) and the attendance report (meetingAnalytics:calling_duration_mf).
+- Expiry digits differed. Teams writes a count named as an argument inside a plural ({remainingDays}) as plain digits ("120 يوماً"); only # gets the language's digits. Fixed: such counts are %N (Latin) and # is %n (localized).
+- Verified on linuxlt after the fixes: ar-sa "١١د", "٥د ٥٤ث", "في غضون 120 يوماً"; de-de "11Min.", "5Min. 54Sek."; both match Teams.
+- Follow-up (not translation, OST in English too): Teams treats an event's group chat as an "Event group" chat. It names it "Event group: <title>" (event_backroom_chat_title_prefix), says "<names> joined the Event Group Chat: <title> for organizers, presenters, and people helping with the event." (tmp_messages_*EventBackroom), and shows "<title> has ended." / "<title> has started." (tmp_messages_backroom_call_*) in place of "Meeting ended:". OST shows these chats like ordinary meeting chats.
 <!-- SECTION:NOTES:END -->

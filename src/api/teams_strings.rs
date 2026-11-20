@@ -353,8 +353,11 @@ fn render(parts: &[Part], args: &[String], plural_var: Option<&str>) -> Option<S
     for p in parts {
         match p {
             Part::Text(t) => out.push_str(t),
+            // `#` is formatted in the language's numbering system (Teams'
+            // ICU messages: Arabic-Indic digits in Arabic); the count named
+            // as an argument ({days}) is written as it is: %N.
             Part::Hash => out.push_str("%n"),
-            Part::Arg(n) if Some(n.as_str()) == plural_var => out.push_str("%n"),
+            Part::Arg(n) if Some(n.as_str()) == plural_var => out.push_str("%N"),
             Part::Arg(n) => out.push_str(&format!("%{}", args.iter().position(|a| a == n)? + 1)),
             _ => return None,
         }
@@ -362,29 +365,47 @@ fn render(parts: &[Part], args: &[String], plural_var: Option<&str>) -> Option<S
     Some(out)
 }
 
+fn plural_forms(var: &str, forms: &[(String, Vec<Part>)], before: &[Part], after: &[Part], args: &[String], trim: bool) -> Option<Map<String, Value>> {
+    let mut m = Map::new();
+    for (sel, body) in forms {
+        let mut whole = before.to_vec();
+        whole.extend(body.iter().cloned());
+        whole.extend(after.iter().cloned());
+        let r = render(&whole, args, Some(var))?;
+        m.insert(sel.clone(), Value::String(if trim { r.trim().to_string() } else { r }));
+    }
+    m.contains_key("other").then_some(m)
+}
+
 /// A Teams message in Qt's form, its placeholders numbered by `args` (the
-/// en-us order): a string, or a plural message's forms; None for what Qt's
-/// form can't hold (selects, two plurals, a placeholder en-us lacks).
+/// en-us order): a string, or a plural message's forms. A message with
+/// several plurals ("{hour, plural, …} {min, plural, …}") becomes its
+/// segments: text, and `{"var": name, "forms": {…}}` for each count. None
+/// for what that can't hold (selects, a placeholder en-us lacks).
 pub fn to_qt(text: &str, args: &[String]) -> Option<Value> {
     let parts = parse_message(text)?;
     let plurals: Vec<&Part> = parts.iter().filter(|p| matches!(p, Part::Plural(..))).collect();
-    if parts.iter().any(|p| matches!(p, Part::Select)) || plurals.len() > 1 {
+    if parts.iter().any(|p| matches!(p, Part::Select)) {
         return None;
     }
-    let Some(Part::Plural(var, forms)) = plurals.first().copied() else {
-        return render(&parts, args, None).map(Value::String);
-    };
-    let k = parts.iter().position(|p| matches!(p, Part::Plural(..)))?;
-    let mut m = Map::new();
-    for (sel, body) in forms {
-        let mut whole = parts[..k].to_vec();
-        whole.extend(body.iter().cloned());
-        whole.extend(parts[k + 1..].iter().cloned());
-        m.insert(sel.clone(), Value::String(render(&whole, args, Some(var))?.trim().to_string()));
+    match plurals.as_slice() {
+        [] => render(&parts, args, None).map(Value::String),
+        [Part::Plural(var, forms)] => {
+            let k = parts.iter().position(|p| matches!(p, Part::Plural(..)))?;
+            plural_forms(var, forms, &parts[..k], &parts[k + 1..], args, true).map(Value::Object)
+        }
+        _ => {
+            let mut segs = Vec::new();
+            for p in &parts {
+                segs.push(match p {
+                    Part::Plural(var, forms) => serde_json::json!({ "var": var, "forms": plural_forms(var, forms, &[], &[], args, false)? }),
+                    other => Value::String(render(std::slice::from_ref(other), args, None)?),
+                });
+            }
+            Some(Value::Array(segs))
+        }
     }
-    m.contains_key("other").then_some(Value::Object(m))
 }
-
 /// The en-us placeholder order of a message (its plural count excluded).
 pub fn message_args(text: &str) -> Vec<String> {
     let Some(parts) = parse_message(text) else { return Vec::new() };
@@ -434,7 +455,9 @@ pub fn ostify(text: &str, locale: &str) -> String {
 fn ostify_value(v: Value, locale: &str) -> Value {
     match v {
         Value::String(s) => Value::String(ostify(&s, locale)),
-        Value::Object(m) => Value::Object(m.into_iter().map(|(k, v)| (k, ostify_value(v, locale))).collect()),
+        // a segment's "var" is Teams' name for a count ("hour"): no product name in it
+        Value::Object(m) => Value::Object(m.into_iter().map(|(k, v)| (k.clone(), if k == "var" { v } else { ostify_value(v, locale) })).collect()),
+        Value::Array(a) => Value::Array(a.into_iter().map(|v| ostify_value(v, locale)).collect()),
         v => v,
     }
 }
@@ -543,6 +566,13 @@ mod tests {
         assert_eq!(to_qt("{g, select, m{er} other{sie}}", &[]), None);
         assert_eq!(message_args("{c, plural, one{{{a}} #} other{{{a}} und {{b}}}}"), a(&["a", "b"]));
         assert_eq!(to_qt("{{unbekannt}}", &a(&["name"])), None);
+        // a count named as an argument is written as it is (%N), # in the
+        // language's digits (%n)
+        let p = to_qt("{d, plural, =1{ und läuft in {d} Tag ab.} other{ und läuft in {d} Tagen ab.}}", &[]).unwrap();
+        assert_eq!(p["other"], "und läuft in %N Tagen ab.");
+        // several plurals: segments
+        let p = to_qt("{hour, plural, =0{} other{#Std.}} {min, plural, =0{} other{#Min.}}", &[]).unwrap();
+        assert_eq!(p, serde_json::json!([{"var": "hour", "forms": {"=0": "", "other": "%nStd."}}, " ", {"var": "min", "forms": {"=0": "", "other": "%nMin."}}]));
         // Teams' empty components are placeholders too
         assert_eq!(message_args("<0></0> added <1></1> and {otherTargets} to the chat."), a(&["<0>", "<1>", "otherTargets"]));
         assert_eq!(to_qt("<0></0> hat <1></1> zum Chat hinzugefügt.", &a(&["<0>", "<1>"])), Some(Value::String("%1 hat %2 zum Chat hinzugefügt.".into())));

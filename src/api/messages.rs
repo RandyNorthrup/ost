@@ -1206,6 +1206,34 @@ pub fn event_text(e: &ChatEvent, name: &dyn Fn(&str) -> String, meeting: bool) -
     }
 }
 
+/// A duration as Teams writes it, in the app language (its duration
+/// formatter's messages, whose counts are ICU `#`: Arabic-Indic digits in
+/// Arabic, "11Min." in German):
+/// - "call": a chat's call and meeting rows (module 75579 `us`,
+///   tmp_calling_duration_mf: hours, minutes, seconds; whole days left
+///   out, as Teams shows a 25h 28m meeting as "1h 28m");
+/// - "history": the Calls app's history (call_history_call_duration_long_mf
+///   from an hour, else _short_mf);
+/// - "attendance": the attendance report (meetingAnalytics'
+///   calling_duration_mf: days, hours, minutes, seconds).
+pub fn duration_text(kind: &str, seconds: i64) -> String {
+    use crate::i18n::tr_id_counts;
+    let s = seconds.max(0);
+    let (h, m, sec) = (s / 3600, s / 60 % 60, s % 60);
+    let text = match kind {
+        "history" if h > 0 => tr_id_counts("{totalHour}h {min}m", "calling:kc0xcnca0_mf", &[("totalHour", h), ("min", m)]),
+        "history" => tr_id_counts("{totalMin}m {sec}s", "calling:k1yau8i0o_mf", &[("totalMin", s / 60), ("sec", sec)]),
+        "attendance" => tr_id_counts(
+            "{day}d {hour}h {min}m {sec}s",
+            "meetingAnalytics:k31vmww9a_mf",
+            &[("day", s / 86_400), ("hour", h % 24), ("min", m), ("sec", sec)],
+        ),
+        _ => tr_id_counts("{hour}h {min}m {sec}s", "messaging:k5gsf29bb_mf", &[("hour", h % 24), ("min", m), ("sec", sec)]),
+    };
+    // the empty parts' spaces (Teams' HTML collapses them)
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 /// Teams' reaction keys and their emoji.
 pub fn reaction_emoji(key: &str) -> &'static str {
     match key {
@@ -5292,6 +5320,18 @@ mod tests {
 #[cfg(test)]
 mod paging_and_event_tests {
     use super::*;
+
+    #[test]
+    fn durations_as_teams_writes_them() {
+        assert_eq!(duration_text("call", 660), "11m");
+        assert_eq!(duration_text("call", 354), "5m 54s");
+        assert_eq!(duration_text("call", 25 * 3600 + 28 * 60 + 28), "1h 28m 28s");
+        assert_eq!(duration_text("history", 3900), "1h 5m");
+        assert_eq!(duration_text("history", 3600), "1h");
+        assert_eq!(duration_text("history", 65), "1m 5s");
+        assert_eq!(duration_text("history", 3), "3s");
+        assert_eq!(duration_text("attendance", 90061), "1d 1h 1m 1s");
+    }
 
     #[test]
     fn system_events_read_as_teams_says_them() {

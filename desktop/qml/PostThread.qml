@@ -437,8 +437,7 @@ Item {
                             text: {
                                 if (!rep.callRow) return ""
                                 const m = rep.modelData, s = m.call_seconds || 0
-                                const parts = [[Math.floor(s / 3600) % 24, qsTr("%1h", "messaging:k7gf07fy9")], [Math.floor(s / 60) % 60, qsTr("%1m", "messaging:k2r3m66s9")], [s % 60, qsTr("%1s", "messaging:k8v6yafyl")]]
-                                    .filter(p => p[0] > 0).map(p => p[1].arg(p[0])).join(" ")
+                                const parts = backend.durationText("call", s)
                                 return theme.time(new Date(m.time)) + "&nbsp;&nbsp;&nbsp;" + (m.call_state === "missed" ? qsTr("Call missed") : qsTr("Meeting ended:") + "&nbsp;<b>" + parts + "</b>")
                             }
                             font.family: theme.font; font.pixelSize: 12

@@ -32,11 +32,9 @@ Item {
     function duration(c) {
         if (!c.connect_time || !c.end_time) return ""
         const s = Math.max(0, Math.round((new Date(c.end_time) - new Date(c.connect_time)) / 1000))
-        const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, sec = s % 60
-        // Teams' call history: "1h 5m" (no minutes when 0), "5m 3s", "3s",
-        // its parts the calling_duration_hours/minutes/seconds strings.
-        const hs = qsTr("%1h", "messaging:k7gf07fy9"), ms = qsTr("%1m", "messaging:k2r3m66s9"), ss = qsTr("%1s", "messaging:k8v6yafyl")
-        return h > 0 ? hs.arg(h) + (m > 0 ? " " + ms.arg(m) : "") : (m > 0 ? ms.arg(m) + " " + ss.arg(sec) : ss.arg(sec))
+        // Teams' call history: "1h 5m" (no minutes when 0), "5m 3s", "3s"
+        // (call_history_call_duration_long_mf / _short_mf).
+        return backend.durationText("history", s)
     }
     function when(iso) {
         const d = new Date(iso), now = new Date()

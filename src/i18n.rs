@@ -94,24 +94,49 @@ fn new(ids: &str, catalogue: Option<&str>, locale: &str) -> anyhow::Result<Self>
     Ok(Catalogue { index, rows, lang, zero, english })
 }
 
-fn lookup(&self, source: &str, dis: &str, n: Option<i64>) -> Option<String> {
+fn row(&self, source: &str, dis: &str) -> Option<&Value> {
     let i = self.index.get(&key(source, dis)).or_else(|| (!dis.is_empty()).then(|| self.index.get(source)).flatten())?;
-    let text = match &self.rows[*i] {
-        Value::String(s) => s.clone(),
-        Value::Object(forms) => {
-            let count = n.unwrap_or(0);
-            let pick = forms
-                .get(&format!("={count}"))
-                .or_else(|| forms.get(plural_category(&self.lang, count.unsigned_abs())))
-                .or_else(|| forms.get("other"))?;
-            pick.as_str()?.to_string()
+    self.rows.get(*i)
+}
+
+/// A plural message's form for `n`: an exact `=N` form first, else the
+/// language's category, else "other"; its `%n` in the language's digits,
+/// `%N` as written.
+fn form(&self, forms: &serde_json::Map<String, Value>, n: i64) -> Option<String> {
+    let pick = forms
+        .get(&format!("={n}"))
+        .or_else(|| forms.get(plural_category(&self.lang, n.unsigned_abs())))
+        .or_else(|| forms.get("other"))?;
+    Some(pick.as_str()?.replace("%n", &number_in(n, self.zero)).replace("%N", &n.to_string()))
+}
+
+fn lookup(&self, source: &str, dis: &str, n: Option<i64>) -> Option<String> {
+    match self.row(source, dis)? {
+        Value::String(s) => Some(match n {
+            Some(n) => s.replace("%n", &number_in(n, self.zero)).replace("%N", &n.to_string()),
+            None => s.clone(),
+        }),
+        Value::Object(forms) => self.form(forms, n.unwrap_or(0)),
+        _ => None,
+    }
+}
+
+/// A message with several counts (its segments), each count by name.
+fn lookup_counts(&self, source: &str, dis: &str, counts: &[(&str, i64)]) -> Option<String> {
+    let Value::Array(segs) = self.row(source, dis)? else { return None };
+    let mut out = String::new();
+    for s in segs {
+        match s {
+            Value::String(t) => out.push_str(t),
+            Value::Object(o) => {
+                let var = o.get("var")?.as_str()?;
+                let n = counts.iter().find(|(k, _)| *k == var)?.1;
+                out.push_str(&self.form(o.get("forms")?.as_object()?, n)?);
+            }
+            _ => return None,
         }
-        _ => return None,
-    };
-    Some(match n {
-        Some(n) => text.replace("%n", &number_in(n, self.zero)),
-        None => text,
-    })
+    }
+    Some(out)
 }
 }
 
@@ -203,6 +228,15 @@ pub fn tr_id(source: &str, id: &str) -> String {
 /// `tr_n` naming the Teams string explicitly.
 pub fn tr_id_n(source: &str, id: &str, n: i64) -> String {
     lookup(source, id, Some(n)).unwrap_or_else(|| source.replace("%n", &n.to_string()))
+}
+
+/// A Teams message with several counts (`{hour, plural, …} {min, plural,
+/// …}`), named by its id, each count by Teams' name for it; `source` is
+/// only OST's label for it (the English comes from ids.json).
+pub fn tr_id_counts(source: &str, id: &str, counts: &[(&str, i64)]) -> String {
+    current()
+        .and_then(|c| c.lookup_counts(source, id, counts))
+        .unwrap_or_else(|| counts.iter().map(|(k, n)| format!("{n} {k}")).collect::<Vec<_>>().join(" "))
 }
 
 /// A translated text's placeholders `%1`…`%9` filled with `args`, in one
@@ -410,6 +444,20 @@ mod tests {
         assert_eq!(t(&ar, "%n others", "", Some(5)).unwrap(), "٥ آخرين");
         assert_eq!(number_in(2026, ar.zero), "٢٠٢٦");
         assert!(Catalogue::new(TEST_IDS, Some(r#"{"strings":{}}"#), "de-de").is_err());
+    }
+
+    #[test]
+    fn several_counts_and_raw_counts() {
+        let ids = r#"[["{hour}h {min}m {sec}s","messaging:kd_mf","messaging:kd_mf",[],[{"var":"hour","forms":{"=0":"","other":"%nh"}}," ",{"var":"min","forms":{"=0":"","other":"%nm"}}," ",{"var":"sec","forms":{"=0":"","other":"%ns"}}]],["and will expire in %n days.","messaging:ke_mf","messaging:ke_mf",[],{"=1":"and will expire in %N day.","other":"and will expire in %N days."}]]"#;
+        let en = Catalogue::new(ids, None, "en-us").unwrap();
+        let c = |cat: &Catalogue, h, m, s| cat.lookup_counts("{hour}h {min}m {sec}s", "messaging:kd_mf", &[("hour", h), ("min", m), ("sec", s)]).unwrap().trim().to_string();
+        assert_eq!(c(&en, 0, 11, 0), "11m");
+        assert_eq!(c(&en, 1, 0, 5), "1h  5s");
+        let cat = r#"{"strings":{"messaging:kd_mf":[{"var":"hour","forms":{"=0":"","other":"%nس"}}," ",{"var":"min","forms":{"=0":"","other":"%nد"}}," ",{"var":"sec","forms":{"=0":"","other":"%nث"}}],"messaging:ke_mf":{"other":"في غضون %N يوماً."}}}"#;
+        let ar = Catalogue::new(ids, Some(cat), "ar-sa").unwrap();
+        // Teams: "٥د ٥٤ث" (#), but "في غضون 120 يوماً" ({remainingDays})
+        assert_eq!(c(&ar, 0, 5, 54), "٥د ٥٤ث");
+        assert_eq!(ar.lookup("and will expire in %n days.", "messaging:ke_mf", Some(120)).unwrap(), "في غضون 120 يوماً.");
     }
 
     #[test]

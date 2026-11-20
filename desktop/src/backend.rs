@@ -692,6 +692,10 @@ pub mod qobject {
         /// context: reports to GitHub stay English).
         #[qinvokable]
         fn english_text(self: &Backend, text: &QString) -> QString;
+        /// A duration as Teams writes it in the app language ("call":
+        /// chat call rows, "history": Calls, "attendance").
+        #[qinvokable]
+        fn duration_text(self: &Backend, kind: &QString, seconds: i64) -> QString;
         /// Teams' suggested-reply feedback categories for these kinds of
         /// suggestions (a JSON list of kinds in, of labels out).
         #[qinvokable]
@@ -14494,6 +14498,10 @@ impl qobject::Backend {
             unsafe { ost_set_clipboard_image(p.as_ptr()) };
         }
         QString::from(url.as_str())
+    }
+
+    pub fn duration_text(&self, kind: &QString, seconds: i64) -> QString {
+        QString::from(api::messages::duration_text(&kind.to_string(), seconds).as_str())
     }
 
     pub fn english_text(&self, text: &QString) -> QString {

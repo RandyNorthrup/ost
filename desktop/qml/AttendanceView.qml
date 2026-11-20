@@ -62,7 +62,8 @@ Rectangle {
     function unitText(u) {
         return u === "h" ? qsTr("%1h", "messaging:k7gf07fy9") : u === "m" ? qsTr("%1m", "messaging:k2r3m66s9") : qsTr("%1s", "messaging:k8v6yafyl")
     }
-    function durationText(sec) { return duration(sec).map(p => unitText(p[1]).arg(p[0])).join(" ") }
+    // A row's duration: the report's calling_duration_mf (Teams).
+    function durationText(sec) { return backend.durationText("attendance", Math.max(0, Math.round(sec || 0))) }
     // Big numbers with small units, as Teams' summary cards.
     function big(parts) {
         const small = t => t ? "<span style=\"font-size:20px\">" + t + "</span>" : ""
