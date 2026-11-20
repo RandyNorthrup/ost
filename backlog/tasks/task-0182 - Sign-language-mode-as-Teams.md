@@ -1,11 +1,11 @@
 ---
 id: TASK-0182
 title: Sign language mode as Teams
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-16T04:53:00Z'
-updated_date: '2026-11-20T01:49:00Z'
+updated_date: '2026-11-20T02:13:00Z'
 labels:
   - desktop
 dependencies: []
@@ -19,7 +19,7 @@ OST saves Teams' sign language setting but doesn't act on it.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 With it on, meetings show Teams' signer view and settings, as Teams
+- [x] #1 With it on, meetings show Teams' signer view and settings, as Teams
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -69,3 +69,14 @@ OST saves Teams' sign language setting but doesn't act on it.
 - 2026-11-19 three-account pin area check (linuxlt, OST calendar test meeting): ost-test1 pinned OST Test 2 and OST Test 3 (--vi-pin-all=2): both went to the pin area (pins/featured in pin order), their videos were focused (video focus count 2) and took slots; unpinned 30 s later (pins []). Two pinned on an 864x560 area first stacked 2x1; GalleryGrid now follows Teams' 1x2 rule for two people (aspect >= 1.25, oneByTwoGridSizeAspectRatioBreakpoint) and showed them side by side. All three left (hung up 202). test3's sign language settings were not touched.
 - Open (OST bug seen, not this task): people who join before the organizer wait in the lobby and the organizer's lobby list stays empty, so they are never admitted.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Sign language mode as Teams.
+
+- Settings ▸ Accessibility: Signer / Interpreter, "Show my signer status…", Manage interpreters, saved in Teams' callAccessibilitySettings (Teams' defaults when an account has none).
+- Meetings: roles published as Teams does; your signers or interpreters come first, a Sign language view, Teams' tile icons, People lines ("Your Sign Language Interpreter", "Paired to you"), the "Add interpreters" alert with Teams' text; up to 9 people in the pin area (side by side when wide), featured tiles requesting the high-quality stream; a live signing badge from signing detection (MoveNet, downloaded with a pinned hash).
+- Live: ost-test1 (Signer) and OST Test 2 (Interpreter) each saw the other's role; three-account pin area; signing badge from a CC-licensed ASL clip. Settings restored.
+- 796 lib tests pass.
+<!-- SECTION:FINAL_SUMMARY:END -->

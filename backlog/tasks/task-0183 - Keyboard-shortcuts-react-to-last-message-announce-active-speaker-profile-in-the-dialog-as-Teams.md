@@ -3,11 +3,11 @@ id: TASK-0183
 title: >-
   Keyboard shortcuts: react to last message, announce active speaker, profile in
   the dialog, as Teams
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-16T04:53:00Z'
-updated_date: '2026-11-20T01:18:00Z'
+updated_date: '2026-11-20T02:13:00Z'
 labels:
   - desktop
 dependencies: []
@@ -21,7 +21,7 @@ OST lacks these two shortcuts and has the profile choice only in Settings ▸ Ge
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Both shortcuts work as Teams'
+- [x] #1 Both shortcuts work as Teams'
 - [x] #2 The Keyboard shortcuts dialog offers the profile choice as Teams'
 <!-- AC:END -->
 
@@ -65,3 +65,14 @@ OST lacks these two shortcuts and has the profile choice only in Settings ▸ Ge
 
 - 2026-11-19 winpc (Teams, CDP key events, aria-live watched): in Teams' Make a test call, Ctrl+Alt+Shift+S announced "Latest speaker: Unknown" (assertive) each time: Teams looks the dominant speaker up in its participants and the Echo bot has no roster displayName. OST said "Latest speaker: Echo" (it names the bot from its profile), so Participant now carries roster_named and the announcement uses only the roster's name. A 1:1 call from OST Test 2 to Teams wasn't answered in time and went to ost-test1's voicemail (a synthetic-voice voicemail is left there).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Keyboard shortcuts as Teams: React to last message and Announce active speaker, and the profile choice in the dialog.
+
+- React to last message (Ctrl+Alt+R; Slack profile Ctrl+Shift+\\) focuses the newest message's first quick reaction; Announce active speaker (Ctrl+Alt+Shift+S; Zoom Ctrl+2) says "Latest speaker: {roster name}", "Unknown" or "Nobody is speaking", and "<signer> voiced by <interpreter>" for a paired interpreter.
+- The Keyboard shortcuts dialog has Teams' profile dropdown with "N available changes", Apply, View options and highlighted rows.
+- Live: real key events in OST; Teams on winpc said "Latest speaker: Unknown" for the Echo bot (roster name), and OST now does the same.
+- 796 lib tests pass.
+<!-- SECTION:FINAL_SUMMARY:END -->

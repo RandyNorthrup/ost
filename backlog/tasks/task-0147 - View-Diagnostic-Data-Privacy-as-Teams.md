@@ -1,11 +1,11 @@
 ---
 id: TASK-0147
 title: View Diagnostic Data (Privacy) as Teams
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-15T04:40:00Z'
-updated_date: '2026-11-20T01:18:00Z'
+updated_date: '2026-11-20T02:13:00Z'
 labels:
   - settings
 dependencies: []
@@ -21,7 +21,7 @@ Teams' Settings > Privacy > View Diagnostic Data > Manage opens its diagnostic d
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 Privacy shows 'View Diagnostic Data' with a Manage button as Teams
-- [ ] #2 Manage opens a viewer laid out as Teams' diagnostic data viewer, listing exactly the diagnostic data OST sends
+- [x] #2 Manage opens a viewer laid out as Teams' diagnostic data viewer, listing exactly the diagnostic data OST sends
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -61,3 +61,14 @@ Teams' Settings > Privacy > View Diagnostic Data > Manage opens its diagnostic d
 
 - 2026-11-19 real Diagnostic Data Viewer on winpc: DDV's own Settings > Office data settings (Office diagnostic data viewing on, Remote Office diagnostic data viewing on, port 8000, connection string 10.10.11.64:8000); no Windows privacy setting was needed or touched. OST's first Connect failed: its empty POST had no Content-Length, DDV answered 411 and then stopped answering anyone until restarted. wire.rs now sends Content-Length (0 too), title-cased headers, one connection per request. Then OST connected, and DDV listed the device randy-lt with Ost.UpdateCheck decoded in full (ver 3.0, iKey o:ost, deviceClass Linux.Desktop, timezone -08:00, data.properties AppInfo.ClientType ost, AppInfo.Version 0.1.0, status 200, url, userAgent). Afterwards both DDV toggles were turned off and DDV closed; Teams' own data viewing was never touched.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+View Diagnostic Data as Teams.
+
+- Privacy shows View Diagnostic Data with Manage, opening Teams' Diagnostic data viewer page (Enable data viewing, connection string, Connect).
+- OST records exactly the diagnostic data it sends on its own (the update check, Report a problem with call-quality details, suggested-reply feedback) and streams each item in Teams' wire format (captured from Teams) to the viewer.
+- Live: Microsoft's Diagnostic Data Viewer on winpc listed device "randy-lt" with OST's update-check event decoded; no Windows setting changed (only the viewer's own Office data viewing, turned off again).
+- 796 lib tests pass.
+<!-- SECTION:FINAL_SUMMARY:END -->
