@@ -1,10 +1,11 @@
 ---
 id: TASK-0128
 title: 'Picker search: Person filter and Location pictures as Teams'
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-13T16:48:00Z'
-updated_date: '2026-11-20T09:04:00Z'
+updated_date: '2026-11-20T15:35:00Z'
 labels:
   - files
 dependencies: []
@@ -19,7 +20,7 @@ Teams' Move/Copy picker search has a Person pill ("Filter by people": a people s
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The picker's search has the Person filter as Teams draws it, and choosing people narrows the results
+- [x] #1 The picker's search has the Person filter as Teams draws it, and choosing people narrows the results
 - [ ] #2 Location shows a site's or person's picture before their name as Teams does
 <!-- AC:END -->
 
@@ -31,4 +32,6 @@ Teams' Move/Copy picker search has a Person pill ("Filter by people": a people s
 - 2026-11-20 built: Person pill + menu in the picker search (Graph /me/people), people clause in drive::folder_query, Location pictures (getsitelogo / drive owner); harness --picker-person-test. Pending: run.
 
 - 2026-11-20 verified (--picker-person-test): people listed and typed, OST Test 1 picked narrows My files (drops SharePoint App's Recordings), Clear restores; All files shows OST Test Team's logo in Location (getsitelogo). A person's-OneDrive picture wasn't seen live (no such folders reachable).
+
+Built so far: the picker search's Person pill and menu; picking a person adds the modified-by/author clause (taken from OneDrive's code, since Teams' picker shows a stuck "Please sign in" on winpc); Location shows a site's logo or the owner's picture. Verified live: Person narrowed My files; All files showed the OST Test Team logo. Missing: the person-picture case seen live (needs a folder in someone else's OneDrive reachable to ost-test1); people are found via Graph /me/people, not OneDrive's own people search.
 <!-- SECTION:NOTES:END -->

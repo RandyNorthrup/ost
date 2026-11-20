@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-20T01:10:00Z'
-updated_date: '2026-11-20T15:31:00Z'
+updated_date: '2026-11-20T15:35:00Z'
 labels:
   - calls
 dependencies: []
@@ -55,4 +55,6 @@ Built so far: the Cast wizard (rooms with presence and nearby mark, meetings, co
 - Tests: 809 lib tests pass (linuxlt). Cleanup: room and test window stopped, btvirt pair down, restore token deleted from the portal store, trouter dumps and pcap removed; winpc: Teams back on Chat, theme back to Follow OS, helper files and task removed.
 
 - 2026-11-20 winpc Bluetooth (linuxlt 3 ft away): linuxlt hci0 is the real Realtek radio (USB, HCI 5.1), not a virtual one; its room beacon was legacy ADV_NONCONN_IND, 0 dBm, non-resolvable random address, the same type and address kind as Windows' own Microsoft (0x0006) beacons that winpc does receive. Plain test adverts from linuxlt hci0 (OSTTEST non-connectable, OSTTESTC connectable on the public address) were heard by this PC but never by winpc's watcher (active scan, ssh session and interactive session alike). A Windows beacon nearby (2C:AC:1D:90:C7:85) reads -41 dBm at linuxlt and -82 dBm at winpc; an advert published from winpc (0xFFFF test data, status Started) was heard by neither linuxlt nor this PC. winpc's Intel AX201 Bluetooth (8087:0026, driver 23.40, LE/central/extended advertising supported) is on; its Wi-Fi side reads 99%. So winpc's Bluetooth radio path is about 40 dB down in both directions: an antenna/hardware problem, not a Windows setting or a beacon format. Teams on winpc can't list any room until that is fixed (antenna leads on the AX201, or a USB Bluetooth adapter). All winpc helpers, tasks and linuxlt test adverts removed.
+
+Built so far: the Cast wizard and Teams' cast flow; the room accepts and shows a cast window or PowerPoint Live (verified live with OST in room mode, including casting a window via the portal's restore token); the room's auto-exit matches Teams Rooms. Missing: Teams' own Cast to the room live on winpc — winpc's Bluetooth radio is about 40 dB weak in both directions (likely an antenna lead), so it never hears the room's beacon; needs the antenna reseated or a USB Bluetooth adapter.
 <!-- SECTION:NOTES:END -->

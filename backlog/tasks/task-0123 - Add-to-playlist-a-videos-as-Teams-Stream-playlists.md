@@ -1,10 +1,11 @@
 ---
 id: TASK-0123
 title: 'Add to playlist (a video''s) as Teams: Stream playlists'
-status: To Do
-assignee: []
+status: Done
+assignee:
+  - '@claude'
 created_date: '2026-11-12T19:58:00Z'
-updated_date: '2026-11-20T09:04:00Z'
+updated_date: '2026-11-20T15:35:00Z'
 labels:
   - files
 dependencies: []
@@ -19,8 +20,8 @@ A video's Add to playlist opens OneDrive's file picker (FilePicker.aspx scenario
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A video's Add to playlist lists your playlists as Teams' picker does
-- [ ] #2 Picking a playlist adds the video to it as Teams does, verified with a test playlist
+- [x] #1 A video's Add to playlist lists your playlists as Teams' picker does
+- [x] #2 Picking a playlist adds the video to it as Teams does, verified with a test playlist
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -37,3 +38,14 @@ A video's Add to playlist opens OneDrive's file picker (FilePicker.aspx scenario
 
 - 2026-11-20 verified (--playlist-test): My lists shows OST TEST 123 playlist (GetPersonalListsProxy answer: value[] of listTitle/listId/listUrl/siteUrl/lastModifiedDate), Recent/Favorites empty, New playlist form; Done added the clip (checked with Graph: Title, Duration 00:00:06, VideoIdentifiers). Test playlist and clip deleted afterwards.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Add to playlist as Teams (Stream playlists).
+
+- The item menu's Add to playlist opens OneDrive's playlist picker as Teams does: My lists, Recent lists, Favorites, Quick access, More places…, New playlist / Done / Cancel; lists from GetPersonalListsProxy / GetRecentListsProxy, New playlist via Microsoft Lists' form, the add via AddValidateUpdateItemUsingPath with thumbnail, title, owner, duration and the video ids; "Added to the playlist" with View.
+- Live: My lists showed the test playlist; Done added the clip (Graph shows the item with title, 00:00:06 and ids). Test playlist and clip deleted.
+- Not seen in Teams: what Quick access and More places list (OST shows OneDrive's empty message).
+- src/api/playlists.rs, PlaylistPicker.qml, --playlist-test. 815 lib tests pass.
+<!-- SECTION:FINAL_SUMMARY:END -->

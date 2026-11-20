@@ -1,10 +1,11 @@
 ---
 id: TASK-0125
 title: 'Rename: Copilot''s Suggested names as Teams (AugLoop)'
-status: To Do
-assignee: []
+status: Done
+assignee:
+  - '@claude'
 created_date: '2026-11-13T01:56:00Z'
-updated_date: '2026-11-20T09:04:00Z'
+updated_date: '2026-11-20T15:35:00Z'
 labels:
   - files
 dependencies: []
@@ -19,8 +20,8 @@ Teams' Rename offers Copilot's Suggested names for some files (a .txt, not an .m
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Rename shows the Suggested names row for the files Teams shows it for, folded and expandable
-- [ ] #2 Expanding it asks Copilot as Teams does and shows its three names, the AI notice with thumbs, and Teams' error and Try again
+- [x] #1 Rename shows the Suggested names row for the files Teams shows it for, folded and expandable
+- [x] #2 Expanding it asks Copilot as Teams does and shows its three names, the AI notice with thumbs, and Teams' error and Try again
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -36,3 +37,14 @@ Teams' Rename offers Copilot's Suggested names for some files (a .txt, not an .m
 
 - 2026-11-20 verified on linuxlt (--rename-suggest-test): folded 266.67 tall, loading pills, Copilot's 3 names for ost-share-test.txt, Get new suggestions, a pill into the box; no row for a folder or .mp4.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Rename's Copilot Suggested names as Teams.
+
+- The folded Suggested names row shows for OneDrive's document, text and picture types (not folders or video), for Copilot-licensed users.
+- Expanding it opens an AugLoop session (wss://augloop.svc.cloud.microsoft/) as Teams does and streams three names; loading pills, Get new suggestions, the AI notice with thumbs, Teams' error and Try again; a pill fills the name box.
+- Live on linuxlt as ost-test1 and compared with Teams on winpc.
+- src/api/rename_suggestions.rs, --rename-suggest-test. 815 lib tests pass.
+<!-- SECTION:FINAL_SUMMARY:END -->

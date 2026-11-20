@@ -1,10 +1,11 @@
 ---
 id: TASK-0190
 title: 'File viewer: Show comments, Share menu check and narrow layout as Teams'
-status: To Do
-assignee: []
+status: Done
+assignee:
+  - '@claude'
 created_date: '2026-11-16T04:53:00Z'
-updated_date: '2026-11-20T09:04:00Z'
+updated_date: '2026-11-20T15:35:00Z'
 labels:
   - desktop
 dependencies: []
@@ -18,8 +19,8 @@ OST's viewer has a Share menu not yet compared with Teams', lacks 'Show comments
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Show comments works as in Teams
-- [ ] #2 The Share menu and narrow layout match Teams, measured on winpc
+- [x] #1 Show comments works as in Teams
+- [x] #2 The Share menu and narrow layout match Teams, measured on winpc
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -37,3 +38,14 @@ OST's viewer has a Share menu not yet compared with Teams', lacks 'Show comments
 
 - 2026-11-20 verified (--preview-bar-test at 1280/864/760/600): positions within ~1 px of Teams' (title 468.26 vs 468.32), folds at Teams' widths, narrow layout, dark Share and ··· menus, Show comments pane (a test comment posted and deleted), Embed code. Open: the look of a comment card in Teams' dark pane wasn't measured (no comments on the test file).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+File preview: Show comments, Share menu and narrow layout as Teams.
+
+- Show comments opens Teams' dark Comments pane with "@mention or comment", posting and reading comments; Share ▾ (Share, Copy link, Manage access) and ··· (Copy to, Embed, Version history, Help ▸) in Teams' dark style; the Embed dialog.
+- As the view narrows, Info, Delete, Favorite and Download fold into ··· at Teams' widths (796/760/724/688; at 640 only the name, ···, Share and Close remain).
+- Live: a test comment posted and deleted; at 1280, 864, 760 and 600 the bar matches Teams within about 1 px.
+- --preview-bar-test. 815 lib tests pass.
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -1,10 +1,11 @@
 ---
 id: TASK-0189
 title: OneDrive column settings as Teams
-status: To Do
-assignee: []
+status: Done
+assignee:
+  - '@claude'
 created_date: '2026-11-16T04:53:00Z'
-updated_date: '2026-11-20T09:04:00Z'
+updated_date: '2026-11-20T15:35:00Z'
 labels:
   - desktop
 dependencies: []
@@ -18,7 +19,7 @@ Teams' column headers have a Column settings submenu; OST offers only Ascending 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Column settings (show/hide, width, move) work as in Teams and are kept as Teams keeps them
+- [x] #1 Column settings work as in Teams (Teams offers Widen column and Narrow column, plus dragging the column borders) and widths are kept as Teams keeps them
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -36,3 +37,16 @@ Teams' column headers have a Column settings submenu; OST offers only Ascending 
 
 - 2026-11-20 verified (--column-settings-test at 1280x680): menus in OneDrive's words, Widen 141.27 -> 173, drag-set 200, Narrow under the responsive width stored but not shown, kept in oneDriveColumnWidths, reset. Open: Filter by (filters pane) not built.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+OneDrive column settings as Teams.
+
+- The criterion was reworded: Teams' Column settings has Widen column and Narrow column (32 px steps) and draggable borders, not show/hide or move.
+- Each header has Teams' own menu wording (Ascending/Descending, Older to newer, A to Z, Smaller to larger; Sharing only Column settings; Activity none).
+- Widths are kept on this device only, per library, never below OneDrive's automatic width (oneDriveColumnWidths).
+- Live: menus match Teams; Widen took Modified from 141 to 173; a dragged width was kept.
+- Not built: Filter by in the Modified and Modified By menus (follow-up TASK-0236).
+- --column-settings-test. 815 lib tests pass.
+<!-- SECTION:FINAL_SUMMARY:END -->
