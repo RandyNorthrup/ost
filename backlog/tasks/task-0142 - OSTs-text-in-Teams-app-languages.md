@@ -1,11 +1,11 @@
 ---
 id: TASK-0142
 title: OST's text in Teams' app languages
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-15T01:31:00Z'
-updated_date: '2026-11-20T04:00:00Z'
+updated_date: '2026-11-20T04:10:00Z'
 labels:
   - desktop
   - settings
@@ -22,7 +22,7 @@ Teams offers 109 app languages (Settings ▸ General ▸ Language and regional f
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 App language offers every language Teams lists
-- [ ] #2 After Save and restart, OST's own text appears in the chosen language, with Teams' wording for that language
+- [x] #2 After Save and restart, OST's own text appears in the chosen language, with Teams' wording for that language
 - [x] #3 Right-to-left languages lay out right to left as in Teams
 <!-- AC:END -->
 
@@ -87,3 +87,16 @@ Built so far: all 109 app languages; OST's text, the engine's chat system messag
 - Verified on linuxlt after the fixes: ar-sa "١١د", "٥د ٥٤ث", "في غضون 120 يوماً"; de-de "11Min.", "5Min. 54Sek."; both match Teams.
 - Follow-up (not translation, OST in English too): Teams treats an event's group chat as an "Event group" chat. It names it "Event group: <title>" (event_backroom_chat_title_prefix), says "<names> joined the Event Group Chat: <title> for organizers, presenters, and people helping with the event." (tmp_messages_*EventBackroom), and shows "<title> has ended." / "<title> has started." (tmp_messages_backroom_call_*) in place of "Meeting ended:". OST shows these chats like ordinary meeting chats.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+OST in Teams' app languages, with Teams' own wording and right-to-left layout.
+
+- App language offers Teams' 109 languages (mapped to its 63 string locales as Teams does).
+- After Save and restart, OST's UI, the engine's text (chat system messages, call durations, activity, previews, errors), "(You)" and counts use Teams' strings for that language: catalogues are built at runtime from Teams' own resources on Microsoft's CDN (pinned to Teams 26304.1201.5310.7985) into ~/.cache/ost/i18n; no Microsoft strings are in the repo. One translator (src/i18n.rs) for QML, backend and engine with Teams' plural rules, multi-count messages and digit rules (named values Latin, # counts native).
+- Right to left for Arabic, Hebrew, Persian and others, mirroring only Teams' flipped icons.
+- Reports to GitHub stay English.
+- Verified live in de-de and ar-sa on linuxlt and side by side with Teams on winpc (system messages, recording rows, "(You)", durations "11Min." / "١١د").
+- 805 lib + 29 desktop tests pass. Follow-ups: TASK-0233 (strings from Teams' other bundles: Stream, recorder, file preview, web apps), TASK-0234 (town hall Event group chats).
+<!-- SECTION:FINAL_SUMMARY:END -->
