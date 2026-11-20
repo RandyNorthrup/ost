@@ -956,6 +956,39 @@ pub fn backroom_kind(thread: &std::collections::HashMap<String, serde_json::Valu
     }
 }
 
+/// A meeting chat's backroom kind from its thread (the chat list's
+/// threadProperties leave `meetingChatType` out; the chat service's thread
+/// has it), asked once per chat and session.
+async fn meeting_backroom(client: &TeamsClient, id: &str) -> String {
+    static KNOWN: std::sync::Mutex<Option<std::collections::HashMap<String, String>>> = std::sync::Mutex::new(None);
+    if let Some(k) = KNOWN.lock().unwrap_or_else(|e| e.into_inner()).as_ref().and_then(|m| m.get(id).cloned()) {
+        return k;
+    }
+    let url = format!("{}/v1/threads/{}?view=msnp24Equivalent", client.chat_service_url(), id);
+    let kind = match client.chat_get(&url).await {
+        Ok(r) => match r.json::<serde_json::Value>().await {
+            Ok(v) => {
+                let props: std::collections::HashMap<String, serde_json::Value> = v
+                    .get("properties")
+                    .and_then(|p| p.as_object())
+                    .map(|o| o.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
+                    .unwrap_or_default();
+                let k = backroom_kind(&props).to_string();
+                if !k.is_empty() {
+                    let meeting = props.get("meeting").map(|m| m.to_string()).unwrap_or_default();
+                    tracing::info!("backroom chat {}: {k} (meeting has templateDetails: {})", &id[..id.len().min(24)], meeting.contains("templateDetails"));
+                }
+                Some(k)
+            }
+            Err(_) => None,
+        },
+        Err(_) => None,
+    };
+    let Some(kind) = kind else { return String::new() };
+    KNOWN.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(Default::default).insert(id.to_string(), kind.clone());
+    kind
+}
+
 /// The backroom chats seen in the chat list: chat id → (kind, title).
 static BACKROOMS: std::sync::RwLock<Option<std::collections::HashMap<String, (String, String)>>> = std::sync::RwLock::new(None);
 
@@ -1078,6 +1111,14 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
         .map(|d| d.as_secs())
         .unwrap_or_default();
     let mut names: std::collections::HashMap<String, Option<String>> = Default::default();
+    // Meeting chats' backroom kinds, asked all at once (cached after).
+    let meeting_ids: Vec<String> = conversations
+        .iter()
+        .filter_map(|c| c.id.clone())
+        .filter(|id| id.starts_with("19:meeting_"))
+        .collect();
+    let kinds = futures::future::join_all(meeting_ids.iter().map(|id| meeting_backroom(client, id))).await;
+    let backrooms: std::collections::HashMap<String, String> = meeting_ids.into_iter().zip(kinds).collect();
     let mut chats = Vec::new();
     for conv in &conversations {
         let id = conv.id.as_deref().unwrap_or("").to_string();
@@ -1087,7 +1128,10 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
 
         let is_group = id.contains("thread") || id.contains("meeting");
         let mut name = conversation_name(conv);
-        let backroom = conv.thread_properties.as_ref().map(|p| backroom_kind(&p.extra)).unwrap_or_default().to_string();
+        let mut backroom = conv.thread_properties.as_ref().map(|p| backroom_kind(&p.extra)).unwrap_or_default().to_string();
+        if backroom.is_empty() && id.starts_with("19:meeting_") && has_topic(conv) {
+            backroom = backrooms.get(&id).cloned().unwrap_or_default();
+        }
         let mut topic = String::new();
         if !backroom.is_empty() && has_topic(conv) {
             topic = name.clone();

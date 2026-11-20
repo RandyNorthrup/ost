@@ -4,6 +4,7 @@ title: Remaining pre-send checks and compose height as Teams
 status: To Do
 assignee: []
 created_date: '2026-11-16T14:25:00Z'
+updated_date: '2026-11-20T17:38:00Z'
 labels:
   - desktop
 dependencies: []
@@ -21,3 +22,12 @@ TASK-0085 built Teams' pre-send checks that apply to an existing chat or post (s
 - [ ] #2 Compose stops growing at Teams' maximum height and scrolls, so banners stay in view
 - [ ] #3 Reply drafts in channel threads roam as Teams' do when Teams' roaming setting is on
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+- 2026-11-20 (chat agent):
+  - Compose height (AC2), measured on winpc with 30 lines in OST group test: Teams' editor viewport (`compose-editor-viewport`, griffel class r1ymts1o) is `min-height: 3.8rem; max-height: 27rem` (270 px, the editor's padding included) with `overflow-y: auto`. OST's box now stops its text at 270 - 18 and scrolls it (wheel, and the caret kept in view); quotes, chips and cards stay put and the "too large" banner stays in view.
+  - Pre-send checks (AC1), from Teams' evaluators (async-entry): the order is now Teams' 1–16. New: fluidComponentSyncing "Syncing... Please wait." and FluidPermissions "Checking permissions... Please wait." (compose Loop components); InlineImageContent wording hooks; noRecipient "The contact info doesn't look right. Enter the info again, then select from the list." (messaging:k6m4wdnk), notEnoughGroupParticipants "You need to add at least 2 people to start group chat." (k8jrb70dr) and exceedsMaxChatRosterSize ("You've hit / There's a {n}-person limit…", tmp_messages_exceedsMaxChatRosterSize_mf k39c3cbbu_mf; limit Teams' maxRosterSizeInGroupChat 250, picked people >= limit) in the new chat form. Nearby: Teams checks it only with People.enableAtNearbyMention (absent from this tenant's ECS, so off) and OST's mention picker has no @Nearby, so the check can't arise. Pasted pictures: OST's compose doesn't paste pictures inline yet, so their three banners have nothing to watch (open).
+  - Reply drafts (AC3): a thread view now keeps its reply's draft as "{channel};messageid={post}" (Teams' -4.{post} reply chain) and roams it with innerThreadId `{channel};messageid={post}` when roaming is on; roamed reply drafts come back to that key.
+<!-- SECTION:NOTES:END -->

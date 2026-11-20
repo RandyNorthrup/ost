@@ -211,7 +211,10 @@
         // sourceless iframe V2): frameborder 0, tabindex -1, an empty title,
         // filling the host (layout fixedByHost), its document
         // `<body style="margin: 0px;"><div id="componentDiv">`.
-        const layoutMode = ({ fixedByHost: "fixedByHost", grow: "grow" })[vp.layoutMode] || (cfg.kind === "channelPages" ? "fixedByHost" : "growHeight");
+        // A Loop component in compose or a message fills Teams' fixed 320 px
+        // frame (its insert row at the bottom, as measured in Teams).
+        const layoutMode = cfg.kind === "compose" || cfg.kind === "message" ? "fixedByHost"
+            : ({ fixedByHost: "fixedByHost", grow: "grow" })[vp.layoutMode] || (cfg.kind === "channelPages" ? "fixedByHost" : "growHeight");
         const frame = document.createElement("iframe");
         frame.frameBorder = "0";
         frame.tabIndex = -1;

@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-09T23:01:00Z'
-updated_date: '2026-11-20T16:15:00Z'
+updated_date: '2026-11-20T18:18:00Z'
 labels:
   - desktop
   - messages
@@ -80,4 +80,12 @@ What TASK-0044 left of Teams' compose box (docs/spec/messages-and-composer.md §
   - Received: a 616.7 card in a 648 bubble; the header has the file name and Shared locations / Copy component / See who has access; frame 320 (messaging.fluid viewProperties growHeight, maxHeight 20rem).
   - "+" lists installed apps with compose commands (Polly, Workflows, Polls, Clipchamp, Power BI, Praise, Updates, Viva Learning; most recent first), then "Add a new app" store suggestions with Add, and a Get more apps footer; 340 x 480, scrolling. Polls/Polly: composeExtension/fetchTask → task module. Praise/Clipchamp: static taskInfo pages. Power BI: query panel ("Search here", initialRun; Unauthorized here → "Unable to reach app. Please try again."). Workflows/Updates: fetchCommands.
 - Built, not yet verified: LoopCard.qml (compose + message), Kind::Compose/Message in loop_page, compose_target/compose_link/discard/rename, outbox LoopEmbed, `--loop-compose-test`; api::compose_apps + ComposeAppPanel + task module launch/submitAction, the "+" apps list and Get more apps.
+
+- 2026-11-20 (chat agent), verified live (linuxlt, ost-test1, `--loop-compose-test`):
+  - Loop components: OST's toolbar shows it (messaging.fluid allows compose); the button puts Loop's paragraph in the box (Loop's own container: "Add a title", the insert row Table / Bulleted list / Checklist / Task list / …); Loop made `Microsoft Teams Chat Files/Loop paragraph.loop` and OST gave it the organization edit link through SharePoint's v2.1 createLink ("People in your organization with the link can edit").
+  - Discard: Teams' dialog, then the file is deleted (`--loop-compose-discard`).
+  - Send: "OST TEST 85 loop from OST" went with Teams' exact FluidEmbedCard span and card (componentUrl = link + nav, sourceType Compose). Teams on winpc draws it exactly as its own: the "Loop paragraph" header with Shared locations / Copy component / See who has access, and the text OST typed into the component ("OST TEST 85 loop OST", "Loop body typed in OST"). OST draws the received component in Loop's frame under the same header.
+  - Left: the title watch (Loop's page container gives no ComponentTitle events here, so a sent component keeps "Loop paragraph" unless it has a title Teams would rename it to; OST renames only when Loop reports one); the card's link description doesn't open link settings yet; a Loop component isn't kept in a chat's draft when you switch chats (it stays in your chat files).
+  - Test messages: "OST TEST 85 loop component from Teams" (Teams), "OST TEST 85 loop from OST" (OST), and an empty "<h1>" message from a slip while measuring, all in OST group test, to delete; their .loop files are in ost-test1's Microsoft Teams Chat Files.
+- Installed apps in "+": built (api::compose_apps installed apps with compose commands, the list under Teams' items with recency, Get more apps, ComposeAppPanel for search commands, task modules for fetchTask / taskInfo actions, submitAction, a picked result as Teams' InputExtension card); `--compose-apps-test` added; not yet run live.
 <!-- SECTION:NOTES:END -->

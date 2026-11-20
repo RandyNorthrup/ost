@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-13T21:53:00Z'
-updated_date: '2026-11-16T16:42:00Z'
+updated_date: '2026-11-20T18:22:00Z'
 labels:
   - desktop
   - files
@@ -35,4 +35,6 @@ What TASK-0085's Attach left of Teams' cloud file picker and compose card (docs/
 Built so far (1050c4e, merged as 8229940): command bar (New folder with Teams' Create a folder dialog and 16 colours, Upload files or a folder, List / Compact / Tiles), shared and coloured folder icons, People in OneDrive's order; Link settings from the attachment card (People currently in this chat, as Teams' OST TEST 172; OST's 173 matched in Teams on winpc); Recent cloud files suggestions with Teams' rows; the Attach popover in a post's thread view.
 
 Left: Media's layout menu, compact toggle, zoom and date headings (measured in the spec, date-grouping rule unknown); People's files you shared (only in OneDrive's picker cache); the Created folder toast; Tiles thumbnails; Home's AllItems.aspx row and repeated Loop entries.
+
+- 2026-11-20 (chat agent): not worked on in this pass (time went to TASK-0085's Loop components and installed apps, 0098, 0203, 0234, 0202). AC1 and AC5 stay as the notes above say.
 <!-- SECTION:NOTES:END -->

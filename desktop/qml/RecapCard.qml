@@ -185,7 +185,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             readonly property var days: root.recs.length === 1 ? root.recs[0].expires_days : null
             text: days === null || days === undefined || root.recs.length > 1 ? qsTr("Set to expire", "meetingRecap:k7mpmiird")
-                : qsTr("Expires in %n day(s)", "meetingRecap:kanosvkvh_mf", days)
+                : qsTr("Expires in %n days", "meetingRecap:kanosvkvh_mf", days)
             font.family: theme.font; font.pixelSize: 10; color: theme.textSecondary
         }
     }

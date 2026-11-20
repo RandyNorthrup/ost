@@ -7486,7 +7486,7 @@ async fn localize_recap(client: &TeamsClient, m: &mut api::messages::MessageView
         let img = api::messages::InlineImage { id: format!("{mid}-recap{i}"), url: rec.thumbnail_url.clone(), width: 0, height: 0, local_path: String::new() };
         match cached_image(client, &img).await {
             Ok(path) => rec.thumb_local = format!("file://{}", path.display()),
-            Err(e) => tracing::warn!("recap thumbnail download failed: {}", short_error(&e)),
+            Err(e) => tracing::warn!("recap thumbnail download failed ({}): {}", reqwest::Url::parse(&rec.thumbnail_url).ok().and_then(|u| u.host_str().map(str::to_string)).unwrap_or_default(), short_error(&e)),
         }
     }
 }

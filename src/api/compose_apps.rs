@@ -74,15 +74,15 @@ pub fn compose_entry(def: &Value) -> Option<Value> {
             })
         })
         .collect();
-    let dynamic = ext.get("supportsDynamicCommands").and_then(Value::as_bool).unwrap_or(false)
-        || ext.get("canUpdateConfiguration").is_some() && commands.is_empty() && ext.get("fetchCommands").is_some();
-    if bot.is_empty() || (commands.is_empty() && !dynamic) {
+    // Teams lists an app only for its compose commands (Power Automate
+    // Actions, with none, isn't in its menu).
+    if bot.is_empty() || commands.is_empty() {
         return None;
     }
     Some(json!({
         "id": def.get("id"),
         "name": def.get("shortName").or_else(|| def.get("name")),
-        "icon": super::tabs::https_only(def.get("smallImageUrl").or_else(|| def.get("largeImageUrl")).and_then(Value::as_str).unwrap_or_default()),
+        "icon": super::tabs::https_only(def.get("largeImageUrl").or_else(|| def.get("smallImageUrl")).and_then(Value::as_str).unwrap_or_default()),
         "color": def.get("color").and_then(Value::as_str).unwrap_or_default(),
         "botId": bot,
         "commands": commands,

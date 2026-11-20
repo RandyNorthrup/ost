@@ -915,7 +915,10 @@ pub fn attach_recaps(raw: &[serde_json::Value], out: &mut [MessageView], now: ch
         let content = m.get("content").and_then(|v| v.as_str()).unwrap_or_default();
         if kind == "Event/Call" && content.contains("<ended/>") {
             let id = xml_text(content, "callId");
-            ends.insert(id, (xml_text(content, "Subject"), xml_text(content, "StartTime"), xml_text(content, "EndTime"), xml_text(content, "ICalUid")));
+            // The end's meetingDetails (camelCase on the wire: startTime, endTime,
+            // subject, iCalUid; Teams' parser reads either case).
+            let either = |a: &str, b: &str| { let v = xml_text(content, a); if v.is_empty() { xml_text(content, b) } else { v } };
+            ends.insert(id, (either("subject", "Subject"), either("startTime", "StartTime"), either("endTime", "EndTime"), either("iCalUid", "ICalUid")));
             continue;
         }
         if kind != "RichText/Media_CallRecording" && kind != "RichText/Media_CallTranscript" {
@@ -978,7 +981,13 @@ pub fn attach_recaps(raw: &[serde_json::Value], out: &mut [MessageView], now: ch
         if let Some((subject, start, end, ical)) = ends.get(&m.call_id) {
             r.subject = subject.clone();
             // Teams reads these times as UTC (it appends " +00:00").
-            let utc = |t: &str| if t.is_empty() || t.ends_with('Z') || t.contains('+') { t.to_string() } else { format!("{t}Z") };
+            // On the wire: "11/19/2026 04:40:00" (or ISO without a zone).
+            let utc = |t: &str| {
+                if let Ok(d) = chrono::NaiveDateTime::parse_from_str(t.trim(), "%m/%d/%Y %H:%M:%S") {
+                    return d.and_utc().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+                }
+                if t.is_empty() || t.ends_with('Z') || t.contains('+') { t.to_string() } else { format!("{t}Z") }
+            };
             r.start = utc(start);
             r.end = utc(end);
             r.ical_uid = ical.clone();
@@ -3379,7 +3388,8 @@ fn iso_seconds(d: &str) -> f64 {
 /// Whether a URL is on Teams' media store (where our token may go).
 pub fn is_ams_url(url: &str) -> bool {
     url::Url::parse(url).is_ok_and(|u| {
-        u.scheme() == "https" && u.host_str().is_some_and(|h| h.ends_with(".asm.skype.com"))
+        // AMS, or its v2 gateway (asyncgw), where recording thumbnails live.
+        u.scheme() == "https" && u.host_str().is_some_and(|h| h.ends_with(".asm.skype.com") || h.ends_with(".asyncgw.teams.microsoft.com"))
     })
 }
 
@@ -5684,7 +5694,7 @@ mod paging_and_event_tests {
         assert_eq!(recording_seconds("0:47:40.1234"), 2860);
         assert_eq!(recording_seconds("1:00:01"), 3601);
         let rec = r#"<URIObject type="Video.2/CallRecording.1" url_thumbnail="https://ams/v1/objects/0-x/views/thumbnail"><RecordingStatus status="Success" code="0"></RecordingStatus><RecordingContent contentTypes="RecordingAndTranscript" timestamp="2026-11-19T04:44:00Z" duration="0:47:40.1" canVideoExpire="True"><item type="onedriveForBusinessVideo" uri="https://x-my.sharepoint.com/rec.mp4" driveId="b!d" driveItemId="01I" /></RecordingContent><Identifiers><Id type="callId" value="c1"/><Id type="AMSDocumentID" value="0-x"/></Identifiers></URIObject>"#;
-        let end = "<ended/><callId>c1</callId><MeetingDetails><Subject>OST TEST</Subject><StartTime>2026-11-19T04:40:00Z</StartTime><EndTime>2026-11-19T05:40:00Z</EndTime><ICalUid>040</ICalUid></MeetingDetails>";
+        let end = "<ended/><callId>c1</callId><meetingDetails><subject>OST TEST</subject><startTime>11/19/2026 04:40:00</startTime><endTime>11/19/2026 05:40:00</endTime></meetingDetails>";
         let raw = vec![
             serde_json::json!({"messagetype": "RichText/Media_CallRecording", "content": rec}),
             serde_json::json!({"messagetype": "Event/Call", "content": end}),
@@ -5694,6 +5704,7 @@ mod paging_and_event_tests {
         attach_recaps(&raw, &mut out, now);
         let r = out[0].recap.as_ref().unwrap();
         assert_eq!(r.subject, "OST TEST");
+        assert_eq!(r.start, "2026-11-19T04:40:00Z");
         assert!(r.transcript);
         assert_eq!(r.recordings.len(), 1);
         assert_eq!(r.recordings[0].duration_seconds, 2860);

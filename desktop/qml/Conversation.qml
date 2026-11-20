@@ -847,7 +847,8 @@ Rectangle {
 
     function annotate(msgs) {
         // A call's start shows only for Meet now ("… started a meeting.").
-        const out = msgs.filter(m => !(m.kind === "call" && m.call_state === "started" && !m.call_huddle)).map(m => Object.assign({}, m))
+        // An event's or meeting's group chat shows it too ("{title} has started.").
+        const out = msgs.filter(m => !(m.kind === "call" && m.call_state === "started" && !m.call_huddle && !root.backroom)).map(m => Object.assign({}, m))
         let unreadSeen = false, lastReadPlaced = false
         for (let i = 0; i < out.length; i++) {
             const prev = i > 0 ? out[i - 1] : null, cur = out[i]

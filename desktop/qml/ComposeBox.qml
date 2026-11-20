@@ -1466,6 +1466,7 @@ Item {
         }
     }
     function loopCardForTest() { return loopCard.visible ? loopCard : null }
+    function openPlusForTest() { plusFlyout.anchorItem = root.attachButton(); plusFlyout.open() }
     function loopDiscardDialogForTest() { return loopDiscardDialog }
     // Teams' "Discard draft message" (measured): 600 wide, the title 20/28
     // 600, "The Loop component will be deleted." 14/20, Close and Discard

@@ -60,7 +60,7 @@ Rectangle {
                 Image { anchors.verticalCenter: parent.verticalCenter; width: 20; height: 20; sourceSize: Qt.size(40, 40); source: "../assets/icons/ft-loop-20.svg" }
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
-                    width: Math.min(implicitWidth, nameButton.width - 34)
+                    width: Math.min(implicitWidth, header.width - 22 - 34 - (root.mode === "compose" ? 260 : 130))
                     elide: Text.ElideRight
                     text: root.name || qsTr("Loop paragraph")
                     lineHeight: 16; lineHeightMode: Text.FixedHeight
@@ -131,7 +131,7 @@ Rectangle {
     // Loop's loading indicator while the component isn't drawn.
     BusyIndicator {
         anchors.centerIn: loop
-        running: !loop.item || loop.item.state_ === "loading"
+        running: root.live && (!loop.item || loop.item.state_ === "loading")
         visible: running
     }
     Text {
