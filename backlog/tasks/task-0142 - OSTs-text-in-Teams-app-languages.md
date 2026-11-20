@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-15T01:31:00Z'
-updated_date: '2026-11-20T02:54:00Z'
+updated_date: '2026-11-20T03:19:00Z'
 labels:
   - desktop
   - settings
@@ -76,4 +76,6 @@ Built so far: all 109 app languages offered; OST's text in each language in Team
 - Download/upload/error status: Teams' strings carry no details ("1 file was downloaded.", "Downloading...", "Uploading 1 file", "The file didn't download."); details go to OST's log. Kept.
 - Reports to GitHub stay English: teams_cli::i18n::in_english() builds the call-health values for the call-quality report in English; english() maps a translated area/context (window titles, search tab, Find filters) back to OST's English in feedback_issue_url and the QML contexts (backend.englishText).
 - Pending: Teams on winpc in de-de/ar-sa side by side (call durations' digits in Arabic, the German recording row, system messages), waiting for winpc to be free.
+
+Built so far: all 109 app languages; OST's text, the engine's chat system messages, call durations and "(You)" in each language in Teams' own wording (runtime catalogue from Teams' CDN, ids matched to Teams' key hashes); right to left; reports to GitHub stay English. Verified live in de-de and ar-sa on linuxlt (801 lib tests). Missing: the side-by-side check against Teams on winpc; text from web apps outside Teams' main string table stays English.
 <!-- SECTION:NOTES:END -->
