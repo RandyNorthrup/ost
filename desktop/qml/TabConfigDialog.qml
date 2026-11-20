@@ -24,6 +24,14 @@ import QtQuick.Controls.Basic
 // - the footer at 526.7: the checkbox (checked, brand) and "Post to the
 //   chat (channel) about this tab" (14/20) at 60.7; Back (96 x 32,
 //   outline) and Save (96 x 32, brand; #F0F0F0 / #BDBDBD while off).
+// A tab's Settings (Teams' updateTab, measured on winpc 2026-11-20 with
+// SharePoint's channel tab) is the same dialog for the tab's app: 600 x
+// 602.3, the header named "<app> settings dialog", the app's
+// configuration page framed 550.7 x 412 at (24.7, 93.9) with the tab's
+// context, and a footer (at 520.9) with only Save (96 x 31.3, right). Save
+// asks the page to save; its settings replace the tab's address, website
+// and entity in the channel's tab property (the tab keeps its name, as
+// Teams keeps it), and the tab's page is framed again at the new address.
 Popup {
     id: root
     /// The app being configured: {id, name, icon}.
@@ -31,6 +39,8 @@ Popup {
     property bool channel: false
     property string conversationId: ""
     property string teamId: ""
+    /// The channel's team thread (the app's context: its team site).
+    property string teamThread: ""
     property bool saving: false
     property string failure: ""
     property bool barShown: true
@@ -41,9 +51,13 @@ Popup {
     signal back()
     signal about(var app)
     signal saved(string tabId)
+    /// The tab being set up again (its Settings), or null when adding.
+    property var updating: null
+    readonly property bool update: !!updating
+    signal updated(string tabId)
     anchors.centerIn: Overlay.overlay
     modal: true; focus: true
-    width: 600; height: 593.3
+    width: 600; height: update ? 602.3 : 593.3
     padding: 0
     closePolicy: Popup.CloseOnEscape
     background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
@@ -68,12 +82,55 @@ Popup {
     readonly property bool valid: website ? (!nameError && !urlError && urlField.text.length > 0) : (appValid && !!configPage.item)
 
     function start(a, id, team, isChannel) {
+        updating = null
         app = a; conversationId = id; teamId = team || ""; channel = isChannel
         saving = false; failure = ""; barShown = true; appValid = false; appSettings = null
         nameField.text = a && a.name ? a.name : qsTr("Website")
         urlField.text = ""
         post.checked = true
         open()
+    }
+    /// Settings on tab `t` (Tab: app_id, icon, config_url, entity_id, id)
+    /// of conversation `id`.
+    function startUpdate(t, id, team, isChannel) {
+        updating = t
+        app = { id: t.app_id, name: "", icon: t.icon || "", config_url: t.config_url || "" }
+        conversationId = id; teamId = team || ""; channel = isChannel
+        saving = false; failure = ""; appValid = false; appSettings = null
+        takeAppName()
+        if (!app.name) backend.appAboutLoad(t.app_id)
+        open()
+    }
+    // The app's name (the dialog's header) from its definition.
+    function takeAppName() {
+        const r = backend.appAboutJson ? JSON.parse(backend.appAboutJson) : null
+        if (root.updating && r && r.app === root.app.id && r.about && r.about.name)
+            root.app = Object.assign({}, root.app, { name: r.about.name, icon: root.app.icon || r.about.icon || "" })
+    }
+    Connections {
+        target: backend
+        enabled: root.update && root.opened && !root.app.name
+        function onAppAboutJsonChanged() { root.takeAppName() }
+    }
+    // The tab rewritten with the page's settings (Teams keeps the tab's
+    // name: SharePoint's suggested name was left out on winpc).
+    readonly property string updateCall: "tabupdate:" + hostIdSeed
+    readonly property string hostIdSeed: Math.floor(Math.random() * 1e9).toString(36)
+    function appUpdated(settings) {
+        const s = Object.assign({}, settings || appSettings || {})
+        delete s.suggestedDisplayName
+        backend.appHostRequest(app.id, conversationId, "", updating.id, "saveTab", updateCall, JSON.stringify({ settings: s }))
+    }
+    Connections {
+        target: backend
+        enabled: root.update && root.saving
+        function onAppHostReply(id, json) {
+            if (id !== root.updateCall) return
+            const r = JSON.parse(json || "{}")
+            root.saving = false
+            if (r.ok) { const t = root.updating.id; root.close(); root.updated(t) }
+            else root.failure = qsTr("Unable to save %1 tab configuration.").arg(root.app.name)
+        }
     }
     function save() {
         if (!valid || saving) return
@@ -140,6 +197,8 @@ Popup {
     // Header.
     Item {
         x: 24.7; y: 32.7; width: 550.7; height: 43.2
+        Accessible.role: Accessible.Grouping
+        Accessible.name: root.update ? qsTr("%1 settings dialog").arg(root.app ? root.app.name : "") : ""
         Rectangle {
             id: iconBox
             y: 3.6; width: 36; height: 36; radius: 18; color: theme.quoteFill; clip: true
@@ -170,13 +229,20 @@ Popup {
     Loader {
         id: configPage
         active: root.opened && !root.website && !!root.app && !!root.app.config_url
-        x: 24.7; y: 75.9; width: 550.7; height: 452.8
+        x: 24.7; y: root.update ? 93.9 : 75.9; width: 550.7; height: root.update ? 412 : 452.8
         sourceComponent: WebApp {
-            showHeader: false; appName: root.app ? root.app.name : ""; appId: root.app ? root.app.id : ""; home: root.app ? root.app.config_url : ""
-            teamsHost: true; frameContext: "settings"; hostThread: root.conversationId
+            showHeader: false; appName: root.app ? root.app.name : ""; appId: root.app ? root.app.id : ""
+            home: root.app && !root.update ? root.app.config_url : ""
+            // Settings: the page with the tab's own context (its entity),
+            // its address filled from that context as Teams fills it.
+            homeTemplate: root.update ? root.app.config_url : ""
+            hostContext: root.update ? ({ entityId: root.updating.entity_id || "", subEntityId: "" }) : ({})
+            hostTabId: root.update ? root.updating.id : ""
+            teamsHost: true; frameContext: "settings"; hostThread: root.conversationId; hostTeamThread: root.teamThread
             onHostEvent: (name, json) => {
                 if (name === "validity") root.appValid = JSON.parse(json).valid
                 else if (name === "settings") root.appSettings = JSON.parse(json)
+                else if (name === "saveSuccess" && root.saving && root.update) root.appUpdated(JSON.parse(json))
                 else if (name === "saveSuccess" && root.saving) root.appSaved(JSON.parse(json))
                 else if (name === "saveFailure" && root.saving) { root.saving = false; root.failure = qsTr("Unable to save %1 tab configuration.").arg(root.app.name) }
             }
@@ -246,7 +312,7 @@ Popup {
     }
     Text {
         visible: !root.website && !!root.failure
-        x: 24.7; y: 506.7; width: 550.7
+        x: 24.7; y: root.update ? 500.9 : 506.7; width: 550.7
         text: root.failure; elide: Text.ElideRight
         font.family: theme.font; font.pixelSize: 14; color: theme.redForeground3
         Accessible.role: Accessible.AlertMessage; Accessible.name: text
@@ -256,9 +322,10 @@ Popup {
 
     // Footer.
     Item {
-        x: 24.7; y: 526.7; width: 550.7; height: 42
+        x: 24.7; y: root.update ? 520.9 : 526.7; width: 550.7; height: 42
         Item {
             id: post
+            visible: !root.update
             property bool checked: true
             y: 8; width: 56.7 - 24.7 + postLabel.implicitWidth + 12; height: 36
             Rectangle {
@@ -275,7 +342,7 @@ Popup {
         }
         Row {
             anchors.right: parent.right; y: 10; spacing: 10
-            Button96 { label: qsTr("Back"); onClicked: { root.close(); root.back() } }
+            Button96 { visible: !root.update; label: qsTr("Back"); onClicked: { root.close(); root.back() } }
             Button96 { label: qsTr("Save"); primary: true; enabled: root.valid && !root.saving; onClicked: root.save() }
         }
     }

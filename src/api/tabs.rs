@@ -80,6 +80,9 @@ pub struct Tab {
     pub conversation: String,
     /// The app's icon (its definition's largeImageUrl).
     pub icon: String,
+    /// Its app's configuration page (galleryTabs[0].configurationUrl,
+    /// placeholders kept), when the tab offers Settings.
+    pub config_url: String,
 }
 
 /// What a tab's URLs may be told about where they are, as Teams fills
@@ -150,14 +153,25 @@ pub(crate) fn kind_of(app_id: &str, id: &str) -> Kind {
     }
 }
 
+/// What a tab's menu needs from its app's definition.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct AppFlags {
+    /// The app declares device permissions (App permissions).
+    pub device_permissions: bool,
+    /// Its configurable tab can be set up again (`galleryTabs[0].
+    /// canUpdateConfiguration`, Teams' tabPermission.canUpdateConfig):
+    /// Settings.
+    pub can_update_config: bool,
+}
+
 /// A tab's menus, as Teams builds them (`We` plus its `c` / `m` filters,
 /// channel entry point, desktop host). `can_update` is the channel's
-/// isAllowedToUpdateTabs; `device_permissions` whether the tab's app
-/// declares any; `can_left` / `can_right` whether it can move.
+/// isAllowedToUpdateTabs; `app` what the tab's app declares;
+/// `can_left` / `can_right` whether it can move.
 pub fn menus(
     kind: Kind,
     can_update: bool,
-    device_permissions: bool,
+    app: AppFlags,
     can_left: bool,
     can_right: bool,
 ) -> (Vec<MenuItem>, Vec<MenuItem>) {
@@ -187,7 +201,10 @@ pub fn menus(
     // Teams opens in the browser anyway (enableDeprecateWebsiteTab), has
     // none (seen on winpc 2026-11-16: Copy link, Rename, About, Move, Remove).
     let website = matches!(kind, Extension | OneNote);
-    let perms = device_permissions && matches!(kind, Extension | StaticExtension);
+    let perms = app.device_permissions && matches!(kind, Extension | StaticExtension);
+    // Settings (Update, module 189744 `eb`): an app tab whose app lets its
+    // configuration be updated; a website tab never (enableDeprecateWebsiteTab).
+    let settings = can_update && kind == Extension && app.can_update_config;
     let mut all: Vec<(MenuItem, bool)> = Vec::new();
     let mut push = |m: MenuItem, submenu_only: bool, keep: bool| {
         if keep {
@@ -202,6 +219,7 @@ pub fn menus(
     // The divider before Rename shows with Rename (ConfigDivider).
     push(divider(), false, rename);
     push(item("renameTab", tr_id("Rename", "extensibility:k52ozwndw")), false, rename);
+    push(item("updateTab", tr_id("Settings", "extensibility:k5getf51n")), false, settings);
     push(item("devicePermissions", tr_id("App permissions", "extensibility:k3bpq3z6e")), false, perms);
     push(item("aboutTab", tr_id("About this tab", "extensibility:k9tl9vpwx")), false, about);
     push(
@@ -400,10 +418,10 @@ fn str_at(t: &serde_json::Value, p: &str) -> String {
         .to_string()
 }
 
-/// What a tab needs from its app's definition: whether it declares device
-/// permissions, and its icon (largeImageUrl, https only). Cached.
-pub(crate) async fn app_facts(client: &TeamsClient, app_id: &str) -> (bool, String) {
-    static CACHE: Mutex<Option<HashMap<String, (bool, String)>>> = Mutex::new(None);
+/// What a tab needs from its app's definition: its menu flags and its
+/// icon (largeImageUrl, https only). Cached.
+pub(crate) async fn app_facts(client: &TeamsClient, app_id: &str) -> (AppFlags, String, String) {
+    static CACHE: Mutex<Option<HashMap<String, (AppFlags, String, String)>>> = Mutex::new(None);
     if let Some(v) = CACHE
         .lock()
         .ok()
@@ -412,7 +430,7 @@ pub(crate) async fn app_facts(client: &TeamsClient, app_id: &str) -> (bool, Stri
         return v;
     }
     let Ok((base, token)) = middle_tier(client).await else {
-        return (false, String::new());
+        return (AppFlags::default(), String::new(), String::new());
     };
     let enc: String = url::form_urlencoded::byte_serialize(app_id.as_bytes()).collect();
     let v = async {
@@ -429,22 +447,32 @@ pub(crate) async fn app_facts(client: &TeamsClient, app_id: &str) -> (bool, Stri
             .await
             .ok()?;
         Some((
-            d.get("devicePermissions")
-                .and_then(|p| p.as_array())
-                .is_some_and(|p| !p.is_empty()),
+            app_flags(&d),
             https_only(d.get("largeImageUrl").and_then(|v| v.as_str()).unwrap_or_default()),
+            https_template(d.pointer("/galleryTabs/0/configurationUrl").and_then(|v| v.as_str()).unwrap_or_default()),
         ))
     }
     .await;
     // Failures aren't cached (the next load asks again).
     let Some(v) = v else {
-        return (false, String::new());
+        return (AppFlags::default(), String::new(), String::new());
     };
     if let Ok(mut c) = CACHE.lock() {
         c.get_or_insert_with(HashMap::new)
             .insert(app_id.to_string(), v.clone());
     }
     v
+}
+
+/// A tab menu's flags from an app definition.
+pub fn app_flags(d: &serde_json::Value) -> AppFlags {
+    AppFlags {
+        device_permissions: d.get("devicePermissions").and_then(|p| p.as_array()).is_some_and(|p| !p.is_empty()),
+        can_update_config: d
+            .pointer("/galleryTabs/0/canUpdateConfiguration")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+    }
 }
 
 /// What About this tab shows (Teams' About dialog: the app's name, icon,
@@ -668,14 +696,18 @@ pub async fn channel_tabs(
     for t in &pinned {
         let app = str_at(t, "/appId");
         if let std::collections::hash_map::Entry::Vacant(e) = perms.entry(app.clone()) {
-            let (p, icon) = app_facts(client, e.key()).await;
+            let (p, icon, config) = app_facts(client, e.key()).await;
             e.insert(p);
-            icons.insert(app, icon);
+            icons.insert(app, (icon, config));
         }
     }
     let mut tabs = tabs_from(&pinned, &ctx, can_update, &perms);
     for t in tabs.iter_mut() {
-        t.icon = icons.get(&t.app_id).cloned().unwrap_or_default();
+        let (icon, config) = icons.get(&t.app_id).cloned().unwrap_or_default();
+        t.icon = icon;
+        if t.menu.iter().any(|m| m.key == "updateTab") {
+            t.config_url = config;
+        }
     }
     Ok(tabs)
 }
@@ -684,7 +716,7 @@ fn tabs_from(
     pinned: &[serde_json::Value],
     ctx: &TabContext,
     can_update: bool,
-    perms: &HashMap<String, bool>,
+    perms: &HashMap<String, AppFlags>,
 ) -> Vec<Tab> {
     let mut tabs = vec![Tab {
         id: "com.microsoft.channeltabs.posts".into(),
@@ -703,6 +735,7 @@ fn tabs_from(
         can_converse: false,
         conversation: String::new(),
         icon: String::new(),
+        config_url: String::new(),
     }];
     for t in pinned {
         let id = str_at(t, "/id");
@@ -733,6 +766,7 @@ fn tabs_from(
                 .filter(|m| !m.is_empty() && m != "0" && m.bytes().all(|b| b.is_ascii_digit()))
                 .unwrap_or_default(),
             icon: String::new(),
+            config_url: String::new(),
             id,
             app_id,
             kind,
@@ -747,8 +781,8 @@ fn tabs_from(
         let pos = movable.iter().position(|&m| m == i);
         let can_left = pos.is_some_and(|p| p > 0);
         let can_right = pos.is_some_and(|p| p + 1 < movable.len());
-        let device = perms.get(&tab.app_id).copied().unwrap_or(false);
-        let (menu, context) = menus(tab.kind, can_update, device, can_left, can_right);
+        let app = perms.get(&tab.app_id).copied().unwrap_or_default();
+        let (menu, context) = menus(tab.kind, can_update, app, can_left, can_right);
         tab.menu = menu;
         tab.context_menu = context;
     }
@@ -1052,7 +1086,10 @@ mod tests {
             serde_json::json!({"id": "tab::a62a7cb0-4528-4db8-958e-c6a5ce6b364e", "appId": PAGES_APP,
                 "name": "Page", "order": 10.0, "configuration": {}}),
         ];
-        let perms = HashMap::from([("0d820ecd-def2-4297-adad-78056cde7c78".to_string(), true)]);
+        let perms = HashMap::from([(
+            "0d820ecd-def2-4297-adad-78056cde7c78".to_string(),
+            AppFlags { device_permissions: true, can_update_config: false },
+        )]);
         let t = tabs_from(&pinned, &TabContext::default(), true, &perms);
         let names: Vec<_> = t.iter().map(|t| t.name.as_str()).collect();
         assert_eq!(names, ["Posts", "Shared", "Page", "Notes"]);
@@ -1122,6 +1159,28 @@ mod tests {
     }
 
     #[test]
+    fn settings_follow_the_apps_can_update_configuration() {
+        // SharePoint's channel tab (canUpdateConfiguration true), as Teams
+        // listed it on winpc 2026-11-20: … Rename, Settings, About this tab …
+        let def = serde_json::json!({"galleryTabs": [{"canUpdateConfiguration": true, "scopes": ["Team"]}]});
+        let app = app_flags(&def);
+        assert!(app.can_update_config && !app.device_permissions);
+        let (menu, context) = menus(Kind::Extension, true, app, true, false);
+        let k: Vec<&str> = menu.iter().map(|m| m.key).collect();
+        assert_eq!(
+            k,
+            ["popOut", "expandTab", "reloadTab", "goToWebsite", "copyLink", "divider", "renameTab", "updateTab", "aboutTab", "moveLeft", "moveRight", "divider", "removeTab"]
+        );
+        assert_eq!(menu[7].label, "Settings");
+        assert!(context.iter().any(|m| m.key == "updateTab"));
+        // Not without the right to change tabs, nor for an app that doesn't
+        // allow it, nor for a website tab.
+        assert!(!menus(Kind::Extension, false, app, true, false).0.iter().any(|m| m.key == "updateTab"));
+        assert!(!menus(Kind::Extension, true, AppFlags::default(), true, false).0.iter().any(|m| m.key == "updateTab"));
+        assert!(!menus(Kind::Website, true, app, true, false).0.iter().any(|m| m.key == "updateTab"));
+    }
+
+    #[test]
     fn moves_use_teams_order_algorithm() {
         // Between neighbours: the floored midpoint.
         assert_eq!(new_order(1, &[10.0, 0.0, 10000.0]), 5005.0);
@@ -1171,6 +1230,7 @@ mod tests {
             can_converse: true,
             conversation: String::new(),
             icon: String::new(),
+            config_url: String::new(),
         };
         let v = conversation_post("19:a@thread.tacv2", &tab, "8:orgid:me", "OST Test 1", "123", "2026-11-09T17:31:58.118Z");
         assert_eq!(v["content"], "Added a new tab at the top of this channel. Here's a link.");
@@ -1224,6 +1284,7 @@ mod tests {
             can_converse: false,
             conversation: String::new(),
             icon: String::new(),
+            config_url: String::new(),
         };
         let (link, html) = copy_link(&tab, "19:ab@thread.tacv2", "g-1", "t-1");
         assert_eq!(

@@ -372,6 +372,22 @@ The runtime answered `canParentManageNAATrustedOrigins` /
 `isDeeplyNestedAuthSupported` false for Whiteboard, Shifts and Clipchamp
 and true for Copilot and the Office apps (Teams' ECS allow list).
 
+| Planner | com.microsoft.teamspace.tab.planner | `https://tasks.teams.microsoft.com/teamsui/{tid}/Home/PlannerFrame?page=8&isFullScreen=true&auth_pvr=OrgId&auth_upn={userPrincipalName}&tid={tid}&userObjectId={userObjectId}&tasksAppFlavor=planner&subEntityId={subEntityId}&entityId={entityId}&sessionId={sessionId}&theme={theme}&mkt={locale}&locale={locale}&ringId={ringId}&PlannerRouteHint={tid}&hostName={hostName}` (measured on Teams desktop, winpc 2026-11-20) | none (full screen), 1212 x 632 at (68, 48) | `mytasks` | 75efb5bc-18a1-4e7b-8a66-2ad2503d79c6: api.office.net, 09abbdfd, Graph, project.microsoft.com | initialize, appLoaded, success |
+| OneNote | 0d820ecd-def2-4297-adad-78056cde7c78 | `https://m365.cloud.microsoft/launch/onenote/officeunihost/teams?auth=2&flight=officeunihost&locale={locale}&tid={tid}&upn={upn}&groupId={groupId}&theme={theme}&entityId={entityId}&…` (`{groupId}` and `{channelType}` left unfilled) | none (full screen) | `MyNotebook` | 2d4d3d8e (the officeunihost page), then OneNote for the web | initialize (twice), appLoaded, success |
+
+Planner and OneNote were native views in OST before 2026-11-20; Teams
+desktop hosts both as above, so OST does too (TASK-0193, TASK-0194): task
+details, Calendar (Schedule) and Charts, and page editing are the apps' own.
+
+**Open in new window** (the app bar's right-click menu, 170 wide: Open in
+new window, About, Share app, Pin, Uninstall, Customize app bar; measured
+2026-11-20): the app's personal page in a 946 x 593 child window titled
+with the app's name; a full-screen app fills it under the title row,
+another gets the entity header (32 px icon at 20, name 18/25.7 bold at 72,
+"More <app> actions"); context `isMultiWindow true`. OST: `AppWindow.qml`
+(Open in new window, About and Share app; Pin, Uninstall and Customize app
+bar not yet), `--app-window-test`.
+
 **Events** isn't a hosted page: Teams draws it itself (Discover and Manage
 tabs, `one-events-discover-tab` / `one-events-manage-tab`; "Introducing an
 app for all things events!" with View meetings / View audio recaps; "No

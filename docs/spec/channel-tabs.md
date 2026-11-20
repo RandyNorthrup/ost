@@ -348,4 +348,26 @@ Shared header (`dn`):
 - [x] Show tab conversation: the header button, the pane, Start conversation, the tab card, and replies (TASK-0079).
 - [x] Overflow ("+N" and the open tab's name).
 - [x] Drag to reorder, not on predefined tabs (TASK-0080).
-- [ ] Settings (`updateTab`) for configurable app tabs.
+- [x] Settings (`updateTab`) for configurable app tabs (TASK-0191, below).
+
+## Settings (updateTab; measured on winpc 2026-11-20 with SharePoint)
+- Offered (after Rename) for an ExtensionTab whose app's
+  `galleryTabs[0].canUpdateConfiguration` is true (Teams' tabPermission
+  .canUpdateConfig; module 189744 `eb`), a CalendarTab likewise, a
+  FileViewTab always, never a website tab while enableDeprecateWebsiteTab
+  is on; it needs isAllowedToUpdateTabs. Icon: Settings.
+- The dialog is the app's configuration dialog (platform-modal): 600 x
+  602.3, the header (the app's icon and name, About, Close; named "<app>
+  settings dialog"), the configurationUrl framed 550.7 x 412 at (24.7,
+  93.9) with the tab's context (frameContext settings), and a footer with
+  only Save (96 x 31.3, at 454.7 of 550.7; off until the page reports a
+  valid setup).
+- Save posts `settings.save`; the page answers `settings.setSettings
+  [{contentUrl, websiteUrl, entityId, suggestedDisplayName}]` and
+  `settings.save.success`; Teams rewrites the tab's channel-thread
+  property in place (`PUT {chatsvc}/v1/threads/{channel}/properties?name=
+  tab::{id}`: `settings.url`, `websiteUrl`, `entityId` replaced; the name and
+  `dateAdded` kept, the suggested name ignored) and the tab's page is
+  framed again at the new address (beforeUnload, readyToUnload, load).
+- OST: `api::tabs::menus` (AppFlags.can_update_config), the tab's
+  `config_url`, `TabConfigDialog.startUpdate`, `--tab-settings-test`.

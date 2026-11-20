@@ -1573,7 +1573,7 @@ Window {
     Timer {
         id: shotTimer
         interval: 15000
-        running: window.shotPath.length > 0 && Qt.application.arguments.indexOf("--draft-format-test") < 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--table-test") < 0 && Qt.application.arguments.indexOf("--hovercard-test") < 0 && Qt.application.arguments.indexOf("--chat-shot") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--pause-test")) && Qt.application.arguments.indexOf("--settings-test") < 0 && Qt.application.arguments.indexOf("--settings-pages-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--meet-now-test") < 0 && Qt.application.arguments.indexOf("--mute-test") < 0 && Qt.application.arguments.indexOf("--video-call-test") < 0 && Qt.application.arguments.indexOf("--meeting-chat-test") < 0 && Qt.application.arguments.indexOf("--breakpoints-test") < 0 && Qt.application.arguments.indexOf("--fun-picker-test") < 0 && Qt.application.arguments.indexOf("--attach-test") < 0 && Qt.application.arguments.indexOf("--copilot-test") < 0 && Qt.application.arguments.indexOf("--attach-link-test") < 0 && Qt.application.arguments.indexOf("--thread-attach-test") < 0 && Qt.application.arguments.indexOf("--picker-bar-test") < 0 && Qt.application.arguments.indexOf("--filecard-test") < 0 && Qt.application.arguments.indexOf("--videoclip-test") < 0 && Qt.application.arguments.indexOf("--recorder-test") < 0 && Qt.application.arguments.indexOf("--recorder-edit-test") < 0 && Qt.application.arguments.indexOf("--teleprompter-test") < 0 && Qt.application.arguments.indexOf("--video-effects-test") < 0 && Qt.application.arguments.indexOf("--video-filters-test") < 0 && Qt.application.arguments.indexOf("--green-screen-test") < 0 && Qt.application.arguments.indexOf("--leave-confirm-test") < 0 && Qt.application.arguments.indexOf("--shortcut-profile-test") < 0 && Qt.application.arguments.indexOf("--new-chat-window-test") < 0 && Qt.application.arguments.indexOf("--chatlist-keys-test") < 0 && Qt.application.arguments.indexOf("--translation-test") < 0 && Qt.application.arguments.indexOf("--regional-test") < 0 && Qt.application.arguments.indexOf("--editor-test") < 0 && Qt.application.arguments.indexOf("--appearance-test") < 0 && Qt.application.arguments.indexOf("--collab-test") < 0 && Qt.application.arguments.indexOf("--notif-test") < 0 && Qt.application.arguments.indexOf("--accounts-test") < 0 && Qt.application.arguments.indexOf("--privacy-test") < 0 && Qt.application.arguments.indexOf("--calls-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--cards-test")) && !Qt.application.arguments.some(a => a.startsWith("--recognition-test=")) && Qt.application.arguments.indexOf("--recognition-states") < 0 && Qt.application.arguments.indexOf("--about-test") < 0 && Qt.application.arguments.indexOf("--room-audio-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--link-preview-test")) && Qt.application.arguments.indexOf("--fileviewer-test") < 0 && Qt.application.arguments.indexOf("--poll-test") < 0 && Qt.application.arguments.indexOf("--media-order-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--custom-emoji")) && Qt.application.arguments.indexOf("--onedrive-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--onedrive-rows-test")) && !Qt.application.arguments.some(a => a.startsWith("--version-history-test")) && !Qt.application.arguments.some(a => a.startsWith("--details-test")) && Qt.application.arguments.indexOf("--preview-test") < 0 && Qt.application.arguments.indexOf("--sortview-test") < 0 && Qt.application.arguments.indexOf("--zip-test") < 0 && Qt.application.arguments.indexOf("--files-links-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--picker-test")) && Qt.application.arguments.indexOf("--folder-bar-test") < 0 && Qt.application.arguments.indexOf("--quick-access-test") < 0 && Qt.application.arguments.indexOf("--picker-views-test") < 0 && Qt.application.arguments.indexOf("--comments-test") < 0 && Qt.application.arguments.indexOf("--bell-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--folder-extras-test")) && Qt.application.arguments.indexOf("--planner-test") < 0 && Qt.application.arguments.indexOf("--apps-test") < 0 && Qt.application.arguments.indexOf("--channel-files-test") < 0 && Qt.application.arguments.indexOf("--store-test") < 0 && Qt.application.arguments.indexOf("--webapp-test") < 0 && Qt.application.arguments.indexOf("--loop-test") < 0 && Qt.application.arguments.indexOf("--tab-menu-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--tab-drag-test=")) && Qt.application.arguments.indexOf("--delete-undo-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat=")) && window.appDetailsTest.length === 0 && Qt.application.arguments.indexOf("--chatlist-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--share-test")) && !Qt.application.arguments.some(a => a.startsWith("--file-actions-test")) && Qt.application.arguments.indexOf("--open-file-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--sharefile-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-grid-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-communities-test")) && Qt.application.arguments.indexOf("--meeting-details-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--attendance-test=")) && !Qt.application.arguments.some(a => a.startsWith("--remove-history-")) && !Qt.application.arguments.some(a => a.startsWith("--embedded-apps-test")) && Qt.application.arguments.indexOf("--test-call-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--events-test")) && Qt.application.arguments.indexOf("--call-notes-test") < 0 && Qt.application.arguments.indexOf("--recaps-test") < 0 && Qt.application.arguments.indexOf("--phone-audio-test") < 0 && Qt.application.arguments.indexOf("--preheat-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--e2ee-setting-test")) && !Qt.application.arguments.some(a => /^--(voicemail-greeting|camera-controls|spatial-audio|tty)-test/.test(a)) && Qt.application.arguments.indexOf("--avatar-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--content-camera-test")) && !Qt.application.arguments.some(a => a.startsWith("--group-call-nmc=")) && Qt.application.arguments.indexOf("--va-test") < 0 && Qt.application.arguments.indexOf("--cast-test") < 0 && !Qt.application.arguments.some(a => /^--(vm-transfer|kb-dialog|ddv|sign-language|voice-isolation|rename-suggest|column-settings|preview-bar|playlist|picker-person)-test/.test(a))
+        running: window.shotPath.length > 0 && Qt.application.arguments.indexOf("--draft-format-test") < 0 && !window.callTest && !window.typingTest && !window.reactTest && !window.editTest && !window.newChatTest && Qt.application.arguments.indexOf("--search-test") < 0 && Qt.application.arguments.indexOf("--channel-test") < 0 && Qt.application.arguments.indexOf("--emoji-test") < 0 && Qt.application.arguments.indexOf("--format-test") < 0 && Qt.application.arguments.indexOf("--table-test") < 0 && Qt.application.arguments.indexOf("--hovercard-test") < 0 && Qt.application.arguments.indexOf("--chat-shot") < 0 && Qt.application.arguments.indexOf("--header-test") < 0 && Qt.application.arguments.indexOf("--status-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--pause-test")) && Qt.application.arguments.indexOf("--settings-test") < 0 && Qt.application.arguments.indexOf("--settings-pages-test") < 0 && Qt.application.arguments.indexOf("--calendar-test") < 0 && Qt.application.arguments.indexOf("--group-test") < 0 && Qt.application.arguments.indexOf("--keys-test") < 0 && Qt.application.arguments.indexOf("--mentions-test") < 0 && Qt.application.arguments.indexOf("--join-test") < 0 && Qt.application.arguments.indexOf("--event-card-test") < 0 && Qt.application.arguments.indexOf("--group-call-test") < 0 && Qt.application.arguments.indexOf("--meet-now-test") < 0 && Qt.application.arguments.indexOf("--mute-test") < 0 && Qt.application.arguments.indexOf("--video-call-test") < 0 && Qt.application.arguments.indexOf("--meeting-chat-test") < 0 && Qt.application.arguments.indexOf("--breakpoints-test") < 0 && Qt.application.arguments.indexOf("--fun-picker-test") < 0 && Qt.application.arguments.indexOf("--attach-test") < 0 && Qt.application.arguments.indexOf("--copilot-test") < 0 && Qt.application.arguments.indexOf("--attach-link-test") < 0 && Qt.application.arguments.indexOf("--thread-attach-test") < 0 && Qt.application.arguments.indexOf("--picker-bar-test") < 0 && Qt.application.arguments.indexOf("--filecard-test") < 0 && Qt.application.arguments.indexOf("--videoclip-test") < 0 && Qt.application.arguments.indexOf("--recorder-test") < 0 && Qt.application.arguments.indexOf("--recorder-edit-test") < 0 && Qt.application.arguments.indexOf("--teleprompter-test") < 0 && Qt.application.arguments.indexOf("--video-effects-test") < 0 && Qt.application.arguments.indexOf("--video-filters-test") < 0 && Qt.application.arguments.indexOf("--green-screen-test") < 0 && Qt.application.arguments.indexOf("--leave-confirm-test") < 0 && Qt.application.arguments.indexOf("--shortcut-profile-test") < 0 && Qt.application.arguments.indexOf("--new-chat-window-test") < 0 && Qt.application.arguments.indexOf("--chatlist-keys-test") < 0 && Qt.application.arguments.indexOf("--translation-test") < 0 && Qt.application.arguments.indexOf("--regional-test") < 0 && Qt.application.arguments.indexOf("--editor-test") < 0 && Qt.application.arguments.indexOf("--appearance-test") < 0 && Qt.application.arguments.indexOf("--collab-test") < 0 && Qt.application.arguments.indexOf("--notif-test") < 0 && Qt.application.arguments.indexOf("--accounts-test") < 0 && Qt.application.arguments.indexOf("--privacy-test") < 0 && Qt.application.arguments.indexOf("--calls-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--cards-test")) && !Qt.application.arguments.some(a => a.startsWith("--recognition-test=")) && Qt.application.arguments.indexOf("--recognition-states") < 0 && Qt.application.arguments.indexOf("--about-test") < 0 && Qt.application.arguments.indexOf("--room-audio-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--link-preview-test")) && Qt.application.arguments.indexOf("--fileviewer-test") < 0 && Qt.application.arguments.indexOf("--poll-test") < 0 && Qt.application.arguments.indexOf("--media-order-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--custom-emoji")) && Qt.application.arguments.indexOf("--onedrive-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--onedrive-rows-test")) && !Qt.application.arguments.some(a => a.startsWith("--version-history-test")) && !Qt.application.arguments.some(a => a.startsWith("--details-test")) && Qt.application.arguments.indexOf("--preview-test") < 0 && Qt.application.arguments.indexOf("--sortview-test") < 0 && Qt.application.arguments.indexOf("--zip-test") < 0 && Qt.application.arguments.indexOf("--files-links-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--picker-test")) && Qt.application.arguments.indexOf("--folder-bar-test") < 0 && Qt.application.arguments.indexOf("--quick-access-test") < 0 && Qt.application.arguments.indexOf("--picker-views-test") < 0 && Qt.application.arguments.indexOf("--comments-test") < 0 && Qt.application.arguments.indexOf("--bell-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--folder-extras-test")) && Qt.application.arguments.indexOf("--apps-test") < 0 && Qt.application.arguments.indexOf("--channel-files-test") < 0 && Qt.application.arguments.indexOf("--store-test") < 0 && Qt.application.arguments.indexOf("--webapp-test") < 0 && Qt.application.arguments.indexOf("--loop-test") < 0 && Qt.application.arguments.indexOf("--tab-menu-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--tab-drag-test=")) && Qt.application.arguments.indexOf("--delete-undo-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--open-chat=")) && window.appDetailsTest.length === 0 && Qt.application.arguments.indexOf("--chatlist-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--share-test")) && !Qt.application.arguments.some(a => a.startsWith("--file-actions-test")) && Qt.application.arguments.indexOf("--open-file-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--sharefile-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-grid-test")) && !Qt.application.arguments.some(a => a.startsWith("--search-communities-test")) && Qt.application.arguments.indexOf("--meeting-details-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--attendance-test=")) && !Qt.application.arguments.some(a => a.startsWith("--remove-history-")) && !Qt.application.arguments.some(a => a.startsWith("--embedded-apps-test")) && Qt.application.arguments.indexOf("--test-call-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--events-test")) && Qt.application.arguments.indexOf("--call-notes-test") < 0 && Qt.application.arguments.indexOf("--recaps-test") < 0 && Qt.application.arguments.indexOf("--phone-audio-test") < 0 && Qt.application.arguments.indexOf("--preheat-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--e2ee-setting-test")) && !Qt.application.arguments.some(a => /^--(voicemail-greeting|camera-controls|spatial-audio|tty)-test/.test(a)) && Qt.application.arguments.indexOf("--avatar-test") < 0 && !Qt.application.arguments.some(a => a.startsWith("--content-camera-test")) && !Qt.application.arguments.some(a => a.startsWith("--group-call-nmc=")) && Qt.application.arguments.indexOf("--va-test") < 0 && Qt.application.arguments.indexOf("--cast-test") < 0 && !Qt.application.arguments.some(a => /^--(vm-transfer|kb-dialog|ddv|sign-language|voice-isolation|rename-suggest|column-settings|preview-bar|playlist|picker-person)-test/.test(a)) && !Qt.application.arguments.some(a => /^--(app-window|tab-settings|store-devices|store-filter|manage-apps)-test/.test(a))
         onTriggered: {
             if (!backend.hasCredentials) {
                 if (!backend.signInPage) {
@@ -2379,6 +2379,53 @@ Window {
         }
     }
     function loopShot(name) { window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-" + name + ".png"))) }
+    // --tab-settings-test=<tab>: in the channel --open-chat names, that
+    // app tab's menu (TABSETTINGS menu: its keys), then its Settings: the
+    // dialog with the app's configuration page after 20 s (TABSETTINGS
+    // dialog, tab-settings-dialog.png); once the page reports a valid
+    // setup (pick its item yourself, e.g. over QTWEBENGINE_REMOTE_DEBUGGING;
+    // up to 3 minutes) it saves as Teams and logs the tab's address before
+    // and after (TABSETTINGS saved), tab-settings-after.png. Quits unless
+    // --tab-settings-stay.
+    Timer {
+        readonly property string which: (Qt.application.arguments.find(a => a.startsWith("--tab-settings-test=")) || "").slice(20)
+        running: which.length > 0 && backend.signedIn
+        interval: 2500; repeat: true
+        property int step: 0
+        property int wait: 0
+        property string before: ""
+        onTriggered: {
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            if (backend.currentChatId !== id) {
+                const ch = (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).reduce((a, t) => a.concat(t.channels), []).find(c => c.id === id)
+                if (ch) { rail.current = "chat"; backend.selectChat(ch.id, ch.name) }
+                return
+            }
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-tab-settings-" + n + ".png")))
+            const t = conversation.channelTabs.find(x => x.name === which)
+            if (step === 0) {
+                if (!t) return
+                before = t.content_template
+                console.warn("TABSETTINGS menu", JSON.stringify(t.menu.map(m => m.key)), "config", !!t.config_url)
+                conversation.tab = which
+            }
+            else if (step === 2) conversation.tabMenuShowForTest(which)
+            else if (step === 3) { shot("menu"); conversation.tabMenuCloseForTest() }
+            else if (step === 4) conversation.tabAction("updateTab", t)
+            else if (step === 12) { console.warn("TABSETTINGS dialog", tabConfig.stateForTest(), "update", tabConfig.update, "app", tabConfig.app ? tabConfig.app.name : ""); shot("dialog") }
+            else if (step === 13) {
+                if (!tabConfig.appValid && wait++ < 72) return
+                console.warn("TABSETTINGS valid", tabConfig.stateForTest()); tabConfig.save()
+            }
+            else if (step === 14) { if (tabConfig.opened && wait++ < 150) return; console.warn("TABSETTINGS closed", !tabConfig.opened, tabConfig.failure) }
+            else if (step === 18) {
+                console.warn("TABSETTINGS saved", JSON.stringify({ name: t ? t.name : "", before: before, after: t ? t.content_template : "" }))
+                shot("after")
+                if (Qt.application.arguments.indexOf("--tab-settings-stay") < 0) Qt.quit()
+            }
+            step++
+        }
+    }
     // --tab-menu-test: in the channel --open-chat names (with test tabs
     // "OST tab A" and "OST tab B"): log every tab's menu, capture the Notes
     // menu and the Rename and Remove dialogs, then rename A, move it next
@@ -8548,8 +8595,7 @@ Window {
         }
     }
 
-    // --apps-test: People (add a contact, favorite it, delete it) and
-    // OneNote (open the first notebook, add a page, delete it), capturing.
+    // --apps-test: People (add a contact, favorite it, delete it), capturing.
     Timer {
         running: Qt.application.arguments.indexOf("--apps-test") >= 0 && backend.signedIn
         interval: 3000; repeat: true
@@ -8563,12 +8609,7 @@ Window {
             else if (step === 5) { const c = peopleApp.find("OST People test"); console.warn("APPS contact added", !!c); if (c) peopleApp.favorite(c.id, true) }
             else if (step === 7) { const c = peopleApp.find("OST People test"); console.warn("APPS favorite", !!c && c.favorite); peopleApp.view = "favorites"; cap("people-favorites") }
             else if (step === 8) { peopleApp.view = "all"; cap("people-all"); const c = peopleApp.find("OST People test"); if (c) peopleApp.remove(c.id) }
-            else if (step === 10) { console.warn("APPS contact deleted", !peopleApp.find("OST People test"), "rail extras", rail.opened.join(",")); rail.openApp("onenote") }
-            else if (step === 12) { console.warn("APPS notebooks", oneNote.notebooks.map(n => n.name).join(", "), oneNote.error); cap("onenote"); if (oneNote.notebooks.length) oneNote.openNotebook(oneNote.notebooks[0]) }
-            else if (step === 15) { console.warn("APPS sections", oneNote.sections.map(s => s.name).join(", ")); if (oneNote.section) oneNote.newPageForTest("OST OneNote page", "Written from OST.\nSecond line.") }
-            else if (step === 19) { console.warn("APPS page shown", !!oneNote.page && oneNote.page.title, "html", oneNote.html.indexOf("Written from OST") >= 0); cap("onenote-page") }
-            else if (step === 20) { if (oneNote.page) oneNote.removePage(oneNote.page.id) }
-            else if (step === 22) { console.warn("APPS page deleted", !oneNote.pages.some(p => p.title === "OST OneNote page")); Qt.quit() }
+            else if (step === 10) { console.warn("APPS contact deleted", !peopleApp.find("OST People test"), "rail extras", rail.opened.join(",")); Qt.quit() }
             step++
         }
     }
@@ -8600,6 +8641,66 @@ Window {
         }
     }
 
+    // --store-devices-test: the Store's Devices menu, Headsets (STOREDEV
+    // page: count, the first devices), its filter, the first device's
+    // details, Add to cart, the cart, emptied again, and Featured; pictures
+    // store-dev-*.png. --store-filter-test: Popular on Teams' See all, its
+    // filter tree (STOREFILTER groups) and Bot + Free to add picked (the
+    // apps kept, the pills); store-filter-*.png. --manage-apps-test: Manage
+    // your apps (MANAGEAPPS rows), Praise expanded, Sort, Upload an app;
+    // manage-apps-*.png. Each quits unless --store-stay.
+    Timer {
+        readonly property string which: Qt.application.arguments.indexOf("--store-devices-test") >= 0 ? "devices" : Qt.application.arguments.indexOf("--store-filter-test") >= 0 ? "filter" : Qt.application.arguments.indexOf("--manage-apps-test") >= 0 ? "manage" : ""
+        running: which.length > 0 && backend.signedIn
+        interval: 2500; repeat: true
+        property int step: 0
+        onTriggered: {
+            const cap = tag => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-" + tag + ".png")))
+            const done = () => { if (Qt.application.arguments.indexOf("--store-stay") < 0) Qt.quit() }
+            if (step === 0) { rail.current = "add"; step++; return }
+            if (step < 12 && (store.busy || !store.feedCols.length) && !store.reply.error) { step++; return }
+            if (step < 12) step = 12
+            const s = step - 12
+            if (which === "devices") {
+                if (s === 0) store.menuForTest("devices")
+                else if (s === 1) { console.warn("STOREDEV menu", JSON.stringify(store.devicesNav.map(d => d.title + "/" + d.icon))); cap("store-dev-menu"); store.closeMenuForTest(); store.openDevices("headsets") }
+                else if (s === 4) { const d = store.deviceData || {}; console.warn("STOREDEV page", JSON.stringify({ title: d.title, description: d.description, count: (d.devices || []).length, first: (d.devices || []).slice(0, 6).map(x => x.id + " " + x.name + " " + x.price_text), error: d.error || "" })); cap("store-dev-headsets") }
+                else if (s === 5) store.deviceFilterForTest()
+                else if (s === 6) cap("store-dev-filter")
+                else if (s === 7) { store.closeDeviceDialogsForTest(); console.warn("STOREDEV details", store.deviceDetailsForTest(0)) }
+                else if (s === 10) { console.warn("STOREDEV details state", store.deviceDetailsStateForTest()); cap("store-dev-details") }
+                else if (s === 11) store.addFirstToCartForTest()
+                else if (s === 12) { console.warn("STOREDEV after add", store.deviceDetailsStateForTest(), "cart", store.cartCount); cap("store-dev-added") }
+                else if (s === 13) store.openCartForTest()
+                else if (s === 14) cap("store-dev-cart")
+                else if (s === 15) store.emptyCartForTest()
+                else if (s === 16) { console.warn("STOREDEV emptied", store.cartCount); cap("store-dev-cart-empty") }
+                else if (s === 17) { store.closeDeviceDialogsForTest(); store.openDevices("featured") }
+                else if (s === 20) { const d = store.deviceData || {}; console.warn("STOREDEV featured", (d.devices || []).length, JSON.stringify((d.devices || []).slice(0, 4).map(x => x.id))); cap("store-dev-featured"); done() }
+            } else if (which === "filter") {
+                if (s === 0) { const c = store.feedCols.find(c => c.title === "Popular on Teams") || store.feedCols[0]; store.openPage(c.id) }
+                else if (s === 3) { console.warn("STOREFILTER groups", store.appFilterForTest()); cap("store-filter-tree") }
+                else if (s === 4) console.warn("STOREFILTER picked Bot+Free", store.pickForTest(["Bot", "Free"]))
+                else if (s === 5) cap("store-filter-picked")
+                else if (s === 6) store.closeDeviceDialogsForTest()
+                else if (s === 7) cap("store-filter-pills")
+                else if (s === 8) { console.warn("STOREFILTER cleared", store.pickForTest([])); done() }
+            } else if (which === "manage") {
+                const m = store.manageForTest()
+                if (s === 0) store.openManage()
+                else if (s === 4) { console.warn("MANAGEAPPS rows", JSON.stringify(m.rowsForTest()), m.error); cap("manage-apps") }
+                else if (s === 5) console.warn("MANAGEAPPS expand", m.expandForTest("Praise"))
+                else if (s === 6) cap("manage-apps-expanded")
+                else if (s === 7) m.sortMenuForTest()
+                else if (s === 8) cap("manage-apps-sort")
+                else if (s === 9) { m.closeAllForTest(); m.sort = "az" }
+                else if (s === 11) { console.warn("MANAGEAPPS az", JSON.stringify(m.rowsForTest().slice(0, 6))); m.uploadForTest() }
+                else if (s === 12) cap("manage-apps-upload")
+                else if (s === 13) { m.closeAllForTest(); done() }
+            }
+            step++
+        }
+    }
     // --store-test: open the Store and capture Home, scrolled; the Featured
     // and Categories menus; a See all page; a category page; a search for
     // "planner"; then Polls' details. Logs what loaded and quits.
@@ -8651,6 +8752,30 @@ Window {
         }
     }
 
+    // --app-window-test=<key>: that hosted app (planner, onenote,
+    // whiteboard, shifts, clipchamp) from the app bar, then its window of
+    // its own (Open in new window); after 30 s APPWINDOW lines: the window's
+    // size and title, the page's host events, header and context, and the
+    // rail menu's items; app-window.png (the window). Quits unless
+    // --app-window-stay.
+    Timer {
+        readonly property string key: (Qt.application.arguments.find(a => a.startsWith("--app-window-test=")) || "").slice(18)
+        running: key.length > 0 && backend.signedIn && chatList.chats.length > 1
+        interval: 3000; repeat: true
+        property int step: 0
+        property var w: null
+        onTriggered: {
+            if (step === 0) rail.openApp(key)
+            else if (step === 3) w = window.popOutApp(key)
+            else if (step === 13 && w) {
+                const v = w.pageForTest()
+                console.warn("APPWINDOW", JSON.stringify({ title: w.title, size: [w.width, w.height], events: v.hostEvents, header: v.headerShown, tab: v.personalTab ? v.personalTab.entity_id : "" }))
+                w.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-app-window.png")))
+            }
+            else if (step === 15) { if (Qt.application.arguments.indexOf("--app-window-stay") < 0) Qt.quit() }
+            step++
+        }
+    }
     // --embedded-apps-test[=<list>]: Teams' embedded first-party apps as OST
     // hosts them (TASK-0038, docs/spec/app-host.md), one after another, about
     // 40 s each: whiteboard, shifts, clipchamp (the app bar's personal apps),
@@ -8675,7 +8800,7 @@ Window {
             const item = items[idx]
             const next = () => { idx++; tick = -1; if (idx >= items.length && Qt.application.arguments.indexOf("--embed-stay") < 0) Qt.quit() }
             if (idx >= items.length) return
-            const hosted = ["whiteboard", "clipchamp", "shifts"].indexOf(item)
+            const hosted = ["whiteboard", "planner", "onenote", "clipchamp", "shifts"].indexOf(item)
             // --embed-message=<text>: the newest message with that text (a
             // card's message for the reader's card text), else your newest.
             const want = (Qt.application.arguments.find(a => a.startsWith("--embed-message=")) || "").slice(16)
@@ -8683,7 +8808,7 @@ Window {
             if (hosted >= 0) {
                 if (tick === 0) rail.openApp(item)
                 else if (tick === 8) {
-                    const v = hostedApps.itemAt(hosted).item
+                    const v = window.hostedAppView(item)
                     console.warn("EMBED", item, JSON.stringify({ events: v ? v.hostEvents : null, header: v ? v.headerShown : null, tab: v && v.personalTab ? v.personalTab.entity_id : "" }))
                     cap(item); next()
                 }
@@ -9364,45 +9489,6 @@ Window {
     property int preheatOpenedAt: 0
     property bool preheatEventAsked: false
     property int preheatEventAt: 0
-
-    // --planner-test: open Planner from View more apps; add a private task,
-    // complete it; create a plan in OST Test Team, add a task, delete the
-    // plan; capturing along the way.
-    Timer {
-        running: Qt.application.arguments.indexOf("--planner-test") >= 0 && backend.signedIn && backend.teamsJson.length > 2
-        interval: 3000; repeat: true
-        property int step: 0
-        property var made: null
-        onTriggered: {
-            const cap = tag => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-" + tag + ".png")))
-            const d = planner.plannerData, has = t => (d.tasks || []).some(x => x.title === t)
-            if (step === 0) rail.openApp("planner")
-            else if (step === 1) { console.warn("PLAN mytasks", (d.tasks || []).length, d.error || ""); cap("mytasks"); planner.filter = "all"; planner.addForTest("OST planner test task") }
-            else if (step === 3) { console.warn("PLAN task added", has("OST planner test task")); cap("added"); planner.completeForTest("OST planner test task") }
-            else if (step === 5) { console.warn("PLAN task completed (gone from open tasks)", !has("OST planner test task")); console.warn("PLAN create", planner.createPlanForTest("OST planner test plan")) }
-            else if (step === 7) planner.open("plans")
-            else if (step === 8) {
-                const p = (d.plans || []).find(p => p.title === "OST planner test plan")
-                console.warn("PLAN plans", (d.plans || []).map(p => p.title).join(", "), "made", !!p, "status", backend.statusText, d.error || ""); cap("plans")
-                made = p; if (p) planner.open("plan", p)
-            }
-            else if (step === 10 && made) { planner.addToPlan(JSON.stringify(made), "OST plan task") }
-            else if (step === 12 && made) { console.warn("PLAN plan task", has("OST plan task")); cap("plan"); planner.board = true }
-            else if (step === 13) { cap("board") }
-            else if (step === 14) {
-                // Clean up every test plan (earlier runs' too).
-                planner.open("plans")
-            }
-            else if (step === 16) {
-                const left = (d.plans || []).filter(p => p.title === "OST planner test plan")
-                console.warn("PLAN deleting test plans", left.length)
-                for (const p of left) planner.deletePlan(p.id)
-            }
-            else if (step === 19) { planner.open("plans") }
-            else if (step === 21) { console.warn("PLAN test plans left", (d.plans || []).filter(p => p.title === "OST planner test plan").length); cap("cleaned"); Qt.quit() }
-            step++
-        }
-    }
 
     // --search-test: type "Ran" into search and capture the suggestions.
     Timer {
@@ -12505,6 +12591,10 @@ Window {
         split: window.splitView
         collabPane: window.collabPane
         onCollabPicked: pane => window.openCollab(pane)
+        // A hosted app's app bar menu.
+        onPopOutRequested: key => window.popOutApp(key)
+        onAboutRequested: key => appDetails.show(rail.hostedIds[key])
+        onShareRequested: key => appShare.start(rail.hostedIds[key])
         // Events' Pin / Unpin, kept in Teams' pinned apps.
         onPinRequested: (key, on) => {
             if (eventsView.item) { eventsView.item.setPinned(on); return }
@@ -12645,10 +12735,37 @@ Window {
     // Teams' app host (TeamsJS), as Teams opens them from the app bar
     // (docs/spec/app-host.md "Personal apps"): Whiteboard under Teams' app
     // header, Shifts and Clipchamp full screen.
+    // A personal app in a window of its own (the app bar's Open in new
+    // window), one per app.
+    property var appWindows: ({})
+    function popOutApp(key) {
+        const m = (hostedApps.model || []).find(a => a.key === key)
+        if (!m || !m.appId) return null
+        const open = window.appWindows[key]
+        if (open) { open.show(); open.raise(); open.requestActivate(); return open }
+        const c = Qt.createComponent("AppWindow.qml")
+        if (c.status !== Component.Ready) { console.warn("AppWindow", c.errorString()); return null }
+        const w = c.createObject(null, { app: { key: key, name: m.name, appId: m.appId } })
+        const all = Object.assign({}, window.appWindows); all[key] = w; window.appWindows = all
+        w.closing.connect(() => { const rest = Object.assign({}, window.appWindows); delete rest[key]; window.appWindows = rest; Qt.callLater(() => w.destroy()) })
+        w.show()
+        return w
+    }
+    /// A hosted personal app's view (its WebApp), once opened.
+    function hostedAppView(key) {
+        for (let i = 0; i < hostedApps.count; i++) { const l = hostedApps.itemAt(i); if (l && l.modelData.key === key) return l.item }
+        return null
+    }
     Repeater {
         id: hostedApps
         model: [
             { key: "whiteboard", name: "Whiteboard", icon: "board-20", color: "#0F6CBD", appId: "95de633a-083e-42f5-b444-a4295d8e9314" },
+            // Planner and OneNote are their personal pages too, full screen
+            // (measured on winpc 2026-11-20: Planner's PlannerFrame "My
+            // tasks" and OneNote's officeunihost "My Notebook" fill the
+            // area right of the app bar, each in its cacheable-iframe).
+            { key: "planner", name: "Planner", icon: "clipboard-task-list-ltr-24", color: "#5B5FC7", appId: "com.microsoft.teamspace.tab.planner" },
+            { key: "onenote", name: "OneNote", icon: "notebook-20", color: "#7719AA", appId: "0d820ecd-def2-4297-adad-78056cde7c78" },
             { key: "clipchamp", name: "Clipchamp", icon: "video", color: "#8764B8", appId: "com.microsoftstream.embed.skypeteamstab" },
             { key: "shifts", name: "Shifts", icon: "calendar-clock-20", color: "#5B5FC7", appId: "42f6c1da-a241-483a-a3cc-4f5be9185951" },
             // Avatars (Microsoft Mesh): its personal tab, Teams' "Avatar builder".
@@ -12795,6 +12912,7 @@ Window {
         busy: backend.storeBusy
         onLoad: backend.storeLoad()
         onOpenApp: key => rail.openApp(key)
+        onToast: d => window.showToast(d)
     }
     PeopleView {
         id: peopleApp
@@ -12806,16 +12924,6 @@ Window {
         onAdd: json => backend.contactsAdd(json)
         onFavorite: (id, on) => backend.contactsFavorite(id, on)
         onRemove: id => backend.contactsDelete(id)
-    }
-    OneNoteView {
-        id: oneNote
-        visible: rail.current === "onenote"
-        anchors { top: appBanner.bottom; bottom: statusBar.top; left: rail.right; right: parent.right }
-        reply: backend.onenoteJson ? JSON.parse(backend.onenoteJson) : ({})
-        busy: backend.onenoteBusy
-        onLoad: (v, id) => backend.onenoteLoad(v, id)
-        onCreate: (kind, parent, name, text) => backend.onenoteCreate(kind, parent, name, text)
-        onRemovePage: id => backend.onenoteDeletePage(id)
     }
     // Teams' Events app, drawn natively from the virtual events service
     // (docs/spec/events.md); made when first opened and kept.
@@ -12859,21 +12967,6 @@ Window {
             onToast: d => window.showToast(d)
             onOpenRecap: (id, title) => { if (id) { rail.current = "chat"; window.composing = false; backend.selectChat(id, title) } }
         }
-    }
-    PlannerView {
-        id: planner
-        visible: rail.current === "planner"
-        anchors { top: appBanner.bottom; bottom: statusBar.top; left: rail.right; right: parent.right }
-        plannerData: backend.plannerJson ? JSON.parse(backend.plannerJson) : ({})
-        busy: backend.plannerBusy
-        teams: (backend.teamsJson ? JSON.parse(backend.teamsJson) : []).map(t => ({ id: t.id, name: t.name }))
-        onLoad: (v, p) => backend.plannerLoad(v, p)
-        onAdd: (title, due) => backend.plannerAdd(title, due)
-        onComplete: json => backend.plannerComplete(json)
-        onRemove: json => backend.plannerDelete(json)
-        onCreatePlan: (g, t, title) => backend.plannerCreatePlan(g, t, title)
-        onAddToPlan: (p, title) => backend.plannerAddToPlan(p, title)
-        onDeletePlan: id => backend.plannerDeletePlan(id)
     }
     // A message's file, as Teams opens it: over the chat list and the
     // conversation, right of the app bar.
@@ -13308,7 +13401,11 @@ Window {
     }
     TabConfigDialog {
         id: tabConfig
+        teamThread: conversation.isChannel ? conversation.teamThread : ""
         onBack: tabPicker.reopen()
+        // A tab's Settings saved: the tabs read again and the tab's page
+        // framed afresh at its new address.
+        onUpdated: tabId => { conversation.tabRevision++; conversation.reloadTabs() }
         onAbout: app => tabConfigAbout.start({ app_id: app.id, name: app.name })
     }
     TabAboutDialog { id: tabConfigAbout }
@@ -13338,6 +13435,7 @@ Window {
         onOpenAppById: id => window.openAppById(id, "")
         onOpenAgentStore: (id, isChannel) => agentStore.show(id, isChannel)
         onOpenTabPicker: (id, kind, team) => tabPicker.showTabs(id, kind, team)
+        onUpdateTabRequested: t => tabConfig.startUpdate(t, conversation.chatId, conversation.teamId, conversation.isChannel)
         teamThread: {
             const teams = backend.teamsJson ? JSON.parse(backend.teamsJson) : []
             const t = teams.find(t => t.channels.some(c => c.id === backend.currentChatId))

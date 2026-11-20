@@ -441,6 +441,36 @@
                 }
                 return;
             }
+            // The device store's checkout (Teams' Client Store app):
+            // TeamsJS marketplace on the store's local cart. Teams answers
+            // [error, cart] (sendAndHandleSdkError); changes go back to the
+            // Store, which keeps the cart.
+            case "marketplace.getCart":
+                if (!cfg.cart) { respond(source, from, d, [{ errorCode: 100 }]); return; }
+                respond(source, from, d, [null, cfg.cart]);
+                return;
+            case "marketplace.addOrUpdateCartItems":
+            case "marketplace.removeCartItems":
+            case "marketplace.updateCartStatus": {
+                if (!cfg.cart) { respond(source, from, d, [{ errorCode: 100 }]); return; }
+                const q = args[0] || {};
+                const items = cfg.cart.cartItems || [];
+                if (func === "marketplace.addOrUpdateCartItems") {
+                    for (const it of (q.cartItems || [])) {
+                        const i = items.findIndex(x => x.id === it.id);
+                        if (i >= 0) items[i] = Object.assign({}, items[i], it); else items.push(it);
+                    }
+                } else if (func === "marketplace.removeCartItems") {
+                    cfg.cart.cartItems = items.filter(x => (q.cartItemIds || []).indexOf(x.id) < 0);
+                } else {
+                    cfg.cart.cartInfo.status = String(q.cartStatus || cfg.cart.cartInfo.status);
+                }
+                if (func !== "marketplace.removeCartItems") cfg.cart.cartItems = items;
+                cfg.cart.cartInfo.updatedAt = new Date().toISOString();
+                respond(source, from, d, [null, cfg.cart]);
+                ost.event("cart", JSON.stringify(cfg.cart));
+                return;
+            }
             case "getExtensibleAppContext":
                 // Excel Live: Teams answers with the session's
                 // extensibleAppContext (and a correlation id) as JSON.

@@ -343,13 +343,14 @@ OST has the org name, Sign out, avatar, name, e-mail and the status row (TitleBa
 - [ ] [P2] Notes tab menu actions — Teams: Open tab in new window, Expand tab, App permissions, each with an effect — OST: the items are listed, but popOut, expandTab and devicePermissions have no handler and do nothing (ref: CT "Menu contents", "Verified on the live client"; OST: Conversation.qml:972-981, src/api/tabs.rs:152-160)
 
 ### 14.2 OneNote personal app
-- [ ] [P1] Editing existing pages — Teams: full editing — OST: pages are read-only rich text; new pages are plain text; no PATCH (ref: FA §9 "Update a page", NT "Editor"; OST: OneNoteView.qml:177-258, onenote.rs (no update))
-- [ ] [P2] Page formatting (bold, lists, tables, tags), images and ink shown — OST: images, objects and styles are stripped from page HTML (ref: FA §9 API; OST: onenote.rs:125-139)
-- [ ] [P2] Page order as in OneNote (subpages, manual order) — OST: pages sorted by last modified (ref: FA §9, NT "Editor (page list, ordering)"; OST: onenote.rs:119-122)
-- [ ] [P2] Section groups — OST: only top-level sections are listed (ref: FA §9 "list notebooks, section groups, sections"; OST: onenote.rs:81-94)
-- [ ] [P2] Search in notebooks — OST: absent (ref: FA §9 "Notes tab capabilities: search"; OST: absent)
-- [ ] [P3] Notebook hover More options > Open (web) / **Open in desktop** — OST: one "Open in OneNote" (browser) button (ref: FA §9 "OneNote personal app"; OST: OneNoteView.qml:119-132)
-- [ ] [P3] Page paging (>100) — OST: `$top=100`, with no next link (ref: FA §9 "20 by default, max 100"; OST: onenote.rs:100)
+- Resolved 2026-11-20 (TASK-0194): OST hosts Teams' OneNote personal page (officeunihost) as Teams desktop does, so the items below are OneNote's own.
+- [x] [P1] Editing existing pages — Teams: full editing — OST: pages are read-only rich text; new pages are plain text; no PATCH (ref: FA §9 "Update a page", NT "Editor"; OST: OneNoteView.qml:177-258, onenote.rs (no update))
+- [x] [P2] Page formatting (bold, lists, tables, tags), images and ink shown — OST: images, objects and styles are stripped from page HTML (ref: FA §9 API; OST: onenote.rs:125-139)
+- [x] [P2] Page order as in OneNote (subpages, manual order) — OST: pages sorted by last modified (ref: FA §9, NT "Editor (page list, ordering)"; OST: onenote.rs:119-122)
+- [x] [P2] Section groups — OST: only top-level sections are listed (ref: FA §9 "list notebooks, section groups, sections"; OST: onenote.rs:81-94)
+- [x] [P2] Search in notebooks — OST: absent (ref: FA §9 "Notes tab capabilities: search"; OST: absent)
+- [x] [P3] Notebook hover More options > Open (web) / **Open in desktop** — OST: one "Open in OneNote" (browser) button (ref: FA §9 "OneNote personal app"; OST: OneNoteView.qml:119-132)
+- [x] [P3] Page paging (>100) — OST: `$top=100`, with no next link (ref: FA §9 "20 by default, max 100"; OST: onenote.rs:100)
 
 ## 15. Channel Page (Loop) and chat Notes
 
@@ -371,15 +372,16 @@ OST has the org name, Sign out, avatar, name, e-mail and the status row (TitleBa
 - [ ] [P3] Clipchamp app — Teams: video hub and editor — OST: an embedded web view of app.clipchamp.com (a gap by the project's rule) (ref: FA §18; OST: Main.qml:1498, WebApp.qml)
 
 ## 18. Planner / To Do
+- Resolved 2026-11-20 (TASK-0193): OST hosts Teams' Planner personal page (PlannerFrame) as Teams desktop does, so the items below are Planner's own.
 
-- [ ] [P1] Task details — Teams: open a task to edit title, notes, checklist, due and start dates, priority, progress, assignees, labels, bucket — OST: rows can only be completed; no task opens (ref: FA §11 plan views; Graph plannerTaskDetails / todoTask; OST: PlannerView.qml:263-293)
-- [ ] [P2] **My Day** — Teams: auto-includes due-today tasks plus manual adds, reorderable, clears nightly — OST: a client-side filter of due-today tasks (ref: FA §11 "My Day"; OST: PlannerView.qml:224-225)
-- [ ] [P2] **My Plans** includes To Do lists, personal plans, Loop and meeting-notes plans, with filters Recent / Shared / Personal / Pinned / My teams / Recommended and keyword — OST: lists your teams' basic plans only, with no filters (ref: FA §11 "My Plans"; OST: PlannerView.qml:186-216)
-- [ ] [P2] Create a personal plan (no group) or from a template — OST: a team is required; no templates (ref: FA §11 "Create a plan"; OST: PlannerView.qml:353-409)
-- [ ] [P2] Delete a task / delete a plan — OST: `remove` and `deletePlan` signals exist but nothing in the UI raises them (ref: FA §11 API; OST: PlannerView.qml:20-23)
-- [ ] [P2] Board drag between buckets; add a task in a bucket; plan views Schedule and Charts — OST: a read-only board; Grid and Board only (ref: FA §11 "Plan views"; OST: PlannerView.qml:297-336)
-- [ ] [P3] Pinned plans — OST: static text "Pinned items will appear here." (ref: FA §11 My Plans filter Pinned; OST: PlannerView.qml:111-114)
-- [ ] [P3] Planner channel tab — OST: absent (ref: FA §11 "Planner channel tab"; OST: absent)
+- [x] [P1] Task details — Teams: open a task to edit title, notes, checklist, due and start dates, priority, progress, assignees, labels, bucket — OST: rows can only be completed; no task opens (ref: FA §11 plan views; Graph plannerTaskDetails / todoTask; OST: PlannerView.qml:263-293)
+- [x] [P2] **My Day** — Teams: auto-includes due-today tasks plus manual adds, reorderable, clears nightly — OST: a client-side filter of due-today tasks (ref: FA §11 "My Day"; OST: PlannerView.qml:224-225)
+- [x] [P2] **My Plans** includes To Do lists, personal plans, Loop and meeting-notes plans, with filters Recent / Shared / Personal / Pinned / My teams / Recommended and keyword — OST: lists your teams' basic plans only, with no filters (ref: FA §11 "My Plans"; OST: PlannerView.qml:186-216)
+- [x] [P2] Create a personal plan (no group) or from a template — OST: a team is required; no templates (ref: FA §11 "Create a plan"; OST: PlannerView.qml:353-409)
+- [x] [P2] Delete a task / delete a plan — OST: `remove` and `deletePlan` signals exist but nothing in the UI raises them (ref: FA §11 API; OST: PlannerView.qml:20-23)
+- [x] [P2] Board drag between buckets; add a task in a bucket; plan views Schedule and Charts — OST: a read-only board; Grid and Board only (ref: FA §11 "Plan views"; OST: PlannerView.qml:297-336)
+- [x] [P3] Pinned plans — OST: static text "Pinned items will appear here." (ref: FA §11 My Plans filter Pinned; OST: PlannerView.qml:111-114)
+- [x] [P3] Planner channel tab — OST: absent (ref: FA §11 "Planner channel tab"; OST: absent)
 
 ## 19. Store / apps
 

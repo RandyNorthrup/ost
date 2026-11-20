@@ -448,6 +448,12 @@ Rectangle {
     property string teamThread: ""
     // The tab picker and the Website configuration (Main.qml's).
     signal openTabPicker(string conversationId, string kind, string teamThread)
+    /// A tab's Settings (Teams' updateTab): its app's configuration page,
+    /// to set the tab up again.
+    signal updateTabRequested(var tab)
+    /// Bumped when a tab's settings change, so its page is framed afresh
+    /// at its new address (Teams posts beforeUnload / load to it).
+    property int tabRevision: 0
     // A channel's Page tab: the channel's Loop page in Loop's own page
     // container, as Teams hosts it (ChannelPageTab, docs/spec/loop-host.md).
     readonly property var webTab: channelTabs.find(t => t.name === tab && t.kind === "ChannelPage") || null
@@ -3660,7 +3666,7 @@ Rectangle {
     Loader {
         id: hostedTabLoader
         // One host per tab: a new one when the channel or the tab changes.
-        readonly property string key: root.hostedTab ? root.chatId + "|" + root.hostedTab.id : ""
+        readonly property string key: root.hostedTab ? root.chatId + "|" + root.hostedTab.id + "|" + root.tabRevision : ""
         property var shown: null
         onKeyChanged: { active = false; shown = root.hostedTab; active = !!key }
         active: false
@@ -3783,7 +3789,7 @@ Rectangle {
         property var entries: []
         readonly property var icons: ({
             popOut: "window-new-20", expandTab: "arrow-maximize-20", reloadTab: "arrow-clockwise-20",
-            goToWebsite: "globe-20", copyLink: "link-20", renameTab: "edit-20",
+            goToWebsite: "globe-20", copyLink: "link-20", renameTab: "edit-20", updateTab: "settings-20",
             devicePermissions: "shield-keyhole-20", aboutTab: "info-20", moveLeft: "arrow-left-20",
             moveRight: "arrow-right-20", removeTab: "delete-20"
         })
@@ -3799,6 +3805,7 @@ Rectangle {
         if (key === "copyLink") backend.copyTabLink(root.teamId, root.chatId, JSON.stringify(t))
         else if (key === "goToWebsite") { if (t.website_url) Qt.openUrlExternally(t.website_url) }
         else if (key === "renameTab") renameDialog.start(t)
+        else if (key === "updateTab") root.updateTabRequested(t)
         else if (key === "removeTab") removeDialog.start(t)
         else if (key === "moveLeft") backend.channelTabChange("left", root.teamId, root.chatId, t.id, "")
         else if (key === "moveRight") backend.channelTabChange("right", root.teamId, root.chatId, t.id, "")

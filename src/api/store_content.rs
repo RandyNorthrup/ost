@@ -499,6 +499,76 @@ pub struct StoreApp {
     /// Its configurable tab's configuration page (what Teams' Add a tab
     /// dialog embeds), placeholders as written; empty when it has none.
     pub config_url: String,
+    /// What the See all filter matches it on (Teams' item features, worker
+    /// `KDr`): Available / Blocked, Free / Paid, Certified /
+    /// PublisherAttested, SharedChannelTypeSupported /
+    /// PrivateChannelTypeSupported, Bot, Connector, CopilotPlugin, Meeting,
+    /// MessageExtension, Personal, Tab.
+    pub features: Vec<&'static str>,
+}
+
+/// An app's filter features from its definition and its Store
+/// capabilities, as Teams' worker computes them (KDr and its helpers).
+pub fn app_features(def: &serde_json::Value, caps: &[String]) -> Vec<&'static str> {
+    let list = |k: &str| def.get(k).and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    let mut f: Vec<&'static str> = Vec::new();
+    let mut add = |x: &'static str| {
+        if !f.contains(&x) {
+            f.push(x)
+        }
+    };
+    let statics = list("staticTabs");
+    let scoped = |t: &serde_json::Value, s: &str| {
+        t.get("scopes").and_then(|v| v.as_array()).is_some_and(|l| l.iter().any(|x| x.as_str().is_some_and(|x| x.eq_ignore_ascii_case(s))))
+    };
+    if !statics.is_empty() && statics.iter().all(|t| scoped(t, "personal")) {
+        add("Personal");
+    }
+    if !list("connectors").is_empty() {
+        add("Connector");
+    }
+    let channel_types: Vec<String> = list("supportedChannelTypes").iter().filter_map(|v| v.as_str().map(str::to_lowercase)).collect();
+    if channel_types.iter().any(|c| c == "sharedchannels") {
+        add("SharedChannelTypeSupported");
+    }
+    if channel_types.iter().any(|c| c == "privatechannels") {
+        add("PrivateChannelTypeSupported");
+    }
+    if def.get("isBlocked").and_then(|v| v.as_bool()).unwrap_or(false) {
+        add("Blocked");
+    } else {
+        add("Available");
+    }
+    if !list("bots").is_empty() {
+        add("Bot");
+    }
+    if !list("inputExtensions").is_empty() || !list("extensions").is_empty() {
+        add("MessageExtension");
+    }
+    let gallery = list("galleryTabs");
+    if !gallery.is_empty() {
+        add("Tab");
+        // Meeting: a tab for a meeting's side panel or stage in a group chat.
+        let meeting = gallery.iter().any(|t| {
+            scoped(t, "groupchat")
+                && t.get("context").and_then(|v| v.as_array()).is_some_and(|c| {
+                    c.iter().any(|x| x.as_str().is_some_and(|x| x.eq_ignore_ascii_case("meetingSidePanel") || x.eq_ignore_ascii_case("meetingStage")))
+                })
+        });
+        if meeting {
+            add("Meeting");
+        }
+    }
+    add(if def.pointer("/subscriptionOffer/offerId").and_then(|v| v.as_str()).is_some_and(|o| !o.is_empty()) { "Paid" } else { "Free" });
+    match def.pointer("/securityComplianceInfo/status").and_then(|v| v.as_str()).map(str::to_lowercase).as_deref() {
+        Some("m365certified") => add("Certified"),
+        Some("attested") => add("PublisherAttested"),
+        _ => {}
+    }
+    if is_agent(caps) || def.get("metaCapabilities").and_then(|m| m.as_object()).is_some_and(|m| m.contains_key("copilotPlugins") || m.contains_key("copilotExtensions")) {
+        add("CopilotPlugin");
+    }
+    f
 }
 
 /// One of the in-context Store's collections.
@@ -568,6 +638,7 @@ pub(crate) fn store_app(def: &serde_json::Value, r: Option<&Ranked>) -> StoreApp
                     .map(str::to_string)
             })
             .unwrap_or_default(),
+        features: app_features(def, r.map(|r| r.caps.as_slice()).unwrap_or_default()),
     }
 }
 

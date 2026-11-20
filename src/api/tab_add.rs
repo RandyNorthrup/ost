@@ -787,7 +787,7 @@ pub async fn chat_tabs(client: &TeamsClient, chat_id: &str) -> Result<Vec<Tab>> 
     let mut out = Vec::new();
     for t in property_tabs(&props) {
         let mut tab = tab_from_property(&t, &ctx);
-        let (perms, icon) = tabs::app_facts(client, &tab.app_id).await;
+        let (perms, icon, config) = tabs::app_facts(client, &tab.app_id).await;
         let (menu, context) = tabs::menus(tab.kind, true, perms, false, false);
         let unmovable = |m: &Vec<tabs::MenuItem>| -> Vec<tabs::MenuItem> {
             m.iter().filter(|i| i.key != "moveLeft" && i.key != "moveRight").cloned().collect()
@@ -795,6 +795,9 @@ pub async fn chat_tabs(client: &TeamsClient, chat_id: &str) -> Result<Vec<Tab>> 
         tab.menu = unmovable(&menu);
         tab.context_menu = unmovable(&context);
         tab.icon = icon;
+        if tab.menu.iter().any(|m| m.key == "updateTab") {
+            tab.config_url = config;
+        }
         out.push(tab);
     }
     Ok(out)
@@ -825,6 +828,7 @@ pub fn tab_from_property(t: &serde_json::Value, ctx: &tabs::TabContext) -> Tab {
             .filter(|m| m.bytes().all(|b| b.is_ascii_digit()) && !m.is_empty())
             .unwrap_or_default(),
         icon: String::new(),
+        config_url: String::new(),
         id,
         app_id,
         kind,
@@ -1306,7 +1310,7 @@ mod tests {
         // A chat website tab's menu (right-click, or ">" under "+N"):
         // Copy link, Rename, About, Remove. It never becomes the open tab,
         // so it has no chevron menu.
-        let (_, context) = tabs::menus(Kind::Website, true, false, false, false);
+        let (_, context) = tabs::menus(Kind::Website, true, tabs::AppFlags::default(), false, false);
         let keys: Vec<&str> = context.iter().map(|m| m.key).filter(|k| *k != "moveLeft" && *k != "moveRight").collect();
         assert_eq!(keys, ["copyLink", "divider", "renameTab", "aboutTab", "divider", "removeTab"]);
     }

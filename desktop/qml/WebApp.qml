@@ -131,6 +131,9 @@ Item {
     property var videoApp: null
     /// Excel Live: the context Teams answers getExtensibleAppContext with.
     property string extensibleAppContext: ""
+    /// The device store's cart (TeamsJS marketplace, for the checkout
+    /// app), or null.
+    property var marketplaceCart: null
     /// A script for the app's own frames (in their world, from the start).
     property string frameScript: ""
     /// Ask the hosted configuration page to save (Teams' Save).
@@ -216,7 +219,7 @@ Item {
                                              frameContext: root.frameContext, hostClientType: root.hostClientType, deepNaa: root.deepNaa, context: c,
                                              ssr: root.ssr, allow: root.frameAllow, supports: root.runtimeSupports, shortcuts: root.hostShortcuts,
                                              meetingBoard: root.meetingBoard ? { organizer: root.meetingBoard.organizer || "" } : null,
-                                             video: root.videoApp, extensibleAppContext: root.extensibleAppContext })
+                                             video: root.videoApp, extensibleAppContext: root.extensibleAppContext, cart: root.marketplaceCart })
         root.hostLoading = true
         web.loadHtml(backend.appHostPage(root.appName), "https://teams.cloud.microsoft/")
     }

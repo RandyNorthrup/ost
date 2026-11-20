@@ -23,6 +23,18 @@ Rectangle {
     signal collabPicked(string pane)
     /// The app bar menu's Pin / Unpin (Events).
     signal pinRequested(string key, bool on)
+    /// The app bar menu of an app Teams hosts (measured on winpc
+    /// 2026-11-20: Open in new window, About, Share app, …): its window,
+    /// its details, sharing it.
+    signal popOutRequested(string key)
+    signal aboutRequested(string key)
+    signal shareRequested(string key)
+    /// The apps whose personal page OST hosts as Teams does (key → app id).
+    readonly property var hostedIds: ({
+        whiteboard: "95de633a-083e-42f5-b444-a4295d8e9314", planner: "com.microsoft.teamspace.tab.planner",
+        onenote: "0d820ecd-def2-4297-adad-78056cde7c78", clipchamp: "com.microsoftstream.embed.skypeteamstab",
+        shifts: "42f6c1da-a241-483a-a3cc-4f5be9185951", avatars: "96a116ab-6847-4d22-90f3-f4dd6af74938"
+    })
     function pick(key) {
         if (split && (key === "chat" || key === "teams")) collabPicked(key === "teams" ? "teams" : "chats")
         else current = key
@@ -91,6 +103,7 @@ Rectangle {
         Repeater {
             model: root.apps
             delegate: Item {
+                id: railItem
                 required property var modelData
                 readonly property bool selected: !root.noneChosen && (root.split && (modelData.key === "chat" || modelData.key === "teams")
                     ? root.current === "chat" && root.collabPane === (modelData.key === "teams" ? "teams" : "chats")
@@ -183,18 +196,32 @@ Rectangle {
                 }
                 HoverHandler { id: hover }
                 TapHandler { onTapped: modelData.key === "more" ? moreApps.open() : root.pick(modelData.key) }
-                // Events' entry: Teams' app bar menu Pin / Unpin (kept in
-                // Teams' pinned apps, as the app's Pin app).
+                // Teams' app bar menu: Events' Pin / Unpin (kept in Teams'
+                // pinned apps, as the app's Pin app); a hosted app's Open in
+                // new window, About and Share app (170 wide, at the pointer).
+                readonly property bool hostedApp: !!root.hostedIds[modelData.key]
                 TapHandler {
-                    enabled: modelData.key === "events"
+                    enabled: modelData.key === "events" || railItem.hostedApp
                     acceptedButtons: Qt.RightButton
-                    onTapped: { railMenu.parent = parent; railMenu.y = parent.height; railMenu.open() }
+                    onTapped: ev => { railMenu.parent = railItem; railMenu.x = ev.position.x; railMenu.y = ev.position.y; railMenu.open() }
                 }
                 MenuPopup {
                     id: railMenu
-                    items: [{ key: "pin", label: root.pinned.indexOf("events") >= 0 ? qsTr("Unpin") : qsTr("Pin"), icon: root.pinned.indexOf("events") >= 0 ? "pin-off-20" : "pin-20" }]
-                    onPicked: i => root.pinRequested("events", root.pinned.indexOf("events") < 0)
+                    readonly property var entries: railItem.hostedApp
+                        ? [{ key: "popOut", label: qsTr("Open in new window"), icon: "window-new-20" },
+                           { key: "about", label: qsTr("About"), icon: "info-20" },
+                           { key: "share", label: qsTr("Share app"), icon: "share-20" }]
+                        : [{ key: "pin", label: root.pinned.indexOf("events") >= 0 ? qsTr("Unpin") : qsTr("Pin"), icon: root.pinned.indexOf("events") >= 0 ? "pin-off-20" : "pin-20" }]
+                    items: entries
+                    onPicked: i => {
+                        const k = entries[i].key
+                        if (k === "pin") root.pinRequested("events", root.pinned.indexOf("events") < 0)
+                        else if (k === "popOut") root.popOutRequested(modelData.key)
+                        else if (k === "about") root.aboutRequested(modelData.key)
+                        else if (k === "share") root.shareRequested(modelData.key)
+                    }
                 }
+                function menuForTest() { railMenu.parent = railItem; railMenu.x = 34; railMenu.y = 22; railMenu.open(); return railMenu.entries.map(e => e.label) }
                 ToolTipLabel { text: modelData.keys ? qsTr("%1 (%2)").arg(modelData.label).arg(modelData.keys) : modelData.label; shown: hover.hovered }
                 Accessible.role: Accessible.Button
                 Accessible.name: modelData.keys ? qsTr("%1 (%2)").arg(modelData.label).arg(modelData.keys) : modelData.label
@@ -202,9 +229,9 @@ Rectangle {
         }
     }
 
-    // View more apps: Teams' flyout with a search box and the apps. Planner,
-    // OneNote and People are native; Whiteboard, Shifts and Clipchamp open
-    // in OST's TeamsJS host as Teams hosts them; Help is embedded.
+    // View more apps: Teams' flyout with a search box and the apps. People
+    // is native; Planner, OneNote, Whiteboard, Shifts and Clipchamp open in
+    // OST's TeamsJS host as Teams hosts them; Help is embedded.
     Popup {
         id: moreApps
         parent: root.Window.contentItem

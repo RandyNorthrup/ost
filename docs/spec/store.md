@@ -146,3 +146,129 @@ Measured on winpc on 2026-11-09. OST: `StoreView.qml`, plus `store_home`, `store
 ### The Store doc path depends on the licence
 - For SMB users, Teams asks for `apps/smb/…`. Without authz `licenseDetails` OST asked for the Enterprise doc instead, which has different collections and featured entries.
 - OST now fetches `licenseDetails` when the config lacks them (`api::ecs::license`).
+
+## 5. Devices (Teams' device store; measured on winpc 2026-11-20, TASK-0077)
+
+OST: `api::devices`, `StoreView.qml` (device pages, the band, the filter),
+`DeviceDetailsDialog.qml`, `DeviceCartDialog.qml`, `--store-devices-test`.
+
+### Data
+- **Catalog** (no sign-in): with ECS `marketplace.enableCatalogOneCdn` (on),
+  `GET {catalogOneCdnBaseUrl}/{catalogOneCdnVersionTTL}/pointer` (e.g.
+  `https://res.cdn.office.net/devicescatalog/5mttl/pointer` → `"2026/11/20"`),
+  then `…/{catalogOneCdnTTL}/{version}/US_en-us/AllDevices` (510 devices:
+  `deviceId, deviceName, manufacturerName, shortDescription, thumbnailImage
+  {blobURI, altText}, price, collections[], isFeatured, availabilityStatus,
+  certifiedDate, connectionType, wearingStyle, useCase, color,
+  accessoryType, fulfillerPartner "UC"…`) and `…/US_en-us/{deviceId}` (one
+  device: also `fullDescription`, `images {small, medium, large, actual}`,
+  `overview [{Key, Value}]` (Highlights), `techSpecs [{Key, Value}]`).
+  Without OneCDN: `{deviceStoreCatalogCDNHost}/catalogdata/US_en-us/AllDevices`.
+- **Collections** (ECS `extensibility.storeDevicesCollections`, worker module
+  2636): featured 24 (lists `isFeatured`), headsets 9, webcameras 5,
+  speakerphones 8, deskphonesandteamsdisplays 7, monitors 11, teamsrooms 6,
+  roomsystemsaccessories 10; titles and descriptions are Teams' strings;
+  icons (storeGroupCollectionIconMap) Star, Headset, Video, Speaker,
+  DeviceMeetingRoom, Desktop, SurfaceHub, DeviceMeetingRoomRemote.
+- **Order**: Teams' default sort Availability (Available, LowStock,
+  AvailableIn3Weeks, OnBackOrder, OutOfStock, the rest), then the device id
+  compared as text (Headsets: 100, 1000, 1004, 1021 …). 147 headsets; 24
+  shown, more as you scroll.
+- The market: the United States ("USA"; tooltip "Your region is set to
+  United States."); prices as `Intl.NumberFormat("en-US", currency USD)`.
+
+### Layout (CSS px, the area right of the app bar)
+- The header's Devices ▾ menu (247 wide, 32 px items with their icons).
+- A device page: a 28 tall #F5F5F5 band under the header: globe 16, "USA"
+  (14/20 semibold #424242), the cart pill flush right (brand, 43.8 x 24, a
+  20 px cart and the count 12/16 white). Then, on the lavender page: Back at
+  (45.5, 62), the title (30/36 semibold) at (85.5, 60), the description
+  (16/22, 580 wide) at 108; the filter button (32, round) 64 under it,
+  96.5 from the right; the tiles 74 under that: 239 x 312, radius 12, 255
+  apart, four to a row 323 apart: the picture 207 x 160 on white (radius 4)
+  at 16, the name 12/16 semibold at 188, the maker 12/16 at 208, the price
+  14/20 bold at 232, the short description 12/16 (two lines) at 264.
+- Its filter shows Teams' generic tree with only an empty "App features"
+  group (Filter / Clear, the group's checkbox); nothing filters (as Teams).
+- **Details** (a 720 x 640 dialog): Close (16 px) at (667.3, 20.7); the
+  large picture 324.3 x 186.4 at (32.7, 48.7); at 407.3: the name 18/24 bold,
+  the maker 14/20 #616161, the price 18/24 bold, "Free shipping in most of
+  the US" (12/16 semibold, a van in a 24 px #E8EBFA circle, an info button),
+  "Quantity" 12/16 over a 112 x 31.3 dropdown (1–9, 10+) and Share ▾ (Copy
+  Link), then Add to cart (112 x 31.3 brand); once in the cart, View Cart
+  (brand) and Add to cart (outline). The tabs Overview, Highlights, Tech
+  Specs (14/20, 44 tall) at 368.7 scroll to their sections (Overview: the
+  short description 14/20 bold and the full one; Highlights: each Key bold
+  over its Value; Tech Specs: a table, key 14/20 semibold, value at 162,
+  rows on #FAFAFA with hairlines). Footer 72 tall: "Powered by
+  UnifiedCommunications.com". Scrolled, Teams pins a compact header (the
+  thumbnail, "<maker> - <name>", price, quantity, Add to cart, the tabs);
+  OST does too.
+- **Cart** (720 x 640): "Your cart" 18/22 bold; columns Item, Item Price,
+  Quantity, Price (12/16 #616161); rows 96.7 tall (picture 92.5 x 56.1, name
+  14/20 semibold, price, a 83.5 wide quantity dropdown, Delete, the line
+  price 14/20 bold); Subtotal with "US" and the amount (18/20 bold),
+  "Shipping and taxes will be calculated at checkout."; footer "Powered by
+  UnifiedCommunications.com." Privacy | Terms of service
+  (unifiedcommunications.com/docs/teams-marketplace/en-us/…) and Checkout
+  (265 x 31.3). Empty: "Your cart is empty", Continue shopping.
+- The cart lives on the device (Teams' IndexedDB store cart per market; OST
+  keeps it in its settings). Checkout (not pressed on winpc) opens Teams'
+  DeviceStoreCart dialog with the Client Store app (ECS
+  `marketplace.appManifestUC`, personal tab
+  `https://clientstore.unifiedcommunications.com/`) in its host, which reads
+  the cart with TeamsJS `marketplace.getCart` (answered `[null, cart]`) and
+  may change it (`addOrUpdateCartItems`, `removeCartItems`,
+  `updateCartStatus`). OST hosts it the same way (app_host.js); unverified
+  past opening, since checking out would place an order.
+
+## 6. See all filter (measured on winpc 2026-11-20)
+- The collection filter (`collection-filter`, a 32 px round button, 96.5
+  from the right, 64 under the page's description) opens Teams' filter tree
+  (`store-collection-filter-tree`): "Filter" (14/20 bold) and "Clear" (14/20
+  semibold, #BDBDBD until something is picked), then 220 wide columns:
+  Availability (Ready to add, Requires approval), Pricing (Free to add,
+  Subscription plans available), Certification (Microsoft 365 certified,
+  Publisher attested), Supported Channel (Shared Channel, Private Channel)
+  in one, App features (Bot, Connector, Agent, Group Chat, Meeting,
+  Messaging, Personal, Tab) in the other; each group's title row (14/20
+  semibold) checks all its options; rows 34 tall with the 16 px checkbox
+  (#616161 edge, radius 2; brand when on) at 184. Only options the page's
+  apps have are listed.
+- An app's features (worker `KDr`): Personal (every static tab personal),
+  Connector, Shared/PrivateChannelTypeSupported (supportedChannelTypes),
+  Available / Blocked, Bot, MessageExtension, Tab (+ Meeting for a group chat
+  tab in meetingSidePanel / meetingStage), Free / Paid (subscriptionOffer),
+  Certified / PublisherAttested (securityComplianceInfo.status),
+  CopilotPlugin (copilot capabilities). OST: `store_content::app_features`.
+- The page keeps apps with **any** picked option (the worker's
+  includedFeatures). Picked options show as pills (brand, 25 tall, radius
+  12.5, 14/20 white) left of the button; a pill removes its option. The
+  button reads "Filter (n), n filters applied".
+
+## 7. Header buttons, Manage your apps (measured on winpc 2026-11-20)
+- At the header's right, 32 x 33.3: "Your agents and apps" (library, 84
+  from the right) and "Manage your apps" (gear, 48 from the right). On a page
+  the search moves into the header (384 x 32, radius 16, 96 from the right).
+- **Your agents and apps**: a page ("See all the apps and agents you added,
+  your org added for you, or people shared with you.") with chips Added by
+  you, Created by you, Added by your org, Built for your org, Shared with
+  you, and your apps as cards.
+- **Manage your apps** (GraphQL installedAppsForUser; OST
+  `api::manage_apps`, `ManageAppsView.qml`, `--manage-apps-test`): Back, the
+  gear tile, "Manage your apps" and the Apps tab; Get more apps, Upload an
+  app, Sort (Recently used, A-Z, Z-A), Find by name; rows 65 tall (caret,
+  36 px icon, name 14/20 bold, publisher 14/16 #616161, ··· = View details,
+  Copy link). The list: personal entitlements Installed / AdminPreInstalled /
+  InstalledAndFavorited / PreConsented, apps shared with you (`GET
+  {mt}/beta/users/apps/entitlements`, enableSharedInstalledAppsInManageApps;
+  a shared copy of an Office asset you have shows once), and apps installed
+  in your teams (`GET {mt}/beta/chats/{team thread}/apps/entitlements`,
+  Installed / AdminPreInstalled / InstalledAndFavorited); the multimodal AI
+  bot hidden. Sorted by your apps usage (`beta/users/apps/usage`), the rest
+  after. Expanded: "Recently used" (i) then "Personal app" and each team
+  with Remove (`DELETE {mt}/beta/{users|teams/{thread}}/apps/entitlements/{app}`
+  after "Remove {app}?").
+- Upload an app: a 600 wide dialog with one card, "Submit an app to your
+  org" (a .zip for your admin: `POST {mt}/beta/users/tenantapps/definitions/
+  appPackage`, uploadTenantStagedApp). Not submitted from OST in tests.
