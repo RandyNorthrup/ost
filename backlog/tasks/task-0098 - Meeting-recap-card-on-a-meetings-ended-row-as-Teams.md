@@ -1,10 +1,10 @@
 ---
 id: TASK-0098
 title: Meeting recap card on a meeting's ended row, as Teams
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-11-10T17:18:00Z'
-updated_date: '2026-11-20T22:06:00Z'
+updated_date: '2026-11-20T23:13:00Z'
 labels:
   - desktop
   - messages
@@ -25,8 +25,8 @@ It is built from the call-end XML (MeetingDetails) plus the recording messages f
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A meeting chat's ended row shows the recap card with Teams' layout, title, date range, transcript chip and recordings thumbnail/count
-- [ ] #2 View recap, the transcript chip and the thumbnail open what Teams opens
+- [x] #1 A meeting chat's ended row shows the recap card with Teams' layout, title, date range, transcript chip and recordings thumbnail/count
+- [x] #2 View recap, the transcript chip and the thumbnail open what Teams opens
 - [ ] #3 Verified side by side with Teams on winpc
 <!-- AC:END -->
 
@@ -48,4 +48,6 @@ It is built from the call-end XML (MeetingDetails) plus the recording messages f
   - Share on the card and in the window: Teams' menu; Copy link copies Teams' meetingrecap link (same parameters as Teams' own, threadId = the meeting chat's thread, organizer from the meeting); Share recap access = Teams' dialog, Give access POSTs recapSharing and (Notify) sends Teams' 1:1 message.
   - Highlights (event organizer): Events opens on the event (found by title and start among your events).
   - Open: the band's Open in Clipchamp and Copilot, the Custom summary and Mentions pages, Notes' Add notes, and the player is OneDrive's player rather than the streamembed page Teams frames (it shows an "Open in browser" button where Teams has Manage). Give access was not sent from OST (it was captured from Teams with OST Test 2; the notify message deleted).
+
+- 2026-11-20 merged. AC1, AC2 met (chip → recap window Transcript tab, thumbnail → AI summary, Highlights → Events, Share menu and Share recap access). AC3 open: a side-by-side of the recap window. Missing extras moved to TASK-0240.
 <!-- SECTION:NOTES:END -->

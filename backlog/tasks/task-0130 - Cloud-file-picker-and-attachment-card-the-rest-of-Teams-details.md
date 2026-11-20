@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-13T21:53:00Z'
-updated_date: '2026-11-20T22:08:00Z'
+updated_date: '2026-11-20T23:13:00Z'
 labels:
   - desktop
   - files
@@ -22,7 +22,7 @@ What TASK-0085's Attach left of Teams' cloud file picker and compose card (docs/
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The attachment card's link description opens Teams' Link settings and the choice applies to what is sent
+- [x] #1 The attachment card's link description opens Teams' Link settings and the choice applies to what is sent
 - [x] #2 Suggested files in the Attach popover look as Teams draws them (measured with an account that has suggestions)
 - [x] #3 A post's thread view offers the same Attach popover
 - [x] #4 The picker's command bar (New folder with Teams' colours, Upload, view switch) and folder icons match Teams'

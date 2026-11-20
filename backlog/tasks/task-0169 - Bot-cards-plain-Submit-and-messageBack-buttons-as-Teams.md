@@ -1,11 +1,11 @@
 ---
 id: TASK-0169
 title: Bot cards' plain Submit and messageBack buttons as Teams
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-16T04:53:00Z'
-updated_date: '2026-11-20T22:06:00Z'
+updated_date: '2026-11-20T23:13:00Z'
 labels:
   - desktop
 dependencies: []
@@ -19,7 +19,7 @@ OST sends invoke-style Action.Submit, imBack and polls, but not plain Action.Sub
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Plain Action.Submit and messageBack buttons send what Teams sends, and the bot answers
+- [x] #1 Plain Action.Submit and messageBack buttons send what Teams sends, and the bot answers
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -34,4 +34,12 @@ Not yet verified: no installed bot sends these buttons (Workflows replies in pla
 - 2026-11-20 (chatB): test flow "OST TEST 169 webhook card" (Workflows template "Send webhook alerts to a chat", OST group test, owner ost-test1) posts an Adaptive Card (Input.Text answer, a plain Action.Submit "OST TEST 169 plain submit" with data {choice: plain}, and an Action.Submit msteams messageBack "OST TEST 169 messageBack") sent by POSTing to its webhook. Teams on winpc: plain Submit shows the red "Unable to reach app. Please try again." bar (the Workflows bot does not take it); messageBack posts the displayText first (`content` "OST TEST 169 messageBack", messagetype Text, properties.skipfanouttobots true), then the card shows "Your response was sent to the app" and the bot answers in text ("Hi there! I'm here to keep you posted on workflow updates..."). Teams adds "OST Test 1 used a Workflow template to send this card. Get template" under the card. To delete afterwards: the flow, the card, the messageBack message and the bot reply.
 
 - 2026-11-20 (chatB): checked live in OST (ost-test1, `--card-action-test`): messageBack posts the displayText first (Teams' Text message, skipfanouttobots), then the card shows "Your response was sent to the app" and the Workflows bot answers in text, as in Teams; plain Submit fails at the bot (HTTP 502, BotError 1008) and OST now shows Teams' red "Unable to reach app. Please try again." (it showed "Something went wrong…").
+
+- 2026-11-20 merged.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Bot cards' plain Submit and messageBack as Teams. Verified with a test Workflows flow (OST TEST 169 webhook card, since deleted): messageBack posts the display text, then "Your response was sent to the app", then the bot's reply, as in Teams; plain Submit sends Teams' invoke and, as in Teams, the Workflows bot rejects it — OST now shows Teams' "Unable to reach app. Please try again." Harness --card-action-test.
+<!-- SECTION:FINAL_SUMMARY:END -->

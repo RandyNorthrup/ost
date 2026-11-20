@@ -1,10 +1,10 @@
 ---
 id: TASK-0203
 title: Remaining pre-send checks and compose height as Teams
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-11-16T14:25:00Z'
-updated_date: '2026-11-20T21:52:00Z'
+updated_date: '2026-11-20T23:13:00Z'
 labels:
   - desktop
 dependencies: []
@@ -18,8 +18,8 @@ TASK-0085 built Teams' pre-send checks that apply to an existing chat or post (s
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 New-chat, pasted-picture, Loop and Nearby checks block with Teams' wording as Teams does
-- [ ] #2 Compose stops growing at Teams' maximum height and scrolls, so banners stay in view
+- [x] #1 New-chat, pasted-picture, Loop and Nearby checks block with Teams' wording as Teams does
+- [x] #2 Compose stops growing at Teams' maximum height and scrolls, so banners stay in view
 - [ ] #3 Reply drafts in channel threads roam as Teams' do when Teams' roaming setting is on
 <!-- AC:END -->
 
@@ -38,4 +38,6 @@ TASK-0085 built Teams' pre-send checks that apply to an existing chat or post (s
   - Compose height (AC2) compared: Teams on winpc with 30 lines (typed over VNC) keeps the editor viewport at 270 px (scrollHeight 638, scrolling), box 340 to 653 in its 680 px window; OST stops its text at the same 270 and scrolls (`--compose-height-test`).
   - Nearby (AC1): there is no tenant setting for it. Teams offers @Nearby only with ECS People.enableAtNearbyMention, which isn't in this tenant's ECS (fetched 13:45 today: only presence enableNearbyInGroupChat / enableNearbyInOneOnOneChat and places enableNearbyMentionNewBadge, which are the roster's Nearby badges) and defaults to false outside Microsoft's own builds; the work-location policy it relies on was already on (tenant-changes). Nothing changed in the tenant, nothing to revert.
   - Reply drafts (AC3) roam with innerThreadId as built (OST_ROAM_DRAFTS); Teams' own roaming stays off for this tenant.
+
+- 2026-11-20 merged. AC1: pasted pictures built (stored in Teams' exact form); @Nearby is behind a Microsoft-side feature flag not on for this tenant (no tenant setting exists), so its check cannot occur, as in Teams here. AC2 compared on winpc (270 px cap). AC3 built; Teams' own draft roaming is off for this tenant, so not yet comparable.
 <!-- SECTION:NOTES:END -->

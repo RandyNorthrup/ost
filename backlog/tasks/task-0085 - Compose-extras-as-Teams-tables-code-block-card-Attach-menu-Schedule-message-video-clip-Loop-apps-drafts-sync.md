@@ -3,11 +3,11 @@ id: TASK-0085
 title: >-
   Compose extras as Teams: tables, code block card, Attach menu, Schedule
   message, video clip, Loop, apps, drafts sync
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-09T23:01:00Z'
-updated_date: '2026-11-20T21:31:00Z'
+updated_date: '2026-11-20T23:13:00Z'
 labels:
   - desktop
   - messages
@@ -26,9 +26,9 @@ What TASK-0044 left of Teams' compose box (docs/spec/messages-and-composer.md §
 - [x] #2 Code blocks show Teams' card menu and syntax colours
 - [x] #3 Attach offers Teams' menu (OneDrive / cloud files, browse channels, upload) and sends what it picks as Teams does
 - [x] #4 Drafts sync with Teams, and Teams' pre-send checks run
-- [ ] #5 Verified side by side with Teams on winpc
+- [x] #5 Verified side by side with Teams on winpc
 - [x] #6 Schedule message and Record video clip work as in Teams
-- [ ] #7 Loop components and installed apps' compose actions work as in Teams
+- [x] #7 Loop components and installed apps' compose actions work as in Teams
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -103,4 +103,17 @@ What TASK-0044 left of Teams' compose box (docs/spec/messages-and-composer.md §
   - Link settings: the description opens the share dialog's Link settings on the component's file ("Loop paragraph 6.loop") with Teams' three choices (Anyone and People you choose hidden); People currently in this chat made a new link (ShareLink with the chat's people), the component's link became it (nav kept), the old link was deleted, and the header read "People currently in this chat with the link can edit" (`--loop-compose-link`).
   - Drafts: as Teams, leaving the chat with a Loop component in the box drops the draft (`--loop-compose-switch`: no loop, no draft after coming back).
   - "+" menu: installed apps (yours and the conversation's) in Teams' MRU-then-name order from the middle tier's apps usage, which OST now also records when you use an app; "Add a new app" from the Store catalog (10, by name, ratings and agent marks, Add / Privacy / Terms of use / Permissions).
+
+- 2026-11-20 merged (68821ef..72ec941); 833 lib + 29 desktop tests pass on linuxlt.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Compose extras as Teams, finished with Loop components and installed apps.
+
+- Loop: the toolbar button inserts a Loop paragraph created in Microsoft Teams Chat Files with an org edit link, sent as Teams' FluidEmbedCard; the file is renamed after the component's title (or "{chat} Loop paragraph N"); the link description opens Link settings with Teams' three choices; leaving the chat drops the draft as Teams does; Discard deletes the file.
+- "+" menu: installed apps (personal and chat-installed) ordered by Teams' server-side usage list then name; "Add a new app" shows Teams' 10 Store suggestions with ratings and agent marks.
+- Verified side by side on winpc: Teams draws OST's Loop messages as its own; the + menu lists and suggestions match in order.
+Tests: 833 lib, 29 desktop.
+<!-- SECTION:FINAL_SUMMARY:END -->

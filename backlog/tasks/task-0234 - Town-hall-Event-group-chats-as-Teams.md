@@ -1,10 +1,10 @@
 ---
 id: TASK-0234
 title: Town hall Event group chats as Teams
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-11-20T04:10:00Z'
-updated_date: '2026-11-20T22:31:00Z'
+updated_date: '2026-11-20T23:13:00Z'
 labels:
   - chat
 dependencies: []
@@ -18,7 +18,7 @@ Found in TASK-0142's winpc comparison: Teams handles a town hall's Event group c
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A town hall's Event group chat shows Teams' title, join line and started/ended rows, in every app language, verified against Teams
+- [x] #1 A town hall's Event group chat shows Teams' title, join line and started/ended rows, in every app language, verified against Teams
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -33,4 +33,12 @@ Found in TASK-0142's winpc comparison: Teams handles a town hall's Event group c
 - 2026-11-20 (chatB): the join lines are now Teams' shown (rich) strings, picked as Teams' module 121919 `Ma` does: self-join tmp_messages_memberJoinedOneMember{Event,Meeting}Backroom (kc2rbbia0 / k8tfy1qp9), added by someone addMemberSystemMessage{OneTarget,TwoTargets,ManyTargets}{Event,Meeting}Backroom (kd2pf534f, kcux3ubsg, k69ip80jz / kd4z24g30, k5hlqlh91, kajtcnui4), "{n} others" from tmp_messages_otherTargets_mf. They were written with format!() before, so l10n gen never keyed them; now literal and in ids.json, translated in all 63 of Teams' string locales. Checked in German on linuxlt (ost-test1, app language de-de): "OST Test 1 ist dem Veranstaltungsgruppenchat OST TEST 217 town hall 2 für Personen, die organisieren, präsentieren und bei der Veranstaltung helfen, beigetreten." and the title "Ereignisgruppe: OST TEST 217 town hall 2".
 
 - 2026-11-20 (chatB), compared with Teams on winpc: adding OST Test 3 to "Event group: OST TEST 217 town hall 2" (ost-test1 adding someone else) shows Teams' plain "OST Test 1 added OST Test 3 to the chat.", not the Event Group sentence: Teams (121919) uses the backroom sentence only for a self-join or when the adder is among those added (`p`), else the meeting chat's added line without shared history. OST now does the same (ChatEvent.actor_added; unit test event_group_join_lines_as_teams) and showed the same line live; the two-person and "and {n} others" sentences arise only in the adder-included case (the event service's adds), checked by unit tests and in all 63 locales' strings. OST Test 3 removed from the chat again afterwards.
+
+- 2026-11-20 merged.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Town hall Event group chats as Teams: "Event group: …" title, calendar-with-lock icon, join line and started/ended rows. The join lines now use Teams' string ids in all 63 locales (German checked live); when someone else adds people OST shows Teams' plain "X added Y to the chat.", the joined form only when the adder is among those added (verified on winpc; unit tests). OST finds these chats by asking the chat service once per meeting chat, as the chat list lacks the field.
+<!-- SECTION:FINAL_SUMMARY:END -->

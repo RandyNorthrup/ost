@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-16T11:48:00Z'
-updated_date: '2026-11-20T22:13:00Z'
+updated_date: '2026-11-20T23:13:00Z'
 labels:
   - desktop
 dependencies:
@@ -37,4 +37,6 @@ Left: the suggestion's page stays blank ("Initial app state does not contain val
 - Built: TaskModuleDialog/WebApp take the launch's validDomains and isMicrosoftOwned; app_host.js passes them with nestedAppAuth.execute; the backend's "naa" broker trusts a Microsoft-owned launch's domains; openWorkflowDialog passes Teams' list and chatId.
 
 - 2026-11-20 (chatB): checked live on linuxlt (ost-test1, `--task-dialog-test=findmeetingtime --open-chat=<OST group test>`): the Workflows dialog opens (800 x 600, Teams' header, framed, initialize, appLoaded, success) but the form doesn't draw: the Workflows page now throws its own React error "useAutomationConnections must be used within AutomationConnectionsProvider" (after the NAA token path; the earlier blank-on-token cause is gone). Teams' own result can't be seen: workflow suggestions aren't offered in this tenant and there is no tenant setting that turns them on (Teams gates them in ECS); a task-module deep link posted as plain text to ost-test1's notes (OST TEST 202, deleted) isn't linkified, so it couldn't be opened inside Teams either. Open: find what Teams' host provides that this page's AutomationConnectionsProvider needs (likely a host capability or getContext field the page checks before mounting the provider).
+
+- 2026-11-20 merged: the dialog opens with Teams' size and header; the Workflows page now throws 'useAutomationConnections must be used within AutomationConnectionsProvider'. Open: what Teams' host gives that page.
 <!-- SECTION:NOTES:END -->
