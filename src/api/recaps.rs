@@ -190,7 +190,7 @@ pub fn match_contents(v: &Value, ical_uid: &str, item_id: &str) -> Option<(Strin
             .and_then(Value::as_array)
             .into_iter()
             .flatten()
-            .filter(|res| res.to_string().contains(item_id))
+            .filter(|res| !item_id.is_empty() && res.to_string().contains(item_id))
             .find_map(|res| ["fileUrl", "webUrl", "location", "url"].iter().find_map(|k| res.pointer(&format!("/{k}")).and_then(Value::as_str)).map(str::to_string))
             .unwrap_or_default();
         Some((thread, org, file))
@@ -261,11 +261,17 @@ pub async fn share_access(region: &str, r: &RecapRef, people_oids: &[String]) ->
 pub fn share_message(r: &RecapRef, day: &str, when: &str) -> (String, String) {
     let link = recap_link(r);
     let e = super::messages::escape;
-    let props = json!({ "version": 1, "kind": "meetingRecap", "meetingTitle": r.subject, "meetingStartTimeMs": r.start_ms.to_string(), "meetingEndTimeMs": r.end_ms.to_string() });
+    // In Teams' key order (version, kind, title, start, end).
+    let props = format!(
+        "{{\"version\":1,\"kind\":\"meetingRecap\",\"meetingTitle\":{},\"meetingStartTimeMs\":\"{}\",\"meetingEndTimeMs\":\"{}\"}}",
+        Value::String(r.subject.clone()),
+        r.start_ms,
+        r.end_ms
+    );
     let content = format!(
         "\n    <div itemprop=\"teams-copy-link\"><a href=\"{l}\" title=\"{l}\" data-origin-known=\"true\" itemtype=\"http://schema.skype.com/HyperLink/MeetingRecap\" data-itemprops=\"{p}\">Recap: {t} {d} | Meeting | Microsoft Teams</a></div>",
         l = e(&link),
-        p = e(&props.to_string()),
+        p = e(&props),
         t = e(&r.subject),
         d = e(day),
     );

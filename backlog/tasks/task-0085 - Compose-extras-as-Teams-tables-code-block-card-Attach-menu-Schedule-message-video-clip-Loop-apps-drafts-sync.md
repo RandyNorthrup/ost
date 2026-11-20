@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-09T23:01:00Z'
-updated_date: '2026-11-20T19:59:00Z'
+updated_date: '2026-11-20T21:31:00Z'
 labels:
   - desktop
   - messages
@@ -97,4 +97,10 @@ What TASK-0044 left of Teams' compose box (docs/spec/messages-and-composer.md §
   - Loop link settings: the description opens SharePoint's sharedialog.aspx Link settings (Teams embeds it) with only "People in {tenant}", "People currently in this chat" and "Only people with existing access", the file name ("Loop paragraph 1.loop") under the title; Apply = ShareLink {createLink, linkKind 3/scope 1…}; the header then reads "People currently in this chat with the link can edit" / "People in Secure Coast Network Solutions with the link can edit".
   - Drafts: Teams does NOT keep a box that holds a Loop component: switching chats drops the whole draft (text too, typed for real over VNC, three tries); the .loop file stays. A text-only draft is kept.
   - Rename: a component without a title is named after the chat: "OST group test Loop paragraph" (Teams' message "OST TEST 85 loop without title"), as fluid compose 997266 `lt` reads ComponentWithTitle.getTitleText(), else "{chat title} {kind name}".
+
+- 2026-11-20 (chatB), built and checked live on linuxlt as ost-test1:
+  - Rename after the title as Teams: at send OST reads the component's title through Loop's ComponentWithTitle.getTitleText() (loop_host.js titleText) and names the file "{title}.loop", else "{chat} Loop paragraph.loop" (api::loop_page::compose_file_name, ODSP's rules, unit-tested). OST's "OST TEST 85 loop from OST" (untitled) became "OST group test Loop paragraph 1.loop", as Teams' own untitled one became "OST group test Loop paragraph.loop".
+  - Link settings: the description opens the share dialog's Link settings on the component's file ("Loop paragraph 6.loop") with Teams' three choices (Anyone and People you choose hidden); People currently in this chat made a new link (ShareLink with the chat's people), the component's link became it (nav kept), the old link was deleted, and the header read "People currently in this chat with the link can edit" (`--loop-compose-link`).
+  - Drafts: as Teams, leaving the chat with a Loop component in the box drops the draft (`--loop-compose-switch`: no loop, no draft after coming back).
+  - "+" menu: installed apps (yours and the conversation's) in Teams' MRU-then-name order from the middle tier's apps usage, which OST now also records when you use an app; "Add a new app" from the Store catalog (10, by name, ratings and agent marks, Add / Privacy / Terms of use / Permissions).
 <!-- SECTION:NOTES:END -->

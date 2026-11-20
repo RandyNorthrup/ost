@@ -1253,7 +1253,7 @@ async fn suggestions_get(
 
 /// Every rated app's rating (one list for all apps; kept for the session,
 /// as Teams keeps it).
-async fn all_ratings(
+pub(crate) async fn all_ratings(
     client: &TeamsClient,
 ) -> Result<std::sync::Arc<HashMap<String, serde_json::Value>>> {
     static CACHE: Mutex<Option<std::sync::Arc<HashMap<String, serde_json::Value>>>> =

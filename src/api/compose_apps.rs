@@ -42,7 +42,8 @@ use super::client::TeamsClient;
 
 /// A command's contexts (none listed: compose and the command box).
 fn contexts(cmd: &Value) -> Vec<String> {
-    match cmd.get("context").and_then(Value::as_array) {
+    // An empty list is the default too (1st Reporting's `context: []`).
+    match cmd.get("context").and_then(Value::as_array).filter(|a| !a.is_empty()) {
         Some(a) => a.iter().filter_map(|x| x.as_str().map(|s| s.to_lowercase())).collect(),
         None => vec!["compose".into(), "commandbox".into()],
     }
@@ -151,6 +152,8 @@ pub async fn suggested(client: &TeamsClient, conversation: &str) -> Result<Vec<V
     let ranked = super::store_content::ranked(client, &["all".to_string()]).await.unwrap_or_default();
     let by_id: std::collections::HashMap<String, &super::store_content::Ranked> =
         ranked.values().flatten().map(|r| (r.id.to_lowercase(), r)).collect();
+    // Every rated app's rating (the Store's ranked lists don't name them all).
+    let ratings = super::app_details::all_ratings(client).await.unwrap_or_default();
     let mut apps: Vec<(Vec<u16>, Value)> = catalog
         .iter()
         .filter(|d| {
@@ -160,7 +163,15 @@ pub async fn suggested(client: &TeamsClient, conversation: &str) -> Result<Vec<V
         .filter_map(|d| {
             compose_entry(d)?;
             let id = d.get("id").and_then(Value::as_str).unwrap_or_default().to_lowercase();
-            let app = super::store_content::store_app(d, by_id.get(&id).copied());
+            let mut app = super::store_content::store_app(d, by_id.get(&id).copied());
+            if app.count == 0
+                && let Some(r) = ratings.get(&id)
+            {
+                app.count = r.get("count").and_then(Value::as_u64).unwrap_or(0);
+                app.average = r.get("average").and_then(Value::as_f64).unwrap_or(0.0);
+                app.average_text = format!("{:.1}", app.average);
+                app.count_text = super::app_details::compact(app.count);
+            }
             let s = |k: &str| d.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
             let v = json!({
                 "id": app.id, "name": app.name, "short": app.short, "icon": app.icon,
@@ -268,6 +279,13 @@ pub async fn invoke(client: &TeamsClient, bot: &str, app_id: &str, kind: &str, c
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_empty_context_is_compose() {
+        // 1st Reporting's search command lists `context: []`.
+        let def = json!({ "id": "a", "name": "1st Reporting ", "inputExtensions": [{ "botId": "b-1", "commands": [{ "id": "findReport", "context": [], "title": "Find" }] }] });
+        assert_eq!(compose_entry(&def).unwrap()["commands"][0]["id"], "findReport");
+    }
 
     #[test]
     fn recent_apps_in_teams_order() {
