@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-16T04:53:00Z'
-updated_date: '2026-11-19T17:41:00Z'
+updated_date: '2026-11-20T00:35:00Z'
 labels:
   - desktop
 dependencies: []
@@ -70,4 +70,6 @@ Teams' noise suppression offers Voice isolation using your voice profile; OST sh
   - Both calls ended from the caller (hung up 202 / call ended by the other side in both logs).
 
 - 2026-11-19 the choice in a live meeting (linuxlt, OST_VOICE_PROFILE_WAV, --vi-audio-ui): Audio settings pane: Noise suppression switch (no info), Background noise only (i) / Voice isolation (i), Voice isolation picked; Mic flyout: the same radios without info buttons. Geometry is Fluent v9's; winpc measurement pending the user's OK.
+
+- Merged cc5e866 (2026-11-19): see the agent notes above; 791 lib tests passed on linuxlt.
 <!-- SECTION:NOTES:END -->

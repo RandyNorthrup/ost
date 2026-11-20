@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-16T04:53:00Z'
-updated_date: '2026-11-19T17:27:00Z'
+updated_date: '2026-11-20T00:35:00Z'
 labels:
   - desktop
 dependencies: []
@@ -63,4 +63,6 @@ OST saves Teams' sign language setting but doesn't act on it.
 
 - 2026-11-19 sign detection (native): MoveNet SinglePose Lightning (Apache-2.0, Xenova ONNX on Hugging Face pinned to commit ed0f314, SHA-256 1ad4f8d6...a464ad, 9.4 MB) downloaded on first need to <cache>/models/, run with tract ~10/s on a worker (vfx sign_detection + calling::sign_detection); signing = a wrist in the signing space that moves (>= 0.3 shoulder widths over 800 ms) or changes shape (fingerspelling); Teams' aggregator rules (start after 500 ms, still-signing from 2 s on 500 ms ticks, stop on a quiet tick or 3 s). Clips: ASL/NGT signers 0.83-0.90 of frames, talking heads 0.00-0.02, a gesturing speaker 0.20 (known false positive).
 - 2026-11-19 live two-account run (OST calendar test meeting, linuxlt): OST Test 2 = Signer naming OST Test 1, camera a v4l2loopback device (/dev/video22, removed after) playing the CC BY-SA ASL demo clip; OST Test 1 = Interpreter. OST Test 2 detected signing and sent 259 data id 25 events (start / still signing / stop); OST Test 1 received them (active signers 1), showed the waveform badge (tethered: OST Test 1; tooltip "Voice interpretation in progress" as the interpreter) and the speaking outline, with OST Test 2 featured in the Sign language view and their video focused (HQ). On the signer's side the badge tooltip read "OST Test 1 is voice interpreting". Both left (hung up 202); both accounts put back to mode off with no interpreters.
+
+- Merged cc5e866 (2026-11-19): see the agent notes above; 791 lib tests passed on linuxlt.
 <!-- SECTION:NOTES:END -->
