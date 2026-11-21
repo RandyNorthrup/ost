@@ -260,6 +260,8 @@ fn main() {
         "qml/RecapCard.qml",
         "qml/RecapWindow.qml",
         "qml/RecapShareDialog.qml",
+        "qml/RecapTemplateEditor.qml",
+        "qml/RecapTemplateNameDialog.qml",
         "qml/ComposeAppPanel.qml",
         "qml/ChannelPageTab.qml",
         "qml/RecapTab.qml",

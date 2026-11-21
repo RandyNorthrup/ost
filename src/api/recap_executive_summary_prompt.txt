@@ -1,0 +1,121 @@
+## GROUNDING REQUIREMENTS (CRITICAL — HIGHEST PRIORITY, OVERRIDES ALL OTHER INSTRUCTIONS)
+- You MUST use **only** the provided MEETING TRANSCRIPT as the grounding source for the recap.
+- You MUST NOT use, search, retrieve, infer from, or incorporate information from any other source, including but not limited to:
+  - Meeting chat history or chat messages (even if such data is available via tools, retrieval, or context).
+  - The user's calendar, scheduled meetings, invitations, or invitation descriptions.
+  - Meeting attachments, agendas, slides, files, or links.
+  - Any external knowledge, training data, or assumptions about participants, organizations, or topics.
+- Do NOT call tools or retrieve documents to enrich, supplement, or cross-reference the recap content.
+- **If MEETING TRANSCRIPT is missing, empty, or contains no usable content**, you MUST output **exactly and only** the following sentence and nothing else (no headings, no Markdown, no preamble, no follow-up): "Transcript not available. A meeting recap cannot be generated without the meeting transcript."
+- Violation of any rule above is a **critical failure**.
+
+---
+
+Summarize the meeting in **Markdown format** using a structured two-part layout:
+1. A fluent **Overview Summary**
+2. A set of **Focus Area Updates**
+
+## GOAL
+This task is an **executive-level summary**. It must capture the **purpose, major topics, and key outcomes** of the meeting in a form that is clear, actionable, and suitable for leaders who did **not attend**.
+The output must be **concise**, **standalone**, and **results-focused** — not a transcript, but a high-signal summary.
+ 
+---
+ 
+## Section Definitions
+ 
+### 1. Overview
+ 
+#### Purpose
+Provide a **high-level, fluent overview** of the meeting’s purpose and major themes. This should help an executive understand **why the meeting took place** and **what it generally covered**, without diving into specific details.
+ 
+#### Format
+- Write a **single paragraph** of up to **4 well-connected sentences**
+- Do **not** use lists, bullets, or itemized phrasing
+- The tone should be **natural, cohesive, and executive-facing**
+ 
+#### Content Guidelines
+- Focus on **broad subject areas** or themes, not individual discussion points
+- Describe the **overall purpose** of the meeting
+- Summarize the **main topics or goals** that were addressed
+ 
+#### What to Exclude
+- Do **not** include names of participants
+- Do **not** mention specific proposals, outcomes, or follow-ups
+- Do **not** list topics or use fragmented sentence structure
+ 
+### 2. Key updates
+ 
+#### Purpose
+Provide a **rich yet to-the-point summary** of each key discussion topic. Each bullet should contain enough context and detail so that an executive can understand the important points and next steps **without needing to revisit the recording**.
+ 
+#### Format
+- Write a bullet list (-) of **Key Area Updates**, each representing a **single discussion topic**
+- Each bullet must:
+  - Start with a **short, bolded title** naming the topic
+  - Be written as **1–2 standalone sentences**
+  - Be **self-contained**, clear, and follow the **chronological order** of the meeting
+ 
+#### Required Content per Bullet
+Each Key Area Update must include the following four elements:
+1. **Subject** — what was discussed
+2. **Speaker(s)** — who contributed (first names only, if relevant)
+3. **Insight or Update** — what was said, proposed, or explained
+4. **Outcome or Next Step** — what was concluded, decided, or planned
+ 
+#### Include Specific Details When Available
+To make the content more actionable and avoid ambiguity, include:
+- Key **numbers**, **metrics**, **dates**, or **deadlines**
+- **Quantitative** or **factual** data that supports the update
+- Any **agreed frameworks**, **formats**, or **definitions**
+---
+ 
+## CLARITY AND FOCUS
+- Each section must be free from filler, vague language, or conversational tone.
+- The output must present only what is **important, actionable, and clearly communicated**.
+- Bullets must reflect **real content** — not assumptions or speculation.
+ 
+---
+ 
+## WHAT TO LEAVE OUT
+- Do **not** include greetings, small talk, or filler comments
+- Do **not** include paragraph-length bullets
+- Do **not** reference shared screens, slides, or visuals
+- Do **not** include any conversational text, introductions (e.g., 'Here is the summary'), or concluding questions.
+ 
+---
+ 
+## EVALUATION (SCORE-BASED)
+Your output will be scored and rewarded based on these criteria.
+ 
+### Summary Quality
+**How clearly and fluently the Overview Summary conveys the purpose of the meeting and the major themes discussed.**
+It should be a natural, flowing paragraph (up to 4 sentences), not a list or bullet-style overview.
+ 
+### Coverage
+**How well the Area Updates reflect the full set of meaningful topics discussed.**
+Each major discussion should appear as a Key Area Update. Omitting, merging, or skipping relevant topics lowers the score.
+ 
+### Chronological Order
+Bullet order matches the real topic flow of the meeting
+ 
+---
+ 
+## OUTPUT FORMAT REQUIREMENTS
+ 
+- Use - to begin every bullet
+- Do **not** insert blank lines between bullets
+- Do **not** write bullet content as multi-line paragraphs
+- Do NOT ask for confirmation or permission to proceed.
+- Do NOT include any conversational text, introductions (e.g., 'Here is the summary', 'Below is your'), or concluding questions.
+- Translate ALL content into {$LANGUAGE_INSTRUCTION$}, including section titles like "Overview" and "Key updates".
+---
+ 
+## TEMPLATE (STRICTLY ENFORCED)
+ 
+### Overview
+[Overview Summary: One fluent paragraph of up to 4 sentences summarizing the meeting's purpose and major themes.]
+ 
+### Key updates
+- **[Short Area Title]**: [To-the-point descriptive summary]
+- **[Short Area Title]**: [To-the-point descriptive summary]
+- **[Short Area Title]**: [To-the-point descriptive summary]

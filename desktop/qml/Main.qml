@@ -5049,11 +5049,16 @@ Window {
         }
     }
 
-    // --recap-window-test[=transcript|thumbnail|link|highlights]: in "Event
-    // group: OST TEST 217 town hall 2", the recap card's transcript chip (or
-    // thumbnail) opens Teams' recap window (RECAPWIN lines, recap-window.png
-    // of that window); =link copies the recap link (Share > Copy link);
-    // =highlights opens Events on the event.
+    // --recap-window-test[=transcript|thumbnail|link|highlights|extras|template]:
+    // in "Event group: OST TEST 217 town hall 2", the recap card's transcript
+    // chip (or thumbnail) opens Teams' recap window (RECAPWIN lines,
+    // recap-window.png of that window); =link copies the recap link (Share >
+    // Copy link); =highlights opens Events on the event; =template goes
+    // through Custom summary's Create template: the editor, a blank Preview,
+    // a suggestion, a Preview of a description, Save and Apply as "OST TEST
+    // 240 template" (a bad name first), Rename, Edit, the card's menu, Share
+    // (the text copied), then Delete (also of any template left from an
+    // earlier run), each logged and shot (recap-template-*.png).
     Timer {
         running: Qt.application.arguments.some(a => a.startsWith("--recap-window-test")) && backend.signedIn && chatList.chats.some(c => c.name.indexOf(recapChat) >= 0)
         interval: 2000; repeat: true
@@ -5062,6 +5067,10 @@ Window {
         property string chosen: ""
         property int step: 0
         property int waited: 0
+        property string tplId: ""
+        readonly property string tplName: "OST TEST 240 template"
+        readonly property string tplText: "OST TEST 240: list the decisions made, then the action items with their owners and due dates."
+        readonly property string tplText2: "OST TEST 240 edited: a short overview, then the decisions made, then the action items with owners."
         onTriggered: {
             const log = (...a) => console.warn("RECAPWIN", ...a.map(x => typeof x === "string" ? x : JSON.stringify(x)))
             const mode = (Qt.application.arguments.find(a => a.startsWith("--recap-window-test")) || "").split("=")[1] || "transcript"
@@ -5092,7 +5101,10 @@ Window {
                 if (w) w.contentItem.grabToImage(r => { r.saveToFile(window.shotPath.replace(".png", "-recap-window.png")); log("shot") })
                 break
             }
-            case 10: if (mode !== "extras") { if (conversation.lastRecapWindow) conversation.lastRecapWindow.close(); Qt.quit(); return } break
+            case 10:
+                if (mode === "template") { step = 40; return }
+                if (mode !== "extras") { if (conversation.lastRecapWindow) conversation.lastRecapWindow.close(); Qt.quit(); return }
+                break
             // =extras: the recap window's extras (Clipchamp, Copilot,
             // Manage, Custom summary, Mentions, Notes), each logged and shot.
             case 11: case 13: case 16: case 18: case 21: {
@@ -5110,6 +5122,58 @@ Window {
             case 17: if (conversation.lastRecapWindow) conversation.lastRecapWindow.manageForTest(); break
             case 19: if (conversation.lastRecapWindow) conversation.lastRecapWindow.copilotForTest(); break
             case 22: Qt.quit(); return
+            // =template.
+            case 40: case 41: case 42: case 43: case 44: case 45: case 46: case 47: case 48: case 49:
+            case 50: case 51: case 52: case 53: case 54: case 55: case 56: case 57: case 58: case 59:
+            case 60: case 61: case 62: case 63: case 64: case 65: case 66: case 67: case 68: case 69:
+            case 70: case 71: case 72: case 73: case 74: case 75: case 76: case 77: case 78: case 79: {
+                const w = conversation.lastRecapWindow
+                if (!w) { log("no window"); Qt.quit(); return }
+                const st = () => JSON.parse(w.templatesForTest())
+                const ed = w.templateEditorForTest()
+                const shot = n => w.contentItem.grabToImage(r => { r.saveToFile(window.shotPath.replace(".png", "-recap-template-" + n + ".png")); log("shot", n) })
+                const mine = () => (st().templates || []).filter(x => String(x.name).indexOf(tplName) === 0)
+                // Wait (2 s a tick) for `ok`, at most `n` ticks.
+                const until = (ok, n) => { if (ok()) { waited = 0; return true } if (waited++ < n) return false; waited = 0; log("timed out at", step); step = 78; return false }
+                switch (step) {
+                case 40: w.pillForTest("CustomSummary"); break
+                case 41: if (!until(() => st().templates !== null, 15)) return; log("templates", st()); shot("cards"); break
+                // Templates left from an earlier run go first.
+                case 42: { const old = mine(); if (old.length) log("leftover", old); for (const t of old) w.templateActionForTest("delete", t.id); break }
+                case 43: if (!until(() => mine().length === 0, 15)) return; ed.openNew(st().templates); break
+                case 44: log("editor", ed.stateForTest()); shot("editor"); break
+                case 45: ed.preview(); log("blank preview", ed.stateForTest().error); shot("blank"); break
+                case 46: ed.suggestionForTest(1); log("suggestion", ed.stateForTest().text); shot("suggestion"); break
+                case 47: ed.typeForTest(tplText); ed.preview(); log("preview", ed.stateForTest().preview); break
+                case 48: if (!until(() => ed.stateForTest().preview !== "generating", 45)) return; log("previewed", ed.stateForTest()); shot("preview"); break
+                case 49: ed.saveAndApply(); break
+                case 50: { const nd = ed.nameDialogForTest(); log("name dialog", nd.stateForTest()); nd.typeForTest("OST:240"); log("bad name", nd.stateForTest().error); shot("name-bad"); break }
+                case 51: { const nd = ed.nameDialogForTest(); nd.typeForTest(tplName); log("name", nd.stateForTest()); shot("name"); break }
+                case 52: ed.nameDialogForTest().save(); break
+                case 53: if (!until(() => !ed.stateForTest().opened && mine().length > 0, 20)) return; tplId = mine()[0].id; log("saved", tplId, st()); break
+                case 54: shot("saved"); break
+                case 55: w.templateActionForTest("rename", tplId); break
+                case 56: { const rd = w.renameDialogForTest(); log("rename dialog", rd.stateForTest()); rd.typeForTest(tplName + " renamed"); shot("rename"); break }
+                case 57: w.renameDialogForTest().save(); break
+                case 58: if (!until(() => (st().templates || []).some(x => x.id === tplId && x.name === tplName + " renamed"), 15)) return; log("renamed", st().order); break
+                case 59: w.templateActionForTest("edit", tplId); break
+                case 60: if (!until(() => !ed.stateForTest().loading, 15)) return; log("edit text", ed.stateForTest().text === tplText, ed.stateForTest().edit); shot("edit"); break
+                case 61: ed.typeForTest(tplText2); ed.saveAndApply(); break
+                case 62: if (!until(() => !ed.stateForTest().opened, 15)) return; log("edited", st().key === tplId, st()); break
+                case 63: log("menu", w.templateMenuForTest(tplId)); break
+                case 64: shot("menu"); break
+                case 65: w.closeTemplateMenuForTest(); w.templateActionForTest("share", tplId); break
+                case 66: if (!until(() => st().shared !== "", 15)) return; log("shared", st().shared === tplText2); shot("shared"); break
+                case 67: w.templateActionForTest("delete", tplId); break
+                case 68: if (!until(() => !(st().templates || []).some(x => x.id === tplId), 15)) return; log("deleted", st()); tplId = ""; shot("deleted"); break
+                case 69: w.close(); Qt.quit(); return
+                // Timed out: the test template is deleted all the same.
+                case 78: { const t = tplId || (mine()[0] || {}).id; if (t) { log("cleanup", t); w.templateActionForTest("delete", t) } break }
+                case 79: log("end", st()); w.close(); Qt.quit(); return
+                default: break
+                }
+                break
+            }
             case 33: {
                 const ev = eventsView.item
                 log("events", ev ? ev.stateForTest() : "no view")

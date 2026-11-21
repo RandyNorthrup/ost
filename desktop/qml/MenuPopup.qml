@@ -9,7 +9,8 @@ import QtQuick.Window
 //   hover NeutralBackground1Hover; disabled items #BDBDBD and inert;
 // - dividers: 1 px, 4 above and below.
 // items: [{ label, icon?, iconColor?, chevron?, dot?, keys?, checked?, endCheck?, separator?,
-// heading?, enabled?, submenu? }] (heading: a group's title row, not pickable) (endCheck: Teams' 16 px check at the row's end, 6 in,
+// heading?, enabled?, submenu?, danger? }] (danger: a red row, colorPaletteRedForeground1 on
+// colorPaletteRedBackground1 when hovered, as the recap templates' Delete) (heading: a group's title row, not pickable) (endCheck: Teams' 16 px check at the row's end, 6 in,
 // as on More ▸ Record and transcribe ▸ Hide transcript; toggle: a Fluent
 // switch row, 36 tall, its 40 x 20 track 8 in and the label at 60, as the
 // RTT captions menu's "Live Captions": picking it leaves the menu open);
@@ -244,7 +245,7 @@ Popup {
                 required property var modelData
                 required property int index
                 readonly property bool on: modelData.enabled !== false && !modelData.heading && !modelData.group
-                readonly property color ink: !on ? theme.disabled : root.darkCallout ? theme.hc("#F3F2F1", "#FFFFFF") : mh.hovered ? theme.text : theme.textStrong
+                readonly property color ink: !on ? theme.disabled : modelData.danger ? theme.redForeground1 : root.darkCallout ? theme.hc("#F3F2F1", "#FFFFFF") : mh.hovered ? theme.text : theme.textStrong
                 width: root.width - 2 * root.padding
                 // A divider takes 1 px plus 4 above and below (the column's
                 // 2 px gaps count towards those).
@@ -282,7 +283,7 @@ Popup {
                     id: hcFill1
                     visible: !row.modelData.separator && !row.modelData.heading && !row.modelData.group
                     anchors.fill: parent; radius: root.darkCallout ? 2 : root.fabric ? 0 : 4
-                    color: (mh.hovered || (row.modelData.outlined && root.subIndex === row.index)) && row.on && !row.modelData.toggle && !row.modelData.split ? (root.darkCallout ? theme.hc("#323130", "#1AEBFF") : theme.menuHover) : "transparent"
+                    color: (mh.hovered || (row.modelData.outlined && root.subIndex === row.index)) && row.on && !row.modelData.toggle && !row.modelData.split ? (root.darkCallout ? theme.hc("#323130", "#1AEBFF") : row.modelData.danger ? theme.redBackground1 : theme.menuHover) : "transparent"
                     border.width: row.modelData.outlined ? 0.67 : 0
                     border.color: theme.hc("#BDBDBD", "#FFFFFF")
                     // A split row: the label part and the chevron part

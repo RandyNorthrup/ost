@@ -136,6 +136,52 @@ pub struct RecapRef {
     /// "RecordingAndTranscript", "Recording" or "Transcript".
     #[serde(default)]
     pub recap_type: String,
+    /// Teams' recap id (selectedRecap.recapId): `canonical_recap_id` of the
+    /// recording's file, or of the transcript's when the meeting has no
+    /// recording. The catch-up service's EntityId and Copilot's vroomId.
+    #[serde(default)]
+    pub recap_id: String,
+}
+
+impl RecapRef {
+    /// The recap id, made from the recording's file when not known yet.
+    pub fn recap_id(&self) -> String {
+        if !self.recap_id.is_empty() {
+            self.recap_id.clone()
+        } else {
+            canonical_recap_id(&self.drive_id, &self.item_id)
+        }
+    }
+}
+
+/// Teams' canonical recap id (597421 `Tv`, used when its recap card opens
+/// a recap): `SPO_{base64url("{site},{web},{library}")}_{itemId}`, the three
+/// GUIDs read from the `b!` drive id (16 bytes each, in .NET's byte order),
+/// base64url without padding; "" without a drive item.
+pub fn canonical_recap_id(drive_id: &str, item_id: &str) -> String {
+    use base64::Engine as _;
+    if drive_id.is_empty() || item_id.is_empty() {
+        return String::new();
+    }
+    if drive_id == "null" || item_id == "null" {
+        return "null".into();
+    }
+    let url = base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    let bytes = url.decode(drive_id.strip_prefix("b!").unwrap_or(drive_id).trim_end_matches('=')).unwrap_or_default();
+    let guid = |b: &[u8]| -> String {
+        if b.len() < 16 {
+            return String::new();
+        }
+        let h = |i: usize| format!("{:02x}", b[i]);
+        format!(
+            "{}{}{}{}-{}{}-{}{}-{}{}-{}",
+            h(3), h(2), h(1), h(0), h(5), h(4), h(7), h(6), h(8), h(9),
+            (10..16).map(h).collect::<String>()
+        )
+    };
+    let part = |i: usize| guid(bytes.get(i * 16..i * 16 + 16).unwrap_or_default());
+    let ids = format!("{},{},{}", part(0), part(1), part(2));
+    format!("SPO_{}_{item_id}", url.encode(ids))
 }
 
 fn enc(s: &str) -> String {
@@ -161,11 +207,22 @@ pub fn recap_link(r: &RecapRef) -> String {
     )
 }
 
-/// The meeting's own thread, organizer and recording address for a recap
-/// card, from the meeting artifacts service's contents for the meeting's
-/// day (Teams reads them from its recap data): the entry with the same
-/// iCalUid, or whose resources name the recording.
-pub fn match_contents(v: &Value, ical_uid: &str, item_id: &str) -> Option<(String, String, String)> {
+/// What the meeting artifacts service tells about a recap's meeting.
+#[derive(Debug, Default, PartialEq)]
+pub struct MeetingContents {
+    pub thread: String,
+    pub organizer: String,
+    pub file_url: String,
+    /// The latest TranscriptV2's file (drive id, item id), as Teams keeps
+    /// the last one.
+    pub transcript: Option<(String, String)>,
+}
+
+/// The meeting's own thread, organizer, recording address and transcript
+/// file for a recap card, from the meeting artifacts service's contents
+/// for the meeting's day (Teams reads them from its recap data): the entry
+/// with the same iCalUid, or whose resources name the recording.
+pub fn match_contents(v: &Value, ical_uid: &str, item_id: &str) -> Option<MeetingContents> {
     v.get("value").and_then(Value::as_array).into_iter().flatten().find_map(|m| {
         let t = m.get("threadInfo")?;
         let ical = t.get("iCalUid").and_then(Value::as_str).unwrap_or_default();
@@ -193,7 +250,19 @@ pub fn match_contents(v: &Value, ical_uid: &str, item_id: &str) -> Option<(Strin
             .filter(|res| !item_id.is_empty() && res.to_string().contains(item_id))
             .find_map(|res| ["fileUrl", "webUrl", "location", "url"].iter().find_map(|k| res.pointer(&format!("/{k}")).and_then(Value::as_str)).map(str::to_string))
             .unwrap_or_default();
-        Some((thread, org, file))
+        let transcript = m
+            .get("resources")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter(|res| res.get("type").and_then(Value::as_str) == Some("TranscriptV2"))
+            .filter_map(|res| {
+                let s = |k: &str| res.get(k).or_else(|| res.pointer(&format!("/metadata/{k}"))).and_then(Value::as_str).unwrap_or_default().to_string();
+                let (d, i) = (s("driveId"), s("driveItemId"));
+                (!d.is_empty() && !i.is_empty()).then_some((d, i))
+            })
+            .last();
+        Some(MeetingContents { thread, organizer: org, file_url: file, transcript })
     })
 }
 
@@ -203,16 +272,27 @@ pub async fn resolve(region: &str, r: &mut RecapRef) -> Result<Value> {
     let day = |ms: i64| chrono::DateTime::from_timestamp_millis(ms).unwrap_or_default();
     let (a, b) = (day(r.start_ms - 86_400_000), day(r.end_ms.max(r.start_ms) + 86_400_000));
     let v = get(&format!("{}/{}", base(region), day_query(a, b))).await?;
-    if let Some((thread, org, file)) = match_contents(&v, &r.ical_uid, &r.item_id) {
-        if r.thread_id.is_empty() || !thread.is_empty() {
-            r.thread_id = thread;
+    if let Some(c) = match_contents(&v, &r.ical_uid, &r.item_id) {
+        if r.thread_id.is_empty() || !c.thread.is_empty() {
+            r.thread_id = c.thread;
         }
-        if !org.is_empty() {
-            r.organizer_id = org;
+        if !c.organizer.is_empty() {
+            r.organizer_id = c.organizer;
         }
-        if !file.is_empty() && r.file_url.is_empty() {
-            r.file_url = file;
+        if !c.file_url.is_empty() && r.file_url.is_empty() {
+            r.file_url = c.file_url;
         }
+        // A meeting with a transcript and no recording: Teams' recap is the
+        // transcript's file.
+        if r.recap_id.is_empty()
+            && r.item_id.is_empty()
+            && let Some((d, i)) = c.transcript
+        {
+            r.recap_id = canonical_recap_id(&d, &i);
+        }
+    }
+    if r.recap_id.is_empty() {
+        r.recap_id = canonical_recap_id(&r.drive_id, &r.item_id);
     }
     Ok(v)
 }
@@ -466,9 +546,14 @@ pub fn mentions_from(v: &Value) -> Value {
     json!({ "count": count, "items": items, "found": !src.is_null() })
 }
 
-/// Mentions (Teams' recap Mentions pill): the catch-up call with your
-/// anchor mailbox; None when the service has nothing for the recording.
+/// Mentions (Teams' recap Mentions pill): the catch-up call's mentions.
 pub async fn mentions(oid: &str, tid: &str, entity_id: &str) -> Result<Value> {
+    Ok(mentions_from(&catch_up(oid, tid, entity_id).await?))
+}
+
+/// The catch-up call (substrate recommendations, MeetingCatchUp.MeetingRecap)
+/// with your anchor mailbox, for the recap id.
+pub async fn catch_up(oid: &str, tid: &str, entity_id: &str) -> Result<Value> {
     let token = crate::auth::oauth::access_token_for("https://substrate.office.com/.default").await?;
     let r = reqwest::Client::new()
         .post("https://substrate.office.com/search/api/v1/recommendations?&setflight=AiTasksV2,AiNotesV2,PeopleMentionsV2")
@@ -480,7 +565,7 @@ pub async fn mentions(oid: &str, tid: &str, entity_id: &str) -> Result<Value> {
         .await?;
     let status = r.status();
     anyhow::ensure!(status.is_success(), "The catch-up service answered {status}");
-    Ok(mentions_from(&r.json().await.unwrap_or_default()))
+    Ok(r.json().await.unwrap_or_default())
 }
 
 /// Custom summary's built-in templates (Teams' 209818), in its order:
@@ -491,103 +576,419 @@ pub const SUMMARY_TEMPLATES: [(&str, &str, &str); 3] = [
     ("ProjectSummary", "Project update", "Accomplishments, risks, and action items"),
 ];
 
-/// The prompt Teams sends for a template you saved (209818's recap
-/// instructions, the template in place of {$USERINPUT$}).
+/// The prompt Teams sends for a template you wrote (633679's `rP`, the
+/// recap instructions): a saved template's text, or Create template's
+/// Preview with the description typed (trimmed), in place of
+/// {$USERINPUT$} (a literal replace, as Teams' `String.replace`).
 pub fn saved_template_prompt(template: &str) -> String {
-    include_str!("recap_saved_template_prompt.txt").replace("{$USERINPUT$}", template)
+    include_str!("recap_saved_template_prompt.txt").replacen("{$USERINPUT$}", template, 1)
 }
 
-/// Custom summary's request: Copilot chat (scenario teamsmeetingrecap) with
-/// the meeting as its EnterpriseSearch constraint.
-pub fn summary_body(r: &RecapRef, entity_id: &str, message: &str, locale: &str) -> Value {
-    // Teams' getMeetingRecapGptContent body (shared worker `nbr`): a call
-    // without an iCalUid is a "RecapCall".
-    let call = r.ical_uid.is_empty();
-    let options = format!(
-        "{{\"EntityConstraints\":[{{\"@domainType\":\"Event\",\"callId\":{},\"organizerId\":{},\"threadId\":{},\"iCalUid\":{},\"sessionType\":\"{}\",\"UserQuestionId\":{},\"canvasType\":\"{}\",\"groupId\":\"\",\"channelMessageId\":\"\",\"isTemporaryStorageForMeetingTranscript\":false,\"id\":{},\"vroomId\":{},\"entityType\":1}}],\"SubstrateFlights\":[]}}",
-        Value::String(r.call_id.clone()),
-        Value::String(format!("{}@{}", r.organizer_id, r.tenant_id)),
-        Value::String(r.thread_id.clone()),
-        Value::String(r.ical_uid.clone()),
-        if call { "RecapCall" } else { "Recap" },
-        Value::String(message.to_string()),
-        if call { "RecapCall" } else { "Unknown" },
-        Value::String(r.call_id.clone()),
-        Value::String(entity_id.to_string()),
-    );
+/// The message for a built-in template (Teams 855033 with ECS
+/// enableMeetingRecapCustomizedNotesCatalystEndpoint): Speaker summary and
+/// Executive report send their recap prompts (633679 `OM` / `TJ`) with
+/// {$LANGUAGE_INSTRUCTION$} replaced by the meeting summary's language (""
+/// when it has none); other keys go as they are.
+pub fn catalyst_message(key: &str, language: &str) -> String {
+    let prompt = match key {
+        "SpeakersBasedRecap" => include_str!("recap_speaker_summary_prompt.txt"),
+        "ExecutiveSummary" => include_str!("recap_executive_summary_prompt.txt"),
+        _ => return key.to_string(),
+    };
+    prompt.replace("{$LANGUAGE_INSTRUCTION$}", language)
+}
+
+/// The variants Teams' Catalyst hub address carries (its
+/// constructCatalystHubUrl, Teams 26304).
+const CATALYST_VARIANTS: &str = "EnableMcpServerWidgets,feature.EnableMcpServerWidgets,feature.EnableLuForChatCIQ,feature.enableChatCIQPlugin,EnableRequestPlugins,feature.EnableSensitivityLabels,EnableUnsupportedUrlDetector,MetricsSummaryEnabled,feature.EnableMessageExtensionAnnotations,3S.ProcessMECardTitleForEntityAnotation,feature.IsCustomEngineCopilotEnabled,feature.bizchatfluxv3,feature.IsOpenApiAnnotationsEnabled,feature.EnableConnectorAnnotations,feature.turnOnWorkTabRecommendation,WorkTabNudgeAddData,WorkTabNudgeAddSources,feature.turnOnDARecommendation,feature.IsStreamingModeInChatRequestEnabled,IncludeSourceAttributionsConcise,SkipPublishEmptyMessage,feature.EnableDeduplicatingSourceAttributions,feature.IsCitationsReferencesOutputEnabled,feature.enableDeltaStreamingForReferences,feature.enableIncludeReferencesInDeltaResponse,feature.enablereferencesforagents,Enable3PActionProgressMessages,feature.enableClientWebRtc,feature.EnableMeetingRecapOfSeriesMeetingWithCiq,feature.EnableReferencesListCompleteSignal,feature.StorageMessageSplitDisabled,feature.EnableCuaTakeControlApi,feature.isExternalEmailEnabled,feature.isExcludedEmailEnabled,feature.disabledisallowedmsgs,feature.enableCitationsForSynthesisData,feature.enableGenerateGraphicArtOptionsSet,cdximagen,feature.EnableClientFileURLSupport,feature.ConversationalScheduledPromptsAlwaysOnEnabled,feature.EnableCuaTakeControlApi,feature.EnableUpdatedUXForConfirmationDialog,cdxgrounding_api_v2_rich_web_answers_reference_bottom_force,cdxgapi_rwa_segments_magazine,feature.EnableDesignEditorImageGrounding,feature.EnablePersonalization,feature.EnableQueryOverrideConversationStorageTypes";
+
+/// Custom summary's hub (Teams' recap custom summary service, streamed
+/// over SignalR): `wss://substrate.office.com/m365Copilot/Chathub/{oid}@{tid}`
+/// with the token and Teams' query; WebSockets without negotiation.
+pub fn catalyst_hub_url(client_request_id: &str, token: &str, oid: &str, tid: &str) -> String {
+    let user = if oid.is_empty() || tid.is_empty() { String::new() } else { format!("/{oid}@{tid}") };
+    let q: String = url::form_urlencoded::Serializer::new(String::new())
+        .append_pair("ClientRequestId", client_request_id)
+        .append_pair("access_token", token)
+        .append_pair("variants", CATALYST_VARIANTS)
+        .append_pair("source", "teamshub")
+        .append_pair("scenario", "TeamsMeetingRecapCopilot")
+        .append_pair("product", "Teams")
+        .append_pair("agentHost", "BizChat.FullScreen")
+        .append_pair("licenseType", "Premium")
+        .append_pair("agent", "work")
+        .append_pair("isproactivechat", "1")
+        .finish();
+    format!("wss://substrate.office.com/m365Copilot/Chathub{user}?{q}")
+}
+
+/// Where the request is made from (Teams' locationInfo).
+pub struct Place {
+    /// Minutes behind UTC (JavaScript's getTimezoneOffset).
+    pub offset_minutes: i64,
+    pub zone: String,
+}
+
+impl Place {
+    pub fn here() -> Place {
+        Place { offset_minutes: -(chrono::Local::now().offset().local_minus_utc() as i64) / 60, zone: super::compose_copilot::iana_timezone() }
+    }
+}
+
+/// Custom summary's chat request (Teams' constructCatalystCustomSummaryRequest):
+/// the message annotated with the meeting (callId, threadId, organizerId,
+/// vroomId = the recap id, iCalUID; canvasType RecapCall without an
+/// iCalUID). `ical_uid` is "" with ECS enableCustomSummaryCurrentCallGrounding
+/// (Teams' current-call grounding), else the meeting's in capitals.
+pub fn catalyst_request(r: &RecapRef, recap_id: &str, ical_uid: &str, message: &str, language: &str, correlation: &str, session: &str, place: &Place) -> Value {
+    let os = std::env::consts::OS;
     json!({
-        "plugins": [{ "Id": "EnterpriseSearch", "Source": "", "Version": "", "Data": { "SerializedOptions": options } }],
-        "message": { "inputMethod": "Keyboard", "text": message, "Locale": locale },
-        "source": "",
-        "ignoreCache": true,
-        "traceId": uuid::Uuid::new_v4().simple().to_string(),
-        "conversationAction": "Create",
-        "verbosity": "verbose",
-        "allowedMessageTypes": ["Chat"],
-        "scenario": "teamsmeetingrecap",
-        "optionsSets": ["enterprise_flux_gpt_meeting_content"],
+        "source": "teamshub",
+        "clientCorrelationId": correlation,
+        "sessionId": session,
+        "optionsSets": [],
+        "spokenTextMode": "None",
+        "options": {},
+        "allowedMessageTypes": ["Chat", "ConfirmationCard", "InternalLoaderMessage", "InternalSearchQuery", "Progress", "SemanticSerp", "Suggestion"],
+        "sliceIds": [],
+        "threadLevelGptId": {},
+        "traceId": correlation,
+        "isStartOfSession": false,
+        "streamingMode": "ConciseWithPadding",
+        "clientInfo": { "clientPlatform": os, "clientAppName": "Teams", "clientEntrypoint": "Recap", "clientSessionId": session,
+                        "ProductCategory": "Meeting", "clientAppType": "Web", "deviceOS": os, "deviceType": "Desktop" },
+        "message": {
+            "author": "user", "inputMethod": "Keyboard", "text": message,
+            "entityAnnotationTypes": ["People", "File", "Event", "External", "ExternalMessageExtension", "Email", "TeamsMessage"],
+            "requestId": correlation,
+            "locationInfo": { "timeZoneOffset": place.offset_minutes, "timeZone": place.zone },
+            "locale": language,
+            "conversationAction": "Create",
+            "messageType": "Chat",
+            "messageAnnotations": [{
+                "id": r.call_id, "text": message, "messageAnnotationSource": "ClientAnnotated",
+                "messageAnnotationMetadata": { "@type": "TeamsMeeting", "callId": r.call_id, "canvasType": if ical_uid.is_empty() { "RecapCall" } else { "Recap" },
+                    "threadId": r.thread_id, "organizerId": r.organizer_id, "channelMessageId": "", "groupId": "", "vroomId": recap_id, "iCalUID": ical_uid },
+                "messageAnnotationType": "TeamsMeeting",
+            }],
+            "experienceType": "Prompts",
+            "adaptiveCards": [],
+            "clientPreferences": {},
+        },
+        "plugins": [{ "Id": "BingWebSearch", "Source": "BuiltIn" }],
+        "tone": "Chat",
+        "renderReferencesBehindEOS": true,
+        "copilotReferenceId": uuid::Uuid::new_v4().simple().to_string(),
+        "disconnectBehavior": "continue",
     })
 }
 
-/// The summary text from Copilot's answer: the last message's text without
-/// its `<RESPONSE>` lead or `{utt_id=…}` marks.
-pub fn summary_text(v: &Value) -> String {
-    let text = v
-        .get("messages")
-        .and_then(Value::as_array)
-        .and_then(|m| m.iter().rev().find_map(|x| x.get("text").and_then(Value::as_str)))
-        .unwrap_or_default();
-    let t = text.trim_start().strip_prefix("<RESPONSE>").unwrap_or(text);
-    let mut out = String::with_capacity(t.len());
-    let mut rest = t;
-    while let Some(i) = rest.find("{utt_id=") {
-        out.push_str(&rest[..i]);
-        rest = match rest[i..].find('}') {
-            Some(j) => &rest[i + j + 1..],
-            None => "",
-        };
-    }
-    out.push_str(rest);
-    out.trim().to_string()
+/// SignalR's JSON frames (each ends with U+001E).
+pub fn hub_frames(text: &str) -> Vec<Value> {
+    text.split('\u{1e}').filter(|f| !f.trim().is_empty()).filter_map(|f| serde_json::from_str(f).ok()).collect()
 }
 
-/// Custom summary: Copilot's summary of the meeting in a template's format.
-pub async fn custom_summary(r: &RecapRef, entity_id: &str, message: &str) -> Result<String> {
+/// A custom summary as its hub's "update" calls build it (Teams'
+/// requestCatalystCustomSummary): "Full" updates replace the text with the
+/// last bot message's, "Delta" ones add `writeAtCursor`; an `item.result.
+/// error` marks it failed.
+#[derive(Debug, Default)]
+pub struct HubSummary {
+    pub text: String,
+    pub error: Option<String>,
+    pub done: bool,
+}
+
+impl HubSummary {
+    pub fn frame(&mut self, f: &Value) {
+        match f.get("type").and_then(Value::as_i64) {
+            Some(1) if f.get("target").and_then(Value::as_str) == Some("update") => {
+                for u in f.get("arguments").and_then(Value::as_array).into_iter().flatten() {
+                    self.update(u);
+                }
+            }
+            Some(2) => {
+                if let Some(e) = f.pointer("/item/result/error") {
+                    self.error = Some(f.pointer("/item/result/value").and_then(Value::as_str).unwrap_or(e.as_str().unwrap_or("error")).to_string());
+                }
+            }
+            Some(3) => {
+                if let Some(e) = f.get("error").and_then(Value::as_str) {
+                    self.error = Some(e.to_string());
+                }
+                self.done = true;
+            }
+            Some(7) => {
+                self.error.get_or_insert_with(|| f.get("error").and_then(Value::as_str).unwrap_or("closed").to_string());
+                self.done = true;
+            }
+            _ => {}
+        }
+    }
+    fn update(&mut self, u: &Value) {
+        if let Some(e) = u.pointer("/item/result/error") {
+            self.error = Some(u.pointer("/item/result/value").and_then(Value::as_str).unwrap_or(e.as_str().unwrap_or("error")).to_string());
+        }
+        match u.get("streamingMode").and_then(Value::as_str) {
+            Some("Full") => {
+                if let Some(last) = u.get("messages").and_then(Value::as_array).and_then(|m| m.last())
+                    && last.get("author").and_then(Value::as_str) == Some("bot")
+                    && let Some(t) = last.get("text").and_then(Value::as_str)
+                    && !t.is_empty()
+                {
+                    self.text = t.to_string();
+                }
+            }
+            Some("Delta") => {
+                if let Some(t) = u.get("writeAtCursor").and_then(Value::as_str) {
+                    self.text.push_str(t);
+                }
+            }
+            _ => {}
+        }
+    }
+    /// The finished text: `[n](…)` reference links dropped, then Teams'
+    /// clean-up.
+    pub fn summary(&self) -> String {
+        use std::sync::LazyLock;
+        static REFS: LazyLock<Option<regex::Regex>> = LazyLock::new(|| regex::Regex::new(r"\[(\d+)\]\([^)]+\)").ok());
+        let t = match &*REFS {
+            Some(r) => r.replace_all(&self.text, "").into_owned(),
+            None => self.text.clone(),
+        };
+        clean_summary(&t).trim().to_string()
+    }
+}
+
+/// Teams' clean-up of a custom summary (855033): the `<RESPONSE>` lead,
+/// `{utt_id=…}` marks, the private-use (U+E200–U+E2FF) citation spans and
+/// the links made of them, `<cite>`, `【n†…】`, `[^n^]`, the `turnNsearchN`
+/// and `cite…turnN` tokens, a doubled heading mark ("## ## A" → "## A");
+/// then `<b>`/`<strong>` become `**` and `<span>`/`<font>` tags go.
+pub fn clean_summary(text: &str) -> String {
+    use regex::Regex;
+    use std::sync::LazyLock;
+    static RULES: LazyLock<Vec<Regex>> = LazyLock::new(|| {
+        [
+            r"\A<RESPONSE>\s*",
+            r"\s*\{utt_id=[^}]*\}",
+            r"\[[^\]]*\]\(\s*\x{E200}[\s\S]*?\x{E201}\s*\)",
+            r"\]\(\s*\x{E200}[\s\S]*?\x{E201}\s*\)",
+            r"\x{E200}[\s\S]*?\x{E201}",
+            r"[\x{E200}-\x{E2FF}]+",
+            r"<cite>[\s\S]*?</cite>",
+            r"\x{3010}[0-9]+\x{2020}[\s\S]*?\x{3011}",
+            r"\[\^[0-9]+\^\]",
+            r#"(?i)\s*\bcite(?:search[0-9]+)?turn[0-9]+(?:search[0-9]+)?\b[\x{201C}\x{201D}"]?"#,
+            r#"(?i)\s*\bturn[0-9]+(?:search[0-9]+)?cite\b[\x{201C}\x{201D}"]?"#,
+            r"(?i)\s*\bturn[0-9]+search[0-9]+\b",
+        ]
+        .iter()
+        .filter_map(|r| Regex::new(r).ok())
+        .collect()
+    });
+    static TAGS: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|| {
+        [(r"(?i)<(?:b|strong)(?:[\s/][^>]*)?>", "**"), (r"(?i)</(?:b|strong)\s*>", "**"), (r"(?i)</?(?:span|font)(?:[\s/][^>]*)?>", "")]
+            .iter()
+            .filter_map(|(r, w)| Regex::new(r).ok().map(|r| (r, *w)))
+            .collect()
+    });
+    let mut t = text.to_string();
+    for r in RULES.iter() {
+        t = r.replace_all(&t, "").into_owned();
+    }
+    t = collapse_heading_marks(&t);
+    for (r, with) in TAGS.iter() {
+        t = r.replace_all(&t, *with).into_owned();
+    }
+    t
+}
+
+/// Teams' `/^(#{1,6})\s+\1\s*/gm` → "$1 ": a heading mark said twice.
+fn collapse_heading_marks(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = String::with_capacity(s.len());
+    let (mut i, mut copied) = (0, 0);
+    while i < b.len() {
+        let line_start = i == 0 || b[i - 1] == b'\n';
+        let n = if line_start { b[i..].iter().take(7).take_while(|&&c| c == b'#').count() } else { 0 };
+        if (1..=6).contains(&n) {
+            let rest = &s[i + n..];
+            let ws = rest.len() - rest.trim_start().len();
+            if ws > 0 && rest.as_bytes()[ws..].iter().take(n).filter(|&&c| c == b'#').count() == n {
+                let after = &rest[ws + n..];
+                let tail = after.len() - after.trim_start().len();
+                out.push_str(&s[copied..i]);
+                out.push_str(&"#".repeat(n));
+                out.push(' ');
+                i += n + ws + n + tail;
+                copied = i;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    out.push_str(&s[copied..]);
+    out
+}
+
+/// Custom summary: Copilot's summary of the meeting in a template's format,
+/// streamed from its hub as Teams asks for it (ECS
+/// enableCustomSummaryStreaming and the Catalyst endpoint).
+pub async fn custom_summary(r: &RecapRef, recap_id: &str, ical_uid: &str, message: &str, language: &str, oid: &str, tid: &str) -> Result<String> {
+    use futures::{SinkExt, StreamExt};
+    use tokio_tungstenite::tungstenite::Message;
     let token = crate::auth::oauth::access_token_for("https://substrate.office.com/sydney/.default").await?;
-    let resp = reqwest::Client::new()
-        .post("https://substrate.office.com/m365Copilot/Chat?scenario=teamsmeetingrecap&variants=feature.enableMeetingRecapCustomizedNotes,feature.enableMeetingRecapCustomizedNotesinProd")
-        .bearer_auth(token)
-        .json(&summary_body(r, entity_id, message, "en-us"))
-        .send()
-        .await?;
-    let status = resp.status();
-    anyhow::ensure!(status.is_success(), "Copilot answered {status}");
-    let text = summary_text(&resp.json().await.unwrap_or_default());
+    let correlation = uuid::Uuid::new_v4().to_string();
+    let mut req = tokio_tungstenite::tungstenite::client::IntoClientRequest::into_client_request(catalyst_hub_url(&correlation, &token, oid, tid))?;
+    req.headers_mut().insert("Origin", "https://teams.microsoft.com".parse()?);
+    let (mut ws, _) = tokio_tungstenite::connect_async(req).await.context("Copilot's hub")?;
+    ws.send(Message::text("{\"protocol\":\"json\",\"version\":1}\u{1e}")).await?;
+    let body = catalyst_request(r, recap_id, ical_uid, message, language, &correlation, &uuid::Uuid::new_v4().to_string(), &Place::here());
+    let call = json!({ "type": 4, "invocationId": "0", "target": "chat", "arguments": [body] });
+    let mut sent = false;
+    let mut summary = HubSummary::default();
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(180);
+    while !summary.done {
+        let Ok(next) = tokio::time::timeout_at(deadline, ws.next()).await else { anyhow::bail!("Copilot didn't finish the summary") };
+        let Some(m) = next else { break };
+        let text = match m? {
+            Message::Text(t) => t.to_string(),
+            Message::Close(_) => break,
+            _ => continue,
+        };
+        for f in hub_frames(&text) {
+            // The handshake's answer ({}), then the chat call.
+            if !sent && f.get("type").is_none() {
+                anyhow::ensure!(f.get("error").is_none(), "Copilot's hub refused the connection");
+                ws.send(Message::text(format!("{call}\u{1e}"))).await?;
+                sent = true;
+                continue;
+            }
+            if f.get("type").and_then(Value::as_i64) == Some(6) {
+                ws.send(Message::text("{\"type\":6}\u{1e}")).await?;
+            }
+            summary.frame(&f);
+        }
+    }
+    let _ = ws.close(None).await;
+    if let Some(e) = &summary.error {
+        anyhow::bail!("Copilot: {e}");
+    }
+    let text = summary.summary();
     anyhow::ensure!(!text.is_empty(), "No summary");
     Ok(text)
 }
 
-/// Your saved Custom summary templates (OneDrive's Recordings/
-/// CustomSummaryTemplates, newest first): [{id, name, template}].
-pub async fn summary_templates(client: &TeamsClient) -> Result<Vec<Value>> {
-    let v: Value = match client
-        .graph_get("/me/drive/root:/Recordings/CustomSummaryTemplates:/children?$orderby=lastModifiedDateTime%20desc")
-        .await
-    {
-        Ok(r) => r.json().await.unwrap_or_default(),
-        Err(_) => return Ok(Vec::new()),
+/// The meeting summary's language from a catch-up answer (its
+/// MeetingSummary's Language; "" when none).
+pub fn summary_language(v: &Value) -> String {
+    let src = v.pointer("/EntitySets/0/ResultSets/0/Results/0/Source/MeetingSummary").cloned().unwrap_or_default();
+    let ms = match src {
+        Value::String(s) => serde_json::from_str(&s).unwrap_or_default(),
+        other => other,
     };
-    let mut out = Vec::new();
-    for f in v.get("value").and_then(Value::as_array).into_iter().flatten() {
-        let id = f.get("id").and_then(Value::as_str).unwrap_or_default();
-        let name = f.get("name").and_then(Value::as_str).unwrap_or_default();
-        let body: Value = match client.graph_get(&format!("/me/drive/items/{id}/content")).await {
-            Ok(r) => r.json().await.unwrap_or_default(),
-            Err(_) => Value::Null,
-        };
-        out.push(json!({ "id": id, "name": name, "template": body.get("template").cloned().unwrap_or(Value::Null) }));
+    ms.get("Language").and_then(Value::as_str).unwrap_or_default().to_string()
+}
+
+// ---------------------------------------------------------------------
+// Custom summary's templates of your own (Teams 26304's customize-notes
+// panel and the shared worker's template resolvers): files in your
+// OneDrive's Recordings/CustomSummaryTemplates, named as the template, each
+// `{"template": "<text>"}`.
+
+/// Your templates' folder listing (Teams' getTemplatesFromODB), newest
+/// first.
+pub const TEMPLATES_LIST: &str = "/me/drive/root:/Recordings/CustomSummaryTemplates:/children?$orderby=lastModifiedDateTime%20desc";
+
+fn is_item_id(s: &str) -> bool {
+    !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || "!-_".contains(c))
+}
+
+/// A path segment for Graph's path addressing (the name as given,
+/// percent-encoded).
+fn segment(s: &str) -> String {
+    s.bytes()
+        .map(|c| if c.is_ascii_alphanumeric() || b"-_.~".contains(&c) { (c as char).to_string() } else { format!("%{c:02X}") })
+        .collect()
+}
+
+/// Save and Apply of a new template (Teams' uploadTemplateFileToODB):
+/// `PUT /me/drive/root:/Recordings/CustomSummaryTemplates/{name}:/content`
+/// (Graph makes the folders).
+pub fn template_upload_path(name: &str) -> String {
+    format!("/me/drive/root:/Recordings/CustomSummaryTemplates/{}:/content", segment(name))
+}
+
+/// A template file's body (Teams' upload and content update).
+pub fn template_body(template: &str) -> Vec<u8> {
+    json!({ "template": template }).to_string().into_bytes()
+}
+
+/// The templates of a folder listing: [{id, name}] (Teams' Ut transform).
+pub fn templates_from(v: &Value) -> Vec<Value> {
+    v.get("value")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|f| {
+            let s = |k: &str| f.get(k).and_then(Value::as_str).unwrap_or_default();
+            json!({ "id": s("id"), "name": s("name") })
+        })
+        .collect()
+}
+
+/// A template file's text (Teams' Ft transform: `template`, "" when none).
+pub fn template_content_from(v: &Value) -> String {
+    v.get("template").and_then(Value::as_str).unwrap_or_default().to_string()
+}
+
+/// Your templates (none while the folder doesn't exist).
+pub async fn summary_templates(client: &TeamsClient) -> Result<Vec<Value>> {
+    let Some(r) = client.graph_get_opt(TEMPLATES_LIST).await? else { return Ok(Vec::new()) };
+    Ok(templates_from(&r.json().await.unwrap_or_default()))
+}
+
+/// A template's text (Edit's text, Share's copy, and a saved template's
+/// summary): `GET /me/drive/items/{id}/content`.
+pub async fn template_content(client: &TeamsClient, id: &str) -> Result<String> {
+    anyhow::ensure!(is_item_id(id), "Not a template");
+    let v: Value = client.graph_get(&format!("/me/drive/items/{id}/content")).await?.json().await.unwrap_or_default();
+    Ok(template_content_from(&v))
+}
+
+/// Save a new template; its item id. Teams takes only 201 Created as
+/// saved (a name already there would be replaced: 200).
+pub async fn create_template(client: &TeamsClient, name: &str, template: &str) -> Result<String> {
+    anyhow::ensure!(!name.trim().is_empty() && !template.trim().is_empty(), "This field cannot be blank");
+    let r = client.graph_put_bytes(&template_upload_path(name), template_body(template), "application/json").await?;
+    let status = r.status();
+    anyhow::ensure!(status == reqwest::StatusCode::CREATED, "OneDrive answered {status}");
+    let v: Value = r.json().await.unwrap_or_default();
+    Ok(v.get("id").and_then(Value::as_str).unwrap_or_default().to_string())
+}
+
+/// Rename (`PATCH /me/drive/items/{id}` {name}) and/or replace the text
+/// (`PUT /me/drive/items/{id}/content` {template}); each must answer 200.
+pub async fn update_template(client: &TeamsClient, id: &str, name: Option<&str>, template: Option<&str>) -> Result<()> {
+    anyhow::ensure!(is_item_id(id), "Not a template");
+    if let Some(name) = name {
+        let r = client.graph_patch(&format!("/me/drive/items/{id}"), &json!({ "name": name })).await?;
+        anyhow::ensure!(r.status() == reqwest::StatusCode::OK, "OneDrive answered {}", r.status());
     }
-    Ok(out)
+    if let Some(template) = template {
+        let r = client.graph_put_bytes(&format!("/me/drive/items/{id}/content"), template_body(template), "application/json").await?;
+        anyhow::ensure!(r.status() == reqwest::StatusCode::OK, "OneDrive answered {}", r.status());
+    }
+    Ok(())
+}
+
+/// Delete a template (`DELETE /me/drive/items/{id}`, 204).
+pub async fn delete_template(client: &TeamsClient, id: &str) -> Result<()> {
+    anyhow::ensure!(is_item_id(id), "Not a template");
+    let r = client.graph_delete(&format!("/me/drive/items/{id}")).await?;
+    anyhow::ensure!(r.status() == reqwest::StatusCode::NO_CONTENT, "OneDrive answered {}", r.status());
+    Ok(())
 }
 
 #[cfg(test)]
@@ -606,10 +1007,12 @@ mod tests {
         let m = mentions_from(&json!({"EntitySets": [{"ResultSets": [{"Results": [{"Source": {"PointsOfInterest": {"UserMentionCount": 1,
             "MentionEvents": [{"SpeakerName": "OST Test 2", "UtteranceFromTranscript": "Thanks OST Test 1", "MentionOffsetInUtterance": 7, "NameLength": 10}]}}}]}]}]}));
         assert_eq!((m["count"].as_i64(), m["items"][0]["speaker"].as_str(), m["items"][0]["nameStart"].as_i64()), (Some(1), Some("OST Test 2"), Some(7)));
-        assert_eq!(summary_text(&json!({"messages": [{"text": "q"}, {"text": "<RESPONSE>## A{utt_id=3} b"}]})), "## A b");
-        let b = summary_body(&RecapRef { call_id: "c".into(), organizer_id: "o".into(), tenant_id: "t".into(), ..Default::default() }, "v", "SpeakersBasedRecap", "en-us");
-        assert_eq!(b["scenario"], "teamsmeetingrecap");
-        assert!(b["plugins"][0]["Data"]["SerializedOptions"].as_str().unwrap().contains("\"organizerId\":\"o@t\""));
+        let r = RecapRef { call_id: "c".into(), organizer_id: "o".into(), thread_id: "19:meeting_t@thread.v2".into(), ..Default::default() };
+        let b = catalyst_request(&r, "SPO_x_01T", "", "Go", "en-US", "corr", "sess", &Place { offset_minutes: 480, zone: "America/Los_Angeles".into() });
+        let meta = &b["message"]["messageAnnotations"][0]["messageAnnotationMetadata"];
+        assert_eq!((meta["vroomId"].as_str(), meta["canvasType"].as_str(), meta["organizerId"].as_str(), meta["callId"].as_str()), (Some("SPO_x_01T"), Some("RecapCall"), Some("o"), Some("c")));
+        assert_eq!((b["message"]["locale"].as_str(), b["message"]["locationInfo"]["timeZoneOffset"].as_i64(), b["streamingMode"].as_str()), (Some("en-US"), Some(480), Some("ConciseWithPadding")));
+        assert_eq!(catalyst_request(&r, "v", "0400AB", "Go", "", "c", "s", &Place::here())["message"]["messageAnnotations"][0]["messageAnnotationMetadata"]["canvasType"], "Recap");
     }
 
     #[test]
@@ -632,7 +1035,7 @@ mod tests {
             thread_id: "19:meeting_YTE4@thread.v2".into(), ical_uid: "0400".into(), organizer_id: "4287".into(), tenant_id: "2716".into(),
             call_id: "084f".into(), drive_id: "b!Mww".into(), item_id: "01BV".into(),
             file_url: "https://scnetsolutions-my.sharepoint.com/:v:/p/ost-test1/IQBv".into(), subject: "OST TEST 217 town hall 2".into(),
-            start_ms: 1795063200000, end_ms: 1795066800000, recap_type: String::new(),
+            start_ms: 1795063200000, end_ms: 1795066800000, recap_type: String::new(), recap_id: String::new(),
         };
         let l = recap_link(&r);
         assert_eq!(l, "https://teams.microsoft.com/l/meetingrecap?driveId=b%21Mww&driveItemId=01BV&sitePath=https%3A%2F%2Fscnetsolutions-my.sharepoint.com%2F%3Av%3A%2Fp%2Fost-test1%2FIQBv&fileUrl=https%3A%2F%2Fscnetsolutions-my.sharepoint.com%2F%3Av%3A%2Fp%2Fost-test1%2FIQBv&iCalUid=0400&threadId=19%3Ameeting_YTE4%40thread.v2&organizerId=4287&tenantId=2716&callId=084f&threadType=Meeting&meetingType=Scheduled&subType=RecapSharingLink_RecapChiclet&recapType=RecordingAndTranscript");
@@ -650,10 +1053,90 @@ mod tests {
             {"threadInfo": {"threadId": "19:meeting_a@thread.v2", "iCalUid": "X1"}, "resources": []},
             {"threadInfo": {"threadId": "19:meeting_b@thread.v2", "iCalUid": "0400AB", "organizer": {"id": "4287@2716"}},
              "resources": [{"type": "Recording", "driveItemId": "01BV", "fileUrl": "https://x/:v:/p/o/I"}]}]});
-        let (t, o, f) = match_contents(&v, "0400ab", "").unwrap();
-        assert_eq!((t.as_str(), o.as_str(), f.as_str()), ("19:meeting_b@thread.v2", "4287", ""));
-        let (_, _, f) = match_contents(&v, "", "01BV").unwrap();
-        assert_eq!(f, "https://x/:v:/p/o/I");
+        let c = match_contents(&v, "0400ab", "").unwrap();
+        assert_eq!((c.thread.as_str(), c.organizer.as_str(), c.file_url.as_str()), ("19:meeting_b@thread.v2", "4287", ""));
+        assert_eq!(c.transcript, None);
+        let c = match_contents(&v, "", "01BV").unwrap();
+        assert_eq!(c.file_url, "https://x/:v:/p/o/I");
+        // A transcript and no recording: the last TranscriptV2's file.
+        let v = json!({"value": [{"threadInfo": {"threadId": "19:meeting_t@thread.v2", "iCalUid": "T1"}, "resources": [
+            {"type": "TranscriptV2", "driveId": "b!old", "driveItemId": "01OLD"},
+            {"type": "Notes", "driveId": "b!n", "driveItemId": "01N"},
+            {"type": "TranscriptV2", "metadata": {"driveId": "b!new", "driveItemId": "01NEW"}}]}]});
+        assert_eq!(match_contents(&v, "t1", "").unwrap().transcript, Some(("b!new".into(), "01NEW".into())));
         assert!(match_contents(&v, "nope", "nope").is_none());
+    }
+
+    #[test]
+    fn cleans_a_summary_as_teams() {
+        assert_eq!(clean_summary("<RESPONSE>  ## ## Overview\nA point {utt_id=12}."), "## Overview\nA point.");
+        assert_eq!(clean_summary("x [1](\u{e200}cite\u{e202}turn0\u{e201}) y\u{e203}"), "x  y");
+        assert_eq!(clean_summary("a<cite>1</cite> b\u{3010}3\u{2020}source\u{3011}[^2^]"), "a b");
+        assert_eq!(clean_summary("Done citeturn0search1 and turn1search2."), "Done and.");
+        assert_eq!(clean_summary("<b>Bold</b> <strong class=\"x\">S</strong> <span style=\"c\">t</span><font>f</font>"), "**Bold** **S** tf");
+        // Only the start's <RESPONSE>; a <br> isn't <b>; a heading said once stays.
+        assert_eq!(clean_summary("x <RESPONSE> <br> ### Title\n#### #### Sub"), "x <RESPONSE> <br> ### Title\n#### Sub");
+        assert_eq!(collapse_heading_marks("## ### x"), "## # x");
+        assert_eq!(collapse_heading_marks("##\n## A"), "## A");
+    }
+
+    #[test]
+    fn template_requests_as_teams() {
+        let p = saved_template_prompt("Create an executive report that includes:\n\n- Overview");
+        assert!(p.contains("-->\nCreate an executive report that includes:\n\n- Overview\n</RECAP_INSTRUCTIONS_AND_EXAMPLE>"));
+        assert!(!p.contains("{$USERINPUT$}"));
+        // A template that itself says {$USERINPUT$} is put in once, as written.
+        assert_eq!(saved_template_prompt("{$USERINPUT$}").matches("{$USERINPUT$}").count(), 1);
+        assert_eq!(template_upload_path("OST TEST 240 template"), "/me/drive/root:/Recordings/CustomSummaryTemplates/OST%20TEST%20240%20template:/content");
+        assert_eq!(template_upload_path("a#b%c\u{e9}"), "/me/drive/root:/Recordings/CustomSummaryTemplates/a%23b%25c%C3%A9:/content");
+        assert_eq!(String::from_utf8(template_body("Line \"1\"\n- a")).unwrap(), r#"{"template":"Line \"1\"\n- a"}"#);
+        assert_eq!(TEMPLATES_LIST, "/me/drive/root:/Recordings/CustomSummaryTemplates:/children?$orderby=lastModifiedDateTime%20desc");
+        let list = templates_from(&json!({"value": [{"id": "01AB!x", "name": "Mine", "size": 30}, {"name": "No id"}]}));
+        assert_eq!(list, vec![json!({"id": "01AB!x", "name": "Mine"}), json!({"id": "", "name": "No id"})]);
+        assert_eq!(template_content_from(&json!({"template": "- Speaker"})), "- Speaker");
+        assert_eq!(template_content_from(&json!({"other": 1})), "");
+        assert!(is_item_id("01BVABC!123") && !is_item_id("../x") && !is_item_id(""));
+    }
+
+    #[test]
+    fn recap_id_as_teams() {
+        use base64::Engine as _;
+        // A drive id of three GUIDs' bytes (site 00..0f, web 10..1f, library 20..2f).
+        let bytes: Vec<u8> = (0u8..48).collect();
+        let drive = format!("b!{}", base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&bytes));
+        let ids = "03020100-0504-0706-0809-0a0b0c0d0e0f,13121110-1514-1716-1819-1a1b1c1d1e1f,23222120-2524-2726-2829-2a2b2c2d2e2f";
+        let want = format!("SPO_{}_01ITEM", base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(ids));
+        assert_eq!(canonical_recap_id(&drive, "01ITEM"), want);
+        assert_eq!(canonical_recap_id("", "01ITEM"), "");
+        assert_eq!(canonical_recap_id("null", "x"), "null");
+        let r = RecapRef { drive_id: drive.clone(), item_id: "01ITEM".into(), ..Default::default() };
+        assert_eq!(r.recap_id(), want);
+        let r = RecapRef { recap_id: "SPO_t_01T".into(), ..Default::default() };
+        assert_eq!(r.recap_id(), "SPO_t_01T");
+    }
+
+    #[test]
+    fn custom_summary_streams_as_teams() {
+        let speaker = catalyst_message("SpeakersBasedRecap", "French");
+        assert!(speaker.contains("Translate content into French") && !speaker.contains("{$LANGUAGE_INSTRUCTION$}"));
+        assert!(catalyst_message("ExecutiveSummary", "").contains("Translate ALL content into ,"));
+        assert_eq!(catalyst_message("ProjectSummary", "x"), "ProjectSummary");
+        let u = catalyst_hub_url("cid", "tok", "oid", "tid");
+        assert!(u.starts_with("wss://substrate.office.com/m365Copilot/Chathub/oid@tid?ClientRequestId=cid&access_token=tok&variants=EnableMcpServerWidgets%2C"));
+        assert!(u.ends_with("&source=teamshub&scenario=TeamsMeetingRecapCopilot&product=Teams&agentHost=BizChat.FullScreen&licenseType=Premium&agent=work&isproactivechat=1"));
+        let mut h = HubSummary::default();
+        for f in hub_frames("{}\u{1e}{\"type\":1,\"target\":\"update\",\"arguments\":[{\"streamingMode\":\"Full\",\"messages\":[{\"author\":\"user\",\"text\":\"q\"},{\"author\":\"bot\",\"text\":\"#### **OST**\"}]}]}\u{1e}") {
+            h.frame(&f);
+        }
+        for f in hub_frames("{\"type\":1,\"target\":\"update\",\"arguments\":[{\"streamingMode\":\"Delta\",\"writeAtCursor\":\"\\n- **Plan**: send it [1](https://x/y)\"}]}\u{1e}{\"type\":6}\u{1e}{\"type\":3,\"invocationId\":\"0\"}\u{1e}") {
+            h.frame(&f);
+        }
+        assert!(h.done && h.error.is_none());
+        assert_eq!(h.summary(), "#### **OST**\n- **Plan**: send it");
+        let mut h = HubSummary::default();
+        h.frame(&json!({"type": 1, "target": "update", "arguments": [{"item": {"result": {"error": "Throttled", "value": "Too many"}}}]}));
+        assert_eq!(h.error.as_deref(), Some("Too many"));
+        assert_eq!(summary_language(&json!({"EntitySets": [{"ResultSets": [{"Results": [{"Source": {"MeetingSummary": "{\"Language\":\"en-US\"}"}}]}]}]})), "en-US");
+        assert_eq!(summary_language(&json!({})), "");
     }
 }

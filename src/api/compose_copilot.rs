@@ -181,7 +181,7 @@ async fn token() -> anyhow::Result<String> {
     crate::auth::oauth::access_token_for("https://augloop.office.com/v2/.default").await
 }
 
-fn iana_timezone() -> String {
+pub fn iana_timezone() -> String {
     std::fs::read_link("/etc/localtime")
         .ok()
         .and_then(|p| p.to_str().and_then(|s| s.split("zoneinfo/").nth(1)).map(str::to_string))

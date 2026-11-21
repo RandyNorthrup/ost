@@ -21304,11 +21304,15 @@ impl qobject::Backend {
                         if r.tenant_id.is_empty() {
                             r.tenant_id = client.tenant_id().unwrap_or_default();
                         }
-                        if (r.thread_id.is_empty() || r.organizer_id.is_empty())
+                        // (A meeting with only a transcript: its recap is the
+                        // transcript's file, which the artifacts service names.)
+                        if (r.thread_id.is_empty() || r.organizer_id.is_empty() || (r.item_id.is_empty() && r.recap_id.is_empty()))
                             && let Err(e) = api::recaps::resolve(&notes_region(&client), &mut r).await
                         {
                             tracing::warn!("recap's meeting: {}", short_error(&e));
                         }
+                        r.recap_id = r.recap_id();
+                        tracing::info!(recording = !r.item_id.is_empty(), recap_id = !r.recap_id.is_empty(), "recap opened");
                         let player = api::recaps::player_url(&client, &r.drive_id, &r.item_id).await;
                         let transcript = api::recaps::transcript(&client, &r.drive_id, &r.item_id).await.unwrap_or_default();
                         Ok(json!({
@@ -21351,23 +21355,64 @@ impl qobject::Backend {
                         let r: api::recaps::RecapRef = serde_json::from_value(p.get("recap").cloned().unwrap_or_default()).unwrap_or_default();
                         let oid = client.object_id().unwrap_or_default();
                         let tid = client.tenant_id().unwrap_or_default();
-                        api::recaps::mentions(&oid, &tid, &r.item_id).await
+                        // Teams' EntityId: the recap id.
+                        api::recaps::mentions(&oid, &tid, &r.recap_id()).await
                     }
-                    // Custom summary: your saved templates, and a summary in
-                    // a template's format (key, or a saved template's text).
-                    "recapTemplates" => Ok(json!({ "templates": api::recaps::summary_templates(&client).await? })),
+                    // Custom summary: your templates ({id, name}), and a
+                    // summary in a template's format: a built-in's key, one
+                    // of yours (`templateId`: its text, fetched as Teams
+                    // does, in Teams' recap prompt), or Create template's
+                    // Preview (`text`, put in the same prompt).
+                    // ECS meetingRecap: Teams hides Project update
+                    // (hideCustomSummaryProjectUpdate) and offers Create
+                    // template (enableCreateTemplateInRecap).
+                    "recapTemplates" => {
+                        let flag = |k: &str| api::ecs::setting("meetingRecap", k).and_then(|v| v.as_bool());
+                        Ok(json!({ "templates": api::recaps::summary_templates(&client).await?,
+                                   "hideProjectUpdate": flag("hideCustomSummaryProjectUpdate").unwrap_or(false),
+                                   "createTemplate": flag("enableCreateTemplateInRecap").unwrap_or(true) }))
+                    }
                     "recapSummary" => {
                         let mut r: api::recaps::RecapRef = serde_json::from_value(p.get("recap").cloned().unwrap_or_default()).unwrap_or_default();
                         if r.tenant_id.is_empty() {
                             r.tenant_id = client.tenant_id().unwrap_or_default();
                         }
-                        let message = match p.get("template").and_then(|v| v.as_str()) {
-                            Some(t) if !t.is_empty() => api::recaps::saved_template_prompt(t),
-                            _ => s("key"),
+                        let oid = client.object_id().unwrap_or_default();
+                        let recap_id = r.recap_id();
+                        // The meeting summary's language (Teams reads it from
+                        // the recap's catch-up), for the prompts and the locale.
+                        let language = match api::recaps::catch_up(&oid, &r.tenant_id, &recap_id).await {
+                            Ok(v) => api::recaps::summary_language(&v),
+                            Err(_) => String::new(),
                         };
-                        let text = api::recaps::custom_summary(&r, &r.item_id, &message).await?;
+                        let message = if !s("templateId").is_empty() {
+                            let t = api::recaps::template_content(&client, &s("templateId")).await?;
+                            anyhow::ensure!(!t.is_empty(), "The template is empty");
+                            api::recaps::saved_template_prompt(&t)
+                        } else if p.get("text").and_then(|v| v.as_str()).is_some() {
+                            api::recaps::saved_template_prompt(&s("text"))
+                        } else {
+                            api::recaps::catalyst_message(&s("key"), &language)
+                        };
+                        // ECS meetingRecap enableCustomSummaryCurrentCallGrounding:
+                        // no iCalUid (grounded on the call); else it in capitals.
+                        let current_call = api::ecs::setting("meetingRecap", "enableCustomSummaryCurrentCallGrounding").and_then(|v| v.as_bool()).unwrap_or(false);
+                        let ical = if current_call { String::new() } else { r.ical_uid.to_uppercase() };
+                        // Teams' vroomId: the recap id.
+                        let text = api::recaps::custom_summary(&r, &recap_id, &ical, &message, &language, &oid, &r.tenant_id).await?;
                         Ok(json!({ "text": text }))
                     }
+                    // Your templates' Edit, Share, Save and Apply, Rename and
+                    // Delete (Teams' OneDrive template calls).
+                    "recapTemplateContent" => Ok(json!({ "content": api::recaps::template_content(&client, &s("id")).await? })),
+                    "recapTemplateCreate" => Ok(json!({ "id": api::recaps::create_template(&client, &s("name"), &s("template")).await? })),
+                    "recapTemplateUpdate" => {
+                        let name = p.get("name").and_then(|v| v.as_str());
+                        let template = p.get("template").and_then(|v| v.as_str());
+                        api::recaps::update_template(&client, &s("id"), name, template).await?;
+                        Ok(json!({ "updated": true }))
+                    }
+                    "recapTemplateDelete" => api::recaps::delete_template(&client, &s("id")).await.map(|_| json!({ "deleted": true })),
                     // Notes ▸ Add notes: Teams' meeting-notes service makes
                     // (or gives) the meeting's Loop notes.
                     "recapNotes" => {

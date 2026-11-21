@@ -47,9 +47,21 @@ Window {
     // Custom summary and Notes' Add notes load when their page opens.
     property var extras: null
     property var mentions: null
+    /// Your Custom summary templates ({id, name}, newest first); null
+    /// until they've come.
     property var templates: null
+    /// The chosen template: a built-in's key or one of yours (its item id,
+    /// `summaryOdb`).
     property string summaryKey: ""
-    property string summaryTemplateId: ""
+    property bool summaryOdb: false
+    /// Teams moves the remembered template to the front when the cards
+    /// first show.
+    property string frontKey: ""
+    /// ECS meetingRecap: Project update hidden, Create template offered.
+    property bool hideProjectUpdate: false
+    property bool createTemplate: true
+    property string menuFor: ""
+    property string lastShared: ""
     property string summaryText: ""
     property string summaryState: ""
     property string notesUrl: ""
@@ -63,11 +75,41 @@ Window {
     }
     onRightPillChanged: {
         if (rightPill === "Mentions" && mentions === null) backend.eventsRequest("recapMentions", tag + "mentions", JSON.stringify({ recap: win.recap }))
-        if (rightPill === "CustomSummary" && templates === null) backend.eventsRequest("recapTemplates", tag + "templates", "{}")
+        if (rightPill === "CustomSummary" && templates === null) loadTemplates()
     }
-    function summarize(key, template) {
-        summaryKey = key; summaryText = ""; summaryState = "generating"
-        backend.eventsRequest("recapSummary", tag + "summary", JSON.stringify({ recap: win.recap, key: key, template: template || "" }))
+    // Custom summary's chosen template, kept per meeting chat as Teams
+    // keeps it (its localStorage[threadId] = {key, isOdbTemplate}): here a
+    // device-local setting.
+    readonly property string memoryKey: "recapCustomSummaryTemplates"
+    function remembered() {
+        try { return (JSON.parse(backend.setting(memoryKey) || "{}") || {})[recap.thread_id || ""] || null } catch (e) { return null }
+    }
+    function remember(v) {
+        let m = {}
+        try { m = JSON.parse(backend.setting(memoryKey) || "{}") || {} } catch (e) {}
+        if (v) m[recap.thread_id || ""] = v
+        else delete m[recap.thread_id || ""]
+        backend.setSetting(memoryKey, JSON.stringify(m))
+    }
+    readonly property var builtInKeys: hideProjectUpdate ? ["SpeakersBasedRecap", "ExecutiveSummary"] : ["SpeakersBasedRecap", "ExecutiveSummary", "ProjectSummary"]
+    /// Pick a template (a card, or a template just saved): remembered, and
+    /// its summary asked for.
+    function choose(key, odb) {
+        remember({ key: key, isOdbTemplate: odb })
+        summarize(key, odb)
+    }
+    function summarize(key, odb) {
+        summaryKey = key; summaryOdb = !!odb; summaryText = ""; summaryState = "generating"
+        backend.eventsRequest("recapSummary", tag + "summary", JSON.stringify(odb ? { recap: win.recap, templateId: key } : { recap: win.recap, key: key }))
+    }
+    function loadTemplates() { backend.eventsRequest("recapTemplates", tag + "templates", "{}") }
+    // A template's menu: Edit, Share (copy its text), Rename, Delete.
+    function templateAction(action, id, name) {
+        console.info("RECAP template", action, id)
+        if (action === "edit") templateEditor.openEdit(id, name, win.templates || [])
+        else if (action === "share") backend.eventsRequest("recapTemplateContent", tag + "share", JSON.stringify({ id: id }))
+        else if (action === "rename") { renameDialog.renaming = id; renameDialog.openFor(name, win.templates || []) }
+        else if (action === "delete") backend.eventsRequest("recapTemplateDelete", tag + "delete:" + id, JSON.stringify({ id: id }))
     }
     function toggleCopilot() {
         copilotOpen = !copilotOpen
@@ -93,7 +135,39 @@ Window {
                 win.mentions = v.error ? { error: v.error, items: [], count: 0 } : v
                 console.info("RECAP mentions", v.error || "", v.count)
             } else if (what === "templates") {
+                const first = win.templates === null
+                win.frontKey = ""
+                win.hideProjectUpdate = !!v.hideProjectUpdate
+                win.createTemplate = v.createTemplate !== false
                 win.templates = v.templates || []
+                console.info("RECAP templates", v.error || "", win.templates.length)
+                // The remembered template, when it's still there: first in
+                // the row, and its summary.
+                const m = first ? win.remembered() : null
+                if (m && m.key && (win.builtInKeys.indexOf(m.key) >= 0 || (m.isOdbTemplate && win.templates.some(x => x.id === m.key)))) {
+                    win.frontKey = m.key
+                    if (win.summaryKey !== m.key) win.summarize(m.key, !!m.isOdbTemplate)
+                }
+            } else if (what === "share") {
+                // Share: the template's text copied (Teams' toast either way).
+                if (v.content) { backend.copyText(v.content); win.lastShared = v.content }
+                win.toast({ text: v.content ? qsTr("Prompt copied") : qsTr("Failed to copy. Please try again."), intent: v.content ? "success" : "error" })
+                console.info("RECAP template shared", v.error || "", (v.content || "").length)
+            } else if (what.indexOf("rename:") === 0) {
+                const id = what.slice(7)
+                if (v.error) { console.warn("RECAP template rename failed", v.error); return }
+                win.templates = (win.templates || []).map(x => x.id === id ? { id: x.id, name: renameDialog.lastName } : x)
+                console.info("RECAP template renamed", id)
+            } else if (what.indexOf("delete:") === 0) {
+                const id = what.slice(7)
+                if (v.error) { console.warn("RECAP template delete failed", v.error); return }
+                console.info("RECAP template deleted", id)
+                win.loadTemplates()
+                if (win.summaryKey === id) {
+                    const m = win.remembered()
+                    if (m && m.key === id) win.remember(null)
+                    win.summaryKey = ""; win.summaryOdb = false; win.summaryText = ""; win.summaryState = ""
+                }
             } else if (what === "summary") {
                 win.summaryText = v.text || ""; win.summaryState = v.error ? "error" : "done"
                 console.info("RECAP summary", v.error || "", (v.text || "").length)
@@ -105,7 +179,7 @@ Window {
                 console.info("RECAP copilot", v.error || "ready")
             } else if (what === "expiry") {
                 if (!v.error) backend.eventsRequest("recapExtras", win.tag + "extras", JSON.stringify({ recap: win.recap }))
-                backend.toast(v.error ? qsTr("Failed to update expiration date. Please try again.") : qsTr("Expiration date updated successfully."), v.error ? "error" : "success")
+                win.toast({ text: v.error ? qsTr("Failed to update expiration date. Please try again.") : qsTr("Expiration date updated successfully."), intent: v.error ? "error" : "success" })
             }
         }
     }
@@ -449,12 +523,13 @@ Window {
                 width: Math.min(parent.width - 48, 420)
                 BusyIndicator { anchors.horizontalCenter: parent.horizontalCenter; running: win.mentions === null; visible: running; width: 32; height: 32 }
                 Image {
-                    visible: !!win.mentions && !!win.mentions.error
+                    visible: !!win.mentions
                     anchors.horizontalCenter: parent.horizontalCenter
                     width: 192; height: 192; sourceSize: Qt.size(384, 384)
-                    source: "../assets/illustrations/warning" + (theme.dark || theme.highContrast ? "-d-" : "-l-") + "standard.svg"
+                    // Teams: the warning on an error, its tag otherwise.
+                    source: "../assets/illustrations/" + (win.mentions && win.mentions.error ? "warning" : "tag") + (theme.dark || theme.highContrast ? "-d-" : "-l-") + "standard.svg"
                 }
-                Item { visible: !!win.mentions && !!win.mentions.error; width: 1; height: 24 }
+                Item { visible: !!win.mentions; width: 1; height: 24 }
                 Text {
                     visible: win.mentions !== null
                     width: parent.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
@@ -483,58 +558,90 @@ Window {
                 }
             }
             // Custom summary (Teams' customize-notes panel): the template
-            // cards (Speaker summary, Executive report, Project update and
-            // yours), then the summary Copilot writes in that format.
+            // cards (Create template, yours, then Speaker summary, Executive
+            // report and Project update), then the summary Copilot writes in
+            // the chosen one's format.
+            BusyIndicator {
+                visible: win.rightPill === "CustomSummary" && win.templates === null
+                running: visible
+                anchors.horizontalCenter: parent.horizontalCenter; y: 140; width: 32; height: 32
+            }
             Item {
-                visible: win.rightPill === "CustomSummary"
+                visible: win.rightPill === "CustomSummary" && win.templates !== null
                 x: 12; y: 64; width: parent.width - 24; height: parent.height - y - 12
                 // Teams' template cards (customize-notes panel, measured on
                 // winpc): a page of 4 (948 wide or more), 3 (480-947) or 2
-                // cards, 50.7 tall, 8 apart, the title 14/600; Create template
-                // first; Next / Previous templates (25 x 25) when there are
-                // more.
+                // cards, 50.7 tall, 8 apart, the title 14/600; Next /
+                // Previous templates (25 x 25) when there are more. The chosen
+                // card is NeutralBackground1Selected with a brand checkmark
+                // (20, in a 32 px area 8 from its right); on yours, hovering
+                // shows "..." (25, Actions) there instead.
                 Item {
                     id: cards
                     width: parent.width; height: 50.7
-                    readonly property var all: [
-                        { key: "Create", t: qsTr("Create template"), create: true },
-                        { key: "SpeakersBasedRecap", t: qsTr("Speaker summary"), d: qsTr("Main points by speaker") },
-                        { key: "ExecutiveSummary", t: qsTr("Executive report"), d: qsTr("Overview and key area updates") },
-                        { key: "ProjectSummary", t: qsTr("Project update"), d: qsTr("Accomplishments, risks, and action items") }
-                    ].concat((win.templates || []).map(x => ({ key: "SavedTemplate:" + x.id, t: x.name, d: qsTr("Created by you"), template: x.template })))
+                    readonly property var all: {
+                        const mine = (win.templates || []).map(x => ({ key: x.id, t: x.name, d: qsTr("Created by you"), odb: true }))
+                        const builtIn = [
+                            { key: "SpeakersBasedRecap", t: qsTr("Speaker summary"), d: qsTr("Main points by speaker") },
+                            { key: "ExecutiveSummary", t: qsTr("Executive report"), d: qsTr("Overview and key area updates") },
+                            { key: "ProjectSummary", t: qsTr("Project update"), d: qsTr("Accomplishments, risks, and action items") }
+                        ].filter(c => win.builtInKeys.indexOf(c.key) >= 0)
+                        let list = mine.concat(builtIn)
+                        if (win.frontKey) list = list.filter(c => c.key === win.frontKey).concat(list.filter(c => c.key !== win.frontKey))
+                        return win.createTemplate ? [{ key: "CreateOwnTemplate", t: qsTr("Create template"), create: true }].concat(list) : list
+                    }
                     readonly property int perPage: width >= 948 ? 4 : width >= 480 ? 3 : 2
                     property int page: 0
                     readonly property int pages: Math.ceil(all.length / perPage)
+                    onPagesChanged: if (page > pages - 1) page = Math.max(0, pages - 1)
                     readonly property real cardWidth: (width - 8 * (perPage - 1)) / perPage
                     Row {
                         spacing: 8
                         Repeater {
+                            id: cardRepeater
                             model: cards.all.slice(cards.page * cards.perPage, (cards.page + 1) * cards.perPage)
                             Rectangle {
                                 id: card
                                 required property var modelData
-                                readonly property bool chosen: win.summaryKey === modelData.key || (!!modelData.template && win.summaryKey === "SavedTemplate" && win.summaryTemplateId === modelData.key)
+                                readonly property bool chosen: !modelData.create && win.summaryKey === modelData.key
+                                readonly property bool menuShown: !!modelData.odb && (cardHover.hovered || win.menuFor === modelData.key)
+                                readonly property Item moreButton: moreBtn
                                 width: cards.cardWidth; height: 50.7; radius: 4
-                                color: cardHover.hovered ? theme.rowHover : theme.surface
-                                border.color: chosen ? theme.brand : "transparent"; border.width: chosen ? 1.33 : 0
+                                color: chosen ? theme.pick("#EBEBEB", "#383838") : cardHover.hovered ? theme.rowHover : theme.surface
                                 FluentSurface { z: -1; anchors.fill: parent; depth: 2; radius: 4 }
                                 Row {
                                     x: 16; anchors.verticalCenter: parent.verticalCenter; spacing: 8
                                     FluentIcon { visible: !!card.modelData.create; anchors.verticalCenter: parent.verticalCenter; name: "add-20"; size: 20; color: theme.onFill(card, theme.text) }
-                                    Text { width: card.width - 32 - (card.modelData.create ? 28 : 0); elide: Text.ElideRight; anchors.verticalCenter: parent.verticalCenter; text: card.modelData.t; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(card, theme.text) }
+                                    Text { width: card.width - 16 - (card.modelData.create ? 44 : 40); elide: Text.ElideRight; anchors.verticalCenter: parent.verticalCenter; text: card.modelData.t; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(card, theme.text) }
                                 }
                                 HoverHandler { id: cardHover; cursorShape: Qt.PointingHandCursor }
                                 TapHandler {
                                     onTapped: {
-                                        if (card.modelData.create) return
-                                        if (card.modelData.template) { win.summaryTemplateId = card.modelData.key; win.summarize("SavedTemplate", JSON.stringify(card.modelData.template)) }
-                                        else win.summarize(card.modelData.key, "")
+                                        if (card.modelData.create) templateEditor.openNew(win.templates || [])
+                                        else win.choose(card.modelData.key, !!card.modelData.odb)
                                     }
                                 }
-                                ToolTip.visible: cardHover.hovered && !!card.modelData.d
+                                Item {
+                                    visible: !card.modelData.create
+                                    anchors { right: parent.right; rightMargin: 8; verticalCenter: parent.verticalCenter }
+                                    width: 32; height: 32
+                                    FluentIcon { visible: card.chosen && !card.menuShown; anchors.centerIn: parent; name: "checkmark-20"; size: 20; color: theme.onFill(card, theme.brandForeground1) }
+                                    Rectangle {
+                                        id: moreBtn
+                                        visible: card.menuShown
+                                        anchors.centerIn: parent; width: 25; height: 25; radius: 4
+                                        color: moreHover.hovered ? theme.menuHover : "transparent"
+                                        FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 16; color: theme.onFill(moreBtn, theme.textStrong) }
+                                        HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
+                                        TapHandler { onTapped: win.openTemplateMenu(moreBtn, card.modelData) }
+                                        Accessible.role: Accessible.Button; Accessible.name: qsTr("Actions")
+                                    }
+                                }
+                                ToolTip.visible: cardHover.hovered && !card.menuShown && !!card.modelData.d
                                 ToolTip.text: card.modelData.d || ""
                                 ToolTip.delay: 500
-                                Accessible.role: Accessible.Button; Accessible.name: modelData.t
+                                Accessible.role: Accessible.PageTab; Accessible.name: modelData.t
+                                Accessible.selected: chosen
                             }
                         }
                     }
@@ -548,12 +655,12 @@ Window {
                     Column {
                         id: sumCol
                         width: parent.width; spacing: 8
-                        Item { visible: win.summaryState === ""; width: 1; height: 36 }
+                        Item { visible: win.summaryState === "" || win.summaryState === "error"; width: 1; height: 36 }
                         Image {
-                            visible: win.summaryState === ""
+                            visible: win.summaryState === "" || win.summaryState === "error"
                             anchors.horizontalCenter: parent.horizontalCenter
                             width: 192; height: 192; sourceSize: Qt.size(384, 384)
-                            source: "../assets/illustrations/meeting-notes" + (theme.dark || theme.highContrast ? "-d-" : "-l-") + "standard.svg"
+                            source: "../assets/illustrations/" + (win.summaryState === "error" ? "warning" : "meeting-notes") + (theme.dark || theme.highContrast ? "-d-" : "-l-") + "standard.svg"
                         }
                         Text {
                             visible: win.summaryState === ""
@@ -562,15 +669,25 @@ Window {
                             lineHeight: 22.86; lineHeightMode: Text.FixedHeight
                             font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold; color: theme.text
                         }
-                        Row {
+                        // Teams' loading card (radius 8, shadow 2, 40 tall, 8
+                        // around it).
+                        Rectangle {
+                            id: sumLoading
                             visible: win.summaryState === "generating"
-                            anchors.horizontalCenter: parent.horizontalCenter; spacing: 8; topPadding: 40
-                            BusyIndicator { running: parent.visible; width: 24; height: 24 }
-                            Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Generating your summary..."); font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                            x: 8; width: parent.width - 16; height: 40; radius: 8
+                            color: theme.surface; clip: true
+                            FluentSurface { z: -1; anchors.fill: parent; depth: 2; radius: 8 }
+                            Text { x: 8; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Generating your summary..."); font.family: theme.font; font.pixelSize: 14; color: theme.onFill(sumLoading, theme.text) }
+                            Rectangle {
+                                id: sumBar
+                                y: parent.height - 2; height: 2; width: parent.width * 0.33; radius: 1; color: theme.brand
+                                NumberAnimation on x { running: sumLoading.visible; loops: Animation.Infinite; from: -sumBar.width; to: sumLoading.width; duration: 3000 }
+                            }
+                            Accessible.role: Accessible.ProgressBar; Accessible.name: qsTr("Generating your summary...")
                         }
                         Column {
                             visible: win.summaryState === "error"
-                            width: parent.width; topPadding: 40; spacing: 8
+                            width: parent.width; topPadding: 16; spacing: 8
                             Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: qsTr("We couldn't load custom AI summary"); font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold; color: theme.text }
                             Text { width: parent.width; horizontalAlignment: Text.AlignHCenter; text: qsTr("Something went wrong. Try again."); font.family: theme.font; font.pixelSize: 14; color: theme.text }
                         }
@@ -677,6 +794,48 @@ Window {
     }
 
     RecapShareDialog { id: shareDialog }
+    RecapTemplateEditor {
+        id: templateEditor
+        recap: win.recap
+        // A new template: the list again, and it's chosen (its summary).
+        onCreated: (id, name) => { win.loadTemplates(); if (id) win.choose(id, true) }
+        // An edited one: its card's name, and its summary again.
+        onUpdated: (id, name, content) => {
+            win.templates = (win.templates || []).map(x => x.id === id ? { id: x.id, name: name } : x)
+            win.choose(id, true)
+        }
+    }
+    RecapTemplateNameDialog {
+        id: renameDialog
+        property string renaming: ""
+        property string lastName: ""
+        onConfirmed: name => {
+            lastName = name
+            backend.eventsRequest("recapTemplateUpdate", win.tag + "rename:" + renaming, JSON.stringify({ id: renaming, name: name }))
+        }
+    }
+    // Teams' template menu (below-start of "..."): Edit, Share ("Copy and
+    // share prompt"), Rename, and Delete in red.
+    MenuPopup {
+        id: templateMenu
+        property var target: null
+        items: [{ key: "edit", label: qsTr("Edit"), icon: "edit-20" },
+                { key: "share", label: qsTr("Share"), icon: "share-20", tip: qsTr("Copy and share prompt") },
+                { key: "rename", label: qsTr("Rename"), icon: "rename-20" },
+                { key: "delete", label: qsTr("Delete"), icon: "delete-20", danger: true }]
+        onPicked: i => { if (target) win.templateAction(items[i].key, target.key, target.t) }
+        onClosed: win.menuFor = ""
+    }
+    function openTemplateMenu(button, card) {
+        templateMenu.target = card
+        win.menuFor = card.key
+        const p = button.mapToItem(win.contentItem, 0, button.height + 4)
+        templateMenu.parent = win.contentItem
+        templateMenu.y = p.y
+        templateMenu.open()
+        // Below-start, shifted back inside the window (Fluent's positioning).
+        templateMenu.x = Math.max(8, Math.min(p.x, win.contentItem.width - templateMenu.width - 8))
+    }
 
     component IconBtn: Rectangle {
         id: ib
@@ -740,7 +899,23 @@ Window {
     }
 
     function pillForTest(k) { win.rightPill = k }
-    function summarizeForTest(k) { win.summarize(k, "") }
+    function summarizeForTest(k) { win.choose(k, false) }
+    // --recap-window-test=template.
+    function templatesForTest() {
+        return JSON.stringify({ templates: win.templates, key: win.summaryKey, odb: win.summaryOdb, summary: win.summaryState, order: cards.all.map(c => c.t),
+                                remembered: win.remembered(), menu: win.menuFor, shared: win.lastShared })
+    }
+    function templateEditorForTest() { return templateEditor }
+    function closeTemplateMenuForTest() { templateMenu.close() }
+    function renameDialogForTest() { return renameDialog }
+    function templateActionForTest(action, id) { const t = (win.templates || []).find(x => x.id === id); win.templateAction(action, id, t ? t.name : "") }
+    function templateMenuForTest(id) {
+        for (let i = 0; i < cardRepeater.count; i++) {
+            const c = cardRepeater.itemAt(i)
+            if (c && c.modelData.key === id) { win.openTemplateMenu(c.moreButton, c.modelData); return true }
+        }
+        return false
+    }
     function copilotForTest() { win.toggleCopilot() }
     function manageForTest() { manageMenu.open() }
     function extrasForTest() { return JSON.stringify({ extras: win.extras, mentions: win.mentions, summary: win.summaryState, summaryLen: win.summaryText.length, notes: win.notesState, copilot: !!win.copilotLaunch }) }

@@ -647,6 +647,8 @@ Rectangle {
         const w = recapWindow.createObject(null, { recap: root.recapRef(m, recap), startTab: part === "transcript" ? "transcript" : "", hasAttendance: root.hasAttendanceReport || !!m.call_id })
         w.goToChat.connect(() => {})
         w.openAttendance.connect(() => root.openAttendance(m.call_id || ""))
+        // Its toasts (Share's "Prompt copied", Manage's expiration) show as the app's.
+        w.toast.connect(d => root.toastRequested(d))
         w.show(); w.raise(); w.requestActivate()
         root.lastRecapWindow = w
         console.info("RECAPCARD open", part || "recap")
