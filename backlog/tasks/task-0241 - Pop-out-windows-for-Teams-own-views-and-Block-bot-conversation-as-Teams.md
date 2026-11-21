@@ -1,10 +1,10 @@
 ---
 id: TASK-0241
 title: Pop-out windows for Teams' own views and Block bot conversation, as Teams
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-11-21T00:13:00Z'
-updated_date: '2026-11-21T01:36:00Z'
+updated_date: '2026-11-21T02:31:00Z'
 labels:
   - desktop
   - apps
@@ -20,7 +20,7 @@ Teams' app bar menu offers Open in new window for its own views (Chat, Calendar 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 Open in new window on Teams' own app-bar views opens them in their own window as in Teams
-- [ ] #2 Block bot conversation appears for bots and works as in Teams
+- [x] #2 Block bot conversation appears for bots and works as in Teams
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -31,4 +31,6 @@ Teams' app bar menu offers Open in new window for its own views (Chat, Calendar 
 - Built: CoreAppWindow.qml (Chat/Teams: ChatList + the picked chat kept live under win:<chat>; Activity: the 280 feed + the item's chat; Calls, Events: their pages; what they open elsewhere goes to the main window), rail menu item on the allowed core keys; Block / Unblock: api::app_bar bot_id, api::bot_chat (reads the thread: the conversations list omits messagingdisabled), api::set_messaging_disabled, backend blockBotChat. Harness --app-bar-test window/wshot/wclose/block/unblock/botchat.
 - Live (linuxlt default = ost-test1): Polly (has a chat) shows Block bot conversation, Workflows (no chat) doesn't, as Teams' rule; Block set the thread's messagingdisabled "true", then Unblock showed and set it "false" (Polly left unblocked). Open in new window on Chat, Activity and Calls opened 946 x 593 windows titled Chat / Activity / Calls; Chat showed the list and OST Test 2's chat beside it, Activity the feed, Calls its page.
 - Open: the Chat window's conversation uses the pop-out chat header (no tabs row) where Teams shows the full entity header with tabs; Events isn't pinned for ost-test1 so its window wasn't compared; the Teams (channels) window wasn't checked live.
+
+- 2026-11-20 merged as 0509286: Block bot conversation done and verified (Polly blocked and unblocked; messagingdisabled read from the thread). AC1: Chat, Activity and Calls windows open at 946x593 with Teams' content; open: the Chat window's tabs row, Events and Teams windows.
 <!-- SECTION:NOTES:END -->

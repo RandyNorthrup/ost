@@ -1,11 +1,11 @@
 ---
 id: TASK-0133
 title: Profile card org chart and Show more sections, with real org data
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-14T03:26:00Z'
-updated_date: '2026-11-21T01:56:00Z'
+updated_date: '2026-11-21T02:31:00Z'
 labels:
   - desktop
   - people
@@ -22,8 +22,8 @@ Teams' profile card Organization tab draws an org chart (managers above, peers a
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 With managers set for test users, the Organization tab draws Teams' org chart and its navigation (Home, Back, Next) walks it as in Teams
-- [ ] #2 The sections under Show more match Teams'
-- [ ] #3 Verified side by side with Teams on winpc
+- [x] #2 The sections under Show more match Teams'
+- [x] #3 Verified side by side with Teams on winpc
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -45,4 +45,17 @@ Built so far: The profile card's Organization tab (manager and reports from Grap
 
 - 2026-11-20 AC2 (winpc, OST Test 2's hover card from a message picture): the hover card's Show more opens the full card on Profile (Contact information); the sections under it are 'Direct reports (n) ›' (12/16 bold, 18 px chevron) at 24, 392, the reports' 40 px pictures (AvatarGroup, each opens that person) from 24, 422, and 'Show organization' (12 px brand link, 131 x 32) at 8, 466; the heading and the link open Organization. Built in HoverCard.qml from the card's Loki org data (Graph reports as fallback); spec in docs/spec/profile-card.md. Live (linuxlt default, --hovercard-test after the card's data loads): OST Test 2's card shows Profile ›, the email, Show more, Direct reports (1) › with OST Test 1's picture and Show organization below (the card scrolls at 446), the same as Teams' picture; Show more opened the full card on Profile.
 - AC3: side by side on 2026-11-20: Teams' hover card (winpc capture) and OST's (--hovercard-test) list the same sections and people; the Organization tab was compared earlier the same day (same managers, reports and works-with). Not covered: the 'Reports to' block Teams may show for someone with a manager (only ost-test1 has one, and you can't hover your own card).
+
+- 2026-11-20 merged as 0509286; 844 lib + 29 desktop tests pass.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Profile card org chart and Show more as Teams.
+
+- Org data comes from Loki (Teams' people-relationship service), not Graph; the Organization tab draws Teams' chart (managers, the person with reports count, reports, works-with) and Home / Back / Next walk it.
+- The hover card's Show more opens the full card on Profile; Direct reports (n) with pictures and Show organization link to Organization, a picture opens that person's card.
+
+Verified side by side with Teams on winpc using OST Test 2's card (Direct reports (1): OST Test 1). Not covered: a Reports to block for someone with a manager (only ost-test1 has one, and you can't hover your own card).
+<!-- SECTION:FINAL_SUMMARY:END -->
