@@ -21,7 +21,7 @@
 "%1 replied: %2 %3"		DetailsPane.qml:431	
 "%1 reports"		ProfileCard.qml:462 ProfileCard.qml:468	
 "%1 stars"		AppDetailsDialog.qml:102	
-"%1 template, %2"		EventsView.qml:439	
+"%1 template, %2"		EventsView.qml:442	
 "%1 was downloaded."		FileActions.qml:285	
 "%1 years"		ManageTeam.qml:155	
 "%1, Jump to a specific date"		CalendarView.qml:923	
@@ -114,10 +114,10 @@
 "Chinese (Hong Kong SAR)"		SettingsView.qml:2800	
 "Choose File"		TeamAppsView.qml:227 TeamAppsView.qml:231	
 "Choose a download location"		SettingsView.qml:3208	
-"Choose an image"		EventsView.qml:3308	
+"Choose an image"		EventsView.qml:3315	
 "Choose co-organizers:"		MeetingOptionsDialog.qml:148	
 "Choose if you'd like organizers and presenters to manage the content and people attendees see on their screens. Only people you've selected in the setting above can manage the screen."		MeetingOptionsDialog.qml:155	
-"Choose what you're organizing"		EventsView.qml:1771	
+"Choose what you're organizing"		EventsView.qml:1778	
 "Class"		CalendarView.qml:265	
 "Clear all download history"		DownloadsFlyout.qml:114 DownloadsFlyout.qml:118	
 "Clipchamp"		AppRail.qml:57 AppRail.qml:408	
@@ -136,17 +136,17 @@
 "Copy email"		HoverCard.qml:229 PeopleView.qml:162	
 "Copying 1 item"		FileActions.qml:220	
 "Couldn't attach the file. Please try again."		CloudAttach.qml:60	
-"Couldn't cancel the event."		EventsView.qml:3892	
-"Couldn't cancel your registration."		EventsView.qml:650	
-"Couldn't change it."		EventsView.qml:3853	
+"Couldn't cancel the event."		EventsView.qml:3899	
+"Couldn't cancel your registration."		EventsView.qml:653	
+"Couldn't change it."		EventsView.qml:3860	
 "Couldn't join the meeting"		backend.rs:10831	
 "Couldn't join the meeting: %1"		backend.rs:10904 backend.rs:12474	
-"Couldn't load events."		EventsView.qml:1141	
-"Couldn't load the meeting options."		EventsView.qml:267	
+"Couldn't load events."		EventsView.qml:1148	
+"Couldn't load the meeting options."		EventsView.qml:270	
 "Couldn't load this profile."		ProfileCard.qml:669	
-"Couldn't open the event."		EventsView.qml:219 EventsView.qml:237 EventsView.qml:245	
+"Couldn't open the event."		EventsView.qml:222 EventsView.qml:240 EventsView.qml:248	
 "Couldn't post your review"		backend.rs:19768	
-"Couldn't publish the event."		EventsView.qml:3735	
+"Couldn't publish the event."		EventsView.qml:3742	
 "Couldn't report the review"		backend.rs:19733	
 "Couldn't save your setting. Try again."		SettingsView.qml:3315	
 "Couldn't send the picture: %1"		backend.rs:24441	
@@ -184,9 +184,9 @@
 "Enable Green room"		MeetingOptionsDialog.qml:156	
 "End consult"		CallWindow.qml:5255	
 "Even if Everyone is selected, your org policy may require certain participants wait in the lobby until a member of your org or a trusted org joins. This could include people joining without an account, people from untrusted orgs, and people dialing in."		MeetingOptionsDialog.qml:141	
-"Event Banner Image\n(Appears here in actual email)"		EventsView.qml:3207	
-"Event Date Time"		EventsView.qml:3015 EventsView.qml:3015	
-"Event Invite Card"		EventsView.qml:3017	
+"Event Banner Image\n(Appears here in actual email)"		EventsView.qml:3214	
+"Event Date Time"		EventsView.qml:3022 EventsView.qml:3022	
+"Event Invite Card"		EventsView.qml:3024	
 "Exam"		CalendarView.qml:266	
 "Expires in %1 days"		RecapWindow.qml:229	
 "Expires in 1 day"		RecapWindow.qml:229	
@@ -312,8 +312,8 @@
 "Open containing folder"		DownloadsFlyout.qml:171	
 "Open downloads folder"		DownloadsFlyout.qml:99	
 "Opens list of active windows"		CastWindow.qml:308 ShareTray.qml:209	
-"Organization Name"		EventsView.qml:3016 EventsView.qml:3016	
-"Organizer Name"		EventsView.qml:3016	
+"Organization Name"		EventsView.qml:3023 EventsView.qml:3023	
+"Organizer Name"		EventsView.qml:3023	
 "Organizer and co-organizers"		MeetingOptionsDialog.qml:128	
 "Organizer, co-organizers, and presenters"		MeetingOptionsDialog.qml:128	
 "Organizers can customize Q&A to allow anonymous posts, review questions before they are published, and more."		MeetingOptionsDialog.qml:161	
@@ -348,8 +348,8 @@
 "Recording & transcription"		MeetingOptionsDialog.qml:166	
 "Recording and transcription will start automatically when the meeting begins. Your license and admin policy also determine how they turn on."		MeetingOptionsDialog.qml:167	
 "Recording in progress"		VideoClipRecorder.qml:378	
-"Reminder amount"		EventsView.qml:3269	
-"Reminder unit"		EventsView.qml:3271	
+"Reminder amount"		EventsView.qml:3276	
+"Reminder unit"		EventsView.qml:3278	
 "Remove all download history?"		DownloadsFlyout.qml:196	
 "Remove channel"		MeetingForm.qml:824	
 "Remove music"		VideoClipRecorder.qml:1240	
@@ -443,8 +443,8 @@
 "Transfer to %1"		CallWindow.qml:5225 CallWindow.qml:5299	
 "Travel"		EmojiPicker.qml:46	
 "Trophy"		CalendarView.qml:260	
-"Turn off all attendee notifications"		EventsView.qml:2749	
-"Turn on all attendee notifications"		EventsView.qml:2749	
+"Turn off all attendee notifications"		EventsView.qml:2756	
+"Turn on all attendee notifications"		EventsView.qml:2756	
 "Turn this off if you don’t want a recap with AI-generated content."		MeetingOptionsDialog.qml:174	
 "Turn this off to prevent attendees from sharing video. You can allow them to share video individually as needed."		MeetingOptionsDialog.qml:159	
 "Turn this off to prevent attendees from unmuting. You can allow them to unmute individually as needed."		MeetingOptionsDialog.qml:158	
