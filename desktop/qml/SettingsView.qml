@@ -419,7 +419,7 @@ Rectangle {
             }
             FluentIcon { visible: !!root.subPage; anchors.verticalCenter: parent.verticalCenter; name: "chevron-right-16"; size: 16; color: theme.textStrong }
             Text {
-                text: root.subPage === "oof" ? qsTr("Out of office") : root.subPage === "priority" ? qsTr("Manage priority access") : root.subPage === "blocked" ? qsTr("Manage blocked people") : root.subPage === "spellcheck" ? qsTr("Manage spellcheck languages") : root.subPage === "status" ? qsTr("Manage status notifications") : root.subPage === "connected" ? qsTr("Manage devices") : root.subPage === "stationary" ? qsTr("Stationary device location") : root.subPage === "ddv" ? qsTr("Diagnostic data viewer") : root.subPage === "interpreters" ? qsTr("Manage interpreters") : root.page === "about" ? qsTr("About OST") : (root.pages.find(p => p.key === root.page) || {}).label || ""
+                text: root.subPage === "channelNotifs" ? qsTr("Manage") : root.subPage === "oof" ? qsTr("Out of office") : root.subPage === "priority" ? qsTr("Manage priority access") : root.subPage === "blocked" ? qsTr("Manage blocked people") : root.subPage === "spellcheck" ? qsTr("Manage spellcheck languages") : root.subPage === "status" ? qsTr("Manage status notifications") : root.subPage === "connected" ? qsTr("Manage devices") : root.subPage === "stationary" ? qsTr("Stationary device location") : root.subPage === "ddv" ? qsTr("Diagnostic data viewer") : root.subPage === "interpreters" ? qsTr("Manage interpreters") : root.page === "about" ? qsTr("About OST") : (root.pages.find(p => p.key === root.page) || {}).label || ""
                 font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; lineHeight: 25.7; lineHeightMode: Text.FixedHeight
                 color: theme.text
                 Accessible.role: Accessible.Heading
@@ -473,30 +473,70 @@ Rectangle {
                     onToggled: on => { backend.setSetting("keepRunning", on ? "true" : "false"); checked = on }
                 }
             }
+            // Teams' "Opening content in Teams windows" (measured on winpc
+            // 2026-11-20, Teams 26304): the two pictures (148 x 88, 24.6
+            // under the header, labels 4 under them), then a table (24.7
+            // under the labels): "Content" (14/700) with Main window and New
+            // window columns 108 wide from 346.5 in, a 29 tall header and
+            // 32 tall rows, each row a radio pair centred in its columns.
+            // Rows: notifications and links (Teams' client preference
+            // windowing.shouldOpenContentInNewWindow, kept on this device)
+            // and new chats (the synced alwaysPopOutNewChat).
             SettingsParts.Card {
+                id: windowModeCard
                 visible: root.page === "general" && !root.subPage
                 icon: "chat-multiple-20"; title: qsTr("Opening content in OST windows")
-                bodyGap: 28
-                subtitle: qsTr("Open incoming notifications and links in the main window or a new window. This will only apply to this account.")
+                bodyGap: 24.6
+                subtitle: qsTr("Choose to open the following content in either the main window or a new window. This will only apply to this account.")
+                property string contentMode: root.local("openContentIn", "main")
+                readonly property bool chatPopout: root.prop("userPersonalSettings", ["messagingSettings", "alwaysPopOutNewChat"], false) === true
+                readonly property string variant: theme.classic ? "classic" : theme.pick("default", "dark", "contrast")
                 Row {
-                    spacing: 12.7
-                    property string mode: root.local("openContentIn", "main")
-                    SettingsParts.ImageRadio { imageHeight: 80; label: qsTr("Main window"); image: "../assets/settings/new-chat-mainwindow-" + theme.pick("default", "dark", "contrast") + ".svg"; checked: parent.mode === "main"; onPicked: { backend.setSetting("openContentIn", "main"); parent.mode = "main" } }
-                    SettingsParts.ImageRadio { imageHeight: 80; label: qsTr("New window"); image: "../assets/settings/new-chat-popout-" + theme.pick("default", "dark", "contrast") + ".svg"; checked: parent.mode === "popout"; onPicked: { backend.setSetting("openContentIn", "popout"); parent.mode = "popout" } }
+                    x: 8.3; spacing: 28
+                    Repeater {
+                        model: [{ key: "mainwindow", label: qsTr("Main window") }, { key: "popout", label: qsTr("New window") }]
+                        Column {
+                            required property var modelData
+                            spacing: 4
+                            Image { width: 148; height: 88; source: "../assets/settings/new-chat-" + modelData.key + "-" + windowModeCard.variant + ".svg"; sourceSize: Qt.size(296, 176); fillMode: Image.PreserveAspectFit }
+                            Text { width: 146.7; text: modelData.label; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
+                        }
+                    }
                 }
-            }
-            // Teams' Starting chats card: new chats in the main window or a
-            // new window (the synced alwaysPopOutNewChat).
-            SettingsParts.Card {
-                visible: root.page === "general" && !root.subPage
-                icon: "compose-20"; title: qsTr("Starting chats")
-                bodyGap: 28
-                subtitle: qsTr("Create new chats in the main window or a new window. This will only apply to this account.")
-                Row {
-                    spacing: 12.7
-                    readonly property bool popout: root.prop("userPersonalSettings", ["messagingSettings", "alwaysPopOutNewChat"], false) === true
-                    SettingsParts.ImageRadio { imageHeight: 80; label: qsTr("Main window"); image: "../assets/settings/new-chat-mainwindow-" + theme.pick("default", "dark", "contrast") + ".svg"; checked: !parent.popout; onPicked: root.setProp("userPersonalSettings", "messagingSettings.alwaysPopOutNewChat", false) }
-                    SettingsParts.ImageRadio { imageHeight: 80; label: qsTr("New window"); image: "../assets/settings/new-chat-popout-" + theme.pick("default", "dark", "contrast") + ".svg"; checked: parent.popout; onPicked: root.setProp("userPersonalSettings", "messagingSettings.alwaysPopOutNewChat", true) }
+                SettingsParts.Gap { size: 24.7 }
+                Item {
+                    width: parent.width; height: 29
+                    Text { width: 346.5; height: 29; verticalAlignment: Text.AlignVCenter; text: qsTr("Content"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold; color: theme.text }
+                    Text { x: 346.5; width: 108; height: 29; verticalAlignment: Text.AlignVCenter; horizontalAlignment: Text.AlignHCenter; text: qsTr("Main window"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold; color: theme.text }
+                    Text { x: 454.5; width: 108; height: 29; verticalAlignment: Text.AlignVCenter; horizontalAlignment: Text.AlignHCenter; text: qsTr("New window"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold; color: theme.text }
+                }
+                Repeater {
+                    model: [{ key: "content", label: qsTr("Notifications and links to chats, channels, and messages") },
+                            { key: "chats", label: qsTr("New chats") }]
+                    Item {
+                        id: wmRow
+                        required property var modelData
+                        width: parent.width; height: 32
+                        readonly property bool popout: modelData.key === "content" ? windowModeCard.contentMode === "popout" : windowModeCard.chatPopout
+                        function choose(p) {
+                            if (modelData.key === "content") { backend.setSetting("openContentIn", p ? "popout" : "main"); windowModeCard.contentMode = p ? "popout" : "main" }
+                            else root.setProp("userPersonalSettings", "messagingSettings.alwaysPopOutNewChat", p)
+                        }
+                        Text { width: 346.5; height: 32; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight; text: wmRow.modelData.label; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                        Repeater {
+                            model: [false, true]
+                            Item {
+                                required property bool modelData
+                                x: 346.5 + (modelData ? 108 : 0) + 38; width: 32; height: 32
+                                SettingsParts.Dot { anchors.centerIn: parent; checked: wmRow.popout === parent.modelData; hovered: wmHover.hovered }
+                                HoverHandler { id: wmHover; cursorShape: Qt.PointingHandCursor }
+                                TapHandler { onTapped: wmRow.choose(parent.modelData) }
+                                Accessible.role: Accessible.RadioButton
+                                Accessible.name: wmRow.modelData.label + ", " + (modelData ? qsTr("New window") : qsTr("Main window"))
+                                Accessible.checked: wmRow.popout === modelData
+                            }
+                        }
+                    }
                 }
             }
             // Teams' Meeting card (measured on winpc 2026-11-16). "New
@@ -537,7 +577,7 @@ Rectangle {
                 id: regionalCard
                 visible: root.page === "general" && !root.subPage
                 icon: "local-language-20"; title: qsTr("Language and regional formats")
-                subtitle: qsTr("Restart OST to apply language and regional format settings")
+                subtitle: qsTr("Please restart OST to apply language settings. Date and time format settings are applied automatically.")
                 property var opts: JSON.parse(backend.regionalOptionsJson())
                 property bool followOs: opts.followOs
                 property string appLanguage: opts.appLanguage
@@ -1074,12 +1114,24 @@ Rectangle {
                     on: window.splitView || root.prop("simpleCollabUserSettings", ["hasUserEnabledShowTimeStamps"], false) === true
                     onToggled: v => root.setProp("simpleCollabUserSettings", "hasUserEnabledShowTimeStamps", v)
                 }
+                // Teams' "Show private chats in meetings" (the synced
+                // simpleCollabUserSettings.hasUserEnabledNewPrivateChatInMeetingChat,
+                // on unless turned off): a meeting's chat keeps its private
+                // chat tabs beside Everyone.
+                SettingsParts.SwitchRow {
+                    label: qsTr("Show private chats in meetings")
+                    on: root.prop("simpleCollabUserSettings", ["hasUserEnabledNewPrivateChatInMeetingChat"], true) !== false
+                    onToggled: v => root.setProp("simpleCollabUserSettings", "hasUserEnabledNewPrivateChatInMeetingChat", v)
+                }
                 SettingsParts.SwitchRow {
                     label: qsTr("Filters")
                     on: root.prop("simpleCollabUserSettings", ["hasUserDisabledShowingFilterAtTop"], false) !== true
                     onToggled: v => root.setProp("simpleCollabUserSettings", "hasUserDisabledShowingFilterAtTop", !v)
                 }
+                // Teams offers Copilot's switch to licensed users with the
+                // Copilot app installed (ECS enableMetaOSCopilotToggleInSettings).
                 SettingsParts.SwitchRow {
+                    visible: !!window.copilotState.settingsToggle && window.copilotInstalled
                     label: qsTr("Copilot")
                     on: root.prop("userPersonalSettings", ["messagingSettings", "shouldShowMetaOSCopilotApp"], true) !== false
                     onToggled: v => root.setProp("userPersonalSettings", "messagingSettings.shouldShowMetaOSCopilotApp", v)
@@ -1105,6 +1157,20 @@ Rectangle {
                     }
                 }
             }
+            // Teams' Compose card (measured on winpc 2026-11-20, Teams 26304:
+            // Enter to send moved out of its own card): the question (14/20)
+            // with its note (12/16) under the header, the radios 10 under.
+            SettingsParts.Card {
+                id: enterCard
+                visible: root.page === "chats"
+                icon: "keyboard-20"; title: qsTr("Compose")
+                property string enterKey: root.local("enterKey", "send")
+                SettingsParts.SubHeading { text: qsTr("When writing a message, press Enter to") }
+                Text { width: parent.width; text: qsTr("This setting doesn't apply when message formatting is active."); wrapMode: Text.Wrap; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textSecondary }
+                SettingsParts.Gap { size: 10 }
+                SettingsParts.RadioRow { label: qsTr("Send the message"); checked: enterCard.enterKey === "send"; onPicked: { backend.setSetting("enterKey", "send"); enterCard.enterKey = "send"; root.settingsChanged() } }
+                SettingsParts.RadioRow { label: qsTr("Start a new line (to send, select Send or use %1).").arg("Ctrl+Enter"); checked: enterCard.enterKey === "newline"; onPicked: { backend.setSetting("enterKey", "newline"); enterCard.enterKey = "newline"; root.settingsChanged() } }
+            }
             SettingsParts.Card {
                 visible: root.page === "chats"
                 icon: "chat-20"; title: qsTr("Chat")
@@ -1124,16 +1190,6 @@ Rectangle {
                     SettingsParts.ImageRadio { label: qsTr("Last read message"); image: "../assets/settings/chat-landing-unread-" + theme.pick("light", "dark", "contrast") + ".svg"; checked: parent.lastRead; onPicked: root.setProp("userPersonalSettings", "messagingSettings.navigateToLastReadMessage", true) }
                     SettingsParts.ImageRadio { label: qsTr("Newest message"); image: "../assets/settings/chat-landing-latest-" + theme.pick("light", "dark", "contrast") + ".svg"; checked: !parent.lastRead; onPicked: root.setProp("userPersonalSettings", "messagingSettings.navigateToLastReadMessage", false) }
                 }
-            }
-            SettingsParts.Card {
-                id: enterCard
-                visible: root.page === "chats"
-                icon: "keyboard-20"; title: qsTr("When writing a message, press Enter to")
-                bodyGap: 26
-                subtitle: qsTr("This setting doesn't apply when message formatting is active.")
-                property string enterKey: root.local("enterKey", "send")
-                SettingsParts.RadioRow { label: qsTr("Send the message"); checked: enterCard.enterKey === "send"; onPicked: { backend.setSetting("enterKey", "send"); enterCard.enterKey = "send"; root.settingsChanged() } }
-                SettingsParts.RadioRow { label: qsTr("Start a new line (to send, select Send or use %1).").arg("Ctrl+Enter"); checked: enterCard.enterKey === "newline"; onPicked: { backend.setSetting("enterKey", "newline"); enterCard.enterKey = "newline"; root.settingsChanged() } }
             }
             SettingsParts.Card {
                 visible: root.page === "chats"
@@ -1353,7 +1409,10 @@ Rectangle {
             Repeater {
                 model: [
                     { icon: "arrow-reply-20", title: qsTr("Replies to followed threads and posts"), keys: ["Reply", "ReplyToReply"] },
-                    { icon: "heart-20", title: qsTr("Likes and reactions"), keys: ["Like", "LikeInChat_v2"] }
+                    { icon: "heart-20", title: qsTr("Likes and reactions"), keys: ["Like", "LikeInChat_v2"] },
+                    // Teams' Reminders (its "Remind me" reminders: Reminder,
+                    // Show in Activity and banner unless changed).
+                    { icon: "clock-alarm-20", title: qsTr("Reminders"), keys: ["Reminder"] }
                 ]
                 SettingsParts.Card {
                     required property var modelData
@@ -1371,34 +1430,15 @@ Rectangle {
                     }
                 }
             }
-            // Teams' "Posts in all shown channels" (Visible_ChannelNewMessage_v2)
-            // with "Include replies" (Visible_ChannelReplyMessage_v2), measured.
+            // Teams' Channel Notifications card (Teams 26304, measured on
+            // winpc 2026-11-20; it replaced "Posts in all shown channels"):
+            // Manage opens Notifications and activity › Manage, every
+            // channel's notification choice.
             SettingsParts.Card {
-                id: shownPosts
                 visible: root.page === "notifications" && !root.subPage
-                icon: "channel-20"; title: qsTr("Posts in all shown channels")
-                pad: 20; bottomPad: 28.7; minHeader: 0; bodyGap: 19.3; iconX: 16.3; titleX: 61.3
-                readonly property int lvl: notif.level(["Visible_ChannelNewMessage_v2"], 2)
-                trailing: Component {
-                    OutlineDropdown {
-                        width: 249.3; height: 30
-                        options: notif.levels
-                        current: shownPosts.lvl
-                        accessibleName: qsTr("Posts in all shown channels")
-                        onPicked: i => {
-                            notif.setLevel(["Visible_ChannelNewMessage_v2"], i)
-                            // Teams: replies follow the posts (off when the posts are).
-                            if (i === 2) notif.setLevel(["Visible_ChannelReplyMessage_v2"], 2)
-                        }
-                    }
-                }
-                SettingsParts.CheckRow {
-                    rowHeight: 32
-                    label: qsTr("Include replies")
-                    usable: shownPosts.lvl !== 2
-                    checked: root.prop("userPersonalSettings", ["activityGenerationSettings", "Visible_ChannelReplyMessage_v2"], false) === true
-                    onToggled: v => notif.setLevel(["Visible_ChannelReplyMessage_v2"], v ? shownPosts.lvl : 2)
-                }
+                icon: "people-team-20"; title: qsTr("Channel Notifications")
+                subtitle: qsTr("Choose where to see notifications for each channel, or turn them off. By default, all new channel notifications are set to '@Mentions & replies' unless changed individually.")
+                trailing: Component { SettingsParts.Button { label: qsTr("Manage"); onClicked: root.subPage = "channelNotifs" } }
             }
             SectionTitle { visible: root.page === "notifications" && !root.subPage; text: qsTr("Meetings") }
             SettingsParts.Card {
@@ -1443,6 +1483,82 @@ Rectangle {
                 subtitle: qsTr("Keep track of someone's status and get notified when they appear available or offline.")
                 pad: 15.7; bottomPad: 15.6; minHeader: 0; iconX: 16.7; titleX: 58.7; textWidth: 494.2; subtitleSize: 14
                 trailing: Component { SettingsParts.Button { label: qsTr("Manage notifications"); onClicked: root.subPage = "status" } }
+            }
+            // Notifications and activity › Manage (Teams' channel
+            // notification manager, measured on winpc 2026-11-20): the
+            // Channel Notifications card (padding 15.7, the icon at 24.7),
+            // then one card listing "Team" (14/600 #424242, 28 tall) and
+            // every team (a 44 tall expander: chevron, its 20 px picture,
+            // the name 14/600) with its channels (47.3 apart: the name, the
+            // choice in a 294 x 31.3 dropdown at 367.3 and Customize).
+            // A choice is saved as the channel menu's Manage notifications
+            // does; Customize opens the channel's notification dialog.
+            SettingsParts.Card {
+                visible: root.page === "notifications" && root.subPage === "channelNotifs"
+                icon: "people-team-20"; title: qsTr("Channel Notifications")
+                subtitle: qsTr("Choose where to see notifications for each channel, or turn them off. By default, all new channel notifications are set to '@Mentions & replies' unless changed individually.")
+                pad: 15.7; bottomPad: 16.3; minHeader: 0; iconX: 24.7; titleX: 59.7
+            }
+            Rectangle {
+                id: chanNotifs
+                visible: root.page === "notifications" && root.subPage === "channelNotifs"
+                width: parent.width; height: visible ? chanCol.height + 24 + 20.7 : 0
+                radius: 8; color: "transparent"
+                border.color: theme.pick("#D1D1D1", "#3D3D3D", "#FFFFFF"); border.width: 0.67
+                readonly property var teams: visible && backend.teamsJson ? JSON.parse(backend.teamsJson) : []
+                property var collapsed: ({})
+                readonly property var modes: [
+                    { mode: "all", label: qsTr("All new messages"), hint: qsTr("New messages, all @mentions, and replies to followed threads") },
+                    { mode: "mentions", label: qsTr("@mentions and replies"), hint: qsTr("All @mentions and replies to followed threads") },
+                    { mode: "mute", label: qsTr("Mute"), hint: qsTr("You'll still be notified for personal mentions and replies to followed threads") }]
+                ChannelNotifyDialog { id: chanNotifyDialog; parent: Overlay.overlay }
+                Column {
+                    id: chanCol
+                    x: 16.7; y: 24; width: parent.width - 16.7 - 20.7
+                    Text { width: parent.width; height: 28; verticalAlignment: Text.AlignVCenter; text: qsTr("Team"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.textStrong; Accessible.role: Accessible.Heading; Accessible.name: text }
+                    Repeater {
+                        model: chanNotifs.teams
+                        Column {
+                            id: tnTeam
+                            required property var modelData
+                            required property int index
+                            readonly property bool open: !chanNotifs.collapsed[modelData.id]
+                            width: chanCol.width
+                            topPadding: index > 0 ? 12 : 0
+                            Item {
+                                width: parent.width; height: 44
+                                FluentIcon { y: 12; size: 20; name: tnTeam.open ? "chevron-down-20" : "chevron-right-20"; color: theme.text }
+                                Avatar { x: 28; y: 12; size: 20; square: true; name: tnTeam.modelData.name; initialsText: tnTeam.modelData.name.split(/\s+/).filter(w => w).slice(0, 2).map(w => w[0]).join("").toUpperCase(); photoId: "team:" + tnTeam.modelData.id }
+                                Text { x: 52; y: 12; width: parent.width - 52; height: 20; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight; text: tnTeam.modelData.name; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                                HoverHandler { cursorShape: Qt.PointingHandCursor }
+                                TapHandler { onTapped: { const c = Object.assign({}, chanNotifs.collapsed); c[tnTeam.modelData.id] = tnTeam.open; chanNotifs.collapsed = c } }
+                                Accessible.role: Accessible.Button
+                                Accessible.name: tnTeam.modelData.name
+                            }
+                            Repeater {
+                                model: tnTeam.open ? (tnTeam.modelData.channels || []) : []
+                                Item {
+                                    id: tnRow
+                                    required property var modelData
+                                    property string mode: modelData.notify || "mentions"
+                                    width: tnTeam.width; height: 47.33
+                                    Text { y: 13.7; width: 326.7; height: 20; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight; text: tnRow.modelData.name; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                                    OutlineDropdown {
+                                        x: 350.6; y: 8; width: 294; height: 31.3
+                                        options: chanNotifs.modes.map(m => ({ label: m.label, sublabel: m.hint }))
+                                        current: Math.max(0, chanNotifs.modes.findIndex(m => m.mode === tnRow.mode))
+                                        accessibleName: tnRow.modelData.name
+                                        onPicked: i => { const m = chanNotifs.modes[i].mode; if (m !== tnRow.mode) { tnRow.mode = m; backend.channelAction("notify", tnTeam.modelData.id, tnRow.modelData.id, m) } }
+                                    }
+                                    SettingsParts.Button {
+                                        x: 656.6; y: 8; label: qsTr("Customize")
+                                        onClicked: { chanNotifyDialog.teamId = tnTeam.modelData.id; chanNotifyDialog.teamName = tnTeam.modelData.name; chanNotifyDialog.start(tnRow.modelData) }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
             SettingsParts.Card {
                 id: statusNotif
@@ -1938,6 +2054,29 @@ Rectangle {
                     label: qsTr("Block calls with no caller ID")
                     checked: root.mt.blockAnonymousCaller === true
                     onToggled: on => root.setMt("blockAnonymousCaller", on)
+                }
+            }
+            // Teams' "Delete Copilot activity history" (Teams 26304, measured
+            // on winpc 2026-11-20; licensed users, ECS messaging.
+            // enableCopilotDeleteHistorySetting): the note with "Learn how
+            // to delete Copilot activity history" (12/16, the link inline,
+            // wrapping at 433.4) and "Open Copilot activity history" (an
+            // open glyph before it), both from ECS (your Microsoft account's
+            // privacy page and Microsoft's article).
+            SettingsParts.Card {
+                id: copilotHistory
+                visible: root.page === "privacy" && !root.subPage && !!window.copilotState.deleteHistory
+                icon: "mo-copilot"; title: qsTr("Delete Copilot activity history")
+                textWidth: 433.4
+                subtitleFormat: Text.RichText
+                subtitle: qsTr("You can delete your history in your Microsoft account.") + " <a href=\"learn\" style=\"color:" + theme.brandForeground1 + ";text-decoration:none\">" + qsTr("Learn how to delete Copilot activity history") + "</a>"
+                onLinkActivated: Qt.openUrlExternally(window.copilotState.deleteHistoryLearnUrl)
+                trailing: Component {
+                    SettingsParts.Button {
+                        icon: "open-20"
+                        label: qsTr("Open Copilot activity history")
+                        onClicked: Qt.openUrlExternally(window.copilotState.deleteHistoryUrl)
+                    }
                 }
             }
             SettingsParts.Card {
@@ -3294,6 +3433,23 @@ Rectangle {
                             : qsTr("You've got the latest version. %1").arg(parent.u.checkedAt ? qsTr("It was last checked on %1.").arg(Qt.formatDate(new Date(parent.u.checkedAt), Qt.locale(), Locale.ShortFormat)) : "").trim()
                         font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
                     }
+                }
+            }
+            // Teams' Early access card (Teams 26304, measured on winpc
+            // 2026-11-20, 121.3 tall: the title row, then "Public preview",
+            // a checkbox): offered where the update policy allows public
+            // preview (teamsUpdateManagementPolicy.allowPublicPreview).
+            // Teams' host starts its preview build on the next launch; OST
+            // follows its pre-releases (the update check above).
+            SettingsParts.Card {
+                readonly property var u: backend.updateJson ? JSON.parse(backend.updateJson) : ({})
+                visible: root.page === "about" && !root.subPage && !!u.previewAllowed
+                icon: "rocket-20"; title: qsTr("Early access")
+                SettingsParts.CheckRow {
+                    rowHeight: 32
+                    label: qsTr("Public preview")
+                    checked: root.local("publicPreview", "false") === "true"
+                    onToggled: on => { backend.setSetting("publicPreview", on ? "true" : "false"); checked = on; backend.checkForUpdates() }
                 }
             }
             AboutCard {

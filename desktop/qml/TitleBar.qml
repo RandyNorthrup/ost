@@ -24,8 +24,17 @@ Rectangle {
     /// Enter in search: Teams' results page for the text (with any
     /// "is:Messages" style tab in it).
     signal searchSubmitted(string text)
+    /// Copilot in search (Teams' Serp catalyst, a licensed user with ECS
+    /// autosuggest.enableSerpCatalystEntrySuggestion): the placeholders
+    /// name Copilot and a query of two words or more is offered as "Ask
+    /// Copilot about …", which opens the results with Copilot asked.
+    property bool copilotSearch: false
+    signal askCopilot(string text)
     /// Put text in the search box (the results page's tab adds "is:…").
     function setSearchText(t) { field.text = t }
+    function suggestionsForTest() { return suggestions.items }
+    function placeholderForTest() { return root.copilotSearch ? (field.activeFocus ? "focused-copilot" : "copilot") : "plain" }
+    function chooseForTest(i) { suggestions.choose(suggestions.items[i]) }
     signal openChat(string id, string name)
     signal openPerson(string oid, string name)
     signal goBack()
@@ -160,7 +169,9 @@ Rectangle {
             }
             Text {
                 visible: !field.text
-                text: field.activeFocus ? qsTr("Press %1 to go right to a chat or channel").arg("Ctrl+G") : qsTr("Search (%1)").arg("Ctrl+E")
+                text: root.copilotSearch
+                    ? (field.activeFocus ? qsTr("Look for people, messages, files and more or ask Copilot") : qsTr("Search or ask Copilot (%1)").arg("Ctrl+E"))
+                    : field.activeFocus ? qsTr("Press %1 to go right to a chat or channel").arg("Ctrl+G") : qsTr("Search (%1)").arg("Ctrl+E")
                 color: theme.onFill(search, theme.textTertiary)
                 font: field.font
             }
@@ -181,9 +192,13 @@ Rectangle {
             const chatNames = chats.map(c => c.name)
             const people = root.people.filter(p => chatNames.indexOf(p.name) < 0 || p.mail)
                 .slice(0, 6).map(p => ({ kind: "person", id: p.id, name: p.name, sub: p.mail || p.job_title }))
-            return chats.concat(people)
+            // Teams (shared worker's serp catalyst entry): first among the
+            // top hits for a query of more than one word.
+            const ask = root.copilotSearch && field.text.trim().split(/\s+/).length > 1 ? [{ kind: "copilot", name: field.text.trim() }] : []
+            return ask.concat(chats).concat(people)
         }
         function choose(item) {
+            if (item.kind === "copilot") { root.keepSuggestionsOpen = false; field.focus = false; root.askCopilot(item.name); return }
             if (item.kind === "chat") root.openChat(item.id, item.name)
             else root.openPerson(item.id, item.name)
             field.text = ""; field.focus = false
@@ -203,10 +218,34 @@ Rectangle {
                 Rectangle {
                     id: item
                     required property var modelData
-                    width: col.width; height: 44
+                    readonly property bool ask: modelData.kind === "copilot"
+                    width: col.width; height: ask ? 50 : 44
+                    radius: ask ? 4 : 0
                     color: itemHover.hovered ? theme.hc(theme.pane, theme.hcHighlight) : "transparent"
-                    Avatar { x: 16; anchors.verticalCenter: parent.verticalCenter; size: 28; name: item.modelData.name }
+                    // Teams' "Ask Copilot about <query>" (measured on winpc
+                    // 2026-11-20): 50 tall, a 32 px #F0F0F0 circle at 16
+                    // with Copilot's 16 px glyph (#424242), the text (14/20)
+                    // at 58 with the query bold.
+                    Rectangle {
+                        visible: item.ask
+                        x: 16; anchors.verticalCenter: parent.verticalCenter
+                        width: 32; height: 32; radius: 16
+                        color: theme.pick("#F0F0F0", "#333333", "#000000")
+                        border.color: theme.hc("transparent", "#FFFFFF"); border.width: theme.highContrast ? 0.67 : 0
+                        FluentIcon { anchors.centerIn: parent; name: "mo-copilot"; size: 16; color: theme.onFill(parent, theme.textStrong) }
+                    }
+                    Text {
+                        visible: item.ask
+                        x: 58; width: parent.width - 74; anchors.verticalCenter: parent.verticalCenter
+                        textFormat: Text.StyledText; elide: Text.ElideRight
+                        text: qsTr("Ask Copilot about") + " <b>" + item.modelData.name.replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</b>"
+                        font.family: theme.font; font.pixelSize: 14; color: theme.onFill(item, theme.text)
+                    }
+                    Accessible.role: Accessible.ListItem
+                    Accessible.name: ask ? qsTr("Ask Copilot about") + " " + modelData.name : modelData.name
+                    Avatar { visible: !item.ask; x: 16; anchors.verticalCenter: parent.verticalCenter; size: 28; name: item.modelData.name }
                     Column {
+                        visible: !item.ask
                         x: 56; anchors.verticalCenter: parent.verticalCenter
                         Text { text: item.modelData.name; font.family: theme.font; font.pixelSize: theme.base; color: theme.onFill(item, theme.text) }
                         Text { text: item.modelData.sub || ""; font.family: theme.font; font.pixelSize: theme.small; color: theme.onFill(item, theme.textSecondary) }

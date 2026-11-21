@@ -239,6 +239,10 @@ Rectangle {
     signal openComposing()
     /// Copilot (the row at the list's top) is open, and opening it.
     property bool copilotOpen: false
+    /// Teams shows Copilot here when its ECS entry point is on, the
+    /// Microsoft 365 Copilot app is installed for you and your Settings ▸
+    /// Chats and channels ▸ Copilot switch is on (Main.qml decides).
+    property bool showCopilot: false
     signal openCopilot()
     /// Communities ▸ Join communities.
     signal openCommunities()
@@ -698,13 +702,13 @@ Rectangle {
             // list-item-metaos-copilot, measured 32 tall at the list's top),
             // which opens Copilot beside the list as Teams hosts it.
             ListRow {
-                visible: !root.filtered && root.pane !== "teams"
+                visible: root.showCopilot && !root.filtered && root.pane !== "teams"
                 height: visible ? 32 : 0
                 label: qsTr("Copilot"); icon: "mo-copilot"
                 selected: root.copilotOpen
                 onClicked: root.openCopilot()
             }
-            Item { width: 1; height: !root.filtered && root.pane !== "teams" ? 4 : 0 }
+            Item { width: 1; height: root.showCopilot && !root.filtered && root.pane !== "teams" ? 4 : 0 }
             Repeater {
                 model: root.sections
                 Column {

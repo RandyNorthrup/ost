@@ -870,6 +870,10 @@ pub mod qobject {
         /// as Teams' Set work location.
         #[qinvokable]
         fn set_work_location_today(self: Pin<&mut Backend>, location: &QString);
+        /// Workplace check-in over Wi-Fi on or off (the work-location
+        /// policy and Privacy's "Manage my work location" switch, TASK-0149).
+        #[qinvokable]
+        fn set_work_location_detection(self: Pin<&mut Backend>, on: bool);
         /// A meeting chat's Report a concern (its thread and meeting, no
         /// call).
         #[qinvokable]
@@ -5758,7 +5762,25 @@ pub fn compose_copilot_state(license: Option<&serde_json::Value>) -> serde_json:
     // enableMeetingCollab with the licence check, useAIFeatureLicense).
     let meeting = licensed && on("calling", "enableMeetingCollab", true);
     // OneDrive's Suggested names in Rename ask the same Copilot licence.
-    serde_json::json!({"allowed": allowed, "proofread": allowed && on("compose", "enableComposeRewriteProofread", false), "meeting": meeting, "rename": licensed})
+    // Copilot elsewhere (TASK-0165, Teams 26304): Privacy's "Delete Copilot
+    // activity history" card (messaging.enableCopilotDeleteHistorySetting
+    // and the licence), the search box's "Search or ask Copilot" with its
+    // "Ask Copilot about …" suggestion (autosuggest.
+    // enableSerpCatalystEntrySuggestion and the licence), and the chat
+    // list's Copilot (chatList.enableBizChatMetaOSChatListEntryPoint, the
+    // user's shouldShowMetaOSCopilotApp, the app installed) with its
+    // Settings switch (messaging.enableMetaOSCopilotToggleInSettings).
+    let text = |ns: &str, key: &str, dflt: &str| api::ecs::setting(ns, key).and_then(|v| v.as_str().map(str::to_string)).unwrap_or_else(|| dflt.to_string());
+    serde_json::json!({
+        "allowed": allowed, "proofread": allowed && on("compose", "enableComposeRewriteProofread", false), "meeting": meeting, "rename": licensed,
+        "licensed": licensed,
+        "deleteHistory": licensed && on("messaging", "enableCopilotDeleteHistorySetting", true),
+        "deleteHistoryUrl": text("messaging", "copilotDeleteHistorySettingDeleteHistoryUrl", "https://myaccount.microsoft.com/settingsandprivacy/privacy"),
+        "deleteHistoryLearnUrl": text("messaging", "copilotDeleteHistorySettingLearnMoreUrl", "https://go.microsoft.com/fwlink/p/?linkid=2250168"),
+        "search": licensed && on("autosuggest", "enableSerpCatalystEntrySuggestion", false),
+        "chatList": (on("chatList", "enableBizChatMetaOSChatListEntryPoint", true) || on("simpleCollab", "enableBizChatMetaOSSimpleCollabEntryPoint", true)),
+        "settingsToggle": licensed && on("messaging", "enableMetaOSCopilotToggleInSettings", true),
+    })
 }
 
 /// Editor's options by language, as its service lists them.
@@ -16666,6 +16688,10 @@ impl qobject::Backend {
         self.send_meeting_report(thread, None, comment.to_string(), reported_json.to_string());
     }
 
+    pub fn set_work_location_detection(self: Pin<&mut Self>, on: bool) {
+        crate::work_location::set_enabled(on, runtime());
+    }
+
     pub fn set_work_location_today(mut self: Pin<&mut Self>, location: &QString) {
         let location = location.to_string();
         let before = self.rust().my_work_location.clone();
@@ -21299,6 +21325,28 @@ impl qobject::Backend {
                         let url = api::meeting_notes::get_or_create(&m).await?;
                         Ok(json!({ "url": url }))
                     }
+                    // Copilot asked from search ("Ask Copilot about …"): the
+                    // Microsoft 365 Copilot app in the results' right pane,
+                    // with the query as its prompt (TASK-0165).
+                    "searchCopilot" => {
+                        let oid = client.object_id().unwrap_or_default();
+                        let tid = client.tenant_id().unwrap_or_default();
+                        let site = api::app_host::sharepoint_host(&client).await;
+                        let m = api::meeting_copilot::Meeting {
+                            user_oid: oid,
+                            tenant_id: tid,
+                            my_site: site.strip_suffix(".sharepoint.com").map(|t| format!("{t}-my.sharepoint.com")).unwrap_or_default(),
+                            culture: "en-us".into(),
+                            theme: s("theme"),
+                            app_session: uuid::Uuid::new_v4().to_string(),
+                            host_session: uuid::Uuid::new_v4().to_string(),
+                            ..Default::default()
+                        };
+                        let cmmid = api::ecs::setting("Copilot", "copilotEntryPointsCMMIds")
+                            .and_then(|v| v.get("searchAutosuggestAskCopilot").and_then(|x| x.as_str()).map(str::to_string))
+                            .unwrap_or_else(|| "cmmi7lmhneb".into());
+                        Ok(api::meeting_copilot::launch_search(&m, &s("session"), &s("query"), &cmmid))
+                    }
                     // Copilot in the recap: the Microsoft 365 Copilot app as
                     // a side pane (Teams' bizChat variant from a recap card:
                     // entryPoint "Recap", session "Recap").
@@ -23851,7 +23899,14 @@ impl qobject::Backend {
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let http = reqwest::Client::new();
-            let result = api::updates::latest_release(&http).await;
+            // Early access ▸ Public preview (where the tenant's update policy
+            // allows it): the pre-release channel.
+            let preview_allowed = match TeamsClient::new().await {
+                Ok(c) => api::custom_emoji::effective_policies(&c, &["teamsUpdateManagementPolicy"]).await.map(|p| api::updates::public_preview_allowed(&p)).unwrap_or(false),
+                Err(_) => false,
+            };
+            let preview = preview_allowed && load_settings().get("publicPreview").and_then(|v| v.as_str()) == Some("true");
+            let result = if preview { api::updates::latest_preview_release(&http).await } else { api::updates::latest_release(&http).await };
             let now = chrono::Utc::now().timestamp_millis();
             let v = match result {
                 Ok(release) => {
@@ -23860,14 +23915,14 @@ impl qobject::Backend {
                     let _ = save_settings(&map);
                     match release {
                         Some(r) if api::updates::is_newer(&r.version, env!("CARGO_PKG_VERSION")) => {
-                            json!({ "state": "available", "checkedAt": now, "latest": r.version, "url": r.url })
+                            json!({ "state": "available", "checkedAt": now, "latest": r.version, "url": r.url, "previewAllowed": preview_allowed, "preview": preview })
                         }
-                        _ => json!({ "state": "latest", "checkedAt": now }),
+                        _ => json!({ "state": "latest", "checkedAt": now, "previewAllowed": preview_allowed, "preview": preview }),
                     }
                 }
                 Err(e) => {
                     tracing::warn!("update check: {}", short_error(&e));
-                    json!({ "state": "error", "checkedAt": checked })
+                    json!({ "state": "error", "checkedAt": checked, "previewAllowed": preview_allowed, "preview": preview })
                 }
             };
             let _ = qt.queue(move |mut this| this.as_mut().set_update_json(QString::from(v.to_string().as_str())));

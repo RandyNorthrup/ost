@@ -70,7 +70,42 @@ Rectangle {
     /// The result open in the preview pane (Teams' preview beside the
     /// results: 40% of the page).
     property var preview: null
-    readonly property real previewWidth: preview ? Math.round(width * 0.4) : 0
+    readonly property real previewWidth: preview || copilotOpen ? Math.round(width * 0.4) : 0
+    // Copilot asked from the search box (Teams' "Ask Copilot about …",
+    // TASK-0165): the Microsoft 365 Copilot app in the results' right pane
+    // (the preview's place, measured on winpc 2026-11-20: a 60.7 tall
+    // header with Copilot's colour mark at 26.7, "Copilot" 16/600 at 50 and
+    // Close), told the Search context and handed the query.
+    property bool copilotOpen: false
+    property var copilotLaunch: null
+    property string copilotTag: ""
+    property bool copilotSent: false
+    function askCopilot(q) {
+        preview = null
+        copilotLaunch = null; copilotSent = false; copilotOpen = true
+        copilotTag = "searchcopilot:" + Date.now()
+        const g = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === "x" ? r : (r & 3 | 8)).toString(16) })
+        backend.eventsRequest("searchCopilot", copilotTag, JSON.stringify({ session: g, query: q, theme: theme.highContrast ? "contrast" : theme.dark ? "dark" : "default" }))
+    }
+    function sendCopilotPrompt() {
+        if (!copilotLaunch || !copilotHost.item || copilotSent) return
+        copilotSent = true
+        copilotHost.item.sendFrameMessage("contextualChatChanged", [copilotLaunch.contextualChat])
+        copilotHost.item.sendFrameMessage("updateCapabilities", [copilotLaunch.capabilities])
+        copilotHost.item.sendFrameMessage("updatePromptInputData", [Object.assign({ promptTimestamp: Date.now().toString() }, copilotLaunch.prompt)])
+        console.info("SEARCH copilot prompt sent")
+    }
+    Connections {
+        target: backend
+        function onEventsReply(id, json) {
+            if (id !== root.copilotTag) return
+            let v = {}
+            try { v = JSON.parse(json) } catch (e) {}
+            root.copilotLaunch = v.error ? null : v
+            console.info("SEARCH copilot", v.error || "ready")
+        }
+    }
+    onPreviewChanged: if (preview) copilotOpen = false
     readonly property real resultsWidth: width - previewWidth
     readonly property string key: tab + "#" + query + "#" + generation
     readonly property var result: { try { const r = JSON.parse(backend.searchPageJson || "{}"); return r.key === key ? r : null } catch (e) { return null } }
@@ -716,6 +751,48 @@ Rectangle {
         }
     }
 
+    Rectangle {
+        id: copilotPane
+        visible: root.copilotOpen && !root.preview
+        anchors { top: parent.top; bottom: parent.bottom; right: parent.right }
+        width: root.previewWidth
+        color: theme.surface
+        Rectangle { width: 0.67; height: parent.height; color: theme.divider }
+        Item {
+            id: copilotHead
+            width: parent.width; height: 60.7
+            FluentIcon { x: 26.7; anchors.verticalCenter: parent.verticalCenter; size: 20; name: "copilot-color-48"; color: theme.text }
+            Text {
+                x: 50; anchors.verticalCenter: parent.verticalCenter
+                text: qsTr("Copilot")
+                font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text
+                Accessible.role: Accessible.Heading; Accessible.name: text
+            }
+            BarButton {
+                x: parent.width - 51; anchors.verticalCenter: parent.verticalCenter; width: 32; height: 31.3
+                icon: "dismiss-20"; tip: qsTr("Close")
+                onClicked: root.copilotOpen = false
+                Accessible.name: qsTr("Close")
+            }
+            Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.divider }
+        }
+        BusyIndicator { anchors.centerIn: parent; running: copilotPane.visible && !root.copilotLaunch; visible: running }
+        Loader {
+            id: copilotHost
+            anchors { top: copilotHead.bottom; left: parent.left; leftMargin: 0.67; right: parent.right; bottom: parent.bottom }
+            active: root.copilotOpen && !!root.copilotLaunch
+            sourceComponent: WebApp {
+                showHeader: false; teamsHost: true; deepNaa: true
+                appName: "Copilot"; appId: "b5abf2ae-c16b-4310-8f8a-d3bcdb52f162"
+                frameContext: "sidePanel"
+                ssr: true
+                runtimeSupports: ({ appPerformanceMetrics: {}, copilot: { eligibility: {} }, mouseRelay: {} })
+                hostContext: root.copilotLaunch.context
+                home: root.copilotLaunch.url
+                onHostEvent: (name, json) => { if (name === "ChatReady") root.sendCopilotPrompt() }
+            }
+        }
+    }
     SearchPreview {
         id: previewPane
         visible: !!root.preview

@@ -384,6 +384,115 @@ How OST does it:
 - `theme.onFill(fills, colour)` makes text black on whatever light fill is under it.
 - Content colours (skin tones, avatar palettes, charts) keep their own colours.
 
+## Teams 26304 changes (measured on winpc 2026-11-20)
+
+Teams changed these pages since the 2026-11-10/14 captures (ost-test1 now also has Teams Phone
+and a Copilot licence, and is in Targeted release):
+
+- **General ▸ Opening content in Teams windows** (`window-mode-section`, card 331.7 tall): it
+  absorbed the old "Starting chats" card. Under the subtitle ("Choose to open the following
+  content in either the main window or a new window. This will only apply to this account.") the
+  two pictures (`evergreen-assets/settings/new-chat/new-chat-{mainwindow,popout}-{default,dark,
+  contrast,classic}.svg`, 148 x 88, 24.6 under the header, their labels 4 under them), then a
+  table 24.7 lower: "Content" (14/700) with "Main window" and "New window" columns (108 wide from
+  346.5 in), a 29 tall header and 32 tall rows, each row a radio pair centred in the columns:
+  - "Notifications and links to chats, channels, and messages": the client preference
+    windowing.shouldOpenContentInNewWindow (device).
+  - "New chats": the synced messagingSettings.alwaysPopOutNewChat.
+- **General ▸ Language and regional formats**: the subtitle is now "Please restart Teams to apply
+  language settings. Date and time format settings are applied automatically."
+  (`restart_teams_to_apply_language_and_regional_settings_autoapplied`, when the host applies OS
+  regional changes live). Save and restart still restarts.
+- **Chats and channels ▸ Chats and channels list**: "Show private chats in meetings" after Show
+  time stamps (simpleCollabUserSettings.hasUserEnabledNewPrivateChatInMeetingChat, on unless
+  off): with it off a meeting chat shows only Everyone, no private chat tabs.
+- **Chats and channels ▸ Compose** (199.3 tall, after Automatically follow threads): Enter to send
+  moved here from its own card: "When writing a message, press Enter to" (14/20) and "This
+  setting doesn't apply when message formatting is active." (12/16) under the header, the radios
+  10 under that.
+- **Chats ▸ Copilot** (the list card's switch): shown to licensed users
+  (isUserLicensedToM365CopilotBusinessChat) with ECS messaging.enableMetaOSCopilotToggleInSettings
+  and the Microsoft 365 Copilot app (`b5abf2ae-…`) installed; userPersonalSettings.
+  messagingSettings.shouldShowMetaOSCopilotApp (default true).
+- **Notifications and activity**: "Posts in all shown channels" / "Include replies" are gone.
+  New: **Reminders** (key `Reminder`, Show in Activity and banner by default; after Likes and
+  reactions) and the **Channel Notifications** card (93.3 tall: "Choose where to see notifications
+  for each channel, or turn them off. By default, all new channel notifications are set to
+  '@Mentions & replies' unless changed individually." with Manage). Manage opens
+  "Notifications and activity › Manage": the Channel Notifications card (padding 15.7, icon at
+  24.7), then one card with "Team" (14/600 #424242) and every team as an expander (44 tall:
+  chevron, the 20 px picture, the name 14/600) with its channels 47.3 apart: the name, a 294 x
+  31.3 dropdown (All new messages / @mentions and replies / Mute, each with Teams' hint) at 367.3
+  and Customize (the channel notification dialog).
+- **Notifications ▸ Apps** (section): an expander per app with Graph activity notifications
+  (Meeting Recaps; Q&A): the app's 18 px icon, its name, an On/Off switch (appNotificationEnabled)
+  and a chevron ("Notification panel") that opens one dropdown per activity type of the app's
+  manifest ("When meeting recap is ready for meetings I follow", …; Q&A: Replies to your posts,
+  Organizer replies to your post, Reactions to your posts, New question posted, Post approved, New
+  post pending approval, Teams Q&A enabled, New discussion posted, New private reply, Organizer
+  private reply, New anonymous reply, New post, Other activities). Kept in userGraphSettings per
+  app. (Not built in OST yet.)
+- **Privacy ▸ Delete Copilot activity history** (93.3 tall, after Blocked contacts; ECS
+  messaging.enableCopilotDeleteHistorySetting and the Copilot licence check for ChatInfoPane):
+  "You can delete your history in your Microsoft account." with the link "Learn how to delete
+  Copilot activity history" (copilotDeleteHistorySettingLearnMoreUrl,
+  https://go.microsoft.com/fwlink/p/?linkid=2250168) inline (12/16, wrapping at 433.4), and the
+  button "Open Copilot activity history" with an open glyph (233.3 x 31.3;
+  copilotDeleteHistorySettingDeleteHistoryUrl,
+  https://myaccount.microsoft.com/settingsandprivacy/privacy).
+- **Calls** (Teams Phone): an "Intelligent call delegation" card (Set up → a sub-page with an
+  Off switch and "Inactive"), Call handling and forwarding with "Forward all my calls", "When you
+  receive a call" (Do not ring anyone else / Also ring a new number or contact / call group /
+  delegates, by the calling policy's isCallGroupsAllowed, isDelegationAllowed,
+  isForwardingToUserAllowed, isForwardingToPhoneAllowed), "When you can't answer a call" with
+  "Redirect to a new number or contact", ringtones for you / forwarded (CallGroup) / delegated
+  (Delegate) calls, "Viewing incoming calls" (user preference callViewMode immersive | minimized:
+  Large window / Small window, pictures `evergreen-assets/settings/calling/{immersive,minimized}-
+  view-{theme}.svg`), and the Call group (Add a call group → "Calls › Call group": "Add a call
+  group member", Type a name or number) and Delegates (Add a delegate → "Calls › Manage
+  delegates") cards. (Not built in OST yet.)
+- **About ▸ Version**: a ring line "**Early Access** through Targeted release ↗" (the host's ring
+  ring3_6 assigned = Targeted release; links from ECS core.aboutRingInfoLinks), and an **Early
+  access** card with "Public preview" (the desktop host's setNextLaunchIsPublicPreview, offered when
+  the update policy allows public preview). (Not built in OST yet.)
+
+## Copilot surfaces (TASK-0165, Teams 26304)
+
+- **Search box**: with the licence (`userLicenseDetails.isCopilot`) and ECS
+  autosuggest.enableSerpCatalystEntrySuggestion, the placeholder is "Search or ask Copilot
+  (Ctrl+E)" and, focused, "Look for people, messages, files and more or ask Copilot". A query of
+  more than one word (no scope, filter, command or KQL) gets "Ask Copilot about <b>query</b>" first
+  among the top hits (50 tall, a 32 px #F0F0F0 circle at 16 with Copilot's 16 px glyph #424242, the
+  text 14/20 at 58). Choosing it opens the search results with the Microsoft 365 Copilot app in the
+  right pane (the preview's 40 %; a 60.7 tall header with Copilot's colour mark at 26.7 and
+  "Copilot" at 50), launched with scope "Search", entry point "SearchAutosuggestAskCopilot", ECS
+  Copilot.copilotEntryPointsCMMIds.searchAutosuggestAskCopilot (cmmi7lmhneb), copilotReferenceId =
+  SHA-256 of the search session id (the frame's address is `chat/sessionanchor/<that>`); once up the
+  host posts contextualChatChanged {contentType "teams", contentItems [{contextType "Search"}]} and
+  updatePromptInputData with the SearchPrompt (the query and Teams' CopilotSearch annotation:
+  searchType AllTab, entityTypes [All], appName Teams).
+- **Chat list**: Copilot at the top (`list-item-metaos-copilot`) when ECS
+  chatList.enableBizChatMetaOSChatListEntryPoint (simple collab: simpleCollab.
+  enableBizChatMetaOSSimpleCollabEntryPoint), the Copilot app installed for you and
+  shouldShowMetaOSCopilotApp is not false.
+- **App bar**: Copilot is one of your pinned personal apps (b5abf2ae-…), as the service lists them.
+
+## Workplace check-in over Wi-Fi (TASK-0149)
+
+Teams' worker (PlacesManager, wifiAutoLocationHelper, IC3 location service client): with the
+work-location policy on (and ECS places.enableAutoDetectPlaceWifi) and your switch on, a Wi-Fi
+network change gets the tenant's SSID allow list (`GET {iC3LocationService}/v1/me/ssid-allowlist`,
+`{SSIDList}`, cached a day; resource https://ic3.teams.office.com) and, on a listed network,
+`PUT …/v1/me/endpoints/{endpointId}/location/network {bssid, [ssid], eventTime, shouldUpdate: true,
+canShareLocationDetails: true}`: 200 {placeId, name} checks you in at that building (BSSID
+match), 207 "In the office" (SSID match), 404 not found. On another network it checks you out
+(`DELETE …/location/wifiNetwork`). Headers: x-ms-client-user-agent Teams-V2-desktop,
+x-ms-endpoint-id (the presence endpoint), x-ms-correlation-id, ms-cv. Admins list the SSIDs with
+`Set-PlacesSettings -Collection Presence -WorkplaceWifiNetworkSSIDList 'Default:…'` and map BSSIDs
+to buildings with `Add-WifiDevices` (MicrosoftPlaces module), 24–48 h to propagate; check-in only
+happens within your working hours. OST reads the network from NetworkManager over D-Bus
+(desktop/src/work_location.rs).
+
 ## OST status
 
 - Built: the left pane and header, General (System, opening content, Out of office, keyboard

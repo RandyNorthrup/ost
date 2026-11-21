@@ -191,6 +191,47 @@ pub fn launch_recap(m: &Meeting, vroom_id: &str, cmmid: &str) -> Value {
     v
 }
 
+/// Copilot asked from search (Teams' "Ask Copilot about …" suggestion,
+/// search-app 403263 `handleCatalystInSerpClick`): the same app in the
+/// search results' right pane. The launch payload names scope "Search",
+/// entry point "SearchAutosuggestAskCopilot" and ECS Copilot.
+/// copilotEntryPointsCMMIds.searchAutosuggestAskCopilot; its
+/// copilotReferenceId is the SHA-256 of the search session's id, which the
+/// frame's address also anchors on (`chat/sessionanchor/<id>`, measured
+/// 2026-11-20). Once the app is up the host tells it the Search context
+/// and hands it the query as a SearchPrompt (`updatePromptInputData`, with
+/// Teams' CopilotSearch annotation for the All tab).
+pub fn launch_search(m: &Meeting, search_session: &str, query: &str, cmmid: &str) -> Value {
+    let reference = reference_id(search_session);
+    let payload = json!({
+        "id": "", "scenario": "Default", "chatType": "", "properties": {}, "version": 1,
+        "referral": { "cmmid": cmmid },
+        "callerInfo": { "scope": "Search", "entryPoint": "SearchAutosuggestAskCopilot", "copilotReferenceId": reference },
+        "serverVariants": [],
+    });
+    let sub = json!({
+        "hostSettings": { "enableDeeplinks": "true", "focusOnLoad": "Compose" },
+        "launchOptionPayload": base64::engine::general_purpose::STANDARD.encode(payload.to_string()),
+    })
+    .to_string();
+    let mut v = launch(m);
+    v["url"] = Value::String(content_url(m).replacen("/chat?", &format!("/chat/sessionanchor/{reference}?"), 1));
+    v["context"]["subEntityId"] = Value::String(sub);
+    v["contextualChat"] = json!({ "contentType": "teams", "contentItems": [{ "contextType": "Search" }] });
+    v["prompt"] = json!({
+        "promptText": query,
+        "isDraft": false,
+        "conversationId": "",
+        "queryAnnotations": [{
+            "id": uuid::Uuid::new_v4().to_string(),
+            "queryAnnotationType": "CopilotSearch",
+            "messageAnnotationSource": "ClientAnnotated",
+            "messageAnnotationMetadata": { "@type": "CopilotSearch", "annotationType": "CopilotSearch", "searchType": "AllTab", "entityTypes": ["All"], "appName": "Teams" },
+        }],
+    });
+    v
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -244,5 +285,21 @@ mod tests {
         let sub: Value = serde_json::from_str(&sub_entity_id(&m)).unwrap();
         assert_eq!(sub["hostSettings"]["focusOnLoad"], "Compose");
         assert_eq!(launch(&m)["context"]["renderingSurface"], "copilotSidePanel");
+    }
+    #[test]
+    fn search_launch_anchors_on_the_session() {
+        let m = meeting();
+        let v = launch_search(&m, "session-1", "what meetings do I have today", "cmmi7lmhneb");
+        let r = reference_id("session-1");
+        assert!(v["url"].as_str().unwrap().starts_with(&format!("https://m365copilotapp.svc.cloud.microsoft/chat/sessionanchor/{r}?OID=")));
+        let sub: Value = serde_json::from_str(v["context"]["subEntityId"].as_str().unwrap()).unwrap();
+        let payload: Value = serde_json::from_slice(&base64::engine::general_purpose::STANDARD.decode(sub["launchOptionPayload"].as_str().unwrap()).unwrap()).unwrap();
+        assert_eq!(payload["callerInfo"]["scope"], "Search");
+        assert_eq!(payload["callerInfo"]["entryPoint"], "SearchAutosuggestAskCopilot");
+        assert_eq!(payload["callerInfo"]["copilotReferenceId"], r.as_str());
+        assert_eq!(payload["referral"]["cmmid"], "cmmi7lmhneb");
+        assert_eq!(v["contextualChat"]["contentItems"][0]["contextType"], "Search");
+        assert_eq!(v["prompt"]["promptText"], "what meetings do I have today");
+        assert_eq!(v["prompt"]["queryAnnotations"][0]["messageAnnotationMetadata"]["searchType"], "AllTab");
     }
 }

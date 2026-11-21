@@ -16,6 +16,7 @@ mod room_host;
 mod tray;
 mod video_effects;
 mod video_item;
+mod work_location;
 
 use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QString, QUrl};
 use tracing_subscriber::EnvFilter;
