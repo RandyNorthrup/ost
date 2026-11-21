@@ -1,10 +1,10 @@
 ---
 id: TASK-0162
 title: 'Better Together: pair with a Teams phone (Settings ▸ Devices ▸ Manage devices)'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-11-15T20:59:00Z'
-updated_date: '2026-11-21T08:57:00Z'
+updated_date: '2026-11-21T15:20:00Z'
 labels:
   - devices
 dependencies: []
@@ -19,8 +19,8 @@ Teams' Manage devices page (Settings ▸ Devices ▸ Connected devices) lists th
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A paired Teams phone shows on Manage devices with Teams' name, status and Disconnect
-- [ ] #2 Disconnect unpairs it as Teams does
+- [x] #1 A paired Teams phone shows on Manage devices with Teams' name, status and Disconnect
+- [x] #2 Disconnect unpairs it as Teams does
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -47,4 +47,18 @@ Teams' Manage devices page (Settings ▸ Devices ▸ Connected devices) lists th
 - Keep-alives every 30 s (proximity scan, keepalive with companionResponseRequired:true, the phone's response); the 50 s prompt timeout answered accepted:false RejectedByTimeout.
 - Found: after an OST restart the stored phone showed paired-not-connected, but the phone refused OST's keepalive (300 DEVICE_NOT_PAIRED) because OST's calling endpoint id was new; fixed by keeping it (profile file calling-endpoint-id; OST_CALLING_ENDPOINT_ID for a second client of the profile). btvirt reports RSSI 127 (HCI "not available"), now read as missing.
 - Cleanup: OST and phone stopped by pid, btvirt down, the test registrations deleted from the registrar (202).
+
+- 2026-11-21 merged (ed054b1, 97cc7a9, 7206139); 871 lib + 29 desktop tests pass on linuxlt.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Better Together as Teams: pair OST with a Teams phone.
+
+- OST registers Better Together as Teams does, as a second transport (context BetterTogether) on its calling registration, and keeps its calling endpoint id across restarts so a paired phone keeps talking to it.
+- Pairing: the phone's beacon and broadcast reach OST, which answers with its device name; the phone's pair request shows Teams' "Connection request" prompt (50 s timeout answered RejectedByTimeout); keep-alives every 30 s.
+- Settings ▸ Devices ▸ Manage devices lists the phone with Teams' name, Connected status and Disconnect; Disconnect sends Teams' unpair and the phone is unpaired.
+
+Verified live on linuxlt with an emulated Teams phone (examples/teams_phone: own Trouter socket, calling registration with the BetterTogether transport, beacon over a btvirt pair); test registrations deleted. No real Teams phone in the test setup (no hardware bought).
+<!-- SECTION:FINAL_SUMMARY:END -->

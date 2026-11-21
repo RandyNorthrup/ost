@@ -1,10 +1,10 @@
 ---
 id: TASK-0165
 title: Copilot surfaces for licensed users as Teams
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-11-16T00:26:00Z'
-updated_date: '2026-11-21T07:55:00Z'
+updated_date: '2026-11-21T15:20:00Z'
 labels:
   - desktop
   - copilot
@@ -20,8 +20,8 @@ With a Copilot licence (ost-test1 since 2026-11-15) Teams shows Copilot in the a
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 OST shows Copilot where Teams does for licensed users only (app bar, chat list, search placeholder), measured on winpc
-- [ ] #2 Privacy shows 'Delete Copilot activity history' as Teams' card with its links
+- [x] #1 OST shows Copilot where Teams does for licensed users only (app bar, chat list, search placeholder), measured on winpc
+- [x] #2 Privacy shows 'Delete Copilot activity history' as Teams' card with its links
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -34,4 +34,12 @@ With a Copilot licence (ost-test1 since 2026-11-15) Teams shows Copilot in the a
   - Search box: "Search or ask Copilot (Ctrl+E)" / focused "Look for people, messages, files and more or ask Copilot" (licence + autosuggest.enableSerpCatalystEntrySuggestion); a query of 2+ words offers "Ask Copilot about <b>query</b>" first (Teams' row: 32 px circle, glyph, 50 tall); choosing it opens the results with the Microsoft 365 Copilot app in the right pane (scope Search, entry SearchAutosuggestAskCopilot, cmmid cmmi7lmhneb, reference = SHA-256 of the search session, frame chat/sessionanchor/<ref>), told the Search context and handed the query (SearchPrompt with Teams' CopilotSearch annotation) once the app has started (api::meeting_copilot::launch_search).
   - Privacy: Delete Copilot activity history card (note + Learn how… link, Open Copilot activity history button with the open glyph).
 - Verified live on linuxlt (ost-test1, --setf-test): the search placeholder, the Ask Copilot suggestion, the results with Copilot answering "what meetings do I have today" (it listed OST TEST 240's meeting), the chat list's Copilot row, the Privacy card. Teams on winpc: the same query gave the same pane and answer.
+
+- 2026-11-21 merged (10fb14c, 0824252).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Copilot surfaces for licensed users as Teams: the Copilot app on the app bar (pinned by the service), the chat list's Copilot row (with Settings ▸ Chats ▸ Copilot), the search box's "Search or ask Copilot (Ctrl+E)" placeholder and its "Ask Copilot about …" suggestion opening the Microsoft 365 Copilot pane, and Privacy's Delete Copilot activity history card; all only with a Copilot licence. Verified live on linuxlt as ost-test1 and side by side with Teams on winpc (same query, same pane and answer).
+<!-- SECTION:FINAL_SUMMARY:END -->
