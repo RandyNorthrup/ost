@@ -6016,7 +6016,12 @@ Window {
                 if (st === 3) { conversation.jumpToNewest(); for (const m of linkCards()) console.warn("APPCARD message", m.id, JSON.stringify((m.cards || []).map(k => ({ link: k.link_card, app: k.app_name, type: k.content_type, title: (k.content || {}).title }))), "preview", JSON.stringify(m.url_preview || null)); shot("app-card-messages") }
                 else if (st > 3) Qt.quit()
             }
-            else if (st === 1) { conversation.focusCompose(); linkTyper.typeText(text) }
+            else if (st === 1) {
+                // A draft left in the box (Teams takes the first link): start clean.
+                if (args.indexOf("--app-card-signin") >= 0 || args.indexOf("--app-card-clear") >= 0) { c.clear(); backend.setDraft(backend.currentChatId, "") }
+                if (args.indexOf("--app-card-clear") >= 0) { Qt.quit(); return }
+                conversation.focusCompose(); linkTyper.typeText(text)
+            }
             else if (st === 4) { console.warn("APPCARD compose", JSON.stringify(c.appCard), "shown", c.appCardShown, "preview", JSON.stringify(c.urlPreview)); shot("app-card-compose") }
             // --app-card-signin: Teams' permission card as a person would
             // use it: Show Preview (installs the app for you), then Sign in
@@ -14240,7 +14245,7 @@ Window {
         id: createTeamDialog
         onMoreOptions: window.openTeamPage("create")
         onCreated: (g, t) => window.teamReady(g, t, true, createTeamDialog.lastName)
-        onAddChannelAgent: (channel, thread, group) => channelAgentToast.start(channel, thread, group)
+        onAddChannelAgent: (channel, thread, group, team) => channelAgentToast.start(channel, thread, group, team)
     }
     CreateTeamPage {
         id: createTeamPage

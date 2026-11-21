@@ -55,7 +55,7 @@ Popup {
     signal created(string groupId, string threadId)
     /// "Add Channel Agent" was ticked: add it to the new team's first
     /// channel (ChannelAgentToast).
-    signal addChannelAgent(string channel, string thread, string group)
+    signal addChannelAgent(string channel, string thread, string group, string team)
     /// Teams' "Add Channel Agent" (785683, measured on winpc 2026-11-20):
     /// under First channel name, unticked, for a Copilot licence when ECS
     /// offers the Channel Agent (api::project_agent::offered).
@@ -120,7 +120,7 @@ Popup {
             dlg.creating = false
             if (r.ok) {
                 dlg.close(); dlg.created(r.data.group_id || "", r.data.thread_id || "")
-                if (dlg.pendingAgent) dlg.addChannelAgent(dlg.pendingAgent, r.data.thread_id || "", r.data.group_id || "")
+                if (dlg.pendingAgent) dlg.addChannelAgent(dlg.pendingAgent, r.data.thread_id || "", r.data.group_id || "", dlg.lastName)
                 dlg.pendingAgent = ""
             }
             else backend.toast(qsTr("We couldn't create your team. Please try again."), "error")

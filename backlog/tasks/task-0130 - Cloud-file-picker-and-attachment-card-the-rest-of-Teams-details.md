@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-13T21:53:00Z'
-updated_date: '2026-11-21T02:46:00Z'
+updated_date: '2026-11-21T06:18:00Z'
 labels:
   - desktop
   - files
@@ -69,4 +69,10 @@ Left: Media's layout menu, compact toggle, zoom and date headings (measured in t
   - Layout and zoom aren't saved to OneDrive uxSetting (they reset per picker).
   - People chips use the file name: Teams shows the recording's title, without the timestamp suffix.
   - The person picture falls back to initials, where Teams draws its person placeholder.
+
+- 2026-11-20 (chatE), from Photos' code (spofilepickerwebpack 2503.js, module 8734 the scrubber, 8735/8736 date maths; settings store 4464) and checked live on linuxlt as ost-test1:
+  - Timeline: the newest year at the top and the oldest at the bottom (each goes there), 4 px dots 68 apart (ceil(height / 68), cut at the channel), shown on hover and while scrolling. Over the channel a 4 px brand mark follows the pointer with the month beside it ("November 2026"); the date is linear in time between the newest and oldest picture; a click goes to the 15th of that month, a drag (the mark 8 x 24) goes along; wheel scrolls. Without the pointer, while scrolling, the mark shows where the pictures in view start. `--attach-media-test`: clicks at a quarter, half and the end of the channel scroll the list to those dates (the list ends at Nov 8 for this account, so all three end at the bottom).
+  - Layout and zoom are kept as Photos keeps them: its uxSetting {layoutAlgorithm, zoomLevel} lives in the picker's local storage (per device), so OST keeps `photosUxSetting` in its device settings; compact, inline dates and file names are not kept (Teams' component state). Live: Waterfall at 300 px came back on reopening; the setting was put back.
+  - People: Teams (winpc, Browse by > People) names chips by the file's title (Substrate's Visualization.Title, the SharePoint Title that Teams sets to a recording's meeting name: "OST TEST 217 r3 town hall B"); OST now reads each file's Title (Graph listItem fields) and shows it, else the name without extension. The person picture is SharePoint's default photo for someone without one (a white figure on #B2B2B2), as the picker shows it. Live: OST shows "OST TEST 217 r3 town hall B" and "OST TEST 217 webinar" with the figure, as Teams does.
+- Open: Teams lists a third file for OST Test 2 ("+1"): its People view reads Substrate's shared-with-me working set, which has one item Graph's sharedWithMe doesn't return. The "files you shared" Teams listed on 11-16 are no longer listed in Teams either.
 <!-- SECTION:NOTES:END -->

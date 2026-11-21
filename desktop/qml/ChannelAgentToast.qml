@@ -27,10 +27,30 @@ Rectangle {
     border.width: theme.highContrast ? 1 : 0; border.color: theme.text
     FluentSurface { z: -1; anchors.fill: parent; depth: 8; radius: 4; color: theme.surface }
 
-    function start(channel, thread, group) {
-        root.channel = channel; root.thread = thread; root.group = group
+    /// The new team's name, to find its thread once it is listed (Create
+    /// team's answer can come before the team has one).
+    property string teamName: ""
+    function start(channel, thread, group, name) {
+        root.channel = channel; root.thread = thread; root.group = group; root.teamName = name || ""
         state_ = "progress"; hide.interval = 120000; hide.restart()
-        backend.channelAction("channel-agent-add", "", "", JSON.stringify({ channel: channel, thread: thread, group: group }))
+        if (thread) add(); else { waitTries = 0; waitThread.restart() }
+    }
+    function add() { backend.channelAction("channel-agent-add", "", "", JSON.stringify({ channel: root.channel, thread: root.thread, group: root.group })) }
+    // Teams' hook takes the first channel from the made team (its thread
+    // is the team's); OST waits for the team to be listed (up to 2
+    // minutes).
+    property int waitTries: 0
+    Timer {
+        id: waitThread
+        interval: 3000; repeat: true
+        onTriggered: {
+            let teams = []
+            try { teams = JSON.parse(backend.teamsJson || "[]") } catch (e) {}
+            const t = teams.find(x => (root.group && x.id === root.group) || (root.teamName && x.name === root.teamName))
+            if (t && t.thread_id) { stop(); root.thread = t.thread_id; if (!root.group) root.group = t.id || ""; root.add(); return }
+            if (++root.waitTries % 5 === 0) backend.reloadTeams()
+            if (root.waitTries > 40) { stop(); root.state_ = "error"; hide.interval = 5000; hide.restart() }
+        }
     }
     Timer { id: hide; onTriggered: root.state_ = "" }
     Connections {
