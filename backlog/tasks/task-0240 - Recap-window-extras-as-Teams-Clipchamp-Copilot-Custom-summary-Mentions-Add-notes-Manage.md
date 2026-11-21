@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-11-20T22:51:00Z'
-updated_date: '2026-11-21T03:15:00Z'
+updated_date: '2026-11-21T07:15:00Z'
 labels:
   - desktop
   - calls
@@ -58,4 +58,8 @@ TASK-0098 built Teams' recap pop-out (player, Speakers/Topics/Chapters, Shared f
   - The player is OneDrive's; it shows "Open in browser", which Teams' streamembed doesn't have.
 
 - 2026-11-20 merged: Open in Clipchamp, Copilot and Manage (Download, Expires in 118 days, Extend / Remove expiration) checked live. AC2 open: Custom summary got Copilot's server error for this meeting; Mentions shows Teams' own error; Add notes not pressed; Create template editor not built.
+
+- 2026-11-20 (chatE): test meeting "OST TEST 240 recap meeting" (organizer ost-test1, OST Test 3 invited; calendar event via examples/create_event), run on linuxlt: ost-test1 in OST with `--join-copilot` (transcript started, Copilot pane), OST Test 3 in OST speaking Piper speech through a PipeWire virtual mic (OST_MIC_DEVICE), about 6 minutes; "Meeting ended: 6m 27s".
+  - Teams on winpc for it: recap card "1 speaker, 3 tasks, Transcript"; recap window with Shared files (Attendance), pills Notes / AI summary / Custom summary (New) / Mentions / Transcript, header Audio recap / Share / Open in Clipchamp. AI summary is written ("Project Plan And Budget Updates…", "Launch Review Rescheduling…"). Mentions: "We didn't find mentions of you". Custom summary cards: Create template, Speaker summary, Executive report (no Project update); Speaker summary returns a summary under the speaker "OST".
+  - OST (`--recap-window-test=extras --recap-chat=OST~TEST~240`, the harness now waits for that chat's own messages): Mentions answers 400 and Speaker summary errors, because OST sends the recording's item as the catch-up entity and vroomId, and this meeting has only a transcript. Being fixed with the Create template editor (separate branch).
 <!-- SECTION:NOTES:END -->

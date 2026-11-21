@@ -4,7 +4,7 @@ title: Chat list leftovers found in live checks
 status: In Progress
 assignee: []
 created_date: '2026-11-16T20:22:00Z'
-updated_date: '2026-11-21T03:15:00Z'
+updated_date: '2026-11-21T07:15:00Z'
 labels:
   - desktop
 dependencies: []
@@ -55,4 +55,14 @@ Found while checking TASK-0150/0195/0204 against Teams on winpc (2026-11-16):
   - Teams lists only 4 people for "OST" (its local cache; OST lists Substrate's 9).
   - The Create team "Add Channel Agent" checkbox is not built: Teams' Channel Agent installer isn't traced, and a checkbox that does nothing would be a placeholder.
   - The Add members blank picture was not reproduced this pass.
+
+- 2026-11-20 (chatE), new chat typed search, from Teams 26304 (worker resolver 81199, slots 964128, local chat search 54954/68583) and Teams on winpc:
+  - Teams doesn't stop at 4 people for "OST": its list is a 225 px scrolling box with 22 rows (5 people incl. "OST Test 1 (You)" and two guests, 3 group chats, 3 channels, the team's group and OST Test Community, 15 more people, then what didn't fit: OST large chat test, OST test channel 2). The 4 seen before were only the rows in view.
+  - OST now asks with the new chat form's own People filter and arranges the answer in Teams' slots (api::search::new_chat_arrange, unit test with the captured answer); local named group chats that match come in as Teams adds them; channels show their team, groups their address; the typed words are bold where a word starts with them (both lines). Picking a chat, channel or team opens it; a group adds its people.
+  - Live (`--new-chat-search-test=OST`): OST lists 17 rows in Teams' order: OST Test 2, the guests, OST Test 3, OST group test, OST TEST group call, two channels, OST Test Team, OST Test Community, the other guests.
+  - Still different: Substrate gives OST's token no "OST Test 1" row and two channels where it gives Teams four (examples/newchat_probe shows the raw answer); OST's chat list doesn't hold "OST empty chat test" / "OST large chat test", so those local matches are missing.
+- Create team's "Add Channel Agent", traced live in Teams on winpc (team "OST TEST 206 agent", deleted afterwards): unticked by default; ticked, Teams creates the team, shows a bottom-left toast ("<channel>" / "Channel Agent is being added." / Go to channel) and the Teams Copilot Aggregator adds "<channel> Agent", which posts "Hi, I'm your Channel Agent…"; the channel shows "OST TEST 206 channel Agent has been added to the channel." (Teams also showed a "We ran into a problem / Please try again later" dialog right after Create, though the team and agent were made.)
+  - Built: the checkbox (ECS messaging enableProjectAgentAutoCreationToggle + enableStatusReportAgent, Copilot licence, locale), api::project_agent (templatedApps check, POST {calling_TeamsCopilotAggregatorUrl}/agents?agentType=0 with Teams' body, the 40 s delay, waiting for the Welcome-AddAgent message) with unit tests, ChannelAgentToast with Teams' strings.
+  - Live in OST (`--team-live=create:... --team-live-agent`, team "OST TEST 206 agent OST", deleted afterwards): the box shows and is ticked; the first run failed because Create team's answer had no thread yet; the toast now waits for the team to be listed (rechecked with the next build).
+- Add members' blank picture: Avatar drew its canvas as soon as the picture loaded, before the pixels were there; it now keeps the initials until the picture is drawn (as Teams shows initials until the photo is in).
 <!-- SECTION:NOTES:END -->

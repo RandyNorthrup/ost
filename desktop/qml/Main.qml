@@ -6032,7 +6032,7 @@ Window {
                 const card = c.appCard || {}, w = c.lastAuthWindow
                 if (st === 5 && card.permission === "install") { console.warn("APPCARD show preview"); backend.appLinkAction("install", c.previewUrl, c.chatId, card.app_id) }
                 else if (card.permission === "auth" && !w && !signInOpened) { signInOpened = true; console.warn("APPCARD sign in", (card.auth_url || "").split("?")[0], JSON.stringify(card.valid_domains)); shot("app-card-signin-card"); c.openAppAuth(card.auth_url, card.valid_domains || []) }
-                else if (st % 5 === 0) console.warn("APPCARD signin state", JSON.stringify({ permission: card.permission || "", type: card.content_type || "", window: w ? String(w.title) : "", opened: signInOpened }))
+                else if (st % 5 === 0) console.warn("APPCARD signin state", JSON.stringify({ permission: card.permission || "", type: card.content_type || "", window: w ? String(w.title).split("?")[0] : "", opened: signInOpened }))
                 if (signInOpened && !card.permission && card.content_type) { console.warn("APPCARD signed in", JSON.stringify(card).slice(0, 600)); shot("app-card-signed-in"); c.clear(); Qt.quit() }
                 if (st > 210) { console.warn("APPCARD signin gave up"); c.clear(); Qt.quit() }
                 return
