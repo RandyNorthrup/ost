@@ -11589,7 +11589,11 @@ Window {
             else if (step === 18) { const i = titleBar.suggestionsForTest().findIndex(x => x.kind === "copilot"); if (i >= 0) titleBar.chooseForTest(i); else console.warn("SETF no Ask Copilot suggestion") }
             else if (step === 26) { console.warn("SETF search copilot", searchView.copilotOpen, !!searchView.copilotLaunch, searchView.copilotSent); shot("search-copilot") }
             else if (step === 34) { console.warn("SETF search copilot later", searchView.copilotSent); shot("search-copilot-2") }
-            else if (step === 35) Qt.quit()
+            else if (step === 35) { rail.current = "settings"; settingsView.pageForTest("calls"); console.warn("SETF callingPolicy", JSON.stringify((JSON.parse(backend.settingsJson).mt || {}).callingPolicy || null)) }
+            else if (step === 37) shot("calls")
+            else if (step === 38) settingsView.scrollToForTest(500)
+            else if (step === 39) shot("calls-2")
+            else if (step === 40) Qt.quit()
             step++
         }
     }

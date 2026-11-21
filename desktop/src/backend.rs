@@ -5772,6 +5772,33 @@ static TENANT_ID: OnceLock<String> = OnceLock::new();
 /// Whether Teams offers Write with Copilot: Teams' rule (module 319919,
 /// ComposeChat / ComposeChannels*) is the compose Copilot setting with
 /// AugLoop on, for a user whose licence details say Copilot.
+/// A ringtone choice from Settings ▸ Calls: a name (your own calls) or
+/// {type: Regular|CallGroup|Delegate, name}.
+fn ringtone_choice(v: &serde_json::Value) -> (String, String) {
+    match v {
+        serde_json::Value::String(n) => ("Regular".into(), n.clone()),
+        _ => (v["type"].as_str().unwrap_or("Regular").into(), v["name"].as_str().unwrap_or("Ring").into()),
+    }
+}
+
+/// A Call handling and forwarding change ({op, targetType, target,
+/// seconds}) applied to the current callRedirectionSettings as Teams does.
+fn forwarding_change(cur: &serde_json::Value, v: &serde_json::Value, voicemail_allowed: bool) -> serde_json::Value {
+    use api::call_forwarding as cf;
+    let t = v["targetType"].as_str();
+    let target = v["target"].as_str().filter(|s| !s.is_empty());
+    let secs = v["seconds"].as_u64().unwrap_or(20);
+    match v["op"].as_str().unwrap_or_default() {
+        "forwardAll" => cf::forward_all(cur, t.unwrap_or("Voicemail"), voicemail_allowed, target),
+        "forwardAllOff" => cf::forward_all_off(cur, voicemail_allowed),
+        "alsoRing" => cf::also_ring(cur, t, voicemail_allowed, target),
+        "unanswered" => cf::unanswered(cur, t, voicemail_allowed, target),
+        "unansweredDelay" => cf::unanswered_delay(cur, secs),
+        "alsoRingDelay" => cf::also_ring_delay(cur, secs),
+        _ => cf::normalized(cur),
+    }
+}
+
 pub fn compose_copilot_state(license: Option<&serde_json::Value>) -> serde_json::Value {
     let on = |ns: &str, key: &str, dflt: bool| api::ecs::setting(ns, key).and_then(|v| v.as_bool()).unwrap_or(dflt);
     let licensed = license.and_then(|l| l["isCopilot"].as_bool()).unwrap_or(false);
@@ -24342,6 +24369,7 @@ impl qobject::Backend {
                 if let Ok(admin) = api::preferences::voice_admin_settings(&client).await {
                     mt["voice"]["ringtoneSettings"] = admin["ringtoneSettings"].clone();
                     mt["vm"] = api::preferences::voicemail_settings_of(&admin);
+                    mt["callingPolicy"] = api::preferences::calling_policy(&client, &admin).await;
                 }
                 anyhow::Ok(json!({ "props": props, "mt": mt, "loaded": true }))
             }
@@ -24364,8 +24392,16 @@ impl qobject::Backend {
         let mut all: serde_json::Value = serde_json::from_str(&before).unwrap_or_else(|_| json!({ "props": {}, "mt": {} }));
         if kind == "mt" && name == "ringtone" {
             // Kept with the rest of the calling settings, as Teams reads it.
-            let body = api::preferences::ringtone_body(&all["mt"]["voice"]["ringtoneSettings"], value.as_str().unwrap_or("Ring"));
+            let (kind, rname) = ringtone_choice(&value);
+            let body = api::preferences::ringtone_body_for(&all["mt"]["voice"]["ringtoneSettings"], &kind, &rname);
             all["mt"]["voice"]["ringtoneSettings"] = body;
+        } else if kind == "mt" && name == "forwarding" {
+            // Teams 26304's call handling for Teams Phone users: the whole
+            // callRedirectionSettings, changed as Teams changes it.
+            let cur = all["mt"]["voice"]["callRedirectionSettings"].clone();
+            let vm = all["mt"]["callingPolicy"]["allowVoicemail"].as_str() != Some("AlwaysDisabled");
+            let next = forwarding_change(&cur, &value, vm);
+            all["mt"]["voice"]["callRedirectionSettings"] = next;
         } else if kind == "mt" && name == "voicemail" {
             // Teams' voicemail mutation sends the whole settings with the
             // change (settings-app $a / bA / rg), and shows them at once.
@@ -24398,8 +24434,15 @@ impl qobject::Backend {
                     anyhow::Ok(None)
                 } else if kind == "mt" && name == "ringtone" {
                     let current: serde_json::Value = serde_json::from_str(&before).unwrap_or_default();
-                    let body = api::preferences::ringtone_body(&current["mt"]["voice"]["ringtoneSettings"], value.as_str().unwrap_or("Ring"));
+                    let (kind, rname) = ringtone_choice(&value);
+                    let body = api::preferences::ringtone_body_for(&current["mt"]["voice"]["ringtoneSettings"], &kind, &rname);
                     api::preferences::set_voice_setting(&client, "ringtone", &body).await?;
+                    anyhow::Ok(None)
+                } else if kind == "mt" && name == "forwarding" {
+                    let current: serde_json::Value = serde_json::from_str(&before).unwrap_or_default();
+                    let vm = current["mt"]["callingPolicy"]["allowVoicemail"].as_str() != Some("AlwaysDisabled");
+                    let body = forwarding_change(&current["mt"]["voice"]["callRedirectionSettings"], &value, vm);
+                    api::preferences::set_voice_setting(&client, "redirection", &body).await?;
                     anyhow::Ok(None)
                 } else if kind == "mt" && name == "voicemail" {
                     let current: serde_json::Value = serde_json::from_str(&before).unwrap_or_default();

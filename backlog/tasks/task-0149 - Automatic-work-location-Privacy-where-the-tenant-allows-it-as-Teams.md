@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-15T04:40:00Z'
-updated_date: '2026-11-21T07:55:00Z'
+updated_date: '2026-11-21T15:44:00Z'
 labels:
   - settings
   - presence
@@ -43,4 +43,9 @@ When the tenant's work-location detection policy is on (ECS places.enableWorkLoc
 
 - 2026-11-20 (agent setF) AC3 client side built as Teams does it (Teams 26304 worker: PlacesManager/wifiAutoLocationHelper/IC3 location service; docs/spec/settings.md "Workplace check-in over Wi-Fi"): with the policy + places.enableAutoDetectPlaceWifi and the switch on (Main.qml workLocationAuto), desktop/src/work_location.rs reads the Wi-Fi network from NetworkManager over D-Bus (wired ignored) and on each change gets the tenant's SSID allow list (GET {iC3LocationService}/v1/me/ssid-allowlist, cached a day), reports a listed network (PUT …/endpoints/{epid}/location/network {bssid, eventTime, shouldUpdate, canShareLocationDetails}: 200 building, 207 In the office, 404 none) and checks out on other networks (DELETE …/location/wifiNetwork). api::places (tested), examples/ic3_location.
 - Live on linuxlt (ost-test1, Wi-Fi): the service answers (needs Teams' MS-CV form); the tenant's allow list is empty (0 SSIDs), so linuxlt's network is not an office network and nothing is checked in; a fake BSSID report gives 404. Open: the tenant's Wi-Fi setup — Set-PlacesSettings -Collection Presence -WorkplaceWifiNetworkSSIDList and Add-WifiDevices (BSSID→building), both in the MicrosoftPlaces module, which needs Windows and an interactive password sign-in (not done; see memory work-location-places), then 24–48 h to propagate and a check-in only within working hours.
+
+- 2026-11-21 (agent setF) Tenant changes (authorized by the user via the coordinator):
+  - Places setting Presence.WorkplaceWifiNetworkSSIDList = 'Default:Condor Cave' (linuxlt's Wi-Fi; tenant-wide by design, only users with the work-location detection policy — the test accounts — use it).
+  - Places Wi-Fi device: linuxlt's access point BSSID mapped to OST Test Building (Add-WifiDevices UploadEntries; device a29c1b98-1184-4db5-b9a1-bb22637bc298, place a93350e7-…). Places.EnableBuildings left off (tenant-wide).
+  - How (the module's password prompt avoided): MicrosoftPlaces 2.1.13 on winpc (pwsh 7, installed to Documents\PowerShell\Modules, PSGallery marked trusted, msalruntime.dll added), with a device-code token for the module's own app (PlacesCmdletModule 05c7489d-…, resource outlook.office365.com, approved in Chrome as Randy) injected as the module's ManualAccessTokenProvider (CmdletSession.AccessTokenProvider) before Connect-MicrosoftPlaces. Token file deleted from winpc.
 <!-- SECTION:NOTES:END -->

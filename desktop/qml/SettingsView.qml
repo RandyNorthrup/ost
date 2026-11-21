@@ -3008,26 +3008,174 @@ Rectangle {
                 visible: root.page === "calls"
                 icon: "call-forward-20"; title: qsTr("Call handling and forwarding")
                 bottomPad: 21.4
+                // Teams Phone (Enterprise Voice) users get Teams 26304's call
+                // handling (settings-app Fg / Po / also-ring; api::
+                // call_forwarding): Forward all my calls with where to, else
+                // who else rings and the delay, then unanswered calls; each
+                // target type only where the calling policy allows it.
                 SettingsParts.SwitchRow {
+                    visible: fwd.ev
+                    label: qsTr("Forward all my calls")
+                    on: fwd.immediate
+                    onToggled: v => fwd.change(v ? { op: "forwardAll", targetType: fwd.vmAllowed ? "Voicemail" : "SingleTarget" } : { op: "forwardAllOff" })
+                }
+                QtObject {
+                    id: fwd
+                    readonly property var pol: root.mt.callingPolicy || {}
+                    readonly property bool ev: pol.ev === true
+                    readonly property var r: (root.mt.voice || {}).callRedirectionSettings || {}
+                    readonly property var cf: r.callForwardingSettings || {}
+                    readonly property var un: r.unansweredCallSettings || {}
+                    readonly property bool immediate: cf.isEnabled === true && (cf.forwardingType || "").toLowerCase() === "immediate"
+                    readonly property bool vmAllowed: pol.allowVoicemail !== "AlwaysDisabled"
+                    readonly property bool toUser: pol.allowCallForwardingToUser === true
+                    readonly property bool toPhone: pol.allowCallForwardingToPhone === true
+                    readonly property bool groups: pol.allowCallGroups === true && (((r.callGroupDetails || {}).targets || []).length > 0)
+                    readonly property bool delegates: pol.allowDelegation === true && !!r.hasDelegates
+                    readonly property string newTarget: toPhone ? (toUser ? "contact_or_number" : "number") : "contact"
+                    function change(v) { root.setMt("forwarding", v) }
+                    function items(kind) {
+                        const out = []
+                        const single = { contact_or_number: [qsTr("Forward to a new number or contact"), qsTr("Also ring a new number or contact"), qsTr("Redirect to a new number or contact")],
+                                         number: [qsTr("Forward to a new number"), qsTr("Also ring a new number"), qsTr("Redirect to a new number")],
+                                         contact: [qsTr("Forward to a new contact"), qsTr("Also ring a new contact"), qsTr("Redirect to a new contact")] }[newTarget]
+                        const k = kind === "forward" ? 0 : kind === "also" ? 1 : 2
+                        if (kind === "also") out.push({ value: "DoNothing", label: qsTr("Do not ring anyone else") })
+                        if (kind === "unanswered") out.push({ value: "DoNothing", label: qsTr("Do not redirect calls") })
+                        if (vmAllowed && kind !== "also") out.push({ value: "Voicemail", label: kind === "forward" ? qsTr("Forward to voicemail") : qsTr("Redirect to voicemail") })
+                        if (toUser || toPhone) out.push({ value: "SingleTarget", label: single[k] })
+                        if (groups && !(kind === "unanswered" && (cf.targetType || "") === "Group")) out.push({ value: "Group", label: [qsTr("Forward to call group"), qsTr("Also ring call group"), qsTr("Redirect to call group")][k] })
+                        if (delegates && !(kind === "unanswered" && (cf.targetType || "") === "MyDelegates")) out.push({ value: "MyDelegates", label: [qsTr("Forward to delegates"), qsTr("Also ring delegates"), qsTr("Redirect to delegates")][k] })
+                        return out
+                    }
+                    readonly property string alsoType: !cf.isEnabled ? "DoNothing" : (cf.targetType || "DoNothing")
+                    readonly property string unType: un.isEnabled === false ? "DoNothing" : (un.targetType || "Voicemail")
+                    readonly property var delays: [0, 5, 10, 15, 20, 30, 40, 50, 60]
+                }
+                SettingsParts.Divider { visible: fwd.ev }
+                SettingsParts.SubHeading { visible: fwd.ev && fwd.immediate; text: qsTr("Choose how all your calls will be forwarded"); gapAbove: 15.6 }
+                SettingsParts.SubHeading { visible: fwd.ev && !fwd.immediate; text: qsTr("When you receive a call"); gapAbove: 15.6 }
+                SettingsParts.Gap { visible: fwd.ev; size: 10 }
+                OutlineDropdown {
+                    visible: fwd.ev
+                    width: 293.3; height: 30
+                    readonly property var list: fwd.items(fwd.immediate ? "forward" : "also")
+                    readonly property string cur: fwd.immediate ? (fwd.cf.targetType || "Voicemail") : fwd.alsoType
+                    options: list.map(o => ({ label: o.label }))
+                    current: Math.max(0, list.findIndex(o => o.value.toLowerCase() === cur.toLowerCase()))
+                    accessibleName: fwd.immediate ? qsTr("Choose how all your calls will be forwarded") : qsTr("When you receive a call")
+                    onPicked: i => {
+                        const t = list[i].value
+                        if (t === "SingleTarget") { fwdPicker.mode = fwd.immediate ? "forward" : "also"; fwdPicker.open = true; return }
+                        fwdPicker.open = false
+                        fwd.change(fwd.immediate ? { op: "forwardAll", targetType: t } : { op: "alsoRing", targetType: t })
+                    }
+                }
+                // The person or number (Teams' target box under the dropdown,
+                // as the voicemail transfer target's).
+                SettingsParts.Gap { visible: fwdPickerRow.visible; size: 15.6 }
+                Item {
+                    id: fwdPickerRow
+                    readonly property string shown: (fwd.immediate || fwd.alsoType === "SingleTarget") ? (fwd.cf.target || "") : ""
+                    visible: fwd.ev && (fwdPicker.open && fwdPicker.mode !== "unanswered" || (fwd.cf.targetType === "SingleTarget" && fwd.cf.isEnabled === true))
+                    width: parent.width; height: visible ? fwdPicker.height : 0
+                    VoicemailTransferPicker {
+                        id: fwdPicker
+                        property bool open: false
+                        property string mode: "also"
+                        anchors.right: parent.right
+                        phoneSuggestions: fwd.toPhone
+                        targetMri: fwd.cf.targetType === "SingleTarget" ? (fwd.cf.target || "") : ""
+                        targetName: { const n = backend.peopleNamesJson ? JSON.parse(backend.peopleNamesJson) : ({}); return n[targetMri] || "" }
+                        people: { const v = backend.newChatPeopleJson ? JSON.parse(backend.newChatPeopleJson) : ({}); return v.items || [] }
+                        peopleQuery: { const v = backend.newChatPeopleJson ? JSON.parse(backend.newChatPeopleJson) : ({}); return v.query || "" }
+                        onSearch: q => backend.newChatPeople(q)
+                        onPicked: (mri, oid, name) => { open = false; fwd.change(fwd.immediate ? { op: "forwardAll", targetType: "SingleTarget", target: mri } : { op: "alsoRing", targetType: "SingleTarget", target: mri }) }
+                        onRemoved: open = true
+                        onTargetMriChanged: if (targetMri && !targetMri.startsWith("4:")) backend.resolveNames(JSON.stringify([targetMri]))
+                    }
+                }
+                // Teams' "Delay for this many seconds before ringing" while
+                // someone else also rings.
+                SettingsParts.SubHeading { visible: fwd.ev && !fwd.immediate && fwd.alsoType !== "DoNothing"; text: qsTr("Delay for this many seconds before ringing"); gapAbove: 15.7 }
+                SettingsParts.Gap { visible: fwd.ev && !fwd.immediate && fwd.alsoType !== "DoNothing"; size: 10 }
+                OutlineDropdown {
+                    visible: fwd.ev && !fwd.immediate && fwd.alsoType !== "DoNothing"
+                    width: 293.3; height: 30
+                    readonly property var list: fwd.delays.filter(d => !(fwd.un.isEnabled && fwd.un.delaySeconds) || d < fwd.un.delaySeconds)
+                    options: list.map(d => ({ label: d === 0 ? qsTr("No delay (default)") : qsTr("%1 seconds").arg(d) }))
+                    current: Math.max(0, list.indexOf(fwd.cf.delaySeconds || 0))
+                    accessibleName: qsTr("Delay for this many seconds before ringing")
+                    onPicked: i => fwd.change({ op: "alsoRingDelay", seconds: list[i] })
+                }
+                SettingsParts.SubHeading { visible: fwd.ev && (!fwd.immediate || fwd.cf.targetType === "MyDelegates"); text: qsTr("When you can't answer a call"); gapAbove: 15.6 }
+                SettingsParts.Gap { visible: fwd.ev && (!fwd.immediate || fwd.cf.targetType === "MyDelegates"); size: 10 }
+                OutlineDropdown {
+                    visible: fwd.ev && (!fwd.immediate || fwd.cf.targetType === "MyDelegates")
+                    width: 293.3; height: 30
+                    readonly property var list: fwd.items("unanswered")
+                    options: list.map(o => ({ label: o.label }))
+                    current: Math.max(0, list.findIndex(o => o.value.toLowerCase() === fwd.unType.toLowerCase()))
+                    accessibleName: qsTr("When you can't answer a call")
+                    onPicked: i => {
+                        const t = list[i].value
+                        if (t === "SingleTarget") { unPicker.open = true; return }
+                        unPicker.open = false
+                        fwd.change({ op: "unanswered", targetType: t })
+                    }
+                }
+                SettingsParts.Gap { visible: unPickerRow.visible; size: 15.6 }
+                Item {
+                    id: unPickerRow
+                    visible: fwd.ev && (unPicker.open || fwd.unType === "SingleTarget")
+                    width: parent.width; height: visible ? unPicker.height : 0
+                    VoicemailTransferPicker {
+                        id: unPicker
+                        property bool open: false
+                        anchors.right: parent.right
+                        phoneSuggestions: fwd.toPhone
+                        targetMri: fwd.unType === "SingleTarget" ? (fwd.un.target || "") : ""
+                        targetName: { const n = backend.peopleNamesJson ? JSON.parse(backend.peopleNamesJson) : ({}); return n[targetMri] || "" }
+                        people: { const v = backend.newChatPeopleJson ? JSON.parse(backend.newChatPeopleJson) : ({}); return v.items || [] }
+                        peopleQuery: { const v = backend.newChatPeopleJson ? JSON.parse(backend.newChatPeopleJson) : ({}); return v.query || "" }
+                        onSearch: q => backend.newChatPeople(q)
+                        onPicked: (mri, oid, name) => { open = false; fwd.change({ op: "unanswered", targetType: "SingleTarget", target: mri }) }
+                        onRemoved: open = true
+                        onTargetMriChanged: if (targetMri && !targetMri.startsWith("4:")) backend.resolveNames(JSON.stringify([targetMri]))
+                    }
+                }
+                SettingsParts.SubHeading { visible: fwd.ev && fwd.unType !== "DoNothing" && (!fwd.immediate || fwd.cf.targetType === "MyDelegates"); text: qsTr("Ring for this many seconds before redirecting"); gapAbove: 15.7 }
+                SettingsParts.Gap { visible: fwd.ev && fwd.unType !== "DoNothing" && (!fwd.immediate || fwd.cf.targetType === "MyDelegates"); size: 10 }
+                OutlineDropdown {
+                    visible: fwd.ev && fwd.unType !== "DoNothing" && (!fwd.immediate || fwd.cf.targetType === "MyDelegates")
+                    width: 293.3; height: 30
+                    readonly property var secs: [5, 10, 15, 20, 30, 40, 50, 60]
+                    options: secs.map(n => ({ label: n === 20 ? qsTr("20 seconds (default)") : qsTr("%1 seconds").arg(n) }))
+                    current: Math.max(0, secs.indexOf(fwd.un.delaySeconds || 20))
+                    accessibleName: qsTr("Ring for this many seconds before redirecting")
+                    onPicked: i => fwd.change({ op: "unansweredDelay", seconds: secs[i] })
+                }
+                SettingsParts.SwitchRow {
+                    visible: !fwd.ev
                     label: qsTr("Forward all calls to voicemail")
                     on: calls.forwardAll
                     onToggled: v => calls.save(v, calls.toVoicemail, calls.delay)
                 }
-                SettingsParts.Divider { visible: !calls.forwardAll }
-                SettingsParts.SubHeading { visible: !calls.forwardAll; text: qsTr("When you can't answer a call"); gapAbove: 15.6 }
-                SettingsParts.Gap { visible: !calls.forwardAll; size: 10 }
+                SettingsParts.Divider { visible: !fwd.ev && !calls.forwardAll }
+                SettingsParts.SubHeading { visible: !fwd.ev && !calls.forwardAll; text: qsTr("When you can't answer a call"); gapAbove: 15.6 }
+                SettingsParts.Gap { visible: !fwd.ev && !calls.forwardAll; size: 10 }
                 OutlineDropdown {
-                    visible: !calls.forwardAll
+                    visible: !fwd.ev && !calls.forwardAll
                     width: 293.3; height: 30
                     options: [{ label: qsTr("Do not redirect calls") }, { label: qsTr("Redirect to voicemail") }]
                     current: calls.toVoicemail ? 1 : 0
                     accessibleName: qsTr("When you can't answer a call")
                     onPicked: i => calls.save(false, i === 1, calls.delay)
                 }
-                SettingsParts.SubHeading { visible: !calls.forwardAll && calls.toVoicemail; text: qsTr("Ring for this many seconds before redirecting"); gapAbove: 15.7 }
-                SettingsParts.Gap { visible: !calls.forwardAll && calls.toVoicemail; size: 10 }
+                SettingsParts.SubHeading { visible: !fwd.ev && !calls.forwardAll && calls.toVoicemail; text: qsTr("Ring for this many seconds before redirecting"); gapAbove: 15.7 }
+                SettingsParts.Gap { visible: !fwd.ev && !calls.forwardAll && calls.toVoicemail; size: 10 }
                 OutlineDropdown {
-                    visible: !calls.forwardAll && calls.toVoicemail
+                    visible: !fwd.ev && !calls.forwardAll && calls.toVoicemail
                     width: 293.3; height: 30
                     readonly property var secs: [5, 10, 15, 20, 30, 40, 50, 60]
                     options: secs.map(n => ({ label: n === 20 ? qsTr("20 seconds (default)") : qsTr("%1 seconds").arg(n) }))
@@ -3040,26 +3188,39 @@ Rectangle {
                 // (Teams' 18 ringtones, Ring as "Default") with Preview
                 // ringtone 10.7 after it; saved with Teams' ringtone
                 // settings and rung by Main.qml's ringer.
-                SettingsParts.SubHeading { text: qsTr("Choose a ringtone for you"); gapAbove: 32 }
-                SettingsParts.Gap { size: 10.6 }
-                Row {
-                    spacing: 10.7
-                    readonly property var names: ["Ring", "Beep", "Bop", "Bounce", "Bubbles", "BubblesLoud", "DripDrop", "Eureka", "Flutter", "HighScore", "NextLevel", "Plink", "Remix", "RingRing", "Ripple", "Spacetime", "WishGranted", "Wobble"]
-                    readonly property var labels: [qsTr("Default"), qsTr("Beep"), qsTr("Bop"), qsTr("Bounce"), qsTr("Bubbles"), qsTr("Bubbles (Loud)"), qsTr("Drip Drop"), qsTr("Eureka"), qsTr("Flutter"), qsTr("High Score"), qsTr("Next Level"), qsTr("Plink"), qsTr("Remix"), qsTr("Ring Ring"), qsTr("Ripple"), qsTr("Spacetime"), qsTr("Wish Granted"), qsTr("Wobble")]
-                    readonly property string chosen: {
-                        const voice = root.mt.voice || {}
-                        const list = ((voice.ringtoneSettings || {}).assignments || {}).ringToneAssignments || []
-                        const own = list.find(a => a.type === "Regular")
-                        return own && own.value ? own.value : "Ring"
+                // Teams Phone users also choose ringtones for forwarded (call
+                // group) and delegated calls (settings-app n1: Regular,
+                // CallGroup, Delegate), each 15.6 under the one before.
+                Repeater {
+                    model: fwd.ev ? [{ kind: "Regular", label: qsTr("Choose a ringtone for you") }, { kind: "CallGroup", label: qsTr("Choose a ringtone for forwarded calls") }, { kind: "Delegate", label: qsTr("Choose a ringtone for delegated calls") }]
+                                  : [{ kind: "Regular", label: qsTr("Choose a ringtone for you") }]
+                    Column {
+                        id: toneRow
+                        required property var modelData
+                        required property int index
+                        width: parent.width
+                        SettingsParts.SubHeading { text: toneRow.modelData.label; gapAbove: toneRow.index === 0 ? 32 : 15.7 }
+                        SettingsParts.Gap { size: 10.6 }
+                        Row {
+                            spacing: 10.7
+                            readonly property var names: ["Ring", "Beep", "Bop", "Bounce", "Bubbles", "BubblesLoud", "DripDrop", "Eureka", "Flutter", "HighScore", "NextLevel", "Plink", "Remix", "RingRing", "Ripple", "Spacetime", "WishGranted", "Wobble"]
+                            readonly property var labels: [qsTr("Default"), qsTr("Beep"), qsTr("Bop"), qsTr("Bounce"), qsTr("Bubbles"), qsTr("Bubbles (Loud)"), qsTr("Drip Drop"), qsTr("Eureka"), qsTr("Flutter"), qsTr("High Score"), qsTr("Next Level"), qsTr("Plink"), qsTr("Remix"), qsTr("Ring Ring"), qsTr("Ripple"), qsTr("Spacetime"), qsTr("Wish Granted"), qsTr("Wobble")]
+                            readonly property string chosen: {
+                                const voice = root.mt.voice || {}
+                                const list = ((voice.ringtoneSettings || {}).assignments || {}).ringToneAssignments || []
+                                const own = list.find(a => a.type === toneRow.modelData.kind)
+                                return own && own.value ? own.value : "Ring"
+                            }
+                            OutlineDropdown {
+                                width: 293.3; height: 30
+                                options: parent.labels.map(l => ({ label: l }))
+                                current: Math.max(0, parent.names.indexOf(parent.chosen))
+                                accessibleName: toneRow.modelData.label
+                                onPicked: i => backend.changeSetting("mt", "ringtone", JSON.stringify(toneRow.modelData.kind === "Regular" ? parent.names[i] : { type: toneRow.modelData.kind, name: parent.names[i] }))
+                            }
+                            PreviewButton { height: 30; label: qsTr("Preview ringtone"); file: parent.chosen.toLowerCase() }
+                        }
                     }
-                    OutlineDropdown {
-                        width: 293.3; height: 30
-                        options: parent.labels.map(l => ({ label: l }))
-                        current: Math.max(0, parent.names.indexOf(parent.chosen))
-                        accessibleName: qsTr("Choose a ringtone for you")
-                        onPicked: i => backend.changeSetting("mt", "ringtone", JSON.stringify(parent.names[i]))
-                    }
-                    PreviewButton { height: 30; label: qsTr("Preview ringtone"); file: parent.chosen.toLowerCase() }
                 }
             }
             Text {

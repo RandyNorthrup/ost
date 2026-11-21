@@ -481,6 +481,45 @@ pub async fn set_voice_setting(client: &TeamsClient, which: &str, body: &serde_j
     Ok(())
 }
 
+/// Teams' calling policy as Settings ▸ Calls uses it (the effective
+/// teamsCallingPolicy with Teams' defaults, CallingPolicySettingStore) and
+/// whether you're an Enterprise Voice (Teams Phone) user.
+pub async fn calling_policy(client: &TeamsClient, voice_admin: &serde_json::Value) -> serde_json::Value {
+    let p = super::custom_emoji::effective_policies(client, &["teamsCallingPolicy"]).await.unwrap_or_default();
+    calling_policy_of(&p, voice_admin)
+}
+
+pub fn calling_policy_of(policies: &serde_json::Value, voice_admin: &serde_json::Value) -> serde_json::Value {
+    let v = policies.pointer("/teamsCallingPolicy/value").cloned().unwrap_or_default();
+    let b = |k: &str, d: bool| v.get(k).and_then(|x| x.as_bool()).unwrap_or(d);
+    serde_json::json!({
+        "ev": voice_admin.get("isEvEnabled").and_then(|x| x.as_bool()).unwrap_or(false),
+        "allowCallGroups": b("allowCallGroups", false),
+        "allowDelegation": b("allowDelegation", false),
+        "allowCallForwardingToUser": b("allowCallForwardingToUser", false),
+        "allowCallForwardingToPhone": b("allowCallForwardingToPhone", false),
+        "allowVoicemail": v.get("allowVoicemail").and_then(|x| x.as_str()).unwrap_or("UserOverride"),
+    })
+}
+
+/// Teams' ringtone settings body with `name` for calls of `kind` ("Regular"
+/// for you, "CallGroup" forwarded, "Delegate" delegated), the others kept;
+/// Ring (Default) isn't listed.
+pub fn ringtone_body_for(current: &serde_json::Value, kind: &str, name: &str) -> serde_json::Value {
+    let mut list: Vec<serde_json::Value> = current
+        .pointer("/assignments/ringToneAssignments")
+        .and_then(|a| a.as_array())
+        .into_iter()
+        .flatten()
+        .filter(|a| a["type"].as_str() != Some(kind) && a["value"].as_str() != Some("Ring"))
+        .cloned()
+        .collect();
+    if name != "Ring" {
+        list.insert(0, serde_json::json!({ "type": kind, "value": name, "associatedEntityId": "" }));
+    }
+    serde_json::json!({ "assignments": { "ringToneAssignments": list } })
+}
+
 /// Teams' ringtone settings body with `name` for your own calls ("Regular")
 /// and the other call types' choices kept; Ring is left out.
 pub fn ringtone_body(current: &serde_json::Value, name: &str) -> serde_json::Value {

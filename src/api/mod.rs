@@ -9,6 +9,7 @@ pub mod biometric;
 pub mod blurhash;
 pub mod breakout_rooms;
 pub mod calendar;
+pub mod call_forwarding;
 mod chat;
 pub mod chat_notes;
 pub mod client;
