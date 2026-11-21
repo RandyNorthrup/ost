@@ -4,7 +4,7 @@ title: Loop page extras as Teams
 status: In Progress
 assignee: []
 created_date: '2026-11-16T20:42:00Z'
-updated_date: '2026-11-21T15:46:00Z'
+updated_date: '2026-11-21T17:37:00Z'
 labels:
   - desktop
 dependencies: []
@@ -58,4 +58,9 @@ What TASK-0205 left of Teams' Loop host (docs/spec/loop-host.md): "See who has a
 - 2026-11-21 (chatE): See who has access's popover drawn live (`--loop-access-test`, OST group test > Notes): "People who have access", "1 groups giving access" (Loop's string), a line and "Only people with existing access can access this Loop component". Merged chatE2's toolbar and nested components (ba51310).
 
 - 2026-11-21 merged: See who has access popover and dark/high-contrast colours verified against winpc; formatting toolbar and nested components built (AC2 open: toolbar on mouse selection is flaky in the test; high contrast and side by side unchecked; new nested component not tried).
+
+- 2026-11-21 (chatF):
+  - Side by side with Teams on winpc (OST group test > Notes, a typed line selected with the mouse, measured over CDP): Teams' commanding surface is 298.7 x 49.3, radius 16, padding 8, shadow 0 0 2px .12 + 0 4px 8px .14; Bold, Italic, Underline, Strikethrough | Headings and lists | Color and formatting, Comment, More (32 x 32, dividers 8.7). OST on the same selection (`--loop-test=notes --loop-format`): 298 x 48, the same commands and glyphs in the same order; picture compared, test text removed in both.
+  - The flaky toolbar: the harness sent its synthetic drag (press, 8 moves, release) in one go, so the page could see press and release in one frame. ost_mouse_drag now spaces them 30 ms apart; two runs in a row (light and high contrast) opened the top bar on the first drag.
+  - High contrast (`--theme=highContrast`): the top bar opened on the first drag, Bold applied (weight 600), Shift+F10 expanded, Escape closed, the text removed (checked after a reload).
 <!-- SECTION:NOTES:END -->

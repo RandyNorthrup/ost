@@ -4,7 +4,7 @@ title: Link cards from installed apps and apps that need sign-in, as Teams
 status: In Progress
 assignee: []
 created_date: '2026-11-16T11:48:00Z'
-updated_date: '2026-11-21T15:46:00Z'
+updated_date: '2026-11-21T18:08:00Z'
 labels:
   - desktop
 dependencies: []
@@ -58,4 +58,7 @@ TASK-0168 shows Teams' app card for links to sites whose Teams app allows anonym
   - The harness had logged the callback page's title, which carries the OAuth code; that log was redacted and the harness now logs the title without its query.
 
 - 2026-11-21 merged: AC1 verified (Wikipedia Search installed; a Wikipedia link gets its card via the app). AC2: sign-in window works as Teams' (success reported, window closes, app asked again with the result); seeing the card needs a free Azure DevOps organization with a work item.
+
+- 2026-11-21 (chatF), AC2 Azure DevOps organization for ost-test1: opened aex.dev.azure.com in OST's own web profile (new `--web-window=<url>` harness, driven over QTWEBENGINE_REMOTE_DEBUGGING; ost-test1 picked from "Pick an account", no password). Get started > Continue (marketing offers left unticked) reaches "Almost done..." (organization dev.azure.com/osttest200, United States), but Azure DevOps now requires linking a new organization to an Azure subscription: "To create an Azure DevOps organization, you need to link it to an Azure subscription. We couldn't find any subscriptions you have access to. Make sure you have the Owner or Contributor role on at least one Azure subscription." Continue does nothing without one. A new subscription needs payment details, and the only subscription in the tenant is the real "Azure subscription 1" (781cdf6a-…, Randy's); giving ost-test1 Owner/Contributor on it to link the organization (the first five Basic users are free) is a decision for the user, so nothing was created and nothing changed.
+  - Left as they were: Wikipedia Search and Azure Boards installed for ost-test1 (both needed if the organization is made; remove with `examples/add_app <id> --remove-personal`, Azure Boards 7299542a-1697-4ec1-812b-6b70065c0795).
 <!-- SECTION:NOTES:END -->
