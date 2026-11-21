@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-11-20T18:48:00Z'
-updated_date: '2026-11-21T03:15:00Z'
+updated_date: '2026-11-21T03:23:00Z'
 labels:
   - desktop
   - apps
@@ -37,4 +37,8 @@ Teams' Manage your apps lists 27 apps for ost-test1; OST lists 24. Teams also sh
 - 2026-11-20 recheck: Teams' Manage your apps on winpc (Recently used) starts SharePoint, Workflows, Whiteboard, Planner, Praise, Polly, Power BI, Polls, OneNote, Avatars, and OST's (--manage-apps-test, linuxlt default) starts with exactly the same ten, so Recently used matches as far as Teams' list was read. That top SharePoint is the personal Viva Connections app d2c6f111 (Installed, isFullScreen, not core), so Teams does list it: the earlier 'Teams leaves d2c6f111 out' note was wrong. OST also lists a second 'SharePoint' row further down (the team SharePoint app); whether Teams lists that one too, and the order after Avatars, still need a full Teams list (the winpc slot ended before the whole list was read).
 
 - 2026-11-20 correction after reading Teams' whole list on winpc (27 rows, Recently used): SharePoint, Workflows, Whiteboard, Planner, Praise, Polly, Power BI, Polls, OneNote, Avatars, Surveys, Excel (Agent), Word (Agent), Planner Agent, PowerPoint (Agent), Analyst, Researcher, Facilitator, Updates, Viva Learning, Power Apps, Copilot, Engage, Power BI (MSIT), SharePoint Pages, Forms for Microsoft Teams, Lists. OST lists the same 27 in the same order plus one more 'SharePoint' between Copilot and Engage, which is the personal Viva Connections app d2c6f111 (the top SharePoint is the team SharePoint app 2a527703, placed by usage). So the earlier finding stands and my previous recheck note was wrong: Teams leaves d2c6f111 out. Its definition (Installed, isFullScreen, isFullTrust, a Personal static tab on {teamSiteDomain}, no officeAssetId) shows no flag that explains it, and no ECS list in the 26304 config names it for Manage apps; the rule is still unknown. AC2 (order) matches.
+
+- 2026-11-20 round 3, Teams' code path for the list (26304 worker): installedAppsForUser (j$t) → b$t merges shared (V$t) and personal (H$t) then team apps; H$t keeps userInstalledAppsManager.getInstalledApps entries whose state is Installed / AdminPreInstalled / InstalledAndFavorited (+ PreConsented unless ECS disablePreConsentedAppsInManageApps) as isInstalledPersonally rows; j$t then drops empty ids, the multimodal AI bot (Ws.GK: calling.enableMultiModalAiHideBot / multiModalAiBotId) and Facilitator when enableHideFacilitatorFromManageApps; the UI (chunk 89511) shows rows with teams, chats or isInstalledPersonally. None of these names d2c6f111, so it must drop out in getInstalledAppsInternal → Si.YE(Personal, userEntitlements, definitions, installedDefinitions) (lead: the definitions Teams pairs with the entitlements), not read to the end yet.
+
+- Further: Teams' Si.YE only pairs each entitlement with its definition, and F$t only sorts (usage, else A-Z; updates first), and OST's state filter equals Teams' (x$t/B$t). So by the code d2c6f111 (Installed) would be listed; Teams' own entitlement cache must hold it differently (another state, or not at all) than the aggregatedEntitlements answer OST reads. Next step: read Teams' app entitlement store (IndexedDB) on winpc for d2c6f111's state and compare with OST's request (OST asks ?appbarview=userpinned).
 <!-- SECTION:NOTES:END -->

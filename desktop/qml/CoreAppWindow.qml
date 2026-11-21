@@ -120,6 +120,8 @@ Window {
             messages: win.messages
             onCall: win.openInMain("call", { id: win.chatId, name: win.chatName })
             onVideoCall: win.openInMain("videoCall", { id: win.chatId, name: win.chatName })
+            // Teams' "+" (Add a tab) beside the tabs: the main window's picker.
+            onOpenTabPicker: (id, kind, team) => win.openInMain("tabPicker", { id: id, kind: kind, team: team })
             onReact: (id, key, on) => backend.toggleReaction(id, key, on)
             onEditMessage: (id, text) => backend.editMessage(id, text)
             onDeleteMessage: id => backend.deleteMessage(id)

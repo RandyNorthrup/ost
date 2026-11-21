@@ -594,9 +594,13 @@ docs/spec/events.md.
   Meetings/<title>.loop, `createLink {"type":"edit","scope":
   "organization"}`) and `PATCH …/collab/commitresource {type, externalEntityKey,
   seriesExternalEntityKey, organizer, user, secret, resourceUri (the link
-  with its nav), metadata {linkScope "organization", hostClient}}`
+  with its nav), metadata {state "Enabled", linkScope "organization",
+  hostClient, creationSource "LWSApi"}}` → `{wasSuccessful, statusCode}`
   (hostClient TeamsInMeeting in a call, TeamsCalendarDetailsPage from the
-  calendar). Once committed, reserveresource answers with the notes in
+  calendar; Teams' type is "Notes", from call-meeting-notes 2026-11-20).
+  Without metadata.state "Enabled" the resource stays pending: everyone
+  else's reserve answers "someone else is making them" (seen live with OST
+  Test 3 joining, TASK-0212). Once committed, reserveresource answers with the notes in
   `collab.resources`. OST asks it first for a scheduled meeting (then the
   meeting-notes service); a Meet now is made the Meet now way (the leader claim,
   then the page shared with the call), the meeting-notes service only if the

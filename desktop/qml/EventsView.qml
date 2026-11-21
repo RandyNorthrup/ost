@@ -109,8 +109,11 @@ Rectangle {
     // Requests to the events service, answered by events_reply.
     property var pending: ({})
     property int seq: 0
+    // Each Events view (the main window's, a window of its own) tags its
+    // requests, so one's answers don't land in the other.
+    readonly property string tag: Math.floor(Math.random() * 1e9).toString(36)
     function call(kind, payload, cb) {
-        const id = "events" + (++seq)
+        const id = "events" + root.tag + ":" + (++seq)
         const p = Object.assign({}, pending); p[id] = cb; pending = p
         backend.eventsRequest(kind, id, JSON.stringify(payload || {}))
     }
@@ -1076,7 +1079,11 @@ Rectangle {
         clip: true
         boundsBehavior: Flickable.StopAtBounds
         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-        readonly property real inner: width - 32 - 46
+        // Teams' page is a centred container, at most 1100 wide with 12 px
+        // padding (1076 of content at 1212), 706 in narrower windows (its
+        // 946 wide window; measured on winpc 2026-11-20).
+        readonly property real inner: width >= 1124 ? 1076 : width >= 730 ? 706 : width - 64
+        readonly property real pageLeft: Math.round((width - inner) / 2)
         // Teams' section titles (oneevents_discover_tab_*_section_title_text)
         // and See more's sections.
         readonly property bool filtered: root.tab === "discover" && (root.myEvents || root.dateRange !== "")
@@ -1089,7 +1096,7 @@ Rectangle {
             : !!root.manageData && (root.manageData.drafts.total + root.manageData.published.total + root.manageData.past.total) === 0
         Column {
             id: tabCol
-            x: 32; y: root.tab === "discover" ? 168 : 32
+            x: tabPage.pageLeft; y: root.tab === "discover" ? 168 : 32
             width: tabPage.inner
             spacing: 0
             // Manage: Connect apps on the right (146 x 32, outlined).
@@ -1248,7 +1255,7 @@ Rectangle {
         Rectangle {
             id: intro
             visible: root.tab === "discover"
-            x: 32; width: tabPage.inner; height: 136
+            x: tabPage.pageLeft; width: tabPage.inner; height: 136
             y: Math.max(32, tabPage.contentY)
             z: 2; radius: 16
             color: theme.pick("#F5F5F5", "#292929", "#000000")

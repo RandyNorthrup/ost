@@ -178,11 +178,12 @@ pub struct CollabCaller {
     pub organizer_upn: String,
 }
 
-/// The reserve request as Teams sends it.
+/// The reserve request as Teams sends it (call-meeting-notes
+/// reserveCollabResource: type "Notes").
 pub fn reserve_body(m: &Meeting, c: &CollabCaller) -> Value {
     let organizer_id = m.organizer.split('@').next().unwrap_or_default();
     json!({
-        "type": "notes",
+        "type": "Notes",
         "externalEntityKey": m.i_cal_uid,
         "seriesExternalEntityKey": m.i_cal_uid,
         "meetingUrl": m.meeting_url,
@@ -220,17 +221,19 @@ pub fn parse_reserve(v: &Value) -> Reserve {
     }
 }
 
-/// The commit request: the made page's shared link (with its `nav`).
+/// The commit request: the made page's shared link (with its `nav`), as
+/// Teams' commitCollabResource sends it. Without `state: "Enabled"` the
+/// resource stays pending for everyone else in the meeting.
 pub fn commit_body(m: &Meeting, c: &CollabCaller, secret: &str, resource_uri: &str) -> Value {
     json!({
-        "type": "notes",
+        "type": "Notes",
         "externalEntityKey": m.i_cal_uid,
         "seriesExternalEntityKey": m.i_cal_uid,
         "organizer": m.organizer,
         "user": c.user,
         "secret": secret,
         "resourceUri": resource_uri,
-        "metadata": { "linkScope": "organization", "hostClient": "TeamsInMeeting" },
+        "metadata": { "state": "Enabled", "linkScope": "organization", "hostClient": "TeamsInMeeting", "creationSource": "LWSApi" },
     })
 }
 
@@ -259,6 +262,9 @@ async fn collab_send(method: reqwest::Method, url: &str, body: &Value) -> Result
 pub async fn reserve(region: &str, m: &Meeting, c: &CollabCaller) -> Result<Reserve> {
     anyhow::ensure!(!m.i_cal_uid.is_empty() && !m.organizer.is_empty(), "Not a scheduled meeting");
     let url = format!("{}/reserveresource", collab_base(region));
+    // The keys the collab object files the notes under (not secrets: the
+    // meeting's calendar id and chat thread).
+    tracing::info!(external_entity_key = %m.i_cal_uid, thread = %m.thread_id, organizer = %m.organizer, "meeting notes: reserve");
     for attempt in 0..=RETRIES {
         let r = parse_reserve(&collab_send(reqwest::Method::POST, &url, &reserve_body(m, c)).await?.json().await.context("The reserve answer")?);
         if !r.location.is_empty() || r.is_leader || attempt == RETRIES {
@@ -271,7 +277,16 @@ pub async fn reserve(region: &str, m: &Meeting, c: &CollabCaller) -> Result<Rese
 
 /// Commit the made notes (their shared link) for everyone.
 pub async fn commit(region: &str, m: &Meeting, c: &CollabCaller, secret: &str, resource_uri: &str) -> Result<()> {
-    collab_send(reqwest::Method::PATCH, &format!("{}/commitresource", collab_base(region)), &commit_body(m, c, secret, resource_uri)).await?;
+    let v: Value = collab_send(reqwest::Method::PATCH, &format!("{}/commitresource", collab_base(region)), &commit_body(m, c, secret, resource_uri))
+        .await?
+        .json()
+        .await
+        .unwrap_or_default();
+    // Teams treats an answer without wasSuccessful as a failed commit.
+    if v.get("wasSuccessful").and_then(Value::as_bool) == Some(false) {
+        anyhow::bail!("The meeting's notes weren't committed ({})", v.get("statusCode").cloned().unwrap_or_default());
+    }
+    tracing::info!(answer = %v.to_string().chars().take(300).collect::<String>(), "meeting notes: commit");
     Ok(())
 }
 
@@ -431,7 +446,7 @@ mod tests {
                           meeting_url: "https://teams.microsoft.com/l/meetup-join/x".into(), i_cal_uid: "0400".into() };
         let c = CollabCaller { user: "4287@2716".into(), organizer_upn: "ost-test1@x.com".into() };
         let r = reserve_body(&m, &c);
-        assert_eq!(r["type"], "notes");
+        assert_eq!(r["type"], "Notes");
         assert_eq!(r["externalEntityKey"], "0400");
         assert_eq!(r["organizedByUserId"], "4287");
         assert_eq!(r["organizerUpn"], "ost-test1@x.com");
@@ -440,7 +455,8 @@ mod tests {
         let b = parse_reserve(&json!({"isLeader": false, "collab": {"resources": [{"type": "notes", "location": "https://x/:fl:/p"}]}}));
         assert_eq!(b.location, "https://x/:fl:/p");
         let k = commit_body(&m, &c, "s", "https://x/:fl:/p?nav=1");
-        assert_eq!(k["metadata"], json!({ "linkScope": "organization", "hostClient": "TeamsInMeeting" }));
+        assert_eq!(k["metadata"], json!({ "state": "Enabled", "linkScope": "organization", "hostClient": "TeamsInMeeting", "creationSource": "LWSApi" }));
+        assert_eq!(k["type"], "Notes");
         assert_eq!(collab_base("us"), "https://teams.microsoft.com/api/mcps/us/collab");
         assert_eq!(collab_base("../x"), "https://teams.microsoft.com/api/mcps/us/collab");
         let w = add_to_workspace_url("https://x/:fl:/p");

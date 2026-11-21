@@ -447,7 +447,7 @@ Rectangle {
     readonly property string chatTabsKey: !isChannel && !isSelf && !pane && !popout && chatId.indexOf("19:") === 0 ? chatId : ""
     onChatTabsKeyChanged: if (chatTabsKey) backend.chatTabsLoad(chatId)
     /// Teams' "+" (Add a tab): chats, meeting chats and channels.
-    readonly property bool canAddTab: !pane && !popout && !isSelf && chatId.indexOf("19:") === 0
+    readonly property bool canAddTab: !pane && (!popout || windowTabs) && !isSelf && chatId.indexOf("19:") === 0
     /// The channel's team thread (its General channel), for the picker.
     property string teamThread: ""
     // The tab picker and the Website configuration (Main.qml's).

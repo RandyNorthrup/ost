@@ -13557,6 +13557,7 @@ Window {
             if (kind === "calendar") { rail.current = "calendar"; return }
             if (kind === "joinEvent") { preJoin.openFor(d.url, d.title, d.start, d.end); return }
             if (kind === "chatWindow") { window.openChatWindow(d.id, d.name, d.photo, d.presence); return }
+            if (kind === "tabPicker") { tabPicker.showTabs(d.id, d.kind, d.team); return }
             rail.current = "chat"; window.composing = false
             if (kind === "newChat") window.startNewChat()
             else if (kind === "chat") backend.selectChat(d.id, d.name)

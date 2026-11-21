@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-17T01:27:00Z'
-updated_date: '2026-11-21T03:02:00Z'
+updated_date: '2026-11-21T07:42:00Z'
 labels:
   - desktop
 dependencies: []
@@ -56,4 +56,10 @@ What TASK-0209 left (docs/spec/events.md, docs/spec/call-and-meeting-window.md):
 - 2026-11-20 round 2 (linuxlt, OST Test 2 organizer --call-notes-test --call-notes-stay, OST Test 3 joining by link with --join-notes; the join link is now logged): a scheduled meeting needs no leader claim (that's the Meet now path): the organizer's notes go through Teams' collab object service (reserve → make the Loop page in OneDrive Meetings → commit), and that works: run 1 (solo) and runs 2–3 made 'OST TEST 212 notes OST.loop', shared it and showed the page; the ··· menu listed Shared locations, Copy component, See who has access, Open in Loop, Add to Loop workspace.
 - Second person: OST Test 3 joined (runs 3 and 4) and the collab object answered them 'pending / someone else is making them' even after the organizer had committed; in run 4 the organizer itself got back the location committed in run 3's meeting (a file deleted by that run's cleanup → ODSP 404). So the collab object keys these test meetings so that one meeting's notes show up in the next, and the second person never got the committed link. Likely cause to check next: what OST sends as the meeting's keys (externalEntityKey / seriesExternalEntityKey from the event's iCalUid, threadId) for each new event, compared with Teams' reserve request on winpc.
 - Still open: the second person's view in a scheduled meeting (above), the Meet now claim 400 (unchanged; Meet now only), Highlights with a recording, a town hall's Manage apps list, the Generate audio recap submit. No tenant settings were changed. All test meetings and their notes files were deleted.
+
+- 2026-11-20 round 3: compared with Teams' own code (call-meeting-notes in chunk 527114, its helper 392648, services-io-collab-object): Teams' reserve and commit send type "Notes", externalEntityKey = the call's meetingDetails instanceDetails.iCalUid ?? iCalUid, seriesExternalEntityKey the same (the series id only for a recurring meeting whose notes are shared), and the commit's metadata {state "Enabled", linkScope, hostClient "TeamsInMeeting", creationSource "LWSApi"}; Teams checks the answer's wasSuccessful, then calls updateMeetingSettings({refreshSettings: CollabDetails}) so everyone's call.meetingDetails.collabDetails carries the notes.
+- OST now sends those fields (type Notes, metadata state Enabled + creationSource) and logs the keys. Live (ost-test1 organizer + OST Test 3 joining, e6): both sides use the same external key (the meeting's iCalUid, unique per meeting); the organizer reserves as leader, makes, commits (the commit answers with an empty body) and shows its notes; OST Test 3's reserve still answers 'pending' (someone else is making them).
+- So Teams' other participants don't learn the notes from reserve but from the call's meeting details (collabDetails.resources notes), refreshed by the organizer's updateMeetingSettings(CollabDetails). OST's calling code has no collabDetails / refreshSettings handling yet: that's the remaining piece for the second person (next: find where the calling stack receives meetingDetails.collabDetails and the refresh request on the wire).
+- Earlier 'one meeting's notes in the next' (runs 3–4 with OST Test 2 as organizer) didn't recur with ost-test1: each new meeting had its own key and the organizer became leader every time.
+- Still open: second person's notes (above), the Meet now claim 400, Highlights with a recording, a town hall's Manage apps, Generate audio recap submit. No tenant settings changed; all test meetings and notes files deleted.
 <!-- SECTION:NOTES:END -->
