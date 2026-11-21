@@ -10235,7 +10235,9 @@ Window {
                 if (!old) backend.createEvent(subject, s.toISOString(), e.toISOString(), "", true)
             } else if (step >= 1 && step <= 8 && !ev) {
                 ev = (backend.calendarJson ? JSON.parse(backend.calendarJson) : []).find(x => x.subject === subject && x.join_url) || null
-                if (!ev) { step++; return }
+                // The calendar's view may not hold today (a work week on a
+                // weekend): load the day around now.
+                if (!ev) { backend.loadCalendar(new Date(Date.now() - 86400000).toISOString().slice(0, 19) + "Z", new Date(Date.now() + 86400000).toISOString().slice(0, 19) + "Z"); step++; return }
                 // Its link, for a second test account to join (--join-url).
                 console.warn("MEETINGNOTES event made", ev.join_url || "")
                 window.muteOnJoin = true; window.noAudioOnJoin = true; window.cameraOnJoin = false
