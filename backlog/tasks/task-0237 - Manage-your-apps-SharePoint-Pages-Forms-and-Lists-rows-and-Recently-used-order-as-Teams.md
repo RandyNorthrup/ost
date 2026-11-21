@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-11-20T18:48:00Z'
-updated_date: '2026-11-21T03:23:00Z'
+updated_date: '2026-11-21T08:23:00Z'
 labels:
   - desktop
   - apps
@@ -41,4 +41,6 @@ Teams' Manage your apps lists 27 apps for ost-test1; OST lists 24. Teams also sh
 - 2026-11-20 round 3, Teams' code path for the list (26304 worker): installedAppsForUser (j$t) → b$t merges shared (V$t) and personal (H$t) then team apps; H$t keeps userInstalledAppsManager.getInstalledApps entries whose state is Installed / AdminPreInstalled / InstalledAndFavorited (+ PreConsented unless ECS disablePreConsentedAppsInManageApps) as isInstalledPersonally rows; j$t then drops empty ids, the multimodal AI bot (Ws.GK: calling.enableMultiModalAiHideBot / multiModalAiBotId) and Facilitator when enableHideFacilitatorFromManageApps; the UI (chunk 89511) shows rows with teams, chats or isInstalledPersonally. None of these names d2c6f111, so it must drop out in getInstalledAppsInternal → Si.YE(Personal, userEntitlements, definitions, installedDefinitions) (lead: the definitions Teams pairs with the entitlements), not read to the end yet.
 
 - Further: Teams' Si.YE only pairs each entitlement with its definition, and F$t only sorts (usage, else A-Z; updates first), and OST's state filter equals Teams' (x$t/B$t). So by the code d2c6f111 (Installed) would be listed; Teams' own entitlement cache must hold it differently (another state, or not at all) than the aggregatedEntitlements answer OST reads. Next step: read Teams' app entitlement store (IndexedDB) on winpc for d2c6f111's state and compare with OST's request (OST asks ?appbarview=userpinned).
+
+- 2026-11-21 winpc, Teams' own store (IndexedDB Teams:user-installed-apps-manager … user-app-entitlements): every personal entitlement Teams got from its aggregated sync carries isInstalledPersonally: true (Teams' prepareAggregatedAppsForPersistence adds it), but d2c6f111's entry is {state Installed, authorization …} without it, so Teams stored it through another path (not its aggregated sync) and doesn't list it. OST's aggregatedEntitlements answer (?appbarview=userpinned) includes d2c6f111 as Installed. To match: find the request Teams' sync makes (its query parameters) that leaves d2c6f111 out, or the path that adds it without the flag.
 <!-- SECTION:NOTES:END -->
