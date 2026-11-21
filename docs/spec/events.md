@@ -22,8 +22,11 @@ Events; it then takes the app bar's open-app slot under Copilot).
   `7fc21101-d09b-4343-8eb3-21187e0431a4` (ECS
   `virtualEventsServiceResource`); headers `authorization`,
   `content-type: application/json`, `x-ms-correlation-id`.
-- Discover: `GET https://teams.microsoft.com/api/virtualevents/prod/beta/eventOverviews`
-  (ECS `virtualEventsServiceEndpoint`, `x-api-version: 2.0`; GraphQL
+- Discover: `GET {regional}/eventOverviews` (the region discovery's `virtualEventsService`,
+  e.g. `https://teams.microsoft.com/api/teamsevents/us`, as ECS
+  `useRegionalVirtualEventsServiceEndpointResolver` is on; the global
+  `virtualevents/prod/beta` address left out OST Test 2's past town hall, TASK-0241)
+  (`x-api-version: 2.0`; GraphQL
   `eventOverviewsV2`), three lists:
 
 | list (category) | query |

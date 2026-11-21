@@ -262,7 +262,8 @@ OST: `api::devices`, `StoreView.qml` (device pages, the band, the filter),
   Copy link). The list: personal entitlements Installed / AdminPreInstalled /
   InstalledAndFavorited / PreConsented, apps shared with you (`GET
   {mt}/beta/users/apps/entitlements`, enableSharedInstalledAppsInManageApps;
-  a shared copy of an Office asset you have shows once), and apps installed
+  keyed by app id only, so a shared Planner beside your own Planner is a
+  second row, as Teams lists it, winpc 2026-11-21), and apps installed
   in your teams (TASK-0237: the same `aggregatedEntitlements` POST with your
   teams' threads as the body answers `teamsEntitlements` {thread: [{id,
   state}]} with the definitions; `GET {mt}/beta/chats/{team thread}/apps/
