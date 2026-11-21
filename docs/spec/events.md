@@ -25,7 +25,7 @@ Events; it then takes the app bar's open-app slot under Copilot).
 - Discover: `GET {regional}/eventOverviews` (the region discovery's `virtualEventsService`,
   e.g. `https://teams.microsoft.com/api/teamsevents/us`, as ECS
   `useRegionalVirtualEventsServiceEndpointResolver` is on; the global
-  `virtualevents/prod/beta` address left out OST Test 2's past town hall, TASK-0241)
+  `virtualevents/prod/beta` address is only the fallback, TASK-0241)
   (`x-api-version: 2.0`; GraphQL
   `eventOverviewsV2`), three lists:
 
@@ -226,6 +226,14 @@ Discover:
 - The sections are "Happening now" (left out while empty), "Upcoming
   events in your org" and "Catch up on past events", each with See more
   (brand link, right).
+- Teams keeps the three lists as slots in its worker store
+  (`one-events-manager` → `one-events`, `{slotId, events, lastSyncedAt}`) and
+  refreshes only DISCOVER_UP_NEXT and DISCOVER_UPCOMING on its interval and
+  activation; DISCOVER_PAST is synced when Teams starts. On winpc
+  (2026-11-21) the past slot dated from 2026-11-19 13:25Z and still showed
+  "OST TEST 217 r3 town hall", while the service answered the same past
+  query with no events: what Teams showed was its two-day-old copy. OST asks
+  all three when Discover opens (as Teams at start).
 - **Filters ▸ Custom range**: From and To (native date fields, 146 x 32,
   "mm/dd/yyyy"; "Select a date." under an empty one). Any date range or My
   events asks the **regional** service once: `GET {regional}/eventOverviews?

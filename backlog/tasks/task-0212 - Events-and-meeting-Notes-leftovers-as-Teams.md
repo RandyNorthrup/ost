@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-17T01:27:00Z'
-updated_date: '2026-11-21T07:42:00Z'
+updated_date: '2026-11-21T16:28:00Z'
 labels:
   - desktop
 dependencies: []
@@ -62,4 +62,11 @@ What TASK-0209 left (docs/spec/events.md, docs/spec/call-and-meeting-window.md):
 - So Teams' other participants don't learn the notes from reserve but from the call's meeting details (collabDetails.resources notes), refreshed by the organizer's updateMeetingSettings(CollabDetails). OST's calling code has no collabDetails / refreshSettings handling yet: that's the remaining piece for the second person (next: find where the calling stack receives meetingDetails.collabDetails and the refresh request on the wire).
 - Earlier 'one meeting's notes in the next' (runs 3–4 with OST Test 2 as organizer) didn't recur with ost-test1: each new meeting had its own key and the organizer became leader every time.
 - Still open: second person's notes (above), the Meet now claim 400, Highlights with a recording, a town hall's Manage apps, Generate audio recap submit. No tenant settings changed; all test meetings and notes files deleted.
+
+- 2026-11-21 (teamsG) AC2, the second person's notes: Teams 26304 (call-meeting-notes 527114, helper 392648, calling-meeting-details-panel) calls updateMeetingSettings({refreshSettings: RefreshSettings.CollabDetails = 1}) after a successful commitresource; the call then pushes meetingDetails.collabDetails {id, containerId, changeKey, resources [{type "notes", location, metadata {linkScope, isShared}, addedBy}], collabLeaders [{type, participant {id}, status}]} to everyone, and the panel opens resources[notes].location. OST now: calling::meeting_notes reads collabDetails (the notes link and leaders) from the join response and conversation updates; the commit is followed by PUT updateMeetingSettings {refreshSettings: 1}.
+- Live (linuxlt, ost-test1 = spatest --call-notes-test --call-notes-stay, OST Test 3 = test3 --join-test --join-notes): the refresh went out 0.1 s after the commit and the call answered with collabDetails resources=1 (notes). OST Test 3's join response carried them, and its Notes panel opened ost-test1's notes from the call ("show call", Loop page connected). AC2 is verified for scheduled meetings. The meeting and both notes files were deleted.
+- Meet now (the 400): Teams' join adds clientEndpointCapabilities supportsCollabLeader (65536) when ECS meetingNotes.enableMeetingNotesInMeetNowCall is on (it is). The call then elects a leader in collabDetails.collabLeaders (status 0 auto-elected, 1 elected, 2 locked), and the panel acknowledges with collabLeaders.notes when nobody leads or you have status 0. OST now sends the capability and follows that create flow, acknowledging again whenever the call names it with status 0 while the notes are open. Live: the acknowledgement now answers Success (it was 400 6179 "The leader to be confirmed is not the same as who's elected"), and OST Test 3 waits while ost-test1 leads.
+- Still open: the leader's collabResources.notes share fails asynchronously (updateMeetingStatesStatus: code 500, subCode 6176 "Unable to update collab resources", additionalData CollabCommitError "CrossTenantRequest"), both with and without secret = the call id. The call never stores the link and keeps re-electing. Cause not found yet; the link is the organization edit link with nav, as Teams'.
+- Harness: --call-notes-test loads today's calendar when the view doesn't hold it (a weekend), --join-notes deletes its own test notes, and --events-test=calclean also removes leftover "OST TEST 212 notes" meetings. 861 lib tests pass.
+- Not attempted this round: Highlights with a recording; a town hall's Manage apps list (the 26304 meet-app chunk has only Polls, and the live winpc chunk wasn't read); Generate audio recap's submit.
 <!-- SECTION:NOTES:END -->
