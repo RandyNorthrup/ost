@@ -1,10 +1,10 @@
 ---
 id: TASK-0098
 title: Meeting recap card on a meeting's ended row, as Teams
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-11-10T17:18:00Z'
-updated_date: '2026-11-21T02:46:00Z'
+updated_date: '2026-11-21T03:15:00Z'
 labels:
   - desktop
   - messages
@@ -27,7 +27,7 @@ It is built from the call-end XML (MeetingDetails) plus the recording messages f
 <!-- AC:BEGIN -->
 - [x] #1 A meeting chat's ended row shows the recap card with Teams' layout, title, date range, transcript chip and recordings thumbnail/count
 - [x] #2 View recap, the transcript chip and the thumbnail open what Teams opens
-- [ ] #3 Verified side by side with Teams on winpc
+- [x] #3 Verified side by side with Teams on winpc
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -56,4 +56,17 @@ It is built from the call-end XML (MeetingDetails) plus the recording messages f
   - OST's RecapWindow shot (`--recap-window-test=extras`, scratch chatC/r-recap-custom.png) has the same header, band, buttons, Manage, pills (Mentions 4th from the thumbnail), cards and empty states.
   - Known difference: the player is OneDrive's own (its "Open in browser" button), where Teams frames streamembed.aspx.
   - The extras are recorded under TASK-0240.
+
+- 2026-11-20 merged (1be5538..15dc1ff); side by side with Teams on winpc: header, band buttons, Manage, pills and empty pages match; OST plays through OneDrive's player (Open in browser button).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Meeting recap card and recap window as Teams.
+
+- The ended row's recap card: title, date range, Share, Highlights split button, Content with the Transcript chip, recording thumbnail and expiry, as Teams.
+- View recap / the Transcript chip / the thumbnail open Teams' recap pop-out (Transcript or AI summary tab): player, Speakers/Topics/Chapters, Shared files, right-hand tabs; Highlights opens the event in Events; Share has Copy link and Share recap access (Teams' recap-sharing service).
+
+Verified side by side with Teams on winpc. Extras tracked in TASK-0240.
+<!-- SECTION:FINAL_SUMMARY:END -->

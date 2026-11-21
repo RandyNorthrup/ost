@@ -1,11 +1,11 @@
 ---
 id: TASK-0202
 title: Workflow suggested reply opens Teams' Workflows dialog
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-16T11:48:00Z'
-updated_date: '2026-11-21T01:00:00Z'
+updated_date: '2026-11-21T03:15:00Z'
 labels:
   - desktop
 dependencies:
@@ -20,7 +20,7 @@ TASK-0170: when the tenant turns workflow suggestions on, Teams opens its Workfl
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The workflow suggestion opens the Workflows dialog in OST, as Teams
+- [x] #1 The workflow suggestion opens the Workflows dialog in OST, as Teams
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -51,4 +51,12 @@ Left: the suggestion's page stays blank ("Initial app state does not contain val
   - Host events: framed, initialize, appLoaded, success. Nothing was submitted.
   - So OST's host gives the page what it needs: context, subPageId, the apihub token over NAA, and chat.id. findmeetingtime and remindme stop on the page's own error, as they would inside Teams.
 - AC1 met as far as Teams itself can go. If Microsoft fixes the route, the other two forms will draw with no OST change.
+
+- 2026-11-20 merged.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Workflow suggested reply opens Teams' Workflows dialog in OST. OST now passes Teams' trusted launch domains so the page gets its token; the dialog opens at Teams' size and header and the Create a Planner task form draws prefilled (verified live, nothing submitted). The Find meeting time and Remind me forms throw "useAutomationConnections must be used within AutomationConnectionsProvider", a bug in the Workflows page (build 2026102302) that fails the same way in Teams.
+<!-- SECTION:FINAL_SUMMARY:END -->

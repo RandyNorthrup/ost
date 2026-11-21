@@ -3,10 +3,10 @@ id: TASK-0240
 title: >-
   Recap window extras as Teams: Clipchamp, Copilot, Custom summary, Mentions,
   Add notes, Manage
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-11-20T22:51:00Z'
-updated_date: '2026-11-21T02:46:00Z'
+updated_date: '2026-11-21T03:15:00Z'
 labels:
   - desktop
   - calls
@@ -21,7 +21,7 @@ TASK-0098 built Teams' recap pop-out (player, Speakers/Topics/Chapters, Shared f
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The recap window has Teams' Open in Clipchamp, Copilot and Manage buttons and they act as in Teams
+- [x] #1 The recap window has Teams' Open in Clipchamp, Copilot and Manage buttons and they act as in Teams
 - [ ] #2 Custom summary, Mentions and Notes' Add notes work as in Teams
 <!-- AC:END -->
 
@@ -56,4 +56,6 @@ TASK-0098 built Teams' recap pop-out (player, Speakers/Topics/Chapters, Shared f
   - A meeting with a working transcript, to see Mentions and Custom summary results.
   - Add notes was not pressed live; it would create notes in the meeting.
   - The player is OneDrive's; it shows "Open in browser", which Teams' streamembed doesn't have.
+
+- 2026-11-20 merged: Open in Clipchamp, Copilot and Manage (Download, Expires in 118 days, Extend / Remove expiration) checked live. AC2 open: Custom summary got Copilot's server error for this meeting; Mentions shows Teams' own error; Add notes not pressed; Create template editor not built.
 <!-- SECTION:NOTES:END -->

@@ -1,10 +1,10 @@
 ---
 id: TASK-0206
 title: Chat list leftovers found in live checks
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-11-16T20:22:00Z'
-updated_date: '2026-11-21T02:45:00Z'
+updated_date: '2026-11-21T03:15:00Z'
 labels:
   - desktop
 dependencies: []

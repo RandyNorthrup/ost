@@ -1,10 +1,10 @@
 ---
 id: TASK-0200
 title: Link cards from installed apps and apps that need sign-in, as Teams
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-11-16T11:48:00Z'
-updated_date: '2026-11-21T02:46:00Z'
+updated_date: '2026-11-21T03:15:00Z'
 labels:
   - desktop
 dependencies: []

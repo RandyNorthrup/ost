@@ -1,10 +1,10 @@
 ---
 id: TASK-0207
 title: Loop page extras as Teams
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-11-16T20:42:00Z'
-updated_date: '2026-11-21T02:46:00Z'
+updated_date: '2026-11-21T03:15:00Z'
 labels:
   - desktop
 dependencies: []
