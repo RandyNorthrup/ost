@@ -1,10 +1,10 @@
 ---
 id: TASK-0239
 title: SharePoint tab configuration pages draw in OST's app host
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-11-20T18:48:00Z'
-updated_date: '2026-11-20T23:11:00Z'
+updated_date: '2026-11-21T00:13:00Z'
 labels:
   - desktop
   - apps
@@ -19,7 +19,7 @@ In TASK-0191's live check SharePoint's Recommended and Pages lists failed to dra
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 SharePoint's tab configuration page shows its Recommended, Pages and Document libraries lists in OST as in Teams
+- [x] #1 SharePoint's tab configuration page shows its Recommended, Pages and Document libraries lists in OST as in Teams
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -30,4 +30,12 @@ In TASK-0191's live check SharePoint's Recommended and Pages lists failed to dra
 
 - Teams on winpc (Settings on the same "Documents" tab): Recommended draws at once. OST's difference was the host's settings.getSettings answer: it returned the configuration page's own address as contentUrl, so SharePoint (opened for an existing tab) had no tab to start from. Fix: TabConfigDialog passes the tab's settings (entityId, contentUrl, websiteUrl, name) and app_host.js answers getSettings with them, as Teams does.
 - Live again (linuxlt, ost-test1): Settings on "Documents" now shows Recommended (Documents, Home, News) on first open, like Teams; picking Documents saved through settings.save → the tab's address rewritten (name kept); then the test tab was removed (--tab-settings-remove), channel tabs back to Conversation, Shared, Notes.
+
+- 2026-11-20 merged as 6112ef3.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+SharePoint tab configuration pages draw in OST: TeamsJS getSettings now returns the tab's own settings (it returned the config page address). Verified live: Settings on a test Documents tab shows Recommended (Documents, Home, News) and saves; Add mode shows Recommended, Pages, Lists and Document libraries. Test tab removed.
+<!-- SECTION:FINAL_SUMMARY:END -->

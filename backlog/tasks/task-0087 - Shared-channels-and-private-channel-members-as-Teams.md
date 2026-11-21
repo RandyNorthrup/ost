@@ -1,10 +1,10 @@
 ---
 id: TASK-0087
 title: Shared channels and private channel members as Teams
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-11-10T05:09:00Z'
-updated_date: '2026-11-20T23:39:00Z'
+updated_date: '2026-11-21T00:13:00Z'
 labels:
   - desktop
 dependencies: []
@@ -18,8 +18,8 @@ Private channels: OST creates and deletes them as Teams, but adding people (the 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Adding people to a private channel sends Teams' request and they appear in Teams' channel roster (needs a second member in OST Test Team)
-- [ ] #2 Shared channel creation, sharing and invitations work as Teams where the tenant allows shared channels
+- [x] #1 Adding people to a private channel sends Teams' request and they appear in Teams' channel roster (needs a second member in OST Test Team)
+- [x] #2 Shared channel creation, sharing and invitations work as Teams where the tenant allows shared channels
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -39,4 +39,17 @@ Built so far: Creating a Shared channel (the type is offered), a member step for
 
 - 2026-11-20 live UI (linuxlt, ost-test1, --channel-share-test manage/shot): Manage channel on the shared channel shows Teams' tabs (Members, Invites and requests, Settings), the "Share with people ▾" split button, Owners (1) / Members (0) / Teams (3); on the private channel Members, Settings, Analytics with "+ Add member", Owners (1) / Members and guests (1) (OST Test 2).
 - Cleanup done: "OST TEST 087 shared" and "OST TEST 087 private" deleted (ost-test1), "OST TEST 087 team1" deleted (ost-test1), "OST TEST 087 team2" deleted (OST Test 2). No other tenant settings were changed for this task.
+
+- 2026-11-20 merged as 6112ef3.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Shared channels and private channel members as Teams.
+
+- Private channel: adding members uses Teams' provisioning request; OST Test 2 appeared in Graph and Teams.
+- Shared channels: Share with a team / a team you own, invitations (accept with {targetTeamThreadMri}, decline), owner Approve / Deny of pending teams, Sent invites (active only), and Manage channel tabs per channel type (Owners, Members, Teams; Members and guests). Private vs shared told apart by the thread subtype.
+
+Verified live between ost-test1, OST Test 2 and OST Test 3; test channels and teams (OST TEST 087 team1/team2) deleted. Spec docs/spec/shared-channels.md; harness --channel-share-test.
+<!-- SECTION:FINAL_SUMMARY:END -->

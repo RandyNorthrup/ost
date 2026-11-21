@@ -1,11 +1,11 @@
 ---
 id: TASK-0133
 title: Profile card org chart and Show more sections, with real org data
-status: To Do
+status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-14T03:26:00Z'
-updated_date: '2026-11-20T23:55:00Z'
+updated_date: '2026-11-21T00:13:00Z'
 labels:
   - desktop
   - people
@@ -21,7 +21,7 @@ Teams' profile card Organization tab draws an org chart (managers above, peers a
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 With managers set for test users, the Organization tab draws Teams' org chart and its navigation (Home, Back, Next) walks it as in Teams
+- [x] #1 With managers set for test users, the Organization tab draws Teams' org chart and its navigation (Home, Back, Next) walks it as in Teams
 - [ ] #2 The sections under Show more match Teams'
 - [ ] #3 Verified side by side with Teams on winpc
 <!-- AC:END -->
@@ -40,4 +40,6 @@ Built so far: The profile card's Organization tab (manager and reports from Grap
 - Live (linuxlt, ost-test1): OST Test 1 → managers [OST Test 2], works with [OST Test 3, Randy Northrup]; visiting OST Test 2 → "1 report / 1 direct", reports [OST Test 1], works with [Randy Northrup]; Back returns to OST Test 1 — the same people Teams shows.
 
 - 2026-11-20 layout to Teams' measures (docs/spec/profile-card.md 'Organization tab'): manager cards 84 tall with 48 px pictures and the reports count, the focus card 156.7 with View profile and '1 report / 1 direct', 'People reporting to {name}' rules, report cards, '{name} also works with' / 'You work with' tiles. Live again with the final build (--profile-org-test, ost-test1): same people and navigation as Teams. Open: AC2 (the hover card's Show more sections) and the AC3 side-by-side still need winpc, which other agents held.
+
+- 2026-11-20 merged: org chart from Loki to Teams' measurements with Home/Back/Next, verified live. AC2/AC3 open (need winpc).
 <!-- SECTION:NOTES:END -->
