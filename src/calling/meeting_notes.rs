@@ -188,10 +188,16 @@ impl Notes {
         json!({ LEADER: { "value": { "type": "notes" }, "sequenceNumber": 1 } })
     }
 
-    /// The meeting state that shares the notes' link; Teams adds the call's
-    /// id as `secret`.
-    pub fn share(&self, resource_uri: &str, call_id: &str) -> Value {
-        json!({ RESOURCE: { "value": { "type": "notes", "resourceUri": resource_uri, "secret": call_id }, "sequenceNumber": 1 } })
+    /// The meeting state that shares the notes' link. Teams' compose
+    /// container (FluidMeetNowComposeContainer, which makes the page) sends
+    /// `{type, resourceUri}`; its leader-ack helper adds the call's id as
+    /// `secret` (given here).
+    pub fn share(&self, resource_uri: &str, secret: Option<&str>) -> Value {
+        let mut value = json!({ "type": "notes", "resourceUri": resource_uri });
+        if let Some(s) = secret {
+            value["secret"] = s.into();
+        }
+        json!({ RESOURCE: { "value": value, "sequenceNumber": 1 } })
     }
 }
 
@@ -232,7 +238,8 @@ mod tests {
     fn publishes_as_teams() {
         let n = Notes::default();
         assert_eq!(n.claim(), json!({"collabLeaders.notes": {"value": {"type": "notes"}, "sequenceNumber": 1}}));
-        assert_eq!(n.share("https://x", "c1"), json!({"collabResources.notes": {"value": {"type": "notes", "resourceUri": "https://x", "secret": "c1"}, "sequenceNumber": 1}}));
+        assert_eq!(n.share("https://x", Some("c1")), json!({"collabResources.notes": {"value": {"type": "notes", "resourceUri": "https://x", "secret": "c1"}, "sequenceNumber": 1}}));
+        assert_eq!(n.share("https://x", None), json!({"collabResources.notes": {"value": {"type": "notes", "resourceUri": "https://x"}, "sequenceNumber": 1}}));
         let mut m = Notes::default();
         m.apply(&json!({"meetingStates": {"collabLeaders.notes": {"value": {"type": "notes"}, "sequenceNumber": 1}}}));
         assert!(m.leader);

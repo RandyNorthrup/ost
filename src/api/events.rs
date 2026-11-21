@@ -379,6 +379,8 @@ pub async fn discover(client: &TeamsClient, filter: &DiscoverFilter) -> Result<V
     let (un, uu, up) = (url(DiscoverList::Now), url(DiscoverList::Upcoming), url(DiscoverList::Past));
     let (a, b, c) = tokio::join!(get_json(&un, true), get_json(&uu, true), get_json(&up, true));
     let (a, b, c) = (a?, b?, c?);
+    let short = |v: &Value| v.to_string().chars().take(400).collect::<String>();
+    tracing::info!(base = %base, now = %short(&a), upcoming = %short(&b), past = %short(&c), "events: discover replies");
     let out = json!({
         "now": cards_from(&a, &ams),
         "upcoming": cards_from(&b, &ams),

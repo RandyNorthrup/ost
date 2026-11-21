@@ -7175,11 +7175,6 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
                     .collect();
                 tracing::info!(resources, ?leaders, notes = teams_cli::calling::meeting_notes::collab_notes_location(&v).is_some(), "meeting: collab details");
             }
-            // The answer to a meeting states update (the notes' claim or link).
-            if let Some(r) = v.pointer("/body/updateMeetingStatesResponse") {
-                let detail = v.pointer("/body/additionalDetail").cloned().unwrap_or_default();
-                tracing::info!(response = %r.to_string().chars().take(600).collect::<String>(), %detail, "meeting states: answer");
-            }
             let notes = call_slot()
                 .lock()
                 .await
@@ -7721,6 +7716,11 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
         keys(&v, "", 4, &mut shape);
     }
     tracing::info!(?shape, "call event");
+    // A meeting states update's answer (such as the notes' claim or link):
+    // its outcome per state.
+    if json.contains("\"updateMeetingStatesResponse\"") {
+        tracing::info!(answer = %json.chars().take(700).collect::<String>(), "meeting states: answer");
+    }
     tracing::debug!(payload = %json, "call event payload");
 }
 
@@ -21773,7 +21773,10 @@ impl qobject::Backend {
                         }
                         let slot = call_slot().lock().await;
                         let call = slot.outgoing.as_ref().context("Not in a call")?;
-                        call.publish_meeting_states(call.notes().share(&uri, call.call_id()), "Meeting notes link").await?;
+                        // As Teams' compose container: no secret (OST_NOTES_SECRET=1
+                        // adds the call's id, as its leader-ack helper does).
+                        let secret = (std::env::var("OST_NOTES_SECRET").as_deref() == Ok("1")).then(|| call.call_id().to_string());
+                        call.publish_meeting_states(call.notes().share(&uri, secret.as_deref()), "Meeting notes link").await?;
                         Ok(json!({ "url": uri, "source": "made" }))
                     }
                     // More actions: See who has access needs the file's ids;
