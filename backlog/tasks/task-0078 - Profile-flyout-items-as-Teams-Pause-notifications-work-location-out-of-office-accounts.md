@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-09T16:14:00Z'
-updated_date: '2026-11-11T22:35:00Z'
+updated_date: '2026-11-21T19:37:00Z'
 labels:
   - desktop
 dependencies: []
@@ -46,4 +46,10 @@ The rest of Teams desktop's profile flyout, measured on winpc: each item behaves
 - AC5 (2026-11-11): measured Teams' bar over a 1:1's compose box with OST Test 2's pinned status message seen by OST Test 1 ("Status of OST Test 2: …", 29.33 tall, #E6E6E6, Close notification); OST shows the same from its presence refresh (peerNote on chat entries), plus Teams' out-of-office line. Teams' 1:1 header shows no status message; profile cards do (TASK-0089). Test note cleared afterwards.
 
 - AC4 research (2026-11-11): Teams' flyout ends with "Add another account"; with more accounts it lists them ("Switch to account {upn}, Status {availability}") and has an "Accounts and orgs" settings page and "Activity in other accounts and orgs" (new window). Its two-account layout can't be measured here without signing a second account into Teams on winpc (a password in Microsoft's sign-in), so AC4 waits for that view.
+
+- 2026-11-21 (agent setH) AC4 built, as far as one account in Teams allows measuring:
+  - Teams (winpc, one account): the flyout ends with a footer row "Add another account" (me-control-menu-add-account: 65 tall under a 1.3 px #F5F5F5 rule on #F0F0F0, a 32 px round slot at 26 with a 16 px person-add glyph #616161, the text 14/600 at 76). Teams' MTMA strings (nova) for more accounts: "Switch to account {upn},  Status {availability}", "Activity in other accounts and orgs".
+  - OST: each account lives in its own profile (OST_PROFILE: its own config folder, keyring entry, instance socket and windows). The device's accounts are kept in ~/.config/teams-cli/accounts.json (teams_cli::config::Account / accounts / record_account, recorded at sign-in, removed at sign-out, with each account's presence). The flyout lists your other accounts (picture, name, e-mail, presence; "Switch to account …" brings that account's window forward, or starts it) and ends with Teams' "Add another account" footer, which starts OST for a new profile (account2, account3, …), where OST's own sign-in runs.
+  - Verified on linuxlt (OST Test 2, --seth-test --seth-accounts): the flyout listed OST Test 1 (the default profile) above Add another account (picture sh-flyout); Add another account started a new OST with OST_PROFILE=account2 (stopped by pid, nothing signed in; its window was still blank 20 s in, so the sign-in page wasn't seen loading).
+  - Open: Teams' layout with two accounts signed in (it needs a second account signed in to Teams on winpc, which takes a password at Microsoft's sign-in, so the user has to do it), and Teams' "Activity in other accounts and orgs" window.
 <!-- SECTION:NOTES:END -->

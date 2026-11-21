@@ -2205,7 +2205,10 @@ Window {
     }
     // Captions in a window of their own (Open captions in new window).
     property bool captionsPoppedOut: false
-    onCaptionsOnChanged: if (!captionsOn && !rttOn) captionsPoppedOut = false
+    onCaptionsOnChanged: {
+        if (!captionsOn && !rttOn) captionsPoppedOut = false
+        if (captionsOn && smallView) { smallView = false; showNormal(); raise() }
+    }
     CaptionsPopout {
         id: captionsPopout
         visible: (win.captionsOn || win.rttOn) && win.captionsPoppedOut && win.state === "connected"
@@ -3978,13 +3981,20 @@ Window {
         }
     }
 
-    // Teams' compact view while the meeting window is minimised.
+    /// An accepted call opened in the small window (Settings ▸ Calls ▸
+    /// Viewing incoming calls ▸ Small window); Teams shows only the large
+    /// window once RTT or captions are on.
+    property bool smallView: false
+    onVisibleChanged: if (!visible) smallView = false
+    onRttOnChanged: if (rttOn && smallView) { smallView = false; showNormal(); raise() }
+    // Teams' compact view while the meeting window is minimised (and for
+    // a call opened in the small window).
     CompactCallWindow {
         id: compactView
         call: win
         // "Hide Call Monitor when minimizing" (Accessibility) keeps it
         // away, except while you share (as Teams says).
-        visible: win.meeting && win.state === "connected" && win.visibility === Window.Minimized
+        visible: (win.meeting || win.smallView) && win.state === "connected" && win.visibility === Window.Minimized
                  && (win.accessibility.hideCallMonitorOnMinimize !== true || win.sharing)
         onRestore: { win.showNormal(); win.raise(); win.requestActivate() }
     }

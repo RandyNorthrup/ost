@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-15T04:40:00Z'
-updated_date: '2026-11-21T16:11:00Z'
+updated_date: '2026-11-21T19:20:00Z'
 labels:
   - settings
   - presence
@@ -50,4 +50,6 @@ When the tenant's work-location detection policy is on (ECS places.enableWorkLoc
   - How (the module's password prompt avoided): MicrosoftPlaces 2.1.13 on winpc (pwsh 7, installed to Documents\PowerShell\Modules, PSGallery marked trusted, msalruntime.dll added), with a device-code token for the module's own app (PlacesCmdletModule 05c7489d-…, resource outlook.office365.com, approved in Chrome as Randy) injected as the module's ManualAccessTokenProvider (CmdletSession.AccessTokenProvider) before Connect-MicrosoftPlaces. Token file deleted from winpc.
 
 - 2026-11-21 live check on linuxlt (ost-test1, Wi-Fi Condor Cave): OST turned detection on with the policy and switch, read the network from NetworkManager and asked the location service; the SSID allow list still came back empty ~30 min after the change (Places says up to 12 h for settings, 24–48 h for BSSIDs), so it correctly treated the network as not an office network. Next check: once the list has "Condor Cave", run with RUST_LOG=warn,ost_desktop::work_location=info and --setf-test --setf-worklocation during ost-test1's working hours (Mon–Fri 8–5 PT); expect "WORKLOC network change: Building { name: OST Test Building }" and the work location in the profile flyout.
+
+- 2026-11-21 (agent setH) re-checked ~10 h after the Places Wi-Fi change: GET {iC3LocationService}/v1/me/ssid-allowlist (examples/ic3_location, OST Test 2, who has the same work-location policy) still returns 0 entries. linuxlt is on Condor Cave (BSSID F4:92:BF:78:C4:67, the one mapped to OST Test Building), so the setting hasn't reached the location service yet (Places says up to 12 h for settings, 24–48 h for BSSIDs). Today is Saturday, outside ost-test1's working hours, so a check-in couldn't happen anyway. Next: a weekday 8–5 PT, once the list has 'Condor Cave'; run --setf-test --setf-worklocation with RUST_LOG=warn,ost_desktop::work_location=info.
 <!-- SECTION:NOTES:END -->

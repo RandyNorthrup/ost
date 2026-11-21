@@ -628,7 +628,7 @@ Rectangle {
         z: 100
         // Teams' profile flyout: 320 wide; its pages replace one another.
         property string page: "main"
-        width: 320; height: (page === "main" ? menuCol.implicitHeight : page === "duration" ? durationPage.implicitHeight : notePage.implicitHeight) + 8
+        width: 320; height: page === "main" ? menuCol.implicitHeight : (page === "duration" ? durationPage.implicitHeight : notePage.implicitHeight) + 8
         anchors.right: parent.right; anchors.rightMargin: 8
         y: parent.height + 4
         radius: 8
@@ -888,12 +888,13 @@ Rectangle {
             // accounts on this device, each "Switch to account {upn},
             // Status {availability}", then "Add another account". OST keeps
             // each account in its own profile and window (its own sign-in).
+            readonly property var otherAccounts: menu.visible ? JSON.parse(backend.otherAccountsJson()) : []
             Item {
-                width: parent.width; height: 9
-                Rectangle { x: 4; width: parent.width - 8; height: 1; anchors.verticalCenter: parent.verticalCenter; color: theme.divider }
+                width: parent.width; height: menuCol.otherAccounts.length ? 9 : 10
+                Rectangle { visible: menuCol.otherAccounts.length > 0; x: 4; width: parent.width - 8; height: 1; anchors.verticalCenter: parent.verticalCenter; color: theme.divider }
             }
             Repeater {
-                model: menu.visible ? JSON.parse(backend.otherAccountsJson()) : []
+                model: menuCol.otherAccounts
                 Rectangle {
                     id: acctRow
                     required property var modelData
@@ -913,13 +914,26 @@ Rectangle {
                     Accessible.name: qsTr("Switch to account %1,  Status %2").arg(acctRow.modelData.upn).arg(root.statusLabel(acctRow.modelData.availability || "Offline"))
                 }
             }
-            FlyoutRow {
-                icon: "person-add-20"
-                label: qsTr("Add another account")
-                chevron: false
-                onClicked: { menu.visible = false; backend.addAccount() }
+            // Teams' footer (me-control-menu-add-account, measured on winpc
+            // 2026-11-21): 65 tall under a 1.3 px #F5F5F5 rule on #F0F0F0,
+            // a 32 px round slot at 26 with the 16 px person-add glyph
+            // (#616161), "Add another account" 14/600 at 76.
+            Rectangle {
+                id: addAcct
+                width: parent.width; height: 66.3
+                color: addHover.hovered ? theme.pick("#E0E0E0", "#3D3D3D", "#1AEBFF") : theme.pick("#F0F0F0", "#1F1F1F", "#000000")
+                bottomLeftRadius: 8; bottomRightRadius: 8
+                Rectangle { width: parent.width; height: 1.3; color: theme.pick("#F5F5F5", "#2E2E2E", "#FFFFFF") }
+                Item {
+                    x: 26; y: 1.3 + (65 - 32) / 2; width: 32; height: 32
+                    FluentIcon { anchors.centerIn: parent; name: "person-add-20"; size: 16; color: theme.onFill(addAcct, theme.textSecondary) }
+                }
+                Text { x: 76; y: 1.3 + (65 - 20) / 2; height: 20; verticalAlignment: Text.AlignVCenter; text: qsTr("Add another account"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(addAcct, theme.text) }
+                HoverHandler { id: addHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: { menu.visible = false; backend.addAccount() } }
+                Accessible.role: Accessible.Button
+                Accessible.name: qsTr("Add another account")
             }
-            Item { width: 1; height: 8 }
         }
         // The status choices, as Teams' menu: the statuses, Duration, Reset status.
         MenuPopup {

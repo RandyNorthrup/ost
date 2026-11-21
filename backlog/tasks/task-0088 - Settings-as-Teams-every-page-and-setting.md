@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-10T07:56:00Z'
-updated_date: '2026-11-21T17:30:00Z'
+updated_date: '2026-11-21T19:20:00Z'
 labels:
   - desktop
   - settings
@@ -99,4 +99,15 @@ OST's Settings has General, Appearance, Chats and channels, Notifications and ac
   - Intelligent call delegation page: Active/Inactive switch; on: Call handling (external / internal dropdowns, VIPs Edit → Privacy priority access), Personalization (Voice and greeting, Custom instructions, Make a test call), Skills (Follow-ups, spam, recordings), Notifications (banner). PUT {mt}/beta/usersettings/personalAttendantSettings (whole object). Turning it on made Teams create the personal Bookings service "Personal Attendant Followup" (POST {mt}/beta/personalbookings/bookingsService…, service ddf16a17-…; left in place, Teams makes it once). ICD turned off again.
   - Notifications ▸ Apps: one card, per app (Meeting Recaps 981bbfd0-…, Q&A 5db56dd0-…) an expander row with switch and the activity types; ECS activityCustomizations (settingsAggregation, defaultAppSettings OnlyFeed for Recaps).
   - About ring line: ECS Segmentation.TeamsRing = ring3_6 (Targeted release) → "<b>Early Access</b> through Targeted release" link (core.aboutRingInfoLinks.targetedReleaseLink, go.microsoft.com/fwlink/?linkid=2254754).
+
+- 2026-11-21 (agent setH) built (docs/spec/settings.md "Calls ▸ Call group, Delegates, Intelligent call delegation, Viewing incoming calls" and "About ▸ ring line"):
+  - Calls: Intelligent call delegation card (Set up / Manage) and page (Active/Inactive switch where the policy is EnabledUserOverride; on: Call handling with the external/internal dropdowns and VIPs (Edit opens Privacy ▸ Manage priority access), Skills' spam and recording switches, Notifications' banner switch), saved as Teams' whole personalAttendantSettings (PUT); the first turn-on where Bookings is allowed also makes the follow-up Bookings service as Teams does (api::call_delegation). Personalization (Voice and greeting, Custom instructions, Make a test call) and Skills ▸ Follow-ups need their sub-pages: TASK-0242. With ICD on, the forwarding card shows Teams' notice in place of its choices.
+  - Viewing incoming calls (Large/Small window = user property callViewMode). With Small window an accepted 1:1/group call opens in the small window (OST's compact call window, the call window minimised), back to the large one when captions or RTT turn on (Teams' rule, from its calling code).
+  - Call group card and Calls › Call group page (picker, Group members, Ring: Everyone at once / In the order below for 2–5 members, drag to reorder, Delete, 25 at most); Delegates card and Calls › Manage delegates page (picker, expanders with the five permissions, Announce when delegates join the call). api::call_forwarding call_group_*, api::call_delegation, unit-tested.
+  - Out-of-office voicemail heading renamed as in Teams 26304.
+  - Notifications ▸ Apps by Teams' rule: apps from your feed's Graph activities (teamsAppId) and your saved userGraphSettings, less ECS hideAppSettings and Calendar; rows from the manifest's activityItems or ECS settingsAggregation; defaults (OnlyFeed for Meeting Recaps); the switch saves appNotificationEnabled (api::app_notifications, unit-tested). ost-test1 gets exactly Teams' list: Meeting Recaps (2 rows) and Q&A (13 rows).
+  - About: "Early Access through Targeted release" from ECS Segmentation.TeamsRing (api::ecs::about_ring); the Early access card now comes after Third party notice, as in Teams.
+- Verified live on linuxlt (OST Test 2, --seth-test --seth-saves; each change read back from the service, then put back): call group add and remove of OST Test 1; delegate add, Join active calls on, remove; Small window then Large window; ringtone Beep then Default; unanswered delay 30 s then 20 s; Q&A "Replies to your posts" Off, then back. ost-test1 (default) display run: ICD policy EnabledUserOverride, apps Meeting Recaps:2 and Q&A:13, ring line shown. Teams on winpc saves Small window as PUT chatsvc properties?name=callViewMode {"callViewMode":"minimized"}, the same request OST sends.
+- Open: Teams' small call window itself wasn't measured. Teams rings with a Windows toast now, and VNC clicks on its Accept didn't answer. Three test calls from OST Test 2 went to voicemail and were cut off at once (no voicemail was saved; missed-call entries remain). OST's small window follows Teams' code (minimized view = the compact call window); it still needs comparing with Teams.
+- Tenant: turning ICD on in Teams on winpc made ost-test1's personal Bookings service "Personal Attendant Followup" (service ddf16a17-…). ICD was turned off again; the service is left in place.
 <!-- SECTION:NOTES:END -->

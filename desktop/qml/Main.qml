@@ -1935,6 +1935,22 @@ Window {
     Timer { id: nsiPopShot; interval: 600; onTriggered: callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-nsi-popover.png"))) }
     Timer { id: bubbleShot; interval: 600; onTriggered: callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-bubble.png"))) }
     Timer { id: reactionShot; interval: 400; onTriggered: callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-their-reaction.png"))) }
+    // Settings ▸ Calls ▸ Viewing incoming calls (Teams 26304's callViewMode,
+    // its calling service's shouldEnableMinimizedViewForCalls): a 1:1 or
+    // group call you accept opens in the small window (Teams' minimized
+    // view, the compact call window) when you chose Small window.
+    property string callPrevState: ""
+    Connections {
+        target: backend
+        function onCallStateChanged() {
+            const accepted = window.callPrevState === "ringing" && (backend.callState === "connecting" || backend.callState === "connected")
+            window.callPrevState = backend.callState
+            if (!accepted || backend.callMeeting) return
+            let mode = "immersive"
+            try { mode = ((JSON.parse(backend.settingsJson || "{}").props || {}).callViewMode) || "immersive" } catch (e) {}
+            if (mode === "minimized") { callWindow.smallView = true; callWindow.showMinimized() }
+        }
+    }
     CallWindow {
         id: callWindow
         // --call-window=<w>x<h>: the call window's size (compared with
@@ -11833,6 +11849,17 @@ Window {
                 console.warn("SETH", tag, JSON.stringify({ group: r.callGroupDetails, unanswered: r.unansweredCallSettings, delegation: mt.delegation, view: (v.props || {}).callViewMode,
                     ringtones: (((mt.voice || {}).ringtoneSettings || {}).assignments || {}).ringToneAssignments, attendant: (mt.attendant || {}).isEnabled, policy: mt.attendantPolicy,
                     apps: (mt.appNotifications || []).map(a => a.name + ":" + a.rows.length), graph: firstApp ? ((v.props || {}).userGraphSettings || {})[firstApp.id] : null })) }
+            // --seth-accounts (TASK-0078): the profile flyout with this
+            // device's other accounts and "Add another account" (captured),
+            // then Add another account (a new profile's OST, at its sign-in).
+            if (Qt.application.arguments.indexOf("--seth-accounts") >= 0) {
+                if (step === 0) { console.warn("SETH accounts", backend.otherAccountsJson()); titleBar.pauseForTest("flyout") }
+                else if (step === 2) shot("flyout")
+                else if (step === 3) { titleBar.pauseForTest("flyout"); backend.addAccount(); console.warn("SETH add account started") }
+                else if (step === 6) Qt.quit()
+                step++
+                return
+            }
             if (step === 0) { rail.current = "settings"; settingsView.pageForTest("calls"); log("start") }
             else if (step === 2) shot("calls")
             else if (step === 3) settingsView.scrollToForTest(700)
