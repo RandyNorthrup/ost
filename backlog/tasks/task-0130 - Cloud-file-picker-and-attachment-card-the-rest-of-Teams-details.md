@@ -1,11 +1,11 @@
 ---
 id: TASK-0130
 title: 'Cloud file picker and attachment card: the rest of Teams'' details'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-13T21:53:00Z'
-updated_date: '2026-11-21T06:18:00Z'
+updated_date: '2026-11-21T15:46:00Z'
 labels:
   - desktop
   - files
@@ -26,7 +26,7 @@ What TASK-0085's Attach left of Teams' cloud file picker and compose card (docs/
 - [x] #2 Suggested files in the Attach popover look as Teams draws them (measured with an account that has suggestions)
 - [x] #3 A post's thread view offers the same Attach popover
 - [x] #4 The picker's command bar (New folder with Teams' colours, Upload, view switch) and folder icons match Teams'
-- [ ] #5 Media (layout menu, compact, zoom, date headings) and People (including files you shared) match Teams'
+- [x] #5 Media (layout menu, compact, zoom, date headings) and People (including files you shared) match Teams'
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -75,4 +75,18 @@ Left: Media's layout menu, compact toggle, zoom and date headings (measured in t
   - Layout and zoom are kept as Photos keeps them: its uxSetting {layoutAlgorithm, zoomLevel} lives in the picker's local storage (per device), so OST keeps `photosUxSetting` in its device settings; compact, inline dates and file names are not kept (Teams' component state). Live: Waterfall at 300 px came back on reopening; the setting was put back.
   - People: Teams (winpc, Browse by > People) names chips by the file's title (Substrate's Visualization.Title, the SharePoint Title that Teams sets to a recording's meeting name: "OST TEST 217 r3 town hall B"); OST now reads each file's Title (Graph listItem fields) and shows it, else the name without extension. The person picture is SharePoint's default photo for someone without one (a white figure on #B2B2B2), as the picker shows it. Live: OST shows "OST TEST 217 r3 town hall B" and "OST TEST 217 webinar" with the figure, as Teams does.
 - Open: Teams lists a third file for OST Test 2 ("+1"): its People view reads Substrate's shared-with-me working set, which has one item Graph's sharedWithMe doesn't return. The "files you shared" Teams listed on 11-16 are no longer listed in Teams either.
+
+- 2026-11-21 merged (1424747); 877 lib + 29 desktop tests pass. One known gap: Teams lists one more file for OST Test 2 (its +1) from a source Microsoft's file API doesn't return to OST.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Cloud file picker and attachment card as Teams, finished with Media and People.
+
+- Media is OneDrive Photos as Teams' picker has it: Select layout (River, Waterfall, Square, Inline dates, Show file names), compact toggle, zoom popover, date headings and a Timeline that scrubs to the 15th of a month; layout and zoom kept per device as Photos keeps them.
+- People chips fit the row with +N, name files by their title and show Teams' person picture.
+- Earlier: Link settings on the attachment card, suggested files, the thread view's Attach popover, the command bar and folder icons.
+
+Verified live against Teams on winpc. Gap: one file Teams lists for OST Test 2 comes from a source the file API doesn't return.
+<!-- SECTION:FINAL_SUMMARY:END -->

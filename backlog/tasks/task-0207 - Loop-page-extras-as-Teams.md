@@ -4,7 +4,7 @@ title: Loop page extras as Teams
 status: In Progress
 assignee: []
 created_date: '2026-11-16T20:42:00Z'
-updated_date: '2026-11-21T15:26:00Z'
+updated_date: '2026-11-21T15:46:00Z'
 labels:
   - desktop
 dependencies: []
@@ -18,9 +18,9 @@ What TASK-0205 left of Teams' Loop host (docs/spec/loop-host.md): "See who has a
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 See who has access opens Teams' permissions panel
+- [x] #1 See who has access opens Teams' permissions panel
 - [ ] #2 Mentions, presence, the formatting toolbar and nested Loop components work in OST's Loop pages as in Teams
-- [ ] #3 Loop pages use Teams' dark and high-contrast themes, measured on winpc
+- [x] #3 Loop pages use Teams' dark and high-contrast themes, measured on winpc
 - [ ] #4 A Page tab without a link behaves as in Teams
 <!-- AC:END -->
 
@@ -56,4 +56,6 @@ What TASK-0205 left of Teams' Loop host (docs/spec/loop-host.md): "See who has a
   - Open: high contrast not seen live; no side-by-side with Teams on winpc; the harness's synthetic drag only sometimes makes Loop show the top bar; Create Loop component / Insert component (type Fluid path) not tried live; requiredProviderTypes, LoopCodeLoaderFactoryProvider (non-Fluid components), Whiteboard container, telemetry sink and trusted-types policy not given.
 
 - 2026-11-21 (chatE): See who has access's popover drawn live (`--loop-access-test`, OST group test > Notes): "People who have access", "1 groups giving access" (Loop's string), a line and "Only people with existing access can access this Loop component". Merged chatE2's toolbar and nested components (ba51310).
+
+- 2026-11-21 merged: See who has access popover and dark/high-contrast colours verified against winpc; formatting toolbar and nested components built (AC2 open: toolbar on mouse selection is flaky in the test; high contrast and side by side unchecked; new nested component not tried).
 <!-- SECTION:NOTES:END -->

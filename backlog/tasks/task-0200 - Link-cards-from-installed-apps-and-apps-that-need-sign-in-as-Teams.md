@@ -4,7 +4,7 @@ title: Link cards from installed apps and apps that need sign-in, as Teams
 status: In Progress
 assignee: []
 created_date: '2026-11-16T11:48:00Z'
-updated_date: '2026-11-21T08:25:00Z'
+updated_date: '2026-11-21T15:46:00Z'
 labels:
   - desktop
 dependencies: []
@@ -18,7 +18,7 @@ TASK-0168 shows Teams' app card for links to sites whose Teams app allows anonym
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A link handled by an installed app shows its card via queryLink, as Teams
+- [x] #1 A link handled by an installed app shows its card via queryLink, as Teams
 - [ ] #2 An app card that asks to sign in (GitHub's Show Preview) signs in and then shows the card, as Teams
 <!-- AC:END -->
 
@@ -56,4 +56,6 @@ TASK-0168 shows Teams' app card for links to sites whose Teams app allows anonym
   - Sign in opened the app's window at its own size: Microsoft's "Pick an account" (ost-test1 already signed in, no password), Visual Studio's one-time "We need a few more details" profile page (Continue: a free Azure DevOps profile for ost-test1, no payment), the consent pick again, then the app's callback page. The page's TeamsJS talked to OST's opener and called authenticate.success: OST logged "APPAUTH signed in", closed the window and asked the app again with value.state, as Teams does.
   - The app then answered 502 (BotError) because that organization doesn't exist; the card needs a real Azure DevOps organization with a work item (free to create at dev.azure.com as ost-test1). Not done in this pass.
   - The harness had logged the callback page's title, which carries the OAuth code; that log was redacted and the harness now logs the title without its query.
+
+- 2026-11-21 merged: AC1 verified (Wikipedia Search installed; a Wikipedia link gets its card via the app). AC2: sign-in window works as Teams' (success reported, window closes, app asked again with the result); seeing the card needs a free Azure DevOps organization with a work item.
 <!-- SECTION:NOTES:END -->
