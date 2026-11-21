@@ -7,7 +7,7 @@ status: To Do
 assignee:
   - '@claude'
 created_date: '2026-11-14T15:44:00Z'
-updated_date: '2026-11-21T01:26:00Z'
+updated_date: '2026-11-21T04:16:00Z'
 labels:
   - messages
   - video
@@ -47,4 +47,12 @@ Teams' video clip recorder (Stream's) has Backdrop (None, Upload, Blur, Microsof
   - Catalogs: 31 frames, 16 boards, 36 backdrops, 18 filters, 446 stickers, all on the public CDN.
   - Teams' "None / Upload / Blur" backdrop panel is the AugLoop variant; its stock list comes over AugLoop and isn't enumerated.
 - Not built in this pass. It still needs measuring on winpc with the camera, during a test recording.
+
+- 2026-11-20 (recD) measured live on winpc with Chromium's fake camera (WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS --use-fake-device-for-media-stream --use-file-for-fake-video-capture=<mjpeg>; no real webcam). Captures and reference shots: scratchpad rec137/ (cap4.txt = AugLoop session start, ref/*.png).
+  - Teams runs the AugLoop variants: Backdrops (None/Upload/Blur, Search, Images/Videos tabs, sections "Images"/"Videos" with See more; home shows 24 each, See more/search 50) and Stickers (Hubble emoji: Smilies, Animals, Food, Objects, People, Hand gestures, Travel and places, Activities, Symbols; home 33 each). Filter/Frame/Board are the local catalogs of the spec.
+  - AugLoop: wss://augloop.svc.cloud.microsoft/, SessionInit appName "Testing"; activate AugLoop_Hubble_ProviderContentAnnotation and ContentDownloadAnnotation (token); ContentSearchSignal per pivot: backdrops f8218404… (images) / 32318599… (videos) with orderBy modifiedDate + filter tags/any(p: p eq 'background'), pageSize 50; stickers pivot 84e04d41… with select "svg3D, skins/svg3D, thumbnailInfo/size100", filter pivotNames/any(p: p eq '<category>'), app 1010. Applied assets: image part "Image" (…_medium.jpg, stretched to 16:9), video part "Video" (.mp4 1920x1080), sticker part "SVG" (…_color.svg).
+  - Drawer: white 95 %, radius 8, padding 8 16 20, centred, bottom = container bottom + 25 % of its height (small window); width 90 % (Backdrops/Stickers 720 x 390, overflowing the dialog), Filter/Frame/Board 608, Draw 480, Photo 680. Effects menu: Fluent menu 138 wide, 32-px rows, opens above the button.
+  - Canvas history (Clear video canvas / Undo / Redo) sits in the header after the title (32 x 31.3 at 161.6/201.6/241.6). Selected objects show a right-hand dock (pill rgba(177,177,177,.48), radius 12, 33.3 wide at x 750.7): Delete, Flip, Duplicate, Forward, Backward; text shows Font, Color, Stroke, Background. Sticker = 100 px wide on the 761 picture, text 68 px at 1280 (~40 px shown), board camera left/board right 50 %.
+
+- 2026-11-20 (recD) built (uncommitted, worktree agent-a7bf3496e5f9bc281): api::hubble (AugLoop stock search, anonymous; examples/hubble_search works live), backend.hubbleSearch/hubbleResults, ClipMask (clip_mask.rs + clipmask.cpp: QVideoSink frames -> ost-vfx segmentation -> mask texture), shaders desktop/shaders/clip_{filter,camera,board}.frag baked by build.rs with qsb (linuxlt: installed qt6-shader-baker), QML ClipCatalog/ClipEffectsState/ClipCanvasItems/ClipEditOverlay/ClipDrawer/ClipEffectPanels, recorder bar (Backdrop, Draw in screen mode, Effects menu), header Clear/Undo/Redo, camera mode now records through ClipFrames (effects burned in). Harness --recorder-effects-test [--recorder-cam=<name>] [--recorder-effects-screen]; linuxlt run script scratchpad rec137/run_fx.sh (feeds test camera B the person photo).
 <!-- SECTION:NOTES:END -->

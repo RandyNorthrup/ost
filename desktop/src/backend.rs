@@ -1235,6 +1235,13 @@ pub mod qobject {
         /// (url, local file URL or "") follows.
         #[qinvokable]
         fn fetch_music(self: Pin<&mut Backend>, url: &QString);
+        /// The recorder's Backdrops and Stickers panels: Microsoft's stock
+        /// content (Hubble over AugLoop, as Stream asks for it).
+        /// `searches_json`: [{query, pivot: "images"|"videos"|"stickers",
+        /// category, pageSize}]; hubble_results(tag, [[{id, name, kind,
+        /// thumb, url, width, height}], …]) follows.
+        #[qinvokable]
+        fn hubble_search(self: Pin<&mut Backend>, tag: &QString, searches_json: &QString);
         /// Teams' background catalog ([{id, name, animated, thumb}]) as
         /// loaded; when it isn't yet, loading starts and
         /// video_backgrounds_ready follows.
@@ -1831,6 +1838,9 @@ pub mod qobject {
         /// A fetch_music finished.
         #[qsignal]
         fn music_ready(self: Pin<&mut Backend>, url: QString, path: QString);
+        /// A hubble_search finished (an empty list per failed search).
+        #[qsignal]
+        fn hubble_results(self: Pin<&mut Backend>, tag: QString, json: QString);
         /// Teams' background catalog loaded (video_backgrounds).
         #[qsignal]
         fn video_backgrounds_ready(self: Pin<&mut Backend>);
@@ -9919,6 +9929,39 @@ impl qobject::Backend {
             .await;
             let path = result.unwrap_or_else(|e| { tracing::warn!("music: {}", short_error(&e)); String::new() });
             let _ = qt.queue(move |mut this| this.as_mut().music_ready(QString::from(url.as_str()), QString::from(path.as_str())));
+        });
+    }
+
+    pub fn hubble_search(self: Pin<&mut Self>, tag: &QString, searches_json: &QString) {
+        let tag = tag.to_string();
+        let list: Vec<serde_json::Value> = serde_json::from_str(&searches_json.to_string()).unwrap_or_default();
+        let searches: Vec<api::hubble::Search> = list
+            .iter()
+            .map(|s| api::hubble::Search {
+                query: s["query"].as_str().unwrap_or_default().to_string(),
+                pivot: match s["pivot"].as_str().unwrap_or_default() {
+                    "videos" => api::hubble::STOCK_VIDEOS,
+                    "stickers" => api::hubble::EMOJI,
+                    _ => api::hubble::STOCK_IMAGES,
+                }
+                .to_string(),
+                category: s["category"].as_str().map(str::to_string),
+                page_size: s["pageSize"].as_u64().unwrap_or(50).clamp(1, 50) as u32,
+                page_offset: s["pageOffset"].as_u64().unwrap_or(0) as u32,
+            })
+            .collect();
+        let qt = self.qt_thread();
+        let lang = app_locale().to_lowercase();
+        runtime().spawn(async move {
+            let results = match api::hubble::search(&searches, &lang).await {
+                Ok(r) => r,
+                Err(e) => {
+                    tracing::warn!("hubble: {}", short_error(&e));
+                    vec![Vec::new(); searches.len()]
+                }
+            };
+            let v = serde_json::to_string(&results).unwrap_or_else(|_| "[]".into());
+            let _ = qt.queue(move |mut this| this.as_mut().hubble_results(QString::from(tag.as_str()), QString::from(v.as_str())));
         });
     }
 

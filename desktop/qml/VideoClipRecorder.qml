@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import QtMultimedia
+import QtQuick.Dialogs
 import com.ost.desktop
 
 // Teams' Record video clip (Microsoft Stream's recorder inside Teams'
@@ -102,6 +103,7 @@ Popup {
         confirmClose = false
     }
     function openFor(chat) {
+        fx.resetAll()
         chatId = chat
         cameraOn = true
         screenOn = false
@@ -125,7 +127,9 @@ Popup {
         // (at full frame rate); Record audio records its picture.
         // The screen is recorded as the picture shows it (with what is
         // drawn over it), so pausing keeps sound and picture together.
-        engine = audioMode || screenMode ? "frames" : "camera"
+        // Everything records what the picture shows (with its backdrop,
+        // effects and drawings), as Stream records its canvas.
+        engine = "frames"
         if (engine === "frames") {
             if (!framesReady) prepareFrames()
             if (!frames.start(file)) { console.warn("RECORDER couldn't start"); return }
@@ -144,7 +148,7 @@ Popup {
     // open), so recording starts at once.
     property bool framesReady: false
     function prepareFrames() { framesReady = frames.prepare(micId, micOn && !testSilent, 1280, 720) }
-    readonly property bool wantFrames: opened && (audioMode || screenMode) && stage === "setup"
+    readonly property bool wantFrames: opened && stage === "setup"
     onWantFramesChanged: if (wantFrames) prepareFrames(); else if (stage === "setup" && framesReady) { frames.release(); framesReady = false }
     onMicOnChanged: if (wantFrames) prepareFrames()
     onTestSilentChanged: if (wantFrames) prepareFrames()
@@ -273,6 +277,8 @@ Popup {
     }
     readonly property bool untouched: segments.length === 1 && segments[0].start === 0 && segments[0].end === segments[0].length && !(music && music.path)
     function stopAndReview() {
+        fx.drawer = ""
+        editOverlay.endText()
         frameTimer.stop()
         stage = "review"
         engineStop()
@@ -315,6 +321,29 @@ Popup {
     }
 
     MediaDevices { id: devices }
+    // ---- Effects (Stream's Backdrop and Effects menu; TASK-0137) ----
+    ClipEffectsState { id: fx }
+    ClipCatalog { id: catalog }
+    /// Effects apply to the camera and the screen, not Record audio.
+    readonly property bool effectsOn: !audioMode
+    readonly property bool backdropOn: !screenMode && !audioMode && fx.backdrop.kind !== "none"
+    readonly property bool cutoutOn: backdropOn && fx.cutout
+    /// Screen recording's Draw and Effects wait for the screen.
+    readonly property bool effectsReady: !audioMode && (!screenMode || live)
+    function openEffect(name) {
+        if (name === "text") { fx.drawer = ""; editOverlay.startText(); return }
+        fx.toggle(name)
+    }
+    FileDialog {
+        id: backdropDialog
+        title: qsTr("Use photo or video as backdrop")
+        nameFilters: [qsTr("Images and videos (*.png *.jpg *.jpeg *.svg *.webp *.gif *.webm *.mp4)")]
+        onAccepted: {
+            const u = selectedFile.toString()
+            fx.backdrop = { kind: /\.(webm|mp4)$/i.test(u) ? "video" : "image", url: u, name: "", upload: true }
+            fx.pip = { x: 0, y: 0, s: 1, a: 0 }
+        }
+    }
     // The camera's picture (shown, and so recorded, in camera mode).
     CaptureSession {
         camera: Camera {
@@ -374,6 +403,7 @@ Popup {
 
     // ---- Header ----
     Text {
+        id: titleText
         x: 16; y: 17; height: 22; verticalAlignment: Text.AlignVCenter
         text: rec.stage === "review" ? qsTr("Review your clips") : rec.stage === "recording" ? qsTr("Recording in progress") : rec.stage === "paused" ? qsTr("Recording paused") : rec.screenMode ? qsTr("Screen recording") : rec.audioMode ? qsTr("Record audio") : qsTr("Record a video clip")
         font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text
@@ -401,6 +431,16 @@ Popup {
         }
     }
     Rectangle { visible: rec.stage === "review"; x: 741.7; y: 18; width: 0.67; height: 20; color: theme.divider }
+    // The canvas's history (Stream's, after the title once there is any):
+    // Clear video canvas, Undo last item, Redo last item.
+    Row {
+        visible: rec.stage !== "review" && fx.hasHistory
+        x: titleText.x + titleText.implicitWidth + 8.6; y: 0
+        spacing: 8
+        HeadButton { icon: "eraser-20"; label: qsTr("Clear video canvas"); opacity: fx.items.length ? 1 : 0.45; onClicked: fx.clearCanvas() }
+        HeadButton { icon: "arrow-undo-20"; label: qsTr("Undo last item"); opacity: fx.undoStack.length ? 1 : 0.45; onClicked: fx.undo() }
+        HeadButton { icon: "arrow-redo-20"; label: qsTr("Redo last item"); opacity: fx.redoStack.length ? 1 : 0.45; onClicked: fx.redo() }
+    }
     HeadButton {
         x: 756; icon: "dismiss-20"; label: qsTr("Close camera")
         onClicked: {
@@ -416,44 +456,184 @@ Popup {
         function onVideoFrameChanged() { if (rec.waitingForScreen) { rec.waitingForScreen = false; rec.startRecording() } }
     }
     // ---- The picture (recorded as shown) ----
+    // Its layers, bottom to top, as Stream's render graph composes them:
+    // the backdrop and you (or the screen), the board, the filter, then the
+    // canvas items and the frame (unfiltered). ClipFrames records it all.
     Rectangle {
         id: canvas
         visible: rec.stage !== "review"
         x: 19.6; y: 56; width: 760.9; height: 428
         color: rec.screenMode && rec.stage !== "setup" || (!rec.screenMode && !rec.audioMode) ? "black" : theme.hc("#E6E6E6", "#000000")
         clip: true
-        VideoOutput {
-            id: camPreview
+        // A click on the picture away from any item ends text editing and
+        // the selection.
+        TapHandler {
+            onTapped: e => { if (canvasItems.hit(e.position.x, e.position.y) < 0) { editOverlay.endText(); fx.selected = -1 } }
+        }
+        Item {
+            id: stage
             anchors.fill: parent
-            visible: !rec.screenMode && !rec.audioMode
-            fillMode: VideoOutput.PreserveAspectFit
-            transform: Scale { origin.x: camPreview.width / 2; xScale: rec.mirror ? -1 : 1 }
-        }
-        VideoOutput {
-            id: screenPreview
-            anchors.fill: parent
-            visible: rec.screenMode && rec.stage !== "setup"
-            fillMode: VideoOutput.PreserveAspectFit
-        }
-        // Record audio: the microphone in a white circle.
-        Rectangle {
-            visible: rec.audioMode
-            x: 400 - 19.6 - 54; y: 264 - 56 - 54; width: 108; height: 108; radius: 54
-            color: theme.hc("#FCFCFC", "#000000")
-            FluentIcon { anchors.centerIn: parent; name: "mic-20"; size: 48; color: theme.hc("#252525", "#FFFFFF") }
-        }
-        // Screen recording, before it starts.
-        Column {
-            visible: rec.screenMode && rec.stage === "setup"
-            anchors.horizontalCenter: parent.horizontalCenter
-            y: 178.9 - 56
-            Image { anchors.horizontalCenter: parent.horizontalCenter; width: 70; height: 73.3; source: "../assets/illustrations/screen-recording.svg"; fillMode: Image.PreserveAspectFit; sourceSize: Qt.size(140, 140) }
-            Text {
-                width: 684.8; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
-                text: qsTr("You’ll pick a screen, window, or tab. Recording will start automatically. For optimal quality, ensure this tab is in view while recording.")
-                font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.onFill(canvas, theme.hc("#242424", "#FFFFFF"))
+            readonly property var filterDef: fx.filter >= 0 && rec.effectsOn ? catalog.filters[fx.filter] : null
+            layer.enabled: !!filterDef
+            layer.textureSize: Qt.size(1280, 720)
+            layer.effect: ShaderEffect {
+                readonly property var f: stage.filterDef || ({})
+                property var lut: lutImage
+                property var sprite: spriteImage
+                property var overlay: overlayImage
+                property real lutMode: f.lut && lutImage.status === Image.Ready ? f.lut.squares : 0
+                property real lutIntensity: f.lut ? f.lut.ratio : 0
+                property real spriteOn: f.sprite && spriteImage.status === Image.Ready ? 1 : 0
+                property real spriteIndex: spriteTimer.index
+                property real spriteCols: f.sprite ? f.sprite.cols : 1
+                property real spriteRows: f.sprite ? f.sprite.rows : 1
+                property real blendMode: f.sprite ? f.sprite.blend : 0
+                property real spriteOpacity: f.sprite ? f.sprite.opacity : 0
+                property real twoToneOn: f.twoTone ? 1 : 0
+                property color colorA: f.colorA || "#000000"
+                property color colorB: f.colorB || "#ffffff"
+                property real exposure: f.exposure || 1
+                property real contrastAmt: (f.contrast || 1) - 1
+                property real overlayMode: f.overlay && overlayImage.status === Image.Ready ? (f.overlay.alpha ? 2 : 1) : 0
+                property point overlayRepeat: f.overlay ? Qt.point(Math.max(1, Math.floor(1280 / f.overlay.width)), Math.max(1, Math.floor(720 / f.overlay.height))) : Qt.point(1, 1)
+                fragmentShader: "../shaders/clip_filter.frag.qsb"
+            }
+            Item {
+                id: pictureLayer
+                anchors.fill: parent
+                readonly property var boardDef: fx.board >= 0 && rec.effectsOn ? catalog.boards[fx.board] : null
+                layer.enabled: !!boardDef && boardImage.status === Image.Ready
+                layer.textureSize: Qt.size(1280, 720)
+                layer.effect: ShaderEffect {
+                    property var board: boardImage
+                    property real ratio: fx.boardRatio
+                    fragmentShader: "../shaders/clip_board.frag.qsb"
+                }
+                // The backdrop: a stock picture stretched over the picture;
+                // an upload fitted inside over a darkened copy that covers it.
+                Image {
+                    anchors.fill: parent
+                    visible: rec.backdropOn && fx.backdrop.kind === "image"
+                    source: rec.backdropOn && fx.backdrop.kind === "image" ? fx.backdrop.url : ""
+                    fillMode: fx.backdrop.upload ? Image.PreserveAspectCrop : Image.Stretch
+                    sourceSize.width: 1920
+                    smooth: !fx.backdrop.upload
+                    asynchronous: true
+                    Rectangle { anchors.fill: parent; visible: !!fx.backdrop.upload; color: Qt.rgba(0, 0, 0, 0.67) }
+                    Image {
+                        anchors.fill: parent
+                        visible: !!fx.backdrop.upload
+                        source: parent.source
+                        fillMode: Image.PreserveAspectFit
+                        sourceSize.width: 1920
+                        asynchronous: true
+                    }
+                }
+                VideoOutput {
+                    id: backdropVideo
+                    anchors.fill: parent
+                    visible: rec.backdropOn && fx.backdrop.kind === "video"
+                    fillMode: VideoOutput.PreserveAspectFit
+                }
+                // You: the camera, cut out over an image or video backdrop
+                // (where you stand can be moved), over a blur of itself, or
+                // in blocks for the Bricks and Pixelated filters.
+                Item {
+                    id: camHolder
+                    anchors.fill: parent
+                    visible: !rec.screenMode && !rec.audioMode
+                    transform: [
+                        Scale { origin.x: camHolder.width / 2; origin.y: camHolder.height / 2; xScale: rec.cutoutOn ? fx.pip.s : 1; yScale: rec.cutoutOn ? fx.pip.s : 1 },
+                        Rotation { origin.x: camHolder.width / 2; origin.y: camHolder.height / 2; angle: rec.cutoutOn ? fx.pip.a : 0 },
+                        Translate { x: rec.cutoutOn ? fx.pip.x : 0; y: rec.cutoutOn ? fx.pip.y : 0 }
+                    ]
+                    VideoOutput {
+                        id: camPreview
+                        anchors.fill: parent
+                        fillMode: VideoOutput.PreserveAspectFit
+                        transform: Scale { origin.x: camPreview.width / 2; xScale: rec.mirror ? -1 : 1 }
+                        readonly property int camMode: rec.cutoutOn ? 1 : rec.backdropOn && fx.backdrop.kind === "blur" ? 2 : 0
+                        readonly property bool pixelate: !!stage.filterDef && !!stage.filterDef.pixelate
+                        layer.enabled: camMode > 0 || pixelate
+                        layer.textureSize: Qt.size(1280, 720)
+                        layer.mipmap: camMode === 2
+                        layer.effect: ShaderEffect {
+                            property var mask: maskSource
+                            property real mode: camPreview.camMode
+                            property real pixelate: camPreview.pixelate ? 1 : 0
+                            property real blurLod: 4
+                            readonly property rect cr: camPreview.contentRect
+                            property vector4d content: Qt.vector4d(cr.x / Math.max(1, camPreview.width), cr.y / Math.max(1, camPreview.height), Math.max(1, cr.width) / Math.max(1, camPreview.width), Math.max(1, cr.height) / Math.max(1, camPreview.height))
+                            fragmentShader: "../shaders/clip_camera.frag.qsb"
+                        }
+                    }
+                    DragHandler {
+                        enabled: rec.cutoutOn
+                        target: null
+                        property var start: null
+                        onActiveChanged: if (active) { start = Object.assign({}, fx.pip); fx.selected = -1 }
+                        onTranslationChanged: if (active && start) fx.pip = Object.assign({}, fx.pip, { x: start.x + translation.x * start.s, y: start.y + translation.y * start.s })
+                    }
+                    WheelHandler {
+                        enabled: rec.cutoutOn
+                        onWheel: e => fx.pip = Object.assign({}, fx.pip, { s: Math.max(0.2, Math.min(3, fx.pip.s * (e.angleDelta.y > 0 ? 1.05 : 1 / 1.05))) })
+                    }
+                }
+                VideoOutput {
+                    id: screenPreview
+                    anchors.fill: parent
+                    visible: rec.screenMode && rec.stage !== "setup"
+                    fillMode: VideoOutput.PreserveAspectFit
+                }
+                // Record audio: the microphone in a white circle.
+                Rectangle {
+                    visible: rec.audioMode
+                    x: 400 - 19.6 - 54; y: 264 - 56 - 54; width: 108; height: 108; radius: 54
+                    color: theme.hc("#FCFCFC", "#000000")
+                    FluentIcon { anchors.centerIn: parent; name: "mic-20"; size: 48; color: theme.hc("#252525", "#FFFFFF") }
+                }
+                // Screen recording, before it starts.
+                Column {
+                    visible: rec.screenMode && rec.stage === "setup"
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    y: 178.9 - 56
+                    Image { anchors.horizontalCenter: parent.horizontalCenter; width: 70; height: 73.3; source: "../assets/illustrations/screen-recording.svg"; fillMode: Image.PreserveAspectFit; sourceSize: Qt.size(140, 140) }
+                    Text {
+                        width: 684.8; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
+                        text: qsTr("You’ll pick a screen, window, or tab. Recording will start automatically. For optimal quality, ensure this tab is in view while recording.")
+                        font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.onFill(canvas, theme.hc("#242424", "#FFFFFF"))
+                    }
+                }
             }
         }
+        // Text, drawings, stickers and photos.
+        ClipCanvasItems {
+            id: canvasItems
+            anchors.fill: parent
+            fx: fx
+            visible: rec.effectsOn
+            interactive: fx.drawer !== "draw"
+            onItemPressed: i => { if (fx.editing !== i) editOverlay.endText(); fx.selected = i }
+            onItemDoubleClicked: i => editOverlay.editText(i)
+        }
+        // The frame, over everything (Stream samples it nearest).
+        Image {
+            anchors.fill: parent
+            visible: fx.frame >= 0 && rec.effectsOn
+            source: fx.frame >= 0 ? catalog.url(catalog.frames[fx.frame].url) : ""
+            smooth: false
+            asynchronous: true
+        }
+        // The person mask for the backdrop (a texture, never shown).
+        ClipMask {
+            id: clipMask
+            width: 192; height: 192
+            active: rec.opened && (rec.cutoutOn || (rec.backdropOn && fx.backdrop.kind === "blur"))
+            Component.onCompleted: attach(camPreview.videoSink)
+            Timer { interval: 33; repeat: true; running: clipMask.active; onTriggered: clipMask.refresh() }
+            onActiveChanged: if (!active) refresh()
+        }
+        ShaderEffectSource { id: maskSource; sourceItem: clipMask; hideSource: true; width: 0; height: 0 }
         ClipFrames {
             id: frames
             onRecorded: ms => {}
@@ -463,6 +643,30 @@ Popup {
             onFailed: m => { console.warn("RECORDER error", m); rec.stage = "setup" }
             Component.onDestruction: release()
         }
+    }
+    // The effects' pictures (Microsoft's, from Stream's CDN), as textures.
+    Image { id: lutImage; visible: false; smooth: true; source: stage.filterDef && stage.filterDef.lut ? catalog.url(stage.filterDef.lut.url) : "" }
+    Image { id: spriteImage; visible: false; smooth: true; source: stage.filterDef && stage.filterDef.sprite ? catalog.url(stage.filterDef.sprite.url) : "" }
+    Image { id: overlayImage; visible: false; smooth: true; source: stage.filterDef && stage.filterDef.overlay ? catalog.url(stage.filterDef.overlay.url) : "" }
+    Image { id: boardImage; visible: false; smooth: false; source: pictureLayer.boardDef ? catalog.url(pictureLayer.boardDef.url) : "" }
+    // The animated filters' sprite: one cell further every 1/fps s.
+    Timer {
+        id: spriteTimer
+        property int index: 0
+        readonly property var sp: stage.filterDef ? stage.filterDef.sprite : null
+        interval: sp ? 1000 / sp.fps : 1000
+        repeat: true
+        running: !!sp && rec.opened
+        onRunningChanged: index = 0
+        onTriggered: index = (index + 1) % sp.frames
+    }
+    // The backdrop's video, looped and silent.
+    MediaPlayer {
+        id: backdropPlayer
+        source: rec.backdropOn && fx.backdrop.kind === "video" ? fx.backdrop.url : ""
+        videoOutput: backdropVideo
+        loops: MediaPlayer.Infinite
+        onSourceChanged: if (source != "") play()
     }
     // The pill's big soft shadow (Teams' box-shadow -5 -5 250 #4D4D4D).
     Canvas {
@@ -481,6 +685,15 @@ Popup {
         }
     }
     RoundedCorners { visible: rec.stage !== "review"; x: canvas.x; y: canvas.y; width: canvas.width; height: canvas.height; radius: 8; background: theme.surface }
+    ClipEditOverlay {
+        id: editOverlay
+        visible: rec.stage !== "review" && rec.effectsOn
+        x: canvas.x; y: canvas.y; width: canvas.width; height: canvas.height
+        fx: fx
+        canvasItems: canvasItems
+        recording: rec.stage === "recording"
+        onOpenMenu: name => fx.toggle(name)
+    }
     // Start recording / Start screen recording.
     Rectangle {
         visible: rec.stage === "setup"
@@ -634,10 +847,42 @@ Popup {
         }
         Item { width: 20; height: 51.3; Rectangle { anchors.centerIn: parent; width: 0.67; height: 32; color: theme.divider } }
         Tool {
+            visible: !rec.screenMode
+            toolWidth: 66.9
+            icon: "video-background-effect-20"; label: qsTr("Backdrop")
+            off: fx.drawer === "backdrop"
+            enabledTool: !rec.audioMode
+            onClicked: rec.openEffect("backdrop")
+        }
+        Tool {
             icon: "slide-text-20"; label: qsTr("Script")
             off: teleprompter.visible
             onClicked: teleprompter.visible = !teleprompter.visible
         }
+        Tool {
+            visible: rec.screenMode
+            icon: "ink-stroke-20"; label: qsTr("Draw")
+            off: fx.drawer === "draw"
+            enabledTool: rec.effectsReady
+            onClicked: rec.openEffect("draw")
+        }
+        Tool {
+            id: effectsTool
+            icon: "draw-text-20"; label: qsTr("Effects")
+            off: effectsMenu.opened
+            enabledTool: rec.effectsReady
+            onClicked: effectsMenu.popupAt(effectsTool)
+        }
+    }
+    // Effects: Stream's menu of the effects that aren't on the bar.
+    MenuPopup {
+        id: effectsMenu
+        function popupAt(btn) { const p = btn.mapToItem(rec.contentItem, 0, 0); x = p.x; y = p.y - height; open() }
+        readonly property var entries: rec.screenMode
+            ? [["text", qsTr("Text"), "text-font-20"], ["backdrop", qsTr("Backdrop"), "video-background-effect-20"], ["stickers", qsTr("Stickers"), "sticker-20"], ["filter", qsTr("Filter"), "photo-filter-20"], ["frame", qsTr("Frame"), "frame-20"], ["board", qsTr("Board"), "whiteboard-20"], ["photo", qsTr("Photo"), "image-add-20"]]
+            : [["text", qsTr("Text"), "text-font-20"], ["draw", qsTr("Draw"), "ink-stroke-20"], ["stickers", qsTr("Stickers"), "sticker-20"], ["filter", qsTr("Filter"), "photo-filter-20"], ["frame", qsTr("Frame"), "frame-20"], ["board", qsTr("Board"), "whiteboard-20"], ["photo", qsTr("Photo"), "image-add-20"]]
+        items: entries.map(e => ({ label: e[1], icon: e[2], enabled: !(rec.screenMode && e[0] === "backdrop") }))
+        onPicked: i => rec.openEffect(entries[i][0])
     }
     MenuPopup {
         id: camMenu
@@ -679,6 +924,21 @@ Popup {
     }
     SquareButton { visible: rec.live; x: 16; y: 500.3; icon: "arrow-counterclockwise-20"; label: qsTr("Record again"); onClicked: rec.recordAgain() }
     SquareButton { visible: rec.live; x: 752; y: 500.3; primary: true; icon: "chevron-right-20"; label: qsTr("Next. Continue to review step."); onClicked: rec.stopAndReview() }
+
+    Item {
+        anchors.fill: parent
+        clip: true
+        z: 6
+        visible: rec.stage !== "review"
+        ClipEffectPanels {
+            id: effectPanels
+            anchors.fill: parent
+            fx: fx
+            catalog: catalog
+            screenMode: rec.screenMode
+            onUploadBackdrop: backdropDialog.open()
+        }
+    }
 
     // ---- Script: Teams' teleprompter (Stream's), over the picture and not
     // recorded. 701.3 x 345.3 at (49.3, 100), white at 80 %, a #D1D1D1
@@ -1311,5 +1571,24 @@ Popup {
     function stateForTest() { return { stage: stage, cameraOn: cameraOn, micOn: micOn, recordedMs: recordedMs, clip: String(clipPath), segments: segments.length, frames: shots.length, screen: screenMode, audio: audioMode, thumb: thumbPath, cams: devices.videoInputs.map(c => c.description), mics: devices.audioInputs.length, duration: player.duration, size: [clipW, clipH] } }
     function openCamMenuForTest() { camMenu.popupAt(camMenuBtn) }
     function openMicMenuForTest() { micMenu.popupAt(micMenuBtn) }
-    function closeMenusForTest() { camMenu.close(); micMenu.close() }
+    function closeMenusForTest() { camMenu.close(); micMenu.close(); effectsMenu.close() }
+    // --recorder-effects-test.
+    function effectsForTest() { return { drawer: fx.drawer, backdrop: fx.backdrop, filter: fx.filter, frame: fx.frame, board: fx.board, ratio: fx.boardRatio, items: fx.items.map(i => ({ kind: i.kind, text: i.text, cx: Math.round(i.cx), cy: Math.round(i.cy), w: Math.round(i.w), h: Math.round(i.h), s: i.s, a: i.a, flip: i.flip })), selected: fx.selected, undo: fx.undoStack.length, redo: fx.redoStack.length, mask: clipMask.hasMask, menu: effectsMenu.opened ? effectsMenu.items.map(i => i.label + (i.enabled === false ? " (disabled)" : "")) : [] } }
+    function openEffectsMenuForTest() { effectsMenu.popupAt(effectsTool) }
+    function fxForTest() { return fx }
+    function panelsForTest() { return effectPanels }
+    function overlayForTest() { return editOverlay }
+    function typeForTest(t) { editOverlay.typeForTest(t) }
+    function drawForTest(points) {
+        // A stroke as Draw records one (picture coordinates).
+        const pts = points.map(p => Qt.point(p[0], p[1]))
+        let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9
+        for (const p of pts) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y) }
+        const pad = fx.inkWidth * fx.k / 2 + 1
+        x0 -= pad; y0 -= pad; x1 += pad; y1 += pad
+        let d = "M " + (pts[0].x - x0) + " " + (pts[0].y - y0)
+        for (let i = 1; i < pts.length; i++) d += " L " + (pts[i].x - x0) + " " + (pts[i].y - y0)
+        fx.add({ kind: "ink", d: d, color: fx.inkColor(fx.inkValue).toString(), width: fx.inkWidth, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, w: x1 - x0, h: y1 - y0 })
+        fx.selected = -1
+    }
 }

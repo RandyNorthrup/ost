@@ -6,6 +6,7 @@ mod backend;
 mod better_together;
 mod clip_edit;
 mod clip_frames;
+mod clip_mask;
 mod help_bundle;
 mod hfp_calls;
 mod key_typer;

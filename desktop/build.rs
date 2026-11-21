@@ -181,6 +181,12 @@ fn main() {
         "qml/VideoClipCard.qml",
         "qml/LiveStreamPlayer.qml",
         "qml/VideoClipRecorder.qml",
+        "qml/ClipCatalog.qml",
+        "qml/ClipEffectsState.qml",
+        "qml/ClipCanvasItems.qml",
+        "qml/ClipEditOverlay.qml",
+        "qml/ClipDrawer.qml",
+        "qml/ClipEffectPanels.qml",
         "qml/ManageChannel.qml",
         "qml/ChannelModeration.qml",
         "qml/ModeratorsDialog.qml",
@@ -350,17 +356,24 @@ fn main() {
             .join("qt-build-utils/qml_modules/com/ost/desktop/plugin.qmltypes");
         let _ = std::fs::remove_file(stale);
     }
+    // The clip recorder's effects are fragment shaders (shaders/*.frag),
+    // baked for Qt's RHI with qsb (Debian/Ubuntu: qt6-shader-baker; Arch:
+    // qt6-shadertools) into OUT_DIR and served beside the QML as
+    // shaders/<name>.frag.qsb.
+    let shader_qrc = bake_shaders();
     let builder = CxxQtBuilder::new_qml_module(module)
         .file("src/backend.rs")
         .file("src/video_item.rs")
         .file("src/key_typer.rs")
         .file("src/rich_text.rs")
         .file("src/clip_frames.rs")
+        .file("src/clip_mask.rs")
         .qt_module("Quick")
         .qt_module("QuickControls2")
         .qt_module("WebEngineQuick")
         .qt_module("Multimedia")
-        .qrc_resources(resources);
+        .qrc_resources(resources)
+        .qrc(&shader_qrc);
     // SAFETY: only adds a source file to the C++ build.
     let builder = unsafe {
         builder.cc_builder(|cc| {
@@ -369,6 +382,7 @@ fn main() {
             cc.file("src/i18n.cpp");
             cc.file("src/richtext.cpp");
             cc.file("src/clipframes.cpp");
+            cc.file("src/clipmask.cpp");
             cc.file("src/clipedit.cpp");
             cc.file("src/vfxplayer.cpp");
             cc.file("src/vfxpicture.cpp");
@@ -379,6 +393,7 @@ fn main() {
     println!("cargo::rerun-if-changed=src/i18n.cpp");
     println!("cargo::rerun-if-changed=src/richtext.cpp");
     println!("cargo::rerun-if-changed=src/clipframes.cpp");
+    println!("cargo::rerun-if-changed=src/clipmask.cpp");
     println!("cargo::rerun-if-changed=src/clipedit.cpp");
     println!("cargo::rerun-if-changed=src/vfxplayer.cpp");
     println!("cargo::rerun-if-changed=src/vfxpicture.cpp");
@@ -388,4 +403,56 @@ fn main() {
         println!("cargo::rustc-link-lib={lib}");
     }
     builder.build();
+}
+
+/// Bake shaders/*.frag with Qt's qsb; the .qrc listing them.
+fn bake_shaders() -> std::path::PathBuf {
+    let out = std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR")).join("shaders");
+    std::fs::create_dir_all(&out).expect("shader dir");
+    println!("cargo::rerun-if-changed=shaders");
+    let qsb = find_qsb().expect("qsb (Qt Shader Tools) is needed to build OST: install qt6-shader-baker (Debian/Ubuntu) or qt6-shadertools (Arch)");
+    let mut files: Vec<String> = Vec::new();
+    let mut entries: Vec<_> = std::fs::read_dir("shaders").expect("shaders").flatten().map(|e| e.path()).collect();
+    entries.sort();
+    for src in entries {
+        if src.extension().and_then(|e| e.to_str()) != Some("frag") {
+            continue;
+        }
+        println!("cargo::rerun-if-changed={}", src.display());
+        let name = format!("{}.qsb", src.file_name().unwrap().to_string_lossy());
+        let dst = out.join(&name);
+        let ok = std::process::Command::new(&qsb)
+            .args(["--glsl", "100es,120,150", "--hlsl", "50", "--msl", "12", "-o"])
+            .arg(&dst)
+            .arg(&src)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        assert!(ok, "qsb failed on {}", src.display());
+        files.push(format!("    <file alias=\"shaders/{name}\">{}</file>\n", dst.display()));
+    }
+    let qrc = out.join("shaders.qrc");
+    std::fs::write(&qrc, format!("<RCC>\n  <qresource prefix=\"/qt/qml/com/ost/desktop\">\n{}  </qresource>\n</RCC>\n", files.concat())).expect("shaders.qrc");
+    qrc
+}
+
+fn find_qsb() -> Option<std::path::PathBuf> {
+    let mut dirs: Vec<std::path::PathBuf> = Vec::new();
+    for key in ["QT_HOST_BINS", "QT_HOST_LIBEXECS", "QT_INSTALL_BINS", "QT_INSTALL_LIBEXECS"] {
+        for qmake in ["qmake6", "qmake"] {
+            if let Ok(o) = std::process::Command::new(qmake).args(["-query", key]).output()
+                && o.status.success()
+            {
+                let d = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                if !d.is_empty() {
+                    dirs.push(d.into());
+                }
+            }
+        }
+    }
+    dirs.extend(["/usr/lib/qt6/bin", "/usr/lib/qt6/libexec", "/usr/lib/x86_64-linux-gnu/qt6/bin", "/usr/lib/x86_64-linux-gnu/qt6/libexec"].map(std::path::PathBuf::from));
+    if let Some(path) = std::env::var_os("PATH") {
+        dirs.extend(std::env::split_paths(&path));
+    }
+    dirs.into_iter().map(|d| d.join("qsb")).find(|p| p.is_file())
 }

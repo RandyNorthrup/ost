@@ -161,11 +161,11 @@ xdg-desktop-portal backend for your desktop).
 
 ```bash
 # Arch
-sudo pacman -S qt6-base qt6-declarative qt6-svg qt6-multimedia qt6-webengine ffmpeg alsa-lib cmake nasm \
+sudo pacman -S qt6-base qt6-declarative qt6-svg qt6-multimedia qt6-webengine qt6-shadertools ffmpeg alsa-lib cmake nasm \
   pipewire clang xdg-desktop-portal
 # Debian / Ubuntu
 sudo apt install qt6-base-dev qt6-declarative-dev qml6-module-qtquick-controls \
-  qml6-module-qtquick-window libqt6svg6 qml6-module-qtmultimedia qt6-webengine-dev qml6-module-qtwebengine \
+  qml6-module-qtquick-window qml6-module-qtquick-shapes qml6-module-qtquick-effects qml6-module-qtquick-dialogs libqt6svg6 qml6-module-qtmultimedia qt6-webengine-dev qml6-module-qtwebengine qt6-shader-baker \
   libavfilter-dev libavformat-dev libavcodec-dev libavutil-dev libswscale-dev \
   libasound2-dev cmake nasm libpipewire-0.3-dev clang xdg-desktop-portal
 

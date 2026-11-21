@@ -66,6 +66,7 @@ pub mod store;
 pub mod store_content;
 pub mod channels;
 pub mod editor;
+pub mod hubble;
 pub mod compose_copilot;
 pub mod rename_suggestions;
 pub mod playlists;
