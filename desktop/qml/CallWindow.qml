@@ -1842,7 +1842,7 @@ Window {
                         text: win.interpreterInGroup
                             ? (win.interpreterOthers === 0 ? qsTr("You are using Interpreter. Your interpretation language is %1.").arg(win.interpreterLanguageName)
                                                            : qsTr("You and %1 others are using Interpreter. Your interpretation language is %2.").arg(win.interpreterOthers).arg(win.interpreterLanguageName))
-                            : win.interpreterListeners === 1 ? qsTr("1 people is using Interpreter.") : qsTr("%1 people are using Interpreter.").arg(win.interpreterListeners)
+                            : qsTr("%n people are using Interpreter.", "", win.interpreterListeners)
                         font.family: theme.font; font.pixelSize: 14; color: theme.textStrong
                     }
                     Row {

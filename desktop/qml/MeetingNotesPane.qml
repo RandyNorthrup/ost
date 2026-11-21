@@ -92,7 +92,7 @@ Rectangle {
                 { key: "copy", label: qsTr("Copy component"), icon: "select-object-20" },
                 { key: "access", label: qsTr("See who has access"), icon: "people-checkmark-20" },
                 { key: "loop", label: qsTr("Open in Loop"), icon: "open-20" },
-                { key: "workspace", label: qsTr("Add to Loop workspace"), icon: "add-square-20" }]
+                { key: "workspace", label: qsTr("Add to Loop Workspace"), icon: "add-square-20" }]
         onPicked: i => {
             const link = root.url || root.sharedUrl
             if (!link) return

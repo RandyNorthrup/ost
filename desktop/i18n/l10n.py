@@ -67,7 +67,12 @@ def parse_message(s):
     ('hash',) for a plural's #. Teams' empty rich-text components
     (`<0></0>`, `<1/>`: names and links its React code fills) are
     placeholders named "<0>", "<1>"."""
-    parts, i = _parse(components(s), 0, False)
+    c = components(s)
+    parts, i = _parse(c, 0, False)
+    # a brace closing nothing is literal
+    while i < len(c):
+        more, i = _parse(c, i, False)
+        parts = parts + ["}"] + more
     return parts
 
 
@@ -101,10 +106,20 @@ def _parse(s, i, in_plural):
             j = i + 1
             m = re.match(r"\s*([\w.]+)\s*(?:,\s*(plural|select|selectordinal)\s*,)?", s[j:])
             if not m:
-                raise ValueError(f"bad message {s!r}")
+                # not a placeholder: a literal brace (Teams' i18next texts,
+                # "We don't support these characters: ~#%&*{}+/…")
+                buf.append(c)
+                i += 1
+                continue
             name, kind = m.group(1), m.group(2)
             j += m.end()
             if not kind:
+                num = re.match(r"\s*,\s*number\s*(?:,[^{}]*)?\}", s[j:])
+                if num:
+                    # `{count, number}` (Loop's): the value as it is
+                    out.append(("arg", name))
+                    i = j + num.end()
+                    continue
                 if s[j:].lstrip().startswith("}"):
                     j += len(s[j:]) - len(s[j:].lstrip()) + 1
                     out.append(("arg", name))
@@ -343,6 +358,10 @@ def index_en(teams):
             n = _norm(v)
             if n is not None:
                 by_text[n].append(f"{ns}:{k}")
+                # OneDrive's texts with a trailing space or zero-width space
+                t = n.strip(" \u200b")
+                if t != n:
+                    by_text[t].append(f"{ns}:{k}")
                 if isinstance(to_qt(v), dict):
                     by_text[("plural", n)].append(f"{ns}:{k}")
     return by_text
@@ -391,10 +410,17 @@ def gen(strings_path, assets_dir=None, teams_version=""):
     found = qml_strings()
     srcs = json.load(open(os.path.join(HERE, "extra_sources.json"), encoding="utf-8"))["sources"]
     used_in = {ns: set(cfg.get("usedIn", [])) for ns, cfg in srcs.items()}
+    prefer = {ns for ns, cfg in srcs.items() if cfg.get("prefer")}
     ids = []
     missing = []
+    replied = 0
     for (source, dis) in sorted(found):
         sid = None
+        if dis.startswith("reply:"):
+            # Teams' text from a service reply in the app language (meeting
+            # options' translations): OST's is only a fallback
+            replied += 1
+            continue
         if re.fullmatch(r"[\w.-]+:\w+", dis or ""):
             if lookup(teams, "en-us", dis) is not None:
                 sid = dis
@@ -402,14 +428,19 @@ def gen(strings_path, assets_dir=None, teams_version=""):
                 missing.append((source, dis, found[(source, dis)][:3], "unknown id"))
                 continue
         else:
+            where = {w.split(":")[0] for w in found[(source, dis)]}
             for form in teams_forms(source):
                 cands = by_text.get(form)
-                if cands and any(not c.startswith("x.") for c in cands):
+                # a screen that is another app's (the Downloads panel is
+                # WebView2's) takes that app's text first
+                own = [c for c in cands or [] if c.split(":")[0] in prefer and where <= used_in[c.split(":")[0]]]
+                if own:
+                    cands = own
+                elif cands and any(not c.startswith("x.") for c in cands):
                     cands = [c for c in cands if not c.startswith("x.")]
                 # another bundle's text only on the screens that bundle is
                 # (OneDrive's for OneDrive's views, Outlook's for Calendar)
                 if cands:
-                    where = {w.split(":")[0] for w in found[(source, dis)]}
                     cands = [c for c in cands if not c.startswith("x.") or where <= used_in.get(c.split(":")[0], set())]
                 if cands:
                     # By text, Teams' plain-text strings first (its rich-text
@@ -464,7 +495,7 @@ def gen(strings_path, assets_dir=None, teams_version=""):
         out.write("# OST strings with no Teams string (left in English), with where they are used\n")
         for source, dis, where, why in missing:
             out.write(f"{json.dumps(source, ensure_ascii=False)}\t{dis}\t{' '.join(where)}\t{why}\n")
-    print(f"{len(ids)} strings keyed to Teams ids, {len(missing)} without one")
+    print(f"{len(ids)} strings keyed to Teams ids, {replied} from service replies, {len(missing)} without one")
 
 
 def find(strings_path, text):

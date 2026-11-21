@@ -75,7 +75,7 @@ Popup {
         }
         Text {
             visible: !!pop.access && pop.access.groups.length > 0
-            text: qsTr("%n groups giving access", "", pop.access ? pop.access.groups.length : 0)
+            text: qsTr("%1 groups giving access").arg(pop.access ? pop.access.groups.length : 0)
             font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary
         }
         Rectangle { width: pop.availableWidth; height: 0.67; color: theme.divider }

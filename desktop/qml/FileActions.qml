@@ -217,7 +217,7 @@ Item {
         else if (label === "Details") detailsItem(it)
         else if (label === "Preview") previewItem(it)
         else if (label === "Add to playlist") playlists.openFor(it)
-        else if (label === "Duplicate") { jobCount = 1; notice("progress", qsTr("Copying 1 item")); backend.driveAction(tag + "duplicate", JSON.stringify(it), "{}") }
+        else if (label === "Duplicate") { jobCount = 1; notice("progress", qsTr("Copying %1 item").arg(1)); backend.driveAction(tag + "duplicate", JSON.stringify(it), "{}") }
     }
 
     // The clipboard, without OST's own "Copied to clipboard" notice
@@ -270,7 +270,7 @@ Item {
             if (kind === "versions" || kind === "restore_version" || kind === "delete_version") { versions.reply(kind, v, error); return }
             if (kind === "shortcut") {
                 const p = root.pendingShortcut || { name: "", place: "" }
-                if (error) root.notice("error", qsTr("Something went wrong so we couldn't add %1 as a shortcut to %2.").arg(p.name).arg(p.place), error)
+                if (error) root.notice("error", qsTr("Something went wrong so we couldn't add %1 as a shortcut to %2. %3").arg(p.name).arg(p.place).arg("").trim(), error)
                 else root.notice("done", qsTr("Added %1 as a shortcut to %2.").arg(p.name).arg(p.place))
                 return
             }

@@ -9,6 +9,8 @@
   "x.planner": {"base": "https://res.public.onecdn.static.microsoft/msplanner/ui/static/releases/planner_prod/all/", "runtime": "js/runtime.1e6b250318.bundle.js", "chunk": "uno-{lang}-resources-strings-json", "englishFile": "js/boot-critical-appstrings.3da83fc430.bundle.js", "englishModule": "26750", "kind": "json", "langMap": {"pt-pt": "pt-pt"}, "usedIn": ["PlannerView.qml"]},
   "x.plannerview": {"base": "https://res.public.onecdn.static.microsoft/msplanner/ui/static/releases/planner_prod/all/", "runtime": "js/runtime.1e6b250318.bundle.js", "chunk": "planner-view-personal-{lang}-planner-view-personal-strings-json", "englishFile": "js/75.78d90a6c02.chunk.js", "englishKey": "LeftNav_MyDayTitle", "kind": "json", "usedIn": ["PlannerView.qml"]},
   "x.oneplayer": {"teamsChunks": "{lang}-strings-jsonThinRes", "englishChunk": "english strings", "kind": "json", "ids": false, "usedIn": ["VideoClipCard.qml", "LiveStreamPlayer.qml"]},
+  "x.edge": {"kind": "cabpak", "cab": "https://msedge.sf.dl.delivery.mp.microsoft.com/filestreamingservice/files/9d6605ff-c172-41a1-8116-e1bb02b93a01/Microsoft.WebView2.FixedVersionRuntime.157.0.4341.60.x64.cab", "version": "157.0.4341.60", "resources": [[12290, 12520], [20690, 20840]], "prefer": true, "usedIn": ["DownloadsFlyout.qml"]},
+  "x.loop": {"teamsContext": "./{lang}/HostUxStrings.json", "kind": "json", "ids": false, "usedIn": ["WebApp.qml", "ChannelPageTab.qml", "LoopAccessPopover.qml", "LoopCard.qml", "MeetingNotesPane.qml", "ChatNotesTab.qml"]},
   "x.onecamera": {"teamsChunks": "onecamera-locale-", "kind": "esm", "englishBundle": "707202-[0-9a-f]+\\.js", "englishFirstKey": "common", "usedIn": ["VideoClipRecorder.qml"]}
  }
 }

@@ -37,8 +37,16 @@ Popup {
     /// people: {mri: name}, organizer: {mri, objectId, upn, tenantId},
     /// tenantId}.
     property var people: ({})
-    /// Teams' dialog strings from the same reply (translations).
+    /// Teams' dialog strings from the same reply (translations), in the
+    /// app language (asked with Accept-Language). Teams' dialog shows them
+    /// as they are: a section's title `meetingsOptions_<SECTION>`, an
+    /// option's label `meetingsOptions_<option>`, its description
+    /// `…_<option>_Info`, a value's name `…_<option>_<value>`. OST's own
+    /// text below is only for a key the reply lacks (marked
+    /// "reply:meetingsOptions" where Teams has it nowhere else).
     readonly property var strings: people.translations || ({})
+    function fromReply(key, fallback) { return strings["meetingsOptions_" + key] || fallback }
+    function valueName(option, v) { return fromReply(option + "_" + v, (labels[option] || {})[v] || String(v)) }
     /// What's been changed and not applied yet ({name: value}).
     property var changes: ({})
     signal apply(var changes)
@@ -122,58 +130,65 @@ Popup {
     readonly property var labels: ({
         AutoAdmittedUsers: { Everyone: qsTr("Everyone"), EveryoneInSameAndFederatedCompany: qsTr("People in my org, trusted orgs, and guests"), EveryoneInCompany: qsTr("People in my org and guests"), EveryoneInCompanyExcludingGuests: qsTr("People in my org"), InvitedUsers: qsTr("People who were invited"), OrganizerOnly: qsTr("Only organizers and co-organizers") },
         UsersCanAdmitFromLobby: { OrganizersAndPresentersOnly: qsTr("Organizers, co-organizers, and presenters"), OrganizerAndCoOrganizersOnly: qsTr("Organizers and co-organizers") },
-        AllowedUsersForMeetingDetails: { UsersAllowedToByPassTheLobby: qsTr("Users allowed to bypass the lobby"), Everyone: qsTr("Everyone") },
+        AllowedUsersForMeetingDetails: { UsersAllowedToByPassTheLobby: qsTr("Users allowed to bypass the lobby", "reply:meetingsOptions"), Everyone: qsTr("Everyone") },
         PresenterOption: { Everyone: qsTr("Everyone"), EveryoneInCompany: qsTr("People in my org and guests"), SpecifiedPeople: qsTr("Specific people"), OrganizerOnly: qsTr("Only organizers and co-organizers") },
         ManagedMode: { Default: qsTr("Off"), HostMode: qsTr("On", "calling:kar4y63pl"), AdvancedHostMode: qsTr("On with preview") },
-        ProducerOption: { OrganizerAndCoOrganizersOnly: qsTr("Organizer and co-organizers"), OrganizersAndPresentersOnly: qsTr("Organizer, co-organizers, and presenters"), SpecifiedPeople: qsTr("Specific people") },
-        AllowMeetingChat: { Enabled: qsTr("On", "calling:kar4y63pl"), Disabled: qsTr("Off"), InMeeting: qsTr("In-meeting only") },
-        WhoCanStartAnnotations: { ActiveSharer: qsTr("Active sharer"), Everyone: qsTr("Everyone") },
-        AutoRecordAndTranscribeMode: { AutoRecordingAndTranscription: qsTr("Record and transcribe"), AutoTranscriptionOnly: qsTr("Transcribe only"), Off: qsTr("Off") },
+        ProducerOption: { OrganizerAndCoOrganizersOnly: qsTr("Organizer and co-organizers", "reply:meetingsOptions"), OrganizersAndPresentersOnly: qsTr("Organizer, co-organizers, and presenters", "reply:meetingsOptions"), SpecifiedPeople: qsTr("Specific people") },
+        AllowMeetingChat: { Enabled: qsTr("On", "calling:kar4y63pl"), Disabled: qsTr("Off"), InMeeting: qsTr("In meeting only") },
+        WhoCanStartAnnotations: { ActiveSharer: qsTr("Active sharer", "reply:meetingsOptions"), Everyone: qsTr("Everyone") },
+        AutoRecordAndTranscribeMode: { AutoRecordingAndTranscription: qsTr("Record and transcribe"), AutoTranscriptionOnly: qsTr("Transcribe only", "reply:meetingsOptions"), Off: qsTr("Off") },
         WhoCanManageQna: { OrganizersAndCoorganizers: qsTr("Only organizers and co-organizers"), OrganizersAndPresenters: qsTr("Organizers, co-organizers, and presenters") },
         RecorderOption: { OrganizersAndPresentersOnly: qsTr("Organizers, co-organizers, and presenters"), OrganizerAndCoOrganizersOnly: qsTr("Organizers and co-organizers") },
         WhoCanAccessTranscriptAndRecording: { Default: qsTr("Everyone") },
-        CopilotMode: { EnabledWithTranscript: qsTr("During and after the meeting"), Enabled: qsTr("Only during the meeting"), Disabled: qsTr("Off") }
+        CopilotMode: { EnabledWithTranscript: qsTr("During and after the meeting", "reply:meetingsOptions"), Enabled: qsTr("Only during the meeting", "reply:meetingsOptions"), Disabled: qsTr("Off") }
     })
     // The sections and their fields, in Teams' order. kind: "list",
     // "switch", "people", "audio"/"video" (AttendeeRestrictions' bits).
-    readonly property var sections: [
-        { key: "MEETING_ACCESS", title: qsTr("Meeting access"), icon: "mo-access", fields: [
-            { name: "AutoAdmittedUsers", kind: "list", label: qsTr("Who can bypass the lobby?"), desc: qsTr("Even if Everyone is selected, your org policy may require certain participants wait in the lobby until a member of your org or a trusted org joins. This could include people joining without an account, people from untrusted orgs, and people dialing in.") },
+    readonly property var sections: baseSections.map(sec => Object.assign({}, sec, {
+        title: fromReply(sec.key, sec.title),
+        fields: sec.fields.map(f => Object.assign({}, f, {
+            label: f.label && f.kind !== "audio" && f.kind !== "video" ? fromReply(f.name, f.label) : f.label,
+            desc: f.desc && f.kind !== "audio" && f.kind !== "video" ? fromReply(f.name + "_Info", f.desc) : f.desc
+        }))
+    }))
+    readonly property var baseSections: [
+        { key: "MEETING_ACCESS", title: qsTr("Meeting access", "reply:meetingsOptions"), icon: "mo-access", fields: [
+            { name: "AutoAdmittedUsers", kind: "list", label: qsTr("Who can bypass the lobby?"), desc: qsTr("Even if Everyone is selected, your org policy may require certain participants wait in the lobby until a member of your org or a trusted org joins. This could include people joining without an account, people from untrusted orgs, and people dialing in.", "reply:meetingsOptions") },
             { name: "AllowPstnUsersToBypassLobby", kind: "switch", label: qsTr("People dialing in can bypass the lobby") },
             { name: "UsersCanAdmitFromLobby", kind: "list", label: qsTr("Who can admit from the lobby") },
-            { name: "AllowedUsersForMeetingDetails", kind: "list", label: qsTr("Show meeting info on join screen"), desc: qsTr("Display details about the meeting like title and start time, number of others joined, and presence of the organizer.") },
+            { name: "AllowedUsersForMeetingDetails", kind: "list", label: qsTr("Show meeting info on join screen"), desc: qsTr("Display details about the meeting like title and start time, number of others joined, and presence of the organizer.", "reply:meetingsOptions") },
             { name: "EntryExitAnnouncementsEnabled", kind: "switch", label: qsTr("Announce when people dialing in join or leave") },
-            { name: "AllowAnonymousUsersToJoinMeeting", kind: "switch", label: qsTr("Require unverified participants to verify their info before joining"), desc: qsTr("When this is on, unverified participants will need to sign in or verify their emails with a code before joining the meeting. Your license and admin policy also determine how they’ll join.") }] },
+            { name: "AllowAnonymousUsersToJoinMeeting", kind: "switch", label: qsTr("Require unverified participants to verify their info before joining", "reply:meetingsOptions"), desc: qsTr("When this is on, unverified participants will need to sign in or verify their emails with a code before joining the meeting. Your license and admin policy also determine how they’ll join.", "reply:meetingsOptions") }] },
         { key: "ROLES", title: qsTr("Roles"), icon: "mo-roles", fields: [
-            { name: "CoOrganizers", kind: "people", label: qsTr("Choose co-organizers:"), desc: qsTr("In Teams meeting, co-organizer has the same capabilities as the organizer.") },
+            { name: "CoOrganizers", kind: "people", label: qsTr("Choose co-organizers:", "reply:meetingsOptions"), desc: qsTr("In Teams meeting, co-organizer has the same capabilities as the organizer.", "reply:meetingsOptions") },
             { name: "PresenterOption", kind: "list", label: qsTr("Who can present") },
             { name: "SpecifiedPresenters", kind: "people", label: "", showWhen: ["PresenterOption", "SpecifiedPeople"] },
-            { name: "Interpretation", kind: "switch", label: qsTr("Enable language interpretation"), desc: qsTr("Add interpreters who can interpret one language into another in real-time. To assign interpreters, send the meeting invite then refresh this page and choose them.") }] },
+            { name: "Interpretation", kind: "switch", label: qsTr("Enable language interpretation"), desc: qsTr("Add interpreters who can interpret one language into another in real-time. To assign interpreters, send the meeting invite then refresh this page and choose them.", "reply:meetingsOptions") }] },
         { key: "PRODUCTION_TOOLS", title: qsTr("Production tools"), icon: "mo-production", fields: [
-            { name: "ProducerOption", kind: "list", label: qsTr("Who has control of production tools"), desc: qsTr("To give people in the meeting control over what is shown on screen for attendees, add them as co-organizers or presenters.") },
+            { name: "ProducerOption", kind: "list", label: qsTr("Who has control of production tools"), desc: qsTr("To give people in the meeting control over what is shown on screen for attendees, add them as co-organizers or presenters.", "reply:meetingsOptions") },
             { name: "SpecifiedProducers", kind: "people", label: "", showWhen: ["ProducerOption", "SpecifiedPeople"] },
-            { name: "ManagedMode", kind: "radio", label: qsTr("Manage what attendees see"), desc: qsTr("Choose if you'd like organizers and presenters to manage the content and people attendees see on their screens. Only people you've selected in the setting above can manage the screen.") },
-            { name: "StagingRoomEnabled", kind: "switch", label: qsTr("Enable Green room"), desc: qsTr("Lets organizers and presenters check their audio, video, and content sharing before attendees are admitted. To use this feature, make someone a presenter and turn it on before the meeting starts.") }] },
+            { name: "ManagedMode", kind: "radio", label: qsTr("Manage what attendees see"), desc: qsTr("Choose if you'd like organizers and presenters to manage the content and people attendees see on their screens. Only people you've selected in the setting above can manage the screen.", "reply:meetingsOptions") },
+            { name: "StagingRoomEnabled", kind: "switch", label: qsTr("Enable green room"), desc: qsTr("Lets organizers and presenters check their audio, video, and content sharing before attendees are admitted. To use this feature, make someone a presenter and turn it on before the meeting starts.") }] },
         { key: "PARTICIPATION", title: qsTr("Participation"), icon: "mo-participation", fields: [
-            { name: "AttendeeRestrictions", kind: "audio", label: qsTr("Allow mic for attendees"), desc: qsTr("Turn this off to prevent attendees from unmuting. You can allow them to unmute individually as needed.") },
-            { name: "AttendeeRestrictions", kind: "video", label: qsTr("Allow camera for attendees"), desc: qsTr("Turn this off to prevent attendees from sharing video. You can allow them to share video individually as needed.") },
+            { name: "AttendeeRestrictions", kind: "audio", label: qsTr("Allow mic for attendees"), desc: qsTr("Turn this off to prevent attendees from unmuting. You can allow them to unmute individually as needed.", "reply:meetingsOptions") },
+            { name: "AttendeeRestrictions", kind: "video", label: qsTr("Allow camera for attendees"), desc: qsTr("Turn this off to prevent attendees from sharing video. You can allow them to share video individually as needed.", "reply:meetingsOptions") },
             { name: "AllowMeetingChat", kind: "list", label: qsTr("Meeting chat") },
-            { name: "YammerQNAEnabled", kind: "switch", label: qsTr("Q&A"), desc: qsTr("Organizers can customize Q&A to allow anonymous posts, review questions before they are published, and more.") },
+            { name: "YammerQNAEnabled", kind: "switch", label: qsTr("Q&A"), desc: qsTr("Organizers can customize Q&A to allow anonymous posts, review questions before publishing, and more.") },
             { name: "WhoCanManageQna", kind: "list", label: qsTr("Who can manage Q&A") },
             { name: "AllowTeamsMeetingReactions", kind: "switch", label: qsTr("Allow reactions") },
             { name: "AttendanceReportEnabled", kind: "switch", label: qsTr("Allow attendance report") },
-            { name: "WhoCanStartAnnotations", kind: "list", label: qsTr("Who can start annotations?") }] },
-        { key: "RECORDING_AND_TRANSCRIPTION", title: qsTr("Recording & transcription"), icon: "mo-recording", fields: [
-            { name: "AutoRecordAndTranscribeMode", kind: "list", label: qsTr("Record and transcribe automatically"), desc: qsTr("Recording and transcription will start automatically when the meeting begins. Your license and admin policy also determine how they turn on.") },
-            { name: "MeetingSpokenLanguage", kind: "list", label: qsTr("Spoken language in this meeting"), desc: qsTr("Language that everyone is speaking in this meeting. This setting affects recording, transcription, captions, and Copilot.") },
-            { name: "RecorderOption", kind: "list", label: qsTr("Who can record and transcribe"), desc: qsTr("Your meeting role, your org’s license, and admin policy also determine who can record and transcribe.") },
-            { name: "EnableMultiLingualMeeting", kind: "switch", label: qsTr("Enable multilingual speech recognition"), desc: qsTr("This allows everyone to be understood in their spoken languages. This also affects recording, transcription, captions, and Copilot.") },
-            { name: "WhoCanAccessTranscriptAndRecording", kind: "list", label: qsTr("Who has access to the recording or transcript"), desc: qsTr("Copilot and recap access might be affected by this option.") }] },
-        { key: "COPILOT", title: qsTr("Copilot and other AI"), icon: "mo-copilot", fields: [
+            { name: "WhoCanStartAnnotations", kind: "list", label: qsTr("Who can start annotations?", "reply:meetingsOptions") }] },
+        { key: "RECORDING_AND_TRANSCRIPTION", title: qsTr("Recording & transcription", "reply:meetingsOptions"), icon: "mo-recording", fields: [
+            { name: "AutoRecordAndTranscribeMode", kind: "list", label: qsTr("Record and transcribe automatically"), desc: qsTr("Recording and transcription will start automatically when the meeting begins. Your license and admin policy also determine how they turn on.", "reply:meetingsOptions") },
+            { name: "MeetingSpokenLanguage", kind: "list", label: qsTr("Spoken language in this meeting"), desc: qsTr("Language that everyone is speaking in this meeting. This setting affects recording, transcription, captions, and Copilot.", "reply:meetingsOptions") },
+            { name: "RecorderOption", kind: "list", label: qsTr("Who can record and transcribe"), desc: qsTr("Your meeting role, your org’s license, and admin policy also determine who can record and transcribe.", "reply:meetingsOptions") },
+            { name: "EnableMultiLingualMeeting", kind: "switch", label: qsTr("Enable multilingual speech recognition"), desc: qsTr("This allows everyone to be understood in their spoken languages. This also affects recording, transcription, captions, and Copilot.", "reply:meetingsOptions") },
+            { name: "WhoCanAccessTranscriptAndRecording", kind: "list", label: qsTr("Who has access to the recording or transcript"), desc: qsTr("Copilot and recap access might be affected by this option.", "reply:meetingsOptions") }] },
+        { key: "COPILOT", title: qsTr("Copilot and other AI", "reply:meetingsOptions"), icon: "mo-copilot", fields: [
             { name: "CopilotMode", kind: "list", label: qsTr("Allow Copilot") },
-            { name: "IsRecapEnabled", kind: "switch", label: qsTr("Start Intelligent Recap when Copilot is turned on"), desc: qsTr("Turn this off if you don’t want a recap with AI-generated content.") }] },
+            { name: "IsRecapEnabled", kind: "switch", label: qsTr("Start Intelligent Recap when Copilot is turned on"), desc: qsTr("Turn this off if you don’t want a recap with AI-generated content.", "reply:meetingsOptions") }] },
         { key: "ACCESSIBILITY", title: qsTr("Accessibility"), icon: "mo-accessibility", fields: [
-            { name: "CARTExternalFeed", kind: "switch", label: qsTr("Provide CART Captions") }] }
+            { name: "CARTExternalFeed", kind: "switch", label: qsTr("Provide CART Captions", "reply:meetingsOptions") }] }
     ]
     // AttendeeRestrictions as two switches (Teams' invertToggleFlags "011":
     // on while that bit isn't set).
@@ -378,8 +393,8 @@ Popup {
                                     enabled: !field.locked
                                     opacity: field.locked ? 0.5 : 1
                                     readonly property var names: root.labels[field.modelData.name] || ({})
-                                    // Teams' own value names from the reply's strings when OST has none.
-                                    function nameOf(v) { return names[v] || root.strings["meetingsOptions_" + field.modelData.name + "_" + v] || String(v) }
+                                    // Teams' own value names from the reply's strings.
+                                    function nameOf(v) { return root.valueName(field.modelData.name, v) }
                                     label: nameOf(root.value(field.modelData.name) || "")
                                     options: (field.opt.values || []).map(v => [v, nameOf(v)])
                                     accessibleName: field.modelData.label
@@ -406,13 +421,13 @@ Popup {
                                             }
                                             Text {
                                                 x: 32; anchors.verticalCenter: parent.verticalCenter
-                                                text: (root.labels[field.modelData.name] || {})[radioItem.modelData] || String(radioItem.modelData)
+                                                text: root.valueName(field.modelData.name, radioItem.modelData)
                                                 font.family: theme.font; font.pixelSize: 14; color: theme.text
                                             }
                                             HoverHandler { id: radioHover; cursorShape: Qt.PointingHandCursor }
                                             TapHandler { onTapped: root.change(field.modelData.name, radioItem.modelData) }
                                             Accessible.role: Accessible.RadioButton; Accessible.checked: radioItem.chosen
-                                            Accessible.name: (root.labels[field.modelData.name] || {})[radioItem.modelData] || String(radioItem.modelData)
+                                            Accessible.name: root.valueName(field.modelData.name, radioItem.modelData)
                                         }
                                     }
                                 }

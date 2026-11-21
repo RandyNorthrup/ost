@@ -23,6 +23,13 @@
 //! language (teams_resources.json's `extra`, also pinned to the build that
 //! Teams 26304 loads). Their ids are `x.<source>:<module>.<key path>`.
 //!
+//! The Downloads panel is WebView2's own downloads hub, whose text is only
+//! in the WebView2 runtime's `Locales/<lang>.pak` resource packs. Microsoft
+//! serves the runtime as one cabinet (the WebView2 Fixed Version runtime);
+//! OST fetches by HTTP range just the few MSZIP blocks that hold the
+//! strings it needs (`kind: "cabpak"`, desktop/i18n/cabpak.py lists them
+//! per language) and inflates them with `mszip_known`.
+//!
 //! The catalogue is cached (written atomically); the desktop's translator
 //! reads it.
 
@@ -66,6 +73,19 @@ pub struct ExtraSource {
     pub kind: String,
     /// Each locale's file (under `base`).
     pub files: HashMap<String, String>,
+    /// "cabpak": each locale's byte ranges of the cabinet at `base`.
+    #[serde(default)]
+    pub parts: HashMap<String, CabPart>,
+}
+
+/// One language's strings in the WebView2 runtime cabinet: the byte ranges
+/// to fetch (`[start, end)`, each starting at an MSZIP block, and the
+/// offset in the cabinet's folder that block inflates to) and each needed
+/// resource's (folder offset, size).
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct CabPart {
+    pub segments: Vec<(u64, u64, u64)>,
+    pub res: HashMap<String, (u64, usize)>,
 }
 
 /// Teams' strings by namespace and key.
@@ -390,7 +410,14 @@ enum Part {
 fn parse_message(s: &str) -> Option<Vec<Part>> {
     let s = components(s);
     let chars: Vec<char> = s.chars().collect();
-    let (parts, _) = parse_parts(&chars, 0, false)?;
+    let (mut parts, mut i) = parse_parts(&chars, 0, false)?;
+    // a brace closing nothing is literal
+    while i < chars.len() {
+        parts.push(Part::Text("}".into()));
+        let (more, next) = parse_parts(&chars, i, false)?;
+        parts.extend(more);
+        i = next;
+    }
     Some(parts)
 }
 
@@ -454,7 +481,10 @@ fn parse_parts(c: &[char], mut i: usize, in_plural: bool) -> Option<(Vec<Part>, 
             }
             let name: String = c[name_start..j].iter().collect();
             if name.is_empty() {
-                return None;
+                // not a placeholder: a literal brace (Teams' i18next texts)
+                buf.push('{');
+                i += 1;
+                continue;
             }
             while j < c.len() && c[j].is_whitespace() {
                 j += 1;
@@ -478,6 +508,13 @@ fn parse_parts(c: &[char], mut i: usize, in_plural: bool) -> Option<(Vec<Part>, 
             let kind: String = c[kind_start..j].iter().collect();
             while j < c.len() && c[j].is_whitespace() {
                 j += 1;
+            }
+            if kind == "number" {
+                // `{count, number}` (Loop's): the value as it is
+                let close = (j..c.len()).find(|&k| c[k] == '}')?;
+                out.push(Part::Arg(name));
+                i = close + 1;
+                continue;
             }
             if c.get(j) != Some(&',') {
                 return None;
@@ -734,17 +771,12 @@ pub async fn fetch(client: &reqwest::Client, res: &Resources, ids: &[IdRow], ids
         let url = format!("{}{}", src.base, file);
         Some(async move {
             let got = async {
+                if src.kind == "cabpak" {
+                    return cab_strings(client, src, locale).await;
+                }
                 let r = client.get(&url).send().await?.error_for_status()?;
-                anyhow::Ok(decode_body(&r.bytes().await?)?)
-            }
-            .await;
-            (ns, src.ids, src.kind.as_str(), url, got)
-        })
-    });
-    for (ns, ids, kind, url, got) in futures::future::join_all(extras).await {
-        match got {
-            Ok(body) => {
-                let table = match kind {
+                let body = decode_body(&r.bytes().await?)?;
+                anyhow::Ok(match src.kind.as_str() {
                     "esm" => parse_esm_tables(&body),
                     "flatjson" => {
                         let mut t = HashMap::new();
@@ -753,12 +785,18 @@ pub async fn fetch(client: &reqwest::Client, res: &Resources, ids: &[IdRow], ids
                         }
                         t
                     }
-                    _ => parse_json_modules(&body, ids),
-                };
-                // Their texts aren't ICU: an apostrophe is just one
-                // ("Filter by '{0}'"), so it is quoted as ICU's ''.
-                strings.entry(ns.clone()).or_default().extend(table.into_iter().map(|(k, v)| (k, v.replace('\'', "''"))));
+                    _ => parse_json_modules(&body, src.ids),
+                })
             }
+            .await;
+            (ns, url, got)
+        })
+    });
+    for (ns, url, got) in futures::future::join_all(extras).await {
+        match got {
+            // Their texts aren't ICU: an apostrophe is just one ("Filter
+            // by '{0}'"), so it is quoted as ICU's ''.
+            Ok(table) => strings.entry(ns.clone()).or_default().extend(table.into_iter().map(|(k, v)| (k, v.replace('\'', "''")))),
             Err(e) => tracing::warn!("app language {locale}: {url}: {e:#}"),
         }
     }
@@ -772,6 +810,95 @@ pub async fn fetch(client: &reqwest::Client, res: &Resources, ids: &[IdRow], ids
         "locale": locale,
         "strings": cat,
     }))
+}
+
+/// A language's strings from the WebView2 runtime cabinet: its byte ranges
+/// fetched by HTTP range and inflated (`mszip_known`); a resource counts
+/// only when every byte of it came out exact.
+async fn cab_strings(client: &reqwest::Client, src: &ExtraSource, locale: &str) -> anyhow::Result<HashMap<String, String>> {
+    let part = src.parts.get(locale).ok_or_else(|| anyhow::anyhow!("no ranges"))?;
+    let mut out = HashMap::new();
+    for &(start, end, uoff) in &part.segments {
+        anyhow::ensure!(end > start && end - start <= 8 << 20, "bad range");
+        let r = client.get(&src.base).header(reqwest::header::RANGE, format!("bytes={start}-{}", end - 1)).send().await?.error_for_status()?;
+        anyhow::ensure!(r.status() == reqwest::StatusCode::PARTIAL_CONTENT, "no range reply");
+        let body = r.bytes().await?;
+        anyhow::ensure!(body.len() as u64 == end - start, "short range");
+        let (data, known) = mszip_known(&body)?;
+        for (id, &(o, n)) in &part.res {
+            let Some(i) = o.checked_sub(uoff).map(|i| i as usize) else { continue };
+            let Some(bytes) = data.get(i..i + n) else { continue };
+            if known[i..i + n].iter().all(|&k| k)
+                && let Ok(t) = std::str::from_utf8(bytes)
+            {
+                out.insert(id.clone(), pak_text(t));
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// MSZIP blocks (a cabinet's CFDATA: checksum, compressed and uncompressed
+/// size, then "CK" and a deflate stream that may refer to the 32 KiB before
+/// it) inflated from a block whose history isn't at hand, and which bytes
+/// came out exact: inflated twice, the unknown history all 0x00 and then
+/// all 0xFF, a byte equal both times owes nothing to it.
+pub fn mszip_known(data: &[u8]) -> anyhow::Result<(Vec<u8>, Vec<bool>)> {
+    let a = mszip_inflate(data, 0)?;
+    let b = mszip_inflate(data, 0xFF)?;
+    let known = a.iter().zip(&b).map(|(x, y)| x == y).collect();
+    Ok((a, known))
+}
+
+fn mszip_inflate(data: &[u8], fill: u8) -> anyhow::Result<Vec<u8>> {
+    use std::io::Read;
+    const HIST: usize = 32768;
+    let mut hist = vec![fill; HIST];
+    let mut out = Vec::new();
+    let mut p = 0;
+    while p + 8 <= data.len() {
+        let cb = u16::from_le_bytes([data[p + 4], data[p + 5]]) as usize;
+        let ucb = u16::from_le_bytes([data[p + 6], data[p + 7]]) as usize;
+        let body = data.get(p + 8..p + 8 + cb).ok_or_else(|| anyhow::anyhow!("cut block"))?;
+        anyhow::ensure!(body.starts_with(b"CK"), "not an MSZIP block");
+        // the history as a stored deflate block, then the block's own data
+        let mut stream = Vec::with_capacity(5 + HIST + cb);
+        stream.push(0);
+        stream.extend_from_slice(&(HIST as u16).to_le_bytes());
+        stream.extend_from_slice(&(!(HIST as u16)).to_le_bytes());
+        stream.extend_from_slice(&hist);
+        stream.extend_from_slice(&body[2..]);
+        let mut all = Vec::with_capacity(HIST + ucb);
+        flate2::read::DeflateDecoder::new(&stream[..]).read_to_end(&mut all)?;
+        let chunk = &all[HIST..];
+        anyhow::ensure!(chunk.len() == ucb, "bad MSZIP block");
+        out.extend_from_slice(chunk);
+        let keep = HIST.min(chunk.len());
+        hist.drain(..keep);
+        hist.extend_from_slice(&chunk[chunk.len() - keep..]);
+        p += 8 + cb;
+    }
+    Ok(out)
+}
+
+/// A WebView2 pak string in Teams' form: `$1` as `{0}`, `$$` a dollar.
+fn pak_text(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut it = s.chars().peekable();
+    while let Some(c) = it.next() {
+        match (c, it.peek().copied()) {
+            ('$', Some('$')) => {
+                it.next();
+                out.push('$');
+            }
+            ('$', Some(d @ '1'..='9')) => {
+                it.next();
+                out.push_str(&format!("{{{}}}", d as u32 - '1' as u32));
+            }
+            _ => out.push(c),
+        }
+    }
+    out
 }
 
 /// A resource's text. Teams' CDN keeps some of them gzipped and sends them
@@ -789,6 +916,40 @@ fn decode_body(b: &[u8]) -> anyhow::Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mszip_with_unknown_history() {
+        // two MSZIP blocks, the second referring back into the first
+        let hex = "0000000031007000434bcb48cdc9c95728cf2fca49d151c840e69464a42aa4e497e7e5e427a6142b649426291427561643d4e8a12a25411f00000000000f002900434bc3270b314121313d31334f1100";
+        let raw: Vec<u8> = (0..hex.len()).step_by(2).map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap()).collect();
+        let first = b"hello world, hello world, the downloads hub says hello. ".repeat(2);
+        let (all, known) = mszip_known(&raw).unwrap();
+        assert_eq!(&all[..112], &first[..]);
+        assert_eq!(&all[112..], b"the downloads hub says hello world again!");
+        assert!(known.iter().all(|&k| k));
+        // from the second block alone: what it copies from the first is unknown
+        let (part, known) = mszip_known(&raw[8 + 0x31..]).unwrap();
+        assert_eq!(part.len(), 41);
+        assert!(!known.iter().all(|&k| k));
+        assert!(part.iter().zip(&known).zip(b"the downloads hub says hello world again!").all(|((a, k), b)| !k || a == b));
+        assert_eq!(pak_text("Search $1 for $$2 $2"), "Search {0} for $2 {1}");
+        assert_eq!(to_qt("characters: ~#%&*{}+/", &[]), Some(Value::String("characters: ~#%&*{}+/".into())));
+        assert_eq!(to_qt("{count, number} groups giving access", &["count".into()]), Some(Value::String("%1 groups giving access".into())));
+    }
+
+    /// The Downloads panel's German strings out of Microsoft's WebView2
+    /// cabinet, as the app fetches them (network: `cargo test -- --ignored
+    /// webview2_cabinet_live`).
+    #[tokio::test]
+    #[ignore]
+    async fn webview2_cabinet_live() {
+        let res: Resources = serde_json::from_str(include_str!("../../desktop/i18n/teams_resources.json")).unwrap();
+        let src = &res.extra["x.edge"];
+        let got = cab_strings(&reqwest::Client::new(), src, "de-de").await.unwrap();
+        assert_eq!(got.len(), src.parts["de-de"].res.len());
+        assert_eq!(got["20707"], "Downloads durchsuchen");
+        assert_eq!(got["20812"], "Übergeordneten Ordner öffnen");
+    }
 
     #[test]
     fn json_module_chunks() {

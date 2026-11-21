@@ -4,7 +4,7 @@ title: 'App languages: strings from Teams'' other bundles'
 status: In Progress
 assignee: []
 created_date: '2026-11-20T04:10:00Z'
-updated_date: '2026-11-20T21:06:00Z'
+updated_date: '2026-11-21T04:59:00Z'
 labels:
   - desktop
 dependencies: []
@@ -39,4 +39,12 @@ Found in TASK-0142: about 800 OST strings stay English because Teams keeps their
 - Open: the Downloads panel (Edge/WebView2 runtime strings, no CDN), most of OneNote (OneNote for the web's bundle needs a signed-in page to find), Events' templates (not in Teams 26304), meeting options' labels (OST now asks with Accept-Language; mapping OST's fallbacks to the reply's translations keys needs a live reply), and strings whose OST wording differs from the bundles'.
 
 - 2026-11-20 merged as 29f89fc; AC1 met for the Stream player, recorder, file preview and OneDrive/Outlook/Planner screens. AC2 open: Downloads panel, OneNote, Events templates, meeting-options labels.
+
+- 2026-11-20 (agent setF-0233) AC2 work in progress:
+  - Catalogue moved to Teams 26304.1207.5384.858 (winpc's current build; its locale chunks are on the CDN). Many new strings (Interpreter etc.) only exist there.
+  - Downloads panel: WebView2 Fixed Version cabinet (msedge.sf.dl.delivery.mp.microsoft.com …FixedVersionRuntime.157.0.4341.60.x64.cab, 310 MB, one MSZIP folder, takes HTTP ranges). desktop/i18n/cabpak.py indexes its blocks; the app fetches only the blocks holding the hub's strings (~ a few hundred KB) and inflates them with an unknown history (two passes, 0x00/0xFF, equal bytes are exact). Source x.edge (kind cabpak, ids 12290-12520 and 20690-20840, prefer on DownloadsFlyout.qml).
+  - Loop host strings: Teams' hostUxStrings<N> chunks, a webpack context "./<lang>/HostUxStrings.json" (source x.loop, teamsContext).
+  - Meeting options: Teams' dialog shows the reply's translations as they are (meetingsOptions_<SECTION>, _<option>, _<option>_Info, _<option>_<value>); OST now prefers them, its fallbacks marked qsTr(…, "reply:meetingsOptions").
+  - Events templates: not in Teams 26304.1201/1207 desktop bundles nor in the web client's loaded assets; eventTemplates lists only saved templates; the Meet app is not available in Randy's tenant. Open.
+  - Profile card (LPC): its strings are livepersonacardstrings_<hash>.js from res.cdn.office.net/midgard/versionless, named by loki.delve.office.com/api/v1/livepersonacard/configuration?cultureName=<lang> (X-ClientType: Teams, needs a Loki token). Open.
 <!-- SECTION:NOTES:END -->

@@ -167,7 +167,7 @@ Popup {
             visible: dlg.channelMode
             x: 0.7; y: 36; width: 543.5
             wrapMode: Text.Wrap
-            text: dlg.shareMode ? qsTr("Type the name of someone in your org you want to add to this channel. You can also add people outside your org by typing their email address.") : qsTr("Start typing a name of a person you want to add to this private channel.")
+            text: dlg.shareMode ? qsTr("Type the name of someone in your org you want to add to this channel. You can also add people outside your org by typing their email addresses.") : qsTr("Start typing a name of a person you want to add to this private channel.")
             font.family: theme.font; font.pixelSize: 14
             lineHeight: 20; lineHeightMode: Text.FixedHeight
             color: theme.text

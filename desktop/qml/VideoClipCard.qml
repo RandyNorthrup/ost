@@ -380,7 +380,7 @@ Item {
             CtlButton {
                 enabledCtl: player.hasAudio
                 icon: !player.hasAudio || audio.muted || audio.volume === 0 ? "speaker-mute-20" : "speaker-2-20"
-                label: !player.hasAudio ? qsTr("This video has no sound") : audio.muted ? qsTr("Unmute (Alt + M)") : qsTr("Mute (Alt + M)")
+                label: !player.hasAudio ? qsTr("This video has no sound") : audio.muted ? qsTr("Unmute (%1 + M)").arg("Alt") : qsTr("Mute (%1 + M)").arg("Alt")
                 onClicked: audio.muted = !audio.muted
             }
         }
@@ -502,7 +502,7 @@ Item {
             [qsTr("Play or pause media"), "Alt + K"], [qsTr("Close open popups"), "Esc"], [qsTr("Enter or exit full screen mode"), "Alt + Enter"],
             [qsTr("Mute or unmute sound"), "Alt + M"], [qsTr("Increase sound volume"), qsTr("Alt + up arrow key")], [qsTr("Decrease sound volume"), qsTr("Alt + down arrow key")],
             [qsTr("Toggle noise suppression on and off"), "Alt + A"], [qsTr("Toggle between audio tracks"), "Alt + H"], [qsTr("Toggle between caption languages"), "Alt + C"],
-            [qsTr("Enter or exit captions reposition mode"), "Alt + R"], [qsTr("Move captions while in reposition mode"), qsTr("Alt + arrow keys")],
+            [qsTr("Enter or exit captions reposition mode"), "Alt + R"], [qsTr("Move captions while in reposition mode"), qsTr("%1 + arrow keys").arg("Alt")],
             [qsTr("Increase playback speed"), "Alt + X"], [qsTr("Decrease playback speed"), "Alt + Z"], [qsTr("Skip 10 seconds forward"), "Alt + L"],
             [qsTr("Skip 10 seconds backward"), "Alt + J"], [qsTr("Skip 15 seconds forward"), qsTr("Alt + right arrow key")], [qsTr("Skip 15 seconds backward"), qsTr("Alt + left arrow key")],
             [qsTr("Go to 0% to 90% of the media"), qsTr("Alt + 0 to 9 number keys")], [qsTr("Access keyboard shortcuts"), "Alt + G"]

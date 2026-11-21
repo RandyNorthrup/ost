@@ -2920,7 +2920,7 @@ Rectangle {
                 // 2026-11-14, in its order): [native, English, code].
                 readonly property var greetingLanguages: [
                     ["Arabic (Egypt)", qsTr("Arabic (Egypt)"), "ar-eg"], ["Bahasa Indonesia (Indonesia)", qsTr("Indonesian (Indonesia)"), "id-id"],
-                    ["Català (Català)", qsTr("Catalan (Spain)"), "ca-es"], ["Čeština (Česká republika)", qsTr("Czech (Czechia)"), "cs-cz"],
+                    ["Català (Català)", qsTr("Catalan (Catalan)"), "ca-es"], ["Čeština (Česká republika)", qsTr("Czech (Czechia)"), "cs-cz"],
                     ["Dansk (Danmark)", qsTr("Danish (Denmark)"), "da-dk"], ["Deutsch (Deutschland)", qsTr("German (Germany)"), "de-de"],
                     ["English (Australia)", qsTr("English (Australia)"), "en-au"], ["English (Canada)", qsTr("English (Canada)"), "en-ca"],
                     ["English (India)", qsTr("English (India)"), "en-in"], ["English (United Kingdom)", qsTr("English (United Kingdom)"), "en-gb"],
@@ -2928,7 +2928,7 @@ Rectangle {
                     ["Español (México)", qsTr("Spanish (Mexico)"), "es-mx"], ["Français (Canada)", qsTr("French (Canada)"), "fr-ca"],
                     ["Français (France)", qsTr("French (France)"), "fr-fr"], ["Hrvatski (Hrvatska)", qsTr("Croatian (Croatia)"), "hr-hr"],
                     ["Italiano (Italia)", qsTr("Italian (Italy)"), "it-it"], ["Magyar (Magyarország)", qsTr("Hungarian (Hungary)"), "hu-hu"],
-                    ["Nederlands (Nederland)", qsTr("Dutch (Netherlands)"), "nl-nl"], ["Norsk, Bokmål (Norge)", qsTr("Norwegian Bokmål (Norway)"), "nb-no"],
+                    ["Nederlands (Nederland)", qsTr("Dutch (Netherlands)"), "nl-nl"], ["Norsk, Bokmål (Norge)", qsTr("Norwegian, Bokmål (Norway)"), "nb-no"],
                     ["Polski (Polska)", qsTr("Polish (Poland)"), "pl-pl"], ["Português (Brasil)", qsTr("Portuguese (Brazil)"), "pt-br"],
                     ["Português (Portugal)", qsTr("Portuguese (Portugal)"), "pt-pt"], ["Română (România)", qsTr("Romanian (Romania)"), "ro-ro"],
                     ["Slovenčina (Slovenská republika)", qsTr("Slovak (Slovakia)"), "sk-sk"], ["Slovenščina (Slovenija)", qsTr("Slovenian (Slovenia)"), "sl-si"],
@@ -2936,7 +2936,7 @@ Rectangle {
                     ["Türkçe (Türkiye)", qsTr("Turkish (Türkiye)"), "tr-tr"], ["Ελληνικά (Ελλάδας)", qsTr("Greek (Greece)"), "el-gr"],
                     ["Русский (Россия)", qsTr("Russian (Russia)"), "ru-ru"], ["ไทย (ไทย)", qsTr("Thai (Thailand)"), "th-th"],
                     ["한국어 (대한민국)", qsTr("Korean (Korea)"), "ko-kr"], ["中文(中国)", qsTr("Chinese (China)"), "zh-cn"],
-                    ["中文(台灣)", qsTr("Chinese (Taiwan)"), "zh-tw"], ["中文(香港特別行政區)", qsTr("Chinese (Hong Kong SAR)"), "zh-hk"],
+                    ["中文(台灣)", qsTr("Chinese (Taiwan)"), "zh-tw"], ["中文(香港特別行政區)", qsTr("Chinese (Traditional, Hong Kong SAR)"), "zh-hk"],
                     ["日本語 (日本)", qsTr("Japanese (Japan)"), "ja-jp"]
                 ]
                 function setVm(k, v) { const b = {}; b[k] = v; root.setMt("voicemail", b) }

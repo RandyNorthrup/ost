@@ -20,6 +20,9 @@ Kinds:
 - "json": modules `7680(f){f.exports=JSON.parse('{"a":"…"}')}` (OneDrive's
   `<lang>/initial.resx.js` / `ondemand.resx.js`); keys "<module>.<key>"
   (module ids are the same in every language of one build).
+- "cabpak": the Edge WebView2 runtime's locale .pak files, read by range
+  out of Microsoft's WebView2 Fixed Version cabinet (cabpak.py; Teams'
+  Downloads panel is WebView2's downloads hub); keys are resource ids.
 - "esm": an ES module of object literals (`const n={addMusic:"…"};…
   e.common=n`), Teams' `onecamera-locale-<lang>-<hash>.js`; keys
   "<export>.<key path>". Its en-us text sits in the recorder's own bundle
@@ -256,6 +259,19 @@ def _runtime_chunks(runtime_js):
     return {un[k]: f"{un[k]}-{uh[k]}.js" for k in un if k in uh}
 
 
+def _runtime_ids(runtime_js):
+    """Teams' webpack runtime: chunk file names by chunk id."""
+    s = open(runtime_js, encoding="utf-8").read()
+
+    def table(name):
+        i = s.index(f"a.{name}={{")
+        j = s.index("}", i)
+        return dict(re.findall(r'(\d+):"([^"]*)"', s[i:j]))
+
+    un, uh = table("un"), table("uh")
+    return {k: f"{un[k]}-{uh[k]}.js" for k in un if k in uh}
+
+
 def _lang_candidates(loc):
     lang = loc.split("-")[0]
     special = {"zh-cn": ["zh-Hans"], "zh-tw": ["zh-Hant"], "zh-hk": ["zh-Hant"], "sr-latn-rs": ["sr-Latn-RS"], "sr-cyrl-rs": ["sr-Cyrl-RS"], "nn-no": ["nn-np"]}
@@ -326,6 +342,53 @@ def collect(locales, assets_dir, cache):
                         if loc != "en-us":
                             entry["files"][loc] = path
                         break
+        elif "teamsContext" in cfg:
+            # a webpack context of per-language JSON files
+            # (`"./de-de/HostUxStrings.json":[<module>,<chunk>]`, Loop's host
+            # strings): its chunks by id from Teams' runtime
+            entry["base"] = TEAMS_CDN
+            by_id = {}
+            for f in os.listdir(assets_dir):
+                if f.startswith("runtime-") and f.endswith(".js"):
+                    by_id.update(_runtime_ids(os.path.join(assets_dir, f)))
+            pat = re.escape(cfg["teamsContext"]).replace(re.escape("{lang}"), "([\\w-]+)")
+            ctx = {}
+            for f in sorted(os.listdir(assets_dir)):
+                if not f.endswith(".js") or f.startswith("runtime-"):
+                    continue
+                text = open(os.path.join(assets_dir, f), encoding="utf-8", errors="replace").read()
+                if cfg["teamsContext"].replace("{lang}", "en-us") in text:
+                    ctx = {m.group(1).lower(): m.group(2) for m in re.finditer('"' + pat + r'":\[\d+,(\d+)\]', text)}
+                    break
+            for loc in locales:
+                for lang in _lang_candidates(loc):
+                    file = by_id.get(ctx.get(lang.lower(), ""))
+                    if file:
+                        text = get(TEAMS_CDN + file, cache)
+                        if text is not None:
+                            strings.setdefault(loc, {})[ns] = parse_json_modules(text, False)
+                            if loc != "en-us":
+                                entry["files"][loc] = file
+                        break
+        elif kind == "cabpak":
+            # the WebView2 runtime's locale packs, out of Microsoft's Fixed
+            # Version cabinet (cabpak.py): the resources whose en-US text is
+            # one of OST's strings on the screens the source is used on
+            import cabpak
+            import l10n
+
+            use = set(cfg.get("usedIn", []))
+            ost = {text for (text, _), where in l10n.qml_strings().items() if {w.split(":")[0] for w in where} & use}
+
+            def wanted(t):
+                return re.sub(r"\{(\d+)\}", lambda m: "%" + str(int(m.group(1)) + 1), t) in ost
+
+            got, parts = cabpak.collect(cfg["cab"], cfg["version"], locales, cache, wanted, cfg.get("resources"))
+            for loc, t in got.items():
+                strings.setdefault(loc, {})[ns] = t
+            entry["base"] = cfg["cab"]
+            entry["files"] = {loc: p["file"] for loc, p in parts.items()}
+            entry["parts"] = {loc: {"segments": p["segments"], "res": p["res"]} for loc, p in parts.items()}
         elif "teamsChunks" in cfg:
             if runtime is None:
                 rt = [f for f in os.listdir(assets_dir) if f.startswith("runtime-") and f.endswith(".js")]

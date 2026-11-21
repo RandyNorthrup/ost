@@ -890,7 +890,7 @@ Item {
             HoverHandler { id: chipsHover }
             Repeater {
                 model: [{ k: "Find my next one-on-one with", t: qsTr("Find my next one-on-one with") }, { k: "Show me meetings I haven't responded to next week", t: qsTr("Show me meetings I haven't responded to next week") },
-                    { k: "What are the top three things I should focus on right now?", t: qsTr("What are the top three things I should focus on right now?") }, { k: "Schedule 1 hour of focus time", t: qsTr("Schedule 1 hour of focus time") }]
+                    { k: "What are the top three things I should focus on right now?", t: qsTr("What are the top 3 things I should focus on right now?") }, { k: "Schedule 1 hour of focus time", t: qsTr("Schedule 1 hour of focus time") }]
                 Item {
                     id: chip
                     required property var modelData
@@ -911,7 +911,7 @@ Item {
             spacing: 6
             // With Copilot's pane open Teams keeps only the pane toggle here.
             readonly property bool narrow: root.copilotOpen
-            NavButton { icon: "panel-left-20"; tip: root.paneShown ? qsTr("Hide navigation") : qsTr("Show navigation"); onClicked: root.paneShown = !root.paneShown }
+            NavButton { icon: "panel-left-20"; tip: root.paneShown ? qsTr("Hide navigation pane") : qsTr("Show navigation pane"); onClicked: root.paneShown = !root.paneShown }
             Rectangle { visible: !leftRow.narrow; width: 1; height: 20; anchors.verticalCenter: parent.verticalCenter; color: theme.dividerSoft }
             BarButton2 { visible: !leftRow.narrow; icon: "calendar-ltr-20"; label: qsTr("Today"); onClicked: root.start = root.startFor(new Date()); Accessible.name: qsTr("Go to today") }
             NavButton { visible: !leftRow.narrow; icon: root.monthView ? "chevron-up-20" : "chevron-left-20"; iconSize: 16; onClicked: root.shift(-1); tip: root.monthView ? qsTr("Go to previous month") : root.view === "day" ? qsTr("Go to previous day") : qsTr("Go to previous week") }
@@ -920,7 +920,7 @@ Item {
                 visible: !leftRow.narrow
                 label: root.rangeLabel; chevron: true
                 onClicked: { month.shown = new Date(root.start.getFullYear(), root.start.getMonth(), 1); root.paneShown = true }
-                Accessible.name: qsTr("%1, Jump to a specific date").arg(root.rangeLabel)
+                Accessible.name: qsTr("%1, Jump to a specific date or date range.").arg(root.rangeLabel)
             }
         }
         Row {
@@ -1459,7 +1459,7 @@ Item {
         }
     }
     function responseLine(r) {
-        return ({ accepted: qsTr("You accepted."), tentativelyAccepted: qsTr("You tentatively accepted."), declined: qsTr("You declined."), following: qsTr("You're following.") })[r] || qsTr("You didn't respond.")
+        return ({ accepted: qsTr("You accepted"), tentativelyAccepted: qsTr("You tentatively accepted"), declined: qsTr("You declined"), following: qsTr("You are following") })[r] || qsTr("You didn't respond")
     }
     Popup {
         id: details

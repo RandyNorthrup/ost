@@ -1111,7 +1111,7 @@ Item {
             PaneDropdown {
                 visible: root.virtualAppointment
                 value: root.vaChat
-                options: [["On", qsTr("On", "calling:kar4y63pl")], ["In-meeting only", qsTr("In-meeting only")], ["Off", qsTr("Off")]]
+                options: [["On", qsTr("On", "calling:kar4y63pl")], ["In-meeting only", qsTr("In meeting only")], ["Off", qsTr("Off")]]
                 accessible: qsTr("Meeting chat")
                 onChosen: v => root.vaChat = v
             }

@@ -126,9 +126,9 @@ Popup {
     // characters: the first and last 12).
     function org() { const n = info ? info.tenant : ""; return n.length > 24 ? n.slice(0, 12) + "..." + n.slice(-12) : n }
     function linkSentence(scope, edit, full) {
-        if (scope === 3) return qsTr("People with existing access can use the link.")
-        if (scope === 0) return edit ? qsTr("Anyone with the link can edit.") : qsTr("Anyone with the link can view.")
-        if (scope === 1) return (edit ? qsTr("People in %1 with the link can edit.") : qsTr("People in %1 with the link can view.")).arg(full ? (info ? info.tenant : "") : qsTr("your organization"))
+        if (scope === 3) return qsTr("People with existing access can use the link")
+        if (scope === 0) return edit ? qsTr("Anyone with the link can edit") : qsTr("Anyone with the link can view")
+        if (scope === 1) return (edit ? qsTr("People in %1 with the link can edit") : qsTr("People in %1 with the link can view")).arg(full ? (info ? info.tenant : "") : qsTr("your organization"))
         return edit ? qsTr("Only the people you specified can edit.") : qsTr("Only the people you specified can view.")
     }
     // A name shortened in the middle to fit, as OneDrive writes it ("...").
@@ -284,7 +284,7 @@ Popup {
                     HoverHandler { id: rbh; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: roleMenu.open() }
                     Accessible.role: Accessible.ComboBox
-                    Accessible.name: qsTr("Select a role for the person you would like to grant access to")
+                    Accessible.name: qsTr("Select a role for the person you would like to grant access")
                 }
                 Rectangle { visible: pickerInput.activeFocus; anchors.bottom: parent.bottom; x: 0; width: parent.width; height: 2; radius: 1; color: root.accent }
             }
@@ -594,7 +594,7 @@ Popup {
                         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: root.rule }
                         Text {
                             x: 12.67; anchors.verticalCenter: parent.verticalCenter
-                            text: root.pendExpiration ? theme.fmtDate(new Date(root.pendExpiration), "MM/dd/yyyy") : qsTr("Set expiration date (MM/DD/YYYY)")
+                            text: root.pendExpiration ? theme.fmtDate(new Date(root.pendExpiration), "MM/dd/yyyy") : qsTr("Set expiration date (%1)").arg("MM/DD/YYYY")
                             font.family: theme.font; font.pixelSize: 14; color: root.pendExpiration ? root.ink : root.soft
                         }
                         Rectangle {

@@ -226,7 +226,7 @@ Window {
                     readonly property int days: win.extras ? win.extras.remainingDays : -1
                     items: [{ key: "download", label: qsTr("Download"), icon: "arrow-download-20" }].concat(
                         days >= 0 && win.extras.file.canEdit ? [{ key: "expiry", icon: "clock-20",
-                            label: days === 1 ? qsTr("Expires in 1 day") : qsTr("Expires in %1 days").arg(days),
+                            label: qsTr("Expires in %n days", "", days),
                             submenu: [{ label: qsTr("Extend by 60 days"), key: "extend" }, { label: qsTr("Remove expiration"), key: "remove" }] }] : [])
                     onPicked: i => { if (items[i].key === "download") backend.driveDownload(JSON.stringify({ id: win.recap.item_id, drive_id: win.recap.drive_id, name: win.extras.file.name || "" })) }
                     onSubPicked: (i, j) => {

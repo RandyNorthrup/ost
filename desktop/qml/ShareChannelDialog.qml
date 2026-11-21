@@ -60,7 +60,7 @@ Popup {
                 dlg.busy = false
                 if (!r.ok) { dlg.error = qsTr("We couldn't send the invite. Try sending it again later."); return }
                 const errs = (r.data && r.data.errors) || []
-                if (errs.length) { dlg.error = errs.length === 1 ? qsTr("1 invite couldn't be sent") : qsTr("%1 invites couldn't be sent").arg(errs.length); return }
+                if (errs.length) { dlg.error = qsTr("%n invites couldn't be sent", "", errs.length); return }
                 dlg.close()
             }
         }
