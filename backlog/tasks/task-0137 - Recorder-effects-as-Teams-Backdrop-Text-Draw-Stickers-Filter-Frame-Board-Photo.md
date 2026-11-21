@@ -7,7 +7,7 @@ status: To Do
 assignee:
   - '@claude'
 created_date: '2026-11-14T15:44:00Z'
-updated_date: '2026-11-21T04:16:00Z'
+updated_date: '2026-11-21T08:05:00Z'
 labels:
   - messages
   - video
@@ -55,4 +55,7 @@ Teams' video clip recorder (Stream's) has Backdrop (None, Upload, Blur, Microsof
   - Canvas history (Clear video canvas / Undo / Redo) sits in the header after the title (32 x 31.3 at 161.6/201.6/241.6). Selected objects show a right-hand dock (pill rgba(177,177,177,.48), radius 12, 33.3 wide at x 750.7): Delete, Flip, Duplicate, Forward, Backward; text shows Font, Color, Stroke, Background. Sticker = 100 px wide on the 761 picture, text 68 px at 1280 (~40 px shown), board camera left/board right 50 %.
 
 - 2026-11-20 (recD) built (uncommitted, worktree agent-a7bf3496e5f9bc281): api::hubble (AugLoop stock search, anonymous; examples/hubble_search works live), backend.hubbleSearch/hubbleResults, ClipMask (clip_mask.rs + clipmask.cpp: QVideoSink frames -> ost-vfx segmentation -> mask texture), shaders desktop/shaders/clip_{filter,camera,board}.frag baked by build.rs with qsb (linuxlt: installed qt6-shader-baker), QML ClipCatalog/ClipEffectsState/ClipCanvasItems/ClipEditOverlay/ClipDrawer/ClipEffectPanels, recorder bar (Backdrop, Draw in screen mode, Effects menu), header Clear/Undo/Redo, camera mode now records through ClipFrames (effects burned in). Harness --recorder-effects-test [--recorder-cam=<name>] [--recorder-effects-screen]; linuxlt run script scratchpad rec137/run_fx.sh (feeds test camera B the person photo).
+
+- 2026-11-21 (recD) live on linuxlt (test2, harness --recorder-effects-test --recorder-cam="OST test camera C" --recorder-chat="OST Test 1"; camera C = a v4l2loopback device added for this, fed /tmp/ost-person.jpg): menu, Backdrops (50+50 Hubble items), stock image (stretched, matches Teams pixel for pixel), Blur (strength now as Teams), stock video, Stickers (9 x 50), sticker + dock, Filter (Lift LUT maths checked against Teams' Lift: mean error 0.009 vs 0.052 unfiltered), Vintage, B&W, Bricks, Frame, Board, Draw, Text, Photo; a 4-6 s recording carries blur, cut-out, filter, stroke, sticker, text and frame at 1280x720; screen mode: menu (Backdrop disabled), Draw disabled until recording, a stroke drawn while recording is in the clip. Test recordings deleted. Side-by-side pictures: scratchpad rec137/ost/c and rec137/ref.
+- OST_QML_DIR=<checkout>/desktop/qml loads QML from disk (no 50-min rebuild for QML; bake shaders/*.frag with qsb into desktop/shaders first).
 <!-- SECTION:NOTES:END -->
