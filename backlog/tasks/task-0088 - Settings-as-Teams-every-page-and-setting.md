@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-10T07:56:00Z'
-updated_date: '2026-11-21T06:53:00Z'
+updated_date: '2026-11-21T16:10:00Z'
 labels:
   - desktop
   - settings
@@ -88,4 +88,7 @@ OST's Settings has General, Appearance, Chats and channels, Notifications and ac
 
   - Also: About ▸ Early access ▸ Public preview (where teamsUpdateManagementPolicy.allowPublicPreview allows it): OST follows its GitHub pre-releases (api::updates::latest_preview_release).
   - Verified live on linuxlt (ost-test1, --setf-test): General's table, Chats' new switch and Compose card, Notifications' Reminders/Channel Notifications and the Manage page (all teams and channels with their current choices), Privacy's Copilot card. Root crate tests: 862 passed.
+
+- 2026-11-21 (agent setF) Calls for Teams Phone users (Teams 26304; settings-app Fg/Po/also-ring and module 30072 ported as api::call_forwarding, tested): with Enterprise Voice (voiceAdminSettings.isEvEnabled) and the effective teamsCallingPolicy (mt.callingPolicy), Call handling and forwarding shows Forward all my calls (then "Choose how all your calls will be forwarded": voicemail / a new number or contact / call group / delegates), else When you receive a call (Do not ring anyone else / Also ring a new number or contact / call group / delegates, with Teams' people-or-number box and "Delay for this many seconds before ringing"), When you can't answer a call (Do not redirect / voicemail / a new number or contact / call group / delegates) and the ring delay; each option only where the policy allows it; saved as Teams' whole callRedirectionSettings. Ringtones for forwarded (CallGroup) and delegated (Delegate) calls beside yours. Verified on linuxlt (ost-test1, --setf-test): the policy (EV, call groups, delegation, forwarding to user and phone allowed) and the page as Teams shows it; saves covered by unit tests, not flipped live.
+- Still not built: Call group and Manage delegates pages (and so the call-group/delegates targets have no members), Intelligent call delegation, Viewing incoming calls (callViewMode), Notifications ▸ Apps, About's ring line.
 <!-- SECTION:NOTES:END -->
