@@ -20,9 +20,7 @@ import QtQuick.Controls.Basic
 // on their tab. It opens about 640 ms after the pointer reaches the
 // picture or name and closes 500 ms after it leaves both (Fluent's
 // mouseLeaveDelay), as Teams' does.
-// Not in OST yet: the LinkedIn button and tab, and the sections under Show
-// more (Badges failed to load in Teams that day, so their layout wasn't
-// measured).
+// Not in OST yet: the LinkedIn button and tab.
 Popup {
     id: root
     parent: Overlay.overlay
@@ -49,6 +47,10 @@ Popup {
     readonly property bool loaded: !!card.id && ("8:orgid:" + card.id) === who
     readonly property var p: (loaded && card.presence) || (fallbackPresence ? { availability: fallbackPresence } : ({}))
     readonly property bool hovered: cardHover.hovered
+    /// Their direct reports (Loki's org chart, else Graph's) and whether
+    /// there's an org chart to show.
+    readonly property var directs: loaded ? ((card.org && card.org.directs && card.org.directs.length ? card.org.directs : card.reports) || []).map(d => ({ name: d.name || d.displayName || "", mri: d.mri || (d.id ? "8:orgid:" + d.id : "") })) : []
+    readonly property bool hasOrg: loaded && !!card.org && ((card.org.managers || []).length > 0 || (card.org.directs || []).length > 0)
 
     /// The pointer reached a person's picture or name.
     /// The hovered person's name, shown until the card's data loads.
@@ -116,7 +118,7 @@ Popup {
         Item {
             id: body
             width: 340
-            implicitHeight: 328 + 32 + 16
+            implicitHeight: orgSection.visible ? orgSection.y + orgSection.height + 16 : 328 + 32 + 16
             Avatar {
                 x: 24; y: 29; size: 72
                 name: root.displayName
@@ -238,6 +240,55 @@ Popup {
                 TapHandler { onTapped: root.full("profile") }
                 Accessible.role: Accessible.Link
                 Accessible.name: qsTr("Show more")
+            }
+            // Under Show more (measured on winpc 2026-11-20, OST Test 2's
+            // card): "Direct reports (n) ›" (12/16 bold) at 24, 392, their
+            // 40 px pictures from 24, 422 (one opens that person's card),
+            // then "Show organization" (12 px brand, 131 x 32) at 8, 466;
+            // the heading and the link open Organization.
+            Item {
+                id: orgSection
+                y: 392; width: parent.width
+                visible: root.directs.length > 0 || root.hasOrg
+                height: (root.directs.length > 0 ? 74 : 0) + 32
+                Row {
+                    id: directsHead
+                    visible: root.directs.length > 0
+                    x: 24; height: 22; spacing: 2
+                    Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Direct reports (%1)").arg(root.directs.length); font.family: theme.font; font.pixelSize: 12; font.weight: Font.Bold; color: theme.text }
+                    FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "chevron-right-12"; size: 12; color: theme.text }
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: root.full("organization") }
+                    Accessible.role: Accessible.Link
+                    Accessible.name: qsTr("Direct reports (%1)").arg(root.directs.length)
+                }
+                Row {
+                    visible: root.directs.length > 0
+                    x: 24; y: 30; spacing: 8
+                    Repeater {
+                        model: root.directs.slice(0, 6)
+                        Avatar {
+                            required property var modelData
+                            size: 40
+                            name: modelData.name || ""
+                            photoId: modelData.mri || ""
+                            HoverHandler { cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: { const m = parent.modelData.mri; root.close(); if (root.fullCard && m) root.fullCard.show(m) } }
+                            Accessible.role: Accessible.Button
+                            Accessible.name: modelData.name || ""
+                        }
+                    }
+                }
+                Rectangle {
+                    id: showOrg
+                    x: 8; y: root.directs.length > 0 ? 74 : 0; width: 131; height: 32; radius: 4
+                    color: soh.hovered ? theme.menuHover : "transparent"
+                    Text { x: 16; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Show organization"); font.family: theme.font; font.pixelSize: 12; color: theme.onFill(showOrg, theme.brand) }
+                    HoverHandler { id: soh; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: root.full("organization") }
+                    Accessible.role: Accessible.Link
+                    Accessible.name: qsTr("Show organization")
+                }
             }
         }
     }

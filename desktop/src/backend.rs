@@ -5481,6 +5481,7 @@ async fn load_overview() -> anyhow::Result<(String, Vec<serde_json::Value>)> {
                 "previewSystem": c.last_message_system,
                 "liveCall": c.live_call,
                 "muted": c.muted,
+                "messagingDisabled": c.messaging_disabled,
                 "empty": c.empty,
                 "unlisted": c.unlisted,
                 "hidden": c.hidden,
@@ -18626,7 +18627,24 @@ impl qobject::Backend {
                             apps[i].icon = icon;
                             apps[i].outline = outline;
                         }
+                        // Bots you have a chat with get Teams' Block / Unblock
+                        // bot conversation.
+                        let bots: Vec<usize> = shown.iter().copied().filter(|&i| !apps[i].bot_id.is_empty()).collect();
+                        let chats = futures::future::join_all(bots.iter().map(|&i| api::bot_chat(&c, &apps[i].bot_id))).await;
+                        for (&i, chat) in bots.iter().zip(chats) {
+                            if let Some((id, blocked)) = chat {
+                                apps[i].bot_chat = id;
+                                apps[i].bot_blocked = blocked;
+                            }
+                        }
                         json!({ "apps": apps })
+                    }
+                    // Teams' Block / Unblock bot conversation (the app bar
+                    // menu of a bot you have a chat with).
+                    "blockBotChat" => {
+                        let block = p.get("block").and_then(|b| b.as_bool()).unwrap_or(true);
+                        api::set_messaging_disabled(&c, &s("chat"), block).await?;
+                        json!({ "chat": s("chat"), "blocked": block })
                     }
                     "uninstall" => {
                         api::manage_apps::uninstall(&c, &s("app"), &s("thread")).await?;
@@ -18647,7 +18665,13 @@ impl qobject::Backend {
                     json!({ "error": short_error(&e) }).to_string()
                 }
             };
-            let _ = qt.queue(move |mut this| this.as_mut().store_reply(QString::from(id.as_str()), QString::from(answer.as_str())));
+            let blocked = kind == "blockBotChat" && !answer.contains("\"error\"");
+            let _ = qt.queue(move |mut this| {
+                if blocked {
+                    this.as_mut().reload_chats();
+                }
+                this.as_mut().store_reply(QString::from(id.as_str()), QString::from(answer.as_str()))
+            });
         });
     }
 

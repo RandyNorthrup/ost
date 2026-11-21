@@ -320,6 +320,23 @@ info, share-invite, arrow-up, arrow-down, pin / pin-off, delete, settings.
 (Cancel, Remove; 420 wide), then `DELETE {mt}/beta/users/apps/entitlements/
 {app}` and reloads your apps.
 
+**Open in new window** is on platform apps with a personal tab (Teams'
+enablePersonalAppsPopOut) and on the core apps ECS `core.allowedCoreAppsPopOut`
+names (simple collab, chat, channel, activity, calling, events; Calendar via
+the M365 calendar's own action). Measured on winpc 2026-11-20: each opens a
+946 x 593 window with Teams' 32 px child-window title row (the app's name,
+Settings and more) and no app bar; Chat: the whole chat list (280 wide), the
+picked chat's header (61) and messages beside it; Activity: the feed (280)
+and the item beside it; Calls: its page as in the main window.
+
+**Block bot conversation** (Unblock when blocked) follows About and Share app
+for a platform app with a bot when you have a 1:1 chat with that bot (Teams'
+hasBotChat; ECS enableBlockUnblockBotChatForPersonalApps). It sets the chat
+thread's `messagingdisabled` property: `PUT {chat}/v1/threads/{chat}/
+properties?name=messagingdisabled {"messagingdisabled": "true"}` ("false" to
+unblock). The conversations list leaves that property out, so the state is
+read from `GET /v1/threads/{chat}`.
+
 **Customize app bar** opens Settings ▸ Appearance (`openSettingPage`,
 settingId `app-bar-settings`) with the App bar card in view and focus on Show
 app names' switch (its focus outline drawn).

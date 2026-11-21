@@ -163,6 +163,7 @@ fn main() {
         "qml/BreakoutTab.qml",
         "qml/TabWindow.qml",
         "qml/AppWindow.qml",
+        "qml/CoreAppWindow.qml",
         "qml/MessageHost.qml",
         "qml/MessageText.qml",
         "qml/CodeBoxes.qml",

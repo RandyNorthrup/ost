@@ -86,7 +86,7 @@ pub mod team_create;
 use anyhow::Result;
 
 // Re-export data types for TUI integration
-pub use chat::{ChatInfo, MessageInfo};
+pub use chat::{ChatInfo, MessageInfo, bot_chat, set_messaging_disabled};
 pub use me::UserInfo;
 pub use presence::PresenceInfo;
 pub use teams::TeamInfo;

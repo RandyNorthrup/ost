@@ -1432,13 +1432,19 @@ Window {
         running: Qt.application.arguments.indexOf("--hovercard-test") >= 0 && chatList.chats.length > 1
         interval: 1500; repeat: true
         property int step: 0
+        property int waited: 0
         onTriggered: {
             const cap = tag => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-" + tag + ".png")))
             const log = (tag, x) => console.warn("HOVERCARD", tag, JSON.stringify(x))
             if (step === 0) { const ch = chatList.chats.find(c => c.name === "OST Test 2"); if (!ch) { log("no chat", ""); Qt.quit(); return } backend.selectChat(ch.id, ch.name) }
             else if (step === 2) conversation.hoverTitleForTest(true)
             else if (step === 3) log("open after 1.5 s", hoverCard.opened)
-            else if (step === 4) { log("card", { name: hoverCard.displayName, loaded: hoverCard.card.displayName || "", loading: !!hoverCard.card.loading, error: hoverCard.card.error || "", availability: hoverCard.availability, mail: hoverCard.card.mail || "", x: hoverCard.x, y: hoverCard.y, h: hoverCard.height }); cap("card") }
+            else if (step === 4) {
+                // Wait (up to 15 s) for the card's data, org chart included.
+                if (hoverCard.card.loading && (waited = (waited || 0) + 1) < 10) return
+                log("card", { name: hoverCard.displayName, loaded: hoverCard.card.displayName || "", loading: !!hoverCard.card.loading, error: hoverCard.card.error || "", availability: hoverCard.availability, mail: hoverCard.card.mail || "", x: hoverCard.x, y: hoverCard.y, h: hoverCard.height, directs: hoverCard.directs.map(d => d.name), hasOrg: hoverCard.hasOrg })
+                cap("card")
+            }
             else if (step === 5) conversation.hoverTitleForTest(false)
             else if (step === 6) log("open after leaving", hoverCard.opened)
             else if (step === 7) conversation.hoverTitleForTest(true)
@@ -9219,7 +9225,8 @@ Window {
     // / uninstall:<app> (picked from the app's menu, Uninstall confirmed),
     // move:<app>:<order> (Teams' reorder to that order), storeunpin /
     // storepin, customize (Activity ▸ Customize app bar, app-bar-
-    // customize.png). <app> is the app's name as the bar or the flyout
+    // customize.png), block:<app> / unblock:<app> (Block / Unblock bot
+    // conversation), botchat:<app> (the bot's 1:1 chat and its state). <app> is the app's name as the bar or the flyout
     // shows it. Quits unless --app-bar-stay.
     Timer {
         readonly property var ops: Qt.application.arguments.some(a => a.startsWith("--app-bar-test"))
@@ -9259,6 +9266,19 @@ Window {
             else if (verb === "unpin") r = pickIn(name, qsTr("Unpin"))
             else if (verb === "up") r = pickIn(name, qsTr("Move up"))
             else if (verb === "down") r = pickIn(name, qsTr("Move down"))
+            else if (verb === "window") r = pickIn(name, qsTr("Open in new window"))
+            else if (verb === "wshot") {
+                // wshot:<key>[:<chat id to show>]: that app's window, pictured.
+                const w = window.appWindows[name]
+                if (w) {
+                    if (arg && w.showChat) { const cid = op.slice(op.indexOf(arg)); const ch = chatList.chats.find(c => c.id === cid); w.showChat(cid, ch ? ch.name : "") }
+                    r = JSON.stringify({ title: w.title, size: [w.width, w.height], chat: w.chatId || "" })
+                    w.contentItem.grabToImage(g => g.saveToFile(window.shotPath.replace(".png", "-app-window-" + name + ".png")))
+                }
+            } else if (verb === "wclose") { const w = window.appWindows[name]; if (w) { w.close(); r = true } }
+            else if (verb === "block") r = pickIn(name, qsTr("Block bot conversation"))
+            else if (verb === "unblock") r = pickIn(name, qsTr("Unblock bot conversation"))
+            else if (verb === "botchat") { const a = rail.barApps.find(x => x.name === name); const c = rail.botChat(a); r = JSON.stringify({ bot: a ? a.bot_id : "", chat: c ? c.id : "", blocked: c ? !!c.messagingDisabled : null }) }
             else if (verb === "storeunpin") r = pickIn(qsTr("Store"), qsTr("Unpin"))
             else if (verb === "storepin") r = rail.flyoutPickForTest("add", qsTr("Pin"))
             else if (verb === "uninstall") { r = pickIn(name, qsTr("Uninstall")); if (r) Qt.callLater(() => { console.warn("APPBAR dialog", appUninstall.title, "/", appUninstall.body); appUninstall.close(); appUninstall.confirmed() }) }
@@ -13193,6 +13213,7 @@ Window {
         onShareRequested: key => appShare.start(rail.idOf(key))
         onBarChangeRequested: (appId, op, target) => backend.storeRequest("appBarChange", "appbar:change", JSON.stringify({ app: appId, op: op, target: target }))
         onUninstallRequested: (appId, name) => appUninstall.start(appId, name)
+        onBlockBotRequested: (chatId, block) => backend.storeRequest("blockBotChat", "appbar:block", JSON.stringify({ chat: chatId, block: block }))
         onNewMessageRequested: inWindow => { chatList.draftsOpen = false; chatList.mentionsOpen = false; window.startNewChat(inWindow) }
         // Customize app bar: Settings ▸ Appearance at the App bar card
         // (Teams' openSettingPage settingId "app-bar-settings").
@@ -13353,6 +13374,7 @@ Window {
                 return
             }
             if (id === "appbar:uninstall") { window.loadAppBar(); return }
+            if (id === "appbar:block") { const b = Object.assign({}, rail.botBlocks); b[r.chat] = r.blocked; rail.botBlocks = b; return }
             if (r.apps) rail.barApps = r.apps
         }
     }
@@ -13377,7 +13399,37 @@ Window {
         }
     }
     property var appWindows: ({})
+    /// Teams' own app (Chat, Teams, Activity, Calls, Events) in a window of
+    /// its own (CoreAppWindow); what it opens elsewhere comes back here.
+    function popOutCore(key) {
+        const open = window.appWindows[key]
+        if (open) { open.show(); open.raise(); open.requestActivate(); return open }
+        const c = Qt.createComponent("CoreAppWindow.qml")
+        if (c.status !== Component.Ready) { console.warn("CoreAppWindow", c.errorString()); return null }
+        const w = c.createObject(null, { app: key, appName: rail.coreLabels[key] || key })
+        const all = Object.assign({}, window.appWindows); all[key] = w; window.appWindows = all
+        w.openInMain.connect((kind, d) => {
+            window.raise(); window.requestActivate()
+            if (kind === "toast") { window.showToast(d); return }
+            if (kind === "calendar") { rail.current = "calendar"; return }
+            if (kind === "joinEvent") { preJoin.openFor(d.url, d.title, d.start, d.end); return }
+            if (kind === "chatWindow") { window.openChatWindow(d.id, d.name, d.photo, d.presence); return }
+            rail.current = "chat"; window.composing = false
+            if (kind === "newChat") window.startNewChat()
+            else if (kind === "chat") backend.selectChat(d.id, d.name)
+            else if (kind === "call" || kind === "videoCall") { backend.selectChat(d.id, d.name); if (kind === "call") backend.startCall(); else backend.startVideoCall() }
+            else if (kind === "chatWith" || kind === "callBack") { if (kind === "callBack") window.callAfterOpen = true; backend.openChatWith(d.oid, d.name) }
+            else if (kind === "chatWithMri") {
+                const ch = chatList.chats.find(c => c.peerMri === d.mri)
+                if (ch) backend.selectChat(ch.id, ch.name); else if ((d.mri || "").startsWith("8:orgid:")) backend.openChatWith(d.mri.slice(8), d.name)
+            }
+        })
+        w.closing.connect(() => { const rest = Object.assign({}, window.appWindows); delete rest[key]; window.appWindows = rest; Qt.callLater(() => w.destroy()) })
+        w.show()
+        return w
+    }
     function popOutApp(key) {
+        if (rail.coreWindowKeys.indexOf(key) >= 0) return window.popOutCore(key)
         let m = null
         for (let i = 0; i < hostedModel.count && !m; i++) { const x = JSON.parse(hostedModel.get(i).json); if (x.key === key) m = x }
         if (!m || !m.appId) return null

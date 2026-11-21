@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-11-20T18:48:00Z'
-updated_date: '2026-11-21T00:13:00Z'
+updated_date: '2026-11-21T01:56:00Z'
 labels:
   - desktop
   - apps
@@ -33,4 +33,6 @@ Teams' Manage your apps lists 27 apps for ost-test1; OST lists 24. Teams also sh
 - Live (linuxlt, ost-test1, --manage-apps-test): 27 rows incl. SharePoint Pages, Forms for Microsoft Teams, Lists; Teams on winpc lists 26 — OST also shows the personal SharePoint (Viva Connections, d2c6f111) that Teams leaves out (rule not found yet), and lists the shared agents in the service's order.
 
 - 2026-11-20 merged: team apps via the entitlements request with your teams' thread ids brings in SharePoint Pages, Forms and Lists; shared apps in id order. OST lists 27 rows to Teams' 26: Teams leaves out the personal SharePoint / Viva Connections app (d2c6f111), rule not found yet.
+
+- 2026-11-20 recheck: Teams' Manage your apps on winpc (Recently used) starts SharePoint, Workflows, Whiteboard, Planner, Praise, Polly, Power BI, Polls, OneNote, Avatars, and OST's (--manage-apps-test, linuxlt default) starts with exactly the same ten, so Recently used matches as far as Teams' list was read. That top SharePoint is the personal Viva Connections app d2c6f111 (Installed, isFullScreen, not core), so Teams does list it: the earlier 'Teams leaves d2c6f111 out' note was wrong. OST also lists a second 'SharePoint' row further down (the team SharePoint app); whether Teams lists that one too, and the order after Avatars, still need a full Teams list (the winpc slot ended before the whole list was read).
 <!-- SECTION:NOTES:END -->

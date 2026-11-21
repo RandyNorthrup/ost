@@ -76,6 +76,17 @@ Rectangle {
     signal uninstallRequested(string appId, string name)
     signal customizeRequested()
     signal newMessageRequested(bool inWindow)
+    signal blockBotRequested(string chatId, bool block)
+    readonly property var coreWindowKeys: ["chat", "teams", "activity", "calls", "events"]
+    /// A bot app's 1:1 chat with you, if you have one (Teams offers Block
+    /// bot conversation only then; Unblock when its messaging is off).
+    /// Blocks changed here since the bar loaded ({chat id: blocked}).
+    property var botBlocks: ({})
+    function botChat(a) {
+        if (!a || !a.bot_chat) return null
+        const b = botBlocks[a.bot_chat]
+        return { id: a.bot_chat, messagingDisabled: b === undefined ? !!a.bot_blocked : b }
+    }
     /// Teams' own apps' ids (async-entry module 318854) → OST's views.
     readonly property var coreKeys: ({
         "14d6962d-6eeb-4f48-8890-de55454bb136": "activity", "3b64df9d-7e97-4d9c-ac5c-2e0a5d8e6f40": "chat",
@@ -186,13 +197,19 @@ Rectangle {
         if (entry.store) return inBar
             ? [[{ key: "unpinStore", label: qsTr("Unpin"), icon: "nmc-unpin" }], [{ key: "customize", label: qsTr("Customize app bar"), icon: "nmc-settings" }]]
             : [[{ key: "pinStore", label: qsTr("Pin"), icon: "nmc-pin" }]]
-        // OST opens a hosted app's page in a window of its own.
-        if (!!hostedIds[entry.key] || entry.key.indexOf("app:") === 0 || entry.key === "copilot")
+        // OST opens a hosted app's page in a window of its own, and Teams'
+        // own apps its ECS core.allowedCoreAppsPopOut names (simple collab,
+        // chat, channel, activity, calling, events).
+        if (!!hostedIds[entry.key] || entry.key.indexOf("app:") === 0 || entry.key === "copilot" || coreWindowKeys.indexOf(entry.key) >= 0)
             groups.push([{ key: "popOut", label: qsTr("Open in new window"), icon: "open-window-20" }])
         const g2 = []
         if (a && !a.core) {
             g2.push({ key: "about", label: qsTr("About"), icon: "info-20" })
             g2.push({ key: "share", label: qsTr("Share app"), icon: "share-invite-20" })
+            const bc = botChat(a)
+            if (bc) g2.push(bc.messagingDisabled
+                ? { key: "unblockBot", label: qsTr("Unblock bot conversation"), icon: "prohibited-20" }
+                : { key: "blockBot", label: qsTr("Block bot conversation"), icon: "prohibited-20" })
         }
         if (entry.key === "chat") {
             g2.push({ key: "newMessage", label: qsTr("New message"), icon: "compose-20", keys: "Ctrl+N" })
@@ -228,6 +245,7 @@ Rectangle {
         else if (k === "newMessage") newMessageRequested(false)
         else if (k === "newMessageWindow") newMessageRequested(true)
         else if (k === "customize") customizeRequested()
+        else if (k === "blockBot" || k === "unblockBot") { const bc = botChat(a); if (bc) blockBotRequested(bc.id, k === "blockBot") }
         else if (k === "uninstall") uninstallRequested(id, a ? a.name : entry.label)
         else if (k === "pin" || k === "unpin") {
             if (!a) { pinRequested(entry.key, k === "pin"); return }

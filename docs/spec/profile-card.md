@@ -61,8 +61,14 @@ the 1:1 chat header.
 - "Profile ›" (12/700 #242424) at 25, 262; the email row (312.7 x 32 at 1,
   292: a mail glyph at 25, the address 12 px brand at 57, Copy at 290.7);
   "Show more" (12 px brand, 92 x 32) at 9, 328.
-- Then more sections. On 2026-11-12 they loaded as placeholders and Badges
-  said "Something went wrong. Try again".
+- Then the sections under Show more (measured on winpc 2026-11-20, OST Test
+  2's card from a message picture, TASK-0133): "Direct reports (n) ›" (12/16
+  bold #242424, 115 x 22 with an 18 px chevron) at 24, 392; their 40 px
+  pictures (Fluent AvatarGroup, each a person link) from 24, 422; then "Show
+  organization" (12 px brand, 131 x 32) at 8, 466. The heading and the link
+  open the full card on Organization; a picture opens that person's card. A
+  person without reports shows no Direct reports block. (On 2026-11-12 the
+  sections loaded as placeholders and Badges said "Something went wrong".)
 - Profile › and Show more open the full card on Profile; the org-chart
   button opens it on Organization; the LinkedIn button opens it on a
   LinkedIn tab (only a spinner that day).

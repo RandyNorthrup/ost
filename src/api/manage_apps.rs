@@ -87,7 +87,7 @@ pub fn merge(
 ) -> Vec<InstalledApp> {
     let mut out: Vec<InstalledApp> = Vec::new();
     let mut index: HashMap<String, usize> = HashMap::new();
-    let mut put = |app: InstalledApp, out: &mut Vec<InstalledApp>, index: &mut HashMap<String, usize>| {
+    let put = |app: InstalledApp, out: &mut Vec<InstalledApp>, index: &mut HashMap<String, usize>| {
         let key = app.id.to_lowercase();
         if let Some(&i) = index.get(&key) {
             out[i] = app;

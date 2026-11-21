@@ -56,6 +56,12 @@ pub struct BarApp {
     pub can_uninstall: bool,
     /// A bot app (Teams adds "Block bot conversation").
     pub bot: bool,
+    /// Its bot's id (definition `bots[0].id`), for its 1:1 chat.
+    pub bot_id: String,
+    /// That chat, when you have one (Teams' hasBotChat), and whether you
+    /// blocked it (filled by the caller).
+    pub bot_chat: String,
+    pub bot_blocked: bool,
     /// Has a personal tab Teams can open in its own window.
     pub personal_tab: bool,
     /// Teams lists it in View more apps when it isn't pinned.
@@ -160,6 +166,9 @@ fn apps_with(v: &Value, blocked: &[String]) -> Vec<BarApp> {
                 core,
                 can_uninstall: !core && !matches!(state.as_str(), "InstalledAndPermanent" | "AdminPreInstalled" | "RequireConsent"),
                 bot: d.and_then(|d| d.pointer("/bots/0")).is_some(),
+                bot_id: d.and_then(|d| d.pointer("/bots/0/id")).and_then(|v| v.as_str()).unwrap_or_default().to_string(),
+                bot_chat: String::new(),
+                bot_blocked: false,
                 personal_tab: has_personal(d.and_then(|d| d.get("staticTabs"))),
                 flyout: in_flyout(id, core, &state, d, blocked),
                 state,

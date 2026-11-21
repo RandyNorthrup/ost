@@ -887,6 +887,45 @@ pub async fn send_typing(client: &TeamsClient, chat_id: &str) -> Result<()> {
     Ok(())
 }
 
+/// Teams' Block / Unblock bot conversation: the bot's 1:1 chat gets the
+/// thread property `messagingdisabled` "true" / "false" (`PUT
+/// /v1/threads/{id}/properties?name=messagingdisabled`).
+pub async fn set_messaging_disabled(client: &TeamsClient, chat_id: &str, disabled: bool) -> Result<()> {
+    anyhow::ensure!(chat_id.starts_with("19:") && chat_id.len() < 300, "Not a chat");
+    let url = format!(
+        "{}/v1/threads/{}/properties?name=messagingdisabled",
+        client.chat_service_url(),
+        super::tabs::encode_uri_component(chat_id)
+    );
+    client
+        .chat_request(reqwest::Method::PUT, &url, &serde_json::json!({ "messagingdisabled": disabled.to_string() }))
+        .await
+        .context("Block bot conversation")?;
+    Ok(())
+}
+
+/// A bot's 1:1 chat with you and whether you blocked it: Teams keeps the
+/// block on the thread (`messagingdisabled`), which the conversations list
+/// leaves out, so the thread itself is read (`GET /v1/threads/{id}`).
+pub async fn bot_chat(client: &TeamsClient, bot_id: &str) -> Option<(String, bool)> {
+    let me = client.object_id()?.to_ascii_lowercase();
+    let bot = bot_id.trim_start_matches("28:").to_ascii_lowercase();
+    if bot.is_empty() || bot.len() > 64 {
+        return None;
+    }
+    for id in [format!("19:{me}_{bot}@unq.gbl.spaces"), format!("19:{bot}_{me}@unq.gbl.spaces")] {
+        let url = format!("{}/v1/threads/{}?view=msnp24Equivalent", client.chat_service_url(), super::tabs::encode_uri_component(&id));
+        let Ok(r) = client.chat_get(&url).await else { continue };
+        let Ok(v) = r.json::<serde_json::Value>().await else { continue };
+        if v.get("id").is_none() {
+            continue;
+        }
+        let blocked = v.pointer("/properties/messagingdisabled").or_else(|| v.pointer("/threadProperties/messagingdisabled")).and_then(|b| b.as_str()) == Some("true");
+        return Some((id, blocked));
+    }
+    None
+}
+
 // ---------------------------------------------------------------------------
 // Data-returning API functions for TUI integration
 // ---------------------------------------------------------------------------
@@ -929,6 +968,9 @@ pub struct ChatInfo {
     pub backroom: String,
     /// A backroom chat's own title (its name without Teams' prefix).
     pub topic: String,
+    /// A bot's 1:1 chat you blocked (Teams' Block bot conversation sets
+    /// the thread's `messagingdisabled` to "true").
+    pub messaging_disabled: bool,
     /// Unread as Teams counts it: someone else's message newer than your
     /// read horizon, or marked unread (see `messages::is_unread`).
     pub unread: bool,
@@ -1208,6 +1250,12 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
                 .as_ref()
                 .and_then(|p| live_call(&p.extra, now_secs)),
             muted: is_muted(conv),
+            messaging_disabled: conv
+                .thread_properties
+                .as_ref()
+                .and_then(|p| p.extra.get("messagingdisabled"))
+                .and_then(|v| v.as_str())
+                .is_some_and(|v| v.eq_ignore_ascii_case("true")),
             empty: conv
                 .properties
                 .as_ref()

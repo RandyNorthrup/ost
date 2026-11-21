@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-14T03:26:00Z'
-updated_date: '2026-11-21T00:13:00Z'
+updated_date: '2026-11-21T01:56:00Z'
 labels:
   - desktop
   - people
@@ -42,4 +42,7 @@ Built so far: The profile card's Organization tab (manager and reports from Grap
 - 2026-11-20 layout to Teams' measures (docs/spec/profile-card.md 'Organization tab'): manager cards 84 tall with 48 px pictures and the reports count, the focus card 156.7 with View profile and '1 report / 1 direct', 'People reporting to {name}' rules, report cards, '{name} also works with' / 'You work with' tiles. Live again with the final build (--profile-org-test, ost-test1): same people and navigation as Teams. Open: AC2 (the hover card's Show more sections) and the AC3 side-by-side still need winpc, which other agents held.
 
 - 2026-11-20 merged: org chart from Loki to Teams' measurements with Home/Back/Next, verified live. AC2/AC3 open (need winpc).
+
+- 2026-11-20 AC2 (winpc, OST Test 2's hover card from a message picture): the hover card's Show more opens the full card on Profile (Contact information); the sections under it are 'Direct reports (n) ›' (12/16 bold, 18 px chevron) at 24, 392, the reports' 40 px pictures (AvatarGroup, each opens that person) from 24, 422, and 'Show organization' (12 px brand link, 131 x 32) at 8, 466; the heading and the link open Organization. Built in HoverCard.qml from the card's Loki org data (Graph reports as fallback); spec in docs/spec/profile-card.md. Live (linuxlt default, --hovercard-test after the card's data loads): OST Test 2's card shows Profile ›, the email, Show more, Direct reports (1) › with OST Test 1's picture and Show organization below (the card scrolls at 446), the same as Teams' picture; Show more opened the full card on Profile.
+- AC3: side by side on 2026-11-20: Teams' hover card (winpc capture) and OST's (--hovercard-test) list the same sections and people; the Organization tab was compared earlier the same day (same managers, reports and works-with). Not covered: the 'Reports to' block Teams may show for someone with a manager (only ost-test1 has one, and you can't hover your own card).
 <!-- SECTION:NOTES:END -->
