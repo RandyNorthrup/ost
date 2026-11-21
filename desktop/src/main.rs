@@ -26,6 +26,8 @@ use tracing_subscriber::EnvFilter;
 unsafe extern "C" {
     /// QtWebEngineQuick::initialize() (src/webengine.cpp).
     fn ost_webengine_initialize();
+    /// Development: load QML from a directory (src/native.cpp).
+    fn ost_dev_qml_dir(engine: *mut core::ffi::c_void, dir: *const core::ffi::c_char);
 }
 
 /// OST's log file (what Help › Collect Support Files packs up):
@@ -166,7 +168,14 @@ fn main() {
     // Teams' App language: its text, direction and culture, before any QML.
     backend::install_app_language();
     let mut engine = QQmlApplicationEngine::new();
-    if let Some(engine) = engine.as_mut() {
+    if let Some(mut engine) = engine.as_mut() {
+        // OST_QML_DIR (development): QML from a checkout instead of the
+        // compiled-in copy.
+        if let Some(dir) = std::env::var("OST_QML_DIR").ok().filter(|d| !d.is_empty()).and_then(|d| std::ffi::CString::new(d).ok()) {
+            // SAFETY: the engine is alive and owns the interceptor's use;
+            // only the pointer is passed.
+            unsafe { ost_dev_qml_dir(engine.as_mut().get_unchecked_mut() as *mut QQmlApplicationEngine as *mut core::ffi::c_void, dir.as_ptr()) };
+        }
         engine.load(&QUrl::from("qrc:/qt/qml/com/ost/desktop/qml/Main.qml"));
     }
     if let Some(app) = app.as_mut() {

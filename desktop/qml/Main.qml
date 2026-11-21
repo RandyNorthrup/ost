@@ -5609,15 +5609,18 @@ Window {
             step++
         }
     }
-    // --recorder-effects-test: in the OST Test 2 chat, Record video clip on
-    // linuxlt's test camera A (never the laptop's own), silent: the Effects
-    // menu, Backdrops (Microsoft's stock list over AugLoop, an image, Blur),
-    // Stickers (one placed), Filter (Lift, Vintage, Black and White,
-    // Bricks), Frame, Board (split), Draw (a stroke), Text and Photo, each
-    // captured; then a 4 s recording with them on, reviewed and its path
-    // logged (to check the clip's frames), and Close recording. Nothing is
-    // sent. --recorder-effects-screen instead checks screen mode's tools
-    // (Script, Draw, Effects; Backdrop disabled). Logs RECFX lines.
+    // --recorder-effects-test: in a test chat (--recorder-chat=<name>, OST
+    // Test 2 at first), Record video clip on a test camera
+    // (--recorder-cam=<name>, linuxlt's test camera A at first; never the
+    // laptop's own), silent: the Effects menu, Backdrops (Microsoft's stock
+    // list over AugLoop, an image, Blur, a video), Stickers (one placed),
+    // Filter (Lift, Vintage, Black and White, Bricks), Frame, Board, Draw
+    // (a stroke), Text, Photo and a selected item, each captured; then a
+    // 4 s recording with effects on, reviewed (the clip's path logged, to
+    // check its frames) and Close recording. Nothing is sent.
+    // --recorder-effects-screen instead checks screen mode: its tools and
+    // menu, then (without a picked screen: linuxlt's portal picker can't be
+    // driven) Draw on the bar drawing into a recording. Logs RECFX lines.
     Timer {
         running: Qt.application.arguments.indexOf("--recorder-effects-test") >= 0 && chatList.chats.length > 1
         interval: 1500; repeat: true
@@ -5627,72 +5630,101 @@ Window {
         onTriggered: {
             const cap = tag => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-" + tag + ".png")))
             const log = (...a) => console.warn("RECFX", ...a.map(x => typeof x === "string" ? x : JSON.stringify(x)))
+            const arg = (k, d) => (Qt.application.arguments.find(a => a.startsWith(k + "=")) || ("=" + d)).split("=").slice(1).join("=")
             const screen = Qt.application.arguments.indexOf("--recorder-effects-screen") >= 0
             const fx = rec ? rec.fxForTest() : null
-            switch (step) {
-            case 0: {
-                const c = chatList.chats.find(x => x.name === "OST Test 2")
-                if (!c) { log("no chat"); Qt.quit(); return }
+            const p = rec ? rec.panelsForTest() : null
+            // Each entry runs on its own tick; a capture is never followed by
+            // a change in the same tick (grabs finish later).
+            const plan = screen ? [
+                () => rec.openEffectsMenuForTest(),
+                () => { log("screen setup", { draw: rec.effectsReady, menu: rec.effectsForTest().menu }); cap("screen-menu") },
+                () => rec.closeMenusForTest(),
+                () => rec.startRecording(true),
+                () => { log("screen recording", { stage: rec.stage, draw: rec.effectsReady }); rec.openEffect("draw") },
+                () => cap("screen-draw-drawer"),
+                () => rec.drawForTest([[120, 120], [240, 200], [360, 140], [480, 220]]),
+                () => cap("screen-drawn"),
+                () => rec.stopAndReview(),
+                () => { if (!rec.stateForTest().segments && waited++ < 30) return false },
+                null,
+                () => { log("screen review", rec.stateForTest()); cap("screen-review") },
+                () => rec.confirmClose = true
+            ] : [
+                () => { log("setup", rec.stateForTest()); rec.openEffectsMenuForTest() },
+                () => { log("menu", rec.effectsForTest().menu); cap("menu") },
+                () => { rec.closeMenusForTest(); rec.openEffect("backdrop") },
+                () => { if (!p.bdImages.length && waited++ < 20) return false; log("backdrops", { images: p.bdImages.length, videos: p.bdVideos.length, first: p.bdImages.slice(0, 3).map(i => i.name) }) },
+                () => cap("backdrops"),
+                () => { const it = p.bdImages.find(i => /stones/i.test(i.name)) || p.bdImages[0]; if (it) p.applyBackdrop(it); fx.drawer = "" },
+                null, null,
+                () => { log("backdrop image", rec.effectsForTest()); cap("backdrop-image") },
+                () => fx.backdrop = { kind: "blur" },
+                null,
+                () => { log("blur", rec.effectsForTest()); cap("backdrop-blur") },
+                () => { if (p.bdVideos.length) p.applyBackdrop(p.bdVideos[0]) },
+                null, null, null,
+                () => { log("backdrop video", rec.effectsForTest()); cap("backdrop-video") },
+                () => { fx.backdrop = { kind: "none" }; rec.openEffect("stickers") },
+                () => { if (!Object.keys(p.stickers).length && waited++ < 20) return false; log("stickers", Object.keys(p.stickers).map(k => k + ":" + p.stickers[k].length)) },
+                null,
+                () => cap("stickers"),
+                () => { const s = (p.stickers["Smilies"] || [])[0]; if (s) p.addSticker(s) },
+                null,
+                () => { log("sticker", rec.effectsForTest()); cap("sticker") },
+                () => rec.openEffect("filter"),
+                () => cap("filter-drawer"),
+                () => fx.filter = 0,
+                () => cap("filter-lift"),
+                () => fx.filter = 2,
+                () => cap("filter-vintage"),
+                () => fx.filter = 14,
+                () => cap("filter-bw"),
+                () => fx.filter = 16,
+                () => cap("filter-bricks"),
+                () => { fx.filter = -1; fx.drawer = ""; rec.openEffect("frame") },
+                () => cap("frame-drawer"),
+                () => fx.frame = 0,
+                () => cap("frame-frostedglass"),
+                () => { fx.drawer = ""; rec.openEffect("board") },
+                () => fx.board = 0,
+                () => { log("board", rec.effectsForTest()); cap("board") },
+                () => { fx.board = -1; fx.drawer = ""; rec.openEffect("draw") },
+                () => cap("draw-drawer"),
+                () => rec.drawForTest([[100, 64], [180, 104], [260, 74], [340, 124]]),
+                () => { fx.drawer = ""; rec.typeForTest("Hello OST") },
+                null,
+                () => { log("text", rec.effectsForTest()); cap("text") },
+                () => { rec.overlayForTest().endText(); rec.openEffect("photo") },
+                () => cap("photo-drawer"),
+                () => { fx.drawer = ""; fx.selected = 0 },
+                () => cap("selected"),
+                () => { fx.selected = -1; fx.backdrop = { kind: "blur" }; fx.filter = 0; rec.startRecording() },
+                () => { if (rec.stage !== "recording" && waited++ < 10) return false },
+                () => cap("recording"),
+                null,
+                () => rec.stopAndReview(),
+                () => { if (!rec.stateForTest().segments && waited++ < 30) return false },
+                null,
+                () => { log("review", rec.stateForTest()); cap("review") },
+                () => rec.confirmClose = true
+            ]
+            if (step === 0) {
+                const want = arg("--recorder-chat", "OST Test 2")
+                const c = chatList.chats.find(x => x.name === want)
+                if (!c) { log("no chat", chatList.chats.map(x => x.name).slice(0, 30)); Qt.quit(); return }
                 backend.selectChat(c.id, c.name)
-                break
-            }
-            case 2:
+            } else if (step === 2) {
                 rec = conversation.clipRecorderForTest()
                 rec.testSilent = true
                 rec.openFor(backend.currentChatId)
-                // (--recorder-cam=<name>: another test camera, e.g. one fed a
-                // picture of a person for the backdrop's cut-out.)
-                rec.pickCameraForTest((Qt.application.arguments.find(a => a.startsWith("--recorder-cam=")) || "=OST test camera A").split("=")[1])
+                rec.pickCameraForTest(arg("--recorder-cam", "OST test camera A"))
                 if (screen) rec.screenOn = true
-                break
-            case 4: log("setup", rec.stateForTest()); cap("setup"); rec.openEffectsMenuForTest(); break
-            case 5: log("menu", rec.effectsForTest().menu); cap("menu"); rec.closeMenusForTest(); if (screen) { step = 90; return } break
-            case 6: rec.openEffect("backdrop"); break
-            case 7: {
-                const p = rec.panelsForTest()
-                if (!p.bdImages.length && waited++ < 20) return
+            } else if (step >= 4) {
+                const i = step - 4
+                if (i >= plan.length) { Qt.quit(); return }
+                if (plan[i] && plan[i]() === false) return
                 waited = 0
-                log("backdrops", { images: p.bdImages.length, videos: p.bdVideos.length, first: p.bdImages.slice(0, 3).map(i => i.name), video: p.bdVideos.slice(0, 2).map(i => i.name) })
-                cap("backdrops")
-                break
-            }
-            case 8: { const p = rec.panelsForTest(); const it = p.bdImages.find(i => /stones/i.test(i.name)) || p.bdImages[0]; if (it) p.applyBackdrop(it); fx.drawer = ""; break }
-            case 11: log("backdrop image", rec.effectsForTest()); cap("backdrop-image"); fx.backdrop = { kind: "blur" }; break
-            case 14: log("blur", rec.effectsForTest()); cap("backdrop-blur"); { const p = rec.panelsForTest(); if (p.bdVideos.length) p.applyBackdrop(p.bdVideos[0]) } break
-            case 18: log("backdrop video", rec.effectsForTest()); cap("backdrop-video"); fx.backdrop = { kind: "none" }; rec.openEffect("stickers"); break
-            case 19: {
-                const p = rec.panelsForTest()
-                if (!Object.keys(p.stickers).length && waited++ < 20) return
-                waited = 0
-                log("stickers", Object.keys(p.stickers).map(k => k + ":" + p.stickers[k].length))
-                cap("stickers")
-                break
-            }
-            case 20: { const p = rec.panelsForTest(); const s = (p.stickers["Smilies"] || [])[0]; if (s) p.addSticker(s); break }
-            case 22: log("sticker", rec.effectsForTest()); cap("sticker"); rec.openEffect("filter"); break
-            case 23: cap("filter-drawer"); fx.filter = 0; break
-            case 25: cap("filter-lift"); fx.filter = 2; break
-            case 27: cap("filter-vintage"); fx.filter = 14; break
-            case 29: cap("filter-bw"); fx.filter = 16; break
-            case 31: cap("filter-bricks"); fx.filter = -1; fx.drawer = ""; rec.openEffect("frame"); break
-            case 32: cap("frame-drawer"); fx.frame = 0; break
-            case 34: cap("frame-frostedglass"); fx.drawer = ""; rec.openEffect("board"); break
-            case 35: fx.board = 0; break
-            case 37: log("board", rec.effectsForTest()); cap("board"); fx.board = -1; fx.drawer = ""; rec.openEffect("draw"); break
-            case 38: cap("draw-drawer"); rec.drawForTest([[100, 64], [180, 104], [260, 74], [340, 124]]); break
-            case 39: fx.drawer = ""; rec.typeForTest("Hello OST"); break
-            case 41: log("text", rec.effectsForTest()); cap("text"); rec.overlayForTest().endText(); rec.openEffect("photo"); break
-            case 42: cap("photo-drawer"); fx.drawer = ""; fx.selected = 1; break
-            case 43: cap("selected"); fx.selected = -1; fx.backdrop = { kind: "blur" }; fx.filter = 0; rec.startRecording(); break
-            case 44: if (rec.stage !== "recording") { if (waited++ < 10) return; log("never started", rec.stateForTest()); Qt.quit(); return } waited = 0; break
-            case 45: cap("recording"); break
-            case 47: rec.stopAndReview(); break
-            case 50: log("review", rec.stateForTest()); cap("review"); rec.confirmClose = true; break
-            case 51: cap("confirm"); Qt.quit(); return
-            // Screen mode's tools, before the screen is picked.
-            case 91: log("screen setup", { draw: rec.effectsReady }); cap("screen-setup"); rec.openEffectsMenuForTest(); break
-            case 92: log("screen menu", rec.effectsForTest().menu); cap("screen-menu"); rec.closeMenusForTest(); break
-            case 93: Qt.quit(); return
             }
             step++
         }

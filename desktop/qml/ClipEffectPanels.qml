@@ -73,8 +73,9 @@ Item {
     Connections {
         target: panels.fx
         function onDrawerChanged() {
-            if (panels.fx.drawer === "backdrop") panels.loadBackdrops()
-            else if (panels.fx.drawer === "stickers") panels.loadStickers()
+            // The search box takes the keys at once, as Stream's does.
+            if (panels.fx.drawer === "backdrop") { panels.loadBackdrops(); bdSearch.focusField() }
+            else if (panels.fx.drawer === "stickers") { panels.loadStickers(); stSearch.focusField() }
         }
     }
 
@@ -82,6 +83,7 @@ Item {
     component SearchBox: Rectangle {
         id: sb
         property alias text: field.text
+        function focusField() { field.forceActiveFocus() }
         width: parent ? parent.width : 0; height: 36; radius: 8
         color: theme.pick("#FFFFFF", "#292929", "#000000")
         border.color: theme.stroke; border.width: 0.67
@@ -163,6 +165,26 @@ Item {
         NavButton { next: true; x: parent.width - 21.2; height: 55.2; onClicked: flick.contentX = Math.min(Math.max(0, flick.contentWidth - flick.width), flick.contentX + flick.width) }
         Dots { anchors.horizontalCenter: parent.horizontalCenter; y: 55.2; pages: Math.max(1, Math.ceil(flick.contentWidth / Math.max(1, flick.width))); page: Math.round(flick.contentX / Math.max(1, flick.width)) }
     }
+    /// Fluent's slider: a brand track to the thumb, a round thumb.
+    component FluentSlider: Slider {
+        id: fs
+        height: 32
+        leftPadding: 10; rightPadding: 10
+        background: Item {
+            x: fs.leftPadding; y: (fs.height - 4) / 2
+            width: fs.availableWidth; height: 4
+            Rectangle { anchors.fill: parent; radius: 2; color: theme.pick("#616161", "#ADADAD", "#FFFFFF") }
+            Rectangle { width: fs.visualPosition * parent.width; height: 4; radius: 2; color: theme.brandFill }
+        }
+        handle: Rectangle {
+            x: fs.leftPadding + fs.visualPosition * fs.availableWidth - 10
+            y: (fs.height - 20) / 2
+            width: 20; height: 20; radius: 10
+            color: theme.surface
+            border.color: theme.stroke; border.width: 1
+            Rectangle { anchors.centerIn: parent; width: fs.pressed ? 10 : 12; height: width; radius: width / 2; color: theme.brandFill }
+        }
+    }
     component SectionHead: Item {
         id: sh
         property string title
@@ -187,9 +209,11 @@ Item {
         let row = [], w = 0
         for (const it of list) {
             const nat = it.width > 0 && it.height > 0 ? h * it.width / it.height : h * 16 / 9
+            // (A row takes what fits, then grows to the width, as Stream's
+            // flex rows do.)
+            if (row.length && w + nat + 8.67 > width) { rows.push(row); row = []; w = 0 }
             row.push({ it: it, w: nat })
             w += nat + 8.67
-            if (w >= width) { rows.push(row); row = []; w = 0 }
         }
         if (row.length) rows.push(row)
         return rows.map((r, i) => {
@@ -265,6 +289,7 @@ Item {
     function applyBackdrop(it) {
         fx.backdrop = { kind: it.kind === "video" ? "video" : "image", url: it.url, name: it.name, upload: false }
         fx.pip = { x: 0, y: 0, s: 1, a: 0 }
+        fx.selected = -2
     }
     ClipDrawer {
         visible: panels.fx.drawer === "backdrop"
@@ -319,7 +344,7 @@ Item {
                                 required property var modelData
                                 width: 104.4; height: 62.7; radius: 10; color: "transparent"
                                 border.width: 1.33
-                                border.color: (modelData.act === "none" && panels.fx.backdrop.kind === "none") || (modelData.act === "blur" && panels.fx.backdrop.kind === "blur") ? theme.text : "transparent"
+                                border.color: "transparent"
                                 Rectangle {
                                     anchors.fill: parent; anchors.margins: 1.33; radius: 4
                                     color: abHover.hovered ? theme.menuHover : "transparent"
@@ -350,6 +375,7 @@ Item {
                         delegate: Column {
                             required property var modelData
                             width: bdCol.width
+                            topPadding: 12
                             visible: panels.bdMore === "" || panels.bdMore === modelData.key
                             readonly property var all: panels.bdFound ? panels.bdFound[modelData.key] : modelData.key === "images" ? panels.bdImages : panels.bdVideos
                             SectionHead { title: modelData.title; more: panels.bdMore === "" && parent.all.length > 24; onSeeMore: panels.bdMore = parent.modelData.key }
@@ -519,7 +545,7 @@ Item {
                 topPadding: 8
                 visible: panels.fx.board >= 0
                 Text { text: qsTr("Split screen"); font.family: theme.font; font.pixelSize: 12; color: theme.text }
-                Slider {
+                FluentSlider {
                     width: parent.width
                     from: 0; to: 100; stepSize: 1
                     value: panels.fx.boardRatio * 100
@@ -577,7 +603,7 @@ Item {
                 Accessible.name: qsTr("Color picker")
             }
             Text { x: 16; text: qsTr("Thickness"); font.family: theme.font; font.pixelSize: 12; color: theme.text }
-            Slider {
+            FluentSlider {
                 x: 4; width: parent.width - 8
                 from: 1; to: 60; stepSize: 1
                 value: panels.fx.inkWidth

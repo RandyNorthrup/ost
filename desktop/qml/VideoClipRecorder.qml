@@ -114,9 +114,9 @@ Popup {
         const s = Math.max(0, Math.ceil(ms / 1000))
         return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0")
     }
-    function startRecording() {
+    function startRecording(noScreenForTest) {
         // Screen recording starts once a screen or window is picked.
-        if (screenMode && !screen.active) { waitingForScreen = true; screen.active = true; return }
+        if (screenMode && !screen.active && !noScreenForTest) { waitingForScreen = true; screen.active = true; return }
         shots = []
         thumbPath = ""
         recordedMs = 0
@@ -342,6 +342,7 @@ Popup {
             const u = selectedFile.toString()
             fx.backdrop = { kind: /\.(webm|mp4)$/i.test(u) ? "video" : "image", url: u, name: "", upload: true }
             fx.pip = { x: 0, y: 0, s: 1, a: 0 }
+            fx.selected = -2
         }
     }
     // The camera's picture (shown, and so recorded, in camera mode).
@@ -468,16 +469,17 @@ Popup {
         // A click on the picture away from any item ends text editing and
         // the selection.
         TapHandler {
-            onTapped: e => { if (canvasItems.hit(e.position.x, e.position.y) < 0) { editOverlay.endText(); fx.selected = -1 } }
+            // (Over an image or video backdrop, that selects you.)
+            onTapped: e => { if (canvasItems.hit(e.position.x, e.position.y) < 0) { editOverlay.endText(); fx.selected = rec.cutoutOn ? -2 : -1 } }
         }
         Item {
-            id: stage
+            id: fxStage
             anchors.fill: parent
             readonly property var filterDef: fx.filter >= 0 && rec.effectsOn ? catalog.filters[fx.filter] : null
             layer.enabled: !!filterDef
             layer.textureSize: Qt.size(1280, 720)
             layer.effect: ShaderEffect {
-                readonly property var f: stage.filterDef || ({})
+                readonly property var f: fxStage.filterDef || ({})
                 property var lut: lutImage
                 property var sprite: spriteImage
                 property var overlay: overlayImage
@@ -553,15 +555,16 @@ Popup {
                         fillMode: VideoOutput.PreserveAspectFit
                         transform: Scale { origin.x: camPreview.width / 2; xScale: rec.mirror ? -1 : 1 }
                         readonly property int camMode: rec.cutoutOn ? 1 : rec.backdropOn && fx.backdrop.kind === "blur" ? 2 : 0
-                        readonly property bool pixelate: !!stage.filterDef && !!stage.filterDef.pixelate
+                        readonly property bool pixelate: !!fxStage.filterDef && !!fxStage.filterDef.pixelate
                         layer.enabled: camMode > 0 || pixelate
                         layer.textureSize: Qt.size(1280, 720)
                         layer.mipmap: camMode === 2
+                        layer.smooth: true
                         layer.effect: ShaderEffect {
                             property var mask: maskSource
                             property real mode: camPreview.camMode
                             property real pixelate: camPreview.pixelate ? 1 : 0
-                            property real blurLod: 4
+                            property real blurLod: 4.5
                             readonly property rect cr: camPreview.contentRect
                             property vector4d content: Qt.vector4d(cr.x / Math.max(1, camPreview.width), cr.y / Math.max(1, camPreview.height), Math.max(1, cr.width) / Math.max(1, camPreview.width), Math.max(1, cr.height) / Math.max(1, camPreview.height))
                             fragmentShader: "../shaders/clip_camera.frag.qsb"
@@ -645,15 +648,15 @@ Popup {
         }
     }
     // The effects' pictures (Microsoft's, from Stream's CDN), as textures.
-    Image { id: lutImage; visible: false; smooth: true; source: stage.filterDef && stage.filterDef.lut ? catalog.url(stage.filterDef.lut.url) : "" }
-    Image { id: spriteImage; visible: false; smooth: true; source: stage.filterDef && stage.filterDef.sprite ? catalog.url(stage.filterDef.sprite.url) : "" }
-    Image { id: overlayImage; visible: false; smooth: true; source: stage.filterDef && stage.filterDef.overlay ? catalog.url(stage.filterDef.overlay.url) : "" }
+    Image { id: lutImage; visible: false; smooth: true; source: fxStage.filterDef && fxStage.filterDef.lut ? catalog.url(fxStage.filterDef.lut.url) : "" }
+    Image { id: spriteImage; visible: false; smooth: true; source: fxStage.filterDef && fxStage.filterDef.sprite ? catalog.url(fxStage.filterDef.sprite.url) : "" }
+    Image { id: overlayImage; visible: false; smooth: true; source: fxStage.filterDef && fxStage.filterDef.overlay ? catalog.url(fxStage.filterDef.overlay.url) : "" }
     Image { id: boardImage; visible: false; smooth: false; source: pictureLayer.boardDef ? catalog.url(pictureLayer.boardDef.url) : "" }
     // The animated filters' sprite: one cell further every 1/fps s.
     Timer {
         id: spriteTimer
         property int index: 0
-        readonly property var sp: stage.filterDef ? stage.filterDef.sprite : null
+        readonly property var sp: fxStage.filterDef ? fxStage.filterDef.sprite : null
         interval: sp ? 1000 / sp.fps : 1000
         repeat: true
         running: !!sp && rec.opened
@@ -692,6 +695,7 @@ Popup {
         fx: fx
         canvasItems: canvasItems
         recording: rec.stage === "recording"
+        cutout: rec.cutoutOn
         onOpenMenu: name => fx.toggle(name)
     }
     // Start recording / Start screen recording.

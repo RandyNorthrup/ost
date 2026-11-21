@@ -25,13 +25,20 @@ layout(binding = 2) uniform sampler2D mask;
 
 vec4 blurred(vec2 uv)
 {
-    // A soft, strong blur from the mipmaps (nine taps at a low level).
-    vec2 d = vec2(1.0 / 80.0, 1.0 / 45.0);
+    // A strong, soft blur: a 7 x 7 Gaussian over the mipmaps at level 4.5
+    // (about 57 x 32), taps 1.5 of its texels apart: about 100 px either
+    // way on the 1280 x 720 clip.
+    vec2 d = vec2(1.5 / 57.0, 1.5 / 32.0);
     vec4 s = vec4(0.0);
-    for (int y = -1; y <= 1; y++)
-        for (int x = -1; x <= 1; x++)
-            s += textureLod(source, uv + vec2(float(x), float(y)) * d, blurLod) * (x == 0 && y == 0 ? 0.25 : (x == 0 || y == 0 ? 0.125 : 0.0625));
-    return s;
+    float total = 0.0;
+    for (int y = -3; y <= 3; y++) {
+        for (int x = -3; x <= 3; x++) {
+            float w = exp(-float(x * x + y * y) / 8.0);
+            s += textureLod(source, uv + vec2(float(x), float(y)) * d, blurLod) * w;
+            total += w;
+        }
+    }
+    return s / total;
 }
 
 void main()

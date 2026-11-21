@@ -429,3 +429,39 @@ extern "C" void ost_window_input_region(const char *title, int x, int y, int w, 
         return;
     win->setMask(w > 0 && h > 0 ? QRegion(x, y, w, h) : QRegion());
 }
+
+// For development: with OST_QML_DIR set (a checkout's desktop/qml), QML
+// files load from there instead of the compiled-in module, so a QML change
+// can be tried without rebuilding. Assets and shaders resolve beside them.
+#include <QtCore/QFile>
+#include <QtQml/QQmlAbstractUrlInterceptor>
+#include <QtQml/QQmlEngine>
+
+namespace {
+class QmlDirInterceptor : public QQmlAbstractUrlInterceptor
+{
+public:
+    explicit QmlDirInterceptor(const QString &dir) : m_dir(dir) {}
+    QUrl intercept(const QUrl &url, DataType type) override
+    {
+        if (type != QmlFile && type != JavaScriptFile)
+            return url;
+        static const QString prefix = QStringLiteral("qrc:/qt/qml/com/ost/desktop/qml/");
+        const QString s = url.toString();
+        if (!s.startsWith(prefix))
+            return url;
+        const QString file = m_dir + QLatin1Char('/') + s.mid(prefix.size());
+        return QFile::exists(file) ? QUrl::fromLocalFile(file) : url;
+    }
+
+private:
+    QString m_dir;
+};
+} // namespace
+
+extern "C" void ost_dev_qml_dir(void *engine, const char *dir)
+{
+    if (!engine || !dir || !*dir)
+        return;
+    static_cast<QQmlEngine *>(engine)->addUrlInterceptor(new QmlDirInterceptor(QString::fromUtf8(dir)));
+}

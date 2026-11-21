@@ -105,7 +105,7 @@ Item {
             anchors.fill: parent; anchors.margins: 3
             clip: true
             horizontalAlignment: TextInput.AlignHCenter; verticalAlignment: TextInput.AlignVCenter
-            font.family: "Arial"; font.pixelSize: 57.6
+            font.family: "Arial"; font.pixelSize: 58
             color: "#FFFFFF"
             Text {
                 anchors.fill: parent
@@ -183,7 +183,8 @@ Item {
     }
     Item {
         id: frame
-        visible: !!ov.sel && !!ov.selItem && !ov.recording
+        // (Not while typing: Stream shows only the caret then.)
+        visible: !!ov.sel && !!ov.selItem && !ov.recording && ov.fx.editing !== ov.fx.selected
         readonly property real pad: 4
         readonly property real sw: ov.sel && ov.selItem ? ov.selItem.boxW * ov.sel.s * ov.sel.sx : 0
         readonly property real sh: ov.sel && ov.selItem ? ov.selItem.boxH * ov.sel.s : 0
@@ -228,6 +229,26 @@ Item {
                         if (d0 > 1) frame.setSel({ sx: Math.max(0.05, frame.start.sx * d1 / d0) })
                     }
                 }
+            }
+        }
+    }
+
+    // ---- You, over an image or video backdrop (Stream's presenter
+    // object): the same frame round the whole picture as it is moved. ----
+    property bool cutout: false
+    Item {
+        visible: ov.cutout && ov.fx.selected === -2 && !ov.recording
+        width: ov.width * ov.fx.pip.s; height: ov.height * ov.fx.pip.s
+        x: (ov.width - width) / 2 + ov.fx.pip.x; y: (ov.height - height) / 2 + ov.fx.pip.y
+        rotation: ov.fx.pip.a
+        Rectangle { anchors.fill: parent; anchors.margins: -1; color: "transparent"; border.color: "#974CFF"; border.width: 2 }
+        Repeater {
+            model: [[0, 0], [1, 0], [0, 1], [1, 1], [0, 0.5], [1, 0.5]]
+            delegate: Rectangle {
+                required property var modelData
+                x: modelData[0] * parent.width - 6; y: modelData[1] * parent.height - 6
+                width: 12; height: 12; radius: 6
+                color: "#FFFFFF"; border.color: "#DDDDDD"; border.width: 1
             }
         }
     }
