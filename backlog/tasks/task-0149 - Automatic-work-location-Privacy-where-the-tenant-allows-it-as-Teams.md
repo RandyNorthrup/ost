@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-15T04:40:00Z'
-updated_date: '2026-11-21T15:44:00Z'
+updated_date: '2026-11-21T16:11:00Z'
 labels:
   - settings
   - presence
@@ -48,4 +48,6 @@ When the tenant's work-location detection policy is on (ECS places.enableWorkLoc
   - Places setting Presence.WorkplaceWifiNetworkSSIDList = 'Default:Condor Cave' (linuxlt's Wi-Fi; tenant-wide by design, only users with the work-location detection policy — the test accounts — use it).
   - Places Wi-Fi device: linuxlt's access point BSSID mapped to OST Test Building (Add-WifiDevices UploadEntries; device a29c1b98-1184-4db5-b9a1-bb22637bc298, place a93350e7-…). Places.EnableBuildings left off (tenant-wide).
   - How (the module's password prompt avoided): MicrosoftPlaces 2.1.13 on winpc (pwsh 7, installed to Documents\PowerShell\Modules, PSGallery marked trusted, msalruntime.dll added), with a device-code token for the module's own app (PlacesCmdletModule 05c7489d-…, resource outlook.office365.com, approved in Chrome as Randy) injected as the module's ManualAccessTokenProvider (CmdletSession.AccessTokenProvider) before Connect-MicrosoftPlaces. Token file deleted from winpc.
+
+- 2026-11-21 live check on linuxlt (ost-test1, Wi-Fi Condor Cave): OST turned detection on with the policy and switch, read the network from NetworkManager and asked the location service; the SSID allow list still came back empty ~30 min after the change (Places says up to 12 h for settings, 24–48 h for BSSIDs), so it correctly treated the network as not an office network. Next check: once the list has "Condor Cave", run with RUST_LOG=warn,ost_desktop::work_location=info and --setf-test --setf-worklocation during ost-test1's working hours (Mon–Fri 8–5 PT); expect "WORKLOC network change: Building { name: OST Test Building }" and the work location in the profile flyout.
 <!-- SECTION:NOTES:END -->
