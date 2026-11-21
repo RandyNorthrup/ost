@@ -1,10 +1,10 @@
 ---
 id: TASK-0225
 title: Interpreter (AI interpretation) in meetings as Teams
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-11-18T23:07:00Z'
-updated_date: '2026-11-21T02:22:00Z'
+updated_date: '2026-11-21T03:27:00Z'
 labels:
   - calls
 dependencies: []
@@ -20,8 +20,8 @@ Found in TASK-0214/0208: Teams shows Interpreter in meetings when the meeting po
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Interpreter shows in OST's meeting controls exactly when it shows in Teams
-- [ ] #2 Turning Interpreter on in OST gives the same interpreted audio and settings as Teams, verified live between test accounts
+- [x] #1 Interpreter shows in OST's meeting controls exactly when it shows in Teams
+- [x] #2 Turning Interpreter on in OST gives the same interpreted audio and settings as Teams, verified live between test accounts
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -39,4 +39,18 @@ Found in TASK-0214/0208: Teams shows Interpreter in meetings when the meeting po
 - Settings dialog rebuilt as Teams' 480 x 524.67 "Interpreter settings" (What you hear / Original audio first / Balance volume slider / How others hear you radios / Save); bar menu items by role as Teams (in group: Turn off for me, Turn off for all, Interpreter settings; organizer not in group: Turn off for all, Interpreter settings); x-much2 logs each speaker with its interpreter gain (proof of the interpreter source being mixed).
 
 - 2026-11-21 01:48 UTC (callsC) OST-side proof of interpreted audio: spatest OST (ost-test1, organizer) in "OST TEST 73 agenda" turned Interpreter on for Spanish (group 4c755f4f…, listeners 1, interpreter source 1256); OST Test 2 (OST) spoke English through the linuxlt speech rig; the bot sent AudioMetadata language es and TranslatedText ("Right side left side right front…" → "Lado derecho lado izquierdo…") for OST Test 2's speech, and x-much2 logged "a speaker starts source=1256 gain=1.0", i.e. the Spanish interpretation was mixed into what OST plays. Both instances logged hang-ups.
+
+- 2026-11-20 merged (620aa14, 63246f1).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+AI interpretation (Interpreter) in meetings as Teams.
+
+- Shows under More ▸ Language and speech and in the new controls' More grid only for the meeting policy plus a Copilot licence, as Teams; the bar items follow the user's role.
+- Teams' flow: Choose an Interpreter mode (Consecutive / Simultaneous), Set up your Interpreter (language, Turn on for me), the indicator and its card (Manage settings, Turn off for me), and the 480-wide Interpreter settings dialog (What you hear, Original audio first, Balance volume, How others hear you).
+- Engine: turn on for the meeting, join/leave a language group, voice choice, audio balance.
+
+Verified live: OST (ost-test1) in Spanish with OST Test 2 speaking English received the interpreter bot's Spanish audio mixed in (logged gain); Teams on winpc showed the same indicator and card. Tile badges not built (never seen in Teams to measure).
+<!-- SECTION:FINAL_SUMMARY:END -->

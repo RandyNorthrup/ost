@@ -1,11 +1,11 @@
 ---
 id: TASK-0199
 title: Meeting chat Q&A, Meeting Whiteboard and Breakout Rooms with rooms as Teams
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-16T09:43:00Z'
-updated_date: '2026-11-21T02:50:00Z'
+updated_date: '2026-11-21T03:27:00Z'
 labels:
   - desktop
 dependencies:
@@ -21,7 +21,7 @@ OST lists a meeting chat's tabs as Teams (Attendance, Breakout Rooms, Q&A, Meeti
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 Q&A and Meeting Whiteboard tabs run in a meeting chat as in Teams
-- [ ] #2 Breakout Rooms with rooms created matches Teams' layout, and its Assign participants, Room settings and Import from CSV work from the tab as in Teams
+- [x] #2 Breakout Rooms with rooms created matches Teams' layout, and its Assign participants, Room settings and Import from CSV work from the tab as in Teams
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -42,4 +42,12 @@ Left: Breakout Rooms with rooms created (layout, Assign participants, Room setti
 - 2026-11-20 (callsC) live on winpc in "OST TEST 235 room camera" (OST Test 3 and OST Test Room added to the chat for the check, removed afterwards): unassigned avatar row = 32 px pictures 8 apart, 15 after Assign participants (fixed spacing 4 → 8). Dark theme measured: card #292929, band #7F85F5 with a #242424 ··· glyph, outline button #292929 / #666666, disabled button #141414 / #5C5C5C with a #424242 edge, toolbar icons #D6D6D6 (disabled #5C5C5C), Create rooms #4F52B2, dialog #292929; High contrast: black card with white edge, white band, black ··· glyph, avatars with a 2 px white ring. OST's card, band, glyph and button colours now follow these (the rest already came from theme tokens).
 - Import from CSV with rooms → "Overwriting rooms and participant assignment" → Continue opens the same "Import CSV file to assign participants to breakout rooms" dialog as with no rooms (OST does the same).
 - "1 participant" fix and the tab rechecked live with OST (spatest): rooms, three unassigned avatars, "+2" overflow tab, cards match Teams side by side (scratchpad c235/ost6, c235/w131/w139/w142). spatest's thread fetch kept getting HTTP 429 (why the tab was missing earlier): OST now waits and asks again (2, 4, 8 s) as Teams' HTTP layer does, after which the tab appears.
+
+- 2026-11-20 merged as 63246f1.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Meeting chat Q&A, Whiteboard and Breakout Rooms with rooms as Teams. The Breakout Rooms tab follows Teams' measurements: 290x250 room cards with the purple band and ··· (Rename, Room options, Delete), Add / Import from CSV / Remove / Settings, unassigned members' 32 px pictures, Assign participants' first step and the assignment table, Breakout rooms settings, Remove rooms? and the CSV overwrite question; dark and high-contrast colours as Teams. Chat requests retry after 2/4/8 s on 429. Verified side by side with Teams on winpc; test rooms removed.
+<!-- SECTION:FINAL_SUMMARY:END -->

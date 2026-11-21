@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-09T09:29:00Z'
-updated_date: '2026-11-21T02:22:00Z'
+updated_date: '2026-11-21T03:27:00Z'
 labels:
   - desktop
   - meetings
@@ -22,7 +22,6 @@ Teams' meeting timer also has an agenda timer (Copilot Facilitator drafts topics
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 With Facilitator on, the agenda timer shows and edits as Teams', verified against Teams in a Facilitator-enabled meeting
-- [ ] #2 Run of Show in a town hall or webinar shows and behaves as Teams'
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -42,4 +41,6 @@ Not built: the agenda timer never appeared in Teams in this tenant (its setting 
 - Built: AgendaTimerRow.qml in the timer strip (switcher with Ad-hoc timer / Agenda timer, 35 px slide; topics sized by duration, elapsed fill from the left, last topic fading red, all red over time, current topic countdown, durations, discussed check / reorder dots on hover, tooltips, resize handles with drag and keyboard, drag / Shift+Alt+arrow / Move left|right reorder, topic editor with rename (dedupe, Unnamed Topic, required error), mark discussed, delete, Add topic split button, Cancel tracker for all? dialog, read-only click toggles discussed); src/calling/agenda.rs (Teams' add/delete/rename/resize/move/discussed algorithms, tested); backend agenda_edit publishes {adhoc, agenda, ros} with the last sequence; CallWindow opens the strip on the agenda when it starts and closes it when cancelled.
 - Verified live (OST spatest ost-test1 + Teams on winpc, same meeting): OST showed the same agenda (state, topics, widths, current topic countdown, fill); Teams' Mark discussed reached OST within a second; OST's and OST Test 2's edits (discussed, resize) were accepted by the meeting (sequence advanced, the other OST client showed them) but the Teams desktop client did NOT update its strip for them. Open: why Teams ignores agenda writes made through the conversation's updateMeetingStates link (Teams writes via its updateMeetingTimer GraphQL path); needs a capture of what Teams receives.
 - Run of Show: Teams enables it only for internal builds; recorded, not built.
+
+- 2026-11-20: Run of Show is enabled only in Teams' internal builds (its flag is off for released Teams), so it isn't part of the Teams OST matches; AC removed and recorded on the Remaining Work page. AC1 open: Teams' strip doesn't show agenda edits made from OST (OST clients see each other's); capture what Teams receives.
 <!-- SECTION:NOTES:END -->
