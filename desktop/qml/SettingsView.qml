@@ -3038,13 +3038,13 @@ Rectangle {
                         const out = []
                         const single = { contact_or_number: [qsTr("Forward to a new number or contact"), qsTr("Also ring a new number or contact"), qsTr("Redirect to a new number or contact")],
                                          number: [qsTr("Forward to a new number"), qsTr("Also ring a new number"), qsTr("Redirect to a new number")],
-                                         contact: [qsTr("Forward to a new contact"), qsTr("Also ring a new contact"), qsTr("Redirect to a new contact")] }[newTarget]
+                                         contact: [qsTr("Forward to a contact"), qsTr("Also ring a contact"), qsTr("Redirect to a contact")] }[newTarget]
                         const k = kind === "forward" ? 0 : kind === "also" ? 1 : 2
                         if (kind === "also") out.push({ value: "DoNothing", label: qsTr("Do not ring anyone else") })
                         if (kind === "unanswered") out.push({ value: "DoNothing", label: qsTr("Do not redirect calls") })
                         if (vmAllowed && kind !== "also") out.push({ value: "Voicemail", label: kind === "forward" ? qsTr("Forward to voicemail") : qsTr("Redirect to voicemail") })
                         if (toUser || toPhone) out.push({ value: "SingleTarget", label: single[k] })
-                        if (groups && !(kind === "unanswered" && (cf.targetType || "") === "Group")) out.push({ value: "Group", label: [qsTr("Forward to call group"), qsTr("Also ring call group"), qsTr("Redirect to call group")][k] })
+                        if (groups && !(kind === "unanswered" && (cf.targetType || "") === "Group")) out.push({ value: "Group", label: [qsTr("Forward to call group"), qsTr("Also ring a call group"), qsTr("Redirect to a call group")][k] })
                         if (delegates && !(kind === "unanswered" && (cf.targetType || "") === "MyDelegates")) out.push({ value: "MyDelegates", label: [qsTr("Forward to delegates"), qsTr("Also ring delegates"), qsTr("Redirect to delegates")][k] })
                         return out
                     }
