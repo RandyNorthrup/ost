@@ -224,6 +224,8 @@ async fn scan() -> zbus::Result<()> {
             let Some(rssi) = props
                 .get("RSSI")
                 .and_then(|v| i16::try_from(v).ok())
+                // 127 is HCI's "not available" (what btvirt reports).
+                .filter(|r| *r != 127)
                 .or_else(|| std::env::var("OST_BT_ASSUMED_RSSI").ok().and_then(|v| v.parse().ok()))
             else {
                 continue;

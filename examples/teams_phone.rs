@@ -16,7 +16,10 @@
 //! usage: OST_PROFILE=<profile> cargo run --example teams_phone --
 //!   [pair|listen] [--name=<device name>] [--controller=<MAC>]
 //!   [--salt=<n>] [--signature=<n>] [--wired] [--desktop=<endpoint id>]
+//!   [--platform=<prefix, e.g. Linux>] [--broadcast-only] [--paired=<desktop id>]
 //!   [--minutes=<n>]
+//! Set OST_CALLING_ENDPOINT_ID to give the phone its own endpoint id when it
+//! shares a profile with OST on one machine.
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
@@ -31,7 +34,10 @@ struct Opts {
     salt: u16,
     signature: i16,
     wired: bool,
+    broadcast_only: bool,
+    paired: Option<String>,
     desktop: Option<String>,
+    platform: Option<String>,
     minutes: u64,
 }
 
@@ -43,7 +49,10 @@ fn opts() -> Opts {
         salt: 0x1620,
         signature: 162,
         wired: false,
+        broadcast_only: false,
+        paired: None,
         desktop: None,
+        platform: None,
         minutes: 30,
     };
     for a in std::env::args().skip(1) {
@@ -56,7 +65,10 @@ fn opts() -> Opts {
             "--salt" => o.salt = v.parse().unwrap_or(o.salt),
             "--signature" => o.signature = v.parse().unwrap_or(o.signature),
             "--wired" => o.wired = true,
+            "--broadcast-only" => o.broadcast_only = true,
+            "--paired" => o.paired = Some(v.into()),
             "--desktop" => o.desktop = Some(v.into()),
+            "--platform" => o.platform = Some(v.into()),
             "--minutes" => o.minutes = v.parse().unwrap_or(o.minutes),
             _ => eprintln!("unknown argument {a}"),
         }
@@ -161,15 +173,15 @@ async fn main() -> Result<()> {
             eprintln!("trouter: {e:#}");
         }
     });
-    let (surl, epid) = loop {
-        if let Some(ep) = teams_cli::trouter::current_endpoint() {
+    let (me, registrar) = loop {
+        if let Some(ep) = teams_cli::trouter::better_together_endpoint() {
             break ep;
         }
         tokio::time::sleep(Duration::from_millis(200)).await;
     };
     // Give the registrations a moment.
     tokio::time::sleep(Duration::from_secs(3)).await;
-    let me = Endpoint::from_surl(&epid, &surl);
+    let me: Endpoint = me;
     println!("phone endpoint {} at {}", me.id, me.url);
     let mut caps = vec![serde_json::json!("BETTER_TOGETHER")];
     if o.wired {
@@ -187,12 +199,18 @@ async fn main() -> Result<()> {
     let beacon = advertise(&o, &oid).ok();
 
     let mut desktop: Option<(String, String)> = None;
+    // Already paired (a phone keeps its pairing across restarts).
+    if let Some(id) = &o.paired {
+        bt::set_paired_ids(vec![id.clone()]);
+        println!("paired with {id} (kept)");
+    }
     if o.pair {
-        let peers = bt::discover(&phone.http, &phone.token, bt::REGISTRAR_URL).await?;
+        let peers = bt::discover(&phone.http, &phone.token, &registrar).await?;
         let peers: Vec<_> = peers.into_iter().filter(|p| p.id != phone.me.id).collect();
         println!("desktops: {:?}", peers.iter().map(|p| (&p.id, &p.app_id, &p.platform)).collect::<Vec<_>>());
         let mut broadcasts = Vec::new();
-        for p in peers.iter().filter(|p| o.desktop.as_ref().is_none_or(|d| *d == p.id)) {
+        let wanted = |p: &&bt::Peer| o.desktop.as_ref().is_none_or(|d| *d == p.id) && o.platform.as_ref().is_none_or(|w| p.platform.starts_with(w.as_str()));
+        for p in peers.iter().filter(wanted) {
             match phone.send(&p.url, command::BROADCAST, serde_json::json!({"targetEndpointId": p.id})).await {
                 Ok(m) => broadcasts.push((m.debug_content.cause_id.clone(), p.clone())),
                 Err(e) => println!("broadcast to {}: {e:#}", p.id),
@@ -219,6 +237,13 @@ async fn main() -> Result<()> {
             }
             bail!("no desktop answered the broadcast");
         };
+        if o.broadcast_only {
+            println!("broadcast answered by {id}; not pairing (--broadcast-only)");
+            if let Some(b) = beacon {
+                stop_advertising(b);
+            }
+            return Ok(());
+        }
         let pair = phone.send(&url, command::PAIR, serde_json::json!({"targetEndpointId": id})).await?;
         let answer = loop {
             let Some(m) = next(&mut events, Duration::from_secs(bt::PAIR_PROMPT_SECS + 15)).await else { break None };

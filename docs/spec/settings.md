@@ -331,8 +331,12 @@ Everything below is in userPersonalSettings unless marked local.
 - **Manage devices** opens "Devices › Manage devices": "Select a device to connect", then the
   Teams phones paired with this PC (Teams' Better Together, TASK-0162): each with Teams'
   screen-and-phone glyph, the phone's name, "Connected" while it is, and **Disconnect**.
-  - Transport (Teams' SlimCore "BTT"): every Teams client of the user registers its calling
-    endpoint id with the registrar on its Trouter socket's `bettertogether` path. A command is
+  - Transport (Teams' SlimCore "BTT", registrar listing read 2026-11-21): Teams desktop's
+    calling registration (NextGenCalling, `DesktopNgc_2.5:SkypeNgc`) carries a second Trouter
+    transport, context `BetterTogether`, path `https://<socket>-t.trouter.teams.microsoft.com
+    :443/…/bettertogether/send` (the socket's user-token front: the `-f` host at 3443 turns a
+    Skype token away with 401). The calling registration id is the endpoint id; the user's
+    endpoints are found by listing the registrar (`{bindings: […]}`). A command is
     one JSON message POSTed to the other side's URL: `{registrationId, command,
     commandSequenceNumber, commandDetails (JSON text), transportDetails {context, endpointType
     "BetterTogether", url}, debugContent {chainId, causeId}}`. The receiver acknowledges it in

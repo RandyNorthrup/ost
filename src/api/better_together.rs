@@ -32,8 +32,12 @@ use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
 /// The Trouter path Better Together endpoints listen on (SlimCore's
-/// CBTTransportUser registers its listener for it).
+/// CBTTransportUser registers its listener for it); commands go to
+/// `<surl>bettertogether/send`.
 pub const TROUTER_PATH: &str = "bettertogether";
+/// The registrar transport's context for it (Teams desktop's calling
+/// registration carries it as a second Trouter transport).
+pub const TRANSPORT_CONTEXT: &str = "BetterTogether";
 /// `transportDetails.endpointType` of a Better Together endpoint (a room
 /// remote's is `RemoteControl`).
 pub const ENDPOINT_TYPE: &str = "BetterTogether";
@@ -178,14 +182,19 @@ impl Endpoint {
     }
 }
 
-/// The Better Together URL on a Trouter socket.
+/// The Better Together URL on a Trouter socket, as Teams registers it: the
+/// socket's address on Trouter's user-token front (`-t` host, port 443;
+/// the `-f` service front at 3443 turns a Skype token away with 401) and
+/// the path `bettertogether/send`.
 pub fn trouter_url(surl: &str) -> String {
-    format!("{}/{TROUTER_PATH}", surl.trim_end_matches('/'))
+    let base = surl.trim_end_matches('/').replacen("-f.trouter.", "-t.trouter.", 1).replacen(":3443/", ":443/", 1);
+    format!("{base}/{TROUTER_PATH}/send")
 }
 
 /// Whether a pushed request's URL is a Better Together command.
 pub fn is_trouter_url(url: &str) -> bool {
-    url.trim_end_matches('/').rsplit('/').next() == Some(TROUTER_PATH)
+    let path = url.split(['?', '#']).next().unwrap_or_default();
+    path.trim_end_matches('/').split('/').any(|seg| seg == TROUTER_PATH)
 }
 
 // ---- Paired devices ----
@@ -385,28 +394,6 @@ pub fn companion_beacon(oid: &str, salt: u16, signature: i16) -> Option<Vec<u8>>
 
 // ---- The transport ----
 
-/// What this client says about itself to the registrar (Teams' BTT stack
-/// info: uiVersion, appId, platform, languageId).
-#[derive(Debug, Clone)]
-pub struct ClientInfo {
-    pub app_id: String,
-    pub platform: String,
-    pub ui_version: String,
-    pub language_id: String,
-}
-
-/// OST's stack info, as Teams builds its own (initializeBTTStackInfo: the
-/// app's version, `<os>_x64`, the client version and the UI language).
-pub fn client_info() -> ClientInfo {
-    let version = env!("CARGO_PKG_VERSION").to_string();
-    ClientInfo {
-        app_id: version.clone(),
-        platform: format!("{}_x64", os_name()),
-        ui_version: version,
-        language_id: Some(crate::i18n::locale()).filter(|l| !l.is_empty()).unwrap_or_else(|| "en-US".into()),
-    }
-}
-
 /// The OS name Teams shows phones for this PC (platformDetectService.getOS).
 pub fn os_name() -> &'static str {
     match std::env::consts::OS {
@@ -414,47 +401,6 @@ pub fn os_name() -> &'static str {
         "macos" => "Mac",
         _ => "Linux",
     }
-}
-
-/// The registrar request that makes this endpoint reachable for Better
-/// Together (its CBTTransportUser registration).
-pub fn registration_body(endpoint: &Endpoint, client: &ClientInfo) -> serde_json::Value {
-    serde_json::json!({
-        "clientDescription": {
-            "appId": client.app_id,
-            "aesKey": "",
-            "languageId": client.language_id,
-            "platform": client.platform,
-            "platformUIVersion": client.ui_version,
-            "templateKey": "",
-        },
-        "registrationId": endpoint.id,
-        "nodeId": "",
-        "transports": {"TROUTER": [{"context": "", "path": endpoint.url, "ttl": 86400}]},
-    })
-}
-
-/// Register this endpoint for Better Together.
-pub async fn register(
-    http: &reqwest::Client,
-    skype_token: &str,
-    registrar_url: &str,
-    endpoint: &Endpoint,
-    client: &ClientInfo,
-) -> Result<()> {
-    let r = http
-        .post(registrar_url.trim_end_matches('/'))
-        .header("X-Skypetoken", skype_token)
-        .json(&registration_body(endpoint, client))
-        .send()
-        .await
-        .context("Better Together registration")?;
-    let status = r.status();
-    if !status.is_success() {
-        bail!("Better Together registration returned {status}");
-    }
-    tracing::info!("Better Together endpoint registered");
-    Ok(())
 }
 
 /// Another Better Together endpoint of the user, as the registrar lists it.
@@ -466,27 +412,29 @@ pub struct Peer {
     pub platform: String,
 }
 
-/// The user's Better Together endpoints in a registrar listing (each
-/// registration whose Trouter path is a `bettertogether` one).
+/// The user's Better Together endpoints in a registrar listing
+/// (`{bindings: [...]}`): each registration with a Trouter transport whose
+/// context is `BetterTogether` (or whose path is a `bettertogether` one).
 pub fn peers_in(listing: &serde_json::Value) -> Vec<Peer> {
-    let regs = listing
-        .get("registrations")
-        .and_then(|r| r.as_array())
-        .cloned()
+    let regs = ["bindings", "registrations"]
+        .iter()
+        .find_map(|k| listing.get(*k).and_then(|r| r.as_array()).cloned())
         .or_else(|| listing.as_array().cloned())
         .unwrap_or_default();
     let mut out = Vec::new();
     for r in regs {
         let id = r.get("registrationId").and_then(|v| v.as_str()).unwrap_or_default();
         let cd = r.get("clientDescription").cloned().unwrap_or_default();
-        let paths = r
-            .pointer("/transports/TROUTER")
-            .and_then(|t| t.as_array())
-            .cloned()
+        let transports = r
+            .get("transports")
+            .and_then(|t| t.as_object())
+            .and_then(|t| t.iter().find(|(k, _)| k.eq_ignore_ascii_case("trouter")).map(|(_, v)| v.clone()))
+            .and_then(|v| v.as_array().cloned())
             .unwrap_or_default();
-        for t in paths {
+        for t in transports {
             let path = t.get("path").and_then(|v| v.as_str()).unwrap_or_default();
-            if is_trouter_url(path) && !id.is_empty() {
+            let context = t.get("context").and_then(|v| v.as_str()).unwrap_or_default();
+            if (context == TRANSPORT_CONTEXT || is_trouter_url(path)) && !id.is_empty() && !path.is_empty() {
                 out.push(Peer {
                     id: id.to_string(),
                     url: path.to_string(),
@@ -614,7 +562,7 @@ mod tests {
     #[test]
     fn messages_carry_details_as_text() {
         let ep = Endpoint::from_surl("ep-1", "https://t.example/v4/f/abc/");
-        assert_eq!(ep.url, "https://t.example/v4/f/abc/bettertogether");
+        assert_eq!(ep.url, "https://t.example/v4/f/abc/bettertogether/send");
         let m = ep.message(command::PAIR, &serde_json::json!({"deviceName": "Phone"}), 3);
         let v = serde_json::to_value(&m).unwrap();
         assert_eq!(v["commandDetails"], "{\"deviceName\":\"Phone\"}");
@@ -628,7 +576,7 @@ mod tests {
         assert_eq!(back.name(), "pair");
         assert_eq!(back.details()["deviceName"], "X");
         assert_eq!(back.cause_id(), "c");
-        assert!(is_trouter_url("https://t.example/v4/f/abc/bettertogether/"));
+        assert!(is_trouter_url("https://t.example/v4/f/abc/bettertogether/send"));
         assert!(!is_trouter_url("https://t.example/v4/f/abc/NGCallManagerWin"));
     }
 
@@ -668,13 +616,18 @@ mod tests {
 
     #[test]
     fn registrar_listing_names_the_phones() {
-        let v = serde_json::json!({"registrations": [
-            {"registrationId": "pc", "clientDescription": {"appId": "TeamsDesktop"},
-             "transports": {"TROUTER": [{"path": "https://t/v4/f/a/bettertogether"}]}},
-            {"registrationId": "chat", "transports": {"TROUTER": [{"path": "https://t/v4/f/a/"}]}}
+        // As the registrar lists Teams desktop (2026-11-21): its calling
+        // registration with a second, BetterTogether, transport.
+        let v = serde_json::json!({"bindings": [
+            {"registrationId": "pc", "clientDescription": {"appId": "NextGenCalling", "platform": "49/26304"},
+             "transports": {"trouter": [
+                {"context": "", "path": "https://t:3443/v3/f/a/NGCallManagerWin"},
+                {"context": "BetterTogether", "path": "https://t:443/v3/f/a/bettertogether/send"}]}},
+            {"registrationId": "chat", "transports": {"trouter": [{"context": "", "path": "https://t/v4/f/a/"}]}}
         ]});
         let p = peers_in(&v);
         assert_eq!(p.len(), 1);
-        assert_eq!((p[0].id.as_str(), p[0].app_id.as_str()), ("pc", "TeamsDesktop"));
+        assert_eq!((p[0].id.as_str(), p[0].app_id.as_str()), ("pc", "NextGenCalling"));
+        assert!(p[0].url.ends_with("/bettertogether/send"));
     }
 }

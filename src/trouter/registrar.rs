@@ -59,14 +59,73 @@ pub async fn register_with_endpoint(
     trouter_surl: &str,
     epid: Option<&str>,
 ) -> Result<()> {
+    register_all(http, skype_token, registrar_url, trouter_surl, epid, None).await
+}
+
+/// This process's calling registration id: Teams' calling endpoint id,
+/// which is also its Better Together endpoint id.
+/// It is kept across runs (the profile's `calling-endpoint-id`), as Teams
+/// keeps its own: paired phones know the PC by it.
+pub fn calling_registration_id() -> &'static str {
+    static ID: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    ID.get_or_init(|| {
+        // A second client of the same profile on one machine (the emulated
+        // phone) names its own.
+        if let Some(id) = std::env::var("OST_CALLING_ENDPOINT_ID").ok().filter(|s| uuid::Uuid::parse_str(s).is_ok()) {
+            return id;
+        }
+        let path = crate::config::Config::config_dir().ok().map(|d| d.join("calling-endpoint-id"));
+        if let Some(id) = path
+            .as_ref()
+            .and_then(|p| std::fs::read_to_string(p).ok())
+            .map(|s| s.trim().to_string())
+            .filter(|s| uuid::Uuid::parse_str(s).is_ok())
+        {
+            return id;
+        }
+        let id = uuid::Uuid::new_v4().to_string();
+        if let Some(p) = path {
+            if let Some(dir) = p.parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
+            let _ = std::fs::write(&p, &id);
+        }
+        id
+    })
+}
+
+/// Like [`register_with_endpoint`]; with `better_together` the calling
+/// (NextGenCalling) registration also carries Teams' Better Together
+/// transport, as Teams desktop registers it: a second Trouter transport
+/// with context `BetterTogether` at `<base>bettertogether/send` (`base`:
+/// the session's `url`, the socket's address for user-token senders), under the
+/// calling registration id ([`calling_registration_id`]).
+pub async fn register_all(
+    http: &reqwest::Client,
+    skype_token: &str,
+    registrar_url: &str,
+    trouter_surl: &str,
+    epid: Option<&str>,
+    better_together: Option<&str>,
+) -> Result<()> {
     let url = registrar_url.trim_end_matches('/').to_string();
 
     for entry in REGISTRATIONS {
+        let calling = entry.app_id == "NextGenCalling";
         let reg_id = match epid {
             Some(e) if entry.app_id == "TeamsCDLWebWorker" && !e.trim().is_empty() => e.to_string(),
+            _ if calling && better_together.is_some() => calling_registration_id().to_string(),
             _ => uuid::Uuid::new_v4().to_string(),
         };
         let path = format!("{}{}", trouter_surl, entry.path_suffix);
+        let mut transports = vec![serde_json::json!({"context": entry.context, "path": path, "ttl": 86400})];
+        if calling && let Some(base) = better_together {
+            transports.push(serde_json::json!({
+                "context": crate::api::better_together::TRANSPORT_CONTEXT,
+                "path": crate::api::better_together::trouter_url(base),
+                "ttl": 86400
+            }));
+        }
 
         let payload = serde_json::json!({
             "clientDescription": {
@@ -79,13 +138,7 @@ pub async fn register_with_endpoint(
             },
             "registrationId": reg_id,
             "nodeId": "",
-            "transports": {
-                "TROUTER": [{
-                    "context": entry.context,
-                    "path": path,
-                    "ttl": 86400
-                }]
-            }
+            "transports": { "TROUTER": transports }
         });
 
         tracing::info!(

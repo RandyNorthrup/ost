@@ -113,7 +113,7 @@ impl Config {
     }
 
     /// Get config directory path
-    fn config_dir() -> Result<PathBuf> {
+    pub fn config_dir() -> Result<PathBuf> {
         let proj_dirs = ProjectDirs::from("com", "teams-cli", "teams-cli")
             .context("Could not determine config directory")?;
         let base = proj_dirs.config_dir().to_path_buf();

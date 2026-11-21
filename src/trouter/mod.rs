@@ -186,19 +186,22 @@ where
     // 5. Register with registrar
     let registrar_ttl_secs: u64 = 86400;
     if let Some(ref reg_url) = session.registrar_url
-        && let Err(e) = registrar::register_with_endpoint(
+        && let Err(e) = registrar::register_all(
             &http,
             skype_token_str,
             reg_url,
             &session.surl,
             Some(&epid),
+            opts.better_together.then_some(session.surl.as_str()),
         )
         .await
     {
         tracing::warn!("Initial registrar registration failed: {:#}", e);
     }
     if opts.better_together {
-        register_better_together(&http, skype_token_str, session.registrar_url.as_deref(), &session.surl, &epid).await;
+        *BETTER_TOGETHER
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some((session.surl.clone(), session.registrar_url.clone().unwrap_or_default()));
     }
     // Publish the endpoint to the presence service: users with no active
     // endpoint show as Offline and are never rung.
@@ -358,8 +361,9 @@ where
                     let surl = session.surl.clone();
                     let reg = reg_url.clone();
                     let ep = epid.clone();
+                    let btt = opts.better_together.then(|| session.surl.clone());
                     tokio::spawn(async move {
-                        if let Err(e) = registrar::register_with_endpoint(&http2, &tok, &reg, &surl, Some(&ep)).await {
+                        if let Err(e) = registrar::register_all(&http2, &tok, &reg, &surl, Some(&ep), btt.as_deref()).await {
                             tracing::warn!("Re-registration failed: {:#}", e);
                         }
                     });
@@ -393,22 +397,18 @@ where
     }
 }
 
-/// Make this socket a Better Together endpoint (Teams desktop's
-/// TransportAgentService: the calling endpoint id, listening on the
-/// socket's `bettertogether` path), so the user's Teams phones can pair.
-async fn register_better_together(
-    http: &reqwest::Client,
-    skype_token: &str,
-    registrar_url: Option<&str>,
-    surl: &str,
-    epid: &str,
-) {
-    use crate::api::better_together as bt;
-    let endpoint = bt::Endpoint::from_surl(epid, surl);
-    let url = registrar_url.unwrap_or(bt::REGISTRAR_URL);
-    if let Err(e) = bt::register(http, skype_token, url, &endpoint, &bt::client_info()).await {
-        tracing::warn!("Better Together registration failed: {:#}", e);
-    }
+/// This socket's Better Together endpoint, once registered: (the
+/// session's `url`, the registrar's URL).
+static BETTER_TOGETHER: std::sync::Mutex<Option<(String, String)>> = std::sync::Mutex::new(None);
+
+/// This process's Better Together endpoint (its calling registration id
+/// and `<url>bettertogether/send`) and the registrar that lists the
+/// user's others, once the socket is up.
+pub fn better_together_endpoint() -> Option<(crate::api::better_together::Endpoint, String)> {
+    let (surl, registrar) = BETTER_TOGETHER.lock().unwrap_or_else(|e| e.into_inner()).clone()?;
+    let ep = crate::api::better_together::Endpoint::from_surl(registrar::calling_registration_id(), &surl);
+    let registrar = if registrar.is_empty() { crate::api::better_together::REGISTRAR_URL.to_string() } else { registrar };
+    Some((ep, registrar))
 }
 
 /// Developer aid: with `OST_TROUTER_DUMP_DIR` set, every frame is written
@@ -629,7 +629,7 @@ fn better_together_ack(frame: &str) -> Option<(u16, String)> {
     if !crate::api::better_together::is_trouter_url(&url) {
         return None;
     }
-    let own = current_endpoint().map(|(_, epid)| epid);
+    let own = Some(registrar::calling_registration_id().to_string());
     Some(crate::api::better_together::acknowledgement(&body, own.as_deref()))
 }
 

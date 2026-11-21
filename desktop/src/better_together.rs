@@ -145,7 +145,7 @@ pub fn start(qt: Qt) {
 
 /// This PC's endpoint, once its Trouter socket is up.
 fn me() -> Option<Endpoint> {
-    teams_cli::trouter::current_endpoint().map(|(surl, epid)| Endpoint::from_surl(&epid, &surl))
+    teams_cli::trouter::better_together_endpoint().map(|(ep, _)| ep)
 }
 
 fn response_salt() -> serde_json::Value {
@@ -164,7 +164,8 @@ async fn url_of(id: &str) -> Option<String> {
         return Some(u);
     }
     let (http, token) = client().await?;
-    let peers = bt::discover(&http, &token, bt::REGISTRAR_URL).await.ok()?;
+    let registrar = teams_cli::trouter::better_together_endpoint().map(|(_, r)| r)?;
+    let peers = bt::discover(&http, &token, &registrar).await.ok()?;
     let mut s = state();
     for p in &peers {
         s.urls.insert(p.id.clone(), p.url.clone());

@@ -2864,7 +2864,7 @@ Rectangle {
                 width: parent.width
                 spacing: 16
                 property var devices: []
-                function reload() { try { devices = JSON.parse(backend.betterTogetherDevices()) } catch (e) { devices = [] } }
+                function reload() { try { btDevices.devices = JSON.parse(backend.betterTogetherDevices()) } catch (e) { btDevices.devices = [] } }
                 onVisibleChanged: if (visible) reload()
                 Connections { target: backend; function onBetterTogetherChanged() { btDevices.reload() } }
                 Text {
