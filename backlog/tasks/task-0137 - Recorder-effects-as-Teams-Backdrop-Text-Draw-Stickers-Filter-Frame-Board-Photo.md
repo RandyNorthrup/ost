@@ -3,11 +3,11 @@ id: TASK-0137
 title: >-
   Recorder effects as Teams: Backdrop, Text, Draw, Stickers, Filter, Frame,
   Board, Photo
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-14T15:44:00Z'
-updated_date: '2026-11-21T19:30:00Z'
+updated_date: '2026-11-21T20:12:00Z'
 labels:
   - messages
   - video
@@ -66,3 +66,13 @@ Teams' video clip recorder (Stream's) has Backdrop (None, Upload, Blur, Microsof
 - 2026-11-21 (teamsH) AC3 over a real picked screen, on linuxlt's KDE: the portal's "Share screen with OST" picker is drawn on the shared screen and can be driven with the uinput pointer (/tmp/click.py: untick "Allow restoring on future sessions", then pick "Laptop screen"). New harness flag --recorder-real-screen (with --recorder-effects-test --recorder-effects-screen): Record asks the desktop's picker and recording starts with its first picture; then Draw on the bar draws into the recording. Live (test3): "screen picked" stage recording, frame 1920x1080 (the real screen), Draw ready while recording, a stroke drawn, 7.6 s clip 1280x720 reviewed; its last frame shows the real screen with the blue stroke burned in. Nothing sent; the clip and frames deleted.
 - Not attempted: the smaller gaps (Recent sections, scrolling past 50 results, darkened fill behind non-16:9 uploaded videos, Board drawer ~15 px short, corner-handle scale/rotate of the cut-out person).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Video clip recorder effects as Teams/Stream: Backdrop (None, Upload, Blur, stock images/videos), Effects (Text, Draw, Stickers, Filter, Frame, Board, Photo) recorded into the clip, and Draw while screen recording.
+
+This round: Draw verified over a real picked screen (linuxlt KDE portal picker driven with the uinput pointer; new --recorder-real-screen flag): the clip shows the real screen with the stroke burned in.
+
+Open (small gaps, not in the criteria): Recent sections, scrolling past 50 results, non-16:9 uploaded video fill, Board drawer height, cut-out corner handles.
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -1,10 +1,10 @@
 ---
 id: TASK-0241
 title: Pop-out windows for Teams' own views and Block bot conversation, as Teams
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-11-21T00:13:00Z'
-updated_date: '2026-11-21T19:39:00Z'
+updated_date: '2026-11-21T20:12:00Z'
 labels:
   - desktop
   - apps
@@ -47,3 +47,13 @@ Teams' app bar menu offers Open in new window for its own views (Chat, Calendar 
 - Built: split Chat pills Unread, Chats, Unmuted (Ctrl+Alt+Q; unmuted chats only), Meeting chats (under More filters when they don't fit); no Followed threads in the Chat pane; the window passes the main window's drafts, mentions and Copilot row and sends Mentions / Drafts / Saved / Copilot to the main window; the window opens on the main window's chat (a chat for split Chat, a channel for Teams); previews one line (line breaks as spaces) everywhere. Add a tab picker: Math.min(901.3, W - 46) x Math.min(647.3, H - 28), Teams' 900 x 565 at 23, 14 in the 946 x 593 pop-out.
 - Live (spatest, --app-bar-test=split:on,...,split:off; new ops split:on|off and wlist:<key>): window 946 x 593, pills ["Unread","Chats","Unmuted"] + more ["Meeting chats"], one-line previews; the window's Add a tab picker 900 x 565 at 23, 14.5 (was 901 x 561). Quick views showed only Saved in that run: OST shows Mentions and Drafts when its activity feed has mentions and it has drafts (the main window's data), which that run hadn't loaded; Teams showed both. Split view put back to Combined.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Open in new window for Teams' own views (Chat, Teams, Activity, Calls, Events) as Teams, and Block bot conversation.
+
+This round (split view, measured on winpc with Separate on for the test): the split Chat window's pills (Unread, Chats, Unmuted, Meeting chats under More filters), quick views without Followed threads, the Copilot row, opening on the chat you were in, one-line previews, and the Add a tab picker at Teams' 900 x 565 in the 946 x 593 pop-out.
+
+Tests: --app-bar-test with the new split:on|off and wlist ops (spatest); split view put back to Combined. Known: Mentions / Drafts quick views follow OST's own data (activity mentions, local drafts), where Teams uses its cloud drafts.
+<!-- SECTION:FINAL_SUMMARY:END -->

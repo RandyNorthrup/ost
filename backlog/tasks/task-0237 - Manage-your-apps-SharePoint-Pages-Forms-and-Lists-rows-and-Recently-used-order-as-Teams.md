@@ -3,10 +3,10 @@ id: TASK-0237
 title: >-
   Manage your apps: SharePoint Pages, Forms and Lists rows and Recently used
   order as Teams
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-11-20T18:48:00Z'
-updated_date: '2026-11-21T19:21:00Z'
+updated_date: '2026-11-21T20:12:00Z'
 labels:
   - desktop
   - apps
@@ -52,3 +52,13 @@ Teams' Manage your apps lists 27 apps for ost-test1; OST lists 24. Teams also sh
 - 2026-11-21 (teamsH) AC1 after a Teams restart on winpc: Teams' stored personal entitlements re-synced (IndexedDB Personal_ring3_6 last update 19:04Z) and now hold Azure Boards 7299542a (Installed), Wikipedia Search 25492237 (Installed) and both "OST TEST channel Agent" apps 24006ec3 / 0dfe1f3c (PreConsented). Teams' Manage your apps, read by app id from each row's React props: 35 rows - 2081505e (OST TEST 206 channel Agent), 2a527703 SharePoint, c3a1996d Workflows, 95de633a Whiteboard, com.microsoft.teamspace.tab.planner, d832a33f Praise, 1542629c Polly, 1c4340de Power BI, 0e3bedea Polls, 0d820ecd OneNote, 96a116ab, 2e49bd44, 331d4605, 4674e5f9, 4aba4be7, 75f31797 Planner, a17b6823, cca447a8, e6d03825, 7299542a Azure Boards, 25492237 Wikipedia Search, 8e55a7b1, 24006ec3 and 0dfe1f3c OST TEST channel Agent, a59fe11a Custom Streaming, 99e46335, 2e3a628d, a6b63365, 4046041d, d2c6f111 SharePoint, db5e5970, feda49f8, 0ae35b36 SharePoint Pages, 81fef3a6 Forms, 26bc2873 Lists.
 - OST (spatest, --manage-apps-test, same minute): the same 35 rows in the same order (OST TEST 206 channel Agent, SharePoint, Workflows, Whiteboard, Planner, Praise, Polly, Power BI, Polls, OneNote, Avatars, Surveys, Excel (Agent), Word (Agent), Planner Agent, Planner, PowerPoint (Agent), Analyst, Researcher, Azure Boards, Wikipedia Search, Facilitator, OST TEST channel Agent x2, Custom Streaming, Updates, Viva Learning, Power Apps, Copilot, SharePoint, Engage, Power BI (MSIT), SharePoint Pages, Forms for Microsoft Teams, Lists). So the two extra rows were Teams' stale copy; no rule left to match. (Custom Streaming is new in both: added and removed again in TASK-0212's town hall test, which left its personal entitlement.)
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Manage your apps lists exactly Teams' rows in Teams' order for ost-test1 (35 rows, compared by app id after Teams re-synced on a restart).
+
+The last difference (Azure Boards and two OST TEST channel Agent rows) was Teams' stale entitlement copy: after the restart Teams lists them too. Team apps come from the aggregated entitlements with your teams' threads; shared apps keyed by app id; Recently used order by the usage service.
+
+Tests: --manage-apps-test (spatest) against Teams' list read on winpc via CDP.
+<!-- SECTION:FINAL_SUMMARY:END -->

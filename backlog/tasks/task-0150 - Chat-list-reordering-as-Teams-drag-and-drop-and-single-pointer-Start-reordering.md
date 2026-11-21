@@ -3,11 +3,11 @@ id: TASK-0150
 title: >-
   Chat list reordering as Teams: drag and drop, and single pointer 'Start
   reordering'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-15T05:37:00Z'
-updated_date: '2026-11-21T19:14:00Z'
+updated_date: '2026-11-21T20:12:00Z'
 labels:
   - chat-list
   - accessibility
@@ -38,3 +38,13 @@ Left: confirm Teams shows OST's team order (not picked up within 7 s; not checke
 - 2026-11-21 (teamsH) team order, both ways, live (spatest = ost-test1; winpc Teams 26304): OST's Start reordering moved OST Test Team above Secure Coast Network Solutions and saved it (users/ME/properties teamsOrder). Teams dragging a team writes exactly the same request (captured: PUT {chatsvc}/v1/users/ME/properties?name=teamsOrder with {"teamsOrder": "[{teamId, order}]"}), and OST read Teams' order back on its next start. Moving it back in OST, the running Teams showed OST's order within about 15 s, no restart. The order ends as it was (Secure Coast Network Solutions, OST Test Team). (One earlier OST write wasn't shown after a Teams restart: Teams had been killed seconds after it; the live check is the clean one.) Chats in Favorites and custom sections were confirmed in Teams after a restart in dd601ea; channels don't reorder in Teams either.
 - Fixed: the generic --shots timer quit --reorder-test runs early (now excluded).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Chat and team reordering as Teams: drag and drop in Favorites, custom sections and teams (dd601ea), single pointer Start reordering, and the order saved where Teams keeps it.
+
+Verified live (2026-11-21): team order written by OST (users/ME/properties teamsOrder, the same request Teams sends when you drag a team) shows in the running Teams on winpc within seconds, and Teams' order reads back into OST; chat order in sections confirmed earlier after a Teams restart. Original order restored.
+
+Tests: --reorder-test=teams --reorder-only-up (spatest), winpc CDP capture of Teams' drag. Fix: the generic --shots timer no longer quits reorder runs.
+<!-- SECTION:FINAL_SUMMARY:END -->
