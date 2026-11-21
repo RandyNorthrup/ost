@@ -361,6 +361,98 @@ fn tenant_id_from_jwt(token: &str) -> Option<String> {
     jwt_claim(token, "tid").filter(|t| is_guid(t))
 }
 
+/// An account signed in on this device (Teams' "Accounts and orgs" list):
+/// each lives in its own profile, with its own tokens and windows.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct Account {
+    /// The profile ("" for the first account, else `OST_PROFILE`).
+    pub profile: String,
+    pub upn: String,
+    pub name: String,
+    #[serde(default)]
+    pub object_id: String,
+    /// The account's last presence, as its window last saw it.
+    #[serde(default)]
+    pub availability: String,
+}
+
+fn accounts_path() -> Result<PathBuf> {
+    let proj_dirs = ProjectDirs::from("com", "teams-cli", "teams-cli").context("Could not determine config directory")?;
+    Ok(proj_dirs.config_dir().join("accounts.json"))
+}
+
+/// Every account signed in on this device, the first one first.
+pub fn accounts() -> Vec<Account> {
+    accounts_path()
+        .ok()
+        .and_then(|p| fs::read_to_string(p).ok())
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+/// The list with `a` recorded (by profile), the first profile first.
+pub fn with_account(mut list: Vec<Account>, a: Account) -> Vec<Account> {
+    match list.iter_mut().find(|x| x.profile == a.profile) {
+        Some(x) => *x = a,
+        None => list.push(a),
+    }
+    list.sort_by_key(|x| !x.profile.is_empty());
+    list
+}
+
+/// Records this profile's account (at sign-in and as its presence
+/// changes); `None` removes it (signed out).
+pub fn record_account(a: Option<Account>) -> Result<()> {
+    let me = profile().unwrap_or_default();
+    let list: Vec<Account> = accounts().into_iter().filter(|x| x.profile != me || a.is_some()).collect();
+    let list = match a {
+        Some(a) => with_account(list, Account { profile: me, ..a }),
+        None => list,
+    };
+    let path = accounts_path()?;
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir)?;
+    }
+    write_private(&path, serde_json::to_string_pretty(&list)?.as_bytes())
+}
+
+/// A profile name for the next account ("account2", "account3", …) that
+/// no account or profile folder uses yet.
+pub fn new_profile_name(list: &[Account], taken: &[String]) -> String {
+    (2..)
+        .map(|n| format!("account{n}"))
+        .find(|p| !list.iter().any(|a| &a.profile == p) && !taken.contains(p))
+        .expect("a free name")
+}
+
+/// The profile folders that already exist.
+pub fn profile_folders() -> Vec<String> {
+    ProjectDirs::from("com", "teams-cli", "teams-cli")
+        .and_then(|d| fs::read_dir(d.config_dir().join("profiles")).ok())
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|e| e.file_name().into_string().ok())
+        .collect()
+}
+
+#[cfg(test)]
+mod account_tests {
+    use super::*;
+
+    #[test]
+    fn accounts_keep_one_per_profile_first_account_first() {
+        let a = Account { profile: "account2".into(), upn: "b@x".into(), ..Default::default() };
+        let first = Account { profile: String::new(), upn: "a@x".into(), ..Default::default() };
+        let list = with_account(with_account(vec![], a.clone()), first.clone());
+        assert_eq!(list[0].upn, "a@x");
+        let again = with_account(list, Account { availability: "Busy".into(), ..a });
+        assert_eq!(again.len(), 2);
+        assert_eq!(again[1].availability, "Busy");
+        assert_eq!(new_profile_name(&again, &["account3".into()]), "account4");
+    }
+}
+
 #[cfg(test)]
 mod tenant_id_tests {
     use super::*;

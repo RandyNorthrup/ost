@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-10T07:56:00Z'
-updated_date: '2026-11-21T16:10:00Z'
+updated_date: '2026-11-21T17:30:00Z'
 labels:
   - desktop
   - settings
@@ -91,4 +91,12 @@ OST's Settings has General, Appearance, Chats and channels, Notifications and ac
 
 - 2026-11-21 (agent setF) Calls for Teams Phone users (Teams 26304; settings-app Fg/Po/also-ring and module 30072 ported as api::call_forwarding, tested): with Enterprise Voice (voiceAdminSettings.isEvEnabled) and the effective teamsCallingPolicy (mt.callingPolicy), Call handling and forwarding shows Forward all my calls (then "Choose how all your calls will be forwarded": voicemail / a new number or contact / call group / delegates), else When you receive a call (Do not ring anyone else / Also ring a new number or contact / call group / delegates, with Teams' people-or-number box and "Delay for this many seconds before ringing"), When you can't answer a call (Do not redirect / voicemail / a new number or contact / call group / delegates) and the ring delay; each option only where the policy allows it; saved as Teams' whole callRedirectionSettings. Ringtones for forwarded (CallGroup) and delegated (Delegate) calls beside yours. Verified on linuxlt (ost-test1, --setf-test): the policy (EV, call groups, delegation, forwarding to user and phone allowed) and the page as Teams shows it; saves covered by unit tests, not flipped live.
 - Still not built: Call group and Manage delegates pages (and so the call-group/delegates targets have no members), Intelligent call delegation, Viewing incoming calls (callViewMode), Notifications ▸ Apps, About's ring line.
+
+- 2026-11-21 (agent setH) measured on winpc (Teams 26304.1207, ost-test1; every setting put back and re-read):
+  - Calls page order: Intelligent call delegation card (top: avatar 32, "Set up" off / "Manage" on), Call handling and forwarding (now ends with ringtones and "Viewing incoming calls" Large/Small window = user property callViewMode immersive|minimized), Voicemail, Out-of-office voicemail, Call group card ("Add a call group" / "Manage" + "Ring everyone at once:" avatars), Delegates card ("Add a delegate" / "Manage").
+  - Call group page (Calls › Call group): picker "Add a call group member" (294 x 33.3), "Group members" + "Ring:" Everyone at once / In the order below (enabled for 2–5 members, max 25), rows 668 x 48 #F0F0F0 r4 with Delete. Saves POST …/callredirectionsettings with callGroupDetails.targets (captured).
+  - Manage delegates page: picker "Add a delegate", "Your delegates" accordion rows (#F0F0F0 header 48, #FAFAFA panel) with Make calls / Receive calls / Change call and delegate settings / Pick up held calls / Join active calls, then "Announce when delegates join the call". POST …/usersettings/{mri}/delegate {userMri,isActive,allowedActions,createdDate}; PATCH …/delegate/{mri} {isActive,allowedActions}; DELETE …/delegate/{mri}; PATCH …/delegationWarningTone {playWarningTone} (all captured but the last, from the bundle).
+  - Intelligent call delegation page: Active/Inactive switch; on: Call handling (external / internal dropdowns, VIPs Edit → Privacy priority access), Personalization (Voice and greeting, Custom instructions, Make a test call), Skills (Follow-ups, spam, recordings), Notifications (banner). PUT {mt}/beta/usersettings/personalAttendantSettings (whole object). Turning it on made Teams create the personal Bookings service "Personal Attendant Followup" (POST {mt}/beta/personalbookings/bookingsService…, service ddf16a17-…; left in place, Teams makes it once). ICD turned off again.
+  - Notifications ▸ Apps: one card, per app (Meeting Recaps 981bbfd0-…, Q&A 5db56dd0-…) an expander row with switch and the activity types; ECS activityCustomizations (settingsAggregation, defaultAppSettings OnlyFeed for Recaps).
+  - About ring line: ECS Segmentation.TeamsRing = ring3_6 (Targeted release) → "<b>Early Access</b> through Targeted release" link (core.aboutRingInfoLinks.targetedReleaseLink, go.microsoft.com/fwlink/?linkid=2254754).
 <!-- SECTION:NOTES:END -->

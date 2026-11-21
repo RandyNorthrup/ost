@@ -21,6 +21,7 @@ Item {
     component Card: Rectangle {
         id: card
         property string icon
+        property string image: ""
         property string title
         property string subtitle
         /// A control on the title's row (single-setting cards).
@@ -79,7 +80,10 @@ Item {
         radius: 8
         color: "transparent"
         border.color: theme.pick("#D1D1D1", "#3D3D3D", "#FFFFFF"); border.width: 0.67
-        FluentIcon { x: card.iconX; y: card.pad + (card.headerHeight - 20) / 2; name: card.icon; size: 20; color: theme.text }
+        FluentIcon { visible: !card.image; x: card.iconX; y: card.pad + (card.headerHeight - 20) / 2; name: card.icon; size: 20; color: theme.text }
+        // A 32 px picture in the icon's place (Teams' Intelligent call
+        // delegation card: 12.7 in, centred on the header row).
+        Image { visible: !!card.image; x: 12.7; y: card.pad + (card.headerHeight - 32) / 2; width: 32; height: 32; source: card.image; sourceSize: Qt.size(64, 64) }
         Text {
             id: titleText
             x: card.titleX; y: card.pad + (card.headerHeight - card.textHeight) / 2

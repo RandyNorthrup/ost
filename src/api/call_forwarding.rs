@@ -196,9 +196,98 @@ pub fn forward_all_off(current: &Value, voicemail_allowed: bool) -> Value {
     also_ring(current, Some("DoNothing"), voicemail_allowed, None)
 }
 
+/// Teams' call group limits (Yi.YM.callForwardingSettings.callGroup).
+pub const CALL_GROUP_MAX_MEMBERS: usize = 25;
+pub const CALL_GROUP_IN_ORDER_MIN: usize = 2;
+pub const CALL_GROUP_IN_ORDER_MAX: usize = 5;
+
+/// Teams' `Cg`: whether the ring order can't be "inOrder" for this many
+/// members (then the Ring dropdown is disabled).
+pub fn call_group_order_locked(members: usize) -> bool {
+    !(CALL_GROUP_IN_ORDER_MIN..=CALL_GROUP_IN_ORDER_MAX).contains(&members)
+}
+
+fn call_group_targets(o: &Value) -> Vec<String> {
+    o["callGroupDetails"]["targets"].as_array().into_iter().flatten().filter_map(|t| t.as_str().map(str::to_string)).collect()
+}
+
+fn set_call_group(o: &mut Value, targets: Vec<String>) {
+    // Teams' `bg`: outside 2–5 members the group rings everyone at once.
+    let order = o["callGroupDetails"]["callOrder"].as_str().unwrap_or("simultaneous").to_string();
+    let order = if call_group_order_locked(targets.len()) { "simultaneous".to_string() } else { order };
+    o["callGroupDetails"]["targets"] = json!(targets);
+    o["callGroupDetails"]["callOrder"] = json!(order);
+}
+
+/// Calls › Call group's "Add a call group member" (settings-app `hm`):
+/// the member goes last; None when the group is full or has them already.
+pub fn call_group_add(current: &Value, member: &str) -> Option<Value> {
+    let mut o = normalized(current);
+    let mut t = call_group_targets(&o);
+    if t.len() >= CALL_GROUP_MAX_MEMBERS || t.iter().any(|x| x == member) {
+        return None;
+    }
+    t.push(member.to_string());
+    set_call_group(&mut o, t);
+    Some(o)
+}
+
+/// A member's Delete (settings-app `_m`'s remove).
+pub fn call_group_remove(current: &Value, member: &str) -> Value {
+    let mut o = normalized(current);
+    let t = call_group_targets(&o).into_iter().filter(|x| x != member).collect();
+    set_call_group(&mut o, t);
+    o
+}
+
+/// "Ring:" Everyone at once ("simultaneous") or In the order below
+/// ("inOrder").
+pub fn call_group_order(current: &Value, order: &str) -> Value {
+    let mut o = normalized(current);
+    o["callGroupDetails"]["callOrder"] = json!(order);
+    o
+}
+
+/// Dragging a member to another place in the in-order list.
+pub fn call_group_move(current: &Value, member: &str, to: usize) -> Value {
+    let mut o = normalized(current);
+    let mut t = call_group_targets(&o);
+    if let Some(i) = t.iter().position(|x| x == member) {
+        let m = t.remove(i);
+        t.insert(to.min(t.len()), m);
+    }
+    o["callGroupDetails"]["targets"] = json!(t);
+    o
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn call_group_add_and_remove_match_the_capture() {
+        let base = json!({ "callForwardingSettings": { "isEnabled": false, "forwardingType": "Simultaneous", "target": null, "delaySeconds": 0 },
+            "unansweredCallSettings": { "isEnabled": true, "targetType": "Voicemail", "target": null, "delaySeconds": 20, "safeForward": null },
+            "callGroupDetails": { "callOrder": "simultaneous", "delaySeconds": 0, "targets": [] }, "favoriteTargets": { "targets": [] } });
+        let added = call_group_add(&base, "8:orgid:b").expect("added");
+        assert_eq!(added["callGroupDetails"], json!({ "callOrder": "simultaneous", "delaySeconds": 0, "targets": ["8:orgid:b"] }));
+        assert_eq!(added["unansweredCallSettings"], base["unansweredCallSettings"]);
+        assert!(call_group_add(&added, "8:orgid:b").is_none());
+        assert_eq!(call_group_remove(&added, "8:orgid:b")["callGroupDetails"]["targets"], json!([]));
+    }
+
+    #[test]
+    fn call_group_order_falls_back_outside_two_to_five() {
+        let mut o = json!({});
+        for m in ["a", "b"] {
+            o = call_group_add(&o, m).unwrap();
+        }
+        o = call_group_order(&o, "inOrder");
+        o = call_group_move(&o, "b", 0);
+        assert_eq!(o["callGroupDetails"]["targets"], json!(["b", "a"]));
+        assert_eq!(call_group_remove(&o, "a")["callGroupDetails"]["callOrder"], "simultaneous");
+        assert!(call_group_order_locked(1) && call_group_order_locked(6) && !call_group_order_locked(5));
+    }
 
     #[test]
     fn forward_all_to_voicemail_matches_the_capture() {

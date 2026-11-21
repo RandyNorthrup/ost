@@ -630,6 +630,25 @@ pub mod qobject {
         #[qinvokable]
         fn sign_out(self: Pin<&mut Backend>);
 
+        /// The other accounts signed in on this device (Teams' Accounts and
+        /// orgs), as JSON: [{profile, upn, name, objectId, availability}].
+        #[qinvokable]
+        fn other_accounts_json(self: Pin<&mut Backend>) -> QString;
+
+        /// Teams' "Add another account": OST's sign-in for a new account
+        /// in its own profile (a window of its own).
+        #[qinvokable]
+        fn add_account(self: Pin<&mut Backend>);
+
+        /// "Switch to account …": that account's window (started if it
+        /// isn't running).
+        #[qinvokable]
+        fn switch_account(self: Pin<&mut Backend>, profile: &QString);
+
+        /// Keeps this account's presence in the device's account list.
+        #[qinvokable]
+        fn note_account_presence(self: Pin<&mut Backend>, availability: &QString);
+
         /// A sign-in web view is about to load `url` (`silent`: the hidden
         /// renewal's view). True when it's the browser sign-in's return
         /// address: the view must stop there, and the sign-in completes.
@@ -5822,6 +5841,59 @@ fn forwarding_change(cur: &serde_json::Value, v: &serde_json::Value, voicemail_a
     }
 }
 
+/// Starts OST for another account's profile ("" = the first account), as
+/// a plain launch: a running window of that account comes forward (its
+/// instance socket), else it starts, signing in first if it must.
+fn launch_profile(profile: &str) {
+    let Ok(exe) = std::env::current_exe() else { return };
+    let mut cmd = std::process::Command::new(exe);
+    if profile.is_empty() {
+        cmd.env_remove("OST_PROFILE");
+    } else {
+        cmd.env("OST_PROFILE", profile);
+    }
+    if let Err(e) = cmd.spawn() {
+        tracing::warn!("couldn't start the other account: {e}");
+    }
+}
+
+/// Calls › Call group's changes (api::call_forwarding's call_group_*):
+/// {op: add|remove|order|move, member, order, to}.
+fn call_group_change(cur: &serde_json::Value, v: &serde_json::Value) -> Option<serde_json::Value> {
+    use api::call_forwarding as cf;
+    let member = v["member"].as_str().unwrap_or_default();
+    match v["op"].as_str().unwrap_or_default() {
+        "add" => cf::call_group_add(cur, member),
+        "remove" => Some(cf::call_group_remove(cur, member)),
+        "order" => Some(cf::call_group_order(cur, v["order"].as_str().unwrap_or("simultaneous"))),
+        "move" => Some(cf::call_group_move(cur, member, v["to"].as_u64().unwrap_or(0) as usize)),
+        _ => None,
+    }
+}
+
+/// Manage delegates' changes shown at once (the voice admin settings'
+/// delegationSettings shape).
+fn delegation_change(cur: &serde_json::Value, v: &serde_json::Value) -> serde_json::Value {
+    use api::call_delegation as cd;
+    let mut d = if cur.is_object() { cur.clone() } else { json!({}) };
+    let mut list = cd::delegates_of(&json!({ "delegationSettings": d }));
+    let mri = v["mri"].as_str().unwrap_or_default();
+    match v["op"].as_str().unwrap_or_default() {
+        "add" if !list.iter().any(|x| x["userMri"].as_str() == Some(mri)) => list.push(cd::add_body(mri, "")),
+        "remove" => list.retain(|x| x["userMri"].as_str() != Some(mri)),
+        "action" => {
+            for x in list.iter_mut().filter(|x| x["userMri"].as_str() == Some(mri)) {
+                let body = cd::edit_body(&x["allowedActions"], v["action"].as_str().unwrap_or_default(), v["on"].as_bool().unwrap_or(false));
+                x["allowedActions"] = body["allowedActions"].clone();
+            }
+        }
+        "tone" => d["playWarningTone"] = json!(v["on"].as_bool().unwrap_or(false)),
+        _ => {}
+    }
+    d["userDelegates"]["delegates"] = json!(list);
+    d
+}
+
 pub fn compose_copilot_state(license: Option<&serde_json::Value>) -> serde_json::Value {
     let on = |ns: &str, key: &str, dflt: bool| api::ecs::setting(ns, key).and_then(|v| v.as_bool()).unwrap_or(dflt);
     let licensed = license.and_then(|l| l["isCopilot"].as_bool()).unwrap_or(false);
@@ -8818,7 +8890,36 @@ impl qobject::Backend {
         self.as_mut().set_renew_page(QString::from(url.as_str()));
     }
 
+    pub fn other_accounts_json(self: Pin<&mut Self>) -> QString {
+        let me = teams_cli::config::profile().unwrap_or_default();
+        let list: Vec<serde_json::Value> = teams_cli::config::accounts()
+            .into_iter()
+            .filter(|a| a.profile != me && !a.upn.is_empty())
+            .map(|a| json!({ "profile": a.profile, "upn": a.upn, "name": a.name, "objectId": a.object_id, "availability": a.availability }))
+            .collect();
+        QString::from(serde_json::Value::Array(list).to_string().as_str())
+    }
+
+    pub fn add_account(self: Pin<&mut Self>) {
+        let list = teams_cli::config::accounts();
+        let profile = teams_cli::config::new_profile_name(&list, &teams_cli::config::profile_folders());
+        launch_profile(&profile);
+    }
+
+    pub fn switch_account(self: Pin<&mut Self>, profile: &QString) {
+        launch_profile(&profile.to_string());
+    }
+
+    pub fn note_account_presence(self: Pin<&mut Self>, availability: &QString) {
+        let avail = availability.to_string();
+        let mine = teams_cli::config::accounts().into_iter().find(|a| a.profile == teams_cli::config::profile().unwrap_or_default());
+        if let Some(a) = mine.filter(|a| a.availability != avail) {
+            let _ = teams_cli::config::record_account(Some(teams_cli::config::Account { availability: avail, ..a }));
+        }
+    }
+
     pub fn sign_out(mut self: Pin<&mut Self>) {
+        let _ = teams_cli::config::record_account(None);
         // As Teams: remove this presence endpoint before the tokens go
         // (the request needs them).
         let _ = runtime().block_on(async {
@@ -15101,8 +15202,19 @@ impl qobject::Backend {
                         this.as_mut().set_user_name(QString::from(name.as_str()));
                         this.as_mut().load_profile();
                         this.as_mut().load_engagement();
-                        this.as_mut().rust_mut().my_mri = teams_cli::config::Config::load()
-                            .ok()
+                        let cfg = teams_cli::config::Config::load().ok();
+                        // This device's accounts (Teams' Accounts and orgs).
+                        if let Some(c) = &cfg
+                            && let Some(upn) = c.user_principal_name()
+                        {
+                            let _ = teams_cli::config::record_account(Some(teams_cli::config::Account {
+                                upn,
+                                name: c.display_name().unwrap_or_default(),
+                                object_id: c.object_id().unwrap_or_default(),
+                                ..Default::default()
+                            }));
+                        }
+                        this.as_mut().rust_mut().my_mri = cfg
                             .and_then(|c| c.object_id())
                             .map(|oid| format!("8:orgid:{oid}").to_ascii_lowercase());
                         let mri = this.rust().my_mri.clone().unwrap_or_default();
@@ -24284,6 +24396,11 @@ impl qobject::Backend {
                     json!({ "state": "error", "checkedAt": checked, "previewAllowed": preview_allowed, "preview": preview })
                 }
             };
+            // About's "Early Access through Targeted release" line.
+            let mut v = v;
+            if let Some((text, url)) = api::ecs::about_ring() {
+                v["ring"] = json!({ "text": text, "url": url });
+            }
             let _ = qt.queue(move |mut this| this.as_mut().set_update_json(QString::from(v.to_string().as_str())));
         });
     }
@@ -24576,6 +24693,39 @@ impl qobject::Backend {
                     mt["voice"]["ringtoneSettings"] = admin["ringtoneSettings"].clone();
                     mt["vm"] = api::preferences::voicemail_settings_of(&admin);
                     mt["callingPolicy"] = api::preferences::calling_policy(&client, &admin).await;
+                    // Manage delegates and Intelligent call delegation
+                    // read the same store (Teams' voiceAdminSettings).
+                    mt["delegation"] = admin["delegationSettings"].clone();
+                    mt["attendant"] = admin["personalAttendantSettings"].clone();
+                }
+                // Notifications ▸ Apps (api::app_notifications): the apps
+                // from your feed and saved settings, with their rows.
+                {
+                    use api::app_notifications as an;
+                    let custom = api::ecs::setting("activity", "activityCustomizations").filter(|c| c.is_array()).unwrap_or_else(an::default_customizations);
+                    let url = format!("{}/v1/users/ME/conversations/48:notifications/messages?pageSize=200&view=msnp24Equivalent", client.chat_service_url());
+                    let feed: serde_json::Value = match client.chat_get(&url).await {
+                        Ok(r) => r.json().await.unwrap_or_default(),
+                        Err(_) => json!({}),
+                    };
+                    let ids = an::app_ids(&feed["messages"], props.get("userGraphSettings").unwrap_or(&serde_json::Value::Null), &custom);
+                    let defs = if ids.is_empty() { Vec::new() } else { api::app_details::definitions(&client, &ids).await.unwrap_or_default() };
+                    let apps: Vec<serde_json::Value> = ids
+                        .iter()
+                        .filter_map(|id| defs.iter().find(|d| d["id"].as_str().map(str::to_lowercase).as_deref() == Some(id.as_str())))
+                        .filter_map(|d| {
+                            let (rows, toast) = an::app_rows(d, &custom);
+                            (!rows.is_empty()).then(|| json!({ "id": d["id"], "name": d["name"], "icon": d["largeImageUrl"], "toastDefault": toast, "rows": rows }))
+                        })
+                        .collect();
+                    mt["appNotifications"] = json!(apps);
+                }
+                // Intelligent call delegation: ECS calling.
+                // enablePersonalAttendant and the effective
+                // teamsPersonalAttendantPolicy.
+                if api::ecs::setting("calling", "enablePersonalAttendant").and_then(|v| v.as_bool()).unwrap_or(false) {
+                    let p = api::custom_emoji::effective_policies(&client, &["teamsPersonalAttendantPolicy"]).await.unwrap_or_default();
+                    mt["attendantPolicy"] = p.pointer("/teamsPersonalAttendantPolicy/value").cloned().unwrap_or_default();
                 }
                 anyhow::Ok(json!({ "props": props, "mt": mt, "loaded": true }))
             }
@@ -24608,6 +24758,16 @@ impl qobject::Backend {
             let vm = all["mt"]["callingPolicy"]["allowVoicemail"].as_str() != Some("AlwaysDisabled");
             let next = forwarding_change(&cur, &value, vm);
             all["mt"]["voice"]["callRedirectionSettings"] = next;
+        } else if kind == "mt" && name == "callGroup" {
+            let cur = all["mt"]["voice"]["callRedirectionSettings"].clone();
+            if let Some(next) = call_group_change(&cur, &value) {
+                all["mt"]["voice"]["callRedirectionSettings"] = next;
+            }
+        } else if kind == "mt" && name == "delegate" {
+            all["mt"]["delegation"] = delegation_change(&all["mt"]["delegation"], &value);
+        } else if kind == "mt" && name == "attendant" {
+            let base = all["mt"]["attendant"].clone();
+            all["mt"]["attendant"] = api::preferences::merged(if base.is_object() { base } else { json!({}) }, &value);
         } else if kind == "mt" && name == "voicemail" {
             // Teams' voicemail mutation sends the whole settings with the
             // change (settings-app $a / bA / rg), and shows them at once.
@@ -24649,6 +24809,59 @@ impl qobject::Backend {
                     let vm = current["mt"]["callingPolicy"]["allowVoicemail"].as_str() != Some("AlwaysDisabled");
                     let body = forwarding_change(&current["mt"]["voice"]["callRedirectionSettings"], &value, vm);
                     api::preferences::set_voice_setting(&client, "redirection", &body).await?;
+                    anyhow::Ok(None)
+                } else if kind == "mt" && name == "callGroup" {
+                    let current: serde_json::Value = serde_json::from_str(&before).unwrap_or_default();
+                    match call_group_change(&current["mt"]["voice"]["callRedirectionSettings"], &value) {
+                        Some(body) => api::preferences::set_voice_setting(&client, "redirection", &body).await?,
+                        None => anyhow::bail!("call group full"),
+                    }
+                    anyhow::Ok(None)
+                } else if kind == "mt" && name == "delegate" {
+                    use api::call_delegation as cd;
+                    let mri = value["mri"].as_str().unwrap_or_default().to_string();
+                    match value["op"].as_str().unwrap_or_default() {
+                        "add" => cd::add_delegate(&client, &mri).await?,
+                        "remove" => cd::remove_delegate(&client, &mri).await?,
+                        "tone" => cd::set_warning_tone(&client, value["on"].as_bool().unwrap_or(false)).await?,
+                        "action" => {
+                            let current: serde_json::Value = serde_json::from_str(&before).unwrap_or_default();
+                            let actions = cd::delegates_of(&json!({ "delegationSettings": current["mt"]["delegation"] }))
+                                .into_iter()
+                                .find(|d| d["userMri"].as_str() == Some(mri.as_str()))
+                                .map(|d| d["allowedActions"].clone())
+                                .unwrap_or_default();
+                            let body = cd::edit_body(&actions, value["action"].as_str().unwrap_or_default(), value["on"].as_bool().unwrap_or(false));
+                            cd::edit_delegate(&client, &mri, &body).await?
+                        }
+                        _ => {}
+                    }
+                    anyhow::Ok(None)
+                } else if kind == "mt" && name == "attendant" {
+                    // Teams PUTs the whole settings; the first turn-on
+                    // where Bookings is allowed also makes the follow-up
+                    // booking page and saves its ids.
+                    use api::call_delegation as cd;
+                    let current: serde_json::Value = serde_json::from_str(&before).unwrap_or_default();
+                    let base = current["mt"]["attendant"].clone();
+                    let mut next = api::preferences::merged(if base.is_object() { base.clone() } else { json!({}) }, &value);
+                    let first_on = cd::wants_bookings(&current["mt"]["attendantPolicy"], &base, value["isEnabled"].as_bool() == Some(true))
+                        && api::ecs::setting("calling", "enableBookingsByDefaultForPA").and_then(|v| v.as_bool()).unwrap_or(true);
+                    if first_on {
+                        next["enableBookingCalendar"] = json!(true);
+                    }
+                    cd::set_attendant(&client, &next).await?;
+                    if first_on {
+                        let email = client.user_principal_name().unwrap_or_default();
+                        match cd::create_bookings_service(&client, &email).await {
+                            Ok((service, code)) => {
+                                next["bookingServiceId"] = json!(service);
+                                next["bookingCode"] = json!(code);
+                                cd::set_attendant(&client, &next).await?;
+                            }
+                            Err(e) => tracing::warn!("follow-up booking page not made: {}", short_error(&e)),
+                        }
+                    }
                     anyhow::Ok(None)
                 } else if kind == "mt" && name == "voicemail" {
                     let current: serde_json::Value = serde_json::from_str(&before).unwrap_or_default();

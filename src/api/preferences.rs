@@ -165,8 +165,11 @@ pub const JSON_PROPERTIES: [&str; 7] = [
 
 /// Settings kept as plain string user properties ("true", "COMFY", …),
 /// written as Teams' Settings writes them.
-pub const PLAIN_PROPERTIES: [&str; 8] = [
+pub const PLAIN_PROPERTIES: [&str; 9] = [
     "messageDensity",
+    // Settings ▸ Calls ▸ Viewing incoming calls: "immersive" (Large
+    // window, the default) or "minimized" (Small window).
+    "callViewMode",
     "readReceiptsEnabled",
     "enableChannelsV2",
     "userEnableSurveysNotification",

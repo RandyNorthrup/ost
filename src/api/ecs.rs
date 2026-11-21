@@ -227,4 +227,36 @@ mod tests {
         assert_eq!(setting_in(&v, "extensibility", "enableChannelApps"), Some(serde_json::json!(true)));
         assert_eq!(setting_in(&v, "extensibility", "b"), None);
     }
+
+    #[test]
+    fn ring_line_for_targeted_release_only() {
+        let v = serde_json::json!({ "Segmentation": { "TeamsRing": "ring3_6" } });
+        assert_eq!(about_ring_in(&v).unwrap().0, "Targeted release");
+        assert!(about_ring_in(&serde_json::json!({ "Segmentation": { "TeamsRing": "general" } })).is_none());
+    }
+}
+
+/// About's ring line (settings-app `by` / `wy` / `Ty`): shown when the
+/// user's ring is Early Access (Teams' host takes the ring from ECS
+/// Segmentation.TeamsRing, "ring3_6" for Targeted release users), with
+/// the link Teams' core.aboutRingInfoLinks gives (its defaults below).
+/// Returns (link text, url) or None.
+pub fn about_ring_in(v: &serde_json::Value) -> Option<(String, String)> {
+    let ring = v.get("Segmentation")?.get("TeamsRing")?.as_str()?;
+    let off = setting_in(v, "core", "disableAboutRingInfo").and_then(|x| x.as_bool()).unwrap_or(false);
+    if off || ring != "ring3_6" {
+        return None;
+    }
+    let links = setting_in(v, "core", "aboutRingInfoLinks").unwrap_or_default();
+    let link = |k: &str, d: &str| links.get(k).and_then(|x| x.as_str()).unwrap_or(d).to_string();
+    if setting_in(v, "core", "enableReleaseDashboardButton").and_then(|x| x.as_bool()).unwrap_or(false) {
+        return Some(("Ring 3.6".into(), link("internalPreviewLink", "https://aka.ms/Ring3.6")));
+    }
+    // The ring the host was given is the user's own (isAssignedRing), so
+    // an Early Access user is in Targeted release.
+    Some(("Targeted release".into(), link("targetedReleaseLink", "https://go.microsoft.com/fwlink/?linkid=2254754")))
+}
+
+pub fn about_ring() -> Option<(String, String)> {
+    SETTINGS.read().ok()?.as_ref().and_then(about_ring_in)
 }

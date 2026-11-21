@@ -480,12 +480,91 @@ and a Copilot licence, and is in Targeted release):
   Large window / Small window, pictures `evergreen-assets/settings/calling/{immersive,minimized}-
   view-{theme}.svg`), and the Call group (Add a call group → "Calls › Call group": "Add a call
   group member", Type a name or number) and Delegates (Add a delegate → "Calls › Manage
-  delegates") cards. (Not built in OST yet.)
+  delegates") cards. (Built: see "Calls ▸ Call group, Delegates, …" below.)
 - **About ▸ Version**: a ring line "**Early Access** through Targeted release ↗" (the host's ring
   ring3_6 assigned = Targeted release; links from ECS core.aboutRingInfoLinks), and an **Early
   access** card with "Public preview" (the desktop host's setNextLaunchIsPublicPreview, offered when
-  the update policy allows public preview). (Not built in OST yet.)
+  the update policy allows public preview). (Built.)
 
+
+## Calls ▸ Call group, Delegates, Intelligent call delegation, Viewing incoming calls (measured on winpc 2026-11-21)
+
+Teams 26304, ost-test1 (Teams Phone). Page order: **Intelligent call delegation** (first card,
+where ECS calling.enablePersonalAttendant and teamsPersonalAttendantPolicy.personalAttendant is
+`EnabledUserOverride` or `Enabled`), **Call handling and forwarding** (ending with the three
+ringtones and Viewing incoming calls), **Voicemail**, **Out-of-office voicemail** (the heading
+lost its "Manage"), **Call group**, **Delegates**.
+
+- **Intelligent call delegation card** (77.3 tall): the 32 px avatar
+  (`evergreen-assets/personal-attendant/personal_attendant_avatar.svg`) at 12.7, "Intelligent call
+  delegation" and "An AI-powered tool that answers, routes, and filters calls on your behalf.",
+  button "Set up" (off) / "Manage" (on) → "Calls › Intelligent call delegation":
+  - The switch card (129.3 tall where the policy is EnabledUserOverride): a 10 px status dot (on
+    #0E700E; off hollow, 0.67 #707070) at the body's left, "Active" / "Inactive" 22 after it, the
+    switch at the end.
+  - On: four collapsible cards (a 32 x 31.3 chevron button at the end): **Call handling**
+    (call-inbound icon; "Control how your calls are managed. Any call you don’t answer will be
+    handled on your behalf."; "Choose how external calls are handled" where inboundFederatedCalls
+    and inboundPSTNCalls are EnabledUserOverride, "Choose how internal calls are handled" where
+    inboundInternalCalls is: Automatically answer calls / Let calls ring me first; "VIPs" with
+    "Calls from these people go straight to you…" and Edit → Privacy ▸ Manage priority access),
+    **Personalization** (Voice and greeting, Custom instructions, "Test voice quality and
+    interaction behavior" Make a test call), **Skills** (Follow-ups where calendarBookings allows;
+    "Prevent suspected spam calls from disturbing you" = enableCallScreening, on unless false,
+    where callScreening allows; "Save transcriptions and recordings for all screened calls" =
+    enableAutomaticRecording + enableAutomaticTranscription where both allow), **Notifications**
+    ("Display banner for answered calls" = enableScreeningNotification).
+  - Saved with `PUT {mt}/beta/usersettings/personalAttendantSettings`, the whole object
+    (bookingCalendarId, bookingCode, bookingServiceId, calleeName, defaultLanguage, defaultTone,
+    defaultVoice, enable* flags, id "personalAttendantSettingsId", isEnabled). Read from the voice
+    admin settings' personalAttendantSettings.
+  - The first turn-on where Bookings is allowed (ECS enableBookingsByDefaultForPA, on) sets
+    enableBookingCalendar and makes the personal Bookings service: `POST {mt}/beta/personalbookings/
+    bookingsService?email=<upn>&settingsSync=false&provisionMailbox=true` {title "Personal Attendant
+    Followup", PT30M, maximumAdvance P60D, minimumLeadTime PT1H, timeSlotInterval PT15M, private,
+    online, …} → bookingUrlDetails {serviceId, bookingCode}, then PUTs the settings again with them.
+  - With it on, Call handling and forwarding shows, in place of the forwarding choices, the 28.8 px
+    avatar and "Intelligent call delegation answers incoming (external) calls on your behalf.
+    Settings below apply only when calls are routed to you." (card 603 tall).
+- **Viewing incoming calls** (in the forwarding card, 31.7 under the last ringtone): the title,
+  Teams' 12/16 subtitle ("…only the large window will show when you or someone else enables RTT
+  or captions."), then two picture radios 12 below (168 x 133, 181.4 apart): Large window /
+  Small window = user property callViewMode `immersive` (default) | `minimized`. Teams reads it
+  when you accept a 1:1 or group call (ECS enableMinimizedViewForCalls) and opens the call that way.
+- **Call group card** (77.3 tall, people-team icon): "Call group members can receive calls on
+  your behalf." with "Add a call group", or "Manage" plus "Ring everyone at once:" / "Ring in the
+  order below:" (14/20, 26 tall) and the members' 32 px pictures (151.3 tall with one).
+  "Calls › Call group": the card's subtitle "Call group members can receive calls on your behalf.
+  Select members to be in your call group and then forward to them whenever you need to.", "Add a
+  call group member" with the people picker (294 x 33.3, #F0F0F0, radius 4) at the right; with
+  members, "Group members" and "Ring:" (12, #C7C7C7 while disabled) Everyone at once / In the order
+  below (12/600; disabled outside 2–5 members, tooltip "Pick the ring order for your call group
+  members to receive your calls"), and a row per member: 668 x 48, #F0F0F0, radius 4, padding 8 7
+  8 12, picture 32 with presence, the name 14/20 at 52, Delete (32 x 31.3) at the end. At most 25
+  ("Maximum number of call group members reached"). Saved at once: `POST …/callredirectionsettings`
+  with callGroupDetails.targets (and callOrder, falling back to simultaneous outside 2–5).
+- **Delegates card** (109.3 tall): "Delegates can make and receive calls on your behalf. They'll
+  be notified when you change call settings to send your calls to them." with "Add a delegate" /
+  "Manage" and the delegates' pictures. "Calls › Manage delegates": the card "Add a delegate" with
+  "Delegates can receive and make calls on your behalf. Once you add a delegate, select them to
+  choose what they can do.", the picker row; "Your delegates" (14/20); each delegate an expander:
+  header 668 x 48 #F0F0F0 (chevron at 12, picture 32 at 36, name, Delete), panel #FAFAFA with five
+  checkboxes 33 apart (Make calls, Receive calls, Change call and delegate settings, Pick up held
+  calls on; Join active calls off), then "Announce when delegates join the call" / "You will only
+  be notified when delegates join an active call." with its switch.
+  - `POST {mt}/beta/usersettings/{mri}/delegate` {userMri, isActive true, allowedActions,
+    createdDate}; `PATCH …/delegate/{delegateMri}` {isActive, allowedActions}; `DELETE
+    …/delegate/{delegateMri}`; `PATCH …/delegationWarningTone` {playWarningTone}. Read from the
+    voice admin settings' delegationSettings (userDelegates.delegates, userDelegators.delegators).
+
+## About ▸ ring line (TASK-0088)
+
+Teams' host asks ECS with the user's id and tenant; Segmentation.TeamsRing ("ring3_6" for a
+Targeted release user) becomes its ring (ecs_request_param.json on winpc). The About page shows
+"**Early Access** through" and the link when ring.id is ring3_6 (core.disableAboutRingInfo off):
+"Targeted release" (the ring is the user's own, isAssignedRing) → core.aboutRingInfoLinks.
+targetedReleaseLink (default https://go.microsoft.com/fwlink/?linkid=2254754); "Ring 3.6" with
+enableReleaseDashboardButton.
 ## Copilot surfaces (TASK-0165, Teams 26304)
 
 - **Search box**: with the licence (`userLicenseDetails.isCopilot`) and ECS

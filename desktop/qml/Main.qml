@@ -522,6 +522,9 @@ Window {
     // the presence badge; the account row, the status submenu (with Reset
     // Status), Help › Collect Support Files, and Quit, the only real quit.
     readonly property string myPresence: titleBar.presence
+    // This account's status in the device's account list (the other
+    // accounts' flyouts show it, as Teams' Accounts and orgs do).
+    onMyPresenceChanged: if (backend.signedIn) backend.noteAccountPresence(myPresence)
     readonly property string trayKind: {
         const p = myPresence.toLowerCase()
         return (p === "available" || p === "availableidle") ? "available"
@@ -11804,6 +11807,78 @@ Window {
             else if (step === 38) settingsView.scrollToForTest(500)
             else if (step === 39) shot("calls-2")
             else if (step === 40) Qt.quit()
+            step++
+        }
+    }
+
+    // --seth-test --shots=<dir> (TASK-0088): Settings ▸ Calls' Teams 26304
+    // additions (Intelligent call delegation card and page, Viewing incoming
+    // calls, Call group and Delegates cards and pages), Notifications ▸
+    // Apps opened, About's ring line. With --seth-saves it also saves and
+    // reads back from the services, then puts back: OST Test 2 added to and
+    // removed from the call group, as a delegate (Join active calls on),
+    // Small window then Large window, a ringtone, the unanswered delay, and
+    // the first app row Off then as it was. SETH lines; pictures sh-*.png.
+    Timer {
+        running: Qt.application.arguments.indexOf("--seth-test") >= 0 && backend.signedIn && !!backend.teamsJson && backend.settingsJson.length > 0
+        interval: 2500; repeat: true
+        property int step: 0
+        property var firstApp: null
+        property int firstLevel: 1
+        onTriggered: {
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "sh-" + n + ".png"))
+            const saves = Qt.application.arguments.indexOf("--seth-saves") >= 0
+            const s = () => JSON.parse(backend.settingsJson)
+            const two = "8:orgid:9edcc62f-2f4b-4f55-bbf9-02c7cbaadbb5"
+            const log = tag => { const v = s(), mt = v.mt || {}, r = (mt.voice || {}).callRedirectionSettings || {}
+                console.warn("SETH", tag, JSON.stringify({ group: r.callGroupDetails, unanswered: r.unansweredCallSettings, delegation: mt.delegation, view: (v.props || {}).callViewMode,
+                    ringtones: (((mt.voice || {}).ringtoneSettings || {}).assignments || {}).ringToneAssignments, attendant: (mt.attendant || {}).isEnabled, policy: mt.attendantPolicy,
+                    apps: (mt.appNotifications || []).map(a => a.name + ":" + a.rows.length), graph: firstApp ? ((v.props || {}).userGraphSettings || {})[firstApp.id] : null })) }
+            if (step === 0) { rail.current = "settings"; settingsView.pageForTest("calls"); log("start") }
+            else if (step === 2) shot("calls")
+            else if (step === 3) settingsView.scrollToForTest(700)
+            else if (step === 4) shot("calls-2")
+            else if (step === 5) settingsView.scrollToForTest(1700)
+            else if (step === 6) shot("calls-3")
+            else if (step === 7) settingsView.pageForTest("calls", "attendant")
+            else if (step === 8) shot("attendant")
+            else if (step === 9) settingsView.pageForTest("calls", "callGroup")
+            else if (step === 10) shot("callgroup")
+            else if (step === 11) settingsView.pageForTest("calls", "delegates")
+            else if (step === 12) shot("delegates")
+            else if (step === 13) { settingsView.pageForTest("notifications"); settingsView.scrollToForTest(5000); firstApp = (s().mt.appNotifications || [])[0] || null }
+            else if (step === 14) { settingsView.openAppsForTest(); }
+            else if (step === 15) { settingsView.scrollToForTest(5000); }
+            else if (step === 16) shot("apps")
+            else if (step === 17) settingsView.pageForTest("about")
+            else if (step === 18) { console.warn("SETH about", backend.updateJson); shot("about") }
+            else if (step === 19 && !saves) Qt.quit()
+            else if (step === 20) { settingsView.pageForTest("calls", "callGroup"); backend.changeSetting("mt", "callGroup", JSON.stringify({ op: "add", member: two })) }
+            else if (step === 22) { backend.loadSettings() }
+            else if (step === 24) { log("group added (read back)"); shot("callgroup-added") }
+            else if (step === 25) { backend.changeSetting("mt", "callGroup", JSON.stringify({ op: "remove", member: two })) }
+            else if (step === 27) backend.loadSettings()
+            else if (step === 29) log("group removed (read back)")
+            else if (step === 30) { settingsView.pageForTest("calls", "delegates"); backend.changeSetting("mt", "delegate", JSON.stringify({ op: "add", mri: two })) }
+            else if (step === 32) backend.changeSetting("mt", "delegate", JSON.stringify({ op: "action", mri: two, action: "joinActiveCalls", on: true }))
+            else if (step === 34) backend.loadSettings()
+            else if (step === 36) { log("delegate added (read back)"); shot("delegate-added") }
+            else if (step === 37) backend.changeSetting("mt", "delegate", JSON.stringify({ op: "remove", mri: two }))
+            else if (step === 39) backend.loadSettings()
+            else if (step === 41) log("delegate removed (read back)")
+            else if (step === 42) { settingsView.pageForTest("calls"); backend.changeSetting("prop", "callViewMode", JSON.stringify("minimized")); backend.changeSetting("mt", "ringtone", JSON.stringify("Beep")); backend.changeSetting("mt", "forwarding", JSON.stringify({ op: "unansweredDelay", seconds: 30 })) }
+            else if (step === 44) backend.loadSettings()
+            else if (step === 46) { log("changed (read back)"); settingsView.scrollToForTest(700) }
+            else if (step === 47) shot("calls-changed")
+            else if (step === 48) { backend.changeSetting("prop", "callViewMode", JSON.stringify("immersive")); backend.changeSetting("mt", "ringtone", JSON.stringify("Ring")); backend.changeSetting("mt", "forwarding", JSON.stringify({ op: "unansweredDelay", seconds: 20 })) }
+            else if (step === 50) backend.loadSettings()
+            else if (step === 52) log("put back (read back)")
+            else if (step === 53 && firstApp) { firstLevel = settingsView.appLevelForTest(firstApp.id, firstApp.rows[0].subTypes, firstApp.toastDefault); console.warn("SETH app level before", firstApp.name, firstLevel); settingsView.setAppLevelForTest(firstApp.id, firstApp.rows[0].subTypes, 2) }
+            else if (step === 55) backend.loadSettings()
+            else if (step === 57) { log("app row off (read back)"); if (firstApp) settingsView.setAppLevelForTest(firstApp.id, firstApp.rows[0].subTypes, firstLevel) }
+            else if (step === 59) backend.loadSettings()
+            else if (step === 61) { log("app row put back (read back)"); Qt.quit() }
             step++
         }
     }

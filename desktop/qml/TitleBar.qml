@@ -884,6 +884,41 @@ Rectangle {
                     Accessible.name: qsTr("Your current status message: %1").arg(root.statusNote)
                 }
             }
+            // Teams' accounts and orgs (its MTMA flyout, "nova"): your other
+            // accounts on this device, each "Switch to account {upn},
+            // Status {availability}", then "Add another account". OST keeps
+            // each account in its own profile and window (its own sign-in).
+            Item {
+                width: parent.width; height: 9
+                Rectangle { x: 4; width: parent.width - 8; height: 1; anchors.verticalCenter: parent.verticalCenter; color: theme.divider }
+            }
+            Repeater {
+                model: menu.visible ? JSON.parse(backend.otherAccountsJson()) : []
+                Rectangle {
+                    id: acctRow
+                    required property var modelData
+                    width: menuCol.width - 8; x: 4; height: 48; radius: theme.radius
+                    color: acctHover.hovered ? theme.rowHover : "transparent"
+                    Avatar { x: 14; anchors.verticalCenter: parent.verticalCenter; size: 32; name: acctRow.modelData.name || acctRow.modelData.upn; photoId: acctRow.modelData.objectId || "" }
+                    PresenceBadge { x: 36; y: 30; total: 12; presence: acctRow.modelData.availability || "Offline" }
+                    Column {
+                        x: 56; anchors.verticalCenter: parent.verticalCenter
+                        width: parent.width - 68
+                        Text { width: parent.width; elide: Text.ElideRight; text: acctRow.modelData.name || acctRow.modelData.upn; font.family: theme.font; font.pixelSize: theme.base; color: theme.onFill(acctRow, theme.text) }
+                        Text { width: parent.width; elide: Text.ElideRight; text: acctRow.modelData.upn; font.family: theme.font; font.pixelSize: theme.small; color: theme.onFill(acctRow, theme.textStrong) }
+                    }
+                    HoverHandler { id: acctHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: { menu.visible = false; backend.switchAccount(acctRow.modelData.profile) } }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: qsTr("Switch to account %1,  Status %2").arg(acctRow.modelData.upn).arg(root.statusLabel(acctRow.modelData.availability || "Offline"))
+                }
+            }
+            FlyoutRow {
+                icon: "person-add-20"
+                label: qsTr("Add another account")
+                chevron: false
+                onClicked: { menu.visible = false; backend.addAccount() }
+            }
             Item { width: 1; height: 8 }
         }
         // The status choices, as Teams' menu: the statuses, Duration, Reset status.

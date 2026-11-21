@@ -419,7 +419,7 @@ Rectangle {
             }
             FluentIcon { visible: !!root.subPage; anchors.verticalCenter: parent.verticalCenter; name: "chevron-right-16"; size: 16; color: theme.textStrong }
             Text {
-                text: root.subPage === "channelNotifs" ? qsTr("Manage") : root.subPage === "oof" ? qsTr("Out of office") : root.subPage === "priority" ? qsTr("Manage priority access") : root.subPage === "blocked" ? qsTr("Manage blocked people") : root.subPage === "spellcheck" ? qsTr("Manage spellcheck languages") : root.subPage === "status" ? qsTr("Manage status notifications") : root.subPage === "connected" ? qsTr("Manage devices") : root.subPage === "stationary" ? qsTr("Stationary device location") : root.subPage === "ddv" ? qsTr("Diagnostic data viewer") : root.subPage === "interpreters" ? qsTr("Manage interpreters") : root.page === "about" ? qsTr("About OST") : (root.pages.find(p => p.key === root.page) || {}).label || ""
+                text: root.subPage === "channelNotifs" ? qsTr("Manage") : root.subPage === "attendant" ? qsTr("Intelligent call delegation") : root.subPage === "callGroup" ? qsTr("Call group") : root.subPage === "delegates" ? qsTr("Manage delegates") : root.subPage === "oof" ? qsTr("Out of office") : root.subPage === "priority" ? qsTr("Manage priority access") : root.subPage === "blocked" ? qsTr("Manage blocked people") : root.subPage === "spellcheck" ? qsTr("Manage spellcheck languages") : root.subPage === "status" ? qsTr("Manage status notifications") : root.subPage === "connected" ? qsTr("Manage devices") : root.subPage === "stationary" ? qsTr("Stationary device location") : root.subPage === "ddv" ? qsTr("Diagnostic data viewer") : root.subPage === "interpreters" ? qsTr("Manage interpreters") : root.page === "about" ? qsTr("About OST") : (root.pages.find(p => p.key === root.page) || {}).label || ""
                 font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; lineHeight: 25.7; lineHeightMode: Text.FixedHeight
                 color: theme.text
                 Accessible.role: Accessible.Heading
@@ -1686,6 +1686,100 @@ Rectangle {
                             current: calNotif.lvl(calRow.modelData.key)
                             accessibleName: calRow.modelData.label
                             onPicked: i => calNotif.setLvl(calRow.modelData.key, i)
+                        }
+                    }
+                }
+            }
+
+            // Notifications ▸ Apps (Teams 26304, measured on winpc
+            // 2026-11-21): one card; per app (api::app_notifications) a
+            // 65.3 tall row with its 18 px icon at 19.3, the name at 55.3,
+            // its switch and the "Notification panel" chevron (24 px, 13.3
+            // from the end); open, its activity types as 68.7 tall rows
+            // with Teams' three choices. Kept in userGraphSettings.
+            SectionTitle { visible: root.page === "notifications" && !root.subPage && appNotif.apps.length > 0; text: qsTr("Apps") }
+            Rectangle {
+                id: appNotif
+                readonly property var apps: root.mt.appNotifications || []
+                property var open: ({})
+                visible: root.page === "notifications" && !root.subPage && apps.length > 0
+                width: parent.width; height: appCol.height + 1.4
+                radius: 8; color: "transparent"
+                border.color: theme.pick("#D1D1D1", "#3D3D3D", "#FFFFFF"); border.width: 0.67
+                Column {
+                    id: appCol
+                    x: 0.7; y: 0.7; width: parent.width - 1.4
+                    Repeater {
+                        model: appNotif.apps
+                        Column {
+                            id: appItem
+                            required property var modelData
+                            required property int index
+                            readonly property var saved: root.prop("userGraphSettings", [modelData.id], {})
+                            readonly property bool on: saved.appNotificationEnabled !== false
+                            readonly property bool expanded: !!appNotif.open[modelData.id]
+                            width: parent.width
+                            Item {
+                                width: parent.width; height: 65.3
+                                Image { x: 18.6; anchors.verticalCenter: parent.verticalCenter; width: 18; height: 18; source: appItem.modelData.icon || ""; sourceSize: Qt.size(36, 36) }
+                                Text { x: 54.6; anchors.verticalCenter: parent.verticalCenter; text: appItem.modelData.name; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                                SettingsParts.Toggle {
+                                    anchors.right: parent.right; anchors.rightMargin: 48.6; anchors.verticalCenter: parent.verticalCenter
+                                    on: appItem.on
+                                    accessibleName: appItem.modelData.name
+                                    onToggled: v => backend.changeSetting("prop", "userGraphSettings", JSON.stringify(appItem.switchPatch(v)))
+                                }
+                                Rectangle {
+                                    anchors.right: parent.right; anchors.rightMargin: 12.6; anchors.verticalCenter: parent.verticalCenter
+                                    width: 24; height: 24; radius: 4
+                                    color: chevH.hovered ? theme.pick("#F5F5F5", "#3D3D3D", "#1AEBFF") : "transparent"
+                                    FluentIcon { anchors.centerIn: parent; name: appItem.expanded ? "chevron-up-20" : "chevron-down-20"; size: 20; color: theme.text }
+                                    HoverHandler { id: chevH; cursorShape: Qt.PointingHandCursor }
+                                    TapHandler { onTapped: { const o = Object.assign({}, appNotif.open); o[appItem.modelData.id] = !appItem.expanded; appNotif.open = o } }
+                                    Accessible.role: Accessible.Button
+                                    Accessible.name: qsTr("Notification panel")
+                                }
+                            }
+                            Repeater {
+                                model: appItem.expanded ? appItem.modelData.rows : []
+                                Item {
+                                    id: appRow
+                                    required property var modelData
+                                    width: appItem.width; height: 68.7
+                                    Text { x: 56.3; y: 24.3; width: parent.width - 56.3 - 249 - 70; elide: Text.ElideRight; text: appRow.modelData.label; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: appItem.on ? theme.text : theme.disabled }
+                                    OutlineDropdown {
+                                        anchors.right: parent.right; anchors.rightMargin: 57.9; y: 19.3
+                                        width: 248.7; height: 30
+                                        enabled: appItem.on
+                                        options: notif.levels
+                                        current: appItem.level(appRow.modelData.subTypes)
+                                        accessibleName: appRow.modelData.label
+                                        onPicked: i => backend.changeSetting("prop", "userGraphSettings", JSON.stringify(appItem.levelPatch(appRow.modelData.subTypes, i)))
+                                    }
+                                }
+                            }
+                            SettingsParts.Gap { visible: appItem.expanded; size: 28 }
+                            Item {
+                                visible: appItem.index < appNotif.apps.length - 1
+                                width: parent.width; height: 9.7
+                                Rectangle { x: 16; width: parent.width - 32; height: 0.67; anchors.verticalCenter: parent.verticalCenter; color: theme.pick("#E0E0E0", "#3D3D3D", "#FFFFFF") }
+                            }
+                            // api::app_notifications' level / level_patch /
+                            // switch_patch, as Teams' worker does them.
+                            function level(types) {
+                                const g = t => ((saved.activityGenerationSettings || {})[t]) !== false
+                                const b = t => { const v = (saved.toastSettings || {})[t]; return v === undefined ? modelData.toastDefault : v === true }
+                                return !types.some(g) ? 2 : types.some(b) ? 0 : 1
+                            }
+                            function levelPatch(types, lv) {
+                                const gen = {}, toast = {}
+                                for (const t of types) { gen[t] = lv !== 2; toast[t] = lv === 0 }
+                                const p = {}; p[modelData.id] = { activityGenerationSettings: gen, toastSettings: toast }; return p
+                            }
+                            function switchPatch(v) {
+                                const all = [].concat(...modelData.rows.map(r => r.subTypes))
+                                const p = levelPatch(all, v ? 1 : 2); p[modelData.id].appNotificationEnabled = v; return p
+                            }
                         }
                     }
                 }
@@ -2996,8 +3090,44 @@ Rectangle {
                 ]
                 function setVm(k, v) { const b = {}; b[k] = v; root.setMt("voicemail", b) }
             }
+            // Teams 26304's Intelligent call delegation card (first on
+            // Calls, where ECS calling.enablePersonalAttendant and the
+            // teamsPersonalAttendantPolicy offer it): Set up, or Manage
+            // once it's on.
+            QtObject {
+                id: pa
+                readonly property var pol: root.mt.attendantPolicy || {}
+                readonly property var s: root.mt.attendant || {}
+                readonly property bool offered: pol.personalAttendant === "EnabledUserOverride" || pol.personalAttendant === "Enabled"
+                readonly property bool userChoice: pol.personalAttendant === "EnabledUserOverride"
+                readonly property bool on: pol.personalAttendant === "Enabled" || (userChoice && s.isEnabled === true)
+                // Teams shows the rest once the settings exist and it's on.
+                readonly property bool shown: on && !!root.mt.attendant
+                readonly property bool extUser: pol.inboundFederatedCalls === "EnabledUserOverride" && pol.inboundPSTNCalls === "EnabledUserOverride"
+                readonly property bool intUser: pol.inboundInternalCalls === "EnabledUserOverride"
+                readonly property bool externalManual: s.enableManualExternalCalls === true || !(s.enableInboundFederatedCalls === true || s.enableInboundPSTNCalls === true)
+                readonly property bool internalManual: s.enableManualInternalCalls === true || s.enableInboundInternalCalls !== true
+                readonly property bool bookings: pol.calendarBookings === "EnabledUserOverride"
+                readonly property bool spam: pol.callScreening === "EnabledUserOverride"
+                readonly property bool recording: pol.automaticTranscription === "EnabledUserOverride" && pol.automaticRecording === "EnabledUserOverride"
+                function set(patch) { backend.changeSetting("mt", "attendant", JSON.stringify(patch)) }
+            }
             Text {
-                visible: root.page === "calls"
+                visible: root.page === "calls" && !root.subPage && pa.offered
+                text: qsTr("Intelligent call delegation")
+                font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; lineHeight: 22; lineHeightMode: Text.FixedHeight
+                color: theme.text
+                Accessible.role: Accessible.Heading
+                Accessible.name: text
+            }
+            SettingsParts.Card {
+                visible: root.page === "calls" && !root.subPage && pa.offered
+                image: "../assets/illustrations/personal-attendant-avatar.svg"; title: qsTr("Intelligent call delegation")
+                subtitle: qsTr("An AI-powered tool that answers, routes, and filters calls on your behalf.")
+                trailing: Component { SettingsParts.Button { label: pa.on ? qsTr("Manage") : qsTr("Set up"); onClicked: root.subPage = "attendant" } }
+            }
+            Text {
+                visible: root.page === "calls" && !root.subPage
                 text: qsTr("Call handling and forwarding")
                 font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; lineHeight: 22; lineHeightMode: Text.FixedHeight
                 color: theme.text
@@ -3005,7 +3135,7 @@ Rectangle {
                 Accessible.name: text
             }
             SettingsParts.Card {
-                visible: root.page === "calls"
+                visible: root.page === "calls" && !root.subPage
                 icon: "call-forward-20"; title: qsTr("Call handling and forwarding")
                 bottomPad: 21.4
                 // Teams Phone (Enterprise Voice) users get Teams 26304's call
@@ -3013,8 +3143,22 @@ Rectangle {
                 // call_forwarding): Forward all my calls with where to, else
                 // who else rings and the delay, then unanswered calls; each
                 // target type only where the calling policy allows it.
+                // Intelligent call delegation on: Teams' notice (its avatar
+                // 28.8 and 14/20 text) in place of the forwarding choices.
+                Row {
+                    visible: fwd.ev && pa.on
+                    spacing: 12
+                    width: parent.width
+                    Image { anchors.verticalCenter: parent.verticalCenter; width: 28.8; height: 28.8; source: "../assets/illustrations/personal-attendant-avatar.svg"; sourceSize: Qt.size(58, 58) }
+                    Text {
+                        width: parent.width - 40.8 - 28
+                        text: pa.s.enableInboundInternalCalls === true ? qsTr("Intelligent call delegation answers incoming calls on your behalf. Settings below apply only when calls are routed to you.") : qsTr("Intelligent call delegation answers incoming external calls on your behalf. Settings below apply only when calls are routed to you.")
+                        wrapMode: Text.Wrap
+                        font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text
+                    }
+                }
                 SettingsParts.SwitchRow {
-                    visible: fwd.ev
+                    visible: fwd.controls
                     label: qsTr("Forward all my calls")
                     on: fwd.immediate
                     onToggled: v => fwd.change(v ? { op: "forwardAll", targetType: fwd.vmAllowed ? "Voicemail" : "SingleTarget" } : { op: "forwardAllOff" })
@@ -3023,6 +3167,9 @@ Rectangle {
                     id: fwd
                     readonly property var pol: root.mt.callingPolicy || {}
                     readonly property bool ev: pol.ev === true
+                    // With Intelligent call delegation on, Teams shows its
+                    // notice in place of the forwarding choices.
+                    readonly property bool controls: ev && !pa.on
                     readonly property var r: (root.mt.voice || {}).callRedirectionSettings || {}
                     readonly property var cf: r.callForwardingSettings || {}
                     readonly property var un: r.unansweredCallSettings || {}
@@ -3052,12 +3199,12 @@ Rectangle {
                     readonly property string unType: un.isEnabled === false ? "DoNothing" : (un.targetType || "Voicemail")
                     readonly property var delays: [0, 5, 10, 15, 20, 30, 40, 50, 60]
                 }
-                SettingsParts.Divider { visible: fwd.ev }
-                SettingsParts.SubHeading { visible: fwd.ev && fwd.immediate; text: qsTr("Choose how all your calls will be forwarded"); gapAbove: 15.6 }
-                SettingsParts.SubHeading { visible: fwd.ev && !fwd.immediate; text: qsTr("When you receive a call"); gapAbove: 15.6 }
-                SettingsParts.Gap { visible: fwd.ev; size: 10 }
+                SettingsParts.Divider { visible: fwd.controls }
+                SettingsParts.SubHeading { visible: fwd.controls && fwd.immediate; text: qsTr("Choose how all your calls will be forwarded"); gapAbove: 15.6 }
+                SettingsParts.SubHeading { visible: fwd.controls && !fwd.immediate; text: qsTr("When you receive a call"); gapAbove: 15.6 }
+                SettingsParts.Gap { visible: fwd.controls; size: 10 }
                 OutlineDropdown {
-                    visible: fwd.ev
+                    visible: fwd.controls
                     width: 293.3; height: 30
                     readonly property var list: fwd.items(fwd.immediate ? "forward" : "also")
                     readonly property string cur: fwd.immediate ? (fwd.cf.targetType || "Voicemail") : fwd.alsoType
@@ -3077,7 +3224,7 @@ Rectangle {
                 Item {
                     id: fwdPickerRow
                     readonly property string shown: (fwd.immediate || fwd.alsoType === "SingleTarget") ? (fwd.cf.target || "") : ""
-                    visible: fwd.ev && (fwdPicker.open && fwdPicker.mode !== "unanswered" || (fwd.cf.targetType === "SingleTarget" && fwd.cf.isEnabled === true))
+                    visible: fwd.controls && (fwdPicker.open && fwdPicker.mode !== "unanswered" || (fwd.cf.targetType === "SingleTarget" && fwd.cf.isEnabled === true))
                     width: parent.width; height: visible ? fwdPicker.height : 0
                     VoicemailTransferPicker {
                         id: fwdPicker
@@ -3097,10 +3244,10 @@ Rectangle {
                 }
                 // Teams' "Delay for this many seconds before ringing" while
                 // someone else also rings.
-                SettingsParts.SubHeading { visible: fwd.ev && !fwd.immediate && fwd.alsoType !== "DoNothing"; text: qsTr("Delay for this many seconds before ringing"); gapAbove: 15.7 }
-                SettingsParts.Gap { visible: fwd.ev && !fwd.immediate && fwd.alsoType !== "DoNothing"; size: 10 }
+                SettingsParts.SubHeading { visible: fwd.controls && !fwd.immediate && fwd.alsoType !== "DoNothing"; text: qsTr("Delay for this many seconds before ringing"); gapAbove: 15.7 }
+                SettingsParts.Gap { visible: fwd.controls && !fwd.immediate && fwd.alsoType !== "DoNothing"; size: 10 }
                 OutlineDropdown {
-                    visible: fwd.ev && !fwd.immediate && fwd.alsoType !== "DoNothing"
+                    visible: fwd.controls && !fwd.immediate && fwd.alsoType !== "DoNothing"
                     width: 293.3; height: 30
                     readonly property var list: fwd.delays.filter(d => !(fwd.un.isEnabled && fwd.un.delaySeconds) || d < fwd.un.delaySeconds)
                     options: list.map(d => ({ label: d === 0 ? qsTr("No delay (default)") : qsTr("%1 seconds").arg(d) }))
@@ -3108,10 +3255,10 @@ Rectangle {
                     accessibleName: qsTr("Delay for this many seconds before ringing")
                     onPicked: i => fwd.change({ op: "alsoRingDelay", seconds: list[i] })
                 }
-                SettingsParts.SubHeading { visible: fwd.ev && (!fwd.immediate || fwd.cf.targetType === "MyDelegates"); text: qsTr("When you can't answer a call"); gapAbove: 15.6 }
-                SettingsParts.Gap { visible: fwd.ev && (!fwd.immediate || fwd.cf.targetType === "MyDelegates"); size: 10 }
+                SettingsParts.SubHeading { visible: fwd.controls && (!fwd.immediate || fwd.cf.targetType === "MyDelegates"); text: qsTr("When you can't answer a call"); gapAbove: 15.6 }
+                SettingsParts.Gap { visible: fwd.controls && (!fwd.immediate || fwd.cf.targetType === "MyDelegates"); size: 10 }
                 OutlineDropdown {
-                    visible: fwd.ev && (!fwd.immediate || fwd.cf.targetType === "MyDelegates")
+                    visible: fwd.controls && (!fwd.immediate || fwd.cf.targetType === "MyDelegates")
                     width: 293.3; height: 30
                     readonly property var list: fwd.items("unanswered")
                     options: list.map(o => ({ label: o.label }))
@@ -3127,7 +3274,7 @@ Rectangle {
                 SettingsParts.Gap { visible: unPickerRow.visible; size: 15.6 }
                 Item {
                     id: unPickerRow
-                    visible: fwd.ev && (unPicker.open || fwd.unType === "SingleTarget")
+                    visible: fwd.controls && (unPicker.open || fwd.unType === "SingleTarget")
                     width: parent.width; height: visible ? unPicker.height : 0
                     VoicemailTransferPicker {
                         id: unPicker
@@ -3144,10 +3291,10 @@ Rectangle {
                         onTargetMriChanged: if (targetMri && !targetMri.startsWith("4:")) backend.resolveNames(JSON.stringify([targetMri]))
                     }
                 }
-                SettingsParts.SubHeading { visible: fwd.ev && fwd.unType !== "DoNothing" && (!fwd.immediate || fwd.cf.targetType === "MyDelegates"); text: qsTr("Ring for this many seconds before redirecting"); gapAbove: 15.7 }
-                SettingsParts.Gap { visible: fwd.ev && fwd.unType !== "DoNothing" && (!fwd.immediate || fwd.cf.targetType === "MyDelegates"); size: 10 }
+                SettingsParts.SubHeading { visible: fwd.controls && fwd.unType !== "DoNothing" && (!fwd.immediate || fwd.cf.targetType === "MyDelegates"); text: qsTr("Ring for this many seconds before redirecting"); gapAbove: 15.7 }
+                SettingsParts.Gap { visible: fwd.controls && fwd.unType !== "DoNothing" && (!fwd.immediate || fwd.cf.targetType === "MyDelegates"); size: 10 }
                 OutlineDropdown {
-                    visible: fwd.ev && fwd.unType !== "DoNothing" && (!fwd.immediate || fwd.cf.targetType === "MyDelegates")
+                    visible: fwd.controls && fwd.unType !== "DoNothing" && (!fwd.immediate || fwd.cf.targetType === "MyDelegates")
                     width: 293.3; height: 30
                     readonly property var secs: [5, 10, 15, 20, 30, 40, 50, 60]
                     options: secs.map(n => ({ label: n === 20 ? qsTr("20 seconds (default)") : qsTr("%1 seconds").arg(n) }))
@@ -3222,9 +3369,30 @@ Rectangle {
                         }
                     }
                 }
+                // Teams 26304's "Viewing incoming calls" (Teams Phone
+                // users, measured on winpc 2026-11-21): 31.7 under the last
+                // ringtone, Teams' subtitle, then Large window / Small window
+                // 12 below (the user property callViewMode: immersive, the
+                // default, or minimized; answered calls open that way).
+                SettingsParts.SubHeading { visible: fwd.ev; text: qsTr("Viewing incoming calls"); gapAbove: 31.7 }
+                Text {
+                    visible: fwd.ev
+                    width: parent.width - 27.3
+                    text: qsTr("See calls in a large window or a small one. Both are resizable during the call. Keep in mind that only the large window will show when you or someone else enables RTT or captions.")
+                    wrapMode: Text.Wrap
+                    font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textSecondary
+                }
+                SettingsParts.Gap { visible: fwd.ev; size: 12 }
+                Row {
+                    visible: fwd.ev
+                    spacing: 12.1
+                    readonly property bool small: root.prop("callViewMode", [], "immersive") === "minimized"
+                    SettingsParts.ImageRadio { imageHeight: 80; label: qsTr("Large window"); image: "../assets/settings/immersive-view-" + theme.pick("default", "dark", "contrast") + ".svg"; checked: !parent.small; onPicked: root.setProp("callViewMode", "", "immersive") }
+                    SettingsParts.ImageRadio { imageHeight: 80; label: qsTr("Small window"); image: "../assets/settings/minimized-view-" + theme.pick("default", "dark", "contrast") + ".svg"; checked: parent.small; onPicked: root.setProp("callViewMode", "", "minimized") }
+                }
             }
             Text {
-                visible: root.page === "calls"
+                visible: root.page === "calls" && !root.subPage
                 text: qsTr("Voicemail")
                 font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; lineHeight: 22; lineHeightMode: Text.FixedHeight
                 color: theme.text
@@ -3232,7 +3400,7 @@ Rectangle {
                 Accessible.name: text
             }
             SettingsParts.Card {
-                visible: root.page === "calls"
+                visible: root.page === "calls" && !root.subPage
                 icon: "voicemail-20"; title: qsTr("Voicemail")
                 // Teams' "Record a custom greeting" (measured on winpc
                 // 2026-11-10: its button at the body's top, a divider 15 under
@@ -3301,16 +3469,16 @@ Rectangle {
                 
             }
             Text {
-                visible: root.page === "calls"
-                text: qsTr("Manage out-of-office voicemail")
+                visible: root.page === "calls" && !root.subPage
+                text: qsTr("Out-of-office voicemail")
                 font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; lineHeight: 22; lineHeightMode: Text.FixedHeight
                 color: theme.text
                 Accessible.role: Accessible.Heading
                 Accessible.name: text
             }
             SettingsParts.Card {
-                visible: root.page === "calls"
-                icon: "voicemail-arrow-back-20"; title: qsTr("Manage out-of-office voicemail")
+                visible: root.page === "calls" && !root.subPage
+                icon: "voicemail-arrow-back-20"; title: qsTr("Out-of-office voicemail")
                 SettingsParts.SubHeading { text: qsTr("When should your greeting play") }
                 SettingsParts.Gap { size: 15 }
                 SettingsParts.CheckRow { label: qsTr("All the time"); checked: calls.vm.vmUseOof === true; onToggled: v => calls.setVm("vmUseOof", v) }
@@ -3321,6 +3489,318 @@ Rectangle {
                     onClicked: { greetingDialog.oof = true; greetingDialog.show(calls.vm.vmDefaultOofGreetingPromptOverwrite || "") }
                 }
                 
+            }
+            // Teams 26304's Call group and Delegates cards (Teams Phone
+            // users where the calling policy allows them; measured on
+            // winpc 2026-11-21): "Add a call group" / "Add a delegate", or
+            // Manage with the members' pictures (the call group's under
+            // "Ring everyone at once:" / "Ring in the order below:").
+            Text {
+                visible: root.page === "calls" && !root.subPage && fwd.ev && fwd.pol.allowCallGroups === true
+                text: qsTr("Call group")
+                font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; lineHeight: 22; lineHeightMode: Text.FixedHeight
+                color: theme.text
+                Accessible.role: Accessible.Heading
+                Accessible.name: text
+            }
+            SettingsParts.Card {
+                id: cgCard
+                visible: root.page === "calls" && !root.subPage && fwd.ev && fwd.pol.allowCallGroups === true
+                readonly property var members: (fwd.r.callGroupDetails || {}).targets || []
+                icon: "people-team-20"; title: qsTr("Call group")
+                subtitle: qsTr("Call group members can receive calls on your behalf.")
+                trailing: Component { SettingsParts.Button { label: cgCard.members.length ? qsTr("Manage") : qsTr("Add a call group"); onClicked: root.subPage = "callGroup" } }
+                Column {
+                    visible: cgCard.members.length > 0
+                    width: parent.width
+                    Text {
+                        width: parent.width; height: 26
+                        text: ((fwd.r.callGroupDetails || {}).callOrder || "").toLowerCase() === "inorder" ? qsTr("Ring in the order below:") : qsTr("Ring everyone at once:")
+                        font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text
+                    }
+                    MemberPictures { mris: cgCard.members }
+                }
+            }
+            Text {
+                visible: root.page === "calls" && !root.subPage && fwd.ev && fwd.pol.allowDelegation === true
+                text: qsTr("Delegates")
+                font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; lineHeight: 22; lineHeightMode: Text.FixedHeight
+                color: theme.text
+                Accessible.role: Accessible.Heading
+                Accessible.name: text
+            }
+            SettingsParts.Card {
+                id: dgCard
+                visible: root.page === "calls" && !root.subPage && fwd.ev && fwd.pol.allowDelegation === true
+                readonly property var list: ((root.mt.delegation || {}).userDelegates || {}).delegates || []
+                icon: "people-team-20"; title: qsTr("Delegates")
+                subtitle: qsTr("Delegates can make and receive calls on your behalf. They'll be notified when you change call settings to send your calls to them.")
+                trailing: Component { SettingsParts.Button { label: dgCard.list.length ? qsTr("Manage") : qsTr("Add a delegate"); onClicked: root.subPage = "delegates" } }
+                MemberPictures { visible: dgCard.list.length > 0; mris: dgCard.list.map(d => d.userMri) }
+            }
+
+            // ---- Calls › Call group (settings-app kP, measured on winpc
+            // 2026-11-21): the card's header with Teams' longer text, "Add
+            // a call group member" with the picker (294 x 33.3) at the
+            // right, then "Group members" with "Ring:" Everyone at once /
+            // In the order below (only for 2–5 members; at most 25) and a
+            // row per member: 668 x 48, #F0F0F0, radius 4, the picture 32
+            // with presence at 12, the name at 52, Delete at the end. In
+            // order, members are dragged into place.
+            SettingsParts.Card {
+                id: cgPage
+                visible: root.page === "calls" && root.subPage === "callGroup"
+                readonly property var members: (fwd.r.callGroupDetails || {}).targets || []
+                readonly property bool inOrder: ((fwd.r.callGroupDetails || {}).callOrder || "").toLowerCase() === "inorder"
+                readonly property bool orderLocked: members.length < 2 || members.length > 5
+                property bool full: false
+                icon: "people-team-20"; title: qsTr("Call group")
+                subtitle: qsTr("Call group members can receive calls on your behalf. Select members to be in your call group and then forward to them whenever you need to.")
+                onMembersChanged: backend.resolveNames(JSON.stringify(members.filter(m => !m.startsWith("4:"))))
+                Item {
+                    width: parent.width; height: cgPicker.height
+                    Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Add a call group member"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    VoicemailTransferPicker {
+                        id: cgPicker
+                        anchors.right: parent.right; anchors.rightMargin: 27.3
+                        phoneSuggestions: fwd.toPhone
+                        exclude: cgPage.members
+                        people: { const v = backend.newChatPeopleJson ? JSON.parse(backend.newChatPeopleJson) : ({}); return v.items || [] }
+                        peopleQuery: { const v = backend.newChatPeopleJson ? JSON.parse(backend.newChatPeopleJson) : ({}); return v.query || "" }
+                        onSearch: q => backend.newChatPeople(q)
+                        onPicked: (mri, oid, name) => {
+                            cgPage.full = cgPage.members.length >= 25
+                            if (!cgPage.full) backend.changeSetting("mt", "callGroup", JSON.stringify({ op: "add", member: mri }))
+                            targetMri = ""
+                        }
+                    }
+                }
+                Text {
+                    visible: cgPage.full
+                    text: qsTr("Maximum number of call group members reached")
+                    font.family: theme.font; font.pixelSize: 12; color: theme.danger
+                }
+                SettingsParts.Gap { visible: cgPage.members.length > 0; size: 24 }
+                Item {
+                    visible: cgPage.members.length > 0
+                    width: parent.width - 27.3; height: 30
+                    Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Group members"); font.family: theme.font; font.pixelSize: 14; color: theme.text; Accessible.role: Accessible.Heading; Accessible.name: text }
+                    Row {
+                        anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                        spacing: 8
+                        Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Ring:"); font.family: theme.font; font.pixelSize: 12; color: cgPage.orderLocked ? theme.disabled : theme.textSecondary }
+                        // Teams' subtle dropdown (12/600) with its tooltip.
+                        Item {
+                            id: ringOrder
+                            width: ringText.implicitWidth + 30; height: 30
+                            enabled: !cgPage.orderLocked
+                            Text { id: ringText; anchors.verticalCenter: parent.verticalCenter; text: cgPage.inOrder ? qsTr("In the order below") : qsTr("Everyone at once"); font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: ringOrder.enabled ? theme.text : theme.disabled }
+                            FluentIcon { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-20"; size: 20; color: ringOrder.enabled ? theme.text : theme.disabled }
+                            HoverHandler { id: ringHover; cursorShape: ringOrder.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor }
+                            TapHandler { onTapped: ringMenu.open() }
+                            ToolTip.visible: ringHover.hovered
+                            ToolTip.text: qsTr("Pick the ring order for your call group members to receive your calls")
+                            Menu {
+                                id: ringMenu
+                                y: parent.height
+                                MenuItem { text: qsTr("Everyone at once"); onTriggered: backend.changeSetting("mt", "callGroup", JSON.stringify({ op: "order", order: "simultaneous" })) }
+                                MenuItem { text: qsTr("In the order below"); onTriggered: backend.changeSetting("mt", "callGroup", JSON.stringify({ op: "order", order: "inOrder" })) }
+                            }
+                            Accessible.role: Accessible.ComboBox
+                            Accessible.name: qsTr("Ring order")
+                        }
+                    }
+                }
+                SettingsParts.Gap { visible: cgPage.members.length > 0; size: 12 }
+                Repeater {
+                    model: cgPage.members
+                    MemberRow {
+                        required property string modelData
+                        required property int index
+                        mri: modelData
+                        draggable: cgPage.inOrder
+                        bottomGap: index < cgPage.members.length - 1 ? 8 : 0
+                        onRemove: backend.changeSetting("mt", "callGroup", JSON.stringify({ op: "remove", member: modelData }))
+                        onMoveTo: to => backend.changeSetting("mt", "callGroup", JSON.stringify({ op: "move", member: modelData, to: Math.max(0, Math.min(cgPage.members.length - 1, index + to)) }))
+                    }
+                }
+            }
+
+            // ---- Calls › Manage delegates (settings-app delegation page,
+            // measured on winpc 2026-11-21): "Add a delegate" with the
+            // picker; "Your delegates": each an expander (#F0F0F0 header,
+            // 48 tall, chevron, picture 32, name, Delete; the open panel
+            // #FAFAFA with Make calls / Receive calls / Change call and
+            // delegate settings / Pick up held calls / Join active calls),
+            // then "Announce when delegates join the call".
+            SettingsParts.Card {
+                id: dgPage
+                visible: root.page === "calls" && root.subPage === "delegates"
+                readonly property var list: ((root.mt.delegation || {}).userDelegates || {}).delegates || []
+                readonly property var delegators: ((root.mt.delegation || {}).userDelegators || {}).delegators || []
+                property string open: ""
+                icon: "people-team-20"; title: qsTr("Add a delegate")
+                subtitle: qsTr("Delegates can receive and make calls on your behalf. Once you add a delegate, select them to choose what they can do.")
+                onListChanged: backend.resolveNames(JSON.stringify(list.map(d => d.userMri)))
+                Item {
+                    width: parent.width; height: dgPicker.height
+                    Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Add a delegate"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    VoicemailTransferPicker {
+                        id: dgPicker
+                        anchors.right: parent.right; anchors.rightMargin: 27.3
+                        phoneSuggestions: false
+                        exclude: dgPage.list.map(d => d.userMri)
+                        people: { const v = backend.newChatPeopleJson ? JSON.parse(backend.newChatPeopleJson) : ({}); return v.items || [] }
+                        peopleQuery: { const v = backend.newChatPeopleJson ? JSON.parse(backend.newChatPeopleJson) : ({}); return v.query || "" }
+                        onSearch: q => backend.newChatPeople(q)
+                        onPicked: (mri, oid, name) => {
+                            dgPage.circular = dgPage.delegators.some(d => d.userMri === mri)
+                            if (!dgPage.circular) { backend.changeSetting("mt", "delegate", JSON.stringify({ op: "add", mri: mri })); dgPage.open = mri }
+                            targetMri = ""
+                        }
+                    }
+                }
+                property bool circular: false
+                Text {
+                    visible: dgPage.circular
+                    text: qsTr("You're a delegate for this person. They can't be your delegate.")
+                    font.family: theme.font; font.pixelSize: 12; color: theme.danger
+                }
+                SettingsParts.Gap { visible: dgPage.list.length > 0; size: 24 }
+                Text { visible: dgPage.list.length > 0; height: 18.7; text: qsTr("Your delegates"); font.family: theme.font; font.pixelSize: 14; color: theme.text; Accessible.role: Accessible.Heading; Accessible.name: text }
+                SettingsParts.Gap { visible: dgPage.list.length > 0; size: 16.7 }
+                Repeater {
+                    model: dgPage.list
+                    Column {
+                        id: dgRow
+                        required property var modelData
+                        required property int index
+                        readonly property bool expanded: dgPage.open === modelData.userMri
+                        width: parent.width - 27.3
+                        MemberRow {
+                            width: parent.width
+                            mri: dgRow.modelData.userMri
+                            expander: true
+                            expanded: dgRow.expanded
+                            onToggle: dgPage.open = dgRow.expanded ? "" : dgRow.modelData.userMri
+                            onRemove: backend.changeSetting("mt", "delegate", JSON.stringify({ op: "remove", mri: dgRow.modelData.userMri }))
+                        }
+                        Rectangle {
+                            visible: dgRow.expanded
+                            width: parent.width; height: visible ? 190 : 0
+                            color: theme.pick("#FAFAFA", "#1F1F1F", "#000000")
+                            Column {
+                                x: 22; y: 8
+                                Repeater {
+                                    model: [["makeCalls", qsTr("Make calls")], ["receiveCalls", qsTr("Receive calls")], ["manageSettings", qsTr("Change call and delegate settings")], ["pickUpHeldCalls", qsTr("Pick up held calls")], ["joinActiveCalls", qsTr("Join active calls")]]
+                                    SettingsParts.CheckRow {
+                                        required property var modelData
+                                        width: 500; rowHeight: 33
+                                        label: modelData[1]
+                                        checked: ((dgRow.modelData.allowedActions || {})[modelData[0]]) === true
+                                        onToggled: on => backend.changeSetting("mt", "delegate", JSON.stringify({ op: "action", mri: dgRow.modelData.userMri, action: modelData[0], on: on }))
+                                    }
+                                }
+                            }
+                        }
+                        SettingsParts.Gap { size: dgRow.index < dgPage.list.length - 1 ? 8 : 0 }
+                    }
+                }
+                SettingsParts.Gap { visible: dgPage.list.length > 0; size: 15 }
+                SettingsParts.SwitchRow {
+                    visible: dgPage.list.length > 0
+                    label: qsTr("Announce when delegates join the call")
+                    sublabel: qsTr("You will only be notified when delegates join an active call.")
+                    on: (root.mt.delegation || {}).playWarningTone === true
+                    onToggled: v => backend.changeSetting("mt", "delegate", JSON.stringify({ op: "tone", on: v }))
+                }
+            }
+
+            // ---- Calls › Intelligent call delegation (Teams'
+            // personal-attendant-settings, measured on winpc 2026-11-21):
+            // the switch card (Active / Inactive with its dot) where the
+            // policy lets you choose; when on, Call handling, Personalization,
+            // Skills and Notifications, each collapsible. Saved as Teams'
+            // whole personalAttendantSettings.
+            SettingsParts.Card {
+                visible: root.page === "calls" && root.subPage === "attendant"
+                image: "../assets/illustrations/personal-attendant-avatar.svg"; title: qsTr("Intelligent call delegation")
+                subtitle: qsTr("An AI-powered tool that answers, routes, and filters calls on your behalf.")
+                Item {
+                    visible: pa.userChoice
+                    width: parent.width - 27.3; height: 36
+                    Rectangle { x: 0; anchors.verticalCenter: parent.verticalCenter; width: 10; height: 10; radius: 5; color: pa.on ? "#0E700E" : "transparent"; border.width: pa.on ? 0 : 0.67; border.color: theme.pick("#707070", "#ADADAD", "#FFFFFF") }
+                    Text { x: 22; anchors.verticalCenter: parent.verticalCenter; text: pa.on ? qsTr("Active") : qsTr("Inactive"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    SettingsParts.Toggle { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; on: pa.on; accessibleName: qsTr("Intelligent call delegation"); onToggled: v => pa.set({ isEnabled: v }) }
+                }
+            }
+            SettingsParts.Card {
+                id: paHandling
+                visible: root.page === "calls" && root.subPage === "attendant" && pa.shown
+                property bool collapsed: false
+                icon: "call-inbound-20"; title: qsTr("Call handling")
+                subtitle: qsTr("Control how your calls are managed. Any call you don’t answer will be handled on your behalf.")
+                trailing: Component { CollapseButton { collapsed: paHandling.collapsed; onClicked: paHandling.collapsed = !paHandling.collapsed } }
+                Column {
+                    visible: !paHandling.collapsed
+                    width: parent.width
+                    SettingsParts.SubHeading { visible: pa.extUser; text: qsTr("Choose how external calls are handled") }
+                    SettingsParts.Gap { visible: pa.extUser; size: 10.7 }
+                    OutlineDropdown {
+                        visible: pa.extUser
+                        width: 293.3; height: 30
+                        options: [{ label: qsTr("Automatically answer calls") }, { label: qsTr("Let calls ring me first") }]
+                        current: pa.externalManual ? 1 : 0
+                        accessibleName: qsTr("Choose how external calls are handled")
+                        onPicked: i => pa.set(i === 0 ? { enableInboundFederatedCalls: true, enableInboundPSTNCalls: true, enableManualExternalCalls: false } : { enableInboundFederatedCalls: false, enableInboundPSTNCalls: false, enableManualExternalCalls: true })
+                    }
+                    SettingsParts.SubHeading { visible: pa.intUser; text: qsTr("Choose how internal calls are handled"); gapAbove: pa.extUser ? 16.6 : 0 }
+                    SettingsParts.Gap { visible: pa.intUser; size: 10.7 }
+                    OutlineDropdown {
+                        visible: pa.intUser
+                        width: 293.3; height: 30
+                        options: [{ label: qsTr("Automatically answer calls") }, { label: qsTr("Let calls ring me first") }]
+                        current: pa.internalManual ? 1 : 0
+                        accessibleName: qsTr("Choose how internal calls are handled")
+                        onPicked: i => pa.set(i === 0 ? { enableInboundInternalCalls: true, enableManualInternalCalls: false } : { enableInboundInternalCalls: false, enableManualInternalCalls: true })
+                    }
+                    SettingsParts.Gap { size: 16.7 }
+                    // VIPs: your priority contacts (Privacy ▸ Manage priority
+                    // access), their pictures and Edit.
+                    SettingsParts.ButtonRow {
+                        label: qsTr("VIPs")
+                        sublabel: qsTr("Calls from these people go straight to you. Any call you don't answer will be handled on your behalf.")
+                        buttonText: qsTr("Edit")
+                        onClicked: { root.page = "privacy"; root.subPage = "priority" }
+                    }
+                }
+            }
+            SettingsParts.Card {
+                id: paSkills
+                visible: root.page === "calls" && root.subPage === "attendant" && pa.shown && (pa.spam || pa.recording)
+                property bool collapsed: false
+                icon: "toolbox-20"; title: qsTr("Skills")
+                trailing: Component { CollapseButton { collapsed: paSkills.collapsed; onClicked: paSkills.collapsed = !paSkills.collapsed } }
+                Column {
+                    visible: !paSkills.collapsed
+                    width: parent.width
+                    spacing: 15
+                    // Personalization (Voice and greeting, Custom instructions,
+                    // the test call) and Skills ▸ Follow-ups open sub-pages
+                    // still to build (TASK-0242).
+
+                    SettingsParts.SwitchRow { visible: pa.spam; label: qsTr("Prevent suspected spam calls from disturbing you"); on: pa.s.enableCallScreening !== false; onToggled: v => pa.set({ enableCallScreening: v }) }
+                    SettingsParts.Divider { visible: pa.spam && pa.recording }
+                    SettingsParts.SwitchRow { visible: pa.recording; label: qsTr("Save transcriptions and recordings for all screened calls"); on: pa.s.enableAutomaticRecording === true && pa.s.enableAutomaticTranscription === true; onToggled: v => pa.set({ enableAutomaticRecording: v, enableAutomaticTranscription: v }) }
+                }
+            }
+            SettingsParts.Card {
+                id: paNotif
+                visible: root.page === "calls" && root.subPage === "attendant" && pa.shown
+                property bool collapsed: false
+                icon: "alert-20"; title: qsTr("Notifications")
+                trailing: Component { CollapseButton { collapsed: paNotif.collapsed; onClicked: paNotif.collapsed = !paNotif.collapsed } }
+                SettingsParts.SwitchRow { visible: !paNotif.collapsed; label: qsTr("Display banner for answered calls"); on: pa.s.enableScreeningNotification === true; onToggled: v => pa.set({ enableScreeningNotification: v }) }
             }
             GreetingDialog {
                 id: greetingDialog
@@ -3650,6 +4130,36 @@ Rectangle {
                         font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
                     }
                 }
+                // Teams' ring line (settings-app `wy`, Teams 26304) for
+                // Early Access users (ECS Segmentation.TeamsRing ring3_6):
+                // "<b>Early Access</b> through" and the ring's link with
+                // the open glyph after it.
+                Row {
+                    readonly property var ring: (backend.updateJson ? JSON.parse(backend.updateJson) : ({})).ring
+                    visible: !!ring
+                    height: 20; spacing: 4
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        textFormat: Text.StyledText
+                        text: qsTr("<0>Early Access</0> through").replace("<0>", "<b>").replace("</0>", "</b>")
+                        font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
+                    }
+                    Row {
+                        anchors.verticalCenter: parent.verticalCenter
+                        Text {
+                            id: ringLink
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: parent.parent.ring ? parent.parent.ring.text : ""
+                            font.family: theme.font; font.pixelSize: 14; font.underline: ringHover.hovered
+                            color: ringHover.hovered ? theme.brandHover : theme.brandForeground1
+                        }
+                        FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "open-20"; size: 20; color: ringLink.color }
+                        HoverHandler { id: ringHover; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: if (parent.parent.ring && parent.parent.ring.url) Qt.openUrlExternally(parent.parent.ring.url) }
+                        Accessible.role: Accessible.Link
+                        Accessible.name: ringLink.text
+                    }
+                }
             }
             // Teams' Early access card (Teams 26304, measured on winpc
             // 2026-11-20, 121.3 tall: the title row, then "Public preview",
@@ -3696,6 +4206,87 @@ Rectangle {
     // Teams' section headings (Notifications and activity, measured on
     // winpc 2026-11-14): 14/700 on a 20 px line, 18 above and below (the
     // first one 6, and 8 under the page's top), cards 12 above.
+    /// Teams' section collapse button (32 x 31.3, chevron up while open).
+    component CollapseButton: Rectangle {
+        id: cb
+        property bool collapsed: false
+        signal clicked()
+        width: 32; height: 31.3; radius: 4
+        color: cbh.hovered ? theme.pick("#F5F5F5", "#3D3D3D", "#1AEBFF") : "transparent"
+        FluentIcon { anchors.centerIn: parent; name: cb.collapsed ? "chevron-down-20" : "chevron-up-20"; size: 20; color: theme.text }
+        HoverHandler { id: cbh; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: cb.clicked() }
+        Accessible.role: Accessible.Button
+        Accessible.name: collapsed ? qsTr("Expand") : qsTr("Collapse")
+    }
+    /// The people's pictures (32, 4 apart) on the Calls page's Call group
+    /// and Delegates cards.
+    component MemberPictures: Row {
+        property var mris: []
+        spacing: 4
+        Component.onCompleted: backend.resolveNames(JSON.stringify(mris.filter(m => !m.startsWith("4:"))))
+        Repeater {
+            model: parent.mris
+            Avatar {
+                required property string modelData
+                size: 32
+                name: { const n = backend.peopleNamesJson ? JSON.parse(backend.peopleNamesJson) : ({}); return n[modelData] || modelData.replace(/^4:/, "") }
+                photoId: modelData.replace(/^8:orgid:/, "")
+                Accessible.name: name
+            }
+        }
+    }
+    /// A call group member or delegate (Teams' contact card: 48 tall,
+    /// #F0F0F0, radius 4, picture 32 with presence 12 in (after the
+    /// chevron for a delegate), the name 14/20, Delete 7 from the end).
+    component MemberRow: Rectangle {
+        id: mr
+        property string mri
+        property bool expander: false
+        property bool expanded: false
+        property bool draggable: false
+        property real bottomGap: 0
+        readonly property real trailingGap: bottomGap
+        signal remove()
+        signal toggle()
+        signal moveTo(int delta)
+        width: parent ? parent.width - (expander ? 0 : 27.3) : 0
+        height: 48
+        radius: expander && expanded ? 0 : 4
+        color: theme.pick("#F0F0F0", "#2E2E2E", "#000000")
+        readonly property string personName: { const n = backend.peopleNamesJson ? JSON.parse(backend.peopleNamesJson) : ({}); return n[mri] || mri.replace(/^4:/, "") }
+        FluentIcon { visible: mr.expander; x: 12; anchors.verticalCenter: parent.verticalCenter; name: mr.expanded ? "chevron-down-20" : "chevron-right-20"; size: 20; color: theme.text }
+        Avatar {
+            id: mrPic
+            x: mr.expander ? 36 : 12; anchors.verticalCenter: parent.verticalCenter
+            size: 32; name: mr.personName; photoId: mr.mri.replace(/^8:orgid:/, "")
+            presence: { const n = backend.peoplePresenceJson ? JSON.parse(backend.peoplePresenceJson) : ({}); return n[mr.mri] || "" }
+        }
+        Text { x: mrPic.x + 40; anchors.verticalCenter: parent.verticalCenter; text: mr.personName; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+        TapHandler { enabled: mr.expander; onTapped: mr.toggle() }
+        DragHandler {
+            id: mrDrag
+            enabled: mr.draggable
+            target: null
+            yAxis.enabled: true; xAxis.enabled: false
+            onActiveChanged: if (!active) { const d = Math.round(translation.y / 56); if (d !== 0) mr.moveTo(d) }
+        }
+        HoverHandler { cursorShape: mr.draggable ? Qt.OpenHandCursor : (mr.expander ? Qt.PointingHandCursor : Qt.ArrowCursor) }
+        Rectangle {
+            anchors.right: parent.right; anchors.rightMargin: 7; anchors.verticalCenter: parent.verticalCenter
+            width: 32; height: 31.3; radius: 4
+            color: delH.hovered ? theme.pick("#E0E0E0", "#3D3D3D", "#1AEBFF") : "transparent"
+            FluentIcon { anchors.centerIn: parent; name: "delete-20"; size: 20; color: theme.text }
+            HoverHandler { id: delH; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: mr.remove() }
+            ToolTip.visible: delH.hovered
+            ToolTip.text: qsTr("Delete")
+            Accessible.role: Accessible.Button
+            Accessible.name: qsTr("Delete")
+        }
+        Accessible.role: mr.expander ? Accessible.Button : Accessible.ListItem
+        Accessible.name: personName
+    }
     component SectionTitle: Text {
         property bool first: false
         width: parent ? parent.width : 0
@@ -3792,7 +4383,21 @@ Rectangle {
         walk(card)
         return out.sort((a, b) => a[0] - b[0])
     }
-    function scrollToForTest(y) { content.contentY = y }
+    function scrollToForTest(y) { content.contentY = Math.max(0, Math.min(y, content.contentHeight - content.height)) }
+    /// Test hooks: Notifications ▸ Apps' panels, a row's choice.
+    function openAppsForTest() { const o = {}; (mt.appNotifications || []).forEach(a => o[a.id] = true); appNotif.open = o }
+    function appLevelForTest(id, types, toastDefault) {
+        const sv = prop("userGraphSettings", [id], {})
+        const g = t => ((sv.activityGenerationSettings || {})[t]) !== false
+        const b = t => { const v = (sv.toastSettings || {})[t]; return v === undefined ? toastDefault : v === true }
+        return !types.some(g) ? 2 : types.some(b) ? 0 : 1
+    }
+    function setAppLevelForTest(id, types, lv) {
+        const gen = {}, toast = {}
+        for (const t of types) { gen[t] = lv !== 2; toast[t] = lv === 0 }
+        const p = {}; p[id] = { activityGenerationSettings: gen, toastSettings: toast }
+        backend.changeSetting("prop", "userGraphSettings", JSON.stringify(p))
+    }
     /// --vm-transfer-test (TASK-0180): the voicemail answer rule and its
     /// transfer target: "state", "rule" <rule>, "type" <text>, "pick"
     /// <mri> <oid>, "remove", "raw" <settings JSON> (a whole voicemail
