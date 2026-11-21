@@ -433,16 +433,37 @@ pub fn shared_link(edit_link: &str, page_link: &str) -> String {
     }
 }
 
-/// The organization edit link of a made page (Teams' createLink).
+/// The organization edit link of a made page, as Teams makes it: OneDrive's
+/// own `POST {your OneDrive site}/_api/v2.1/drives/{drive}/items/{item}/
+/// createLink {"type": "edit", "scope": "organization"}` (captured from
+/// Teams desktop making a Meet now's notes, TASK-0212). Its link is the
+/// short `/:fl:/p/<user>/<token>` form; Graph's createLink answers with
+/// the older `/:fl:/g/personal/…` one, which the call refuses to store as
+/// a Meet now's notes (CollabCommitError CrossTenantRequest, 6176).
 pub async fn edit_link(client: &TeamsClient, drive_id: &str, item_id: &str) -> Result<String> {
     let ok = |s: &str| !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || "!-_".contains(c));
     anyhow::ensure!(ok(drive_id) && ok(item_id), "Not a page");
+    let site = meetings_target(client).await?.site_url;
+    let host = url::Url::parse(&site).ok().and_then(|u| u.host_str().map(str::to_string)).context("Your OneDrive")?;
+    anyhow::ensure!(host.ends_with(".sharepoint.com"), "Your OneDrive");
+    let token = crate::auth::oauth::access_token_for(&format!("https://{host}/.default")).await?;
     let v: Value = client
-        .graph_post(&format!("/drives/{drive_id}/items/{item_id}/createLink"), &json!({ "type": "edit", "scope": "organization" }))
+        .http()
+        .post(create_link_url(&site, drive_id, item_id))
+        .bearer_auth(token)
+        .json(&json!({ "type": "edit", "scope": "organization" }))
+        .send()
         .await?
+        .error_for_status()
+        .context("The page's link")?
         .json()
         .await?;
     v.pointer("/link/webUrl").and_then(Value::as_str).map(str::to_string).context("The page's link")
+}
+
+/// OneDrive's createLink address for an item of your OneDrive site.
+pub fn create_link_url(site: &str, drive_id: &str, item_id: &str) -> String {
+    format!("{}/_api/v2.1/drives/{drive_id}/items/{item_id}/createLink", site.trim_end_matches('/'))
 }
 
 #[cfg(test)]
@@ -514,5 +535,7 @@ mod tests {
         assert_eq!(site_of("https://t-my.sharepoint.com/personal/ost-test1_t_com/Documents").as_deref(), Some("https://t-my.sharepoint.com/personal/ost-test1_t_com"));
         assert_eq!(shared_link("https://t-my.sharepoint.com/:fl:/g/personal/u/abc", "https://t-my.sharepoint.com/x.loop?d=w1&nav=cz0lMkY%3D"),
                    "https://t-my.sharepoint.com/:fl:/g/personal/u/abc?nav=cz0lMkY%3D");
+        assert_eq!(create_link_url("https://t-my.sharepoint.com/personal/u_t_com/", "b!d", "01AB"),
+                   "https://t-my.sharepoint.com/personal/u_t_com/_api/v2.1/drives/b!d/items/01AB/createLink");
     }
 }

@@ -550,6 +550,12 @@ Which pills, in which order:
   **Unread, Channels, Chats, Meeting chats**, then **Communities** (the
   resolver appends `ENGAGE_COMMUNITIES` when Engage is licensed and on).
   Split Chat app: Unread, Chats, Meeting chats. Split Teams app: Unread.
+  (Seen on winpc 2026-11-21, TASK-0241: split Chat shows Unread, Chats,
+  Unmuted, with Meeting chats under More filters; split Teams shows
+  Unread, Channels, Communities; quick views in split Chat are Mentions,
+  Drafts, Saved and in split Teams Followed threads, Discover, Drafts.
+  The Chat window in split view is the same list, 266 wide in a 946 x 593
+  window, with the chat you were in beside it.)
   **Unmuted** is appended when `showUnmutedFilterIfMutedSectionNotExist`
   and the user has no Muted section (live: flag absent).
 - Without config (fallback): unified = Unread, [Unmuted], [@Mentions

@@ -637,6 +637,23 @@ docs/spec/events.md.
     link and leaders), the commit is followed by the refresh, the join sends
     supportsCollabLeader with that ECS flag, and a Meet now follows the
     create flow.
+  - The call stores a Meet now's link only when the request carries the
+    user's AAD identity (TASK-0212, 2026-11-21): Teams' calling stack signs
+    every conversation request with the user's IC3 token (Skype token
+    migration: `Authorization: Bearer <token for https://ic3.teams.office.com>`
+    and `X-MS-Migration: True`; ECS skypeTokenMigrationServiceInfo has
+    Slimcore on CAE tokens), and the call commits the link to the collab
+    service for that user. Signed with the Skype token, the share was
+    answered asynchronously with code 500, subCode 6176 "Unable to update
+    collab resources", additionalData CollabCommitError "CrossTenantRequest"
+    (in OST's own Meet now and in one Teams made alike). OST's conversation
+    requests now carry the IC3 token (the Skype token only if the call
+    answers 401). The link Teams shares is OneDrive's own organization edit
+    link (`POST {OneDrive site}/_api/v2.1/drives/{d}/items/{i}/createLink`,
+    the short `/:fl:/p/<user>/<token>` form; Graph's createLink gives the
+    older `/:fl:/g/personal/…`), which OST now makes too. Verified live:
+    OST Test 3 made and shared the notes of a Meet now of ost-test1's, and
+    Teams desktop (ost-test1) joining opened that page in its Notes panel.
 - More actions (Teams gives the notes Loop's host controls): Shared
   locations (the notes and "Open component in" its chat), Copy component,
   See who has access (OneDrive's Manage access), Open in Loop and Add to

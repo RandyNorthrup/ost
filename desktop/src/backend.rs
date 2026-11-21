@@ -7256,6 +7256,7 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
                     .map(|l| format!("{}:{}:{}", l["type"].as_str().unwrap_or(""), l.pointer("/participant/id").and_then(|x| x.as_str()).unwrap_or(""), l["status"]))
                     .collect();
                 tracing::info!(resources, ?leaders, notes = teams_cli::calling::meeting_notes::collab_notes_location(&v).is_some(), "meeting: collab details");
+                tracing::debug!(details = %teams_cli::calling::meeting_notes::debug_summary(&v), "meeting: notes states");
             }
             let notes = call_slot()
                 .lock()
@@ -21384,6 +21385,10 @@ impl qobject::Backend {
                         Ok(r)
                     }
                     "overview" => api::events::overview(&client, &s("id")).await,
+                    // A town hall's Manage apps card and its Uninstall.
+                    "townhallApps" => api::events::townhall_apps(&client, &s("thread")).await,
+                    "townhallAppInstall" => api::events::townhall_app_install(&client, &s("thread"), &s("app")).await,
+                    "townhallAppRemove" => api::events::townhall_app_remove(&client, &s("thread"), &s("app")).await,
                     "people" => api::events::people(&client, &s("id")).await,
                     "publish" => {
                         let r = api::events::publish(&client, &s("id")).await?;

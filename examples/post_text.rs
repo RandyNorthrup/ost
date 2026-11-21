@@ -1,6 +1,7 @@
 //! Post a plain message with a delivery option into a chat (debugging aid):
 //! `cargo run --example post_text -- <chat id> <text> [high|urgent]`.
-//! OST_POST_HEADERS="name: value;; name: value" adds request headers.
+//! OST_POST_HEADERS="name: value;; name: value" adds request headers;
+//! OST_POST_HTML=1 sends the text as the message's HTML.
 use teams_cli::api::client::TeamsClient;
 
 #[tokio::main]
@@ -19,7 +20,12 @@ async fn main() -> anyhow::Result<()> {
         .duration_since(std::time::UNIX_EPOCH)?
         .as_millis();
     let body = serde_json::json!({
-        "content": format!("<p>{}</p>", text.replace('&', "&amp;").replace('<', "&lt;")),
+        // OST_POST_HTML=1 posts the text as HTML (a test link).
+        "content": if std::env::var("OST_POST_HTML").as_deref() == Ok("1") {
+            text.clone()
+        } else {
+            format!("<p>{}</p>", text.replace('&', "&amp;").replace('<', "&lt;"))
+        },
         "messagetype": "RichText/Html",
         "contenttype": "text",
         "clientmessageid": now.to_string(),
@@ -35,6 +41,6 @@ async fn main() -> anyhow::Result<()> {
     let resp = client
         .chat_request_with(reqwest::Method::POST, &url, &body, &headers)
         .await?;
-    println!("{}", resp.status());
+    println!("{} {}", resp.status(), resp.headers().get("location").and_then(|v| v.to_str().ok()).unwrap_or_default());
     Ok(())
 }

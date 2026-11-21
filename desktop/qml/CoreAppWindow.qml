@@ -19,6 +19,8 @@ Window {
     property bool pinned: false
     /// The main window shows chats and channels apart (Teams' split view).
     property bool splitView: false
+    /// The main window has mentions (the list's Mentions quick view).
+    property bool hasMentions: false
     /// The chat shown beside the list or the feed.
     property string chatId: ""
     property string chatName: ""
@@ -76,6 +78,11 @@ Window {
                 currentId: win.chatId
                 windowWidth: win.width
                 onChatSelected: (id, name) => win.showChat(id, name)
+                draftIds: (backend.draftsJson ? JSON.parse(backend.draftsJson) : []).map(d => d.id)
+                hasMentions: win.hasMentions
+                onOpenMentions: win.openInMain("mentions", {})
+                onOpenDrafts: win.openInMain("drafts", {})
+                onOpenQuick: kind => win.openInMain("quick", { kind: kind })
                 onNewChat: win.openInMain("newChat", {})
                 onOpenChatWindow: (id, name, photo, presence) => win.openInMain("chatWindow", { id: id, name: name, photo: photo, presence: presence })
             }

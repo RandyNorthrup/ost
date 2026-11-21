@@ -2514,6 +2514,24 @@ async fn cc_post(
     cc_send(http, reqwest::Method::POST, skype_token, url, body, what).await
 }
 
+/// The user's IC3 token for a conversation request. Teams' calling stack
+/// signs its conversation requests with it (Skype token migration:
+/// `Authorization: Bearer <token>` and `X-MS-Migration: True`; ECS
+/// skypeTokenMigrationServiceInfo has Slimcore on CAE tokens for
+/// ic3CaeResource https://ic3.teams.office.com), not the Skype token. The
+/// call then acts for the user elsewhere: a Meet now's notes link is
+/// committed to the collab service on their behalf, which a Skype-token
+/// request fails (updateMeetingStates 500, subCode 6176, CollabCommitError
+/// CrossTenantRequest; TASK-0212).
+async fn cc_bearer() -> Option<String> {
+    let mut config = Config::load().ok()?;
+    if config.get_ic3_token().is_none_or(|t| t.is_expired()) {
+        crate::auth::oauth::refresh().await.ok()?;
+        config = Config::load().ok()?;
+    }
+    config.get_ic3_token().filter(|t| !t.is_expired()).map(|t| t.token)
+}
+
 /// A conversation request with the given method (Teams PUTs some, such as
 /// updateMeetingSettings).
 async fn cc_send(
@@ -2527,13 +2545,24 @@ async fn cc_send(
     if !super::incoming::is_service_link(url) {
         bail!("{what}: not a Teams service link");
     }
-    let resp = http
-        .request(method, url)
-        .header("X-Skypetoken", skype_token)
-        .json(body)
+    let send = |bearer: Option<String>| {
+        let req = http.request(method.clone(), url).json(body);
+        match bearer {
+            Some(t) => req.bearer_auth(t).header("X-MS-Migration", "True"),
+            None => req.header("X-Skypetoken", skype_token),
+        }
         .send()
-        .await
-        .with_context(|| format!("{what} failed to send"))?;
+    };
+    let bearer = cc_bearer().await;
+    let signed = bearer.is_some();
+    let mut resp = send(bearer).await.with_context(|| format!("{what} failed to send"))?;
+    // A conversation that doesn't take the user's token yet (Teams asks
+    // the service's WWW-Authenticate for the token types it takes): the
+    // Skype token.
+    if signed && resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+        tracing::info!("{what}: the call refused the IC3 token, sending the Skype token");
+        resp = send(None).await.with_context(|| format!("{what} failed to send"))?;
+    }
     let status = resp.status();
     let text = resp.text().await.unwrap_or_default();
     if !status.is_success() {
@@ -3860,6 +3889,7 @@ async fn start_tagged(
         let mut n = super::meeting_notes::Notes::default();
         if let Ok(v) = serde_json::from_str::<serde_json::Value>(&created.response_body) {
             n.apply(&v);
+            tracing::debug!(details = %super::meeting_notes::debug_summary(&v), "meeting join: notes states");
             tracing::info!(collab = v.pointer("/conversationResponse/meetingDetails/collabDetails").or_else(|| v.pointer("/meetingDetails/collabDetails")).is_some(), notes = !n.resource_uri.is_empty(), "meeting join: notes");
         }
         n

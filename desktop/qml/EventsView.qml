@@ -84,6 +84,31 @@ Rectangle {
     /// entityCommanding.calendar.meetingDetails for the session's meeting:
     /// the scheduling form's view, its default tab).
     signal openMeetingDetails(string joinUrl, string start)
+    /// A town hall's Manage apps ▸ Add: the app's tab configuration in the
+    /// event meeting's chat (Teams' Add a tab dialog for that chat); the
+    /// window calls townhallAppAdded() once it saved.
+    signal addTownhallApp(var app, string thread)
+    signal townhallAppAdded()
+    property Item thAppsRef: null
+    function townhallAppsForTest() { return thAppsRef ? thAppsRef.apps : null }
+    function townhallThreadForTest() { return thAppsRef ? thAppsRef.thread : "" }
+    function uninstallTownhallAppForTest(a) { confirmTownhallUninstall(thAppsRef.thread, a); uninstallDialog.confirmed(); uninstallDialog.close() }
+    function confirmTownhallUninstall(thread, app) {
+        uninstallDialog.thread = thread; uninstallDialog.app = app
+        uninstallDialog.title = qsTr("Uninstall %1 from this event?").arg(app.name)
+        uninstallDialog.open()
+    }
+    ConfirmDialog {
+        id: uninstallDialog
+        property string thread: ""
+        property var app: null
+        body: qsTr("This removes the app for everyone in the event. You can add it again later.")
+        confirmText: qsTr("Uninstall")
+        onConfirmed: root.call("townhallAppRemove", { thread: thread, app: app ? app.id : "" }, v => {
+            if (v.error) root.toast({ text: v.error, intent: "error" })
+            root.townhallAppAdded()
+        })
+    }
     signal toast(var d)
     /// The event page's Join: its meeting's pre-join.
     signal joinEvent(string url, string title, string start, string end)
@@ -2725,9 +2750,61 @@ Rectangle {
                             }
                         }
                     }
+                    // Manage apps, a town hall's: the apps Teams allows there
+                    // (ECS baseTownhallAppEntityAllowlist), each with Add (the
+                    // app's tab configuration in the event meeting's chat), or
+                    // "Added" and Uninstall (measured on winpc: card 350 wide,
+                    // padding 20, rows 48 apart with a 32 icon, the name at
+                    // 65, Add 80 x 28 (12 px, radius 4, #D1D1D1 border) at the
+                    // right edge, or under "Added" with a 28 trash button).
+                    Item {
+                        id: thApps
+                        visible: !root.previewOn && eventPage.organizer && eventPage.ev.event_type === "Townhall"
+                        width: parent.width; height: visible ? 64 + Math.max(1, apps.length) * 48 + 8 : 0
+                        property var apps: []
+                        readonly property string thread: eventPage.ev.thread_id || ((decodeURIComponent(eventPage.ev.join_url || "").match(/19:meeting_[^/]+@thread\.v2/) || [""])[0])
+                        readonly property bool anyAdded: apps.some(a => a.added)
+                        function reload() { if (visible && thread) root.call("townhallApps", { thread: thread }, v => { if (!v.error) apps = v.apps || [] }) }
+                        onVisibleChanged: reload()
+                        Component.onCompleted: root.thAppsRef = thApps
+                        onThreadChanged: reload()
+                        Connections { target: root; function onTownhallAppAdded() { thApps.reload() } }
+                        Rectangle { anchors.fill: parent; radius: 16; color: theme.pick("#F5F5F5", "#292929", "#000000") }
+                        Text { x: 21; y: 21; text: qsTr("Manage apps"); font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
+                        Repeater {
+                            model: thApps.apps
+                            Item {
+                                required property var modelData
+                                required property int index
+                                x: 21; y: 63 + index * 48; width: thApps.width - 42; height: 32
+                                Image { width: 32; height: 32; source: modelData.icon || ""; sourceSize.width: 64; sourceSize.height: 64; fillMode: Image.PreserveAspectFit; smooth: true }
+                                Text { x: 44; width: (thApps.anyAdded ? 192 : 228) - 44; anchors.verticalCenter: parent.verticalCenter; text: modelData.name; elide: Text.ElideRight; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                                Text {
+                                    visible: modelData.added; x: 192; width: 80; anchors.verticalCenter: parent.verticalCenter
+                                    text: qsTr("Added"); font.family: theme.font; font.pixelSize: 14; color: theme.pick("#424242", "#D6D6D6", "#FFFFFF")
+                                }
+                                Rectangle {
+                                    visible: modelData.added; x: 280; y: 2; width: 28; height: 28; radius: 4
+                                    color: delMa.containsMouse ? theme.pick("#E0E0E0", "#3D3D3D", "#000000") : "transparent"
+                                    FluentIcon { anchors.centerIn: parent; name: "delete-20"; size: 20; color: theme.pick("#424242", "#D6D6D6", "#FFFFFF") }
+                                    MouseArea { id: delMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.confirmTownhallUninstall(thApps.thread, modelData) }
+                                    Accessible.role: Accessible.Button; Accessible.name: qsTr("Uninstall %1").arg(modelData.name)
+                                }
+                                Rectangle {
+                                    visible: !modelData.added
+                                    x: thApps.anyAdded ? 192 : parent.width - 80; width: 80; height: 28; radius: 4; y: 2
+                                    color: addMa.containsMouse ? theme.pick("#F5F5F5", "#3D3D3D", "#000000") : theme.pick("#FFFFFF", "#292929", "#000000")
+                                    border.width: 1; border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF")
+                                    Text { anchors.centerIn: parent; text: qsTr("Add"); font.family: theme.font; font.pixelSize: 12; color: theme.text }
+                                    MouseArea { id: addMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.addTownhallApp(modelData, thApps.thread) }
+                                    Accessible.role: Accessible.Button; Accessible.name: qsTr("Add %1 app").arg(modelData.name)
+                                }
+                            }
+                        }
+                    }
                     // Manage apps.
                     Item {
-                        visible: !root.previewOn && eventPage.organizer
+                        visible: !root.previewOn && eventPage.organizer && eventPage.ev.event_type !== "Townhall"
                         width: parent.width; height: visible ? 104 : 0
                         Rectangle { anchors.fill: parent; radius: 16; color: theme.pick("#F5F5F5", "#292929", "#000000") }
                         Text { x: 21; y: 20; text: qsTr("Manage apps"); font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }

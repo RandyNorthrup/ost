@@ -53,6 +53,9 @@ Popup {
     signal saved(string tabId)
     /// The tab being set up again (its Settings), or null when adding.
     property var updating: null
+    /// Added from an event's Manage apps (Teams' dialog there has no Back
+    /// and no post to the chat).
+    property bool eventApp: false
     readonly property bool update: !!updating
     signal updated(string tabId)
     anchors.centerIn: Overlay.overlay
@@ -88,6 +91,7 @@ Popup {
         nameField.text = a && a.name ? a.name : qsTr("Website")
         urlField.text = ""
         post.checked = true
+        eventApp = false
         open()
     }
     /// Settings on tab `t` (Tab: app_id, icon, config_url, entity_id, id)
@@ -328,7 +332,7 @@ Popup {
         x: 24.7; y: root.update ? 520.9 : 526.7; width: 550.7; height: 42
         Item {
             id: post
-            visible: !root.update
+            visible: !root.update && !root.eventApp
             property bool checked: true
             y: 8; width: 56.7 - 24.7 + postLabel.implicitWidth + 12; height: 36
             Rectangle {
@@ -345,7 +349,7 @@ Popup {
         }
         Row {
             anchors.right: parent.right; y: 10; spacing: 10
-            Button96 { visible: !root.update; label: qsTr("Back"); onClicked: { root.close(); root.back() } }
+            Button96 { visible: !root.update && !root.eventApp; label: qsTr("Back"); onClicked: { root.close(); root.back() } }
             Button96 { label: qsTr("Save"); primary: true; enabled: root.valid && !root.saving; onClicked: root.save() }
         }
     }

@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-17T01:27:00Z'
-updated_date: '2026-11-21T16:28:00Z'
+updated_date: '2026-11-21T18:42:00Z'
 labels:
   - desktop
 dependencies: []
@@ -69,4 +69,10 @@ What TASK-0209 left (docs/spec/events.md, docs/spec/call-and-meeting-window.md):
 - Still open: the leader's collabResources.notes share fails asynchronously (updateMeetingStatesStatus: code 500, subCode 6176 "Unable to update collab resources", additionalData CollabCommitError "CrossTenantRequest"), both with and without secret = the call id. The call never stores the link and keeps re-electing. Cause not found yet; the link is the organization edit link with nav, as Teams'.
 - Harness: --call-notes-test loads today's calendar when the view doesn't hold it (a weekend), --join-notes deletes its own test notes, and --events-test=calclean also removes leftover "OST TEST 212 notes" meetings. 861 lib tests pass.
 - Not attempted this round: Highlights with a recording; a town hall's Manage apps list (the 26304 meet-app chunk has only Polls, and the live winpc chunk wasn't read); Generate audio recap's submit.
+
+- 2026-11-21 (teamsH) (a) Meet now notes, fixed and verified live. Teams desktop (winpc, ost-test1) made and shared a Meet now's notes fine (CDP: Graph special/meetings, Fluid snapshot, GetSharingInformation, SharePoint v2.1 createLink {edit, organization}; the share itself goes through SlimCore, not visible on CDP; its JS (FluidMeetNowComposeContainer) sends collabResources.notes {type, resourceUri}). OST Test 3 joining read the link from the join response and opened the page.
+- Cause of 6176 CrossTenantRequest: OST signed the conversation's follow-up requests (cc_send: updateMeetingStates, updateMeetingSettings, …) with the Skype token; Teams' calling stack signs them with the user's IC3 AAD token (Skype token migration: Authorization Bearer + X-MS-Migration: True; ECS skypeTokenMigrationServiceInfo Slimcore = CAE, ic3CaeResource https://ic3.teams.office.com; calling-pluginless HEADERS / getTokenMetadata). The call commits a Meet now's notes to the collab service on the user's behalf, which fails without their AAD identity. Ruled out first: the meeting's creator (fails in a Teams-made Meet now too), the link form (Graph /:fl:/g/ vs SharePoint /:fl:/p/: still failed).
+- Built: cc_send uses the IC3 token (Skype token only if the call answers 401); notes' edit link now from SharePoint's own createLink as Teams (/:fl:/p/ link); debug log of the notes states; --join-notes deletes its notes near the end of --join-stay; examples meeting_resolve, post_text OST_POST_HTML.
+- Live: OST Test 3 alone in Teams' "Get a link" Meet now ("OST TEST 212 notes teams 3"): claim Success, collabResources.notes Success (was 500/6176); Teams (ost-test1) then joined and its Notes panel opened OST Test 3's page (Agenda / Meeting notes / Follow-up tasks, OST Test 3's presence shown). Test meetings: "OST TEST 212 notes teams", "… 2", "… 3" (Teams Meet nows, no calendar entries); notes files deleted by the harness except Teams' own "OST TEST 212 notes teams.loop" in ost-test1's Meetings folder (to delete).
+- (c) Town hall Manage apps: the card lists ECS extensibility.baseTownhallAppEntityAllowlist (live: AI Producer e7fb100c, Custom Streaming a59fe11a; worker filter isTownHall → base list), names from batchedDefinitions; Add = POST chats/{thread}/apps/entitlements then the tab configuration (Custom Streaming's page is teams.microsoft.com/extensibility-apps/meetingstream/rtmp/config, code teams-modular-packages meeting-stream-rtmp-*.js at runtime), Uninstall = tab property null + DELETE chat entitlement. Spec in events.md; built the card (api::events::townhall_apps/_install/_remove, EventsView, TabConfigDialog eventApp), harness --events-test=thapps:<title>; test draft "OST TEST 212 town hall apps" made by ost-test1 on winpc (to cancel).
 <!-- SECTION:NOTES:END -->

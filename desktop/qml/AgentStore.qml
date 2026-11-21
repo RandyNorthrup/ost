@@ -48,8 +48,10 @@ Popup {
     /// Add a tab: one of your apps was picked from the grid.
     signal pickTabApp(var app)
     modal: true; focus: true
-    width: Math.min(901.3, (parent ? parent.width : 901.3) - 32)
-    height: Math.min(647.3, (parent ? parent.height : 647.3) - 32)
+    // Teams' picker: 901.3 x 647.3 in the main window; in a 946 x 593
+    // pop-out 900 x 565 at 23, 14 (winpc, 2026-11-21).
+    width: Math.min(901.3, (parent ? parent.width : 901.3) - 46)
+    height: Math.min(647.3, (parent ? parent.height : 647.3) - 28)
     anchors.centerIn: Overlay.overlay
     padding: 0
     closePolicy: Popup.CloseOnEscape

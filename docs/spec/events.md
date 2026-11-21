@@ -480,9 +480,29 @@ Delete collection).
 **Manage apps** (seen on winpc): a webinar's card says "Manage or add apps for your
 session here."; "here" opens the session meeting's details page
 (entityCommanding.calendar.meetingDetails, its default tab; OST: Calendar's meeting
-details). A town hall's card on winpc lists apps with Add ("Custom Streaming",
-"AI Producer"), which the 26304 bundles on linuxlt don't have (they list Polls under
-"Commonly added:"): not built.
+details). A town hall's card (measured 2026-11-21 on an "OST TEST 212 town hall apps"
+draft, TASK-0212) lists the apps Teams allows in a town hall's own thread: ECS
+`extensibility.baseTownhallAppEntityAllowlist` (the worker's filter `isTownHall →
+base allowlist`, `isStreamingThread → streamingTownhallAppEntityAllowlist`; the
+26304 defaults hold only AI Producer e7fb100c…, the live ECS adds Custom Streaming
+a59fe11a…), each named and pictured from batchedDefinitions; Teams listed Custom
+Streaming above AI Producer. Card 350 wide, #F5F5F5, radius 16, padding 20; "Manage
+apps" 16/22 semibold; rows 48 apart: icon 32 (radius 2), name 14/20 at 65, Add 80 x
+28 (12/16, radius 4, white, 1 px #D1D1D1) at the right edge; with an app added its row
+shows "Added" (14, #424242) and a 28 x 28 Uninstall button (trash 20), and the Add
+buttons move into that column. Add: `POST {mt}/beta/chats/{event thread}/apps/
+entitlements` (the definition), then Teams' tab configuration dialog (app icon and
+name, About, the app's configuration page — Custom Streaming's is Teams' own
+`teams.microsoft.com/extensibility-apps/meetingstream/rtmp/config?host=teams`, code
+`teams-modular-packages/hashed-assets/meeting-stream-rtmp-*.js` loaded at runtime —
+and Save, no Back and no post to the chat), saved as the chat's tab property
+(`tab::<id>` extension-tab, entityId streaming-controls). Uninstall asks "Uninstall
+{app} from this event?" / "This removes the app for everyone in the event. You can add
+it again later." (Cancel, Uninstall), then sets the tab property to null and `DELETE
+{mt}/beta/chats/{thread}/apps/entitlements/{app}`. "Added" follows the chat's
+`GET {mt}/beta/chats/{thread}/apps/chatentitlements`. OST: the same card
+(`api::events::townhall_apps`, `townhall_app_install`, `townhall_app_remove`;
+harness `--events-test=thapps:<title>`).
 
 **Room options**: Presenting sends the room in `presenters` (with sessionsProps),
 Attendee viewing in `attendees` (userType Room, no sessionsProps) — Teams' code

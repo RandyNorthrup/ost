@@ -98,6 +98,13 @@ fn collab_details(event: &Value) -> Option<Value> {
     }
 }
 
+/// The notes' meeting states and collab details of an event, for the
+/// debug log (links, ids and statuses; no tokens are in these).
+pub fn debug_summary(event: &Value) -> String {
+    let st = states(event).map(|s| json!({ RESOURCE: s.get(RESOURCE), LEADER: s.get(LEADER) }));
+    json!({ "states": st, "collab": collab_details(event) }).to_string()
+}
+
 /// The notes' link in the call's collab details (the `notes` resource's
 /// location), if they carry one.
 pub fn collab_notes_location(event: &Value) -> Option<String> {

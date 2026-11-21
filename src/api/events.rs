@@ -1475,9 +1475,112 @@ pub async fn set_theme_image(client: &TeamsClient, id: &str, etag: &str, which: 
                   Some(&body), etag, true).await
 }
 
+/// A town hall's Manage apps card (measured in Teams desktop 26304 on winpc,
+/// TASK-0212, an "OST TEST 212 town hall apps" draft): the apps of ECS
+/// `extensibility.baseTownhallAppEntityAllowlist` (Teams' worker filter for a
+/// town hall's own thread allows only these; live today AI Producer
+/// e7fb100c… and Custom Streaming a59fe11a…), named from their definitions
+/// (batchedDefinitions); "Added" once the event meeting's chat has the app
+/// (`GET {mt}/beta/chats/{thread}/apps/chatentitlements`). Teams listed
+/// Custom Streaming above AI Producer, the reverse of the allowlist.
+pub async fn townhall_apps(client: &TeamsClient, thread: &str) -> Result<Value> {
+    anyhow::ensure!(thread.starts_with("19:") && thread.ends_with("@thread.v2"), "Not a meeting chat");
+    let mut ids: Vec<String> = super::ecs::setting("extensibility", "baseTownhallAppEntityAllowlist")
+        .and_then(|v| serde_json::from_value(v).ok())
+        .unwrap_or_default();
+    ids.retain(|i| uuid::Uuid::parse_str(i).is_ok());
+    ids.reverse();
+    if ids.is_empty() {
+        return Ok(json!({ "apps": [] }));
+    }
+    let defs = super::app_details::definitions(client, &ids).await?;
+    let base = client.middle_tier_url().context("No Teams middle-tier endpoint")?;
+    let token = super::directory::middle_tier_token().await?;
+    let installed: String = client
+        .http()
+        .get(format!("{base}/beta/chats/{thread}/apps/chatentitlements"))
+        .bearer_auth(token)
+        .send()
+        .await?
+        .error_for_status()
+        .context("The event's apps")?
+        .text()
+        .await?
+        .to_lowercase();
+    Ok(json!({ "apps": townhall_rows(&ids, &defs, &installed) }))
+}
+
+/// The card's rows in `ids` order: name, icon, configuration page, added
+/// (the app's id quoted in the chat's entitlements).
+pub fn townhall_rows(ids: &[String], defs: &[Value], installed: &str) -> Vec<Value> {
+    ids.iter()
+        .filter_map(|id| {
+            let def = defs.iter().find(|d| d.get("id").and_then(Value::as_str).is_some_and(|x| x.eq_ignore_ascii_case(id)))?;
+            let app = super::store_content::store_app(def, None);
+            Some(json!({
+                "id": app.id, "name": app.name, "icon": app.icon, "config_url": app.config_url,
+                "added": installed.contains(&format!("\"{}\"", id.to_lowercase())),
+            }))
+        })
+        .collect()
+}
+
+/// The card's Add, first step (captured on winpc): the app goes into the
+/// event meeting's chat (`POST {mt}/beta/chats/{thread}/apps/entitlements`
+/// with its definition), before its tab configuration opens.
+pub async fn townhall_app_install(client: &TeamsClient, thread: &str, app: &str) -> Result<Value> {
+    anyhow::ensure!(thread.starts_with("19:") && thread.ends_with("@thread.v2") && uuid::Uuid::parse_str(app).is_ok(), "Not an app");
+    let def = super::app_details::definition(client, app).await?;
+    let base = client.middle_tier_url().context("No Teams middle-tier endpoint")?;
+    let token = super::directory::middle_tier_token().await?;
+    client
+        .http()
+        .post(format!("{base}/beta/chats/{thread}/apps/entitlements"))
+        .bearer_auth(token)
+        .header("x-client-ui-language", "en-us")
+        .json(&def)
+        .send()
+        .await?
+        .error_for_status()
+        .context("Add the app to the event")?;
+    Ok(json!({ "added": app }))
+}
+
+/// The card's Uninstall (Teams: "Uninstall {app} from this event?" ▸
+/// Uninstall): the app's tabs leave the event meeting's chat (their thread
+/// properties set to null), then the app (`DELETE {mt}/beta/chats/{thread}/
+/// apps/entitlements/{app}`).
+pub async fn townhall_app_remove(client: &TeamsClient, thread: &str, app: &str) -> Result<Value> {
+    anyhow::ensure!(thread.starts_with("19:") && uuid::Uuid::parse_str(app).is_ok(), "Not an app");
+    for t in super::tab_add::chat_tabs(client, thread).await.unwrap_or_default() {
+        if t.app_id.eq_ignore_ascii_case(app) {
+            super::tab_add::remove_property(client, thread, &t.id).await?;
+        }
+    }
+    super::store_content::remove_from_chat(client, thread, app).await?;
+    Ok(json!({ "removed": app }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn townhall_card_rows() {
+        let ids = vec!["a59fe11a-7ae8-4569-94d1-081c83ab59b6".to_string(), "e7fb100c-8c81-4e3f-9c78-bb1407080cdc".to_string()];
+        let defs = vec![
+            json!({"id": "e7fb100c-8c81-4e3f-9c78-bb1407080cdc", "name": "AI Producer", "largeImageUrl": "https://x/ai.png"}),
+            json!({"id": "a59fe11a-7ae8-4569-94d1-081c83ab59b6", "name": "Custom Streaming", "largeImageUrl": "https://x/cs.png",
+                   "configurableTabs": [{"configurationUrl": "https://teams.microsoft.com/extensibility-apps/meetingstream/rtmp/config?host=teams"}]}),
+        ];
+        let rows = townhall_rows(&ids, &defs, r#"{"value":[{"appId":"a59fe11a-7ae8-4569-94d1-081c83ab59b6"}]}"#);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0]["name"], "Custom Streaming");
+        assert_eq!(rows[0]["added"], true);
+        assert!(rows[0]["config_url"].as_str().unwrap().contains("meetingstream/rtmp/config"));
+        assert_eq!(rows[1]["name"], "AI Producer");
+        assert_eq!(rows[1]["added"], false);
+    }
 
     #[test]
     fn email_template_patch_keeps_the_editor_fields() {

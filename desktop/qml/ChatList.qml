@@ -366,6 +366,7 @@ Rectangle {
         if (category === "channels" || category === "communities") return false
         if (category === "chats" && isMeeting(c)) return false
         if (category === "meetings" && !isMeeting(c)) return false
+        if (category === "unmuted" && c.muted) return false
         if (unreadOn && !c.unread) return false
         return nameMatches(c.name)
     }
@@ -410,7 +411,10 @@ Rectangle {
             if (category || unreadOn || nameFilter) rows = []
             else {
                 if (root.hasMentions) rows.push({ type: "slice", key: "mentions", label: qsTr("Mentions"), icon: "mention-20" })
-                rows.push({ type: "slice", key: "followed", label: qsTr("Followed threads"), icon: "followed-threads-20" })
+                // Separate view's Chat has no Followed threads (Teams'
+                // quickViewsSupportedSlicesForViewType CHATS: Mentions,
+                // Drafts, Saved; seen on winpc 2026-11-21).
+                if (pane !== "chats") rows.push({ type: "slice", key: "followed", label: qsTr("Followed threads"), icon: "followed-threads-20" })
                 if (root.draftIds.length > 0) rows.push({ type: "slice", key: "drafts", label: qsTr("Drafts"), icon: "drafts-20" })
                 rows.push({ type: "slice", key: "saved", label: qsTr("Saved"), icon: "bookmark-20" })
             }
@@ -586,9 +590,13 @@ Rectangle {
         { key: "unread", label: qsTr("Unread"), keys: "Ctrl+Alt+U" },
         { key: "channels", label: qsTr("Channels"), keys: "Ctrl+Alt+A" },
         { key: "chats", label: qsTr("Chats"), keys: "Ctrl+Alt+C" },
+        // Separate view's Chat (winpc, 2026-11-21): Unread, Chats, Unmuted,
+        // then Meeting chats under More filters.
+        { key: "unmuted", label: qsTr("Unmuted"), keys: "Ctrl+Alt+Q" },
         { key: "meetings", label: qsTr("Meeting chats"), keys: "Ctrl+Alt+B" }
     ].concat(hasCommunities ? [{ key: "communities", label: qsTr("Communities"), keys: "" }] : [])
-     .filter(p => pane === "chats" ? ["unread", "chats", "meetings"].indexOf(p.key) >= 0
+     .filter(p => pane === "chats" ? ["unread", "chats", "unmuted", "meetings"].indexOf(p.key) >= 0
+                : p.key === "unmuted" ? false
                 : pane === "teams" ? ["unread", "channels", "communities"].indexOf(p.key) >= 0 : true)
     onPaneChanged: { category = ""; unreadOn = false }
     function pillOn(k) { return k === "unread" ? unreadOn : category === k }
@@ -966,8 +974,9 @@ Rectangle {
         Text {
             visible: row.twoLine
             x: 80; y: 26; width: parent.width - x - 28 - (liveIcon.visible || unreadDot.visible ? 22 : 0)
-            text: root.previewOf(row.chat)
-            elide: Text.ElideRight
+            // One line, as Teams (a message's line breaks read as spaces).
+            text: (root.previewOf(row.chat) || "").replace(/\s*\n\s*/g, " ")
+            elide: Text.ElideRight; maximumLineCount: 1; wrapMode: Text.NoWrap
             font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight
             font.italic: !!row.chat.previewSystem
             font.weight: row.unread ? Font.DemiBold : Font.Normal
