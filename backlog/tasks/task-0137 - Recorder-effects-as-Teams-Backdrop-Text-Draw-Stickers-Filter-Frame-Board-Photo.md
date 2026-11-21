@@ -3,11 +3,11 @@ id: TASK-0137
 title: >-
   Recorder effects as Teams: Backdrop, Text, Draw, Stickers, Filter, Frame,
   Board, Photo
-status: To Do
+status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-14T15:44:00Z'
-updated_date: '2026-11-21T16:10:00Z'
+updated_date: '2026-11-21T17:05:00Z'
 labels:
   - messages
   - video
@@ -23,10 +23,10 @@ Teams' video clip recorder (Stream's) has Backdrop (None, Upload, Blur, Microsof
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Backdrop: None, Upload, Blur and the image/video library, applied to the camera picture as Teams does
-- [ ] #2 Effects menu: Text, Draw, Stickers, Filter, Frame, Board and Photo, each as Teams, recorded into the clip
+- [x] #1 Backdrop: None, Upload, Blur and the image/video library, applied to the camera picture as Teams does
+- [x] #2 Effects menu: Text, Draw, Stickers, Filter, Frame, Board and Photo, each as Teams, recorded into the clip
 - [ ] #3 Draw while screen recording, as Teams
-- [ ] #4 Verified side by side with Teams on winpc
+- [x] #4 Verified side by side with Teams on winpc
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -60,4 +60,6 @@ Teams' video clip recorder (Stream's) has Backdrop (None, Upload, Blur, Microsof
 - OST_QML_DIR=<checkout>/desktop/qml loads QML from disk (no 50-min rebuild for QML; bake shaders/*.frag with qsb into desktop/shaders first).
 
 - 2026-11-21 (recD) rebased on desktop/foundation 7063948 (Main.qml harness-list conflict resolved), rebuilt on linuxlt, re-run on the compiled build: all effects and the 1280x720 clip as before; screen mode Draw stroke in the clip. Engine lib tests 850 passed. The scratchpad (tmpfs) was wiped by the PC restart, so the earlier reference/side-by-side PNGs and capture files are gone; the measurements are in these notes and docs/spec/messages-and-composer.md.
+
+- 2026-11-21 merged (ff3e544..be97e15); 883 lib + 29 desktop tests pass on linuxlt. AC3 open: Draw over a real picked screen (linuxlt's KDE picker can't be driven; strokes while recording without a picked screen do record). Smaller gaps: Recent sections, scrolling past 50 results, darkened fill behind non-16:9 uploaded videos, Board drawer ~15 px short, corner-handle scale/rotate of the cut-out person.
 <!-- SECTION:NOTES:END -->
