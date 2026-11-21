@@ -14482,14 +14482,30 @@ impl qobject::Backend {
         let generation = self.rust().new_chat_people_generation + 1;
         self.as_mut().rust_mut().new_chat_people_generation = generation;
         let (my_mail, my_name) = (self.rust().user_mail.to_string(), self.rust().user_name.to_string());
+        // Your chats, for Teams' local chat search.
+        let local: Vec<api::search::LocalChat> = self
+            .rust()
+            .chats
+            .iter()
+            .map(|c| api::search::LocalChat {
+                id: c["id"].as_str().unwrap_or_default().to_string(),
+                topic: c["topic"].as_str().unwrap_or_default().to_string(),
+                group: c["isGroup"].as_bool().unwrap_or(false),
+                meeting: c["meeting"].as_bool().unwrap_or(false),
+                time: c["time"].as_str().and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok()).map(|t| t.timestamp_millis()).unwrap_or(0),
+            })
+            .collect();
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let result = async {
                 let me = TeamsClient::new().await.ok().and_then(|c| c.object_id()).unwrap_or_default();
-                let items = if q.is_empty() {
+                let items: Vec<serde_json::Value> = if q.is_empty() {
                     api::search::zero_state_people(&me, &my_mail, &my_name).await?
+                        .into_iter()
+                        .map(|mut p| { p["id"] = p["oid"].clone(); p["kind"] = "person".into(); p })
+                        .collect()
                 } else {
-                    api::search::new_chat_typed(api::search::recipients(&q, &me).await?, 20)
+                    api::search::new_chat_suggestions(&q, &me, &local).await?
                 };
                 anyhow::Ok(items)
             }
@@ -14500,12 +14516,14 @@ impl qobject::Backend {
                 }
                 match result {
                     Ok(items) => {
+                        // Chats, channels and teams open; people (and lists)
+                        // are picked.
                         let items: Vec<serde_json::Value> = items
                             .into_iter()
-                            .map(|p| if p["kind"] == "chat" {
-                                json!({ "id": p["id"], "name": p["name"], "sub": "", "chat": true })
-                            } else {
-                                json!({ "id": p["oid"], "name": p["name"], "sub": p["sub"], "guest": p["guest"], "upn": p["upn"] })
+                            .map(|p| {
+                                let kind = p["kind"].as_str().unwrap_or("person").to_string();
+                                json!({ "id": p["id"], "name": p["name"], "plain_name": p["plain_name"], "sub": p["sub"], "guest": p["guest"], "upn": p["upn"],
+                                        "kind": kind, "chat": matches!(kind.as_str(), "chat" | "channel" | "team"), "group": p["group"] })
                             })
                             .collect();
                         let v = json!({ "query": q, "items": items });
@@ -19876,7 +19894,7 @@ impl qobject::Backend {
             arg.to_string(),
         );
         // Your teams and channels' ops are about all your teams.
-        if !channel.ends_with("@thread.tacv2") && !op.starts_with("chat-notify") && !matches!(op.as_str(), "quick-saved" | "quick-followed" | "quick-unsave" | "quick-unfollow" | "notify-tagged" | "notify-on" | "notify-off" | "people-list" | "people-list-add" | "people-list-remove" | "meeting-chat-report-info" | "chat-apps" | "chat-app-remove" | "cross-team-analytics" | "invitations" | "invitation-answer" | "create-team" | "team-templates" | "team-template" | "my-groups" | "teams-suggested" | "teams-find" | "team-join" | "team-join-code") {
+        if !channel.ends_with("@thread.tacv2") && !op.starts_with("chat-notify") && !matches!(op.as_str(), "quick-saved" | "quick-followed" | "quick-unsave" | "quick-unfollow" | "notify-tagged" | "notify-on" | "notify-off" | "people-list" | "people-list-add" | "people-list-remove" | "meeting-chat-report-info" | "chat-apps" | "chat-app-remove" | "cross-team-analytics" | "invitations" | "invitation-answer" | "create-team" | "channel-agent-offered" | "channel-agent-add" | "channel-agent-wait" | "team-templates" | "team-template" | "my-groups" | "teams-suggested" | "teams-find" | "team-join" | "team-join-code") {
             return;
         }
         // The team's thread id and the channel's facts, from the list.
@@ -20576,6 +20594,25 @@ impl qobject::Backend {
                             }
                         };
                         Ok(serde_json::to_value(created)?)
+                    }
+                    // Create team's "Add Channel Agent": whether it is
+                    // offered (ECS and a Copilot licence), and adding the
+                    // agent to a new team's first channel as Teams does.
+                    "channel-agent-offered" => {
+                        let copilot = api::ecs::license(&client).await.and_then(|l| l["isCopilot"].as_bool()).unwrap_or(false);
+                        let offered = api::project_agent::offered(|k| api::ecs::setting("Messaging", k), copilot, &app_locale());
+                        Ok(json!({ "offered": offered }))
+                    }
+                    "channel-agent-add" => {
+                        let a: serde_json::Value = serde_json::from_str(&arg).context("Channel Agent")?;
+                        let f = |k: &str| a[k].as_str().unwrap_or_default().to_string();
+                        let prompt = channel_agent_prompt();
+                        let added = api::project_agent::add_to_new_team(&client, &f("channel"), &f("thread"), &f("group"), &prompt).await?;
+                        Ok(json!({ "added": added, "channel": f("channel"), "thread": f("thread") }))
+                    }
+                    "channel-agent-wait" => {
+                        let welcomed = api::project_agent::wait_for_welcome(&client, &arg).await?;
+                        Ok(json!({ "welcomed": welcomed, "thread": arg }))
                     }
                     // Template and app pictures go through the private image
                     // cache (the CDN's content types don't suit Qt's loader).
@@ -22556,9 +22593,19 @@ impl qobject::Backend {
                             "people" => {
                                 let order = api::cloud_attach::collaborators(&client).await.unwrap_or_default();
                                 let me = client.display_name().unwrap_or_default();
-                                json!({ "people": api::cloud_attach::order_people(api::drive::by_people(&client).await?, &order, &me).into_iter()
-                                    .map(|(name, items)| json!({ "name": name, "items": deco(items) }))
-                                    .collect::<Vec<_>>() })
+                                let people = api::cloud_attach::order_people(api::drive::by_people(&client).await?, &order, &me);
+                                // The chips name each file by its title where
+                                // it has one (a recording's meeting name).
+                                let mut out = Vec::new();
+                                for (name, items) in people {
+                                    let titles = futures::future::join_all(items.iter().map(|it| api::drive::item_title(&client, &it.drive_id, &it.id))).await;
+                                    let mut rows = deco(items);
+                                    for (row, title) in rows.iter_mut().zip(titles) {
+                                        if let Some(t) = title { row["title"] = t.into(); }
+                                    }
+                                    out.push(json!({ "name": name, "items": rows }));
+                                }
+                                json!({ "people": out })
                             }
                             // A channel's folder ("Browse Teams and Channels").
                             "channel" => {
@@ -25012,4 +25059,14 @@ fn picture_blur_hash(path: &str) -> Option<String> {
         return None;
     }
     teams_cli::api::blurhash::encode(&buf, w as usize, h as usize, 4, 3)
+}
+
+/// Teams' description prompt for a new Channel Agent (messaging:
+/// status_report_agent_configuration_agent_description_prompt, in the app
+/// language).
+fn channel_agent_prompt() -> String {
+    teams_cli::i18n::tr_id(
+        "Write a status report for [business stakeholders] that includes an [executive summary, progress update, blockers, risks, and next steps]. The report should be written from the perspective of a [project manager].",
+        "messaging:kbmb490vo",
+    )
 }

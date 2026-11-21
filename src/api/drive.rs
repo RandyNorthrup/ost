@@ -391,6 +391,17 @@ pub async fn by_people(client: &TeamsClient) -> Result<Vec<(String, Vec<DriveIte
     Ok(out)
 }
 
+/// An item's title as the cloud picker's People chips show it (Substrate's
+/// Visualization.Title: the SharePoint Title, which Teams sets to a
+/// recording's meeting name), or None when it has none.
+pub async fn item_title(client: &TeamsClient, drive_id: &str, item_id: &str) -> Option<String> {
+    if drive_id.is_empty() || item_id.is_empty() {
+        return None;
+    }
+    let v: serde_json::Value = client.graph_get(&format!("/drives/{drive_id}/items/{item_id}/listItem/fields?$select=Title")).await.ok()?.json().await.ok()?;
+    v["Title"].as_str().map(str::trim).filter(|t| !t.is_empty()).map(str::to_string)
+}
+
 /// Meeting files: the recordings Teams keeps in your OneDrive's
 /// Recordings folder (empty when there are none).
 pub async fn meetings(client: &TeamsClient) -> Result<Vec<DriveItem>> {

@@ -60,6 +60,7 @@ pub mod places;
 pub mod premium;
 pub mod presence;
 pub mod profile;
+pub mod project_agent;
 pub mod store;
 pub mod store_content;
 pub mod channels;

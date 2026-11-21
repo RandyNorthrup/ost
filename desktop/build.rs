@@ -94,6 +94,7 @@ fn main() {
         "qml/UrlPreviewCard.qml",
         "qml/AppLinkCard.qml",
         "qml/AppAuthWindow.qml",
+        "qml/ChannelAgentToast.qml",
         "qml/SmartReplyFeedback.qml",
         "qml/AutoLocationDialog.qml",
         "qml/MobileAppDialog.qml",

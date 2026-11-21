@@ -381,6 +381,23 @@ opened, then another chat was clicked.
     (You), three guests, OST group test, OST large chat test, OST empty
     chat test, four channels, OST Test Team, the team's group, OST Test
     Community, the other guests).
+  - How Teams lists them (worker resolver 81199, slots 964128; checked
+    on winpc 2026-11-20, where "OST" gives 22 rows in the 225 px list,
+    about four and a half in view): the request is the one above, with
+    the new chat form's People filter (OrganizationUser, MTOUser, Guest,
+    PublicDistributionList, UnifiedGroup; Mailbox, Directory and
+    SecurityGroups). People are Substrate's, in its order, without anyone
+    lacking an object id or a name; you are "<name> (You)". Group chats
+    are Substrate's that are in your chat list (not meeting chats), and
+    your own named chats whose name has a word starting with each typed
+    word come in too (the best at the third place, the rest after). The
+    rows fill slots: 5 people, 5 federated people and bots, 3 group
+    chats, 3 channels, 1 team, 2 distribution lists or groups, 15 more
+    people, then what didn't fit, up to 22. A channel's second line is its
+    team; a list's or group's its address. The typed words are bold where
+    a word starts with them, in both lines ("**OST** Test 2",
+    "**OST**-TEST2", "**ost**guest02@**ost**testlab…"). Picking a chat,
+    channel or team opens it.
 - **Compose in a new conversation (winpc).** The same box as a chat's
   (Format, Emoji, Attach, Write with Copilot, Loop, "+", Send). Attach
   opens the same popover (Search cloud files, Recent cloud files, Attach
@@ -1257,7 +1274,28 @@ OST Guest accounts; all were removed afterwards.
   creating a team from scratch. More create team options", Team name *,
   Description, Team type (Private by default), First channel name * (with
   ···), **Add Channel Agent** (a new checkbox), What's a team?, Cancel /
-  Create. Create sends `POST {teamsAndChannelsProvisioningService}/team/
+  Create.
+  - **Add Channel Agent** (785683; measured 2026-11-20): unticked, under
+    First channel name; an info button's tooltip "Keeps your plans on
+    track and gets your team the answers it needs. It creates status
+    reports, schedules meetings, and more." Shown for a Copilot licence
+    when ECS Messaging has enableProjectAgentAutoCreationToggle and
+    enableStatusReportAgent, enableCreateTeamAgent doesn't name
+    "CreateTeam" and projectAgentSupportedLocales is empty or names your
+    language. Ticked, once the team is made Teams checks the tenant offers
+    the agent (`GET {mt}/beta/users/apps/templatedApps` lists
+    projectAgentAppId 5ebb964d-…; otherwise it stops without a word) and
+    asks the Teams Copilot Aggregator (`POST {calling_TeamsCopilotAggregatorUrl}
+    /agents?agentType=0`, token for 0e959cba-…) for a StatusReportAgent
+    named "<channel> Agent" in the first channel: weekly from an hour
+    later for 90 days, you approving, Teams' description prompt. A toast
+    at the bottom left (288 wide, x 83, 16 above the bottom) says "<channel>"
+    / "Channel Agent is being added." / Go to channel; once the bot's
+    welcome ("Hi, I'm your Channel Agent…", botMetadata Welcome-AddAgent)
+    is in the channel, "Channel Agent has been added to this channel.";
+    on failure "Couldn't create {channelName} agent.". The channel shows
+    "<channel> Agent has been added to the channel." (Tried live in Teams
+    with "OST TEST 206 agent".) Create sends `POST {teamsAndChannelsProvisioningService}/team/
   v2?async=false` `{displayName, description, displayNamePrefix: "",
   displayNameSuffix: "", visibility, firstChannelName, isTenantWide:
   false}`; the first channel takes that name (the team's thread). Then

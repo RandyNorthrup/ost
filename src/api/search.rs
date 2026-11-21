@@ -609,21 +609,197 @@ pub fn parse_recipients(reply: &serde_json::Value, my_oid: &str) -> Vec<serde_js
     out
 }
 
-/// The new chat form's typed suggestions (Teams' peoplepicker.newChat, as
-/// it lists them, measured on winpc 2026-11-20): the people who match, or
-/// when no one does the chats (not channels or teams), in Substrate's
-/// best-match order.
-pub fn new_chat_typed(items: Vec<serde_json::Value>, max: usize) -> Vec<serde_json::Value> {
-    let usable = |v: &serde_json::Value| {
-        (v["kind"] == "person" && !v["oid"].as_str().unwrap_or_default().is_empty())
-            || (v["kind"] == "chat" && !v["name"].as_str().unwrap_or_default().is_empty() && !matches!(v["thread_type"].as_str(), Some("channel") | Some("team")))
-    };
-    let any_best = items.iter().any(|v| v["best"] == true);
-    let picked: Vec<serde_json::Value> = items.into_iter().filter(|v| usable(v) && (!any_best || v["best"] == true)).collect();
-    // Teams lists the people who match, and chats only when no one does
-    // ("OST": people; "OST group": the two chats).
-    let people = picked.iter().any(|v| v["kind"] == "person");
-    picked.into_iter().filter(|v| !people || v["kind"] == "person").take(max).collect()
+/// The new chat form's request (Teams' peoplepicker.newChat as its To: box
+/// sends it, captured on winpc 2026-11-20): people (organization users,
+/// cross-tenant users, guests, distribution lists and Microsoft 365
+/// groups), chats, channels and teams.
+pub fn new_chat_body(keyword: &str) -> serde_json::Value {
+    let q = serde_json::json!({ "QueryString": keyword, "DisplayQueryString": keyword });
+    serde_json::json!({
+        "EntityRequests": [
+            {
+                "Query": q, "EntityType": "People", "Size": 20,
+                "Fields": ["Id", "MRI", "DisplayName", "EmailAddresses", "PeopleType", "PeopleSubtype", "Phones", "UserPrincipalName", "GivenName", "Surname", "Cid", "CompanyName", "JobTitle", "ImAddress", "ExternalDirectoryObjectId", "ConcatenatedId", "Department"],
+                "Filter": { "And": [
+                    { "Or": [{ "Term": { "PeopleType": "Person" } }, { "Term": { "PeopleType": "Other" } }, { "Term": { "PeopleType": "Group" } }] },
+                    { "Or": [{ "Term": { "PeopleSubtype": "OrganizationUser" } }, { "Term": { "PeopleSubtype": "MTOUser" } }, { "Term": { "PeopleSubtype": "Guest" } }, { "Term": { "PeopleSubtype": "PublicDistributionList" } }, { "Term": { "PeopleSubtype": "UnifiedGroup" } }] },
+                    { "Or": [{ "Term": { "Flags": "NonHidden" } }] }
+                ] },
+                "Provenances": ["Mailbox", "Directory", "SecurityGroups"], "From": 0, "ServeNoEmailContacts": true
+            },
+            { "Query": { "QueryString": keyword }, "EntityType": "Chat", "Size": 20 },
+            { "Query": { "QueryString": keyword }, "EntityType": "Channel", "Size": 20, "Filter": { "Or": [{ "Term": { "ChannelType": "Standard" } }, { "Term": { "ChannelType": "Shared" } }] } },
+            { "Query": { "QueryString": keyword }, "EntityType": "Team", "Size": 20 }
+        ],
+        "Scenario": { "Name": "peoplepicker.newChat" },
+        "Cvid": uuid::Uuid::new_v4().to_string(),
+        "AppName": "Microsoft Teams",
+        "LogicalId": uuid::Uuid::new_v4().to_string(),
+    })
+}
+
+/// A chat in your chat list, for the new chat form's local chat search.
+#[derive(Debug, Clone, Default)]
+pub struct LocalChat {
+    pub id: String,
+    /// Its own name (a group chat's topic); empty for an unnamed chat.
+    pub topic: String,
+    pub group: bool,
+    pub meeting: bool,
+    /// Its last activity (ms), newest first within a rank.
+    pub time: i64,
+}
+
+/// The new chat form's typed suggestions, as Teams lists them.
+pub async fn new_chat_suggestions(keyword: &str, my_oid: &str, local: &[LocalChat]) -> Result<Vec<serde_json::Value>> {
+    let token = crate::auth::oauth::access_token_for("https://substrate.office.com/.default").await?;
+    let reply: serde_json::Value = reqwest::Client::new()
+        .post("https://substrate.office.com/search/api/v1/suggestions?scenario=peoplepicker.newChat")
+        .bearer_auth(token)
+        .json(&new_chat_body(keyword))
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    Ok(new_chat_arrange(&reply, my_oid, local, keyword))
+}
+
+/// Teams' local chat match (worker 54954 with the matcher 68583): every
+/// word typed starts a word of the chat's name, without case or accents;
+/// the rank class (exact 1, the name starting with what was typed 2, the
+/// rest 4) or None.
+fn local_chat_rank(name: &str, query: &str) -> Option<u8> {
+    let fold = |s: &str| s.to_lowercase();
+    let words = |s: &str| fold(s).split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).map(str::to_string).collect::<Vec<_>>();
+    let (n, q) = (words(name), words(query));
+    if q.is_empty() || !q.iter().all(|t| n.iter().any(|w| w.starts_with(t.as_str()))) {
+        return None;
+    }
+    let (fname, fq) = (fold(name.trim()), fold(query.trim()));
+    Some(if fname == fq { 1 } else if fname.starts_with(&fq) { 2 } else { 4 })
+}
+
+/// Teams' typed suggestions (worker resolver 81199, slots 964128; checked
+/// against Teams on winpc 2026-11-20: "OST" gives 22 rows in a 225 px
+/// list). People are Substrate's in its order, without anyone lacking an
+/// id or a name (you are "<name> (You)"); group chats are Substrate's that
+/// are in your chat list (not meeting chats), with your own matching named
+/// chats (the first at the third place, the rest after); then channels,
+/// teams and distribution lists. The slots, in order: 5 people, 5
+/// federated people and bots (none here), 3 group chats, 3 channels, 1
+/// team, 2 distribution lists, 15 more people, then what didn't fit, up to
+/// 22. Items: {kind: person|chat|channel|team|dl, id, name, sub, …}.
+pub fn new_chat_arrange(reply: &serde_json::Value, my_oid: &str, local: &[LocalChat], query: &str) -> Vec<serde_json::Value> {
+    let s = |v: &serde_json::Value| v.as_str().unwrap_or_default().to_string();
+    let (mut people, mut dls, mut chats, mut channels, mut teams) = (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    let mut seen: std::collections::HashSet<String> = Default::default();
+    for g in reply["Groups"].as_array().into_iter().flatten() {
+        for r in g["Suggestions"].as_array().into_iter().flatten() {
+            match g["Type"].as_str().unwrap_or_default() {
+                "People" => {
+                    let name = s(&r["DisplayName"]);
+                    let subtype = r["PeopleSubtype"].as_str().unwrap_or_default();
+                    if matches!(subtype, "PublicDistributionList" | "UnifiedGroup") {
+                        let mail = r["EmailAddresses"][0].as_str().map(str::to_string).unwrap_or_default();
+                        let id = s(&r["ExternalDirectoryObjectId"]).to_ascii_lowercase();
+                        let key = if id.is_empty() { mail.to_ascii_lowercase() } else { id.clone() };
+                        if name.is_empty() || key.is_empty() || !seen.insert(key.clone()) {
+                            continue;
+                        }
+                        dls.push(serde_json::json!({ "kind": "dl", "id": key, "name": name, "sub": mail, "unified": subtype == "UnifiedGroup" }));
+                        continue;
+                    }
+                    let id = s(&r["ExternalDirectoryObjectId"]).to_ascii_lowercase();
+                    if id.is_empty() || name.is_empty() || !seen.insert(id.clone()) {
+                        continue;
+                    }
+                    let upn = s(&r["UserPrincipalName"]);
+                    let alias = upn.split('@').next().unwrap_or_default().to_uppercase();
+                    let job = s(&r["JobTitle"]);
+                    let guest = subtype == "Guest";
+                    let sub = if !job.is_empty() {
+                        if alias.is_empty() { job } else { format!("({alias}) {job}") }
+                    } else if !guest {
+                        alias
+                    } else {
+                        r["EmailAddresses"][0].as_str().map(str::to_string).unwrap_or(upn.clone())
+                    };
+                    let you = !my_oid.is_empty() && id == my_oid.to_ascii_lowercase();
+                    let shown = if you { format!("{name} {}", crate::i18n::tr_id("(You)", "autosuggest:k9m83y7y2")) } else { name.clone() };
+                    people.push(serde_json::json!({ "kind": "person", "id": id, "name": shown, "plain_name": name, "you": you, "sub": sub, "upn": upn, "guest": guest }));
+                }
+                "Chat" => {
+                    let id = s(&r["ThreadId"]);
+                    let known = local.iter().find(|c| c.id == id);
+                    let name = known.map(|c| c.topic.clone()).filter(|t| !t.is_empty()).unwrap_or_else(|| s(&r["Name"]));
+                    // Only chats in your list (Teams looks them up locally),
+                    // not meeting chats, and not nameless ones.
+                    if known.is_none_or(|c| c.meeting) || name.is_empty() || !seen.insert(id.clone()) {
+                        continue;
+                    }
+                    chats.push(serde_json::json!({ "kind": "chat", "id": id, "name": name, "sub": "" }));
+                }
+                "Channel" => {
+                    let id = s(&r["ThreadId"]);
+                    if s(&r["Name"]).is_empty() || !seen.insert(format!("ch:{id}")) {
+                        continue;
+                    }
+                    channels.push(serde_json::json!({ "kind": "channel", "id": id, "name": s(&r["Name"]), "sub": s(&r["TeamName"]), "group": s(&r["GroupId"]) }));
+                }
+                "Team" => {
+                    let id = s(&r["ThreadId"]);
+                    if s(&r["Name"]).is_empty() || !seen.insert(format!("team:{id}")) {
+                        continue;
+                    }
+                    teams.push(serde_json::json!({ "kind": "team", "id": id, "name": s(&r["Name"]), "sub": "", "group": s(&r["GroupId"]) }));
+                }
+                _ => {}
+            }
+        }
+    }
+    // Your own named group chats that match and Substrate didn't give: the
+    // best at the third place, the rest after.
+    let mut extra: Vec<(&LocalChat, u8)> = local
+        .iter()
+        .filter(|c| c.group && !c.meeting && !c.topic.is_empty() && !chats.iter().any(|v| v["id"] == c.id.as_str()))
+        .filter_map(|c| local_chat_rank(&c.topic, query).map(|r| (c, r)))
+        .collect();
+    extra.sort_by(|a, b| a.1.cmp(&b.1).then(b.0.time.cmp(&a.0.time)));
+    let mut extra = extra.into_iter().map(|(c, _)| serde_json::json!({ "kind": "chat", "id": c.id, "name": c.topic, "sub": "" }));
+    if let Some(first) = extra.next() {
+        chats.insert(chats.len().min(2), first);
+    }
+    chats.extend(extra);
+
+    const SLOTS: [(&str, usize); 7] = [("person", 5), ("chat", 3), ("channel", 3), ("team", 1), ("dl", 2), ("person", 15), ("", 0)];
+    const MAX: usize = 22;
+    let lists: [(&str, &Vec<serde_json::Value>); 5] = [("person", &people), ("chat", &chats), ("channel", &channels), ("team", &teams), ("dl", &dls)];
+    let mut used = vec![0usize; lists.len()];
+    let (mut out, mut overflow) = (Vec::new(), Vec::new());
+    for (kind, count) in SLOTS {
+        let Some(li) = lists.iter().position(|(k, _)| *k == kind) else { continue };
+        let list = lists[li].1;
+        let take = list.len().saturating_sub(used[li]).min(count);
+        out.extend(list[used[li]..used[li] + take].iter().cloned());
+        used[li] += take;
+        // Teams keeps what didn't fit a slot for the end.
+        for v in &list[used[li]..] {
+            if !overflow.contains(v) {
+                overflow.push(v.clone());
+            }
+        }
+    }
+    for v in overflow {
+        if out.len() >= MAX {
+            break;
+        }
+        if !out.contains(&v) {
+            out.push(v);
+        }
+    }
+    out.truncate(MAX);
+    out
 }
 
 /// The new chat form's suggestions before anything is typed: Teams' top-N
@@ -794,13 +970,37 @@ mod tests {
     use super::*;
 
     #[test]
-    fn new_chat_lists_people_else_chats() {
-        let p = |n: &str| serde_json::json!({"kind": "person", "oid": "o", "name": n});
-        let c = |n: &str, t: &str| serde_json::json!({"kind": "chat", "id": "19:x", "name": n, "thread_type": t});
-        let both = new_chat_typed(vec![p("OST Test 2"), c("OST group test", "chat"), c("OST Test Team", "team")], 20);
-        assert_eq!(both.len(), 1);
-        let chats = new_chat_typed(vec![c("OST group test", "chat"), c("", "chat"), c("General", "channel"), c("OST TEST group call", "chat")], 20);
-        assert_eq!(chats.iter().map(|v| v["name"].as_str().unwrap()).collect::<Vec<_>>(), ["OST group test", "OST TEST group call"]);
+    fn new_chat_arranges_as_teams() {
+        // Substrate's answer for "OST" (shape as captured 2026-11-20).
+        let person = |n: &str, id: &str, sub: &str| serde_json::json!({"DisplayName": n, "ExternalDirectoryObjectId": id, "PeopleSubtype": sub, "UserPrincipalName": format!("{id}@x.com"), "EmailAddresses": [format!("{id}@x.com")]});
+        let mut ppl: Vec<serde_json::Value> = vec![person("OST Test 2", "t2", "OrganizationUser"), person("OST Guest 02", "g2", "Guest"), person("OST Guest 01", "g1", "Guest"),
+            person("OST Test 1", "me", "OrganizationUser"), person("OST Test 3", "t3", "OrganizationUser"), person("OST Test Team", "team", "UnifiedGroup"), person("No id", "", "OrganizationUser")];
+        for i in 3..10 { ppl.push(person(&format!("OST Guest 0{i}"), &format!("g{i}"), "Guest")); }
+        ppl.push(person("OST Test Community", "comm", "UnifiedGroup"));
+        let chat = |n: &str, id: &str| serde_json::json!({"Name": n, "ThreadId": id});
+        let chan = |n: &str, id: &str| serde_json::json!({"Name": n, "ThreadId": id, "TeamName": "OST Test Team", "GroupId": "gid"});
+        let reply = serde_json::json!({"Groups": [
+            {"Type": "People", "Suggestions": ppl},
+            {"Type": "Chat", "Suggestions": [chat("OST group test", "19:a"), chat("OST TEST group call", "19:b"), chat("Meeting", "19:meeting_m"), chat("Not mine", "19:z")]},
+            {"Type": "Channel", "Suggestions": [chan("OST layout test", "19:c1"), chan("OST test channel", "19:c2"), chan("OST threads test", "19:c3"), chan("OST test channel 2", "19:c4")]},
+        ]});
+        let lc = |id: &str, t: &str, time: i64| LocalChat { id: id.into(), topic: t.into(), group: true, meeting: id.starts_with("19:meeting_"), time };
+        let local = [lc("19:a", "OST group test", 9), lc("19:b", "OST TEST group call", 8), lc("19:meeting_m", "Meeting", 7), lc("19:e", "OST empty chat test", 6), lc("19:l", "OST large chat test", 5), lc("19:o", "Other", 4)];
+        let out = new_chat_arrange(&reply, "me", &local, "OST");
+        let names: Vec<&str> = out.iter().map(|v| v["plain_name"].as_str().or(v["name"].as_str()).unwrap()).collect();
+        assert_eq!(names, ["OST Test 2", "OST Guest 02", "OST Guest 01", "OST Test 1", "OST Test 3", "OST group test", "OST TEST group call", "OST empty chat test",
+            "OST layout test", "OST test channel", "OST threads test", "OST Test Team", "OST Test Community", "OST Guest 03", "OST Guest 04", "OST Guest 05",
+            "OST Guest 06", "OST Guest 07", "OST Guest 08", "OST Guest 09", "OST large chat test", "OST test channel 2"]);
+        assert_eq!(out[3]["you"], true);
+        assert_eq!(out[1]["sub"], "g2@x.com");
+        assert_eq!(out[8]["sub"], "OST Test Team");
+        // "OST group": no one matches, the chats do.
+        let reply = serde_json::json!({"Groups": [{"Type": "Chat", "Suggestions": [chat("OST group test", "19:a")]}]});
+        let out = new_chat_arrange(&reply, "me", &local, "OST group");
+        assert_eq!(out.iter().map(|v| v["name"].as_str().unwrap()).collect::<Vec<_>>(), ["OST group test", "OST TEST group call"]);
+        assert_eq!(local_chat_rank("OST group test", "ost gr"), Some(2));
+        assert_eq!(local_chat_rank("OST group test", "group"), Some(4));
+        assert_eq!(local_chat_rank("OST group test", "roup"), None);
     }
 
     #[test]

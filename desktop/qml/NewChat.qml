@@ -85,6 +85,22 @@ Rectangle {
         highlight = -1
         field.forceActiveFocus()
     }
+    // Teams bolds what was typed where a word starts with it, in the name
+    // and the second line ("OST Test 2", "OST-TEST2",
+    // "ostguest02@osttestlab2611…").
+    function marked(t) {
+        const esc = x => String(x).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+        const terms = field.text.trim().toLowerCase().split(/\s+/).filter(x => x.length > 0)
+        if (!t || terms.length === 0) return esc(t || "")
+        let out = "", i = 0
+        while (i < t.length) {
+            const start = i === 0 || !/[A-Za-z0-9\u00C0-\uFFFF]/.test(t[i - 1])
+            const hit = start ? terms.filter(x => t.substr(i, x.length).toLowerCase() === x).sort((a, b) => b.length - a.length)[0] : undefined
+            if (hit) { out += "<b>" + esc(t.substr(i, hit.length)) + "</b>"; i += hit.length }
+            else { out += esc(t[i]); i++ }
+        }
+        return out
+    }
     function unpick(id) { picked = picked.filter(x => x.id !== id) }
     /// What the compose box holds, for the chat's own box to send
     /// (Conversation.adoptAndSend): {text, html, media, importance, files,
@@ -425,11 +441,24 @@ Rectangle {
                     readonly property string second: person.modelData.sub || ""
                     width: suggestCol.width; height: guest ? 52 : 50; radius: 4
                     color: hover.hovered || root.highlight === index ? theme.hc(theme.menuHover, theme.hcHighlight) : "transparent"
-                    Avatar { x: 12; anchors.verticalCenter: parent.verticalCenter; size: 32; name: (person.modelData.plain_name || person.modelData.name); group: !!person.modelData.chat; photoId: person.modelData.chat ? "chat:" + person.modelData.id : (person.modelData.id || "") }
+                    // A chat's merged picture; a channel's or team's team
+                    // picture; a list's or group's own.
+                    readonly property string kind: person.modelData.kind || (person.modelData.chat ? "chat" : "person")
+                    Avatar {
+                        x: 12; anchors.verticalCenter: parent.verticalCenter; size: 32
+                        name: (person.modelData.plain_name || person.modelData.name)
+                        group: person.kind === "chat"
+                        square: person.kind === "channel" || person.kind === "team"
+                        photoId: person.kind === "chat" ? "chat:" + person.modelData.id
+                            : (person.kind === "channel" || person.kind === "team") ? (person.modelData.group ? "team:" + person.modelData.group : "")
+                            : person.kind === "dl" ? (person.modelData.unified ? "team:" + person.modelData.id : "")
+                            : (person.modelData.id || "")
+                    }
                     Text {
                         id: personName
-                        x: 60; y: person.modelData.chat ? 15 : person.guest ? 8 : 6.5
-                        text: person.modelData.name
+                        x: 60; y: !person.second ? 15 : person.guest ? 8 : 6.5
+                        textFormat: Text.StyledText
+                        text: root.marked(person.modelData.name)
                         font.family: theme.font; font.pixelSize: theme.base; lineHeight: 20; lineHeightMode: Text.FixedHeight
                         color: theme.onFill(person, theme.textStrong)
                     }
@@ -453,7 +482,8 @@ Rectangle {
                         visible: person.second.length > 0
                         x: 60; y: personName.y + 21; width: person.width - 60 - 8
                         elide: Text.ElideRight
-                        text: person.second
+                        textFormat: Text.StyledText
+                        text: root.marked(person.second)
                         font.family: theme.font; font.pixelSize: theme.small; lineHeight: 16; lineHeightMode: Text.FixedHeight
                         color: theme.onFill(person, theme.textSecondary)
                     }

@@ -48,6 +48,10 @@ pub struct LinkApp {
     /// (Teams' MatchButNotInstalled: the Install permission card).
     #[serde(default)]
     pub needs_install: bool,
+    /// The manifest's validDomains: where its sign-in window may talk to
+    /// Teams from.
+    #[serde(default)]
+    pub valid_domains: Vec<String>,
 }
 
 /// An app's card for a link.
@@ -82,6 +86,9 @@ pub struct AppCard {
     pub auth_url: String,
     #[serde(default)]
     pub bot_id: String,
+    /// The app's validDomains (its sign-in window's allowed origins).
+    #[serde(default)]
+    pub valid_domains: Vec<String>,
 }
 
 /// Teams' `F`: a domain it can use (at least two labels, no `*` in the
@@ -179,6 +186,7 @@ pub fn find_app(
                 privacy_url: str_at(def, "privacyUrl").to_string(),
                 terms_url: str_at(def, "termsOfUseUrl").to_string(),
                 needs_install: false,
+                valid_domains: def.get("validDomains").and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()).unwrap_or_default(),
             },
             anonymous,
         ))
@@ -282,6 +290,7 @@ pub fn card_from_reply(reply: &Value, app: &LinkApp, url: &str) -> Option<AppCar
         permission: String::new(),
         auth_url: String::new(),
         bot_id: app.bot_id.clone(),
+        valid_domains: app.valid_domains.clone(),
     })
 }
 
@@ -320,6 +329,7 @@ pub fn permission_from_reply(ce: &Value, kind: &str, app: &LinkApp, url: &str) -
         permission: kind.to_string(),
         auth_url,
         bot_id: app.bot_id.clone(),
+        valid_domains: app.valid_domains.clone(),
     })
 }
 
@@ -444,6 +454,7 @@ pub fn index_from(catalog: &[Value]) -> Vec<Value> {
             json!({
                 "id": d.get("id"), "name": d.get("name"), "largeImageUrl": d.get("largeImageUrl"),
                 "privacyUrl": d.get("privacyUrl"), "termsOfUseUrl": d.get("termsOfUseUrl"),
+                "validDomains": d.get("validDomains"),
                 "inputExtensions": [{ "botId": ext.get("botId"), "messageHandlers": ext.get("messageHandlers") }],
             })
         })
@@ -467,7 +478,7 @@ async fn build_index(client: &TeamsClient, file: Option<&std::path::Path>) -> Re
 /// Load the link-app index at sign-in: the saved one at once, then a new
 /// one from the catalog when it is a day old (or missing).
 pub async fn load_index(client: &TeamsClient, cache_dir: &std::path::Path) -> Result<()> {
-    let file = cache_dir.join("link-apps.json");
+    let file = cache_dir.join("link-apps-2.json");
     let _ = INDEX_FILE.set(file.clone());
     let saved: Option<Vec<Value>> = std::fs::read(&file).ok().and_then(|b| serde_json::from_slice(&b).ok());
     let fresh = std::fs::metadata(&file)

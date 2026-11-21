@@ -53,6 +53,16 @@ Popup {
     property bool pickMembers: false
     signal moreOptions()
     signal created(string groupId, string threadId)
+    /// "Add Channel Agent" was ticked: add it to the new team's first
+    /// channel (ChannelAgentToast).
+    signal addChannelAgent(string channel, string thread, string group)
+    /// Teams' "Add Channel Agent" (785683, measured on winpc 2026-11-20):
+    /// under First channel name, unticked, for a Copilot licence when ECS
+    /// offers the Channel Agent (api::project_agent::offered).
+    property bool agentOffered: false
+    property bool addAgent: false
+    /// The first channel to add the Channel Agent to once the team is made.
+    property string pendingAgent: ""
     /// The name of the team last asked for (to find it once listed).
     property string lastName: ""
 
@@ -63,8 +73,12 @@ Popup {
         page = "form"; isPublic = false; creating = false; nameTouched = false
         nameField.text = ""; descField.text = ""; firstField.text = ""
         pickTabs = true; pickSettings = true; pickMembers = false
+        addAgent = false
     }
-    function startScratch(fromPage) { kind = "scratch"; fromPage = !!fromPage; template = null; source = null; reset(); open(); nameField.forceActiveFocus() }
+    function startScratch(fromPage) {
+        kind = "scratch"; fromPage = !!fromPage; template = null; source = null; reset(); open(); nameField.forceActiveFocus()
+        backend.channelAction("channel-agent-offered", "", "", "")
+    }
     function startTemplate(t) {
         kind = "template"; source = null; reset()
         template = t
@@ -87,6 +101,7 @@ Popup {
         if (!canCreate) return
         const a = { mode: kind, name: nameField.text.trim(), description: descField.text, "public": isPublic }
         if (kind === "scratch") a.firstChannel = firstField.text.trim()
+        dlg.pendingAgent = kind === "scratch" && agentOffered && addAgent ? a.firstChannel : ""
         else if (kind === "template") a.template = {
             id: template.id, locale: template.locale || "en-US", appIds: template.app_ids || [],
             channels: (template.channels || []).map((c, i) => ({ id: c.id, displayName: dlg.channelNames[i] || c.displayName }))
@@ -100,9 +115,14 @@ Popup {
         target: backend
         function onChannelActionResultChanged() {
             const r = JSON.parse(backend.channelActionResult || "{}")
+            if (r.op === "channel-agent-offered") { dlg.agentOffered = !!(r.ok && r.data.offered); return }
             if (r.op !== "create-team" || !dlg.creating) return
             dlg.creating = false
-            if (r.ok) { dlg.close(); dlg.created(r.data.group_id || "", r.data.thread_id || "") }
+            if (r.ok) {
+                dlg.close(); dlg.created(r.data.group_id || "", r.data.thread_id || "")
+                if (dlg.pendingAgent) dlg.addChannelAgent(dlg.pendingAgent, r.data.thread_id || "", r.data.group_id || "")
+                dlg.pendingAgent = ""
+            }
             else backend.toast(qsTr("We couldn't create your team. Please try again."), "error")
         }
     }
@@ -323,6 +343,50 @@ Popup {
                     }
                     Rectangle { visible: firstField.activeFocus; anchors.bottom: parent.bottom; width: parent.width; height: 2; radius: 1; color: theme.brand }
                 }
+                // Add Channel Agent (scratch, when offered): Fluent's
+                // checkbox (16 px box 8.7 in, the label 14/20 at 36.7) with
+                // an info button whose tooltip is Teams'; the row's middle
+                // 36 under the first channel field.
+                Item {
+                    id: agentRow
+                    visible: form.scratch && dlg.agentOffered
+                    y: 338.3 + fieldCol.shift; width: parent.width; height: 32
+                    Rectangle {
+                        id: agentBox
+                        x: 8.7; anchors.verticalCenter: parent.verticalCenter; width: 16; height: 16; radius: 2
+                        color: dlg.addAgent ? theme.hc(theme.brand, theme.hcHighlight) : "transparent"
+                        border.width: dlg.addAgent ? 0 : 1
+                        border.color: theme.pick("#616161", "#D6D6D6", "#FFFFFF")
+                        FluentIcon { visible: dlg.addAgent; anchors.centerIn: parent; name: "checkmark-12"; size: 12; color: theme.onFill(agentBox, "white") }
+                    }
+                    Text {
+                        id: agentLabel
+                        x: 36.7; anchors.verticalCenter: parent.verticalCenter
+                        text: qsTr("Add Channel Agent")
+                        font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
+                        color: theme.text
+                    }
+                    MouseArea {
+                        width: agentLabel.x + agentLabel.implicitWidth; height: parent.height
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: dlg.addAgent = !dlg.addAgent
+                    }
+                    Rectangle {
+                        id: agentInfo
+                        x: agentLabel.x + agentLabel.implicitWidth + 8; anchors.verticalCenter: parent.verticalCenter
+                        width: 24; height: 24; radius: 4
+                        color: agentInfoHover.hovered ? theme.menuHover : "transparent"
+                        FluentIcon { anchors.centerIn: parent; name: "info-16"; size: 16; color: theme.onFill(agentInfo, theme.textStrong) }
+                        HoverHandler { id: agentInfoHover }
+                        ToolTip.visible: agentInfoHover.hovered
+                        ToolTip.text: qsTr("Keeps your plans on track and gets your team the answers it needs. It creates status reports, schedules meetings, and more.")
+                        Accessible.role: Accessible.Button
+                        Accessible.name: "information"
+                    }
+                    Accessible.role: Accessible.CheckBox
+                    Accessible.name: qsTr("Add Channel Agent")
+                    Accessible.checked: dlg.addAgent
+                }
                 // Customize channels > (template).
                 Rectangle {
                     id: hcFill2
@@ -518,6 +582,7 @@ Popup {
     // Test hooks.
     function setNameForTest(n) { nameField.text = n }
     function setFirstChannelForTest(n) { firstField.text = n }
+    function setAgentForTest(on) { addAgent = !!on; return { offered: agentOffered, checked: addAgent, visible: agentRow.visible } }
     function openNamingForTest() { namingMenu.open() }
     function customizeForTest() { customRepeater.model = dlg.channelNames.slice(); dlg.page = "customize" }
     function discardForTest() { discard.open() }

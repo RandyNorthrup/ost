@@ -1,7 +1,8 @@
 //! Add an app as Teams' Add does (debugging aid): for you, and to a chat or
 //! a channel (with its team's thread id):
 //! `cargo run --example add_app -- <app id> [<chat id> | <channel id> --team=<team thread id>]`,
-//! or `-- <app id> --remove-from-team=<team thread id>`.
+//! or `-- <app id> --remove-from-team=<team thread id>`, or
+//! `-- <app id> --remove-personal`.
 use teams_cli::api::client::TeamsClient;
 use teams_cli::api::store_content::{AddTarget, add_app, remove_from_team};
 
@@ -20,6 +21,12 @@ async fn main() -> anyhow::Result<()> {
     if let Some(t) = args.iter().find_map(|a| a.strip_prefix("--remove-from-team=")) {
         remove_from_team(&client, t, app).await?;
         println!("removed {app} from {t}");
+        return Ok(());
+    }
+    // --remove-personal: uninstall your personal copy (Manage apps' Remove).
+    if args.iter().any(|a| a == "--remove-personal") {
+        teams_cli::api::manage_apps::uninstall(&client, app, "").await?;
+        println!("removed {app} for you");
         return Ok(());
     }
     let added = add_app(&client, app, target).await?;

@@ -162,6 +162,18 @@ Item {
     // that app's card (api::link_unfurl), which Collapse preview turns into
     // the plain preview (sent so) and X removes.
     property var appCard: null
+    /// An app's sign-in window for the link card (AppAuthWindow); the
+    /// newest is kept for --app-auth-test.
+    property var lastAuthWindow: null
+    function openAppAuth(u, domains) {
+        const w = authWindow.createObject(null, { url: u, validDomains: domains })
+        lastAuthWindow = w
+        w.finished.connect((ok, result) => {
+            if (ok) backend.appLinkAction("requery", root.previewUrl, root.chatId, result)
+            Qt.callLater(() => w.destroy())
+        })
+        w.show()
+    }
     /// The conversation the link's app is asked from.
     property string chatId: ""
     // (An app's compose action can put its card here too: `fromApp`.)
@@ -1092,13 +1104,13 @@ Item {
                 onOpenLink: url => Qt.openUrlExternally(url)
                 // Teams' permission card: Show Preview installs the app for
                 // you and asks it again; Sign in opens the app's sign-in
-                // window and asks again when it closes.
+                // window, and once its page reports success the app is
+                // asked again with the result (value.state). Closing the
+                // window keeps the sign-in card (Teams' CancelledByUser).
                 onShowPreviewRequested: backend.appLinkAction("install", root.previewUrl, root.chatId, root.appCard.app_id)
                 onSignInRequested: u => {
                     if (u.indexOf("https://") !== 0) { backend.appLinkAction("install", root.previewUrl, root.chatId, root.appCard.app_id); return }
-                    const w = authWindow.createObject(null, { url: u })
-                    w.finished.connect(() => { backend.appLinkAction("requery", root.previewUrl, root.chatId, ""); w.destroy() })
-                    w.show()
+                    root.openAppAuth(u, root.appCard.valid_domains || [])
                 }
             }
             Component { id: authWindow; AppAuthWindow {} }

@@ -630,7 +630,17 @@ Popup {
                     id: pr
                     required property var modelData
                     width: parent.width; height: 65
-                    Avatar { x: 4; anchors.verticalCenter: parent.verticalCenter; size: 40; name: pr.modelData.name }
+                    // SharePoint's picture of the person (the picker asks
+                    // _userprofile/userphoto.jpg): for someone without a
+                    // photo its default, a white figure on #B2B2B2.
+                    Rectangle {
+                        id: prPic
+                        x: 4; anchors.verticalCenter: parent.verticalCenter; width: 40; height: 40; radius: 20
+                        color: theme.pick("#B2B2B2", "#6E6E6E", "#000000")
+                        border.width: theme.highContrast ? 1 : 0; border.color: theme.text
+                        clip: true
+                        FluentIcon { anchors.horizontalCenter: parent.horizontalCenter; y: 7; name: "person-20-filled"; size: 30; color: theme.onFill(prPic, "white") }
+                    }
                     Text {
                         x: 76; anchors.verticalCenter: parent.verticalCenter; width: 170; elide: Text.ElideRight
                         text: pr.modelData.name
@@ -645,7 +655,7 @@ Popup {
                         const items = pr.modelData.items || [], avail = 570, plus = 50, out = []
                         let used = 0
                         for (let i = 0; i < items.length; i++) {
-                            const name = items[i].name.replace(/\.[^.]+$/, "")
+                            const name = items[i].title || items[i].name.replace(/\.[^.]+$/, "")
                             const fixed = 32.7 + 0.7 + pillFont.advanceWidth(String(items[i].modified_text || "").replace(/ at .*$/, "")) + 36 + 8
                             const natural = fixed + chipFont.advanceWidth(name)
                             const rest = i < items.length - 1 ? 12 + plus : 0
@@ -673,7 +683,7 @@ Popup {
                                 Text {
                                     id: chipName
                                     x: 32.7; anchors.verticalCenter: parent.verticalCenter; width: Math.min(implicitWidth, chip.modelData.nameW); elide: Text.ElideRight
-                                    text: chip.item.name.replace(/\.[^.]+$/, "")
+                                    text: chip.item.title || chip.item.name.replace(/\.[^.]+$/, "")
                                     font.family: theme.font; font.pixelSize: 12; color: theme.onFill(chip, theme.text)
                                 }
                                 Rectangle {
@@ -877,7 +887,10 @@ Popup {
                 id: channel
                 y: 32; width: parent.width; height: parent.height - 64
                 Repeater {
-                    model: Math.ceil(channel.height / 68)
+                    // Photos counts them for the whole Timeline (ResizeObserver on
+                    // the section): ceil(height / 68), those past the channel
+                    // cut off.
+                    model: Math.ceil(scrub.height / 68)
                     Rectangle {
                         required property int index
                         visible: y + height <= channel.height
