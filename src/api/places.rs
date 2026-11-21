@@ -182,6 +182,14 @@ pub async fn report_remote(client: &TeamsClient, endpoint_id: &str) -> Result<()
     Ok(())
 }
 
+/// A new correlation vector (the service checks MS-CV's form: 22 base64
+/// characters of a random 128-bit base, then ".0").
+pub fn correlation_vector() -> String {
+    use base64::Engine as _;
+    let b = base64::engine::general_purpose::STANDARD_NO_PAD.encode(uuid::Uuid::new_v4().as_bytes());
+    format!("{b}.0")
+}
+
 /// This device's id for the location service (kept with OST's settings).
 fn device_id() -> String {
     static ID: std::sync::OnceLock<String> = std::sync::OnceLock::new();
@@ -213,7 +221,7 @@ async fn location_request(client: &TeamsClient, method: reqwest::Method, path: &
         .header("x-ms-client-device-id", device_id())
         .header("x-ms-client-os", "linux")
         .header("x-ms-client-os-ver", os_version())
-        .header("ms-cv", uuid::Uuid::new_v4().simple().to_string())
+        .header("ms-cv", correlation_vector())
         .header("x-ms-correlation-id", uuid::Uuid::new_v4().to_string())
         .header("x-ms-endpoint-id", endpoint_id)
         .header("Content-Type", "application/json"))
@@ -229,6 +237,13 @@ mod location_tests {
         let b = network_body("f4:92:bf:00:00:01", None, at);
         assert_eq!(b, serde_json::json!({"bssid": "f4:92:bf:00:00:01", "eventTime": "2026-11-20T17:00:00.000Z", "shouldUpdate": true, "canShareLocationDetails": true}));
         assert_eq!(network_body("x", Some("Office"), at)["ssid"], "Office");
+    }
+
+    #[test]
+    fn correlation_vectors_have_teams_form() {
+        let cv = correlation_vector();
+        assert_eq!(cv.len(), 24);
+        assert!(cv.ends_with(".0"));
     }
 
     #[test]
