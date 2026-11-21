@@ -1286,7 +1286,7 @@ Popup {
         SquareButton {
             x: 16; y: 536.3
             icon: rec.trimming ? "delete-20" : "chevron-left-20"
-            label: rec.trimming ? qsTr("Delete this clip. Your recording will be lost.") : qsTr("Back")
+            label: rec.trimming ? qsTr("Delete this clip. Your video will be lost.") : qsTr("Back")
             onClicked: {
                 if (rec.trimming) { rec.trimming = false; rec.deleteSelected(); return }
                 player.stop(); rec.playing = false; rec.reset()
@@ -1301,7 +1301,7 @@ Popup {
                 onClicked: { rec.playing = false; player.pause(); musicPlayer.pause(); const sg = rec.segments[rec.selected]; rec.trimStart = sg.start; rec.trimEnd = sg.end; player.source = sg.path; player.position = sg.start; rec.trimming = true }
             }
             Tool { icon: "split-vertical-20"; label: qsTr("Split"); spoken: qsTr("Split Clip"); enabledTool: rec.canSplit; onClicked: rec.splitAtPlayhead() }
-            Tool { toolWidth: 71.9; icon: "delete-20"; label: qsTr("Delete clip"); spoken: qsTr("Delete this clip. Your recording will be lost."); onClicked: rec.deleteSelected() }
+            Tool { toolWidth: 71.9; icon: "delete-20"; label: qsTr("Delete clip"); spoken: qsTr("Delete this clip. Your video will be lost."); onClicked: rec.deleteSelected() }
             Tool { toolWidth: 82; icon: "video-add-20"; label: qsTr("Record more"); onClicked: { player.pause(); rec.playing = false; musicPlayer.pause(); rec.stage = "setup" } }
             Tool {
                 id: rearrangeTool
@@ -1314,7 +1314,7 @@ Popup {
             Tool {
                 toolWidth: rec.music ? Math.max(56, musicLabel.implicitWidth + 25) : 56
                 icon: rec.music ? "data-bar-vertical-20" : "music-note-2-20"
-                label: rec.music ? rec.music.name : qsTr("Music")
+                label: rec.music ? rec.music.name : qsTr("Music", "x.onecamera:actionBar.musicButton")
                 spoken: rec.music ? qsTr("Add music Selected %1").arg(rec.music.name) : qsTr("Add music")
                 onClicked: { rec.playing = false; player.pause(); musicPlayer.pause(); musicPanel.visible = true }
                 Text { id: musicLabel; visible: false; text: rec.music ? rec.music.name : ""; font.family: theme.font; font.pixelSize: 10 }
@@ -1390,7 +1390,7 @@ Popup {
         color: theme.surface
         FluentSurface { z: -1; anchors.fill: parent; depth: 16; radius: 8 }
         MouseArea { anchors.fill: parent }
-        Text { x: 64.7; y: 24.6; width: 358.7; height: 20; horizontalAlignment: Text.AlignHCenter; text: qsTr("Music"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+        Text { x: 64.7; y: 24.6; width: 358.7; height: 20; horizontalAlignment: Text.AlignHCenter; text: qsTr("Music", "x.onecamera:common.music"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
         HeadButton { x: 447.3; y: 14.6; height: 40; icon: "dismiss-20"; label: qsTr("Close Music"); onClicked: { songPreview.stop(); musicPanel.visible = false } }
         Row {
             x: 22.7; y: 65.6; spacing: 0
@@ -1515,7 +1515,7 @@ Popup {
             x: 285.7; y: 243; spacing: 0
             Text { height: 28; text: qsTr("Close your recording?"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.onFill(hcFill4, theme.text) }
             Item { width: 1; height: 16 }
-            Text { height: 20; text: qsTr("This will delete your recording clips."); font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill4, theme.text) }
+            Text { height: 20; text: qsTr("This will delete your video clips."); font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill4, theme.text) }
             Item { width: 1; height: 16 }
             Row {
                 spacing: 8

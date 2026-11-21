@@ -205,6 +205,19 @@ def parse_esm_tables(s):
     return out
 
 
+def parse_loc_table(s):
+    """The Stream web recorder's language chunk (webrec2-language-<lang>):
+    `loc:new a({"effects.boards.graph":"Graph",…})`."""
+    m = re.search(r"loc:new [\w$]+\(\{", s)
+    if not m:
+        return {}
+    r = object_literal(s, m.end() - 1)
+    out = {}
+    if r:
+        _flatten(r[0], "", out)
+    return out
+
+
 def parse_esm_english(s, first_key):
     """The en-us tables in the bundle that embeds them: the object literal
     of variables (`var n0={common:ob,colors:ab,…}`) whose first entry is
@@ -408,7 +421,7 @@ def collect(locales, assets_dir, cache):
                     if file:
                         text = get(TEAMS_CDN + file, cache)
                         if text is not None:
-                            strings.setdefault(loc, {})[ns] = parse_esm_tables(text) if kind == "esm" else parse_json_modules(text, entry["ids"])
+                            strings.setdefault(loc, {})[ns] = parse_esm_tables(text) if kind == "esm" else parse_loc_table(text) if kind == "loc" else parse_json_modules(text, entry["ids"])
                             entry["files"][loc] = file
                         break
             # en-us: the bundle that embeds it
@@ -421,7 +434,7 @@ def collect(locales, assets_dir, cache):
                 file = runtime.get(cfg["englishChunk"])
                 text = file and get(TEAMS_CDN + urllib.request.quote(file), cache)
                 if text:
-                    strings.setdefault("en-us", {})[ns] = parse_json_modules(text, entry["ids"])
+                    strings.setdefault("en-us", {})[ns] = parse_loc_table(text) if kind == "loc" else parse_json_modules(text, entry["ids"])
         files[ns] = entry
         print(ns, len(strings.get("en-us", {}).get(ns, {})), "en-us strings,", len(entry["files"]), "languages")
     return strings, files

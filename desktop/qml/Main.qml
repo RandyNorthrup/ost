@@ -522,9 +522,6 @@ Window {
     // the presence badge; the account row, the status submenu (with Reset
     // Status), Help › Collect Support Files, and Quit, the only real quit.
     readonly property string myPresence: titleBar.presence
-    // This account's status in the device's account list (the other
-    // accounts' flyouts show it, as Teams' Accounts and orgs do).
-    onMyPresenceChanged: if (backend.signedIn) backend.noteAccountPresence(myPresence)
     readonly property string trayKind: {
         const p = myPresence.toLowerCase()
         return (p === "available" || p === "availableidle") ? "available"
@@ -574,7 +571,7 @@ Window {
     }
     onTrayShownChanged: refreshTray()
     onTrayKindChanged: { refreshTray(); refreshTaskbarBadge() }
-    onMyPresenceChanged: refreshTray()
+    onMyPresenceChanged: { refreshTray(); if (backend.signedIn) backend.noteAccountPresence(myPresence) }
     Connections {
         target: backend
         function onUserNameChanged() { window.refreshTray() }
@@ -11830,7 +11827,8 @@ Window {
             const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "sh-" + n + ".png"))
             const saves = Qt.application.arguments.indexOf("--seth-saves") >= 0
             const s = () => JSON.parse(backend.settingsJson)
-            const two = "8:orgid:9edcc62f-2f4b-4f55-bbf9-02c7cbaadbb5"
+            // --seth-member=<mri>: who is added and removed (default OST Test 2).
+            const two = (Qt.application.arguments.find(a => a.startsWith("--seth-member=")) || "--seth-member=8:orgid:9edcc62f-2f4b-4f55-bbf9-02c7cbaadbb5").slice(14)
             const log = tag => { const v = s(), mt = v.mt || {}, r = (mt.voice || {}).callRedirectionSettings || {}
                 console.warn("SETH", tag, JSON.stringify({ group: r.callGroupDetails, unanswered: r.unansweredCallSettings, delegation: mt.delegation, view: (v.props || {}).callViewMode,
                     ringtones: (((mt.voice || {}).ringtoneSettings || {}).assignments || {}).ringToneAssignments, attendant: (mt.attendant || {}).isEnabled, policy: mt.attendantPolicy,

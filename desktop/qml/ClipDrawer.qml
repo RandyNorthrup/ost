@@ -53,7 +53,7 @@ Item {
         height: childrenRect.height
     }
     Accessible.role: Accessible.Pane
-    Accessible.name: qsTr("Video editing tools: %1 menu region").arg(dr.title)
+    Accessible.name: qsTr("Video editing tools: %1 menu").arg(dr.title)
 
     component DrawerButton: Rectangle {
         id: b

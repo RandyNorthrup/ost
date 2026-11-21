@@ -421,7 +421,7 @@ def gen(strings_path, assets_dir=None, teams_version=""):
             # options' translations): OST's is only a fallback
             replied += 1
             continue
-        if re.fullmatch(r"[\w.-]+:\w+", dis or ""):
+        if re.fullmatch(r"[\w.-]+:[\w.]+", dis or ""):
             if lookup(teams, "en-us", dis) is not None:
                 sid = dis
             else:

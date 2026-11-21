@@ -4,7 +4,7 @@ title: 'App languages: strings from Teams'' other bundles'
 status: In Progress
 assignee: []
 created_date: '2026-11-20T04:10:00Z'
-updated_date: '2026-11-21T07:41:00Z'
+updated_date: '2026-11-21T18:23:00Z'
 labels:
   - desktop
 dependencies: []
@@ -56,4 +56,10 @@ Found in TASK-0142: about 800 OST strings stay English because Teams keeps their
   - "Search all files" and "%1, removed" in the Downloads panel: Edge builds these in its hub JS.
   - Meeting-options keys: not yet seen in a live reply.
   - OST-only strings: the feedback and help pages, and "not available in OST yet".
+
+- 2026-11-21 (agent setH) recorder effects (TASK-0137 screens):
+  - x.onecamera usedIn now has ClipCanvasItems/ClipCatalog/ClipDrawer/ClipEditOverlay/ClipEffectPanels/ClipEffectsState.qml.
+  - New source x.webrec (kind "loc"): the Stream web recorder's language chunks in Teams' hashed assets (webrec2-language-<lang>-<hash>.js, `loc:new a({…})`, 124 strings, 56 languages): the backdrop/board/sticker names (effects.*), "Record again", "Review your clips", "Recording in progress", "Screen recording", fonts. Parsers: extra_strings.py parse_loc_table and teams_strings.rs parse_loc_table (tested). `l10n.py extra` rerun on linuxlt (cache ~/l10n3; strings-extra.json backed up as strings-extra.json.setH-bak).
+  - OST text reworded to Teams' (OneCamera): Font menu / Text color menu / Text shadow menu / Text background menu, "Video editing tools: %1 menu", "The camera is %1 percent of the video viewport", "Choose image file to upload", "Delete this clip. Your video will be lost.", "This will delete your video clips."; shared words (sticker categories, Music) name their OneCamera ids explicitly (l10n.py now accepts dotted keys in qsTr("…", "<ns>:<key>")).
+  - untranslated.txt 542 -> 437 lines; recorder lines 140 -> 28 (left: OST's own accessibility texts and keyboard hints Teams has no string for, e.g. "Alt + left arrow key", "Mic is off", file-dialog filters).
 <!-- SECTION:NOTES:END -->

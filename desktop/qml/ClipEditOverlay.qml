@@ -291,25 +291,25 @@ Item {
             // Text: Font, Color, Stroke (Shadow), Background.
             DockButton {
                 visible: dock.isText; first: true
-                label: qsTr("Font menu.")
+                label: qsTr("Font menu")
                 onClicked: ov.openMenu("font")
                 Text { anchors.centerIn: parent; text: "Aa"; font.family: ov.sel ? ov.fx.textStyle(ov.sel.style).family : "Arial"; font.pixelSize: 16; color: "#242424"; style: Text.Normal }
             }
             DockButton {
                 visible: dock.isText
-                label: qsTr("Color menu.")
+                label: qsTr("Text color menu")
                 onClicked: ov.openMenu("color")
                 Rectangle { anchors.centerIn: parent; width: 20; height: 20; radius: 10; color: ov.sel && ov.sel.fill ? ov.sel.fill : "white"; border.color: "#D1D1D1"; border.width: 0.67 }
             }
             DockButton {
                 visible: dock.isText
-                label: ov.sel && ov.fx.textStyle(ov.sel.style).shadow ? qsTr("Shadow menu.") : qsTr("Stroke menu.")
+                label: ov.sel && ov.fx.textStyle(ov.sel.style).shadow ? qsTr("Text shadow menu") : qsTr("Stroke menu.")
                 onClicked: ov.openMenu("stroke")
                 Rectangle { anchors.centerIn: parent; width: 20; height: 20; radius: 10; color: "transparent"; border.width: 5; border.color: ov.sel && (ov.sel.stroke || ov.sel.shadow) ? (ov.sel.stroke || ov.sel.shadow) : "#BDBDBD" }
             }
             DockButton {
                 visible: dock.isText; last: true
-                label: qsTr("Background menu.")
+                label: qsTr("Text background menu")
                 onClicked: ov.openMenu("background")
                 Rectangle { anchors.centerIn: parent; width: 20; height: 20; radius: 4; color: ov.sel && ov.sel.bg ? ov.sel.bg : "transparent"; border.color: "#BDBDBD"; border.width: ov.sel && ov.sel.bg ? 0 : 1.5 }
             }

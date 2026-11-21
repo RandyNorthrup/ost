@@ -68,7 +68,8 @@ pub struct ExtraSource {
     /// "json": modules holding `JSON.parse('…')` tables (OneDrive's resx
     /// chunks); "esm": an ES module exporting object literals
     /// (`const n={…};…e.common=n`, the clip recorder's); "flatjson": a
-    /// plain JSON table (Outlook's calendar).
+    /// plain JSON table (Outlook's calendar); "loc": the Stream web
+    /// recorder's `loc:new a({…})` table.
     #[serde(default)]
     pub kind: String,
     /// Each locale's file (under `base`).
@@ -169,6 +170,18 @@ pub fn parse_json_modules(js: &str, with_ids: bool) -> HashMap<String, String> {
             String::new()
         };
         flatten(&v, prefix, &mut out);
+    }
+    out
+}
+
+/// The Stream web recorder's language chunk (Teams' webrec2-language-<lang>):
+/// `loc:new a({"effects.boards.graph":"Graph",…})`, keys as they are.
+pub fn parse_loc_table(js: &str) -> HashMap<String, String> {
+    let mut out = HashMap::new();
+    let Some(p) = js.find("loc:new ") else { return out };
+    let Some(open) = js[p..].find("({").map(|o| p + o + 1) else { return out };
+    if let Some((v, _)) = object_literal(js, open) {
+        flatten(&v, String::new(), &mut out);
     }
     out
 }
@@ -778,6 +791,7 @@ pub async fn fetch(client: &reqwest::Client, res: &Resources, ids: &[IdRow], ids
                 let body = decode_body(&r.bytes().await?)?;
                 anyhow::Ok(match src.kind.as_str() {
                     "esm" => parse_esm_tables(&body),
+                    "loc" => parse_loc_table(&body),
                     "flatjson" => {
                         let mut t = HashMap::new();
                         if let Ok(v) = serde_json::from_str::<Value>(&body) {
@@ -965,6 +979,10 @@ mod tests {
         let m = parse_json_modules(teams, false);
         assert_eq!(m.get("common.addMusic").map(String::as_str), Some("Musik hinzufügen"));
         assert_eq!(parse_json_modules(teams, true).get("204247.common.addMusic").map(String::as_str), Some("Musik hinzufügen"));
+        let loc = r#"const c={lng:"de",loc:new a({direction:"ltr","effects.boards.graph":"Diagramm","iframe.loading":"Wird geladen..."}),fgloc:{}};"#;
+        let t = parse_loc_table(loc);
+        assert_eq!(t.get("effects.boards.graph").map(String::as_str), Some("Diagramm"));
+        assert_eq!(t.get("iframe.loading").map(String::as_str), Some("Wird geladen..."));
         let esm = r#"push([[752149],{204247:(Xe,e)=>{Object.defineProperty(e,Symbol.toStringTag,{value:"Module"});const n={direction:"ltr","_direction.comment":"x",addMusic:"Musik hinzufügen",n:1,deep:{a:'Tief'}},t={title:"Kopf"};e.common=n,e.header=t}}]);"#;
         let m = parse_esm_tables(esm);
         assert_eq!(m.get("common.addMusic").map(String::as_str), Some("Musik hinzufügen"));

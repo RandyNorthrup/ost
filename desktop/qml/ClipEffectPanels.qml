@@ -32,9 +32,9 @@ Item {
     property var bdFound: null      // {images, videos} for a search
     property string bdMore: ""      // "images" | "videos": See more
     readonly property var stickerCats: [
-        { key: "Smilies", name: qsTr("Smilies") }, { key: "Animals", name: qsTr("Animals") }, { key: "Food", name: qsTr("Food") },
-        { key: "Objects", name: qsTr("Objects") }, { key: "People", name: qsTr("People") }, { key: "Hand gestures", name: qsTr("Hand gestures") },
-        { key: "Travel and places", name: qsTr("Travel and places") }, { key: "Activities", name: qsTr("Activities") }, { key: "Symbols", name: qsTr("Symbols") }
+        { key: "Smilies", name: qsTr("Smilies", "x.onecamera:stickerCategories.smilies") }, { key: "Animals", name: qsTr("Animals", "x.onecamera:stickerCategories.animals") }, { key: "Food", name: qsTr("Food", "x.onecamera:stickerCategories.food") },
+        { key: "Objects", name: qsTr("Objects", "x.onecamera:stickerCategories.objects") }, { key: "People", name: qsTr("People", "x.onecamera:stickerCategories.people") }, { key: "Hand gestures", name: qsTr("Hand gestures", "x.onecamera:stickerCategories.handGestures") },
+        { key: "Travel and places", name: qsTr("Travel and places", "x.onecamera:stickerCategories.travelAndPlaces") }, { key: "Activities", name: qsTr("Activities", "x.onecamera:stickerCategories.activities") }, { key: "Symbols", name: qsTr("Symbols", "x.onecamera:stickerCategories.symbols") }
     ]
     property var stickers: ({})     // category -> items
     property var stickersFound: null
@@ -550,7 +550,7 @@ Item {
                     from: 0; to: 100; stepSize: 1
                     value: panels.fx.boardRatio * 100
                     onMoved: panels.fx.boardRatio = value / 100
-                    Accessible.name: qsTr("The camera is %1 percent of the video viewport.").arg(Math.round(value))
+                    Accessible.name: qsTr("The camera is %1 percent of the video viewport").arg(Math.round(value))
                     ToolTip.visible: pressed; ToolTip.text: Math.round(value) + "%"
                 }
             }
@@ -623,7 +623,7 @@ Item {
     }
     FileDialog {
         id: photoDialog
-        title: qsTr("Choose image file to upload.")
+        title: qsTr("Choose image file to upload")
         fileMode: FileDialog.OpenFiles
         nameFilters: [qsTr("Images (*.png *.jpg *.jpeg *.svg *.webp *.gif)")]
         onAccepted: { for (const f of selectedFiles) panels.addPhoto(f.toString()) }
@@ -651,7 +651,7 @@ Item {
                 onDropped: d => { for (const u of d.urls) panels.addPhoto(u.toString()) }
             }
             Accessible.role: Accessible.Button
-            Accessible.name: qsTr("Choose image file to upload.")
+            Accessible.name: qsTr("Choose image file to upload")
         }
     }
 

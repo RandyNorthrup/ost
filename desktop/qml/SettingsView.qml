@@ -4150,18 +4150,30 @@ Rectangle {
                             id: ringLink
                             anchors.verticalCenter: parent.verticalCenter
                             text: parent.parent.ring ? parent.parent.ring.text : ""
-                            font.family: theme.font; font.pixelSize: 14; font.underline: ringHover.hovered
-                            color: ringHover.hovered ? theme.brandHover : theme.brandForeground1
+                            font.family: theme.font; font.pixelSize: 14; font.underline: aboutRingHover.hovered
+                            color: aboutRingHover.hovered ? theme.brandHover : theme.brandForeground1
                         }
                         FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "open-20"; size: 20; color: ringLink.color }
-                        HoverHandler { id: ringHover; cursorShape: Qt.PointingHandCursor }
+                        HoverHandler { id: aboutRingHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: if (parent.parent.ring && parent.parent.ring.url) Qt.openUrlExternally(parent.parent.ring.url) }
                         Accessible.role: Accessible.Link
                         Accessible.name: ringLink.text
                     }
                 }
             }
-            // Teams' Early access card (Teams 26304, measured on winpc
+            AboutCard {
+                icon: "info-20"; title: qsTr("Legal information")
+                AboutLink { label: qsTr("OST Legal Information"); url: "https://github.com/RandyNorthrup/ost/blob/main/LICENSE" }
+            }
+            AboutCard {
+                icon: "cookies-20"; title: qsTr("Privacy and cookies")
+                AboutLink { label: qsTr("OST Privacy Statement"); url: "https://github.com/RandyNorthrup/ost/blob/main/PRIVACY.md" }
+            }
+            AboutCard {
+                icon: "document-text-20"; title: qsTr("Third party notice")
+                AboutLink { label: qsTr("Desktop"); external: false; onActivated: { const u = backend.thirdPartyNoticesUrl(); if (u) Qt.openUrlExternally(u) } }
+            }
+            // Teams' Early access card, after Third party notice (Teams 26304, measured on winpc
             // 2026-11-20, 121.3 tall: the title row, then "Public preview",
             // a checkbox): offered where the update policy allows public
             // preview (teamsUpdateManagementPolicy.allowPublicPreview).
@@ -4177,18 +4189,6 @@ Rectangle {
                     checked: root.local("publicPreview", "false") === "true"
                     onToggled: on => { backend.setSetting("publicPreview", on ? "true" : "false"); checked = on; backend.checkForUpdates() }
                 }
-            }
-            AboutCard {
-                icon: "info-20"; title: qsTr("Legal information")
-                AboutLink { label: qsTr("OST Legal Information"); url: "https://github.com/RandyNorthrup/ost/blob/main/LICENSE" }
-            }
-            AboutCard {
-                icon: "cookies-20"; title: qsTr("Privacy and cookies")
-                AboutLink { label: qsTr("OST Privacy Statement"); url: "https://github.com/RandyNorthrup/ost/blob/main/PRIVACY.md" }
-            }
-            AboutCard {
-                icon: "document-text-20"; title: qsTr("Third party notice")
-                AboutLink { label: qsTr("Desktop"); external: false; onActivated: { const u = backend.thirdPartyNoticesUrl(); if (u) Qt.openUrlExternally(u) } }
             }
 
             // A failed save, as Teams' Settings says it.
