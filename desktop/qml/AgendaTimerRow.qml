@@ -62,7 +62,18 @@ Item {
         return Math.max(0, sections.length - 1)
     }
     function startOf(i) { let s = 0; for (let k = 0; k < i; k++) s += sections[k].originalDuration || 0; return s }
+    // A topic's lifecycle stage (Teams 26304: the Facilitator's
+    // topicLifecycleStage, a person's topicLifecycleUserOverride winning);
+    // without one, discussed or not.
+    // Only NotStarted and Done count (another value, "InProgress" tried
+    // live, makes Teams fall back to the older look): "" when it has none.
+    function stage(s) {
+        const known = v => v === "Done" || v === "NotStarted" ? v : ""
+        return known(s.topicLifecycleUserOverride) || known(s.topicLifecycleStage)
+    }
     function discussed(s) {
+        const st = stage(s)
+        if (st) return st === "Done"
         if (s.topicRelevanceUserOverride !== undefined) return !!s.topicRelevanceUserOverride
         if (s.isDiscussed !== undefined) return !!s.isDiscussed
         return s.relevanceScore !== undefined && s.relevanceScore >= 3
@@ -168,6 +179,7 @@ Item {
                 readonly property bool isCurrent: index === root.current && root.state_ !== "Cancelled"
                 readonly property real within: Math.max(0, root.elapsed - start)
                 readonly property bool done: root.discussed(s)
+                readonly property string stage: root.stage(s)
                 readonly property string timing: isCurrent ? root.countdown(dur - within) : root.length(dur)
                 readonly property bool neg: timing[0] === "-"
                 readonly property int wide: timing.length - (neg ? 1 : 0) - 4   // 0, 1 (≥10 min), 2 (≥100 min)
@@ -218,10 +230,13 @@ Item {
                 Item {
                     x: 4; y: 2; width: 20; height: 20; clip: true
                     readonly property bool dots: !root.viewOnly && pillHover.hovered
+                    // Done: a filled check circle; a topic without a
+                    // lifecycle stage shows an empty circle until
+                    // discussed (Teams 26304, seen live).
                     FluentIcon {
-                        anchors.centerIn: parent; size: 16; name: "checkmark-circle-16-filled"
+                        anchors.centerIn: parent; size: 16; name: pill.done ? "checkmark-circle-16-filled" : "circle-20"
                         color: theme.onFill(pillBox, theme.text)
-                        visible: pill.done
+                        visible: pill.done || pill.stage === ""
                         anchors.verticalCenterOffset: parent.dots ? -20 : 0
                         Behavior on anchors.verticalCenterOffset { NumberAnimation { duration: 150 } }
                     }
@@ -312,7 +327,8 @@ Item {
                     Accessible.checked: pill.done
                     // "{title}, {status}, {elapsed} min of {duration} min".
                     Accessible.name: qsTr("%1, %2, %3 min of %4 min").arg(pill.s.title || "")
-                        .arg(pill.done ? qsTr("Done") : qsTr("Not started"))
+                        .arg(pill.stage === "Done" ? qsTr("Done") : pill.stage === "NotStarted" ? qsTr("Not started")
+                             : pill.done ? qsTr("Discussed") : qsTr("Not discussed"))
                         .arg(Math.max(1, Math.round(Math.min(pill.within, pill.dur) / 60000)))
                         .arg(Math.max(1, Math.round(pill.dur / 60000)))
                     Accessible.description: qsTr("Topic %1 of %2").arg(pill.index + 1).arg(root.sections.length)

@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-09T09:29:00Z'
-updated_date: '2026-11-21T03:27:00Z'
+updated_date: '2026-11-21T05:55:00Z'
 labels:
   - desktop
   - meetings
@@ -43,4 +43,11 @@ Not built: the agenda timer never appeared in Teams in this tenant (its setting 
 - Run of Show: Teams enables it only for internal builds; recorded, not built.
 
 - 2026-11-20: Run of Show is enabled only in Teams' internal builds (its flag is off for released Teams), so it isn't part of the Teams OST matches; AC removed and recorded on the Remaining Work page. AC1 open: Teams' strip doesn't show agenda edits made from OST (OST clients see each other's); capture what Teams receives.
+
+- 2026-11-21 (callsC) OST → Teams sync, live in "OST TEST 73 sync" (Teams ost-test1 on winpc as organizer, Facilitator on; OST Test Room on linuxlt with the `room` profile; cancelled afterwards):
+  - Teams 26304's meeting state can't be seen on the network from the page (signalling is native), so Teams' strip state was read from React (props of the strip) once a second while OST wrote.
+  - OST's writes reach Teams: every edit from OST Test Room (discussed, undiscussed, resize) appeared in Teams' strip state within a second, and resizes and OST's ad-hoc timer (start, running count, pause) show in Teams' strip.
+  - Cause of the missing check marks: this Teams build decides "discussed" by the topic's lifecycle (`topicLifecycleUserOverride` over `topicLifecycleStage`, values NotStarted / Done; the Facilitator writes stages on every topic) and ignores `isDiscussed` when a stage is set. Teams' own Mark discussed writes isDiscussed and topicRelevanceUserOverride true, topicLifecycleStage "Done" and topicLifecycleUserOverride "Done"; unmark writes NotStarted and drops the override. Topics with no known stage (tried "InProgress") are shown the older way: an empty circle until discussed, "Discussed / Not discussed".
+  - Fixed: agenda.rs reads and writes the lifecycle as Teams does; AgendaTimerRow shows the lifecycle (no marker for Not started, check for Done; the empty circle for topics without a stage) and its spoken status. Verified: OST Test Room's mark showed in Teams as "Welcome, Done…" within a second and its unmark as "Not started".
+  - The earlier misses with spatest (ost-test1, the same account as Teams) were most likely this lifecycle issue too; the same-account check itself was not run (spatest was busy).
 <!-- SECTION:NOTES:END -->

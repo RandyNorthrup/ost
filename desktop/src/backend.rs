@@ -11693,6 +11693,18 @@ impl qobject::Backend {
                 (agenda::rename(&sections, index, draft).or_else(|| held.then(|| sections.clone())), None)
             }
             "discussed" => (agenda::toggle_discussed(&sections, index), None),
+            // A topic's lifecycle stage as the Facilitator would set it
+            // (test aid: --agenda-test-stage).
+            "stage" => {
+                let mut s = sections.clone();
+                match (s.get_mut(index), args["stage"].as_str()) {
+                    (Some(t), Some(st)) => {
+                        t["topicLifecycleStage"] = serde_json::json!(st);
+                        (Some(s), None)
+                    }
+                    _ => (None, None),
+                }
+            }
             "delete" => (agenda::delete_topic(&sections, index), None),
             "move" => (
                 agenda::move_topic(&sections, args["from"].as_u64().unwrap_or(0) as usize, args["to"].as_u64().unwrap_or(0) as usize),

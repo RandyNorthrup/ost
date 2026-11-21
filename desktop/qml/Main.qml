@@ -12294,7 +12294,17 @@ Window {
             else if (step === 6 && edit) { grab("discussed"); row.toggleDiscussed(0) }
             else if (step === 8 && edit) { row.resizeFrom = row.sections; row.resizeBy(0, 60000, true) }
             else if (step === 10 && edit) { grab("resized"); row.resizeFrom = row.sections; row.resizeBy(0, -60000, true) }
-            else if (step === 12) { grab("restored") }
+            else if (step === 12) {
+                grab("restored")
+                // --agenda-test-stage=<index>:<stage>: set a topic's lifecycle
+                // stage (as the Facilitator does), then back to NotStarted.
+                const st = (Qt.application.arguments.find(a => a.startsWith("--agenda-test-stage=")) || "").slice(20)
+                if (st) { const [i, v] = st.split(":"); backend.agendaEdit("stage", JSON.stringify({ index: parseInt(i), stage: v, sections: row.sections })) }
+            }
+            else if (step === 22) {
+                const st = (Qt.application.arguments.find(a => a.startsWith("--agenda-test-stage=")) || "").slice(20)
+                if (st) backend.agendaEdit("stage", JSON.stringify({ index: parseInt(st.split(":")[0]), stage: "NotStarted", sections: row.sections }))
+            }
             else if (step === 13) strip.view = "adhoc"
             else if (step === 14) { grab("adhoc"); strip.view = "agenda" }
             else if (step === 15) grab("back")

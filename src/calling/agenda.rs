@@ -35,10 +35,32 @@ pub fn title(s: &Value) -> &str {
     s.get("title").and_then(Value::as_str).unwrap_or_default()
 }
 
-/// Whether a topic counts as discussed (Teams' module 624328 `g`): the
-/// first of the user's override, `isDiscussed` and the relevance score
-/// that is set.
+/// A topic's lifecycle stage as Teams shows it (NotStarted, InProgress,
+/// Done; the Facilitator sets `topicLifecycleStage` as the meeting goes,
+/// a person's mark goes in `topicLifecycleUserOverride`, which wins).
+/// Teams 26304 checks topics off by this when a topic has one (seen live
+/// 2026-11-20 in "OST TEST 73 sync").
+pub fn lifecycle(s: &Value) -> Option<&str> {
+    // Only the stages Teams knows count: a topic with another value
+    // ("InProgress" tried live) is shown the older way, discussed or not.
+    fn known(v: &Value) -> Option<&str> {
+        v.as_str().filter(|v| *v == DONE || *v == NOT_STARTED)
+    }
+    s.get("topicLifecycleUserOverride")
+        .and_then(known)
+        .or_else(|| s.get("topicLifecycleStage").and_then(known))
+}
+
+pub const DONE: &str = "Done";
+pub const NOT_STARTED: &str = "NotStarted";
+
+/// Whether a topic counts as discussed: its lifecycle stage is Done when it
+/// has one; otherwise (Teams' module 624328 `g`) the first of the user's
+/// override, `isDiscussed` and the relevance score that is set.
 pub fn discussed(s: &Value) -> bool {
+    if let Some(stage) = lifecycle(s) {
+        return stage == DONE;
+    }
     if let Some(v) = s.get("topicRelevanceUserOverride").and_then(Value::as_bool) {
         return v;
     }
@@ -219,10 +241,22 @@ pub fn rename(sections: &[Value], index: usize, draft: &str) -> Option<Vec<Value
 /// Mark discussed / not discussed: both `isDiscussed` and the user's
 /// override.
 pub fn toggle_discussed(sections: &[Value], index: usize) -> Option<Vec<Value>> {
-    let v = !discussed(sections.get(index)?);
+    let section = sections.get(index)?;
+    let v = !discussed(section);
+    let staged = lifecycle(section).is_some();
     let mut out = sections.to_vec();
     out[index]["isDiscussed"] = json!(v);
     out[index]["topicRelevanceUserOverride"] = json!(v);
+    // With a lifecycle stage, Teams marks it Done (the person's override
+    // too) or puts it back to NotStarted, dropping the override.
+    if staged && let Some(o) = out[index].as_object_mut() {
+        o.insert("topicLifecycleStage".into(), json!(if v { DONE } else { NOT_STARTED }));
+        if v {
+            o.insert("topicLifecycleUserOverride".into(), json!(DONE));
+        } else {
+            o.remove("topicLifecycleUserOverride");
+        }
+    }
     Some(out)
 }
 
@@ -370,6 +404,24 @@ mod tests {
         assert_eq!(title(&rename(&s, 1, "  budget ").unwrap()[1]), "budget 3");
         assert_eq!(title(&rename(&s, 1, "").unwrap()[1]), UNNAMED);
         assert!(rename(&s, 1, " Next ").is_none());
+    }
+
+    #[test]
+    fn lifecycle_stage_decides_discussed_and_is_toggled() {
+        let s = vec![json!({"title": "A", "originalDuration": 300000, "isDiscussed": true, "topicLifecycleStage": "NotStarted"})];
+        assert!(!discussed(&s[0]));
+        let done = toggle_discussed(&s, 0).unwrap();
+        assert_eq!(done[0]["topicLifecycleStage"], json!("Done"));
+        assert_eq!(done[0]["topicLifecycleUserOverride"], json!("Done"));
+        assert!(discussed(&done[0]));
+        let back = toggle_discussed(&done, 0).unwrap();
+        assert_eq!(back[0]["topicLifecycleStage"], json!("NotStarted"));
+        assert!(back[0].get("topicLifecycleUserOverride").is_none());
+        assert_eq!(back[0]["isDiscussed"], json!(false));
+        // The person's override wins over the Facilitator's stage.
+        assert!(discussed(&json!({"topicLifecycleStage": "InProgress", "topicLifecycleUserOverride": "Done"})));
+        // A stage Teams doesn't know: the older rule.
+        assert!(discussed(&json!({"topicLifecycleStage": "InProgress", "isDiscussed": true})));
     }
 
     #[test]
