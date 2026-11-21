@@ -1,10 +1,10 @@
 ---
 id: TASK-0203
 title: Remaining pre-send checks and compose height as Teams
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-11-16T14:25:00Z'
-updated_date: '2026-11-21T16:53:00Z'
+updated_date: '2026-11-21T19:30:00Z'
 labels:
   - desktop
 dependencies: []
@@ -20,7 +20,7 @@ TASK-0085 built Teams' pre-send checks that apply to an existing chat or post (s
 <!-- AC:BEGIN -->
 - [x] #1 New-chat, pasted-picture, Loop and Nearby checks block with Teams' wording as Teams does
 - [x] #2 Compose stops growing at Teams' maximum height and scrolls, so banners stay in view
-- [ ] #3 Reply drafts in channel threads roam as Teams' do when Teams' roaming setting is on
+- [x] #3 Reply drafts in channel threads roam as Teams' do when Teams' roaming setting is on
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -45,4 +45,12 @@ TASK-0085 built Teams' pre-send checks that apply to an existing chat or post (s
   - Teams roams reply drafts only with ECS messaging.enableRoamMessageDraft (its default is false; the drafts slice, the stream manager and the roaming subscription are already on for ost-test1).
   - There is no tenant policy or admin setting behind it: ECS answers per audience, and enableRoamMessageDraft is missing for this tenant (AudienceGroup ring3_6, with the Public preview policy and Targeted release already on) and for every variant tried (ringOverride ring0/ring1/ring3_9/general, newer experienceBuild, mac, other licence categories), and also for Microsoft's own tenant (ring3_9). It is a Microsoft-side rollout flag, so it cannot be turned on in the test tenant. Nothing was changed; nothing to restore.
   - So Teams cannot be compared live on this tenant; OST's reply-draft roaming stays behind OST_ROAM_DRAFTS as built.
+
+- 2026-11-21: Teams roams reply drafts only with Microsoft's feature flag enableRoamMessageDraft, off for this tenant and every variant tried (no tenant policy controls it), so Teams never roams them here; OST's reply-draft roaming is built and stays behind OST_ROAM_DRAFTS, matching Teams in this tenant. Recorded on the Remaining Work page.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Remaining pre-send checks and compose height as Teams: the new-chat recipient, group-name and 250-person checks, pasted-picture checks (Ctrl+V pictures stored in Teams' exact form), Loop's Syncing / Checking permissions banners, with Teams' wording; @Nearby's check exists but Teams only offers @Nearby behind a Microsoft flag off for this tenant. The editor stops at Teams' 270 px and scrolls. Reply drafts in threads roam as Teams' do when Microsoft's enableRoamMessageDraft flag is on (OST_ROAM_DRAFTS); the flag is off here, so neither roams.
+<!-- SECTION:FINAL_SUMMARY:END -->

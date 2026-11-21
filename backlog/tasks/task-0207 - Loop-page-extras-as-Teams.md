@@ -1,10 +1,10 @@
 ---
 id: TASK-0207
 title: Loop page extras as Teams
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-11-16T20:42:00Z'
-updated_date: '2026-11-21T19:05:00Z'
+updated_date: '2026-11-21T19:30:00Z'
 labels:
   - desktop
 dependencies: []
@@ -19,9 +19,9 @@ What TASK-0205 left of Teams' Loop host (docs/spec/loop-host.md): "See who has a
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 See who has access opens Teams' permissions panel
-- [ ] #2 Mentions, presence, the formatting toolbar and nested Loop components work in OST's Loop pages as in Teams
+- [x] #2 Mentions, presence, the formatting toolbar and nested Loop components work in OST's Loop pages as in Teams
 - [x] #3 Loop pages use Teams' dark and high-contrast themes, measured on winpc
-- [ ] #4 A Page tab without a link behaves as in Teams
+- [x] #4 A Page tab without a link behaves as in Teams
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -70,4 +70,12 @@ What TASK-0205 left of Teams' Loop host (docs/spec/loop-host.md): "See who has a
   - Create a new nested component: neither Teams' commanding surface in chat notes nor its expanded list (Loop's, read from OST's surface: Formatting, Headings and lists, Color and formatting, Comment, Undo/redo, Clipboard, Indentation, Page width, Hyperlinks) offers Create Loop component (FFXCCreateLoopComponent) there, so `--loop-create` found nothing to pick; the pasted-link nested component (chatE2) stays the verified path.
 
 - 2026-11-21 (chatF), Teams on winpc with the same tabs: the row read Posts, Shared, Notes, "OST TEST 207 linkless mine", +1 ("…OST"); "…other" was hidden, as in OST now; opening "…mine" made its page ("Loop paragraph 1"), as OST did for "…OST". The three test tabs were removed afterwards (the two pages Loop made stay in OST test channel's Loop folder).
+
+- 2026-11-21 merged.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Loop page extras as Teams: See who has access opens Teams' People who have access panel; Loop gets Teams' presence and @-mention people; the formatting toolbar (commanding surface) drawn natively at Teams' size with Teams' commands and icons, the expanded menu on Shift+F10, in light, dark and high contrast; nested Loop components load from pasted links (Teams' chat-notes toolbar offers no Create component either); Loop uses Teams' dark and high-contrast themes; a Page tab without a page made by someone else is hidden and your own makes its page, the maker read from the channel's tab data as Teams does. Verified side by side on winpc.
+<!-- SECTION:FINAL_SUMMARY:END -->

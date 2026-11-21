@@ -3,10 +3,10 @@ id: TASK-0240
 title: >-
   Recap window extras as Teams: Clipchamp, Copilot, Custom summary, Mentions,
   Add notes, Manage
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-11-20T22:51:00Z'
-updated_date: '2026-11-21T19:05:00Z'
+updated_date: '2026-11-21T19:30:00Z'
 labels:
   - desktop
   - calls
@@ -22,7 +22,7 @@ TASK-0098 built Teams' recap pop-out (player, Speakers/Topics/Chapters, Shared f
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 The recap window has Teams' Open in Clipchamp, Copilot and Manage buttons and they act as in Teams
-- [ ] #2 Custom summary, Mentions and Notes' Add notes work as in Teams
+- [x] #2 Custom summary, Mentions and Notes' Add notes work as in Teams
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -87,4 +87,19 @@ TASK-0098 built Teams' recap pop-out (player, Speakers/Topics/Chapters, Shared f
   - Custom summary: Speaker summary on 240 returned a real summary (1408/1858 characters); Create template's Preview of a typed description returned a real preview (Decisions + an Action items table with owners); the template was saved, renamed, edited, shared and deleted again. On OST TEST 217 town hall 2 (no transcript) OST now gets Copilot's 93-character answer "Transcript not available. A meeting recap cannot be generated without the meeting transcript.", the same as Teams.
   - Audio recap / Open in Clipchamp / Transcript pill on the transcript-only meeting: as Teams (see above). The four failed test audio recaps (three from Teams, one from OST) were deleted with `--podcast-cleanup` (Teams' deletePodcasts over AugLoop).
   - Open: OST's AI summary page for 240 still shows its empty sections, while Teams' card lists 3 tasks; Teams' Notes page in the recap has a Loop header row (icon, title, a button) that OST's does not draw; a successful audio recap's playback could not be seen (this tenant's meetings are too short for Copilot to make one).
+
+- 2026-11-21 merged (a49befd..87ea6ae); 890 lib + 29 desktop tests pass. AI summary tasks list and the notes' Loop header row moved to a follow-up.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Recap window extras as Teams.
+
+- Open in Clipchamp, Copilot and Manage (Download, expiry, extend/remove) as Teams.
+- Custom summary: Teams' current Speaker summary and Executive report prompts (taken from Teams' live traffic), template cards, and the Create template editor with name dialog and Edit / Share / Rename / Delete.
+- Mentions as Teams, including its empty and error states; Notes' Add notes creates the meeting's notes and the recap shows existing notes.
+- Transcript-only meetings use the transcript's file: no player, Teams' five pills, Audio recap with Teams' mini player and messages.
+
+Verified live on OST TEST 240 (transcript-only) and 217 against Teams on winpc; test templates and audio recaps deleted.
+<!-- SECTION:FINAL_SUMMARY:END -->
