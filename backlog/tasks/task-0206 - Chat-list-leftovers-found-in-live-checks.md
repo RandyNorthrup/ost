@@ -4,7 +4,7 @@ title: Chat list leftovers found in live checks
 status: In Progress
 assignee: []
 created_date: '2026-11-16T20:22:00Z'
-updated_date: '2026-11-21T07:15:00Z'
+updated_date: '2026-11-21T15:26:00Z'
 labels:
   - desktop
 dependencies: []
@@ -65,4 +65,7 @@ Found while checking TASK-0150/0195/0204 against Teams on winpc (2026-11-16):
   - Built: the checkbox (ECS messaging enableProjectAgentAutoCreationToggle + enableStatusReportAgent, Copilot licence, locale), api::project_agent (templatedApps check, POST {calling_TeamsCopilotAggregatorUrl}/agents?agentType=0 with Teams' body, the 40 s delay, waiting for the Welcome-AddAgent message) with unit tests, ChannelAgentToast with Teams' strings.
   - Live in OST (`--team-live=create:... --team-live-agent`, team "OST TEST 206 agent OST", deleted afterwards): the box shows and is ticked; the first run failed because Create team's answer had no thread yet; the toast now waits for the team to be listed (rechecked with the next build).
 - Add members' blank picture: Avatar drew its canvas as soon as the picture loaded, before the pixels were there; it now keeps the initials until the picture is drawn (as Teams shows initials until the photo is in).
+
+- 2026-11-21 (chatE), Add Channel Agent checked live end to end (`--team-live=create:OST TEST 206 agent OST2 --team-live-agent`): OST created the team with the box ticked, waited for the team's thread, asked the Teams Copilot Aggregator (OST's token for its resource works), and the "OST TEST channel Agent" bot posted "Hi, I'm your Channel Agent…" in the first channel; the toast went from "Channel Agent is being added." to "Channel Agent has been added to this channel." with Go to channel, as in Teams. The team was deleted afterwards (also "OST TEST 206 agent OST" and Teams' "OST TEST 206 agent").
+  - Seen on the way (not part of this item): OST shows the agent's welcome as from "Project-Agent-Prod" and its add event as "OST Test 1 added OST TEST channel Agent here.", where Teams shows "<channel> Agent" with an "AI agent" tag and "<channel> Agent has been added to the channel.".
 <!-- SECTION:NOTES:END -->

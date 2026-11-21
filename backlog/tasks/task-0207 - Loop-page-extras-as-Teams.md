@@ -4,7 +4,7 @@ title: Loop page extras as Teams
 status: In Progress
 assignee: []
 created_date: '2026-11-16T20:42:00Z'
-updated_date: '2026-11-21T08:45:00Z'
+updated_date: '2026-11-21T15:26:00Z'
 labels:
   - desktop
 dependencies: []
@@ -54,4 +54,6 @@ What TASK-0205 left of Teams' Loop host (docs/spec/loop-host.md): "See who has a
   - Harness: --loop-test=notes --loop-format (mouse-drag selection, Bold, Shift+F10, Escape), --loop-paste=<link>, --loop-backspace=<n>; KeyTyper gained drag() and more keys.
   - Verified live on linuxlt (ost-test1, OST group test Notes): collapsed top bar on a mouse selection, Bold via it (text weight 600), Shift+F10 expanded surface (light and dark), Escape closes; a pasted Loop component link (ost-test1's OST TEST 187 meeting notes) loads through LoopComponentLoader and Loop draws the nested component; all test text and the component removed again (page as before, checked after reload).
   - Open: high contrast not seen live; no side-by-side with Teams on winpc; the harness's synthetic drag only sometimes makes Loop show the top bar; Create Loop component / Insert component (type Fluid path) not tried live; requiredProviderTypes, LoopCodeLoaderFactoryProvider (non-Fluid components), Whiteboard container, telemetry sink and trusted-types policy not given.
+
+- 2026-11-21 (chatE): See who has access's popover drawn live (`--loop-access-test`, OST group test > Notes): "People who have access", "1 groups giving access" (Loop's string), a line and "Only people with existing access can access this Loop component". Merged chatE2's toolbar and nested components (ba51310).
 <!-- SECTION:NOTES:END -->
