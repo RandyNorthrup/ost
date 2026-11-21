@@ -10026,7 +10026,7 @@ Window {
             if (mode === "calclean") {
                 if (step === 0) range()
                 else if (step === 3) {
-                    const old = (backend.calendarJson ? JSON.parse(backend.calendarJson) : []).filter(c => /^Canceled: OST TEST 212/.test(c.subject))
+                    const old = (backend.calendarJson ? JSON.parse(backend.calendarJson) : []).filter(c => /^(Canceled: OST TEST 212|OST TEST 212 notes)/.test(c.subject))
                     console.warn("EVENTS calclean", old.length, JSON.stringify(old.map(c => c.subject)))
                     queue = old.map(c => c.id)
                 } else if (step === 4 && queue.length) {
@@ -10271,7 +10271,7 @@ Window {
 
     Connections {
         target: backend
-        enabled: Qt.application.arguments.indexOf("--call-notes-test") >= 0
+        enabled: Qt.application.arguments.indexOf("--call-notes-test") >= 0 || Qt.application.arguments.indexOf("--join-notes") >= 0
         function onCallNotesReply(id, json) { if (id === "notescleanup") console.warn("MEETINGNOTES cleanup", json) }
     }
     // --phone-audio-test: Teams' phone audio in a solo meeting of your own

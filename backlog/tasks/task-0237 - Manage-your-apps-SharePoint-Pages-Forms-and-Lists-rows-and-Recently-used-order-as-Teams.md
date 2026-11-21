@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-11-20T18:48:00Z'
-updated_date: '2026-11-21T08:23:00Z'
+updated_date: '2026-11-21T15:07:00Z'
 labels:
   - desktop
   - apps
@@ -43,4 +43,6 @@ Teams' Manage your apps lists 27 apps for ost-test1; OST lists 24. Teams also sh
 - Further: Teams' Si.YE only pairs each entitlement with its definition, and F$t only sorts (usage, else A-Z; updates first), and OST's state filter equals Teams' (x$t/B$t). So by the code d2c6f111 (Installed) would be listed; Teams' own entitlement cache must hold it differently (another state, or not at all) than the aggregatedEntitlements answer OST reads. Next step: read Teams' app entitlement store (IndexedDB) on winpc for d2c6f111's state and compare with OST's request (OST asks ?appbarview=userpinned).
 
 - 2026-11-21 winpc, Teams' own store (IndexedDB Teams:user-installed-apps-manager … user-app-entitlements): every personal entitlement Teams got from its aggregated sync carries isInstalledPersonally: true (Teams' prepareAggregatedAppsForPersistence adds it), but d2c6f111's entry is {state Installed, authorization …} without it, so Teams stored it through another path (not its aggregated sync) and doesn't list it. OST's aggregatedEntitlements answer (?appbarview=userpinned) includes d2c6f111 as Installed. To match: find the request Teams' sync makes (its query parameters) that leaves d2c6f111 out, or the path that adds it without the flag.
+
+- 2026-11-21 (teamsG) winpc recheck by app id (CDP, React props of each row, read-only): Teams' Manage your apps lists 31 rows and DOES include the personal SharePoint / Viva Connections app d2c6f111 (between Copilot and Engage, isInstalledPersonally true) as well as the team SharePoint 2a527703 at the top. The earlier "Teams leaves d2c6f111 out" came from reading the list by name (two rows named SharePoint, and two named Planner: com.microsoft.teamspace.tab.planner and 75f31797, collapsed into one). Teams' stored entitlement for d2c6f111 now carries isInstalledPersonally and its definition 1.0.55 (user-installed-apps-manager IndexedDB, Personal_ring3_6 key). So OST listing d2c6f111 there matches Teams. Teams' rows today: OST TEST 206 channel Agent, SharePoint (2a527703), Workflows, Whiteboard, Planner, Praise, Polly, Power BI, Polls, OneNote, Avatars, Surveys, Excel (Agent), Word (Agent), Planner Agent, Planner (75f31797), PowerPoint (Agent), Analyst, Researcher, Wikipedia Search, Facilitator, Updates, Viva Learning, Power Apps, Copilot, SharePoint (d2c6f111), Engage, Power BI (MSIT), SharePoint Pages, Forms for Microsoft Teams, Lists.
 <!-- SECTION:NOTES:END -->

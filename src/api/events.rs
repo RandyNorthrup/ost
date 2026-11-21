@@ -32,8 +32,6 @@ use super::client::TeamsClient;
 
 /// Teams' virtual events service resource (ECS `virtualEventsServiceResource`).
 pub const RESOURCE: &str = "7fc21101-d09b-4343-8eb3-21187e0431a4";
-/// Teams' default service address (ECS `virtualEventsServiceEndpoint`).
-pub const DEFAULT_ENDPOINT: &str = "https://teams.microsoft.com/api/virtualevents/prod/beta";
 /// The regional service Teams' web client used for ost-test1's tenant.
 pub const DEFAULT_REGIONAL: &str = "https://teams.microsoft.com/api/teamsevents/us";
 
@@ -369,7 +367,11 @@ async fn get_json(url: &str, api_v2: bool) -> Result<Value> {
 pub async fn discover(client: &TeamsClient, filter: &DiscoverFilter) -> Result<Value> {
     let ams = client.ams_v2_url().unwrap_or_default();
     let now = chrono::Utc::now();
-    let url = |l| format!("{DEFAULT_ENDPOINT}{}", discover_query(l, now, filter));
+    // Teams asks its virtual events service at the regional address (ECS
+    // virtualEvents.useRegionalVirtualEventsServiceEndpointResolver, on):
+    // the global one leaves out other people's past events.
+    let base = regional_endpoint(client);
+    let url = |l| format!("{base}{}", discover_query(l, now, filter));
     if !filter.from.is_empty() && !filter.to.is_empty() {
         let r = get_json(&format!("{}{}", regional_endpoint(client), discover_query(DiscoverList::Upcoming, now, filter)), false).await?;
         return Ok(json!({ "filtered": cards_from(&r, &ams) }));
@@ -1000,9 +1002,9 @@ pub async fn see_more(client: &TeamsClient, section: &str, skip: &str) -> Result
     let f = DiscoverFilter::default();
     let url = match section {
         "Draft" | "Published" | "Past" => format!("{}/eventOverviews?manageFilterType={section}&pageSize=25&includeTotalCount=true&eventTypes=Townhall,Webinar{tok}", regional_endpoint(client)),
-        "upcoming" => format!("{DEFAULT_ENDPOINT}{}{tok}", discover_query(DiscoverList::Upcoming, now, &f).replace("pageSize=21", "pageSize=25")),
-        "past" => format!("{DEFAULT_ENDPOINT}{}{tok}", discover_query(DiscoverList::Past, now, &f).replace("pageSize=9", "pageSize=25")),
-        "now" => format!("{DEFAULT_ENDPOINT}{}{tok}", discover_query(DiscoverList::Now, now, &f).replace("pageSize=9", "pageSize=25")),
+        "upcoming" => format!("{}{}{tok}", regional_endpoint(client), discover_query(DiscoverList::Upcoming, now, &f).replace("pageSize=21", "pageSize=25")),
+        "past" => format!("{}{}{tok}", regional_endpoint(client), discover_query(DiscoverList::Past, now, &f).replace("pageSize=9", "pageSize=25")),
+        "now" => format!("{}{}{tok}", regional_endpoint(client), discover_query(DiscoverList::Now, now, &f).replace("pageSize=9", "pageSize=25")),
         _ => anyhow::bail!("Not a section"),
     };
     let r = get_json(&url, !matches!(section, "Draft" | "Published" | "Past")).await?;
