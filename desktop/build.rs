@@ -160,6 +160,7 @@ fn main() {
         "qml/PhoneAudioDialog.qml",
         "qml/ExistingPageDialog.qml",
         "qml/AiInterpreterDialog.qml",
+        "qml/AiInterpreterModeDialog.qml",
         "qml/BreakoutSettingsDialog.qml",
         "qml/BreakoutTab.qml",
         "qml/TabWindow.qml",

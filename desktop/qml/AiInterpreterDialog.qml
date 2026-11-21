@@ -16,7 +16,7 @@ Popup {
     parent: Overlay.overlay
     modal: true; focus: true
     padding: 0
-    width: 600; height: col.implicitHeight + 49.33
+    width: setup ? 480 : 600; height: setup ? 252 : col.implicitHeight + 49.33
     anchors.centerIn: Overlay.overlay
     closePolicy: Popup.CloseOnEscape
     background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
@@ -80,8 +80,95 @@ Popup {
         MenuPopup { id: menu; y: parent.height + 4; width: parent.width; height: Math.min(implicitHeight, 320); items: cb.items; onPicked: i => cb.picked(i) }
     }
 
+    // Setting it up (measured on winpc 2026-11-20, 480 x 252, padding 24):
+    // the title (20/28 semibold), Close (24 x 23.33) at 431.33, 25.5; "You'll
+    // hear speech translated into" (14/600) at 68.67 over the language box
+    // (430.67 x 31.33, "Choose interpretation language" in #707070) at
+    // 92.67; the ticked "Allow AI to simulate my voice when others hear my
+    // translated speech" (14/20, two lines, with its information button) at
+    // 140.67; Cancel and "Turn on for me" (off until a language is chosen)
+    // at 196.
+    Item {
+        visible: root.setup
+        anchors.fill: parent
+        Text {
+            x: 24.67; y: 24.67; width: 398.67; height: 28; verticalAlignment: Text.AlignVCenter
+            text: qsTr("Set up your Interpreter")
+            font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text
+            Accessible.role: Accessible.Heading; Accessible.name: text
+        }
+        Rectangle {
+            id: setupClose
+            x: 431.33; y: 25.5; width: 24; height: 23.33; radius: 4
+            color: setupCloseHover.hovered ? theme.menuHover : "transparent"
+            FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.textStrong }
+            HoverHandler { id: setupCloseHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: root.close() }
+            Accessible.role: Accessible.Button; Accessible.name: qsTr("Close")
+        }
+        Text { x: 24.67; y: 68.67; height: 20; text: qsTr("You'll hear speech translated into"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+        Combo {
+            x: 24.67; y: 92.67; width: 430.67; height: 31.33
+            placeholder: qsTr("Choose interpretation language")
+            text: root.nameOf(root.language)
+            items: root.languages.map(l => ({ label: l.name, checked: l.code === root.language }))
+            onPicked: i => root.language = root.languages[i].code
+        }
+        Rectangle {
+            id: simBox
+            x: 24.67; y: 142; width: 16; height: 16; radius: 2
+            color: root.voice === "0" ? theme.checkedFill : "transparent"
+            border.width: 0.67; border.color: root.voice === "0" ? theme.checkedFill : theme.textStrong
+            FluentIcon { visible: root.voice === "0"; anchors.centerIn: parent; name: "checkmark-12"; size: 12; color: theme.onFill(simBox, theme.textOnBrand) }
+            Accessible.role: Accessible.CheckBox; Accessible.checked: root.voice === "0"
+            Accessible.name: qsTr("Allow AI to simulate my voice when others hear my translated speech")
+        }
+        Text {
+            id: simLabel
+            x: 48.67; y: 140.67; width: 380.77
+            wrapMode: Text.Wrap; lineHeight: 20; lineHeightMode: Text.FixedHeight
+            text: qsTr("Allow AI to simulate my voice when others hear my translated speech")
+            font.family: theme.font; font.pixelSize: 14; color: theme.text
+        }
+        MouseArea {
+            x: 24.67; y: 138; width: 405; height: 42
+            cursorShape: Qt.PointingHandCursor
+            onClicked: root.voice = root.voice === "0" ? "1" : "0"
+        }
+        Item {
+            x: 91.88; y: 158; width: 24; height: 24
+            FluentIcon { anchors.centerIn: parent; name: "info-16"; size: 16; color: theme.textStrong }
+            HoverHandler { id: simInfo }
+            ToolTip.visible: simInfo.hovered
+            ToolTip.text: qsTr("This is the voice others hear when your speech is interpreted.")
+            Accessible.role: Accessible.Button; Accessible.name: "information"
+        }
+        Row {
+            x: 231.57; y: 196; spacing: 8
+            Rectangle {
+                width: 96; height: 31.33; radius: 4
+                color: setupCancelHover.hovered ? theme.menuHover : theme.surface; border.color: theme.stroke; border.width: 0.67
+                Text { anchors.centerIn: parent; text: qsTr("Cancel"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                HoverHandler { id: setupCancelHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: root.close() }
+                Accessible.role: Accessible.Button; Accessible.name: qsTr("Cancel")
+            }
+            Rectangle {
+                id: setupGo
+                readonly property bool ok: !!root.language
+                width: 119.76; height: 31.33; radius: 4
+                color: !ok ? theme.bgDisabled : setupGoHover.hovered ? theme.brandHover : theme.brandFill
+                Text { anchors.centerIn: parent; text: qsTr("Turn on for me"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: setupGo.ok ? theme.textOnBrand : theme.disabled }
+                HoverHandler { id: setupGoHover; cursorShape: setupGo.ok ? Qt.PointingHandCursor : Qt.ArrowCursor }
+                TapHandler { enabled: setupGo.ok; onTapped: { root.confirmed(root.language, root.voice, root.balance / 100); root.close() } }
+                Accessible.role: Accessible.Button; Accessible.name: qsTr("Turn on for me")
+            }
+        }
+    }
+
     Column {
         id: col
+        visible: !root.setup
         x: 24.67; y: 24.67; width: root.width - 49.33; spacing: 12
         Text {
             width: parent.width; height: 28; verticalAlignment: Text.AlignVCenter

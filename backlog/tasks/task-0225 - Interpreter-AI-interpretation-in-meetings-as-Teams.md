@@ -1,10 +1,10 @@
 ---
 id: TASK-0225
 title: Interpreter (AI interpretation) in meetings as Teams
-status: In Progress
+status: To Do
 assignee: []
 created_date: '2026-11-18T23:07:00Z'
-updated_date: '2026-11-21T00:03:00Z'
+updated_date: '2026-11-21T00:27:00Z'
 labels:
   - calls
 dependencies: []
@@ -20,7 +20,7 @@ Found in TASK-0214/0208: Teams shows Interpreter in meetings when the meeting po
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [x] #1 Interpreter shows in OST's meeting controls exactly when it shows in Teams
+- [ ] #1 Interpreter shows in OST's meeting controls exactly when it shows in Teams
 - [ ] #2 Turning Interpreter on in OST gives the same interpreted audio and settings as Teams, verified live between test accounts
 <!-- AC:END -->
 
@@ -33,5 +33,5 @@ Found in TASK-0214/0208: Teams shows Interpreter in meetings when the meeting po
 - Live 2026-11-20 (linuxlt profile default = ost-test1 in "OST calendar test"): availability policy Enabled + Copilot -> Interpreter offered; Turn on for me (Spanish): updateMeetingSettings -> meetingCapability.aiInterpretationEnabled, Join meeting group 202, joinMeetingGroupStatus code 0, roster put our endpoint in group es (270514aa-…) and the interpreter bot's source 414 in it; meeting audio renegotiated per speaker (x-much2 taken). Teams on winpc (same user, second device) then showed Interpreter in More's grid; clicking it opened "Choose an Interpreter mode" (Consecutive "Uses credits"/"On for everyone" with two language boxes, Simultaneous "On for you"; Cancel / Turn on|Next; 490x525.33), then "Set up your Interpreter" (480x252: "You'll hear speech translated into", the language box, checkbox "Allow AI to simulate my voice when others hear my translated speech", Cancel / Turn on for me) — dumps in scratchpad c225/modedlg.json, setupdlg.json.
 - Open: (1) Teams on winpc gets the mode-selection step (turn-by-turn is on for it although OST's ECS copy lacks enableAiInterpretationTurnByTurnMode) and the compact setup dialog; OST goes straight to its fuller settings dialog -> needs the mode dialog, the 480-wide setup layout and turn-by-turn; (2) interpreted audio not heard yet: the English speaker (OST Test 2 with the speech rig) sat in the meeting's OrganizerOnly lobby (no longer co-organizer); needs a re-run with the speaker admitted; (3) indicator, alerts and tile badges not built.
 
-- 2026-11-20 merged as 8366e9f: shows under More ▸ Language and speech and in the More grid exactly for the meeting policy plus a Copilot licence, as Teams (seen in both for ost-test1). AC2 open: the mode step, compact setup dialog, consecutive mode, indicators, and a live audio run with the speaker admitted.
+- 2026-11-21 (callsC) built: AiInterpreterModeDialog (Teams' "Choose an Interpreter mode", 490x525.33: Consecutive with its badges and two language boxes / Simultaneous; Turn on / Next; Learn more; the round picture is a Fluent backdrop with Interpreter's glyph, not Teams' artwork); the compact "Set up your Interpreter" (480x252, checkbox "Allow AI to simulate my voice…"); consecutive mode (aiInterpretationSettingsJson TurnByTurn with two languages, organizer only, Turn off for all); the bar indicator after the AI one with its tooltip and card (Manage settings, Turn off/on for me, AI disclaimer); alerts "AI is interpreting for others", "Interpreter has been turned off", "Something went wrong with Interpreter"; bot signals on data id 3 logged (for the tile badges, not built until their live format is seen); harness --join-interpreter-admit.
 <!-- SECTION:NOTES:END -->

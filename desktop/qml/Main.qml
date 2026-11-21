@@ -12244,7 +12244,13 @@ Window {
             const arg = k => (Qt.application.arguments.find(a => a.startsWith(k + "=")) || "").slice(k.length + 1)
             const has = k => Qt.application.arguments.indexOf(k) >= 0
             t += 5
-            const row = (callWindow.barMoreItems || []).reduce((a, it) => a.concat(it.submenu || []), []).find(x => x.name === "AiInterpretationButtonForAll")
+            // --join-interpreter-admit: let in whoever waits in the lobby
+            // (the test speaker).
+            if (has("--join-interpreter-admit")) {
+                const lobby = JSON.parse(backend.callLobbyJson || "[]")
+                lobby.forEach(p => { console.warn("INTERP admitting", p.name); backend.admitFromLobby(p.id, p.name, true) })
+            }
+            const row =(callWindow.barMoreItems || []).reduce((a, it) => a.concat(it.submenu || []), []).find(x => x.name === "AiInterpretationButtonForAll")
             console.warn("INTERP", t, backend.callInterpreterJson.replace(/"languages":\[[^\]]*\],?/, ""), "row", JSON.stringify(row || null))
             if (t === 10) backend.interpreterAction("turnOn", JSON.stringify({ language: arg("--join-interpreter"), voice: arg("--join-interpreter-voice") || "1", balance: 0.8 }))
             const off = parseInt(arg("--join-interpreter-off")) || 0
@@ -12276,6 +12282,8 @@ Window {
             if (backend.currentChatId !== id) { backend.selectChat(id, (chatList.chats.find(c => c.id === id) || { name: "OST breakout tab test" }).name); return }
             const tab = conversation.breakoutTabForTest()
             const st = () => tab ? JSON.stringify({ rooms: tab.rooms.map(r => ({ name: r.name, n: (r.participants || []).length, options: !!r.options_url })), people: tab.people.map(p => p.name), busy: tab.busy, error: tab.state_ ? tab.state_.error : null, settings: tab.state_ ? tab.state_.settings : null }) : "no tab"
+            // No tab (the meeting isn't known, or we don't organize it).
+            if (step >= 6 && !tab) { console.warn("BRTAB end", "no tab", JSON.stringify(conversation.tabNames)); Qt.quit(); return }
             if (step === 1) { console.warn("BRTAB tabs", JSON.stringify(conversation.tabNames)); conversation.tab = "Breakout Rooms" }
             else if (step === 4) { console.warn("BRTAB open", st()); shot("open"); if (tab && !tab.rooms.length) { made = true; tab.act("create", { rooms: [{ name: "Room 1", participants: [] }, { name: "Room 2", participants: [] }] }) } }
             else if (step === 7) { console.warn("BRTAB rooms", st()); shot("rooms") }

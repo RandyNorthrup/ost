@@ -289,6 +289,13 @@ impl Session {
         };
         match m.data_id {
             TRANSCRIPT_DATA_ID => {
+                // Interpreter's bot signals ride here too (Teams'
+                // `aiInterpretation` key: AudioMetadata, TranslatedText,
+                // VoiceAssignment).
+                if m.payload.windows(16).any(|w| w == b"aiInterpretation") {
+                    let text: String = String::from_utf8_lossy(&m.payload).chars().take(600).collect();
+                    tracing::info!(source = m.source_id, %text, "interpreter: bot signal");
+                }
                 return serde_json::from_slice(&m.payload)
                     .map(|v| vec![Incoming::Transcript(v)])
                     .unwrap_or_default();

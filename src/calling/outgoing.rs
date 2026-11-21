@@ -1756,6 +1756,11 @@ impl OutgoingCall {
         self.update_meeting_settings(super::ai_interpreter::settings(on)).await
     }
 
+    /// Teams' consecutive interpretation: on for everyone in two languages.
+    pub async fn set_ai_interpretation_turn_by_turn(&mut self, first: &str, second: &str) -> Result<()> {
+        self.update_meeting_settings(super::ai_interpreter::turn_by_turn_settings(first, second)).await
+    }
+
     /// Listen to a language's interpretation: join its meeting group
     /// (Teams' joinMeetingGroup), retrying as Teams does on 404/6011 and
     /// 500/5406 (6 times, 1.5 s apart). Returns the operation id; the

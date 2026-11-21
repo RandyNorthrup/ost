@@ -48,6 +48,11 @@ pub struct MeetingState {
     pub for_all: bool,
     /// `meetingGroups.groups.languageGroup`: (id, label).
     pub groups: Vec<(String, String)>,
+    /// Consecutive interpretation is on for everyone
+    /// (`aiInterpretationSettings.interpretationMode` "TurnByTurn"), with
+    /// its two languages (`turnByTurnModeTargetLanguages`).
+    pub turn_by_turn: bool,
+    pub turn_by_turn_languages: Vec<String>,
 }
 
 fn details(json: &Value) -> Option<&Value> {
@@ -82,7 +87,18 @@ pub fn meeting_state(json: &Value) -> Option<MeetingState> {
                 .collect()
         })
         .unwrap_or_default();
-    Some(MeetingState { enabled: flag("aiInterpretationEnabled") && !turn_by_turn, for_all: flag("aiInterpretationEnabledForAllParticipants"), groups })
+    let turn_by_turn_languages = cap
+        .and_then(|c| c.pointer("/aiInterpretationSettings/turnByTurnModeTargetLanguages"))
+        .and_then(Value::as_array)
+        .map(|a| a.iter().filter_map(|l| l.as_str().filter(|l| !l.is_empty()).map(str::to_string)).collect())
+        .unwrap_or_default();
+    Some(MeetingState {
+        enabled: flag("aiInterpretationEnabled") && !turn_by_turn,
+        for_all: flag("aiInterpretationEnabledForAllParticipants"),
+        groups,
+        turn_by_turn: flag("aiInterpretationEnabled") && turn_by_turn,
+        turn_by_turn_languages,
+    })
 }
 
 /// Our own language group id in a roster update: our endpoint's
@@ -139,6 +155,28 @@ pub fn interpreter_sources(roster: &Value, group: &str) -> Vec<u32> {
     out
 }
 
+/// Who a roster update names, and whether each is in a language group
+/// (people only: the interpreter bots are left out), as Teams counts the
+/// people using Interpreter.
+pub fn group_members(roster: &Value) -> Vec<(String, bool)> {
+    let Some(participants) = roster.pointer("/participants").or_else(|| roster.pointer("/body/participants")).and_then(Value::as_object) else {
+        return Vec::new();
+    };
+    participants
+        .iter()
+        .filter(|(id, _)| id.starts_with("8:"))
+        .filter_map(|(id, p)| {
+            let eps = p.get("endpoints")?.as_object()?;
+            let in_group = eps.values().any(|ep| {
+                ep.pointer("/call/meetingGroupDetails/groups/languageGroup/0/id")
+                    .or_else(|| ep.pointer("/meetingGroupDetails/groups/languageGroup/0/id"))
+                    .is_some()
+            });
+            Some((id.to_ascii_lowercase(), in_group))
+        })
+        .collect()
+}
+
 /// Teams' joinMeetingGroup body (shell `XX`).
 pub fn join_group_body(from: &Value, label: &str, status_link: &str, operation: &str) -> Value {
     json!({
@@ -169,6 +207,13 @@ pub fn settings(on: bool) -> Value {
     } else {
         json!({ "aiInterpretationEnabled": false, "aiInterpretationEnabledForAllParticipants": false })
     }
+}
+
+/// The meeting settings Teams sends to turn consecutive interpretation on
+/// for everyone, in two languages (core `updateAiInterpretationTurnByTurnMode`).
+pub fn turn_by_turn_settings(first: &str, second: &str) -> Value {
+    let inner = json!({ "interpretationMode": "TurnByTurn", "turnByTurnModeTargetLanguages": [first, second] });
+    json!({ "aiInterpretationEnabled": true, "aiInterpretationSettingsJson": inner.to_string() })
 }
 
 /// Teams' aiVoiceConsent participant property: "0" simulate my voice, "1"
@@ -278,6 +323,9 @@ mod tests {
         let tbt = json!({"meetingDetails": {"meetingCapability": {"aiInterpretationEnabled": true,
             "aiInterpretationSettings": {"interpretationMode": "TurnByTurn"}}}});
         assert!(!meeting_state(&tbt).unwrap().enabled);
+        assert!(meeting_state(&tbt).unwrap().turn_by_turn);
+        let t = turn_by_turn_settings("en", "es");
+        assert_eq!(t["aiInterpretationSettingsJson"], r#"{"interpretationMode":"TurnByTurn","turnByTurnModeTargetLanguages":["en","es"]}"#);
     }
 
     #[test]

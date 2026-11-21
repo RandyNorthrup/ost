@@ -1035,7 +1035,10 @@ Window {
           .concat([{ name: "InterpreterSettings", label: qsTr("Interpreter settings"), icon: "settings-20" }])
         : (organizer && interpreter.on ? [{ name: "InterpreterTurnOn", label: qsTr("Turn on for me") }, { name: "InterpreterOffForAll", label: qsTr("Turn off for all") }] : [])
     function interpreterAction(name) {
-        if (name === "AiInterpretationButtonForAll" || name === "InterpreterTurnOn") interpreterDialog.show(true)
+        if (name === "AiInterpretationButtonForAll" || name === "InterpreterTurnOn") {
+            if (interpreterConsecutive) interpreterOffAsk.open()
+            else interpreterMode.show()
+        }
         else if (name === "InterpreterSettings") interpreterDialog.show(false)
         else if (name === "InterpreterOffForMe") backend.interpreterAction("offForMe", "{}")
         else if (name === "InterpreterOffForAll") interpreterOffAsk.open()
@@ -1051,6 +1054,42 @@ Window {
         body: qsTr("This will turn off Interpreter for everyone.")
         confirmText: qsTr("Turn off")
         onConfirmed: backend.interpreterAction("offForAll", "{}")
+    }
+    // Consecutive interpretation is on for everyone (organizer); the mode
+    // step comes first, as Teams' new Interpreter controls.
+    AiInterpreterModeDialog {
+        id: interpreterMode
+        languages: (win.interpreter.languages || []).slice().sort((a, b) => a.name.localeCompare(b.name))
+        canConsecutive: win.organizer
+        onConsecutive: (first, second) => backend.interpreterAction("turnOnConsecutive", JSON.stringify({ first: first, second: second }))
+        onSimultaneous: interpreterDialog.show(true)
+    }
+    readonly property bool interpreterConsecutive: !!interpreter.consecutive
+    /// People listening in a language group (others in the roster's groups
+    /// and us), as the indicator counts them.
+    readonly property int interpreterListeners: interpreter.listeners || 0
+    readonly property int interpreterOthers: Math.max(0, interpreterListeners - (interpreterInGroup ? 1 : 0))
+    readonly property bool interpreterIndicator: (!!interpreter.on && interpreterListeners > 0) || interpreterConsecutive
+    readonly property string interpreterLanguageName: ((interpreter.languages || []).find(l => l.code === interpreter.myLanguage) || {}).name || ""
+    readonly property string interpreterTip: interpreterConsecutive && interpreter.paused ? qsTr("Interpreter is paused") : qsTr("AI is interpreting this meeting")
+    // Teams' Interpreter alerts: "AI is interpreting for others" (licensed,
+    // not listening), "Interpreter has been turned off", and "Something
+    // went wrong with Interpreter".
+    property string interpreterAlert: ""
+    property bool interpreterOthersShown: false
+    property bool interpreterWasOn: false
+    onInterpreterChanged: {
+        const on = !!interpreter.on || interpreterConsecutive
+        if (interpreterWasOn && !on) interpreterAlert = "off"
+        else if (on && !interpreterInGroup && !interpreterConsecutive && !!interpreter.available && interpreterListeners > 0 && !interpreterOthersShown) { interpreterOthersShown = true; interpreterAlert = "others" }
+        else if (interpreter.error) interpreterAlert = "failed"
+        interpreterWasOn = on
+    }
+    onInterpreterAlertChanged: {
+        if (interpreterAlert === "others") showBreakoutAlert(qsTr("AI is interpreting for others") + " · " + qsTr("People are using Interpreter. You can turn it on to listen in your preferred language."), "sound-wave-circle-sparkle-20")
+        else if (interpreterAlert === "off") showBreakoutAlert(qsTr("Interpreter has been turned off"), "sound-wave-circle-sparkle-20")
+        else if (interpreterAlert === "failed") showBreakoutAlert(qsTr("Something went wrong with Interpreter") + " · " + qsTr("Try turning Interpreter on again."), "alert-warning-16-filled")
+        interpreterAlert = ""
     }
     TextMetrics { id: resumeMetrics; font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; text: qsTr("Resume") }
     // Each control's slot (button 48 + 4 either side; split buttons 74).
@@ -1771,6 +1810,67 @@ Window {
             Accessible.name: aiIndicator.tip
             Accessible.onPressAction: if (win.aiAvailable) aiPopover.open()
         }
+        // Teams' Interpreter indicator (AiInterpretationIndicator, after the
+        // AI one): while Interpreter is on and someone listens in a
+        // language group, or consecutive interpretation is on; its 20 px
+        // sparkle sound wave, the tooltip "AI is interpreting this meeting"
+        // ("Interpreter is paused"); a click opens its card.
+        Item {
+            id: interpIndicator
+            visible: win.meeting && !win.streaming && win.interpreterIndicator
+            x: (win.compactBar ? 30 : 38) + (recordingIndicator.visible ? (win.compactBar ? 22 : 30) : 0) + (aiIndicator.visible ? (win.compactBar ? 24.9 : 37.33) : 0)
+            y: win.compactBar ? 8.7 : 14; width: win.compactBar ? 22 : 30; height: win.compactBar ? 22 : 32
+            FluentIcon {
+                anchors.centerIn: parent
+                name: "sound-wave-circle-sparkle-20"; size: win.compactBar ? 14 : 20
+                color: interpHover.hovered || interpCard.visible ? theme.brand : theme.textStrong
+            }
+            HoverHandler { id: interpHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: interpCard.visible ? interpCard.close() : interpCard.open() }
+            IndicatorTip { target: interpIndicator; text: win.interpreterTip; shown: interpHover.hovered && !interpCard.visible }
+            Accessible.role: Accessible.Button
+            Accessible.name: win.interpreterTip
+            Popup {
+                id: interpCard
+                y: parent.height + 13.33; width: 320; padding: 16
+                background: FluentSurface { depth: 16; radius: 8; color: theme.surface }
+                contentItem: Column {
+                    spacing: 12
+                    Text { text: win.interpreterTip; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                    Text {
+                        width: 288; wrapMode: Text.Wrap
+                        text: win.interpreterInGroup
+                            ? (win.interpreterOthers === 0 ? qsTr("You are using Interpreter. Your interpretation language is %1.").arg(win.interpreterLanguageName)
+                                                           : qsTr("You and %1 others are using Interpreter. Your interpretation language is %2.").arg(win.interpreterOthers).arg(win.interpreterLanguageName))
+                            : win.interpreterListeners === 1 ? qsTr("1 people is using Interpreter.") : qsTr("%1 people are using Interpreter.").arg(win.interpreterListeners)
+                        font.family: theme.font; font.pixelSize: 14; color: theme.textStrong
+                    }
+                    Row {
+                        spacing: 8
+                        Rectangle {
+                            width: manageText.implicitWidth + 24; height: 32; radius: 4
+                            color: manageHover.hovered ? theme.menuHover : theme.surface; border.color: theme.stroke; border.width: 0.67
+                            Text { id: manageText; anchors.centerIn: parent; text: qsTr("Manage settings"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                            HoverHandler { id: manageHover; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: { interpCard.close(); interpreterDialog.show(!win.interpreterInGroup) } }
+                            Accessible.role: Accessible.Button; Accessible.name: manageText.text
+                        }
+                        Rectangle {
+                            visible: win.interpreterInGroup || !!win.interpreter.available
+                            width: offText.implicitWidth + 24; height: 32; radius: 4
+                            color: win.interpreterInGroup ? (offHover.hovered ? theme.menuHover : theme.surface) : (offHover.hovered ? theme.brandHover : theme.brandFill)
+                            border.color: win.interpreterInGroup ? theme.stroke : "transparent"; border.width: 0.67
+                            Text { id: offText; anchors.centerIn: parent; text: win.interpreterInGroup ? qsTr("Turn off for me") : qsTr("Turn on for me"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: win.interpreterInGroup ? theme.text : theme.textOnBrand }
+                            HoverHandler { id: offHover; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: { interpCard.close(); if (win.interpreterInGroup) backend.interpreterAction("offForMe", "{}"); else interpreterDialog.show(true) } }
+                            Accessible.role: Accessible.Button; Accessible.name: offText.text
+                        }
+                    }
+                    Rectangle { width: 288; height: 1; color: theme.divider }
+                    Text { width: 288; wrapMode: Text.Wrap; text: qsTr("AI-generated content may be incorrect."); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+                }
+            }
+        }
         // Teams' event state pill (VirtualEventsLiveIndicator) with a green
         // room, measured in Teams desktop 2026-11-18: 22 tall, radius 10,
         // 8 padding, the label 11.67 uppercase; presenters see "Not
@@ -1825,8 +1925,8 @@ Window {
             visible: !win.streaming
             // After the shield (and the AI indicator), 6.67 into the
             // duration's slot.
-            x: win.compactBar ? 30 + (recordingIndicator.visible ? 22 : 0) + (aiIndicator.visible ? 24.9 : 0) + 2.7
-               : 38 + (recordingIndicator.visible ? 30 : 0) + (aiIndicator.visible ? 37.33 : 0) + 6.67
+            x: win.compactBar ? 30 + (recordingIndicator.visible ? 22 : 0) + (aiIndicator.visible ? 24.9 : 0) + (interpIndicator.visible ? 22 : 0) + 2.7
+               : 38 + (recordingIndicator.visible ? 30 : 0) + (aiIndicator.visible ? 37.33 : 0) + (interpIndicator.visible ? 30 : 0) + 6.67
                  + (liveIndicator.visible ? liveIndicator.width + 8 : 0)
             anchors.verticalCenter: parent.verticalCenter
             text: win.state === "connected" ? win.clock(win.seconds) : "--:--"

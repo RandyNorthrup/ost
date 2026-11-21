@@ -3559,6 +3559,8 @@ struct Interp {
     sources: Vec<u32>,
     /// The language to join once the meeting has it on (Turn on for me).
     pending: Option<String>,
+    /// People in the meeting and whether each listens in a language group.
+    members: std::collections::BTreeMap<String, bool>,
     busy: bool,
     error: String,
 }
@@ -3614,6 +3616,9 @@ fn interpreter_json() -> String {
         "voice": voice,
         "balance": balance,
         "interpreter": i.sources,
+        "consecutive": i.meeting.turn_by_turn,
+        "consecutiveLanguages": i.meeting.turn_by_turn_languages,
+        "listeners": i.members.values().filter(|v| **v).count(),
         "busy": i.busy,
         "error": i.error,
         "languages": teams_cli::calling::ai_interpreter::LANGUAGES
@@ -3739,6 +3744,11 @@ async fn interpreter_roster(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &s
     let changed = {
         let mut i = interp().lock().unwrap_or_else(|e| e.into_inner());
         let mut changed = false;
+        for (who, in_group) in teams_cli::calling::ai_interpreter::group_members(body) {
+            if i.members.insert(who, in_group) != Some(in_group) {
+                changed = true;
+            }
+        }
         if let Some(group) = teams_cli::calling::ai_interpreter::self_group(body, &mri, &endpoint)
             && group != i.my_group
         {
@@ -10131,6 +10141,12 @@ impl qobject::Backend {
                             tracing::info!(%language, "interpreter: turned on for the meeting; joining once it says so");
                         }
                         Ok(())
+                    }
+                    "turnOnConsecutive" => {
+                        let (a, b) = (args["first"].as_str().unwrap_or_default().to_string(), args["second"].as_str().unwrap_or_default().to_string());
+                        anyhow::ensure!(!a.is_empty() && !b.is_empty() && a != b, "Two languages are needed");
+                        let mut slot = call_slot().lock().await;
+                        slot.outgoing.as_mut().context("Not in a meeting")?.set_ai_interpretation_turn_by_turn(&a, &b).await
                     }
                     "offForMe" => {
                         let g = interp().lock().unwrap_or_else(|e| e.into_inner()).my_group.clone();
