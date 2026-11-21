@@ -82,16 +82,22 @@ Rectangle {
     property bool copilotSent: false
     function askCopilot(q) {
         preview = null
-        copilotLaunch = null; copilotSent = false; copilotOpen = true
+        copilotLaunch = null; copilotSent = false; copilotReady = false; copilotOpen = true
         copilotTag = "searchcopilot:" + Date.now()
         const g = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === "x" ? r : (r & 3 | 8)).toString(16) })
         backend.eventsRequest("searchCopilot", copilotTag, JSON.stringify({ session: g, query: q, theme: theme.highContrast ? "contrast" : theme.dark ? "dark" : "default" }))
     }
+    // The app reports ChatReady, then success (its TeamsJS start): the
+    // Search context goes on ChatReady, the query once it has started.
+    property bool copilotReady: false
+    function sendCopilotContext() {
+        if (!copilotLaunch || !copilotHost.item) return
+        copilotHost.item.sendFrameMessage("contextualChatChanged", [copilotLaunch.contextualChat])
+        copilotHost.item.sendFrameMessage("updateCapabilities", [copilotLaunch.capabilities])
+    }
     function sendCopilotPrompt() {
         if (!copilotLaunch || !copilotHost.item || copilotSent) return
         copilotSent = true
-        copilotHost.item.sendFrameMessage("contextualChatChanged", [copilotLaunch.contextualChat])
-        copilotHost.item.sendFrameMessage("updateCapabilities", [copilotLaunch.capabilities])
         copilotHost.item.sendFrameMessage("updatePromptInputData", [Object.assign({ promptTimestamp: Date.now().toString() }, copilotLaunch.prompt)])
         console.info("SEARCH copilot prompt sent")
     }
@@ -789,7 +795,10 @@ Rectangle {
                 runtimeSupports: ({ appPerformanceMetrics: {}, copilot: { eligibility: {} }, mouseRelay: {} })
                 hostContext: root.copilotLaunch.context
                 home: root.copilotLaunch.url
-                onHostEvent: (name, json) => { if (name === "ChatReady") root.sendCopilotPrompt() }
+                onHostEvent: (name, json) => {
+                    if (name === "ChatReady") { root.sendCopilotContext(); if (root.copilotReady) root.sendCopilotPrompt() }
+                    else if (name === "success") { root.copilotReady = true; root.sendCopilotPrompt() }
+                }
             }
         }
     }

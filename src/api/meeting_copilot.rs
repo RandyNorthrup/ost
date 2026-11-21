@@ -218,6 +218,9 @@ pub fn launch_search(m: &Meeting, search_session: &str, query: &str, cmmid: &str
     v["url"] = Value::String(content_url(m).replacen("/chat?", &format!("/chat/sessionanchor/{reference}?"), 1));
     v["context"]["subEntityId"] = Value::String(sub);
     v["contextualChat"] = json!({ "contentType": "teams", "contentItems": [{ "contextType": "Search" }] });
+    // Search adds no capabilities of its own (Teams' addConfiguredCapabilities
+    // for the Search context): voice input stays.
+    v["capabilities"] = json!([]);
     v["prompt"] = json!({
         "promptText": query,
         "isDraft": false,

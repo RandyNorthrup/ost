@@ -108,12 +108,14 @@ pub enum Detected {
 pub async fn ssid_allow_list(client: &TeamsClient, endpoint_id: &str) -> Result<Vec<String>> {
     let resp = location_request(client, reqwest::Method::GET, "v1/me/ssid-allowlist", endpoint_id)
         .await?
-        .header("x-ms-client-os", std::env::consts::OS)
         .send()
         .await
-        .context("SSID allow list")?
-        .error_for_status()
         .context("SSID allow list")?;
+    let status = resp.status();
+    if !status.is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        anyhow::bail!("SSID allow list: HTTP {} {}", status.as_u16(), body.chars().take(300).collect::<String>());
+    }
     let v: serde_json::Value = resp.json().await.context("SSID allow list reply")?;
     Ok(ssid_list_from(&v))
 }
@@ -151,7 +153,10 @@ pub async fn report_network(client: &TeamsClient, endpoint_id: &str, body: &serd
             let v: serde_json::Value = resp.json().await.unwrap_or_default();
             Ok(detected_from(status, &v))
         }
-        s => anyhow::bail!("Report network: HTTP {s}"),
+        s => {
+            let body = resp.text().await.unwrap_or_default();
+            anyhow::bail!("Report network: HTTP {s} {}", body.chars().take(300).collect::<String>())
+        }
     }
 }
 
@@ -177,6 +182,24 @@ pub async fn report_remote(client: &TeamsClient, endpoint_id: &str) -> Result<()
     Ok(())
 }
 
+/// This device's id for the location service (kept with OST's settings).
+fn device_id() -> String {
+    static ID: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    ID.get_or_init(|| {
+        std::fs::read_to_string("/etc/machine-id")
+            .ok()
+            .map(|m| m.trim().to_string())
+            .filter(|m| m.len() >= 32)
+            .map(|m| format!("{}-{}-{}-{}-{}", &m[0..8], &m[8..12], &m[12..16], &m[16..20], &m[20..32]))
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string())
+    })
+    .clone()
+}
+
+fn os_version() -> String {
+    std::fs::read_to_string("/proc/sys/kernel/osrelease").map(|v| v.trim().to_string()).unwrap_or_default()
+}
+
 async fn location_request(client: &TeamsClient, method: reqwest::Method, path: &str, endpoint_id: &str) -> Result<reqwest::RequestBuilder> {
     let base = client.region_endpoint("iC3LocationService").context("No IC3 location service address")?;
     let token = crate::auth::oauth::access_token_for(&format!("{IC3_LOCATION_RESOURCE}/.default")).await?;
@@ -185,7 +208,11 @@ async fn location_request(client: &TeamsClient, method: reqwest::Method, path: &
         .request(method, format!("{}/{path}", base.trim_end_matches('/')))
         .bearer_auth(token)
         .header("x-ms-client-user-agent", "Teams-V2-desktop")
+        .header("X-ms-client-version", "1416/1.0.0.2024050301")
         .header("X-ms-client-type", "desktop")
+        .header("x-ms-client-device-id", device_id())
+        .header("x-ms-client-os", "linux")
+        .header("x-ms-client-os-ver", os_version())
         .header("ms-cv", uuid::Uuid::new_v4().simple().to_string())
         .header("x-ms-correlation-id", uuid::Uuid::new_v4().to_string())
         .header("x-ms-endpoint-id", endpoint_id)
