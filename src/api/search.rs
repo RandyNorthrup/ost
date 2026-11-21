@@ -638,6 +638,9 @@ pub fn new_chat_body(keyword: &str) -> serde_json::Value {
     })
 }
 
+/// The x-client-flights Teams sends with the new chat form's suggestions.
+pub const NEW_CHAT_FLIGHTS: &str = "EnableSelfSuggestion,TeamsHiddenPeopleDirectorySearch";
+
 /// A chat in your chat list, for the new chat form's local chat search.
 #[derive(Debug, Clone, Default)]
 pub struct LocalChat {
@@ -655,9 +658,13 @@ pub struct LocalChat {
 /// The new chat form's typed suggestions, as Teams lists them.
 pub async fn new_chat_suggestions(keyword: &str, my_oid: &str, local: &[LocalChat]) -> Result<Vec<serde_json::Value>> {
     let token = crate::auth::oauth::access_token_for("https://substrate.office.com/.default").await?;
+    // Teams' flights for this call (captured on winpc 2026-11-21): with
+    // EnableSelfSuggestion Substrate lists you too ("OST Test 1 (You)").
     let reply: serde_json::Value = reqwest::Client::new()
         .post("https://substrate.office.com/search/api/v1/suggestions?scenario=peoplepicker.newChat")
         .bearer_auth(token)
+        .header("x-client-flights", NEW_CHAT_FLIGHTS)
+        .header("x-client-version", "T2.1")
         .json(&new_chat_body(keyword))
         .send()
         .await?

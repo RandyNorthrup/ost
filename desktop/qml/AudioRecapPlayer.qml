@@ -86,7 +86,7 @@ Window {
         }
         DragHandler { target: null; onActiveChanged: if (active) win.startSystemMove() }
 
-        Image { x: 16; y: 18; width: 16; height: 16; source: "../assets/logo.svg"; sourceSize: Qt.size(32, 32) }
+        Image { x: 16; y: 18; width: 16; height: 16; source: "../assets/logo.png"; sourceSize: Qt.size(32, 32) }
         Text {
             x: 40; y: 18; width: 289.3; elide: Text.ElideRight
             text: win.state_ === "generating" ? qsTr("Generating...") : qsTr("Audio recap")

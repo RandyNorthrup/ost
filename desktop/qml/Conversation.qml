@@ -2250,7 +2250,11 @@ Rectangle {
                     id: metaText
                     // Compact: the name semibold in NeutralForeground1, as Teams.
                     textFormat: root.compact ? Text.StyledText : Text.PlainText
-                    text: root.compact
+                    // (An AI agent's name stands alone: its tag and the time
+                    // follow as their own items.)
+                    readonly property bool agentTag: !!msg.modelData.ai_agent && !root.compact && !msg.mine
+                    text: agentTag ? root.senderLabel(msg.modelData)
+                        : root.compact
                         ? "<b><font color=\"" + theme.text + "\">" + root.senderLabel(msg.modelData).replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</font></b>&nbsp;&nbsp;" + root.stamp(msg.modelData.time) + (msg.modelData.edited && !msg.sendFailed ? "&nbsp;&nbsp;&nbsp;" + qsTr("Edited") : "") + (root.cardUpdated(msg.modelData.id) ? "&nbsp;&nbsp;&nbsp;" + qsTr("Updated") : "")
                         : (msg.mine ? "" : root.senderLabel(msg.modelData) + "  ") + root.stamp(msg.modelData.time)
                         + (msg.modelData.edited && !msg.sendFailed ? "   " + qsTr("Edited") : "")
@@ -2271,6 +2275,33 @@ Rectangle {
                             onHoveredChanged: if (theme.hoverCard) { if (hovered) theme.hoverCard.hoverEnter(msg.modelData.sender_mri, senderSpot, msg.modelData.sender); else theme.hoverCard.hoverLeave() }
                         }
                     }
+                }
+                // Teams' "AI agent" tag on an AI bot's messages (its
+                // message-disclaimer, measured on winpc 2026-11-21: 10 px
+                // NeutralForeground3 in a 17.3 tall outline, radius 4, 2 px
+                // padding, 4 after the name; the tooltip "AI-generated
+                // content may be incorrect"), then the time.
+                Item {
+                    visible: metaText.agentTag
+                    width: agentTagBox.width - 4; height: 16
+                    Rectangle {
+                        id: agentTagBox
+                        x: -4; y: -0.65
+                        width: agentTagText.implicitWidth + 4 + 1.34; height: 17.3; radius: 4
+                        color: "transparent"
+                        border.width: 0.67; border.color: theme.pick("#E0E0E0", "#3D3D3D", "#FFFFFF")
+                        Text { id: agentTagText; anchors.centerIn: parent; text: qsTr("AI agent", "messaging:k6gdrts20"); font.family: theme.font; font.pixelSize: 10; color: theme.textSecondary }
+                        HoverHandler { id: agentTagHover }
+                        ToolTip.visible: agentTagHover.hovered; ToolTip.delay: 500
+                        ToolTip.text: qsTr("AI-generated content may be incorrect", "messaging:kd2tqw453")
+                        Accessible.role: Accessible.StaticText; Accessible.name: agentTagText.text
+                    }
+                }
+                Text {
+                    visible: metaText.agentTag
+                    text: root.stamp(msg.modelData.time) + (msg.modelData.edited ? "   " + qsTr("Edited") : "") + (root.cardUpdated(msg.modelData.id) ? "   " + qsTr("Updated") : "")
+                    font.family: theme.font; font.pixelSize: theme.small
+                    color: theme.textSecondary
                 }
                 // Teams' delivery option label: IMPORTANT / URGENT, 12 px
                 // semibold, RedForeground3, 8 after the time (measured).

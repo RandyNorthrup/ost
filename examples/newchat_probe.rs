@@ -10,6 +10,8 @@ async fn main() -> anyhow::Result<()> {
     let reply: serde_json::Value = reqwest::Client::new()
         .post("https://substrate.office.com/search/api/v1/suggestions?scenario=peoplepicker.newChat")
         .bearer_auth(token)
+        .header("x-client-flights", teams_cli::api::search::NEW_CHAT_FLIGHTS)
+        .header("x-client-version", "T2.1")
         .json(&new_chat_body(&q))
         .send()
         .await?

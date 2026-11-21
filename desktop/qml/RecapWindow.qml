@@ -422,7 +422,8 @@ Window {
             property string fourth: win.startTab === "transcript" ? "Transcript" : "Mentions"
             Connections { target: win; function onRightPillChanged() { if (win.rightPill === "Transcript" || win.rightPill === "Mentions") right.fourth = win.rightPill } }
             // (Full width, without the recording card, all five fit.)
-            readonly property var shown: win.recording ? all.filter(p => p.k !== (fourth === "Transcript" ? "Mentions" : "Transcript")) : all
+            // (Teams then puts Mentions before Transcript.)
+            readonly property var shown: win.recording ? all.filter(p => p.k !== (fourth === "Transcript" ? "Mentions" : "Transcript")) : [all[0], all[1], all[2], all[4], all[3]]
             readonly property var hidden: all.filter(p => shown.indexOf(p) < 0)
             Row {
                 x: 12; y: 12.7; spacing: 8

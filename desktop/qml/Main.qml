@@ -5051,6 +5051,14 @@ Window {
         }
     }
 
+    // --podcast-cleanup: your audio recaps of "OST TEST …" meetings deleted
+    // (PODCASTCLEANUP line), then quit.
+    Connections {
+        enabled: Qt.application.arguments.indexOf("--podcast-cleanup") >= 0
+        target: backend
+        function onSignedInChanged() { if (backend.signedIn) backend.eventsRequest("podcastCleanup", "podcastcleanup", "{}") }
+        function onEventsReply(id, json) { if (id === "podcastcleanup") { console.warn("PODCASTCLEANUP", json); Qt.quit() } }
+    }
     // --web-window=<https url>: that page in a window of its own, in the
     // web profile every embedded page shares (signed in as the account's
     // apps are), for setting up test services by hand or over

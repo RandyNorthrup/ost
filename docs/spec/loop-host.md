@@ -176,6 +176,13 @@ CommandingSurface service, 173848).
   main body's commands as Fluent MenuGroups (header = `title`) of items
   (14/20, the shortcut or secondary text in base200 at the end,
   checkmarks for toggles, submenus beside), a divider between groups.
+- Measured on winpc 2026-11-21 (OST group test > Notes, text selected
+  with the mouse): the popover 298.7 x 49.3 about 60 above the line,
+  radius 16, padding 8, shadow `0 0 2px rgba(0,0,0,.12), 0 4px 8px
+  rgba(0,0,0,.14)`; Bold, Italic, Underline, Strikethrough | Headings and
+  lists | Color and formatting, Comment, More (32 x 32 each, the dividers
+  8.7 wide; More on white with a #616161 glyph). OST's surface on the same
+  selection: 298 x 48 with the same commands and glyphs.
 - Picking: `command.execute(event)`, then Teams' dismiss: `provider.dismiss()`,
   `params.onDismiss()`, `params.previousElement.focus({preventScroll:
   true})`. Escape (Loop's own key binding while the focus is in the page,

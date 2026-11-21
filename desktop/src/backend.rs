@@ -21502,6 +21502,18 @@ impl qobject::Backend {
                         tracing::info!(status = %g.status, message = %g.message, "audio recap generated");
                         Ok(json!({ "status": g.status, "message": g.message, "noInsight": api::podcast::no_insight(&g.message), "podcast": g.podcast }))
                     }
+                    // The harness's clean-up (--podcast-cleanup): your audio
+                    // recaps made from "OST TEST …" meetings deleted as Teams'
+                    // deletePodcasts does.
+                    "podcastCleanup" => {
+                        let list = api::recaps::podcasts(&notes_region(&client)).await?;
+                        let ids: Vec<String> = list["items"].as_array().into_iter().flatten()
+                            .filter(|p| p.pointer("/params/eventsWithTranscripts/0/event/subject").and_then(|s| s.as_str()).is_some_and(|s| s.starts_with("OST TEST")))
+                            .filter_map(|p| p["id"].as_str().map(str::to_string))
+                            .collect();
+                        let deleted = if ids.is_empty() { Vec::new() } else { api::podcast::delete(&ids, &app_locale()).await? };
+                        Ok(json!({ "found": ids.len(), "deleted": deleted.len() }))
+                    }
                     // An audio recap's audio (its fullAudioFile, an ODSP
                     // `…/drives/{d}/items/{i}/…/content` address) as a
                     // short-lived download address the player can stream.

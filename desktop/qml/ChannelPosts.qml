@@ -224,6 +224,17 @@ Item {
                             x: root.compact ? 0 : parent.implicitWidth + 10
                             y: root.compact ? 20 : 2
                             spacing: root.compact ? 8 : 10
+                            // Teams' "AI agent" tag (an AI bot's post).
+                            Rectangle {
+                                visible: !!card.post && !!card.post.ai_agent
+                                width: postAgentTag.implicitWidth + 5.34; height: 17.3; radius: 4; y: -0.65
+                                color: "transparent"
+                                border.width: 0.67; border.color: theme.pick("#E0E0E0", "#3D3D3D", "#FFFFFF")
+                                Text { id: postAgentTag; anchors.centerIn: parent; text: qsTr("AI agent", "messaging:k6gdrts20"); font.family: theme.font; font.pixelSize: 10; color: theme.textSecondary }
+                                HoverHandler { id: postAgentHover }
+                                ToolTip.visible: postAgentHover.hovered; ToolTip.delay: 500
+                                ToolTip.text: qsTr("AI-generated content may be incorrect", "messaging:kd2tqw453")
+                            }
                             Text {
                                 text: card.post ? root.conversationStamp(card.post.time) : ""
                                 font.family: theme.font; font.pixelSize: theme.small

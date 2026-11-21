@@ -4,7 +4,7 @@ title: Chat list leftovers found in live checks
 status: In Progress
 assignee: []
 created_date: '2026-11-16T20:22:00Z'
-updated_date: '2026-11-21T15:26:00Z'
+updated_date: '2026-11-21T17:28:00Z'
 labels:
   - desktop
 dependencies: []
@@ -68,4 +68,11 @@ Found while checking TASK-0150/0195/0204 against Teams on winpc (2026-11-16):
 
 - 2026-11-21 (chatE), Add Channel Agent checked live end to end (`--team-live=create:OST TEST 206 agent OST2 --team-live-agent`): OST created the team with the box ticked, waited for the team's thread, asked the Teams Copilot Aggregator (OST's token for its resource works), and the "OST TEST channel Agent" bot posted "Hi, I'm your Channel Agent…" in the first channel; the toast went from "Channel Agent is being added." to "Channel Agent has been added to this channel." with Go to channel, as in Teams. The team was deleted afterwards (also "OST TEST 206 agent OST" and Teams' "OST TEST 206 agent").
   - Seen on the way (not part of this item): OST shows the agent's welcome as from "Project-Agent-Prod" and its add event as "OST Test 1 added OST TEST channel Agent here.", where Teams shows "<channel> Agent" with an "AI agent" tag and "<channel> Agent has been added to the channel.".
+
+- 2026-11-21 (chatF):
+  - Why "OST empty chat test" / "OST large chat test" were missing from OST's chat list: the chat service hands conversations out in time slices; the first page (156 here) holds only chats active since about 2026-11-18, its _metadata.backwardLink the older ones (110 more, including both chats and several channels). OST read only the first page; Teams' list comes from its full sync. api::chat::list_chats_data now follows backwardLink (up to 20 pages of 200; the older slices kept for ten minutes, the first page always fresh, ids de-duplicated), and the backroom lookups go 12 at a time.
+  - New chat "OST", Teams on winpc (CDP, 22 rows): OST Test 2, OST Guest 02, OST Guest 01, OST Test 1 (You), OST Test 3, OST group test, OST TEST group call, OST empty chat test, OST layout test, OST test channel, OST threads test, OST Test Team, OST Test Community, OST Guest 03, 09…04, OST large chat test, OST test channel 2. Teams' Substrate request carries x-client-flights "EnableSelfSuggestion,TeamsHiddenPeopleDirectorySearch" (with it Substrate lists you, 4th) and gives only two channels (OST layout test, OST test channel); "OST threads test" and "OST test channel 2" are Teams' own matches from its teams store. OST now sends the same flights and adds your teams' matching channels (best match, then latest activity) after Substrate's.
+  - Live (`--new-chat-search-test=OST`, before the flights): 22 rows with OST empty chat test (3rd chat) and OST large chat test (overflow) now present, the local channels added.
+  - Channel Agent welcome, Teams on winpc (team "OST TEST 206 agent F2", made by OST's Add Channel Agent): sender "OST TEST channel Agent" (the message's properties.fromAppMetadata.name; imdisplayname is "Project-Agent-Prod"), then the "AI agent" tag (data-testid message-disclaimer: 10 px #616161, 0.67 px #E0E0E0 outline, radius 4, padding 0 2, 17.3 tall, 4 after the name; tooltip "AI-generated content may be incorrect"; messaging:group_copilot_disclaimer), then the time. The message has botPoweredByAI true. Teams showed no add-member / AddCustomApp rows in that (threads-layout) channel.
+  - Built: MessageView.ai_agent and the app-instance name for bot messages; the tag in chats/threads (Conversation.qml) and channel posts (ChannelPosts.qml).
 <!-- SECTION:NOTES:END -->

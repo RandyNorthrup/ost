@@ -647,6 +647,10 @@ pub struct MessageView {
     pub kind: String,
     pub sender: String,
     pub sender_mri: String,
+    /// A bot message Teams marks with its "AI agent" tag (properties.
+    /// botPoweredByAI, e.g. a Channel Agent's).
+    #[serde(default)]
+    pub ai_agent: bool,
     pub time: String,
     pub mine: bool,
     /// Sanitised HTML for display (a subset Qt renders), "" when deleted.
@@ -1851,6 +1855,15 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
     if sender.is_empty() && mine {
         sender = own_name.to_string();
     }
+    // A bot speaking as an app instance (a Channel Agent: imdisplayname
+    // "Project-Agent-Prod") is named as Teams names it, after the app
+    // (properties.fromAppMetadata.name, "<channel> Agent").
+    let bot = sender_mri.starts_with("28:");
+    let app_name = s("/properties/fromAppMetadata/name");
+    if bot && !app_name.is_empty() {
+        sender = app_name;
+    }
+    let ai_agent = bot && m.pointer("/properties/botPoweredByAI").is_some_and(|v| v.as_bool() == Some(true) || v.as_str() == Some("true"));
     let time = {
         let t = s("/originalarrivaltime");
         if t.is_empty() { s("/composetime") } else { t }
@@ -1865,6 +1878,7 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
         kind: "message".into(),
         sender,
         sender_mri,
+        ai_agent,
         time,
         mine,
         html: String::new(),
@@ -5014,6 +5028,22 @@ mod quote_tests {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn channel_agent_is_named_after_its_app() {
+        // The Channel Agent's welcome in "OST TEST 206 agent F2" (2026-11-21):
+        // Teams shows "OST TEST channel Agent" with its "AI agent" tag.
+        let m = serde_json::json!({"id": "1795280517037", "messagetype": "RichText/Html", "content": "<p>Hi, I'm your Channel Agent</p>",
+            "from": "https://x/v1/users/ME/contacts/28:3cf96df7-3ecf-460a-a065-d1ca251969e4", "imdisplayname": "Project-Agent-Prod",
+            "originalarrivaltime": "2026-11-21T17:01:57.0370000Z",
+            "properties": {"botPoweredByAI": true, "fromAppMetadata": {"id": "0dfe1f3c-38f8-4dc6-bcae-a1275ca828b6", "name": "OST TEST channel Agent"}}});
+        let v = super::view_of(&m, "8:orgid:me", "Me").unwrap();
+        assert_eq!(v.sender, "OST TEST channel Agent");
+        assert!(v.ai_agent);
+        let plain = serde_json::json!({"id": "2", "messagetype": "RichText/Html", "content": "<p>x</p>", "from": "https://x/contacts/28:bot", "imdisplayname": "Workflows", "properties": {}});
+        let v = super::view_of(&plain, "8:orgid:me", "Me").unwrap();
+        assert_eq!((v.sender.as_str(), v.ai_agent), ("Workflows", false));
+    }
+
     #[test]
     fn polls_cards_name_who_sent_them() {
         // OST TEST 126: the Polls bot's card, sent for OST Test 1.

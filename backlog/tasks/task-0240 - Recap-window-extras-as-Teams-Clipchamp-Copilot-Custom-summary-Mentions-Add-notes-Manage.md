@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-11-20T22:51:00Z'
-updated_date: '2026-11-21T08:26:00Z'
+updated_date: '2026-11-21T17:26:00Z'
 labels:
   - desktop
   - calls
@@ -74,4 +74,11 @@ TASK-0098 built Teams' recap pop-out (player, Speakers/Topics/Chapters, Shared f
   - Mentions' empty pages show Teams' tag illustration (the warning only on an error).
 - Checked live on linuxlt (--recap-window-test=extras --recap-chat=OST~TEST~240): Mentions shows "We didn't find mentions of you", the same as Teams on winpc. Speaker summary returns a summary (1661 characters, logged; before, the server error). The cards are Create template, Speaker summary, Executive report, as in Teams.
 - Still open for this meeting: Teams' band (Audio recap, Open in Clipchamp) and the Transcript pill, which come from the transcript's file, not a recording.
+
+- 2026-11-21 (chatF), measured on winpc (Teams 26304, CDP):
+  - Transcript-only recap ("OST TEST 240 recap meeting"): its file is the transcript's "-Meeting Transcript.mp4" (mediaSource contentType Transcript); no player and no Speakers card; the band reads Audio recap (126 x 32), Share, Open in Clipchamp (that file's webUrl?web=1), Copilot, More; Shared files across the full width (Attendance chip 609 wide); all five pills, in the order Notes, AI summary, Custom summary, Mentions, Transcript.
+  - Audio recap (991291 AudioRecapButton; services-podcast generatePodcast; services-augloop submitPodcastGenerationOperation): GET {mcps}/podcasts/consume?threadId&transcriptIds&language=en-US&style=formal&iCalUid (404 = none yet), then AugLoop: TeamsRecapPodcastGenerationAnnotation activated, a TeamsRecapPodcastGenerationSignal at session/doc/teams_recap_podcast_generation_podcast-session/{request} (meeting event, transcripts with streamContent locations, style Dual/formal, podcastType SharedSingleMeetingAudioRecap). Teams pops out its mini player (399 x 152: "Generating...", moving gradient line, dimmed controls) and for this meeting shows "Couldn't generate the audio recap / None of the selected meetings have enough information." (399 x 106; NoValidMeetingInsightError).
+  - OST TEST 217 town hall 2 has no transcript ("No transcript available"); Teams' Custom summary request there succeeds only in the sense that Copilot answers with text: "Transcript not available. A meeting recap cannot be generated without the meeting transcript." Teams sends it over the Chathub (canvasType RecapCall, no iCalUID, locale "") with today's prompts, which differ from the bundled 633679 ones (a new GROUNDING REQUIREMENTS block); OST's old m365Copilot/Chat POST got 500. Both prompts were captured from Teams' frames and are now OST's.
+- Built: AudioRecapPlayer.qml (Teams' mini player), api::podcast (consume, AugLoop generation and delete), recapAudio; transcript-only recaps resolve to the transcript's file (recap_type ODSPTranscript): Open in Clipchamp, no player, the five pills in Teams' order; existing meeting notes read from the collab object (readcollabobject/V2) so Notes shows them as Teams does.
+- Verified live (`--recap-window-test=audio --recap-chat=OST~TEST~240`): Audio recap shown, the mini player said "Generating...", then the same NoValidMeetingInsightError message as Teams; Open in Clipchamp offered; five pills; no player.
 <!-- SECTION:NOTES:END -->

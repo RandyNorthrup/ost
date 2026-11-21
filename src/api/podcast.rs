@@ -167,11 +167,12 @@ fn h(t: &str, b: &[&str]) -> Value {
     json!({ "T_": t, "B_": b })
 }
 
-/// Make the audio recap over AugLoop and wait for the podcast to finish
-/// (or fail): the first annotation with a podcast id or a workflow error
-/// answers Teams' operation; an in-progress podcast is followed until its
-/// status changes (at most 10 minutes).
-pub async fn generate(m: &Meeting, ui_language: &str) -> Result<Generation> {
+/// One AugLoop operation as Teams' AugLoop service runs it: a session
+/// (SessionInit, the "doc" seed, the token), the annotation activated, the
+/// signal added at `path`, then every annotation result handed to `seen`
+/// until it says it's done (true), the socket closes or `wait` runs out.
+/// Server messages with an "s…" id are acked and "~" keepalives answered.
+async fn run_op(annotation: &str, path: Value, signal: Value, ui_language: &str, wait: std::time::Duration, mut seen: impl FnMut(&Value) -> bool) -> Result<()> {
     let token = crate::auth::oauth::access_token_for("https://augloop.office.com/v2/.default").await?;
     let mut req = tokio_tungstenite::tungstenite::client::IntoClientRequest::into_client_request("wss://augloop.office.com/")?;
     req.headers_mut().insert("Origin", "https://teams.microsoft.com".parse()?);
@@ -202,7 +203,6 @@ pub async fn generate(m: &Meeting, ui_language: &str) -> Result<Generation> {
             anyhow::ensure!(!v.pointer("/H_/T_").and_then(Value::as_str).is_some_and(|t| t.contains("Error")), "AugLoop refused the session");
         }
     }
-    let annotation = "AugLoop_TeamsRecapPodcast_TeamsRecapPodcastGenerationAnnotation";
     let (mid, cv) = next(&mut n);
     ws.send(send(json!({"annotationType": annotation, "token": uuid::Uuid::new_v4().to_string(), "ignoreExistingAnnotations": false, "sendStateUpdates": false,
         "returnAnnotationDoesNotExist": true, "sendApologies": false, "H_": h("AugLoop_Session_Protocol_AnnotationActivationMessage", &["AugLoop_Session_Protocol_Message"]), "cv": cv, "messageId": mid})))
@@ -214,16 +214,14 @@ pub async fn generate(m: &Meeting, ui_language: &str) -> Result<Generation> {
     .await?;
     let (mid, cv) = next(&mut n);
     ws.send(send(json!({"authToken": token, "version": 1, "H_": h("AugLoop_Session_Protocol_TokenProvisionMessage", &["AugLoop_Session_Protocol_Message"]), "cv": cv, "messageId": mid}))).await?;
-    let generation_id = uuid::Uuid::new_v4().to_string();
-    let request = uuid::Uuid::new_v4().to_string();
     let (mid, cv) = next(&mut n);
-    ws.send(send(json!({"cv": cv, "seq": 1, "ops": [{"parentPath": ["session", "doc", "teams_recap_podcast_generation_podcast-session", request],
-        "items": [{"id": uuid::Uuid::new_v4().to_string(), "body": generation_signal(m, &generation_id), "contextId": "C1"}],
+    ws.send(send(json!({"cv": cv, "seq": 1, "ops": [{"parentPath": path,
+        "items": [{"id": uuid::Uuid::new_v4().to_string(), "body": signal, "contextId": "C1"}],
         "H_": h("AugLoop_Core_AddOperation", &["AugLoop_Core_OperationWithSiblingContext", "AugLoop_Core_Operation"])}],
         "H_": h("AugLoop_Session_Protocol_SyncMessage", &["AugLoop_Session_Protocol_Message"]), "messageId": mid})))
     .await?;
-    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(600);
-    let mut last: Option<Generation> = None;
+    let deadline = tokio::time::Instant::now() + wait;
+    let mut any = false;
     loop {
         let Ok(next_msg) = tokio::time::timeout_at(deadline, ws.next()).await else { break };
         let Some(msg) = next_msg else { break };
@@ -240,28 +238,67 @@ pub async fn generate(m: &Meeting, ui_language: &str) -> Result<Generation> {
         if let Some(id) = v.get("messageId").and_then(Value::as_str).filter(|id| id.starts_with('s')) {
             ws.send(send(json!({"H_": h("AugLoop_Session_Protocol_Response", &[]), "messageId": id}))).await?;
         }
-        if v.pointer("/H_/T_").and_then(Value::as_str).is_some_and(|t| t.contains("Error")) && last.is_none() {
+        if v.pointer("/H_/T_").and_then(Value::as_str).is_some_and(|t| t.contains("Error")) && !any {
             anyhow::bail!("AugLoop: {}", v.pointer("/H_/T_").and_then(Value::as_str).unwrap_or_default());
         }
-        let bodies = v.get("ops").and_then(Value::as_array).into_iter().flatten().flat_map(|op| op.get("items").and_then(Value::as_array).cloned().unwrap_or_default());
-        for item in bodies {
-            if let Some(g) = item.get("body").and_then(generation_from) {
-                // An update without the podcast keeps the podcast seen.
-                let g = match (&last, g.podcast.is_null()) {
-                    (Some(prev), true) => Generation { podcast: prev.podcast.clone(), ..g },
-                    _ => g,
-                };
-                last = Some(g);
-            }
+        let bodies: Vec<Value> = v.get("ops").and_then(Value::as_array).into_iter().flatten().flat_map(|op| op.get("items").and_then(Value::as_array).cloned().unwrap_or_default()).filter_map(|i| i.get("body").cloned()).collect();
+        let mut done = false;
+        for b in &bodies {
+            any = true;
+            done |= seen(b);
         }
-        if let Some(g) = &last
-            && g.status != "IN_PROGRESS"
-        {
+        if done {
             break;
         }
     }
     let _ = ws.close(None).await;
+    Ok(())
+}
+
+/// Make the audio recap over AugLoop and wait for the podcast to finish
+/// (or fail): the first annotation with a podcast id or a workflow error
+/// answers Teams' operation; an in-progress podcast is followed until its
+/// status changes (at most 10 minutes).
+pub async fn generate(m: &Meeting, ui_language: &str) -> Result<Generation> {
+    let generation_id = uuid::Uuid::new_v4().to_string();
+    // Teams' publishing path: identifier "teams_recap_podcast_generation",
+    // subscription "podcast-session", a new request id.
+    let path = json!(["session", "doc", "teams_recap_podcast_generation_podcast-session", uuid::Uuid::new_v4().to_string()]);
+    let mut last: Option<Generation> = None;
+    run_op("AugLoop_TeamsRecapPodcast_TeamsRecapPodcastGenerationAnnotation", path, generation_signal(m, &generation_id), ui_language, std::time::Duration::from_secs(600), |b| {
+        let Some(g) = generation_from(b) else { return false };
+        // An update without the podcast keeps the podcast seen.
+        let g = match (&last, g.podcast.is_null()) {
+            (Some(prev), true) => Generation { podcast: prev.podcast.clone(), ..g },
+            _ => g,
+        };
+        let finished = g.status != "IN_PROGRESS";
+        last = Some(g);
+        finished
+    })
+    .await?;
     last.context("No audio recap came back")
+}
+
+/// Delete audio recaps (Teams' deletePodcasts: a TeamsRecapPodcastDeleteSignal
+/// with the podcast ids); the ids deleted.
+pub async fn delete(ids: &[String], ui_language: &str) -> Result<Vec<String>> {
+    let signal = json!({ "podcastIds": ids, "H_": h("AugLoop_TeamsRecapPodcast_TeamsRecapPodcastDeleteSignal", &["AugLoop_Signals_Signal"]) });
+    let mut deleted = Vec::new();
+    let mut answered = false;
+    run_op("AugLoop_TeamsRecapPodcast_TeamsRecapPodcastDeleteAnnotation", json!(["session", "doc"]), signal, ui_language, std::time::Duration::from_secs(60), |b| {
+        let Some(results) = b.get("operationResults").and_then(Value::as_array) else { return false };
+        answered = true;
+        deleted = results
+            .iter()
+            .filter(|r| r.get("success").and_then(Value::as_bool) == Some(true))
+            .filter_map(|r| r.get("podcastId").and_then(Value::as_str).map(str::to_string))
+            .collect();
+        true
+    })
+    .await?;
+    anyhow::ensure!(answered, "AugLoop didn't answer the delete");
+    Ok(deleted)
 }
 
 #[cfg(test)]
