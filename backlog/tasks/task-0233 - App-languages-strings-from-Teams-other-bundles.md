@@ -4,7 +4,7 @@ title: 'App languages: strings from Teams'' other bundles'
 status: In Progress
 assignee: []
 created_date: '2026-11-20T04:10:00Z'
-updated_date: '2026-11-21T04:59:00Z'
+updated_date: '2026-11-21T07:41:00Z'
 labels:
   - desktop
 dependencies: []
@@ -47,4 +47,13 @@ Found in TASK-0142: about 800 OST strings stay English because Teams keeps their
   - Meeting options: Teams' dialog shows the reply's translations as they are (meetingsOptions_<SECTION>, _<option>, _<option>_Info, _<option>_<value>); OST now prefers them, its fallbacks marked qsTr(…, "reply:meetingsOptions").
   - Events templates: not in Teams 26304.1201/1207 desktop bundles nor in the web client's loaded assets; eventTemplates lists only saved templates; the Meet app is not available in Randy's tenant. Open.
   - Profile card (LPC): its strings are livepersonacardstrings_<hash>.js from res.cdn.office.net/midgard/versionless, named by loki.delve.office.com/api/v1/livepersonacard/configuration?cultureName=<lang> (X-ClientType: Teams, needs a Loki token). Open.
+
+- 2026-11-20 (agent setF-0233) committed 3765762: untranslated.txt 516 -> 428 (4677 strings keyed, 29 from the meeting-options reply). Also reworded OST text to Teams' exact text (plurals with %n, OneDrive and Outlook punctuation, app language names, and others). The parsers now take Loop's {count, number} and a literal brace (Teams' i18next "{}"). OneDrive texts with a trailing space or zero-width space now match.
+- Verified live on linuxlt (OST Test 2, isolated XDG_CONFIG_HOME, app language de-de, --menu-test). The catalogue was built from the 1207 CDN files plus the other bundles: 4,634 strings, 11 from the WebView2 cabinet and 7 from Loop. The Downloads panel showed "Datei öffnen" and "Entfernt" from Edge's pack. cargo test --lib: 859 passed; webview2_cabinet_live (ignored, network) passed; desktop tests: 29 passed.
+- Still open:
+  - Events templates: no source found.
+  - Profile card (LPC): its strings file is named only by a configuration call that needs a Loki token.
+  - "Search all files" and "%1, removed" in the Downloads panel: Edge builds these in its hub JS.
+  - Meeting-options keys: not yet seen in a live reply.
+  - OST-only strings: the feedback and help pages, and "not available in OST yet".
 <!-- SECTION:NOTES:END -->
