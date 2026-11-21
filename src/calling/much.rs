@@ -145,6 +145,7 @@ impl MuchMixer {
         if !self.speakers.contains_key(&source) {
             let Ok(decoder) = opus::Decoder::new(rate, opus::Channels::Mono) else { return Vec::new() };
             self.speakers.insert(source, Speaker { decoder, place: super::spatial::Spatializer::new(rate), seen: now });
+            tracing::info!(source, gain = super::ai_interpreter::gain_for(source), "x-much2: a speaker starts");
         }
         let Some(sp) = self.speakers.get_mut(&source) else { return Vec::new() };
         sp.seen = now;

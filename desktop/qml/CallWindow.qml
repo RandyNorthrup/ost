@@ -1030,10 +1030,10 @@ Window {
     readonly property bool interpreterInGroup: !!interpreter.myGroup
     readonly property bool interpreterShown: meeting && !e2ee && (!!interpreter.available || !!interpreter.on)
     readonly property var interpreterItems: interpreterInGroup
-        ? [{ name: "InterpreterOffForMe", label: qsTr("Turn off for me") }]
-          .concat(organizer ? [{ name: "InterpreterOffForAll", label: qsTr("Turn off for all") }] : [])
+        ? [{ name: "InterpreterOffForMe", label: qsTr("Turn off for me"), icon: "sound-wave-circle-sparkle-20" }]
+          .concat(organizer ? [{ name: "InterpreterOffForAll", label: qsTr("Turn off for all"), icon: "sound-wave-circle-sparkle-20" }] : [])
           .concat([{ name: "InterpreterSettings", label: qsTr("Interpreter settings"), icon: "settings-20" }])
-        : (organizer && interpreter.on ? [{ name: "InterpreterTurnOn", label: qsTr("Turn on for me") }, { name: "InterpreterOffForAll", label: qsTr("Turn off for all") }] : [])
+        : (organizer && interpreter.on ? [{ name: "InterpreterOffForAll", label: qsTr("Turn off for all"), icon: "sound-wave-circle-sparkle-20" }, { name: "InterpreterSettings", label: qsTr("Interpreter settings"), icon: "settings-20" }] : [])
     function interpreterAction(name) {
         if (name === "AiInterpretationButtonForAll" || name === "InterpreterTurnOn") {
             if (interpreterConsecutive) interpreterOffAsk.open()
@@ -1689,7 +1689,7 @@ Window {
     }
     function recordControl(name) {
         if (name === "FacilitatorToggle" || name === "FacilitatorVoice") facilitatorAction(name)
-        else if (name === "AiInterpretationButtonForAll") interpreterAction(name)
+        else if (name === "AiInterpretationButtonForAll" || name.indexOf("Interpreter") === 0) interpreterAction(name)
         else if (name === "PstnButton") openPhoneAudio()
         else if (name === "ClosedCaptionsButton") setCaptions(!captionsOn)
         else if (name === "RealTimeTextButton") { if (!rttOn) rttAsk.open() }
@@ -2104,9 +2104,10 @@ Window {
     function toggleTimer() {
         timerVisible = !timerVisible
         // Nothing running: Teams opens the setup at once.
-        if (timerVisible && timerStrip.cancelled && !timerViewOnly) Qt.callLater(timerStrip.openControls)
+        if (timerVisible && timerStrip.cancelled && !timerViewOnly && !timerStrip.agendaActive) Qt.callLater(timerStrip.openControls)
     }
     onTimerDataChanged: {
+        agendaChanged()
         const st = timerData && timerData.adhoc ? timerData.adhoc.state : "Cancelled"
         const before = timerPrevState
         timerPrevState = st
@@ -2118,7 +2119,7 @@ Window {
         }
         if (before === "Cancelled" && st === "InProgress") { timerVisible = true; timerCancelledByMe = false }
         else if (before !== "Cancelled" && st === "Cancelled") {
-            if (!timerCancelledByMe) timerVisible = false
+            if (!timerCancelledByMe && !timerStrip.agendaActive) timerVisible = false
             timerCancelledByMe = false
         }
         // What changed, as Teams announces it to everyone.
@@ -2129,6 +2130,37 @@ Window {
         else if (before === "InProgress" && st === "Cancelled") contentItem.Accessible.announce(qsTr("Timer stopped."))
     }
     function timerStripForTest() { return timerStrip }
+    // The agenda: when it starts (or you join with one running) the strip
+    // opens on it; cancelled, the strip goes back to the ad-hoc timer or
+    // closes for everyone.
+    property string agendaPrevState: ""
+    function agendaChanged() {
+        const a = timerData && timerData.agenda ? timerData.agenda : null
+        const st = a && (a.sections || []).length && timerData.facilitator !== false ? a.state || "Cancelled" : "Cancelled"
+        const before = agendaPrevState
+        agendaPrevState = st
+        if (st === before) return
+        const adhocOn = timerData && timerData.adhoc && timerData.adhoc.state !== "Cancelled"
+        if (st !== "Cancelled" && (before === "" || before === "Cancelled")) {
+            timerVisible = true
+            timerStrip.view = "agenda"
+        } else if (st === "Cancelled" && before !== "" && before !== "Cancelled") {
+            if (adhocOn) timerStrip.view = "adhoc"
+            else if (timerStrip.shownView === "agenda" || timerStrip.view === "agenda") { timerVisible = false; timerStrip.view = "adhoc" }
+        }
+    }
+    ConfirmDialog {
+        id: cancelTrackerAsk
+        title: qsTr("Cancel tracker for all?")
+        body: qsTr("This will cancel and remove the tracker for everyone.")
+        cancelText: qsTr("Close")
+        confirmText: qsTr("Cancel tracker")
+        closeButton: true
+        onConfirmed: {
+            backend.agendaEdit("cancel", "{}")
+            contentItem.Accessible.announce(qsTr("Timer has been ended."))
+        }
+    }
     MeetingTimerStrip {
         id: timerStrip
         visible: win.timerVisible && win.timerCanView && win.state === "connected"
@@ -2136,6 +2168,9 @@ Window {
         width: sidePane.visible ? sidePane.x : win.contentItem.width
         info: win.timerData
         viewOnly: win.timerViewOnly
+        // Teams' canEditAgendaTimer: timer controls and a Copilot licence.
+        agendaEditable: !win.timerViewOnly && win.copilotAllowed
+        onCancelAgendaAsked: cancelTrackerAsk.open()
         onAction: (name, arg) => {
             if (name === "cancel" || name === "cancelOverTime") win.timerCancelledByMe = true
             win.timerAction(name, arg)
@@ -4558,7 +4593,7 @@ Window {
         }
         else if (name === "MeetingFacilitatorTimerButton") e = timerCanView ? { label: qsTr("Timer"), icon: "nmc-timer", checked: timerVisible } : null
         // Interpreter (Teams' More grid, measured on winpc 2026-11-20).
-        else if (name === "AiInterpretationButtonForAll") e = interpreterShown ? { label: qsTr("Interpreter"), icon: "sound-wave-circle-sparkle-20", checked: interpreterInGroup } : null
+        else if (name === "AiInterpretationButtonForAll") { e = interpreterShown ? { label: qsTr("Interpreter"), icon: "sound-wave-circle-sparkle-20", checked: interpreterInGroup } : null; if (e && interpreterItems.length) e.submenu = interpreterItems }
         else if (name === "MeetingDetailsButton") e = { label: qsTr("Notes"), icon: "nmc-notes", checked: side === "notes" }
         else if (name === "ClosedCaptionsButton") e = { label: qsTr("Captions"), icon: "nmc-captions", checked: captionsOn }
         else if (name === "StartBreakoutRoomButton") e = { label: qsTr("Rooms"), icon: "nmc-rooms", checked: side === "rooms" }

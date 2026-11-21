@@ -12259,6 +12259,49 @@ Window {
         }
     }
 
+    // --agenda-test (with --join-test, TASK-0073): in a meeting with a
+    // Facilitator agenda, AGENDA lines every 3 s with the strip's state
+    // (view, topics with their widths, current topic) and pictures
+    // -agenda-<n>.png: the strip as it opens, the topic editor, the first
+    // topic marked discussed (then not), the first divider moved 1 minute
+    // right (then back), the More options menu, the switcher's menu and
+    // the ad-hoc view. --agenda-test-edit=0 only looks; with
+    // --agenda-test-transcribe it first starts transcription (which brings
+    // the Facilitator in) and waits up to 2 minutes for its agenda.
+    Timer {
+        running: Qt.application.arguments.indexOf("--agenda-test") >= 0 && backend.callState === "connected"
+        interval: 3000; repeat: true
+        property int step: 0
+        property int waited: 0
+        onTriggered: {
+            const strip = callWindow.timerStripForTest()
+            const row = strip.agendaRowForTest()
+            if (Qt.application.arguments.indexOf("--agenda-test-transcribe") >= 0 && !strip.agendaActive && waited < 40) {
+                if (waited === 0) backend.recorderCommand("startTranscription", "en-us", false)
+                waited++
+                console.warn("AGENDA waiting", waited, "state", row.state_, "topics", row.sections.length)
+                return
+            }
+            const edit = (Qt.application.arguments.find(a => a.startsWith("--agenda-test-edit=")) || "--agenda-test-edit=1").slice(19) !== "0"
+            const grab = n => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-agenda-" + n + ".png")))
+            const topics = row.sections.map((s, i) => `${s.title}|${Math.round(s.originalDuration / 60000)}m|w${row.widthOf(i).toFixed(1)}|${row.discussed(s) ? "done" : "open"}`)
+            console.warn("AGENDA", step, "visible", strip.visible, "view", strip.shownView, "active", strip.agendaActive, "editable", strip.agendaEditable,
+                         "state", row.state_, "elapsed", Math.round(row.elapsed / 1000), "current", row.current, "topics", JSON.stringify(topics))
+            if (step === 1) grab("open")
+            else if (step === 2 && edit) row.editorForTest().openFor(0)
+            else if (step === 3 && edit) { grab("editor"); row.editorForTest().close() }
+            else if (step === 4 && edit) row.toggleDiscussed(0)
+            else if (step === 6 && edit) { grab("discussed"); row.toggleDiscussed(0) }
+            else if (step === 8 && edit) { row.resizeFrom = row.sections; row.resizeBy(0, 60000, true) }
+            else if (step === 10 && edit) { grab("resized"); row.resizeFrom = row.sections; row.resizeBy(0, -60000, true) }
+            else if (step === 12) { grab("restored") }
+            else if (step === 13) strip.view = "adhoc"
+            else if (step === 14) { grab("adhoc"); strip.view = "agenda" }
+            else if (step === 15) grab("back")
+            step++
+        }
+    }
+
     // --breakout-tab-test with --open-chat=<meeting chat id> --shots=<dir>
     // (TASK-0199): the meeting chat's Breakout Rooms tab as its organizer:
     // makes 2 rooms when there are none, then captures the cards, a
@@ -12590,6 +12633,7 @@ Window {
         running: Qt.application.arguments.some(a => a.startsWith("--remove-member-test=")) && backend.signedIn
         interval: 2500; repeat: true
         property int step: 0
+        property int waits: 0
         onTriggered: {
             const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
             const mail = (Qt.application.arguments.find(a => a.startsWith("--remove-member-test=")) || "").slice(21).toLowerCase()
@@ -12601,7 +12645,11 @@ Window {
             const d = conversation.memberRemoveDialogForTest()
             if (step === 1) conversation.openParticipantsForTest()
             else if (step === 2) shot("roster")
-            else if (step === 3) { if (!m) { console.warn("REMOVE-TEST not in the chat"); Qt.quit() } else d.start({ mri: m.mri, name: m.name }) }
+            else if (step === 3) {
+                // The roster can come late (a throttled chat asks again).
+                if (!m && roster.length === 0 && waits++ < 20) return
+                if (!m) { console.warn("REMOVE-TEST not in the chat"); Qt.quit() } else d.start({ mri: m.mri, name: m.name })
+            }
             else if (step === 4) shot("dialog")
             else if (step === 5) d.confirm()
             else if (step === 8) { console.warn("REMOVE-TEST members", backend.chatMembersJson); shot("after") }

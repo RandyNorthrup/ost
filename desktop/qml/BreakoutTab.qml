@@ -75,8 +75,8 @@ Rectangle {
         property bool primary: false
         signal clicked()
         width: row.implicitWidth + 24; height: 31.3; radius: 4
-        color: !enabled ? theme.bgDisabled : primary ? (bh.hovered ? theme.brandHover : theme.brandFill) : (bh.hovered ? theme.menuHover : theme.surface)
-        border.width: 0.67; border.color: primary ? "transparent" : !enabled ? theme.divider : theme.stroke
+        color: !enabled ? theme.bgDisabled : primary ? (bh.hovered ? theme.brandHover : theme.brandFill) : (bh.hovered ? theme.menuHover : theme.pick("#FFFFFF", "#292929", "#000000"))
+        border.width: 0.67; border.color: primary ? "transparent" : !enabled ? theme.pick("#E0E0E0", "#424242", theme.disabled) : theme.stroke
         Row {
             id: row
             anchors.centerIn: parent; spacing: 6
@@ -94,13 +94,14 @@ Rectangle {
         enabled: root.hasRooms && root.people.length > 0 && !root.busy
         onClicked: assignType.start()
     }
-    // Who isn't in a room yet: their pictures (32 px) 15 px after the
+    // Who isn't in a room yet: their pictures (32 px, 8 apart, measured
+    // with three on winpc 2026-11-20) 15 px after the
     // button (Teams' maxParticipantsToolbarAvatarsInPreMeeting: 4, then
     // "+n").
     readonly property var assignedIds: rooms.reduce((a, r) => a.concat((r.participants || []).map(p => (p.mri || "").toLowerCase())), [])
     readonly property var unassigned: people.filter(p => assignedIds.indexOf(p.id.toLowerCase()) < 0)
     Row {
-        x: 210; y: 14; spacing: 4
+        x: 210; y: 14; spacing: 8
         Repeater {
             model: root.unassigned.slice(0, 4)
             Avatar { required property var modelData; size: 32; name: modelData.name; photoId: modelData.id }
@@ -253,16 +254,18 @@ Rectangle {
                     function openMenu() { roomMenu.open() }
                     readonly property int count: (modelData.participants || []).length
                     width: 290; height: 250
-                    FluentSurface { anchors.fill: parent; depth: 2; radius: 2; color: theme.surface }
+                    // Dark (measured 2026-11-20): the card #292929, the band
+                    // #7F85F5 with a #242424 menu glyph.
+                    FluentSurface { anchors.fill: parent; depth: 2; radius: 2; color: theme.pick("#FFFFFF", "#292929", "#000000") }
                     Rectangle {
-                        width: parent.width; height: 126; radius: 4; color: theme.brandFill
+                        width: parent.width; height: 126; radius: 4; color: theme.pick("#5B5FC7", "#7F85F5", "#FFFFFF")
                         Rectangle { y: 122; width: parent.width; height: 4; color: parent.color }
                     }
                     Rectangle {
                         id: menuButton
                         x: 238; y: 16; width: 32; height: 31.33; radius: 4
                         color: menuHover.hovered || roomMenu.opened ? Qt.rgba(1, 1, 1, 0.1) : "transparent"
-                        FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: theme.textOnBrand }
+                        FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: theme.pick("#FFFFFF", "#242424", "#000000") }
                         HoverHandler { id: menuHover; cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: roomMenu.open() }
                         Accessible.role: Accessible.Button

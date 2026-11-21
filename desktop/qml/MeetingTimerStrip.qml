@@ -16,12 +16,26 @@ import QtQuick.Controls.Basic
 //   whole when the timer is off; "Paused" over 40 % black; over time red,
 //   blinking three times, with "Time's up!" (#960B18).
 // View-only (attendees) see the countdown and the track only.
+// With a Facilitator agenda running, the agenda timer (AgendaTimerRow)
+// shares the strip: Teams' "Switch view for me" (ChevronUpDown, 21.33 px,
+// 10 in, 3 before the panels) picks Ad-hoc timer or Agenda timer, and the
+// panels slide 35 px up or down (300 ms).
 Rectangle {
     id: root
     /// The meeting timer (backend.callTimerJson): {adhoc, lastEditMs,
     /// totalMs, skewMs, sequence, live}.
     property var info: null
     property bool viewOnly: false
+    /// The agenda can be edited here (organizer or presenter with Copilot).
+    property bool agendaEditable: false
+    /// "adhoc" or "agenda": the panel showing.
+    property string view: "adhoc"
+    readonly property var agendaTimer: info && info.agenda ? info.agenda : null
+    readonly property bool agendaActive: !!agendaTimer && agendaTimer.state !== "Cancelled"
+        && (agendaTimer.sections || []).length > 0 && info.facilitator !== false
+    readonly property bool showSwitcher: agendaActive
+    readonly property string shownView: agendaActive ? view : "adhoc"
+    signal cancelAgendaAsked()
     /// Ask for a change: start, pause, resume, reset, cancel,
     /// cancelOverTime, startWith (ms), add (minutes).
     signal action(string name, int arg)
@@ -100,9 +114,61 @@ Rectangle {
         Accessible.name: ab.tip
     }
 
+    // Switch view for me.
+    Rectangle {
+        id: switcher
+        visible: root.showSwitcher
+        x: 10; y: 2 + (35 - height) / 2
+        width: 21.33; height: 21.33; radius: 4
+        color: switcherMenu.opened ? theme.pick("#E0E0E0", "#1F1F1F", "#1AEBFF") : "transparent"
+        FluentIcon {
+            anchors.centerIn: parent; size: 20
+            name: "chevron-up-down-20" + (swh.hovered ? "-filled" : "")
+            color: theme.onFill(switcher, swh.hovered ? theme.brand : theme.textStrong)
+        }
+        HoverHandler { id: swh; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: switcherMenu.opened ? switcherMenu.close() : switcherMenu.open() }
+        ToolTip.visible: swh.hovered && !switcherMenu.opened
+        ToolTip.delay: 500
+        ToolTip.text: qsTr("Switch view for me")
+        Accessible.role: Accessible.ButtonMenu
+        Accessible.name: qsTr("Switch view for me")
+        MenuPopup {
+            id: switcherMenu
+            y: switcher.height + 4
+            items: [
+                { label: qsTr("Ad-hoc timer"), icon: "timer-20", endCheck: root.shownView === "adhoc" },
+                { label: qsTr("Agenda timer"), icon: "calendar-agenda-20", endCheck: root.shownView === "agenda" }
+            ]
+            onPicked: i => root.view = i === 0 ? "adhoc" : "agenda"
+        }
+    }
+
+    Item {
+        id: slide
+        x: root.showSwitcher ? switcher.x + switcher.width + 3 : 10
+        y: 2; width: root.width - x - 10; height: 35
+        clip: true
+    Item {
+        id: panels
+        width: slide.width; height: 70
+        y: root.shownView === "agenda" ? -35 : 0
+        Behavior on y { NumberAnimation { duration: 300; easing.type: Easing.InOutQuad } }
+    AgendaTimerRow {
+        id: agendaRow
+        x: 2; y: 35; width: panels.width - 4
+        visible: root.agendaActive
+        agenda: root.agendaTimer
+        lastEdit: root.info && root.info.agendaLastEditMs ? root.info.agendaLastEditMs : 0
+        skew: root.skew
+        viewOnly: !root.agendaEditable
+        addAvailable: root.info ? (root.info.addAvailable || 0) : 0
+        onAnnounce: text => root.announce(text)
+        onCancelAsked: root.cancelAgendaAsked()
+    }
     Row {
         id: controls
-        x: 12; y: 2; height: 35
+        x: 2; y: 0; height: 35
         spacing: 10
         // The countdown: the popover's trigger for controllers.
         Rectangle {
@@ -157,8 +223,8 @@ Rectangle {
     // The track: what's left of the timer.
     Rectangle {
         id: track
-        x: controls.x + controls.width + 10; y: 7.5
-        width: root.width - x - 12; height: 24; radius: 8
+        x: controls.x + controls.width + 10; y: 5.5
+        width: panels.width - x - 2; height: 24; radius: 8
         color: theme.pick("#EBEBEB", "#0A0A0A", "#000000")
         clip: true
         readonly property color progress: theme.pick("#C5CBFA", "#7579EB")
@@ -223,6 +289,9 @@ Rectangle {
             const m = Math.round(root.total / 60000)
             return qsTr("%1 min").arg(root.total < 60000 ? "<1" : Math.min(999, m))
         }
+    }
+
+    }
     }
 
     // "Timer controls": 180 wide inside Fluent's popover padding, a grid
@@ -396,4 +465,5 @@ Rectangle {
         }
     }
     function startForTest(ms) { root.action("startWith", ms) }
+    function agendaRowForTest() { return agendaRow }
 }

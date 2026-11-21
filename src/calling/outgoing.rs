@@ -1534,6 +1534,15 @@ impl OutgoingCall {
     /// updateMeetingStates with the three timers' JSON); the change shows
     /// when the update comes back.
     pub async fn publish_timer(&self, adhoc: &super::meeting_timer::Timer) -> Result<()> {
+        self.publish_meeting_timers(self.timers.publish(adhoc), adhoc.state()).await
+    }
+
+    /// Change the meeting's agenda for everyone (an agenda edit).
+    pub async fn publish_agenda(&self, agenda: &super::meeting_timer::Timer) -> Result<()> {
+        self.publish_meeting_timers(self.timers.publish_agenda(agenda), agenda.state()).await
+    }
+
+    async fn publish_meeting_timers(&self, states: serde_json::Value, state: &str) -> Result<()> {
         let link = self.meeting_states_link.clone().context("This meeting has no timer")?;
         let mut from = self.me.0.clone();
         if let Some(o) = from.as_object_mut() {
@@ -1541,7 +1550,7 @@ impl OutgoingCall {
         }
         let body = serde_json::json!({
             "from": from,
-            "meetingStates": self.timers.publish(adhoc),
+            "meetingStates": states,
             "updateMeetingStatesStatus": signaling::trouter_callback(
                 &self.callbacks.0,
                 &self.callbacks.1,
@@ -1549,7 +1558,7 @@ impl OutgoingCall {
             ),
             "operationId": uuid::Uuid::new_v4().to_string(),
         });
-        tracing::info!(state = adhoc.state(), sequence = self.timers.sequence, "meeting timer: publishing");
+        tracing::info!(state, sequence = self.timers.sequence, "meeting timer: publishing");
         cc_post(&self.http, &self.skype_token, &link, &body, "Meeting timer").await?;
         Ok(())
     }

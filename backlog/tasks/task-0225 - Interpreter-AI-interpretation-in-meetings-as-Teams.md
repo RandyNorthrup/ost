@@ -4,7 +4,7 @@ title: Interpreter (AI interpretation) in meetings as Teams
 status: To Do
 assignee: []
 created_date: '2026-11-18T23:07:00Z'
-updated_date: '2026-11-21T00:27:00Z'
+updated_date: '2026-11-21T02:22:00Z'
 labels:
   - calls
 dependencies: []
@@ -34,4 +34,9 @@ Found in TASK-0214/0208: Teams shows Interpreter in meetings when the meeting po
 - Open: (1) Teams on winpc gets the mode-selection step (turn-by-turn is on for it although OST's ECS copy lacks enableAiInterpretationTurnByTurnMode) and the compact setup dialog; OST goes straight to its fuller settings dialog -> needs the mode dialog, the 480-wide setup layout and turn-by-turn; (2) interpreted audio not heard yet: the English speaker (OST Test 2 with the speech rig) sat in the meeting's OrganizerOnly lobby (no longer co-organizer); needs a re-run with the speaker admitted; (3) indicator, alerts and tile badges not built.
 
 - 2026-11-21 (callsC) built: AiInterpreterModeDialog (Teams' "Choose an Interpreter mode", 490x525.33: Consecutive with its badges and two language boxes / Simultaneous; Turn on / Next; Learn more; the round picture is a Fluent backdrop with Interpreter's glyph, not Teams' artwork); the compact "Set up your Interpreter" (480x252, checkbox "Allow AI to simulate my voice…"); consecutive mode (aiInterpretationSettingsJson TurnByTurn with two languages, organizer only, Turn off for all); the bar indicator after the AI one with its tooltip and card (Manage settings, Turn off/on for me, AI disclaimer); alerts "AI is interpreting for others", "Interpreter has been turned off", "Something went wrong with Interpreter"; bot signals on data id 3 logged (for the tile badges, not built until their live format is seen); harness --join-interpreter-admit.
+
+- 2026-11-20 (callsC) live, Teams side: in "OST calendar test" Teams (ost-test1, organizer) ran More ▸ Interpreter ▸ "Choose an Interpreter mode" (Consecutive "Uses credits"/"On for everyone" with two Language boxes; Simultaneous "On for you") ▸ Simultaneous ▸ Turn on ▸ "Set up your Interpreter" (Spanish; "Speech in Spanish won't be translated."; Allow AI to simulate my voice checked) ▸ Turn on for me. Indicator next to the clock (tooltip "AI is interpreting this meeting"); its card: "You are using Interpreter. Your interpretation language is Spanish (ES)." / Manage settings / Turn off for me / disclaimer, as OST builds it. OST Test 2 (OST, speaking English) was in the meeting; winpc audio could not be listened to from here, so hearing the Spanish voice in Teams is not confirmed. No tile badge appeared on OST Test 2's tile in that run; tile badges (research 5e) are not built (not measured live).
+- Settings dialog rebuilt as Teams' 480 x 524.67 "Interpreter settings" (What you hear / Original audio first / Balance volume slider / How others hear you radios / Save); bar menu items by role as Teams (in group: Turn off for me, Turn off for all, Interpreter settings; organizer not in group: Turn off for all, Interpreter settings); x-much2 logs each speaker with its interpreter gain (proof of the interpreter source being mixed).
+
+- 2026-11-21 01:48 UTC (callsC) OST-side proof of interpreted audio: spatest OST (ost-test1, organizer) in "OST TEST 73 agenda" turned Interpreter on for Spanish (group 4c755f4f…, listeners 1, interpreter source 1256); OST Test 2 (OST) spoke English through the linuxlt speech rig; the bot sent AudioMetadata language es and TranslatedText ("Right side left side right front…" → "Lado derecho lado izquierdo…") for OST Test 2's speech, and x-much2 logged "a speaker starts source=1256 gain=1.0", i.e. the Spanish interpretation was mixed into what OST plays. Both instances logged hang-ups.
 <!-- SECTION:NOTES:END -->

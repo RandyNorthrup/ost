@@ -1340,6 +1340,14 @@ pub mod qobject {
         /// minutes). It changes when the meeting's update comes back.
         #[qinvokable]
         fn meeting_timer(self: Pin<&mut Backend>, action: &QString, arg: i32);
+        /// Edit the meeting's agenda (Teams' agenda timer): "add" (a new
+        /// untitled topic, held here until named), "rename" {index,
+        /// title, sections?}, "discussed" {index}, "delete" {index},
+        /// "move" {from, to}, "resize" {divider, deltaMs, publish} or
+        /// "cancel". Returns the sections it shows meanwhile (JSON, with
+        /// "index" for a new topic), or "" when nothing changes.
+        #[qinvokable]
+        fn agenda_edit(self: Pin<&mut Backend>, action: &QString, args: &QString) -> QString;
         /// The timer ran out: Teams' chime.
         #[qinvokable]
         fn timer_chime(self: &Backend);
@@ -3137,6 +3145,8 @@ pub struct BackendRust {
     /// The meeting timer's clock skew (now − the service's stamp, from
     /// live updates only), ms.
     timer_skew_ms: i64,
+    /// The meeting's agenda timer as last received (for the agenda's edits).
+    agenda_seen: teams_cli::calling::meeting_timer::Timer,
     call_rtt_on: bool,
     call_rtt_initiator: bool,
     call_privacy_url: QString,
@@ -5711,6 +5721,27 @@ fn compose_copilot() -> &'static api::compose_copilot::Copilot {
             });
         })
     })
+}
+
+/// Teams' HTTP layer waits and asks again when the service throttles a
+/// request (HTTP 429): up to three more times, 2, 4 and 8 s apart.
+async fn retry_throttled<T, F, Fut>(mut f: F) -> anyhow::Result<T>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = anyhow::Result<T>>,
+{
+    let mut wait = 2;
+    for _ in 0..3 {
+        match f().await {
+            Err(e) if format!("{e:#}").contains("HTTP 429") => {
+                tracing::info!(wait, "throttled (429): asking again");
+                tokio::time::sleep(std::time::Duration::from_secs(wait)).await;
+                wait *= 2;
+            }
+            r => return r,
+        }
+    }
+    f().await
 }
 
 /// The signed-in user's tenant (for Copilot's request context).
@@ -11586,10 +11617,15 @@ impl qobject::Backend {
     }
 
     fn show_timers(mut self: Pin<&mut Self>, t: teams_cli::calling::meeting_timer::Timers, live: bool) {
+        self.as_mut().rust_mut().agenda_seen = t.agenda.clone();
         let json = serde_json::json!({
             "adhoc": t.adhoc.0,
             "lastEditMs": t.adhoc.last_edit_ms(),
             "totalMs": t.adhoc.total_ms(),
+            "agenda": t.agenda.0,
+            "agendaLastEditMs": t.agenda.last_edit_ms(),
+            "agendaTotalMs": t.agenda.total_ms(),
+            "addAvailable": teams_cli::calling::agenda::add_available(t.agenda.0["sections"].as_array().map(Vec::as_slice).unwrap_or_default()),
             "skewMs": self.rust().timer_skew_ms,
             "sequence": t.sequence,
             "live": live,
@@ -11624,6 +11660,74 @@ impl qobject::Backend {
                 tracing::warn!("meeting timer: {}", short_error(&e));
             }
         });
+    }
+
+    pub fn agenda_edit(self: Pin<&mut Self>, action: &QString, args: &QString) -> QString {
+        use teams_cli::calling::agenda;
+        let args: serde_json::Value = serde_json::from_str(&args.to_string()).unwrap_or_default();
+        let seen = self.rust().agenda_seen.clone();
+        // A held edit (a new topic being named) comes back with its
+        // sections; otherwise the agenda as last received.
+        let sections: Vec<serde_json::Value> = args["sections"]
+            .as_array()
+            .or_else(|| seen.0["sections"].as_array())
+            .cloned()
+            .unwrap_or_default();
+        let index = args["index"].as_u64().unwrap_or(0) as usize;
+        let now = chrono::Utc::now().timestamp_millis();
+        let elapsed = seen.elapsed_ms(now, self.rust().timer_skew_ms);
+        let action = action.to_string();
+        let mut publish = true;
+        let (next, new_index) = match action.as_str() {
+            "add" => {
+                publish = false;
+                match agenda::add_topic(&sections, elapsed) {
+                    Some((s, at)) => (Some(s), Some(at)),
+                    None => (None, None),
+                }
+            }
+            "rename" => {
+                let draft = args["title"].as_str().unwrap_or_default();
+                // A held new topic always goes out once named.
+                let held = args["isNew"].as_bool().unwrap_or(false);
+                (agenda::rename(&sections, index, draft).or_else(|| held.then(|| sections.clone())), None)
+            }
+            "discussed" => (agenda::toggle_discussed(&sections, index), None),
+            "delete" => (agenda::delete_topic(&sections, index), None),
+            "move" => (
+                agenda::move_topic(&sections, args["from"].as_u64().unwrap_or(0) as usize, args["to"].as_u64().unwrap_or(0) as usize),
+                None,
+            ),
+            "resize" => {
+                publish = args["publish"].as_bool().unwrap_or(false);
+                (
+                    agenda::resize(&sections, args["divider"].as_u64().unwrap_or(0) as usize, args["deltaMs"].as_f64().unwrap_or(0.0) as i64),
+                    None,
+                )
+            }
+            "cancel" => (Some(Vec::new()), None),
+            other => {
+                tracing::warn!(other, "agenda: unknown edit");
+                (None, None)
+            }
+        };
+        let Some(next) = next else { return QString::default() };
+        if publish {
+            let timer = if action == "cancel" { agenda::cancel(&seen) } else { agenda::with_sections(&seen, next.clone()) };
+            tracing::info!(action, topics = next.len(), "agenda: publishing an edit");
+            runtime().spawn(async move {
+                let slot = call_slot().lock().await;
+                let Some(call) = slot.outgoing.as_ref() else { return };
+                if let Err(e) = call.publish_agenda(&timer).await {
+                    tracing::warn!("agenda: {}", short_error(&e));
+                }
+            });
+        }
+        let mut out = serde_json::json!({ "sections": next });
+        if let Some(i) = new_index {
+            out["index"] = i.into();
+        }
+        QString::from(out.to_string().as_str())
     }
 
     pub fn call_health_refresh(mut self: Pin<&mut Self>) {
@@ -15439,10 +15543,11 @@ impl qobject::Backend {
         }
         let qt = self.qt_thread();
         runtime().spawn(async move {
-            let result = async {
+            let id = &chat_id;
+            let result = retry_throttled(|| async move {
                 let client = TeamsClient::new().await?;
-                api::chat_meeting(&client, &chat_id).await
-            }
+                api::chat_meeting(&client, id).await
+            })
             .await;
             let _ = qt.queue(move |mut this| {
                 if this.rust().current_chat_id.to_string() != chat_id {
@@ -15469,7 +15574,7 @@ impl qobject::Backend {
         }
         let qt = self.qt_thread();
         runtime().spawn(async move {
-            let result = members_with_presence(&chat_id).await;
+            let result = retry_throttled(|| members_with_presence(&chat_id)).await;
             let _ = qt.queue(move |mut this| {
                 if this.rust().current_chat_id.to_string() != chat_id {
                     return;

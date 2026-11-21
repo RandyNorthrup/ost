@@ -35,6 +35,13 @@ pub const CANCELLED: &str = "Cancelled";
 #[derive(Debug, Clone, PartialEq)]
 pub struct Timer(pub Value);
 
+/// No agenda yet: Teams' local agenda default.
+impl Default for Timer {
+    fn default() -> Self {
+        Self::default_agenda()
+    }
+}
+
 impl Timer {
     /// Teams' local default: Cancelled, 5:00 (an agenda has no sections).
     pub fn default_adhoc() -> Self {
@@ -393,9 +400,19 @@ impl Timers {
     /// What to send for a new ad-hoc timer: the three timers' JSON (the
     /// others as last received), with the last sequence number seen.
     pub fn publish(&self, adhoc: &Timer) -> Value {
+        self.publish_both(adhoc, &self.agenda)
+    }
+
+    /// What to send for an agenda edit (Teams' `mi` with the agenda):
+    /// the ad-hoc and Run of Show timers as last received.
+    pub fn publish_agenda(&self, agenda: &Timer) -> Value {
+        self.publish_both(&self.adhoc, agenda)
+    }
+
+    fn publish_both(&self, adhoc: &Timer, agenda: &Timer) -> Value {
         let data = json!({
             "adhocTimer": adhoc.0,
-            "agendaTimer": self.agenda.0,
+            "agendaTimer": agenda.0,
             "rosTimer": self.ros.0,
         });
         json!({

@@ -3,6 +3,7 @@
 //! This handles signaling only (no media streaming).
 
 pub mod active_speakers;
+pub mod agenda;
 pub mod ai_interpreter;
 #[cfg(feature = "audio")]
 pub mod apm;

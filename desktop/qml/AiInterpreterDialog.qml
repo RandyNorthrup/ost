@@ -16,7 +16,7 @@ Popup {
     parent: Overlay.overlay
     modal: true; focus: true
     padding: 0
-    width: setup ? 480 : 600; height: setup ? 252 : col.implicitHeight + 49.33
+    width: 480; height: setup ? 252 : 524.67
     anchors.centerIn: Overlay.overlay
     closePolicy: Popup.CloseOnEscape
     background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
@@ -166,81 +166,107 @@ Popup {
         }
     }
 
-    Column {
-        id: col
+    // Interpreter settings (measured on winpc 2026-11-20, 480 x 524.67,
+    // padding 24): the title and Close as in setup; "What you hear" (16/22
+    // semibold, its glyph first) at 68.67; "You'll hear speech translated
+    // into" (14/600) at 114.67 over the language box at 138.67 (Original
+    // audio first while listening); "Balance volume" (14/600) at 194 over
+    // the slider (a 20 px brand thumb with a white ring) at 224 and "More
+    // original audio" / "More interpretation audio" (12/16 #616161) at 254;
+    // "How others hear you" at 318.67; "Voice others hear when your speech
+    // is translated" (14/600) at 364.67; the radios "Simulate my voice"
+    // (with its information button) at 396.67 and "Automated voice" at
+    // 428.67 (its voice list under it when picked); Save (96) at 359.33,
+    // 468.67.
+    Item {
         visible: !root.setup
-        x: 24.67; y: 24.67; width: root.width - 49.33; spacing: 12
+        anchors.fill: parent
         Text {
-            width: parent.width; height: 28; verticalAlignment: Text.AlignVCenter
-            text: root.setup ? qsTr("Set up your Interpreter") : qsTr("Interpreter settings")
+            x: 24.67; y: 24.67; width: 398.67; height: 28; verticalAlignment: Text.AlignVCenter
+            text: qsTr("Interpreter settings")
             font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text
             Accessible.role: Accessible.Heading; Accessible.name: text
         }
-        Heading { text: qsTr("What you hear") }
-        Text { text: qsTr("You'll hear speech translated into"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
+        Rectangle {
+            id: settingsClose
+            x: 431.33; y: 25.5; width: 24; height: 23.33; radius: 4
+            color: settingsCloseHover.hovered ? theme.menuHover : "transparent"
+            FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.textStrong }
+            HoverHandler { id: settingsCloseHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: root.close() }
+            Accessible.role: Accessible.Button; Accessible.name: qsTr("Close")
+        }
+        Row {
+            x: 24.67; y: 68.67; height: 22; spacing: 6
+            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "speaker-2-16"; size: 16; color: theme.text }
+            Heading { anchors.verticalCenter: parent.verticalCenter; text: qsTr("What you hear") }
+        }
+        Text { x: 24.67; y: 114.67; height: 20; text: qsTr("You'll hear speech translated into"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
         Combo {
+            x: 24.67; y: 138.67; width: 430.67; height: 31.33
             placeholder: qsTr("Choose interpretation language")
             text: root.language === "original" ? qsTr("Original audio") : root.nameOf(root.language)
-            items: (root.setup ? [] : [{ label: qsTr("Original audio"), checked: root.language === "original" }])
+            items: [{ label: qsTr("Original audio"), checked: root.language === "original" }]
                 .concat(root.languages.map(l => ({ label: l.name, checked: l.code === root.language })))
-            onPicked: i => {
-                const off = root.setup ? 0 : 1
-                root.language = i < off ? "original" : root.languages[i - off].code
+            onPicked: i => root.language = i === 0 ? "original" : root.languages[i - 1].code
+        }
+        Text { x: 24.67; y: 194; height: 20; text: qsTr("Balance volume"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+        Slider {
+            x: 14.67; y: 224; width: 450.67; height: 20
+            from: -100; to: 100; stepSize: 1
+            value: root.balance
+            onMoved: root.balance = Math.round(value)
+            enabled: !!root.state_.myGroup
+            Accessible.name: qsTr("Balance volume")
+            background: Rectangle {
+                x: 10; y: (parent.height - 4) / 2; width: parent.width - 20; height: 4; radius: 2
+                color: theme.stroke
+                Rectangle { width: parent.parent.visualPosition * parent.width; height: 4; radius: 2; color: theme.brand }
             }
+            handle: Rectangle {
+                x: parent.leftPadding + parent.visualPosition * (parent.availableWidth - width)
+                y: (parent.height - 20) / 2; width: 20; height: 20; radius: 10
+                color: theme.brand; border.width: 4; border.color: theme.surface
+            }
+            ToolTip.visible: !enabled && sliderHover.hovered
+            ToolTip.text: qsTr("To change this setting, turn on Interpreter first.")
+            HoverHandler { id: sliderHover }
         }
-        Text {
-            visible: !!root.language && root.language !== "original"
-            text: qsTr("Speech in %1 won't be translated.").arg(root.nameOf(root.language))
-            font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary
+        Text { x: 24.67; y: 254; text: qsTr("More original audio"); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+        Text { anchors.right: parent.right; anchors.rightMargin: 24.67; y: 254; text: qsTr("More interpretation audio"); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+        Row {
+            x: 24.67; y: 318.67; height: 22; spacing: 6
+            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "person-voice-16"; size: 16; color: theme.text }
+            Heading { anchors.verticalCenter: parent.verticalCenter; text: qsTr("How others hear you") }
         }
-        Text { text: qsTr("Balance volume"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
+        Text { x: 24.67; y: 364.67; height: 20; text: qsTr("Voice others hear when your speech is translated"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+        Radio { x: 22.67; y: 396.67; width: 140; label: qsTr("Simulate my voice"); checked: root.voice === "0"; onClicked: root.voice = "0" }
         Item {
-            width: parent.width; height: 44
-            Slider {
-                id: slider
-                width: parent.width; from: -100; to: 100; stepSize: 1
-                value: root.balance
-                onMoved: root.balance = Math.round(value)
-                Accessible.name: qsTr("Balance volume")
-            }
-            Text { anchors.left: parent.left; anchors.bottom: parent.bottom; text: qsTr("More original audio"); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
-            Text { anchors.right: parent.right; anchors.bottom: parent.bottom; text: qsTr("More interpretation audio"); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+            x: 136; y: 400.67; width: 24; height: 24
+            FluentIcon { anchors.centerIn: parent; name: "info-16"; size: 16; color: theme.textStrong }
+            HoverHandler { id: voiceInfo }
+            ToolTip.visible: voiceInfo.hovered
+            ToolTip.text: qsTr("Interpreter will simulate your voice when interpreting your speech. Your voice sample won't be stored.")
+            Accessible.role: Accessible.Button; Accessible.name: "information"
         }
-        Heading { text: qsTr("How others hear you") }
-        Text { text: qsTr("Voice others hear when your speech is translated"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
-        Radio { label: qsTr("Simulate my voice"); checked: root.voice === "0"; onClicked: root.voice = "0" }
-        Radio { label: qsTr("Automated voice"); checked: root.voice !== "0"; onClicked: if (root.voice === "0") root.voice = "1" }
+        Radio { x: 22.67; y: 428.67; width: 200; label: qsTr("Automated voice"); checked: root.voice !== "0"; onClicked: if (root.voice === "0") root.voice = "1" }
         Combo {
             visible: root.voice !== "0"
+            x: 200; y: 429; width: 160; height: 31.33
             placeholder: qsTr("Select an automated voice")
             readonly property var voices: [{ v: "1", n: qsTr("Auto") }, { v: "1", n: "Ava" }, { v: "2", n: "Andrew" }, { v: "3", n: "Fable Turbo" }]
             text: root.voice === "2" ? "Andrew" : root.voice === "3" ? "Fable Turbo" : qsTr("Auto")
             items: voices.map(x => ({ label: x.n }))
             onPicked: i => root.voice = voices[i].v
         }
-        Item { width: 1; height: 8 }
-        Row {
-            anchors.right: parent.right; spacing: 8
-            Rectangle {
-                id: cancel
-                visible: root.setup
-                width: 96; height: 32; radius: 4
-                color: cancelHover.hovered ? theme.menuHover : theme.surface; border.color: theme.stroke; border.width: 0.67
-                Text { anchors.centerIn: parent; text: qsTr("Cancel"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
-                HoverHandler { id: cancelHover; cursorShape: Qt.PointingHandCursor }
-                TapHandler { onTapped: root.close() }
-                Accessible.role: Accessible.Button; Accessible.name: qsTr("Cancel")
-            }
-            Rectangle {
-                id: confirm
-                readonly property bool ok: !!root.language && !(root.setup && root.language === "original")
-                width: Math.max(96, confirmText.implicitWidth + 24); height: 32; radius: 4
-                color: !ok ? theme.bgDisabled : confirmHover.hovered ? theme.brandHover : theme.brandFill
-                Text { id: confirmText; anchors.centerIn: parent; text: root.setup ? qsTr("Turn on for me") : qsTr("Save"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: confirm.ok ? theme.textOnBrand : theme.disabled }
-                HoverHandler { id: confirmHover; cursorShape: confirm.ok ? Qt.PointingHandCursor : Qt.ArrowCursor }
-                TapHandler { enabled: confirm.ok; onTapped: { root.confirmed(root.language, root.voice, root.balance / 100); root.close() } }
-                Accessible.role: Accessible.Button; Accessible.name: confirmText.text
-            }
+        Rectangle {
+            id: saveButton
+            x: 359.33; y: 468.67; width: 96; height: 31.33; radius: 4
+            color: saveHover.hovered ? theme.brandHover : theme.brandFill
+            Text { anchors.centerIn: parent; text: qsTr("Save"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.textOnBrand }
+            HoverHandler { id: saveHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: { root.confirmed(root.language, root.voice, root.balance / 100); root.close() } }
+            Accessible.role: Accessible.Button; Accessible.name: qsTr("Save")
         }
     }
 }

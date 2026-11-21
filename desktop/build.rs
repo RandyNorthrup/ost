@@ -242,6 +242,7 @@ fn main() {
         "qml/RttBox.qml",
         "qml/ChildWindowTitleBar.qml",
         "qml/MeetingTimerStrip.qml",
+        "qml/AgendaTimerRow.qml",
         "qml/CallHealthPane.qml",
         "qml/TimerSpin.qml",
         "qml/NotificationBanners.qml",
