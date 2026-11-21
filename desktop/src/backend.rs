@@ -4329,6 +4329,9 @@ impl JoinedView {
 
 /// The next meeting join asks for the attendee role (Preview as Attendee).
 static JOIN_AS_ATTENDEE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// The call window's Notes were opened in this call (Teams then keeps
+/// acknowledging the notes election).
+static NOTES_OPEN: AtomicBool = AtomicBool::new(false);
 
 /// call_stream_json's text.
 fn stream_json(lobby: bool, url: &str, player: &str) -> String {
@@ -7186,6 +7189,23 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
             if let Some(uri) = notes {
                 tracing::info!(shared = !uri.is_empty(), "meeting notes changed");
                 let _ = qt.queue(move |mut this| this.as_mut().set_call_notes_url(QString::from(uri.as_str())));
+                // As Teams' Notes panel (its load and create flows): while
+                // the notes are open, whenever the call names you
+                // auto-elected (status 0) you acknowledge it, also after
+                // you shared your link.
+                if NOTES_OPEN.load(Ordering::Relaxed) {
+                    let slot = call_slot().lock().await;
+                    if let Some(call) = slot.outgoing.as_ref() {
+                        let me = call.my_endpoint().0;
+                        let elected = call.notes().leaders.as_ref().is_some_and(|l| l.iter().any(|x| x.status == 0 && x.id.eq_ignore_ascii_case(&me)));
+                        if elected {
+                            match call.publish_meeting_states(call.notes().claim(), "Meeting notes claim").await {
+                                Ok(()) => tracing::info!("meeting notes: acknowledged the election"),
+                                Err(e) => tracing::info!("meeting notes: acknowledging: {}", short_error(&e)),
+                            }
+                        }
+                    }
+                }
             }
             // The meeting's dial-in or PSTN capability changed.
             let phone = {
@@ -11323,6 +11343,7 @@ impl qobject::Backend {
         self.as_mut().set_call_stream_json(QString::default());
         stop_stream_proxy();
         self.as_mut().set_call_notes_url(QString::default());
+        NOTES_OPEN.store(false, Ordering::Relaxed);
         self.as_mut().set_call_lobby_thread(QString::default());
         self.as_mut().show_transcript(Vec::new(), true);
         self.as_mut().reset_captions();
@@ -21645,6 +21666,7 @@ impl qobject::Backend {
             let r: anyhow::Result<serde_json::Value> = async {
                 match kind.as_str() {
                     "resolve" => {
+                        NOTES_OPEN.store(true, Ordering::Relaxed);
                         // 1. A link the call already shares.
                         let (shared, leader, ctx) = {
                             let slot = call_slot().lock().await;
