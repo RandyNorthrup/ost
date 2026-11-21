@@ -106,8 +106,12 @@ Popup {
     // - without inline dates one #F5F5F5 heading (64 tall, 18/600) names
     //   the pictures in view ("Nov 17 - Nov 20, 2026"); with them each
     //   day starts with its date over its first picture (a 40 px band);
-    // - the 44 px Timeline at the right (4 px dots 68 apart, the year at
-    //   the bottom).
+    // - the 44 px Timeline at the right (4 px dots 68 apart, the years at
+    //   the ends), shown on hover and while scrolling: a pointer over it
+    //   names the month there and a click or a drag goes to it.
+    // Layout and zoom are kept as Photos keeps them (its "uxSetting":
+    // layoutAlgorithm and zoomLevel, in the picker's local storage, so
+    // per device); compact, inline dates and names are not kept.
     property string mediaLayout: "river"
     property bool mediaCompact: true
     property bool mediaNames: true
@@ -117,6 +121,37 @@ Popup {
     readonly property real mediaWidth: 801.7
     readonly property real mediaHeader: mediaInline ? 40 : 0
     readonly property real mediaName: mediaNames ? 44 : 0
+    function loadUx() {
+        let u = {}
+        try { u = JSON.parse(backend.setting("photosUxSetting") || "{}") || {} } catch (e) {}
+        mediaLayout = ["river", "masonry", "grid"].indexOf(u.layoutAlgorithm) >= 0 ? u.layoutAlgorithm : "river"
+        mediaZoom = Math.max(150, Math.min(500, Math.round(u.zoomLevel || 200)))
+    }
+    function mergeUx(o) {
+        let u = {}
+        try { u = JSON.parse(backend.setting("photosUxSetting") || "{}") || {} } catch (e) {}
+        backend.setSetting("photosUxSetting", JSON.stringify(Object.assign(u, o)))
+    }
+    function setLayout(l) { mediaLayout = l; mergeUx({ layoutAlgorithm: l }) }
+    function setZoom(z) { mediaZoom = Math.max(150, Math.min(500, z)); mergeUx({ zoomLevel: mediaZoom }) }
+    function takenOf(it) { return new Date(it.taken || it.modified || 0) }
+    // The Timeline's target: the first picture taken on or before the
+    // date (the list is newest first), scrolled to the top.
+    function scrollToDate(d) {
+        const t = mediaTiles.tiles
+        if (!t.length) return
+        let hit = t[t.length - 1]
+        for (const x of t) if (takenOf(rows[x.i]).getTime() <= d.getTime()) { hit = x; break }
+        const top = hit.y - (hit.header ? mediaHeader : 0)
+        mediaFlick.contentY = Math.max(0, Math.min(top, mediaFlick.contentHeight - mediaFlick.height))
+    }
+    // A click on the Timeline: the 15th of the month there.
+    property bool scrubShown: false
+    function scrubTo(yy) {
+        scrub.point(yy)
+        const d = scrub.dateAt(scrub.pointY)
+        scrollToDate(new Date(d.getFullYear(), d.getMonth(), 15))
+    }
     function dayKey(it) { const d = new Date(it.taken || it.modified || 0); return d.getFullYear() * 10000 + d.getMonth() * 100 + d.getDate() }
     function aspect(it) { return it.w > 0 && it.h > 0 ? it.w / it.h : 4 / 3 }
     // Tiles: [{i, x, y, w, h, header}] and the total height.
@@ -243,6 +278,7 @@ Popup {
     }
     onOpened: {
         selected = []; navOpen = false
+        loadUx()
         backend.driveAction(tag + "quick_access", "{}", "{}")
         if (entry && entry.channel_id) {
             place = "channel"; rows = []; trail = []
@@ -697,9 +733,9 @@ Popup {
                     { label: qsTr("Show file names"), icon: "app-title-20", checked: dlg.mediaNames }]
             onPicked: i => {
                 const k = items[i]
-                if (k.label === qsTr("River")) dlg.mediaLayout = "river"
-                else if (k.label === qsTr("Waterfall")) dlg.mediaLayout = "masonry"
-                else if (k.label === qsTr("Square")) dlg.mediaLayout = "grid"
+                if (k.label === qsTr("River")) dlg.setLayout("river")
+                else if (k.label === qsTr("Waterfall")) dlg.setLayout("masonry")
+                else if (k.label === qsTr("Square")) dlg.setLayout("grid")
                 else if (k.label === qsTr("Inline dates")) dlg.mediaInline = !dlg.mediaInline
                 else if (k.label === qsTr("Show file names")) dlg.mediaNames = !dlg.mediaNames
             }
@@ -711,16 +747,16 @@ Popup {
             width: 189.3; height: 48.7; padding: 0
             background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
             contentItem: Item {
-                MediaBtn { x: 8.7; y: 8.6; icon: "subtract-circle-20"; tip: qsTr("Zoom out"); onClicked: dlg.mediaZoom = Math.max(150, dlg.mediaZoom - 25) }
+                MediaBtn { x: 8.7; y: 8.6; icon: "subtract-circle-20"; tip: qsTr("Zoom out"); onClicked: dlg.setZoom(dlg.mediaZoom - 25) }
                 Slider {
                     id: zoomSlider
                     x: 44.7; y: 16.3; width: 100; height: 16
                     from: 6; to: 20; stepSize: 1
                     value: dlg.mediaZoom / 25
-                    onMoved: dlg.mediaZoom = Math.round(value) * 25
+                    onMoved: dlg.setZoom(Math.round(value) * 25)
                     Accessible.name: qsTr("Photo zoom level")
                 }
-                MediaBtn { x: 148.7; y: 8.6; icon: "add-circle-20"; tip: qsTr("Zoom in"); onClicked: dlg.mediaZoom = Math.min(500, dlg.mediaZoom + 25) }
+                MediaBtn { x: 148.7; y: 8.6; icon: "add-circle-20"; tip: qsTr("Zoom in"); onClicked: dlg.setZoom(dlg.mediaZoom + 25) }
             }
         }
         Rectangle {
@@ -803,21 +839,106 @@ Popup {
                 }
             }
         }
-        // The Timeline (44 px at the right): a dot per month in the list,
-        // 68 apart, the oldest year at the bottom.
+        // The Timeline (Photos' scrubber, 44 px at the right): the newest
+        // year at the top and the oldest at the bottom (each goes there),
+        // a channel of 4 px dots 68 apart between. It shows on hover and
+        // while the pictures scroll. Over the channel a 4 px brand mark
+        // follows the pointer with the month ("November 2026") beside it;
+        // the date is linear in time from the top's newest picture to the
+        // bottom's oldest. A click goes to the 15th of that month; a drag
+        // (the mark grows to 8 x 24) goes along. Wheel scrolls the list.
         Item {
+            id: scrub
             visible: dlg.place === "media" && dlg.rows.length > 0
             x: 823.3; y: 78; width: 44; height: Math.min(399.3, dlg.height - 80 - 78)
+            readonly property date newest: dlg.rows.length ? dlg.takenOf(dlg.rows[0]) : new Date(0)
+            readonly property date oldest: dlg.rows.length ? dlg.takenOf(dlg.rows[dlg.rows.length - 1]) : new Date(0)
+            property bool dragging: false
+            property real pointY: -1
+            readonly property bool hovering: chHover.hovered && pointY >= 0
+            opacity: scrubHover.hovered || dragging || mediaFlick.moving || dlg.scrubShown ? 1 : 0
+            Behavior on opacity { NumberAnimation { duration: 250 } }
             Accessible.role: Accessible.ScrollBar; Accessible.name: qsTr("Timeline")
-            readonly property var months: { const m = []; for (const it of dlg.rows) { const d = new Date(it.taken || it.modified || 0); const k = d.getFullYear() * 12 + d.getMonth(); if (m.indexOf(k) < 0) m.push(k) } return m }
-            Repeater {
-                model: Math.max(1, Math.floor((parent.height - 64) / 68) + 1)
-                Rectangle { required property int index; x: 20; y: 64 + index * 68; width: 4; height: 4; radius: 2; color: theme.pick("#C7C7C7", "#5C5C5C", "#FFFFFF") }
+            function dateAt(yy) {
+                const f = Math.max(0, Math.min(1, yy / channel.height))
+                return new Date(newest.getTime() - (newest.getTime() - oldest.getTime()) * f)
+            }
+            function point(yy) { pointY = Math.max(10, Math.min(yy, channel.height - 10)) }
+            HoverHandler { id: scrubHover }
+            WheelHandler { onWheel: ev => mediaFlick.flick(0, ev.angleDelta.y * 8) }
+            Text {
+                id: topYear
+                y: 12; anchors.horizontalCenter: parent.horizontalCenter
+                text: String(scrub.newest.getFullYear())
+                font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.textSecondary
+                TapHandler { onTapped: mediaFlick.contentY = 0 }
+            }
+            Item {
+                id: channel
+                y: 32; width: parent.width; height: parent.height - 64
+                Repeater {
+                    model: Math.ceil(channel.height / 68)
+                    Rectangle {
+                        required property int index
+                        visible: y + height <= channel.height
+                        x: 20; y: 32 + index * 68; width: 4; height: 4; radius: 2
+                        color: theme.pick("#C7C7C7", "#5C5C5C", "#FFFFFF")
+                    }
+                }
+                HoverHandler {
+                    id: chHover
+                    onPointChanged: if (hovered) scrub.point(point.position.y)
+                    onHoveredChanged: if (!hovered && !scrub.dragging) scrub.pointY = -1
+                }
+                DragHandler {
+                    target: null; xAxis.enabled: false
+                    onActiveChanged: { scrub.dragging = active; if (!active && !chHover.hovered) scrub.pointY = -1 }
+                    onCentroidChanged: if (active) { scrub.point(centroid.position.y); dlg.scrollToDate(scrub.dateAt(scrub.pointY)) }
+                }
+                TapHandler {
+                    onTapped: ev => dlg.scrubTo(ev.position.y)
+                }
+                // The mark: at the pointer, else (while scrolling) where the
+                // pictures in view start.
+                readonly property real markY: {
+                    if (scrub.hovering || scrub.dragging) return scrub.pointY
+                    const t = dlg.mediaTiles.tiles
+                    if (!t.length) return -1
+                    const top = mediaFlick.contentY
+                    const first = t.find(x => x.y + x.h >= top) || t[0]
+                    const span = scrub.newest.getTime() - scrub.oldest.getTime()
+                    return span > 0 ? channel.height * (scrub.newest.getTime() - dlg.takenOf(dlg.rows[first.i]).getTime()) / span : 0
+                }
+                readonly property date markDate: markY >= 0 ? scrub.dateAt(markY) : new Date(0)
+                Rectangle {
+                    id: mark
+                    visible: channel.markY >= 0 && (scrub.hovering || scrub.dragging || mediaFlick.moving || dlg.scrubShown)
+                    x: scrub.dragging ? 16 : 8; width: scrub.dragging ? 8 : channel.width - 16
+                    height: scrub.dragging ? 24 : 4; radius: 4
+                    y: channel.markY - height / 2
+                    color: theme.brand
+                }
+            }
+            // The month beside the mark (Fluent's tooltip, placed before
+            // it: there is no room after it at the picker's edge).
+            Rectangle {
+                visible: mark.visible
+                x: -width - 4; y: channel.y + channel.markY - height / 2
+                width: monthText.implicitWidth + 22; height: monthText.implicitHeight + 10; radius: 4
+                color: theme.surface
+                FluentSurface { z: -1; anchors.fill: parent; depth: 8; radius: 4 }
+                Text {
+                    id: monthText
+                    anchors.centerIn: parent
+                    text: channel.markDate.toLocaleDateString(Qt.locale(), "MMMM yyyy")
+                    font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.text
+                }
             }
             Text {
-                anchors { bottom: parent.bottom; horizontalCenter: parent.horizontalCenter; bottomMargin: 8 }
-                text: dlg.rows.length ? String(new Date(dlg.rows[dlg.rows.length - 1].taken || dlg.rows[dlg.rows.length - 1].modified || 0).getFullYear()) : ""
+                anchors { bottom: parent.bottom; horizontalCenter: parent.horizontalCenter; bottomMargin: 12 }
+                text: String(scrub.oldest.getFullYear())
                 font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.textSecondary
+                TapHandler { onTapped: dlg.scrollToDate(scrub.oldest) }
             }
         }
 
@@ -1229,6 +1350,19 @@ Popup {
     function stateForTest() {
         return { place: place, trail: trail.map(t => t.name), rows: rows.map(r => r.name), people: people.map(p => p.name),
                  selected: selected.map(s => s.name), loading: loading, nav: navOpen, quick: quickAccess.map(q => q.label) }
+    }
+    // Media for --attach-media-test: show the Timeline, click it at a
+    // fraction of its channel, pick a layout or a zoom; returns the state.
+    function mediaForTest(op, arg) {
+        if (op === "show") scrubShown = !!arg
+        else if (op === "scrub") scrubTo(arg * channel.height)
+        else if (op === "layout") setLayout(arg)
+        else if (op === "zoom") setZoom(arg)
+        const t = mediaTiles.tiles, first = t.find(x => x.y + x.h >= mediaFlick.contentY)
+        const day = it => it ? takenOf(it).toISOString().slice(0, 10) : ""
+        return { layout: mediaLayout, zoom: mediaZoom, saved: backend.setting("photosUxSetting"), contentY: Math.round(mediaFlick.contentY),
+                 contentHeight: Math.round(mediaFlick.contentHeight), first: first ? rows[first.i].name + " " + day(rows[first.i]) : "",
+                 newest: day(rows[0]), oldest: day(rows[rows.length - 1]), markY: Math.round(channel.markY), month: channel.markDate.toLocaleDateString(Qt.locale(), "MMMM yyyy") }
     }
     function pickForTest(name) { const r = rows.find(x => x.name === name); if (r) toggle(r); return !!r }
     function openForTest(key) { if (key === "nav") navOpen = !navOpen; else if (key.startsWith("view:")) view = key.slice(5); else if (key === "newfolder") openNewFolder(); else openPlace(key) }

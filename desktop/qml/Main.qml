@@ -5055,8 +5055,10 @@ Window {
     // of that window); =link copies the recap link (Share > Copy link);
     // =highlights opens Events on the event.
     Timer {
-        running: Qt.application.arguments.some(a => a.startsWith("--recap-window-test")) && backend.signedIn && chatList.chats.some(c => c.name.indexOf("OST TEST 217 town hall 2") >= 0)
+        running: Qt.application.arguments.some(a => a.startsWith("--recap-window-test")) && backend.signedIn && chatList.chats.some(c => c.name.indexOf(recapChat) >= 0)
         interval: 2000; repeat: true
+        // --recap-chat=<name> (~ for spaces): another meeting chat.
+        readonly property string recapChat: (Qt.application.arguments.find(a => a.startsWith("--recap-chat=")) || "").slice(13).replace(/~/g, " ") || "OST TEST 217 town hall 2"
         property int step: 0
         property int waited: 0
         onTriggered: {
@@ -5064,7 +5066,7 @@ Window {
             const mode = (Qt.application.arguments.find(a => a.startsWith("--recap-window-test")) || "").split("=")[1] || "transcript"
             const ended = () => (conversation.messages || []).find(m => m.recap && ((m.recap.recordings || []).length || m.recap.transcript))
             switch (step) {
-            case 0: { const ch = chatList.chats.find(x => x.name.indexOf("OST TEST 217 town hall 2") >= 0); backend.selectChat(ch.id, ch.name); break }
+            case 0: { const ch = chatList.chats.find(x => x.name.indexOf(recapChat) >= 0); backend.selectChat(ch.id, ch.name); break }
             case 3: {
                 const m = ended()
                 if (!m && waited++ < 15) return
@@ -5328,6 +5330,39 @@ Window {
             else if (step === 31) { if (Qt.application.arguments.indexOf("--attach-send") < 0) Qt.quit(); else { conversation.setComposeText(chan ? "OST TEST 121 cloud file in a channel from OST" : "OST TEST 119 cloud file from OST"); } }
             else if (step === 32) conversation.sendForTest()
             else if (step === 36) { log("sent; status", backend.statusText); cap("sent"); Qt.quit() }
+            step++
+        }
+    }
+
+    // --attach-media-test: the cloud file picker's Media in OST group
+    // test: the Timeline shown, clicked at a quarter, half and the end of
+    // its channel (each goes to the pictures of that month), then
+    // Waterfall at 300 px; the picker is closed and opened again (layout
+    // and zoom kept, as Photos keeps them), and the saved setting is put
+    // back. Logs ATTACHMEDIA lines; pictures attach-media-*.png.
+    Timer {
+        running: Qt.application.arguments.indexOf("--attach-media-test") >= 0 && backend.signedIn && chatList.chats.some(c => c.name === "OST group test")
+        interval: 2500; repeat: true
+        property int step: 0
+        property string before: ""
+        onTriggered: {
+            const p = conversation.cloudPickerForTest()
+            const cap = tag => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-" + tag + ".png")))
+            const log = (...a) => console.warn("ATTACHMEDIA", ...a.map(x => typeof x === "string" ? x : JSON.stringify(x)))
+            if (step === 0) { const c = chatList.chats.find(c => c.name === "OST group test"); backend.selectChat(c.id, c.name); before = backend.setting("photosUxSetting") }
+            else if (step === 2) { p.entry = "home"; p.open() }
+            else if (step === 4) p.openForTest("media")
+            else if (step === 7) { log("open", p.mediaForTest("show", true)); cap("timeline") }
+            else if (step === 8) log("scrub 0.25", p.mediaForTest("scrub", 0.25))
+            else if (step === 9) { cap("scrub-quarter"); log("scrub 0.5", p.mediaForTest("scrub", 0.5)) }
+            else if (step === 10) { cap("scrub-half"); log("scrub 1", p.mediaForTest("scrub", 1)) }
+            else if (step === 11) { cap("scrub-end"); p.mediaForTest("show", false); log("layout", p.mediaForTest("layout", "masonry")) }
+            else if (step === 12) log("zoom", p.mediaForTest("zoom", 300))
+            else if (step === 13) { cap("waterfall"); p.close() }
+            else if (step === 14) { p.entry = "home"; p.open() }
+            else if (step === 16) p.openForTest("media")
+            else if (step === 19) { log("reopened", p.mediaForTest("")); cap("reopened"); p.close() }
+            else if (step === 20) { backend.setSetting("photosUxSetting", before); log("restored", JSON.stringify(backend.setting("photosUxSetting"))); Qt.quit() }
             step++
         }
     }

@@ -101,7 +101,7 @@ Rectangle {
     property bool ring: true
     readonly property bool hc: theme.highContrast && !square && ring
     readonly property real hcInset: hc && !meeting ? 2 : 0
-    color: hc ? "#000000" : meeting ? "#C5CBFA" : pic.visible ? "transparent" : group ? "#949494" : colorful ? fluentColors[0] : swatches[hue]
+    color: hc ? "#000000" : meeting ? "#C5CBFA" : pic.shown ? "transparent" : group ? "#949494" : colorful ? fluentColors[0] : swatches[hue]
     border.color: hc ? "#FFFFFF" : "transparent"
     border.width: hc ? (meeting ? 0.67 : 2) : 0
 
@@ -126,7 +126,11 @@ Rectangle {
         // The pixels reach the canvas a moment after Ready; paint again then.
         onStatusChanged: { pic.requestPaint(); if (status === Image.Ready) repaint.restart() }
     }
-    Timer { id: repaint; interval: 50; onTriggered: pic.requestPaint() }
+    // Until then the initials stay: a picture that has just loaded can't
+    // be drawn yet, and Teams shows the initials until the picture is in
+    // (a person just picked in Add members showed a blank circle).
+    Timer { id: repaint; interval: 50; onTriggered: { pic.requestPaint(); pic.drawn = true } }
+    onPhotoChanged: pic.drawn = false
     // Painted at twice the avatar's size and scaled down, so the picture
     // (often Teams' small initials image) stays sharp on scaled screens
     // where a canvas the avatar's size would be stretched and blurred.
@@ -140,6 +144,8 @@ Rectangle {
         smooth: true
         antialiasing: true
         visible: !root.meeting && root.photo.length > 0 && src.status === Image.Ready
+        property bool drawn: false
+        readonly property bool shown: visible && drawn
         onVisibleChanged: requestPaint()
         onPaint: {
             const ctx = getContext("2d")
@@ -164,14 +170,14 @@ Rectangle {
         color: root.hc ? "#FFFFFF" : "#5B5FC7"
     }
     FluentIcon {
-        visible: root.group && !root.meeting && !pic.visible
+        visible: root.group && !root.meeting && !pic.shown
         anchors.centerIn: parent
         name: root.size > 24 ? "people-team-20" : "people-team-16"
         size: Math.round(root.size * 0.55)
         color: "white"
     }
     Text {
-        visible: !pic.visible && !root.group && !root.meeting
+        visible: !pic.shown && !root.group && !root.meeting
         anchors.centerIn: parent
         text: root.initialsText || (root.colorful && root.size <= 16 ? root.initials(root.name).charAt(0) : root.initials(root.name))
         color: root.hc ? "#FFFFFF" : root.colorful ? root.fluentColors[1] : root.inks[root.hue]
