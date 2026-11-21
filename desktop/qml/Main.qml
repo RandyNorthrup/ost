@@ -9287,10 +9287,17 @@ Window {
                 // wshot:<key>[:<chat id to show>]: that app's window, pictured.
                 const w = window.appWindows[name]
                 if (w) {
-                    if (arg && w.showChat) { const cid = op.slice(op.indexOf(arg)); const ch = chatList.chats.find(c => c.id === cid); w.showChat(cid, ch ? ch.name : "") }
+                    if (arg && w.showChat) {
+                        const cid = op.slice(op.indexOf(arg))
+                        let ch = chatList.chats.find(c => c.id === cid)
+                        for (const t of (backend.teamsJson ? JSON.parse(backend.teamsJson) : [])) if (!ch) ch = (t.channels || []).find(c => c.id === cid)
+                        w.showChat(cid, ch ? ch.name : "")
+                    }
                     r = JSON.stringify({ title: w.title, size: [w.width, w.height], chat: w.chatId || "" })
                     w.contentItem.grabToImage(g => g.saveToFile(window.shotPath.replace(".png", "-app-window-" + name + ".png")))
                 }
+            } else if (verb === "core") { r = !!window.popOutCore(name)   // core:<key>: that app's window directly
+            } else if (verb === "wtab") { const w = window.appWindows[name]; if (w) { const c = w.conversationForTest(); r = JSON.stringify({ tabs: c.tabNames, shown: c.windowTabs }) }
             } else if (verb === "wclose") { const w = window.appWindows[name]; if (w) { w.close(); r = true } }
             else if (verb === "block") r = pickIn(name, qsTr("Block bot conversation"))
             else if (verb === "unblock") r = pickIn(name, qsTr("Unblock bot conversation"))
@@ -9837,7 +9844,8 @@ Window {
             } else if (step >= 1 && step <= 8 && !ev) {
                 ev = (backend.calendarJson ? JSON.parse(backend.calendarJson) : []).find(x => x.subject === subject && x.join_url) || null
                 if (!ev) { step++; return }
-                console.warn("MEETINGNOTES event made", !!ev.join_url)
+                // Its link, for a second test account to join (--join-url).
+                console.warn("MEETINGNOTES event made", ev.join_url || "")
                 window.muteOnJoin = true; window.noAudioOnJoin = true; window.cameraOnJoin = false
                 backend.joinMeeting(ev.join_url, subject)
                 step = 9; return
@@ -13475,7 +13483,7 @@ Window {
         if (open) { open.show(); open.raise(); open.requestActivate(); return open }
         const c = Qt.createComponent("CoreAppWindow.qml")
         if (c.status !== Component.Ready) { console.warn("CoreAppWindow", c.errorString()); return null }
-        const w = c.createObject(null, { app: key, appName: rail.coreLabels[key] || key })
+        const w = c.createObject(null, { app: key, appName: rail.coreLabels[key] || key, splitView: window.splitView })
         const all = Object.assign({}, window.appWindows); all[key] = w; window.appWindows = all
         w.openInMain.connect((kind, d) => {
             window.raise(); window.requestActivate()

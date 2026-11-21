@@ -17,6 +17,8 @@ Window {
     property string app: "chat"
     property string appName: ""
     property bool pinned: false
+    /// The main window shows chats and channels apart (Teams' split view).
+    property bool splitView: false
     /// The chat shown beside the list or the feed.
     property string chatId: ""
     property string chatName: ""
@@ -67,7 +69,8 @@ Window {
             ChatList {
                 // Teams' Chat window has the whole list (chats, teams and
                 // channels), 280 wide.
-                pane: win.app === "teams" ? "channels" : "combined"
+                // (Split view's Chat window: chats only; Teams: teams and channels.)
+                pane: win.app === "teams" ? "teams" : win.splitView ? "chats" : "combined"
                 chats: win.chats
                 teams: backend.teamsJson ? JSON.parse(backend.teamsJson) : []
                 currentId: win.chatId
@@ -107,6 +110,8 @@ Window {
             visible: side.active && win.chatId !== ""
             anchors { top: parent.top; bottom: parent.bottom; left: side.right; right: parent.right }
             popout: true
+            // Teams' Chat window keeps the chat's tabs row.
+            windowTabs: true
             chatId: win.chatId
             chatName: win.chatName
             isGroup: win.chatId.endsWith("@thread.v2") || win.chatId.indexOf("meeting_") >= 0

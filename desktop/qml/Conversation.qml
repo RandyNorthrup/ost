@@ -38,6 +38,8 @@ Rectangle {
     /// A chat in its own window (the chat menu's Open in new window): no
     /// tab row, and the compose sends to this chat rather than the open one.
     property bool popout: false
+    /// A pop-out that keeps the tabs row (Teams' Chat app window).
+    property bool windowTabs: false
     /// The chat menu's Manage apps: the chat's apps in place of its
     /// messages (Teams keeps the Chat tab chosen) until a tab is picked.
     property bool manageApps: false
@@ -1184,7 +1186,7 @@ Rectangle {
         }
         Row {
             id: tabs
-            visible: !root.narrowTitle && !root.popout
+            visible: !root.narrowTitle && (!root.popout || root.windowTabs)
             x: (renameButton.visible ? renameButton.x + renameButton.width : title.x + title.width) + 2
             y: 2; height: 56
             Repeater {

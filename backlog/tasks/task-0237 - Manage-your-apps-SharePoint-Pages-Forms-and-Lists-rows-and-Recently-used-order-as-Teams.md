@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-11-20T18:48:00Z'
-updated_date: '2026-11-21T02:31:00Z'
+updated_date: '2026-11-21T02:25:00Z'
 labels:
   - desktop
   - apps
@@ -36,5 +36,5 @@ Teams' Manage your apps lists 27 apps for ost-test1; OST lists 24. Teams also sh
 
 - 2026-11-20 recheck: Teams' Manage your apps on winpc (Recently used) starts SharePoint, Workflows, Whiteboard, Planner, Praise, Polly, Power BI, Polls, OneNote, Avatars, and OST's (--manage-apps-test, linuxlt default) starts with exactly the same ten, so Recently used matches as far as Teams' list was read. That top SharePoint is the personal Viva Connections app d2c6f111 (Installed, isFullScreen, not core), so Teams does list it: the earlier 'Teams leaves d2c6f111 out' note was wrong. OST also lists a second 'SharePoint' row further down (the team SharePoint app); whether Teams lists that one too, and the order after Avatars, still need a full Teams list (the winpc slot ended before the whole list was read).
 
-- 2026-11-20 merged as 0509286: Teams does list the personal SharePoint app (top row); OST's first ten rows match Teams'. Open: a second SharePoint row in OST and Teams' order past Avatars.
+- 2026-11-20 correction after reading Teams' whole list on winpc (27 rows, Recently used): SharePoint, Workflows, Whiteboard, Planner, Praise, Polly, Power BI, Polls, OneNote, Avatars, Surveys, Excel (Agent), Word (Agent), Planner Agent, PowerPoint (Agent), Analyst, Researcher, Facilitator, Updates, Viva Learning, Power Apps, Copilot, Engage, Power BI (MSIT), SharePoint Pages, Forms for Microsoft Teams, Lists. OST lists the same 27 in the same order plus one more 'SharePoint' between Copilot and Engage, which is the personal Viva Connections app d2c6f111 (the top SharePoint is the team SharePoint app 2a527703, placed by usage). So the earlier finding stands and my previous recheck note was wrong: Teams leaves d2c6f111 out. Its definition (Installed, isFullScreen, isFullTrust, a Personal static tab on {teamSiteDomain}, no officeAssetId) shows no flag that explains it, and no ECS list in the 26304 config names it for Manage apps; the rule is still unknown. AC2 (order) matches.
 <!-- SECTION:NOTES:END -->

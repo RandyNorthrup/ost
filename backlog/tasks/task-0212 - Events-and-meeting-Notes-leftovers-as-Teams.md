@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-17T01:27:00Z'
-updated_date: '2026-11-20T23:40:00Z'
+updated_date: '2026-11-21T03:02:00Z'
 labels:
   - desktop
 dependencies: []
@@ -52,4 +52,8 @@ What TASK-0209 left (docs/spec/events.md, docs/spec/call-and-meeting-window.md):
 
 - 2026-11-20 (teamsB, with TASK-0238): Events' Pin app writes Teams' pinned apps (beta/users/apps/pinned), and OST's app bar now reloads from them when it changes, so Events appears or leaves the bar in OST and in Teams alike.
 - Still open (not attempted this round): Highlights with a recording; a town hall's Manage apps list (Custom Streaming, AI Producer, not in the 26304 bundles); the Generate audio recap AugLoop submission; the Meeting Notes shared-link path live (the tenant answers 400 to the Meet now leader claim); the scheduled-meeting notes service; the notes panel's other ··· items.
+
+- 2026-11-20 round 2 (linuxlt, OST Test 2 organizer --call-notes-test --call-notes-stay, OST Test 3 joining by link with --join-notes; the join link is now logged): a scheduled meeting needs no leader claim (that's the Meet now path): the organizer's notes go through Teams' collab object service (reserve → make the Loop page in OneDrive Meetings → commit), and that works: run 1 (solo) and runs 2–3 made 'OST TEST 212 notes OST.loop', shared it and showed the page; the ··· menu listed Shared locations, Copy component, See who has access, Open in Loop, Add to Loop workspace.
+- Second person: OST Test 3 joined (runs 3 and 4) and the collab object answered them 'pending / someone else is making them' even after the organizer had committed; in run 4 the organizer itself got back the location committed in run 3's meeting (a file deleted by that run's cleanup → ODSP 404). So the collab object keys these test meetings so that one meeting's notes show up in the next, and the second person never got the committed link. Likely cause to check next: what OST sends as the meeting's keys (externalEntityKey / seriesExternalEntityKey from the event's iCalUid, threadId) for each new event, compared with Teams' reserve request on winpc.
+- Still open: the second person's view in a scheduled meeting (above), the Meet now claim 400 (unchanged; Meet now only), Highlights with a recording, a town hall's Manage apps list, the Generate audio recap submit. No tenant settings were changed. All test meetings and their notes files were deleted.
 <!-- SECTION:NOTES:END -->

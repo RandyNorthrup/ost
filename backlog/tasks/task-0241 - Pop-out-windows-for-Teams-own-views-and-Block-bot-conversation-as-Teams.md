@@ -1,10 +1,10 @@
 ---
 id: TASK-0241
 title: Pop-out windows for Teams' own views and Block bot conversation, as Teams
-status: In Progress
+status: To Do
 assignee: []
 created_date: '2026-11-21T00:13:00Z'
-updated_date: '2026-11-21T02:31:00Z'
+updated_date: '2026-11-21T02:33:00Z'
 labels:
   - desktop
   - apps
@@ -20,7 +20,7 @@ Teams' app bar menu offers Open in new window for its own views (Chat, Calendar 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 Open in new window on Teams' own app-bar views opens them in their own window as in Teams
-- [x] #2 Block bot conversation appears for bots and works as in Teams
+- [ ] #2 Block bot conversation appears for bots and works as in Teams
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -32,5 +32,5 @@ Teams' app bar menu offers Open in new window for its own views (Chat, Calendar 
 - Live (linuxlt default = ost-test1): Polly (has a chat) shows Block bot conversation, Workflows (no chat) doesn't, as Teams' rule; Block set the thread's messagingdisabled "true", then Unblock showed and set it "false" (Polly left unblocked). Open in new window on Chat, Activity and Calls opened 946 x 593 windows titled Chat / Activity / Calls; Chat showed the list and OST Test 2's chat beside it, Activity the feed, Calls its page.
 - Open: the Chat window's conversation uses the pop-out chat header (no tabs row) where Teams shows the full entity header with tabs; Events isn't pinned for ost-test1 so its window wasn't compared; the Teams (channels) window wasn't checked live.
 
-- 2026-11-20 merged as 0509286: Block bot conversation done and verified (Polly blocked and unblocked; messagingdisabled read from the thread). AC1: Chat, Activity and Calls windows open at 946x593 with Teams' content; open: the Chat window's tabs row, Events and Teams windows.
+- 2026-11-20 round 2: Chat window now keeps the chat's tabs row (Conversation windowTabs): live (spatest, --app-bar-test wshot/wtab) OST Test 2's chat in the Chat window shows Chat, Shared, Notes, Recap, Storyline beside the name, like Teams' window (Teams also shows its '+' Add a tab, which OST's pop-outs leave out). Events: Teams opens its Events window from View more apps (no pin needed; winpc measured 946 x 593, header 61 with Events / Discover / Manage, Pin app, Filters, Create event, then the Discover page); OST's Events window from the flyout shows the same header and page (its Discover was still empty when pictured, and Teams caps the page width where OST's banner runs wider). Teams window (core:teams, split view's Teams app): OST layout test's posts with Posts / Shared and Post in channel beside the list; the list showed the combined pane, fixed to Teams' teams pane (and split view's Chat window to chats only), not yet rechecked live.
 <!-- SECTION:NOTES:END -->
