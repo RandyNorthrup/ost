@@ -310,6 +310,49 @@ pub async fn media(client: &TeamsClient) -> Result<Vec<DriveItem>> {
         .collect())
 }
 
+/// The cloud file picker's Media (OneDrive Photos' AllPhotosView, as
+/// Teams' picker asks, measured 2026-11-20): your OneDrive's pictures and
+/// videos newest first by when they were taken (`{my site}/_api/v2.1/
+/// drives/me/items/root/items?$filter=photo ne null and
+/// photo/takenDateTime ge 1900-01-01…&orderby=photo/takenDateTime desc`,
+/// 100), each with its size in pixels, when it was taken and a video's
+/// length: (item, raw extras {w, h, taken, duration}).
+pub async fn photos(client: &TeamsClient) -> Result<Vec<(DriveItem, serde_json::Value)>> {
+    let drive: serde_json::Value = client.graph_get("/me/drive?$select=webUrl").await?.json().await?;
+    let web = drive["webUrl"].as_str().unwrap_or_default();
+    let site = web.rsplit_once('/').map(|(s, _)| s).unwrap_or(web).to_string();
+    let host = url::Url::parse(&site).ok().and_then(|u| u.host_str().map(str::to_string)).context("Your OneDrive")?;
+    anyhow::ensure!(host.ends_with(".sharepoint.com"), "Your OneDrive");
+    let token = crate::auth::oauth::access_token_for(&format!("https://{host}/.default")).await?;
+    let url = format!(
+        "{site}/_api/v2.1/drives/me/items/root/items?%24filter=photo+ne+null+and+photo%2FtakenDateTime+ge+1900-01-01T00%3A00%3A00.000Z&orderby=photo%2FtakenDateTime+desc&select=createdBy%2CcreatedDateTime%2CcTag%2Cdescription%2CdriveId%2Cfile%2CfileSystemInfo%2Cid%2Cimage%2ClastModifiedDateTime%2Clocation%2Cname%2CparentReference%2Cphoto%2Cshared%2CsharepointIds%2Csize%2Cvideo%2CwebUrl&top=100"
+    );
+    let v: serde_json::Value = reqwest::Client::new().get(url).bearer_auth(token).send().await?.error_for_status()?.json().await?;
+    Ok(photos_from(&v))
+}
+
+pub fn photos_from(v: &serde_json::Value) -> Vec<(DriveItem, serde_json::Value)> {
+    v.get("value")
+        .and_then(|x| x.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|raw| {
+            let mut item = parse_item(raw)?;
+            if item.drive_id.is_empty() {
+                item.drive_id = raw["driveId"].as_str().unwrap_or_default().to_string();
+            }
+            let dims = raw.get("image").or_else(|| raw.get("video")).cloned().unwrap_or_default();
+            let extras = serde_json::json!({
+                "w": dims["width"].as_f64().unwrap_or(0.0), "h": dims["height"].as_f64().unwrap_or(0.0),
+                "taken": raw["photo"]["takenDateTime"].as_str().unwrap_or_default(),
+                "duration": raw["video"]["duration"].as_f64().unwrap_or(0.0),
+                "video": raw.get("video").is_some(),
+            });
+            Some((item, extras))
+        })
+        .collect()
+}
+
 /// Files shared with you, by who shared them: [(person, files)].
 pub async fn by_people(client: &TeamsClient) -> Result<Vec<(String, Vec<DriveItem>)>> {
     let v: serde_json::Value = client

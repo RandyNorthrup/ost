@@ -1045,9 +1045,13 @@ Rectangle {
                 root.singlePointReordering && row.dragGroup ? { key: "reorder", label: qsTr("Start reordering"), icon: "arrow-sort-20", endIcon: "accessibility-20" } : null,
                 { separator: true },
                 { key: row.unread ? "read" : "unread", label: row.unread ? qsTr("Mark as read") : qsTr("Mark as unread"), icon: row.unread ? "glasses-20" : "glasses-off-20" },
+                // A group chat you're in: Teams' Manage notifications ▸
+                // (granular chat settings) in place of Mute, before Move to
+                // section (measured on winpc 2026-11-20).
+                row.groupNotify ? { key: "notify", label: qsTr("Manage notifications"), icon: "alert-20", flyout: true } : null,
                 { key: "move", label: qsTr("Move to section"), icon: "star-20", submenu: sub },
                 row.holder ? { key: "removeFrom", label: qsTr("Remove from section"), icon: "star-off-20" } : null,
-                row.chat.isSelf ? null : { key: row.chat.muted ? "unmute" : "mute", label: row.chat.muted ? qsTr("Unmute") : qsTr("Mute"), icon: row.chat.muted ? "alert-20" : "alert-off-20" },
+                row.groupNotify || row.chat.isSelf ? null : { key: row.chat.muted ? "unmute" : "mute", label: row.chat.muted ? qsTr("Unmute") : qsTr("Mute"), icon: row.chat.muted ? "alert-20" : "alert-off-20" },
                 oneOnOne ? { key: tagged ? "notifyOff" : "notifyOn", label: tagged ? qsTr("Turn off notifications") : qsTr("Notify when available"), icon: "notify-available-20" } : null,
                 row.chat.isSelf ? null : { key: "apps", label: qsTr("Manage apps"), icon: "manage-apps-20" },
                 row.chat.isSelf ? null : { key: "workflows", label: qsTr("Set workflows"), icon: "workflows-20" },
@@ -1063,9 +1067,22 @@ Rectangle {
             rowMenu.y = py
             rowMenu.open()
         }
+        // Teams shows Manage notifications for a group chat (not a meeting
+        // or one-on-one chat) when granular chat settings are on.
+        readonly property bool groupNotify: !!row.chat.isGroup && !row.chat.peerMri && !row.chat.isSelf && !root.isMeeting(row.chat)
         MenuPopup {
             id: rowMenu
             separatorHeight: 8.6
+            onFlyoutRequested: (i, r) => {
+                if (i < 0 || !r) { chatNotifyFlyout.close(); return }
+                const p = r.mapToItem(rowMenu.contentItem, 0, 0)
+                chatNotifyFlyout.parent = rowMenu.contentItem
+                chatNotifyFlyout.x = rowMenu.width - 8
+                chatNotifyFlyout.y = p.y - 4
+                chatNotifyFlyout.load()
+                chatNotifyFlyout.open()
+            }
+            onClosed: chatNotifyFlyout.close()
             onPicked: i => {
                 const k = items[i].key
                 if (k === "read" || k === "unread") backend.setChatUnread(row.chat.id, k === "unread")
@@ -1089,6 +1106,94 @@ Rectangle {
                 else if (s.to) backend.folderAction("move", JSON.stringify({ item: row.chat.id, to: s.to, from: row.holder }))
             }
         }
+        // Manage notifications ▸ (Teams' conversation notification settings
+        // popover): "Select what content notifies you", All new messages and
+        // Mute ("Customized" after the current one when you changed its
+        // parts), a line, Customize.
+        Popup {
+            id: chatNotifyFlyout
+            padding: 4
+            width: 290 + 8
+            background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
+            property var state_: null
+            function load() { state_ = null; backend.channelAction("chat-notify-load", "", row.chat.id, "") }
+            Connections {
+                target: backend
+                enabled: chatNotifyFlyout.visible
+                function onChannelActionResultChanged() {
+                    const r = JSON.parse(backend.channelActionResult || "{}")
+                    if (r.op === "chat-notify-load" && r.channel === row.chat.id && r.ok) chatNotifyFlyout.state_ = r.data
+                }
+            }
+            readonly property string current: state_ ? state_.preset : (row.chat.muted ? "mute" : "all")
+            readonly property var choices: [
+                { mode: "all", icon: "alert-on-20", label: qsTr("All new messages"), hint: qsTr("New messages, all @mentions, and replies to followed threads") },
+                { mode: "mute", icon: "alert-off-20", label: qsTr("Mute"), hint: qsTr("You'll still be notified for personal mentions and replies to followed threads") }
+            ]
+            contentItem: Column {
+                spacing: 2
+                Text {
+                    width: 290; height: 32
+                    leftPadding: 8; rightPadding: 8
+                    verticalAlignment: Text.AlignVCenter
+                    text: qsTr("Select what content notifies you")
+                    font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold
+                    color: theme.textSecondary
+                }
+                Repeater {
+                    model: chatNotifyFlyout.choices
+                    Rectangle {
+                        id: nChoice
+                        required property var modelData
+                        readonly property bool current: chatNotifyFlyout.current === modelData.mode
+                        width: 290; height: 64; radius: 4
+                        color: nHover.hovered ? theme.menuHover : "transparent"
+                        FluentIcon { visible: nChoice.current; x: 4; y: 8; size: 16; name: "checkmark-16"; color: theme.onFill(nChoice, theme.textStrong) }
+                        FluentIcon { x: 24; y: 6; size: 20; name: nChoice.modelData.icon; color: theme.onFill(nChoice, nHover.hovered ? theme.text : theme.textStrong) }
+                        Column {
+                            x: 50; y: 6; width: 232
+                            Row {
+                                spacing: 4
+                                Text { text: nChoice.modelData.label; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.onFill(nChoice, nHover.hovered ? theme.text : theme.textStrong) }
+                                // Teams' "Customized" label after the
+                                // current preset.
+                                Rectangle {
+                                    visible: nChoice.current && !!chatNotifyFlyout.state_ && chatNotifyFlyout.state_.customized
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: custText.implicitWidth + 8; height: 18; radius: 4
+                                    color: "transparent"; border.color: theme.divider; border.width: 0.67
+                                    Text { id: custText; anchors.centerIn: parent; text: qsTr("Customized"); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+                                }
+                            }
+                            Text { width: 232; wrapMode: Text.Wrap; text: nChoice.modelData.hint; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.onFill(nChoice, theme.textSecondary) }
+                        }
+                        HoverHandler { id: nHover; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: { chatNotifyFlyout.close(); rowMenu.close(); if (!nChoice.current) backend.channelAction("chat-notify", "", row.chat.id, nChoice.modelData.mode) } }
+                        Accessible.role: Accessible.RadioButton
+                        Accessible.checked: nChoice.current
+                        Accessible.name: modelData.label
+                    }
+                }
+                Item {
+                    width: 290; height: 5
+                    Rectangle { anchors.verticalCenter: parent.verticalCenter; x: -5; width: 300; height: 0.67; color: theme.divider }
+                }
+                Rectangle {
+                    id: nCustom
+                    width: 290; height: 32; radius: 4
+                    color: nCustomHover.hovered ? theme.menuHover : "transparent"
+                    FluentIcon { x: 24; anchors.verticalCenter: parent.verticalCenter; size: 20; name: "options-20"; color: theme.onFill(nCustom, nCustomHover.hovered ? theme.text : theme.textStrong) }
+                    Text { x: 48; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Customize"); font.family: theme.font; font.pixelSize: 14; color: theme.onFill(nCustom, nCustomHover.hovered ? theme.text : theme.textStrong) }
+                    HoverHandler { id: nCustomHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: { chatNotifyFlyout.close(); rowMenu.close(); chatNotifyDialog.start({ id: row.chat.id, name: row.chat.name }) } }
+                    Accessible.role: Accessible.MenuItem
+                    Accessible.name: qsTr("Customize")
+                }
+            }
+        }
+        ChannelNotifyDialog { id: chatNotifyDialog; chat: true }
+        function notifyFlyoutForTest() { rowMenu.open(); chatNotifyFlyout.parent = rowMenu.contentItem; chatNotifyFlyout.x = rowMenu.width - 8; chatNotifyFlyout.y = 60; chatNotifyFlyout.load(); chatNotifyFlyout.open() }
+        function notifyCustomizeForTest() { chatNotifyDialog.start({ id: row.chat.id, name: row.chat.name }) }
         function closeMenuForTest() { rowMenu.close() }
         function menuItemsForTest() { return rowMenu.items }
         function leaveForTest() { return leaveAsk }

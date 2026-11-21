@@ -31,7 +31,12 @@ Rectangle {
     signal settingsRequested()
     signal permissionsRequested()
     signal openLink(string url)
-    readonly property bool hasFooter: compose && !!appCard && appCard.anonymous === true
+    /// Teams' permission card (707715): Show Preview installs the app, Sign
+    /// in opens the app's sign-in window, Setup its setup page.
+    signal showPreviewRequested()
+    signal signInRequested(string url)
+    readonly property string permission: appCard && appCard.permission ? appCard.permission : ""
+    readonly property bool hasFooter: compose && !!appCard && appCard.anonymous === true && permission !== "auth" && permission !== "config"
     width: 452
     height: col.y + col.height + 16.67
     radius: 4
@@ -90,7 +95,7 @@ Rectangle {
         // 16:9 across), then the title and text.
         Column {
             id: body
-            visible: !adaptive.visible
+            visible: !adaptive.visible && !!card.appCard && !!card.appCard.content_type
             width: parent.width
             readonly property var content: card.appCard ? (card.appCard.content || ({})) : ({})
             readonly property bool thumb: !!card.appCard && card.appCard.content_type === "application/vnd.microsoft.card.thumbnail"
@@ -142,6 +147,23 @@ Rectangle {
                 lineHeight: 15; lineHeightMode: Text.FixedHeight
                 font.family: theme.font; font.pixelSize: 12; color: theme.textStrong
                 onLinkActivated: link => card.openLink(link)
+            }
+        }
+        // The permission card's link (pre-auth cards: the app's card above
+        // it, when it gave one): Install "Show Preview", Auth a 16 px icon
+        // and "Sign in to view card content", Config "Setup".
+        Row {
+            visible: card.permission !== ""
+            spacing: 4
+            FluentIcon { visible: card.permission === "auth"; anchors.verticalCenter: parent.verticalCenter; name: "person-16"; size: 16; color: theme.brandForeground1 }
+            Text {
+                text: card.permission === "install" ? qsTr("Show Preview") : card.permission === "auth" ? qsTr("Sign in to view card content") : qsTr("Setup")
+                lineHeight: 20; lineHeightMode: Text.FixedHeight
+                font.family: theme.font; font.pixelSize: 14; color: theme.brandForeground1
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: card.permission === "install" ? card.showPreviewRequested() : card.signInRequested(card.appCard.auth_url || "") }
+                Accessible.role: Accessible.Link
+                Accessible.name: text
             }
         }
         AdaptiveCard {

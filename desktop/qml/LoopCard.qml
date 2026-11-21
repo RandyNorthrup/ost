@@ -109,9 +109,10 @@ Rectangle {
             HeaderButton { visible: root.mode === "compose"; icon: "delete-20"; tip: qsTr("Discard"); onClicked: root.discardRequested() }
             HeaderButton { visible: root.mode === "message"; icon: "apps"; tip: qsTr("Shared locations"); onClicked: locations.open() }
             HeaderButton { visible: root.mode === "message"; icon: "select-object-20"; tip: qsTr("Copy component"); onClicked: { copier.text = root.componentUrl; copier.selectAll(); copier.copy() } }
-            HeaderButton { visible: root.mode === "message"; icon: "people-checkmark-20"; tip: qsTr("See who has access"); onClicked: if (root.componentUrl) Qt.openUrlExternally(root.componentUrl) }
+            HeaderButton { visible: root.mode === "message"; icon: "people-checkmark-20"; tip: qsTr("See who has access"); onClicked: if (root.componentUrl) accessPop.openFor(this, root.componentUrl) }
         }
         TextEdit { id: copier; visible: false }
+        LoopAccessPopover { id: accessPop }
         Popup {
             id: locations
             x: parent.width - width - 16; y: parent.height

@@ -162,6 +162,35 @@ pub fn launch(m: &Meeting) -> Value {
     })
 }
 
+/// Copilot in a meeting's recap (Teams 991291: the recap's Copilot button,
+/// bizChat variant from a recap card): the same app and pane with
+/// entryPoint "Recap" and the recap's CMM id (ECS Copilot.
+/// copilotEntryPointsCMMIds.meetingRecap), the meeting context's session
+/// "Recap" (a call without an iCalUid: "RecapCall") and the recording as
+/// its vroomId.
+pub fn launch_recap(m: &Meeting, vroom_id: &str, cmmid: &str) -> Value {
+    let call = m.ical_uid.is_empty();
+    let entry = if call { "RecapCall" } else { "Recap" };
+    let payload = json!({
+        "id": "", "scenario": "Default", "chatType": "", "properties": {}, "version": 1,
+        "referral": { "cmmid": cmmid },
+        "callerInfo": { "scope": "Meeting", "entryPoint": entry, "copilotReferenceId": reference_id(&m.call_id) },
+        "serverVariants": [],
+    });
+    let sub = json!({
+        "hostSettings": { "enableDeeplinks": "true", "focusOnLoad": "Compose" },
+        "launchOptionPayload": base64::engine::general_purpose::STANDARD.encode(payload.to_string()),
+    })
+    .to_string();
+    let mut v = launch(m);
+    v["context"]["subEntityId"] = Value::String(sub);
+    let mc = &mut v["contextualChat"]["contentItems"][0]["meetingContext"];
+    mc["sessionType"] = Value::String(entry.into());
+    mc["vroomId"] = Value::String(vroom_id.into());
+    v["contextualChat"]["contentItems"][0]["scenarioName"] = Value::String("TeamsMeetingRecapCopilot".into());
+    v
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

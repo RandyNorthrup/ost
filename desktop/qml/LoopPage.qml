@@ -95,7 +95,7 @@ Item {
         signal askTitle()
         function request(kind, id, json) {
             // Only what the Loop host may ask.
-            if (["token"].indexOf(kind) < 0) return
+            if (["token", "people"].indexOf(kind) < 0) return
             backend.loopHostRequest(kind, root.hostId + ":" + id, json)
         }
         function event(name, json) {

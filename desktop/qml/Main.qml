@@ -12087,6 +12087,35 @@ Window {
         }
     }
 
+    // --chat-notify-test=<group chat id> with --shots=<dir>: Teams' group
+    // chat menu (Manage notifications in place of Mute), its flyout and
+    // Customize's dialog (CHATNOTIFY lines, chat-notify-*.png); nothing is
+    // saved unless --chat-notify-set=<all|mute> picks a preset (logged
+    // after the reload), then quits.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--chat-notify-test=")) && backend.signedIn
+        interval: 2500; repeat: true
+        property int step: 0
+        onTriggered: {
+            const arg = k => (Qt.application.arguments.find(a => a.startsWith(k + "=")) || "").slice(k.length + 1)
+            const id = arg("--chat-notify-test"), set = arg("--chat-notify-set")
+            const dir = (arg("--shots") || ".") + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "chat-notify-" + n + ".png"))
+            const row = chatList.rowsForTest[id]
+            if (!row) { if (step++ > 20) Qt.quit(); return }
+            if (step === 1) { row.openMenu(row.width - 50, 30); console.warn("CHATNOTIFY menu", JSON.stringify(row.menuItemsForTest().map(i => i.label || "-"))) }
+            else if (step === 2) shot("menu")
+            else if (step === 3) { row.closeMenuForTest(); row.notifyFlyoutForTest() }
+            else if (step === 5) shot("flyout")
+            else if (step === 6) { row.closeMenuForTest(); row.notifyCustomizeForTest() }
+            else if (step === 8) shot("customize")
+            else if (step === 9 && set) backend.channelAction("chat-notify", "", id, set)
+            else if (step === 12) { backend.channelAction("chat-notify-load", "", id, "") }
+            else if (step === 13) { console.warn("CHATNOTIFY state", backend.channelActionResult); Qt.quit() }
+            step++
+        }
+    }
+
     // --task-dialog-test=<findmeetingtime|createaplanner|remindme> with
     // --open-chat=<chat id> --shots=<dir>: the workflow suggestion's
     // Workflows dialog (Teams' task module) in OST's TeamsJS host: its
@@ -13267,6 +13296,8 @@ Window {
         }
         onGroup: (oids, topic, message) => { window.composing = false; window.newGroupMessage = message; backend.createGroupChat(oids, topic, "") }
         onScheduleMeetingWith: attendees => { window.composing = false; rail.current = "calendar"; calendarView.newMeetingWith(attendees, "", "") }
+        // A chat picked from the typed suggestions: Teams opens it.
+        onOpenChat: (id, name) => { window.composing = false; backend.selectChat(id, name) }
         onCancelled: window.composing = false
     }
     /// A new group chat's first message, sent once the chat is made.

@@ -471,9 +471,84 @@ pub async fn page_name(client: &TeamsClient, component_url: &str) -> Result<Stri
     Ok(super::tab_add::resolve_page_link(client, component_url).await?.name)
 }
 
+/// "See who has access" (Loop's header PermissionsPanel with Teams'
+/// ShareService, 154570): the component's file's permissions (ODSP v2.1
+/// `drives/{d}/items/{i}/permissions`) as {personas [{name, email}] (the
+/// people with an email, once each), groups [names], scope (the widest
+/// link: anyone > anonymous > organization > users, else "")}.
+pub fn access_from(v: &Value) -> Value {
+    let mut personas: Vec<Value> = Vec::new();
+    let mut groups: Vec<String> = Vec::new();
+    let mut scopes: Vec<String> = Vec::new();
+    for p in v.get("value").and_then(Value::as_array).into_iter().flatten() {
+        let mut users: Vec<&Value> = Vec::new();
+        if let Some(u) = p.pointer("/grantedTo/user") {
+            users.push(u);
+        }
+        for g in p.get("grantedToIdentities").and_then(Value::as_array).into_iter().flatten() {
+            if let Some(u) = g.get("user") {
+                users.push(u);
+            }
+        }
+        for u in users {
+            let name = u.get("displayName").and_then(Value::as_str).unwrap_or_default();
+            match u.get("email").and_then(Value::as_str).filter(|e| !e.is_empty()) {
+                Some(email) => {
+                    if !personas.iter().any(|x| x["email"].as_str().is_some_and(|e| e.eq_ignore_ascii_case(email))) {
+                        personas.push(json!({ "name": name, "email": email }));
+                    }
+                }
+                None if !name.is_empty() && !groups.iter().any(|g| g == name) => groups.push(name.to_string()),
+                None => {}
+            }
+        }
+        if let Some(sc) = p.pointer("/link/scope").and_then(Value::as_str) {
+            scopes.push(sc.to_string());
+        }
+    }
+    let scope = ["anyone", "anonymous", "organization", "users"].iter().find(|s| scopes.iter().any(|x| x == *s)).map(|s| s.to_string()).unwrap_or_default();
+    json!({ "personas": personas, "groups": groups, "scope": scope })
+}
+
+pub async fn access(client: &TeamsClient, component_url: &str) -> Result<Value> {
+    let link = component_url.split('?').next().unwrap_or(component_url);
+    let item: Value = client
+        .graph_get(&format!("/shares/{}/driveItem?$select=id,webUrl,parentReference", super::drive::share_id(link)))
+        .await?
+        .json()
+        .await?;
+    let s = |p: &str| item.pointer(p).and_then(Value::as_str).unwrap_or_default().to_string();
+    let (drive, id, web) = (s("/parentReference/driveId"), s("/id"), s("/webUrl"));
+    let host = url::Url::parse(&web).ok().and_then(|u| u.host_str().map(str::to_string)).context("The component's site")?;
+    anyhow::ensure!(host.ends_with(".sharepoint.com") && !drive.is_empty() && !id.is_empty(), "The component's file");
+    let token = crate::auth::oauth::access_token_for(&format!("https://{host}/.default")).await?;
+    let v: Value = reqwest::Client::new()
+        .get(format!("https://{host}/_api/v2.1/drives/{drive}/items/{id}/permissions"))
+        .bearer_auth(token)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    Ok(access_from(&v))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn access_reads_permissions_as_teams() {
+        let v = access_from(&json!({"value": [
+            {"roles": ["owner"], "grantedTo": {"user": {"displayName": "OST Test 1", "email": "ost-test1@x.com"}}},
+            {"roles": ["write"], "grantedToIdentities": [{"user": {"displayName": "OST Test 2", "email": "ost-test2@x.com"}}, {"user": {"displayName": "OST Test 1", "email": "OST-TEST1@x.com"}}],
+             "link": {"scope": "users"}},
+            {"roles": ["read"], "grantedTo": {"user": {"displayName": "Everyone except external users"}}},
+            {"roles": ["write"], "link": {"scope": "organization"}}]}));
+        assert_eq!(v["personas"].as_array().unwrap().len(), 2);
+        assert_eq!(v["groups"][0], "Everyone except external users");
+        assert_eq!(v["scope"], "organization");
+    }
 
     fn s(v: &[&str]) -> Vec<String> {
         v.iter().map(|x| x.to_string()).collect()

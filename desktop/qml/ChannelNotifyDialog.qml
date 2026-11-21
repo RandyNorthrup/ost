@@ -18,8 +18,15 @@ import QtQuick.Controls.Basic
 // - Cancel and Save (96 x 31.3, 8 apart); Save once something changed.
 // Saving writes channelNotificationSettings, alerts and followAllRc as
 // Teams does.
+// With `chat` (a group chat's Manage notifications ▸ Customize, Teams'
+// granular chat settings): the chat's picture and name, two cards (All new
+// messages, with Follow all new threads and Everyone mentions under it;
+// Mute), the desktop texts for chats; Save writes the chat's
+// conversationNotificationSettings, followAllRc and alerts.
 Popup {
     id: dlg
+    property bool chat: false
+    property bool everyone: true
     property string teamId: ""
     property string teamName: ""
     property string newestPost: ""
@@ -32,13 +39,15 @@ Popup {
     property bool channelTeam: true
     property string dsk: ""
     property bool saving: false
-    readonly property bool changed: !!loaded && (mode !== loaded.mode || followAll !== loaded.follow_all
-        || tag !== loaded.tag || channelTeam !== loaded.channel_team || dsk !== (loaded.dsk || ""))
+    readonly property bool changed: !!loaded && (chat
+        ? (mode !== loaded.preset || followAll !== loaded.follow_threads || everyone !== loaded.everyone || dsk !== (loaded.dsk || ""))
+        : (mode !== loaded.mode || followAll !== loaded.follow_all
+           || tag !== loaded.tag || channelTeam !== loaded.channel_team || dsk !== (loaded.dsk || "")))
     signal openNotificationSettings()
 
     function start(c) {
         channel = c; loaded = null; saving = false
-        backend.channelAction("notify-load", teamId, c.id, "")
+        backend.channelAction(chat ? "chat-notify-load" : "notify-load", teamId, c.id, "")
         open()
     }
     Connections {
@@ -46,7 +55,14 @@ Popup {
         function onChannelActionResultChanged() {
             const r = JSON.parse(backend.channelActionResult || "{}")
             if (r.channel !== dlg.channel.id) return
-            if (r.op === "notify-load" && r.ok && r.data) {
+            if (r.op === "chat-notify-load" && dlg.chat && r.ok && r.data) {
+                dlg.loaded = r.data
+                dlg.mode = r.data.preset; dlg.followAll = r.data.follow_threads
+                dlg.everyone = r.data.everyone; dlg.dsk = r.data.dsk || ""
+            } else if (r.op === "chat-notify-customize") {
+                dlg.saving = false
+                if (r.ok) dlg.close()
+            } else if (r.op === "notify-load" && !dlg.chat && r.ok && r.data) {
                 dlg.loaded = r.data
                 dlg.mode = r.data.mode; dlg.followAll = r.data.follow_all
                 dlg.tag = r.data.tag; dlg.channelTeam = r.data.channel_team; dlg.dsk = r.data.dsk || ""
@@ -58,6 +74,11 @@ Popup {
     }
     function save() {
         saving = true
+        if (chat) {
+            backend.channelAction("chat-notify-customize", "", channel.id, JSON.stringify({
+                preset: mode, follow: followAll, everyone: everyone, dsk: dsk || null }))
+            return
+        }
         backend.channelAction("customize", teamId, channel.id, JSON.stringify({
             mode: mode, tag: tag, channel_team: channelTeam, dsk: dsk || null,
             follow_all: followAll, newest: newestPost }))
@@ -78,7 +99,7 @@ Popup {
         default property alias extra: extraCol.data
         readonly property bool chosen: dlg.mode === key
         width: parent.width
-        height: 12 + 40 + (chosen && extraCol.children.length ? extraCol.height + 8 : 0) + 9.3
+        height: 12 + 40 + (chosen && extraCol.height > 0 ? extraCol.height + 8 : 0) + 9.3
         radius: 8
         color: cardHover.hovered && !chosen ? theme.pick("#E8EBFA", "#2F2F4A", "#1AEBFF") : "transparent"
         border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF"); border.width: 0.67
@@ -148,10 +169,10 @@ Popup {
                 Item {
                     width: parent.width; height: 32 + 32
                     Avatar {
-                        x: 0.7; y: 3.7; size: 32; square: true
-                        name: dlg.teamName
-                        initialsText: dlg.teamName.split(/\s+/).filter(w => w).slice(0, 2).map(w => w[0]).join("").toUpperCase()
-                        photoId: dlg.teamId ? "team:" + dlg.teamId : ""
+                        x: 0.7; y: 3.7; size: 32; square: !dlg.chat
+                        name: dlg.chat ? (dlg.channel.name || "") : dlg.teamName
+                        initialsText: dlg.chat ? "" : dlg.teamName.split(/\s+/).filter(w => w).slice(0, 2).map(w => w[0]).join("").toUpperCase()
+                        photoId: dlg.chat ? "chat:" + (dlg.channel.id || "") : dlg.teamId ? "team:" + dlg.teamId : ""
                     }
                     Text { x: 44.7; y: 0.7; text: dlg.channel.name || ""; font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
                     Text { x: 44.7; y: 22.7; text: qsTr("Manage notifications"); font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textStrong }
@@ -165,8 +186,13 @@ Popup {
                 Item { width: 1; height: 20 }
                 Column {
                     width: parent.width; spacing: 8
-                    Card { key: "all"; icon: "alert-on-20"; label: qsTr("All new messages"); hint: qsTr("New messages, all @mentions, and replies to followed threads") }
                     Card {
+                        key: "all"; icon: "alert-on-20"; label: qsTr("All new messages"); hint: qsTr("New messages, all @mentions, and replies to followed threads")
+                        Check { visible: dlg.chat; label: qsTr("Follow all new threads"); checked: dlg.followAll; onToggled: dlg.followAll = !dlg.followAll }
+                        Check { visible: dlg.chat; label: qsTr("Everyone mentions"); checked: dlg.everyone; onToggled: dlg.everyone = !dlg.everyone }
+                    }
+                    Card {
+                        visible: !dlg.chat
                         key: "mentions"; icon: "alert-20"; label: qsTr("@mentions and replies"); hint: qsTr("All @mentions and replies to followed threads")
                         Check { label: qsTr("Follow all new threads"); checked: dlg.followAll; onToggled: dlg.followAll = !dlg.followAll }
                         Check { label: qsTr("Tag mentions"); checked: dlg.tag; onToggled: dlg.tag = !dlg.tag }
@@ -179,7 +205,9 @@ Popup {
                 Text {
                     width: parent.width; topPadding: 4; wrapMode: Text.Wrap
                     textFormat: Text.StyledText
-                    text: qsTr("Desktop notifications are on for all channels. Go to") + " <a href=\"settings\">" + qsTr("notifications settings for all channels") + "</a>"
+                    text: (dlg.chat ? ((dlg.loaded && dlg.loaded.desktop_off) ? qsTr("Desktop notifications are off for all chats. Go to") : qsTr("Desktop notifications are on for all chats. Go to"))
+                           : qsTr("Desktop notifications are on for all channels. Go to"))
+                          + " <a href=\"settings\">" + (dlg.chat ? qsTr("notifications settings for all chats") : qsTr("notifications settings for all channels")) + "</a>"
                     font.family: theme.font; font.pixelSize: 12; color: theme.textStrong
                     linkColor: theme.brandForeground1
                     onLinkActivated: { dlg.close(); dlg.openNotificationSettings() }
@@ -188,13 +216,13 @@ Popup {
                 Item { width: 1; height: 8 }
                 Item {
                     width: parent.width; height: 31.3
-                    Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Set a preference for this channel"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    Text { anchors.verticalCenter: parent.verticalCenter; text: dlg.chat ? qsTr("Set a preference for this chat") : qsTr("Set a preference for this channel"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
                     Dropdown {
                         x: parent.width - width; width: 294; height: 31.3
-                        options: [["", qsTr("Match settings used for all channels")], ["On", qsTr("Get notified for selected content")], ["Off", qsTr("Don't get desktop notifications")]]
+                        options: [["", dlg.chat ? qsTr("Match settings used for all chats") : qsTr("Match settings used for all channels")], ["On", qsTr("Get notified for selected content")], ["Off", qsTr("Don't get desktop notifications")]]
                         label: options.find(o => o[0] === dlg.dsk)[1]
                         onPicked: code => dlg.dsk = code
-                        accessibleName: qsTr("Set a preference for this channel")
+                        accessibleName: dlg.chat ? qsTr("Set a preference for this chat") : qsTr("Set a preference for this channel")
                     }
                 }
             }

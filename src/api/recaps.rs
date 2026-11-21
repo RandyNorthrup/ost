@@ -338,9 +338,270 @@ pub async fn transcript(client: &TeamsClient, drive_id: &str, item_id: &str) -> 
         .collect())
 }
 
+// ---------------------------------------------------------------------
+// The recap window's extras (Teams 26304, module 991291 and the shared
+// worker's recap resolvers).
+
+/// Teams' client type for recap links on desktop (MeetingRecap.
+/// clientTypeForRecap: "TEAMS-ELECTRON" on the desktop platforms).
+pub const CLIENT_TYPE: &str = "TEAMS-ELECTRON";
+
+/// "Open in Clipchamp" (Teams' label for "Watch in browser"): the
+/// recording's web page with `web=1` and Teams' referrer
+/// (RecapOpenInStreamButton.view), opened in the browser.
+pub fn clipchamp_url(web_url: &str) -> String {
+    let sep = if web_url.contains('?') { '&' } else { '?' };
+    format!("{web_url}{sep}web=1&referrer=Teams.{CLIENT_TYPE}&referrerScenario=RecapOpenInStreamButton.view")
+}
+
+/// The recording's file facts the window needs: its web page, its site
+/// and server-relative path (for Manage's expiration), whether you may
+/// download and edit it, and its expiration (UTC, "" when none).
+pub async fn file_info(client: &TeamsClient, drive_id: &str, item_id: &str) -> Result<Value> {
+    let ok = |s: &str| !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || "!-_".contains(c));
+    anyhow::ensure!(ok(drive_id) && ok(item_id), "Not a recording");
+    let item: Value = client
+        .graph_get(&format!("/drives/{drive_id}/items/{item_id}?$select=id,name,webUrl,parentReference,sharepointIds,file"))
+        .await?
+        .json()
+        .await?;
+    let web = item.get("webUrl").and_then(Value::as_str).unwrap_or_default().to_string();
+    let site = item.pointer("/sharepointIds/siteUrl").and_then(Value::as_str).unwrap_or_default().to_string();
+    let host = url::Url::parse(&web).ok().and_then(|u| u.host_str().map(str::to_string)).unwrap_or_default();
+    let path = url::Url::parse(&web).ok().map(|u| percent_decode(u.path())).unwrap_or_default();
+    // The file's expiration and your rights, as ODSP's v2.1 item gives them.
+    let mut expiration = String::new();
+    let mut can_edit = false;
+    if host.ends_with(".sharepoint.com") {
+        let token = crate::auth::oauth::access_token_for(&format!("https://{host}/.default")).await?;
+        let v: Value = reqwest::Client::new()
+            .get(format!("https://{host}/_api/v2.1/drives/{drive_id}/items/{item_id}?$select=id,expiration,permissions&$expand=permissions"))
+            .bearer_auth(token)
+            .send()
+            .await?
+            .json()
+            .await
+            .unwrap_or_default();
+        expiration = v.pointer("/expiration/expirationDateTime").and_then(Value::as_str).unwrap_or_default().to_string();
+        can_edit = v.get("permissions").and_then(Value::as_array).into_iter().flatten().any(|p| {
+            p.get("roles").and_then(Value::as_array).into_iter().flatten().any(|r| matches!(r.as_str(), Some("owner") | Some("write")))
+        });
+    }
+    Ok(json!({ "webUrl": web, "site": site, "path": path, "name": item.get("name").cloned().unwrap_or(Value::Null),
+               "expiration": expiration, "canEdit": can_edit }))
+}
+
+fn percent_decode(s: &str) -> String {
+    url::form_urlencoded::parse(format!("x={}", s.replace('+', "%2B")).as_bytes())
+        .next()
+        .map(|(_, v)| v.into_owned())
+        .unwrap_or_default()
+}
+
+/// Days left before the recording expires (rounded up), -1 for none.
+pub fn remaining_days(expiration: &str, now: chrono::DateTime<chrono::Utc>) -> i64 {
+    match chrono::DateTime::parse_from_rfc3339(expiration) {
+        Ok(t) => ((t.with_timezone(&chrono::Utc) - now).num_seconds() as f64 / 86_400.0).ceil().max(0.0) as i64,
+        Err(_) => -1,
+    }
+}
+
+/// Manage ▸ Expires in ▸ Extend by 60 days / Remove expiration: Teams'
+/// `POST {site}/_api/web/GetFileByServerRelativePath(DecodedUrl=@url)/
+/// SetExpirationDate?@url='{path}'` with `{"expirationDate": ISO|null}`.
+pub async fn set_expiration(site: &str, path: &str, date: Option<&str>) -> Result<()> {
+    let host = url::Url::parse(site).ok().and_then(|u| u.host_str().map(str::to_string)).context("The recording's site")?;
+    anyhow::ensure!(host.ends_with(".sharepoint.com"), "The recording's site");
+    let token = crate::auth::oauth::access_token_for(&format!("https://{host}/.default")).await?;
+    let quoted = path.replace('\'', "''");
+    let url = format!("{}/_api/web/GetFileByServerRelativePath(DecodedUrl=@url)/SetExpirationDate?@url='{}'", site.trim_end_matches('/'), enc(&quoted));
+    let r = reqwest::Client::new()
+        .post(url)
+        .bearer_auth(token)
+        .header("accept", "application/json;odata=nometadata")
+        .json(&json!({ "expirationDate": date }))
+        .send()
+        .await?;
+    let status = r.status();
+    anyhow::ensure!(status.is_success(), "SharePoint answered {status}");
+    Ok(())
+}
+
+/// The catch-up request Teams' AI notes and Mentions read (substrate
+/// recommendations, scenario MeetingCatchUp.MeetingRecap).
+pub fn catch_up_body(entity_id: &str) -> Value {
+    json!({
+        "EntityRequests": [{ "Context": { "EntityId": entity_id }, "QueryParameters": [{ "EntityType": "MeetingCatchUp" }] }],
+        "Scenario": { "Name": "MeetingCatchUp.MeetingRecap" },
+    })
+}
+
+/// A catch-up answer's Mentions: {count, items [{speaker, speakerId, text,
+/// offset (ms from the recording's start), at, nameStart, nameLength}]}.
+pub fn mentions_from(v: &Value) -> Value {
+    let src = v.pointer("/EntitySets/0/ResultSets/0/Results/0/Source").cloned().unwrap_or_default();
+    let events = src.pointer("/PointsOfInterest/MentionEvents").and_then(Value::as_array).cloned().unwrap_or_default();
+    let items: Vec<Value> = events
+        .iter()
+        .map(|e| {
+            let s = |k: &str| e.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
+            let text = if s("UtteranceFromTranscript").is_empty() { s("Snippet") } else { s("UtteranceFromTranscript") };
+            json!({
+                "speaker": s("SpeakerName"), "speakerId": s("SpeakerObjectId"), "text": text, "at": s("EventDateTime"),
+                "nameStart": e.get("MentionOffsetInUtterance").and_then(Value::as_i64).unwrap_or(-1),
+                "nameLength": e.get("NameLength").and_then(Value::as_i64).unwrap_or(0),
+            })
+        })
+        .collect();
+    let count = src.pointer("/PointsOfInterest/UserMentionCount").and_then(Value::as_i64).unwrap_or(items.len() as i64);
+    json!({ "count": count, "items": items, "found": !src.is_null() })
+}
+
+/// Mentions (Teams' recap Mentions pill): the catch-up call with your
+/// anchor mailbox; None when the service has nothing for the recording.
+pub async fn mentions(oid: &str, tid: &str, entity_id: &str) -> Result<Value> {
+    let token = crate::auth::oauth::access_token_for("https://substrate.office.com/.default").await?;
+    let r = reqwest::Client::new()
+        .post("https://substrate.office.com/search/api/v1/recommendations?&setflight=AiTasksV2,AiNotesV2,PeopleMentionsV2")
+        .bearer_auth(token)
+        .header("X-AnchorMailbox", format!("Oid:{oid}@{tid}"))
+        .header("client-request-id", uuid::Uuid::new_v4().to_string())
+        .json(&catch_up_body(entity_id))
+        .send()
+        .await?;
+    let status = r.status();
+    anyhow::ensure!(status.is_success(), "The catch-up service answered {status}");
+    Ok(mentions_from(&r.json().await.unwrap_or_default()))
+}
+
+/// Custom summary's built-in templates (Teams' 209818), in its order:
+/// (key, title, description); Project update third unless Teams hides it.
+pub const SUMMARY_TEMPLATES: [(&str, &str, &str); 3] = [
+    ("SpeakersBasedRecap", "Speaker summary", "Main points by speaker"),
+    ("ExecutiveSummary", "Executive report", "Overview and key area updates"),
+    ("ProjectSummary", "Project update", "Accomplishments, risks, and action items"),
+];
+
+/// The prompt Teams sends for a template you saved (209818's recap
+/// instructions, the template in place of {$USERINPUT$}).
+pub fn saved_template_prompt(template: &str) -> String {
+    include_str!("recap_saved_template_prompt.txt").replace("{$USERINPUT$}", template)
+}
+
+/// Custom summary's request: Copilot chat (scenario teamsmeetingrecap) with
+/// the meeting as its EnterpriseSearch constraint.
+pub fn summary_body(r: &RecapRef, entity_id: &str, message: &str, locale: &str) -> Value {
+    // Teams' getMeetingRecapGptContent body (shared worker `nbr`): a call
+    // without an iCalUid is a "RecapCall".
+    let call = r.ical_uid.is_empty();
+    let options = format!(
+        "{{\"EntityConstraints\":[{{\"@domainType\":\"Event\",\"callId\":{},\"organizerId\":{},\"threadId\":{},\"iCalUid\":{},\"sessionType\":\"{}\",\"UserQuestionId\":{},\"canvasType\":\"{}\",\"groupId\":\"\",\"channelMessageId\":\"\",\"isTemporaryStorageForMeetingTranscript\":false,\"id\":{},\"vroomId\":{},\"entityType\":1}}],\"SubstrateFlights\":[]}}",
+        Value::String(r.call_id.clone()),
+        Value::String(format!("{}@{}", r.organizer_id, r.tenant_id)),
+        Value::String(r.thread_id.clone()),
+        Value::String(r.ical_uid.clone()),
+        if call { "RecapCall" } else { "Recap" },
+        Value::String(message.to_string()),
+        if call { "RecapCall" } else { "Unknown" },
+        Value::String(r.call_id.clone()),
+        Value::String(entity_id.to_string()),
+    );
+    json!({
+        "plugins": [{ "Id": "EnterpriseSearch", "Source": "", "Version": "", "Data": { "SerializedOptions": options } }],
+        "message": { "inputMethod": "Keyboard", "text": message, "Locale": locale },
+        "source": "",
+        "ignoreCache": true,
+        "traceId": uuid::Uuid::new_v4().simple().to_string(),
+        "conversationAction": "Create",
+        "verbosity": "verbose",
+        "allowedMessageTypes": ["Chat"],
+        "scenario": "teamsmeetingrecap",
+        "optionsSets": ["enterprise_flux_gpt_meeting_content"],
+    })
+}
+
+/// The summary text from Copilot's answer: the last message's text without
+/// its `<RESPONSE>` lead or `{utt_id=…}` marks.
+pub fn summary_text(v: &Value) -> String {
+    let text = v
+        .get("messages")
+        .and_then(Value::as_array)
+        .and_then(|m| m.iter().rev().find_map(|x| x.get("text").and_then(Value::as_str)))
+        .unwrap_or_default();
+    let t = text.trim_start().strip_prefix("<RESPONSE>").unwrap_or(text);
+    let mut out = String::with_capacity(t.len());
+    let mut rest = t;
+    while let Some(i) = rest.find("{utt_id=") {
+        out.push_str(&rest[..i]);
+        rest = match rest[i..].find('}') {
+            Some(j) => &rest[i + j + 1..],
+            None => "",
+        };
+    }
+    out.push_str(rest);
+    out.trim().to_string()
+}
+
+/// Custom summary: Copilot's summary of the meeting in a template's format.
+pub async fn custom_summary(r: &RecapRef, entity_id: &str, message: &str) -> Result<String> {
+    let token = crate::auth::oauth::access_token_for("https://substrate.office.com/sydney/.default").await?;
+    let resp = reqwest::Client::new()
+        .post("https://substrate.office.com/m365Copilot/Chat?scenario=teamsmeetingrecap&variants=feature.enableMeetingRecapCustomizedNotes,feature.enableMeetingRecapCustomizedNotesinProd")
+        .bearer_auth(token)
+        .json(&summary_body(r, entity_id, message, "en-us"))
+        .send()
+        .await?;
+    let status = resp.status();
+    anyhow::ensure!(status.is_success(), "Copilot answered {status}");
+    let text = summary_text(&resp.json().await.unwrap_or_default());
+    anyhow::ensure!(!text.is_empty(), "No summary");
+    Ok(text)
+}
+
+/// Your saved Custom summary templates (OneDrive's Recordings/
+/// CustomSummaryTemplates, newest first): [{id, name, template}].
+pub async fn summary_templates(client: &TeamsClient) -> Result<Vec<Value>> {
+    let v: Value = match client
+        .graph_get("/me/drive/root:/Recordings/CustomSummaryTemplates:/children?$orderby=lastModifiedDateTime%20desc")
+        .await
+    {
+        Ok(r) => r.json().await.unwrap_or_default(),
+        Err(_) => return Ok(Vec::new()),
+    };
+    let mut out = Vec::new();
+    for f in v.get("value").and_then(Value::as_array).into_iter().flatten() {
+        let id = f.get("id").and_then(Value::as_str).unwrap_or_default();
+        let name = f.get("name").and_then(Value::as_str).unwrap_or_default();
+        let body: Value = match client.graph_get(&format!("/me/drive/items/{id}/content")).await {
+            Ok(r) => r.json().await.unwrap_or_default(),
+            Err(_) => Value::Null,
+        };
+        out.push(json!({ "id": id, "name": name, "template": body.get("template").cloned().unwrap_or(Value::Null) }));
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recap_extras_as_teams() {
+        assert_eq!(
+            clipchamp_url("https://x-my.sharepoint.com/personal/o/Documents/Recordings/a.mp4"),
+            "https://x-my.sharepoint.com/personal/o/Documents/Recordings/a.mp4?web=1&referrer=Teams.TEAMS-ELECTRON&referrerScenario=RecapOpenInStreamButton.view"
+        );
+        let now = chrono::DateTime::parse_from_rfc3339("2026-11-20T00:00:00Z").unwrap().with_timezone(&chrono::Utc);
+        assert_eq!(remaining_days("2027-03-19T12:00:00Z", now), 120);
+        assert_eq!(remaining_days("", now), -1);
+        let m = mentions_from(&json!({"EntitySets": [{"ResultSets": [{"Results": [{"Source": {"PointsOfInterest": {"UserMentionCount": 1,
+            "MentionEvents": [{"SpeakerName": "OST Test 2", "UtteranceFromTranscript": "Thanks OST Test 1", "MentionOffsetInUtterance": 7, "NameLength": 10}]}}}]}]}]}));
+        assert_eq!((m["count"].as_i64(), m["items"][0]["speaker"].as_str(), m["items"][0]["nameStart"].as_i64()), (Some(1), Some("OST Test 2"), Some(7)));
+        assert_eq!(summary_text(&json!({"messages": [{"text": "q"}, {"text": "<RESPONSE>## A{utt_id=3} b"}]})), "## A b");
+        let b = summary_body(&RecapRef { call_id: "c".into(), organizer_id: "o".into(), tenant_id: "t".into(), ..Default::default() }, "v", "SpeakersBasedRecap", "en-us");
+        assert_eq!(b["scenario"], "teamsmeetingrecap");
+        assert!(b["plugins"][0]["Data"]["SerializedOptions"].as_str().unwrap().contains("\"organizerId\":\"o@t\""));
+    }
 
     #[test]
     fn asks_and_reads_as_teams() {

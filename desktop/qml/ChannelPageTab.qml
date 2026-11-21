@@ -81,10 +81,11 @@ Rectangle {
             y: 8
             PageButton { icon: "apps"; tip: qsTr("Shared locations"); onClicked: locations.open() }
             PageButton { icon: "select-object-20"; tip: qsTr("Copy component"); onClicked: { copier.text = root.link; copier.selectAll(); copier.copy() } }
-            PageButton { icon: "people-checkmark-20"; tip: qsTr("See who has access"); onClicked: if (root.link) Qt.openUrlExternally(root.link) }
+            PageButton { icon: "people-checkmark-20"; tip: qsTr("See who has access"); onClicked: if (root.link) accessPop.openFor(this, root.link) }
         }
         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: theme.divider }
         TextEdit { id: copier; visible: false }
+        LoopAccessPopover { id: accessPop }
         Popup {
             id: locations
             x: parent.width - width - 16; y: parent.height

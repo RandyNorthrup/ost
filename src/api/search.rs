@@ -600,11 +600,27 @@ pub fn parse_recipients(reply: &serde_json::Value, my_oid: &str) -> Vec<serde_js
     let mut out = Vec::new();
     for hint in reply["LayoutHints"]["BestMatchSuggestions"].as_array().into_iter().flatten() {
         if let Some(i) = by_ref.iter().position(|(r, _)| r == hint["ReferenceId"].as_str().unwrap_or_default()) {
-            out.push(by_ref.remove(i).1);
+            let mut v = by_ref.remove(i).1;
+            v["best"] = serde_json::Value::Bool(true);
+            out.push(v);
         }
     }
     out.extend(by_ref.into_iter().map(|(_, v)| v));
     out
+}
+
+/// The new chat form's typed suggestions (Teams' peoplepicker.newChat, as
+/// it lists them, measured on winpc 2026-11-20): people and chats in
+/// Substrate's best-match order ("OST" lists only its people; "OST group"
+/// the two group chats), not channels or teams; the rest only when there
+/// is no best match.
+pub fn new_chat_typed(items: Vec<serde_json::Value>, max: usize) -> Vec<serde_json::Value> {
+    let usable = |v: &serde_json::Value| {
+        (v["kind"] == "person" && !v["oid"].as_str().unwrap_or_default().is_empty())
+            || (v["kind"] == "chat" && !matches!(v["thread_type"].as_str(), Some("channel") | Some("team")))
+    };
+    let any_best = items.iter().any(|v| v["best"] == true);
+    items.into_iter().filter(|v| usable(v) && (!any_best || v["best"] == true)).take(max).collect()
 }
 
 /// The new chat form's suggestions before anything is typed: Teams' top-N

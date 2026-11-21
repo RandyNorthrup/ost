@@ -52,6 +52,9 @@ Rectangle {
     /// "+" ▸ Schedule meeting: a meeting with the people picked (emails).
     signal scheduleMeetingWith(string attendees)
     signal cancelled()
+    /// A chat from the typed suggestions (Teams lists group chats too):
+    /// open it.
+    signal openChat(string chatId, string name)
     /// Show this chat behind the form ("" when the form shows its own note).
     signal previewChat(string chatId, string name)
     signal emojiRequested(Item box)
@@ -75,6 +78,7 @@ Rectangle {
     }
 
     function pick(p) {
+        if (p.chat) { root.openChat(p.id, p.name); return }
         if (!picked.some(x => x.id === p.id)) picked = picked.concat([{ id: p.id, name: (p.plain_name || p.name), mail: p.guest ? (p.sub || "") : (p.upn || p.mail || "") }])
         field.text = ""
         root.search("")
@@ -421,10 +425,10 @@ Rectangle {
                     readonly property string second: person.modelData.sub || ""
                     width: suggestCol.width; height: guest ? 52 : 50; radius: 4
                     color: hover.hovered || root.highlight === index ? theme.hc(theme.menuHover, theme.hcHighlight) : "transparent"
-                    Avatar { x: 12; anchors.verticalCenter: parent.verticalCenter; size: 32; name: (person.modelData.plain_name || person.modelData.name); photoId: person.modelData.id || "" }
+                    Avatar { x: 12; anchors.verticalCenter: parent.verticalCenter; size: 32; name: (person.modelData.plain_name || person.modelData.name); group: !!person.modelData.chat; photoId: person.modelData.chat ? "chat:" + person.modelData.id : (person.modelData.id || "") }
                     Text {
                         id: personName
-                        x: 60; y: person.guest ? 8 : 6.5
+                        x: 60; y: person.modelData.chat ? 15 : person.guest ? 8 : 6.5
                         text: person.modelData.name
                         font.family: theme.font; font.pixelSize: theme.base; lineHeight: 20; lineHeightMode: Text.FixedHeight
                         color: theme.onFill(person, theme.textStrong)

@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-16T11:48:00Z'
-updated_date: '2026-11-20T23:13:00Z'
+updated_date: '2026-11-21T01:00:00Z'
 labels:
   - desktop
 dependencies:
@@ -39,4 +39,16 @@ Left: the suggestion's page stays blank ("Initial app state does not contain val
 - 2026-11-20 (chatB): checked live on linuxlt (ost-test1, `--task-dialog-test=findmeetingtime --open-chat=<OST group test>`): the Workflows dialog opens (800 x 600, Teams' header, framed, initialize, appLoaded, success) but the form doesn't draw: the Workflows page now throws its own React error "useAutomationConnections must be used within AutomationConnectionsProvider" (after the NAA token path; the earlier blank-on-token cause is gone). Teams' own result can't be seen: workflow suggestions aren't offered in this tenant and there is no tenant setting that turns them on (Teams gates them in ECS); a task-module deep link posted as plain text to ost-test1's notes (OST TEST 202, deleted) isn't linkified, so it couldn't be opened inside Teams either. Open: find what Teams' host provides that this page's AutomationConnectionsProvider needs (likely a host capability or getContext field the page checks before mounting the provider).
 
 - 2026-11-20 merged: the dialog opens with Teams' size and header; the Workflows page now throws 'useAutomationConnections must be used within AutomationConnectionsProvider'. Open: what Teams' host gives that page.
+
+- 2026-11-20 (chatC): found the cause of "useAutomationConnections must be used within AutomationConnectionsProvider". It is the Workflows page's own bug, so it happens in any host, Teams included. Nothing in Teams' host affects it.
+  - The page is build 2026102302, the build live at automations.teams.cloud.microsoft today. Its router mounts `/suggestedAction/:suggestedActionId` as `<StrictMode><SuggestedActionWorkflow/></StrictMode>`, with no AutomationConnectionsProvider.
+  - The provider (AutomationConnectionsContextProvider-BKI2RLoN.js) is only rendered by the simple editor, settings and agent-operation pages.
+  - The Find meeting time and Remind me containers (suggested-action-wrapper-BeVD_89v.js `ye`/`Ce`) call useSaveCopilotActionFromTemplateByMutation (`Er`). `Er` calls useAutomationConnections (`Ht`), which throws when there is no provider.
+  - The Create a Planner task container (`Fe`) doesn't call it.
+  - Scratch copies of the bundles: chatC/wf/ (index, sa.js, a/*).
+- Checked live on linuxlt as ost-test1 with the current build: `--task-dialog-test=createaplanner --open-chat=<OST group test>`.
+  - The Workflows dialog draws Teams' form: "New workflow", "Create a Planner task", Action details, Title prefilled "OST test" from the launch's subEntityId, Due date, Back and Create (disabled until a date is set).
+  - Host events: framed, initialize, appLoaded, success. Nothing was submitted.
+  - So OST's host gives the page what it needs: context, subPageId, the apihub token over NAA, and chat.id. findmeetingtime and remindme stop on the page's own error, as they would inside Teams.
+- AC1 met as far as Teams itself can go. If Microsoft fixes the route, the other two forms will draw with no OST change.
 <!-- SECTION:NOTES:END -->

@@ -44,6 +44,10 @@ pub struct LinkApp {
     pub installed: bool,
     pub privacy_url: String,
     pub terms_url: String,
+    /// A match you haven't installed that can't unfurl anonymously
+    /// (Teams' MatchButNotInstalled: the Install permission card).
+    #[serde(default)]
+    pub needs_install: bool,
 }
 
 /// An app's card for a link.
@@ -68,6 +72,16 @@ pub struct AppCard {
     /// Sent collapsed: the plain preview instead of the card.
     #[serde(default)]
     pub collapsed: bool,
+    /// Teams' permission card instead of the app's card (707715,
+    /// app-based-link-preview-permission): "install" (Show Preview),
+    /// "auth" (Sign in) or "config" (Setup); empty for a card.
+    #[serde(default)]
+    pub permission: String,
+    /// The sign-in / setup address the app gave (auth, config).
+    #[serde(default)]
+    pub auth_url: String,
+    #[serde(default)]
+    pub bot_id: String,
 }
 
 /// Teams' `F`: a domain it can use (at least two labels, no `*` in the
@@ -164,6 +178,7 @@ pub fn find_app(
                 installed,
                 privacy_url: str_at(def, "privacyUrl").to_string(),
                 terms_url: str_at(def, "termsOfUseUrl").to_string(),
+                needs_install: false,
             },
             anonymous,
         ))
@@ -172,8 +187,12 @@ pub fn find_app(
     if let Some((a, _)) = all.iter().find(|(a, _)| a.installed) {
         return Some(a.clone());
     }
-    // Teams' uninstalled match is the first; it unfurls only when anonymous.
-    all.into_iter().next().filter(|(_, anon)| *anon).map(|(a, _)| a)
+    // Teams' uninstalled match is the first: anonymous ones unfurl, the
+    // others are MatchButNotInstalled (the Install permission card).
+    all.into_iter().next().map(|(mut a, anon)| {
+        a.needs_install = !anon;
+        a
+    })
 }
 
 /// The invoke's name: installed apps get `queryLink`, others the anonymous
@@ -214,6 +233,9 @@ fn strip_tags(s: &str) -> String {
 pub fn card_from_reply(reply: &Value, app: &LinkApp, url: &str) -> Option<AppCard> {
     let ce = reply.get("composeExtension").unwrap_or(reply);
     let kind = ce.get("type").and_then(|t| t.as_str()).unwrap_or("result");
+    if kind == "auth" || kind == "config" {
+        return permission_from_reply(ce, kind, app, url);
+    }
     if kind != "result" {
         return None;
     }
@@ -257,7 +279,64 @@ pub fn card_from_reply(reply: &Value, app: &LinkApp, url: &str) -> Option<AppCar
         terms_url: app.terms_url.clone(),
         preview: Some(preview),
         collapsed: false,
+        permission: String::new(),
+        auth_url: String::new(),
+        bot_id: app.bot_id.clone(),
     })
+}
+
+/// An auth / config reply as Teams' permission card: the sign-in or setup
+/// address (`suggestedActions.actions[0].value`, kept only within the
+/// app's valid domains when Teams knows them) and the pre-auth card
+/// (`items[0].card` / the first attachment) shown above the link.
+pub fn permission_from_reply(ce: &Value, kind: &str, app: &LinkApp, url: &str) -> Option<AppCard> {
+    let auth_url = ce.pointer("/suggestedActions/actions/0/value").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+    if !auth_url.starts_with("https://") && !app.installed {
+        // An anonymous app's sign-in has no address (Teams installs first).
+    } else if !auth_url.starts_with("https://") {
+        return None;
+    }
+    let pre = ce
+        .pointer("/items/0/card")
+        .or_else(|| ce.pointer("/attachments/0"))
+        .cloned()
+        .unwrap_or(Value::Null);
+    let (content_type, content) = match (pre.get("contentType").and_then(|c| c.as_str()), pre.get("content")) {
+        (Some(t), Some(c)) => (t.to_string(), match c { Value::String(s) => serde_json::from_str(s).unwrap_or_default(), v => v.clone() }),
+        _ => (String::new(), Value::Null),
+    };
+    Some(AppCard {
+        url: url.to_string(),
+        app_id: app.app_id.clone(),
+        app_name: app.name.clone(),
+        app_icon: app.icon.clone(),
+        content_type,
+        content,
+        anonymous: !app.installed,
+        privacy_url: app.privacy_url.clone(),
+        terms_url: app.terms_url.clone(),
+        preview: None,
+        collapsed: false,
+        permission: kind.to_string(),
+        auth_url,
+        bot_id: app.bot_id.clone(),
+    })
+}
+
+/// Teams' Install permission card for an app you haven't installed.
+pub fn install_card(app: &LinkApp, url: &str) -> AppCard {
+    AppCard {
+        url: url.to_string(),
+        app_id: app.app_id.clone(),
+        app_name: app.name.clone(),
+        app_icon: app.icon.clone(),
+        anonymous: true,
+        privacy_url: app.privacy_url.clone(),
+        terms_url: app.terms_url.clone(),
+        permission: "install".into(),
+        bot_id: app.bot_id.clone(),
+        ..Default::default()
+    }
 }
 
 /// A new card id as Teams sends it.
@@ -324,7 +403,13 @@ pub async fn app_for(client: &TeamsClient, url: &str) -> Result<Option<LinkApp>>
     let ents = entitlements(client).await;
     let anon = anonymous_ids();
     let app = find_app(url, &apps, &ents, &anon);
-    Ok(app.filter(|a| a.installed || anonymous_allowed()))
+    Ok(app.filter(|a| a.installed || a.needs_install || anonymous_allowed()))
+}
+
+/// Forget your apps so the next link asks again (after Show Preview
+/// installs one).
+pub fn forget_entitlements() {
+    *ENTITLEMENTS.lock().unwrap_or_else(|e| e.into_inner()) = None;
 }
 
 /// The catalog's apps that unfurl links, trimmed to what matching needs
@@ -404,11 +489,24 @@ pub async fn load_index(client: &TeamsClient, cache_dir: &std::path::Path) -> Re
 /// Ask the link's app for its card (None when there is no app or it gave
 /// no card).
 pub async fn unfurl(client: &TeamsClient, url: &str, thread: &str) -> Result<Option<AppCard>> {
+    unfurl_with(client, url, thread, None).await
+}
+
+/// Ask again after signing in: `state` is the sign-in window's result
+/// (Teams sends a JsonAuthResult parsed, a StringAuthResult as its text).
+pub async fn unfurl_with(client: &TeamsClient, url: &str, thread: &str, state: Option<&str>) -> Result<Option<AppCard>> {
     let Some(app) = app_for(client, url).await? else { return Ok(None) };
+    if app.needs_install {
+        tracing::info!("app link {}: not installed (Show Preview)", app.name);
+        return Ok(Some(install_card(&app, url)));
+    }
     let token = crate::auth::oauth::access_token_for("https://api.spaces.skype.com/.default").await.unwrap_or_default();
     let display = client.display_name().unwrap_or_default();
     let endpoint = format!("{}/v1/agents/28:{}/invoke", client.chat_service_url(), app.bot_id);
-    let body = query_body(&app, url, thread, &display, &token);
+    let mut body = query_body(&app, url, thread, &display, &token);
+    if let Some(st) = state.filter(|s| !s.is_empty()) {
+        body["value"]["state"] = serde_json::from_str::<Value>(st).ok().filter(|v| v.is_object()).unwrap_or_else(|| Value::String(st.to_string()));
+    }
     let resp = client
         .chat_request_with(reqwest::Method::POST, &endpoint, &body, &[("content-type", "application/json")])
         .await
@@ -468,12 +566,12 @@ mod tests {
         let a = find_app("https://en.wikipedia.org/wiki/Ferris_wheel", &cat, &none, &[]).unwrap();
         assert_eq!((a.name.as_str(), a.installed), ("Wikipedia Search", false));
         assert_eq!(invoke_name(&a), "composeExtension/anonymousQueryLink");
-        // Not anonymous and not installed: no card.
+        // Not anonymous and not installed: Teams' Install permission card.
         let mut closed = wiki();
         closed["messageExtensions"][0]["messageHandlers"][0]["value"]["supportsAnonymousAccess"] = false.into();
-        assert!(find_app("https://en.wikipedia.org/wiki/x", &[closed.clone()], &none, &[]).is_none());
+        assert!(find_app("https://en.wikipedia.org/wiki/x", &[closed.clone()], &none, &[]).unwrap().needs_install);
         // ...unless ECS lists it, or it is installed.
-        assert!(find_app("https://en.wikipedia.org/wiki/x", &[closed.clone()], &none, &["25492237-70EF-4c56-a36e-dd3405edd40e".into()]).is_some());
+        assert!(!find_app("https://en.wikipedia.org/wiki/x", &[closed.clone()], &none, &["25492237-70EF-4c56-a36e-dd3405edd40e".into()]).unwrap().needs_install);
         let ents = std::collections::HashMap::from([("25492237-70ef-4c56-a36e-dd3405edd40e".to_string(), "Installed".to_string())]);
         let i = find_app("https://en.wikipedia.org/wiki/x", &[closed], &ents, &[]).unwrap();
         assert_eq!(invoke_name(&i), "composeExtension/queryLink");

@@ -584,10 +584,11 @@ Item {
             PageButton { icon: "apps"; tip: qsTr("Shared locations"); onClicked: locations.open() }
             PageButton { icon: "select-object-20"; tip: qsTr("Copy component"); onClicked: { copier.text = root.home; copier.selectAll(); copier.copy() } }
             PageButton { icon: "people-checkmark-20"; tip: qsTr("See who has access")
-                onClicked: web.runJavaScript("[...document.querySelectorAll('button')].find(b => b.getAttribute('aria-label') === 'Share' || b.textContent.trim() === 'Share')?.click()") }
+                onClicked: accessPop.openFor(this, root.home) }
         }
         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: theme.dividerSoft }
         TextEdit { id: copier; visible: false }
+        LoopAccessPopover { id: accessPop }
         Popup {
             id: locations
             x: parent.width - width - 16; y: parent.height

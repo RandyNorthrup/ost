@@ -150,6 +150,145 @@ pub async fn set_follow_all(client: &TeamsClient, channel: &str, newest_post: Op
     set_property(client, channel, "followAllRc", newest_post.unwrap_or("")).await
 }
 
+/// A group chat's notifications as Teams' Manage notifications reads them
+/// (granular chat settings, shared-worker resolver): the preset (Mute when
+/// `alerts` is "false", else All new messages), Follow all new threads (the
+/// newest `followAllRc` entry is still open), Everyone mentions (the chat's
+/// `conversationNotificationSettings.everyone`, else your global setting)
+/// and the desktop preference (`dskNotif` "On" / "Off", else match all
+/// chats). "Customized" marks a non-Mute preset that follows threads or
+/// differs from the global Everyone setting.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ChatNotify {
+    /// "all" or "mute".
+    pub preset: String,
+    pub follow_threads: bool,
+    pub everyone: bool,
+    pub global_everyone: bool,
+    /// "On", "Off" or None (match settings used for all chats).
+    pub dsk: Option<String>,
+    pub customized: bool,
+    /// Desktop notifications are off for all chats (Mute all notifications).
+    pub desktop_off: bool,
+}
+
+fn follow_open(follow_all_rc: &str) -> bool {
+    !follow_all_rc.is_empty() && follow_all_rc.rsplit(';').next().map(|l| !l.contains(':')).unwrap_or(false)
+}
+
+pub fn chat_notify_from(props: &serde_json::Value, global_everyone: bool, desktop_off: bool) -> ChatNotify {
+    let s = |k: &str| props.get(k).and_then(|v| v.as_str()).unwrap_or_default();
+    let v: serde_json::Value = serde_json::from_str(s("conversationNotificationSettings")).unwrap_or_default();
+    let preset = if s("alerts") == "false" { "mute" } else { "all" };
+    let follow_threads = follow_open(s("followAllRc"));
+    let everyone = match v["everyone"].as_str() {
+        Some("On") => true,
+        Some("Off") => false,
+        _ => global_everyone,
+    };
+    let dsk = v["dskNotif"].as_str().filter(|d| *d == "On" || *d == "Off").map(str::to_string);
+    ChatNotify {
+        preset: preset.into(),
+        follow_threads,
+        everyone,
+        global_everyone,
+        dsk,
+        customized: preset != "mute" && (follow_threads || everyone != global_everyone),
+        desktop_off,
+    }
+}
+
+/// What Teams writes for a chat's notification choice: the
+/// `conversationNotificationSettings` JSON (the old keys kept, then
+/// everyone, dskNotif and allNewPosts) and `alerts`. `everyone` None keeps
+/// the chat's; `dsk` Some(None) is "match all chats", None keeps it.
+pub fn chat_notify_write(existing: &str, preset: &str, everyone: Option<bool>, dsk: Option<Option<&str>>) -> (String, bool) {
+    let mut o = match serde_json::from_str::<serde_json::Value>(existing) {
+        Ok(serde_json::Value::Object(m)) => m,
+        _ => serde_json::Map::new(),
+    };
+    let on_off = |b: bool| serde_json::Value::String(if b { "On" } else { "Off" }.into());
+    let old_everyone = o.get("everyone").cloned().unwrap_or(serde_json::Value::Null);
+    let old_dsk = o.get("dskNotif").cloned().unwrap_or(serde_json::Value::Null);
+    o.insert("everyone".into(), everyone.map(on_off).unwrap_or(old_everyone));
+    o.insert(
+        "dskNotif".into(),
+        match dsk {
+            Some(Some(d)) => serde_json::Value::String(d.into()),
+            Some(None) => serde_json::Value::Null,
+            None => old_dsk,
+        },
+    );
+    let alerts = preset != "mute";
+    if alerts {
+        o.insert("allNewPosts".into(), on_off(true));
+    } else {
+        o.insert("allNewPosts".into(), on_off(false));
+        o.insert("everyone".into(), on_off(false));
+    }
+    (serde_json::Value::Object(o).to_string(), alerts)
+}
+
+/// Teams' `followAllRc` change for Follow all new threads: following adds
+/// the chat's newest message time (or its creation) and keeps the last 15;
+/// stopping closes the newest entry as "start:now". None when there is
+/// nothing to change.
+pub fn follow_all_rc_change(existing: &str, now_mark: &str, follow: bool) -> Option<String> {
+    if existing.is_empty() {
+        if !follow {
+            return None;
+        }
+    } else if follow_open(existing) == follow {
+        return None;
+    }
+    let mut r: Vec<String> = if existing.is_empty() { Vec::new() } else { existing.split(';').map(str::to_string).collect() };
+    if follow {
+        r.push(now_mark.to_string());
+        if r.len() > 15 {
+            r.remove(0);
+        }
+    } else if let Some(o) = r.pop() {
+        if o != now_mark {
+            r.push(format!("{o}:{now_mark}"));
+        }
+    }
+    Some(r.join(";"))
+}
+
+/// A chat's conversation (your properties, its newest message and thread
+/// properties) as Manage notifications needs it.
+pub async fn chat_conversation(client: &TeamsClient, chat: &str) -> Result<serde_json::Value> {
+    let url = format!("{}?view=msnp24Equivalent", conversation_url(client, chat));
+    client.chat_get(&url).await?.json().await.context("Chat")
+}
+
+/// The mark Teams stores in followAllRc: the newest message's time (its id),
+/// else the chat's creation time.
+pub fn follow_mark(conv: &serde_json::Value) -> String {
+    let last = conv["lastMessage"]["id"].as_str().unwrap_or_default();
+    if last.parse::<u64>().map(|n| n > 0).unwrap_or(false) {
+        return last.to_string();
+    }
+    conv["threadProperties"]["createdat"].as_str().unwrap_or_default().to_string()
+}
+
+/// Save a chat's notification choice as Teams does: with alerts on, alerts
+/// first, then the settings and followAllRc; otherwise the other way round.
+pub async fn set_chat_notify(client: &TeamsClient, chat: &str, settings: &str, alerts: bool, follow_all_rc: Option<&str>) -> Result<()> {
+    let alerts_v = if alerts { "true" } else { "false" };
+    if alerts {
+        set_property(client, chat, "alerts", alerts_v).await?;
+    }
+    set_property(client, chat, "conversationNotificationSettings", settings).await?;
+    if let Some(f) = follow_all_rc {
+        set_property(client, chat, "followAllRc", f).await?;
+    }
+    if !alerts {
+        set_property(client, chat, "alerts", alerts_v).await?;
+    }
+    Ok(())
+}
+
 /// Hide a channel from your list, or show it again (Teams' Hide / Show).
 pub async fn set_hidden(client: &TeamsClient, channel: &str, general: bool, hidden: bool) -> Result<()> {
     let me = client
@@ -2077,6 +2216,32 @@ pub async fn invitations(client: &TeamsClient) -> Result<Vec<ChannelInvitation>>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn chat_notifications_read_and_write_as_teams() {
+        // Nothing set: All new messages, global Everyone, not customized.
+        let n = chat_notify_from(&serde_json::json!({}), true, false);
+        assert_eq!((n.preset.as_str(), n.follow_threads, n.everyone, n.customized, n.dsk.clone()), ("all", false, true, false, None));
+        // Muted chat with an open follow entry: Mute, never customized.
+        let n = chat_notify_from(&serde_json::json!({"alerts": "false", "followAllRc": "1:2;3"}), true, false);
+        assert_eq!((n.preset.as_str(), n.follow_threads, n.customized), ("mute", true, false));
+        // Everyone off against an on global: customized.
+        let n = chat_notify_from(&serde_json::json!({"alerts": "true", "conversationNotificationSettings": "{\"everyone\":\"Off\",\"dskNotif\":\"On\"}"}), true, false);
+        assert_eq!((n.everyone, n.customized, n.dsk.as_deref()), (false, true, Some("On")));
+        // Mute writes allNewPosts and everyone Off, alerts false; All keeps everyone.
+        let (s, a) = chat_notify_write("{\"x\":1}", "mute", Some(true), None);
+        let v: serde_json::Value = serde_json::from_str(&s).unwrap();
+        assert_eq!((v["x"].as_i64(), v["allNewPosts"].as_str(), v["everyone"].as_str(), a), (Some(1), Some("Off"), Some("Off"), false));
+        let (s, a) = chat_notify_write("", "all", Some(false), Some(None));
+        let v: serde_json::Value = serde_json::from_str(&s).unwrap();
+        assert_eq!((v["allNewPosts"].as_str(), v["everyone"].as_str(), v["dskNotif"].is_null(), a), (Some("On"), Some("Off"), true, true));
+        // followAllRc: follow appends, stop closes the newest entry.
+        assert_eq!(follow_all_rc_change("", "5", true).as_deref(), Some("5"));
+        assert_eq!(follow_all_rc_change("", "5", false), None);
+        assert_eq!(follow_all_rc_change("1:2;3", "5", false).as_deref(), Some("1:2;3:5"));
+        assert_eq!(follow_all_rc_change("1:2", "5", true).as_deref(), Some("1:2;5"));
+        assert_eq!(follow_all_rc_change("1:2;3", "5", true), None);
+    }
 
     #[test]
     fn notification_settings_are_teams() {

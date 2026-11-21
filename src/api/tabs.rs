@@ -83,6 +83,10 @@ pub struct Tab {
     /// Its app's configuration page (galleryTabs[0].configurationUrl,
     /// placeholders kept), when the tab offers Settings.
     pub config_url: String,
+    /// A Page tab's maker (settings.creatorUserMri) until its page exists:
+    /// Teams hides someone else's link-less Page tab and makes the page in
+    /// yours.
+    pub creator: String,
 }
 
 /// What a tab's URLs may be told about where they are, as Teams fills
@@ -736,6 +740,7 @@ fn tabs_from(
         conversation: String::new(),
         icon: String::new(),
         config_url: String::new(),
+            creator: String::new(),
     }];
     for t in pinned {
         let id = str_at(t, "/id");
@@ -767,6 +772,7 @@ fn tabs_from(
                 .unwrap_or_default(),
             icon: String::new(),
             config_url: String::new(),
+            creator: ["/settings/creatorUserMri", "/configuration/creatorUserMri"].iter().map(|k| str_at(t, k)).find(|c| !c.is_empty()).unwrap_or_default(),
             id,
             app_id,
             kind,
@@ -1231,6 +1237,7 @@ mod tests {
             conversation: String::new(),
             icon: String::new(),
             config_url: String::new(),
+            creator: String::new(),
         };
         let v = conversation_post("19:a@thread.tacv2", &tab, "8:orgid:me", "OST Test 1", "123", "2026-11-09T17:31:58.118Z");
         assert_eq!(v["content"], "Added a new tab at the top of this channel. Here's a link.");
@@ -1285,6 +1292,7 @@ mod tests {
             conversation: String::new(),
             icon: String::new(),
             config_url: String::new(),
+            creator: String::new(),
         };
         let (link, html) = copy_link(&tab, "19:ab@thread.tacv2", "g-1", "t-1");
         assert_eq!(

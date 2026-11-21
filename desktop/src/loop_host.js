@@ -123,9 +123,11 @@
     // tokens go (Teams' own colours for those themes weren't measured) and
     // the theme's name tells Loop which palette to use.
     const teamsTheme = window.__ostLoopTeamsTheme || { themeProperties: [], textStyles: [] };
-    const themeFor = t => new Map(teamsTheme.themeProperties
-        .filter(([k]) => t === "default" || !/color|shadow/i.test(k))
-        .concat([["--ms-themeColorThemeName", t]]));
+    // Teams' dark and high-contrast properties (loop_theme_dark.json,
+    // loop_theme_contrast.json, dumped from Teams' Loop frames 2026-11-20).
+    const teamsThemes = window.__ostLoopTeamsThemes || {};
+    const themeFor = t => new Map(((teamsThemes[t] || {}).themeProperties || teamsTheme.themeProperties)
+        .concat([["--ms-themeColorThemeName", t === "contrast" ? "high-contrast" : t]]));
     const listeners = new Map();
     const styling = {
         get StylingProvider() { return this },
@@ -137,7 +139,9 @@
         on(ev, f) { (listeners.get(ev) || listeners.set(ev, new Set()).get(ev)).add(f); return this },
         off(ev, f) { listeners.get(ev)?.delete(f); return this },
         removeListener(ev, f) { return this.off(ev, f) },
+        currentThemeName: "default",
         setTheme(t) {
+            this.currentThemeName = t;
             this.appThemeProperties = themeFor(t);
             for (const f of listeners.get("themePropertiesChanged") || []) { try { f(this.themeProperties) } catch (e) {} }
             for (const f of listeners.get("themeNameChanged") || []) { try { f(t) } catch (e) {} }
@@ -185,6 +189,9 @@
             hostAppPlatform: cfg.hostAppPlatform
         });
         fetchEcs();
+        // The theme OST is in when the page starts (later changes come as
+        // theme messages).
+        if (cfg.theme && cfg.theme !== styling.currentThemeName) styling.setTheme(cfg.theme);
 
         // The dependency synthesizer with Teams' providers.
         const synth = new F.DependencyContainer();
@@ -210,6 +217,32 @@
         reg("StylingProvider", styling);
         reg("HostViewProperties", { get HostViewProperties() { return this }, viewType: vp.viewType || "Large", getViewProperties() { return Promise.resolve({ viewType: vp.viewType || "Large" }) } });
         reg("ResolvedUrlProvider", { get ResolvedUrlProvider() { return this }, async getResolvedUrl() { return resolvedUrl || (container && container.resolvedUrl) || undefined } });
+        // PresenceColorProvider (Teams' 478989): a collaborator's colour from
+        // the sum of their id's character codes (upper case) mod 10 over
+        // Teams' category colours; high contrast is #1aebff for everyone.
+        const presenceLight = ["#B24932", "#92660D", "#56742F", "#248353", "#164279", "#37797B", "#7D2B5C", "#A22954", "#764E3B", "#993840"];
+        const presenceDark = ["#F39D89", "#ECC26E", "#B5CC99", "#78C9A0", "#7FA3D0", "#96D6D8", "#CC87B1", "#E47CA1", "#BF9D8C", "#DC8990"];
+        reg("PresenceColorProvider", {
+            get PresenceColorProvider() { return this },
+            getPresenceColorForUser(id) {
+                if (!id) return "transparent";
+                const t = styling.currentThemeName;
+                if (t === "contrast") return "#1aebff";
+                let sum = 0;
+                for (const ch of String(id).toUpperCase()) sum += ch.charCodeAt(0);
+                return (t === "dark" ? presenceDark : presenceLight)[sum % 10];
+            }
+        });
+        // PeopleService (Teams' 447247 for pages): @mention suggestions from
+        // the compose resolver (people only).
+        reg("PeopleService", {
+            get PeopleService() { return this },
+            async searchForMention(query, options) {
+                const r = await native("people", { query: String(query || "").replace(/^@/, ""), max: (options && options.resultCount) || 10 });
+                return Array.isArray(r.people) ? r.people : [];
+            },
+            async onResolveSuggestions(query, options) { return this.searchForMention(query, options) }
+        });
 
         // The frame Teams makes for the container (OfficeWebHost's
         // sourceless iframe V2): frameborder 0, tabindex -1, an empty title,

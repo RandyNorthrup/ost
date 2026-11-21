@@ -92,6 +92,104 @@ Popup {
     readonly property color label: theme.pick("#424242", "#D6D6D6")
     readonly property color railBlue: theme.pick("#115EA3", "#479EF5")
 
+    // Media: OneDrive Photos' gallery as Teams' picker shows it
+    // (measured on winpc 2026-11-20; AllPhotosView, ODSP 2026-11-06):
+    // - the bar at 714.7 / 754.7 / 811.3, 29.3 (32 x 31.3 each, a line
+    //   before Zoom): Select layout (View as River / Waterfall / Square,
+    //   Inline dates, Show file names), Toggle Compact View (on: 2 px
+    //   apart, off: 20) and Zoom controls (a popover: Zoom out, a 100 px
+    //   slider 6..20 = 150..500 px, Zoom in; 200 to start);
+    // - River: rows as tall as the zoom at most, filled to the width;
+    //   Waterfall: columns as wide as the zoom at most; Square: square
+    //   cells as large as the zoom at most;
+    // - file names add a 44 px block (14 px, 12 in) under each picture;
+    // - without inline dates one #F5F5F5 heading (64 tall, 18/600) names
+    //   the pictures in view ("Nov 17 - Nov 20, 2026"); with them each
+    //   day starts with its date over its first picture (a 40 px band);
+    // - the 44 px Timeline at the right (4 px dots 68 apart, the year at
+    //   the bottom).
+    property string mediaLayout: "river"
+    property bool mediaCompact: true
+    property bool mediaNames: true
+    property bool mediaInline: false
+    property int mediaZoom: 200
+    readonly property real mediaGap: mediaCompact ? 2 : 20
+    readonly property real mediaWidth: 801.7
+    readonly property real mediaHeader: mediaInline ? 40 : 0
+    readonly property real mediaName: mediaNames ? 44 : 0
+    function dayKey(it) { const d = new Date(it.taken || it.modified || 0); return d.getFullYear() * 10000 + d.getMonth() * 100 + d.getDate() }
+    function aspect(it) { return it.w > 0 && it.h > 0 ? it.w / it.h : 4 / 3 }
+    // Tiles: [{i, x, y, w, h, header}] and the total height.
+    readonly property var mediaTiles: {
+        const items = dlg.place === "media" ? dlg.rows : []
+        const W = mediaWidth, g = mediaGap, extra = mediaName, out = []
+        if (!items.length) return { tiles: [], height: 0 }
+        const newSection = i => mediaInline && (i === 0 || dayKey(items[i]) !== dayKey(items[i - 1]))
+        let y = 0
+        if (mediaLayout === "masonry") {
+            let n = Math.max(1, Math.floor((W + g) / (mediaZoom + g)))
+            let cw = (W - (n - 1) * g) / n
+            while (cw > mediaZoom) { n++; cw = (W - (n - 1) * g) / n }
+            const cols = Array(n).fill(0)
+            items.forEach((it, i) => {
+                let c = 0
+                for (let k = 1; k < n; k++) if (cols[k] < cols[c]) c = k
+                const h = Math.max(80, it.h > 0 ? Math.min(it.h, cw / aspect(it)) : cw * 0.75)
+                out.push({ i: i, x: c * (cw + g), y: cols[c], w: cw, h: h, header: false })
+                cols[c] += h + extra + g
+            })
+            return { tiles: out, height: Math.max(...cols) }
+        }
+        if (mediaLayout === "grid") {
+            const n = Math.max(1, Math.round((W + g) / (mediaZoom + g)))
+            const cw = (W - (n - 1) * g) / n
+            let col = 0
+            items.forEach((it, i) => {
+                if (col === n) { col = 0; y += cw + extra + g }
+                const hdr = newSection(i)
+                if (hdr && col === 0) y += mediaHeader
+                out.push({ i: i, x: col * (cw + g), y: y, w: cw, h: cw, header: hdr })
+                col++
+            })
+            return { tiles: out, height: y + cw + extra }
+        }
+        // River.
+        let row = [], sum = 0, last = mediaZoom
+        const flush = (final) => {
+            let h = (W - (row.length - 1) * g) / sum
+            if (final && h > mediaZoom) h = Math.min(last, mediaZoom)
+            last = h
+            if (row.some(r => newSection(r))) y += mediaHeader
+            let x = 0
+            for (const r of row) { const w = aspect(items[r]) * h; out.push({ i: r, x: x, y: y, w: final && h < (W - (row.length - 1) * g) / sum ? w : w, h: h, header: newSection(r) }); x += w + g }
+            y += h + extra + g
+            row = []; sum = 0
+        }
+        items.forEach((it, i) => {
+            row.push(i); sum += aspect(it)
+            if ((W - (row.length - 1) * g) / sum <= mediaZoom) flush(false)
+        })
+        if (row.length) flush(true)
+        return { tiles: out, height: y - g }
+    }
+    // The pictures in view, oldest to newest, as Teams names them.
+    function rangeText(a, b) {
+        if (!a || !b) return ""
+        const loc = Qt.locale(), long_ = d => d.toLocaleDateString(loc, "MMM d, yyyy"), short_ = d => d.toLocaleDateString(loc, "MMM d")
+        if (a.getFullYear() !== b.getFullYear()) return long_(a) + " - " + long_(b)
+        if (a.toDateString() === b.toDateString()) return long_(a)
+        return short_(a) + " - " + long_(b)
+    }
+    readonly property string mediaRange: {
+        const t = mediaTiles.tiles, items = dlg.rows
+        if (!t.length || dlg.place !== "media") return ""
+        const top = mediaFlick.contentY, bottom = top + mediaFlick.height
+        const seen = t.filter(x => x.y + x.h >= top && x.y <= bottom).map(x => new Date(items[x.i].taken || items[x.i].modified || 0))
+        if (!seen.length) return ""
+        const ms = seen.map(d => d.getTime())
+        return rangeText(new Date(Math.min(...ms)), new Date(Math.max(...ms)))
+    }
+
     property var thumbs: ({})
     property var thumbAsked: ({})
     function wantThumb(it) {
@@ -502,84 +600,224 @@ Popup {
                         text: pr.modelData.name
                         font.family: theme.font; font.pixelSize: 14; color: theme.text
                     }
+                    // Teams fills the files cell (570 wide from 268) with
+                    // chips 12 apart, shortens the last name that fits and
+                    // puts the rest under "+N" (measured 2026-11-20).
+                    FontMetrics { id: chipFont; font.family: theme.font; font.pixelSize: 12 }
+                    FontMetrics { id: pillFont; font.family: theme.font; font.pixelSize: 10 }
+                    readonly property var fit: {
+                        const items = pr.modelData.items || [], avail = 570, plus = 50, out = []
+                        let used = 0
+                        for (let i = 0; i < items.length; i++) {
+                            const name = items[i].name.replace(/\.[^.]+$/, "")
+                            const fixed = 32.7 + 0.7 + pillFont.advanceWidth(items[i].modified_text || "") + 36 + 8
+                            const natural = fixed + chipFont.advanceWidth(name)
+                            const rest = i < items.length - 1 ? 12 + plus : 0
+                            if (used + natural + rest <= avail) { out.push({ item: items[i], nameW: chipFont.advanceWidth(name) }); used += natural + 12; continue }
+                            const room = avail - used - (i < items.length - 1 ? 12 + plus : 0) - fixed
+                            if (room >= 40) { out.push({ item: items[i], nameW: room }); i++ }
+                            return { chips: out, more: items.length - i }
+                        }
+                        return { chips: out, more: 0 }
+                    }
                     Row {
                         x: 268; anchors.verticalCenter: parent.verticalCenter
-                        spacing: 8
+                        spacing: 12
                         Repeater {
-                            model: (pr.modelData.items || []).slice(0, 3)
+                            model: pr.fit.chips
                             Rectangle {
                                 id: chip
                                 required property var modelData
-                                readonly property bool sel: dlg.isSelected(modelData)
+                                readonly property var item: modelData.item
+                                readonly property bool sel: dlg.isSelected(item)
                                 width: chipName.x + chipName.width + 8 + chipPill.width + 8; height: 41.3; radius: 6
                                 color: sel ? theme.pick("#CFE4FA", "#0C3B5E", "#000000") : theme.surface
                                 FluentSurface { z: -1; anchors.fill: parent; depth: 2; radius: 6 }
-                                FluentIcon { x: 8.7; anchors.verticalCenter: parent.verticalCenter; size: 16; name: dlg.typeIcon(chip.modelData.kind).replace("-32", "-20") }
+                                FluentIcon { x: 8.7; anchors.verticalCenter: parent.verticalCenter; size: 16; name: dlg.typeIcon(chip.item.kind).replace("-32", "-20") }
                                 Text {
                                     id: chipName
-                                    x: 32.7; anchors.verticalCenter: parent.verticalCenter; width: Math.min(implicitWidth, 120); elide: Text.ElideRight
-                                    text: chip.modelData.name.replace(/\.[^.]+$/, "")
+                                    x: 32.7; anchors.verticalCenter: parent.verticalCenter; width: Math.min(implicitWidth, chip.modelData.nameW); elide: Text.ElideRight
+                                    text: chip.item.name.replace(/\.[^.]+$/, "")
                                     font.family: theme.font; font.pixelSize: 12; color: theme.onFill(chip, theme.text)
                                 }
                                 Rectangle {
                                     id: chipPill
-                                    x: chipName.x + chipName.width + 0.7; anchors.verticalCenter: parent.verticalCenter; width: chipTime.implicitWidth + 24; height: 24; radius: 20
+                                    x: chipName.x + chipName.width + 0.7; anchors.verticalCenter: parent.verticalCenter; width: chipTime.implicitWidth + 36; height: 24; radius: 20
                                     color: theme.pick("#F5F5F5", "#2E2E2E", "#000000")
+                                    // The activity glyph (shared with you).
+                                    FluentIcon { x: 8; anchors.verticalCenter: parent.verticalCenter; size: 12; name: "share-16"; color: dlg.label }
                                     Text {
                                         id: chipTime
-                                        anchors.centerIn: parent
-                                        text: chip.modelData.modified_text || ""
+                                        x: 24; anchors.verticalCenter: parent.verticalCenter
+                                        text: chip.item.modified_text || ""
                                         font.family: theme.font; font.pixelSize: 10; color: dlg.label
                                     }
                                 }
                                 HoverHandler { cursorShape: Qt.PointingHandCursor }
-                                TapHandler { onTapped: dlg.toggle(chip.modelData) }
+                                TapHandler { onTapped: dlg.toggle(chip.item) }
                                 Accessible.role: Accessible.CheckBox
-                                Accessible.name: modelData.name
+                                Accessible.name: item.name
                                 Accessible.checked: sel
                             }
+                        }
+                        Rectangle {
+                            id: moreChip
+                            visible: pr.fit.more > 0
+                            width: moreText.implicitWidth + 24; height: 41.3; radius: 6
+                            color: moreHover.hovered ? theme.rowHover : theme.surface
+                            FluentSurface { z: -1; anchors.fill: parent; depth: 2; radius: 6 }
+                            Text { id: moreText; anchors.centerIn: parent; text: "+" + pr.fit.more; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(moreChip, theme.text) }
+                            HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
+                            Accessible.role: Accessible.Button; Accessible.name: "+" + pr.fit.more
                         }
                     }
                 }
             }
         }
 
-        // Media: the pictures and videos.
-        GridView {
+        Row {
+            visible: dlg.place === "media"
+            x: 714.7; y: 29.3; spacing: 8
+            MediaBtn { id: layoutItem; icon: dlg.mediaLayout === "masonry" ? "glance-20" : dlg.mediaLayout === "grid" ? "grid-20" : "glance-horizontal-20"; tip: qsTr("Select layout"); onClicked: layoutMenu.open() }
+            MediaBtn { icon: dlg.mediaCompact ? "arrow-maximize-vertical-20" : "arrow-minimize-vertical-20"; tip: qsTr("Toggle Compact View"); onClicked: dlg.mediaCompact = !dlg.mediaCompact }
+            Item { width: 8.6; height: 31.3; Rectangle { x: 4; y: 5.6; width: 0.67; height: 20; color: theme.pick("#E0E0E0", "#3D3D3D", "#FFFFFF") } }
+            MediaBtn { id: zoomItem; icon: "add-subtract-circle-20"; tip: qsTr("Zoom controls"); onClicked: zoomPop.open() }
+        }
+        MenuPopup {
+            id: layoutMenu
+            parent: layoutItem
+            checkColumn: true
+            x: layoutItem.width - 252; y: layoutItem.height + 2
+            items: [{ group: qsTr("View as") },
+                    { label: qsTr("River"), icon: "glance-horizontal-20", checked: dlg.mediaLayout === "river" },
+                    { label: qsTr("Waterfall"), icon: "glance-20", checked: dlg.mediaLayout === "masonry" },
+                    { label: qsTr("Square"), icon: "grid-20", checked: dlg.mediaLayout === "grid" },
+                    { separator: true },
+                    { label: qsTr("Inline dates"), icon: "calendar-date-20", checked: dlg.mediaInline },
+                    { label: qsTr("Show file names"), icon: "app-title-20", checked: dlg.mediaNames }]
+            onPicked: i => {
+                const k = items[i]
+                if (k.label === qsTr("River")) dlg.mediaLayout = "river"
+                else if (k.label === qsTr("Waterfall")) dlg.mediaLayout = "masonry"
+                else if (k.label === qsTr("Square")) dlg.mediaLayout = "grid"
+                else if (k.label === qsTr("Inline dates")) dlg.mediaInline = !dlg.mediaInline
+                else if (k.label === qsTr("Show file names")) dlg.mediaNames = !dlg.mediaNames
+            }
+        }
+        Popup {
+            id: zoomPop
+            parent: zoomItem
+            x: zoomItem.width - width + 32; y: zoomItem.height
+            width: 189.3; height: 48.7; padding: 0
+            background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
+            contentItem: Item {
+                MediaBtn { x: 8.7; y: 8.6; icon: "subtract-circle-20"; tip: qsTr("Zoom out"); onClicked: dlg.mediaZoom = Math.max(150, dlg.mediaZoom - 25) }
+                Slider {
+                    id: zoomSlider
+                    x: 44.7; y: 16.3; width: 100; height: 16
+                    from: 6; to: 20; stepSize: 1
+                    value: dlg.mediaZoom / 25
+                    onMoved: dlg.mediaZoom = Math.round(value) * 25
+                    Accessible.name: qsTr("Photo zoom level")
+                }
+                MediaBtn { x: 148.7; y: 8.6; icon: "add-circle-20"; tip: qsTr("Zoom in"); onClicked: dlg.mediaZoom = Math.min(500, dlg.mediaZoom + 25) }
+            }
+        }
+        Rectangle {
+            visible: dlg.place === "media" && !dlg.mediaInline && dlg.rows.length > 0
+            x: 22; y: 78; width: 805.3; height: 64
+            color: theme.pick("#F5F5F5", "#1F1F1F", "#000000")
+            Text {
+                y: 20; text: dlg.mediaRange
+                font.family: theme.font; font.pixelSize: 18; font.weight: Font.DemiBold; color: theme.text
+                Accessible.role: Accessible.Heading; Accessible.name: text
+            }
+        }
+        Flickable {
+            id: mediaFlick
             visible: dlg.place === "media" && dlg.rows.length > 0
-            x: 22; y: 142; width: 3 * 267.8; height: dlg.height - 80 - y
+            x: 22; y: dlg.mediaInline ? 142 - dlg.mediaHeader : 142; width: dlg.mediaWidth; height: dlg.height - 80 - y
+            contentHeight: dlg.mediaTiles.height
             clip: true; boundsBehavior: Flickable.StopAtBounds
-            cellWidth: 267.8; cellHeight: 195.5
-            model: dlg.place === "media" ? dlg.rows : []
-            delegate: Item {
-                id: mt
-                required property var modelData
-                readonly property bool sel: dlg.isSelected(modelData)
-                width: 265.8; height: 195.5
-                Rectangle {
-                    width: 265.8; height: 149.5; radius: 4
-                    color: Qt.rgba(0, 0, 0, 0.2)
-                    border.color: mt.sel ? theme.brand : "transparent"; border.width: 2
-                    Image { anchors.fill: parent; anchors.margins: 2; fillMode: Image.PreserveAspectCrop; source: dlg.thumbs[mt.modelData.id] || "" }
-                    // Videos: a play mark (28, rgba(0,0,0,.5), radius 4) at 12, 12.
-                    Rectangle {
-                        id: hcFill1
-                        visible: ["mp4", "mov", "avi", "mkv", "webm", "wmv", "m4v"].indexOf(String(mt.modelData.kind || "").toLowerCase()) >= 0
-                        x: 12; y: 12; width: 28; height: 28; radius: 4; color: Qt.rgba(0, 0, 0, 0.5)
-                        FluentIcon { anchors.centerIn: parent; size: 20; name: "play-20"; color: theme.onFill(hcFill1, "white") }
+            Repeater {
+                model: dlg.place === "media" ? dlg.mediaTiles.tiles : []
+                Item {
+                    id: mt
+                    required property var modelData
+                    readonly property var item: dlg.rows[modelData.i] || ({})
+                    readonly property bool sel: dlg.isSelected(item)
+                    x: modelData.x; y: modelData.y
+                    width: modelData.w; height: modelData.h + dlg.mediaName
+                    // A day's date (inline dates): over its first picture.
+                    Text {
+                        visible: mt.modelData.header
+                        y: -dlg.mediaHeader + 12
+                        text: { const d = new Date(mt.item.taken || mt.item.modified || 0); return d.toLocaleDateString(Qt.locale(), d.getFullYear() === new Date().getFullYear() ? "MMM d" : "MMM d, yyyy") }
+                        font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text
                     }
+                    Rectangle {
+                        width: mt.modelData.w; height: mt.modelData.h
+                        color: "#000000"
+                        border.color: mt.sel ? theme.brand : "transparent"; border.width: 2
+                        Image { anchors.fill: parent; anchors.margins: mt.sel ? 4 : 0; fillMode: Image.PreserveAspectCrop; source: dlg.thumbs[mt.item.id] || ""; asynchronous: true }
+                        // Videos: the play mark, with its length on hover or
+                        // when picked.
+                        Rectangle {
+                            id: playMark
+                            visible: !!mt.item.video
+                            x: 12; y: 12; height: 28; radius: 4
+                            width: playRow.implicitWidth + 8
+                            color: Qt.rgba(0, 0, 0, 0.5)
+                            Row {
+                                id: playRow
+                                anchors.centerIn: parent; spacing: 4
+                                FluentIcon { anchors.verticalCenter: parent.verticalCenter; size: 20; name: "play-circle-20-filled"; color: theme.onFill(playMark, "white") }
+                                Text {
+                                    visible: (mtHover.hovered || mt.sel) && mt.item.duration > 0
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: { const s = Math.round((mt.item.duration || 0) / 1000); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0") }
+                                    font.family: theme.font; font.pixelSize: 12; color: "white"
+                                }
+                            }
+                        }
+                        Rectangle {
+                            visible: mt.sel
+                            anchors { right: parent.right; top: parent.top; margins: 12 }
+                            width: 20; height: 20; radius: 10
+                            color: theme.brand; border.color: "white"; border.width: 1.33
+                            FluentIcon { anchors.centerIn: parent; size: 12; name: "checkmark-12"; color: "white" }
+                        }
+                    }
+                    Text {
+                        visible: dlg.mediaNames
+                        x: 12; y: mt.modelData.h + 12; width: mt.modelData.w - 24; elide: Text.ElideRight
+                        text: mt.item.name || ""
+                        font.family: theme.font; font.pixelSize: 14; color: theme.text
+                    }
+                    Component.onCompleted: dlg.wantThumb(item)
+                    HoverHandler { id: mtHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: dlg.toggle(mt.item) }
+                    Accessible.role: Accessible.CheckBox
+                    Accessible.name: item.name || ""
+                    Accessible.checked: sel
                 }
-                Text {
-                    x: 12; y: 162.2; width: 241.8; elide: Text.ElideRight
-                    text: mt.modelData.name
-                    font.family: theme.font; font.pixelSize: 14; color: theme.text
-                }
-                Component.onCompleted: dlg.wantThumb(modelData)
-                HoverHandler { cursorShape: Qt.PointingHandCursor }
-                TapHandler { onTapped: dlg.toggle(mt.modelData) }
-                Accessible.role: Accessible.CheckBox
-                Accessible.name: modelData.name
-                Accessible.checked: sel
+            }
+        }
+        // The Timeline (44 px at the right): a dot per month in the list,
+        // 68 apart, the oldest year at the bottom.
+        Item {
+            visible: dlg.place === "media" && dlg.rows.length > 0
+            x: 823.3; y: 78; width: 44; height: Math.min(399.3, dlg.height - 80 - 78)
+            Accessible.role: Accessible.ScrollBar; Accessible.name: qsTr("Timeline")
+            readonly property var months: { const m = []; for (const it of dlg.rows) { const d = new Date(it.taken || it.modified || 0); const k = d.getFullYear() * 12 + d.getMonth(); if (m.indexOf(k) < 0) m.push(k) } return m }
+            Repeater {
+                model: Math.max(1, Math.floor((parent.height - 64) / 68) + 1)
+                Rectangle { required property int index; x: 20; y: 64 + index * 68; width: 4; height: 4; radius: 2; color: theme.pick("#C7C7C7", "#5C5C5C", "#FFFFFF") }
+            }
+            Text {
+                anchors { bottom: parent.bottom; horizontalCenter: parent.horizontalCenter; bottomMargin: 8 }
+                text: dlg.rows.length ? String(new Date(dlg.rows[dlg.rows.length - 1].taken || dlg.rows[dlg.rows.length - 1].modified || 0).getFullYear()) : ""
+                font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.textSecondary
             }
         }
 
@@ -865,6 +1103,20 @@ Popup {
         if (!here || !paths.length) return
         loading = true
         backend.driveAction(tag + "picker_upload", "{}", JSON.stringify({ drive_id: here.drive_id, item_id: here.item_id, paths: paths }))
+    }
+    // Media's bar buttons (Fluent subtle, 32 x 31.3, 20 px icons).
+    component MediaBtn: Rectangle {
+        id: mb
+        property string icon
+        property string tip
+        signal clicked()
+        width: 32; height: 31.3; radius: 4
+        color: mbHover.hovered ? theme.rowHover : "transparent"
+        FluentIcon { anchors.centerIn: parent; size: 20; name: mb.icon; color: theme.onFill(mb, theme.pick("#424242", "#D6D6D6", "#FFFFFF")) }
+        HoverHandler { id: mbHover; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: mb.clicked() }
+        ToolTip.visible: mbHover.hovered && !!tip; ToolTip.text: tip; ToolTip.delay: 500
+        Accessible.role: Accessible.Button; Accessible.name: tip
     }
     component CmdItem: Item {
         id: ci

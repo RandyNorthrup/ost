@@ -180,7 +180,9 @@ Rectangle {
         if (!isChannel) return r.tabs
         // In the channel's own order (Graph's sortOrderIndex); a dropped
         // tab shows in its new place until the list reloads.
-        const tabs = r.tabs.filter(t => t.app !== "Files" && t.name !== "Files")
+        // Teams hides a Page tab without a page that someone else made.
+        const tabs = r.tabs.filter(t => t.app !== "Files" && t.name !== "Files"
+            && !(t.kind === "ChannelPage" && !t.content_url && t.creator && t.creator !== backend.userMri))
         const p = tabOrderPending
         if (p && p.channel === chatId) tabs.sort((a, b) => p.ids.indexOf(a.id) - p.ids.indexOf(b.id))
         return tabs
@@ -3825,7 +3827,10 @@ Rectangle {
             tab: webTabLoader.shown
             channel: root.chatId
             location: root.chatName + (root.teamName ? " · " + root.teamName : "")
-            create: !!webTabLoader.shown && !webTabLoader.shown.content_url && root.newPageTabs.indexOf(webTabLoader.shown.id) >= 0
+            // A Page tab without a page: Teams makes it (yours, or one with
+            // no maker named).
+            create: !!webTabLoader.shown && !webTabLoader.shown.content_url
+                    && (root.newPageTabs.indexOf(webTabLoader.shown.id) >= 0 || !webTabLoader.shown.creator || webTabLoader.shown.creator === backend.userMri)
             onPageCreated: root.reloadTabs()
         }
     }

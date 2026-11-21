@@ -1090,7 +1090,18 @@ Item {
                 onSettingsRequested: root.appCardSettingsRequested()
                 onPermissionsRequested: root.appCardPermissionsRequested(root.appCard ? root.appCard.app_id : "")
                 onOpenLink: url => Qt.openUrlExternally(url)
+                // Teams' permission card: Show Preview installs the app for
+                // you and asks it again; Sign in opens the app's sign-in
+                // window and asks again when it closes.
+                onShowPreviewRequested: backend.appLinkAction("install", root.previewUrl, root.chatId, root.appCard.app_id)
+                onSignInRequested: u => {
+                    if (u.indexOf("https://") !== 0) { backend.appLinkAction("install", root.previewUrl, root.chatId, root.appCard.app_id); return }
+                    const w = authWindow.createObject(null, { url: u })
+                    w.finished.connect(() => { backend.appLinkAction("requery", root.previewUrl, root.chatId, ""); w.destroy() })
+                    w.show()
+                }
             }
+            Component { id: authWindow; AppAuthWindow {} }
             // Teams' attachment card for a cloud file (file-well, measured
             // on winpc 2026-11-13): 320 x 237.3 under the text (13 in, 15
             // under its line), radius 6, 0.67 #E0E0E0 and a soft shadow; a

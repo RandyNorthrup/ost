@@ -2775,6 +2775,12 @@ pub mod qobject {
         /// conversation the app is asked from.
         #[qinvokable]
         fn fetch_link_preview(self: Pin<&mut Backend>, url: &QString, chat_id: &QString);
+        /// An app link card's permission card: "install" (Show Preview:
+        /// install the app for you, then ask it; arg = the app id) or
+        /// "requery" (after signing in; arg = the sign-in result). The card
+        /// comes back as app_link_card_fetched.
+        #[qinvokable]
+        fn app_link_action(self: Pin<&mut Backend>, op: &QString, url: &QString, chat_id: &QString, arg: &QString);
         #[qsignal]
         fn app_link_card_fetched(self: Pin<&mut Backend>, url: QString, json: QString);
         /// The next message's app link card (compose's, maybe collapsed),
@@ -14309,7 +14315,7 @@ impl qobject::Backend {
                 let items = if q.is_empty() {
                     api::search::zero_state_people(&me, &my_mail, &my_name).await?
                 } else {
-                    api::search::people_only(api::search::recipients(&q, &me).await?, 20)
+                    api::search::new_chat_typed(api::search::recipients(&q, &me).await?, 20)
                 };
                 anyhow::Ok(items)
             }
@@ -14322,7 +14328,11 @@ impl qobject::Backend {
                     Ok(items) => {
                         let items: Vec<serde_json::Value> = items
                             .into_iter()
-                            .map(|p| json!({ "id": p["oid"], "name": p["name"], "sub": p["sub"], "guest": p["guest"], "upn": p["upn"] }))
+                            .map(|p| if p["kind"] == "chat" {
+                                json!({ "id": p["id"], "name": p["name"], "sub": "", "chat": true })
+                            } else {
+                                json!({ "id": p["oid"], "name": p["name"], "sub": p["sub"], "guest": p["guest"], "upn": p["upn"] })
+                            })
                             .collect();
                         let v = json!({ "query": q, "items": items });
                         this.as_mut().set_new_chat_people_json(QString::from(v.to_string().as_str()));
@@ -19656,6 +19666,7 @@ impl qobject::Backend {
             conversation: String::new(),
             icon: String::new(),
             config_url: String::new(),
+            creator: String::new(),
         };
         let tenant = teams_cli::config::Config::load()
             .ok()
@@ -19686,7 +19697,7 @@ impl qobject::Backend {
             arg.to_string(),
         );
         // Your teams and channels' ops are about all your teams.
-        if !channel.ends_with("@thread.tacv2") && !matches!(op.as_str(), "quick-saved" | "quick-followed" | "quick-unsave" | "quick-unfollow" | "notify-tagged" | "notify-on" | "notify-off" | "people-list" | "people-list-add" | "people-list-remove" | "meeting-chat-report-info" | "chat-apps" | "chat-app-remove" | "cross-team-analytics" | "invitations" | "invitation-answer" | "create-team" | "team-templates" | "team-template" | "my-groups" | "teams-suggested" | "teams-find" | "team-join" | "team-join-code") {
+        if !channel.ends_with("@thread.tacv2") && !op.starts_with("chat-notify") && !matches!(op.as_str(), "quick-saved" | "quick-followed" | "quick-unsave" | "quick-unfollow" | "notify-tagged" | "notify-on" | "notify-off" | "people-list" | "people-list-add" | "people-list-remove" | "meeting-chat-report-info" | "chat-apps" | "chat-app-remove" | "cross-team-analytics" | "invitations" | "invitation-answer" | "create-team" | "team-templates" | "team-template" | "my-groups" | "teams-suggested" | "teams-find" | "team-join" | "team-join-code") {
             return;
         }
         // The team's thread id and the channel's facts, from the list.
@@ -19751,6 +19762,42 @@ impl qobject::Backend {
                         let props = api::channels::properties(&client, &channel).await.unwrap_or_default();
                         let dsk = api::channels::notify_state_from(&props).notify.dsk;
                         api::channels::set_notify(&client, &channel, &Notify::for_mode(mode(&arg), dsk)).await?;
+                        Ok(serde_json::Value::Null)
+                    }
+                    // A group chat's Manage notifications (`channel` = the
+                    // chat): its state; a preset from the flyout (arg
+                    // all|mute: Everyone back to your global setting, the
+                    // follow and desktop choices kept); Customize's Save (arg
+                    // JSON {preset, follow, everyone, dsk: "On"|"Off"|null}).
+                    "chat-notify-load" | "chat-notify" | "chat-notify-customize" => {
+                        let ups = api::preferences::personal_settings(&client).await.unwrap_or_default();
+                        let t = ups["toastSettings"]["MentionInChat_Everyone"].as_bool();
+                        let a = ups["activityGenerationSettings"]["MentionInChat_Everyone"].as_bool();
+                        let global_everyone = t == Some(true) || a != Some(false);
+                        let desktop_off = ups["toastSettings"]["muteGenericNotifications"].as_str() == Some("On");
+                        let conv = api::channels::chat_conversation(&client, &channel).await?;
+                        let props = conv.get("properties").cloned().unwrap_or_default();
+                        let state = api::channels::chat_notify_from(&props, global_everyone, desktop_off);
+                        if op == "chat-notify-load" {
+                            return Ok(serde_json::to_value(&state)?);
+                        }
+                        let existing = props["conversationNotificationSettings"].as_str().unwrap_or_default();
+                        let rc = props["followAllRc"].as_str().unwrap_or_default();
+                        let (preset, follow, everyone, dsk): (String, bool, bool, Option<Option<String>>) = if op == "chat-notify" {
+                            (arg.clone(), state.follow_threads, global_everyone, None)
+                        } else {
+                            let a: serde_json::Value = serde_json::from_str(&arg).unwrap_or_default();
+                            (
+                                a["preset"].as_str().unwrap_or("all").to_string(),
+                                a["follow"].as_bool().unwrap_or(false),
+                                a["everyone"].as_bool().unwrap_or(global_everyone),
+                                Some(a["dsk"].as_str().map(str::to_string)),
+                            )
+                        };
+                        let follow = follow && preset != "mute";
+                        let (settings, alerts) = api::channels::chat_notify_write(existing, &preset, Some(everyone), dsk.as_ref().map(|d| d.as_deref()));
+                        let rc_new = api::channels::follow_all_rc_change(rc, &api::channels::follow_mark(&conv), follow);
+                        api::channels::set_chat_notify(&client, &channel, &settings, alerts, rc_new.as_deref()).await?;
                         Ok(serde_json::Value::Null)
                     }
                     "customize" => {
@@ -20422,6 +20469,12 @@ impl qobject::Backend {
                 if result.is_ok() && (op == "posts-at-top" || op == "posts-at-bottom") {
                     this.as_mut().set_channel_posts_at_top(op == "posts-at-top");
                 }
+                if op.starts_with("chat-notify") {
+                    if op != "chat-notify-load" {
+                        this.as_mut().reload_chats();
+                    }
+                    return;
+                }
                 if !matches!(op.as_str(), "notify-load" | "email" | "email-senders" | "email-remove" | "posts-at-top" | "posts-at-bottom" | "moderation-load" | "moderation" | "channel-settings-load" | "channel-settings" | "moderator-search" | "moderators" | "team-members-load" | "add-member-search" | "group-people" | "add-members" | "tags-load" | "tag-members" | "tag-member-search" | "tag-create" | "tag-update" | "tag-delete" | "tag-restore" | "tag-add-members" | "tag-remove-members" | "team-roster" | "team-membership" | "join-requests" | "join-answer" | "team-settings-load" | "team-settings" | "team-tag-settings" | "team-code" | "team-apps" | "team-app-remove" | "team-webhook" | "channel-add-members" | "analytics" | "cross-team-analytics" | "invitations" | "chat-apps" | "chat-app-remove" | "meeting-chat-report-info" | "notify-tagged" | "notify-on" | "notify-off" | "quick-saved" | "quick-followed" | "quick-unsave" | "quick-unfollow" | "team-templates" | "team-template" | "my-groups" | "teams-suggested" | "teams-find") {
                     this.as_mut().load_teams();
                 }
@@ -20637,7 +20690,11 @@ impl qobject::Backend {
         QString::from(concat!(
             "window.__ostLoopTeamsTheme = ",
             include_str!("loop_theme_light.json"),
-            ";\n",
+            ";\nwindow.__ostLoopTeamsThemes = { dark: ",
+            include_str!("loop_theme_dark.json"),
+            ", contrast: ",
+            include_str!("loop_theme_contrast.json"),
+            " };\n",
             include_str!("../vendor/fluid-loader/fluid-loader.js"),
             "\n",
             include_str!("loop_host.js")
@@ -20694,6 +20751,24 @@ impl qobject::Backend {
                             json!({ "error": short_error(&e) }).to_string()
                         }
                     }
+                }
+                // Loop's PeopleService (Teams registers it for pages: the
+                // compose @mention resolver, people only, as {userPrincipalName,
+                // name, id, jobTitle}).
+                "people" => {
+                    let r = async {
+                        let client = TeamsClient::new().await?;
+                        api::directory::search_directory(&client, &s("query"), false).await
+                    }
+                    .await;
+                    let max = p.get("max").and_then(|v| v.as_u64()).unwrap_or(10) as usize;
+                    let list: Vec<serde_json::Value> = r
+                        .unwrap_or_default()
+                        .into_iter()
+                        .take(max)
+                        .map(|x| json!({ "userPrincipalName": x.mail, "name": x.name, "id": x.id, "jobTitle": x.mail }))
+                        .collect();
+                    json!({ "people": list }).to_string()
                 }
                 "token" => {
                     let scopes: Vec<String> = p
@@ -21025,6 +21100,105 @@ impl qobject::Backend {
                             "transcript": transcript,
                         }))
                     }
+                    // The recap window's extras: the recording's file facts
+                    // (Open in Clipchamp's address, Manage's download and
+                    // expiration) and whether Copilot is offered.
+                    "recapExtras" => {
+                        let r: api::recaps::RecapRef = serde_json::from_value(p.get("recap").cloned().unwrap_or_default()).unwrap_or_default();
+                        let info = api::recaps::file_info(&client, &r.drive_id, &r.item_id).await?;
+                        let web = info["webUrl"].as_str().unwrap_or_default();
+                        let days = api::recaps::remaining_days(info["expiration"].as_str().unwrap_or_default(), chrono::Utc::now());
+                        let copilot = api::ecs::license(&client).await.and_then(|l| l["isCopilot"].as_bool()).unwrap_or(false);
+                        Ok(json!({
+                            "file": info, "clipchamp": if web.is_empty() { String::new() } else { api::recaps::clipchamp_url(web) },
+                            "remainingDays": days, "copilot": copilot,
+                        }))
+                    }
+                    // Manage ▸ Expires in ▸ Extend by 60 days (from the
+                    // current expiration) / Remove expiration.
+                    "recapExpiry" => {
+                        let site = s("site");
+                        let path = s("path");
+                        let date = if p.get("remove").and_then(|v| v.as_bool()).unwrap_or(false) {
+                            None
+                        } else {
+                            let from = chrono::DateTime::parse_from_rfc3339(&s("expiration")).map(|t| t.with_timezone(&chrono::Utc)).unwrap_or_else(|_| chrono::Utc::now());
+                            Some((from + chrono::Duration::days(60)).to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
+                        };
+                        api::recaps::set_expiration(&site, &path, date.as_deref()).await?;
+                        Ok(json!({ "expiration": date }))
+                    }
+                    // Mentions: the catch-up service's mentions of you.
+                    "recapMentions" => {
+                        let r: api::recaps::RecapRef = serde_json::from_value(p.get("recap").cloned().unwrap_or_default()).unwrap_or_default();
+                        let oid = client.object_id().unwrap_or_default();
+                        let tid = client.tenant_id().unwrap_or_default();
+                        api::recaps::mentions(&oid, &tid, &r.item_id).await
+                    }
+                    // Custom summary: your saved templates, and a summary in
+                    // a template's format (key, or a saved template's text).
+                    "recapTemplates" => Ok(json!({ "templates": api::recaps::summary_templates(&client).await? })),
+                    "recapSummary" => {
+                        let mut r: api::recaps::RecapRef = serde_json::from_value(p.get("recap").cloned().unwrap_or_default()).unwrap_or_default();
+                        if r.tenant_id.is_empty() {
+                            r.tenant_id = client.tenant_id().unwrap_or_default();
+                        }
+                        let message = match p.get("template").and_then(|v| v.as_str()) {
+                            Some(t) if !t.is_empty() => api::recaps::saved_template_prompt(t),
+                            _ => s("key"),
+                        };
+                        let text = api::recaps::custom_summary(&r, &r.item_id, &message).await?;
+                        Ok(json!({ "text": text }))
+                    }
+                    // Notes ▸ Add notes: Teams' meeting-notes service makes
+                    // (or gives) the meeting's Loop notes.
+                    "recapNotes" => {
+                        let r: api::recaps::RecapRef = serde_json::from_value(p.get("recap").cloned().unwrap_or_default()).unwrap_or_default();
+                        let tid = if r.tenant_id.is_empty() { client.tenant_id().unwrap_or_default() } else { r.tenant_id.clone() };
+                        let mut m = api::meeting_notes::Meeting {
+                            thread_id: r.thread_id.clone(),
+                            organizer: if r.organizer_id.is_empty() { String::new() } else { format!("{}@{tid}", r.organizer_id) },
+                            meeting_title: r.subject.clone(),
+                            meeting_url: String::new(),
+                            i_cal_uid: r.ical_uid.clone(),
+                        };
+                        api::meeting_notes::fill_from_chat(&client, &mut m).await;
+                        let url = api::meeting_notes::get_or_create(&m).await?;
+                        Ok(json!({ "url": url }))
+                    }
+                    // Copilot in the recap: the Microsoft 365 Copilot app as
+                    // a side pane (Teams' bizChat variant from a recap card:
+                    // entryPoint "Recap", session "Recap").
+                    "recapCopilot" => {
+                        let r: api::recaps::RecapRef = serde_json::from_value(p.get("recap").cloned().unwrap_or_default()).unwrap_or_default();
+                        let oid = client.object_id().unwrap_or_default();
+                        let tid = client.tenant_id().unwrap_or_default();
+                        let site = api::app_host::sharepoint_host(&client).await;
+                        let m = api::meeting_copilot::Meeting {
+                            call_id: r.call_id.clone(),
+                            thread_id: r.thread_id.clone(),
+                            organizer_id: r.organizer_id.clone(),
+                            organizer_tenant: if r.tenant_id.is_empty() { tid.clone() } else { r.tenant_id.clone() },
+                            ical_uid: r.ical_uid.clone(),
+                            message_id: "0".into(),
+                            subject: r.subject.clone(),
+                            transcript_running: false,
+                            user_oid: oid,
+                            tenant_id: tid,
+                            my_site: site.strip_suffix(".sharepoint.com").map(|t| format!("{t}-my.sharepoint.com")).unwrap_or_default(),
+                            culture: "en-us".into(),
+                            theme: s("theme"),
+                            app_session: uuid::Uuid::new_v4().to_string(),
+                            host_session: uuid::Uuid::new_v4().to_string(),
+                        };
+                        let cmmid = api::ecs::setting("Copilot", "copilotEntryPointsCMMIds")
+                            .and_then(|v| v.get("meetingRecap").and_then(|x| x.as_str()).map(str::to_string))
+                            .unwrap_or_default();
+                        Ok(api::meeting_copilot::launch_recap(&m, &r.item_id, &cmmid))
+                    }
+                    // A Loop page's See who has access (people, groups and the
+                    // widest link of the component's file).
+                    "loopAccess" => api::loop_page::access(&client, &s("url")).await,
                     // Share > Copy link: Teams' recap link.
                     "recapLink" => {
                         let mut r: api::recaps::RecapRef = serde_json::from_value(p.get("recap").cloned().unwrap_or_default()).unwrap_or_default();
@@ -22171,7 +22345,13 @@ impl qobject::Backend {
                             "meetings" => json!({ "items": api::cloud_attach::meeting_files(&client).await? }),
                             // Pictures and videos (not SharePoint's own
                             // "__siteIcon__" pictures).
-                            "media" => json!({ "items": deco(api::drive::media(&client).await?.into_iter().filter(|i| !i.name.starts_with("__")).collect()) }),
+                            // Media: OneDrive Photos' own query (taken
+                            // newest first, with sizes and when taken).
+                            "media" => json!({ "items": api::drive::photos(&client).await?.into_iter().map(|(it, x)| {
+                                let mut v = api::list_rows::decorate(&it, None, now);
+                                for k in ["w", "h", "taken", "duration", "video"] { v[k] = x[k].clone(); }
+                                v
+                            }).collect::<Vec<_>>() }),
                             "people" => {
                                 let order = api::cloud_attach::collaborators(&client).await.unwrap_or_default();
                                 let me = client.display_name().unwrap_or_default();
@@ -23249,6 +23429,37 @@ impl qobject::Backend {
             };
             let _ = qt.queue(move |mut this| {
                 this.as_mut().url_preview_fetched(QString::from(url.as_str()), QString::from(json.as_str()))
+            });
+        });
+    }
+
+    pub fn app_link_action(self: Pin<&mut Self>, op: &QString, url: &QString, chat_id: &QString, arg: &QString) {
+        let (op, url, chat, arg) = (op.to_string(), url.to_string(), chat_id.to_string(), arg.to_string());
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let found = async {
+                let client = TeamsClient::new().await?;
+                if op == "install" {
+                    // Teams' Show Preview: the app for you (Personal scope),
+                    // then the link asked again.
+                    api::store_content::add_app(&client, &arg, None).await?;
+                    api::link_unfurl::forget_entitlements();
+                    api::link_unfurl::unfurl(&client, &url, &chat).await
+                } else {
+                    api::link_unfurl::unfurl_with(&client, &url, &chat, Some(&arg)).await
+                }
+            }
+            .await;
+            let json = match found {
+                Ok(Some(card)) => serde_json::to_string(&card).unwrap_or_default(),
+                Ok(None) => String::new(),
+                Err(e) => {
+                    tracing::info!("app link {op}: {}", short_error(&e));
+                    String::new()
+                }
+            };
+            let _ = qt.queue(move |mut this| {
+                this.as_mut().app_link_card_fetched(QString::from(url.as_str()), QString::from(json.as_str()))
             });
         });
     }
