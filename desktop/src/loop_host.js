@@ -53,6 +53,10 @@
             styling.setTheme(d.theme);
         } else if (d.dir === "titleText") {
             titleText().then(t => emit("titleText", { title: t }), () => emit("titleText", { title: "" }));
+        } else if (d.dir === "commanding") {
+            let m = {};
+            try { m = JSON.parse(d.json) } catch (x) { return }
+            commanding.fromHost(m);
         }
     });
     const fail = (stage, err) => {
@@ -168,6 +172,133 @@
     // The Fluid loader's logger (ITelemetryBaseLogger).
     const fluidLogger = { send(e) { if (e && e.category === "error") console.warn("LOOPHOST fluid", String(e.eventName || "").slice(0, 120), String(e.errorType || "").slice(0, 60)) } };
 
+    // CommandingSurfaceTreeViewProvider (Teams' 425275): Loop's formatting
+    // toolbar ("commanding surface") drawn by the host instead of inside
+    // the frame. Loop calls display(params) with the toolbar's commands and
+    // where to put it (client coordinates in the frame), dismiss() to hide
+    // it. Teams draws it in its own page over the frame (CommandingSurfaceV9,
+    // legacy style); OST draws it natively (LoopCommandingSurface.qml): the
+    // commands go there as plain data, each with a key, and come back as
+    // "exec" (run the command, then dismiss as Teams does) or "dismiss".
+    let frameEl = null;
+    const commanding = {
+        get CommandingSurfaceTreeViewProvider() { return this },
+        get Disposable() { return this },
+        usesCoordinates: true,
+        isExpandableCommandingSurfaceEnabled: true,
+        currentDisplayParams: undefined,
+        commands: new Map(),
+        seq: 0,
+        // Each display is numbered; OST's answers name the one they're for
+        // (a late "dismiss" mustn't close the next one).
+        shown: 0,
+        dispose() { this.currentDisplayParams = undefined; this.commands.clear() },
+        // A command as data: Teams' renderer reads these fields.
+        ser(c) {
+            if (!c || typeof c !== "object") return null;
+            const key = "k" + (++this.seq);
+            this.commands.set(key, c);
+            const ip = c.iconProperties && typeof c.iconProperties === "object" ? c.iconProperties : null;
+            const str = v => typeof v === "string" ? v : v === undefined || v === null ? "" : String(v);
+            return {
+                key, id: str(c.id), name: str(c.displayName), aria: str(c.ariaLabel), title: str(c.title),
+                icon: str(ip ? ip.name : typeof c.icon === "string" ? c.icon : ""), iconColor: str(ip && ip.color), iconBackground: str(ip && ip.backgroundColor),
+                toggle: !!(c.toggle || c.canCheck), checked: !!c.checked, disabled: !!c.disabled,
+                shortcut: str(c.shortcut), secondary: str(c.secondaryText), inline: c.isInlineSubMenu !== false,
+                sub: Array.isArray(c.subMenuCommands) ? c.subMenuCommands.map(s => this.ser(s)).filter(Boolean) : null
+            };
+        },
+        display(p) {
+            if (!this.shown) console.info("LOOPHOST commanding display", Object.keys(p || {}).join(","));
+            this.currentDisplayParams = p;
+            this.commands.clear();
+            this.seq = 0;
+            const c = (p && p.coordinates) || {};
+            // Teams puts the surface at the hosting element's corner (plus
+            // its padding and the page's scroll) plus Loop's coordinates.
+            const r = frameEl ? frameEl.getBoundingClientRect() : { left: 0, top: 0 };
+            emit("commanding", {
+                seq: ++this.shown,
+                x: r.left + window.scrollX + (Number(c.clientX) || 0), y: r.top + window.scrollY + (Number(c.clientY) || 0),
+                top: (p.topBarCommands || []).map(x => this.ser(x)).filter(Boolean),
+                main: (p.mainBodyCommands || []).map(x => this.ser(x)).filter(Boolean),
+                mini: !!p.mainBodyInitiallyHidden, focus: !!p.focusMode,
+                position: String(p.position || "below"), align: String(p.align || "start")
+            });
+        },
+        dismiss() {
+            this.currentDisplayParams = undefined;
+            emit("commandingDismiss", {});
+        },
+        // Teams' onDismiss: hide, tell Loop, give focus back to where it was.
+        closed(p) {
+            this.dismiss();
+            if (!p) return;
+            try { p.onDismiss && p.onDismiss() } catch (e) { console.warn("LOOPHOST commanding onDismiss", String(e && e.message || e).slice(0, 120)) }
+            try { p.previousElement && p.previousElement.focus({ preventScroll: true }) } catch (e) {}
+        },
+        fromHost(m) {
+            const p = this.currentDisplayParams;
+            if (m.seq !== this.shown) return;
+            if (m.op === "exec") {
+                const cmd = this.commands.get(m.key);
+                if (!p || !cmd || typeof cmd.execute !== "function") return;
+                // Teams passes the click event; the command sees one from
+                // the frame's window.
+                const w = frameEl && frameEl.contentWindow || window;
+                const native = new w.MouseEvent("click", { bubbles: true, cancelable: true });
+                const ev = { type: "click", nativeEvent: native, target: null, currentTarget: null, detail: 1, button: 0,
+                             preventDefault() { native.preventDefault() }, stopPropagation() {}, isDefaultPrevented: () => native.defaultPrevented,
+                             isPropagationStopped: () => false, persist() {} };
+                try { cmd.execute(ev) } catch (e) { console.warn("LOOPHOST commanding exec", String(cmd.id || ""), String(e && e.message || e).slice(0, 120)) }
+                emit("commandingExecuted", { id: String(cmd.id || "") });
+                this.closed(p);
+            } else if (m.op === "dismiss") {
+                this.closed(p);
+            }
+        }
+    };
+
+    // NestedLoopComponentHosting (Teams' 910716): the nested component's
+    // dependency container as it is (Teams only swaps its driver when its
+    // useNestedDependencyContainer setting is on: the Automation audience).
+    const nestedHosting = {
+        get NestedLoopComponentHosting() { return this },
+        get Disposable() { return this },
+        getNestedDependencyContainer(c) { return c },
+        dispose() {}
+    };
+    // ResolvedUrlProvider (Teams' 910716): a container's resolved URL, and
+    // other links resolved by the container's URL resolver (cached).
+    const resolvedUrls = (containerP, resolverP) => {
+        const cache = new Map();
+        return {
+            get ResolvedUrlProvider() { return this },
+            get Disposable() { return this },
+            dispose() { cache.clear() },
+            async getResolvedUrl() { const c = await containerP(); return c ? c.resolvedUrl : undefined },
+            async resolveUrl(url) {
+                if (cache.has(url)) return cache.get(url);
+                const r = await resolverP();
+                if (!r) return undefined;
+                try { const v = await r.resolve({ url }); cache.set(url, v); return v }
+                catch (e) { console.warn("LOOPHOST ResolveDocumentUrlError", String(e && e.errorType || "")); return undefined }
+            }
+        };
+    };
+    // A container's component: its entry point, or the data store its
+    // link's path names (UrlRouterFetcher), as Teams' loader routes.
+    const entryOf = async c => {
+        const entry = await c.getEntryPoint();
+        const path = c.resolvedUrl && c.resolvedUrl.dataStorePath;
+        if (path && path !== "/" && entry && entry.UrlRouterFetcher) {
+            const router = await entry.UrlRouterFetcher.getUrlRouter();
+            const r = router && await router.request({ url: path });
+            if (r && r.status === 200 && r.value) return r.value;
+        }
+        return entry;
+    };
+
     let container = null;
     let resolvedUrl = null;
     async function start() {
@@ -216,7 +347,13 @@
         reg("TokenProvider", tokenProvider);
         reg("StylingProvider", styling);
         reg("HostViewProperties", { get HostViewProperties() { return this }, viewType: vp.viewType || "Large", getViewProperties() { return Promise.resolve({ viewType: vp.viewType || "Large" }) } });
-        reg("ResolvedUrlProvider", { get ResolvedUrlProvider() { return this }, async getResolvedUrl() { return resolvedUrl || (container && container.resolvedUrl) || undefined } });
+        let pageUrlResolver = null;
+        reg("ResolvedUrlProvider", resolvedUrls(async () => container, async () => pageUrlResolver));
+        reg("NestedLoopComponentHosting", nestedHosting);
+        // Teams registers its commanding surface when its fluid settings'
+        // commandingSurfaceEnabled is on (its default) and the page isn't
+        // rendered in a div; without it Loop draws its own in the frame.
+        if (fs.commandingSurfaceEnabled !== false && !fs.enableRenderInDiv) reg("CommandingSurfaceTreeViewProvider", commanding);
         // PresenceColorProvider (Teams' 478989): a collaborator's colour from
         // the sum of their id's character codes (upper case) mod 10 over
         // Teams' category colours; high contrast is #1aebff for everyone.
@@ -262,6 +399,7 @@
                         '<link rel="preconnect" href="' + new URL(CDN).origin + '" crossorigin>', "</head>",
                         '<body style="margin: 0px;">', '<div id="componentDiv"></div>', "</body>", "</html>"].join("\n");
         document.body.appendChild(frame);
+        frameEl = frame;
         await loaded;
         const win = frame.contentWindow;
         const doc = win.document;
@@ -309,6 +447,7 @@
             identityType: "Enterprise",
             tokenFetcher: o => tokenProvider.getToken(siteScopes(o.siteUrl), { claims: o.claims, forceRefresh: o.refresh, siteUrl: o.siteUrl, driveId: o.driveId, itemId: o.itemId, request: o.request || null })
         }, fluidLogger, "Teams");
+        pageUrlResolver = urlResolver;
         // A channel's page is made with its share link (scope default, role
         // edit); a meeting's notes without one (Teams makes the link after).
         const createRequest = fileName => cfg.create.noShareLink
@@ -318,11 +457,21 @@
         reg("FluidDocumentServiceFactoryProvider", { get FluidDocumentServiceFactoryProvider() { return this }, documentServiceFactory,
                                                      getCreateDocumentRequest: async n => createRequest(n), get Disposable() { return this }, dispose() {} });
 
-        // Teams' code loader: the package's files from the CDN's code load
-        // details, into the frame; a configurable runtime factory gets the
-        // code details' config.
-        let details = null;
-        const loadDetails = async () => details || (details = await json(CDN + "/loop-page-container/versionless/loopPageContainerCodeLoadDetails.json"));
+        // Teams' code loader (its 835081): the package's files from the
+        // CDN's versionless code load details for its family, into the
+        // frame; a configurable runtime factory gets the code details'
+        // config. The families Teams loads: Loop's page container, Office's
+        // container (also OneNote's meeting notes), the HTML canvas and the
+        // Copilot board containers.
+        const CODE_LOAD_DETAILS = {
+            [LOOP_PACKAGE]: "/loop-page-container/versionless/loopPageContainerCodeLoadDetails.json",
+            "@ms/office-fluid-container": "/container/versionless/officeContainerCodeLoadDetails.json",
+            "@ms/onenote-meetings": "/container/versionless/officeContainerCodeLoadDetails.json",
+            "@fluidx/html-canvas-container": "/html-canvas-container/versionless/htmlCanvasContainerCodeLoadDetails.json",
+            "@fluidx/copilot-board-container": "/copilot-board-container/versionless/copilotBoardContainerCodeLoadDetails.json"
+        };
+        const detailsCache = new Map();
+        const loadDetails = path => detailsCache.get(path) || detailsCache.set(path, json(CDN + path).catch(e => { detailsCache.delete(path); throw e })).get(path);
         const moduleCache = new Map();
         const codeLoader = {
             get IFluidCodeDetailsComparer() { return this },
@@ -335,20 +484,26 @@
             async satisfies() { return true },
             async load(codeDetails) {
                 const name = typeof codeDetails.package === "string" ? codeDetails.package : codeDetails.package.name;
-                if (name !== LOOP_PACKAGE) throw new Error("OST can't load this Loop container: " + name);
-                let lib = moduleCache.get(name);
-                if (!lib) {
-                    const d = await loadDetails();
-                    const pkg = d.fluidCodeDetailsOverride && d.fluidCodeDetailsOverride.package;
-                    const umd = pkg && pkg.fluid && pkg.fluid.browser && pkg.fluid.browser.umd;
-                    if (!umd || !Array.isArray(umd.files)) throw new Error("Failed to get Fluid Package");
-                    if (!umd.files.every(f => f.startsWith(CDN + "/"))) throw new Error("Unsupported container files, check that CDN is on allow list");
-                    await Promise.all(umd.files.map(f => f.toLowerCase().endsWith(".css") ? style(f) : script(f)));
-                    lib = win[umd.library];
-                    if (!lib || !lib.fluidExport) throw new Error("Entry point of loaded package not a Fluid module");
-                    moduleCache.set(name, lib);
-                    emit("code", { version: String(pkg.version || "") });
+                const path = CODE_LOAD_DETAILS[name];
+                if (!path) throw new Error("Codeloader does not know how to load from this source: " + name);
+                let libP = moduleCache.get(path);
+                if (!libP) {
+                    libP = (async () => {
+                        const d = await loadDetails(path);
+                        const pkg = d.fluidCodeDetailsOverride && d.fluidCodeDetailsOverride.package;
+                        const umd = pkg && pkg.fluid && pkg.fluid.browser && pkg.fluid.browser.umd;
+                        if (!umd || !Array.isArray(umd.files)) throw new Error("Failed to get Fluid Package");
+                        if (!umd.files.every(f => f.startsWith(CDN + "/"))) throw new Error("Unsupported container files, check that CDN is on allow list");
+                        await Promise.all(umd.files.map(f => f.toLowerCase().endsWith(".css") ? style(f) : script(f)));
+                        const l = win[umd.library];
+                        if (!l || !l.fluidExport) throw new Error("Entry point of loaded package not a Fluid module");
+                        emit("code", { name, version: String(pkg.version || "") });
+                        return l;
+                    })();
+                    moduleCache.set(path, libP);
+                    libP.catch(() => moduleCache.delete(path));
                 }
+                const lib = await libP;
                 const factory = lib.fluidExport.ConfigurableRuntimeFactory;
                 const config = codeDetails.config;
                 const module = factory ? { fluidExport: { get IRuntimeFactory() { return this }, instantiateRuntime(c, e) { factory.configure(config); return factory.instantiateRuntime(c, e) } } } : lib;
@@ -357,6 +512,52 @@
         };
         const configProvider = { getRawConfig: name => { const v = ecsValue(name, "FluidExperiences"); return v === null ? undefined : v } };
         const loader = new F.Loader({ urlResolver, documentServiceFactory, codeLoader, scope: { IFluidDependencySynthesizer: synth }, logger: fluidLogger, configProvider });
+
+        // LoopComponentLoader (Teams' 910716 / 74043): a Loop component
+        // inside the page (a pasted component link, Insert › a component,
+        // Create Loop component). Loop hands its own dependency container
+        // (the page's providers plus the page loader's driver); the
+        // component gets its own Fluid loader with that driver, OST's code
+        // loader and the container wrapped with NestedLoopComponentHosting
+        // and its own ResolvedUrlProvider. A link loads as Teams' existing
+        // container request (ops from the cache, connected once loaded);
+        // code details make a new detached container (Loop attaches it).
+        reg("LoopComponentLoader", {
+            get LoopComponentLoader() { return this },
+            get Disposable() { return this },
+            dispose() {},
+            async getLoopComponent({ loopComponentRouterInput: input, dependencySynthesizer: ds, fluidRequestHeaders, requiredProviderTypes }) {
+                const p = ds.synthesize({ FluidUrlResolverProvider: "FluidUrlResolverProvider", FluidDocumentServiceFactoryProvider: "FluidDocumentServiceFactoryProvider" }, {});
+                const [ur, dsf] = await Promise.all([p.FluidUrlResolverProvider, p.FluidDocumentServiceFactoryProvider]);
+                if (!ur || !ur.urlResolver || !dsf || !dsf.documentServiceFactory) throw new Error("Driver unavailable");
+                if (!input || (input.type !== "Fluid" && !(input.type === "Data" && input.dataType === "URL"))) throw new Error("Failed to create component.");
+                let nestedContainer;
+                const nested = new F.DependencyContainer(ds);
+                nested.register("NestedLoopComponentHosting", Promise.resolve(nestedHosting));
+                nested.register("ResolvedUrlProvider", Promise.resolve(resolvedUrls(async () => nestedContainer, async () => ur.urlResolver)));
+                const scope = new F.DependencyContainer(nested);
+                if (!scope.has("NamespaceLogger")) scope.register("NamespaceLogger", Promise.resolve(logger));
+                const nestedLoader = new F.Loader({ urlResolver: ur.urlResolver, documentServiceFactory: dsf.documentServiceFactory, codeLoader,
+                                                    scope: { IFluidDependencySynthesizer: scope }, logger: fluidLogger, configProvider });
+                if (input.type === "Fluid") {
+                    nestedContainer = input.pendingLocalState ? await nestedLoader.rehydrateDetachedContainerFromSnapshot(input.pendingLocalState)
+                        : await nestedLoader.createDetachedContainer(input.codeDetails);
+                } else {
+                    const href = input.data && input.data.url ? String(input.data.url.href || input.data.url) : "";
+                    // Teams' check first: the link is a Fluid file.
+                    let fluid = !!(input.manifestData && typeof input.manifestData === "object");
+                    if (!fluid) { try { fluid = (await ur.urlResolver.resolve({ url: href }))?.type === "fluid" } catch (e) {} }
+                    if (!fluid) throw new Error("Failed to create Fluid component from the provided url.");
+                    const headers = Object.assign({ [LOAD_MODE]: { opsBeforeReturn: "cached", deltaConnection: "delayed" } }, fluidRequestHeaders || {});
+                    nestedContainer = await nestedLoader.resolve({ url: href, headers });
+                }
+                const component = await entryOf(nestedContainer);
+                if (!nestedContainer.closed && nestedContainer.attachState === "Attached" && nestedContainer.connectionState === 0) nestedContainer.connect();
+                if (component && component.ComponentInitializer) await component.ComponentInitializer.initialize();
+                emit("nested", { type: input.type, required: Array.isArray(requiredProviderTypes) ? requiredProviderTypes.map(String) : [] });
+                return component;
+            }
+        });
 
         // Teams' render options (chat-app 436488) for the HTML view; a
         // channel's Page keeps Loop's own side spacing (Teams' channel page
@@ -436,14 +637,7 @@
         container = await loader.resolve({ url: cfg.componentUrl, headers });
         watch(container);
         resolvedUrl = container.resolvedUrl;
-        const entry = await container.getEntryPoint();
-        let component = entry;
-        const path = resolvedUrl && resolvedUrl.dataStorePath;
-        if (path && path !== "/" && entry && entry.UrlRouterFetcher) {
-            const router = await entry.UrlRouterFetcher.getUrlRouter();
-            const r = router && await router.request({ url: path });
-            if (r && r.status === 200 && r.value) component = r.value;
-        }
+        const component = await entryOf(container);
         if (!container.closed && container.connectionState === 0) container.connect();
         await render(component);
     }

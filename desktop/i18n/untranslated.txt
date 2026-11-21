@@ -7,7 +7,7 @@
 "%1 and"		AppDetailsDialog.qml:576	
 "%1 by %2"		FindPane.qml:762	
 "%1 checkbox, press spacebar to select all."		StoreView.qml:604	
-"%1 didn't open: %2"		backend.rs:24051	
+"%1 didn't open: %2"		backend.rs:24002	
 "%1 direct"		ProfileCard.qml:463	
 "%1 hour"		BreakoutSettingsDialog.qml:115	
 "%1 invites couldn't be sent"		ShareChannelDialog.qml:63	
@@ -58,8 +58,8 @@
 "Add someone"		CallsView.qml:403	
 "Add to Dictionary"		EditorCard.qml:60	
 "Add to Loop workspace"		MeetingNotesPane.qml:95	
-"Added a shortcut in your OneDrive"		backend.rs:21590	
-"Adding people…"		backend.rs:16196	
+"Added a shortcut in your OneDrive"		backend.rs:21551	
+"Adding people…"		backend.rs:16176	
 "Additional people: %1"		LoopAccessPopover.qml:73	
 "All hands"		EventsView.qml:103	
 "Alt + 0 to 9 number keys"		VideoClipCard.qml:508	
@@ -93,12 +93,12 @@
 "CSV files (*.csv)"		BreakoutCsvDialog.qml:133	
 "Call %1"		CallsView.qml:353	
 "Calling %1…"		CallWindow.qml:5110	
-"Calls are available in 1:1 chats"		backend.rs:9036	
-"Calls merged"		backend.rs:13257	
+"Calls are available in 1:1 chats"		backend.rs:9035	
+"Calls merged"		backend.rs:13256	
 "Camera settings"		CameraSettingsDialog.qml:37	
 "Cameras"		ContentCameraDialog.qml:450	
 "Cancel this meeting for everyone?"		CalendarView.qml:1721	
-"Cancelling…"		backend.rs:22605	
+"Cancelling…"		backend.rs:22556	
 "Capture screenshot"		FeedbackWindow.qml:153	
 "Car"		CalendarView.qml:262	
 "Cast to this room with:"		RoomHome.qml:86 RoomHome.qml:292	
@@ -121,8 +121,8 @@
 "Community event"		EventsView.qml:106	
 "Connect your account"		ProfileCard.qml:648	
 "Connected without audio"		CallWindow.qml:3097	
-"Consult: %1"		backend.rs:13125	
-"Consult: not someone you can call"		backend.rs:13080	
+"Consult: %1"		backend.rs:13124	
+"Consult: not someone you can call"		backend.rs:13079	
 "Copied %1 item"		FileActions.qml:298 FileActions.qml:299	
 "Copied %1 items"		FileActions.qml:298 FileActions.qml:299	
 "Copilot and other AI"		MeetingOptionsDialog.qml:172	
@@ -135,21 +135,21 @@
 "Couldn't cancel the event."		EventsView.qml:3892	
 "Couldn't cancel your registration."		EventsView.qml:650	
 "Couldn't change it."		EventsView.qml:3853	
-"Couldn't join the meeting"		backend.rs:10785	
-"Couldn't join the meeting: %1"		backend.rs:10858 backend.rs:12343	
+"Couldn't join the meeting"		backend.rs:10784	
+"Couldn't join the meeting: %1"		backend.rs:10857 backend.rs:12342	
 "Couldn't load events."		EventsView.qml:1141	
 "Couldn't load the meeting options."		EventsView.qml:267	
 "Couldn't load this profile."		ProfileCard.qml:669	
 "Couldn't open the event."		EventsView.qml:219 EventsView.qml:237 EventsView.qml:245	
-"Couldn't post your review"		backend.rs:19655	
+"Couldn't post your review"		backend.rs:19635	
 "Couldn't publish the event."		EventsView.qml:3735	
-"Couldn't report the review"		backend.rs:19620	
+"Couldn't report the review"		backend.rs:19600	
 "Couldn't save your setting. Try again."		SettingsView.qml:3315	
-"Couldn't send the picture: %1"		backend.rs:24357	
+"Couldn't send the picture: %1"		backend.rs:24308	
 "Couldn't share to Outlook."		ShareToOutlookDialog.qml:35	
-"Couldn't start the call: %1"		backend.rs:9413	
+"Couldn't start the call: %1"		backend.rs:9412	
 "Couldn't update the link settings. Please try again."		CloudAttach.qml:66	
-"Couldn't upload the picture: %1"		backend.rs:16923	
+"Couldn't upload the picture: %1"		backend.rs:16903	
 "Create a team from %1"		CreateTeamPage.qml:234	
 "Credit card"		CalendarView.qml:264	
 "Custom files (*.png *.jpeg *.jpg *.bmp)"		VideoEffectsPane.qml:530	
@@ -162,13 +162,13 @@
 "Delete this clip. Your recording will be lost."		VideoClipRecorder.qml:1025 VideoClipRecorder.qml:1040	
 "Delete this event?"		CalendarView.qml:1721	
 "Dial %1"		CallWindow.qml:5022	
-"Dial pad: %1"		backend.rs:13307	
+"Dial pad: %1"		backend.rs:13306	
 "Direct reports (%1)"		HoverCard.qml:258 HoverCard.qml:263	
 "Display details about the meeting like title and start time, number of others joined, and presence of the organizer."		MeetingOptionsDialog.qml:144	
 "Do not include any private or sensitive information."		FeedbackWindow.qml:111	
 "Domains"		ChannelEmailDialog.qml:147	
-"Downloaded %1"		backend.rs:23826	
-"Downloading %1…"		backend.rs:9858	
+"Downloaded %1"		backend.rs:23777	
+"Downloading %1…"		backend.rs:9857	
 "Draft to %1"		DraftsView.qml:116	
 "Drag and drop files here or paste an image from your clipboard"		FeedbackWindow.qml:134	
 "During and after the meeting"		MeetingOptionsDialog.qml:135	
@@ -216,7 +216,7 @@
 "Help for OST"		HelpView.qml:160 HelpView.qml:362	
 "Hide navigation"		CalendarView.qml:914	
 "High Tech"		VideoClipRecorder.qml:1103	
-"Hold: %1"		backend.rs:12663	
+"Hold: %1"		backend.rs:12662	
 "How others hear you"		AiInterpreterDialog.qml:122	
 "If your contact is based in the European Economic Area or Switzerland, they may need to change the LinkedIn Digital Markets Act %1 for you and others to see their LinkedIn profile here."		ProfileCard.qml:625	
 "Ignore all"		EditorCard.qml:60	
@@ -268,7 +268,7 @@
 "New ask me anything"		EventsView.qml:105	
 "New community event"		EventsView.qml:106	
 "New event | Calendar"		CalendarView.qml:2599 CalendarView.qml:2618	
-"New group chat"		backend.rs:18467	
+"New group chat"		backend.rs:18447	
 "New training"		EventsView.qml:104	
 "Next decade"		DatePickerField.qml:144	
 "Next profile"		ProfileCard.qml:376	
@@ -315,7 +315,7 @@
 "Owners (%1)"		ManageChannel.qml:308	
 "PNG (*.png)"		TeamAppsView.qml:182	
 "Package delivery"		CalendarView.qml:264	
-"Parked call"		backend.rs:9053	
+"Parked call"		backend.rs:9052	
 "People in %1 with the link can edit."		OneDriveShare.qml:131	
 "People in %1 with the link can view."		OneDriveShare.qml:131	
 "People in your organization with the link can also access this Loop component"		LoopAccessPopover.qml:86	
@@ -325,7 +325,7 @@
 "People with existing access can use the link."		OneDriveShare.qml:129	
 "Pill"		CalendarView.qml:261	
 "Pinned %1 to Quick access"		FileActions.qml:267	
-"Plain Text"		ComposeBox.qml:479 ComposeBox.qml:486 ComposeBox.qml:979	
+"Plain Text"		ComposeBox.qml:467 ComposeBox.qml:474 ComposeBox.qml:967	
 "Plane"		CalendarView.qml:260	
 "Planner"		AppRail.qml:53 AppRail.qml:405	
 "Play %1"		VideoClipRecorder.qml:1194	
@@ -358,9 +358,9 @@
 "Review your clips"		VideoClipRecorder.qml:378	
 "Same time zone as you"		ProfileCard.qml:94	
 "Save as"		Main.qml:513	
-"Saved %1 to %2"		backend.rs:9535 backend.rs:9869	
+"Saved %1 to %2"		backend.rs:9534 backend.rs:9868	
 "Schedule 1 hour of focus time"		CalendarView.qml:893	
-"Scheduled %1"		backend.rs:22805	
+"Scheduled %1"		backend.rs:22756	
 "Screen recording"		VideoClipRecorder.qml:378	
 "Search all files"		DownloadsFlyout.qml:90 DownloadsFlyout.qml:93	
 "Search downloads"		DownloadsFlyout.qml:100	
@@ -376,9 +376,9 @@
 "Select a role for the person you would like to grant access to"		OneDriveShare.qml:287	
 "Select a role, %1"		OneDriveShare.qml:562	
 "Send reply"		ChannelPosts.qml:612	
-"Sending update…"		backend.rs:22604	
-"Sending your proposal…"		backend.rs:22606	
-"Sending your response…"		backend.rs:22602	
+"Sending update…"		backend.rs:22555	
+"Sending your proposal…"		backend.rs:22557	
+"Sending your response…"		backend.rs:22553	
 "Set expiration date (MM/DD/YYYY)"		OneDriveShare.qml:597	
 "Set up your Interpreter"		AiInterpreterDialog.qml:88	
 "Share \"%1\""		OneDriveShare.qml:221	
@@ -424,7 +424,7 @@
 "The version wasn't restored"		FileActions.qml:441	
 "This Loop component is temporarily not available."		LoopCard.qml:152	
 "This allows everyone to be understood in their spoken languages. This also affects recording, transcription, captions, and Copilot."		MeetingOptionsDialog.qml:170	
-"This app isn't available in OST yet."		Main.qml:13521	
+"This app isn't available in OST yet."		Main.qml:13524	
 "This camera has no settings to change."		CameraSettingsDialog.qml:64	
 "This file can't be opened"		FileViewer.qml:40	
 "This file has not been shared with a group yet."		OneDriveShare.qml:798	
@@ -449,13 +449,13 @@
 "Unmute (Alt + M)"		VideoClipCard.qml:383	
 "Unmute speaker"		AudioFlyout.qml:101 AudioSettingsPane.qml:174	
 "Unpinned %1 from Quick access"		FileActions.qml:267	
-"Updating link settings..."		ComposeBox.qml:1191 LoopCard.qml:97	
+"Updating link settings..."		ComposeBox.qml:1179 LoopCard.qml:97	
 "Useful"		RecapWindow.qml:634	
 "Users allowed to bypass the lobby"		MeetingOptionsDialog.qml:125	
 "View profile"		ProfileCard.qml:452 ProfileCard.qml:457	
 "Voice others hear when your speech is translated"		AiInterpreterDialog.qml:123	
 "Voting table"		WebApp.qml:614	
-"We couldn't create your team. Please try again."		CreateTeamDialog.qml:126 CreateTeamPage.qml:245	
+"We couldn't create your team. Please try again."		CreateTeamDialog.qml:106 CreateTeamPage.qml:245	
 "We couldn't find any help for “%1”. Try other words, or browse all help."		HelpView.qml:270	
 "We couldn't load the Store. %1"		StoreView.qml:370	
 "We couldn't remove the app. Please try again."		ManageAppsView.qml:54	
@@ -483,7 +483,7 @@
 "You'll hear speech translated into"		AiInterpreterDialog.qml:93	
 "You're following."		CalendarView.qml:1462	
 "You're presenting"		CallWindow.qml:3083	
-"You've hit the %1-person limit for group chats. You'll need to remove someone before you send your message."		NewChat.qml:392	
+"You've hit the %1-person limit for group chats. You'll need to remove someone before you send your message."		NewChat.qml:361	
 "You've invited %1 to edit"		OneDriveShare.qml:667	
 "You've invited %1 to view"		OneDriveShare.qml:667	
 "You, %1 and %2"		SearchView.qml:926	

@@ -12,7 +12,7 @@ load/create, 163214 render, 436488 render options, 627924 storage policy,
 285723 / 595515 / 600862). Pages used: OST group test's Notes; a New page
 in OST Test Team › OST test channel.
 OST: `desktop/src/loop_host.js`, `desktop/src/loop_bridge.js`,
-`LoopPage.qml`, `ChatNotesTab.qml`, `ChannelPageTab.qml`,
+`LoopPage.qml`, `LoopCommandingSurface.qml`, `ChatNotesTab.qml`, `ChannelPageTab.qml`,
 `api::loop_page`, `api::tab_add::{add_new_page_tab, set_page_component_url}`,
 `desktop/vendor/fluid-loader/`, `--loop-test`.
 
@@ -141,6 +141,87 @@ Every provider Loop asks for is optional. Teams registers (600116):
 - Asked but not given by Teams: Theming, DOMDependency, PageCreationProvider,
   SelectionService, ShareService (chat notes), AugLoopRuntimeProvider, …
 
+## Teams' commanding surface (Loop's formatting toolbar)
+Read from Teams 26304 (chat-app 425275 the provider, CommandingSurfaceV9
+577697 the surface, 836862 the icons) and Loop's own chunks (Scriptor's
+CommandingSurface service, 173848).
+- Loop's CommandingSurface service uses the host's
+  `CommandingSurfaceTreeViewProvider` when there is one; without it Loop
+  draws its own toolbar inside the frame. Teams registers it when its
+  fluid settings' `commandingSurfaceEnabled` is on (its default) and
+  `enableRenderInDiv` is off: an EventEmitter with
+  `get CommandingSurfaceTreeViewProvider() {return this}`,
+  `display(params)`, `dismiss()`, `usesCoordinates: true`,
+  `isExpandableCommandingSurfaceEnabled: true`, `get Disposable()`.
+- `display` params: `{coordinates: {clientX, clientY}, topBarCommands,
+  topBarCommandsOnExpand, mainBodyCommands, mainBodyInitiallyHidden,
+  focusMode, previousElement, onDismiss, position, align}`. A command:
+  `{id, displayName, ariaLabel, icon: "FFXC…" | iconProperties {name,
+  color, backgroundColor}, toggle | canCheck, checked, disabled,
+  shortcut, secondaryText, title, subMenuCommands, isInlineSubMenu,
+  execute(event)}`; `{id: "divider"}` separates top-bar groups.
+- Where: Loop's point is the selection's corner (+5 across) and, for a
+  selection (collapsed: the top bar only), 50 px above it; for a
+  right-click or Shift+F10 (expanded, focused) below it. Teams adds the
+  hosting element's corner, padding and the page's scroll and puts a
+  Fluent v9 Popover there (position `below`, align `start`, closeOnScroll,
+  closeOnIframeFocus), in the legacy style (`useLegacyCommandingSurface`).
+- Drawn: the popover (radius 16, NeutralBackground1, shadow 8, padding 8,
+  200 to 320 wide); the top bar (`ul role=menu`, a flex row spread out,
+  padding 0 4) of 32 x 32 subtle buttons with 16 px glyphs, toggles as
+  `menuitemcheckbox` buttons, a command with non-inline subcommands a menu
+  button, inline groups flattened; then Teams' "More" toggle (FFXCMore,
+  string `commandingSurfaceToggleBtnText`) that shows or hides the rest;
+  each button's tooltip its displayName. Expanded: a MenuDivider, then the
+  main body's commands as Fluent MenuGroups (header = `title`) of items
+  (14/20, the shortcut or secondary text in base200 at the end,
+  checkmarks for toggles, submenus beside), a divider between groups.
+- Picking: `command.execute(event)`, then Teams' dismiss: `provider.dismiss()`,
+  `params.onDismiss()`, `params.previousElement.focus({preventScroll:
+  true})`. Escape (Loop's own key binding while the focus is in the page,
+  or the popover's), typing, deleting and a selection change make Loop
+  call `dismiss()` itself.
+- Glyphs: Teams maps 375 Loop icon names to SVG glyphs (Fabric MDL2 2048
+  px and Fluent System glyphs), drawn in the text colour (`fill` from its
+  icon style).
+
+## Nested Loop components
+Read from Teams 26304 (910716 the loader and hosting, 74043 its Loop
+loader, 835081 the code loader) and Loop's chunks (Scriptor's unfurl
+loader and its nested scope, 964793).
+- Loop unfurls a Loop component link (or makes one: Insert, Create Loop
+  component) with the host's `LoopComponentLoader.getLoopComponent({
+  loopComponentRouterInput, dependencySynthesizer, fluidRequestHeaders,
+  requiredProviderTypes})`; without one the link stays a link and
+  creating fails ("CreateLoopComponent failed since LoopComponentLoader is
+  undefined"). Loop builds the synthesizer from the page loader's scope
+  (`ILoader.services`): the page's providers, the page loader's
+  `urlResolver` (FluidUrlResolverProvider) and `documentServiceFactory`
+  (FluidDocumentServiceFactoryProvider), `NestedComponentLevelsTracker`
+  and its own services; `fluidRequestHeaders` `{isSharingLinkToRedeem:
+  true}` (+ `X-CLP-Compliant-App` with information protection).
+- Teams' getLoopComponent: a new Fluid loader with that driver, its code
+  loader and the synthesizer wrapped with `NestedLoopComponentHosting`
+  (`getNestedDependencyContainer`: as it is unless its
+  `useNestedDependencyContainer` setting is on, the Automation audience)
+  and a `ResolvedUrlProvider` for the new container (`getResolvedUrl`, and
+  `resolveUrl(url)` through the URL resolver, cached). Router input
+  `{type: "Data", dataType: "URL", data: {url}}`: the link must resolve to
+  a Fluid file, then `resolve({url, headers: {loadMode: {opsBeforeReturn:
+  "cached", deltaConnection: "delayed"}, ...fluidRequestHeaders}})`, the
+  entry point (routed by the data-store path), `connect()`; `{type:
+  "Fluid", codeDetails}` (or `pendingLocalState`): a detached container
+  from the code details (or the snapshot). Then
+  `ComponentInitializer.initialize()`, and the component goes back to
+  Loop, which draws it in the page.
+- Teams' code loader knows these packages, each from its family's
+  versionless code load details on the CDN: `@fluidx/loop-page-container`
+  (loopPageContainerCodeLoadDetails.json), `@ms/office-fluid-container`
+  and `@ms/onenote-meetings` (container/versionless/
+  officeContainerCodeLoadDetails.json, global `officeContainer`),
+  `@fluidx/html-canvas-container`, `@fluidx/copilot-board-container` (and
+  Whiteboard's, from whiteboard.office.com).
+
 ## Teams' fluid settings
 The page's settings category's `fluid` (`fluidThread` for chat notes,
 `channelPages` for a channel's Page: Teams' built-in defaults from its
@@ -214,9 +295,23 @@ dark, 681 in high contrast) and names the theme `default`, `dark` or
   link allows; from `{site}/_api/v2.1/drives/{d}/items/{i}/permissions`.
 - A Page tab without a page: Teams hides one someone else made; it makes
   the page in your own (or one with no maker).
-- Not given yet: Teams' commanding surface, nested Loop components hosted
-  by Teams, its telemetry sink and trusted-types policy (Loop falls back
-  to its own handling).
+- The commanding surface: loop_host.js registers Teams' provider; each
+  display goes to OST as plain data (each command with a key; the point
+  in the host page's coordinates, numbered) and LoopCommandingSurface.qml
+  draws Teams' legacy surface natively over the page (it may reach out of
+  the frame, as Teams'). A pick comes back as `exec` (the command runs
+  with a click event from the frame's window, then Teams' dismiss) and
+  Escape, a click elsewhere in OST or (focused) into the page as
+  `dismiss`; answers for an older display are dropped. The glyphs are
+  Teams' (`assets/icons/loop-commanding.json`).
+- Nested components: loop_host.js registers Teams' LoopComponentLoader,
+  NestedLoopComponentHosting and ResolvedUrlProvider (also per nested
+  container), and its code loader knows Teams' container families (the
+  CDN allow-list stays).
+- Not given yet: Teams' telemetry sink and trusted-types policy (Loop
+  falls back to its own handling), Whiteboard's container, Loop's
+  non-Fluid components (LoopCodeLoaderFactoryProvider) and the providers
+  a nested component asks for by `requiredProviderTypes`.
 
 ## OST status (live checks 2026-11-16, ost-test1 on linuxlt, `--loop-test`)
 - [x] A chat's Notes (OST group test) shows its Loop page in Loop's own
@@ -232,10 +327,24 @@ dark, 681 in high contrast) and names the theme `default`, `dark` or
   Teams' header, Loop's title and insert row, and takes typing. Teams on
   the web opened the page OST made. Page tabs that already have a link
   load in the same host, also in Open tab in new window.
-- [ ] See who has access opens the page's link in the browser (Teams opens
-  ODSP's permissions panel); presence colours, @ people suggestions,
-  Teams' commanding surface and nested Loop components hosted by Teams
-  aren't given to Loop; Loop's own telemetry sink and trusted-types
-  policy aren't either; Teams' dark and high-contrast theme colours for
-  Loop weren't measured (OST gives the theme's name and the light theme's
-  type tokens there).
+- [x] 2026-11-20 (OST group test's Notes, `--loop-format`, `--loop-paste`):
+  Loop hands its toolbar to OST's provider (Loop draws none in the frame);
+  a mouse selection shows the top bar (Bold, Italic, Underline,
+  Strikethrough | Headings and lists, Font color, Comment, More) above
+  the text, reaching over the tab's header as in Teams; Bold picked there
+  runs Loop's command (the text turns 600) and closes it; Shift+F10 shows
+  the whole surface focused on Bold (Undo / Redo, Cut / Copy / Paste with
+  their shortcuts, Increase / Decrease indent, Page width ▸, Link);
+  Escape closes it. A pasted Loop component link (ost-test1's meeting
+  notes) loads through the host's LoopComponentLoader and Loop draws the
+  nested component in the page (its "Only some people have access" share
+  prompt); removed again afterwards.
+- [ ] Earlier items: see the 2026-11-16 notes in TASK-0205 / TASK-0207 for
+  See who has access, presence and @ people suggestions. Not given yet:
+  Loop's telemetry sink and trusted-types policy, Whiteboard's container,
+  Loop's non-Fluid components, `requiredProviderTypes`. The commanding
+  surface wasn't compared side by side with Teams on winpc (its metrics
+  are from Teams' code); dark checked live (Shift+F10 surface), high
+  contrast not. The harness's synthetic mouse selection doesn't always
+  make Loop show the top bar (it did in one of three runs; Shift+F10
+  always works).

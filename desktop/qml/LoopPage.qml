@@ -48,6 +48,7 @@ Item {
     property var createdInfo: null
 
     function reload() {
+        surface.hide()
         state_ = "loading"; error = ""; events = []
         started = false
         web.loadHtml("", "about:blank")
@@ -82,6 +83,38 @@ Item {
                 typer.typeText(text)
             })
     }
+    // Keys as they are typed, where the page's focus is (no Ctrl+End).
+    function keysForTest(keys) { web.forceActiveFocus(); typer.typeText(keys) }
+    // A link pasted where the page's cursor is, as the browser hands a
+    // paste to the page (text and HTML), without the system clipboard.
+    function pasteForTest(url) {
+        web.runJavaScript("(() => { const f = document.querySelector('iframe'); const d = f && f.contentDocument; const a = d && d.activeElement;"
+            + " if (!a) return 'no focus'; const t = new f.contentWindow.DataTransfer(); const u = " + JSON.stringify(url) + ";"
+            + " t.setData('text/plain', u); t.setData('text/html', '<a href=\"' + u.replace(/\"/g, '&quot;') + '\">' + u.replace(/</g, '&lt;') + '</a>');"
+            + " const e = new f.contentWindow.ClipboardEvent('paste', { clipboardData: t, bubbles: true, cancelable: true }); a.dispatchEvent(e); return 'pasted ' + e.defaultPrevented })()",
+            r => console.warn("LOOPHOST paste", r))
+    }
+    // `text` selected with the mouse, as a person drags across it (from its
+    // end to its start with `backwards`: a press outside a selection, as
+    // one inside it would drag the selected text).
+    function selectByMouseForTest(text, backwards) {
+        web.runJavaScript("(() => { const f = document.querySelector('iframe'); const d = f && f.contentDocument; if (!d) return null;"
+            + " const w = d.createTreeWalker(d.body, NodeFilter.SHOW_TEXT); let n; const t = " + JSON.stringify(text) + ";"
+            + " while ((n = w.nextNode())) { const i = n.nodeValue.indexOf(t); if (i >= 0) { const r = d.createRange(); r.setStart(n, i); r.setEnd(n, i + t.length);"
+            + " const b = r.getBoundingClientRect(), o = f.getBoundingClientRect(); return [o.left + b.left, o.top + b.top, b.width, b.height] } } return null })()", r => {
+                if (!r) { console.warn("LOOPHOST select: text not found"); return }
+                const z = web.zoomFactor, y = (r[1] + r[3] / 2) * z
+                web.forceActiveFocus()
+                if (backwards) typer.drag((r[0] + r[2]) * z + 3, y, r[0] * z, y)
+                else typer.drag(r[0] * z + 1, y, (r[0] + r[2]) * z + 2, y)
+            })
+    }
+    // Bold text in the page holding `text` (the harness's check).
+    function boldForTest(text, cb) {
+        web.runJavaScript("(() => { const f = document.querySelector('iframe'); const d = f && f.contentDocument; if (!d) return 'no page';"
+            + " const w = d.createTreeWalker(d.body, NodeFilter.SHOW_TEXT); let n; const t = " + JSON.stringify(text) + ";"
+            + " while ((n = w.nextNode())) if (n.nodeValue.indexOf(t) >= 0) { const el = n.parentElement; return el.tagName + ' ' + f.contentWindow.getComputedStyle(el).fontWeight } return 'not found' })()", cb)
+    }
     function textForTest(cb) {
         web.runJavaScript("(() => { const f = document.querySelector('iframe'); const d = f && f.contentDocument; return d ? d.body.innerText.slice(0, 2000) : '' })()", cb)
     }
@@ -93,6 +126,9 @@ Item {
         readonly property string theme: root.hostTheme
         signal reply(string id, string json)
         signal askTitle()
+        /// To the host's commanding surface: {op: "exec", key, seq} or
+        /// {op: "dismiss", seq}.
+        signal commanding(string json)
         function request(kind, id, json) {
             // Only what the Loop host may ask.
             if (["token", "people"].indexOf(kind) < 0) return
@@ -103,7 +139,10 @@ Item {
             let d = {}
             try { d = JSON.parse(json) } catch (e) {}
             if (name === "error") console.warn("LOOPHOST", root.kind, "error", d.stage || "", (d.message || "").slice(0, 200))
-            else console.info("LOOPHOST", root.kind, name)
+            else if (name !== "commanding" && name !== "commandingDismiss") console.info("LOOPHOST", root.kind, name, name === "nested" || name === "code" || name === "commandingExecuted" ? json.slice(0, 200) : "")
+            // Loop's formatting toolbar, drawn by OST over the page.
+            if (name === "commanding") { surface.show(d, d.x * web.zoomFactor, d.y * web.zoomFactor); return }
+            if (name === "commandingDismiss") { surface.hide(); return }
             if (name === "title") { root.componentTitle = d.title || ""; return }
             if (name === "titleText") { root.titleText(String(d.title || "")); return }
             if (name === "rendered") root.state_ = "ready"
@@ -170,6 +209,17 @@ Item {
             else p.deny()
         }
     }
+
+    // Loop's formatting toolbar ("commanding surface"), as Teams draws it
+    // over the frame (LoopCommandingSurface.qml).
+    LoopCommandingSurface {
+        id: surface
+        view: web
+        onExec: (key, seq) => bridge.commanding(JSON.stringify({ op: "exec", key: key, seq: seq }))
+        onDismissed: seq => bridge.commanding(JSON.stringify({ op: "dismiss", seq: seq }))
+    }
+    function commandingForTest() { return surface.stateForTest() }
+    function commandingPickForTest(id) { return surface.pickForTest(id) }
 
     // Covered until the page is drawn (Teams shows its loading page
     // meanwhile); the view itself stays shown so it keeps rendering.

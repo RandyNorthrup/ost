@@ -4,7 +4,7 @@ title: Loop page extras as Teams
 status: In Progress
 assignee: []
 created_date: '2026-11-16T20:42:00Z'
-updated_date: '2026-11-21T05:45:00Z'
+updated_date: '2026-11-21T08:45:00Z'
 labels:
   - desktop
 dependencies: []
@@ -48,7 +48,10 @@ What TASK-0205 left of Teams' Loop host (docs/spec/loop-host.md): "See who has a
 - Not checked live: the dark Loop page, because ost-test1's chat service was answering 429 (throttled) during the run, so the Notes page showed Teams' "Your notes are temporarily not available". The popover was not opened live either.
 - Still open: Teams' commanding surface, nested-component hosting, telemetry sink and trusted-types policy.
 
-- 2026-11-20 (chatE), checked live on linuxlt as ost-test1:
-  - AC3: OST group test > Notes in OST's dark and high-contrast themes (`--loop-test=notes --theme=dark|highContrast`) against Teams' own on winpc (Teams set to Dark, then High contrast, then back to Follow OS). The Loop page uses Teams' colours: dark page #1F1F1F with the same header line and "Just start typing..."; high contrast black with white text, white header lines and the "+" in the margin, as Teams draws them.
-  - AC1: See who has access's request for that Notes page answers with the chat's SharePoint group (1 group, no people), which the popover shows as "1 group giving access" (`--loop-access-test=<link>`, new). The popover picture itself is retaken with the next build (the test anchored it off screen).
+- 2026-11-21 (chatE2), AC2 remainder: Teams' formatting toolbar and nested Loop components.
+  - Built: loop_host.js registers Teams' CommandingSurfaceTreeViewProvider (425275: display/dismiss, usesCoordinates, expandable), LoopComponentLoader (910716/74043: a nested Fluid loader with the page's driver; links resolved as Teams' existing request with loadMode cached/delayed, code details as detached containers), NestedLoopComponentHosting and ResolvedUrlProvider (resolveUrl cached, also per nested container); the code loader knows Teams' families (loop-page-container, office-fluid-container and onenote-meetings via officeContainer, html-canvas, copilot-board), CDN allow-list kept.
+  - LoopCommandingSurface.qml draws Teams' legacy CommandingSurfaceV9 natively over the page (top bar of 32 px buttons + More, expanded Fluent menu groups, submenus, keyboard, tooltips, light/dark/HC via theme). Glyphs: Teams' 375-name icon map (836862) as assets/icons/loop-commanding.json (NOTICE entry).
+  - Harness: --loop-test=notes --loop-format (mouse-drag selection, Bold, Shift+F10, Escape), --loop-paste=<link>, --loop-backspace=<n>; KeyTyper gained drag() and more keys.
+  - Verified live on linuxlt (ost-test1, OST group test Notes): collapsed top bar on a mouse selection, Bold via it (text weight 600), Shift+F10 expanded surface (light and dark), Escape closes; a pasted Loop component link (ost-test1's OST TEST 187 meeting notes) loads through LoopComponentLoader and Loop draws the nested component; all test text and the component removed again (page as before, checked after reload).
+  - Open: high contrast not seen live; no side-by-side with Teams on winpc; the harness's synthetic drag only sometimes makes Loop show the top bar; Create Loop component / Insert component (type Fluid path) not tried live; requiredProviderTypes, LoopCodeLoaderFactoryProvider (non-Fluid components), Whiteboard container, telemetry sink and trusted-types policy not given.
 <!-- SECTION:NOTES:END -->

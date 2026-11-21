@@ -22,6 +22,7 @@
         ost.reply.connect((id, json) => post({ dir: "reply", id, json }));
         ost.themeChanged.connect(() => post({ dir: "theme", theme: ost.theme }));
         ost.askTitle.connect(() => post({ dir: "titleText" }));
+        ost.commanding.connect(json => post({ dir: "commanding", json: String(json || "{}") }));
         sendConfig();
     });
 })();

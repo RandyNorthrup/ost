@@ -22,10 +22,17 @@ pub mod qobject {
 
     unsafe extern "RustQt" {
         /// Type `text` into whatever has focus in this item's window
-        /// ("\n" is Return, "\u{8}" Backspace, "\u{1}" Ctrl+End).
+        /// ("\n" is Return, "\u{8}" Backspace, "\u{1}" Ctrl+End, "\u{2}"
+        /// Shift+Home, "\u{3}" Shift+F10, "\u{16}" Ctrl+V, "\u{1a}" Ctrl+Z,
+        /// "\u{1b}" Escape).
         #[qinvokable]
         #[cxx_name = "typeText"]
         fn type_text(self: Pin<&mut KeyTyper>, text: &QString);
+
+        /// Drag the mouse with the left button held from (x1, y1) to
+        /// (x2, y2) in this item's coordinates (a text selection).
+        #[qinvokable]
+        fn drag(self: Pin<&mut KeyTyper>, x1: f64, y1: f64, x2: f64, y2: f64);
     }
 
     // QQuickItem takes a QQuickItem parent; QML parents it.
@@ -39,6 +46,8 @@ unsafe extern "C" {
     /// Send `utf8` (NUL-terminated) to `item`'s window as key presses
     /// (src/webengine.cpp).
     fn ost_type_keys(item: *mut core::ffi::c_void, utf8: *const core::ffi::c_char);
+    /// Drag the mouse across `item`'s window (src/webengine.cpp).
+    fn ost_mouse_drag(item: *mut core::ffi::c_void, x1: f64, y1: f64, x2: f64, y2: f64);
 }
 
 #[derive(Default)]
@@ -68,6 +77,15 @@ impl qobject::KeyTyper {
         unsafe {
             let item = self.get_unchecked_mut() as *mut Self as *mut core::ffi::c_void;
             ost_type_keys(item, text.as_ptr());
+        }
+    }
+
+    pub fn drag(self: Pin<&mut Self>, x1: f64, y1: f64, x2: f64, y2: f64) {
+        // SAFETY: `self` is the live C++ KeyTyper (a QQuickItem); the call
+        // only reads its window and sends it mouse events.
+        unsafe {
+            let item = self.get_unchecked_mut() as *mut Self as *mut core::ffi::c_void;
+            ost_mouse_drag(item, x1, y1, x2, y2);
         }
     }
 }

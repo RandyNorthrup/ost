@@ -12619,12 +12619,17 @@ Window {
         property int step: 0
         property int readyAt: -1
         property string typed: ""
+        property string beforePaste: ""
         property string added: ""
         property var created: null
         onTriggered: {
             const arg = k => (Qt.application.arguments.find(a => a.startsWith(k + "=")) || "").slice(k.length + 1)
             const has = k => Qt.application.arguments.indexOf(k) >= 0
             const id = arg("--open-chat"), which = arg("--loop-test"), text = arg("--loop-type")
+            // --loop-format (with --loop-type): the commanding surface;
+            // --loop-paste=<Loop component link>: a nested component.
+            const fmt = has("--loop-format"), paste = arg("--loop-paste")
+            const F = fmt && text ? 22 : 0, P = paste ? 32 : 0
             const dir = (arg("--shots") || ".") + "/"
             const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "loop-" + which + "-" + n + ".png"))
             if (backend.currentChatId !== id) {
@@ -12659,25 +12664,89 @@ Window {
                 }
             } else if (readyAt >= 0 && step === readyAt + 4) {
                 if (which === "newpage") console.warn("LOOPTEST tabs after", JSON.stringify(conversation.channelTabs.filter(t => t.kind === "ChannelPage").map(t => ({ id: t.id, name: t.name, link: t.content_url.split("?")[0] }))))
-                if (text && loop && state().state === "ready") { typed = text; loop.typeForTest(text) }
+                // With --loop-format the text gets a line of its own (its
+                // selection is only the typed text).
+                if (text && loop && state().state === "ready") { typed = text; loop.typeForTest((fmt ? "\n" : "") + text) }
+                // --loop-backspace=<n>: n Backspaces at the end of the page
+                // first (to clear what a test left).
+                else if (arg("--loop-backspace") && loop) loop.typeForTest("\b".repeat(Number(arg("--loop-backspace"))))
+            } else if (readyAt >= 0 && step === readyAt + 7 && !typed && arg("--loop-backspace")) {
+                loop.textForTest(t => console.warn("LOOPTEST backspaced", JSON.stringify(String(t).slice(0, 400))))
+                shot("backspaced")
             } else if (readyAt >= 0 && step === readyAt + 7 && typed) {
                 loop.textForTest(t => console.warn("LOOPTEST typed", String(t).indexOf(typed) >= 0 ? "found" : "missing", JSON.stringify(String(t).slice(0, 300))))
                 shot("typed")
-            } else if (readyAt >= 0 && step === readyAt + 8 && typed) {
+            } else if (fmt && typed && step === readyAt + 8) {
+                // Teams' commanding surface: the typed text selected with
+                // the mouse (Loop shows the top bar for that).
+                loop.selectByMouseForTest(typed)
+            } else if (fmt && typed && step === readyAt + 9) {
+                // Loop can miss the first drag right after typing: again.
+                if (!loop.commandingForTest().open) loop.selectByMouseForTest(typed, true)
+            } else if (fmt && typed && step === readyAt + 10) {
+                console.warn("LOOPTEST toolbar", JSON.stringify(loop.commandingForTest()))
+                shot("toolbar")
+            } else if (fmt && typed && step === readyAt + 11) {
+                console.warn("LOOPTEST bold picked", loop.commandingPickForTest("bold"))
+            } else if (fmt && typed && step === readyAt + 13) {
+                loop.boldForTest(typed, r => console.warn("LOOPTEST bold", r))
+                console.warn("LOOPTEST after bold", JSON.stringify(loop.commandingForTest()))
+                shot("bold")
+            } else if (fmt && typed && step === readyAt + 14) {
+                // The whole surface (Shift+F10), focused.
+                loop.keysForTest("\u0002\u0003")
+            } else if (fmt && typed && step === readyAt + 16) {
+                console.warn("LOOPTEST expanded", JSON.stringify(loop.commandingForTest()))
+                shot("expanded")
+            } else if (fmt && typed && step === readyAt + 17) {
+                loop.keysForTest("\u001b")
+            } else if (fmt && typed && step === readyAt + 18) {
+                console.warn("LOOPTEST escaped", JSON.stringify(loop.commandingForTest()))
+                shot("escaped")
+                // Bold off again (the text is removed later in any case).
+                loop.selectByMouseForTest(typed)
+            } else if (fmt && typed && step === readyAt + 19) {
+                if (!loop.commandingForTest().open) loop.selectByMouseForTest(typed, true)
+            } else if (fmt && typed && step === readyAt + 20) {
+                console.warn("LOOPTEST unbold picked", loop.commandingPickForTest("bold"))
+            } else if (fmt && typed && step === readyAt + 21) {
+                loop.boldForTest(typed, r => console.warn("LOOPTEST unbold", r))
+            } else if (paste && step === readyAt + 8 + F) {
+                // A Loop component link pasted on a line of its own: Loop
+                // asks the host's LoopComponentLoader for the component.
+                if (loop) { loop.textForTest(t => beforePaste = String(t)); loop.typeForTest("\n") }
+            } else if (paste && step === readyAt + 9 + F) {
+                loop.pasteForTest(paste)
+            } else if (paste && step === readyAt + 17 + F) {
+                console.warn("LOOPTEST nested", JSON.stringify(state().events.filter(e => e === "nested" || e === "code" || e === "error")))
+                loop.textForTest(t => console.warn("LOOPTEST nested text", JSON.stringify(String(t).slice(0, 600))))
+                shot("nested")
+            } else if (paste && (step === readyAt + 18 + F || step === readyAt + 21 + F)) {
+                // Removed again: Backspace after the component selects it,
+                // the next deletes it (and the line); again while the page
+                // isn't as it was.
+                loop.textForTest(t => { if (String(t).trim() !== beforePaste.trim()) loop.typeForTest("\b\b") })
+            } else if (paste && step === readyAt + 24 + F) {
+                loop.textForTest(t => console.warn("LOOPTEST nested removed", String(t).trim() === beforePaste.trim() ? "as before" : "differs", JSON.stringify(String(t).slice(0, 400))))
+                shot("nested-removed")
+                loop.reload()
+            } else if (paste && step === readyAt + 30 + F) {
+                loop.textForTest(t => console.warn("LOOPTEST nested removed after reload", String(t).trim() === beforePaste.trim() ? "as before" : "differs", JSON.stringify(String(t).slice(0, 400))))
+            } else if (readyAt >= 0 && step === readyAt + 8 + F + P && typed) {
                 // The page again from the service: the typing was saved.
                 loop.reload()
-            } else if (readyAt >= 0 && step === readyAt + 14 && typed) {
+            } else if (readyAt >= 0 && step === readyAt + 14 + F + P && typed) {
                 loop.textForTest(t => console.warn("LOOPTEST reloaded", String(t).indexOf(typed) >= 0 ? "found" : "missing", JSON.stringify(String(t).slice(0, 300))))
                 shot("reloaded")
-            } else if (readyAt >= 0 && step === readyAt + 15 && typed) {
-                loop.typeForTest("\b".repeat(typed.length))
-            } else if (readyAt >= 0 && step === readyAt + 18 && typed) {
+            } else if (readyAt >= 0 && step === readyAt + 15 + F + P && typed) {
+                loop.typeForTest("\b".repeat(typed.length + (fmt ? 1 : 0)))
+            } else if (readyAt >= 0 && step === readyAt + 18 + F + P && typed) {
                 loop.textForTest(t => console.warn("LOOPTEST removed", String(t).indexOf(typed) >= 0 ? "still there" : "gone", JSON.stringify(String(t).slice(0, 300))))
                 shot("removed")
                 loop.reload()
-            } else if (readyAt >= 0 && step === readyAt + 24 && typed) {
+            } else if (readyAt >= 0 && step === readyAt + 24 + F + P && typed) {
                 loop.textForTest(t => console.warn("LOOPTEST removed after reload", String(t).indexOf(typed) >= 0 ? "still there" : "gone", JSON.stringify(String(t).slice(0, 300))))
-            } else if (readyAt >= 0 && step === readyAt + 25) {
+            } else if (readyAt >= 0 && step === readyAt + 25 + F + P) {
                 console.warn("LOOPTEST final", JSON.stringify(state()))
                 if (which === "newpage" && has("--loop-remove") && added) {
                     const t = conversation.channelTabs.find(t => t.id === added)
@@ -12685,7 +12754,7 @@ Window {
                     const ev = view && view.createdForTest ? view.createdForTest() : null
                     if (ev && ev.driveId && ev.itemId) { console.warn("LOOPTEST deleting the new page's file"); backend.driveDelete(ev.driveId, ev.itemId) }
                 }
-            } else if (readyAt >= 0 && step === readyAt + 29) {
+            } else if (readyAt >= 0 && step === readyAt + 29 + F + P) {
                 console.warn("LOOPTEST done", backend.channelTabResult)
                 if (!has("--loop-stay")) Qt.quit()
             }
