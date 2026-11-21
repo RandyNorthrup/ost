@@ -4,7 +4,7 @@ title: Pop-out windows for Teams' own views and Block bot conversation, as Teams
 status: In Progress
 assignee: []
 created_date: '2026-11-21T00:13:00Z'
-updated_date: '2026-11-21T16:31:00Z'
+updated_date: '2026-11-21T19:39:00Z'
 labels:
   - desktop
   - apps
@@ -19,7 +19,7 @@ Teams' app bar menu offers Open in new window for its own views (Chat, Calendar 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Open in new window on Teams' own app-bar views opens them in their own window as in Teams
+- [x] #1 Open in new window on Teams' own app-bar views opens them in their own window as in Teams
 - [x] #2 Block bot conversation appears for bots and works as in Teams
 <!-- AC:END -->
 
@@ -41,4 +41,9 @@ Teams' app bar menu offers Open in new window for its own views (Chat, Calendar 
 - 2026-11-21 (teamsG) Discover's "Catch up on past events": the Events window asks exactly Teams' DISCOVER_PAST query, now at the regional service as Teams does (ECS useRegionalVirtualEventsServiceEndpointResolver on; it was the global virtualevents/prod address). The service answers past = [] for ost-test1 (logged live). Teams on winpc still showed OST TEST 217 r3 town hall only because its stored DISCOVER_PAST slot (IndexedDB one-events-manager, read-only) was last synced 2026-11-19 13:25Z: Teams refreshes only UP_NEXT and UPCOMING on its interval and activation, and the past slot only at start. So the empty past list matches the service, and Teams' list is a stale copy. Live: Events window 946 x 593 with Discover loaded (now 0, upcoming 0, past 0, no error).
 - Add a tab in the pop-out: the Chat window now opens Teams' Add a tab picker and the tab configuration inside itself (CoreAppWindow has its own AgentStore and TabConfigDialog; app details, Get more apps and Manage apps go to the main window). Live (spatest, --app-bar-test wplus:chat): the picker opened in the Chat window (901 x 561 within 946 x 593) and not in the main window, then closed without adding anything. Harness ops wplus:<key>[:close] and wevents:<key>.
 - Split-view Chat window: not checked this round (the winpc slots went to the reads above). OST passes split view (Teams' simpleCollabUserSettings) to the window, which then lists chats only.
+
+- 2026-11-21 (teamsH) split view, measured on winpc (Settings > Chats and channels > Separate for the test, put back to Combined after; previews/timestamps came back as they were): the app bar's Chat menu has Open in new window, New message, New message in new window, Move up, Move down, Unpin, Customize app bar (OST's matches). Teams' Chat window: 946 x 593, the list 266 wide (tree at x 14), pills Unread / Chats / Unmuted with Meeting chats under More filters, Copilot row, Quick views Mentions / Drafts / Saved, Favorites, Chats with previews and time stamps (split's defaults), and the chat you were last in (OST Test 2) open beside it. The split Teams app: pills Unread / Channels / Communities; quick views Followed threads, Discover, Drafts.
+- OST before: pills Unread / Chats / Meeting chats, quick views Followed threads / Saved, no Copilot row, empty chat pane, and a preview with line breaks spilling over three lines.
+- Built: split Chat pills Unread, Chats, Unmuted (Ctrl+Alt+Q; unmuted chats only), Meeting chats (under More filters when they don't fit); no Followed threads in the Chat pane; the window passes the main window's drafts, mentions and Copilot row and sends Mentions / Drafts / Saved / Copilot to the main window; the window opens on the main window's chat (a chat for split Chat, a channel for Teams); previews one line (line breaks as spaces) everywhere. Add a tab picker: Math.min(901.3, W - 46) x Math.min(647.3, H - 28), Teams' 900 x 565 at 23, 14 in the 946 x 593 pop-out.
+- Live (spatest, --app-bar-test=split:on,...,split:off; new ops split:on|off and wlist:<key>): window 946 x 593, pills ["Unread","Chats","Unmuted"] + more ["Meeting chats"], one-line previews; the window's Add a tab picker 900 x 565 at 23, 14.5 (was 901 x 561). Quick views showed only Saved in that run: OST shows Mentions and Drafts when its activity feed has mentions and it has drafts (the main window's data), which that run hadn't loaded; Teams showed both. Split view put back to Combined.
 <!-- SECTION:NOTES:END -->

@@ -7,20 +7,21 @@
 "%1 and"		AppDetailsDialog.qml:576	
 "%1 by %2"		FindPane.qml:762	
 "%1 checkbox, press spacebar to select all."		StoreView.qml:604	
-"%1 didn't open: %2"		backend.rs:24666	
+"%1 didn't open: %2"		backend.rs:24461	
 "%1 direct"		ProfileCard.qml:463	
 "%1 hour"		BreakoutSettingsDialog.qml:115	
-"%1 is presenting"		CallWindow.qml:3120 CallWindow.qml:3203	
+"%1 is presenting"		CallWindow.qml:3117 CallWindow.qml:3200	
 "%1 isn't available in OST yet."		TabWindow.qml:161	
 "%1 isn't sharing LinkedIn profile information here or doesn't have a LinkedIn profile."		ProfileCard.qml:615	
 "%1 mentioned you: %2"		MentionsView.qml:152	
 "%1 minute"		BreakoutSettingsDialog.qml:116	
 "%1 months"		ManageTeam.qml:154	
+"%1 pixels"		ClipEffectPanels.qml:611	
 "%1 replied: %2 %3"		DetailsPane.qml:431	
 "%1 reports"		ProfileCard.qml:462 ProfileCard.qml:468	
 "%1 stars"		AppDetailsDialog.qml:102	
 "%1 tab"		ClipEffectPanels.qml:319 ClipEffectPanels.qml:446	
-"%1 template, %2"		EventsView.qml:442	
+"%1 template, %2"		EventsView.qml:467	
 "%1 was downloaded."		FileActions.qml:285	
 "%1 years"		ManageTeam.qml:155	
 "%1, all day event"		CalendarView.qml:1105	
@@ -29,20 +30,20 @@
 "%1, collapsed"		KeyboardShortcuts.qml:272	
 "%1, currently: %2"		ProfileCard.qml:519 ProfileCard.qml:548	
 "%1, expanded"		KeyboardShortcuts.qml:272	
-"%1, open thread"		Conversation.qml:3143	
+"%1, open thread"		Conversation.qml:3112	
 "%1, removed"		DownloadsFlyout.qml:176	
 "%1, sorted ascending"		OneDriveView.qml:1221	
 "%1, sorted descending"		OneDriveView.qml:1221	
 "%1: %2. %3: %4."		AgendaTimerRow.qml:426	
-", collapsed"		ChatList.qml:1504 ChatList.qml:1573	
-", expanded"		ChatList.qml:1504 ChatList.qml:1573	
+"(PNG, JPG, and GIF formats supported)"		ClipEffectPanels.qml:645	
+", collapsed"		ChatList.qml:1513 ChatList.qml:1582	
+", expanded"		ChatList.qml:1513 ChatList.qml:1582	
 "1 month"		ManageTeam.qml:154	
 "1 participant"		BreakoutTab.qml:300	
 "1 report"		ProfileCard.qml:462 ProfileCard.qml:468	
 "1 year"		ManageTeam.qml:155	
 "5 minutes - Most space for details"		CalendarView.qml:257	
 "60 minutes - Least space for details"		CalendarView.qml:257	
-"<0>Early Access</0> through"		SettingsView.qml:4144	
 "About to leave meeting ..."		RoomAutoExit.qml:91	
 "Accept the proposed time"		CalendarView.qml:1576	
 "Add %1 backdrop."		ClipEffectPanels.qml:252	
@@ -52,121 +53,149 @@
 "Add more"		OneDriveShare.qml:273	
 "Add more details"		FeedbackWindow.qml:133	
 "Add music Selected %1"		VideoClipRecorder.qml:1318	
+"Add photo"		ClipEffectPanels.qml:642	
 "Add someone"		CallsView.qml:403	
 "Add to Dictionary"		EditorCard.qml:60	
-"Added a shortcut in your OneDrive"		backend.rs:22181	
-"Adding people…"		backend.rs:16620	
+"Added a shortcut in your OneDrive"		backend.rs:21981	
+"Adding people…"		backend.rs:16483	
 "Additional people: %1"		LoopAccessPopover.qml:73	
-"All hands"		EventsView.qml:103	
+"All hands"		EventsView.qml:128	
 "Alt + 0 to 9 number keys"		VideoClipCard.qml:508	
 "Alt + down arrow key"		VideoClipCard.qml:503	
 "Alt + left arrow key"		VideoClipCard.qml:507	
 "Alt + right arrow key"		VideoClipCard.qml:507	
 "Alt + up arrow key"		VideoClipCard.qml:503	
-"An AI-powered tool that answers, routes, and filters calls on your behalf."		SettingsView.qml:3126 SettingsView.qml:3728	
 "An office building on a desk"		AutoLocationDialog.qml:45	
-"Animals"		EmojiPicker.qml:35	
+"Animals"		ClipEffectPanels.qml:35 EmojiPicker.qml:35	
 "Annotation is available when you share your screen"		SharingControlBar.qml:221	
 "Anyone with the link can also access this Loop component"		LoopAccessPopover.qml:85	
-"App permissions for %1"		SettingsView.qml:3969	
+"App permissions for %1"		SettingsView.qml:3489	
 "Are you sure you want to delete the <0>%1</0> channel? All conversations will be deleted."		ChannelMenu.qml:313	
+"Art Strokes"		ClipCatalog.qml:42	
 "Ask a question"		EventStagePreview.qml:128	
-"Ask me about call quality after calls"		SettingsView.qml:2187	
-"Ask me anything"		EventsView.qml:105	
+"Ask me about call quality after calls"		SettingsView.qml:2093	
+"Ask me anything"		EventsView.qml:130	
 "Attach my last message to help OST analyze my feedback. It will be public."		SmartReplyFeedback.qml:153	
 "Auto %1"		CameraSettingsDialog.qml:106	
+"Autumn"		ClipCatalog.qml:55	
 "Back to previous profile"		ProfileCard.qml:375	
+"Backdrops"		ClipEffectPanels.qml:296	
+"Background menu."		ClipEditOverlay.qml:312	
 "Backward menu."		ClipEditOverlay.qml:321	
-"Best for interactive trainings, product demos, or thought leadership sessions"		EventsView.qml:101	
+"Best for interactive trainings, product demos, or thought leadership sessions"		EventsView.qml:126	
 "Bike"		CalendarView.qml:264	
+"Black and White"		ClipCatalog.qml:30	
+"Blackboard"		ClipCatalog.qml:83	
+"Blue Bubbles"		ClipCatalog.qml:40	
 "Blur options"		EffectTile.qml:84	
+"Board"		ClipEffectPanels.qml:526 VideoClipRecorder.qml:886 VideoClipRecorder.qml:887	
+"Bokeh"		ClipCatalog.qml:63	
 "Books"		CalendarView.qml:263	
-"Bring a community together for virtual experiences"		EventsView.qml:106	
+"Breeze"		ClipCatalog.qml:20	
+"Bricks"		ClipCatalog.qml:32	
+"Bring a community together for virtual experiences"		EventsView.qml:131	
 "Browse all help"		HelpView.qml:191	
 "Bus"		CalendarView.qml:265	
 "By pressing \"Send feedback\", Report a problem opens with your answers and the call's technical details, to post as a public issue on GitHub (%1). Nothing is sent before you do."		CallQualitySurvey.qml:221	
 "CSV files (*.csv)"		BreakoutCsvDialog.qml:133	
 "Call %1"		CallsView.qml:353	
-"Calling %1…"		CallWindow.qml:5255	
-"Calls are available in 1:1 chats"		backend.rs:9307	
-"Calls merged"		backend.rs:13653	
+"Calling %1…"		CallWindow.qml:5245	
+"Calls are available in 1:1 chats"		backend.rs:9197	
+"Calls merged"		backend.rs:13543	
 "Camera settings"		CameraSettingsDialog.qml:37	
 "Cameras"		ContentCameraDialog.qml:450	
 "Cancel this meeting for everyone?"		CalendarView.qml:1721	
-"Cancelling…"		backend.rs:23196	
+"Cancelling…"		backend.rs:22996	
 "Capture screenshot"		FeedbackWindow.qml:153	
 "Car"		CalendarView.qml:262	
 "Cast to this room with:"		RoomHome.qml:86 RoomHome.qml:292	
+"Chalkboard"		ClipCatalog.qml:84	
 "Change Camera settings"		VideoClipRecorder.qml:828	
 "Change Mic settings"		VideoClipRecorder.qml:841	
 "Check your own settings"		ProfileCard.qml:637	
 "Checklist"		WebApp.qml:612	
 "Choose File"		TeamAppsView.qml:227 TeamAppsView.qml:231	
-"Choose a download location"		SettingsView.qml:4043	
-"Choose an image"		EventsView.qml:3315	
-"Choose what you're organizing"		EventsView.qml:1778	
+"Choose a download location"		SettingsView.qml:3563	
+"Choose an image"		EventsView.qml:3392	
+"Choose image file to upload."		ClipEffectPanels.qml:626 ClipEffectPanels.qml:654	
+"Choose what you're organizing"		EventsView.qml:1803	
 "Class"		CalendarView.qml:265	
+"Clear boards"		ClipEffectPanels.qml:537	
+"Clear frame"		ClipEffectPanels.qml:518	
 "Clipchamp"		AppRail.qml:57 AppRail.qml:408	
 "Close Music"		VideoClipRecorder.qml:1394	
-"Community event"		EventsView.qml:106	
+"Color Dots"		ClipCatalog.qml:75	
+"Color menu."		ClipEditOverlay.qml:300	
+"Color picker"		ClipEffectPanels.qml:569 ClipEffectPanels.qml:603	
+"Community event"		EventsView.qml:131	
 "Connect your account"		ProfileCard.qml:648	
-"Connected without audio"		CallWindow.qml:3235	
-"Consult: %1"		backend.rs:13521	
-"Consult: not someone you can call"		backend.rs:13476	
+"Connected without audio"		CallWindow.qml:3232	
+"Consult: %1"		backend.rs:13411	
+"Consult: not someone you can call"		backend.rs:13366	
 "Copied %1 item"		FileActions.qml:298 FileActions.qml:299	
 "Copied %1 items"		FileActions.qml:298 FileActions.qml:299	
 "Copilot uses your data to generate responses during the meeting and an Intelligent recap after the meeting. Interactions and summaries with Copilot might be retained due to the host organization’s policy."		CallWindow.qml:1621	
 "Copy email"		HoverCard.qml:229 PeopleView.qml:162	
 "Couldn't attach the file. Please try again."		CloudAttach.qml:60	
-"Couldn't cancel the event."		EventsView.qml:3899	
-"Couldn't cancel your registration."		EventsView.qml:653	
-"Couldn't change it."		EventsView.qml:3860	
-"Couldn't join the meeting"		backend.rs:11095	
-"Couldn't join the meeting: %1"		backend.rs:11168 backend.rs:12739	
-"Couldn't load events."		EventsView.qml:1148	
-"Couldn't load the meeting options."		EventsView.qml:270	
+"Couldn't cancel the event."		EventsView.qml:3976	
+"Couldn't cancel your registration."		EventsView.qml:678	
+"Couldn't change it."		EventsView.qml:3937	
+"Couldn't join the meeting"		backend.rs:10985	
+"Couldn't join the meeting: %1"		backend.rs:11058 backend.rs:12629	
+"Couldn't load events."		EventsView.qml:1173	
+"Couldn't load the meeting options."		EventsView.qml:295	
 "Couldn't load this profile."		ProfileCard.qml:669	
-"Couldn't open the event."		EventsView.qml:222 EventsView.qml:240 EventsView.qml:248	
-"Couldn't post your review"		backend.rs:20083	
-"Couldn't publish the event."		EventsView.qml:3742	
-"Couldn't report the review"		backend.rs:20048	
-"Couldn't save your setting. Try again."		SettingsView.qml:4197	
-"Couldn't send the picture: %1"		backend.rs:25084	
+"Couldn't open the event."		EventsView.qml:247 EventsView.qml:265 EventsView.qml:273	
+"Couldn't post your review"		backend.rs:19946	
+"Couldn't publish the event."		EventsView.qml:3819	
+"Couldn't report the review"		backend.rs:19911	
+"Couldn't save your setting. Try again."		SettingsView.qml:3687	
+"Couldn't send the picture: %1"		backend.rs:24783	
 "Couldn't share to Outlook."		ShareToOutlookDialog.qml:35	
-"Couldn't start the call: %1"		backend.rs:9684	
+"Couldn't start the call: %1"		backend.rs:9574	
 "Couldn't update the link settings. Please try again."		CloudAttach.qml:66	
-"Couldn't upload the picture: %1"		backend.rs:17351	
+"Couldn't upload the picture: %1"		backend.rs:17214	
 "Create a team from %1"		CreateTeamPage.qml:234	
 "Credit card"		CalendarView.qml:264	
 "Custom files (*.png *.jpeg *.jpg *.bmp)"		VideoEffectsPane.qml:530	
+"Cyan Dreams"		ClipCatalog.qml:25	
+"DJ"		ClipCatalog.qml:50	
 "Dark pink"		Theme.qml:61	
 "Date, %1"		DatePickerField.qml:64	
 "Decrement value"		BreakoutRoomsPane.qml:212 BreakoutTab.qml:346 TimerSpin.qml:56	
 "Default microphone"		PreJoin.qml:237	
 "Default speaker"		CallsView.qml:211 CallsView.qml:224 CallsView.qml:228	
 "Delete menu."		ClipEditOverlay.qml:317	
+"Delete this clip. Your recording will be lost."		VideoClipRecorder.qml:1289 VideoClipRecorder.qml:1304	
 "Delete this event?"		CalendarView.qml:1721	
-"Dial %1"		CallWindow.qml:5167	
-"Dial pad: %1"		backend.rs:13703	
+"Design Grid"		ClipCatalog.qml:72	
+"Dial %1"		CallWindow.qml:5157	
+"Dial pad: %1"		backend.rs:13593	
 "Direct reports (%1)"		HoverCard.qml:258 HoverCard.qml:263	
 "Do not include any private or sensitive information."		FeedbackWindow.qml:111	
 "Domains"		ChannelEmailDialog.qml:147	
-"Downloaded %1"		backend.rs:24441	
-"Downloading %1…"		backend.rs:10162	
+"Dot Grid"		ClipCatalog.qml:78	
+"Downloaded %1"		backend.rs:24236	
+"Downloading %1…"		backend.rs:10052	
 "Draft to %1"		DraftsView.qml:116	
 "Drag and drop files here or paste an image from your clipboard"		FeedbackWindow.qml:134	
+"Dramatic"		ClipCatalog.qml:21	
+"Draw"		ClipEffectPanels.qml:563 VideoClipRecorder.qml:868 VideoClipRecorder.qml:887	
+"Dreamy Notepad"		ClipCatalog.qml:77	
+"Drop an image file or click to browse."		ClipEffectPanels.qml:644	
 "Duplicate menu."		ClipEditOverlay.qml:319	
 "Earlier post"		ChannelPosts.qml:216	
 "Edit on GitHub"		HelpView.qml:343	
 "Editor content"		PreviewBody.qml:106	
 "Editor settings..."		EditorCard.qml:98	
 "Email address"		ChannelEmailDialog.qml:116	
-"End consult"		CallWindow.qml:5265	
-"Event Banner Image\n(Appears here in actual email)"		EventsView.qml:3214	
-"Event Date Time"		EventsView.qml:3022 EventsView.qml:3022	
-"Event Invite Card"		EventsView.qml:3024	
+"End consult"		CallWindow.qml:5255	
+"Event Banner Image\n(Appears here in actual email)"		EventsView.qml:3291	
+"Event Date Time"		EventsView.qml:3099 EventsView.qml:3099	
+"Event Invite Card"		EventsView.qml:3101	
 "Exam"		CalendarView.qml:266	
 "Featured topics"		HelpView.qml:219	
+"Festive Ribbons"		ClipCatalog.qml:51	
 "File %1"		ChannelFiles.qml:159 FileActions.qml:2031 FileActions.qml:2203	
 "Files from %1"		OneDriveView.qml:598	
 "Files from your meetings will show up here"		OneDriveView.qml:1050	
@@ -178,26 +207,44 @@
 "Find your way around OST"		HelpView.qml:47	
 "Finish on GitHub: check the issue, then select Create."		FeedbackWindow.qml:283	
 "Finish on GitHub: paste your screenshot (Ctrl+V), drop in any other files from the folder that opened, and select Create."		FeedbackWindow.qml:282	
-"Finish on GitHub: select Create to send your feedback."		Conversation.qml:3439	
+"Finish on GitHub: select Create to send your feedback."		Conversation.qml:3408	
 "First aid"		CalendarView.qml:260	
 "Flip menu."		ClipEditOverlay.qml:318	
+"Flowers"		ClipCatalog.qml:61	
 "Folder %1"		ChannelFiles.qml:159 FileActions.qml:1970 FileActions.qml:2031	
 "Folders from %1"		FileActions.qml:1817	
+"Font"		ClipEffectPanels.qml:696	
+"Font menu."		ClipEditOverlay.qml:294	
 "Fork knife"		CalendarView.qml:262	
 "Forward menu."		ClipEditOverlay.qml:320	
+"Frame"		ClipEffectPanels.qml:509 VideoClipRecorder.qml:886 VideoClipRecorder.qml:887	
 "Free at %1"		ProfileCard.qml:72 ProfileCard.qml:80	
+"Fresh Stickies"		ClipCatalog.qml:73	
 "From filter"		FindPane.qml:434	
+"Frosted Blocks"		ClipCatalog.qml:39	
+"Frosted Glass"		ClipCatalog.qml:37	
+"Galaxy"		ClipCatalog.qml:81	
+"Geometric Fresh"		ClipCatalog.qml:45	
+"Geometric Night"		ClipCatalog.qml:46	
+"Gift Box"		ClipCatalog.qml:52	
+"Glitter"		ClipCatalog.qml:56	
 "Go to next day"		CalendarView.qml:918 CalendarView.qml:1990	
 "Go to previous day"		CalendarView.qml:917 CalendarView.qml:1989	
 "Goal"		CalendarView.qml:266	
+"Gold"		ClipEffectsState.qml:126	
+"Golden"		ClipCatalog.qml:23	
 "Grant access is not available because this person can already view this item."		OneDriveShare.qml:950	
+"Graph"		ClipCatalog.qml:79	
+"Gray white"		ClipEffectsState.qml:122	
 "Group chat %1"		SearchView.qml:999 SearchView.qml:1093	
 "Gym"		CalendarView.qml:265	
-"HD video stream"		EventsView.qml:102	
+"HD video stream"		EventsView.qml:127	
+"Hand gestures"		ClipEffectPanels.qml:36	
 "Help articles for OST, built into the app so they work offline. They're written by the OST project; you can read and improve them on %1."		HelpView.qml:367	
 "Help for OST"		HelpView.qml:160 HelpView.qml:362	
+"Hi Fives"		ClipCatalog.qml:44	
 "High Tech"		VideoClipRecorder.qml:1367	
-"Hold: %1"		backend.rs:13059	
+"Hold: %1"		backend.rs:12949	
 "If your contact is based in the European Economic Area or Switzerland, they may need to change the LinkedIn Digital Markets Act %1 for you and others to see their LinkedIn profile here."		ProfileCard.qml:625	
 "Ignore all"		EditorCard.qml:60	
 "Images (*.png *.jpeg *.gif)"		CustomEmojiAdd.qml:33	
@@ -205,18 +252,21 @@
 "Images (*.png *.jpg *.jpeg *.svg *.webp *.gif)"		ClipEffectPanels.qml:628	
 "Images and videos (*.png *.jpg *.jpeg *.svg *.webp *.gif *.webm *.mp4)"		VideoClipRecorder.qml:340	
 "In a conference call"		CastWindow.qml:456	
-"In some situations, AI isn't able to generate chapters."		RecapWindow.qml:374	
-"In some situations, AI isn't able to generate topics."		RecapWindow.qml:374	
+"In some situations, AI isn't able to generate chapters."		RecapWindow.qml:342	
+"In some situations, AI isn't able to generate topics."		RecapWindow.qml:342	
 "Increment value"		BreakoutRoomsPane.qml:212 BreakoutTab.qml:346 TimerSpin.qml:56	
 "Info, View file details"		FilePreview.qml:196	
 "Information"		AudioSettingsPane.qml:455	
 "Interpreter will simulate your voice when interpreting your speech. Your voice sample won't be stored."		AiInterpreterDialog.qml:249	
 "Inviting this room to a meeting"		RoomHome.qml:245	
 "Island"		CalendarView.qml:265	
-"Join: %1"		EventsView.qml:95	
+"Join: %1"		EventsView.qml:120	
+"Jungle"		ClipCatalog.qml:67	
+"Laguna Dreams"		ClipCatalog.qml:27	
 "Learn more on LinkedIn"		ProfileCard.qml:605	
 "Leave now"		RoomAutoExit.qml:134	
 "Licence"		HelpView.qml:245	
+"Lift"		ClipCatalog.qml:16	
 "Light blue"		Theme.qml:58	
 "Light orange"		Theme.qml:52	
 "Light pink"		Theme.qml:62	
@@ -224,14 +274,21 @@
 "List of search result folders"		FileActions.qml:1900	
 "Live event video"		LiveStreamPlayer.qml:125	
 "Luggage"		CalendarView.qml:261	
+"Magenta Dreams"		ClipCatalog.qml:24	
 "Manage access (%1 people) Select to manage access."		OneDriveShare.qml:410	
 "Manage languages..."		EditorCard.qml:98	
+"Manage out-of-office voicemail"		SettingsView.qml:3305 SettingsView.qml:3313	
+"Manifest"		ClipCatalog.qml:17	
+"Maroon"		ClipEffectsState.qml:127	
 "May we contact you about your feedback?"		FeedbackWindow.qml:224	
 "Member team"		ManageChannel.qml:347	
 "Members and guests (%1)"		ManageChannel.qml:309	
+"Memory"		ClipCatalog.qml:19	
 "Mic is off"		VideoClipRecorder.qml:835	
 "Mic is on"		VideoClipRecorder.qml:835	
-"Mix and match capabilities as you go"		EventsView.qml:100	
+"Minimal Grid"		ClipCatalog.qml:71	
+"Mix and match capabilities as you go"		EventsView.qml:125	
+"Modern"		ClipEffectsState.qml:132	
 "More (%1)"		SearchView.qml:296	
 "More calls options"		CallsView.qml:106	
 "More new options"		CalendarView.qml:1015	
@@ -239,33 +296,40 @@
 "Moved %1 item"		FileActions.qml:297	
 "Moved %1 items"		FileActions.qml:297	
 "Movie"		CalendarView.qml:263	
-"Music"		CalendarView.qml:261	
+"Music"		CalendarView.qml:261 VideoClipRecorder.qml:1317 VideoClipRecorder.qml:1393	
 "Mute speaker"		AudioFlyout.qml:101 AudioSettingsPane.qml:174	
-"New all hands"		EventsView.qml:103	
-"New ask me anything"		EventsView.qml:105	
-"New community event"		EventsView.qml:106	
+"My Story"		ClipCatalog.qml:54	
+"Mystery"		ClipCatalog.qml:29	
+"Neon Purple"		ClipCatalog.qml:60	
+"New Report"		ClipCatalog.qml:64	
+"New all hands"		EventsView.qml:128	
+"New ask me anything"		EventsView.qml:130	
+"New community event"		EventsView.qml:131	
 "New event | Calendar"		CalendarView.qml:2599 CalendarView.qml:2618	
-"New group chat"		backend.rs:18895	
-"New training"		EventsView.qml:104	
+"New group chat"		backend.rs:18758	
+"New training"		EventsView.qml:129	
 "Next decade"		DatePickerField.qml:144	
+"Next options"		ClipEffectPanels.qml:133	
 "Next profile"		ProfileCard.qml:376	
+"Nightmode"		ClipCatalog.qml:31	
 "No calls match this filter."		CallsView.qml:363	
 "No file chosen"		TeamAppsView.qml:233	
 "No icon"		CalendarView.qml:260 CalendarView.qml:2416	
 "No matches yet"		TitleBar.qml:261	
-"No posts yet. Start the conversation."		ChannelPosts.qml:637	
+"No posts yet. Start the conversation."		ChannelPosts.qml:626	
 "No preview available"		PreviewBody.qml:165	
 "No shortcuts match"		KeyboardShortcuts.qml:321	
 "No, don't contact me"		FeedbackWindow.qml:228	
 "No, don't share"		FeedbackWindow.qml:219	
-"Not useful"		RecapWindow.qml:789	
+"Not useful"		RecapWindow.qml:752	
+"Notebook"		ClipCatalog.qml:80	
 "Notifications couldn't be turned off. %1"		DetailsPane.qml:65	
 "Notifications couldn't be turned on. %1"		DetailsPane.qml:65	
-"OST Legal Information"		SettingsView.qml:4166	
-"OST Privacy Statement"		SettingsView.qml:4170	
-"OST asks after some calls. If a call had issues, Report a problem opens with its technical details (no one's name) for you to post as a public issue on GitHub."		SettingsView.qml:2188	
+"OST Legal Information"		SettingsView.qml:3673	
+"OST Privacy Statement"		SettingsView.qml:3677	
+"OST asks after some calls. If a call had issues, Report a problem opens with its technical details (no one's name) for you to post as a public issue on GitHub."		SettingsView.qml:2094	
 "OST notifications"		NotificationBanners.qml:33	
-"Objects"		EmojiPicker.qml:54	
+"Objects"		ClipEffectPanels.qml:36 EmojiPicker.qml:54	
 "Older"		FindPane.qml:158	
 "OneDrive"		AppRail.qml:103 AppRail.qml:156 AppRail.qml:162	
 "OneNote"		AppRail.qml:55 AppRail.qml:406 FindPane.qml:363	
@@ -275,37 +339,45 @@
 "Only the people you specified can edit."		OneDriveShare.qml:132	
 "Only the people you specified can view"		FileActions.qml:1148 OneDriveShare.qml:854	
 "Only the people you specified can view."		OneDriveShare.qml:132	
-"Open Q&A sessions with moderated audience questions"		EventsView.qml:105	
-"Open chat with %1"		CallWindow.qml:5225	
+"Open Q&A sessions with moderated audience questions"		EventsView.qml:130	
+"Open chat with %1"		CallWindow.qml:5215	
 "Opens list of active windows"		CastWindow.qml:308 ShareTray.qml:209	
-"Organization Name"		EventsView.qml:3023 EventsView.qml:3023	
-"Organizer Name"		EventsView.qml:3023	
+"Organization Name"		EventsView.qml:3100 EventsView.qml:3100	
+"Organizer Name"		EventsView.qml:3100	
 "Owners (%1)"		ManageChannel.qml:308	
 "PNG (*.png)"		TeamAppsView.qml:182	
 "Package delivery"		CalendarView.qml:264	
-"Parked call"		backend.rs:9324	
+"Paint"		ClipCatalog.qml:62	
+"Parked call"		backend.rs:9214	
 "People in your organization with the link can also access this Loop component"		LoopAccessPopover.qml:86	
 "People reporting to"		ProfileCard.qml:497	
 "People reporting to %1 (%2)"		ProfileCard.qml:306 ProfileCard.qml:578	
+"Photo"		ClipEffectPanels.qml:633 VideoClipRecorder.qml:886 VideoClipRecorder.qml:887	
 "Pill"		CalendarView.qml:261	
+"Pink Dots"		ClipCatalog.qml:76	
 "Pinned %1 to Quick access"		FileActions.qml:267	
+"Pixelated"		ClipCatalog.qml:33	
 "Plain Text"		ComposeBox.qml:479 ComposeBox.qml:486 ComposeBox.qml:979	
 "Plane"		CalendarView.qml:260	
 "Planner"		AppRail.qml:53 AppRail.qml:405	
 "Play %1"		VideoClipRecorder.qml:1458	
-"Polls"		EventsView.qml:104 EventsView.qml:105	
+"Pola"		ClipCatalog.qml:43	
+"Polls"		EventsView.qml:129 EventsView.qml:130	
 "Powered by"		DeviceDetailsDialog.qml:284	
-"Prevent suspected spam calls from disturbing you"		SettingsView.qml:3792	
 "Previous decade"		DatePickerField.qml:141	
-"Producer controls"		EventsView.qml:105	
-"Production view"		CallWindow.qml:2703	
+"Previous options"		ClipEffectPanels.qml:133	
+"Producer controls"		EventsView.qml:130	
+"Production view"		CallWindow.qml:2700	
 "Public Team"		TeamSettingsView.qml:108	
-"Reach a large audience with a professional produced broadcast"		EventsView.qml:102	
+"Reach a large audience with a professional produced broadcast"		EventsView.qml:127	
 "React with %1"		NotificationBanners.qml:376	
-"Real-time reactions"		EventsView.qml:103	
-"Reminder amount"		EventsView.qml:3276	
-"Reminder unit"		EventsView.qml:3278	
+"Real-time reactions"		EventsView.qml:128	
+"Record again"		VideoClipRecorder.qml:771 VideoClipRecorder.qml:929	
+"Recording in progress"		VideoClipRecorder.qml:409	
+"Reminder amount"		EventsView.qml:3353	
+"Reminder unit"		EventsView.qml:3355	
 "Remove channel"		MeetingForm.qml:824	
+"Remove color"		ClipEffectPanels.qml:740	
 "Remove music"		VideoClipRecorder.qml:1504	
 "Remove the card"		ShareForm.qml:238	
 "Repeat unit"		MeetingForm.qml:1438	
@@ -313,28 +385,35 @@
 "Resize %1"		OneDriveView.qml:859	
 "Restore defaults"		CameraSettingsDialog.qml:156	
 "Results for “%1”"		HelpView.qml:262	
+"Results will update as you type."		ClipEffectPanels.qml:98	
+"Retro"		ClipCatalog.qml:65	
+"Review your clips"		VideoClipRecorder.qml:409	
 "Same time zone as you"		ProfileCard.qml:94	
 "Save as"		Main.qml:558	
-"Saved %1 to %2"		backend.rs:9806 backend.rs:10173	
+"Saved %1 to %2"		backend.rs:9696 backend.rs:10063	
+"Scarlet Dreams"		ClipCatalog.qml:26	
 "Schedule 1 hour of focus time"		CalendarView.qml:893	
-"Scheduled %1"		backend.rs:23396	
+"Scheduled %1"		backend.rs:23196	
+"Screen recording"		VideoClipRecorder.qml:409	
 "Search all files"		DownloadsFlyout.qml:90 DownloadsFlyout.qml:93	
 "Search emoji"		EmojiPicker.qml:89 EmojiPicker.qml:90	
 "Search for participants"		MeetingOptionsDialog.qml:445 MeetingPeoplePicker.qml:27	
 "Search help"		HelpView.qml:137 HelpView.qml:139	
 "Search here"		ComposeAppPanel.qml:101 ComposeAppPanel.qml:105	
+"Search..."		ClipEffectPanels.qml:94	
 "Securely connect your LinkedIn account to bring your professional network into Microsoft apps."		ProfileCard.qml:661	
 "See all %1"		FunPicker.qml:205 StoreView.qml:318	
 "See more %1"		ClipEffectPanels.qml:203	
 "Select a Date"		FindPane.qml:496	
 "Select a chat to start messaging"		Conversation.qml:1896	
 "Select a role, %1"		OneDriveShare.qml:562	
-"Send reply"		ChannelPosts.qml:623	
-"Sending update…"		backend.rs:23195	
-"Sending your proposal…"		backend.rs:23197	
-"Sending your response…"		backend.rs:23193	
+"Send reply"		ChannelPosts.qml:612	
+"Sending update…"		backend.rs:22995	
+"Sending your proposal…"		backend.rs:22997	
+"Sending your response…"		backend.rs:22993	
+"Shadow menu."		ClipEditOverlay.qml:306	
 "Share \"%1\""		OneDriveShare.qml:221	
-"Share organization updates and engage employees at scale"		EventsView.qml:103	
+"Share organization updates and engage employees at scale"		EventsView.qml:128	
 "Share relevant content samples and additional log files?"		FeedbackWindow.qml:189	
 "Share with a group"		OneDriveShare.qml:806	
 "Shared with %1. Select to manage access."		OneDriveShare.qml:678	
@@ -343,56 +422,79 @@
 "Show organization"		HoverCard.qml:286 HoverCard.qml:290 ProfileCard.qml:318	
 "Signed in as %1."		FeedbackWindow.qml:237	
 "Signing in…"		SignIn.qml:59	
-"Smilies"		EmojiPicker.qml:17	
+"Smilies"		ClipEffectPanels.qml:35 EmojiPicker.qml:17	
 "Snooze"		RoomAutoExit.qml:132	
 "Soccer"		CalendarView.qml:263	
-"Speaker"	calling:kp3u3qpn	AudioFlyout.qml:79 SettingsView.qml:2534 SettingsView.qml:2541	unknown id
+"Speaker"	calling:kp3u3qpn	AudioFlyout.qml:79 SettingsView.qml:2440 SettingsView.qml:2447	unknown id
 "Specific people with the link can edit"		ShareFileDialog.qml:140	
 "Specific people with the link can view"		ShareFileDialog.qml:140	
 "Split Clip"		VideoClipRecorder.qml:1303	
+"Split screen"		ClipEffectPanels.qml:547	
+"Spring"		ClipCatalog.qml:58	
 "Sprint"		CalendarView.qml:266	
-"Start a call with %1"		CallWindow.qml:5235	
-"Stop consulting and resume"		CallWindow.qml:5317	
+"Squiggles"		ClipCatalog.qml:41	
+"Start a call with %1"		CallWindow.qml:5225	
+"Start typing..."		ClipEditOverlay.qml:113	
+"Stop consulting and resume"		CallWindow.qml:5307	
 "Stroke menu."		ClipEditOverlay.qml:306	
 "Submit an app to your IT admin for approval and check the status of your submissions."		ManageAppsView.qml:273	
 "Submit feedback to OST"		FeedbackWindow.qml:76	
-"Symbols"		EmojiPicker.qml:59	
+"Summer"		ClipCatalog.qml:59	
+"Super"		ClipCatalog.qml:22	
+"Symbols"		ClipEffectPanels.qml:37 EmojiPicker.qml:59	
 "TV"		CalendarView.qml:263	
-"Tab %1"		Conversation.qml:3079	
+"Tab %1"		Conversation.qml:3048	
 "Table"		WebApp.qml:610	
 "Task list"		WebApp.qml:613	
-"Teach, onboard, or upskill with an interactive session"		EventsView.qml:104	
+"Teach, onboard, or upskill with an interactive session"		EventsView.qml:129	
 "Teams (%1)"		ManageChannel.qml:310	
 "Teams / Chat"		MeetingNotesPane.qml:137	
 "Teams Cast"		RoomHome.qml:86 RoomHome.qml:296	
+"Text background"		ClipEffectPanels.qml:732	
+"Text shadow"		ClipEffectPanels.qml:732	
+"Text stroke"		ClipEffectPanels.qml:732	
+"The camera is %1 percent of the video viewport."		ClipEffectPanels.qml:553	
 "The file couldn't be opened"		FileActions.qml:289	
 "The folder color wasn't changed"		FileActions.qml:278	
 "The folder wasn't created"		FileActions.qml:1338	
 "The link wasn't created"		FileActions.qml:1137	
 "The version wasn't deleted"		FileActions.qml:441	
 "The version wasn't restored"		FileActions.qml:441	
+"Thickness"		ClipEffectPanels.qml:605	
 "This Loop component is temporarily not available."		LoopCard.qml:152	
-"This app isn't available in OST yet."		Main.qml:14191	
+"This app isn't available in OST yet."		Main.qml:14056	
 "This camera has no settings to change."		CameraSettingsDialog.qml:64	
 "This file can't be opened"		FileViewer.qml:40	
 "This file has not been shared with a group yet."		OneDriveShare.qml:798	
 "This page is temporarily not available."		ChannelPageTab.qml:133	
+"This removes the app for everyone in the event. You can add it again later."		EventsView.qml:105	
+"This will delete your recording clips."		VideoClipRecorder.qml:1518	
 "This will turn off Interpreter for everyone."		CallWindow.qml:1054	
 "Thumbnail Preview"		FileCard.qml:148	
 "Todo"		CalendarView.qml:266	
-"Training"		EventsView.qml:104	
-"Transfer to %1"		CallWindow.qml:5235 CallWindow.qml:5309	
+"Traditional"		ClipEffectsState.qml:133	
+"Training"		EventsView.qml:129	
+"Transfer to %1"		CallWindow.qml:5225 CallWindow.qml:5299	
 "Travel"		EmojiPicker.qml:46	
+"Travel and places"		ClipEffectPanels.qml:37	
 "Trophy"		CalendarView.qml:260	
-"Turn off all attendee notifications"		EventsView.qml:2756	
-"Turn on all attendee notifications"		EventsView.qml:2756	
+"Turn off all attendee notifications"		EventsView.qml:2833	
+"Turn on all attendee notifications"		EventsView.qml:2833	
+"Typewriter"		ClipEffectsState.qml:135	
 "USA"		StoreView.qml:616	
+"Underwater"		ClipCatalog.qml:66	
+"Uninstall %1 from this event?"		EventsView.qml:98	
 "Unmute speaker"		AudioFlyout.qml:101 AudioSettingsPane.qml:174	
 "Unpinned %1 from Quick access"		FileActions.qml:267	
 "Updating link settings..."		ComposeBox.qml:1191 LoopCard.qml:97	
-"Useful"		RecapWindow.qml:788	
+"Useful"		RecapWindow.qml:751	
 "Uses credits"		AiInterpreterModeDialog.qml:113	
+"Valentine's Day"		ClipCatalog.qml:48	
+"Vaporwave"		ClipCatalog.qml:86	
+"Video editing tools: %1 menu region"		ClipDrawer.qml:56	
+"Videos"		ClipEffectPanels.qml:309 ClipEffectPanels.qml:373	
 "View profile"		ProfileCard.qml:452 ProfileCard.qml:457	
+"Vintage"		ClipCatalog.qml:18	
 "Voting table"		WebApp.qml:614	
 "We couldn't create your team. Please try again."		CreateTeamDialog.qml:126 CreateTeamPage.qml:245	
 "We couldn't find any help for “%1”. Try other words, or browse all help."		HelpView.qml:270	
@@ -401,8 +503,12 @@
 "We couldn't start the conversation."		TabConversationPane.qml:103	
 "We don't have the necessary details to show the organization chart for %1. Organization details are provided by your admin or human resources department."		ProfileCard.qml:570	
 "What is your list about?"		PlaylistPicker.qml:343	
+"White Curves"		ClipCatalog.qml:38	
+"White Dots"		ClipCatalog.qml:74	
+"Winter"		ClipCatalog.qml:57	
 "With %1"		SearchView.qml:293	
 "Work hours: %1 - %2"		ProfileCard.qml:88	
+"Working Hard"		ClipCatalog.qml:49	
 "Yes, share"		FeedbackWindow.qml:218	
 "Yes, you may contact me"		FeedbackWindow.qml:227	
 "Yesterday %1"		Conversation.qml:886 SearchView.qml:188	
@@ -410,7 +516,7 @@
 "You are using Interpreter. Your interpretation language is %1."		CallWindow.qml:1843	
 "You can't view this app right now."		AppDetailsDialog.qml:669	
 "You'll be able to chat separately with the co-organizers and presenters in the planning group. Once saved access it from chat list or Calendar"		MeetingOptionsDialog.qml:348 MeetingOptionsDialog.qml:357	
-"You're presenting"		CallWindow.qml:3221	
+"You're presenting"		CallWindow.qml:3218	
 "You've hit the %1-person limit for group chats. You'll need to remove someone before you send your message."		NewChat.qml:392	
 "You've invited %1 to edit"		OneDriveShare.qml:667	
 "You've invited %1 to view"		OneDriveShare.qml:667	
@@ -421,6 +527,7 @@
 "Your favorite files will show up here"		OneDriveView.qml:1049	
 "Your feedback opens as a public issue on GitHub (%1)."		SmartReplyFeedback.qml:143	
 "Your photos and videos will show up here"		OneDriveView.qml:1050	
+"Your search had no results. Please try again."		ClipEffectPanels.qml:391 ClipEffectPanels.qml:481	
 "You’ll pick a screen, window, or tab. Recording will start automatically. For optimal quality, ensure this tab is in view while recording."		VideoClipRecorder.qml:606	
 "[Me]"		OneDriveView.qml:752	
 "about %1"		ManageTeam.qml:160 ManageTeam.qml:163 ManageTeam.qml:167	

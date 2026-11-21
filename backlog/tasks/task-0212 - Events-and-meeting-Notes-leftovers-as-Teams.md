@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-17T01:27:00Z'
-updated_date: '2026-11-21T18:42:00Z'
+updated_date: '2026-11-21T19:39:00Z'
 labels:
   - desktop
 dependencies: []
@@ -22,7 +22,7 @@ What TASK-0209 left (docs/spec/events.md, docs/spec/call-and-meeting-window.md):
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 Events' remaining pages, actions and pickers work as in Teams (publishing only to test accounts)
-- [ ] #2 Meeting Notes opens or makes the notes in every kind of meeting as Teams, and its ··· menu matches
+- [x] #2 Meeting Notes opens or makes the notes in every kind of meeting as Teams, and its ··· menu matches
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -75,4 +75,8 @@ What TASK-0209 left (docs/spec/events.md, docs/spec/call-and-meeting-window.md):
 - Built: cc_send uses the IC3 token (Skype token only if the call answers 401); notes' edit link now from SharePoint's own createLink as Teams (/:fl:/p/ link); debug log of the notes states; --join-notes deletes its notes near the end of --join-stay; examples meeting_resolve, post_text OST_POST_HTML.
 - Live: OST Test 3 alone in Teams' "Get a link" Meet now ("OST TEST 212 notes teams 3"): claim Success, collabResources.notes Success (was 500/6176); Teams (ost-test1) then joined and its Notes panel opened OST Test 3's page (Agenda / Meeting notes / Follow-up tasks, OST Test 3's presence shown). Test meetings: "OST TEST 212 notes teams", "… 2", "… 3" (Teams Meet nows, no calendar entries); notes files deleted by the harness except Teams' own "OST TEST 212 notes teams.loop" in ost-test1's Meetings folder (to delete).
 - (c) Town hall Manage apps: the card lists ECS extensibility.baseTownhallAppEntityAllowlist (live: AI Producer e7fb100c, Custom Streaming a59fe11a; worker filter isTownHall → base list), names from batchedDefinitions; Add = POST chats/{thread}/apps/entitlements then the tab configuration (Custom Streaming's page is teams.microsoft.com/extensibility-apps/meetingstream/rtmp/config, code teams-modular-packages meeting-stream-rtmp-*.js at runtime), Uninstall = tab property null + DELETE chat entitlement. Spec in events.md; built the card (api::events::townhall_apps/_install/_remove, EventsView, TabConfigDialog eventApp), harness --events-test=thapps:<title>; test draft "OST TEST 212 town hall apps" made by ost-test1 on winpc (to cancel).
+
+- 2026-11-21 (teamsH) (c) live: --events-test=thapps:OST~TEST~212~town~hall~apps (spatest = ost-test1, on the winpc-made draft): card listed Custom Streaming then AI Producer (names, icons, configuration pages from the definitions), Add put Custom Streaming into the event chat and opened its tab configuration in OST's dialog (Teams' meetingstream/rtmp config page loaded and allowed Save), Save added the tab, the card showed "Added" with the trash button, Uninstall removed tab and app and the card showed Add again. The draft was then cancelled in Teams; Teams' "OST TEST 212 notes teams.loop" and "OST TEST 212 town hall apps.loop" (Teams makes the event's notes page) deleted from ost-test1's Meetings folder; the two link messages in the OST Test 3 chat deleted. Leftover: Custom Streaming now shows in ost-test1's Manage your apps (Teams' own Add in the test seems to have left a personal entitlement); removing it with examples/add_app --remove-personal failed on the middle-tier token refresh for a teams-web profile (Graph still fine).
+- AC2 (notes in every kind of meeting, ··· menu): scheduled meetings (collab object, second person via collabDetails) and Meet now (leader election, shared link, second person) both verified live; ··· menu as Teams (earlier rounds). Checked.
+- Still open for AC1: (b) Highlights with a recording and (d) the Generate audio recap submission (AugLoop teams_recap_podcast_generation). Both need a recorded / transcribed test meeting; "OST TEST 240 recap meeting" (ost-test1's, transcript present, 2026-11-20) is a candidate for (d): Teams' Generate dialog should list it, then capture the AugLoop frames (CDP Network.webSocketFrameSent) of one Generate and delete the made recap after. Not attempted this round.
 <!-- SECTION:NOTES:END -->
