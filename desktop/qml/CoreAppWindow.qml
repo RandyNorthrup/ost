@@ -21,6 +21,15 @@ Window {
     property bool splitView: false
     /// The main window has mentions (the list's Mentions quick view).
     property bool hasMentions: false
+    /// The list's Copilot row (as the main window's).
+    property bool showCopilot: false
+    /// The list's pills, sections and quick views as shown (harness wlist).
+    function listForTest() {
+        const l = side.item
+        if (!l || !l.pillRows) return null
+        return { chat: win.chatId, pills: l.pillRows.first.map(p => p.label), more: l.pillRows.second.map(p => p.label),
+                 sections: l.sections.map(s => [s.folder ? s.folder.kind : s.kind, (s.rows || []).filter(r => r.type === "slice").map(r => r.label)]) }
+    }
     /// The chat shown beside the list or the feed.
     property string chatId: ""
     property string chatName: ""
@@ -80,6 +89,8 @@ Window {
                 onChatSelected: (id, name) => win.showChat(id, name)
                 draftIds: (backend.draftsJson ? JSON.parse(backend.draftsJson) : []).map(d => d.id)
                 hasMentions: win.hasMentions
+                showCopilot: win.showCopilot
+                onOpenCopilot: win.openInMain("copilot", {})
                 onOpenMentions: win.openInMain("mentions", {})
                 onOpenDrafts: win.openInMain("drafts", {})
                 onOpenQuick: kind => win.openInMain("quick", { kind: kind })

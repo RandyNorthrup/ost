@@ -1572,6 +1572,7 @@ Popup {
     function confirmTrimForTest() { const list = segments.slice(); list[selected] = Object.assign({}, list[selected], { start: Math.round(trimStart), end: Math.round(trimEnd) }); segments = list; trimming = false; seekTimeline(segStartAt(selected)) }
     function pickSongForTest(cat, idx) { pickSong(library[cat], library[cat].songs[idx]) }
     function musicPanelForTest(on) { musicPanel.visible = on }
+    function screenFrameForTest() { const z = screenPreview.videoSink ? screenPreview.videoSink.videoSize : null; return z ? [z.width, z.height] : null }
     function stateForTest() { return { stage: stage, cameraOn: cameraOn, micOn: micOn, recordedMs: recordedMs, clip: String(clipPath), segments: segments.length, frames: shots.length, screen: screenMode, audio: audioMode, thumb: thumbPath, cams: devices.videoInputs.map(c => c.description), mics: devices.audioInputs.length, duration: player.duration, size: [clipW, clipH] } }
     function openCamMenuForTest() { camMenu.popupAt(camMenuBtn) }
     function openMicMenuForTest() { micMenu.popupAt(micMenuBtn) }

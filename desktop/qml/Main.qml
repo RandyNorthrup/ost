@@ -5703,6 +5703,8 @@ Window {
         interval: 1500; repeat: true
         property int step: 0
         property int waited: 0
+        property int screenWait: 0
+        readonly property bool realScreen: Qt.application.arguments.indexOf("--recorder-real-screen") >= 0
         property var rec: null
         onTriggered: {
             const cap = tag => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-" + tag + ".png")))
@@ -5717,7 +5719,11 @@ Window {
                 () => rec.openEffectsMenuForTest(),
                 () => { log("screen setup", { draw: rec.effectsReady, menu: rec.effectsForTest().menu }); cap("screen-menu") },
                 () => rec.closeMenusForTest(),
-                () => rec.startRecording(true),
+                // --recorder-real-screen: the desktop's own picker asks what to
+                // record (pick a screen there within 90 s); recording starts
+                // with its first picture.
+                () => rec.startRecording(!realScreen),
+                () => { if (realScreen && rec.stage !== "recording" && screenWait++ < 60) return false; log("screen picked", { stage: rec.stage, real: realScreen, frame: rec.screenFrameForTest() }) },
                 () => { log("screen recording", { stage: rec.stage, draw: rec.effectsReady }); rec.openEffect("draw") },
                 () => cap("screen-draw-drawer"),
                 () => rec.drawForTest([[120, 120], [240, 200], [360, 140], [480, 220]]),
@@ -9735,6 +9741,10 @@ Window {
             else if (verb === "up") r = pickIn(name, qsTr("Move up"))
             else if (verb === "down") r = pickIn(name, qsTr("Move down"))
             else if (verb === "window") r = pickIn(name, qsTr("Open in new window"))
+            // split:on / split:off: Settings' Separate / Combined (Teams'
+            // synced simpleCollabUserSettings), to look at split view.
+            else if (verb === "split") { backend.changeSetting("prop", "simpleCollabUserSettings", JSON.stringify({ hasUserEnabledAdaptiveRailForDesktop: true, hasUserEnabledUnifiedAppForDesktop: name !== "on" })); r = name }
+            else if (verb === "wlist") { const w = window.appWindows[name]; r = w ? JSON.stringify(w.listForTest()) : "no window" }
             else if (verb === "wshot") {
                 // wshot:<key>[:<chat id to show>]: that app's window, pictured.
                 const w = window.appWindows[name]
@@ -14287,6 +14297,7 @@ Window {
         // The list's quick views as the main window's (Mentions when there
         // are any, Drafts when there are any).
         w.hasMentions = Qt.binding(() => mentionsView.mentions.length > 0)
+        w.showCopilot = Qt.binding(() => window.copilotInChatList)
         // Teams' Chat window opens on the chat you were in (OST: the main
         // window's chat, when it is one the window lists).
         const cur = backend.currentChatId || "", isCh = cur.endsWith("@thread.tacv2")
@@ -14302,6 +14313,7 @@ Window {
             if (kind === "appDetails") { appDetails.show(d.id, d.conversation ? { id: d.conversation, channel: !!d.channel } : null); return }
             if (kind === "store") { rail.current = "add"; return }
             if (kind === "manageApps") { window.manageConversationApps(!!d.channel); return }
+            if (kind === "copilot") { rail.current = "chat"; chatList.openCopilot(); return }
             if (kind === "mentions") { rail.current = "chat"; chatList.openMentions(); return }
             if (kind === "drafts") { rail.current = "chat"; chatList.openDrafts(); return }
             if (kind === "quick") { rail.current = "chat"; chatList.openQuick(d.kind); return }
