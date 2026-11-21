@@ -5051,6 +5051,27 @@ Window {
         }
     }
 
+    // --web-window=<https url>: that page in a window of its own, in the
+    // web profile every embedded page shares (signed in as the account's
+    // apps are), for setting up test services by hand or over
+    // QTWEBENGINE_REMOTE_DEBUGGING; WEBWINDOW lines with its address and
+    // title as they change.
+    Loader {
+        readonly property string url: (Qt.application.arguments.find(a => a.startsWith("--web-window=")) || "").slice(13)
+        active: url.indexOf("https://") === 0 && backend.signedIn
+        sourceComponent: Window {
+            width: 1200; height: 900; visible: true
+            title: webWindowView.title
+            WebEngineView {
+                id: webWindowView
+                anchors.fill: parent
+                Component.onCompleted: { profile = webAppsProfile.instance(); url = Qt.application.arguments.find(a => a.startsWith("--web-window=")).slice(13) }
+                onUrlChanged: console.warn("WEBWINDOW url", String(url).split("?")[0])
+                onTitleChanged: console.warn("WEBWINDOW title", title)
+                onNewWindowRequested: req => { url = req.requestedUrl }
+            }
+        }
+    }
     // --recap-window-test[=transcript|thumbnail|link|highlights|extras|template]:
     // in "Event group: OST TEST 217 town hall 2", the recap card's transcript
     // chip (or thumbnail) opens Teams' recap window (RECAPWIN lines,
@@ -5104,7 +5125,10 @@ Window {
                 break
             }
             case 10:
+                if (conversation.lastRecapWindow) log("band", JSON.parse(conversation.lastRecapWindow.bandForTest()))
                 if (mode === "template") { step = 40; return }
+                if (mode === "audio") { step = 80; return }
+                if (mode === "notes") { step = 90; return }
                 if (mode !== "extras") { if (conversation.lastRecapWindow) conversation.lastRecapWindow.close(); Qt.quit(); return }
                 break
             // =extras: the recap window's extras (Clipchamp, Copilot,
@@ -5174,6 +5198,32 @@ Window {
                 case 79: log("end", st()); w.close(); Qt.quit(); return
                 default: break
                 }
+                break
+            }
+            // =audio: Audio recap pressed; the mini player while it's made,
+            // then what came of it (recap-audio-*.png of the player).
+            case 80: case 81: case 82: case 83: case 84: {
+                const w = conversation.lastRecapWindow
+                if (!w) { Qt.quit(); return }
+                const shotPlayer = n => { const p = w.audioPlayerForTest(); if (p) p.contentItem.grabToImage(r => { r.saveToFile(window.shotPath.replace(".png", "-recap-audio-" + n + ".png")); log("shot", n) }) }
+                if (step === 80) { log("audio pressed", w.audioForTest()); break }
+                if (step === 81) { log("audio", w.audioStateForTest()); shotPlayer("generating"); break }
+                if (step === 82) { const st = w.audioStateForTest(); if (st.indexOf("generating") >= 0 && waited++ < 150) return; waited = 0; log("audio done", st); break }
+                if (step === 83) { shotPlayer("done"); w.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-recap-audio-window.png"))); break }
+                const p = w.audioPlayerForTest(); if (p) p.close(); w.close(); Qt.quit(); return
+            }
+            // =notes: Notes ▸ Add notes as a person would; the notes made (or
+            // given) by Teams' meeting-notes service, then the Loop page.
+            case 90: case 91: case 92: case 93: case 94: case 95: case 96: case 97: case 98: case 99: {
+                const w = conversation.lastRecapWindow
+                if (!w) { Qt.quit(); return }
+                const ex = () => JSON.parse(w.extrasForTest())
+                if (step === 90) { w.pillForTest("Notes"); break }
+                if (step === 91) { log("notes before", ex().notes); w.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-recap-notes-before.png"))); break }
+                if (step === 92) { w.addNotesForTest(); break }
+                if (step === 93) { if (ex().notes === "making" && waited++ < 30) return; waited = 0; log("notes", ex().notes); break }
+                if (step === 98) { w.contentItem.grabToImage(r => { r.saveToFile(window.shotPath.replace(".png", "-recap-notes.png")); log("shot notes") }); break }
+                if (step === 99) { w.close(); Qt.quit(); return }
                 break
             }
             case 33: {
@@ -12849,7 +12899,10 @@ Window {
             // --loop-format (with --loop-type): the commanding surface;
             // --loop-paste=<Loop component link>: a nested component.
             const fmt = has("--loop-format"), paste = arg("--loop-paste")
-            const F = fmt && text ? 22 : 0, P = paste ? 32 : 0
+            // --loop-create (with --loop-format): then Create Loop component
+            // on the typed text (a new nested component), undone after.
+            const create = fmt && has("--loop-create")
+            const F = fmt && text ? (create ? 34 : 22) : 0, P = paste ? 32 : 0
             const dir = (arg("--shots") || ".") + "/"
             const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "loop-" + which + "-" + n + ".png"))
             if (backend.currentChatId !== id) {
@@ -12903,6 +12956,23 @@ Window {
             } else if (fmt && typed && step === readyAt + 9) {
                 // Loop can miss the first drag right after typing: again.
                 if (!loop.commandingForTest().open) loop.selectByMouseForTest(typed, true)
+            } else if (create && typed && step === readyAt + 22) {
+                loop.selectByMouseForTest(typed)
+            } else if (create && typed && step === readyAt + 23) {
+                if (!loop.commandingForTest().open) loop.selectByMouseForTest(typed, true)
+            } else if (create && typed && step === readyAt + 24) {
+                console.warn("LOOPTEST create toolbar", JSON.stringify(loop.commandingForTest()))
+                console.warn("LOOPTEST create picked", loop.commandingPickForTest("icon:FFXCCreateLoopComponent"))
+            } else if (create && typed && step === readyAt + 29) {
+                console.warn("LOOPTEST created", JSON.stringify(state().events.filter(e => e === "nested" || e === "code" || e === "error" || e === "create")))
+                loop.textForTest(t => console.warn("LOOPTEST created text", JSON.stringify(String(t).slice(0, 600))))
+                shot("created")
+            } else if (create && typed && (step === readyAt + 30 || step === readyAt + 31)) {
+                // Undone: the text back as it was typed.
+                loop.keysForTest("\u001a")
+            } else if (create && typed && step === readyAt + 33) {
+                loop.textForTest(t => console.warn("LOOPTEST create undone", String(t).indexOf(typed) >= 0 ? "text back" : "text missing", JSON.stringify(String(t).slice(0, 400))))
+                shot("create-undone")
             } else if (fmt && typed && step === readyAt + 10) {
                 console.warn("LOOPTEST toolbar", JSON.stringify(loop.commandingForTest()))
                 shot("toolbar")
@@ -13457,6 +13527,9 @@ Window {
             function onToastJsonChanged() { if (backend.toastJson) window.showToast(JSON.parse(backend.toastJson)) }
         }
     }
+    // The Meeting Recaps app on Audio recaps (the audio recap mini player's
+    // View generated audio recaps).
+    function openAudioRecaps() { rail.openApp("recaps"); recapsView.openTab("audio"); window.raise(); window.requestActivate() }
     function showToast(d) {
         toast.toastData = d
         toastTimer.interval = d.intent === "error" ? 2000 : 5000

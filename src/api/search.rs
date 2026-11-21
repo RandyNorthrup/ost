@@ -648,6 +648,8 @@ pub struct LocalChat {
     pub meeting: bool,
     /// Its last activity (ms), newest first within a rank.
     pub time: i64,
+    /// A channel of one of your teams: its team's name ("" for a chat).
+    pub channel_team: String,
 }
 
 /// The new chat form's typed suggestions, as Teams lists them.
@@ -763,6 +765,18 @@ pub fn new_chat_arrange(reply: &serde_json::Value, my_oid: &str, local: &[LocalC
             }
         }
     }
+    // The channels of your teams that match and Substrate didn't give
+    // (Teams' local search over its teams store, checked on winpc
+    // 2026-11-21: Substrate gave "OST layout test" and "OST test channel",
+    // Teams added "OST threads test" and "OST test channel 2"), best match,
+    // then latest activity, first.
+    let mut more: Vec<(&LocalChat, u8)> = local
+        .iter()
+        .filter(|c| !c.channel_team.is_empty() && !c.topic.is_empty() && !channels.iter().any(|v| v["id"] == c.id.as_str()))
+        .filter_map(|c| local_chat_rank(&c.topic, query).map(|r| (c, r)))
+        .collect();
+    more.sort_by(|a, b| a.1.cmp(&b.1).then(b.0.time.cmp(&a.0.time)));
+    channels.extend(more.into_iter().map(|(c, _)| serde_json::json!({ "kind": "channel", "id": c.id, "name": c.topic, "sub": c.channel_team, "group": "" })));
     // Your own named group chats that match and Substrate didn't give: the
     // best at the third place, the rest after.
     let mut extra: Vec<(&LocalChat, u8)> = local
@@ -987,10 +1001,12 @@ mod tests {
         let reply = serde_json::json!({"Groups": [
             {"Type": "People", "Suggestions": ppl},
             {"Type": "Chat", "Suggestions": [chat("OST group test", "19:a"), chat("OST TEST group call", "19:b"), chat("Meeting", "19:meeting_m"), chat("Not mine", "19:z")]},
-            {"Type": "Channel", "Suggestions": [chan("OST layout test", "19:c1"), chan("OST test channel", "19:c2"), chan("OST threads test", "19:c3"), chan("OST test channel 2", "19:c4")]},
+            {"Type": "Channel", "Suggestions": [chan("OST layout test", "19:c1"), chan("OST test channel", "19:c2")]},
         ]});
-        let lc = |id: &str, t: &str, time: i64| LocalChat { id: id.into(), topic: t.into(), group: true, meeting: id.starts_with("19:meeting_"), time };
-        let local = [lc("19:a", "OST group test", 9), lc("19:b", "OST TEST group call", 8), lc("19:meeting_m", "Meeting", 7), lc("19:e", "OST empty chat test", 6), lc("19:l", "OST large chat test", 5), lc("19:o", "Other", 4)];
+        let lc = |id: &str, t: &str, time: i64| LocalChat { id: id.into(), topic: t.into(), group: true, meeting: id.starts_with("19:meeting_"), time, channel_team: String::new() };
+        let lch = |id: &str, t: &str, time: i64| LocalChat { id: id.into(), topic: t.into(), time, channel_team: "OST Test Team".into(), ..Default::default() };
+        let local = [lc("19:a", "OST group test", 9), lc("19:b", "OST TEST group call", 8), lc("19:meeting_m", "Meeting", 7), lc("19:e", "OST empty chat test", 6), lc("19:l", "OST large chat test", 5), lc("19:o", "Other", 4),
+            lch("19:c1", "OST layout test", 1), lch("19:c3", "OST threads test", 3), lch("19:c4", "OST test channel 2", 2), lch("19:c5", "OST test channel 3", 1), lch("19:g", "General", 9)];
         let out = new_chat_arrange(&reply, "me", &local, "OST");
         let names: Vec<&str> = out.iter().map(|v| v["plain_name"].as_str().or(v["name"].as_str()).unwrap()).collect();
         assert_eq!(names, ["OST Test 2", "OST Guest 02", "OST Guest 01", "OST Test 1", "OST Test 3", "OST group test", "OST TEST group call", "OST empty chat test",

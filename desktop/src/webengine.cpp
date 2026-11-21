@@ -3,6 +3,8 @@
 // it, so this one call is plain C++.
 #include <QtWebEngineQuick/qtwebenginequickglobal.h>
 #include <QtCore/QCoreApplication>
+#include <QtCore/QPointer>
+#include <QtCore/QTimer>
 #include <QtGui/QKeyEvent>
 #include <QtGui/QMouseEvent>
 #include <QtQuick/QQuickItem>
@@ -81,14 +83,21 @@ extern "C" void ost_mouse_drag(void *item, double x1, double y1, double x2, doub
     QQuickWindow *window = it ? it->window() : nullptr;
     if (!window)
         return;
-    auto send = [&](QEvent::Type type, QPointF local, Qt::MouseButton button, Qt::MouseButtons buttons) {
-        const QPointF scene = it->mapToScene(local);
-        QMouseEvent e(type, scene, scene, window->mapToGlobal(scene), button, buttons, Qt::NoModifier);
-        QCoreApplication::sendEvent(window, &e);
+    // Spread over time as a hand does (press, eight moves, release, 30 ms
+    // apart): sent all at once, the page can see the press and release in
+    // one frame and miss the drag.
+    QPointer<QQuickItem> guard(it);
+    auto send = [guard](QEvent::Type type, QPointF local, Qt::MouseButton button, Qt::MouseButtons buttons) {
+        QQuickWindow *w = guard ? guard->window() : nullptr;
+        if (!w)
+            return;
+        const QPointF scene = guard->mapToScene(local);
+        QMouseEvent e(type, scene, scene, w->mapToGlobal(scene), button, buttons, Qt::NoModifier);
+        QCoreApplication::sendEvent(w, &e);
     };
     send(QEvent::MouseMove, QPointF(x1, y1), Qt::NoButton, Qt::NoButton);
-    send(QEvent::MouseButtonPress, QPointF(x1, y1), Qt::LeftButton, Qt::LeftButton);
+    QTimer::singleShot(30, window, [=] { send(QEvent::MouseButtonPress, QPointF(x1, y1), Qt::LeftButton, Qt::LeftButton); });
     for (int i = 1; i <= 8; ++i)
-        send(QEvent::MouseMove, QPointF(x1 + (x2 - x1) * i / 8, y1 + (y2 - y1) * i / 8), Qt::NoButton, Qt::LeftButton);
-    send(QEvent::MouseButtonRelease, QPointF(x2, y2), Qt::LeftButton, Qt::NoButton);
+        QTimer::singleShot(30 + 30 * i, window, [=] { send(QEvent::MouseMove, QPointF(x1 + (x2 - x1) * i / 8, y1 + (y2 - y1) * i / 8), Qt::NoButton, Qt::LeftButton); });
+    QTimer::singleShot(30 + 30 * 9 + 60, window, [=] { send(QEvent::MouseButtonRelease, QPointF(x2, y2), Qt::LeftButton, Qt::NoButton); });
 }

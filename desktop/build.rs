@@ -265,6 +265,7 @@ fn main() {
         "qml/LoopCommandingSurface.qml",
         "qml/RecapCard.qml",
         "qml/RecapWindow.qml",
+        "qml/AudioRecapPlayer.qml",
         "qml/RecapShareDialog.qml",
         "qml/RecapTemplateEditor.qml",
         "qml/RecapTemplateNameDialog.qml",

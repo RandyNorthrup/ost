@@ -384,6 +384,21 @@ pub async fn event_by_ical_uid(client: &TeamsClient, ical_uid: &str) -> Result<O
     }))
 }
 
+/// Your calendar event's id for a meeting, by its iCalUId (Teams'
+/// meetingEventRedemption); "" when it isn't in your calendar.
+pub async fn event_id_by_ical_uid(client: &TeamsClient, ical_uid: &str) -> Result<String> {
+    if ical_uid.is_empty() || !ical_uid.bytes().all(|b| b.is_ascii_alphanumeric()) {
+        anyhow::bail!("Not an iCalUId");
+    }
+    let v: serde_json::Value = client
+        .graph_get(&format!("/me/events?$filter=iCalUId%20eq%20'{ical_uid}'&$select=id&$top=1"))
+        .await?
+        .json()
+        .await
+        .context("Failed to read the meeting's calendar event")?;
+    Ok(v.pointer("/value/0/id").and_then(|i| i.as_str()).unwrap_or_default().to_string())
+}
+
 /// A calendar event's body (HTML), by its id: a Teams meeting's
 /// invitation, with its dial-in block when the meeting has one.
 pub async fn event_body(client: &TeamsClient, id: &str) -> Result<String> {

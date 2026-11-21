@@ -69,10 +69,30 @@ Window {
     property bool copilotOpen: false
     property var copilotLaunch: null
     readonly property string hostTheme: theme.highContrast ? "contrast" : theme.dark ? "dark" : "default"
+    // A recording-less recap (Teams' ODSPTranscript: only a transcript)
+    // has no recording card; its file is known once the meeting is read.
+    readonly property bool recording: !data_ || data_.recording !== false
+    /// The Audio recap mini player, while one is open.
+    property var audioPlayer: null
     Component.onCompleted: {
         backend.eventsRequest("recapOpen", tag + "open", JSON.stringify({ recap: win.recap }))
-        backend.eventsRequest("recapExtras", tag + "extras", JSON.stringify({ recap: win.recap }))
+        if (win.recap.item_id) backend.eventsRequest("recapExtras", tag + "extras", JSON.stringify({ recap: win.recap }))
     }
+    // Audio recap: Teams' mini player pops out at once ("Generating..."),
+    // then plays the audio recap or says why there isn't one.
+    function openAudioRecap() {
+        if (!audioPlayer) {
+            audioPlayer = audioPlayerComponent.createObject(null, { subject: win.recap.subject || "" })
+            audioPlayer.closing.connect(() => { win.audioPlayer = null })
+            audioPlayer.x = win.x + Math.round((win.width - audioPlayer.width) / 2) + 200
+            audioPlayer.y = win.y + Math.round((win.height - audioPlayer.height) / 2) - 80
+        }
+        audioPlayer.state_ = "generating"
+        audioPlayer.show(); audioPlayer.raise()
+        backend.eventsRequest("recapAudio", tag + "audio", JSON.stringify({ recap: win.recap }))
+        console.info("RECAP audio requested")
+    }
+    Component { id: audioPlayerComponent; AudioRecapPlayer {} }
     onRightPillChanged: {
         if (rightPill === "Mentions" && mentions === null) backend.eventsRequest("recapMentions", tag + "mentions", JSON.stringify({ recap: win.recap }))
         if (rightPill === "CustomSummary" && templates === null) loadTemplates()
@@ -127,6 +147,11 @@ Window {
                 if (v.error) { console.warn("RECAP open failed", v.error); return }
                 win.data_ = v
                 if (v.recap) win.recap = v.recap
+                // The meeting's notes, when made: Notes shows them.
+                if (v.notesUrl && !win.notesUrl) { win.notesUrl = v.notesUrl; win.notesState = "ready" }
+                // The file is known now (a transcript-only recap's comes
+                // from the meeting's artifacts).
+                if (!win.extras && win.recap.item_id) backend.eventsRequest("recapExtras", win.tag + "extras", JSON.stringify({ recap: win.recap }))
                 console.info("RECAP open", !!v.player, (v.transcript || []).length, v.recap ? v.recap.thread_id : "")
             } else if (what === "extras") {
                 if (!v.error) win.extras = v
@@ -174,6 +199,9 @@ Window {
             } else if (what === "notes") {
                 win.notesUrl = v.url || ""; win.notesState = v.error ? "error" : "ready"
                 console.info("RECAP notes", v.error || "", !!v.url)
+            } else if (what === "audio") {
+                console.info("RECAP audio", v.error || "", v.status || "", v.message || "", !!v.existing)
+                if (win.audioPlayer) win.audioPlayer.result(v)
             } else if (what === "copilot") {
                 win.copilotLaunch = v.error ? null : v
                 console.info("RECAP copilot", v.error || "ready")
@@ -221,6 +249,9 @@ Window {
         Row {
             anchors { right: parent.right; rightMargin: 20 }
             y: 8; spacing: 0
+            // Teams' Audio recap (126 x 32, headphones): an AI audio recap
+            // of the meeting in its mini player.
+            BandButton { id: audioButton; visible: !!win.data_ && !!win.data_.audioRecap; icon: "headphones-20"; label: qsTr("Audio recap"); active: !!win.audioPlayer; onClicked: win.openAudioRecap() }
             BandButton { icon: "share-20"; label: qsTr("Share"); onClicked: shareMenu.popup(this, 0, height + 4) }
             // Teams' "Open in Clipchamp" (MeetingRecap.enableOpenInClipchamp's
             // label for Watch in browser): the recording's web page.
@@ -251,7 +282,8 @@ Window {
         // The recording's card.
         Rectangle {
             id: left
-            x: 13; y: 49; width: Math.max(320, parent.width - 13 - 507.7 - 13); height: parent.height - y - 14
+            visible: win.recording
+            x: 13; y: 49; width: win.recording ? Math.max(320, parent.width - 13 - 507.7 - 13) : 0; height: parent.height - y - 14
             radius: 8; color: theme.surface; clip: true
             Rectangle {
                 id: player
@@ -352,7 +384,7 @@ Window {
         // Shared files and the right-hand pills.
         Rectangle {
             id: files
-            x: left.x + left.width + 7.6; y: 49; width: parent.width - x - 13; height: 89.3
+            x: win.recording ? left.x + left.width + 7.6 : 12; y: 49; width: parent.width - x - (win.recording ? 13 : 12); height: 89.3
             radius: 8; color: theme.surface
             border.color: theme.pick(Qt.rgba(0, 0, 0, 0.05), "#333333", "#FFFFFF"); border.width: 0.67
             Text {
@@ -363,7 +395,9 @@ Window {
             }
             Rectangle {
                 visible: win.hasAttendance
-                x: 15.7; y: 42.7; width: 226.2; height: 32; radius: 4
+                // Teams' two-column file grid (226.2 in the 495.7 column,
+                // 609 across a transcript-only recap's full width).
+                x: 15.7; y: 42.7; width: (files.width - 43.3) / 2; height: 32; radius: 4
                 color: attHover.hovered ? theme.rowHover : theme.surface
                 border.color: theme.pick("#F0F0F0", "#333333", "#FFFFFF"); border.width: 0.67
                 FluentIcon { x: 12; anchors.verticalCenter: parent.verticalCenter; name: "people-list-20"; size: 20; color: theme.brand }
@@ -387,7 +421,8 @@ Window {
             // chip), otherwise Mentions; the other under "+1".
             property string fourth: win.startTab === "transcript" ? "Transcript" : "Mentions"
             Connections { target: win; function onRightPillChanged() { if (win.rightPill === "Transcript" || win.rightPill === "Mentions") right.fourth = win.rightPill } }
-            readonly property var shown: all.filter(p => p.k !== (fourth === "Transcript" ? "Mentions" : "Transcript"))
+            // (Full width, without the recording card, all five fit.)
+            readonly property var shown: win.recording ? all.filter(p => p.k !== (fourth === "Transcript" ? "Mentions" : "Transcript")) : all
             readonly property var hidden: all.filter(p => shown.indexOf(p) < 0)
             Row {
                 x: 12; y: 12.7; spacing: 8
@@ -397,6 +432,7 @@ Window {
                 }
             }
             Pill {
+                visible: right.hidden.length > 0
                 anchors { right: parent.right; rightMargin: 3 }
                 y: 12.7; label: qsTr("+%1").arg(right.hidden.length); chevron: true
                 onClicked: overflow.popup(this, 0, height + 4)
@@ -856,14 +892,16 @@ Window {
         id: bb
         property string icon
         property string label
+        /// Teams' brand colour while what it opened is open (Audio recap).
+        property bool active: false
         signal clicked()
         height: 32; width: bbRow.implicitWidth + 24; radius: 4
         color: bbh.hovered ? theme.rowHover : "transparent"
         Row {
             id: bbRow
             anchors.centerIn: parent; spacing: 8
-            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: bb.icon; size: 20; color: theme.onFill(bb, theme.pick("#424242", "#D6D6D6", "#FFFFFF")) }
-            Text { anchors.verticalCenter: parent.verticalCenter; text: bb.label; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(bb, theme.pick("#424242", "#D6D6D6", "#FFFFFF")) }
+            FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: bb.icon; size: 20; color: bb.active ? theme.brandForeground1 : theme.onFill(bb, theme.pick("#424242", "#D6D6D6", "#FFFFFF")) }
+            Text { anchors.verticalCenter: parent.verticalCenter; text: bb.label; font.family: theme.font; font.pixelSize: 14; color: bb.active ? theme.brandForeground1 : theme.onFill(bb, theme.pick("#424242", "#D6D6D6", "#FFFFFF")) }
         }
         HoverHandler { id: bbh; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: bb.clicked() }
@@ -919,6 +957,15 @@ Window {
     function copilotForTest() { win.toggleCopilot() }
     function manageForTest() { manageMenu.open() }
     function extrasForTest() { return JSON.stringify({ extras: win.extras, mentions: win.mentions, summary: win.summaryState, summaryLen: win.summaryText.length, notes: win.notesState, copilot: !!win.copilotLaunch }) }
-    function stateForTest() { return JSON.stringify({ loading: win.loading, pill: win.rightPill, player: !!(win.data_ && win.data_.player), transcript: win.data_ ? (win.data_.transcript || []).length : -1, thread: win.recap.thread_id || "", link: win.data_ ? win.data_.link : "" }) }
+    function audioForTest() { if (audioButton.visible) win.openAudioRecap(); return audioButton.visible }
+    function audioStateForTest() { return win.audioPlayer ? win.audioPlayer.stateForTest() : "none" }
+    function audioPlayerForTest() { return win.audioPlayer }
+    function addNotesForTest() { win.notesState = "making"; backend.eventsRequest("recapNotes", win.tag + "notes", JSON.stringify({ recap: win.recap })) }
+    function bandForTest() {
+        const out = []
+        for (const b of [audioButton]) if (b.visible) { const p = b.mapToItem(win.contentItem, 0, 0); out.push({ label: b.label, x: p.x, y: p.y, w: b.width, h: b.height }) }
+        return JSON.stringify({ band: out, recording: win.recording, pills: right.shown.map(p => p.k), hidden: right.hidden.map(p => p.k), clipchamp: !!(win.extras && win.extras.clipchamp), files: { x: files.x, w: files.width } })
+    }
+    function stateForTest() { return JSON.stringify({ loading: win.loading, pill: win.rightPill, player: !!(win.data_ && win.data_.player), recording: win.recording, audio: !!(win.data_ && win.data_.audioRecap), transcript: win.data_ ? (win.data_.transcript || []).length : -1, thread: win.recap.thread_id || "", link: win.data_ ? win.data_.link : "" }) }
     function shareDialogForTest() { return shareDialog }
 }

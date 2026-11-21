@@ -1146,10 +1146,43 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
         }
     };
 
-    let raw: serde_json::Value = resp
+    let mut raw: serde_json::Value = resp
         .json()
         .await
         .context("Failed to parse conversations response")?;
+    // The chat service hands the list out in time slices: the first page
+    // holds the chats active lately, its backwardLink the older ones (in
+    // ost-test1's case "OST empty chat test" and "OST large chat test",
+    // which Teams' chat list shows from its full sync). Read them all.
+    // (Older slices change only when a chat in them comes back to life, and
+    // then it is on the first page too: they're kept for ten minutes.)
+    static OLDER: std::sync::Mutex<Option<(std::time::Instant, Vec<serde_json::Value>, usize)>> = std::sync::Mutex::new(None);
+    let cached = OLDER.lock().unwrap_or_else(|e| e.into_inner()).as_ref().filter(|(at, _, _)| at.elapsed() < std::time::Duration::from_secs(600)).map(|(_, v, n)| (v.clone(), *n));
+    let (older, pages) = match cached {
+        Some(c) => c,
+        None => {
+            let mut back = raw.pointer("/_metadata/backwardLink").and_then(|l| l.as_str()).unwrap_or_default().to_string();
+            let (mut older, mut pages) = (Vec::new(), 0usize);
+            while !back.is_empty() && pages < 20 {
+                let url = if back.contains("pageSize=") { back.clone() } else { format!("{back}&pageSize=200") };
+                let Ok(r) = client.chat_get(&url).await else { break };
+                let Ok(more) = r.json::<serde_json::Value>().await else { break };
+                pages += 1;
+                let page = more.get("conversations").and_then(|c| c.as_array()).cloned().unwrap_or_default();
+                if page.is_empty() {
+                    break;
+                }
+                older.extend(page);
+                back = more.pointer("/_metadata/backwardLink").and_then(|l| l.as_str()).unwrap_or_default().to_string();
+            }
+            *OLDER.lock().unwrap_or_else(|e| e.into_inner()) = Some((std::time::Instant::now(), older.clone(), pages));
+            (older, pages)
+        }
+    };
+    if let Some(list) = raw.get_mut("conversations").and_then(|c| c.as_array_mut()) {
+        let mut seen: std::collections::HashSet<String> = list.iter().filter_map(|c| c.get("id").and_then(|i| i.as_str()).map(str::to_string)).collect();
+        list.extend(older.into_iter().filter(|c| c.get("id").and_then(|i| i.as_str()).is_some_and(|i| seen.insert(i.to_string()))));
+    }
     let body: ConversationsResponse =
         serde_json::from_value(raw.clone()).context("Failed to parse conversations response")?;
 
@@ -1169,12 +1202,19 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
         .unwrap_or_default();
     let mut names: std::collections::HashMap<String, Option<String>> = Default::default();
     // Meeting chats' backroom kinds, asked all at once (cached after).
+    // (Only the titled ones whose properties don't say already, a few at a
+    // time: with every page read there can be hundreds.)
     let meeting_ids: Vec<String> = conversations
         .iter()
+        .filter(|c| has_topic(c) && c.thread_properties.as_ref().is_none_or(|p| backroom_kind(&p.extra).is_empty()))
         .filter_map(|c| c.id.clone())
         .filter(|id| id.starts_with("19:meeting_"))
         .collect();
-    let kinds = futures::future::join_all(meeting_ids.iter().map(|id| meeting_backroom(client, id))).await;
+    tracing::info!(conversations = conversations.len(), pages = pages + 1, titled_meetings = meeting_ids.len(), "chat list read");
+    let mut kinds: Vec<String> = Vec::with_capacity(meeting_ids.len());
+    for chunk in meeting_ids.chunks(12) {
+        kinds.extend(futures::future::join_all(chunk.iter().map(|id| meeting_backroom(client, id))).await);
+    }
     let backrooms: std::collections::HashMap<String, String> = meeting_ids.into_iter().zip(kinds).collect();
     let mut chats = Vec::new();
     for (i, conv) in conversations.iter().enumerate() {

@@ -42,6 +42,25 @@ pub async fn podcasts(region: &str) -> Result<Value> {
     Ok(json!({ "items": v.get("items").cloned().unwrap_or(json!([])), "skipToken": v.get("skipToken").cloned().unwrap_or(Value::Null) }))
 }
 
+/// The audio recap already made from a meeting's transcripts (Teams'
+/// `podcasts/consume` check before generating); None on 404.
+pub async fn podcast_consume(region: &str, query: &str) -> Result<Option<Value>> {
+    let token = crate::auth::oauth::access_token_for(&format!("{}/.default", super::meeting_notes::RESOURCE)).await?;
+    let r = reqwest::Client::new()
+        .get(format!("{}/{query}", base(region)))
+        .bearer_auth(token)
+        .header("x-ms-correlation-id", uuid::Uuid::new_v4().to_string())
+        .send()
+        .await
+        .context("The meeting artifacts service")?;
+    let status = r.status();
+    if status == reqwest::StatusCode::NOT_FOUND {
+        return Ok(None);
+    }
+    anyhow::ensure!(status.is_success(), "The meeting artifacts service answered {status}");
+    Ok(Some(r.json().await.context("The meeting artifacts service's reply")?))
+}
+
 /// A day's request, as Teams asks (the local day's first and last moment).
 pub fn day_query(start: chrono::DateTime<chrono::Utc>, end: chrono::DateTime<chrono::Utc>) -> String {
     let f = |t: chrono::DateTime<chrono::Utc>| t.to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
@@ -216,6 +235,10 @@ pub struct MeetingContents {
     /// The latest TranscriptV2's file (drive id, item id), as Teams keeps
     /// the last one.
     pub transcript: Option<(String, String)>,
+    /// Every TranscriptV2 (what an audio recap is made from).
+    pub transcripts: Vec<super::podcast::Transcript>,
+    /// The organizer's name.
+    pub organizer_name: String,
 }
 
 /// The meeting's own thread, organizer, recording address and transcript
@@ -262,17 +285,34 @@ pub fn match_contents(v: &Value, ical_uid: &str, item_id: &str) -> Option<Meetin
                 (!d.is_empty() && !i.is_empty()).then_some((d, i))
             })
             .last();
-        Some(MeetingContents { thread, organizer: org, file_url: file, transcript })
+        let transcripts = m.get("resources").and_then(Value::as_array).into_iter().flatten().filter_map(super::podcast::transcript_from).collect();
+        let organizer_name = t
+            .pointer("/organizer/emailAddress/name")
+            .or_else(|| t.pointer("/organizer/user/displayName"))
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        Some(MeetingContents { thread, organizer: org, file_url: file, transcript, transcripts, organizer_name })
     })
 }
 
 /// Fill a recap's meeting thread, organizer and recording address from
-/// the meeting artifacts service.
+/// the meeting artifacts service. A meeting with a transcript and no
+/// recording gets the transcript's file as its recap's file (Teams'
+/// ODSPTranscript recap: the "Meeting Transcript.mp4" the transcript
+/// lives in), which Open in Clipchamp and the transcript read.
 pub async fn resolve(region: &str, r: &mut RecapRef) -> Result<Value> {
+    resolve_contents(region, r).await.map(|(v, _)| v)
+}
+
+/// `resolve`, with what the service said about the meeting.
+pub async fn resolve_contents(region: &str, r: &mut RecapRef) -> Result<(Value, Option<MeetingContents>)> {
     let day = |ms: i64| chrono::DateTime::from_timestamp_millis(ms).unwrap_or_default();
     let (a, b) = (day(r.start_ms - 86_400_000), day(r.end_ms.max(r.start_ms) + 86_400_000));
     let v = get(&format!("{}/{}", base(region), day_query(a, b))).await?;
-    if let Some(c) = match_contents(&v, &r.ical_uid, &r.item_id) {
+    let found = match_contents(&v, &r.ical_uid, &r.item_id);
+    if let Some(c) = &found {
+        let c = MeetingContents { transcript: c.transcript.clone(), thread: c.thread.clone(), organizer: c.organizer.clone(), file_url: c.file_url.clone(), ..Default::default() };
         if r.thread_id.is_empty() || !c.thread.is_empty() {
             r.thread_id = c.thread;
         }
@@ -284,17 +324,27 @@ pub async fn resolve(region: &str, r: &mut RecapRef) -> Result<Value> {
         }
         // A meeting with a transcript and no recording: Teams' recap is the
         // transcript's file.
-        if r.recap_id.is_empty()
-            && r.item_id.is_empty()
+        if r.item_id.is_empty()
             && let Some((d, i)) = c.transcript
         {
-            r.recap_id = canonical_recap_id(&d, &i);
+            if r.recap_id.is_empty() {
+                r.recap_id = canonical_recap_id(&d, &i);
+            }
+            r.drive_id = d;
+            r.item_id = i;
+            r.recap_type = "ODSPTranscript".into();
         }
     }
     if r.recap_id.is_empty() {
         r.recap_id = canonical_recap_id(&r.drive_id, &r.item_id);
     }
-    Ok(v)
+    Ok((v, found))
+}
+
+/// Whether the recap has a recording to play (Teams shows its player and
+/// the Speakers / Topics / Chapters card only then).
+pub fn has_recording(r: &RecapRef) -> bool {
+    !matches!(r.recap_type.as_str(), "Transcript" | "ODSPTranscript") && !r.item_id.is_empty()
 }
 
 /// Share recap access (Teams' MeetingRecapSharingDialog, Give access):

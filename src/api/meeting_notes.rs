@@ -257,6 +257,37 @@ async fn collab_send(method: reqwest::Method, url: &str, body: &Value) -> Result
     Ok(resp)
 }
 
+/// The notes a meeting already has (Teams' recap Notes reads the collab
+/// object, `GET {mcps}/collab/readcollabobject/V2/{organizer}@{tenant}/
+/// {iCalUid}/{thread}`): the Notes resource's location, or "".
+pub fn notes_location(v: &Value) -> String {
+    v.get("resources")
+        .and_then(Value::as_array)
+        .and_then(|a| a.iter().find(|r| r.get("type").and_then(Value::as_str).is_some_and(|t| t.eq_ignore_ascii_case("notes"))))
+        .and_then(|r| r.get("location"))
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string()
+}
+
+pub async fn read_notes(region: &str, organizer_oid: &str, tenant: &str, ical_uid: &str, thread: &str) -> Result<String> {
+    let ok = |s: &str| !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || "-:@._".contains(c));
+    anyhow::ensure!(ok(organizer_oid) && ok(tenant) && ok(ical_uid) && ok(thread), "Not a meeting");
+    let token = crate::auth::oauth::access_token_for(&format!("{RESOURCE}/.default")).await?;
+    let r = reqwest::Client::new()
+        .get(format!("{}/readcollabobject/V2/{organizer_oid}@{tenant}/{ical_uid}/{thread}", collab_base(region)))
+        .bearer_auth(&token)
+        .header("x-ms-correlation-id", uuid::Uuid::new_v4().to_string())
+        .send()
+        .await
+        .context("The collab object service")?;
+    if r.status() == reqwest::StatusCode::NOT_FOUND {
+        return Ok(String::new());
+    }
+    anyhow::ensure!(r.status().is_success(), "The collab object service answered {}", r.status());
+    Ok(notes_location(&r.json().await.unwrap_or_default()))
+}
+
 /// Reserve the notes of a scheduled meeting: made already, yours to make,
 /// or someone else is making them (pending: asked again, as Teams does).
 pub async fn reserve(region: &str, m: &Meeting, c: &CollabCaller) -> Result<Reserve> {
@@ -417,6 +448,13 @@ pub async fn edit_link(client: &TeamsClient, drive_id: &str, item_id: &str) -> R
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn notes_from_the_collab_object() {
+        let v = json!({"resources": [{"type": "TranscriptV2", "location": "t"}, {"type": "Notes", "location": "https://x.sharepoint.com/:fl:/g/n"}]});
+        assert_eq!(notes_location(&v), "https://x.sharepoint.com/:fl:/g/n");
+        assert_eq!(notes_location(&json!({"resources": [{"type": "TranscriptV2", "location": "t"}]})), "");
+    }
 
     #[test]
     fn asks_as_teams() {

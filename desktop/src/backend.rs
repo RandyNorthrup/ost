@@ -5496,11 +5496,21 @@ fn short_error(e: &anyhow::Error) -> String {
     line.chars().take(200).collect()
 }
 
+/// Channel id → its last activity (ms), from the chat service's list.
+static CHANNEL_ACTIVITY: std::sync::Mutex<std::collections::BTreeMap<String, i64>> = std::sync::Mutex::new(std::collections::BTreeMap::new());
+
 async fn load_overview() -> anyhow::Result<(String, Vec<serde_json::Value>)> {
     let client = TeamsClient::new().await?;
     let my_oid = client.object_id().unwrap_or_default();
     let me = api::whoami_data(&client).await?;
     let chats = api::list_chats_data(&client, CHAT_LIMIT).await?;
+    // Channels' last activity (the new chat form's local channel search
+    // orders by it).
+    if let Ok(mut m) = CHANNEL_ACTIVITY.lock() {
+        for c in chats.iter().filter(|c| c.id.ends_with("@thread.tacv2")) {
+            m.insert(c.id.clone(), c.activity_ms);
+        }
+    }
     let favorites = api::messages::favorites(&client).await.unwrap_or_else(|e| {
         tracing::debug!("favorites unavailable: {}", short_error(&e));
         Vec::new()
@@ -14595,7 +14605,7 @@ impl qobject::Backend {
         self.as_mut().rust_mut().new_chat_people_generation = generation;
         let (my_mail, my_name) = (self.rust().user_mail.to_string(), self.rust().user_name.to_string());
         // Your chats, for Teams' local chat search.
-        let local: Vec<api::search::LocalChat> = self
+        let mut local: Vec<api::search::LocalChat> = self
             .rust()
             .chats
             .iter()
@@ -14606,8 +14616,24 @@ impl qobject::Backend {
                 group: c["isGroup"].as_bool().unwrap_or(false),
                 meeting: c["meeting"].as_bool().unwrap_or(false),
                 time: c["time"].as_str().and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok()).map(|t| t.timestamp_millis()).unwrap_or(0),
+                channel_team: String::new(),
             })
             .collect();
+        // And your teams' channels (Teams searches its teams store too).
+        let teams: serde_json::Value = serde_json::from_str(&self.rust().teams_json.to_string()).unwrap_or_default();
+        let activity = CHANNEL_ACTIVITY.lock().map(|m| m.clone()).unwrap_or_default();
+        for t in teams.as_array().into_iter().flatten() {
+            for ch in t["channels"].as_array().into_iter().flatten() {
+                let id = ch["id"].as_str().unwrap_or_default().to_string();
+                local.push(api::search::LocalChat {
+                    time: activity.get(&id).copied().unwrap_or(0),
+                    id,
+                    topic: ch["name"].as_str().unwrap_or_default().to_string(),
+                    channel_team: t["name"].as_str().unwrap_or_default().to_string(),
+                    ..Default::default()
+                });
+            }
+        }
         let qt = self.qt_thread();
         runtime().spawn(async move {
             let result = async {
@@ -21423,15 +21449,70 @@ impl qobject::Backend {
                             tracing::warn!("recap's meeting: {}", short_error(&e));
                         }
                         r.recap_id = r.recap_id();
-                        tracing::info!(recording = !r.item_id.is_empty(), recap_id = !r.recap_id.is_empty(), "recap opened");
-                        let player = api::recaps::player_url(&client, &r.drive_id, &r.item_id).await;
+                        let recording = api::recaps::has_recording(&r);
+                        tracing::info!(recording, file = !r.item_id.is_empty(), recap_id = !r.recap_id.is_empty(), "recap opened");
+                        // A transcript-only recap has no player (Teams shows
+                        // no recording card then).
+                        let player = if recording { api::recaps::player_url(&client, &r.drive_id, &r.item_id).await } else { Err(anyhow::anyhow!("No recording")) };
                         let transcript = api::recaps::transcript(&client, &r.drive_id, &r.item_id).await.unwrap_or_default();
+                        // Teams' Audio recap button (991291 AudioRecapButton):
+                        // podcasts on (ECS calling enablePodcastEntry and a
+                        // Copilot licence), a recording-and-transcript or
+                        // ODSP-transcript recap with its meeting and transcripts.
+                        let podcasts_on = api::ecs::setting("calling", "enablePodcastEntry").and_then(|v| v.as_bool()).unwrap_or(false)
+                            && !api::ecs::setting("meetingRecap", "forceDisableIntelligentRecap").and_then(|v| v.as_bool()).unwrap_or(false)
+                            && api::ecs::license(&client).await.and_then(|l| l["isCopilot"].as_bool()).unwrap_or(false);
+                        let audio = podcasts_on
+                            && matches!(r.recap_type.as_str(), "RecordingAndTranscript" | "ODSPTranscript" | "Transcript")
+                            && (!r.ical_uid.is_empty() || !r.call_id.is_empty())
+                            && !transcript.is_empty();
+                        // The meeting's notes, when it has them (Teams' Notes
+                        // shows them; otherwise its Add notes).
+                        let notes = api::meeting_notes::read_notes(&notes_region(&client), &r.organizer_id, &r.tenant_id, &r.ical_uid, &r.thread_id).await.unwrap_or_else(|e| {
+                            tracing::info!("recap notes: {}", short_error(&e));
+                            String::new()
+                        });
                         Ok(json!({
-                            "recap": r, "link": api::recaps::recap_link(&r),
+                            "recap": r, "link": api::recaps::recap_link(&r), "recording": recording, "audioRecap": audio, "notesUrl": notes,
                             "player": player.as_ref().map(String::as_str).unwrap_or_default(),
                             "playerError": player.as_ref().err().map(|e| short_error(e)).unwrap_or_default(),
                             "transcript": transcript,
                         }))
+                    }
+                    // Audio recap (Teams' AudioRecapButton): an audio recap
+                    // of the meeting already made for these transcripts, or a
+                    // new one made over AugLoop; answers once it's done or
+                    // failed.
+                    "recapAudio" => {
+                        let mut r: api::recaps::RecapRef = serde_json::from_value(p.get("recap").cloned().unwrap_or_default()).unwrap_or_default();
+                        let region = notes_region(&client);
+                        let (_, found) = api::recaps::resolve_contents(&region, &mut r).await?;
+                        let c = found.ok_or_else(|| anyhow::anyhow!("The meeting's artifacts weren't found"))?;
+                        let event_id = api::calendar::event_id_by_ical_uid(&client, &r.ical_uid).await.unwrap_or_default();
+                        let m = api::podcast::Meeting {
+                            event_id, subject: r.subject.clone(), organizer_name: c.organizer_name.clone(), organizer_id: r.organizer_id.clone(),
+                            thread_id: r.thread_id.clone(), ical_uid: r.ical_uid.clone(), start_ms: r.start_ms, end_ms: r.end_ms, transcripts: c.transcripts.clone(),
+                        };
+                        anyhow::ensure!(!m.transcripts.is_empty(), "No transcripts");
+                        if let Some(existing) = api::recaps::podcast_consume(&region, &api::podcast::consume_query(&m, "en-US", "formal")).await? {
+                            tracing::info!("audio recap: existing");
+                            return Ok(json!({ "status": "COMPLETED", "message": "", "podcast": existing, "existing": true }));
+                        }
+                        let g = api::podcast::generate(&m, &app_locale()).await?;
+                        tracing::info!(status = %g.status, message = %g.message, "audio recap generated");
+                        Ok(json!({ "status": g.status, "message": g.message, "noInsight": api::podcast::no_insight(&g.message), "podcast": g.podcast }))
+                    }
+                    // An audio recap's audio (its fullAudioFile, an ODSP
+                    // `…/drives/{d}/items/{i}/…/content` address) as a
+                    // short-lived download address the player can stream.
+                    "driveStreamUrl" => {
+                        let u = s("url");
+                        let part = |k: &str| u.split(k).nth(1).and_then(|r| r.split('/').next()).unwrap_or_default().to_string();
+                        let (d, i) = (part("/drives/"), part("/items/"));
+                        let ok = |s: &str| !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || "!-_".contains(c));
+                        anyhow::ensure!(ok(&d) && ok(&i), "Not a drive file");
+                        let v: serde_json::Value = client.graph_get(&format!("/drives/{d}/items/{i}?$select=id,@microsoft.graph.downloadUrl")).await?.json().await?;
+                        Ok(json!({ "url": v.get("@microsoft.graph.downloadUrl").and_then(|x| x.as_str()).unwrap_or_default() }))
                     }
                     // The recap window's extras: the recording's file facts
                     // (Open in Clipchamp's address, Manage's download and

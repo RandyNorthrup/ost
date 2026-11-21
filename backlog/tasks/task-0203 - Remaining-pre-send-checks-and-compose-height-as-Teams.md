@@ -4,7 +4,7 @@ title: Remaining pre-send checks and compose height as Teams
 status: In Progress
 assignee: []
 created_date: '2026-11-16T14:25:00Z'
-updated_date: '2026-11-20T23:13:00Z'
+updated_date: '2026-11-21T16:53:00Z'
 labels:
   - desktop
 dependencies: []
@@ -40,4 +40,9 @@ TASK-0085 built Teams' pre-send checks that apply to an existing chat or post (s
   - Reply drafts (AC3) roam with innerThreadId as built (OST_ROAM_DRAFTS); Teams' own roaming stays off for this tenant.
 
 - 2026-11-20 merged. AC1: pasted pictures built (stored in Teams' exact form); @Nearby is behind a Microsoft-side feature flag not on for this tenant (no tenant setting exists), so its check cannot occur, as in Teams here. AC2 compared on winpc (270 px cap). AC3 built; Teams' own draft roaming is off for this tenant, so not yet comparable.
+
+- 2026-11-21 (chatF), AC3: where Teams' draft roaming is switched:
+  - Teams roams reply drafts only with ECS messaging.enableRoamMessageDraft (its default is false; the drafts slice, the stream manager and the roaming subscription are already on for ost-test1).
+  - There is no tenant policy or admin setting behind it: ECS answers per audience, and enableRoamMessageDraft is missing for this tenant (AudienceGroup ring3_6, with the Public preview policy and Targeted release already on) and for every variant tried (ringOverride ring0/ring1/ring3_9/general, newer experienceBuild, mac, other licence categories), and also for Microsoft's own tenant (ring3_9). It is a Microsoft-side rollout flag, so it cannot be turned on in the test tenant. Nothing was changed; nothing to restore.
+  - So Teams cannot be compared live on this tenant; OST's reply-draft roaming stays behind OST_ROAM_DRAFTS as built.
 <!-- SECTION:NOTES:END -->

@@ -638,11 +638,18 @@ pub fn page_property(id: &str, order: f64, component_url: Option<&str>, creator:
 /// ([`crate::api::loop_page`]) and [`set_page_component_url`] points the
 /// tab at it. Returns the tab's id.
 pub async fn add_new_page_tab(client: &TeamsClient, channel_id: &str) -> Result<String> {
+    let me = client.object_id().map(|o| format!("8:orgid:{o}")).context("Not signed in")?;
+    add_page_tab_without_link(client, channel_id, &me, "Untitled page").await
+}
+
+/// A Page tab whose page isn't made yet, named `name`, made by `creator`
+/// (an MRI): what a New page leaves until Loop has made the page (and,
+/// with someone else as its maker, what Teams hides). Returns the tab's id.
+pub async fn add_page_tab_without_link(client: &TeamsClient, channel_id: &str, creator: &str, name: &str) -> Result<String> {
     let (orders, names) = existing_tabs(client, channel_id).await?;
     let id = format!("tab::{}", uuid::Uuid::new_v4());
     let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
-    let me = client.object_id().map(|o| format!("8:orgid:{o}")).context("Not signed in")?;
-    let property = page_property(&id, add_order(&orders), None, &me, &stored_name("Untitled page", &names), &now);
+    let property = page_property(&id, add_order(&orders), None, creator, &stored_name(name, &names), &now);
     put_property(client, channel_id, &id, Some(&property)).await?;
     Ok(id)
 }

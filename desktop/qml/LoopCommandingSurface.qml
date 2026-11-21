@@ -546,8 +546,11 @@ Popup {
         return { open: opened, mini: mini, x: x, y: y, width: width, height: height, top: surface ? names(surface.top) : [], main: surface && !mini ? names(surface.main) : [],
                  iconsMissing: top.concat(rows).filter(t => t.cmd && t.cmd.icon && !isEmoji(t.cmd.icon) && !icons[t.cmd.icon]).map(t => t.cmd.icon) }
     }
+    // (`id` may also be "icon:<Loop icon name>", e.g. Create Loop
+    // component's FFXCCreateLoopComponent.)
     function pickForTest(id) {
-        const find = l => { for (const c of l || []) { if (c.id === id && !c.sub) return c; const f = c.sub ? find(c.sub) : null; if (f) return f } return null }
+        const hit = c => id.indexOf("icon:") === 0 ? c.icon === id.slice(5) : c.id === id
+        const find = l => { for (const c of l || []) { if (hit(c) && !c.sub) return c; const f = c.sub ? find(c.sub) : null; if (f) return f } return null }
         const c = surface ? find(surface.top) || find(surface.main) : null
         if (c) pick(c)
         return !!c
