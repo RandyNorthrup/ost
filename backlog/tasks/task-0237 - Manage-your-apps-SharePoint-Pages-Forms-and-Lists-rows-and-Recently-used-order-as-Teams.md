@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-11-20T18:48:00Z'
-updated_date: '2026-11-21T02:25:00Z'
+updated_date: '2026-11-21T03:15:00Z'
 labels:
   - desktop
   - apps
@@ -22,7 +22,7 @@ Teams' Manage your apps lists 27 apps for ost-test1; OST lists 24. Teams also sh
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 Manage your apps lists the same apps as Teams for ost-test1, including SharePoint Pages, Forms and Lists
-- [ ] #2 Recently used sorts apps in Teams' order
+- [x] #2 Recently used sorts apps in Teams' order
 <!-- AC:END -->
 
 ## Implementation Notes

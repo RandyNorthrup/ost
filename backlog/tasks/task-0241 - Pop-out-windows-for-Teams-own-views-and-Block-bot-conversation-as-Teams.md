@@ -1,10 +1,10 @@
 ---
 id: TASK-0241
 title: Pop-out windows for Teams' own views and Block bot conversation, as Teams
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-11-21T00:13:00Z'
-updated_date: '2026-11-21T02:33:00Z'
+updated_date: '2026-11-21T03:15:00Z'
 labels:
   - desktop
   - apps
@@ -20,7 +20,7 @@ Teams' app bar menu offers Open in new window for its own views (Chat, Calendar 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 Open in new window on Teams' own app-bar views opens them in their own window as in Teams
-- [ ] #2 Block bot conversation appears for bots and works as in Teams
+- [x] #2 Block bot conversation appears for bots and works as in Teams
 <!-- AC:END -->
 
 ## Implementation Notes
