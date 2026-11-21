@@ -387,6 +387,15 @@ pub async fn file_info(client: &TeamsClient, drive_id: &str, item_id: &str) -> R
             p.get("roles").and_then(Value::as_array).into_iter().flatten().any(|r| matches!(r.as_str(), Some("owner") | Some("write")))
         });
     }
+    // A recording in your own OneDrive is yours to change (Teams'
+    // accessViewpoint.canEdit).
+    if !can_edit
+        && let Ok(r) = client.graph_get("/me/drive?$select=webUrl").await
+        && let Ok(d) = r.json::<Value>().await
+        && let Some(mine) = d.get("webUrl").and_then(Value::as_str)
+    {
+        can_edit = !mine.is_empty() && web.starts_with(mine);
+    }
     Ok(json!({ "webUrl": web, "site": site, "path": path, "name": item.get("name").cloned().unwrap_or(Value::Null),
                "expiration": expiration, "canEdit": can_edit }))
 }

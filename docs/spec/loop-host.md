@@ -160,10 +160,13 @@ visualSpacingTop: 12, visualSpacingBottom: 0, layoutMode: "fixedByHost"}`
 658 CSS properties (Fluent's Teams tokens such as `--fontSizeHero800`
 32px, the page title's size, and Teams' `--ms-theme*` names such as
 `--ms-themeFontSizeHeading1` 18px, `--ms-themeColorBodyText` #242424) and
-text styles for Heading 1-3 and Body. OST hands Loop the light theme as
-measured (`desktop/src/loop_theme_light.json`); in its dark and high
-contrast themes only the type, size and spacing tokens and the theme's
-name (Teams' colours for those weren't measured).
+text styles for Heading 1-3 and Body. In dark and high contrast Teams
+builds the same properties from its dark / high-contrast themes (dumped
+from Teams' Loop frame on winpc 2026-11-20: 685 properties in light and
+dark, 681 in high contrast) and names the theme `default`, `dark` or
+`high-contrast`. OST hands Loop each as measured
+(`desktop/src/loop_theme_light.json`, `loop_theme_dark.json`,
+`loop_theme_contrast.json`).
 
 ## What Teams draws around it
 - Chat notes: chat-tabs.md (the 48 px "Notes" header with the lock; the
@@ -198,9 +201,22 @@ name (Teams' colours for those weren't measured).
   expiry; never logged. They reach the page through a bridge script in an
   isolated world (it alone holds the web channel), by window messages from
   the same window.
-- Not given (optional): presence colours, people suggestions for @, Teams'
-  commanding surface, nested Loop components hosted by Teams, telemetry
-  sinks, trusted-types policy (Loop falls back to its own handling).
+- PresenceColorProvider (Teams' 478989): a collaborator's colour from the
+  sum of the upper-cased id's character codes mod 10 over Teams' category
+  colours (light #B24932 #92660D #56742F #248353 #164279 #37797B #7D2B5C
+  #A22954 #764E3B #993840; dark #F39D89 #ECC26E #B5CC99 #78C9A0 #7FA3D0
+  #96D6D8 #CC87B1 #E47CA1 #BF9D8C #DC8990; high contrast #1aebff).
+- PeopleService (pages): @mention suggestions from the compose resolver,
+  people only, as {userPrincipalName, name, id, jobTitle}.
+- See who has access (Loop's header PermissionsPanel with Teams'
+  ShareService): a popover "People who have access" with a facepile (32
+  px, at most 6, then "+n"), the groups count, a line and what the widest
+  link allows; from `{site}/_api/v2.1/drives/{d}/items/{i}/permissions`.
+- A Page tab without a page: Teams hides one someone else made; it makes
+  the page in your own (or one with no maker).
+- Not given yet: Teams' commanding surface, nested Loop components hosted
+  by Teams, its telemetry sink and trusted-types policy (Loop falls back
+  to its own handling).
 
 ## OST status (live checks 2026-11-16, ost-test1 on linuxlt, `--loop-test`)
 - [x] A chat's Notes (OST group test) shows its Loop page in Loop's own

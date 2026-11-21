@@ -5043,7 +5043,23 @@ Window {
                 if (w) w.contentItem.grabToImage(r => { r.saveToFile(window.shotPath.replace(".png", "-recap-window.png")); log("shot") })
                 break
             }
-            case 10: if (conversation.lastRecapWindow) conversation.lastRecapWindow.close(); Qt.quit(); return
+            case 10: if (mode !== "extras") { if (conversation.lastRecapWindow) conversation.lastRecapWindow.close(); Qt.quit(); return } break
+            // =extras: the recap window's extras (Clipchamp, Copilot,
+            // Manage, Custom summary, Mentions, Notes), each logged and shot.
+            case 11: case 13: case 16: case 18: case 21: {
+                const w = conversation.lastRecapWindow
+                if (!w) { Qt.quit(); return }
+                const n = { 11: "mentions", 13: "custom", 16: "summary", 18: "manage", 21: "copilot" }[step]
+                log(n, w.extrasForTest())
+                w.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-recap-" + n + ".png")))
+                if (step === 21) { w.close(); Qt.quit(); return }
+                break
+            }
+            case 9: if (mode === "extras" && conversation.lastRecapWindow) conversation.lastRecapWindow.pillForTest("Mentions"); break
+            case 12: if (conversation.lastRecapWindow) conversation.lastRecapWindow.pillForTest("CustomSummary"); break
+            case 14: if (conversation.lastRecapWindow) conversation.lastRecapWindow.summarizeForTest("SpeakersBasedRecap"); break
+            case 17: if (conversation.lastRecapWindow) conversation.lastRecapWindow.manageForTest(); break
+            case 19: if (conversation.lastRecapWindow) conversation.lastRecapWindow.copilotForTest(); break
             case 22: Qt.quit(); return
             case 33: {
                 const ev = eventsView.item
@@ -12087,6 +12103,28 @@ Window {
         }
     }
 
+    // --new-chat-search-test=<query> with --shots=<dir>: New chat, the
+    // query typed in To: (Teams' typed suggestions: people and chats), the
+    // suggestions logged (NEWCHATSEARCH) and newchat-search.png; with
+    // --new-chat-search-pick the first chat suggestion is picked (Teams
+    // opens it). Never sends.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--new-chat-search-test=")) && backend.signedIn
+        interval: 2500; repeat: true
+        property int step: 0
+        onTriggered: {
+            const arg = k => (Qt.application.arguments.find(a => a.startsWith(k + "=")) || "").slice(k.length + 1)
+            const q = decodeURIComponent(arg("--new-chat-search-test"))
+            const dir = (arg("--shots") || ".") + "/"
+            if (step === 1) { rail.current = "chat"; window.composing = true }
+            else if (step === 2) newChat.setFieldForTest(q)
+            else if (step === 5) { console.warn("NEWCHATSEARCH", q, JSON.stringify(newChat.suggestions.map(x => (x.chat ? "chat:" : "person:") + x.name))); window.contentItem.grabToImage(r => r.saveToFile(dir + "newchat-search.png")) }
+            else if (step === 6 && Qt.application.arguments.indexOf("--new-chat-search-pick") >= 0) { const c = newChat.suggestions.find(x => x.chat); if (c) newChat.pick(c) }
+            else if (step === 8) { console.warn("NEWCHATSEARCH after", window.composing, backend.currentChatId); Qt.quit() }
+            step++
+        }
+    }
+
     // --chat-notify-test=<group chat id> with --shots=<dir>: Teams' group
     // chat menu (Manage notifications in place of Mute), its flyout and
     // Customize's dialog (CHATNOTIFY lines, chat-notify-*.png); nothing is
@@ -12108,10 +12146,10 @@ Window {
             else if (step === 3) { row.closeMenuForTest(); row.notifyFlyoutForTest() }
             else if (step === 5) shot("flyout")
             else if (step === 6) { row.closeMenuForTest(); row.notifyCustomizeForTest() }
-            else if (step === 8) shot("customize")
-            else if (step === 9 && set) backend.channelAction("chat-notify", "", id, set)
-            else if (step === 12) { backend.channelAction("chat-notify-load", "", id, "") }
-            else if (step === 13) { console.warn("CHATNOTIFY state", backend.channelActionResult); Qt.quit() }
+            else if (step === 11) shot("customize")
+            else if (step === 12 && set) backend.channelAction("chat-notify", "", id, set)
+            else if (step === 15) { backend.channelAction("chat-notify-load", "", id, "") }
+            else if (step === 17) { console.warn("CHATNOTIFY state", backend.channelActionResult); Qt.quit() }
             step++
         }
     }

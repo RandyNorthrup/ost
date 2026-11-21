@@ -1185,7 +1185,7 @@ Rectangle {
                     FluentIcon { x: 24; anchors.verticalCenter: parent.verticalCenter; size: 20; name: "options-20"; color: theme.onFill(nCustom, nCustomHover.hovered ? theme.text : theme.textStrong) }
                     Text { x: 48; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Customize"); font.family: theme.font; font.pixelSize: 14; color: theme.onFill(nCustom, nCustomHover.hovered ? theme.text : theme.textStrong) }
                     HoverHandler { id: nCustomHover; cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: { chatNotifyFlyout.close(); rowMenu.close(); chatNotifyDialog.start({ id: row.chat.id, name: row.chat.name }) } }
+                    TapHandler { onTapped: { chatNotifyFlyout.close(); rowMenu.close(); chatNotifyDialog.start({ id: row.chat.id, name: row.chat.name, muted: !!row.chat.muted }) } }
                     Accessible.role: Accessible.MenuItem
                     Accessible.name: qsTr("Customize")
                 }
@@ -1193,7 +1193,7 @@ Rectangle {
         }
         ChannelNotifyDialog { id: chatNotifyDialog; chat: true }
         function notifyFlyoutForTest() { rowMenu.open(); chatNotifyFlyout.parent = rowMenu.contentItem; chatNotifyFlyout.x = rowMenu.width - 8; chatNotifyFlyout.y = 60; chatNotifyFlyout.load(); chatNotifyFlyout.open() }
-        function notifyCustomizeForTest() { chatNotifyDialog.start({ id: row.chat.id, name: row.chat.name }) }
+        function notifyCustomizeForTest() { chatNotifyDialog.start({ id: row.chat.id, name: row.chat.name, muted: !!row.chat.muted }) }
         function closeMenuForTest() { rowMenu.close() }
         function menuItemsForTest() { return rowMenu.items }
         function leaveForTest() { return leaveAsk }

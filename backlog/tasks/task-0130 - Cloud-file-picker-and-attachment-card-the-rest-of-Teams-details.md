@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-13T21:53:00Z'
-updated_date: '2026-11-21T01:18:00Z'
+updated_date: '2026-11-21T02:46:00Z'
 labels:
   - desktop
   - files
@@ -58,4 +58,15 @@ Left: Media's layout menu, compact toggle, zoom and date headings (measured in t
 - People (Browse by > People), measured: today only OST Test 2 is listed, with the files they shared with you. The "files you shared" from 11-16 are no longer listed.
   - The files cell runs from 353 to 939. Chips are 41.3 tall and 12 apart, filled until the cell is full; the last one's name is shortened. The rest go under a "+N" button that opens the person's page.
 - All picker settings were put back (River, Inline dates off, compact on).
+
+- 2026-11-20 (chatC), built and checked live on linuxlt as ost-test1 (`--attach-test`):
+  - Media now uses Photos' own query (api::drive::photos) and draws Teams' bar: Select layout (River / Waterfall / Square, Inline dates, Show file names), Toggle Compact View, a line, and Zoom controls (Zoom out, slider 6–20 x 25 px, Zoom in).
+  - River / masonry / square layouts at the zoom; 2 / 20 px gaps; 44 px names; the visible-range heading (#F5F5F5 64, 18/600) or per-day dates; a 44 px timeline with dots and the year; video length on hover or pick.
+  - The shot (scratch chatC/a-media.png) matches Teams' Media view on winpc: 265.8 x 149.5 tiles 3 to a row, the heading and the bar.
+  - People: chips fill the 570 px cell, then "+N". The pill shows the day only with the shared glyph. People without a sharer ("Someone") are no longer listed.
+- Still open:
+  - The timeline doesn't scrub.
+  - Layout and zoom aren't saved to OneDrive uxSetting (they reset per picker).
+  - People chips use the file name: Teams shows the recording's title, without the timestamp suffix.
+  - The person picture falls back to initials, where Teams draws its person placeholder.
 <!-- SECTION:NOTES:END -->

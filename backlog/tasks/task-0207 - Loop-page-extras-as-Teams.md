@@ -4,7 +4,7 @@ title: Loop page extras as Teams
 status: To Do
 assignee: []
 created_date: '2026-11-16T20:42:00Z'
-updated_date: '2026-11-21T01:26:00Z'
+updated_date: '2026-11-21T02:46:00Z'
 labels:
   - desktop
 dependencies: []
@@ -39,4 +39,12 @@ What TASK-0205 left of Teams' Loop host (docs/spec/loop-host.md): "See who has a
     - Trusted Types: the "@fluidx/loop" policy (DOMPurify).
   - Themes: --ms-themeColorThemeName is "default", "dark" or "high-contrast". On winpc, Teams' Loop frame (OST group test > Notes) carries 685 properties in light and dark and 681 in high contrast, dumped to scratch chatC/loop-{light,dark,hc}.json. Theme was set back to Follow OS.
   - A Page tab without a page: Teams hides one someone else made (no componentUrl and a creatorUserMri that isn't you). For your own tab, or one with no maker, Teams makes the page (FluidCreateChannelPage).
+
+- 2026-11-20 (chatC), built:
+  - See who has access on Loop components, channel Page tabs and Loop app pages opens LoopAccessPopover. It shows "People who have access", the facepile with "+n", the groups count and the widest-link footer, from ODSP v2.1 permissions (api::loop_page::access, with a unit test).
+  - loop_host.js now registers Teams' PresenceColorProvider (its colours per theme) and PeopleService (directory people, via a new "people" host request).
+  - Theme name: default / dark / high-contrast. The dark and high-contrast properties come from the winpc dumps (desktop/src/loop_theme_{dark,contrast}.json; light refreshed from today's dump). The theme is applied when the page starts.
+  - Page tabs: a link-less Page tab made by someone else is hidden; your own, or one with no maker, makes its page (Tab.creator from settings.creatorUserMri).
+- Not checked live: the dark Loop page, because ost-test1's chat service was answering 429 (throttled) during the run, so the Notes page showed Teams' "Your notes are temporarily not available". The popover was not opened live either.
+- Still open: Teams' commanding surface, nested-component hosting, telemetry sink and trusted-types policy.
 <!-- SECTION:NOTES:END -->

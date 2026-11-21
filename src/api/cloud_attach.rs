@@ -353,7 +353,9 @@ pub fn parse_collaborators(reply: &Value) -> Vec<String> {
 /// People's rows: who shared files with you, in OneDrive's collaborator
 /// order (people it doesn't know last), without you.
 pub fn order_people(mut people: Vec<(String, Vec<DriveItem>)>, order: &[String], me: &str) -> Vec<(String, Vec<DriveItem>)> {
-    people.retain(|(n, items)| !n.eq_ignore_ascii_case(me) && !items.is_empty());
+    // Teams lists who shared files with you: files without a sharer
+    // (OneDrive's "Someone") aren't listed.
+    people.retain(|(n, items)| !n.eq_ignore_ascii_case(me) && !n.eq_ignore_ascii_case("Someone") && !items.is_empty());
     people.sort_by_key(|(n, _)| order.iter().position(|o| o.eq_ignore_ascii_case(n)).unwrap_or(usize::MAX));
     people
 }

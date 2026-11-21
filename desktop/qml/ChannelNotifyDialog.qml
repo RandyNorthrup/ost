@@ -47,6 +47,7 @@ Popup {
 
     function start(c) {
         channel = c; loaded = null; saving = false
+        if (chat) { mode = c.muted ? "mute" : "all"; followAll = false; dsk = "" }
         backend.channelAction(chat ? "chat-notify-load" : "notify-load", teamId, c.id, "")
         open()
     }
@@ -87,7 +88,8 @@ Popup {
     anchors.centerIn: Overlay.overlay
     modal: true; width: 656
     padding: 32
-    height: Math.min(implicitHeight, (Overlay.overlay ? Overlay.overlay.height : 680) - 24)
+    // Teams' chat dialog keeps 656 tall (its buttons at the bottom).
+    height: Math.min(chat ? Math.max(implicitHeight, 656) : implicitHeight, (Overlay.overlay ? Overlay.overlay.height : 680) - 24)
     background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
 
     component Card: Rectangle {

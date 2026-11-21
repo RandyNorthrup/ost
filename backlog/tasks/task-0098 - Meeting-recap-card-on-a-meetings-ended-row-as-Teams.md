@@ -4,7 +4,7 @@ title: Meeting recap card on a meeting's ended row, as Teams
 status: In Progress
 assignee: []
 created_date: '2026-11-10T17:18:00Z'
-updated_date: '2026-11-20T23:13:00Z'
+updated_date: '2026-11-21T02:46:00Z'
 labels:
   - desktop
   - messages
@@ -50,4 +50,10 @@ It is built from the call-end XML (MeetingDetails) plus the recording messages f
   - Open: the band's Open in Clipchamp and Copilot, the Custom summary and Mentions pages, Notes' Add notes, and the player is OneDrive's player rather than the streamembed page Teams frames (it shows an "Open in browser" button where Teams has Manage). Give access was not sent from OST (it was captured from Teams with OST Test 2; the notify message deleted).
 
 - 2026-11-20 merged. AC1, AC2 met (chip → recap window Transcript tab, thumbnail → AI summary, Highlights → Events, Share menu and Share recap access). AC3 open: a side-by-side of the recap window. Missing extras moved to TASK-0240.
+
+- 2026-11-20 (chatC): AC3 side-by-side with Teams on winpc, opened from the thumbnail of OST TEST 217 town hall 2.
+  - Teams' window: 1283 x 730. Band: Share 78 at 887.3, 101; Open in Clipchamp 169.8; Copilot 96.2; More options 32 x 30. Manage over the player (117.6 x 31.3, 12 in). Speakers / Topics / Chapters; Shared files with Attendance. Pills: Notes, AI summary, Custom summary (New), Mentions, "Show 1 more item"; Copy all on AI summary.
+  - OST's RecapWindow shot (`--recap-window-test=extras`, scratch chatC/r-recap-custom.png) has the same header, band, buttons, Manage, pills (Mentions 4th from the thumbnail), cards and empty states.
+  - Known difference: the player is OneDrive's own (its "Open in browser" button), where Teams frames streamembed.aspx.
+  - The extras are recorded under TASK-0240.
 <!-- SECTION:NOTES:END -->

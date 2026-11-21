@@ -610,17 +610,20 @@ pub fn parse_recipients(reply: &serde_json::Value, my_oid: &str) -> Vec<serde_js
 }
 
 /// The new chat form's typed suggestions (Teams' peoplepicker.newChat, as
-/// it lists them, measured on winpc 2026-11-20): people and chats in
-/// Substrate's best-match order ("OST" lists only its people; "OST group"
-/// the two group chats), not channels or teams; the rest only when there
-/// is no best match.
+/// it lists them, measured on winpc 2026-11-20): the people who match, or
+/// when no one does the chats (not channels or teams), in Substrate's
+/// best-match order.
 pub fn new_chat_typed(items: Vec<serde_json::Value>, max: usize) -> Vec<serde_json::Value> {
     let usable = |v: &serde_json::Value| {
         (v["kind"] == "person" && !v["oid"].as_str().unwrap_or_default().is_empty())
-            || (v["kind"] == "chat" && !matches!(v["thread_type"].as_str(), Some("channel") | Some("team")))
+            || (v["kind"] == "chat" && !v["name"].as_str().unwrap_or_default().is_empty() && !matches!(v["thread_type"].as_str(), Some("channel") | Some("team")))
     };
     let any_best = items.iter().any(|v| v["best"] == true);
-    items.into_iter().filter(|v| usable(v) && (!any_best || v["best"] == true)).take(max).collect()
+    let picked: Vec<serde_json::Value> = items.into_iter().filter(|v| usable(v) && (!any_best || v["best"] == true)).collect();
+    // Teams lists the people who match, and chats only when no one does
+    // ("OST": people; "OST group": the two chats).
+    let people = picked.iter().any(|v| v["kind"] == "person");
+    picked.into_iter().filter(|v| !people || v["kind"] == "person").take(max).collect()
 }
 
 /// The new chat form's suggestions before anything is typed: Teams' top-N
@@ -789,6 +792,16 @@ async fn fill_by_thread(client: &super::client::TeamsClient, found: &mut Found) 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn new_chat_lists_people_else_chats() {
+        let p = |n: &str| serde_json::json!({"kind": "person", "oid": "o", "name": n});
+        let c = |n: &str, t: &str| serde_json::json!({"kind": "chat", "id": "19:x", "name": n, "thread_type": t});
+        let both = new_chat_typed(vec![p("OST Test 2"), c("OST group test", "chat"), c("OST Test Team", "team")], 20);
+        assert_eq!(both.len(), 1);
+        let chats = new_chat_typed(vec![c("OST group test", "chat"), c("", "chat"), c("General", "channel"), c("OST TEST group call", "chat")], 20);
+        assert_eq!(chats.iter().map(|v| v["name"].as_str().unwrap()).collect::<Vec<_>>(), ["OST group test", "OST TEST group call"]);
+    }
 
     #[test]
     fn communities_read_engages_reply() {

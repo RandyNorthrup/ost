@@ -600,7 +600,16 @@ mod tests {
         assert!(inline_span(&id).starts_with("<span class=\"inline-compose-card\" itemid=\"app-preview-card-ps"));
         let b = query_body(&app, url, "19:t@thread.v2", "OST Test 1", "tok");
         assert_eq!(b, json!({"name":"composeExtension/anonymousQueryLink","appId":"25492237-70ef-4c56-a36e-dd3405edd40e","value":{"url":url},"imdisplayname":"OST Test 1","userAadToken":"tok","conversation":{"id":"19:t@thread.v2"}}));
-        // Auth or config replies give no card.
-        assert!(card_from_reply(&json!({"composeExtension":{"type":"auth","suggestedActions":{"actions":[]}}}), &app, url).is_none());
+        // Auth or config replies give Teams' permission card: an anonymous
+        // app's sign-in has no address (Show Preview installs first); an
+        // installed app's needs one; its pre-auth card goes above the link.
+        let anon = card_from_reply(&json!({"composeExtension":{"type":"auth","suggestedActions":{"actions":[]}}}), &app, url).unwrap();
+        assert_eq!((anon.permission.as_str(), anon.auth_url.as_str()), ("auth", ""));
+        let installed = LinkApp { installed: true, ..app.clone() };
+        assert!(card_from_reply(&json!({"composeExtension":{"type":"auth","suggestedActions":{"actions":[]}}}), &installed, url).is_none());
+        let signin = card_from_reply(&json!({"composeExtension":{"type":"auth","suggestedActions":{"actions":[{"type":"openUrl","value":"https://token.botframework.com/x"}]},
+            "items":[{"card":{"contentType":"application/vnd.microsoft.card.thumbnail","content":{"title":"Repo"}}}]}}), &installed, url).unwrap();
+        assert_eq!((signin.auth_url.as_str(), signin.content["title"].as_str()), ("https://token.botframework.com/x", Some("Repo")));
+        assert_eq!(install_card(&app, url).permission, "install");
     }
 }

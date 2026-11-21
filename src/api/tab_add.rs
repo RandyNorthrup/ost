@@ -829,6 +829,7 @@ pub fn tab_from_property(t: &serde_json::Value, ctx: &tabs::TabContext) -> Tab {
             .unwrap_or_default(),
         icon: String::new(),
         config_url: String::new(),
+        creator: String::new(),
         id,
         app_id,
         kind,

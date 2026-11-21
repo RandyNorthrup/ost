@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-11-20T22:51:00Z'
-updated_date: '2026-11-21T01:18:00Z'
+updated_date: '2026-11-21T02:46:00Z'
 labels:
   - desktop
   - calls
@@ -42,4 +42,18 @@ TASK-0098 built Teams' recap pop-out (player, Speakers/Topics/Chapters, Shared f
   - Notes: "Add meeting notes for everyone" / "Anyone can contribute to the notes, anytime." with an outlined Add notes button (124.4 x 31.3, the 20 px Loop icon, 14/600 #242424). It calls the meeting-notes service getOrCreateMeetingNotes, then shows the Loop notes.
   - Opened from the thumbnail, the 4th pill is Mentions; opened from the Transcript chip, it is Transcript. The other one goes under "Show 1 more item".
   - AI summary has Copy all (32 x 31.3 at the right of the "AI-generated content may be incorrect" row). The left card has Collapse panel (32 x 32) at its bottom right.
+
+- 2026-11-20 (chatC), built and checked live on linuxlt as ost-test1 (`--recap-window-test=extras`, OST TEST 217 town hall 2):
+  - Open in Clipchamp: the recording's page with web=1 and Teams' referrer, opened in the browser.
+  - Copilot: shown for the Copilot licence. The pane loads the M365 Copilot app (launch_recap: entryPoint Recap, ECS meetingRecap cmm id, sessionType Recap, vroomId).
+  - Manage over the player (dark button and dark menu): Download (driveDownload); Expires in 118 days (the same as Teams) ▸ Extend by 60 days / Remove expiration (SetExpirationDate). It is offered for your own recordings.
+  - Custom summary: Teams' cards (Create template, Speaker summary, Executive report, Project update, your OneDrive templates; 2/3/4 per page with Next/Previous), the empty state, and Copilot's m365Copilot/Chat summary with Teams' body. For this meeting Copilot answers 500, so OST shows Teams' "We couldn't load custom AI summary".
+  - Mentions: the MeetingCatchUp call. It answers 400 for this meeting, so OST shows Teams' page: warning illustration, "We couldn't load mentions", "Something went wrong. Try again." This matches what Teams shows on winpc for the same meeting.
+  - Notes: Teams' outlined Add notes (Loop icon). It runs getOrCreateMeetingNotes, then shows the Loop notes.
+  - The 4th pill is Mentions from the thumbnail and Transcript from the chip, as in Teams.
+- Still open:
+  - Create template's editor (Describe your summary format / Preview / Save and Apply).
+  - A meeting with a working transcript, to see Mentions and Custom summary results.
+  - Add notes was not pressed live; it would create notes in the meeting.
+  - The player is OneDrive's; it shows "Open in browser", which Teams' streamembed doesn't have.
 <!-- SECTION:NOTES:END -->

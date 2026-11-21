@@ -4,7 +4,7 @@ title: Chat list leftovers found in live checks
 status: To Do
 assignee: []
 created_date: '2026-11-16T20:22:00Z'
-updated_date: '2026-11-21T01:26:00Z'
+updated_date: '2026-11-21T02:45:00Z'
 labels:
   - desktop
 dependencies: []
@@ -45,4 +45,14 @@ Found while checking TASK-0150/0195/0204 against Teams on winpc (2026-11-16):
     - The info tooltip reads "Keeps your plans on track and gets your team the answers it needs. It creates status reports, schedules meetings, and more."
     - No "agent id" second box (enableAgenticUserCreationToggle is off).
     - Checked, Teams installs the Channel Agent (project agent) in the first channel after creating the team: the installer hook passed into 785683's F, with entryPoint "autoInstallTeamToggle". That hook is not traced yet.
+
+- 2026-11-20 (chatC), built and checked live on linuxlt as ost-test1:
+  - Manage notifications ▸ for group chats, in Teams' place before Move to section. The flyout reads the chat's state ("chat-notify-load"; "Customized" label). A preset writes alerts, conversationNotificationSettings and followAllRc as Teams does. Customize is ChannelNotifyDialog in chat mode, 656 tall.
+    - `--chat-notify-test=<OST group test>`: the menu items in Teams' order and the flyout match Teams on winpc; the state read back is {preset all, everyone true (global), follow false}.
+    - Code: api::channels chat_notify_from / chat_notify_write / follow_all_rc_change / set_chat_notify, with unit tests.
+  - New chat typed search: people who match, else group chats (Substrate peoplepicker.newChat; nameless chats, channels and teams left out). Picking a chat opens it (NewChat.openChat). `--new-chat-search-test`: "OST group" gives ["OST group test", "OST TEST group call"] as in Teams, and the pick opened OST group test; "OST" gives people only.
+- Still open:
+  - Teams lists only 4 people for "OST" (its local cache; OST lists Substrate's 9).
+  - The Create team "Add Channel Agent" checkbox is not built: Teams' Channel Agent installer isn't traced, and a checkbox that does nothing would be a placeholder.
+  - The Add members blank picture was not reproduced this pass.
 <!-- SECTION:NOTES:END -->

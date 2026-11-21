@@ -4,7 +4,7 @@ title: Link cards from installed apps and apps that need sign-in, as Teams
 status: To Do
 assignee: []
 created_date: '2026-11-16T11:48:00Z'
-updated_date: '2026-11-21T01:26:00Z'
+updated_date: '2026-11-21T02:46:00Z'
 labels:
   - desktop
 dependencies: []
@@ -36,4 +36,13 @@ TASK-0168 shows Teams' app card for links to sites whose Teams app allows anonym
     - Sign in opens window.open(url, "appAuthWindow", "width=W,height=H"), with W and H taken from the address. Teams answers its TeamsJS initialize and getContext calls. authenticateSuccess(result) re-queries with value.state. Closing the window cancels.
     - silentAuth (SSO bots) asks getAuthTokenForBot and re-queries with authentication.token.
   - ECS: enableAppBasedLink, enableAnonymousAppBasedLink, enablePreAuthCard, enableAppBasedLinkSsoAuth and enablePreconsentedAppBasedLink are on.
+
+- 2026-11-20 (chatC), built (not checked live):
+  - A matching uninstalled, non-anonymous app now gets Teams' Install card ("Show Preview" and the consent footer). Show Preview runs app_link_action "install": store_content::add_app for you, then asks again.
+  - auth/config replies give the permission card: the pre-auth card, then "Sign in to view card content" / "Setup". Sign in opens AppAuthWindow at the address's width and height, and asks again when it closes. queryLink carries value.state when given.
+  - api::link_unfurl permission_from_reply / install_card / unfurl_with, with unit tests.
+- Open:
+  - AC1 needs an installed link app in the tenant (for example installing Wikipedia Search for ost-test1, then a Wikipedia link).
+  - AC2 needs an account at the Show Preview app's own service to finish the sign-in.
+  - TeamsJS authenticateSuccess from the popup isn't wired; OST re-queries on close.
 <!-- SECTION:NOTES:END -->

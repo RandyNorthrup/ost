@@ -213,21 +213,27 @@ Window {
                         FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-12"; size: 12; color: "white" }
                     }
                     HoverHandler { id: manageHover; cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: manageMenu.popup(manageBtn, manageBtn.width - manageMenu.width, manageBtn.height + 4) }
+                    TapHandler { onTapped: manageMenu.open() }
                     Accessible.role: Accessible.Button; Accessible.name: qsTr("Manage")
                 }
-                Menu {
+                // Teams' Manage menu: dark, over the player (Download; Expires
+                // in {n} days ▸ Extend by 60 days / Remove expiration).
+                MenuPopup {
                     id: manageMenu
-                    MenuItem {
-                        text: qsTr("Download")
-                        onTriggered: backend.driveDownload(JSON.stringify({ id: win.recap.item_id, drive_id: win.recap.drive_id, name: win.extras.file.name || "" }))
-                    }
-                    Menu {
-                        id: expiryMenu
-                        enabled: !!win.extras && win.extras.file.canEdit && win.extras.remainingDays >= 0
-                        title: win.extras && win.extras.remainingDays >= 0 ? qsTr("Expires in %n day(s)", "", win.extras.remainingDays) : qsTr("No expiration")
-                        MenuItem { text: qsTr("Extend by 60 days"); onTriggered: backend.eventsRequest("recapExpiry", win.tag + "expiry", JSON.stringify({ site: win.extras.file.site, path: win.extras.file.path, expiration: win.extras.file.expiration })) }
-                        MenuItem { text: qsTr("Remove expiration"); onTriggered: backend.eventsRequest("recapExpiry", win.tag + "expiry", JSON.stringify({ site: win.extras.file.site, path: win.extras.file.path, remove: true })) }
+                    parent: manageBtn
+                    darkCallout: true
+                    x: manageBtn.width - implicitWidth; y: manageBtn.height + 8
+                    readonly property int days: win.extras ? win.extras.remainingDays : -1
+                    items: [{ key: "download", label: qsTr("Download"), icon: "arrow-download-20" }].concat(
+                        days >= 0 && win.extras.file.canEdit ? [{ key: "expiry", icon: "clock-20",
+                            label: days === 1 ? qsTr("Expires in 1 day") : qsTr("Expires in %1 days").arg(days),
+                            submenu: [{ label: qsTr("Extend by 60 days"), key: "extend" }, { label: qsTr("Remove expiration"), key: "remove" }] }] : [])
+                    onPicked: i => { if (items[i].key === "download") backend.driveDownload(JSON.stringify({ id: win.recap.item_id, drive_id: win.recap.drive_id, name: win.extras.file.name || "" })) }
+                    onSubPicked: (i, j) => {
+                        const k = items[i].submenu[j].key
+                        backend.eventsRequest("recapExpiry", win.tag + "expiry", JSON.stringify(k === "remove"
+                            ? { site: win.extras.file.site, path: win.extras.file.path, remove: true }
+                            : { site: win.extras.file.site, path: win.extras.file.path, expiration: win.extras.file.expiration }))
                     }
                 }
             }
@@ -507,7 +513,7 @@ Window {
                             Rectangle {
                                 id: card
                                 required property var modelData
-                                readonly property bool chosen: win.summaryKey === modelData.key || (modelData.template && win.summaryKey === "SavedTemplate" && win.summaryTemplateId === modelData.key)
+                                readonly property bool chosen: win.summaryKey === modelData.key || (!!modelData.template && win.summaryKey === "SavedTemplate" && win.summaryTemplateId === modelData.key)
                                 width: cards.cardWidth; height: 50.7; radius: 4
                                 color: cardHover.hovered ? theme.rowHover : theme.surface
                                 border.color: chosen ? theme.brand : "transparent"; border.width: chosen ? 1.33 : 0
@@ -736,7 +742,7 @@ Window {
     function pillForTest(k) { win.rightPill = k }
     function summarizeForTest(k) { win.summarize(k, "") }
     function copilotForTest() { win.toggleCopilot() }
-    function manageForTest() { manageMenu.popup(manageBtn, manageBtn.width - manageMenu.width, manageBtn.height + 4) }
+    function manageForTest() { manageMenu.open() }
     function extrasForTest() { return JSON.stringify({ extras: win.extras, mentions: win.mentions, summary: win.summaryState, summaryLen: win.summaryText.length, notes: win.notesState, copilot: !!win.copilotLaunch }) }
     function stateForTest() { return JSON.stringify({ loading: win.loading, pill: win.rightPill, player: !!(win.data_ && win.data_.player), transcript: win.data_ ? (win.data_.transcript || []).length : -1, thread: win.recap.thread_id || "", link: win.data_ ? win.data_.link : "" }) }
     function shareDialogForTest() { return shareDialog }

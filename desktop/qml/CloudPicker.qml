@@ -155,13 +155,13 @@ Popup {
         }
         // River.
         let row = [], sum = 0, last = mediaZoom
-        const flush = (final) => {
+        const flush = isLast => {
             let h = (W - (row.length - 1) * g) / sum
-            if (final && h > mediaZoom) h = Math.min(last, mediaZoom)
+            if (isLast && h > mediaZoom) h = Math.min(last, mediaZoom)
             last = h
             if (row.some(r => newSection(r))) y += mediaHeader
             let x = 0
-            for (const r of row) { const w = aspect(items[r]) * h; out.push({ i: r, x: x, y: y, w: final && h < (W - (row.length - 1) * g) / sum ? w : w, h: h, header: newSection(r) }); x += w + g }
+            for (const r of row) { const w = aspect(items[r]) * h; out.push({ i: r, x: x, y: y, w: w, h: h, header: newSection(r) }); x += w + g }
             y += h + extra + g
             row = []; sum = 0
         }
@@ -610,7 +610,7 @@ Popup {
                         let used = 0
                         for (let i = 0; i < items.length; i++) {
                             const name = items[i].name.replace(/\.[^.]+$/, "")
-                            const fixed = 32.7 + 0.7 + pillFont.advanceWidth(items[i].modified_text || "") + 36 + 8
+                            const fixed = 32.7 + 0.7 + pillFont.advanceWidth(String(items[i].modified_text || "").replace(/ at .*$/, "")) + 36 + 8
                             const natural = fixed + chipFont.advanceWidth(name)
                             const rest = i < items.length - 1 ? 12 + plus : 0
                             if (used + natural + rest <= avail) { out.push({ item: items[i], nameW: chipFont.advanceWidth(name) }); used += natural + 12; continue }
@@ -649,7 +649,7 @@ Popup {
                                     Text {
                                         id: chipTime
                                         x: 24; anchors.verticalCenter: parent.verticalCenter
-                                        text: chip.item.modified_text || ""
+                                        text: String(chip.item.modified_text || "").replace(/ at .*$/, "")
                                         font.family: theme.font; font.pixelSize: 10; color: dlg.label
                                     }
                                 }
@@ -771,7 +771,7 @@ Popup {
                             Row {
                                 id: playRow
                                 anchors.centerIn: parent; spacing: 4
-                                FluentIcon { anchors.verticalCenter: parent.verticalCenter; size: 20; name: "play-circle-20-filled"; color: theme.onFill(playMark, "white") }
+                                FluentIcon { anchors.verticalCenter: parent.verticalCenter; size: 20; name: "play-circle-20"; color: theme.onFill(playMark, "white") }
                                 Text {
                                     visible: (mtHover.hovered || mt.sel) && mt.item.duration > 0
                                     anchors.verticalCenter: parent.verticalCenter
