@@ -384,6 +384,29 @@ Window {
         function onVisibleChanged() { window.syncHeadset() }
         function onMicOnChanged() { window.syncHeadset() }
     }
+    // Teams' Better Together pairing prompt (its pair command, V9e; texts read
+    // from Teams on winpc 2026-11-20): a Teams
+    // phone signed in as you asks to pair; Connect keeps it (Settings ▸
+    // Devices ▸ Manage devices), Cancel or 50 s without an answer turns it
+    // down.
+    ConfirmDialog {
+        id: btPairDialog
+        property string deviceName: ""
+        title: qsTr("Connection request")
+        body: qsTr("%1 would like to pair with your PC.\nClick on \"Connect\" to approve.").arg(deviceName)
+        confirmText: qsTr("Connect")
+        property bool answered: false
+        onAboutToShow: answered = false
+        onConfirmed: { answered = true; backend.betterTogetherAnswer(true) }
+        onClosed: if (!answered) { answered = true; backend.betterTogetherAnswer(false) }
+    }
+    Connections {
+        target: backend
+        function onBetterTogetherPairRequest(name) {
+            if (name.length > 0) { btPairDialog.deviceName = name; btPairDialog.open() }
+            else if (btPairDialog.opened) { btPairDialog.answered = true; btPairDialog.close() }
+        }
+    }
     // Teams' HidControlTransferWorkflow: another OST answers the headset's
     // buttons; take them here.
     ConfirmDialog {
@@ -6551,6 +6574,47 @@ Window {
                 else if (roomShot && backend.callState !== "connected") { console.warn("LEFT", backend.callState); step = 30 }
             }
             else if (st > 6) Qt.quit()
+        }
+    }
+    // --better-together-test: Teams' Better Together (TASK-0162). Shows
+    // Settings ▸ Devices ▸ Manage devices and logs BT lines (the paired
+    // phones) every 2 s. A phone's pairing prompt is captured
+    // (/tmp/act/bt-pair.png) and answered by --bt-pair=accept|cancel (left
+    // open without one). With a phone listed, the page is captured
+    // (bt-paired.png); --bt-disconnect then presses its Disconnect and
+    // captures the page again (bt-unpaired.png). Ends after --bt-minutes
+    // (default 5).
+    Timer {
+        running: Qt.application.arguments.indexOf("--better-together-test") >= 0 && backend.signedIn
+        interval: 2000; repeat: true
+        property int step: 0
+        property bool pairShot: false
+        property bool pairedShot: false
+        property bool disconnected: false
+        readonly property string arg: (Qt.application.arguments.find(x => x.startsWith("--bt-pair=")) || "").split("=")[1] || ""
+        readonly property int minutes: parseInt((Qt.application.arguments.find(x => x.startsWith("--bt-minutes=")) || "=5").split("=")[1])
+        onTriggered: {
+            const st = step++
+            if (st === 0) { rail.current = "settings"; settingsView.pageForTest("devices", "connected"); return }
+            const devices = JSON.parse(backend.betterTogetherDevices())
+            console.warn("BT", JSON.stringify(devices), "prompt", btPairDialog.opened, btPairDialog.deviceName)
+            if (btPairDialog.opened && !pairShot) {
+                pairShot = true
+                console.warn("BT-PROMPT", btPairDialog.title, "|", btPairDialog.body, "|", btPairDialog.width, btPairDialog.height)
+                window.contentItem.grabToImage(r => r.saveToFile("/tmp/act/bt-pair.png"))
+                return
+            }
+            if (btPairDialog.opened && pairShot && arg === "accept") { btPairDialog.answered = true; backend.betterTogetherAnswer(true); btPairDialog.close(); return }
+            if (btPairDialog.opened && pairShot && arg === "cancel") { btPairDialog.close(); return }
+            if (devices.length > 0 && !pairedShot) { pairedShot = true; window.contentItem.grabToImage(r => r.saveToFile("/tmp/act/bt-paired.png")); return }
+            if (devices.length > 0 && pairedShot && !disconnected && Qt.application.arguments.indexOf("--bt-disconnect") >= 0 && st > 5) {
+                disconnected = true
+                console.warn("BT-DISCONNECT", devices[0].endPointId)
+                backend.betterTogetherUnpair(devices[0].endPointId)
+                return
+            }
+            if (disconnected && devices.length === 0) { window.contentItem.grabToImage(r => r.saveToFile("/tmp/act/bt-unpaired.png")); console.warn("BT-UNPAIRED"); disconnected = false }
+            if (st * interval > minutes * 60000) Qt.quit()
         }
     }
     // --rooms-test: Teams' tenant rooms in Room audio (TASK-0161). Opens a

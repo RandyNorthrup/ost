@@ -59,12 +59,12 @@ impl TrouterSocket {
 
                     // Auto-respond to Trouter data frame deliveries (3::: HTTP-over-WS)
                     if let Some(req_id) = extract_trouter_request_id(&text) {
-                        let resp = match super::sync_reply_body(&text) {
-                            Some(body) => format!(
+                        let resp = match super::sync_reply(&text) {
+                            Some((status, body)) => format!(
                                 "3:::{}",
                                 serde_json::json!({
                                     "id": req_id,
-                                    "status": 200,
+                                    "status": status,
                                     "headers": { "Content-Type": "application/json" },
                                     "body": body
                                 })

@@ -328,9 +328,30 @@ Everything below is in userPersonalSettings unless marked local.
   Attendees see only meeting content on the room display. Learn More"
   (https://aka.ms/meetingroommode). Teams keeps the switch on the device (clientPreferences
   `byod.pushToRoomAudio`); OST keeps it as the local setting `pushToRoomAudio`.
-- **Manage devices** opens "Devices › Manage devices": "Select a device to connect", the Teams
-  phones paired with this PC (Teams' Better Together). OST pairs with no phone, so the list is
-  empty, as on a PC with none (pairing is TASK-0162).
+- **Manage devices** opens "Devices › Manage devices": "Select a device to connect", then the
+  Teams phones paired with this PC (Teams' Better Together, TASK-0162): each with Teams'
+  screen-and-phone glyph, the phone's name, "Connected" while it is, and **Disconnect**.
+  - Transport (Teams' SlimCore "BTT"): every Teams client of the user registers its calling
+    endpoint id with the registrar on its Trouter socket's `bettertogether` path. A command is
+    one JSON message POSTed to the other side's URL: `{registrationId, command,
+    commandSequenceNumber, commandDetails (JSON text), transportDetails {context, endpointType
+    "BetterTogether", url}, debugContent {chainId, causeId}}`. The receiver acknowledges it in
+    the Trouter reply (200 `{}`, or 300 `{errorCode}`, e.g. DEVICE_NOT_PAIRED from a phone that
+    isn't paired) and later sends a `response` command `{requestCauseId, statusCode, salt, …}`.
+  - Proximity: the phone advertises Microsoft's Bluetooth manufacturer data `34 F0 40`, the
+    user's packed object id, a byte, its salt (bytes 17-18, little-endian) and its endpoint
+    signature (19-20). The PC scans 15 s for it (-75 dBm or better), unless a command carries
+    the salt last heard or the phone is wired (`WIRED_CONNECTION`).
+  - `broadcast` is answered with the PC's OS name; `pair {deviceName, clientType,
+    clientVersion, endpointSignature, capabilities, salt}` asks the user ("Connection request": "<name> would like to pair with your PC. Click on \"Connect\" to approve.", Connect / Cancel, 50 s)
+    and on Pair keeps the phone Connected and answers `{accepted: true, salt}`. A connected
+    phone gets `keepalive` every 30 s; two misses send `lock` (Locked); hearing it again sends
+    `keepalive` and `unlock` (Connected). `locked`, `unlocked`, `autopair`, `updateendpoint`
+    and `unpair` from the phone are taken as Teams takes them.
+  - Disconnect (Teams' betterTogetherUnpairDevice) sends the phone `unpair` (`{salt,
+    targetEndpointId, companionResponseRequired: false}`) and forgets it at once. The list is
+    kept on the device as Teams keeps it (`BTPairedDevices`, without the connection status:
+    every phone starts disconnected).
 - Meeting room mode acts in the pre-join screen. A connected room device is a USB device that
   is both a speaker and a microphone (no headsets). OST reads these from PipeWire with their
   USB ids (`calling::room_devices`). If the device's id is on Teams' `byodRoomDeviceVidPids`

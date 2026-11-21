@@ -3,6 +3,7 @@
 mod avatars;
 mod cameo_feed;
 mod backend;
+mod better_together;
 mod clip_edit;
 mod clip_frames;
 mod help_bundle;

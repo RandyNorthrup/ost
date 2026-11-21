@@ -153,7 +153,7 @@ fn start_push(client: &TeamsClient, resp_tx: mpsc::UnboundedSender<BackendRespon
 
     let mut events = event_hub::subscribe();
     tokio::spawn(async {
-        let opts = crate::trouter::ListenOptions::EMBEDDED;
+        let opts = crate::trouter::ListenOptions { better_together: false, ..crate::trouter::ListenOptions::EMBEDDED };
         if let Err(e) = crate::trouter::listen(opts, std::future::pending).await {
             tracing::warn!("push channel stopped: {:#}", e);
         }
@@ -177,7 +177,7 @@ fn start_push(client: &TeamsClient, resp_tx: mpsc::UnboundedSender<BackendRespon
             };
             let response = match ev.kind {
                 EventKind::Connected => BackendResponse::PushConnected,
-                EventKind::Call => continue,
+                EventKind::Call | EventKind::BetterTogether => continue,
                 EventKind::Chat => {
                     let changed = event_hub::conversation_ids(&ev.json);
                     if changed.is_empty() {

@@ -19,6 +19,9 @@ pub enum EventKind {
     /// Trouter (re)connected; `json` is empty. Teams replays its offline
     /// queue then.
     Connected,
+    /// A Better Together command from one of the user's Teams devices
+    /// (`api::better_together::Message` JSON), already acknowledged.
+    BetterTogether,
 }
 
 /// One pushed event; `json` is the decoded event body.

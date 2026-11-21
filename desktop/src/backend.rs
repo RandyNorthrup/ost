@@ -2675,6 +2675,23 @@ pub mod qobject {
         /// [{mri, name, status, code, adjacent}]}. `scan`: keep looking.
         #[qinvokable]
         fn nearby_rooms(self: &Backend, scan: bool) -> QString;
+        /// Teams' paired phones for Manage devices (Better Together):
+        /// [{endPointId, deviceName, clientType, clientVersion,
+        /// connectionType, connectionStatus (0 Connected)}].
+        #[qinvokable]
+        fn better_together_devices(self: &Backend) -> QString;
+        /// Manage devices' Disconnect: unpair the phone as Teams does.
+        #[qinvokable]
+        fn better_together_unpair(self: &Backend, endpoint_id: &QString);
+        /// The user's answer to Teams' pairing prompt (Connect / Cancel).
+        #[qinvokable]
+        fn better_together_answer(self: &Backend, accept: bool);
+        /// The paired phones changed.
+        #[qsignal]
+        fn better_together_changed(self: Pin<&mut Backend>);
+        /// A phone asks to pair (its name); empty when the prompt is over.
+        #[qsignal]
+        fn better_together_pair_request(self: Pin<&mut Backend>, device_name: QString);
         /// Teams' join with a room: add the room account to the meeting
         /// (code -1 when the room wasn't heard over Bluetooth).
         #[qinvokable]
@@ -8213,14 +8230,14 @@ pub fn extended_diagnostics() -> bool {
     load_settings().get("shouldPersistLogsIntoIDB").and_then(|v| v.as_str()) == Some("true")
 }
 
-fn load_settings() -> serde_json::Map<String, serde_json::Value> {
+pub(crate) fn load_settings() -> serde_json::Map<String, serde_json::Value> {
     settings_path()
         .and_then(|p| std::fs::read_to_string(p).ok())
         .and_then(|t| serde_json::from_str(&t).ok())
         .unwrap_or_default()
 }
 
-fn save_settings(map: &serde_json::Map<String, serde_json::Value>) -> anyhow::Result<()> {
+pub(crate) fn save_settings(map: &serde_json::Map<String, serde_json::Value>) -> anyhow::Result<()> {
     let path = settings_path().ok_or_else(|| anyhow::anyhow!("No config directory"))?;
     let dir = path.parent().expect("settings file has a directory");
     std::fs::create_dir_all(dir)?;
@@ -8783,6 +8800,9 @@ impl qobject::Backend {
             return;
         }
         let mut events = teams_cli::event_hub::subscribe();
+        // Better Together: subscribed before the socket connects, so no
+        // phone's command is missed.
+        crate::better_together::start(self.qt_thread());
         self.as_mut().load_recent_reactions();
         // The outbox: redraw the open chat whenever a send changes state, and
         // replay queued sends at startup and every 10 minutes (Teams'
@@ -23187,6 +23207,18 @@ impl qobject::Backend {
             tracing::info!(query = %query, rooms = %json, "rooms found");
             let _ = qt.queue(move |mut this| this.as_mut().tenant_rooms_ready(QString::from(query.as_str()), QString::from(json.as_str())));
         });
+    }
+
+    pub fn better_together_devices(&self) -> QString {
+        QString::from(crate::better_together::devices_json().as_str())
+    }
+
+    pub fn better_together_unpair(&self, endpoint_id: &QString) {
+        crate::better_together::unpair(endpoint_id.to_string());
+    }
+
+    pub fn better_together_answer(&self, accept: bool) {
+        crate::better_together::answer(accept);
     }
 
     pub fn nearby_rooms(&self, scan: bool) -> QString {

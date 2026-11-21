@@ -2853,17 +2853,55 @@ Rectangle {
                     onLinkActivated: Qt.openUrlExternally("https://aka.ms/meetingroommode")
                 }
             }
-            // Devices ▸ Manage devices: Teams' "Select a device to connect"
-            // with the phones paired with it (Better Together). OST pairs
-            // with no phone, so the list is empty, as on a PC with none.
-            Text {
+            // Devices ▸ Manage devices (Teams' BttDeviceSettings): "Select a
+            // device to connect", then each Teams phone paired with this PC
+            // (Better Together): Teams' screen-and-phone glyph, the phone's
+            // name, "Connected" while it is, and Disconnect (Teams'
+            // betterTogetherUnpairDevice).
+            Column {
+                id: btDevices
                 visible: root.page === "devices" && root.subPage === "connected"
-                width: parent.width; height: 20
-                text: qsTr("Select a device to connect")
-                font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
-                color: theme.text
-                Accessible.role: Accessible.Heading
-                Accessible.name: text
+                width: parent.width
+                spacing: 16
+                property var devices: []
+                function reload() { try { devices = JSON.parse(backend.betterTogetherDevices()) } catch (e) { devices = [] } }
+                onVisibleChanged: if (visible) reload()
+                Connections { target: backend; function onBetterTogetherChanged() { btDevices.reload() } }
+                Text {
+                    width: parent.width; height: 20
+                    text: qsTr("Select a device to connect")
+                    font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
+                    color: theme.text
+                    Accessible.role: Accessible.Heading
+                    Accessible.name: text
+                }
+                Repeater {
+                    model: btDevices.devices
+                    delegate: Column {
+                        required property var modelData
+                        width: btDevices.width
+                        spacing: 8
+                        FluentIcon { name: "video-person-call-20"; size: 20; color: theme.text }
+                        Column {
+                            width: parent.width
+                            Text {
+                                width: parent.width; text: modelData.deviceName; elide: Text.ElideRight
+                                font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
+                                color: theme.text
+                            }
+                            Text {
+                                visible: modelData.connectionStatus === 0
+                                width: parent.width; text: qsTr("Connected")
+                                font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
+                                color: theme.text
+                            }
+                        }
+                        SettingsParts.Button {
+                            label: qsTr("Disconnect")
+                            onClicked: backend.betterTogetherUnpair(modelData.endPointId)
+                        }
+                    }
+                }
             }
 
             // ---- Calls ----

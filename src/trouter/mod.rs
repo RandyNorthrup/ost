@@ -23,6 +23,9 @@ pub struct ListenOptions {
     /// Answer incoming calls automatically (the CLI's echo-test mode).
     /// Embedders that show an incoming-call UI leave this off.
     pub auto_answer: bool,
+    /// Register a Better Together endpoint (Teams desktop does; the CLI
+    /// has no use for paired phones).
+    pub better_together: bool,
 }
 
 impl ListenOptions {
@@ -30,11 +33,13 @@ impl ListenOptions {
     pub const CLI: Self = Self {
         console: true,
         auto_answer: true,
+        better_together: false,
     };
     /// A library host: quiet, events only via [`crate::event_hub`].
     pub const EMBEDDED: Self = Self {
         console: false,
         auto_answer: false,
+        better_together: true,
     };
 }
 
@@ -191,6 +196,9 @@ where
         .await
     {
         tracing::warn!("Initial registrar registration failed: {:#}", e);
+    }
+    if opts.better_together {
+        register_better_together(&http, skype_token_str, session.registrar_url.as_deref(), &session.surl, &epid).await;
     }
     // Publish the endpoint to the presence service: users with no active
     // endpoint show as Offline and are never rung.
@@ -385,6 +393,24 @@ where
     }
 }
 
+/// Make this socket a Better Together endpoint (Teams desktop's
+/// TransportAgentService: the calling endpoint id, listening on the
+/// socket's `bettertogether` path), so the user's Teams phones can pair.
+async fn register_better_together(
+    http: &reqwest::Client,
+    skype_token: &str,
+    registrar_url: Option<&str>,
+    surl: &str,
+    epid: &str,
+) {
+    use crate::api::better_together as bt;
+    let endpoint = bt::Endpoint::from_surl(epid, surl);
+    let url = registrar_url.unwrap_or(bt::REGISTRAR_URL);
+    if let Err(e) = bt::register(http, skype_token, url, &endpoint, &bt::client_info()).await {
+        tracing::warn!("Better Together registration failed: {:#}", e);
+    }
+}
+
 /// Developer aid: with `OST_TROUTER_DUMP_DIR` set, every frame is written
 /// there (one file each, owner-only). Frames carry message text and call
 /// links, so this is for local protocol work only and is off by default.
@@ -475,6 +501,20 @@ async fn handle_frame(frame: &str, http: &reqwest::Client, skype_token: &str, op
             say!("Ack: {}", json_str);
         } else {
             say!("Ack frame: {}", frame);
+        }
+        return;
+    }
+
+    // Better Together commands from the user's other Teams devices, once
+    // acknowledged (the socket answered them already).
+    if let Some((status, _)) = better_together_ack(frame) {
+        if status == crate::api::better_together::STATUS_OK
+            && let Some((_, body)) = frame.strip_prefix("3:::").and_then(data_frame_body)
+        {
+            tracing::info!("Better Together command received");
+            publish(EventKind::BetterTogether, body);
+        } else {
+            tracing::info!(status, "Better Together command turned down");
         }
         return;
     }
@@ -574,6 +614,25 @@ pub fn unwrap_call_payload(json: &str) -> String {
 /// Controller waits for this acknowledgement in the reply itself and ends
 /// the call with 408/10056 after 30 s without it, even when the same
 /// acknowledgement is also POSTed to the acceptance's link.
+pub(crate) fn sync_reply(frame: &str) -> Option<(u16, String)> {
+    if let Some(ack) = better_together_ack(frame) {
+        return Some(ack);
+    }
+    sync_reply_body(frame).map(|b| (200, b))
+}
+
+/// Teams' acknowledgement of a Better Together command, sent in the
+/// Trouter reply (SlimCore's sendIncomingCommandResponse).
+fn better_together_ack(frame: &str) -> Option<(u16, String)> {
+    let payload = frame.strip_prefix("3:::")?;
+    let (url, body) = data_frame_body(payload)?;
+    if !crate::api::better_together::is_trouter_url(&url) {
+        return None;
+    }
+    let own = current_endpoint().map(|(_, epid)| epid);
+    Some(crate::api::better_together::acknowledgement(&body, own.as_deref()))
+}
+
 pub(crate) fn sync_reply_body(frame: &str) -> Option<String> {
     let payload = frame.strip_prefix("3:::")?;
     let (url, body) = data_frame_body(payload)?;

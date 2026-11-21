@@ -14,6 +14,7 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use teams_cli::api::better_together::{Companion, parse_companion};
 use teams_cli::api::rooms::{Beacon, parse_beacon};
 use zbus::zvariant::{OwnedObjectPath, OwnedValue, Value};
 
@@ -29,19 +30,69 @@ pub struct BleState {
 struct Shared {
     state: BleState,
     seen: std::collections::BTreeMap<String, (Beacon, Instant)>,
+    /// Teams phones heard (Better Together's companion discovery), by
+    /// user and endpoint bytes.
+    companions: std::collections::BTreeMap<(String, Option<[u8; 2]>), (Companion, Instant)>,
     scanning: bool,
+    /// Better Together proximity checks running (Teams subscribes to its
+    /// companion discovery for each).
+    companion_scans: u32,
     task: bool,
 }
 
 static SHARED: Mutex<Shared> = Mutex::new(Shared {
     state: BleState { supported: false, radio_on: false },
     seen: std::collections::BTreeMap::new(),
+    companions: std::collections::BTreeMap::new(),
     scanning: false,
+    companion_scans: 0,
     task: false,
 });
 
 fn scanning_wanted() -> bool {
-    SHARED.lock().unwrap_or_else(|e| e.into_inner()).scanning
+    let s = SHARED.lock().unwrap_or_else(|e| e.into_inner());
+    s.scanning || s.companion_scans > 0
+}
+
+fn note_companion(c: Companion, now: Instant) {
+    let mut s = SHARED.lock().unwrap_or_else(|e| e.into_inner());
+    s.companions.insert((c.oid.clone(), c.tail), (c, now));
+}
+
+/// The Teams phones heard in the last 30 s, with when each was last heard.
+pub fn companions() -> Vec<(Companion, Instant)> {
+    let mut s = SHARED.lock().unwrap_or_else(|e| e.into_inner());
+    s.companions.retain(|_, (_, at)| at.elapsed() < KEEP);
+    s.companions.values().cloned().collect()
+}
+
+/// Scan for Teams phones while a Better Together proximity check runs.
+pub fn set_companion_scanning(on: bool) {
+    let start = {
+        let mut s = SHARED.lock().unwrap_or_else(|e| e.into_inner());
+        if on {
+            s.companion_scans += 1;
+        } else {
+            s.companion_scans = s.companion_scans.saturating_sub(1);
+        }
+        let start = on && !s.task;
+        if start {
+            s.task = true;
+        }
+        start
+    };
+    if start {
+        spawn_scan();
+    }
+}
+
+fn spawn_scan() {
+    crate::backend::runtime().spawn(async {
+        if let Err(e) = scan().await {
+            tracing::info!("Bluetooth discovery: {e}");
+        }
+        SHARED.lock().unwrap_or_else(|e| e.into_inner()).task = false;
+    });
 }
 
 fn set_state(state: BleState) {
@@ -81,12 +132,7 @@ pub fn set_scanning(on: bool) {
         start
     };
     if start {
-        crate::backend::runtime().spawn(async {
-            if let Err(e) = scan().await {
-                tracing::info!("Bluetooth room discovery: {e}");
-            }
-            SHARED.lock().unwrap_or_else(|e| e.into_inner()).task = false;
-        });
+        spawn_scan();
     }
 }
 
@@ -185,6 +231,9 @@ async fn scan() -> zbus::Result<()> {
             for (company, data) in manufacturer_data(props) {
                 if let Some(b) = parse_beacon(company, &data, rssi) {
                     note_beacon(b, now);
+                }
+                if let Some(c) = parse_companion(company, &data, rssi) {
+                    note_companion(c, now);
                 }
             }
         }
