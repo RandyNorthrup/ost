@@ -4,7 +4,7 @@ title: Link cards from installed apps and apps that need sign-in, as Teams
 status: In Progress
 assignee: []
 created_date: '2026-11-16T11:48:00Z'
-updated_date: '2026-11-21T07:15:00Z'
+updated_date: '2026-11-21T08:25:00Z'
 labels:
   - desktop
 dependencies: []
@@ -50,4 +50,10 @@ TASK-0168 shows Teams' app card for links to sites whose Teams app allows anonym
   - AC1 checked live on linuxlt: Wikipedia Search installed for ost-test1 (examples/add_app; tenant/user change, uninstall with `add_app <id> --remove-personal`). `--app-card-test` with a Wikipedia link now gets the card through the installed app (anonymous false: composeExtension/queryLink to the app's bot), the thumbnail card with the Lighthouse picture, as Teams shows it.
   - Sign-in as Teams does it (Teams 26304 modules 961755 / 24575 / 707715 / 197100): Teams' own page opens the app's window with window.open(url, "appAuthWindow", "width=W, height=H") after checking the address against the app's validDomains; it listens only to that window, locks onto the first origin on a valid domain, answers initialize with ["authentication","desktop"] and getContext with {}, and on authentication.authenticate.success (after initialize) closes it and asks the app again with value.state = the result (JSON results parsed). Closing the window is CancelledByUser: the sign-in card stays and nothing is asked. OST now does the same natively: AppAuthWindow loads a hidden page with Teams' origin that opens the window (a real opener, so TeamsJS in the page talks to it unchanged); the result goes to app_link_action "requery" (value.state). The app index now keeps validDomains (link-apps-2.json).
   - AC2 test case: Azure Boards (its link card asks you to sign in with a work account; needs an Azure DevOps organization, free). `--app-card-signin` drives Show Preview, then Sign in, and waits for the card. First live try showed a draft left in the compose box from an earlier run (Teams takes the first link), so the harness now starts with an empty box; the sign-in run is next.
+
+- 2026-11-21 (chatE), AC2 live on linuxlt as ost-test1 (`--app-card-test=<Azure Boards link> --app-card-signin`):
+  - Azure Boards link (dev.azure.com/osttest200/OST/_workitems/edit/1): Teams' Install card; Show Preview installed Azure Boards for ost-test1 (personal app; remove with `add_app 7299542a-1697-4ec1-812b-6b70065c0795 --remove-personal`); then the app answered with its sign-in card ("Sign in to view card content"), validDomains azchatopprodcus1.azchatops.visualstudio.com.
+  - Sign in opened the app's window at its own size: Microsoft's "Pick an account" (ost-test1 already signed in, no password), Visual Studio's one-time "We need a few more details" profile page (Continue: a free Azure DevOps profile for ost-test1, no payment), the consent pick again, then the app's callback page. The page's TeamsJS talked to OST's opener and called authenticate.success: OST logged "APPAUTH signed in", closed the window and asked the app again with value.state, as Teams does.
+  - The app then answered 502 (BotError) because that organization doesn't exist; the card needs a real Azure DevOps organization with a work item (free to create at dev.azure.com as ost-test1). Not done in this pass.
+  - The harness had logged the callback page's title, which carries the OAuth code; that log was redacted and the harness now logs the title without its query.
 <!-- SECTION:NOTES:END -->
