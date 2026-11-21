@@ -97,20 +97,13 @@ pub fn merge(
         }
     };
     // Shared apps first, your own over them (Teams' Map([...shared,
-    // ...personal])). A shared copy of an app you have yourself (the same
-    // Office asset) shows once.
-    let assets: Vec<String> = personal
-        .iter()
-        .filter_map(|(id, _)| definitions.get(id)?.get("officeAssetId")?.as_str().map(str::to_string))
-        .collect();
+    // ...personal]), by app id only: a shared Planner beside your own
+    // Planner shows twice in Teams, measured on winpc 2026-11-21).
     // Teams keeps shared apps in its store by id, so that's their order.
     let mut shared_sorted: Vec<&serde_json::Value> = shared.iter().collect();
     shared_sorted.sort_by_key(|d| d.get("id").and_then(|v| v.as_str()).unwrap_or_default().to_lowercase());
     for d in shared_sorted {
         if d.get("state").and_then(|v| v.as_str()).is_some_and(|s| s != "Installed") {
-            continue;
-        }
-        if d.get("officeAssetId").and_then(|v| v.as_str()).is_some_and(|a| assets.iter().any(|x| x == a)) {
             continue;
         }
         let mut a = app_from(d);
@@ -377,12 +370,13 @@ mod tests {
         ])];
         let mut apps = merge(&personal, &defs, &shared, &teams, &[]);
         let names: Vec<&str> = apps.iter().map(|a| a.name.as_str()).collect();
-        assert_eq!(names, ["Surveys", "Praise", "Planner", "Lists"]);
-        assert_eq!(apps[1].teams, vec![team.clone()]);
-        assert!(apps[1].personal && !apps[3].personal);
-        assert_eq!(apps[1].link, "https://teams.microsoft.com/l/app/p1?source=manage-apps-copy-link");
+        // A shared Planner and your own Planner are two rows, as in Teams.
+        assert_eq!(names, ["Surveys", "Planner", "Praise", "Planner", "Lists"]);
+        assert_eq!(apps[2].teams, vec![team.clone()]);
+        assert!(apps[2].personal && !apps[4].personal);
+        assert_eq!(apps[2].link, "https://teams.microsoft.com/l/app/p1?source=manage-apps-copy-link");
         sort(&mut apps, "recent", &["l1".to_string(), "p1".to_string()]);
-        assert_eq!(apps.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(), ["l1", "p1", "s1", "pl"]);
+        assert_eq!(apps.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(), ["l1", "p1", "s1", "s2", "pl"]);
         sort(&mut apps, "za", &[]);
         assert_eq!(apps[0].name, "Surveys");
         sort(&mut apps, "az", &[]);
