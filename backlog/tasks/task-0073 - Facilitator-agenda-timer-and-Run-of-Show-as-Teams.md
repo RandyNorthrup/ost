@@ -1,11 +1,11 @@
 ---
 id: TASK-0073
 title: Facilitator agenda timer and Run of Show as Teams
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-09T09:29:00Z'
-updated_date: '2026-11-21T05:55:00Z'
+updated_date: '2026-11-21T07:50:00Z'
 labels:
   - desktop
   - meetings
@@ -21,7 +21,7 @@ Teams' meeting timer also has an agenda timer (Copilot Facilitator drafts topics
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 With Facilitator on, the agenda timer shows and edits as Teams', verified against Teams in a Facilitator-enabled meeting
+- [x] #1 With Facilitator on, the agenda timer shows and edits as Teams', verified against Teams in a Facilitator-enabled meeting
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -50,4 +50,17 @@ Not built: the agenda timer never appeared in Teams in this tenant (its setting 
   - Cause of the missing check marks: this Teams build decides "discussed" by the topic's lifecycle (`topicLifecycleUserOverride` over `topicLifecycleStage`, values NotStarted / Done; the Facilitator writes stages on every topic) and ignores `isDiscussed` when a stage is set. Teams' own Mark discussed writes isDiscussed and topicRelevanceUserOverride true, topicLifecycleStage "Done" and topicLifecycleUserOverride "Done"; unmark writes NotStarted and drops the override. Topics with no known stage (tried "InProgress") are shown the older way: an empty circle until discussed, "Discussed / Not discussed".
   - Fixed: agenda.rs reads and writes the lifecycle as Teams does; AgendaTimerRow shows the lifecycle (no marker for Not started, check for Done; the empty circle for topics without a stage) and its spoken status. Verified: OST Test Room's mark showed in Teams as "Welcome, Done…" within a second and its unmark as "Not started".
   - The earlier misses with spatest (ost-test1, the same account as Teams) were most likely this lifecycle issue too; the same-account check itself was not run (spatest was busy).
+
+- 2026-11-21 merged as 1f043eb; 859 lib + 29 desktop tests pass on linuxlt.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Facilitator agenda timer as Teams.
+
+- The meeting's timer strip shows the Facilitator's agenda with Teams' switch between the ad-hoc timer and the agenda; topics sized by time, filling as time passes, the current topic counting down; resize and reorder, the topic editor (rename, mark discussed, delete), Add topic and Cancel tracker for all? (rules in src/calling/agenda.rs, tested).
+- Discussed marks use Teams 26304's topic lifecycle fields (stage and user override NotStarted / Done, plus isDiscussed), so Teams draws OST's marks; topics without a recognised stage get the empty circle as Teams draws them.
+
+Verified live in Facilitator meetings (OST TEST 73 agenda / sync, cancelled): OST and Teams show the same agenda side by side; Teams' edits reach OST and OST Test Room's marks, resizes and ad-hoc timer reach Teams within a second. Run of Show is internal-builds-only in Teams (left out). Not yet run: OST signed in as the same account as Teams.
+<!-- SECTION:FINAL_SUMMARY:END -->
