@@ -4,7 +4,7 @@ title: 'Better Together: pair with a Teams phone (Settings ▸ Devices ▸ Manag
 status: To Do
 assignee: []
 created_date: '2026-11-15T20:59:00Z'
-updated_date: '2026-11-21T08:00:00Z'
+updated_date: '2026-11-21T08:57:00Z'
 labels:
   - devices
 dependencies: []
@@ -40,4 +40,11 @@ Teams' Manage devices page (Settings ▸ Devices ▸ Connected devices) lists th
 - Teams' pairing strings (CDP): "Connection request", "<name> would like to pair with your PC.\nClick on "Connect" to approve.", Connect / Cancel. Page: "Manage devices", "Select a device to connect", "Connected", "Disconnect".
 - Teams desktop on winpc answered the emulated phone's broadcast with Trouter 504 (no ack within the timeout), twice, so pairing is verified OST <-> emulator.
 - Test leftovers: the emulator's registrations were deleted from the registrar (202).
+
+2026-11-21 verified live on linuxlt (spatest = ost-test1; btvirt pair: OST scans hci1, the emulated phone advertises on hci2; OST_BT_ASSUMED_RSSI -40):
+- The emulated phone (examples/teams_phone.rs: own Trouter socket, calling registration with the BetterTogether transport, beacon 34 F0 40 via bluetoothctl) found OST at the registrar, sent broadcast: OST heard the beacon, learned salt 5664 and answered deviceName Linux. pair: OST showed "Connection request / OST TEST 162 Phone would like to pair with your PC." (bt-pair.png), Connect -> response accepted:true; Manage devices listed "OST TEST 162 Phone" / Connected / Disconnect (bt-paired.png).
+- Disconnect: OST sent unpair {companionResponseRequired:false, salt, targetEndpointId}, the phone acknowledged 200 and answered; the list emptied (bt-unpaired.png). (AC #1, #2)
+- Keep-alives every 30 s (proximity scan, keepalive with companionResponseRequired:true, the phone's response); the 50 s prompt timeout answered accepted:false RejectedByTimeout.
+- Found: after an OST restart the stored phone showed paired-not-connected, but the phone refused OST's keepalive (300 DEVICE_NOT_PAIRED) because OST's calling endpoint id was new; fixed by keeping it (profile file calling-endpoint-id; OST_CALLING_ENDPOINT_ID for a second client of the profile). btvirt reports RSSI 127 (HCI "not available"), now read as missing.
+- Cleanup: OST and phone stopped by pid, btvirt down, the test registrations deleted from the registrar (202).
 <!-- SECTION:NOTES:END -->

@@ -2862,7 +2862,7 @@ Rectangle {
                 id: btDevices
                 visible: root.page === "devices" && root.subPage === "connected"
                 width: parent.width
-                spacing: 16
+                spacing: 15
                 property var devices: []
                 function reload() { try { btDevices.devices = JSON.parse(backend.betterTogetherDevices()) } catch (e) { btDevices.devices = [] } }
                 onVisibleChanged: if (visible) reload()
@@ -2875,31 +2875,48 @@ Rectangle {
                     Accessible.role: Accessible.Heading
                     Accessible.name: text
                 }
+                // Teams' BttDeviceSettings styles (its Griffel classes): the
+                // list 15 under the text (Flex gap.medium) and 15 apart;
+                // each phone a 10-padded, hoverable column (gap.small 10):
+                // the glyph, its name (16 semibold, 55rem wide), "Connected"
+                // (14) while it is, then Disconnect.
                 Repeater {
                     model: btDevices.devices
-                    delegate: Column {
+                    delegate: Rectangle {
+                        id: btRow
                         required property var modelData
                         width: btDevices.width
-                        spacing: 8
-                        FluentIcon { name: "video-person-call-20"; size: 20; color: theme.text }
+                        height: btCol.height + 20
+                        radius: 4
+                        color: btHover.hovered ? theme.pick("#F0F0F0", "#343434", "transparent") : "transparent"
+                        HoverHandler { id: btHover; cursorShape: Qt.PointingHandCursor }
                         Column {
-                            width: parent.width
-                            Text {
-                                width: parent.width; text: modelData.deviceName; elide: Text.ElideRight
-                                font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
-                                color: theme.text
+                            id: btCol
+                            x: 10; y: 10
+                            width: parent.width - 20
+                            spacing: 10
+                            FluentIcon { name: "video-person-call-20"; size: 20; color: theme.onFill(btRow, theme.text) }
+                            Column {
+                                width: parent.width
+                                Text {
+                                    width: Math.min(parent.width, 550); text: btRow.modelData.deviceName; elide: Text.ElideRight
+                                    font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; lineHeight: 22; lineHeightMode: Text.FixedHeight
+                                    color: theme.onFill(btRow, theme.text)
+                                }
+                                Text {
+                                    visible: btRow.modelData.connectionStatus === 0
+                                    width: parent.width; text: qsTr("Connected")
+                                    font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
+                                    color: theme.onFill(btRow, theme.text)
+                                }
                             }
-                            Text {
-                                visible: modelData.connectionStatus === 0
-                                width: parent.width; text: qsTr("Connected")
-                                font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
-                                color: theme.text
+                            SettingsParts.Button {
+                                label: qsTr("Disconnect")
+                                onClicked: backend.betterTogetherUnpair(btRow.modelData.endPointId)
                             }
                         }
-                        SettingsParts.Button {
-                            label: qsTr("Disconnect")
-                            onClicked: backend.betterTogetherUnpair(modelData.endPointId)
-                        }
+                        Accessible.role: Accessible.Grouping
+                        Accessible.name: btRow.modelData.deviceName
                     }
                 }
             }

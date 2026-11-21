@@ -331,6 +331,11 @@ Everything below is in userPersonalSettings unless marked local.
 - **Manage devices** opens "Devices › Manage devices": "Select a device to connect", then the
   Teams phones paired with this PC (Teams' Better Together, TASK-0162): each with Teams'
   screen-and-phone glyph, the phone's name, "Connected" while it is, and **Disconnect**.
+  - Layout (Teams' BttDeviceSettings Griffel classes, rem = 10 px; read from its CSS, as no
+    phone could be paired with Teams on winpc to measure): the list 15 under the text
+    and 15 apart (Flex gap.medium); each phone a hoverable column padded 10 (hover
+    colorNeutralBackground2Hover), 10 apart inside (gap.small): glyph (Fluent
+    video_person_call_20), name 16 semibold (55rem wide), "Connected" 14, then the button.
   - Transport (Teams' SlimCore "BTT", registrar listing read 2026-11-21): Teams desktop's
     calling registration (NextGenCalling, `DesktopNgc_2.5:SkypeNgc`) carries a second Trouter
     transport, context `BetterTogether`, path `https://<socket>-t.trouter.teams.microsoft.com
