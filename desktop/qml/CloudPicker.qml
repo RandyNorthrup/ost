@@ -219,7 +219,7 @@ Popup {
         const t = mediaTiles.tiles, items = dlg.rows
         if (!t.length || dlg.place !== "media") return ""
         const top = mediaFlick.contentY, bottom = top + mediaFlick.height
-        const seen = t.filter(x => x.y + x.h >= top && x.y <= bottom).map(x => new Date(items[x.i].taken || items[x.i].modified || 0))
+        const seen = t.filter(x => items[x.i] && x.y + x.h >= top && x.y <= bottom).map(x => new Date(items[x.i].taken || items[x.i].modified || 0))
         if (!seen.length) return ""
         const ms = seen.map(d => d.getTime())
         return rangeText(new Date(Math.min(...ms)), new Date(Math.max(...ms)))

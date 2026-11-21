@@ -710,7 +710,12 @@ pub fn new_chat_arrange(reply: &serde_json::Value, my_oid: &str, local: &[LocalC
                         dls.push(serde_json::json!({ "kind": "dl", "id": key, "name": name, "sub": mail, "unified": subtype == "UnifiedGroup" }));
                         continue;
                     }
-                    let id = s(&r["ExternalDirectoryObjectId"]).to_ascii_lowercase();
+                    // The person's object id (from their Teams id when
+                    // Substrate leaves it out, as it does for you).
+                    let mut id = s(&r["ExternalDirectoryObjectId"]).to_ascii_lowercase();
+                    if id.is_empty() {
+                        id = s(&r["MRI"]).strip_prefix("8:orgid:").unwrap_or_default().to_ascii_lowercase();
+                    }
                     if id.is_empty() || name.is_empty() || !seen.insert(id.clone()) {
                         continue;
                     }

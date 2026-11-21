@@ -5536,6 +5536,7 @@ async fn load_overview() -> anyhow::Result<(String, Vec<serde_json::Value>)> {
                 "meeting": c.id.starts_with("19:meeting_"),
                 "backroom": c.backroom,
                 "topic": c.topic,
+                "named": c.named,
                 "peerMri": outgoing::callee_mri_for_chat(&c.id, &my_oid),
                 "favorite": fav_rank(&c.id).is_some(),
                 "favoriteRank": fav_rank(&c.id),
@@ -14489,7 +14490,8 @@ impl qobject::Backend {
             .iter()
             .map(|c| api::search::LocalChat {
                 id: c["id"].as_str().unwrap_or_default().to_string(),
-                topic: c["topic"].as_str().unwrap_or_default().to_string(),
+                // A named group chat's own name (Teams leaves unnamed ones out).
+                topic: if c["named"].as_bool().unwrap_or(false) { c["name"].as_str().unwrap_or_default().to_string() } else { String::new() },
                 group: c["isGroup"].as_bool().unwrap_or(false),
                 meeting: c["meeting"].as_bool().unwrap_or(false),
                 time: c["time"].as_str().and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok()).map(|t| t.timestamp_millis()).unwrap_or(0),
@@ -19894,7 +19896,7 @@ impl qobject::Backend {
             arg.to_string(),
         );
         // Your teams and channels' ops are about all your teams.
-        if !channel.ends_with("@thread.tacv2") && !op.starts_with("chat-notify") && !matches!(op.as_str(), "quick-saved" | "quick-followed" | "quick-unsave" | "quick-unfollow" | "notify-tagged" | "notify-on" | "notify-off" | "people-list" | "people-list-add" | "people-list-remove" | "meeting-chat-report-info" | "chat-apps" | "chat-app-remove" | "cross-team-analytics" | "invitations" | "invitation-answer" | "create-team" | "channel-agent-offered" | "channel-agent-add" | "channel-agent-wait" | "team-templates" | "team-template" | "my-groups" | "teams-suggested" | "teams-find" | "team-join" | "team-join-code") {
+        if !channel.ends_with("@thread.tacv2") && !op.starts_with("chat-notify") && !matches!(op.as_str(), "quick-saved" | "quick-followed" | "quick-unsave" | "quick-unfollow" | "notify-tagged" | "notify-on" | "notify-off" | "people-list" | "people-list-add" | "people-list-remove" | "meeting-chat-report-info" | "chat-apps" | "chat-app-remove" | "cross-team-analytics" | "invitations" | "invitation-answer" | "create-team" | "channel-agent-offered" | "channel-agent-add" | "channel-agent-wait" | "group-people" | "team-templates" | "team-template" | "my-groups" | "teams-suggested" | "teams-find" | "team-join" | "team-join-code") {
             return;
         }
         // The team's thread id and the channel's facts, from the list.

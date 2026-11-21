@@ -79,6 +79,9 @@ Rectangle {
 
     function pick(p) {
         if (p.chat) { root.openChat(p.id, p.name); return }
+        // A distribution list or group: its people join the To: line
+        // (Teams' chat with a group, allowChatWithGroup).
+        if (p.kind === "dl") { backend.channelAction("group-people", "", "", p.id); field.text = ""; root.search(""); highlight = -1; field.forceActiveFocus(); return }
         if (!picked.some(x => x.id === p.id)) picked = picked.concat([{ id: p.id, name: (p.plain_name || p.name), mail: p.guest ? (p.sub || "") : (p.upn || p.mail || "") }])
         field.text = ""
         root.search("")
@@ -100,6 +103,18 @@ Rectangle {
             else { out += esc(t[i]); i++ }
         }
         return out
+    }
+    Connections {
+        target: backend
+        function onChannelActionResultChanged() {
+            if (!root.visible) return
+            const r = JSON.parse(backend.channelActionResult || "{}")
+            if (r.op !== "group-people" || !r.ok) return
+            const me = (root.chats.find(c => c.isSelf) || {}).peerMri || ""
+            const add = (r.data.people || []).filter(x => x.mri && x.mri !== me).map(x => ({ id: x.mri.replace(/^8:orgid:/, ""), name: x.name, mail: x.mail || "" }))
+                .filter(x => !root.picked.some(y => y.id === x.id))
+            root.picked = root.picked.concat(add)
+        }
     }
     function unpick(id) { picked = picked.filter(x => x.id !== id) }
     /// What the compose box holds, for the chat's own box to send

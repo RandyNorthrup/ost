@@ -968,6 +968,9 @@ pub struct ChatInfo {
     pub backroom: String,
     /// A backroom chat's own title (its name without Teams' prefix).
     pub topic: String,
+    /// A group chat with a name of its own (its thread's topic), not one
+    /// named after its members.
+    pub named: bool,
     /// A bot's 1:1 chat you blocked (Teams' Block bot conversation sets
     /// the thread's `messagingdisabled` to "true").
     pub messaging_disabled: bool,
@@ -1237,10 +1240,12 @@ pub async fn list_chats_data(client: &TeamsClient, limit: usize) -> Result<Vec<C
             (None, None, None)
         };
 
+        let named = has_topic(conv);
         chats.push(ChatInfo {
             id,
             name,
             is_group,
+            named,
             last_message_time: last_time,
             last_message_sender: last_sender,
             last_message_preview: last_preview,

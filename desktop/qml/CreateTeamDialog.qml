@@ -101,12 +101,12 @@ Popup {
         if (!canCreate) return
         const a = { mode: kind, name: nameField.text.trim(), description: descField.text, "public": isPublic }
         if (kind === "scratch") a.firstChannel = firstField.text.trim()
-        dlg.pendingAgent = kind === "scratch" && agentOffered && addAgent ? a.firstChannel : ""
         else if (kind === "template") a.template = {
             id: template.id, locale: template.locale || "en-US", appIds: template.app_ids || [],
             channels: (template.channels || []).map((c, i) => ({ id: c.id, displayName: dlg.channelNames[i] || c.displayName }))
         }
         else if (kind === "clone") { a.groupId = source.id; a.pick = { tabs: pickTabs, settings: pickSettings, members: pickMembers } }
+        dlg.pendingAgent = kind === "scratch" && agentOffered && addAgent ? a.firstChannel : ""
         creating = true
         lastName = a.name
         backend.channelAction("create-team", "", "", JSON.stringify(a))

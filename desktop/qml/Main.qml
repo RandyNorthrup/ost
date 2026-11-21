@@ -5059,6 +5059,7 @@ Window {
         interval: 2000; repeat: true
         // --recap-chat=<name> (~ for spaces): another meeting chat.
         readonly property string recapChat: (Qt.application.arguments.find(a => a.startsWith("--recap-chat=")) || "").slice(13).replace(/~/g, " ") || "OST TEST 217 town hall 2"
+        property string chosen: ""
         property int step: 0
         property int waited: 0
         onTriggered: {
@@ -5066,9 +5067,10 @@ Window {
             const mode = (Qt.application.arguments.find(a => a.startsWith("--recap-window-test")) || "").split("=")[1] || "transcript"
             const ended = () => (conversation.messages || []).find(m => m.recap && ((m.recap.recordings || []).length || m.recap.transcript))
             switch (step) {
-            case 0: { const ch = chatList.chats.find(x => x.name.indexOf(recapChat) >= 0); backend.selectChat(ch.id, ch.name); break }
+            case 0: { const ch = chatList.chats.find(x => x.name.indexOf(recapChat) >= 0); chosen = ch.id; log("chat", ch.name, ch.id); backend.selectChat(ch.id, ch.name); break }
             case 3: {
-                const m = ended()
+                // The chat's own messages (not the one open before).
+                const m = backend.currentChatId === chosen ? ended() : null
                 if (!m && waited++ < 15) return
                 waited = 0
                 if (!m) { log("no recap card"); Qt.quit(); return }
