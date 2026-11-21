@@ -120,8 +120,10 @@ Window {
             messages: win.messages
             onCall: win.openInMain("call", { id: win.chatId, name: win.chatName })
             onVideoCall: win.openInMain("videoCall", { id: win.chatId, name: win.chatName })
-            // Teams' "+" (Add a tab) beside the tabs: the main window's picker.
-            onOpenTabPicker: (id, kind, team) => win.openInMain("tabPicker", { id: id, kind: kind, team: team })
+            // Teams' "+" (Add a tab) beside the tabs: its picker opens in
+            // this window, as Teams' does.
+            onOpenTabPicker: (id, kind, team) => tabPicker.showTabs(id, kind, team)
+            onUpdateTabRequested: t => tabConfig.startUpdate(t, chat.chatId, chat.teamId, chat.isChannel)
             onReact: (id, key, on) => backend.toggleReaction(id, key, on)
             onEditMessage: (id, text) => backend.editMessage(id, text)
             onDeleteMessage: id => backend.deleteMessage(id)
@@ -140,6 +142,7 @@ Window {
         }
         Loader {
             anchors.fill: parent
+            id: eventsLoader
             active: win.app === "events"
             sourceComponent: EventsView {
                 onToast: d => win.openInMain("toast", d)
@@ -150,7 +153,31 @@ Window {
         }
     }
 
+    // Teams' Add a tab in this window: the picker, then the app's tab
+    // configuration (Back returns to the picker). An app's details, Get
+    // more apps and Manage apps go to the main window.
+    AgentStore {
+        id: tabPicker
+        onOpenApp: id => { tabPicker.close(); win.openInMain("appDetails", { id: id, conversation: tabPicker.conversationId, channel: tabPicker.channel }) }
+        onGetMoreApps: { tabPicker.close(); win.openInMain("store", {}) }
+        onManageApps: { tabPicker.close(); win.openInMain("manageApps", { channel: tabPicker.channel }) }
+        onPickTabApp: app => {
+            tabPicker.close()
+            tabConfig.start(app, tabPicker.conversationId, tabPicker.channel ? chat.teamId : "", tabPicker.channel)
+        }
+    }
+    TabConfigDialog {
+        id: tabConfig
+        teamThread: chat.isChannel ? chat.teamThread : ""
+        onBack: tabPicker.reopen()
+        onSaved: chat.reloadTabs()
+        onUpdated: tabId => { chat.tabRevision++; chat.reloadTabs() }
+        onAbout: app => win.openInMain("appDetails", { id: app.id })
+    }
+
     // Test hooks.
     function sideForTest() { return side.item }
     function conversationForTest() { return chat }
+    function tabPickerForTest() { return tabPicker }
+    function eventsForTest() { return eventsLoader.item }
 }

@@ -606,6 +606,37 @@ docs/spec/events.md.
   then the page shared with the call), the meeting-notes service only if the
   claim fails (TASK-0212: with the service first, both people got the notes
   from the service and the call never shared them).
+- How the others get them (Teams 26304: call-meeting-notes 527114, its helper
+  392648, the panel calling-meeting-details-panel; TASK-0212, 2026-11-21):
+  - after a successful commit (and after the service made them for the
+    Copilot bot, `fanOutServiceCreatedNotes`) Teams calls the call's
+    `updateMeetingSettings({refreshSettings: RefreshSettings.CollabDetails})`
+    — the conversation's `updateMeetingSettings` link, PUT `{from,
+    meetingSettings: {refreshSettings: 1}, sequenceNumber}` (the enum is
+    None 0, CollabDetails 1);
+  - every participant's conversation update then carries
+    `meetingDetails.collabDetails {id, containerId, changeKey, resources
+    [{mcoResourceId, type "notes", location, metadata {linkScope, isShared,
+    …}, subType, addedBy, additionDateTime}], collabLeaders [{type,
+    participant {id, …}, status}]}`; the notes are the `notes` resource's
+    `location` (cacheMeetingNotesDetailsFromCall), which the panel opens
+    (its load flow) instead of making them.
+  - A Meet now's leader is elected by the call: Teams' join sends
+    `clientEndpointCapabilities` with `supportsCollabLeader` (65536) when ECS
+    `meetingNotes.enableMeetingNotesInMeetNowCall` is on (it is for the test
+    tenant). The panel's create flow reads `collabDetails.collabLeaders`
+    (type notes): none, or you with status 0 (auto-elected) → acknowledge
+    with `collabLeaders.notes {value {type "notes"}, sequenceNumber 1}`; you
+    with status 1 (elected) → make the notes; someone else with status 1 →
+    load theirs once shared; 2 is locked. The link is then shared as
+    `collabResources.notes {value {type "notes", resourceUri, secret: <the
+    call id>}, sequenceNumber 1}`. Without the capability the service
+    answered OST's acknowledgement with 400 subCode 6179 "The leader to be
+    confirmed is not the same as who's elected".
+  - OST does the same: `calling::meeting_notes` reads collabDetails (notes
+    link and leaders), the commit is followed by the refresh, the join sends
+    supportsCollabLeader with that ECS flag, and a Meet now follows the
+    create flow.
 - More actions (Teams gives the notes Loop's host controls): Shared
   locations (the notes and "Open component in" its chat), Copy component,
   See who has access (OneDrive's Manage access), Open in Loop and Add to

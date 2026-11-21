@@ -7157,6 +7157,13 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
                 let _ = qt.queue(move |mut this| this.as_mut().set_call_event_json(QString::from(text.as_str())));
             }
             // The meeting's notes were made or claimed.
+            if let Some(d) = ["/body/meetingDetails/collabDetails", "/meetingDetails/collabDetails", "/conversationUpdate/meetingDetails/collabDetails"]
+                .iter()
+                .find_map(|p| v.pointer(p))
+            {
+                let resources = d.get("resources").and_then(|r| r.as_array()).map(|r| r.len()).unwrap_or(0);
+                tracing::info!(resources, notes = teams_cli::calling::meeting_notes::collab_notes_location(&v).is_some(), "meeting: collab details");
+            }
             let notes = call_slot()
                 .lock()
                 .await
@@ -21669,8 +21676,23 @@ impl qobject::Backend {
                         // them, unless someone already did; the page made is
                         // then shared with the call (collabResources.notes).
                         if m.i_cal_uid.is_empty() {
-                            if leader && s("force").is_empty() {
-                                return Ok(json!({ "waiting": true }));
+                            // Teams' createFlow: the call elects who makes
+                            // them (collabDetails.collabLeaders); you
+                            // acknowledge when nobody is or you were picked,
+                            // make them once elected, else wait for the link.
+                            let step = {
+                                let slot = call_slot().lock().await;
+                                let call = slot.outgoing.as_ref().context("Not in a call")?;
+                                let me = call.my_endpoint().0;
+                                let step = call.notes().meet_now_step(&me);
+                                tracing::info!(?step, leaders = ?call.notes().leaders, claimed = leader, "meeting notes: meet now");
+                                step
+                            };
+                            use teams_cli::calling::meeting_notes::MeetNowStep;
+                            match step {
+                                MeetNowStep::Wait if s("force").is_empty() => return Ok(json!({ "waiting": true })),
+                                MeetNowStep::Make => return Ok(json!({ "create": true, "title": m.meeting_title })),
+                                _ => {}
                             }
                             let claimed = {
                                 let slot = call_slot().lock().await;
@@ -21702,11 +21724,21 @@ impl qobject::Backend {
                         if let Some((m, caller, secret, region)) = notes_claim().lock().await.take() {
                             api::meeting_notes::commit(&region, &m, &caller, &secret, &uri).await?;
                             tracing::info!("meeting notes: committed to the collab object");
+                            // As Teams: the call refreshes its collab
+                            // details, so every participant's meeting
+                            // details carry the notes.
+                            let mut slot = call_slot().lock().await;
+                            if let Some(call) = slot.outgoing.as_mut() {
+                                match call.update_meeting_settings(teams_cli::calling::meeting_notes::refresh_collab_details()).await {
+                                    Ok(()) => tracing::info!("meeting notes: collab details refresh sent"),
+                                    Err(e) => tracing::warn!("meeting notes: collab details refresh: {}", short_error(&e)),
+                                }
+                            }
                             return Ok(json!({ "url": uri, "source": "made" }));
                         }
                         let slot = call_slot().lock().await;
                         let call = slot.outgoing.as_ref().context("Not in a call")?;
-                        call.publish_meeting_states(call.notes().share(&uri), "Meeting notes link").await?;
+                        call.publish_meeting_states(call.notes().share(&uri, call.call_id()), "Meeting notes link").await?;
                         Ok(json!({ "url": uri, "source": "made" }))
                     }
                     // More actions: See who has access needs the file's ids;

@@ -3860,6 +3860,7 @@ async fn start_tagged(
         let mut n = super::meeting_notes::Notes::default();
         if let Ok(v) = serde_json::from_str::<serde_json::Value>(&created.response_body) {
             n.apply(&v);
+            tracing::info!(collab = v.pointer("/conversationResponse/meetingDetails/collabDetails").or_else(|| v.pointer("/meetingDetails/collabDetails")).is_some(), notes = !n.resource_uri.is_empty(), "meeting join: notes");
         }
         n
     };

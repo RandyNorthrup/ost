@@ -9609,6 +9609,17 @@ Window {
     // conversation), botchat:<app> (the bot's 1:1 chat and its state). <app> is the app's name as the bar or the flyout
     // shows it. Quits unless --app-bar-stay.
     Timer {
+        id: pickerShot
+        property var target: null
+        property string key: ""
+        interval: 2000
+        onTriggered: if (target) {
+            const p = target.tabPickerForTest()
+            console.warn("APPBAR wplus picker", JSON.stringify({ opened: p.opened, apps: (p.store && p.store.installed ? p.store.installed.length : -1), pos: [p.x, p.y, p.width, p.height] }))
+            target.contentItem.grabToImage(g => g.saveToFile(window.shotPath.replace(".png", "-app-window-" + key + "-picker.png")))
+        }
+    }
+    Timer {
         readonly property var ops: Qt.application.arguments.some(a => a.startsWith("--app-bar-test"))
             ? ((Qt.application.arguments.find(a => a.startsWith("--app-bar-test=")) || "").slice(15) || "menus").split(",") : []
         running: ops.length > 0 && backend.signedIn && rail.barApps.length > 0
@@ -9662,6 +9673,23 @@ Window {
                 }
             } else if (verb === "core") { r = !!window.popOutCore(name)   // core:<key>: that app's window directly
             } else if (verb === "wtab") { const w = window.appWindows[name]; if (w) { const c = w.conversationForTest(); r = JSON.stringify({ tabs: c.tabNames, shown: c.windowTabs }) }
+            } else if (verb === "wplus") {
+                // wplus:<key>: the window's chat's "+" (Add a tab); its picker
+                // in that window (app-window-<key>-picker.png 2 s later), or
+                // wplus:<key>:close to close it.
+                const w = window.appWindows[name]
+                if (w && arg === "close") { w.tabPickerForTest().close(); r = "closed" }
+                else if (w) {
+                    w.conversationForTest().addTab()
+                    const p = w.tabPickerForTest()
+                    r = JSON.stringify({ inWindow: p.opened, mainPicker: tabPicker.opened, size: [p.width, p.height], window: [w.width, w.height] })
+                    pickerShot.target = w; pickerShot.key = name; pickerShot.restart()
+                }
+            } else if (verb === "wevents") {
+                // wevents:events: the Events window's state (Discover's lists),
+                // and the main window's Events for comparison.
+                const w = window.appWindows[name]; const ev = w && w.eventsForTest ? w.eventsForTest() : null
+                r = JSON.stringify({ window: ev ? JSON.parse(ev.stateForTest()) : null, past: ev && ev.discoverData ? (ev.discoverData.past || []).map(c => c.title) : null })
             } else if (verb === "wclose") { const w = window.appWindows[name]; if (w) { w.close(); r = true } }
             else if (verb === "block") r = pickIn(name, qsTr("Block bot conversation"))
             else if (verb === "unblock") r = pickIn(name, qsTr("Unblock bot conversation"))
@@ -14043,6 +14071,9 @@ Window {
             if (kind === "joinEvent") { preJoin.openFor(d.url, d.title, d.start, d.end); return }
             if (kind === "chatWindow") { window.openChatWindow(d.id, d.name, d.photo, d.presence); return }
             if (kind === "tabPicker") { tabPicker.showTabs(d.id, d.kind, d.team); return }
+            if (kind === "appDetails") { appDetails.show(d.id, d.conversation ? { id: d.conversation, channel: !!d.channel } : null); return }
+            if (kind === "store") { rail.current = "add"; return }
+            if (kind === "manageApps") { window.manageConversationApps(!!d.channel); return }
             rail.current = "chat"; window.composing = false
             if (kind === "newChat") window.startNewChat()
             else if (kind === "chat") backend.selectChat(d.id, d.name)

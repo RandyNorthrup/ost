@@ -19,6 +19,22 @@ use uuid;
 /// available on the web"); the desktop app, like OST, doesn't.
 pub const CLIENT_ENDPOINT_CAPABILITIES: u64 = 2 | 8 | 32 | 64 | 128 | 512 | 1024 | 4096 | 8192 | 131072 | 262144 | 524288 | 8388608;
 
+/// Teams' `supportsCollabLeader`: the call may elect this endpoint to make
+/// a Meet now's notes (the conversation's `collabDetails.collabLeaders`,
+/// acknowledged with the `collabLeaders.notes` meeting state). Without it
+/// the service refuses the acknowledgement (400, subCode 6179, "The leader
+/// to be confirmed is not the same as who's elected").
+pub const SUPPORTS_COLLAB_LEADER: u64 = 65536;
+
+/// The capabilities a join or call sends: Teams adds supportsCollabLeader
+/// when ECS `meetingNotes.enableMeetingNotesInMeetNowCall` is on.
+pub fn client_endpoint_capabilities() -> u64 {
+    let notes = crate::api::ecs::setting("meetingNotes", "enableMeetingNotesInMeetNowCall")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    CLIENT_ENDPOINT_CAPABILITIES | if notes { SUPPORTS_COLLAB_LEADER } else { 0 }
+}
+
 // Common headers for Teams calling API requests.
 // TODO: region headers are hardcoded to AMER — derive from config for other tenants.
 pub(crate) const SKYPE_CLIENT_HEADER: &str =
@@ -159,7 +175,7 @@ pub async fn create_conversation(
         "capabilities": null,
         // Capability bitmasks captured from Teams web client traffic
         "endpointCapabilities": 73463,
-        "clientEndpointCapabilities": CLIENT_ENDPOINT_CAPABILITIES,
+        "clientEndpointCapabilities": client_endpoint_capabilities(),
         "endpointMetadata": { "holographicCapabilities": 3 },
         "meetingInfo": null,
         "endpointState": {
@@ -317,7 +333,7 @@ pub async fn join_conversation_with_sdp(
         // Capability bitmasks captured from Teams web client traffic
         "capabilities": null,
         "endpointCapabilities": 73463,
-        "clientEndpointCapabilities": CLIENT_ENDPOINT_CAPABILITIES,
+        "clientEndpointCapabilities": client_endpoint_capabilities(),
         "endpointMetadata": { "holographicCapabilities": 3 },
         "meetingInfo": {
             "organizerId": params.caller_oid,
@@ -1323,7 +1339,7 @@ async fn join_conversation_with(
         },
         "capabilities": null,
         "endpointCapabilities": 73463,
-        "clientEndpointCapabilities": CLIENT_ENDPOINT_CAPABILITIES,
+        "clientEndpointCapabilities": client_endpoint_capabilities(),
         "endpointMetadata": { "holographicCapabilities": 3 },
         "meetingInfo": opts.meeting_info,
         "endpointState": {
@@ -1551,7 +1567,7 @@ async fn create_call_with(
         },
         "capabilities": null,
         "endpointCapabilities": 73463,
-        "clientEndpointCapabilities": CLIENT_ENDPOINT_CAPABILITIES,
+        "clientEndpointCapabilities": client_endpoint_capabilities(),
         "endpointMetadata": { "holographicCapabilities": 3 },
         "meetingInfo": opts.meeting_info,
         "endpointState": {
@@ -1904,7 +1920,7 @@ pub async fn subscribe_conversation(
         },
         "capabilities": null,
         "endpointCapabilities": 73463,
-        "clientEndpointCapabilities": CLIENT_ENDPOINT_CAPABILITIES,
+        "clientEndpointCapabilities": client_endpoint_capabilities(),
         "endpointMetadata": { "holographicCapabilities": 3 },
         "meetingInfo": null,
         "endpointState": {
