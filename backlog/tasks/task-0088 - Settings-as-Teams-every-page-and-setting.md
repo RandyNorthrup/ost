@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-10T07:56:00Z'
-updated_date: '2026-11-21T19:20:00Z'
+updated_date: '2026-11-21T20:22:00Z'
 labels:
   - desktop
   - settings
@@ -21,8 +21,8 @@ OST's Settings has General, Appearance, Chats and channels, Notifications and ac
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Settings lists Teams' pages in Teams' order with the same layout
-- [ ] #2 Each page's settings show and save the same values Teams does, through the same services
+- [x] #1 Settings lists Teams' pages in Teams' order with the same layout
+- [x] #2 Each page's settings show and save the same values Teams does, through the same services
 - [ ] #3 Links into settings from elsewhere (Do not disturb banner, Pause notifications' Notifications settings, call and chat menus) open the right page and section
 <!-- AC:END -->
 
@@ -110,4 +110,6 @@ OST's Settings has General, Appearance, Chats and channels, Notifications and ac
 - Verified live on linuxlt (OST Test 2, --seth-test --seth-saves; each change read back from the service, then put back): call group add and remove of OST Test 1; delegate add, Join active calls on, remove; Small window then Large window; ringtone Beep then Default; unanswered delay 30 s then 20 s; Q&A "Replies to your posts" Off, then back. ost-test1 (default) display run: ICD policy EnabledUserOverride, apps Meeting Recaps:2 and Q&A:13, ring line shown. Teams on winpc saves Small window as PUT chatsvc properties?name=callViewMode {"callViewMode":"minimized"}, the same request OST sends.
 - Open: Teams' small call window itself wasn't measured. Teams rings with a Windows toast now, and VNC clicks on its Accept didn't answer. Three test calls from OST Test 2 went to voicemail and were cut off at once (no voicemail was saved; missed-call entries remain). OST's small window follows Teams' code (minimized view = the compact call window); it still needs comparing with Teams.
 - Tenant: turning ICD on in Teams on winpc made ost-test1's personal Bookings service "Personal Attendant Followup" (service ddf16a17-…). ICD was turned off again; the service is left in place.
+
+- 2026-11-21 merged (7c59bd7, 0e8395f, ac82968); 898 lib + 29 desktop tests pass. AC1/AC2 met for every page (Intelligent call delegation's Personalization, Follow-ups and test call moved to TASK-0242; Teams' Small incoming-call window not measurable over VNC). AC3 open: verify the links into Settings (Do not disturb banner, Pause notifications' Notifications settings, call and chat menus).
 <!-- SECTION:NOTES:END -->
