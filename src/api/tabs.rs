@@ -706,6 +706,25 @@ pub async fn channel_tabs(
         }
     }
     let mut tabs = tabs_from(&pinned, &ctx, can_update, &perms);
+    // A Page tab whose page isn't made yet: its maker is only in the
+    // channel's own tab property (settings.creatorUserMri), which the
+    // middle tier's list leaves out. Teams reads the property; so does OST
+    // (Teams hides such a tab when someone else made it).
+    if tabs.iter().any(|t| t.kind == Kind::ChannelPage && t.content_url.is_empty() && t.creator.is_empty())
+        && let Ok(props) = super::tab_add::thread_properties(client, channel_id).await
+    {
+        let bare = |s: &str| s.trim_start_matches("tab::").to_ascii_lowercase();
+        let made: HashMap<String, String> = super::tab_add::property_tabs(&props)
+            .iter()
+            .filter(|p| str_at(p, "/settings/componentUrl").is_empty())
+            .map(|p| (bare(&str_at(p, "/id")), str_at(p, "/settings/creatorUserMri")))
+            .collect();
+        for t in tabs.iter_mut().filter(|t| t.kind == Kind::ChannelPage && t.content_url.is_empty() && t.creator.is_empty()) {
+            if let Some(c) = made.get(&bare(&t.id)) {
+                t.creator = c.clone();
+            }
+        }
+    }
     for t in tabs.iter_mut() {
         let (icon, config) = icons.get(&t.app_id).cloned().unwrap_or_default();
         t.icon = icon;
