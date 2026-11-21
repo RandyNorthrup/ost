@@ -4,7 +4,7 @@ title: Loop page extras as Teams
 status: In Progress
 assignee: []
 created_date: '2026-11-16T20:42:00Z'
-updated_date: '2026-11-21T03:15:00Z'
+updated_date: '2026-11-21T05:45:00Z'
 labels:
   - desktop
 dependencies: []
@@ -47,4 +47,8 @@ What TASK-0205 left of Teams' Loop host (docs/spec/loop-host.md): "See who has a
   - Page tabs: a link-less Page tab made by someone else is hidden; your own, or one with no maker, makes its page (Tab.creator from settings.creatorUserMri).
 - Not checked live: the dark Loop page, because ost-test1's chat service was answering 429 (throttled) during the run, so the Notes page showed Teams' "Your notes are temporarily not available". The popover was not opened live either.
 - Still open: Teams' commanding surface, nested-component hosting, telemetry sink and trusted-types policy.
+
+- 2026-11-20 (chatE), checked live on linuxlt as ost-test1:
+  - AC3: OST group test > Notes in OST's dark and high-contrast themes (`--loop-test=notes --theme=dark|highContrast`) against Teams' own on winpc (Teams set to Dark, then High contrast, then back to Follow OS). The Loop page uses Teams' colours: dark page #1F1F1F with the same header line and "Just start typing..."; high contrast black with white text, white header lines and the "+" in the margin, as Teams draws them.
+  - AC1: See who has access's request for that Notes page answers with the chat's SharePoint group (1 group, no people), which the popover shows as "1 group giving access" (`--loop-access-test=<link>`, new). The popover picture itself is retaken with the next build (the test anchored it off screen).
 <!-- SECTION:NOTES:END -->

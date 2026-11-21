@@ -20602,7 +20602,7 @@ impl qobject::Backend {
                     // agent to a new team's first channel as Teams does.
                     "channel-agent-offered" => {
                         let copilot = api::ecs::license(&client).await.and_then(|l| l["isCopilot"].as_bool()).unwrap_or(false);
-                        let offered = api::project_agent::offered(|k| api::ecs::setting("Messaging", k), copilot, &app_locale());
+                        let offered = api::project_agent::offered(|k| api::ecs::setting("messaging", k), copilot, &app_locale());
                         Ok(json!({ "offered": offered }))
                     }
                     "channel-agent-add" => {

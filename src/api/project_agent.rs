@@ -26,7 +26,7 @@ use super::client::TeamsClient;
 /// The agent's app (and bot) id: ECS Messaging `projectAgentAppId`, else
 /// Teams' default.
 pub fn app_id() -> String {
-    super::ecs::setting("Messaging", "projectAgentAppId")
+    super::ecs::setting("messaging", "projectAgentAppId")
         .and_then(|v| v.as_str().map(str::to_string))
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "5ebb964d-4dd7-4ea6-acd5-a5f310390c5b".into())
@@ -35,7 +35,7 @@ pub fn app_id() -> String {
 /// The Teams Copilot Aggregator's resource (ECS
 /// `teamsCopilotAggregatorResourceId`, else Teams' default).
 fn resource() -> String {
-    super::ecs::setting("Messaging", "teamsCopilotAggregatorResourceId")
+    super::ecs::setting("messaging", "teamsCopilotAggregatorResourceId")
         .and_then(|v| v.as_str().map(str::to_string))
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "0e959cba-d60f-49b7-afe3-1b7c34563e37".into())
@@ -107,6 +107,12 @@ pub async fn add_to_new_team(client: &TeamsClient, channel: &str, team_thread: &
         tracing::info!("channel agent: not offered in this tenant");
         return Ok(false);
     }
+    // enableProjectAgentAutoInstallDelay: Teams lets the new team's site
+    // settle first (projectAgentAutoInstallDelayMs, 40 s).
+    if super::ecs::setting("messaging", "enableProjectAgentAutoInstallDelay").and_then(|v| v.as_bool()).unwrap_or(false) {
+        let ms = super::ecs::setting("messaging", "projectAgentAutoInstallDelayMs").and_then(|v| v.as_u64()).unwrap_or(40_000);
+        tokio::time::sleep(std::time::Duration::from_millis(ms.min(120_000))).await;
+    }
     let base = client
         .region_endpoint("calling_TeamsCopilotAggregatorUrl")
         .unwrap_or_else(|| "https://teams.cloud.microsoft/api/tca/api/v1".into());
@@ -152,7 +158,7 @@ pub fn is_welcome(message: &Value) -> bool {
 /// `projectAgentWelcomeMessageWaitTimeoutSeconds` (600 s), looking at the
 /// channel's newest messages every 20 s.
 pub async fn wait_for_welcome(client: &TeamsClient, channel: &str) -> Result<bool> {
-    let limit = super::ecs::setting("Messaging", "projectAgentWelcomeMessageWaitTimeoutSeconds").and_then(|v| v.as_u64()).unwrap_or(600);
+    let limit = super::ecs::setting("messaging", "projectAgentWelcomeMessageWaitTimeoutSeconds").and_then(|v| v.as_u64()).unwrap_or(600);
     let url = format!("{}/v1/users/ME/conversations/{}/messages?pageSize=10&view=msnp24Equivalent", client.chat_service_url(), channel);
     let start = std::time::Instant::now();
     while start.elapsed().as_secs() < limit {

@@ -5343,6 +5343,8 @@ Window {
         active: Qt.application.arguments.some(a => a.startsWith("--loop-access-test=")) && backend.signedIn
         sourceComponent: Item {
             LoopAccessPopover { id: testAccess }
+            // Where a page's header button would be (top right).
+            Item { id: testAccessAnchor; parent: window.contentItem; x: window.contentItem.width - 60; y: 120; width: 32; height: 32 }
             Timer {
                 running: true; interval: 3000; repeat: true
                 property int step: 0
@@ -5350,7 +5352,7 @@ Window {
                     const arg = k => (Qt.application.arguments.find(a => a.startsWith(k + "=")) || "").slice(k.length + 1)
                     const dir = (arg("--shots") || "/tmp/act") + "/"
                     const st = step++
-                    if (st === 1) testAccess.openFor(window.contentItem, decodeURIComponent(arg("--loop-access-test")))
+                    if (st === 1) testAccess.openFor(testAccessAnchor, decodeURIComponent(arg("--loop-access-test")))
                     else if (st === 4) { console.warn("LOOPACCESS", JSON.stringify(testAccess.access)); window.contentItem.grabToImage(r => r.saveToFile(dir + "loop-access.png")) }
                     else if (st === 6) Qt.quit()
                 }
@@ -5999,6 +6001,7 @@ Window {
         running: Qt.application.arguments.some(a => a.startsWith("--app-card-test") || a === "--app-card-messages") && backend.signedIn
         interval: 3000; repeat: true
         property int step: 0
+        property bool signInOpened: false
         onTriggered: {
             const st = step++
             const args = Qt.application.arguments
@@ -6015,6 +6018,20 @@ Window {
             }
             else if (st === 1) { conversation.focusCompose(); linkTyper.typeText(text) }
             else if (st === 4) { console.warn("APPCARD compose", JSON.stringify(c.appCard), "shown", c.appCardShown, "preview", JSON.stringify(c.urlPreview)); shot("app-card-compose") }
+            // --app-card-signin: Teams' permission card as a person would
+            // use it: Show Preview (installs the app for you), then Sign in
+            // (the app's sign-in window, as Teams opens it); the window's
+            // page is logged every 15 s while you sign in there (up to
+            // 10 minutes), then the card the app gives afterwards.
+            else if (st >= 5 && args.indexOf("--app-card-signin") >= 0) {
+                const card = c.appCard || {}, w = c.lastAuthWindow
+                if (st === 5 && card.permission === "install") { console.warn("APPCARD show preview"); backend.appLinkAction("install", c.previewUrl, c.chatId, card.app_id) }
+                else if (card.permission === "auth" && !w && !signInOpened) { signInOpened = true; console.warn("APPCARD sign in", (card.auth_url || "").split("?")[0], JSON.stringify(card.valid_domains)); shot("app-card-signin-card"); c.openAppAuth(card.auth_url, card.valid_domains || []) }
+                else if (st % 5 === 0) console.warn("APPCARD signin state", JSON.stringify({ permission: card.permission || "", type: card.content_type || "", window: w ? String(w.title) : "", opened: signInOpened }))
+                if (signInOpened && !card.permission && card.content_type) { console.warn("APPCARD signed in", JSON.stringify(card).slice(0, 600)); shot("app-card-signed-in"); c.clear(); Qt.quit() }
+                if (st > 210) { console.warn("APPCARD signin gave up"); c.clear(); Qt.quit() }
+                return
+            }
             else if (st === 5 && args.indexOf("--app-card-collapse") >= 0) c.setAppCard({ collapsed: true })
             else if (st === 6 && args.indexOf("--app-card-collapse") >= 0) { console.warn("APPCARD collapsed", c.appCardCollapsedShown, JSON.stringify(c.shownPreview)); shot("app-card-collapsed") }
             else if (st === 7 && args.indexOf("--app-card-send") >= 0) { console.warn("APPCARD send", c.appCardForSend().length > 0, c.previewForSend()); conversation.sendCompose() }
