@@ -4,7 +4,7 @@ title: Chat list leftovers found in live checks
 status: In Progress
 assignee: []
 created_date: '2026-11-16T20:22:00Z'
-updated_date: '2026-11-21T17:28:00Z'
+updated_date: '2026-11-21T19:05:00Z'
 labels:
   - desktop
 dependencies: []
@@ -75,4 +75,7 @@ Found while checking TASK-0150/0195/0204 against Teams on winpc (2026-11-16):
   - Live (`--new-chat-search-test=OST`, before the flights): 22 rows with OST empty chat test (3rd chat) and OST large chat test (overflow) now present, the local channels added.
   - Channel Agent welcome, Teams on winpc (team "OST TEST 206 agent F2", made by OST's Add Channel Agent): sender "OST TEST channel Agent" (the message's properties.fromAppMetadata.name; imdisplayname is "Project-Agent-Prod"), then the "AI agent" tag (data-testid message-disclaimer: 10 px #616161, 0.67 px #E0E0E0 outline, radius 4, padding 0 2, 17.3 tall, 4 after the name; tooltip "AI-generated content may be incorrect"; messaging:group_copilot_disclaimer), then the time. The message has botPoweredByAI true. Teams showed no add-member / AddCustomApp rows in that (threads-layout) channel.
   - Built: MessageView.ai_agent and the app-instance name for bot messages; the tag in chats/threads (Conversation.qml) and channel posts (ChannelPosts.qml).
+
+- 2026-11-21 (chatF), live after the fixes: `--new-chat-search-test=OST` lists the same 22 rows as Teams, in Teams' order (OST Test 1 (You) 4th, OST empty chat test 3rd chat, OST threads test 3rd channel, OST large chat test and OST test channel 2 last). The Channel Agent's welcome in "OST TEST 206 agent F2" showed as "OST TEST channel Agent" with the "AI agent" tag, as in Teams (`--chat-shot`). Both test teams (F, from a first run that quit early, and F2) were deleted with `--team-live=delete:`.
+  - Still different: OST shows the add event "OST Test 1 added OST TEST channel Agent here." where Teams showed no event row in that threads-layout channel; OST draws the agent's initials where Teams shows its app icon; Teams' "@agent" suggested action and feedback buttons under the welcome are not drawn.
 <!-- SECTION:NOTES:END -->

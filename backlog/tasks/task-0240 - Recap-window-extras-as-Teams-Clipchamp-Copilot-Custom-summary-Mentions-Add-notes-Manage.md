@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-11-20T22:51:00Z'
-updated_date: '2026-11-21T17:26:00Z'
+updated_date: '2026-11-21T19:05:00Z'
 labels:
   - desktop
   - calls
@@ -81,4 +81,10 @@ TASK-0098 built Teams' recap pop-out (player, Speakers/Topics/Chapters, Shared f
   - OST TEST 217 town hall 2 has no transcript ("No transcript available"); Teams' Custom summary request there succeeds only in the sense that Copilot answers with text: "Transcript not available. A meeting recap cannot be generated without the meeting transcript." Teams sends it over the Chathub (canvasType RecapCall, no iCalUID, locale "") with today's prompts, which differ from the bundled 633679 ones (a new GROUNDING REQUIREMENTS block); OST's old m365Copilot/Chat POST got 500. Both prompts were captured from Teams' frames and are now OST's.
 - Built: AudioRecapPlayer.qml (Teams' mini player), api::podcast (consume, AugLoop generation and delete), recapAudio; transcript-only recaps resolve to the transcript's file (recap_type ODSPTranscript): Open in Clipchamp, no player, the five pills in Teams' order; existing meeting notes read from the collab object (readcollabobject/V2) so Notes shows them as Teams does.
 - Verified live (`--recap-window-test=audio --recap-chat=OST~TEST~240`): Audio recap shown, the mini player said "Generating...", then the same NoValidMeetingInsightError message as Teams; Open in Clipchamp offered; five pills; no player.
+
+- 2026-11-21 (chatF), AC2 verified live:
+  - Add notes (`--recap-window-test=notes`, OST TEST 240 recap meeting): the meeting-notes service made the meeting's Loop notes and OST showed them (Agenda / Meeting notes / Follow-up tasks). Teams on winpc then showed the same notes ("OST TEST 240 recap meeting 2026-11-21") under its recap Notes, and OST's next opening showed them at once (read from the collab object). The notes stay in that test meeting (deleting the file would leave the meeting's notes link broken).
+  - Custom summary: Speaker summary on 240 returned a real summary (1408/1858 characters); Create template's Preview of a typed description returned a real preview (Decisions + an Action items table with owners); the template was saved, renamed, edited, shared and deleted again. On OST TEST 217 town hall 2 (no transcript) OST now gets Copilot's 93-character answer "Transcript not available. A meeting recap cannot be generated without the meeting transcript.", the same as Teams.
+  - Audio recap / Open in Clipchamp / Transcript pill on the transcript-only meeting: as Teams (see above). The four failed test audio recaps (three from Teams, one from OST) were deleted with `--podcast-cleanup` (Teams' deletePodcasts over AugLoop).
+  - Open: OST's AI summary page for 240 still shows its empty sections, while Teams' card lists 3 tasks; Teams' Notes page in the recap has a Loop header row (icon, title, a button) that OST's does not draw; a successful audio recap's playback could not be seen (this tenant's meetings are too short for Copilot to make one).
 <!-- SECTION:NOTES:END -->

@@ -4,7 +4,7 @@ title: Loop page extras as Teams
 status: In Progress
 assignee: []
 created_date: '2026-11-16T20:42:00Z'
-updated_date: '2026-11-21T17:37:00Z'
+updated_date: '2026-11-21T19:05:00Z'
 labels:
   - desktop
 dependencies: []
@@ -63,4 +63,11 @@ What TASK-0205 left of Teams' Loop host (docs/spec/loop-host.md): "See who has a
   - Side by side with Teams on winpc (OST group test > Notes, a typed line selected with the mouse, measured over CDP): Teams' commanding surface is 298.7 x 49.3, radius 16, padding 8, shadow 0 0 2px .12 + 0 4px 8px .14; Bold, Italic, Underline, Strikethrough | Headings and lists | Color and formatting, Comment, More (32 x 32, dividers 8.7). OST on the same selection (`--loop-test=notes --loop-format`): 298 x 48, the same commands and glyphs in the same order; picture compared, test text removed in both.
   - The flaky toolbar: the harness sent its synthetic drag (press, 8 moves, release) in one go, so the page could see press and release in one frame. ost_mouse_drag now spaces them 30 ms apart; two runs in a row (light and high contrast) opened the top bar on the first drag.
   - High contrast (`--theme=highContrast`): the top bar opened on the first drag, Bold applied (weight 600), Shift+F10 expanded, Escape closed, the text removed (checked after a reload).
+
+- 2026-11-21 (chatF), AC4 link-less Page tabs, live in OST test channel (tabs made with the new examples/page_tab_linkless: "OST TEST 207 linkless mine" and "…OST" by ost-test1, "…other" with OST Test 2 as creatorUserMri):
+  - OST's hide rule never fired: the middle tier's tab list (v1.0/channels/{id}/tabs) leaves out settings.creatorUserMri. OST now reads the maker from the channel's own tab property, as Teams does; after that "…other" is gone from the tab row while both of ost-test1's show.
+  - Opening "…OST" made its page as Teams does (Loop events framed, code, rendered, title, created, connected; the insert row shown). A second run on "…mine" hit the chat service's 429 ("API calls quota exceeded! 20Per1…") on the thread read and showed the error page; not retried further.
+  - Create a new nested component: neither Teams' commanding surface in chat notes nor its expanded list (Loop's, read from OST's surface: Formatting, Headings and lists, Color and formatting, Comment, Undo/redo, Clipboard, Indentation, Page width, Hyperlinks) offers Create Loop component (FFXCCreateLoopComponent) there, so `--loop-create` found nothing to pick; the pasted-link nested component (chatE2) stays the verified path.
+
+- 2026-11-21 (chatF), Teams on winpc with the same tabs: the row read Posts, Shared, Notes, "OST TEST 207 linkless mine", +1 ("…OST"); "…other" was hidden, as in OST now; opening "…mine" made its page ("Loop paragraph 1"), as OST did for "…OST". The three test tabs were removed afterwards (the two pages Loop made stay in OST test channel's Loop folder).
 <!-- SECTION:NOTES:END -->
