@@ -176,7 +176,8 @@
 "Event Date Time"		EventsView.qml:3015 EventsView.qml:3015	
 "Event Invite Card"		EventsView.qml:3017	
 "Exam"		CalendarView.qml:266	
-"Expires in %n day(s)"		RecapWindow.qml:228	
+"Expires in %1 days"		RecapWindow.qml:229	
+"Expires in 1 day"		RecapWindow.qml:229	
 "Featured topics"		HelpView.qml:219	
 "File %1"		ChannelFiles.qml:159 FileActions.qml:2031 FileActions.qml:2203	
 "Files from %1"		OneDriveView.qml:598	
@@ -215,8 +216,8 @@
 "Import rooms from CSV from the meeting window's Breakout rooms pane."		BreakoutTab.qml:201	
 "In Teams meeting, co-organizer has the same capabilities as the organizer."		MeetingOptionsDialog.qml:148	
 "In a conference call"		CastWindow.qml:456	
-"In some situations, AI isn't able to generate chapters."		RecapWindow.qml:262	
-"In some situations, AI isn't able to generate topics."		RecapWindow.qml:262	
+"In some situations, AI isn't able to generate chapters."		RecapWindow.qml:268	
+"In some situations, AI isn't able to generate topics."		RecapWindow.qml:268	
 "In-meeting only"		MeetingForm.qml:1114 MeetingOptionsDialog.qml:129	
 "Increment value"		BreakoutRoomsPane.qml:212 BreakoutTab.qml:157 TimerSpin.qml:56	
 "Info, View file details"		FilePreview.qml:196	
@@ -269,7 +270,7 @@
 "No, don't contact me"		FeedbackWindow.qml:228	
 "No, don't share"		FeedbackWindow.qml:219	
 "Norwegian Bokmål (Norway)"		SettingsView.qml:2790	
-"Not useful"		RecapWindow.qml:629	
+"Not useful"		RecapWindow.qml:635	
 "Notifications couldn't be turned off. %1"		DetailsPane.qml:65	
 "Notifications couldn't be turned on. %1"		DetailsPane.qml:65	
 "OST Legal Information"		SettingsView.qml:3299	
@@ -430,7 +431,7 @@
 "Unmute speaker"		AudioFlyout.qml:101 AudioSettingsPane.qml:174	
 "Unpinned %1 from Quick access"		FileActions.qml:267	
 "Updating link settings..."		ComposeBox.qml:1179 LoopCard.qml:97	
-"Useful"		RecapWindow.qml:628	
+"Useful"		RecapWindow.qml:634	
 "Users allowed to bypass the lobby"		MeetingOptionsDialog.qml:125	
 "Voting table"		WebApp.qml:610	
 "We couldn't create your team. Please try again."		CreateTeamDialog.qml:106 CreateTeamPage.qml:245	
