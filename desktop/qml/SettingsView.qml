@@ -447,6 +447,36 @@ Rectangle {
         clip: true
         boundsBehavior: Flickable.StopAtBounds
         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+        // Teams' arrival highlight on the setting a link opened (settings-app
+        // module 266576, measured on winpc with Customize app bar): an inset
+        // 1 px colorPaletteDarkOrangeBorderActive edge inside the card's
+        // border that fades out over 4 s (ease-out) after 50 ms.
+        Rectangle {
+            id: highlight
+            z: 10
+            visible: false
+            color: "transparent"
+            border.width: 1
+            border.color: theme.dark ? "#E9835E" : "#DA3B01"
+            property Item card: null
+            function show(c) {
+                card = c
+                const p = c.mapToItem(content.contentItem, 0, 0)
+                const bw = c.border ? c.border.width : 0
+                x = p.x + bw; y = p.y + bw; width = c.width - 2 * bw; height = c.height - 2 * bw
+                radius = Math.max(0, (c.radius || 0) - bw)
+                opacity = 1; visible = true
+                fade.restart()
+            }
+            function stop() { fade.stop(); visible = false; card = null }
+            SequentialAnimation {
+                id: fade
+                PauseAnimation { duration: 50 }
+                NumberAnimation { target: highlight; property: "opacity"; from: 1; to: 0; duration: 4000; easing.type: Easing.OutQuad }
+                ScriptAction { script: highlight.visible = false }
+            }
+            Connections { target: root; function onPageChanged() { highlight.stop() } function onSubPageChanged() { highlight.stop() } }
+        }
         Column {
             id: pageCol
             x: 20; y: 12
@@ -1138,10 +1168,13 @@ Rectangle {
                 }
             }
             SettingsParts.Card {
+                id: autoFollowCard
                 visible: root.page === "chats"
                 icon: "chat-bubbles-question-20"; title: qsTr("Automatically follow threads in channels")
                 subtitle: qsTr("To choose how you get notified, go to <0>Replies to followed threads and posts</0>").replace("<0>", "<a href=\"followed\">").replace("</0>", "</a>")
-                onLinkActivated: root.page = "notifications"
+                // Teams' link: Notifications, at Replies to followed threads
+                // and posts (launchSection with that setting id).
+                onLinkActivated: root.launchSection("notifications", { settingId: "replies-to-threads-and-posts-settings" })
                 Repeater {
                     model: [{ key: "Authored", label: qsTr("Threads started from my messages or posts") }, { key: "Participated", label: qsTr("Threads I reply to") }, { key: "AtMentioned", label: qsTr("Threads where I'm @mentioned") }]
                     SettingsParts.CheckRow {
@@ -1407,6 +1440,7 @@ Rectangle {
                 }
             }
             Repeater {
+                id: notifTypeCards
                 model: [
                     { icon: "arrow-reply-20", title: qsTr("Replies to followed threads and posts"), keys: ["Reply", "ReplyToReply"] },
                     { icon: "heart-20", title: qsTr("Likes and reactions"), keys: ["Like", "LikeInChat_v2"] },
@@ -3771,7 +3805,7 @@ Rectangle {
                         label: qsTr("VIPs")
                         sublabel: qsTr("Calls from these people go straight to you. Any call you don't answer will be handled on your behalf.")
                         buttonText: qsTr("Edit")
-                        onClicked: { root.page = "privacy"; root.subPage = "priority" }
+                        onClicked: root.launchSection("privacy_manage_priority_access")
                     }
                 }
             }
@@ -4329,17 +4363,134 @@ Rectangle {
         page = "devices"; subPage = ""
         Qt.callLater(() => { content.contentY = Math.max(0, greenScreenRow.mapToItem(content.contentItem, 0, 0).y - 40) })
     }
-    /// Teams' openSettingPage({settingCategory, settingId}): the page,
-    /// scrolled to the setting, its first control focused (Customize app
-    /// bar: Appearance, "app-bar-settings", Show app names).
-    function showSetting(category, settingId) {
-        page = category; subPage = ""
-        Qt.callLater(() => {
-            if (settingId !== "app-bar-settings") return
-            content.contentY = Math.max(0, Math.min(pageCol.y + appBarCard.y - 12, content.contentHeight - content.height))
-            appBarNamesRow.focusSwitch()
-        })
+    // ---- Links into Settings (TASK-0088 AC3) ----
+    // Teams opens Settings with settings.launch(command, id) and
+    // settings.launchSection(id, command, {settingCategory, settingId,
+    // settingSectionId, focusId}); its settings app resolves them (Teams
+    // 26304, settings-app Ar/LV): no id is General; a category with a
+    // setting id opens that page with the setting brought into view; a
+    // sub-page's id opens "Page › Sub-page"; any other id is a page.
+    readonly property var teamsPages: ({ general: "general", appearance: "appearance", chats_and_channels: "chats", notifications: "notifications", accounts: "accounts", privacy: "privacy", accessibility: "accessibility", devices: "devices", calls: "calls", files_and_links: "files", app_permissions: "apppermissions", recognition: "recognition", about: "about" })
+    readonly property var teamsSubPages: ({
+        general_settings_oof_settings_page_title: ["general", "oof"],
+        general_settings_editor_sdk_manage_spellcheck_languages_page_title: ["general", "spellcheck"],
+        follow_presence_settings: ["notifications", "status"],
+        shown_channels_centralized_settings: ["notifications", "channelNotifs"],
+        privacy_manage_priority_access: ["privacy", "priority"],
+        privacy_manage_blocked_users: ["privacy", "blocked"],
+        // Teams' VIP contacts page (OST has none yet): Privacy.
+        privacy_manage_vip_contacts: ["privacy", ""],
+        privacy_diagnostic_data_viewer: ["privacy", "ddv"],
+        privacy_device_home_building_settings: ["privacy", "stationary"],
+        appearance_settings_manage_interpreters: ["accessibility", "interpreters"],
+        better_together_devices_dialog_title: ["devices", "connected"],
+        call_group_section_subpage_title: ["calls", "callGroup"],
+        delegation_section_subpage_title: ["calls", "delegates"],
+        personal_attendant_group_section_title: ["calls", "attendant"],
+        personal_attendant_custom_greeting_title: ["calls", "attendantGreeting"],
+        personal_attendant_custom_instructions_title: ["calls", "attendantInstructions"],
+        personal_attendant_booking_manage_hours: ["calls", "attendantHours"]
+    })
+    /// The setting (and section) elements Teams' setting ids name.
+    function settingItem(id) {
+        switch (id) {
+        case "app-bar-settings": return appBarCard
+        case "translation-settings": return translationCard
+        case "optimized-perf-section": return efficiencyCard
+        case "editor-spellcheck-section": return editorSpellCard
+        case "configure-enter-to-send-setting": return enterCard
+        case "auto-follow-threads-settings": return autoFollowCard
+        }
+        return null
     }
+    /// The first control in an item Tab would reach, depth first.
+    function firstFocusable(it) {
+        if (!it || !it.visible || !it.enabled) return null
+        if (it.activeFocusOnTab) return it
+        for (let i = 0; i < it.children.length; i++) {
+            const f = firstFocusable(it.children[i])
+            if (f) return f
+        }
+        return null
+    }
+    function launchSection(id, opts) {
+        opts = opts || {}
+        let pg = "general", sub = ""
+        const withSetting = !!opts.settingCategory && !!opts.settingId
+        if (withSetting) pg = teamsPages[opts.settingCategory] || "general"
+        else if (id && teamsSubPages[id]) { pg = teamsSubPages[id][0]; sub = teamsSubPages[id][1] }
+        else if (id) pg = teamsPages[id] || "general"
+        page = pg
+        subPage = sub
+        scrollAnim.stop()
+        highlight.stop()
+        content.contentY = 0
+        arrival.opts = opts
+        arrival.withSetting = withSetting
+        // Teams brings a setting in 50 ms after the page renders; with no
+        // setting it focuses the page's first control after 100 ms, unless
+        // something still has focus (the window's last focused control
+        // stays focused when you came from a menu).
+        arrival.interval = withSetting ? 50 : 100
+        // (Settings' own controls don't count: Teams unmounts them when you
+        // leave Settings.)
+        const f = window.activeFocusItem
+        let inside = false
+        for (let p = f; p; p = p.parent) if (p === root) { inside = true; break }
+        arrival.hadFocus = !!f && f.visible && !inside
+        arrival.restart()
+    }
+    /// Settings and more ▸ Settings and Ctrl+, (Teams' launch(command,
+    /// General)): General, the search box focused.
+    function launchGeneral() {
+        launchSection("general")
+        arrival.stop()
+        Qt.callLater(() => find.forceActiveFocus(Qt.OtherFocusReason))
+    }
+    Timer {
+        id: arrival
+        property var opts: ({})
+        property bool withSetting: false
+        property bool hadFocus: false
+        onTriggered: {
+            if (withSetting) {
+                const target = root.settingItem(opts.focusId || opts.settingId)
+                const section = root.settingItem(opts.settingSectionId) || target
+                if (!target || !target.visible) return
+                // scrollIntoView({block: "center"}), smooth
+                const y = target.mapToItem(content.contentItem, 0, 0).y
+                scrollAnim.to = Math.max(0, Math.min(y + target.height / 2 - content.height / 2, content.contentHeight - content.height))
+                scrollAnim.restart()
+                const f = root.firstFocusable(target)
+                if (f) f.forceActiveFocus(Qt.TabFocusReason)
+                if (section && section.visible) highlight.show(section)
+                return
+            }
+            // Notifications: "Replies to followed threads and posts" (the
+            // channel follow dialog's and the auto-follow card's link)
+            // scrolls itself to the top of the view and takes focus.
+            if (opts.settingId === "replies-to-threads-and-posts-settings" && root.page === "notifications") {
+                const card = notifTypeCards.itemAt(0)
+                if (card && card.visible) {
+                    scrollAnim.to = Math.max(0, Math.min(card.mapToItem(content.contentItem, 0, 0).y, content.contentHeight - content.height))
+                    scrollAnim.restart()
+                    const f = root.firstFocusable(card)
+                    if (f) f.forceActiveFocus(Qt.TabFocusReason)
+                }
+                return
+            }
+            if (hadFocus) return
+            const f = root.firstFocusable(pageCol)
+            if (f) f.forceActiveFocus(Qt.TabFocusReason)
+        }
+    }
+    NumberAnimation { id: scrollAnim; target: content; property: "contentY"; duration: 300; easing.type: Easing.InOutQuad }
+    /// Customize app bar: Appearance at the App bar card.
+    function showSetting(category, settingId) {
+        launchSection(category, { settingCategory: category, settingId: settingId, settingSectionId: settingId })
+    }
+    function followLinkForTest() { autoFollowCard.linkActivated("followed") }
+    function highlightForTest() { return { shown: highlight.visible, opacity: Math.round(highlight.opacity * 100) / 100, y: Math.round(highlight.mapToItem(null, 0, 0).y), h: Math.round(highlight.height), border: String(highlight.border.color), width: highlight.border.width, focus: window.activeFocusItem ? String(window.activeFocusItem.Accessible.name || window.activeFocusItem.accessibleName || window.activeFocusItem.label || window.activeFocusItem) : "", contentY: Math.round(content.contentY) } }
     function oofForTest() { return oofPage }
     function scrollForTest() { content.contentY = Math.max(0, content.contentHeight - content.height) }
     function scrollByForTest(dy) { content.contentY = Math.max(0, Math.min(content.contentHeight - content.height, content.contentY + dy)) }
@@ -4425,11 +4576,12 @@ Rectangle {
     function toggleTtyForTest(on) { backend.setSetting("ttyMode", on ? "true" : "false"); ttyCard.changed = true }
     /// Editor spellcheck (the Editor card's links): General scrolled to it,
     /// or its Manage spellcheck languages page.
+    // Teams' Editor card links (compose-add-ons): Manage languages... opens
+    // General › Manage spellcheck languages; Editor settings... General at
+    // its "editor-spellcheck-section".
     function showEditor(manage) {
-        page = "general"
-        subPage = manage ? "spellcheck" : ""
-        content.contentY = 0
-        if (!manage) Qt.callLater(() => { content.contentY = Math.max(0, Math.min(pageCol.y + editorSpellCard.y - 12, content.contentHeight - content.height)) })
+        if (manage) launchSection("general_settings_editor_sdk_manage_spellcheck_languages_page_title")
+        else launchSection("general-editor-spellcheck-section", { settingCategory: "general", settingId: "editor-spellcheck-section", settingSectionId: "editor-spellcheck-section" })
     }
     /// Test hooks: General scrolled to Language and regional formats; the card.
     function scrollToRegionalForTest() { content.contentY = Math.max(0, Math.min(pageCol.y + regionalCard.y - 12, content.contentHeight - content.height)) }

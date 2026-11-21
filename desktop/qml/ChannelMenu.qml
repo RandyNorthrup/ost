@@ -211,7 +211,9 @@ Item {
         }
     }
 
-    ChannelNotifyDialog { id: notifyDialog; teamId: root.teamId; teamName: root.teamName; newestPost: root.newestPost }
+    // Its "notifications settings for all channels" link: Teams'
+    // launchSection(Notifications), the page at its top.
+    ChannelNotifyDialog { id: notifyDialog; teamId: root.teamId; teamName: root.teamName; newestPost: root.newestPost; onOpenNotificationSettings: window.launchSettings("notifications") }
     ChannelEditDialog { id: editDialog; teamId: root.teamId }
     ChannelEmailDialog { id: emailDialog; teamId: root.teamId; teamName: root.teamName }
 

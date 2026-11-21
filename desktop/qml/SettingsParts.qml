@@ -150,7 +150,7 @@ Item {
             visible: tg.activeFocus
             anchors.fill: parent; anchors.margins: -9
             radius: 4; color: "transparent"
-            border.width: 2; border.color: theme.hc("#000000", "#FFFFFF")
+            border.width: 2; border.color: theme.dark || theme.highContrast ? "#FFFFFF" : "#000000"
         }
         Text {
             id: stateText
@@ -259,6 +259,16 @@ Item {
         Text { id: subText; visible: !!cr.sublabel; x: 28; y: labelText.y + labelText.height; width: parent.width - 28; text: cr.sublabel; wrapMode: Text.Wrap; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textSecondary }
         HoverHandler { id: ch; cursorShape: cr.usable ? Qt.PointingHandCursor : Qt.ArrowCursor }
         TapHandler { enabled: cr.usable; onTapped: cr.toggled(!cr.checked) }
+        // Keyboard: Tab reaches it, Space toggles; Fluent's 2 px focus
+        // outline around the box and its label.
+        activeFocusOnTab: usable
+        Keys.onSpacePressed: if (usable) toggled(!checked)
+        Rectangle {
+            visible: cr.activeFocus
+            x: -4; y: 2; width: Math.min(cr.width + 4, 28 + labelText.contentWidth + 8); height: labelText.y + labelText.height + (subText.visible ? subText.height : 0) + 2
+            radius: 4; color: "transparent"
+            border.width: 2; border.color: theme.dark || theme.highContrast ? "#FFFFFF" : "#000000"
+        }
         Accessible.role: Accessible.CheckBox
         Accessible.name: label
         Accessible.checked: checked
@@ -288,11 +298,21 @@ Item {
         Dot { y: 8; checked: rr.checked; hovered: rh.hovered; opacity: rr.usable ? 1 : 0.4 }
         Column {
             x: 28; y: 6; width: parent.width - 28
-            Text { width: parent.width; text: rr.label; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: !rr.usable ? theme.disabled : rr.checked || rh.hovered ? theme.text : theme.textSecondary }
+            Text { id: rrLabel; width: parent.width; text: rr.label; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: !rr.usable ? theme.disabled : rr.checked || rh.hovered ? theme.text : theme.textSecondary }
             Text { visible: !!rr.sublabel; width: parent.width; text: rr.sublabel; wrapMode: Text.Wrap; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: rr.usable ? theme.textSecondary : theme.disabled }
         }
         HoverHandler { id: rh; enabled: rr.usable; cursorShape: Qt.PointingHandCursor }
         TapHandler { enabled: rr.usable; onTapped: rr.picked() }
+        // Keyboard: Tab reaches it, Space picks; Fluent's 2 px focus outline
+        // around the radio and its label.
+        activeFocusOnTab: usable
+        Keys.onSpacePressed: if (usable) picked()
+        Rectangle {
+            visible: rr.activeFocus
+            x: -4; y: 2; width: Math.min(rr.width + 4, 28 + rrLabel.contentWidth + 8); height: rr.height - 4
+            radius: 4; color: "transparent"
+            border.width: 2; border.color: theme.dark || theme.highContrast ? "#FFFFFF" : "#000000"
+        }
         Accessible.role: Accessible.RadioButton
         Accessible.name: label
         Accessible.checked: checked
@@ -320,6 +340,16 @@ Item {
         FluentIcon { x: 132.7; y: ir.imageHeight + 18.7; name: ir.checked ? "radio-button-20-filled" : "circle-20"; size: 20; color: ir.checked ? theme.brand : theme.textSecondary }
         HoverHandler { id: ih; cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: ir.picked() }
+        // Keyboard: Tab reaches it, Space picks; Fluent's 2 px focus outline
+        // on the tile.
+        activeFocusOnTab: true
+        Keys.onSpacePressed: picked()
+        Rectangle {
+            visible: ir.activeFocus
+            anchors.fill: parent; anchors.margins: -2
+            radius: 6; color: "transparent"
+            border.width: 2; border.color: theme.dark || theme.highContrast ? "#FFFFFF" : "#000000"
+        }
         Accessible.role: Accessible.RadioButton
         Accessible.name: label
         Accessible.checked: checked

@@ -73,6 +73,20 @@ Window {
         settingsView.showGreenScreen()
         window.show(); window.raise(); window.requestActivate()
     }
+    // Links into Settings (TASK-0088 AC3): Teams' settings.launchSection(id,
+    // command, options) in the main window (SettingsView.launchSection).
+    function launchSettings(id, opts) {
+        rail.current = "settings"
+        settingsView.launchSection(id, opts || {})
+        window.show(); window.raise(); window.requestActivate()
+    }
+    // Settings and more ▸ Settings and Ctrl+,: always General, the search
+    // box focused (Teams' launch(command, General)).
+    function launchSettingsGeneral() {
+        rail.current = "settings"
+        settingsView.launchGeneral()
+        window.show(); window.raise(); window.requestActivate()
+    }
     // The Editor card's Editor settings... / Manage languages...: Settings ▸
     // General at Editor spellcheck, or its Manage spellcheck languages page.
     function showEditorSettings(manage) {
@@ -288,7 +302,7 @@ Window {
             Shortcut { sequence: "Ctrl+" + (index + 1); onActivated: rail.pickAt(index) } }
     }
     Shortcut { sequence: "Ctrl+Shift+N"; onActivated: { chatList.draftsOpen = false; chatList.mentionsOpen = false; window.startNewChat(true) } }
-    Shortcut { sequence: "Ctrl+,"; onActivated: rail.current = "settings" }
+    Shortcut { sequence: "Ctrl+,"; onActivated: window.launchSettingsGeneral() }
     Shortcut { sequence: "Ctrl+N"; onActivated: { chatList.draftsOpen = false; chatList.mentionsOpen = false; window.startNewChat() } }
     Shortcut { sequence: "Ctrl+Shift+T"; onActivated: window.pinned = !window.pinned }
     // The rest of Teams' shortcuts that OST supports (listed by Ctrl+.).
@@ -1755,10 +1769,7 @@ Window {
         onJoinMeeting: (chatId, chatName) => backend.joinFromNotification(chatId, chatName)
         // A scheduled meeting's start notification: its pre-join.
         onJoinMeetingUrl: (url, title) => preJoin.openFor(url, title, "", "")
-        onOpenSettings: {
-            rail.current = "settings"; settingsView.page = "notifications"
-            window.show(); window.raise(); window.requestActivate()
-        }
+        onOpenSettings: window.launchSettings("notifications")
         onAcceptCall: video => backend.acceptCall(video)
         onDeclineCall: backend.declineCall()
         // Ignore: stop ringing here; the call isn't declined.
@@ -11923,6 +11934,58 @@ Window {
         }
     }
 
+    // --seti-test --shots=<dir> (TASK-0088 AC3): the links into Settings,
+    // each through the handler its button uses: Settings and more ▸
+    // Settings, Ctrl+, (after another page), the DND banner's Change
+    // settings, Pause notifications ▸ Notifications settings, Customize app
+    // bar (with Teams' highlight, read at once and after it fades), the
+    // compose hint, Customize view, a notification dialog's link, the
+    // auto-follow card's link, the Editor card's two links, Schedule out of
+    // office and a teams.microsoft.com/l/settings link. SETI lines;
+    // pictures si-*.png.
+    Timer {
+        running: Qt.application.arguments.indexOf("--seti-test") >= 0 && backend.signedIn && !!backend.teamsJson && backend.settingsJson.length > 0
+        interval: 1500; repeat: true
+        property int step: 0
+        onTriggered: {
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "si-" + n + ".png"))
+            const log = tag => console.warn("SETI", tag, JSON.stringify({ rail: rail.current, page: settingsView.page, sub: settingsView.subPage, hl: settingsView.highlightForTest() }))
+            switch (step) {
+            case 0: rail.current = "chat"; break
+            case 1: rail.current = "chat"; titleBar.openSettings(); break
+            case 2: log("more-menu Settings"); settingsView.pageForTest("privacy"); break
+            case 3: rail.current = "chat"; window.launchSettingsGeneral(); break
+            case 4: log("Ctrl+, after Privacy"); break
+            case 5: rail.current = "chat"; window.launchSettings("privacy_manage_priority_access"); break
+            case 6: log("DND banner Change settings"); shot("dnd"); break
+            case 7: rail.current = "chat"; titleBar.openNotificationSettings(); break
+            case 8: log("Pause notifications > Notifications settings"); break
+            case 9: rail.current = "chat"; chatList.customizeView(); break
+            case 10: log("Customize view"); break
+            case 11: rail.current = "chat"; conversation.openChatSettings(); break
+            case 12: log("compose Enter hint"); shot("enter-hint"); break
+            case 13: rail.current = "chat"; window.launchSettings("notifications"); break
+            case 14: log("notification dialog link"); settingsView.launchSection("chats_and_channels"); break
+            case 15: settingsView.followLinkForTest(); break
+            case 16: log("auto-follow link"); shot("replies"); break
+            case 17: rail.current = "chat"; window.showEditorSettings(true); break
+            case 18: log("Editor Manage languages"); break
+            case 19: rail.current = "chat"; window.showEditorSettings(false); break
+            case 20: log("Editor settings"); shot("editor"); break
+            case 21: rail.current = "chat"; titleBar.openOutOfOffice(); break
+            case 22: log("Schedule out of office"); break
+            case 23: rail.current = "chat"; conversation.openLink("https://teams.microsoft.com/l/settings/privacy"); break
+            case 24: log("deep link /l/settings/privacy"); break
+            case 25: rail.current = "chat"; rail.customizeRequested(); break
+            case 26: log("Customize app bar (at once)"); shot("appbar"); break
+            case 29: log("Customize app bar (4 s later)"); break
+            case 30: Qt.quit(); break
+            }
+            step++
+        }
+    }
+
     // --seth-test --shots=<dir> (TASK-0088): Settings ▸ Calls' Teams 26304
     // additions (Intelligent call delegation card and page, Viewing incoming
     // calls, Call group and Delegates cards and pages), Notifications ▸
@@ -13774,7 +13837,7 @@ Window {
         onGoBack: window.goBack()
         onGoForward: window.goForward()
         onToggleRail: rail.collapsed = !rail.collapsed
-        onOpenSettings: rail.current = "settings"
+        onOpenSettings: window.launchSettingsGeneral()
         onOpenShortcuts: shortcutsDialog.open()
         onOpenHelp: window.openHelp()
         onOpenFeedback: kind => window.openFeedback(kind, "Settings and more", "")
@@ -13788,8 +13851,11 @@ Window {
         workLocation: backend.myWorkLocation
         onSetWorkLocation: loc => backend.setWorkLocationToday(loc)
         onPauseUntil: iso => backend.setMyStatusUntil("DoNotDisturb", "Custom", iso)
-        onOpenNotificationSettings: { settingsView.page = "notifications"; rail.current = "settings" }
-        onOpenOutOfOffice: { settingsView.page = "general"; settingsView.subPage = "oof"; rail.current = "settings" }
+        // Pause notifications ▸ Notifications settings: Teams' openSettingPage
+        // (Notifications, "web-activity-settings"); that card isn't shown, so
+        // the page opens at its top (measured on winpc).
+        onOpenNotificationSettings: window.launchSettings("notifications", { settingCategory: "notifications", settingId: "web-activity-settings", settingSectionId: "web-activity-settings" })
+        onOpenOutOfOffice: window.launchSettings("general_settings_oof_settings_page_title")
         pinned: window.pinned
         onTogglePin: window.pinned = !window.pinned
         windowButtons: !backend.systemFrame
@@ -14069,7 +14135,8 @@ Window {
                 onTapped: {
                     if (bannerAction.primary) { const m = window.liveMeetings[0]; preJoin.openFor(m.joinUrl, m.subject, m.start || "", m.end || ""); return }
                     if (appBanner.kind === "live") { liveMeetingsDialog.open(); return }
-                    settingsView.page = settingsView.pages.some(p => p.key === "privacy") ? "privacy" : "notifications"; rail.current = "settings"
+                    // Teams' DND banner: Privacy › Manage priority access.
+                    window.launchSettings("privacy_manage_priority_access")
                 }
             }
             Accessible.role: Accessible.Button
@@ -14924,7 +14991,7 @@ Window {
         onManageChatApps: (id, name) => { window.composing = false; draftsOpen = false; mentionsOpen = false; window.manage = null; window.manageTeamId = ""; yourTeamsOpen = false; if (backend.currentChatId !== id) backend.selectChat(id, name); conversation.manageApps = true }
         onChatWorkflows: (id, name) => workflowsDialog.startChat(id, name)
         onMarkAllRead: appType => backend.markAllRead(appType)
-        onCustomizeView: { window.composing = false; rail.current = "settings" }
+        onCustomizeView: { window.composing = false; window.launchSettings("chats_and_channels") }
         windowWidth: window.width
         composing: window.composing
         onOpenComposing: window.composing = true
@@ -15222,8 +15289,12 @@ Window {
         onTyping: backend.userTyping()
         onReact: (id, key, on) => backend.toggleReaction(id, key, on)
         onEditMessage: (id, text) => backend.editMessage(id, text)
-        onOpenChatSettings: { settingsView.page = "chats"; rail.current = "settings" }
-        onOpenPrivacySettings: { settingsView.page = "privacy"; rail.current = "settings" }
+        // The compose box's Enter / Shift+Enter hint: Teams' launchSection
+        // (ChatsAndChannels, {settingId: configure-enter-to-send-setting})
+        // has no category, so the page opens at its top with its first
+        // control focused (measured on winpc).
+        onOpenChatSettings: window.launchSettings("chats_and_channels", { settingId: "configure-enter-to-send-setting" })
+        onOpenPrivacySettings: window.launchSettings("privacy")
         // A suggested reply's meeting: Teams' scheduling form for the chat.
         onScheduleMeetingWith: (attendees, startIso, endIso) => { rail.current = "calendar"; calendarView.newMeetingWith(attendees, startIso, endIso) }
         // From a channel's header: the form with the channel filled in.

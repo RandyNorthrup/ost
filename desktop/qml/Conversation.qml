@@ -553,8 +553,19 @@ Rectangle {
     /// Links in messages: Teams opens its app links as the app's details.
     function openLink(link) {
         const m = /^https:\/\/teams\.microsoft\.com\/l\/app\/([0-9A-Za-z._-]+)/.exec(link)
-        if (m) root.openAppDetails(decodeURIComponent(m[1]))
-        else Qt.openUrlExternally(link)
+        if (m) { root.openAppDetails(decodeURIComponent(m[1])); return }
+        // Teams' settings deep links, /l/settings/<page>[/<sub-page>]
+        // (async-apps-settings onBeforeDeeplinkParsed): the page, General
+        // when unknown; manage-vip-contacts is Privacy's only sub-page link.
+        const s = /^https:\/\/teams\.microsoft\.com\/l\/settings(?:\/([^/?#]*))?(?:\/([^/?#]*))?/i.exec(link)
+        if (s) {
+            const pages = ["about", "accounts", "appearance", "accessibility", "calendar", "calls", "chats_and_channels", "general", "meetings", "notifications", "people_setting", "privacy", "benefits", "captions_and_transcription", "devices", "recognition", "files_and_links", "phonelink", "app_permissions", "teams_insider", "localization", "teams_labs"]
+            const pg = pages.find(p => p === (s[1] || "general").toLowerCase()) || "general"
+            const sub = pg === "privacy" && (s[2] || "").toLowerCase() === "manage-vip-contacts" ? "privacy_manage_vip_contacts" : ""
+            window.launchSettings(sub || pg)
+            return
+        }
+        Qt.openUrlExternally(link)
     }
     signal scheduleMeeting()
     /// A clip's "Reply with a video clip": record one for this chat (only

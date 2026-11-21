@@ -1204,7 +1204,7 @@ Rectangle {
                 }
             }
         }
-        ChannelNotifyDialog { id: chatNotifyDialog; chat: true }
+        ChannelNotifyDialog { id: chatNotifyDialog; chat: true; onOpenNotificationSettings: window.launchSettings("notifications") }
         function notifyFlyoutForTest() { rowMenu.open(); chatNotifyFlyout.parent = rowMenu.contentItem; chatNotifyFlyout.x = rowMenu.width - 8; chatNotifyFlyout.y = 60; chatNotifyFlyout.load(); chatNotifyFlyout.open() }
         function notifyCustomizeForTest() { chatNotifyDialog.start({ id: row.chat.id, name: row.chat.name, muted: !!row.chat.muted }) }
         function closeMenuForTest() { rowMenu.close() }

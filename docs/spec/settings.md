@@ -557,6 +557,79 @@ lost its "Manage"), **Call group**, **Delegates**.
     …/delegate/{delegateMri}`; `PATCH …/delegationWarningTone` {playWarningTone}. Read from the
     voice admin settings' delegationSettings (userDelegates.delegates, userDelegators.delegators).
 
+## Links into Settings (TASK-0088 AC3; Teams 26304, bundles read and measured on winpc 2026-11-21)
+
+Every link goes through `entityCommanding.settings.launch(command, id)` or
+`launchSection(id, command, {settingCategory, settingId, settingSectionId, focusId})`
+(or an entity command `{type: settingsstore, action: view, id}`), always in the main window.
+The settings app resolves it (settings-app `Ar`, sub-page map `LV`):
+
+- **No id** → General. `launch(command, General)` (Settings and more ▸ Settings, and Ctrl+,
+  from anywhere, also after another page was open) opens General with focus in "Find in
+  settings" (measured).
+- **A category and a setting id** → that page; 50 ms later the element `#focusId || #settingId`
+  is scrolled into view (`scrollIntoView({behavior: "smooth", block: "center"})`), its first
+  focusable control focused, and the section (`#settingSectionId`, else the setting) gets the
+  arrival highlight: `box-shadow: inset 0 0 0 0.1rem colorPaletteDarkOrangeBorderActive`
+  (#DA3B01; dark #E9835E) fading to transparent over 4 s (ease-out; ECS
+  junoSearchConfigs.junoSearchAnimationDuration/Delay, defaults 4000/50 ms). The root font is
+  10 px, so the edge is 1 px (measured: `rgba(218, 59, 1, 0.898) 0 0 0 1px inset` 0.25 s in,
+  0.565 0.8 s in, gone at 4 s). A setting id whose element isn't shown changes nothing.
+- **A sub-page id** → "Page › Sub-page": general_settings_oof_settings_page_title,
+  general_settings_editor_sdk_manage_spellcheck_languages_page_title, follow_presence_settings,
+  shown_channels_centralized_settings, privacy_manage_priority_access, privacy_manage_blocked_users,
+  privacy_manage_vip_contacts, privacy_diagnostic_data_viewer, privacy_device_home_building_settings,
+  appearance_settings_manage_interpreters, better_together_devices_dialog_title,
+  call_group_section_subpage_title, delegation_section_subpage_title,
+  personal_attendant_group_section_title and its personal_attendant_custom_greeting_title /
+  personal_attendant_custom_instructions_title / personal_attendant_booking_manage_hours.
+- **Any other id** is a page (general, appearance, chats_and_channels, notifications, accounts,
+  privacy, accessibility, devices, calls, files_and_links, app_permissions, recognition, about, …).
+- Without a setting id the page opens at its top and, 100 ms later, its first control takes
+  focus unless something outside Settings still has it (measured: Privacy's first switch).
+- Notifications scrolls "Replies to followed threads and posts" to the top when the setting id
+  is replies-to-threads-and-posts-settings, even with no category (no highlight).
+
+The links Teams has, and where they go:
+
+| Where | Opens |
+|---|---|
+| Settings and more ▸ Settings; Ctrl+,; `/settings` slash command | General, Find focused |
+| DND / pause banner ▸ Change settings | Privacy › Manage priority access |
+| Profile flyout ▸ Pause notifications ▸ Notifications settings | Notifications at web-activity-settings (not shown for ost-test1: the page at its top, focus unchanged; measured) |
+| Profile flyout presence ▸ status settings | the same |
+| Title bar menu ▸ Pause notifications ▸ Notifications settings | Notifications |
+| Profile flyout ▸ Schedule out of office | General › Out of office |
+| Profile flyout ▸ Manage org; guest invitation banner; external team invitation | Accounts and orgs |
+| App bar ▸ Customize app bar | Appearance at app-bar-settings (highlight; Show app names focused; measured) |
+| Compose box's Enter / Shift+Enter hint | Chats and channels with setting id configure-enter-to-send-setting but no category: the page at its top, first control focused (measured) |
+| Chat list ··· ▸ Customize view | Chats and channels |
+| Channel / chat notification dialog ▸ "notifications settings for all …" | Notifications |
+| Channel follow settings; Chats ▸ Automatically follow threads link | Notifications at Replies to followed threads and posts |
+| Activity slices / headline "follow settings" | Chats and channels at auto-follow-threads-settings |
+| Activity ▸ Notification settings (recommendation dialog) | Notifications |
+| Editor card ▸ Editor settings… / Manage languages… | General at editor-spellcheck-section / General › Manage spellcheck languages |
+| A message's translation menu ▸ settings | General at translation-settings |
+| Title bar menu efficiency row | General at optimized-perf-section |
+| Intelligent call delegation ▸ VIPs Edit | Privacy › Manage priority access |
+| Calls app / call settings header | Calls (and the delegator / call queue / alternate line pages) |
+| App card footer ▸ permissions | Privacy |
+| Leave chat and block toast | Privacy |
+| Work location banners and toasts; device home banner | Privacy; Privacy › Stationary device location |
+| Windows Focus Assist banner | Notifications |
+| NDI banner | App permissions |
+| People app | People settings; Privacy › searchability |
+| `teams.microsoft.com/l/settings/<page>[/manage-vip-contacts]` | that page (General when unknown) |
+
+OST: SettingsView.launchSection(id, options) resolves ids the same way and draws the highlight;
+Main.launchSettings / launchSettingsGeneral open them in the main window. Wired: Settings and more
+▸ Settings, Ctrl+,, the DND banner, Pause notifications ▸ Notifications settings, Schedule out of
+office, Customize app bar, the compose hint, Customize view, both notification dialogs' links, the
+auto-follow link, the Editor card's links, VIPs Edit, the app card footer, notification banners'
+settings, settings deep links in messages. Not in OST (so no link): the message translation menu,
+the efficiency row (VDI only), Teams Premium/Insider/Labs pages, People settings, contacts sync,
+leave-and-block, NDI, Focus Assist (Windows), Calls app call-queue pages.
+
 ## About ▸ ring line (TASK-0088)
 
 Teams' host asks ECS with the user's id and tenant; Segmentation.TeamsRing ("ring3_6" for a
