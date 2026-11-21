@@ -7,7 +7,7 @@ status: To Do
 assignee:
   - '@claude'
 created_date: '2026-11-14T15:44:00Z'
-updated_date: '2026-11-21T08:05:00Z'
+updated_date: '2026-11-21T16:10:00Z'
 labels:
   - messages
   - video
@@ -58,4 +58,6 @@ Teams' video clip recorder (Stream's) has Backdrop (None, Upload, Blur, Microsof
 
 - 2026-11-21 (recD) live on linuxlt (test2, harness --recorder-effects-test --recorder-cam="OST test camera C" --recorder-chat="OST Test 1"; camera C = a v4l2loopback device added for this, fed /tmp/ost-person.jpg): menu, Backdrops (50+50 Hubble items), stock image (stretched, matches Teams pixel for pixel), Blur (strength now as Teams), stock video, Stickers (9 x 50), sticker + dock, Filter (Lift LUT maths checked against Teams' Lift: mean error 0.009 vs 0.052 unfiltered), Vintage, B&W, Bricks, Frame, Board, Draw, Text, Photo; a 4-6 s recording carries blur, cut-out, filter, stroke, sticker, text and frame at 1280x720; screen mode: menu (Backdrop disabled), Draw disabled until recording, a stroke drawn while recording is in the clip. Test recordings deleted. Side-by-side pictures: scratchpad rec137/ost/c and rec137/ref.
 - OST_QML_DIR=<checkout>/desktop/qml loads QML from disk (no 50-min rebuild for QML; bake shaders/*.frag with qsb into desktop/shaders first).
+
+- 2026-11-21 (recD) rebased on desktop/foundation 7063948 (Main.qml harness-list conflict resolved), rebuilt on linuxlt, re-run on the compiled build: all effects and the 1280x720 clip as before; screen mode Draw stroke in the clip. Engine lib tests 850 passed. The scratchpad (tmpfs) was wiped by the PC restart, so the earlier reference/side-by-side PNGs and capture files are gone; the measurements are in these notes and docs/spec/messages-and-composer.md.
 <!-- SECTION:NOTES:END -->
