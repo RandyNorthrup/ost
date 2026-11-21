@@ -7162,7 +7162,20 @@ async fn on_call_event(qt: &cxx_qt::CxxQtThread<qobject::Backend>, json: &str) {
                 .find_map(|p| v.pointer(p))
             {
                 let resources = d.get("resources").and_then(|r| r.as_array()).map(|r| r.len()).unwrap_or(0);
-                tracing::info!(resources, notes = teams_cli::calling::meeting_notes::collab_notes_location(&v).is_some(), "meeting: collab details");
+                // Who the call elected (ids and status only).
+                let leaders: Vec<String> = d
+                    .get("collabLeaders")
+                    .and_then(|l| l.as_array())
+                    .into_iter()
+                    .flatten()
+                    .map(|l| format!("{}:{}:{}", l["type"].as_str().unwrap_or(""), l.pointer("/participant/id").and_then(|x| x.as_str()).unwrap_or(""), l["status"]))
+                    .collect();
+                tracing::info!(resources, ?leaders, notes = teams_cli::calling::meeting_notes::collab_notes_location(&v).is_some(), "meeting: collab details");
+            }
+            // The answer to a meeting states update (the notes' claim or link).
+            if let Some(r) = v.pointer("/body/updateMeetingStatesResponse") {
+                let detail = v.pointer("/body/additionalDetail").cloned().unwrap_or_default();
+                tracing::info!(response = %r.to_string().chars().take(600).collect::<String>(), %detail, "meeting states: answer");
             }
             let notes = call_slot()
                 .lock()

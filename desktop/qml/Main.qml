@@ -3336,6 +3336,8 @@ Window {
                 if (st === 4) capCall("open")
                 if (st === 12) capCall("ready")
             }
+            // Notes this account made in the test are deleted again.
+            else if (st === 15) backend.callNotesRequest("cleanup", "notescleanup", JSON.stringify({ prefix: "OST TEST 212" }))
         }
     }
     readonly property int joinStay: Math.round(parseInt((Qt.application.arguments.find(a => a.startsWith("--join-stay=")) || "--join-stay=0").slice(12)) / 2)
