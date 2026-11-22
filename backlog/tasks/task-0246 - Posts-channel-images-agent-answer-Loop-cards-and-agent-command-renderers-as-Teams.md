@@ -3,9 +3,10 @@ id: TASK-0246
 title: >-
   Posts-channel images, agent answer Loop cards and agent command renderers as
   Teams
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-11-22T22:44:00Z'
+updated_date: '2026-11-22T23:07:00Z'
 labels:
   - desktop
   - messages
