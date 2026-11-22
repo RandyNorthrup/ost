@@ -1,10 +1,10 @@
 ---
 id: TASK-0206
 title: Chat list leftovers found in live checks
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-11-16T20:22:00Z'
-updated_date: '2026-11-22T22:43:00Z'
+updated_date: '2026-11-22T23:06:00Z'
 labels:
   - desktop
 dependencies: []
@@ -22,7 +22,7 @@ Found while checking TASK-0150/0195/0204 against Teams on winpc (2026-11-16):
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Each item matches Teams on winpc
+- [x] #1 Each item matches Teams on winpc
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -117,4 +117,12 @@ Found while checking TASK-0150/0195/0204 against Teams on winpc (2026-11-16):
 - Open: the other ODSL commands' renderers (tasks, plan, createMeeting, agendaTimer, questionsList, ...: none seen live); the "still reasoning" current-step line is from Teams' code, not measured; Teams draws the agent answer's Loop page inline (a Loop card) where OST shows its link; the posts list draws no images, so Teams' image-aware cut doesn't arise yet.
 
 - Desktop crate tests: 29 pass.
+
+- 2026-11-22 merged (c576d9e). Posts-list images, inline Loop cards in agent answers and other agent command renderers moved to TASK-0246.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Chat list and channel leftovers found in live checks, each matched to Teams on winpc: the chat list reads every time slice (missing chats appear); new chat search lists Teams' 22 rows in order (you, local channel matches, people, chats, groups) with bolded matches; group chats' Manage notifications; Create team's Add Channel Agent with Teams' toasts; the Channel Agent welcome (name, AI agent tag, app icon with presence, no added row in threads channels, @agent and feedback row in threads and posts channels); suggested-action kinds; Teams' see more / see less cut-offs (posts 200 px, replies 80 px, agent replies 140 px; agent messages 220 px with fade); agents' reasoning view; the Add members picture. Follow-up TASK-0246.
+<!-- SECTION:FINAL_SUMMARY:END -->
