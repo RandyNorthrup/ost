@@ -174,9 +174,15 @@ Rectangle {
                 size: 32; name: it.modelData.actor_name || "?"
                 photoId: it.fromPerson ? it.modelData.actor_mri : ""
             }
+            // An app's activity: the app's icon (Teams' customIconUrl).
+            AppIcon {
+                visible: !it.fromPerson && !!it.modelData.icon
+                x: 20.7; y: 10.7; width: 32; height: 32
+                source: it.modelData.icon || ""
+            }
             Rectangle {
                 id: hcFill2
-                visible: !it.fromPerson
+                visible: !it.fromPerson && !it.modelData.icon
                 x: 20.7; y: 10.7; width: 32; height: 32; radius: theme.radius
                 color: theme.brand
                 FluentIcon { anchors.centerIn: parent; name: "apps-20-filled"; size: 20; color: theme.onFill(hcFill2, "white") }
@@ -184,9 +190,17 @@ Rectangle {
             // What happened, as a badge on the picture: the reaction itself,
             // or a coloured icon.
             Rectangle {
+                // An app's activity by a person: the app's icon here (Teams'
+                // customIconUrl); by the app itself: none.
+                visible: it.modelData.kind !== "app" || (it.fromPerson && !!it.modelData.icon)
                 x: 20.7 + 32 - 14; y: 10.7 + 32 - 14
                 width: 18; height: 18; radius: 9
                 color: theme.surface
+                AppIcon {
+                    visible: it.modelData.kind === "app"
+                    anchors.centerIn: parent; width: 14; height: 14
+                    source: visible ? it.modelData.icon : ""
+                }
                 Text {
                     visible: it.modelData.emoji.length > 0
                     anchors.centerIn: parent
@@ -194,7 +208,7 @@ Rectangle {
                     font.pixelSize: 12
                 }
                 FluentIcon {
-                    visible: it.modelData.emoji.length === 0
+                    visible: it.modelData.emoji.length === 0 && it.modelData.kind !== "app"
                     anchors.centerIn: parent; size: 14
                     name: it.modelData.kind === "missedCall" ? "call-missed-16-filled"
                         : it.modelData.kind === "voicemail" ? "voicemail-16-filled"
@@ -220,19 +234,41 @@ Rectangle {
                 Text {
                     visible: text.length > 0
                     width: parent.width
-                    text: it.modelData.preview
+                    // (one line, as Teams: a multi-line message runs on)
+                    text: (it.modelData.preview || "").replace(/\s+/g, " ").trim()
                     elide: Text.ElideRight
                     lineHeight: 20; lineHeightMode: Text.FixedHeight
                     font.family: theme.font; font.pixelSize: theme.base
                     color: theme.textSecondary
                 }
-                Text {
-                    visible: text.length > 0
+                // Where: a chat, an app's own place (its dates worded), or
+                // a channel as Teams' "Team > Channel".
+                Row {
+                    visible: placeText.text.length > 0
                     width: parent.width
-                    text: it.modelData.context
-                    elide: Text.ElideRight
-                    font.family: theme.font; font.pixelSize: theme.small
-                    color: theme.textStrong
+                    spacing: 4
+                    Text {
+                        id: placeText
+                        width: Math.min(implicitWidth, parent.width - (channelText.visible ? Math.min(channelText.implicitWidth, parent.width / 2) + 20 : 0))
+                        text: theme.activityPlace(it.modelData.context)
+                        elide: Text.ElideRight
+                        font.family: theme.font; font.pixelSize: theme.small
+                        color: theme.textStrong
+                    }
+                    FluentIcon {
+                        visible: channelText.visible
+                        anchors.verticalCenter: parent.verticalCenter
+                        size: 12; name: "chevron-right-12"; color: theme.textStrong
+                    }
+                    Text {
+                        id: channelText
+                        visible: !!it.modelData.channel
+                        width: Math.max(0, Math.min(implicitWidth, parent.width - placeText.width - 20))
+                        text: it.modelData.channel || ""
+                        elide: Text.ElideRight
+                        font.family: theme.font; font.pixelSize: theme.small
+                        color: theme.textStrong
+                    }
                 }
             }
             Text {

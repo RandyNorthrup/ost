@@ -676,6 +676,17 @@ pub mod qobject {
         #[qinvokable]
         fn other_accounts_hub_json(self: Pin<&mut Backend>) -> QString;
 
+        /// The orgs pinned to the app bar ("Pin this org"), in pin order,
+        /// as JSON: another account's hub entry (as other_accounts_hub_json
+        /// gives it), or {current: true, upn, name, org} for this one.
+        #[qinvokable]
+        fn pinned_orgs_json(self: Pin<&mut Backend>) -> QString;
+
+        /// Pin or unpin an account's org (Teams' Pin this org / Unpin this
+        /// org); false when two are pinned already.
+        #[qinvokable]
+        fn set_org_pinned(self: Pin<&mut Backend>, upn: &QString, on: bool) -> bool;
+
         /// Publish this account's summary for the other accounts' hubs
         /// (JSON {missed, items}).
         #[qinvokable]
@@ -8615,7 +8626,7 @@ fn set_autostart(on: bool) -> anyhow::Result<()> {
 }
 
 /// How many notifications the Activity feed shows.
-const ACTIVITY_LIMIT: usize = 50;
+const ACTIVITY_LIMIT: usize = 200;
 
 /// How long a downloaded picture (or "has none") is trusted before it is
 /// fetched again.
@@ -8969,6 +8980,7 @@ impl qobject::Backend {
     pub fn other_accounts_hub_json(mut self: Pin<&mut Self>) -> QString {
         let list: Vec<serde_json::Value> = serde_json::from_str(&self.as_mut().other_accounts_json().to_string()).unwrap_or_default();
         let all = teams_cli::config::accounts();
+        let pins = teams_cli::config::hub_pins();
         let out: Vec<serde_json::Value> = list
             .into_iter()
             .map(|mut a| {
@@ -8990,10 +9002,50 @@ impl qobject::Backend {
                 a["missed"] = hub.get("missed").cloned().unwrap_or(json!(0));
                 a["items"] = hub.get("items").cloned().unwrap_or(json!([]));
                 a["updated"] = hub.get("updated").cloned().unwrap_or(json!(""));
+                a["pinned"] = json!(pins.contains(&upn));
                 a
             })
             .collect();
         QString::from(serde_json::Value::Array(out).to_string().as_str())
+    }
+
+    pub fn pinned_orgs_json(mut self: Pin<&mut Self>) -> QString {
+        let others: Vec<serde_json::Value> = serde_json::from_str(&self.as_mut().other_accounts_hub_json().to_string()).unwrap_or_default();
+        let me = teams_cli::config::profile().unwrap_or_default();
+        let all = teams_cli::config::accounts();
+        let mine = all.iter().find(|a| a.profile == me);
+        let out: Vec<serde_json::Value> = teams_cli::config::hub_pins()
+            .into_iter()
+            .filter_map(|upn| {
+                if let Some(a) = others.iter().find(|a| a["upn"].as_str().is_some_and(|u| u.eq_ignore_ascii_case(&upn))) {
+                    return Some(a.clone());
+                }
+                // This account's own org: Teams' "Current org" tile.
+                let m = mine.filter(|m| m.upn.eq_ignore_ascii_case(&upn))?;
+                let org = if m.org.is_empty() {
+                    all.iter().find(|x| x.upn.eq_ignore_ascii_case(&upn) && !x.org.is_empty()).map(|x| x.org.clone()).unwrap_or_default()
+                } else {
+                    m.org.clone()
+                };
+                Some(json!({ "current": true, "profile": m.profile, "upn": m.upn, "name": m.name, "org": org, "objectId": m.object_id, "missed": 0, "items": [] }))
+            })
+            .collect();
+        QString::from(serde_json::Value::Array(out).to_string().as_str())
+    }
+
+    pub fn set_org_pinned(self: Pin<&mut Self>, upn: &QString, on: bool) -> bool {
+        let upn = upn.to_string();
+        let pins = teams_cli::config::hub_pins();
+        if on && pins.len() >= teams_cli::config::MAX_PINNED_ORGS && !pins.contains(&upn.to_lowercase()) {
+            return false;
+        }
+        match teams_cli::config::set_hub_pin(&upn, on) {
+            Ok(()) => true,
+            Err(e) => {
+                tracing::warn!("couldn't save the pinned orgs: {e}");
+                false
+            }
+        }
     }
 
     pub fn publish_hub(self: Pin<&mut Self>, json: &QString) {

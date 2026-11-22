@@ -457,6 +457,48 @@ pub fn write_hub_summary(json: &str) -> Result<()> {
     write_private(&path, json.as_bytes())
 }
 
+/// Teams lets at most two orgs be pinned to the app bar (its hub's
+/// pinningDisabled at two pinned tenants).
+pub const MAX_PINNED_ORGS: usize = 2;
+
+fn hub_pins_path() -> Result<PathBuf> {
+    let proj_dirs = ProjectDirs::from("com", "teams-cli", "teams-cli").context("Could not determine config directory")?;
+    Ok(proj_dirs.config_dir().join("hub-pins.json"))
+}
+
+/// The orgs pinned to the app bar from "Activity in other accounts and
+/// orgs" ("Pin this org"), in the order they were pinned: each account's
+/// address, lower-case (each OST account is one org). One list for the
+/// device, as Teams keeps it for its one app.
+pub fn hub_pins() -> Vec<String> {
+    hub_pins_path()
+        .ok()
+        .and_then(|p| fs::read_to_string(p).ok())
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+/// The list with `upn` pinned (added at the end, at most
+/// MAX_PINNED_ORGS) or unpinned.
+pub fn with_hub_pin(mut list: Vec<String>, upn: &str, on: bool) -> Vec<String> {
+    let upn = upn.to_lowercase();
+    list.retain(|u| u != &upn);
+    if on && !upn.is_empty() && list.len() < MAX_PINNED_ORGS {
+        list.push(upn);
+    }
+    list
+}
+
+/// Pin or unpin an account's org.
+pub fn set_hub_pin(upn: &str, on: bool) -> Result<()> {
+    let list = with_hub_pin(hub_pins(), upn, on);
+    let path = hub_pins_path()?;
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir)?;
+    }
+    write_private(&path, serde_json::to_string_pretty(&list)?.as_bytes())
+}
+
 /// The profile folders that already exist.
 pub fn profile_folders() -> Vec<String> {
     ProjectDirs::from("com", "teams-cli", "teams-cli")
@@ -482,6 +524,16 @@ mod account_tests {
         assert_eq!(again.len(), 2);
         assert_eq!(again[1].availability, "Busy");
         assert_eq!(new_profile_name(&again, &["account3".into()]), "account4");
+    }
+
+    #[test]
+    fn pinned_orgs_keep_their_order_up_to_two() {
+        let l = with_hub_pin(vec![], "B@x", true);
+        let l = with_hub_pin(l, "a@x", true);
+        assert_eq!(l, ["b@x", "a@x"]);
+        // A third waits (Teams disables Pin this org at two).
+        assert_eq!(with_hub_pin(l.clone(), "c@x", true), ["b@x", "a@x"]);
+        assert_eq!(with_hub_pin(l, "b@x", false), ["a@x"]);
     }
 }
 

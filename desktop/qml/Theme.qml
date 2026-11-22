@@ -124,6 +124,42 @@ QtObject {
     function longDate(d) { return fmtDate(d, regional.longDate) }
     function longDateNoYear(d) { return fmtDate(d, regional.longDateNoYear) }
     function dateTime(d) { return date(d) + " " + time(d) }
+    /// An activity's place with Teams' date markup in it (an app's custom
+    /// location, Teams' activity renderer 542284): <DateTimeRange> as
+    /// "Nov 20, 8:23 PM - 9:02 PM" (the end's date left out on the same
+    /// day), <DateRange>, <DateTime>, <Date>; the year only when not this
+    /// year's.
+    function activityPlace(s) {
+        s = String(s || "")
+        if (!/<Dat(.+?)>(.+?)<[/]Dat\1>/.test(s)) return s
+        const now = new Date()
+        const fmt = (d, withTime, thisYear) => isNaN(d.getTime()) ? ""
+            : fmtDate(d, thisYear ? "MMM d" : "MMM d, yyyy") + (withTime ? ", " + time(d) : "")
+        const ranges = [{ re: /<DateTimeRange><StartDateTime>(.+?)<[/]StartDateTime><EndDateTime>(.+?)<[/]EndDateTime><[/]DateTimeRange>/, withTime: true },
+                        { re: /<DateRange><StartDate>(.+?)<[/]StartDate><EndDate>(.+?)<[/]EndDate><[/]DateRange>/, withTime: false }]
+        for (const r of ranges) {
+            const m = s.match(r.re)
+            if (m) {
+                const a = new Date(m[1]), b = new Date(m[2])
+                const sameDay = a.toDateString() === b.toDateString()
+                const thisYear = a.getFullYear() === now.getFullYear() && b.getFullYear() === now.getFullYear()
+                if (sameDay && !r.withTime) return s.replace(r.re, fmt(a, false, thisYear))
+                const x = fmt(a, r.withTime, thisYear)
+                const y = sameDay ? (isNaN(b.getTime()) ? "" : time(b)) : fmt(b, r.withTime, thisYear)
+                const both = y ? x + " - " + y : x
+                return both ? s.replace(r.re, both) : s
+            }
+        }
+        for (const r of [{ re: /<DateTime>(.+?)<[/]DateTime>/, withTime: true }, { re: /<Date>(.+?)<[/]Date>/, withTime: false }]) {
+            const m = s.match(r.re)
+            if (m) {
+                const d = new Date(m[1])
+                const v = fmt(d, r.withTime, d.getFullYear() === now.getFullYear())
+                return v ? s.replace(r.re, v) : s
+            }
+        }
+        return s
+    }
     /// The short date with a two-digit year (the chat list's older dates,
     /// date fields).
     readonly property string shortYearPattern: regional.shortDate.replace("yyyy", "yy")

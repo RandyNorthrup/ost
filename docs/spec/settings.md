@@ -682,6 +682,22 @@ above and below a divider.
   - Filter by (240 wide at the flyout's right edge, under the button): "Filter by" 14/600 (52 tall),
     then 40 px rows (text at 40): Mentions, Tag mentions, Followed threads, Orgs ›.
   - Picking an entry switches to that account at it.
+  - **Pin this org** (the org's submenu, pin glyph; at two pinned orgs it is
+    disabled: "Maximum tenants are pinned. Unpin one to add another."; measured
+    2026-11-22): the org leaves the hub (its count with it; nothing left:
+    "We couldn't find any results." under the search illustration) and gets
+    its own app bar tile above the hub's: 52 × 48 at 8, radius 8 (white while
+    open), the org's colourful square initial (28, radius 4) at 12, 10, its
+    count at 30, 4, the org's name as tooltip ("Current org" for the account's
+    own). The tile opens the hub's flyout for that org alone (379 wide, beside
+    the bar, its bottom on the hub's): a 72.67 tall header (padding 16; the
+    32 px square initial with its count at 20, 0; the name 14/600 and the
+    address 12/20 #616161 at 60; Tenant settings ··· 24 × 23.33 at 338.67,
+    24.33), a #D1D1D1 rule, the pills 16 under it, the entries from 128.67.
+    Tenant settings: Switch and Unpin this org (pin-off glyph), 240 wide at
+    the flyout's right edge.
+  - **OST**: the pinned orgs (accounts' addresses, in pin order, at most two)
+    are kept for the device in `hub-pins.json`.
 - **OST**: each account's window publishes its own summary (its app-bar count, its unread activity
   and recent chats) to `hub.json` in its profile folder; the other accounts' windows read them every
   few seconds for the tile and the flyout. Picking an entry asks that account's running window (its

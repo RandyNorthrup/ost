@@ -12373,6 +12373,63 @@ Window {
             step++
         }
     }
+    // --pin-org --shots=<dir> (TASK-0245 AC2): with another account on
+    // this device, opens the hub's Account settings ▸ org ▸ Pin this org,
+    // pins it: its own app bar tile above the hub's; opens the tile's
+    // flyout and its Tenant settings, then the hub (now without it), and
+    // unpins it again. PINORG lines; pictures po-*.png.
+    Timer {
+        running: Qt.application.arguments.indexOf("--pin-org") >= 0 && backend.signedIn && window.otherAccounts.length > 0
+        interval: 2000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "po-" + n + ".png"))
+            const log = tag => console.warn("PINORG", tag, JSON.stringify(mtmaHub.pinStateForTest()))
+            switch (step) {
+            // (each picture a step before the next change: grabs are async)
+            case 1: mtmaHub.unpinAllForTest(); log("start"); mtmaHub.show(); break
+            case 2: mtmaHub.orgMenuForTest(); break
+            case 3: shot("menu"); break
+            case 4: mtmaHub.closeMenusForTest(); mtmaHub.hide(); console.warn("PINORG pinned", mtmaHub.pinFirstForTest()); break
+            case 5: log("pinned"); shot("tile"); break
+            case 6: mtmaHub.orgFlyoutForTest(0); break
+            case 7: log("org flyout"); shot("org-flyout"); break
+            case 8: mtmaHub.tenantMenuForTest(); break
+            case 9: shot("tenant-menu"); break
+            case 10: mtmaHub.hide(); mtmaHub.show(); break
+            case 11: log("hub without it"); shot("hub"); break
+            // A second pinned org (Teams' most): the hub has nothing left
+            // when there were two others.
+            case 12: mtmaHub.hide(); console.warn("PINORG pinned", mtmaHub.pinFirstForTest()); mtmaHub.show(); break
+            case 13: log("two pinned"); shot("hub-two-pinned"); break
+            case 14: mtmaHub.hide(); if (Qt.application.arguments.indexOf("--keep-pin") < 0) mtmaHub.unpinAllForTest(); break
+            case 15: log("unpinned"); shot("after"); break
+            case 16: Qt.quit(); break
+            }
+            step++
+        }
+    }
+    // --activity-dump [--shots=<dir>]: the Activity feed's items as shown
+    // (title, place, preview, time), ACTIVITY lines; a picture of the view.
+    Timer {
+        running: Qt.application.arguments.indexOf("--activity-dump") >= 0 && backend.signedIn && !!backend.activityJson
+        interval: 4000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            switch (step) {
+            case 0: rail.current = "activity"; break
+            case 1:
+                JSON.parse(backend.activityJson).forEach((a, i) => console.warn("ACTIVITY", i, JSON.stringify({ kind: a.kind, title: a.title,
+                    place: theme.activityPlace(a.context) + (a.channel ? " > " + a.channel : ""), preview: (a.preview || "").slice(0, 60), time: a.time, unread: a.unread, icon: !!a.icon })))
+                window.contentItem.grabToImage(r => r.saveToFile(dir + "activity.png"))
+                break
+            case 2: Qt.quit(); break
+            }
+            step++
+        }
+    }
     // --setj-pa --shots=<dir> (TASK-0244 AC2): turns Intelligent call
     // delegation on when it is off; Custom instructions with a call
     // transfer target and a shared contact as Teams' pills (in the box
@@ -14756,7 +14813,8 @@ Window {
         interval: 3000; running: backend.signedIn
         onTriggered: {
             const acts = (backend.activityJson ? JSON.parse(backend.activityJson) : []).filter(a => a.unread).map(a => ({
-                kind: "activity", activity: a.kind, id: a.id, time: a.time, title: a.title, subtitle: a.context, unread: true,
+                kind: "activity", activity: a.kind, id: a.id, time: a.time, title: a.title, unread: true,
+                subtitle: theme.activityPlace(a.context) + (a.channel ? " > " + a.channel : ""),
                 thread: a.thread_id || "", actorName: a.actor_name || "", actorOid: (a.actor_mri || "").startsWith("8:orgid:") ? a.actor_mri.slice(8) : "",
                 avatarName: a.actor_name || a.title, photoId: (a.actor_mri || "").startsWith("8:orgid:") ? a.actor_mri.slice(8) : "", emoji: a.emoji || "",
                 channel: (a.thread_id || "").endsWith("@thread.tacv2") }))
