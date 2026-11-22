@@ -383,7 +383,7 @@ mod tests {
         let two = [m.clone(), Meeting { thread_id: "19:meeting_y@thread.v2".into(), start_ms: 1_795_000_000_000, end_ms: 1_795_000_600_000, ..m.clone() }];
         let s = generation_signal_multi(&two, style("Newscast"), "en-US", "g2");
         assert_eq!(s["eventsWithTranscripts"].as_array().map(Vec::len), Some(2));
-        assert_eq!(s["range"]["startDateTime"], "2026-11-18T07:06:40.000Z");
+        assert_eq!(s["range"]["startDateTime"], "2026-11-18T11:06:40.000Z");
         assert_eq!(s["range"]["endDateTime"], "2026-11-21T05:08:40.000Z");
         assert_eq!(s["style"], json!({"format": "Single", "tone": "newscast"}));
         assert!(s.get("podcastType").is_none());
