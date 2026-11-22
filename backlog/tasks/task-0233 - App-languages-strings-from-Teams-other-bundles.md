@@ -4,7 +4,7 @@ title: 'App languages: strings from Teams'' other bundles'
 status: In Progress
 assignee: []
 created_date: '2026-11-20T04:10:00Z'
-updated_date: '2026-11-22T16:17:00Z'
+updated_date: '2026-11-22T16:51:00Z'
 labels:
   - desktop
 dependencies: []
@@ -66,4 +66,9 @@ Found in TASK-0142: about 800 OST strings stay English because Teams keeps their
 - 2026-11-22 (agent setI): meeting options: a live reply (meeting "OST TEST 233 options" made with examples/meeting_options create, read with OST_DUMP_TRANSLATIONS, then deleted) has 413 translation keys; every OST fallback marked reply:meetingsOptions maps to a key in it (7/7 keyed by option/value, e.g. meetingsOptions_ProducerOption_OrganizerAndCoOrganizersOnly, meetingsOptions_CopilotMode_EnabledWithTranscript), so the dialog shows Teams' translations for them.
 - Teams' string ids are k + base36((h*131 + charCode) mod 2^40) over "ns:key" ("_mf" kept) - precompiled-shared-worker NQr/g7e; scratchpad tool tkey.py resolves keys to en-us text.
 - untranslated.txt regenerated (440 lines) with the TASK-0242 strings; new lines only for text Teams' table words differently or lacks.
+
+- 2026-11-22 (agent setI, e611b89): Profile card: Teams loads res.cdn.office.net/midgard/versionless/livepersonacardstrings_<hash>.js (seen on winpc); Loki's card configuration (GET {region}.loki.delve.office.com/api/v1/livepersonacard/configuration?cultureName=<culture>, X-ClientType Teams) names one file per culture - examples/lpc_strings lists them (62 of 63 cultures). New extra source x.lpc (kind lpc: this.LivePersonaCardStrings.strings = {...}) used on ProfileCard/HoverCard; profile-card lines in untranslated.txt 25 -> 12. Loki's en-us file is an older card build than the one Teams' page loaded: "Next profile", "Back to previous profile", "People reporting to" are only in the newer one, so they stay English until the configuration names a newer file (a header Teams sends is probably missing).
+- Downloads panel: "Search all files" and "%1, removed" are in none of WebView2 157's locale packs (searched en-US.pak from the cached Fixed Version cabinet: only "Search downloads" (20707) and unrelated "removed" texts) - Edge builds them in its hub script, so no translation exists: they stay in untranslated.txt legitimately.
+- Events templates: still no source (not in Teams 26304 bundles).
+- untranslated.txt now 423 lines; ids.json and teams_resources.json regenerated against teams-1207 (26304.1207.5384.858).
 <!-- SECTION:NOTES:END -->
