@@ -25,7 +25,7 @@
 //!   content}`; the body ends with an `inline-compose-card` span naming it;
 //!   `properties.links` carries the preview turned off.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -503,8 +503,39 @@ pub async fn unfurl(client: &TeamsClient, url: &str, thread: &str) -> Result<Opt
     unfurl_with(client, url, thread, None).await
 }
 
+/// The invoke's `value.state` for a sign-in result, as Teams' chat-service
+/// transport builds it (the worker's botsinvoke body): the window's result
+/// is a BotAuthResult `{type, value}`; a JsonAuthResult goes as its value
+/// parsed, a StringAuthResult as its text (the whole result when the text
+/// is empty). Text that isn't a BotAuthResult goes as it is.
+pub fn auth_state_value(result: &str) -> Value {
+    let r: Value = match serde_json::from_str(result) {
+        Ok(v @ Value::Object(_)) if v.get("type").is_some() => v,
+        _ => return Value::String(result.to_string()),
+    };
+    if r["type"] == "JsonAuthResult" {
+        return serde_json::from_str(r["value"].as_str().unwrap_or_default()).unwrap_or(Value::Null);
+    }
+    match &r["value"] {
+        Value::String(s) if !s.is_empty() => Value::String(s.clone()),
+        Value::Null | Value::Bool(false) => r.clone(),
+        Value::String(_) => r.clone(),
+        v => v.clone(),
+    }
+}
+
+/// What a sign-in result is, for logs (never its text).
+pub fn auth_state_shape(result: &str) -> String {
+    let v = auth_state_value(result);
+    match &v {
+        Value::String(s) => format!("string of {} chars", s.len()),
+        Value::Object(o) => format!("object with keys {:?}", o.keys().collect::<Vec<_>>()),
+        other => format!("{}", if other.is_null() { "null" } else { "other" }),
+    }
+}
+
 /// Ask again after signing in: `state` is the sign-in window's result
-/// (Teams sends a JsonAuthResult parsed, a StringAuthResult as its text).
+/// (Teams' BotAuthResult, see auth_state_value).
 pub async fn unfurl_with(client: &TeamsClient, url: &str, thread: &str, state: Option<&str>) -> Result<Option<AppCard>> {
     let Some(app) = app_for(client, url).await? else { return Ok(None) };
     if app.needs_install {
@@ -516,12 +547,19 @@ pub async fn unfurl_with(client: &TeamsClient, url: &str, thread: &str, state: O
     let endpoint = format!("{}/v1/agents/28:{}/invoke", client.chat_service_url(), app.bot_id);
     let mut body = query_body(&app, url, thread, &display, &token);
     if let Some(st) = state.filter(|s| !s.is_empty()) {
-        body["value"]["state"] = serde_json::from_str::<Value>(st).ok().filter(|v| v.is_object()).unwrap_or_else(|| Value::String(st.to_string()));
+        tracing::info!("app link {}: asking again with the sign-in result ({})", app.name, auth_state_shape(st));
+        body["value"]["state"] = auth_state_value(st);
     }
-    let resp = client
-        .chat_request_with(reqwest::Method::POST, &endpoint, &body, &[("content-type", "application/json")])
-        .await
-        .context("The app didn't answer")?;
+    let resp = match client.chat_request_with(reqwest::Method::POST, &endpoint, &body, &[("content-type", "application/json")]).await {
+        Ok(r) => r,
+        Err(e) => {
+            // The chat service's own words (BotError and the like); no
+            // tokens are in them.
+            let why: String = format!("{e:#}").chars().take(600).collect();
+            tracing::info!("app link {}: the app didn't answer: {why}", app.name);
+            return Err(e.context("The app didn't answer"));
+        }
+    };
     let text = resp.text().await.unwrap_or_default();
     let reply: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
     let card = card_from_reply(&reply, &app, url);
@@ -622,5 +660,17 @@ mod tests {
             "items":[{"card":{"contentType":"application/vnd.microsoft.card.thumbnail","content":{"title":"Repo"}}}]}}), &installed, url).unwrap();
         assert_eq!((signin.auth_url.as_str(), signin.content["title"].as_str()), ("https://token.botframework.com/x", Some("Repo")));
         assert_eq!(install_card(&app, url).permission, "install");
+    }
+
+    #[test]
+    fn sends_the_sign_in_result_as_teams() {
+        // Teams' transport: JsonAuthResult parsed, StringAuthResult as its
+        // text even when the text looks like JSON, an empty one whole.
+        assert_eq!(auth_state_value(r#"{"type":"JsonAuthResult","value":"{\"code\":\"1\"}"}"#), json!({"code":"1"}));
+        assert_eq!(auth_state_value(r#"{"type":"StringAuthResult","value":"{\"code\":\"1\"}"}"#), json!("{\"code\":\"1\"}"));
+        assert_eq!(auth_state_value(r#"{"type":"StringAuthResult","value":"123456"}"#), json!("123456"));
+        assert_eq!(auth_state_value(r#"{"type":"StringAuthResult","value":""}"#), json!({"type":"StringAuthResult","value":""}));
+        assert_eq!(auth_state_value("123456"), json!("123456"));
+        assert_eq!(auth_state_shape(r#"{"type":"StringAuthResult","value":"123456"}"#), "string of 6 chars");
     }
 }

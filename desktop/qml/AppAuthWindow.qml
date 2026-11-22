@@ -16,7 +16,10 @@ import QtWebEngine
 // - `initialize` gets ["authentication", "desktop"], `getContext` {};
 // - `authentication.authenticate.success` (after initialize) closes it
 //   with its result, which the link's app is asked again with
-//   (value.state); `...failure` closes it as failed.
+//   (value.state); `...failure` closes it as failed. The result goes on
+//   as Teams' BotAuthResult (24575's T): an object as {type:
+//   "JsonAuthResult", value: its JSON}, anything else as {type:
+//   "StringAuthResult", value}.
 // Closing the window is "CancelledByUser": the sign-in card stays and the
 // app isn't asked again.
 Window {
@@ -24,8 +27,8 @@ Window {
     property string url: ""
     /// The app's validDomains.
     property var validDomains: []
-    /// ok: signed in, with the window's result (a string, or JSON text when
-    /// the page gave an object); else why not ("CancelledByUser", "failed",
+    /// ok: signed in, with the window's result (Teams' BotAuthResult as JSON
+    /// text); else why not ("CancelledByUser", "failed",
     /// "InvalidAuthUrl").
     signal finished(bool ok, string result)
     property bool done: false
@@ -70,7 +73,8 @@ Window {
         + "  switch (d.func) {"
         + "  case 'initialize': initialized = true; reply(['authentication', 'desktop']); break;"
         + "  case 'getContext': reply([{}]); break;"
-        + "  case 'authentication.authenticate.success': if (initialized) { const r = (d.args || [])[0]; say({ ok: true, result: r === undefined || r === null ? '' : typeof r === 'string' ? r : JSON.stringify(r) }) } break;"
+        + "  case 'authentication.authenticate.success': if (initialized) { const r = (d.args || [])[0];"
+        + "   say({ ok: true, result: JSON.stringify(r && typeof r !== 'string' ? { type: 'JsonAuthResult', value: JSON.stringify(r) } : { type: 'StringAuthResult', value: r === undefined || r === null ? '' : r }) }) } break;"
         + "  case 'authentication.authenticate.failure': if (initialized) say({ ok: false, result: 'failed' }); break;"
         + "  }"
         + " });"

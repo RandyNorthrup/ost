@@ -19,12 +19,30 @@ Item {
     /// The component's name and its link.
     property string title: ""
     property string link: ""
+    /// The component's app icon (LoopPage.iconUrl / iconState).
+    property string iconUrl: ""
+    property string iconState: "pending"
+    onIconUrlChanged: appIcon.loadFailed = false
+    /// Teams' own Loop glyphs (assets/icons/loop-commanding.json) by name.
+    function loopGlyph(name, color) {
+        const k = "loop-commanding-icons"
+        let m = IconCache.get(k)
+        if (m === undefined) {
+            const x = new XMLHttpRequest()
+            x.open("GET", Qt.resolvedUrl("../assets/icons/loop-commanding.json"), false)
+            x.send()
+            try { m = JSON.parse(x.responseText) } catch (e) { m = {} }
+            IconCache.put(k, m)
+        }
+        const svg = m[name]
+        return svg ? "data:image/svg+xml;utf8," + encodeURIComponent(svg.replace(/#212121/g, color.toString())) : ""
+    }
     implicitHeight: 31.3
     readonly property string tag: "loopchrome" + Math.floor(Math.random() * 1e9) + ":"
     property var places: null
     property string workspaceUrl: ""
     function stateForTest() {
-        return { shown: visible && title !== "", title: title, buttons: [locationsButton.tip, copyButton.tip, accessButton.tip], places: places, workspace: workspaceUrl !== "" }
+        return { shown: visible && title !== "", title: title, icon: appIcon.shown, iconUrl: iconUrl.split("?")[0], buttons: [locationsButton.tip, copyButton.tip, accessButton.tip], places: places, workspace: workspaceUrl !== "" }
     }
     function openLocations() {
         locations.open()
@@ -81,7 +99,36 @@ Item {
         Row {
             id: titleRow
             x: 2; anchors.verticalCenter: parent.verticalCenter; spacing: 8
-            Image { anchors.verticalCenter: parent.verticalCenter; width: 20; height: 20; sourceSize: Qt.size(40, 40); source: "../assets/icons/ft-loop-20.svg" }
+            // Teams' AppIcon (698099 `z`): a 20 px square skeleton until the
+            // component's icon is known (at most 5 s), then its iconUrl
+            // (contain-fit), else Loop's logo (FFXLoopIcon); a component that
+            // failed or an icon that didn't load gets the Loop outline
+            // (FFXLoopOutline) in the disabled colour.
+            Item {
+                id: appIcon
+                anchors.verticalCenter: parent.verticalCenter
+                width: 20; height: 20
+                property bool loadFailed: false
+                readonly property string shown: root.iconState === "pending" ? "skeleton"
+                    : root.iconState === "failed" || loadFailed ? "outline" : root.iconUrl ? "url" : "logo"
+                Rectangle {
+                    anchors.fill: parent; radius: 4
+                    visible: appIcon.shown === "skeleton"
+                    color: theme.pick("#E6E6E6", "#3D3D3D", "#000000")
+                    SequentialAnimation on opacity { running: parent.visible; loops: Animation.Infinite; NumberAnimation { to: 0.4; duration: 700 } NumberAnimation { to: 1; duration: 700 } }
+                }
+                Image {
+                    anchors.fill: parent; fillMode: Image.PreserveAspectFit; sourceSize: Qt.size(40, 40)
+                    visible: appIcon.shown === "url"
+                    source: root.iconUrl
+                    onStatusChanged: if (status === Image.Error && root.iconUrl) { console.info("LOOPCHROME icon didn't load"); appIcon.loadFailed = true }
+                }
+                Image {
+                    anchors.fill: parent; sourceSize: Qt.size(40, 40)
+                    visible: appIcon.shown === "logo" || appIcon.shown === "outline"
+                    source: visible ? root.loopGlyph(appIcon.shown === "logo" ? "FFXLoopIcon" : "FFXLoopOutline", theme.disabled) : ""
+                }
+            }
             Text {
                 anchors.verticalCenter: parent.verticalCenter
                 width: Math.min(implicitWidth, root.width - 140); elide: Text.ElideRight

@@ -23,11 +23,15 @@ Item {
     id: card
     property var content: ({})
     property real cardWidth: 452
+    /// Inside an app's link card (AppLinkCard draws the frame, the bar and
+    /// the app's header): only the title, text and sections, from 0, 0 at
+    /// cardWidth.
+    property bool embedded: false
     width: cardWidth
     height: frame.y + frame.height
     readonly property var sections: content && content.sections ? content.sections : []
     readonly property string theme_: String(content.themeColor || "").replace(/^#/, "")
-    readonly property real inner: cardWidth - 33.4
+    readonly property real inner: embedded ? cardWidth : cardWidth - 33.4
 
     // Markdown as Teams renders it in these cards: paragraphs and "- " / "* "
     // lists, inline bold, italic and links.
@@ -48,7 +52,9 @@ Item {
         const link = theme.brandLink
         return String(h).replace(/\s*\n\s*/g, " ")
             .replace(/<(\/?)strong\b[^>]*>/gi, "<$1b>").replace(/<(\/?)em\b[^>]*>/gi, "<$1i>")
-            .replace(/<a\b(?![^>]*style=)([^>]*)>/gi, "<a style=\"color:" + link + ";text-decoration:none\"$1>")
+            // Links are 400 even inside a semibold line (measured: the Azure
+            // Boards card's "Task 2" link in its activityTitle).
+            .replace(/<a\b(?![^>]*style=)([^>]*)>/gi, "<a style=\"color:" + link + ";text-decoration:none;font-weight:400\"$1>")
             .trim()
     }
     function htmlBlocks(h) {
@@ -149,13 +155,13 @@ Item {
     Rectangle {
         id: frame
         width: card.cardWidth
-        height: body.y + body.height + 16.6
+        height: body.y + body.height + (card.embedded ? 0 : 16.6)
         radius: 4
-        color: theme.surface
-        border.color: theme.pick("#E0E0E0", "#3D3D3D", "#FFFFFF"); border.width: 0.67
+        color: card.embedded ? "transparent" : theme.surface
+        border.color: theme.pick("#E0E0E0", "#3D3D3D", "#FFFFFF"); border.width: card.embedded ? 0 : 0.67
         Column {
             id: body
-            x: 16.7; y: 26.7
+            x: card.embedded ? 0 : 16.7; y: card.embedded ? 0 : 26.7
             width: card.inner
             spacing: 8
             Text {
@@ -253,7 +259,7 @@ Item {
     }
     // The theme colour bar over the frame's top edge.
     Rectangle {
-        visible: /^[0-9a-fA-F]{6}$/.test(card.theme_)
+        visible: !card.embedded && /^[0-9a-fA-F]{6}$/.test(card.theme_)
         width: card.cardWidth; height: 3
         topLeftRadius: 4; topRightRadius: 4
         color: "#" + card.theme_

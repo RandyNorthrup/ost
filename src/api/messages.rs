@@ -1757,45 +1757,86 @@ async fn name_events(client: &TeamsClient, chat_id: &str, out: &mut [MessageView
 }
 
 /// A bot message's suggested actions as Teams parses them (Teams 26304's
-/// suggested-actions parser `uC`: the first 3; Action.Compose whose value
-/// is a Teams.chatMessage with body.content, and its mentions). Other kinds
-/// (imBack, Action.Submit) aren't drawn by OST yet.
+/// suggested-actions parser, r_data-resolvers-chat `Es`): the first 3 that
+/// parse (Teams allows 4 for its own Copilot apps), by type, without case:
+/// - `imBack` with a value: a button that sends "@bot {value}" (`text`, the
+///   value as JSON when it isn't text);
+/// - `Action.Compose` whose value is a Teams.chatMessage with body.content:
+///   its text and mentions go to the compose box;
+/// - `Action.Submit` with an object value: an invoke named its `name`
+///   ("suggestedActions/submit" by default) with its `value` (else the
+///   whole value) as JSON;
+/// - `openUrl` with an http(s) address;
+/// - `Action.ODSL`: Copilot's own statements (kind "odsl"; counted, not
+///   drawn by OST).
+///
+/// An action whose title or type isn't text makes Teams drop them all.
 pub fn suggested_actions(v: Option<&serde_json::Value>) -> Vec<serde_json::Value> {
+    use serde_json::{Value, json};
+    const MAX: usize = 3;
     let v = match v {
-        Some(serde_json::Value::String(t)) => serde_json::from_str(t).unwrap_or_default(),
+        Some(Value::String(t)) => serde_json::from_str(t).unwrap_or_default(),
         Some(o) => o.clone(),
         None => return Vec::new(),
     };
-    let s = |v: &serde_json::Value, p: &str| v.pointer(p).and_then(|x| x.as_str()).unwrap_or_default().to_string();
-    v["actions"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .take(3)
-        .filter_map(|a| {
-            let title = a["title"].as_str()?.to_string();
-            if !a["type"].as_str()?.eq_ignore_ascii_case("Action.Compose") || !s(a, "/value/type").eq_ignore_ascii_case("Teams.chatMessage") {
-                return None;
+    let s = |v: &Value, p: &str| v.pointer(p).and_then(|x| x.as_str()).unwrap_or_default().to_string();
+    let text_of = |v: &Value| match v {
+        Value::String(t) => t.clone(),
+        other => other.to_string(),
+    };
+    let Some(list) = v["actions"].as_array() else { return Vec::new() };
+    if list.iter().any(|a| !a["title"].is_string() || !a["type"].is_string()) {
+        return Vec::new();
+    }
+    let compose = |a: &Value, title: &str| -> Option<Value> {
+        if !s(a, "/value/type").eq_ignore_ascii_case("Teams.chatMessage") {
+            return None;
+        }
+        let html = s(a, "/value/data/body/content");
+        if html.is_empty() {
+            return None;
+        }
+        let mut mentions = Vec::new();
+        for m in a.pointer("/value/data/mentions").and_then(|m| m.as_array()).into_iter().flatten() {
+            // Teams drops the action when a mention isn't well formed.
+            let id = match &m["id"] {
+                Value::Number(n) => n.to_string(),
+                Value::String(t) => t.clone(),
+                _ => return None,
+            };
+            let mri = m.pointer("/mentioned/user/id").and_then(|x| x.as_str())?;
+            let app = if mri.starts_with("28:") { s(m, "/mentioned/user/appId") } else { String::new() };
+            mentions.push(json!({ "id": id.parse::<i64>().unwrap_or(0), "name": s(m, "/mentionText"), "mri": mri, "appId": app }));
+        }
+        Some(json!({ "title": title, "kind": "compose", "html": html, "mentions": mentions }))
+    };
+    let mut out = Vec::new();
+    for a in list {
+        if out.len() >= MAX {
+            break;
+        }
+        let title = a["title"].as_str().unwrap_or_default();
+        let parsed = match a["type"].as_str().unwrap_or_default().to_lowercase().as_str() {
+            "imback" => (!a["value"].is_null() && a["value"] != json!("")).then(|| json!({ "title": title, "kind": "imBack", "text": text_of(&a["value"]) })),
+            "action.compose" => compose(a, title),
+            "action.odsl" => Some(json!({ "title": title, "kind": "odsl", "value": if a["value"].is_null() { String::new() } else { text_of(&a["value"]) } })),
+            "action.submit" => a["value"].as_object().map(|o| {
+                let name = o.get("name").and_then(|n| n.as_str()).filter(|n| !n.is_empty()).unwrap_or("suggestedActions/submit");
+                let value = o.get("value").filter(|x| !x.is_null()).unwrap_or(&a["value"]);
+                json!({ "title": title, "kind": "invoke", "name": name, "value": text_of(value) })
+            }),
+            "openurl" => {
+                let url = text_of(&a["value"]);
+                let lower = url.to_lowercase();
+                (lower.starts_with("http://") || lower.starts_with("https://")).then(|| json!({ "title": title, "kind": "openUrl", "url": url }))
             }
-            let html = s(a, "/value/data/body/content");
-            if html.is_empty() {
-                return None;
-            }
-            let mentions: Vec<serde_json::Value> = a
-                .pointer("/value/data/mentions")
-                .and_then(|m| m.as_array())
-                .into_iter()
-                .flatten()
-                .map(|m| serde_json::json!({
-                    "id": m["id"].as_i64().unwrap_or(0),
-                    "name": s(m, "/mentionText"),
-                    "mri": s(m, "/mentioned/user/id"),
-                    "appId": s(m, "/mentioned/user/appId"),
-                }))
-                .collect();
-            Some(serde_json::json!({ "title": title, "kind": "compose", "html": html, "mentions": mentions }))
-        })
-        .collect()
+            _ => None,
+        };
+        if let Some(p) = parsed {
+            out.push(p);
+        }
+    }
+    out
 }
 
 /// A Channel Agent's own app added to a channel (Teams 26304, module 75579
@@ -5128,8 +5169,28 @@ mod tests {
             "mentions": [{"id": 0, "mentionText": "OST TEST channel Agent", "mentioned": {"user": {"appId": "87daf61a", "displayName": "OST TEST channel Agent", "id": "28:3cf96df7"}}}]}}},
             {"title": "x", "type": "imBack", "value": "x"}]});
         let a = super::suggested_actions(Some(&sa));
-        assert_eq!(a.len(), 1);
+        assert_eq!(a.len(), 2);
         assert_eq!((a[0]["title"].as_str(), a[0]["mentions"][0]["mri"].as_str()), (Some("@agent"), Some("28:3cf96df7")));
+        assert_eq!(a[1], serde_json::json!({"title": "x", "kind": "imBack", "text": "x"}));
+        // Teams' other kinds: an Action.Submit invoke (its name and value,
+        // or the default name and the whole value), an http(s) openUrl, an
+        // ODSL statement; three at most; a bad title drops them all.
+        let more = serde_json::json!({"actions": [
+            {"title": "Approve", "type": "Action.Submit", "value": {"name": "task/approve", "value": {"id": 1}}},
+            {"title": "Open", "type": "openUrl", "value": "ftp://x"},
+            {"title": "Docs", "type": "OPENURL", "value": "https://learn.microsoft.com"},
+            {"title": "Send", "type": "action.submit", "value": {"k": "v"}},
+            {"title": "Fourth", "type": "imBack", "value": "4"}]});
+        let a = super::suggested_actions(Some(&more));
+        assert_eq!(a, vec![
+            serde_json::json!({"title": "Approve", "kind": "invoke", "name": "task/approve", "value": "{\"id\":1}"}),
+            serde_json::json!({"title": "Docs", "kind": "openUrl", "url": "https://learn.microsoft.com"}),
+            serde_json::json!({"title": "Send", "kind": "invoke", "name": "suggestedActions/submit", "value": "{\"k\":\"v\"}"}),
+        ]);
+        let odsl = serde_json::json!({"actions": [{"title": "Report", "type": "Action.ODSL", "value": {"actions": {}}}]});
+        assert_eq!(super::suggested_actions(Some(&odsl))[0]["kind"], "odsl");
+        let bad = serde_json::json!({"actions": [{"title": "ok", "type": "imBack", "value": "a"}, {"title": 1, "type": "imBack", "value": "b"}]});
+        assert!(super::suggested_actions(Some(&bad)).is_empty());
         // Its AddCustomApp ("OST TEST 206 agent G", 2026-11-21): the agent's
         // app instance as the target.
         let add = serde_json::json!({"id": "1795280500000", "messagetype": "ThreadActivity/AddCustomApp",

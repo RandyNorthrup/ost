@@ -1345,6 +1345,10 @@ pub mod qobject {
 
         #[qinvokable]
         fn card_invoke(self: Pin<&mut Backend>, op: &QString, target_json: &QString, action_json: &QString, inputs_json: &QString, automatic: bool);
+        /// A bot message's Action.Submit suggested action: Teams' invoke
+        /// (its name, the value's JSON as the invoke value) for the message.
+        #[qinvokable]
+        fn suggested_invoke(self: Pin<&mut Backend>, message_id: &QString, target_json: &QString, name: &QString, value: &QString);
         /// Teams' Download in the Attendance view: save the report file
         /// (the service's name) to Downloads.
         #[qinvokable]
@@ -1911,6 +1915,9 @@ pub mod qobject {
         /// A card_invoke finished: its op, the outcome (JSON) and an error.
         #[qsignal]
         fn card_invoke_done(self: Pin<&mut Backend>, op: QString, result: QString, error: QString);
+        /// A suggested_invoke finished (its message; an error or "").
+        #[qsignal]
+        fn suggested_invoke_done(self: Pin<&mut Backend>, message_id: QString, error: QString);
 
         /// A calendar_action finished: its op, its result (JSON) and an error.
         #[qsignal]
@@ -10282,6 +10289,36 @@ impl qobject::Backend {
                 }
             };
             let _ = qt.queue(move |mut this| this.as_mut().card_invoke_done(QString::from(op.as_str()), QString::from(value.as_str()), QString::from(error.as_str())));
+        });
+    }
+
+    pub fn suggested_invoke(self: Pin<&mut Self>, message_id: &QString, target_json: &QString, name: &QString, value: &QString) {
+        let id = message_id.to_string();
+        let mut target: api::bot_invoke::Target = serde_json::from_str(&target_json.to_string()).unwrap_or_default();
+        let name = name.to_string();
+        // Teams' transport: the value's JSON when it is an object, else {}.
+        let value = serde_json::from_str::<serde_json::Value>(&value.to_string()).ok().filter(|v| v.is_object()).unwrap_or_else(|| json!({}));
+        let qt = self.qt_thread();
+        runtime().spawn(async move {
+            let result = async {
+                let client = TeamsClient::new().await?;
+                if target.app_id.is_empty()
+                    && let Some((app, _, _)) = api::app_details::app_for_bot(&client, &target.bot_mri).await
+                {
+                    target.app_id = app;
+                }
+                tracing::info!("suggested action invoke: {name}");
+                api::bot_invoke::invoke(&client, &target, Some(&name), None, value, false).await
+            }
+            .await;
+            let error = match result {
+                Ok(_) => String::new(),
+                Err(e) => {
+                    tracing::warn!("suggested action invoke: {}", short_error(&e));
+                    short_error(&e)
+                }
+            };
+            let _ = qt.queue(move |mut this| this.as_mut().suggested_invoke_done(QString::from(id.as_str()), QString::from(error.as_str())));
         });
     }
 

@@ -263,6 +263,7 @@ fn main() {
         "qml/LoopCard.qml",
         "qml/LoopAccessPopover.qml",
         "qml/LoopChromeBar.qml",
+        "qml/SuggestedActionsRow.qml",
         "qml/LoopCommandingSurface.qml",
         "qml/RecapCard.qml",
         "qml/RecapWindow.qml",

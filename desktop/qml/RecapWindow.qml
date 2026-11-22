@@ -629,9 +629,14 @@ Window {
                 id: notesChrome
                 active: win.rightPill === "Notes" && win.notesUrl !== ""
                 x: 22.7; y: 64; width: parent.width - x - 18.6; height: 31.3
-                sourceComponent: LoopChromeBar { readName: true; link: win.notesUrl }
+                sourceComponent: LoopChromeBar {
+                    readName: true; link: win.notesUrl
+                    iconUrl: notesPage.item ? notesPage.item.iconUrl : ""
+                    iconState: notesPage.item ? notesPage.item.iconState : "pending"
+                }
             }
             Loader {
+                id: notesPage
                 active: win.rightPill === "Notes" && win.notesUrl !== ""
                 x: 3.3; y: 104.4; width: parent.width - 6.6; height: parent.height - y - 3
                 sourceComponent: LoopPage { kind: "meetingNotes"; title: win.recap.subject || ""; componentUrl: win.notesUrl }

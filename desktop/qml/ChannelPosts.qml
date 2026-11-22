@@ -37,6 +37,13 @@ Item {
     signal react(string messageId, string key, bool on)
     /// The post whose reply box is open.
     property string replying: ""
+    /// A bot's Action.Compose for a post: its reply opens with the mention.
+    property var pendingSuggestion: null
+    function applySuggestion(postId, action) { replying = postId; pendingSuggestion = { id: postId, action: action } }
+    /// The harness: the open reply box's plain text and whether it holds a mention.
+    property string replyStateForTest: ""
+    signal clearReplies()
+    onClearReplies: replying = ""
     function toEnd() { list.positionViewAtEnd() }
     /// Bring a post into view (Find in channel); whether it's loaded.
     function showPost(id) {
@@ -181,7 +188,7 @@ Item {
                 // The post
                 Item {
                     width: parent.width
-                    height: !card.post ? 44 : postEdit.active ? (postEdit.item ? postEdit.item.height : 0) + 8 : postBody.y + postBody.height + 51
+                    height: !card.post ? 44 : postEdit.active ? (postEdit.item ? postEdit.item.height : 0) + 8 : postBody.y + postBody.height + postActions.extra + 51
                     readonly property var mark: postEdit.active ? null : root.highlight(card.post)
                     // Teams' indicator bar: 4 x 32 at (4, 16), rounded 2.
                     Rectangle {
@@ -317,11 +324,22 @@ Item {
                         message: card.post
                         mark: root.markFor(card.post ? card.post.id : "")
                     }
+                    // A bot's suggested actions ("@agent") and its like /
+                    // dislike, 8 under the text (SuggestedActionsRow).
+                    SuggestedActionsRow {
+                        id: postActions
+                        readonly property real extra: visible ? Math.max(31.3, height) + 8 : 0
+                        visible: !!card.post && !postEdit.active && !card.post.mine && !card.post.deleted && shown
+                        x: 18; y: postBody.y + postBody.height + 8
+                        message: card.post || ({})
+                        host: root.host
+                        maxWidth: card.width - 36
+                    }
                     // Teams' reaction summary, 17 under the body; posts show the
                     // add button even with no reactions.
                     ReactionSummary {
                         visible: !!card.post && !postEdit.active
-                        x: 18; y: postBody.y + postBody.height + 17
+                        x: 18; y: postBody.y + postBody.height + postActions.extra + 17
                         host: root.host
                         messageId: card.post ? card.post.id : ""
                         reactions: card.post ? (card.post.reactions || []) : []
@@ -588,8 +606,30 @@ Item {
                             anchors.bottom: parent.bottom; x: 1; width: parent.width - 2; height: 2; radius: 1
                             color: replyInput.activeFocus ? theme.brand : "transparent"
                         }
+                        // A bot's suggested action for this post (Teams opens
+                        // the post's reply with its mention: 763654 `eo`,
+                        // showReplyCompose then setCopilotAtMention).
+                        Connections {
+                            target: root
+                            function onClearReplies() { replyInput.clearBox() }
+                            function onPendingSuggestionChanged() {
+                                const p = root.pendingSuggestion
+                                if (!p || p.id !== card.modelData.id) return
+                                root.pendingSuggestion = null
+                                const style = 'style="color:' + theme.brandForeground1 + '; text-decoration:none"'
+                                const esc = s => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;")
+                                replyInput.textFormat = TextEdit.RichText
+                                replyInput.rich = true
+                                replyInput.insert(replyInput.cursorPosition, (p.action.mentions || []).map(m => '<a href="mention:' + m.mri + '" ' + style + '>' + esc(m.name) + '</a>&nbsp;').join(""))
+                                replyInput.cursorPosition = replyInput.length
+                                replyInput.forceActiveFocus()
+                            }
+                        }
                         TextArea {
                             id: replyInput
+                            /// Holds a mention (rich text, sent as the editor's HTML).
+                            property bool rich: false
+                            onTextChanged: if (card.open) root.replyStateForTest = JSON.stringify({ post: card.modelData.id, text: getText(0, length), mention: rich && text.indexOf('href="mention:') >= 0 })
                             anchors { left: parent.left; right: sendReply.left; verticalCenter: parent.verticalCenter; leftMargin: 8 }
                             placeholderText: qsTr("Reply in thread")
                             placeholderTextColor: theme.textSecondary
@@ -598,13 +638,15 @@ Item {
                             wrapMode: TextArea.Wrap
                             background: Item {}
                             function submit() {
-                                if (!text.trim()) return
-                                root.reply(card.modelData.id, text.trim())
-                                text = ""
+                                if (!getText(0, length).trim()) return
+                                if (rich) backend.sendThreadReply(backend.currentChatId, card.modelData.id, text, "[]", "", false)
+                                else root.reply(card.modelData.id, text.trim())
+                                clearBox()
                                 root.replying = ""
                             }
+                            function clearBox() { text = ""; rich = false; textFormat = TextEdit.PlainText }
                             Keys.onReturnPressed: e => { if (e.modifiers & Qt.ShiftModifier) e.accepted = false; else submit() }
-                            Keys.onEscapePressed: { text = ""; root.replying = "" }
+                            Keys.onEscapePressed: { clearBox(); root.replying = "" }
                             Accessible.name: qsTr("Reply in thread")
                         }
                         Rectangle {
@@ -614,8 +656,8 @@ Item {
                             color: srh.hovered ? theme.rowHover : "transparent"
                             FluentIcon {
                                 anchors.centerIn: parent
-                                name: replyInput.text.trim() ? "send-20-filled" : "send-20"; size: 20
-                                color: theme.onFill(sendReply, replyInput.text.trim() ? theme.brand : theme.textStrong)
+                                name: replyInput.length > 0 ? "send-20-filled" : "send-20"; size: 20
+                                color: theme.onFill(sendReply, replyInput.length > 0 ? theme.brand : theme.textStrong)
                             }
                             HoverHandler { id: srh; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: replyInput.submit() }

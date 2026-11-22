@@ -586,8 +586,22 @@
             }
             return String(t || "");
         };
+        // The component's app icon for the host's header (Teams' bundled
+        // Loop control, 698099 AppIcon `k`): ComponentProperties.iconUrl,
+        // else the first one "propertiesChanged" gives, given up after 5 s;
+        // a component without ComponentProperties has none.
+        const iconOf = async component => {
+            const r = component.ComponentProperties;
+            if (r === undefined) return undefined;
+            const given = new Promise(resolve => {
+                if (r.iconUrl) resolve(r.iconUrl);
+                else if (typeof r.on === "function") r.on("propertiesChanged", () => resolve(r.iconUrl ?? ""));
+            });
+            return Promise.race([new Promise(resolve => setTimeout(() => resolve(undefined), 5000)), given]);
+        };
         const render = async component => {
             rendered = component;
+            iconOf(component).then(u => emit("icon", { url: String(u || ""), known: true }), () => emit("icon", { url: "", failed: true }));
             if (component.ComponentInitializer) await component.ComponentInitializer.initialize();
             const v = await (component.HTMLViewable && component.HTMLViewable.getView());
             if (!v || !v.HTMLView) throw new Error("Requested component loaded but did not provide a renderer");

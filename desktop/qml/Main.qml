@@ -1554,8 +1554,12 @@ Window {
                 log("welcome", st, "layout", conversation.channelLayout, "events", (conversation.messages || []).filter(m => m.event).map(m => m.event.kind + ": " + m.text))
             } else if (step === 5) cap("agent-welcome")
             else if (step === 6) log("picked", conversation.suggestionsForTest(true))
-            else if (step === 8) { const t = threadsPane.threadForTest(); log("thread", threadsPane.rootId, "reply box", t ? t.composeTextForTest() : "") }
+            else if (step === 8) {
+                if (conversation.postsLayout) log("post reply", conversation.postReplyForTest())
+                else { const t = threadsPane.threadForTest(); log("thread", threadsPane.rootId, "reply box", t ? t.composeTextForTest() : "") }
+            }
             else if (step === 9) cap("agent-welcome-picked")
+            else if (step === 10 && conversation.postsLayout) { conversation.clearPostReplyForTest(); log("cleared post reply", conversation.postReplyForTest()) }
             else if (step === 10) { const t = threadsPane.threadForTest(); if (t) t.composeForTest().clearForTest(); log("cleared", t ? t.composeTextForTest() : "") }
             else if (step === 11) Qt.quit()
             step++
@@ -5329,7 +5333,7 @@ Window {
                 if (step === 103) { log("ainotes open", JSON.parse(w.aiNotesForTest()).open); shot("ainotes-open"); break }
                 if (step === 104) { log("copied", w.aiCopyForTest()); break }
                 if (step === 105) { w.pillForTest("Notes"); break }
-                if (step === 107) { if (!w.notesHeaderForTest().shown && waited++ < 15) return; waited = 0; log("notes header", w.notesHeaderForTest()); break }
+                if (step === 107) { { const h = w.notesHeaderForTest(); if ((!h.shown || h.icon === "skeleton") && waited++ < 30) return } waited = 0; log("notes header", w.notesHeaderForTest()); break }
                 if (step === 108) { shot("ainotes-notes"); break }
                 if (step === 109) { w.close(); Qt.quit(); return }
                 break
@@ -6380,10 +6384,11 @@ Window {
             // 10 minutes), then the card the app gives afterwards.
             else if (st >= 5 && args.indexOf("--app-card-signin") >= 0) {
                 const card = c.appCard || {}, w = c.lastAuthWindow
-                if (st === 5 && card.permission === "install") { console.warn("APPCARD show preview"); backend.appLinkAction("install", c.previewUrl, c.chatId, card.app_id) }
+                if (st === 5 && card.permission === "install") { console.warn("APPCARD show preview"); c.showPreview() }
+                else if (card.permission === "auth" && w && !signInOpened) { signInOpened = true; console.warn("APPCARD sign-in window opened by itself (Teams' auto popup)"); shot("app-card-signin-card") }
                 else if (card.permission === "auth" && !w && !signInOpened) { signInOpened = true; console.warn("APPCARD sign in", (card.auth_url || "").split("?")[0], JSON.stringify(card.valid_domains)); shot("app-card-signin-card"); c.openAppAuth(card.auth_url, card.valid_domains || []) }
                 else if (st % 5 === 0) console.warn("APPCARD signin state", JSON.stringify({ permission: card.permission || "", type: card.content_type || "", window: w ? String(w.title).split("?")[0] : "", opened: signInOpened }))
-                if (signInOpened && !card.permission && card.content_type) { console.warn("APPCARD signed in", JSON.stringify(card).slice(0, 600)); shot("app-card-signed-in"); c.clear(); Qt.quit() }
+                if (signInOpened && !card.permission && card.content_type) { console.warn("APPCARD signed in", JSON.stringify(card).slice(0, 4000)); shot("app-card-signed-in"); c.clear(); Qt.quit() }
                 if (st > 210) { console.warn("APPCARD signin gave up"); c.clear(); Qt.quit() }
                 return
             }
@@ -15587,12 +15592,28 @@ Window {
         // A bot's suggested action (Action.Compose): in a threads channel
         // Teams opens the message's thread with the text in its reply box
         // ("Send to: thread only"); elsewhere it goes to the compose box.
+        // Teams' other kinds (763654 `eo`): imBack sends "@bot {text}"
+        // (to the message's thread in a channel), Action.Submit sends the
+        // bot an invoke, openUrl opens the address.
         onSuggestedAction: (m, action) => {
+            if (action.kind === "openUrl") { Qt.openUrlExternally(action.url); return }
+            if (action.kind === "invoke") {
+                backend.suggestedInvoke(m.id, JSON.stringify({ thread_id: backend.currentChatId, server_message_id: m.id, client_message_id: m.client_message_id || "", bot_mri: m.sender_mri, app_id: "", message_type: "Text" }), action.name, action.value)
+                return
+            }
+            if (action.kind === "imBack") {
+                const esc = s => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+                const html = '<p><a href="mention:' + m.sender_mri + '">' + esc(m.sender) + '</a>&nbsp;' + esc(action.text) + '</p>'
+                if (conversation.isChannel) backend.sendThreadReply(backend.currentChatId, m.root_id || m.id, html, "[]", "", false)
+                else backend.sendRich(html)
+                return
+            }
             if (conversation.threadsLayout) {
                 threadsPane.channelId = backend.currentChatId
                 threadsPane.openThread(m.root_id || m.id)
                 threadsPane.applySuggestion(action)
-            } else conversation.applySuggestion(action)
+            } else if (conversation.postsLayout) conversation.applyPostSuggestion(m, action)
+            else conversation.applySuggestion(action)
         }
         threadsOpen: threadsPane.shown
         openThreadRoot: threadsPane.shown ? threadsPane.rootId : ""

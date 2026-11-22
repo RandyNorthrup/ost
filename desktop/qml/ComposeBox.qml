@@ -174,6 +174,9 @@ Item {
         })
         w.show()
     }
+    /// Show Preview was pressed: the next sign-in answer opens its window.
+    property bool autoPopupNext: false
+    function showPreview() { autoPopupNext = true; backend.appLinkAction("install", root.previewUrl, root.chatId, root.appCard.app_id) }
     /// The conversation the link's app is asked from.
     property string chatId: ""
     // (An app's compose action can put its card here too: `fromApp`.)
@@ -210,6 +213,13 @@ Item {
         function onAppLinkCardFetched(url, json) {
             if (url !== root.previewUrl || !json || (root.appCard && root.appCard.fromApp)) return
             try { root.appCard = JSON.parse(json) } catch (e) {}
+            // Teams (707715): after Show Preview installed the app, a
+            // sign-in or setup answer opens the app's window by itself
+            // (shouldAutoPopup).
+            if (root.autoPopupNext && root.appCard && (root.appCard.permission === "auth" || root.appCard.permission === "config")
+                    && (root.appCard.auth_url || "").indexOf("https://") === 0)
+                root.openAppAuth(root.appCard.auth_url, root.appCard.valid_domains || [])
+            root.autoPopupNext = false
         }
     }
     /// What goes with the message: the preview (on or removed), or "".
@@ -1107,9 +1117,9 @@ Item {
                 // window, and once its page reports success the app is
                 // asked again with the result (value.state). Closing the
                 // window keeps the sign-in card (Teams' CancelledByUser).
-                onShowPreviewRequested: backend.appLinkAction("install", root.previewUrl, root.chatId, root.appCard.app_id)
+                onShowPreviewRequested: root.showPreview()
                 onSignInRequested: u => {
-                    if (u.indexOf("https://") !== 0) { backend.appLinkAction("install", root.previewUrl, root.chatId, root.appCard.app_id); return }
+                    if (u.indexOf("https://") !== 0) { root.showPreview(); return }
                     root.openAppAuth(u, root.appCard.valid_domains || [])
                 }
             }

@@ -85,6 +85,10 @@ Rectangle {
         return { found: true, id: m.id, sender: m.sender, app: m.sender_app || "", ai: !!m.ai_agent, actions: (m.suggested || []).map(a => a.title), feedback: !!m.feedback_loop }
     }
     function composeTextForTest() { return compose.visible ? compose.exportForTest() : "" }
+    // In a posts channel Teams opens the post's reply with the mention.
+    function applyPostSuggestion(m, action) { channelPosts.applySuggestion(m.root_id || m.id, action) }
+    function postReplyForTest() { return channelPosts.replyStateForTest }
+    function clearPostReplyForTest() { channelPosts.clearReplies() }
     function applySuggestion(action) {
         compose.focusEditor()
         for (const m of (action.mentions || [])) compose.insertMentionOf({ mri: m.mri, name: m.name, whole: true })
@@ -2544,10 +2548,10 @@ Rectangle {
                 // A bot's suggested actions ("@agent") and its like / dislike
                 // (Teams, a Channel Agent's welcome measured on winpc
                 // 2026-11-21): a 31.3 row 8 under the text.
-                readonly property var suggested: msg.modelData.suggested || []
+                readonly property var suggested: (msg.modelData.suggested || []).filter(a => a.kind !== "odsl")
                 readonly property bool hasActions: !msg.mine && !msg.modelData.deleted && showBody && cards.length === 0 && files.length === 0 && !hasPics && !urlPreview
                     && (suggested.length > 0 || !!msg.modelData.feedback_loop)
-                readonly property real actionsH: hasActions ? 39.3 : 0
+                readonly property real actionsH: hasActions ? Math.max(31.3, actionsRow.height) + 8 : 0
                 width: root.postsLayout ? msg.maxBubble
                     : botCard ? cardCol.width
                     : cards.length > 0 ? Math.max(cardCol.width + 2 * (linkCardFirst ? 15.67 : 17.3), showBody ? Math.min(msg.maxBubble, body.implicitWidth + 2 * pad) : 0)
@@ -3005,58 +3009,13 @@ Rectangle {
                     maxWidth: msg.maxBubble - 2 * bubble.pad
                     onActivated: root.jumpToMessage(msg.modelData.quote.message_id)
                 }
-                Row {
+                SuggestedActionsRow {
                     id: actionsRow
                     visible: bubble.hasActions
-                    x: bubble.pad; y: body.y + bubble.bodyH + 8; height: 31.3
-                    spacing: 8
-                    // Action.Compose ("@agent"): 12 px on white, a #D1D1D1
-                    // hairline, radius 4, padding 3 8 (Teams'
-                    // mention-project-agent-button).
-                    Repeater {
-                        model: bubble.suggested
-                        Rectangle {
-                            id: sugg
-                            required property var modelData
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: suggText.implicitWidth + 16; height: 23.3; radius: 4
-                            color: suggHover.hovered ? theme.rowHover : theme.surface
-                            border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF"); border.width: 0.67
-                            Text { id: suggText; anchors.centerIn: parent; text: sugg.modelData.title; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(sugg, theme.text) }
-                            HoverHandler { id: suggHover; cursorShape: Qt.PointingHandCursor }
-                            TapHandler { onTapped: root.suggestedAction(msg.modelData, sugg.modelData) }
-                            Accessible.role: Accessible.Button; Accessible.name: sugg.modelData.title
-                        }
-                    }
-                    // Like / dislike (24 x 31.3, 16 px thumbs, #424242;
-                    // filled once picked): Teams' feedback form.
-                    Row {
-                        visible: !!msg.modelData.feedback_loop
-                        Repeater {
-                            model: [{ k: "compliment", icon: "thumb-like-16", tip: qsTr("Like") }, { k: "problem", icon: "thumb-dislike-16", tip: qsTr("Dislike") }]
-                            Rectangle {
-                                id: thumb
-                                required property var modelData
-                                readonly property bool picked: root.botFeedback[msg.modelData.id] === modelData.k
-                                width: 24; height: 31.3; radius: 4
-                                color: "transparent"
-                                FluentIcon {
-                                    anchors.centerIn: parent; size: 16
-                                    name: thumb.modelData.icon + (thumb.picked || thumbHover.hovered ? "-filled" : "")
-                                    color: thumb.picked ? theme.brand : theme.pick("#424242", "#D6D6D6", "#FFFFFF")
-                                }
-                                HoverHandler { id: thumbHover; cursorShape: Qt.PointingHandCursor }
-                                TapHandler {
-                                    onTapped: {
-                                        const f = Object.assign({}, root.botFeedback); f[msg.modelData.id] = thumb.modelData.k; root.botFeedback = f
-                                        backend.requestFeedback(thumb.modelData.k, msg.modelData.sender || "Bot", "Bot message " + msg.modelData.id)
-                                    }
-                                }
-                                ToolTip.visible: thumbHover.hovered; ToolTip.text: thumb.modelData.tip; ToolTip.delay: 500
-                                Accessible.role: Accessible.Button; Accessible.name: thumb.modelData.tip
-                            }
-                        }
-                    }
+                    x: bubble.pad; y: body.y + bubble.bodyH + 8
+                    message: msg.modelData
+                    host: root
+                    maxWidth: msg.maxBubble - 2 * bubble.pad
                 }
                 // Selectable, as in Teams (a message's text can be selected and
                 // copied); read-only.

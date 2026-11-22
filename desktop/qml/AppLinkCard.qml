@@ -95,7 +95,7 @@ Rectangle {
         // 16:9 across), then the title and text.
         Column {
             id: body
-            visible: !adaptive.visible && !!card.appCard && !!card.appCard.content_type
+            visible: !adaptive.visible && !connector.visible && !!card.appCard && !!card.appCard.content_type
             width: parent.width
             readonly property var content: card.appCard ? (card.appCard.content || ({})) : ({})
             readonly property bool thumb: !!card.appCard && card.appCard.content_type === "application/vnd.microsoft.card.thumbnail"
@@ -166,6 +166,20 @@ Rectangle {
                 Accessible.name: text
             }
         }
+        // An Office 365 connector card (Azure Boards' work items; measured
+        // on winpc 2026-11-22, "OST TEST 200 item 2"): its sections under
+        // the header as ConnectorCard draws them (the 52 px activity image,
+        // the activity's lines 62 in), the frame ending 26.6 under them; its
+        // themeColor is the card's 3 px top bar.
+        ConnectorCard {
+            id: connector
+            readonly property bool isConnector: !!card.appCard && card.appCard.content_type === "application/vnd.microsoft.teams.card.o365connector"
+            visible: isConnector && card.permission === ""
+            embedded: true
+            content: isConnector ? (card.appCard.content || ({})) : ({})
+            cardWidth: col.width
+        }
+        Item { visible: connector.visible; width: 1; height: 10 }
         AdaptiveCard {
             id: adaptive
             visible: !!card.appCard && card.appCard.content_type === "application/vnd.microsoft.card.adaptive"
@@ -205,6 +219,13 @@ Rectangle {
                 Accessible.name: qsTr("Settings")
             }
         }
+    }
+    Rectangle {
+        readonly property string tint: connector.visible ? String(connector.content.themeColor || "").replace(/^#/, "") : ""
+        visible: /^[0-9a-fA-F]{6}$/.test(tint)
+        width: card.width; height: 3
+        topLeftRadius: 4; topRightRadius: 4
+        color: visible ? "#" + tint : "transparent"
     }
     Accessible.role: Accessible.Grouping
     Accessible.name: card.appCard ? (card.appCard.app_name || "") : ""

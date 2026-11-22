@@ -4,7 +4,7 @@ title: Link cards from installed apps and apps that need sign-in, as Teams
 status: In Progress
 assignee: []
 created_date: '2026-11-16T11:48:00Z'
-updated_date: '2026-11-22T17:02:00Z'
+updated_date: '2026-11-22T18:57:00Z'
 labels:
   - desktop
 dependencies: []
@@ -70,4 +70,15 @@ TASK-0168 shows Teams' app card for links to sites whose Teams app allows anonym
   - Cleaned up: the work item deleted and destroyed (recycle bin empty); Azure Boards and Wikipedia Search removed from ost-test1 (examples/add_app --remove-personal).
   - Kept: the organization osttest200, project OST and the Contributor role, so AC2 can be finished without repeating the portal and MFA steps (free tier, no cost). Remove the role in the subscription's IAM and delete the organization when AC2 is closed.
   - Open for AC2: why the app answers 502 to OST's re-query after sign-in (compare Teams' re-query body after its sign-in, which needs Teams' sign-in window on winpc).
+
+- 2026-11-22 (chatH), AC2 retry:
+  - Teams 26304 after sign-in (707715 `T` → 24575 `T` → AppBasedLinkService.getQueryLinkVariables → the worker's botsinvoke body `Et`): the window's result becomes a BotAuthResult {type: JsonAuthResult | StringAuthResult, value}; the re-query is composeExtension/queryLink with value {url, state}, state = the JSON result parsed, or the string result as it is (even when it looks like JSON; the whole BotAuthResult when the text is empty). OST parsed any JSON-looking string into an object; it now passes the BotAuthResult from AppAuthWindow and maps it as Teams (link_unfurl::auth_state_value, unit test), and logs the result's shape (never its text) and the chat service's error body.
+  - Found: the org osttest200 had "Third-party application access via OAuth" Off (Azure DevOps' default for new orgs; the Azure Boards app for Teams needs it). Turned On in Organization settings > Policies as ost-test1 (goes away with the org).
+  - New work item: Task 2 "OST TEST 200 item 2" (dev.azure.com/osttest200/OST/_workitems/edit/2), made in OST's web window.
+
+- 2026-11-22 (chatH), Teams on winpc (the user allowed typing ost-test1's password in Teams' own popup): Show Preview installed Azure Boards and Teams opened the sign-in window by itself (707715 shouldAutoPopup; it opened two at once). Sign in (password, no MFA asked) → Teams re-asked composeExtension/queryLink with value {url, state: a string of 86 characters} (StringAuthResult) and the app answered 200 with an Office 365 connector card: themeColor A4880A, one section with activityImage (Azure Boards' task icon), activityTitle "<p><a href=…>Task 2</a>: OST TEST 200 item 2</p>", activityText "<p>To Do | Unassigned</p>"; preview a thumbnail. Seen over CDP (read only; tokens and the state never printed). Teams draws it in the link card: 452 x 131.3, a 3 px themeColor bar (radius 4 4 0 0), the header (24 px icon, 12/16 semibold name, collapse and remove), the 52 px activity image 12 under it, the title 14/20 semibold with the link 400 #4F52B2, 62 in, the text 30 under, the frame 26.6 under the image.
+- The sign-in is kept per user by the app, so OST's first queryLink then got the same card at once (no sign-in card): OST's compose showed only the header (connector cards weren't drawn in link cards). AppLinkCard now draws connector cards (ConnectorCard embedded, the bar), and Show Preview opens the sign-in window by itself as Teams does.
+
+- 2026-11-22 (chatH), OST live (linuxlt, `--app-card-test=<item 2 link>`): Azure Boards answered OST's queryLink with the connector card (the app keeps the sign-in per user), and OST's compose now draws it as Teams: the gold bar, the header, the task icon, "Task 2: OST TEST 200 item 2" with its link, "To Do | Unassigned" (130 tall). OST's own sign-in window path (Show Preview → window → success → re-query with value.state) was checked live in chatG up to the re-query; its 502 then matches the org's OAuth policy being Off (Teams needs it On too). After the app kept the sign-in, a fresh OST sign-in could not be re-run (Azure Boards keeps no OAuth grant to revoke in the org, and ost-test1 has no Azure Boards bot chat to "signout" in).
+- Cleaned up: work item 2 deleted and destroyed (recycle bin 0), Azure Boards removed for ost-test1 (examples/add_app --remove-personal), the organization osttest200 deleted (dev.azure.com/osttest200 is 404), ost-test1's Contributor role on "Azure subscription 1" removed (IAM shows only Randy's two Owner rows). Wikipedia Search stays removed.
 <!-- SECTION:NOTES:END -->
