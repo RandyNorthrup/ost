@@ -1,9 +1,10 @@
 ---
 id: TASK-0243
 title: Recap AI summary tasks and notes header as Teams
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-11-21T19:30:00Z'
+updated_date: '2026-11-22T17:01:00Z'
 labels:
   - desktop
   - calls

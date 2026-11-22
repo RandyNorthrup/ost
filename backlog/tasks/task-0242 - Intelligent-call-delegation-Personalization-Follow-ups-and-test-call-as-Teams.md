@@ -3,9 +3,10 @@ id: TASK-0242
 title: >-
   Intelligent call delegation: Personalization, Follow-ups and test call as
   Teams
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-11-21T17:39:00Z'
+updated_date: '2026-11-22T17:01:00Z'
 labels:
   - desktop
   - settings
