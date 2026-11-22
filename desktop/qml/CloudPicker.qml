@@ -260,8 +260,26 @@ Popup {
     function isSelected(it) { return selected.some(s => s.web_url === it.web_url) }
     function toggle(it) {
         if (it.is_folder) { openFolder(it); return }
-        selected = isSelected(it) ? selected.filter(s => s.web_url !== it.web_url)
-                                  : selected.concat([{ name: it.name, kind: it.kind || "", web_url: it.web_url, drive_id: it.drive_id || "", id: it.id || "" }])
+        const pick = { name: it.name, kind: it.kind || "", web_url: it.web_url, drive_id: it.drive_id || "", id: it.id || "" }
+        selected = isSelected(it) ? selected.filter(s => s.web_url !== it.web_url) : single ? [pick] : selected.concat([pick])
+    }
+    /// One file at a time (Teams' selection mode "single").
+    property bool single: false
+    /// Only these file types (Teams' typesAndSources filters, e.g. [".mp4",
+    /// ".mov"]); folders always show.
+    property var extensions: []
+    /// The confirm button's label (Teams' tray command).
+    property string confirmLabel: qsTr("Attach")
+    function filtered(items) {
+        if (!extensions || !extensions.length) return items
+        return items.filter(r => r.is_folder || extensions.some(e => String(r.name || "").toLowerCase().endsWith(e)))
+    }
+    /// The harness: the shown file named so picked and confirmed.
+    function pickByNameForTest(name) {
+        const r = rows.find(x => !x.is_folder && x.name === name)
+        if (!r) return JSON.stringify(rows.map(x => x.name))
+        selected = []; toggle(r); attach()
+        return "picked"
     }
     /// The header's circle: every file shown picked, or none.
     function allPicked() { const f = rows.filter(r => !r.is_folder); return f.length > 0 && f.every(r => isSelected(r)) }
@@ -307,7 +325,7 @@ Popup {
             }
             if (kind === "libraries") { dlg.rows = (v || []).map(l => ({ name: l.name, library: l, is_folder: true })); return }
             dlg.people = v && v.people ? v.people : []
-            dlg.rows = v && v.items ? v.items : []
+            dlg.rows = dlg.filtered(v && v.items ? v.items : [])
             if (dlg.openWhenListed) {
                 const f = dlg.rows.find(r => r.is_folder && r.name === dlg.openWhenListed)
                 dlg.openWhenListed = ""
@@ -1008,14 +1026,14 @@ Popup {
                 readonly property bool on: dlg.selected.length > 0
                 color: on ? (attachHover.hovered ? theme.brandHover : theme.brand) : theme.pick("#F5F5F5", "#2E2E2E", "#000000")
                 Text {
-                    anchors.centerIn: parent; text: qsTr("Attach")
+                    anchors.centerIn: parent; text: dlg.confirmLabel
                     font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold
                     color: theme.onFill(hcFill3, parent.on ? "white" : theme.pick("#BDBDBD", "#5C5C5C", "#3FF23F"))
                 }
                 HoverHandler { id: attachHover; enabled: parent.on; cursorShape: Qt.PointingHandCursor }
                 TapHandler { enabled: parent.on; onTapped: dlg.attach() }
                 Accessible.role: Accessible.Button
-                Accessible.name: qsTr("Attach")
+                Accessible.name: dlg.confirmLabel
             }
             Rectangle {
                 id: hcFill4

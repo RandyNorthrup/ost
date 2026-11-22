@@ -10447,11 +10447,15 @@ Window {
             const ev = eventsView.item
             const cap = n => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-events-hl-" + n + ".png")))
             const st = () => console.warn("EVHL", step, ev ? ev.highlightsForTest() : "no view")
+            const arg = k => { const a = Qt.application.arguments.find(x => x === k || x.startsWith(k + "=")); return a === undefined ? null : a.indexOf("=") > 0 ? a.slice(a.indexOf("=") + 1) : "" }
             if (step === 0) { rail.current = "events"; step++; return }
             if (!ev) return
             if (step === 2) ev.openEventByTitle(title, 0)
             else if (step === 5) { if (!ev.current && wait++ < 10) return; wait = 0; ev.eventTab = "highlights" }
             else if (step === 6) { if (!ev.hl && wait++ < 20) return; wait = 0; st() }
+            // A first visit generates the highlights from the first
+            // recording (as Teams): wait for that (up to 10 minutes).
+            else if (step === 7) { if (ev.hlGenerating) { if (wait === 1) cap("generating"); if (wait % 10 === 0) st(); if (wait++ < 200) return } wait = 0 }
             else if (step === 9) { st(); cap("tab") }
             else if (step === 10) ev.openHlMenuForTest("picker")
             else if (step === 11) cap("picker")
@@ -10465,15 +10469,34 @@ Window {
                 if (d) ev.downloadHighlightsAsset(d)
             }
             else if (step === 19) {
-                if (Qt.application.arguments.indexOf("--events-hl-generate") >= 0) {
+                if (arg("--events-hl-generate") !== null) {
                     const recs = ev.hl ? ev.hl.recordings || [] : []
-                    ev.generateHighlights(recs[recs.length - 1])
+                    ev.generateHighlights(recs[0])
                 } else step = 40
             }
             else if (step === 20) { st(); cap("generating") }
             else if (step > 20 && step < 40) { if (ev.hlGenerating) { if (step % 3 === 0) st(); return } step = 40 }
             else if (step === 43) { st(); cap("after") }
-            else if (step >= 45) { console.warn("EVHL done"); Qt.quit() }
+            // --events-hl-odsp=<file name in My files' root, ~ for spaces>:
+            // Select from OneDrive, that video picked (the draft saved and,
+            // with highlights already, "Generate new AI highlights?" shown and
+            // cancelled).
+            else if (step === 44) { if (arg("--events-hl-odsp") === null) { step = 50; return } ev.openHlOdsp() }
+            else if (step === 47) cap("odsp")
+            else if (step === 48) console.warn("EVHL odsp pick", ev.hlOdspPickForTest(arg("--events-hl-odsp").replace(/~/g, " ")))
+            else if (step === 50) { st(); cap("odsp-picked") }
+            // --events-hl-publish[=recordingOnly]: Publish, its dialog
+            // captured and confirmed, followed until published;
+            // --events-hl-remove then Remove highlights (confirmed) and
+            // followed back to the draft.
+            else if (step === 52) { if (arg("--events-hl-publish") === null) { step = 90; return } console.warn("EVHL publish", ev.hlPublishForTest(arg("--events-hl-publish") || "recordingAndTextHighlights")) }
+            else if (step === 53) cap("publish-dialog")
+            else if (step === 54) console.warn("EVHL publish confirm", ev.hlConfirmPublishForTest())
+            else if (step === 55) { st(); if (ev.hlStatus !== "Published" && wait++ < 100) { if (wait === 2) cap("publishing"); if (wait % 5 === 0) st(); return } wait = 0; cap("published") }
+            else if (step === 58) { st(); if (arg("--events-hl-remove") === null) { step = 90; return } ev.hlResetForTest() }
+            else if (step === 59) { st(); if (ev.hlStatus === "Published" && wait++ < 40) return; wait = 0; cap("removed") }
+            else if (step === 62) st()
+            else if (step >= 90) { st(); console.warn("EVHL done"); if (arg("--events-stay") === null) Qt.quit(); else running = false }
             step++
         }
     }
@@ -10683,7 +10706,7 @@ Window {
                 else if (mode === "uninvite") {
                     const m = ev.manageData || {}
                     const all = [].concat((m.drafts || {}).items || [], (m.published || {}).items || [], (m.past || {}).items || [])
-                    const ids = all.filter(e => /^OST TEST 212 (invite|room options|recording)/.test(e.title)).map(e => e.id)
+                    const ids = all.filter(e => /^OST TEST 212 (invite|room options|recording|recap long)/.test(e.title)).map(e => e.id)
                     ids.forEach((id, i) => backend.eventsRequest("cancel", "uninvite" + i, JSON.stringify({ id: id })))
                     log("cancelling", ids)
                 } else ev.pickerForTest("attendees").typeForTest(invitee)
@@ -10812,6 +10835,16 @@ Window {
             else if (step === 5) { console.warn("RECAPS audio", recapsView.item.stateForTest()); cap("audio") }
             else if (step === 6) recapsView.openTab("home")
             else if (step === 9) { console.warn("RECAPS home", recapsView.item.stateForTest()); cap("home") }
+            // --recaps-detail: the newest finished audio recap in Audio recaps:
+            // its chapters, a chapter played for 10 s, then its transcript
+            // (RECAPS detail lines, recaps-detail-{chapters,playing,transcript}.png).
+            else if (step === 10 && Qt.application.arguments.indexOf("--recaps-detail") >= 0) { recapsView.openTab("audio"); step = 300 }
+            else if (step === 303) { console.warn("RECAPS detail chosen", recapsView.item.chooseDoneForTest()); }
+            else if (step === 305) { console.warn("RECAPS detail", recapsView.item.recapDetailForTest()); cap("detail-chapters"); recapsView.item.playChapter(1) }
+            else if (step === 309) { console.warn("RECAPS detail", recapsView.item.recapDetailForTest()); cap("detail-playing") }
+            else if (step === 310) recapsView.item.openDetailTab("transcript")
+            else if (step === 314) { console.warn("RECAPS detail", recapsView.item.recapDetailForTest()); cap("detail-transcript"); recapsView.item.playChosen() }
+            else if (step === 316) { console.warn("RECAPS detail", recapsView.item.recapDetailForTest()); Qt.quit() }
             else if (step === 10 && !Qt.application.arguments.some(a => a.startsWith("--recaps-generate="))) Qt.quit()
             // --recaps-generate=<subject start>[,<subject start>…] (~ for
             // spaces) [--recaps-style=Executive|Newscast|Casual]: Audio

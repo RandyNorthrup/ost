@@ -269,24 +269,67 @@ Rectangle {
         const tm = x => x.toLocaleTimeString(Qt.locale("en_US"), "h:mm AP")
         return a.toLocaleDateString(Qt.locale("en_US"), "MMM d, yyyy") + " " + tm(a) + (b ? " \u2013 " + tm(b) : "")
     }
+    // The picked file (Teams' odsp selection: {id (the item), driveId, name,
+    // objectUrl}); a meeting artifact is named by its id and addressed by
+    // its location, the session's recording by its source.
+    property var hlSel: null
+    /// The session's recording (draft or published), Teams' activeRecording.
+    readonly property var hlActive: hl && hl.active ? hl.active : null
+    readonly property string hlStatus: hlActive && hlActive.publishProgress ? String(hlActive.publishProgress.status || "") : ""
+    /// "" or Teams' alert after a failed publish: "RecordingAlreadyExists",
+    /// "Unknown".
+    property string hlAlert: ""
+    property bool hlBusy: false
+    function hlFileFromRec(r) { return r ? { id: r.item_id, driveId: r.drive_id, name: r.id, objectUrl: r.location } : null }
+    function hlFileFromActive(a) { return a ? { id: a.sourceItemId || "", driveId: a.sourceDriveId || "", name: a.name || "", objectUrl: a.sourceUrl || "" } : null }
+    function hlSame(a, f) { return !!a && !!f && (a.sourceItemId || "") === f.id && (a.sourceDriveId || "") === f.driveId }
     // On opening the tab Teams reads the meeting's artifacts and, with no
-    // highlights file yet, makes one (createHighlights); with a recording
-    // and a just-made file it generates the highlights from the latest
-    // recording.
+    // highlights file yet, makes one (createHighlights), and the event's
+    // session recording. With no session recording yet the first recording
+    // is picked: saved as the draft and the highlights generated from it.
     function loadHighlights() {
         if (!current || !hlThread) { hl = { recordings: [] }; return }
         const ev = current
-        call("highlights", { threadId: hlThread, start: ev.start || "", title: ev.title || "", create: ev.state !== "Draft", recordingItem: hlPick }, v => {
+        call("highlights", { eventId: ev.id, threadId: hlThread, start: ev.start || "", title: ev.title || "", create: ev.state !== "Draft",
+                             recordingItem: hlSel ? hlSel.id : "", recordingDrive: hlSel ? hlSel.driveId : "" }, v => {
             if (current !== ev) return
             if (v.error) { console.warn("EVENTS highlights error", v.error); hl = { recordings: [] }; return }
             hl = v
-            console.warn("EVENTS highlights", JSON.stringify({ recordings: (v.recordings || []).length, loop: !!v.loop, created: v.created, player: !!v.player, loopUrl: (v.loopUrl || "").split("?")[0] }))
+            console.warn("EVENTS highlights", JSON.stringify({ recordings: (v.recordings || []).length, loop: !!v.loop, created: v.created, player: !!v.player, loopUrl: (v.loopUrl || "").split("?")[0],
+                                                               session: v.sessionId || "", active: v.active ? (v.active.publishProgress || {}).status : "" }))
             const recs = v.recordings || []
-            if (recs.length && v.loop && v.created === 201 && !hlGenerating) generateHighlights(recs[recs.length - 1])
+            if (!hlSel) hlSel = v.active ? hlFileFromActive(v.active) : null
+            // Once per visit (Teams' ref): a failed draft doesn't pick again.
+            if (!v.active && recs.length && !hlGenerating && !hlBusy && ev.state !== "Draft" && !hlAutoPicked) { hlAutoPicked = true; hlSelectFile(hlFileFromRec(recs[0])) }
+            hlPoll.running = hlStatus === "Scheduled" || hlStatus === "InProgress"
         })
     }
-    onEventTabChanged: if (eventTab === "highlights") { hlError = ""; loadHighlights() }
-    onCurrentChanged: { hl = null; hlPick = ""; hlGenerating = false; hlError = "" }
+    Timer { id: hlPoll; interval: 5000; repeat: true; onTriggered: if (root.eventTab === "highlights" && root.page === "event") root.loadHighlights(); else running = false }
+    onEventTabChanged: if (eventTab === "highlights") { hlError = ""; hlAlert = ""; loadHighlights() }
+    property bool hlAutoPicked: false
+    onCurrentChanged: { hl = null; hlSel = null; hlGenerating = false; hlError = ""; hlAlert = ""; hlBusy = false; hlAutoPicked = false; hlPoll.running = false }
+    // Picking a file (Teams' useChooseEventHighlightsSource): another file
+    // than the session's recording is saved as the draft at once; then the
+    // highlights are generated from it, after "Generate new AI highlights?"
+    // when there were highlights already.
+    function hlSelectFile(f) {
+        if (!f) return
+        hlSel = f
+        if (hlSame(hlActive, f)) return
+        const had = !!hlActive
+        hlSaveDraft(f)
+        if (had) { hlRegenerate.recording = f; hlRegenerate.open() }
+        else generateHighlights({ drive_id: f.driveId, item_id: f.id })
+    }
+    function openHlOdsp() { hlOdsp.entry = "home"; hlOdsp.open() }
+    function hlSaveDraft(f) {
+        const ev = current
+        if (!hl || !hl.sessionId) return
+        call("highlightsSaveDraft", { eventId: ev.id, sessionId: hl.sessionId, file: f }, v => {
+            console.warn("EVENTS highlights draft", JSON.stringify({ error: v.error || "", status: v.recording && v.recording.publishProgress ? v.recording.publishProgress.status : "" }))
+            if (current === ev && !hlGenerating) loadHighlights()
+        })
+    }
     function generateHighlights(rec) {
         if (!hl || !hl.loop || !rec) return
         hlGenerating = true; hlError = ""
@@ -298,19 +341,90 @@ Rectangle {
             if (current === ev) loadHighlights()
         })
     }
+    // Teams' generation errors: a transcript problem says to pick a video
+    // with a transcript; the others can be retried.
+    readonly property bool hlTranscriptError: ["TranscriptNotFound", "TranscriptTooShort", "TranscriptEmpty"].indexOf(hlError) >= 0
+    readonly property bool hlRetryable: ["Unknown", "NetworkError", "TranscriptFetchFailed", "LlmCallFailed", "LoopWriteFailed"].indexOf(hlError) >= 0 || (hlError !== "" && !hlTranscriptError && !/^[A-Z][A-Za-z]+$/.test(hlError))
+    // Publish (Teams' handlePublish → "Ready to publish highlights?" →
+    // addVirtualEventSessionRecording): the session's recording published,
+    // with the highlights' Loop page serialized when the highlights go
+    // with it (Recording + text highlights).
+    function hlPublish(mode) {
+        const f = hlFileFromActive(hlActive)
+        if (!f) return
+        hlPublishDialog.mode = mode; hlPublishDialog.file = f; hlPublishDialog.open()
+    }
+    function hlConfirmPublish(f, mode) {
+        hlAlert = ""; hlError = ""
+        const ev = current
+        const send = content => {
+            hlBusy = true
+            call("highlightsPublish", { eventId: ev.id, sessionId: hl.sessionId, file: f, content: content }, v => {
+                hlBusy = false
+                console.warn("EVENTS highlights publish", JSON.stringify({ error: v.error || "", status: v.recording && v.recording.publishProgress ? v.recording.publishProgress.status : "", content: content === undefined ? -1 : content.length }))
+                if (v.error) hlAlert = /RecordingAlreadyExists/.test(v.error) ? "RecordingAlreadyExists" : "Unknown"
+                if (current === ev) loadHighlights()
+            })
+        }
+        if (mode !== "recordingAndTextHighlights" || !hlLoop.item) { send(undefined); return }
+        hlSerializeWait.cb = send
+        hlLoop.item.requestSerialized()
+    }
+    QtObject { id: hlSerializeWait; property var cb: null }
+    Connections {
+        target: hlLoop.item
+        ignoreUnknownSignals: true
+        function onSerialized(ok, content) { const cb = hlSerializeWait.cb; hlSerializeWait.cb = null; if (cb) cb(ok ? content : undefined) }
+    }
+    // Cancel publish and Remove highlights (Teams' resetToDraft): the
+    // recording deleted from the session and added again as a draft.
+    function hlResetToDraft() {
+        const a = hlActive
+        if (!a) return
+        const ev = current
+        hlBusy = true
+        call("highlightsReset", { eventId: ev.id, sessionId: hl.sessionId, recordingId: a.id, file: hlFileFromActive(a) }, v => {
+            hlBusy = false
+            console.warn("EVENTS highlights reset", JSON.stringify({ error: v.error || "", status: v.recording && v.recording.publishProgress ? v.recording.publishProgress.status : "" }))
+            if (current === ev) loadHighlights()
+        })
+    }
+    function hlExtend() {
+        const a = hlActive
+        if (!a) return
+        const ev = current
+        call("highlightsExtend", { eventId: ev.id, sessionId: hl.sessionId, recordingId: a.id }, v => { if (current === ev) loadHighlights() })
+    }
+    // Preview email (the publish dialog's link): the event's "Event
+    // recording available" email.
+    function hlPreviewEmail() {
+        const show = () => { const t = (emailTemplateList || []).find(x => x.templateType === "EventRecording"); if (t) emailEditor.openFor(t.templateId, t.templateType, true) }
+        if (emailTemplateList) { show(); return }
+        call("emailTemplates", { id: current.id }, v => {
+            if (v.error) return
+            const list = Array.isArray(v) ? v : (v.emailTemplates || v.value || [])
+            emailTemplateList = emailOrder.map(k => list.find(t => t.templateType === k)).filter(t => !!t)
+            show()
+        })
+    }
     function openHlPicker() { hlPickerMenu.parent = hlPickerAnchor(); hlPickerMenu.x = 0; hlPickerMenu.y = 34; hlPickerMenu.open() }
     function hlPickerAnchor() { return eventPage }
     // View recap: the meeting's recap (Teams' intelligentRecap of the thread).
     signal openRecapFor(var recap)
+    function hlPickedRec() {
+        const recs = hl && hl.recordings ? hl.recordings : []
+        return recs.find(x => hlSel && x.item_id === hlSel.id) || (hlSel ? null : recs[0] || null)
+    }
     function viewHighlightsRecap() {
-        const r = hl && (hl.recordings || []).find(x => x.item_id === hlPick) || (hl && hl.recordings ? hl.recordings[hl.recordings.length - 1] : null)
-        openRecapFor({ thread_id: hlThread, subject: current ? current.title : "", drive_id: r ? r.drive_id : "", item_id: r ? r.item_id : "",
+        const r = hlPickedRec()
+        const f = hlSel
+        openRecapFor({ thread_id: hlThread, subject: current ? current.title : "", drive_id: r ? r.drive_id : f ? f.driveId : "", item_id: r ? r.item_id : f ? f.id : "",
                        start_ms: current ? new Date(current.start).getTime() : 0, end_ms: current ? new Date(current.end).getTime() : 0, recap_type: "RecordingAndTranscript" })
     }
     // Download: the recording's video or its transcript (the file's own
     // download, as Teams' Download menu).
     function downloadHighlightsAsset(kind) {
-        const r = hl && (hl.recordings || []).find(x => x.item_id === hlPick) || (hl && hl.recordings ? hl.recordings[hl.recordings.length - 1] : null)
+        const r = hlPickedRec() || (hlSel ? { location: hlSel.objectUrl } : null)
         if (!r) return
         const tr = (hl.transcripts || [])
         const loc = kind === "video" ? r.location : tr[tr.length - 1] || ""
@@ -325,8 +439,25 @@ Rectangle {
     function highlightsForTest() {
         const h = root.hl
         const recs = h && h.recordings ? Array.from(h.recordings).map(r => root.recordingLabel(r)) : []
-        return JSON.stringify({ recordings: recs, hasHl: !!h, loop: !!(h && h.loop), player: !!(h && h.player), loopUrl: h && h.loopUrl ? String(h.loopUrl).split("?")[0] : "", created: h && h.created ? Number(h.created) : 0, generating: !!root.hlGenerating, error: String(root.hlError), included: String(root.hlIncluded) })
+        return JSON.stringify({ recordings: recs, hasHl: !!h, loop: !!(h && h.loop), player: !!(h && h.player), loopUrl: h && h.loopUrl ? String(h.loopUrl).split("?")[0] : "", created: h && h.created ? Number(h.created) : 0, generating: !!root.hlGenerating, error: String(root.hlError), included: String(root.hlIncluded),
+                                session: h && h.sessionId ? String(h.sessionId) : "", status: String(root.hlStatus), alert: String(root.hlAlert), busy: !!root.hlBusy, selected: root.hlSel ? String(root.hlSel.name) : "",
+                                expires: root.hlActive ? String(root.hlActive.expirationDate || "") : "", hasHighlights: root.hlActive ? !!root.hlActive.hasHighlights : false,
+                                loopState: hlLoop.item ? String(hlLoop.item.state_) : "", publishUsable: !!root.hlPublishUsable, bar: String(root.hlBarKind) })
     }
+    // Publish is usable on a draft (or failed or expired) recording, not
+    // while generating or sending, and not on a draft event.
+    readonly property bool hlPublishUsable: !!hlActive && ["Draft", "Failed", "Expired"].indexOf(hlStatus) >= 0 && !hlGenerating && !hlBusy && !!current && current.state !== "Draft" && !hlPublishDisabledReason
+    readonly property string hlPublishDisabledReason: current && current.state === "Draft" ? "DraftEvent" : ""
+    /// Which status bar Teams shows (its Ge): generating, error,
+    /// publishDisabled, alert, notPublished, publishing, published, failed,
+    /// expired.
+    readonly property string hlBarKind: hlGenerating ? "generating" : hlError ? "error" : hlPublishDisabledReason ? "publishDisabled" : hlAlert ? "alert"
+                                        : (!hlActive || hlStatus === "Draft") ? "notPublished" : (hlStatus === "Scheduled" || hlStatus === "InProgress") ? "publishing"
+                                        : hlStatus === "Published" ? "published" : hlStatus === "Failed" ? "failed" : hlStatus === "Expired" ? "expired" : ""
+    function hlPublishForTest(mode) { if (!hlPublishUsable) return false; hlPublish(mode || hlIncluded); return true }
+    function hlConfirmPublishForTest() { if (!hlPublishDialog.opened) return false; hlPublishDialog.confirm(); return true }
+    function hlResetForTest() { if (!hlActive) return false; hlResetToDraft(); return true }
+    function hlOdspPickForTest(name) { return hlOdsp.pickByNameForTest(name) }
     function openHlMenuForTest(which) {
         if (which === "picker") openHlPicker()
         else if (which === "download") { hlDownloadMenu.parent = eventPage; hlDownloadMenu.open() }
@@ -3001,8 +3132,12 @@ Rectangle {
                 visible: root.eventTab === "highlights" && !root.previewOn
                 width: parent.width; spacing: 0
                 readonly property var recs: root.hl ? root.hl.recordings || [] : []
-                readonly property var picked: recs.find(r => r.item_id === root.hlPick) || recs[recs.length - 1] || null
-                readonly property bool has: !!picked
+                // The selection: the picked file (a recording of the
+                // meeting, or a OneDrive video), else the first recording.
+                readonly property var picked: root.hlSel ? (recs.find(r => r.item_id === root.hlSel.id) || null) : recs[0] || null
+                readonly property bool has: !!picked || !!root.hlSel
+                readonly property string pickedLabel: picked ? root.recordingLabel(picked) : root.hlSel ? root.hlSel.name : ""
+                readonly property bool published: root.hlStatus === "Published"
                 Item {
                     width: parent.width; height: 49
                     Text { id: hlLabel; x: 0; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Recording used for highlights:"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
@@ -3013,9 +3148,9 @@ Rectangle {
                         border.width: hlTab.has ? 1 : 0; border.color: theme.stroke
                         Rectangle { visible: hlTab.has; anchors.bottom: parent.bottom; anchors.left: parent.left; anchors.right: parent.right; anchors.margins: 1; height: 1; color: theme.textSecondary }
                         Text { x: 12; width: parent.width - 48; elide: Text.ElideRight; anchors.verticalCenter: parent.verticalCenter
-                               text: hlTab.has ? root.recordingLabel(hlTab.picked) : qsTr("No video is selected"); font.family: theme.font; font.pixelSize: 14; color: hlTab.has ? theme.text : theme.disabledStrong }
+                               text: hlTab.has ? hlTab.pickedLabel : qsTr("No video is selected"); font.family: theme.font; font.pixelSize: 14; color: hlTab.has ? theme.text : theme.disabledStrong }
                         FluentIcon { visible: hlTab.has; x: parent.width - 32; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-20"; size: 20; color: theme.textStrong }
-                        TapHandler { enabled: hlTab.has; onTapped: root.openHlPicker() }
+                        TapHandler { enabled: hlTab.has && !root.hlGenerating && !hlTab.published; onTapped: root.openHlPicker() }
                         Accessible.role: Accessible.ComboBox; Accessible.name: qsTr("Recording used for highlights:")
                     }
                     Btn { id: hlDownload; x: hlPicker.x + hlPicker.width + 8; anchors.verticalCenter: parent.verticalCenter; width: 64; height: 31; outlined: true; icon: "arrow-download-20"; text: "⌄"; fontSize: 12; pad: 10; usable: hlTab.has
@@ -3023,24 +3158,69 @@ Rectangle {
                           Accessible.name: qsTr("Download") }
                     Row { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; spacing: 8
                         Btn { id: hlRecap; width: 32; height: 31; outlined: true; icon: "video-clip-20"; text: ""; usable: hlTab.has; onClicked: root.viewHighlightsRecap(); Accessible.name: qsTr("View recap") }
-                        Btn { id: hlIncluded; height: 32; outlined: true; text: qsTr("Included content") + "  ⌄"; usable: !!root.hl && !!root.hl.loop && !root.hlGenerating
+                        // Unpublished: Included content and Publish; published:
+                        // Remove highlights (Teams' revert button).
+                        Btn { id: hlIncluded; visible: !hlTab.published; height: 32; outlined: true; text: qsTr("Included content") + "  ⌄"; usable: root.hlPublishUsable
                               onClicked: { hlIncludedMenu.parent = hlIncluded; hlIncludedMenu.x = hlIncluded.width - hlIncludedMenu.implicitWidth; hlIncludedMenu.y = hlIncluded.height + 2; hlIncludedMenu.open() } }
-                        Btn { width: 96; height: 31; primary: true; text: qsTr("Publish"); usable: false } }
+                        Btn { visible: !hlTab.published; width: 96; height: 31; primary: true; text: qsTr("Publish"); usable: root.hlPublishUsable; onClicked: root.hlPublish(root.hlIncluded) }
+                        Btn { visible: hlTab.published; height: 31; outlined: true; text: qsTr("Remove highlights"); usable: !root.hlBusy; onClicked: hlRemoveDialog.open() } }
                 }
                 Rectangle { width: parent.width; height: 1; color: theme.divider }
                 Item { width: 1; height: 16 }
-                // The status bar.
+                // The status bar (Teams' Fluent MessageBar: info, success,
+                // warning or error), as its Ge picks it.
                 Rectangle {
-                    visible: hlTab.has && (root.hlGenerating || (!!root.hl && !!root.hl.loop) || !!root.hlError)
+                    id: hlBar
+                    readonly property string k: root.hlBarKind
+                    readonly property string intent: k === "published" ? "success" : (k === "error" || k === "publishDisabled" || k === "expired") ? "warning" : (k === "alert" || k === "failed") ? "error" : "info"
+                    visible: hlTab.has && k !== "" && (!!root.hl && (!!root.hl.loop || !!root.hlActive) || root.hlGenerating || !!root.hlError)
                     width: parent.width; height: 36; radius: 4
-                    color: theme.pick("#F5F5F5", "#292929", "#000000"); border.color: theme.stroke; border.width: 1
-                    BusyIndicator { visible: root.hlGenerating; running: visible; x: 12; anchors.verticalCenter: parent.verticalCenter; width: 20; height: 20 }
-                    FluentIcon { visible: !root.hlGenerating; x: 13; anchors.verticalCenter: parent.verticalCenter; name: root.hlError ? "error-circle-20" : "info-20"; size: 20; color: root.hlError ? theme.danger : theme.textStrong }
-                    Text { x: 41; width: parent.width - 53; anchors.verticalCenter: parent.verticalCenter; elide: Text.ElideRight; textFormat: Text.StyledText
-                           font.family: theme.font; font.pixelSize: 14; color: theme.text
-                           text: root.hlGenerating ? "<b>" + qsTr("Generating AI highlights from event recording...") + "</b> " + qsTr("This might take a minute. Feel free to leave this tab and come back.")
-                               : root.hlError ? "<b>" + qsTr("Couldn't generate highlights.") + "</b> " + qsTr("Let's try again.")
-                               : "<b>" + qsTr("Highlights aren't published yet.") + "</b> " + qsTr("Publish them when you're ready to share with attendees.") }
+                    color: intent === "success" ? theme.pick("#F1FAF1", "#052505", "#000000") : intent === "warning" ? theme.pick("#FDF6F3", "#4A1504", "#000000")
+                         : intent === "error" ? theme.pick("#FDF6F6", "#3F1011", "#000000") : theme.pick("#F5F5F5", "#292929", "#000000")
+                    border.width: 1
+                    border.color: intent === "success" ? theme.pick("#9FD89F", "#107C10", "#FFFFFF") : intent === "warning" ? theme.pick("#F4BFAB", "#8A3302", "#FFFFFF")
+                                : intent === "error" ? theme.pick("#EEACB2", "#6E0811", "#FFFFFF") : theme.stroke
+                    readonly property bool spinning: k === "generating" || k === "publishing"
+                    BusyIndicator { visible: hlBar.spinning; running: visible; x: 12; anchors.verticalCenter: parent.verticalCenter; width: 20; height: 20 }
+                    FluentIcon { visible: !hlBar.spinning; x: 12; anchors.verticalCenter: parent.verticalCenter; size: 20
+                                 name: hlBar.intent === "success" ? "checkmark-circle-20-filled" : hlBar.intent === "warning" ? "warning-20-filled" : hlBar.intent === "error" ? "dismiss-circle-20-filled" : "info-20-filled"
+                                 color: hlBar.intent === "success" ? theme.pick("#107C10", "#54B054", "#FFFFFF") : hlBar.intent === "warning" ? theme.pick("#DA3B01", "#E9835E", "#FFFFFF")
+                                      : hlBar.intent === "error" ? theme.pick("#D13438", "#DC626D", "#FFFFFF") : theme.textSecondary }
+                    Text {
+                        x: 40; width: parent.width - 52 - hlBarAction.width; anchors.verticalCenter: parent.verticalCenter; elide: Text.ElideRight; textFormat: Text.StyledText
+                        font.family: theme.font; font.pixelSize: 14; color: theme.text
+                        linkColor: theme.brandForeground1
+                        onLinkActivated: link => { if (link === "extend") hlExtendDialog.open() }
+                        readonly property string expires: root.hlActive && root.hlActive.expirationDate ? new Date(root.hlActive.expirationDate).toLocaleDateString(Qt.locale(), "MMMM d, yyyy") : ""
+                        text: {
+                            const b = s => "<b>" + s + "</b> "
+                            switch (hlBar.k) {
+                            case "generating": return b(qsTr("Generating AI highlights from event recording...")) + qsTr("This might take a minute. Feel free to leave this tab and come back.")
+                            case "error": return root.hlTranscriptError ? b(qsTr("Recording not available for highlights")) + qsTr("Select a video with a transcript and try again.")
+                                                                         : b(qsTr("Couldn't generate highlights.")) + qsTr("There was an error while creating your highlights.")
+                            case "publishDisabled": return b(qsTr("Highlights aren't published yet.")) + qsTr("This option is only available after the event has been published.")
+                            case "alert": return root.hlAlert === "RecordingAlreadyExists" ? qsTr("This file can't be published because recording has been already published for this event.")
+                                                                                          : qsTr("There was a problem publishing this file. Let’s try again.")
+                            case "notPublished": return b(qsTr("Highlights aren't published yet.")) + qsTr("Publish them when you're ready to share with attendees.")
+                            case "publishing": return b(qsTr("Publishing highlights...")) + qsTr("This might take a minute. Feel free to leave this tab and we'll notify you when it's done.")
+                            case "published": return b(qsTr("Highlights published to event page.")) + qsTr("Expires %1").arg(expires)
+                                                     + (root.hlActive && !root.hlActive.isExpirationExtended ? " <a href=\"extend\">" + qsTr("Extend for 60 days") + "</a>" : "")
+                            case "failed": return qsTr("Failed to publish recording")
+                            case "expired": return qsTr("Recording expired")
+                            }
+                            return ""
+                        }
+                    }
+                    // Retry (a generation error that can be retried) or Cancel
+                    // publish (while publishing).
+                    Btn {
+                        id: hlBarAction
+                        visible: (hlBar.k === "error" && root.hlRetryable) || hlBar.k === "publishing"
+                        width: visible ? implicitWidth : 0
+                        anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter; height: 24; outlined: true; fontSize: 12
+                        text: hlBar.k === "publishing" ? qsTr("Cancel publish") : qsTr("Retry"); usable: !root.hlBusy
+                        onClicked: { if (hlBar.k === "publishing") root.hlResetToDraft(); else { root.hlError = ""; root.generateHighlights(root.hlSel ? { drive_id: root.hlSel.driveId, item_id: root.hlSel.id } : hlTab.picked) } }
+                    }
                 }
                 Item { width: 1; height: 16; visible: hlTab.has }
                 // The recording's player.
@@ -3069,11 +3249,14 @@ Rectangle {
                     border.color: theme.dividerSoft; border.width: 1
                     Text { x: 20; y: 20; text: eventPage.ev.title || ""; font.family: theme.font; font.pixelSize: 24; font.weight: Font.DemiBold; color: theme.text }
                     Loader {
+                        id: hlLoop
                         x: 0; y: 76; width: parent.width; height: 540
                         active: parent.visible && !root.hlGenerating
                         sourceComponent: LoopPage { kind: "message"; componentUrl: root.hl.loopUrl; title: eventPage.ev.title || "" }
                     }
                 }
+                // Nothing picked (Teams' empty state: its title and text, and
+                // Select from OneDrive, usable once the event is published).
                 Column {
                     visible: !hlTab.has
                     width: parent.width
@@ -3084,6 +3267,8 @@ Rectangle {
                     Item { width: 1; height: 8 }
                     Text { anchors.horizontalCenter: parent.horizontalCenter; width: 400; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
                            text: qsTr("Check back after the event has ended to generate them and share with attendees."); font.family: theme.font; font.pixelSize: 14; color: theme.textStrong }
+                    Item { width: 1; height: 16 }
+                    Btn { anchors.horizontalCenter: parent.horizontalCenter; outlined: true; height: 32; text: qsTr("Select from OneDrive"); usable: !!root.current && root.current.state !== "Draft"; onClicked: root.openHlOdsp() }
                 }
             }
         }
@@ -3101,14 +3286,35 @@ Rectangle {
         }
         MenuPopup {
             id: hlPickerMenu
-            items: [{ heading: true, label: qsTr("Current recording") }].concat(hlTab.recs.map(r => ({ key: r.item_id, label: root.recordingLabel(r), checked: hlTab.picked && r.item_id === hlTab.picked.item_id })))
-                    .concat([{ separator: true }, { key: "__odsp", label: qsTr("Select from OneDrive"), icon: "cloud-20" }])
+            // Teams (winpc 2026-11-22): "Current recording" (the one used,
+            // checked), "Select another recording" (the meeting's others), a
+            // line, Select from OneDrive (OneDrive's colour mark).
+            readonly property var others: hlTab.recs.filter(r => !hlTab.picked || r.item_id !== hlTab.picked.item_id)
+            items: [{ heading: true, label: qsTr("Current recording") }]
+                    .concat(hlTab.picked ? [{ key: hlTab.picked.item_id, label: root.recordingLabel(hlTab.picked), checked: true }] : root.hlSel ? [{ key: "__sel", label: root.hlSel.name, checked: true }] : [])
+                    .concat(others.length ? [{ separator: true }, { heading: true, label: qsTr("Select another recording") }] : [])
+                    .concat(others.map(r => ({ key: r.item_id, label: root.recordingLabel(r), checked: false })))
+                    .concat([{ separator: true }, { key: "__odsp", label: qsTr("Select from OneDrive"), icon: "onedrive-color" }])
             onPicked: i => {
                 const k = items[i].key
-                if (!k) return
-                if (k === "__odsp") { root.toast({ text: qsTr("Select a video with a transcript and try again."), intent: "info" }); return }
+                if (!k || k === "__sel") return
+                if (k === "__odsp") { root.openHlOdsp(); return }
                 if (hlTab.picked && k === hlTab.picked.item_id) return
-                hlRegenerate.recording = hlTab.recs.find(r => r.item_id === k); hlRegenerate.open()
+                root.hlSelectFile(root.hlFileFromRec(hlTab.recs.find(r => r.item_id === k)))
+            }
+        }
+        // Select from OneDrive (Teams' launchFilePicker: OneDrive's picker,
+        // files mode with shared libraries, .mp4 and .mov only, one file).
+        CloudPicker {
+            id: hlOdsp
+            single: true
+            extensions: [".mp4", ".mov"]
+            confirmLabel: qsTr("Confirm")
+            onAttached: files => {
+                const f = files && files[0]
+                if (!f) return
+                console.warn("EVENTS highlights odsp", JSON.stringify({ name: f.name, drive: !!f.drive_id, item: !!f.id }))
+                root.hlSelectFile({ id: f.id || "", driveId: f.drive_id || "", name: f.name || "", objectUrl: f.web_url || "" })
             }
         }
         ConfirmDialog {
@@ -3117,7 +3323,44 @@ Rectangle {
             title: qsTr("Generate new AI highlights?")
             body: qsTr("A new set of highlights will be generated using the recording you selected. This will replace the current highlights and can't be undone.")
             confirmText: qsTr("Generate highlights")
-            onConfirmed: { root.hlPick = recording.item_id; root.generateHighlights(recording) }
+            onConfirmed: root.generateHighlights({ drive_id: recording.driveId, item_id: recording.id })
+        }
+        // "Ready to publish highlights?" (Teams' publish dialog: its text by
+        // what's included and whether attendee emails are on; Preview email
+        // when they are).
+        ConfirmDialog {
+            id: hlPublishDialog
+            property string mode: "recordingAndTextHighlights"
+            property var file: null
+            readonly property bool emails: !(root.peopleData && root.peopleData.disableAttendeeEmails)
+            title: qsTr("Ready to publish highlights?")
+            body: mode === "recordingOnly"
+                  ? (emails ? qsTr("Invited and registered attendees will be notified by email. They'll be able to play the recording on the event page.")
+                            : qsTr("Attendees won't be notified because email notifications are turned off for this event. They'll be able to play the recording on the event page."))
+                  : (emails ? qsTr("Invited and registered attendees will be notified by email. They'll be able to view highlights and play recordings on the event page.")
+                            : qsTr("Attendees won't be notified because email notifications are turned off for this event. They'll be able to view highlights and play recordings on the event page."))
+            confirmText: qsTr("Publish highlights")
+            dialogWidth: 600
+            leadingText: emails ? qsTr("Preview email") : ""
+            leadingIcon: "eye-20"
+            onLeading: root.hlPreviewEmail()
+            onConfirmed: root.hlConfirmPublish(file, mode)
+        }
+        ConfirmDialog {
+            id: hlRemoveDialog
+            title: qsTr("Remove highlights from event page?")
+            body: qsTr("Attendees will no longer be able to view them on the event page. Your edits will be saved if you decide to publish highlights again later.")
+            confirmText: qsTr("Remove highlights")
+            onConfirmed: root.hlResetToDraft()
+        }
+        ConfirmDialog {
+            id: hlExtendDialog
+            readonly property string until: root.hlActive && root.hlActive.expirationDate ? new Date(new Date(root.hlActive.expirationDate).getTime() + 60 * 86400000).toLocaleDateString(Qt.locale(), "MMMM d, yyyy") : ""
+            title: qsTr("Extend expiration date?")
+            body: qsTr("This recording will expire on %1 and be removed from the event site. You can publish it again if you’d like it to remain online for attendees.").arg(until)
+            confirmText: qsTr("Extend")
+            cancelText: qsTr("Never mind")
+            onConfirmed: root.hlExtend()
         }
         MenuPopup {
             id: joinMenu

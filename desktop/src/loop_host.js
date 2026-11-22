@@ -53,6 +53,14 @@
             styling.setTheme(d.theme);
         } else if (d.dir === "titleText") {
             titleText().then(t => emit("titleText", { title: t }), () => emit("titleText", { title: "" }));
+        } else if (d.dir === "serialize") {
+            // Teams' getSerializedContentRef (its Loop component host,
+            // 525430 Mn): the component's ComponentSerializable.serialize(),
+            // what an event's highlights are published with.
+            const c = rendered;
+            Promise.resolve(c && c.ComponentSerializable && c.ComponentSerializable.serialize ? c.ComponentSerializable.serialize() : undefined)
+                .then(v => emit("serialized", { ok: v !== undefined && v !== null, content: v === undefined || v === null ? "" : typeof v === "string" ? v : JSON.stringify(v) }),
+                      err => emit("serialized", { ok: false, content: "", message: String(err && err.message || err).slice(0, 200) }));
         } else if (d.dir === "commanding") {
             let m = {};
             try { m = JSON.parse(d.json) } catch (x) { return }

@@ -44,6 +44,11 @@ Item {
     /// (requestTitle; "" when it has none or isn't drawn).
     signal titleText(string title)
     function requestTitle() { if (root.state_ === "ready") bridge.askTitle(); else root.titleText("") }
+    /// The component's serialized content (Teams' getSerializedContentRef:
+    /// ComponentSerializable.serialize()), as an event's highlights are
+    /// published; ok false when it has none or isn't drawn.
+    signal serialized(bool ok, string content)
+    function requestSerialized() { if (root.state_ === "ready") bridge.askSerialized(); else root.serialized(false, "") }
     signal failed(string message)
     readonly property string hostTheme: theme.highContrast ? "contrast" : theme.dark ? "dark" : "default"
     property string channelJs: ""
@@ -131,6 +136,7 @@ Item {
         readonly property string theme: root.hostTheme
         signal reply(string id, string json)
         signal askTitle()
+        signal askSerialized()
         /// To the host's commanding surface: {op: "exec", key, seq} or
         /// {op: "dismiss", seq}.
         signal commanding(string json)
@@ -151,6 +157,7 @@ Item {
             if (name === "title") { root.componentTitle = d.title || ""; return }
             if (name === "icon") { console.info("LOOPHOST", root.kind, "icon", d.url ? d.url.split("?")[0].slice(0, 200) : d.failed ? "failed" : "none"); if (d.url || root.iconUrl === "") { root.iconUrl = d.url || ""; root.iconState = d.failed ? "failed" : "known" } return }
             if (name === "titleText") { root.titleText(String(d.title || "")); return }
+            if (name === "serialized") { if (!d.ok) console.warn("LOOPHOST serialize", d.message || "nothing"); root.serialized(!!d.ok, String(d.content || "")); return }
             if (name === "rendered") root.state_ = "ready"
             else if (name === "error" || (name === "closed" && d.errorType)) { root.error = d.message || d.errorType || "error"; root.state_ = "error"; root.failed(root.error) }
             else if (name === "created" && d.componentUrl) { root.createdInfo = d; root.created(d.componentUrl) }

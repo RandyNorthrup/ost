@@ -395,9 +395,53 @@ The event page:
     highlights?" ("A new set of highlights will be generated using the
     recording you selected. This will replace the current highlights and
     can't be undone.", Generate highlights).
-  - Publish ("Ready to publish highlights?") sends `POST events/{id}/
-    sessions/{sid}/recordings` with the recording and `highlightsContent`,
-    the Loop page's content serialized by the page (not built in OST).
+  - The session's recording (Teams' activeRecording) is the first of
+    `GET events/{id}/sessions` → `[0].recordings[0]` `{id, name,
+    publishProgress {status Draft|Scheduled|InProgress|Published|Failed|
+    Expired}, expirationDate, isExpirationExtended, hasHighlights,
+    sourceUrl, sourceDriveId, sourceItemId}`. With none, the first meeting
+    recording (the contents list's first) is picked: saved as a draft and
+    the highlights generated from it (no dialog). Picking another file
+    saves it as the draft at once, then asks "Generate new AI
+    highlights?". A meeting recording goes as `{id: driveItemId, name: the
+    artifact's id, objectUrl: its location}`.
+  - The draft and Publish are `POST events/{id}/sessions/{sid}/recordings`
+    (x-skypetoken) `{name, webUrl, duration (the video's ms), 
+    expirationDurationDays 30, driveId, itemId}` + `isDraft: true` for the
+    draft, + `highlightsContent` on Publish with Recording + text
+    highlights: the highlights Loop component's
+    `ComponentSerializable.serialize()` (Teams' getSerializedContentRef).
+    Publish is usable on a Draft / Failed / Expired recording of a
+    published event ("This option is only available after the event has
+    been published." on a draft event).
+  - Publish's dialog: "Ready to publish highlights?", the text by what's
+    included and whether attendee emails are on ("Invited and registered
+    attendees will be notified by email. They'll be able to view
+    highlights and play recordings on the event page." / "…play the
+    recording…" / "Attendees won't be notified because email
+    notifications are turned off for this event. …"), Preview email
+    (leading, the Event recording available email) when emails are on,
+    Cancel / Publish highlights.
+  - Status bars (Fluent MessageBar): Generating (spinner), a generation
+    error (warning: "Couldn't generate highlights." + "There was an error
+    while creating your highlights." with Retry, or "Recording not
+    available for highlights" + "Select a video with a transcript and try
+    again." for TranscriptNotFound/TooShort/Empty), not published (info),
+    "Publishing highlights..." + "This might take a minute. Feel free to
+    leave this tab and we'll notify you when it's done." with Cancel
+    publish (spinner), "Highlights published to event page." + "Expires
+    {date}" + Extend for 60 days (success; "Extend expiration date?" →
+    `PATCH …/recordings/{rid} {expirationDurationExtensionDays: 60}`),
+    "Failed to publish recording" (error), "Recording expired" (warning),
+    and after a failed publish "There was a problem publishing this file.
+    Let's try again." / "This file can't be published because recording
+    has been already published for this event.". Published replaces
+    Included content and Publish by Remove highlights ("Remove highlights
+    from event page?"); it and Cancel publish reset to a draft (`DELETE
+    …/recordings/{rid}`, then the draft POSTed again).
+  - Select from OneDrive (the picker's group and the empty state's
+    button): Teams' OneDrive file picker (files, shared libraries, .mp4 and
+    .mov, one file); the pick is treated as above.
 - **Preview** on: "This is a preview of what attendees will see." instead of
   the tabs; the attendee's page (Add to calendar, no banner edit, no Manage
   apps).
@@ -551,6 +595,36 @@ meetings, your meetings with a transcript from the last 30 days, else
 `illustrations/png/128/calendar-three-people-l-standard-128x128.png` and "No meetings
 were transcribed"; Generate (off until a meeting is picked). Teams' Generate is an
 AugLoop operation (teams_recap_podcast_generation) with the meetings' transcripts.
+
+The dialog's meetings (winpc 2026-11-22): grouped by week in an accordion ("This
+week", "Last week", else the week's date; 44 tall headers, a 13 px filled caret, 14/600);
+rows 72.7 tall: a checkbox, the title 14/600 over "Today · 1:00 PM - 1:30 PM ,
+{organizer}" (12 #616161; Today / Yesterday / "Friday, November 20"); from the row's
+middle the chips (24 tall on #F5F5F5, a 16 px brand glyph and the count 12/600; tooltip
+"3 tasks for people to follow up on") from Teams' meeting catch-up recommendations
+(`POST substrate.office.com/search/api/v1/recommendations?setflight=AiTasksV2,
+AiNotesV2,AllowResultsWithoutMeeting,PeopleMentionsV2`, EntityType and scenario
+MeetingCatchUp: `PointsOfInterest.ActionItems` / `MentionEvents` per
+`MeetingRecording.TeamsThreadId`); the recording's thumbnail 84 x 48 at the right (Graph
+`drives/{d}/items/{i}/thumbnails/0/c126x72/content`); a picked row #F5F5F5; "✕ n/8
+selected" (a pill) left of the search box.
+
+**A finished audio recap** (winpc, "OST TEST 212 recap long", 5 min 38 s): the list row
+shows the title and its length ("5m 38s", or "4m 3s left" once started). The detail:
+title 16/600, Listen on mobile, a New badge, ··· (Learn more: a 676 wide dialog with three
+paragraphs; Delete: "Delete audio recap?" "Are you sure you want to delete this audio
+recap? The audio recap will also be deleted on your OneDrive."); the day 12; AI generated
+with Like / Dislike; a line; Chapters / Transcript. Chapters are grouped by meeting
+(`chapters[].meetings[0]`): the first and last chapters without one stand alone ("Intro",
+"Outro", 18/600, their start at the right), a meeting's group opens with its name
+(18/600), "Today · 1:00 PM - 1:30 PM, {organizer}" (12) and Recap, then its chapters (31.3
+rows: a 12 px brand play glyph, the title 14, the one playing 600 brand, "mm:ss" at the
+right); a chapter's start is the sum of the earlier durations. Transcript: the recap's
+caption file (WebVTT, fetched with the file's site token); voices are "Speaker 1",
+"Speaker 2" in order of first speech; "Speaker n · mm:ss" (12 #707070) where the speaker
+changes, 12 above it, each line 14/20. The player: the chapter's title 14/600, a 6 px bar
+in chapter segments, "01:41 / 05:38", then speed, back 10, Play (40), forward 10 and Play
+in new window. Generating in Teams auto-plays the new recap.
 
 **Attendees** card: the picture is `illustrations/v2/people-l-standard.svg` (dark
 `people-d-standard.svg`) at 128, under "When attendees RSVP or register, they'll show up

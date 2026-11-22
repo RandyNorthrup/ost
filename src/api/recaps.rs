@@ -94,8 +94,62 @@ pub fn meetings_from(v: &Value) -> Vec<Value> {
             "organizerId": t.pointer("/organizer/id").or_else(|| t.pointer("/organizerId")).or_else(|| t.pointer("/organizer/user/id"))
                 .and_then(Value::as_str).unwrap_or_default().split('@').next().unwrap_or_default(),
             "transcripts": m.get("resources").and_then(Value::as_array).into_iter().flatten().filter_map(super::podcast::transcript_from).collect::<Vec<_>>(),
+            // Generate audio recap's row thumbnail: the first recording's
+            // file (Teams' meeting.recordings[0]).
+            "recording": m.get("resources").and_then(Value::as_array).into_iter().flatten()
+                .find(|r| r.get("type").and_then(Value::as_str) == Some("Recording"))
+                .map(|r| {
+                    let g = |k: &str| r.pointer(&format!("/metadata/{k}")).or_else(|| r.get(k)).and_then(Value::as_str).unwrap_or_default().to_string();
+                    json!({ "driveId": g("driveId"), "itemId": g("driveItemId") })
+                })
+                .unwrap_or(Value::Null),
         }))
     }).collect()
+}
+
+/// Teams' meeting catch-up recommendations for a time range (its
+/// getMeetingCatchUpRecommendationsByTimeRange: `POST substrate.office.com/
+/// search/api/v1/recommendations?setflight=AiTasksV2,AiNotesV2,
+/// AllowResultsWithoutMeeting,PeopleMentionsV2` with an entity request of
+/// type MeetingCatchUp, scenario MeetingCatchUp). Generate audio recap's rows
+/// show their task and mention counts (`PointsOfInterest.ActionItems`,
+/// `MentionEvents`); keyed by the meeting's thread.
+pub async fn catch_up_counts(start: &str, end: &str) -> Result<serde_json::Map<String, Value>> {
+    let token = crate::auth::oauth::access_token_for("https://substrate.office.com/.default").await?;
+    let body = catch_up_body_range(start, end);
+    let r = reqwest::Client::new()
+        .post("https://substrate.office.com/search/api/v1/recommendations?setflight=AiTasksV2,AiNotesV2,AllowResultsWithoutMeeting,PeopleMentionsV2")
+        .bearer_auth(token)
+        .header("x-client-request-id", uuid::Uuid::new_v4().to_string())
+        .json(&body)
+        .send()
+        .await
+        .context("Meeting catch-up")?;
+    let status = r.status();
+    anyhow::ensure!(status.is_success(), "Meeting catch-up answered {status}");
+    let v: Value = r.json().await.unwrap_or_default();
+    Ok(catch_up_counts_from(&v))
+}
+
+/// The MeetingCatchUp request for a range.
+pub fn catch_up_body_range(start: &str, end: &str) -> Value {
+    json!({ "EntityRequests": [{ "QueryParameters": [{ "EntityType": "MeetingCatchUp", "StartDateTime": start, "EndDateTime": end }] }], "Scenario": { "Name": "MeetingCatchUp" } })
+}
+
+/// Per thread: `{actionItemCount, mentionEventCount}` from a MeetingCatchUp
+/// reply (`EntitySets[0].ResultSets[0].Results[].Source`).
+pub fn catch_up_counts_from(v: &Value) -> serde_json::Map<String, Value> {
+    let mut out = serde_json::Map::new();
+    for r in v.pointer("/EntitySets/0/ResultSets/0/Results").and_then(Value::as_array).into_iter().flatten() {
+        let s = &r["Source"];
+        let thread = s.pointer("/MeetingRecording/TeamsThreadId").and_then(Value::as_str).unwrap_or_default();
+        if thread.is_empty() {
+            continue;
+        }
+        let n = |k: &str| s.pointer(&format!("/PointsOfInterest/{k}")).and_then(Value::as_array).map(Vec::len).unwrap_or(0);
+        out.insert(thread.to_string(), json!({ "actionItemCount": n("ActionItems"), "mentionEventCount": n("MentionEvents") }));
+    }
+    out
 }
 
 /// Home's meetings for `days` local days back from `from_days_ago`
@@ -1131,6 +1185,20 @@ pub async fn delete_template(client: &TeamsClient, id: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn catch_up_counts_per_thread() {
+        let b = catch_up_body_range("2026-11-01T00:00:00.000Z", "2026-11-22T00:00:00.000Z");
+        assert_eq!(b["EntityRequests"][0]["QueryParameters"][0]["EntityType"], "MeetingCatchUp");
+        assert_eq!(b["Scenario"]["Name"], "MeetingCatchUp");
+        let v = json!({"EntitySets": [{"ResultSets": [{"Results": [
+            {"Source": {"MeetingRecording": {"TeamsThreadId": "19:meeting_a@thread.v2"}, "PointsOfInterest": {"ActionItems": [{}, {}, {}], "MentionEvents": [{}]}}},
+            {"Source": {"MeetingRecording": {"TeamsThreadId": ""}, "PointsOfInterest": {}}}]}]}]});
+        let m = catch_up_counts_from(&v);
+        assert_eq!(m.len(), 1);
+        assert_eq!(m["19:meeting_a@thread.v2"]["actionItemCount"], 3);
+        assert_eq!(m["19:meeting_a@thread.v2"]["mentionEventCount"], 1);
+    }
 
     #[test]
     fn ai_notes_read_as_teams() {

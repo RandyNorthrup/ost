@@ -45,6 +45,27 @@ Popup {
     signal confirmed()
     /// Cancel (not Esc).
     signal cancelled()
+    /// A transparent small button at the start of the buttons' row (Teams'
+    /// leadingActions, as the highlights publish dialog's Preview email).
+    property string leadingText: ""
+    property string leadingIcon: ""
+    signal leading()
+    function confirm() { root.close(); root.confirmed() }
+
+    Rectangle {
+        id: leadBtn
+        visible: root.leadingText.length > 0 && root.checkText.length === 0
+        x: 24.67; width: leadRow.implicitWidth + 10; height: 23.3; radius: 4
+        y: buttons.y
+        color: leadHover.hovered ? theme.menuHover : "transparent"
+        Row { id: leadRow; x: 5; anchors.verticalCenter: parent.verticalCenter; spacing: 4
+            FluentIcon { visible: root.leadingIcon.length > 0; name: root.leadingIcon; size: 16; color: theme.textStrong; anchors.verticalCenter: parent.verticalCenter }
+            Text { text: root.leadingText; font.family: theme.font; font.pixelSize: 12; color: theme.text; anchors.verticalCenter: parent.verticalCenter } }
+        HoverHandler { id: leadHover; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: root.leading() }
+        Accessible.role: Accessible.Button
+        Accessible.name: root.leadingText
+    }
 
     Rectangle {
         id: hcFill1

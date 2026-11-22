@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-17T01:27:00Z'
-updated_date: '2026-11-22T19:23:00Z'
+updated_date: '2026-11-22T21:24:00Z'
 labels:
   - desktop
 dependencies: []
@@ -117,4 +117,15 @@ What TASK-0209 left (docs/spec/events.md, docs/spec/call-and-meeting-window.md):
   - The downloaded transcript .docx deleted on linuxlt; the meetI test mic and camera were stopped right after the call.
   - Left in place: the highlights Loop file Teams made in its own SharePoint Embedded storage (users can't delete it; it went with the cancelled event's meeting); the organization link OST made on it once (see above).
 - Still open for AC1: Highlights' Publish (POST events/{id}/sessions/{sid}/recordings with the Loop page's serialized highlightsContent, and the "Ready to publish highlights?" dialog); Select from OneDrive in the recording picker (says to pick a video with a transcript instead of opening a picker); the Generate dialog's rows aren't grouped by date with tasks chip and thumbnail as in Teams; the Audio recaps detail of a finished recap (chapters, transcript, playback) couldn't be checked live, since every test meeting was too thin for Teams too.
+
+- 2026-11-22 (meetK) long test event: "OST TEST 212 recap long" published by ost-test1 (OST, default profile; event 2ba5988e-…, 1:00–1:30 PM PT, Specific people: OST Test 3). Both joined from linuxlt with meetK-only PipeWire mics fed with a 9 min 9 s two-voice Piper dialogue (a community-garden planning meeting with decisions and action items). The event records and transcribes automatically (Teams' event default): the first run's --join-record-both therefore stopped the running recording after 16 s; both left (Leave clicked), and the second run (no record flag) was recorded and transcribed automatically from 12:45 to 12:57 PT. Both instances' logs show the call ended (audio devices closed) and they quit; the fake mics were unloaded and the test camera stopped.
+- OST Test 3's profile had lost its sign-in; signed in again in OST (password typed by a virtual keyboard, never printed; no MFA prompt).
+- Built (not yet live-checked): Highlights Publish (session recordings: draft on pick, Publish with the Loop page's ComponentSerializable.serialize() as highlightsContent, Teams' status bars, Remove highlights / Cancel publish = reset to draft, Extend for 60 days), Select from OneDrive (CloudPicker single, .mp4/.mov), Generate dialog rows grouped by week with task/mention chips (MeetingCatchUp recommendations) and recording thumbnails, Audio recaps detail (chapters with their place in the audio, transcript from the caption file, player controls).
+
+- 2026-11-22 (meetK) live, winpc (Teams 26304, ost-test1):
+  - Generate audio recap in Teams for "OST TEST 212 recap long" succeeded (5 min 38 s; chapters Intro, the meeting with Meeting overview, Budget estimates and contingency, Permit owners and timelines, Plot allocation and volunteer rotations, Spring workshop planning, Launch program and promotion, Water and soil delivery risks, Accessible garden design, Compost area relocation, Outro). Measured the dialog rows (week groups, 72.7 rows, task chips "3 tasks for people to follow up on", 84 x 48 thumbnails, "n/8 selected"), the recap detail (header, chapters grouped by meeting with Recap, transcript "Speaker n · mm:ss", player), ··· Learn more / Delete. Teams auto-played the new recap; paused at once.
+  - OST highlights generation (default profile = ost-test1, before Teams opened the tab): createHighlights 201 (Teams had not generated), AugLoop teams_event_highlights steps FetchGroundingData, GenerateHighlights, WriteToLoop, succeeded; the Loop page rendered in OST. (The older run picked the short 16 s recording: TranscriptNotFound; Teams picks the contents list's first, which OST now does.)
+  - OST's first draft save answered 400. Teams' own draft (captured over CDP when Teams then opened the tab): POST …/sessions/{sid}/recordings {name: the artifact id "…-Recording", webUrl: the recording's /:v:/p/ share link, duration 766144 (ms), expirationDurationDays 30, driveId, itemId, isDraft true} → 201, read back as recordings[0] {status Draft, duration "00:12:46.144", hostType SPE}. Teams then generated its own highlights (Generating bar, then "Highlights aren't published yet.").
+  - Teams' recording picker: "Current recording" (checked), "Select another recording" (info), a line, "Select from OneDrive" (OneDrive colour mark) → OneDrive's FilePicker.aspx in a 973 x 558 dialog on Home, videos only, Confirm / Cancel (cancelled). Publish → "Ready to publish highlights?" 600 wide with Preview email, Cancel, Publish highlights (cancelled).
+  - An OST loop bug (a failed draft re-picked and re-generated) was caught after one extra generation and fixed (once per visit, as Teams).
 <!-- SECTION:NOTES:END -->

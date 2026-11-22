@@ -233,6 +233,64 @@ pub fn site_url(location: &str) -> String {
     String::new()
 }
 
+/// How long a published recording stays on the event page (Teams'
+/// virtualEventsRecording expirationDurationDays).
+pub const EXPIRATION_DAYS: i64 = 30;
+/// Extend's days (Teams' "Extend for 60 days").
+pub const EXTENSION_DAYS: i64 = 60;
+
+/// A recording as Teams publishes it to the event's session (its
+/// addVirtualEventSessionRecording input after the resolver's At(): `{name,
+/// webUrl, duration, expirationDurationDays, driveId, itemId}`, plus the
+/// Loop page's serialized `highlightsContent` when the highlights go with
+/// it, and `isDraft` for a draft). For a meeting artifact Teams names the
+/// file by the artifact's id and sends its location as the address.
+pub fn recording_body(name: &str, web_url: &str, duration_ms: Option<f64>, drive_id: &str, item_id: &str, highlights_content: Option<&str>, draft: bool) -> Value {
+    let mut b = json!({ "name": name, "webUrl": web_url, "expirationDurationDays": EXPIRATION_DAYS, "driveId": drive_id, "itemId": item_id });
+    if let Some(d) = duration_ms {
+        b["duration"] = json!(d);
+    }
+    if let Some(c) = highlights_content {
+        b["highlightsContent"] = json!(c);
+    }
+    if draft {
+        b["isDraft"] = json!(true);
+    }
+    b
+}
+
+/// The video's length in milliseconds, as Teams reads it before
+/// publishing (its fetchOdspVideoItem: the file's `video.duration`).
+pub async fn video_duration(location: &str, drive_id: &str, item_id: &str) -> Result<Option<f64>> {
+    let u = url::Url::parse(location).context("Not a file address")?;
+    let host = u.host_str().unwrap_or_default().to_string();
+    anyhow::ensure!(host.ends_with(".sharepoint.com"), "Not a file address");
+    let token = crate::auth::oauth::access_token_for(&format!("https://{host}/.default")).await?;
+    let base = location.split('?').next().unwrap_or_default().trim_end_matches("/content");
+    let ok = |s: &str| !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || "!-_".contains(c));
+    let url = if base.contains("/_api/") {
+        format!("{base}?select=video")
+    } else if ok(drive_id) && ok(item_id) {
+        format!("https://{host}/_api/v2.0/drives/{drive_id}/items/{item_id}?select=video")
+    } else {
+        anyhow::bail!("Not a file address")
+    };
+    let r = reqwest::Client::new().get(&url).bearer_auth(token).send().await.context("The file")?;
+    anyhow::ensure!(r.status().is_success(), "The file answered {}", r.status());
+    let v: Value = r.json().await.unwrap_or_default();
+    Ok(v.pointer("/video/duration").and_then(Value::as_f64))
+}
+
+/// The session's recording Teams treats as the active one (the first),
+/// and its publish status ("Draft", "Scheduled", "InProgress",
+/// "Published", "Failed", "Expired").
+pub fn active_recording(sessions: &Value) -> (String, Option<Value>) {
+    let s = sessions.as_array().and_then(|a| a.first()).cloned().unwrap_or_default();
+    let sid = s.get("id").and_then(Value::as_str).unwrap_or_default().to_string();
+    let rec = s.get("recordings").and_then(Value::as_array).and_then(|a| a.first()).cloned();
+    (sid, rec)
+}
+
 /// What came of a generation: the steps seen, and the result.
 #[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct Generation {
@@ -300,5 +358,21 @@ mod tests {
         assert_eq!(s["eventContext"]["eventLanguage"], "en-US");
         assert_eq!(s["loopFile"]["siteUrl"], "https://x-my.sharepoint.com/personal/u");
         assert_eq!(s["H_"]["T_"], "AugLoop_TeamsEventHighlights_TeamsEventHighlightsSignal");
+    }
+
+    #[test]
+    fn publish_bodies() {
+        let d = recording_body("rec.mp4", "https://x/_api/v2.1/drives/b!d/items/R1", Some(171_000.0), "b!d", "R1", None, true);
+        assert_eq!(d["isDraft"], true);
+        assert_eq!(d["expirationDurationDays"], 30);
+        assert!(d.get("highlightsContent").is_none());
+        let p = recording_body("rec.mp4", "https://x", None, "b!d", "R1", Some("<p>hi</p>"), false);
+        assert_eq!(p["highlightsContent"], "<p>hi</p>");
+        assert!(p.get("isDraft").is_none() && p.get("duration").is_none());
+        let s = json!([{"id": "s1", "recordings": [{"id": "r1", "publishProgress": {"status": "Draft"}}]}]);
+        let (sid, rec) = active_recording(&s);
+        assert_eq!(sid, "s1");
+        assert_eq!(rec.unwrap()["publishProgress"]["status"], "Draft");
+        assert!(active_recording(&json!([])).1.is_none());
     }
 }

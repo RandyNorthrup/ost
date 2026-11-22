@@ -21822,6 +21822,46 @@ impl qobject::Backend {
                         let from = p.get("from").and_then(|v| v.as_i64()).unwrap_or(0);
                         api::recaps::meetings(&notes_region(&client), from, 14).await
                     }
+                    // Generate audio recap's task and mention counts (the
+                    // meeting catch-up recommendations of the last 30 days).
+                    "recapCatchUp" => {
+                        let end = chrono::Utc::now();
+                        let f = |t: chrono::DateTime<chrono::Utc>| t.to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+                        Ok(serde_json::Value::Object(api::recaps::catch_up_counts(&f(end - chrono::Duration::days(30)), &f(end)).await?))
+                    }
+                    // An audio recap's transcript: its caption file read with
+                    // the file's own site token (Teams' useTranscriptData).
+                    "podcastCaptions" => {
+                        let u = reqwest::Url::parse(&s("url"))?;
+                        let host = u.host_str().unwrap_or_default().to_string();
+                        anyhow::ensure!(u.scheme() == "https" && host.ends_with(".sharepoint.com"), "Not a file address");
+                        let token = teams_cli::auth::oauth::access_token_for(&format!("https://{host}/.default")).await?;
+                        let r = reqwest::Client::new().get(u).bearer_auth(token).send().await?;
+                        anyhow::ensure!(r.status().is_success(), "The transcript answered {}", r.status());
+                        Ok(json!({ "text": r.text().await? }))
+                    }
+                    // A recording's 126 x 72 thumbnail (Teams' Graph
+                    // `drives/{d}/items/{i}/thumbnails/0/c126x72/content`),
+                    // cached; its local path.
+                    "recordingThumb" => {
+                        let (d, i) = (s("driveId"), s("itemId"));
+                        let ok = |x: &str| !x.is_empty() && x.chars().all(|c| c.is_ascii_alphanumeric() || "!-_".contains(c));
+                        anyhow::ensure!(ok(&d) && ok(&i), "Not a drive file");
+                        let base = std::env::var_os("XDG_CACHE_HOME")
+                            .map(std::path::PathBuf::from)
+                            .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".cache")))
+                            .ok_or_else(|| anyhow::anyhow!("No cache directory"))?;
+                        let dir = base.join("ost").join("images");
+                        let path = dir.join(format!("recthumb-{}.jpg", i.replace('!', "_")));
+                        if !path.exists() {
+                            let r = client.graph_get(&format!("/drives/{d}/items/{i}/thumbnails/0/c126x72/content")).await?;
+                            anyhow::ensure!(r.status().is_success(), "The thumbnail answered {}", r.status());
+                            let bytes = r.bytes().await?;
+                            std::fs::create_dir_all(&dir)?;
+                            std::fs::write(&path, &bytes)?;
+                        }
+                        Ok(json!({ "path": path.display().to_string() }))
+                    }
                     // A recap card's recap: the meeting it belongs to, the
                     // recording's player and its transcript.
                     "recapOpen" => {
@@ -21944,7 +21984,11 @@ impl qobject::Backend {
                         // The picked recording's player (Teams' OnePlayer
                         // preview of the file), else the latest one's.
                         let want = s("recordingItem");
-                        let pick = recs.iter().find(|r| !want.is_empty() && r.item_id == want).or(recs.last());
+                        // A video picked from OneDrive (not one of the
+                        // meeting's recordings) plays as itself.
+                        let picked_file = (!want.is_empty() && !s("recordingDrive").is_empty() && !recs.iter().any(|r| r.item_id == want))
+                            .then(|| api::event_highlights::Recording { drive_id: s("recordingDrive"), item_id: want.clone(), ..Default::default() });
+                        let pick = picked_file.as_ref().or_else(|| recs.iter().find(|r| !want.is_empty() && r.item_id == want)).or(recs.first());
                         let player = match pick {
                             Some(r) => api::recaps::player_url(&client, &r.drive_id, &r.item_id).await.unwrap_or_else(|e| {
                                 tracing::info!("event highlights player: {}", short_error(&e));
@@ -21965,7 +22009,52 @@ impl qobject::Backend {
                             }
                             _ => String::new(),
                         };
-                        Ok(json!({ "recordings": recs, "loop": lf, "created": created, "player": player, "loopUrl": loop_url, "transcripts": transcripts }))
+                        // The session's published (or draft) recording, as
+                        // Teams' HighlightsOrganizerSessionsQuery reads it.
+                        let (session, active) = match s("eventId") {
+                            id if id.is_empty() => (String::new(), None),
+                            id => match api::events::sessions(&client, &id).await {
+                                Ok(v) => api::event_highlights::active_recording(&v),
+                                Err(e) => {
+                                    tracing::info!("event highlights: sessions: {}", short_error(&e));
+                                    (String::new(), None)
+                                }
+                            },
+                        };
+                        tracing::info!(session = !session.is_empty(), active = %active.as_ref().and_then(|a| a.pointer("/publishProgress/status")).and_then(|x| x.as_str()).unwrap_or("none"), "event highlights: session recording");
+                        Ok(json!({ "recordings": recs, "loop": lf, "created": created, "player": player, "loopUrl": loop_url, "transcripts": transcripts,
+                                   "sessionId": session, "active": active }))
+                    }
+                    // Highlights' draft and Publish (Teams' saveDraft and
+                    // addVirtualEventSessionRecording): the picked file
+                    // `{id, driveId, name, objectUrl}` sent to the event's
+                    // session, a draft or published (with the Loop page's
+                    // serialized content when the highlights go with it).
+                    // "highlightsReset" is Remove highlights / Cancel publish
+                    // (Teams' resetVirtualEventSessionRecordingToDraft: the
+                    // recording deleted and added again as a draft).
+                    "highlightsSaveDraft" | "highlightsPublish" | "highlightsReset" => {
+                        let f = p.get("file").cloned().unwrap_or_default();
+                        let g = |k: &str| f[k].as_str().unwrap_or_default().to_string();
+                        let (event, session) = (s("eventId"), s("sessionId"));
+                        anyhow::ensure!(!session.is_empty(), "The event has no session");
+                        let duration = api::event_highlights::video_duration(&g("objectUrl"), &g("driveId"), &g("id")).await.unwrap_or_else(|e| {
+                            tracing::warn!("event highlights: video length: {}", short_error(&e));
+                            None
+                        });
+                        if kind == "highlightsReset" {
+                            api::events::delete_session_recording(&client, &event, &session, &s("recordingId")).await?;
+                        }
+                        let content = p.get("content").and_then(|c| c.as_str()).filter(|_| kind == "highlightsPublish");
+                        let body = api::event_highlights::recording_body(&g("name"), &g("objectUrl"), duration, &g("driveId"), &g("id"), content, kind != "highlightsPublish");
+                        tracing::warn!(kind = %kind, name = %g("name"), url = %g("objectUrl").split('?').next().unwrap_or_default(), drive = !g("driveId").is_empty(), item = !g("id").is_empty(), duration = ?duration, "event highlights: sending recording");
+                        let v = api::events::add_session_recording(&client, &event, &session, &body).await?;
+                        tracing::info!(kind = %kind, content = content.map(str::len).unwrap_or(0), status = %v.pointer("/publishProgress/status").and_then(|x| x.as_str()).unwrap_or_default(), "event highlights: recording sent");
+                        Ok(json!({ "recording": v }))
+                    }
+                    "highlightsExtend" => {
+                        let v = api::events::extend_session_recording(&client, &s("eventId"), &s("sessionId"), &s("recordingId"), api::event_highlights::EXTENSION_DAYS).await?;
+                        Ok(json!({ "recording": v }))
                     }
                     // Highlights' Download: the recording's video, or its
                     // transcript as a Word document, into Downloads.
@@ -22014,6 +22103,14 @@ impl qobject::Backend {
                     // The harness's clean-up (--podcast-cleanup): your audio
                     // recaps made from "OST TEST …" meetings deleted as Teams'
                     // deletePodcasts does.
+                    // ··· ▸ Delete (Teams' deletePodcasts of the one recap).
+                    "podcastDelete" => {
+                        let ids: Vec<String> = p.get("ids").and_then(|v| v.as_array()).into_iter().flatten().filter_map(|x| x.as_str().map(str::to_string)).collect();
+                        anyhow::ensure!(!ids.is_empty(), "No audio recap");
+                        let deleted = api::podcast::delete(&ids, &app_locale()).await?;
+                        anyhow::ensure!(deleted.len() == ids.len(), "Couldn't delete the audio recap");
+                        Ok(json!({ "deleted": deleted.len() }))
+                    }
                     "podcastCleanup" => {
                         let list = api::recaps::podcasts(&notes_region(&client)).await?;
                         let ids: Vec<String> = list["items"].as_array().into_iter().flatten()

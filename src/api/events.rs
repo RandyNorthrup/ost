@@ -1561,6 +1561,86 @@ pub async fn townhall_app_remove(client: &TeamsClient, thread: &str, app: &str) 
     Ok(json!({ "removed": app }))
 }
 
+/// The event's sessions with their published recordings (Teams'
+/// virtualEventSessions: `GET events/{id}/sessions`; each session's
+/// `recordings` `[{id, name, publishProgress {status, subStatus,
+/// progressPct, timeStamp}, expirationDate, isExpirationExtended, duration,
+/// hasHighlights, sourceUrl, sourceDriveId, sourceItemId}]`).
+pub async fn sessions(client: &TeamsClient, id: &str) -> Result<Value> {
+    let id = event_path(id)?;
+    let v = get_json(&format!("{}/events/{id}/sessions", regional_endpoint(client)), false).await?;
+    Ok(v.get("value").cloned().filter(Value::is_array).unwrap_or(if v.is_array() { v } else { json!([]) }))
+}
+
+fn session_path(s: &str) -> Result<&str> {
+    anyhow::ensure!(!s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || "-_@".contains(c)), "Not a session id");
+    Ok(s)
+}
+
+/// Teams' addSessionRecording (Highlights' draft and Publish): `POST
+/// events/{id}/sessions/{sid}/recordings` with the recording (see
+/// [`super::event_highlights::recording_body`]) and the Skype token, as
+/// its virtual events transport sends it.
+pub async fn add_session_recording(client: &TeamsClient, id: &str, session: &str, body: &Value) -> Result<Value> {
+    let id = event_path(id)?;
+    let session = session_path(session)?;
+    let t = token().await?;
+    let resp = reqwest::Client::new()
+        .post(format!("{}/events/{id}/sessions/{session}/recordings", regional_endpoint(client)))
+        .bearer_auth(t)
+        .header("content-type", "application/json")
+        .header("x-ms-correlation-id", uuid::Uuid::new_v4().to_string())
+        .header("x-skypetoken", client.skype_token_value()?)
+        .json(body)
+        .send()
+        .await
+        .context("The events service")?;
+    let status = resp.status();
+    let text = resp.text().await.unwrap_or_default();
+    if !status.is_success() {
+        // Teams tells "RecordingAlreadyExists" apart from other failures.
+        let v = serde_json::from_str::<Value>(&text).unwrap_or_default();
+        let code = v.get("ErrorCode").or_else(|| v.get("code")).or_else(|| v.get("errorCode")).map(|c| c.as_str().map(str::to_string).unwrap_or_else(|| c.to_string())).unwrap_or_default();
+        let msg = v.get("ErrorMessage").or_else(|| v.get("message")).and_then(Value::as_str).unwrap_or_default();
+        tracing::warn!(%status, %code, message = %msg.chars().take(300).collect::<String>(), "events: session recording refused");
+        anyhow::bail!("The events service answered {status}{}", if code.is_empty() { String::new() } else { format!(": {code}") });
+    }
+    Ok(serde_json::from_str(&text).unwrap_or_else(|_| json!({})))
+}
+
+/// Teams' deleteSessionRecording: `DELETE events/{id}/sessions/{sid}/
+/// recordings/{rid}`.
+pub async fn delete_session_recording(client: &TeamsClient, id: &str, session: &str, recording: &str) -> Result<()> {
+    let id = event_path(id)?;
+    let session = session_path(session)?;
+    let recording = session_path(recording)?;
+    send(reqwest::Method::DELETE, &format!("{}/events/{id}/sessions/{session}/recordings/{recording}", regional_endpoint(client)), None, false).await?;
+    Ok(())
+}
+
+/// Extend for 60 days (Teams' updateSessionRecording: `PATCH events/{id}/
+/// sessions/{sid}/recordings/{rid}` `{expirationDurationExtensionDays}`).
+pub async fn extend_session_recording(client: &TeamsClient, id: &str, session: &str, recording: &str, days: i64) -> Result<Value> {
+    let id = event_path(id)?;
+    let session = session_path(session)?;
+    let recording = session_path(recording)?;
+    let t = token().await?;
+    let resp = reqwest::Client::new()
+        .patch(format!("{}/events/{id}/sessions/{session}/recordings/{recording}", regional_endpoint(client)))
+        .bearer_auth(t)
+        .header("content-type", "application/json")
+        .header("x-ms-correlation-id", uuid::Uuid::new_v4().to_string())
+        .header("x-skypetoken", client.skype_token_value()?)
+        .json(&json!({ "expirationDurationExtensionDays": days }))
+        .send()
+        .await
+        .context("The events service")?;
+    let status = resp.status();
+    let text = resp.text().await.unwrap_or_default();
+    anyhow::ensure!(status.is_success(), "The events service answered {status}");
+    Ok(serde_json::from_str(&text).unwrap_or_else(|_| json!({})))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
