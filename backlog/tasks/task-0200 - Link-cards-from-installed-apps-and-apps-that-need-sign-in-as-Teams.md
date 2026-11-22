@@ -4,7 +4,7 @@ title: Link cards from installed apps and apps that need sign-in, as Teams
 status: In Progress
 assignee: []
 created_date: '2026-11-16T11:48:00Z'
-updated_date: '2026-11-21T18:08:00Z'
+updated_date: '2026-11-22T17:02:00Z'
 labels:
   - desktop
 dependencies: []
@@ -61,4 +61,13 @@ TASK-0168 shows Teams' app card for links to sites whose Teams app allows anonym
 
 - 2026-11-21 (chatF), AC2 Azure DevOps organization for ost-test1: opened aex.dev.azure.com in OST's own web profile (new `--web-window=<url>` harness, driven over QTWEBENGINE_REMOTE_DEBUGGING; ost-test1 picked from "Pick an account", no password). Get started > Continue (marketing offers left unticked) reaches "Almost done..." (organization dev.azure.com/osttest200, United States), but Azure DevOps now requires linking a new organization to an Azure subscription: "To create an Azure DevOps organization, you need to link it to an Azure subscription. We couldn't find any subscriptions you have access to. Make sure you have the Owner or Contributor role on at least one Azure subscription." Continue does nothing without one. A new subscription needs payment details, and the only subscription in the tenant is the real "Azure subscription 1" (781cdf6a-…, Randy's); giving ost-test1 Owner/Contributor on it to link the organization (the first five Basic users are free) is a decision for the user, so nothing was created and nothing changed.
   - Left as they were: Wikipedia Search and Azure Boards installed for ost-test1 (both needed if the organization is made; remove with `examples/add_app <id> --remove-personal`, Azure Boards 7299542a-1697-4ec1-812b-6b70065c0795).
+
+- 2026-11-22 (chatG), AC2 with the user's approval of Contributor for ost-test1:
+  - Role: OST Test 1 = Contributor on "Azure subscription 1" (781cdf6a-…), assigned in the portal's IAM as Randy. Azure DevOps listed no subscription for ost-test1 until ost-test1 had signed in to portal.azure.com once (its TOTP was needed there).
+  - Organization dev.azure.com/osttest200 (free tier, billing linked to Azure subscription 1, United States), project OST (private), Task 1 "OST TEST 200 item", all made as ost-test1 in OST's own web window (`--web-window`; the login page only posts when the window is brought to the front over CDP).
+  - OST (`--app-card-test=<item link> --app-card-signin`): Azure Boards answers with its sign-in card; Sign in opened the app's window, ost-test1 was picked (no password), APPAUTH signed in, OST asked again with value.state - and the app answered HTTP 502 again (OST's log: "The app didn't answer: HTTP 502"). A second run still got the sign-in card, so the app kept no sign-in.
+  - Teams on winpc with the same link (typed into OST group test, not sent, cleared; Sign in not clicked per the coordinator): the same "Azure Boards / Sign in to view card content" card. The signed-in card could not be seen in either client: finishing Teams' sign-in would open its sign-in window, which was ruled out on winpc.
+  - Cleaned up: the work item deleted and destroyed (recycle bin empty); Azure Boards and Wikipedia Search removed from ost-test1 (examples/add_app --remove-personal).
+  - Kept: the organization osttest200, project OST and the Contributor role, so AC2 can be finished without repeating the portal and MFA steps (free tier, no cost). Remove the role in the subscription's IAM and delete the organization when AC2 is closed.
+  - Open for AC2: why the app answers 502 to OST's re-query after sign-in (compare Teams' re-query body after its sign-in, which needs Teams' sign-in window on winpc).
 <!-- SECTION:NOTES:END -->
