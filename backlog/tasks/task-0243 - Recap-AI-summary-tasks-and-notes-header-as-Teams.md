@@ -1,10 +1,10 @@
 ---
 id: TASK-0243
 title: Recap AI summary tasks and notes header as Teams
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-11-21T19:30:00Z'
-updated_date: '2026-11-22T16:54:00Z'
+updated_date: '2026-11-22T17:37:00Z'
 labels:
   - desktop
   - calls
@@ -19,7 +19,7 @@ Left from TASK-0240: for OST TEST 240 Teams' AI summary card lists 3 tasks where
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The recap's AI summary page shows the same sections and tasks as Teams for a transcribed meeting
+- [x] #1 The recap's AI summary page shows the same sections and tasks as Teams for a transcribed meeting
 - [ ] #2 The recap's Notes page has Teams' Loop header row
 <!-- AC:END -->
 
@@ -37,4 +37,6 @@ Left from TASK-0240: for OST TEST 240 Teams' AI summary card lists 3 tasks where
   - Fixed on the way: a transcript-only recap card carries no organizer or times, so OST never found the meeting's notes; the recap now fills organizer, call, subject and times from the catch-up answer, as Teams' hG reads them (api::recaps::fill_from_catch_up, unit test).
   - Tests: 893 lib + 29 desktop pass.
   - Left: the header's icon is OST's Loop file icon where Teams shows Loop's app logo from the component's iconUrl (not exposed by OST's Loop host yet); Shared locations' place rows follow the sharedlocations reply but none could be seen (the notes are shared nowhere); "Add to Loop workspace" opens Loop in the browser as Teams does (not clicked again).
+
+- 2026-11-22 merged (890e128, 7a3792a); 902 lib + 29 desktop tests pass. AC1 verified live against Teams. AC2: header row built at Teams' positions; open: it shows OST's Loop file icon where Teams shows Loop's app logo.
 <!-- SECTION:NOTES:END -->
