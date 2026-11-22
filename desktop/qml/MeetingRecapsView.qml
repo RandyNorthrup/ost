@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Window
 import QtQuick.Controls.Basic
 
 // Teams' Meeting Recaps app, where Events' View audio recaps goes
@@ -269,7 +270,7 @@ Rectangle {
             if (search) out = out.filter(m => (m.subject || "").toLowerCase().indexOf(search.toLowerCase()) >= 0)
             return out
         }
-        function openNow() { picked = []; chip = "All"; search = ""; open(); while (root.next < 42 && !root.loading) { root.loadMore(); break } }
+        function openNow() { genDialog.picked = []; genDialog.chip = "All"; genDialog.search = ""; genSearch.text = ""; genDialog.open(); if (root.next < 42 && !root.loading) root.loadMore() }
         contentItem: Column {
             spacing: 0
             Item { width: parent.width; height: 34
@@ -344,9 +345,45 @@ Rectangle {
                     readonly property bool usable: genDialog.picked.length > 0 && genDialog.picked.length <= 8
                     color: !usable ? theme.bgDisabled : genH.hovered ? theme.brandHover : theme.brandFill
                     Text { anchors.centerIn: parent; text: qsTr("Generate"); font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: parent.usable ? theme.textOnBrand : theme.disabledStrong }
-                    HoverHandler { id: genH }
+                    HoverHandler { id: genH; cursorShape: parent.usable ? Qt.PointingHandCursor : Qt.ArrowCursor }
+                    TapHandler { enabled: parent.usable; onTapped: root.generate() }
                     Accessible.role: Accessible.Button; Accessible.name: qsTr("Generate") } }
         }
     }
     function generateDialogForTest(on) { if (on) genDialog.openNow(); else genDialog.close() }
+    // Generate (Teams' RecapHome generateAndPopoutPodcast): the dialog
+    // closes, the audio recap's mini player pops out with "Generating...",
+    // and the recap is made from the picked meetings over AugLoop; then it
+    // plays (or says why it couldn't be made) and Audio recaps reloads.
+    property var audioPlayer: null
+    Component { id: genPlayerComponent; AudioRecapPlayer {} }
+    function generate() {
+        const rows = genDialog.meetings.filter(m => genDialog.picked.indexOf(m.threadId) >= 0)
+        if (rows.length === 0 || rows.length > 8) return
+        genDialog.close()
+        if (!audioPlayer) {
+            audioPlayer = genPlayerComponent.createObject(null, { subject: rows.length === 1 ? rows[0].subject : qsTr("Audio recap") })
+            audioPlayer.closing.connect(() => { root.audioPlayer = null })
+            const w = root.Window.window
+            if (w) { audioPlayer.x = w.x + Math.round((w.width - audioPlayer.width) / 2) + 200; audioPlayer.y = w.y + Math.round((w.height - audioPlayer.height) / 2) - 80 }
+        }
+        audioPlayer.state_ = "generating"
+        audioPlayer.show(); audioPlayer.raise()
+        console.info("RECAPS generate", rows.length, genDialog.style)
+        call("podcastGenerate", { meetings: rows, style: genDialog.style, language: "en-US" }, v => {
+            console.info("RECAPS generated", v.status || "", v.message || "", v.error || "", v.podcast && v.podcast.id ? v.podcast.id : "")
+            root.lastGenerated = v
+            if (root.audioPlayer) root.audioPlayer.result(v)
+            root.loadPodcasts()
+        })
+    }
+    property var lastGenerated: null
+    function pickForTest(subjects, style) {
+        genDialog.picked = genDialog.meetings.filter(m => subjects.some(s => (m.subject || "").indexOf(s) === 0)).map(m => m.threadId)
+        if (style) genDialog.style = style
+        return genDialog.picked.length
+    }
+    function generateForTest() { generate() }
+    function genMeetingsForTest() { return genDialog.meetings.map(m => m.subject) }
+    function audioPlayerStateForTest() { return audioPlayer ? audioPlayer.stateForTest() : "none" }
 }

@@ -3993,6 +3993,24 @@ Window {
                 else if (step === 22) { shot("on-a2"); backend.toggleCamera() }
                 else if (step === 23) callWindow.audioOptionsForTest()
                 else if (step === 24) shot("audio-flyout")
+            } else if (step >= 9 && step <= Math.min(11 + window.joinStay, 400) && Qt.application.arguments.indexOf("--join-record-both") >= 0) {
+                // --join-record-both [--join-record-secs=<s>, default 90]:
+                // Record and transcribe (recording and the transcript
+                // together, as Teams' "Start recording"), kept that long,
+                // then stopped; the recorder's state logged every 4 steps.
+                const grab = n => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-recboth-" + n + ".png")))
+                const st = () => console.warn("JOIN recboth", step, "state", JSON.stringify(backend.callRecordingState), backend.callRecordingTip)
+                const secs = parseInt((Qt.application.arguments.find(a => a.startsWith("--join-record-secs=")) || "--join-record-secs=90").slice(19))
+                const stopAt = 14 + Math.round(secs / 2)
+                if (step === 10) callWindow.recordControl("RecordingButton")
+                else if (step === 11) grab("dialog")
+                else if (step === 12) console.warn("JOIN recboth start", callWindow.confirmRecordDialogForTest())
+                else if (step === 16) { st(); grab("recording") }
+                else if (step === stopAt) { st(); callWindow.recordControl("RecordingButton") }
+                else if (step === stopAt + 1) grab("dialog-stop")
+                else if (step === stopAt + 2) console.warn("JOIN recboth stop", callWindow.confirmRecordDialogForTest())
+                else if (step === stopAt + 6) { st(); grab("stopped") }
+                else if (step % 4 === 0) st()
             } else if (step >= 9 && step <= 60 && Qt.application.arguments.indexOf("--join-record") >= 0) {
                 // --join-record: Record and transcribe from the More menu:
                 // start transcription (dialog), stop it, start recording
@@ -6735,7 +6753,7 @@ Window {
     // logs REORDER lines with the order shown and, after the server
     // answers, the order it keeps. The setting is put back at the end.
     Timer {
-        running: Qt.application.arguments.some(a => a.startsWith("--reorder-test=")) && backend.signedIn && chatList.folders.length > 0 && chatList.folders[0].id !== ""
+        running: Qt.application.arguments.some(a => a.startsWith("--reorder-test=")) && !Qt.application.arguments.some(a => a.startsWith("--reorder-drag=")) && backend.signedIn && chatList.folders.length > 0 && chatList.folders[0].id !== ""
         interval: 2500; repeat: true
         property int step: 0
         property string group: ""
@@ -6820,6 +6838,159 @@ Window {
                 shot("end")
             }
             else if (st === 22) Qt.quit()
+        }
+    }
+    // --reorder-test=<section name> --reorder-drag=<from>:<to> with
+    // --shots=<dir>: a drag with the mouse, as a hand does it (a press on
+    // row <from> of that section, moves, a release over row <to>, sent to
+    // the window as mouse events, so the row's own drag handler runs);
+    // REORDER lines with the order shown, then the one the server keeps.
+    // Then it drags the row back the same way, unless --reorder-leave
+    // (to look at Teams; the same run with <to>:<from> moves it back).
+    KeyTyper { id: reorderTyper; x: 0; y: 0; width: 1; height: 1 }
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--reorder-test=")) && Qt.application.arguments.some(a => a.startsWith("--reorder-drag=")) && backend.signedIn && chatList.folders.length > 0 && chatList.folders[0].id !== ""
+        interval: 2500; repeat: true
+        property int step: 0
+        property string group: ""
+        property var start: []
+        property string key: ""
+        onTriggered: {
+            const st = step++
+            const arg = k => { const a = Qt.application.arguments.find(a => a.startsWith(k + "=")); return a ? a.slice(k.length + 1) : "" }
+            const dir = (arg("--shots") || "/tmp/act") + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "reorder-drag-" + n + ".png"))
+            const log = (...a) => console.warn("REORDER", ...a.map(x => typeof x === "string" ? x : JSON.stringify(x)))
+            const nameOf = id => { const c = chatList.chats.find(c => c.id === id); if (c) return c.name; for (const t of chatList.teams) { const ch = (t.channels || []).find(ch => ch.id === id); if (ch) return ch.name + " (" + t.name + ")" } return id }
+            const names = () => chatList.groupOrder(group).map(nameOf)
+            const rowOf = k => chatList.dragRows[group + "|" + k]
+            const [from, to] = arg("--reorder-drag").split(":").map(n => parseInt(n))
+            // Press on row a's middle, release over row b (above its middle
+            // when moving up, below it when moving down).
+            const drag = (a, b, up) => {
+                const ra = rowOf(a), rb = rowOf(b)
+                if (!ra || !rb) { log("rows not shown", a, b); return false }
+                const p = ra.mapToItem(reorderTyper, ra.width / 2, ra.dragHeight / 2)
+                const q = rb.mapToItem(reorderTyper, rb.width / 2, rb.dragHeight * (up ? 0.25 : 0.75))
+                log("mouse drag", nameOf(a), "from", Math.round(p.x), Math.round(p.y), "to", nameOf(b), Math.round(q.x), Math.round(q.y))
+                reorderTyper.drag(p.x, p.y, q.x, q.y)
+                return true
+            }
+            if (st === 0) {
+                rail.current = "chat"
+                const want = arg("--reorder-test").replace(/~/g, " ")
+                const f = chatList.folders.find(f => f.title === want)
+                group = f ? f.id : ""
+                if (!group) { log("no such section", want, JSON.stringify(chatList.folders.map(f => f.title))); Qt.quit(); return }
+                start = chatList.groupOrder(group)
+                log("start", want, group, "reorderable", chatList.sectionReorderable(f), names(), JSON.stringify(start))
+                if (!(from >= 0 && to >= 0 && from < start.length && to < start.length && from !== to)) { log("bad rows", from, to, start.length); Qt.quit(); return }
+                key = start[from]
+                const it = rowOf(start[Math.min(from, to)])
+                if (it) chatList.scrollIntoViewForTest(it)
+            }
+            else if (st === 1) shot("before")
+            else if (st === 2) { if (!drag(key, start[to], to < from)) { Qt.quit(); return } }
+            else if (st === 3) { log("dropped", names(), "moved to", chatList.groupOrder(group).indexOf(key)); shot("dropped") }
+            else if (st === 6) {
+                log("kept", names(), "at", chatList.groupOrder(group).indexOf(key), "as asked", chatList.groupOrder(group).indexOf(key) === to)
+                if (Qt.application.arguments.indexOf("--reorder-leave") >= 0) { step = 20; return }
+                const now = chatList.groupOrder(group)
+                drag(key, now[from], from < to)
+            }
+            else if (st === 7) log("dragged back", names())
+            else if (st === 10) { log("back", names(), JSON.stringify(chatList.groupOrder(group)) === JSON.stringify(start)); shot("end") }
+            else if (st === 11 || st === 21) Qt.quit()
+        }
+    }
+    // --sections-setup=<section>:<item>|<item>… [--sections-fav=<item>|…]
+    // (~ for spaces; items are chat names or "Channel (Team)"): a section
+    // of yours made with those items (Teams' New section, then Move to
+    // section), and the --sections-fav items moved into Favorites;
+    // --sections-teardown=<section> [--sections-unfav=<item>|…] deletes
+    // that section (its items go back) and takes those out of Favorites.
+    // SECTIONS lines with every section's items after.
+    Timer {
+        running: Qt.application.arguments.some(a => /^--sections-(setup|teardown)=/.test(a)) && backend.signedIn && chatList.folders.length > 0 && chatList.folders[0].id !== "" && chatList.chats.length > 0
+        interval: 3000; repeat: true
+        property int step: 0
+        property var queue: []
+        onTriggered: {
+            const st = step++
+            const arg = k => { const a = Qt.application.arguments.find(a => a.startsWith(k + "=")); return a ? a.slice(k.length + 1).replace(/~/g, " ") : "" }
+            const log = (...a) => console.warn("SECTIONS", ...a.map(x => typeof x === "string" ? x : JSON.stringify(x)))
+            const idOf = n => {
+                const c = chatList.chats.find(c => c.name === n)
+                if (c) return c.id
+                for (const t of chatList.teams) for (const ch of (t.channels || [])) if (ch.name + " (" + t.name + ")" === n) return ch.id
+                return ""
+            }
+            const nameOf = id => { const c = chatList.chats.find(c => c.id === id); if (c) return c.name; for (const t of chatList.teams) { const ch = (t.channels || []).find(ch => ch.id === id); if (ch) return ch.name + " (" + t.name + ")" } return id }
+            const dump = () => log("now", chatList.folders.filter(f => f.kind === "Favorites" || chatList.isUsers(f)).map(f => ({ title: f.title, kind: f.kind, sort: f.sort, items: f.items.map(nameOf) })))
+            const fav = chatList.folders.find(f => f.kind === "Favorites")
+            const setup = arg("--sections-setup"), teardown = arg("--sections-teardown")
+            if (st === 0) {
+                rail.current = "chat"; dump()
+                if (setup) {
+                    const [name, list] = setup.split(":")
+                    const ids = list.split("|").map(idOf)
+                    log("items", list.split("|"), ids)
+                    if (ids.some(i => !i)) { log("not found"); Qt.quit(); return }
+                    backend.folderAction("create", JSON.stringify({ name: name, item: ids[0] }))
+                    queue = ids.slice(1).map(i => ({ item: i, section: name }))
+                    for (const n of arg("--sections-fav").split("|").filter(n => n)) queue.push({ item: idOf(n), fav: true })
+                } else {
+                    const f = chatList.folders.find(f => f.title === teardown && chatList.isUsers(f))
+                    if (f) backend.folderAction("delete", JSON.stringify({ id: f.id }))
+                    else log("no section", teardown)
+                    for (const n of arg("--sections-unfav").split("|").filter(n => n)) queue.push({ item: idOf(n), unfav: true })
+                }
+            } else if (st >= 2 && queue.length) {
+                const q = queue.shift()
+                if (q.unfav) backend.folderAction("remove", JSON.stringify({ item: q.item, from: fav.id }))
+                else {
+                    const to = q.fav ? fav : chatList.folders.find(f => f.title === q.section && chatList.isUsers(f))
+                    if (!to) { log("section not there yet"); queue.unshift(q); return }
+                    backend.folderAction("move", JSON.stringify({ item: q.item, to: to.id }))
+                }
+                log("moved", nameOf(q.item), q.fav ? "Favorites" : q.unfav ? "out of Favorites" : q.section)
+            } else if (st >= 2 && !queue.length) { step = 100 }
+            else if (st === 102) dump()
+            else if (st === 103) Qt.quit()
+        }
+    }
+    // --hide-chats=<name>|<name>… (~ for spaces): each chat of the list
+    // with exactly that name: its ··· menu (logged: Teams offers Hide
+    // there), then Hide as the menu's item does (unpinnedTime and
+    // historyHiddenTime); HIDECHATS lines with what the list keeps after.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--hide-chats=")) && backend.signedIn && chatList.chats.length > 0
+        interval: 2500; repeat: true
+        property int step: 0
+        property var targets: []
+        onTriggered: {
+            const st = step++
+            const names = Qt.application.arguments.find(a => a.startsWith("--hide-chats=")).slice(13).replace(/~/g, " ").split("|")
+            const log = (...a) => console.warn("HIDECHATS", ...a.map(x => typeof x === "string" ? x : JSON.stringify(x)))
+            if (st === 0) {
+                rail.current = "chat"
+                targets = chatList.chats.filter(c => names.indexOf(c.name) >= 0).map(c => ({ id: c.id, name: c.name, hidden: !!c.hidden }))
+                log("found", targets)
+                if (targets.length === 0) Qt.quit()
+            } else if (st <= targets.length * 2) {
+                const t = targets[Math.floor((st - 1) / 2)]
+                if ((st - 1) % 2 === 0) {
+                    chatList.openRowMenuForTest(t.id)
+                    const r = chatList.rowsForTest[t.id]
+                    log("menu", t.name, r ? JSON.stringify(r.menuItemsForTest().map(i => i.label || "-")) : "row not shown")
+                } else {
+                    chatList.closeRowMenuForTest()
+                    if (!t.hidden) { backend.setChatHidden(t.id, true); log("hide", t.name, t.id) }
+                }
+            } else if (st === targets.length * 2 + 4) {
+                log("after", chatList.chats.filter(c => names.indexOf(c.name) >= 0).map(c => ({ name: c.name, hidden: !!c.hidden })))
+                Qt.quit()
+            }
         }
     }
     // --new-chat-compose-test with --shots=<dir> --new-chat-to=<name>[,<name>…]
@@ -9597,6 +9768,17 @@ Window {
                 const m = store.manageForTest()
                 if (s === 0) store.openManage()
                 else if (s === 4) { console.warn("MANAGEAPPS rows", JSON.stringify(m.rowsForTest()), m.error); cap("manage-apps") }
+                // --manage-apps-remove=<app name> (~ for spaces): that app's
+                // personal copy removed as its bin does (Teams' dialog
+                // confirmed), then the list again.
+                else if (s === 5 && Qt.application.arguments.some(a => a.startsWith("--manage-apps-remove="))) {
+                    const n = Qt.application.arguments.find(a => a.startsWith("--manage-apps-remove=")).slice(21).replace(/~/g, " ")
+                    console.warn("MANAGEAPPS remove", n, JSON.stringify(m.appForTest(n)), m.expandForTest(n), m.removeForTest(n))
+                }
+                else if (s === 6 && Qt.application.arguments.some(a => a.startsWith("--manage-apps-remove="))) cap("manage-apps-remove")
+                else if (s === 7 && Qt.application.arguments.some(a => a.startsWith("--manage-apps-remove="))) console.warn("MANAGEAPPS remove confirmed", m.confirmRemoveForTest())
+                else if (s === 11 && Qt.application.arguments.some(a => a.startsWith("--manage-apps-remove="))) { console.warn("MANAGEAPPS rows after", JSON.stringify(m.rowsForTest()), m.error); cap("manage-apps-removed"); done() }
+                else if (s > 4 && Qt.application.arguments.some(a => a.startsWith("--manage-apps-remove="))) {}
                 else if (s === 5) console.warn("MANAGEAPPS expand", m.expandForTest("Praise"))
                 else if (s === 6) cap("manage-apps-expanded")
                 else if (s === 7) m.sortMenuForTest()
@@ -9973,7 +10155,7 @@ Window {
     // is told), shows its page (events-draft.png), cancels it (the draft
     // is deleted) and reloads Manage. Quits unless --events-stay.
     Timer {
-        running: Qt.application.arguments.some(a => a.startsWith("--events-test") && !/^--events-test=(full|invite|myevents|uninvite|calclean|emails|branding|collections|thapps:.*)$/.test(a)) && backend.signedIn
+        running: Qt.application.arguments.some(a => a.startsWith("--events-test") && !/^--events-test=(full|invite|myevents|uninvite|calclean|emails|branding|collections|thapps:.*|highlights:.*)$/.test(a)) && backend.signedIn
         interval: 3000; repeat: true
         property int step: 0
         onTriggered: {
@@ -10043,6 +10225,54 @@ Window {
         }
     }
 
+    // --events-test=highlights:<event title, "~" for spaces> (TASK-0212):
+    // the event page's Highlights as its organizer (EVHL lines): the
+    // meeting's recordings, the highlights file (made when it has none) and
+    // the player; the recording picker, Download and Included content menus
+    // captured; --events-hl-generate generates the highlights again from
+    // the picked recording (AugLoop) and waits for them;
+    // --events-hl-download=video|transcript downloads that. Pictures
+    // events-hl-{tab,picker,download,included,generating,after}.png.
+    Timer {
+        readonly property string title: ((Qt.application.arguments.find(a => a.startsWith("--events-test=highlights:")) || "").slice(25)).replace(/~/g, " ")
+        running: title.length > 0 && backend.signedIn
+        interval: 3000; repeat: true
+        property int step: 0
+        property int wait: 0
+        onTriggered: {
+            const ev = eventsView.item
+            const cap = n => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-events-hl-" + n + ".png")))
+            const st = () => console.warn("EVHL", step, ev ? ev.highlightsForTest() : "no view")
+            if (step === 0) { rail.current = "events"; step++; return }
+            if (!ev) return
+            if (step === 2) ev.openEventByTitle(title, 0)
+            else if (step === 5) { if (!ev.current && wait++ < 10) return; wait = 0; ev.eventTab = "highlights" }
+            else if (step === 6) { if (!ev.hl && wait++ < 20) return; wait = 0; st() }
+            else if (step === 9) { st(); cap("tab") }
+            else if (step === 10) ev.openHlMenuForTest("picker")
+            else if (step === 11) cap("picker")
+            else if (step === 12) { ev.openHlMenuForTest(""); ev.openHlMenuForTest("download") }
+            else if (step === 13) cap("download")
+            else if (step === 14) { ev.openHlMenuForTest(""); ev.openHlMenuForTest("included") }
+            else if (step === 15) cap("included")
+            else if (step === 16) {
+                ev.openHlMenuForTest("")
+                const d = (Qt.application.arguments.find(a => a.startsWith("--events-hl-download=")) || "").slice(21)
+                if (d) ev.downloadHighlightsAsset(d)
+            }
+            else if (step === 19) {
+                if (Qt.application.arguments.indexOf("--events-hl-generate") >= 0) {
+                    const recs = ev.hl ? ev.hl.recordings || [] : []
+                    ev.generateHighlights(recs[recs.length - 1])
+                } else step = 40
+            }
+            else if (step === 20) { st(); cap("generating") }
+            else if (step > 20 && step < 40) { if (ev.hlGenerating) { if (step % 3 === 0) st(); return } step = 40 }
+            else if (step === 43) { st(); cap("after") }
+            else if (step >= 45) { console.warn("EVHL done"); Qt.quit() }
+            step++
+        }
+    }
     // --events-test=thapps:<event title, "~" for spaces> (TASK-0212): a town
     // hall's Manage apps card (EVTH lines): the apps it lists, Add on the
     // first one not added (the app goes into the event meeting's chat and
@@ -10259,7 +10489,9 @@ Window {
             case 9:
                 if (mode === "invite") {
                     cap("form")
-                    ev.saveForTest("OST TEST 212 invite " + Qt.formatTime(new Date(), "hh:mm"))
+                    // --events-new-title=<title> (~ for spaces): that title instead.
+                    const nt = (Qt.application.arguments.find(a => a.startsWith("--events-new-title=")) || "").slice(19).replace(/~/g, " ")
+                    ev.saveForTest(nt || "OST TEST 212 invite " + Qt.formatTime(new Date(), "hh:mm"))
                 } else if (mode === "uninvite") range()
                 break
             case 10: if (mode === "invite") ev.confirmSaveForTest(); break
@@ -10272,7 +10504,7 @@ Window {
                     if (Qt.application.arguments.indexOf("--events-unpin") >= 0 && ev.pinned) { ev.setPinned(false); console.warn("EVENTS unpinned") }
                 }
                 break
-            case 15: log("published"); cap("published"); ev.eventTab = "people"; ev.loadPeopleTab(); break
+            case 15: log("published", ev.current ? { id: ev.current.id, title: ev.current.title, start: ev.current.start, join: ev.current.join_url } : null); cap("published"); ev.eventTab = "people"; ev.loadPeopleTab(); break
             case 17: log("people"); cap("people"); break
             case 18: Qt.quit(); break
             }
@@ -10376,9 +10608,39 @@ Window {
             else if (step === 5) { console.warn("RECAPS audio", recapsView.item.stateForTest()); cap("audio") }
             else if (step === 6) recapsView.openTab("home")
             else if (step === 9) { console.warn("RECAPS home", recapsView.item.stateForTest()); cap("home") }
-            else if (step === 10) Qt.quit()
+            else if (step === 10 && !Qt.application.arguments.some(a => a.startsWith("--recaps-generate="))) Qt.quit()
+            // --recaps-generate=<subject start>[,<subject start>…] (~ for
+            // spaces) [--recaps-style=Executive|Newscast|Casual]: Audio
+            // recaps' Generate audio recap, those meetings picked, Generate;
+            // the mini player followed until the recap is made (or fails),
+            // then Audio recaps again. --recaps-delete deletes the recaps
+            // made from "OST TEST" meetings afterwards (Teams' deletePodcasts).
+            else if (step === 10) { recapsView.openTab("audio"); recapsView.item.generateDialogForTest(true) }
+            else if (step === 13) cap("generate-dialog")
+            else if (step === 14) {
+                const want = Qt.application.arguments.find(a => a.startsWith("--recaps-generate=")).slice(18).replace(/~/g, " ").split(",")
+                const style = (Qt.application.arguments.find(a => a.startsWith("--recaps-style=")) || "").slice(15)
+                const n = recapsView.item.pickForTest(want, style)
+                console.warn("RECAPS generate list", JSON.stringify(recapsView.item.genMeetingsForTest()), "picked", n)
+                if (n === 0) { recapsView.item.generateDialogForTest(false); step = 199 }
+            }
+            else if (step === 15) cap("generate-picked")
+            else if (step === 16) recapsView.item.generateForTest()
+            else if (step === 18) { console.warn("RECAPS player", recapsView.item.audioPlayerStateForTest()); cap("generating") }
+            else if (step > 18 && step < 199) {
+                if (step % 5 === 0) console.warn("RECAPS player", recapsView.item.audioPlayerStateForTest())
+                if (recapsView.item.lastGenerated) { console.warn("RECAPS done", JSON.stringify(recapsView.item.lastGenerated).slice(0, 600)); step = 199 }
+            }
+            else if (step === 202) { console.warn("RECAPS audio after", recapsView.item.stateForTest()); cap("audio-after") }
+            else if (step === 203 && Qt.application.arguments.indexOf("--recaps-delete") >= 0) backend.eventsRequest("podcastCleanup", "recapsclean", "{}")
+            else if (step === 207) Qt.quit()
             step++
         }
+    }
+    Connections {
+        target: backend
+        enabled: Qt.application.arguments.indexOf("--recaps-delete") >= 0
+        function onEventsReply(id, json) { if (id === "recapsclean") console.warn("RECAPS cleanup", json) }
     }
 
     // --call-notes-test: a solo Teams meeting of your own (a calendar
@@ -14767,6 +15029,7 @@ Window {
             onJoinEvent: (url, title, start, end) => preJoin.openFor(url, title, start, end)
             onOpenEventChat: (id, title) => { rail.current = "chat"; window.composing = false; backend.selectChat(id, title) }
             onViewAudioRecaps: { rail.openApp("recaps"); recapsView.openTab("audio") }
+            onOpenRecapFor: r => conversation.openRecapRef(r)
             // Manage apps: the event meeting, where its apps are added.
             onOpenMeetingDetails: (url, start) => { if (url) { rail.current = "calendar"; calendarView.showMeeting(url, "", start) } }
             // A town hall's Manage apps ▸ Add: the app goes into the event

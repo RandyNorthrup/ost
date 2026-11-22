@@ -687,6 +687,15 @@ Rectangle {
         root.lastRecapWindow = w
         console.info("RECAPCARD open", part || "recap")
     }
+    // A recap opened from elsewhere (Events' Highlights ▸ View recap): the
+    // meeting's thread and recording; the window looks up the rest.
+    function openRecapRef(ref) {
+        const w = recapWindow.createObject(null, { recap: Object.assign({ tenant_id: backend.tenantId(), ical_uid: "", organizer_id: "", call_id: "", file_url: "" }, ref), startTab: "" })
+        w.toast.connect(d => root.toastRequested(d))
+        w.show(); w.raise(); w.requestActivate()
+        root.lastRecapWindow = w
+        console.info("RECAPCARD open", "highlights")
+    }
     property var lastRecapWindow: null
     Component { id: recapWindow; RecapWindow {} }
     // Share on the card: Teams' menu (Share recap access, Copy link).

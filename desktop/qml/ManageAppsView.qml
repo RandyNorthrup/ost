@@ -298,5 +298,10 @@ Item {
     function expandForTest(name) { const a = root.apps.find(x => x.name === name); if (!a) return false; const e = Object.assign({}, root.expanded); e[a.id] = true; root.expanded = e; return true }
     function sortMenuForTest() { sortMenu.parent = sortBtn; sortMenu.y = sortBtn.height + 2; sortMenu.open() }
     function uploadForTest() { uploadDialog.open() }
+    /// Remove's dialog for that app's personal copy (as its bin would);
+    /// false when it has none.
+    function removeForTest(name) { const a = root.apps.find(x => x.name === name); if (!a || !a.personal) return false; removeDialog.start(a, { thread: "", personal: true }); return true }
+    function confirmRemoveForTest() { if (!removeDialog.opened) return false; removeDialog.close(); removeDialog.confirmed(); return true }
+    function appForTest(name) { return root.apps.find(x => x.name === name) || null }
     function closeAllForTest() { sortMenu.close(); uploadDialog.close() }
 }

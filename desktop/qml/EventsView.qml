@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Dialogs
+import QtWebEngine
 import com.ost.desktop
 
 // Teams' Events app, drawn natively as Teams draws it itself (it is not a
@@ -252,6 +253,81 @@ Rectangle {
             if (card) openEvent(card)
             else console.warn("EVENTS highlights: no event", title)
         })
+    }
+    // ---- The event page's Highlights (api::event_highlights) ----
+    property var hl: null
+    property string hlPick: ""
+    property bool hlGenerating: false
+    property string hlError: ""
+    property string hlIncluded: "recordingAndTextHighlights"
+    readonly property string hlThread: current ? (current.thread_id || ((decodeURIComponent(current.join_url || "").match(/19:meeting_[^/]+@thread\.v2/) || [""])[0])) : ""
+    /// "Nov 21, 2026 1:17 PM – 1:20 PM" from a recording's .NET ticks.
+    function recordingLabel(r) {
+        const d = t => { const n = parseInt(t); return isNaN(n) || n < 621355968e9 ? null : new Date((n - 621355968e9) / 1e4) }
+        const a = d(r.start), b = d(r.end)
+        if (!a) return r.id || ""
+        const tm = x => x.toLocaleTimeString(Qt.locale("en_US"), "h:mm AP")
+        return a.toLocaleDateString(Qt.locale("en_US"), "MMM d, yyyy") + " " + tm(a) + (b ? " \u2013 " + tm(b) : "")
+    }
+    // On opening the tab Teams reads the meeting's artifacts and, with no
+    // highlights file yet, makes one (createHighlights); with a recording
+    // and a just-made file it generates the highlights from the latest
+    // recording.
+    function loadHighlights() {
+        if (!current || !hlThread) { hl = { recordings: [] }; return }
+        const ev = current
+        call("highlights", { threadId: hlThread, title: ev.title || "", create: ev.state !== "Draft", recordingItem: hlPick }, v => {
+            if (current !== ev) return
+            if (v.error) { console.warn("EVENTS highlights error", v.error); hl = { recordings: [] }; return }
+            hl = v
+            console.warn("EVENTS highlights", JSON.stringify({ recordings: (v.recordings || []).length, loop: !!v.loop, created: v.created, player: !!v.player, loopUrl: (v.loopUrl || "").split("?")[0] }))
+            const recs = v.recordings || []
+            if (recs.length && v.loop && v.created === 201 && !hlGenerating) generateHighlights(recs[recs.length - 1])
+        })
+    }
+    onEventTabChanged: if (eventTab === "highlights") { hlError = ""; loadHighlights() }
+    onCurrentChanged: { hl = null; hlPick = ""; hlGenerating = false; hlError = "" }
+    function generateHighlights(rec) {
+        if (!hl || !hl.loop || !rec) return
+        hlGenerating = true; hlError = ""
+        const ev = current
+        call("highlightsGenerate", { eventId: ev.id, threadId: hlThread, language: "en-US", recording: rec, loop: hl.loop }, v => {
+            hlGenerating = false
+            console.warn("EVENTS highlights generated", JSON.stringify(v))
+            if (v.error || !v.succeeded) hlError = v.error_code || v.error || "Unknown"
+            if (current === ev) loadHighlights()
+        })
+    }
+    function openHlPicker() { hlPickerMenu.parent = hlPickerAnchor(); hlPickerMenu.x = 0; hlPickerMenu.y = 34; hlPickerMenu.open() }
+    function hlPickerAnchor() { return eventPage }
+    // View recap: the meeting's recap (Teams' intelligentRecap of the thread).
+    signal openRecapFor(var recap)
+    function viewHighlightsRecap() {
+        const r = hl && (hl.recordings || []).find(x => x.item_id === hlPick) || (hl && hl.recordings ? hl.recordings[hl.recordings.length - 1] : null)
+        openRecapFor({ thread_id: hlThread, subject: current ? current.title : "", drive_id: r ? r.drive_id : "", item_id: r ? r.item_id : "",
+                       start_ms: current ? new Date(current.start).getTime() : 0, end_ms: current ? new Date(current.end).getTime() : 0, recap_type: "RecordingAndTranscript" })
+    }
+    // Download: the recording's video or its transcript (the file's own
+    // download, as Teams' Download menu).
+    function downloadHighlightsAsset(kind) {
+        const r = hl && (hl.recordings || []).find(x => x.item_id === hlPick) || (hl && hl.recordings ? hl.recordings[hl.recordings.length - 1] : null)
+        if (!r) return
+        const tr = (hl.transcripts || [])
+        const loc = kind === "video" ? r.location : tr[tr.length - 1] || ""
+        if (!loc) { toast({ text: qsTr("No transcript available"), intent: "error" }); return }
+        const name = (current ? current.title : "Recording") + (kind === "video" ? ".mp4" : " transcript.docx")
+        toast({ text: qsTr("Downloading..."), intent: "info" })
+        call("highlightsDownload", { location: loc, docx: kind !== "video", name: name }, v => {
+            console.warn("EVENTS highlights download", kind, JSON.stringify(v))
+            toast(v.error ? { text: qsTr("Download failed. Please try again."), intent: "error" } : { text: qsTr("Download complete"), intent: "success" })
+        })
+    }
+    function highlightsForTest() { return JSON.stringify({ hl: hl ? { recordings: (hl.recordings || []).map(r => recordingLabel(r)), loop: !!hl.loop, player: !!hl.player, loopUrl: !!hl.loopUrl, created: hl.created } : null, generating: hlGenerating, error: hlError, included: hlIncluded }) }
+    function openHlMenuForTest(which) {
+        if (which === "picker") openHlPicker()
+        else if (which === "download") { hlDownloadMenu.parent = eventPage; hlDownloadMenu.open() }
+        else if (which === "included") { hlIncludedMenu.parent = eventPage; hlIncludedMenu.open() }
+        else { hlPickerMenu.close(); hlDownloadMenu.close(); hlIncludedMenu.close() }
     }
     function openEvent(card) {
         current = card; page = "event"; eventTab = "overview"; previewOn = false; peopleData = null
@@ -2900,32 +2976,143 @@ Rectangle {
                 Text { anchors.horizontalCenter: parent.horizontalCenter; text: qsTr("No reports yet"); font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
                 Text { anchors.horizontalCenter: parent.horizontalCenter; text: qsTr("You'll get a set of reports after the event ends."); font.family: theme.font; font.pixelSize: 14; color: theme.text }
             }
-            // Highlights: the recording bar (Recording used for highlights,
-            // Download, View recap, Included content, Publish; off until the
-            // event has a recording) and "No AI highlights yet".
+            // Highlights (Teams 26304 event-highlights-tab / -organizer,
+            // measured on winpc 2026-11-21 for "OST TEST 212 recording"):
+            // the toolbar (49 tall): "Recording used for highlights:" (14/600),
+            // the recording picker (311 x 30: "Nov 21, 2026 1:17 PM – 1:20 PM",
+            // a "Current recording" group, then Select from OneDrive),
+            // Download (64 x 31 split: Video, Transcript); at the right View
+            // recap (32 x 31), Included content (149 x 32: "Choose what to
+            // include in highlights", Recording + text highlights / Recording
+            // only) and Publish (96 x 31, primary). Under it a 36 tall status
+            // bar ("Generating AI highlights from event recording..." with a
+            // spinner, or "Highlights aren't published yet." + "Publish them
+            // when you're ready to share with attendees."), the recording's
+            // player (804 x 452, Teams' OnePlayer) and the highlights card
+            // (796 wide: the event's title 24/600, then the highlights' Loop
+            // page). Without a recording: "No AI highlights yet".
             Column {
+                id: hlTab
                 visible: root.eventTab === "highlights" && !root.previewOn
                 width: parent.width; spacing: 0
+                readonly property var recs: root.hl ? root.hl.recordings || [] : []
+                readonly property var picked: recs.find(r => r.item_id === root.hlPick) || recs[recs.length - 1] || null
+                readonly property bool has: !!picked
                 Item {
-                    width: parent.width; height: 40
-                    Text { x: 0; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Recording used for highlights:"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
-                    Rectangle { x: 200; anchors.verticalCenter: parent.verticalCenter; width: 311; height: 30; radius: 4; color: theme.bgDisabled
-                        Text { x: 12; anchors.verticalCenter: parent.verticalCenter; text: qsTr("No video is selected"); font.family: theme.font; font.pixelSize: 14; color: theme.disabledStrong } }
-                    Btn { x: 519; anchors.verticalCenter: parent.verticalCenter; width: 64; icon: "arrow-download-20"; text: ""; usable: false; Accessible.name: qsTr("Download") }
+                    width: parent.width; height: 49
+                    Text { id: hlLabel; x: 0; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Recording used for highlights:"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                    Rectangle {
+                        id: hlPicker
+                        x: hlLabel.width + 9; anchors.verticalCenter: parent.verticalCenter; width: 311; height: 30; radius: 4
+                        color: hlTab.has ? theme.surface : theme.bgDisabled
+                        border.width: hlTab.has ? 1 : 0; border.color: theme.stroke
+                        Rectangle { visible: hlTab.has; anchors.bottom: parent.bottom; anchors.left: parent.left; anchors.right: parent.right; anchors.margins: 1; height: 1; color: theme.textSecondary }
+                        Text { x: 12; width: parent.width - 48; elide: Text.ElideRight; anchors.verticalCenter: parent.verticalCenter
+                               text: hlTab.has ? root.recordingLabel(hlTab.picked) : qsTr("No video is selected"); font.family: theme.font; font.pixelSize: 14; color: hlTab.has ? theme.text : theme.disabledStrong }
+                        FluentIcon { visible: hlTab.has; x: parent.width - 32; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-20"; size: 20; color: theme.textStrong }
+                        TapHandler { enabled: hlTab.has; onTapped: root.openHlPicker() }
+                        Accessible.role: Accessible.ComboBox; Accessible.name: qsTr("Recording used for highlights:")
+                    }
+                    Btn { id: hlDownload; x: hlPicker.x + hlPicker.width + 8; anchors.verticalCenter: parent.verticalCenter; width: 64; height: 31; outlined: true; icon: "arrow-download-20"; text: ""; usable: hlTab.has
+                          onClicked: { hlDownloadMenu.parent = hlDownload; hlDownloadMenu.x = 5; hlDownloadMenu.y = hlDownload.height + 4; hlDownloadMenu.open() }
+                          Accessible.name: qsTr("Download") }
                     Row { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; spacing: 8
-                        Btn { width: 32; icon: "video-clip-20"; text: ""; usable: false; Accessible.name: qsTr("View recap") }
-                        Btn { text: qsTr("Included content"); usable: false }
-                        Btn { width: 96; text: qsTr("Publish"); usable: false } }
+                        Btn { id: hlRecap; width: 32; height: 31; outlined: true; icon: "video-clip-20"; text: ""; usable: hlTab.has; onClicked: root.viewHighlightsRecap(); Accessible.name: qsTr("View recap") }
+                        Btn { id: hlIncluded; height: 32; outlined: true; text: qsTr("Included content") + "  ⌄"; usable: !!root.hl && !!root.hl.loop && !root.hlGenerating
+                              onClicked: { hlIncludedMenu.parent = hlIncluded; hlIncludedMenu.x = hlIncluded.width - hlIncludedMenu.implicitWidth; hlIncludedMenu.y = hlIncluded.height + 2; hlIncludedMenu.open() } }
+                        Btn { width: 96; height: 31; primary: true; text: qsTr("Publish"); usable: false } }
                 }
                 Rectangle { width: parent.width; height: 1; color: theme.divider }
-                Item { width: 1; height: 32 }
-                Image { anchors.horizontalCenter: parent.horizontalCenter; width: 157; height: 128; source: root.cdn + "v2/ai-video-record-l-standard.svg"; sourceSize: Qt.size(314, 256); asynchronous: true }
-                Item { width: 1; height: 24 }
-                Text { anchors.horizontalCenter: parent.horizontalCenter; text: qsTr("No AI highlights yet"); font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold; color: theme.text }
-                Item { width: 1; height: 8 }
-                Text { anchors.horizontalCenter: parent.horizontalCenter; width: 400; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
-                       text: qsTr("Check back after the event has ended to generate them and share with attendees."); font.family: theme.font; font.pixelSize: 14; color: theme.textStrong }
+                Item { width: 1; height: 16 }
+                // The status bar.
+                Rectangle {
+                    visible: hlTab.has && (root.hlGenerating || (!!root.hl && !!root.hl.loop) || !!root.hlError)
+                    width: parent.width; height: 36; radius: 4
+                    color: theme.pick("#F5F5F5", "#292929", "#000000"); border.color: theme.stroke; border.width: 1
+                    BusyIndicator { visible: root.hlGenerating; running: visible; x: 12; anchors.verticalCenter: parent.verticalCenter; width: 20; height: 20 }
+                    FluentIcon { visible: !root.hlGenerating; x: 13; anchors.verticalCenter: parent.verticalCenter; name: root.hlError ? "error-circle-20" : "info-20"; size: 20; color: root.hlError ? theme.danger : theme.textStrong }
+                    Text { x: 41; width: parent.width - 53; anchors.verticalCenter: parent.verticalCenter; elide: Text.ElideRight; textFormat: Text.StyledText
+                           font.family: theme.font; font.pixelSize: 14; color: theme.text
+                           text: root.hlGenerating ? "<b>" + qsTr("Generating AI highlights from event recording...") + "</b> " + qsTr("This might take a minute. Feel free to leave this tab and come back.")
+                               : root.hlError ? "<b>" + qsTr("Couldn't generate highlights.") + "</b> " + qsTr("Let's try again.")
+                               : "<b>" + qsTr("Highlights aren't published yet.") + "</b> " + qsTr("Publish them when you're ready to share with attendees.") }
+                }
+                Item { width: 1; height: 16; visible: hlTab.has }
+                // The recording's player.
+                Rectangle {
+                    visible: hlTab.has
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: Math.min(804, parent.width - 220); height: width * 452 / 804; radius: 8; color: "#000000"; clip: true
+                    Loader {
+                        anchors.fill: parent
+                        active: hlTab.visible && !!root.hl && !!root.hl.player
+                        sourceComponent: WebEngineView {
+                            url: root.hl.player
+                            settings.javascriptCanOpenWindows: false
+                            settings.localContentCanAccessRemoteUrls: false
+                            onNewWindowRequested: req => { const u = req.requestedUrl.toString(); if (u.indexOf("https://") === 0) Qt.openUrlExternally(u) }
+                            Component.onCompleted: profile = webAppsProfile.instance()
+                        }
+                    }
+                }
+                Item { width: 1; height: 16; visible: hlTab.has }
+                // The highlights card: the title and the highlights' Loop page.
+                Rectangle {
+                    visible: hlTab.has && !!root.hl && !!root.hl.loopUrl && root.hlIncluded === "recordingAndTextHighlights"
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: Math.min(796, parent.width - 228); height: 76 + 552; radius: 8; color: theme.surface
+                    border.color: theme.dividerSoft; border.width: 1
+                    Text { x: 20; y: 20; text: eventPage.ev.title || ""; font.family: theme.font; font.pixelSize: 24; font.weight: Font.DemiBold; color: theme.text }
+                    Loader {
+                        x: 0; y: 76; width: parent.width; height: 540
+                        active: parent.visible && !root.hlGenerating
+                        sourceComponent: LoopPage { kind: "message"; componentUrl: root.hl.loopUrl; title: eventPage.ev.title || "" }
+                    }
+                }
+                Column {
+                    visible: !hlTab.has
+                    width: parent.width
+                    Item { width: 1; height: 32 }
+                    Image { anchors.horizontalCenter: parent.horizontalCenter; width: 157; height: 128; source: root.cdn + "v2/ai-video-record-l-standard.svg"; sourceSize: Qt.size(314, 256); asynchronous: true }
+                    Item { width: 1; height: 24 }
+                    Text { anchors.horizontalCenter: parent.horizontalCenter; text: qsTr("No AI highlights yet"); font.family: theme.font; font.pixelSize: 16; font.weight: Font.Bold; color: theme.text }
+                    Item { width: 1; height: 8 }
+                    Text { anchors.horizontalCenter: parent.horizontalCenter; width: 400; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
+                           text: qsTr("Check back after the event has ended to generate them and share with attendees."); font.family: theme.font; font.pixelSize: 14; color: theme.textStrong }
+                }
             }
+        }
+        MenuPopup {
+            id: hlDownloadMenu
+            items: [{ key: "video", label: qsTr("Video") }, { key: "transcript", label: qsTr("Transcript") }]
+            onPicked: i => root.downloadHighlightsAsset(items[i].key)
+        }
+        MenuPopup {
+            id: hlIncludedMenu
+            items: [{ heading: true, label: qsTr("Choose what to include in highlights") },
+                    { key: "recordingAndTextHighlights", label: qsTr("Recording + text highlights"), icon: "document-sparkle-20", checked: root.hlIncluded === "recordingAndTextHighlights" },
+                    { key: "recordingOnly", label: qsTr("Recording only"), icon: "video-clip-20", checked: root.hlIncluded === "recordingOnly" }]
+            onPicked: i => { if (items[i].key) root.hlIncluded = items[i].key }
+        }
+        MenuPopup {
+            id: hlPickerMenu
+            items: [{ heading: true, label: qsTr("Current recording") }].concat(hlTab.recs.map(r => ({ key: r.item_id, label: root.recordingLabel(r), checked: hlTab.picked && r.item_id === hlTab.picked.item_id })))
+                    .concat([{ separator: true }, { key: "__odsp", label: qsTr("Select from OneDrive"), icon: "cloud-20" }])
+            onPicked: i => {
+                const k = items[i].key
+                if (!k) return
+                if (k === "__odsp") { root.toast({ text: qsTr("Select a video with a transcript and try again."), intent: "info" }); return }
+                if (hlTab.picked && k === hlTab.picked.item_id) return
+                hlRegenerate.recording = hlTab.recs.find(r => r.item_id === k); hlRegenerate.open()
+            }
+        }
+        ConfirmDialog {
+            id: hlRegenerate
+            property var recording: null
+            title: qsTr("Generate new AI highlights?")
+            body: qsTr("A new set of highlights will be generated using the recording you selected. This will replace the current highlights and can't be undone.")
+            confirmText: qsTr("Generate highlights")
+            onConfirmed: { root.hlPick = recording.item_id; root.generateHighlights(recording) }
         }
         MenuPopup {
             id: joinMenu

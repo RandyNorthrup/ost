@@ -89,6 +89,11 @@ pub fn meetings_from(v: &Value) -> Vec<Value> {
             "channel": s("/channelDisplayName"),
             // Generate audio recap lists the meetings you have a transcript of.
             "transcript": m.to_string().contains("TranscriptV2"),
+            // What its Generate sends for the meeting.
+            "iCalUid": s("/iCalUid"),
+            "organizerId": t.pointer("/organizer/id").or_else(|| t.pointer("/organizerId")).or_else(|| t.pointer("/organizer/user/id"))
+                .and_then(Value::as_str).unwrap_or_default().split('@').next().unwrap_or_default(),
+            "transcripts": m.get("resources").and_then(Value::as_array).into_iter().flatten().filter_map(super::podcast::transcript_from).collect::<Vec<_>>(),
         }))
     }).collect()
 }

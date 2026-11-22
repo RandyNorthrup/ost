@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-15T05:37:00Z'
-updated_date: '2026-11-21T20:22:00Z'
+updated_date: '2026-11-21T21:40:00Z'
 labels:
   - chat-list
   - accessibility
@@ -39,6 +39,13 @@ Left: confirm Teams shows OST's team order (not picked up within 7 s; not checke
 - Fixed: the generic --shots timer quit --reorder-test runs early (now excluded).
 
 - 2026-11-21 (review on merge): reopened. Team order was verified both ways with Teams; drag-and-drop of chats in Favorites and custom sections, and of channels, still needs the same live check before AC1 is met.
+
+- 2026-11-21 (meetI) AC1 chats and channels by drag and drop, live (spatest = ost-test1, winpc Teams 26304): new harness --reorder-drag=<from>:<to> drags with real mouse events sent to the window, so the row's own DragHandler runs (press, moves, release). Test set-up in Teams: OST Test 2 into Favorites; section "OST TEST 150 section" (Custom order) with OST Test 3, OST group test, OST test channel, OST test channel 2.
+  - Favorites: OST dragged OST Test 2 above OST Test 1 (You); the server kept it, and the running Teams showed the same order within seconds (no restart). Dragged back the same way; Teams followed.
+  - Custom section: OST dragged OST Test 3 below OST group test (chat), then OST test channel 2 above OST test channel (channel). Both were kept by the server, and Teams showed each new order live.
+  - Other way: a drag in Teams (OST test channel) showed in OST on its next start. Teams put the channel at the top of the section, although its drop line was under OST Test 3 (Teams quirk, seen with a VNC drag). OST's drags then restored the section's order.
+  - Channels within a team don't reorder in Teams (no drop line), and OST matches that.
+- Restored: the test section removed and OST Test 2 taken out of Favorites (in Teams). The list is as before: Favorites = OST Test 1 (You), no custom sections, team order unchanged.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

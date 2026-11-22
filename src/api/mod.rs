@@ -29,6 +29,7 @@ pub mod events;
 pub mod events_tz;
 pub mod immersive;
 pub mod recaps;
+pub mod event_highlights;
 pub mod podcast;
 pub mod files;
 pub mod find;

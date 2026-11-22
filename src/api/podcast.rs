@@ -98,28 +98,63 @@ pub fn consume_query(m: &Meeting, language: &str, style: &str) -> String {
     )
 }
 
-/// The generation signal's body (Teams' TeamsRecapPodcastGenerationSignal).
-pub fn generation_signal(m: &Meeting, generation_id: &str) -> Value {
+/// A meeting as an entry of the signal's eventsWithTranscripts.
+fn event_with_transcripts(m: &Meeting) -> Value {
     let (start, end) = (iso_ms(m.start_ms), iso_ms(m.end_ms));
     json!({
-        "range": { "startDateTime": start, "endDateTime": end },
-        "eventsWithTranscripts": [{
-            "event": { "id": m.event_id, "subject": m.subject, "organizerName": m.organizer_name, "startDateTime": start, "endDateTime": end,
-                       "threadId": m.thread_id, "iCalUid": m.ical_uid.to_uppercase(), "organizerObjectId": m.organizer_id },
-            "transcripts": m.transcripts.iter().map(|t| json!({
-                "id": t.id, "location": t.location, "startDateTime": t.start, "endDateTime": t.end,
-                "driveId": t.drive_id, "driveItemId": t.item_id, "transcriptId": t.id, "callId": t.call_id,
-            })).collect::<Vec<_>>(),
-        }],
-        "style": { "format": "Dual", "tone": "formal" },
-        "language": "en-US",
+        "event": { "id": m.event_id, "subject": m.subject, "organizerName": m.organizer_name, "startDateTime": start, "endDateTime": end,
+                   "threadId": m.thread_id, "iCalUid": m.ical_uid.to_uppercase(), "organizerObjectId": m.organizer_id },
+        "transcripts": m.transcripts.iter().map(|t| json!({
+            "id": t.id, "location": t.location, "startDateTime": t.start, "endDateTime": t.end,
+            "driveId": t.drive_id, "driveItemId": t.item_id, "transcriptId": t.id, "callId": t.call_id,
+        })).collect::<Vec<_>>(),
+    })
+}
+
+/// Generate audio recap's Style as Teams sends it (`{format: host, tone:
+/// format}`; Teams' podcast formats Formal / Newscast / Casual, the host
+/// Single for Newscast, else Dual; the tone lower-cased as
+/// generateAndPopoutPodcast does). The dialog's "Executive" is Formal.
+pub fn style(choice: &str) -> (&'static str, &'static str) {
+    match choice {
+        "Newscast" => ("Single", "newscast"),
+        "Casual" => ("Dual", "casual"),
+        _ => ("Dual", "formal"),
+    }
+}
+
+/// The generation signal's body (Teams' TeamsRecapPodcastGenerationSignal)
+/// for one meeting's audio recap (the recap window's Audio recap).
+pub fn generation_signal(m: &Meeting, generation_id: &str) -> Value {
+    signal_for(std::slice::from_ref(m), ("Dual", "formal"), "en-US", generation_id, Some("SharedSingleMeetingAudioRecap"))
+}
+
+/// The signal for Generate audio recap (Meeting Recaps, origin RecapHome):
+/// up to eight meetings, the range from the first start to the last end,
+/// the chosen style and language, and no podcastType (Teams sets it only
+/// for the single-meeting origins).
+pub fn generation_signal_multi(meetings: &[Meeting], style: (&str, &str), language: &str, generation_id: &str) -> Value {
+    signal_for(meetings, style, language, generation_id, None)
+}
+
+fn signal_for(meetings: &[Meeting], style: (&str, &str), language: &str, generation_id: &str, podcast_type: Option<&str>) -> Value {
+    let start = meetings.iter().map(|m| m.start_ms).min().unwrap_or_default();
+    let end = meetings.iter().map(|m| m.end_ms).max().unwrap_or_default();
+    let mut v = json!({
+        "range": { "startDateTime": iso_ms(start), "endDateTime": iso_ms(end) },
+        "eventsWithTranscripts": meetings.iter().map(event_with_transcripts).collect::<Vec<_>>(),
+        "style": { "format": style.0, "tone": style.1 },
+        "language": language,
         "experiments": "EnableGenerationFromMeetingCrux:true;EnablePodcastGenerationEmail:true",
         "promptVersion": "\"\"",
         "generationId": generation_id,
         "triggerType": "Manual",
-        "podcastType": "SharedSingleMeetingAudioRecap",
         "H_": { "T_": "AugLoop_TeamsRecapPodcast_TeamsRecapPodcastGenerationSignal", "B_": ["AugLoop_Signals_Signal"] },
-    })
+    });
+    if let Some(t) = podcast_type {
+        v["podcastType"] = json!(t);
+    }
+    v
 }
 
 /// Where an audio recap stands, from a generation annotation (Teams'
@@ -172,7 +207,13 @@ fn h(t: &str, b: &[&str]) -> Value {
 /// signal added at `path`, then every annotation result handed to `seen`
 /// until it says it's done (true), the socket closes or `wait` runs out.
 /// Server messages with an "s…" id are acked and "~" keepalives answered.
-async fn run_op(annotation: &str, path: Value, signal: Value, ui_language: &str, wait: std::time::Duration, mut seen: impl FnMut(&Value) -> bool) -> Result<()> {
+async fn run_op(annotation: &str, path: Value, signal: Value, ui_language: &str, wait: std::time::Duration, seen: impl FnMut(&Value) -> bool) -> Result<()> {
+    run_op_with(&[annotation], path, signal, ui_language, wait, seen).await
+}
+
+/// [`run_op`] with several annotations activated first (Teams' streaming
+/// operations: a progress annotation and the result's).
+pub(crate) async fn run_op_with(annotations: &[&str], path: Value, signal: Value, ui_language: &str, wait: std::time::Duration, mut seen: impl FnMut(&Value) -> bool) -> Result<()> {
     let token = crate::auth::oauth::access_token_for("https://augloop.office.com/v2/.default").await?;
     let mut req = tokio_tungstenite::tungstenite::client::IntoClientRequest::into_client_request("wss://augloop.office.com/")?;
     req.headers_mut().insert("Origin", "https://teams.microsoft.com".parse()?);
@@ -203,10 +244,12 @@ async fn run_op(annotation: &str, path: Value, signal: Value, ui_language: &str,
             anyhow::ensure!(!v.pointer("/H_/T_").and_then(Value::as_str).is_some_and(|t| t.contains("Error")), "AugLoop refused the session");
         }
     }
-    let (mid, cv) = next(&mut n);
-    ws.send(send(json!({"annotationType": annotation, "token": uuid::Uuid::new_v4().to_string(), "ignoreExistingAnnotations": false, "sendStateUpdates": false,
-        "returnAnnotationDoesNotExist": true, "sendApologies": false, "H_": h("AugLoop_Session_Protocol_AnnotationActivationMessage", &["AugLoop_Session_Protocol_Message"]), "cv": cv, "messageId": mid})))
-    .await?;
+    for annotation in annotations {
+        let (mid, cv) = next(&mut n);
+        ws.send(send(json!({"annotationType": annotation, "token": uuid::Uuid::new_v4().to_string(), "ignoreExistingAnnotations": false, "sendStateUpdates": false,
+            "returnAnnotationDoesNotExist": true, "sendApologies": false, "H_": h("AugLoop_Session_Protocol_AnnotationActivationMessage", &["AugLoop_Session_Protocol_Message"]), "cv": cv, "messageId": mid})))
+        .await?;
+    }
     let (mid, cv) = next(&mut n);
     ws.send(send(json!({"cv": cv, "seq": 0, "ops": [{"parentPath": ["session"], "items": [{"id": "doc", "body": {"isReadonly": false, "H_": h("AugLoop_Core_Document", &["AugLoop_Core_TileGroup"])}}],
         "H_": h("AugLoop_Core_AddOperation", &["AugLoop_Core_OperationWithSiblingContext", "AugLoop_Core_Operation"])}], "groupId": "Seed", "groupSize": 1, "groupComplete": true,
@@ -260,12 +303,23 @@ async fn run_op(annotation: &str, path: Value, signal: Value, ui_language: &str,
 /// answers Teams' operation; an in-progress podcast is followed until its
 /// status changes (at most 10 minutes).
 pub async fn generate(m: &Meeting, ui_language: &str) -> Result<Generation> {
+    generate_signal(&|id: &str| generation_signal(m, id), ui_language).await
+}
+
+/// Generate audio recap's Generate: several meetings, a style and a
+/// language, made over AugLoop like the single-meeting one.
+pub async fn generate_multi(meetings: &[Meeting], style_choice: &str, language: &str, ui_language: &str) -> Result<Generation> {
+    anyhow::ensure!(!meetings.is_empty() && meetings.len() <= 8, "Select up to 8 meetings");
+    generate_signal(&|id: &str| generation_signal_multi(meetings, style(style_choice), language, id), ui_language).await
+}
+
+async fn generate_signal(make: &(dyn Fn(&str) -> Value + Sync), ui_language: &str) -> Result<Generation> {
     let generation_id = uuid::Uuid::new_v4().to_string();
     // Teams' publishing path: identifier "teams_recap_podcast_generation",
     // subscription "podcast-session", a new request id.
     let path = json!(["session", "doc", "teams_recap_podcast_generation_podcast-session", uuid::Uuid::new_v4().to_string()]);
     let mut last: Option<Generation> = None;
-    run_op("AugLoop_TeamsRecapPodcast_TeamsRecapPodcastGenerationAnnotation", path, generation_signal(m, &generation_id), ui_language, std::time::Duration::from_secs(600), |b| {
+    run_op("AugLoop_TeamsRecapPodcast_TeamsRecapPodcastGenerationAnnotation", path, make(&generation_id), ui_language, std::time::Duration::from_secs(600), |b| {
         let Some(g) = generation_from(b) else { return false };
         // An update without the podcast keeps the podcast seen.
         let g = match (&last, g.podcast.is_null()) {
@@ -326,6 +380,15 @@ mod tests {
         assert_eq!(s["eventsWithTranscripts"][0]["event"]["iCalUid"], "04ABC");
         assert_eq!(s["eventsWithTranscripts"][0]["transcripts"][0]["transcriptId"], "t1");
         assert_eq!(s["podcastType"], "SharedSingleMeetingAudioRecap");
+        let two = [m.clone(), Meeting { thread_id: "19:meeting_y@thread.v2".into(), start_ms: 1_795_000_000_000, end_ms: 1_795_000_600_000, ..m.clone() }];
+        let s = generation_signal_multi(&two, style("Newscast"), "en-US", "g2");
+        assert_eq!(s["eventsWithTranscripts"].as_array().map(Vec::len), Some(2));
+        assert_eq!(s["range"]["startDateTime"], "2026-11-18T07:06:40.000Z");
+        assert_eq!(s["range"]["endDateTime"], "2026-11-21T05:08:40.000Z");
+        assert_eq!(s["style"], json!({"format": "Single", "tone": "newscast"}));
+        assert!(s.get("podcastType").is_none());
+        assert_eq!(style("Executive"), ("Dual", "formal"));
+        assert_eq!(style("Casual"), ("Dual", "casual"));
         assert_eq!(consume_query(&m, "en-US", "formal"), "podcasts/consume?threadId=19:meeting_x@thread.v2&transcriptIds=t1&language=en-US&style=formal&iCalUid=04ABC");
     }
 

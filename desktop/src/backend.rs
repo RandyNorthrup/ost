@@ -21686,6 +21686,91 @@ impl qobject::Backend {
                         tracing::info!(status = %g.status, message = %g.message, "audio recap generated");
                         Ok(json!({ "status": g.status, "message": g.message, "noInsight": api::podcast::no_insight(&g.message), "podcast": g.podcast }))
                     }
+                    // The event page's Highlights (api::event_highlights): the
+                    // meeting's recordings and highlights file; with
+                    // "create", the highlights file made when it has none
+                    // (Teams' createHighlights on opening the tab).
+                    "highlights" => {
+                        let region = notes_region(&client);
+                        let (oid, tid) = (client.object_id().unwrap_or_default(), client.tenant_id().unwrap_or_default());
+                        let thread = s("threadId");
+                        let read = || async { api::event_highlights::artifacts(&region, &thread, &s("iCalUid"), &oid).await };
+                        let mut v = read().await?;
+                        let (mut recs, mut lf, mut transcripts) = api::event_highlights::artifacts_with_transcripts(&v, &thread);
+                        let mut created = 0u16;
+                        if lf.is_none() && p.get("create").and_then(|c| c.as_bool()).unwrap_or(false) {
+                            created = api::event_highlights::create(&region, &thread, &format!("{oid}@{tid}"), &s("title")).await?;
+                            tracing::info!(created, "event highlights: file made");
+                            v = read().await?;
+                            (recs, lf, transcripts) = api::event_highlights::artifacts_with_transcripts(&v, &thread);
+                        }
+                        tracing::info!(recordings = recs.len(), highlights = lf.is_some(), loop_location = %lf.as_ref().map(|l| l.location.split('?').next().unwrap_or_default().to_string()).unwrap_or_default(), "event highlights: artifacts");
+                        // The picked recording's player (Teams' OnePlayer
+                        // preview of the file), else the latest one's.
+                        let want = s("recordingItem");
+                        let pick = recs.iter().find(|r| !want.is_empty() && r.item_id == want).or(recs.last());
+                        let player = match pick {
+                            Some(r) => api::recaps::player_url(&client, &r.drive_id, &r.item_id).await.unwrap_or_else(|e| {
+                                tracing::info!("event highlights player: {}", short_error(&e));
+                                String::new()
+                            }),
+                            None => String::new(),
+                        };
+                        // The highlights page's link as Loop opens it: the
+                        // file's organization edit link with its nav.
+                        let loop_url = match &lf {
+                            Some(l) if !l.drive_id.is_empty() => {
+                                let edit = api::meeting_notes::edit_link(&client, &l.drive_id, &l.item_id).await.unwrap_or_default();
+                                if edit.is_empty() { l.location.clone() } else { api::meeting_notes::shared_link(&edit, &l.location) }
+                            }
+                            _ => String::new(),
+                        };
+                        Ok(json!({ "recordings": recs, "loop": lf, "created": created, "player": player, "loopUrl": loop_url, "transcripts": transcripts }))
+                    }
+                    // Highlights' Download: the recording's video, or its
+                    // transcript as a Word document, into Downloads.
+                    "highlightsDownload" => {
+                        let dir = download_dir().ok_or_else(|| anyhow::anyhow!("No Downloads folder"))?;
+                        let docx = p.get("docx").and_then(|d| d.as_bool()).unwrap_or(false);
+                        let path = api::event_highlights::download(&s("location"), docx, &s("name"), &dir).await?;
+                        tracing::info!(path = %path.display(), "event highlights: downloaded");
+                        Ok(json!({ "path": path.display().to_string() }))
+                    }
+                    "highlightsGenerate" => {
+                        let r = p.get("recording").cloned().unwrap_or_default();
+                        let l = p.get("loop").cloned().unwrap_or_default();
+                        let g = |v: &serde_json::Value, k: &str| v[k].as_str().unwrap_or_default().to_string();
+                        let site = api::event_highlights::site_url(&g(&l, "location"));
+                        let sig = api::event_highlights::signal(&s("eventId"), &s("threadId"), &s("language"), (&g(&r, "drive_id"), &g(&r, "item_id")), (&g(&l, "drive_id"), &g(&l, "item_id"), &site));
+                        let out = api::event_highlights::generate(sig, &app_locale()).await?;
+                        tracing::info!(succeeded = out.succeeded, error = %out.error_code, steps = ?out.steps, "event highlights: generated");
+                        Ok(serde_json::to_value(out)?)
+                    }
+                    // Generate audio recap's Generate (Teams' RecapHome
+                    // generateAndPopoutPodcast): the picked meetings (rows of
+                    // recapMeetings), the style and language, made over
+                    // AugLoop; answers once it's done or failed.
+                    "podcastGenerate" => {
+                        let rows = p.get("meetings").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+                        let ms = |r: &serde_json::Value, k: &str| r[k].as_str().and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok()).map(|d| d.timestamp_millis()).unwrap_or_default();
+                        let mut meetings = Vec::new();
+                        for r in &rows {
+                            let ical = r["iCalUid"].as_str().unwrap_or_default().to_string();
+                            let event_id = if ical.is_empty() { String::new() } else { api::calendar::event_id_by_ical_uid(&client, &ical).await.unwrap_or_default() };
+                            meetings.push(api::podcast::Meeting {
+                                event_id, subject: r["subject"].as_str().unwrap_or_default().into(), organizer_name: r["organizer"].as_str().unwrap_or_default().into(),
+                                organizer_id: r["organizerId"].as_str().unwrap_or_default().into(), thread_id: r["threadId"].as_str().unwrap_or_default().into(), ical_uid: ical,
+                                start_ms: ms(r, "start"), end_ms: ms(r, "end"),
+                                transcripts: serde_json::from_value(r["transcripts"].clone()).unwrap_or_default(),
+                            });
+                        }
+                        anyhow::ensure!(meetings.iter().all(|m| !m.transcripts.is_empty()), "No transcripts");
+                        tracing::info!(meetings = meetings.len(), style = %s("style"), "audio recap: generate");
+                        let language = Some(s("language")).filter(|l| !l.is_empty()).unwrap_or_else(|| "en-US".into());
+                        let g = api::podcast::generate_multi(&meetings, &s("style"), &language, &app_locale()).await?;
+                        tracing::info!(status = %g.status, message = %g.message, "audio recap generated");
+                        Ok(json!({ "status": g.status, "message": g.message, "noInsight": api::podcast::no_insight(&g.message), "podcast": g.podcast }))
+                    }
                     // The harness's clean-up (--podcast-cleanup): your audio
                     // recaps made from "OST TEST …" meetings deleted as Teams'
                     // deletePodcasts does.
