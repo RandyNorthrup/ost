@@ -447,6 +447,9 @@ pub mod qobject {
         /// The call is Teams' voicemail greeting call (Record a greeting):
         /// titled Voicemail, no Chat, People, hold, transfer or park.
         #[qproperty(bool, call_voicemail)]
+        /// The call is Teams' test call to your intelligent call delegation
+        /// (titled "Test call with your Call Delegation"; Mic, More, Leave).
+        #[qproperty(bool, call_attendant_test)]
         /// Teams' isCallParkAvailable for you (park policy and Enterprise
         /// Voice), read as a call connects.
         #[qproperty(bool, call_can_park)]
@@ -1016,6 +1019,8 @@ pub mod qobject {
         /// your own voicemail, where the greeting is recorded.
         #[qinvokable]
         fn record_voicemail_greeting(self: Pin<&mut Backend>);
+        #[qinvokable]
+        fn call_personal_attendant(self: Pin<&mut Backend>);
         /// Channels: Teams' Meet now, a new meeting in the channel with
         /// this title (from the pre-join's title field).
         #[qinvokable]
@@ -3261,6 +3266,7 @@ pub struct BackendRust {
     call_park_code: QString,
     call_continues: bool,
     call_voicemail: bool,
+    call_attendant_test: bool,
     call_can_park: bool,
     call_consult_json: QString,
     call_can_dtmf: bool,
@@ -4891,6 +4897,7 @@ async fn take_transfer(qt: cxx_qt::CxxQtThread<qobject::Backend>, request: teams
         transfer_context: request.transfer_context.clone(),
         unpark_code: None,
         voicemail: None,
+        personal_attendant: false,
     };
     let tag = outgoing::new_call_tag();
     let (_cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
@@ -4954,6 +4961,8 @@ enum Placement {
     Unpark(i64),
     /// Your own voicemail, to record your greeting.
     Voicemail,
+    /// Your intelligent call delegation, as a test call.
+    Attendant,
 }
 
 /// Hold (or resume) the first call while a consult goes on.
@@ -9335,6 +9344,16 @@ impl qobject::Backend {
         self.place_and_show(Placement::Voicemail, QString::from(tr("Voicemail")), String::new());
     }
 
+    /// Intelligent call delegation's Make a test call (Teams' TestCallToPA):
+    /// a call to your personal attendant, titled as Teams titles it.
+    pub fn call_personal_attendant(self: Pin<&mut Self>) {
+        if !self.rust().call_state.is_empty() && self.rust().call_state.to_string() != "ended" {
+            return;
+        }
+        tracing::info!("test call to the personal attendant");
+        self.place_and_show(Placement::Attendant, QString::from(teams_cli::i18n::tr_id("Test call with your Call Delegation", "calling:k3eze0lt").as_str()), String::new());
+    }
+
     /// Park the call (Teams' Park Call): the pickup code comes back on the
     /// transfer's completion, and the call ends for us.
     pub fn park_call(mut self: Pin<&mut Self>) {
@@ -9365,6 +9384,7 @@ impl qobject::Backend {
         let video = matches!(placement, Placement::Person { video: true, .. });
         self.as_mut().set_call_continues(matches!(placement, Placement::Unpark(_)));
         self.as_mut().set_call_voicemail(matches!(placement, Placement::Voicemail));
+        self.as_mut().set_call_attendant_test(matches!(placement, Placement::Attendant));
         self.as_mut().set_call_peer(peer);
         self.as_mut()
             .set_call_peer_id(QString::from(callee.as_str()));
@@ -9387,6 +9407,7 @@ impl qobject::Backend {
                 Placement::Person { chat_id, callee, video } => outgoing::place_call(&chat_id, &callee, video, cancel_rx).await,
                 Placement::Unpark(code) => outgoing::unpark_call("", code, cancel_rx).await,
                 Placement::Voicemail => outgoing::call_own_voicemail(cancel_rx).await,
+                Placement::Attendant => outgoing::call_personal_attendant(cancel_rx).await,
             };
             let mut slot = call_slot().lock().await;
             slot.cancel_placing = None;
@@ -13936,6 +13957,7 @@ impl qobject::Backend {
         self.as_mut().set_call_park_code(QString::default());
         self.as_mut().set_call_continues(false);
         self.as_mut().set_call_voicemail(false);
+        self.as_mut().set_call_attendant_test(false);
         self.as_mut().set_call_can_dtmf(false);
         self.as_mut().set_call_hand_raised(false);
         if !self.rust().call_state.is_empty() {
@@ -24815,6 +24837,17 @@ impl qobject::Backend {
         } else if kind == "mt" && name == "attendant" {
             let base = all["mt"]["attendant"].clone();
             all["mt"]["attendant"] = api::preferences::merged(if base.is_object() { base } else { json!({}) }, &value);
+        } else if kind == "mt" && name == "bookings" {
+            // Follow-ups: {op: "load"} reads the booking page; any other
+            // value is the page's changed fields, shown at once.
+            if value["op"].as_str() != Some("load") {
+                let base = all["mt"]["bookings"].clone();
+                let mut next = if base.is_object() { base } else { json!({}) };
+                for (k, v) in value.as_object().cloned().unwrap_or_default() {
+                    next[&k] = v;
+                }
+                all["mt"]["bookings"] = next;
+            }
         } else if kind == "mt" && name == "voicemail" {
             // Teams' voicemail mutation sends the whole settings with the
             // change (settings-app $a / bA / rg), and shows them at once.
@@ -24831,6 +24864,7 @@ impl qobject::Backend {
         self.as_mut().set_settings_json(QString::from(all.to_string().as_str()));
         self.as_mut().set_settings_error(QString::default());
         let qt = self.qt_thread();
+        let load_qt = qt.clone();
         runtime().spawn(async move {
             let result = async {
                 let client = TeamsClient::new().await?;
@@ -24908,6 +24942,32 @@ impl qobject::Backend {
                             }
                             Err(e) => tracing::warn!("follow-up booking page not made: {}", short_error(&e)),
                         }
+                    }
+                    anyhow::Ok(None)
+                } else if kind == "mt" && name == "bookings" {
+                    // Teams' bookingCalendarDetails / updateBookingService
+                    // for the page the intelligent call delegation keeps.
+                    use api::call_delegation as cd;
+                    let current: serde_json::Value = serde_json::from_str(&before).unwrap_or_default();
+                    let s = &current["mt"]["attendant"];
+                    let (service, code) = (s["bookingServiceId"].as_str().unwrap_or_default().to_string(), s["bookingCode"].as_str().unwrap_or_default().to_string());
+                    let email = client.user_principal_name().unwrap_or_default();
+                    if service.is_empty() || code.is_empty() {
+                        anyhow::bail!("no follow-up booking page yet");
+                    }
+                    if value["op"].as_str() == Some("load") {
+                        let details = cd::bookings_service(&client, &email, &service, &code).await?;
+                        let _ = load_qt.queue(move |mut this| {
+                            let mut all: serde_json::Value = serde_json::from_str(&this.rust().settings_json.to_string()).unwrap_or_else(|_| json!({ "props": {}, "mt": {} }));
+                            all["mt"]["bookings"] = details;
+                            this.as_mut().set_settings_json(QString::from(all.to_string().as_str()));
+                        });
+                    } else {
+                        let mut next = current["mt"]["bookings"].clone();
+                        for (k, v) in value.as_object().cloned().unwrap_or_default() {
+                            next[&k] = v;
+                        }
+                        cd::update_bookings_service(&client, &email, &service, &code, &next).await?;
                     }
                     anyhow::Ok(None)
                 } else if kind == "mt" && name == "voicemail" {

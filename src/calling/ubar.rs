@@ -699,6 +699,9 @@ pub struct Facts {
     /// View, Apps, Camera or Share, and it can't be held, transferred or
     /// parked.
     pub voicemail: bool,
+    /// Teams' test call to your intelligent call delegation (measured on
+    /// winpc 2026-11-21: Mic with its audio options, More and Leave).
+    pub attendant_test: bool,
     /// We present a Microsoft Whiteboard (Teams' WhiteboardControlsSection:
     /// Stop sharing on the bar).
     pub whiteboard_sharing: bool,
@@ -720,7 +723,7 @@ impl Facts {
     /// A chat's group call (its Meet now or Audio call): neither a meeting
     /// nor a 1:1 call, and not the test call.
     pub fn group_call(&self) -> bool {
-        !self.is_meeting() && !self.p2p && !self.pstn && !self.consult && !self.echo && !self.voicemail
+        !self.is_meeting() && !self.p2p && !self.pstn && !self.consult && !self.echo && !self.voicemail && !self.attendant_test
     }
 
     /// Whether Teams shows `control` (bar controls and More's items OST
@@ -731,6 +734,9 @@ impl Facts {
         }
         if self.voicemail {
             return matches!(control, "MicrophoneButton" | "DialpadButton" | "CallButton" | "AudioSettingsButton");
+        }
+        if self.attendant_test {
+            return matches!(control, "MicrophoneButton" | "CallButton" | "AudioSettingsButton");
         }
         // A town hall's stream (measured in Teams desktop as an attendee,
         // 2026-11-18): Q&A where the meeting has it, Captions once the
@@ -972,6 +978,17 @@ mod tests {
 
     /// Teams' voicemail greeting call: the dial pad stays (the voicemail
     /// is driven by keys), Chat, People, hold, transfer and park don't.
+    #[test]
+    fn the_attendant_test_call_keeps_mic_more_and_leave() {
+        let facts = Facts { p2p: true, attendant_test: true, can_park: true, ..Default::default() };
+        for c in ["MicrophoneButton", "CallButton", "AudioSettingsButton"] {
+            assert!(facts.shows(c), "{c}");
+        }
+        for c in ["VideoButton", "ShareButton", "ChatButton", "RosterButton", "DialpadButton", "HoldButton", "CallParkButton", "CallTransferButtonV2"] {
+            assert!(!facts.shows(c), "{c}");
+        }
+    }
+
     #[test]
     fn a_voicemail_greeting_call_keeps_only_the_dial_pad() {
         let facts = Facts { p2p: true, voicemail: true, can_park: true, ..Default::default() };

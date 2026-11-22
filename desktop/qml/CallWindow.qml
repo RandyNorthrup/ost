@@ -34,6 +34,9 @@ Window {
     /// Teams' voicemail greeting call (Settings ▸ Calls ▸ Record a
     /// greeting): no Chat or People, no hold, transfer or park.
     property bool voicemail: false
+    /// Teams' test call to your intelligent call delegation: Mic, More and
+    /// Leave only (measured on winpc 2026-11-21).
+    property bool attendantTest: false
     signal leave()
     signal toggleMute()
     /// Video: whether the call can carry ours, and whether the camera is on.
@@ -904,7 +907,7 @@ Window {
         townHall: !!liveEvent.townHall, webinar: !!liveEvent.webinar, attendee: myRole === "attendee" || streaming, streaming: streaming,
         greenRoom: !!liveEvent.staging && myRole !== "attendee" && !streaming && live && liveEvent.eventPhase === "prelive",
         eventPhase: liveEvent.eventPhase || "", qna: !!liveEvent.qna && scheduled,
-        e2ee: e2ee, canPark: canPark, voicemail: voicemail,
+        e2ee: e2ee, canPark: canPark, voicemail: voicemail, attendantTest: attendantTest,
         whiteboardSharing: !!contentState.mine && !!contentState.mine.content && ["whiteboard", "extensible_app"].indexOf(contentState.mine.content.type) >= 0,
         pptSharing: pptPresenting,
         pptViewing: pptViewed && myRole !== "attendee"

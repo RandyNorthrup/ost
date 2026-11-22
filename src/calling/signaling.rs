@@ -1202,6 +1202,11 @@ pub struct CallExtras {
     pub transfer_context: Option<serde_json::Value>,
     pub unpark_code: Option<i64>,
     pub voicemail: Option<String>,
+    /// Teams' test call to your intelligent call delegation (Settings ▸
+    /// Calls ▸ Intelligent call delegation ▸ Make a test call: SlimCore's
+    /// `callToPersonalAttendant`, botType `personalAttendant`): a 1:1 call
+    /// to yourself whose callee is your personal attendant endpoint.
+    pub personal_attendant: bool,
 }
 
 /// Teams' voicemail service (`KNOWN_BOTS.VOICEMAIL_BOT_ID`): who answers a
@@ -1233,6 +1238,18 @@ pub fn apply_call_extras(invitation: &mut serde_json::Value, extras: &CallExtras
         } else {
             serde_json::json!({ "localResourcePath": path })
         };
+    }
+}
+
+/// One callee of a call request: its id, and the endpoint a call to your
+/// voicemail or to your personal attendant asks for.
+fn callee_entry(id: &str, voicemail: bool, attendant: bool) -> serde_json::Value {
+    if voicemail {
+        serde_json::json!({ "id": id, "endpointType": "voicemail" })
+    } else if attendant {
+        serde_json::json!({ "id": id, "endpointType": "personalAttendant" })
+    } else {
+        serde_json::json!({ "id": id })
     }
 }
 
@@ -1510,17 +1527,9 @@ async fn create_call_with(
     };
     // A call to a voicemail names its callee's voicemail endpoint.
     let to_voicemail = opts.extras.is_some_and(|e| e.voicemail.is_some());
-    let to: Vec<serde_json::Value> = opts
-        .to
-        .iter()
-        .map(|id| {
-            if to_voicemail {
-                serde_json::json!({ "id": id, "endpointType": "voicemail" })
-            } else {
-                serde_json::json!({ "id": id })
-            }
-        })
-        .collect();
+    // A test call to your personal attendant names that endpoint.
+    let to_attendant = opts.extras.is_some_and(|e| e.personal_attendant);
+    let to: Vec<serde_json::Value> = opts.to.iter().map(|id| callee_entry(id, to_voicemail, to_attendant)).collect();
     let tc = |path: &str| trouter_callback(params.trouter_surl, params.endpoint_id, path);
     let cause_id = &params.message_id[..8.min(params.message_id.len())];
 
@@ -2154,6 +2163,7 @@ mod tests {
             transfer_context: None,
             unpark_code: None,
             voicemail: None,
+            personal_attendant: false,
         });
         assert_eq!(inv["transferor"]["authorizationToken"], "t");
         assert!(inv.get("unparkContent").is_none());
@@ -2166,6 +2176,13 @@ mod tests {
 
     /// Teams' Record a greeting: the invitation asks the voicemail for its
     /// greeting resource.
+    #[test]
+    fn attendant_test_call_names_the_attendant_endpoint() {
+        assert_eq!(callee_entry("8:orgid:me", false, true), serde_json::json!({ "id": "8:orgid:me", "endpointType": "personalAttendant" }));
+        assert_eq!(callee_entry("8:orgid:me", true, false), serde_json::json!({ "id": "8:orgid:me", "endpointType": "voicemail" }));
+        assert_eq!(callee_entry("8:orgid:x", false, false), serde_json::json!({ "id": "8:orgid:x" }));
+    }
+
     #[test]
     fn voicemail_call_asks_for_the_greeting() {
         let mut inv = serde_json::json!({});

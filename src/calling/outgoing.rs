@@ -3190,6 +3190,17 @@ pub async fn call_own_voicemail(cancel: tokio::sync::oneshot::Receiver<()>) -> R
     start_tagged("", Target::PersonWith(&me, &extras), None, cancel).await
 }
 
+/// Teams' test call to your intelligent call delegation (its
+/// `TestCallToPA` intent: a 1:1 call to yourself, no chat thread, audio
+/// only, answered by your personal attendant).
+pub async fn call_personal_attendant(cancel: tokio::sync::oneshot::Receiver<()>) -> Result<OutgoingCall> {
+    let config = Config::load()?;
+    let oid = config.object_id().context("Signed-in user has no object id")?;
+    let me = format!("8:orgid:{oid}");
+    let extras = signaling::CallExtras { personal_attendant: true, ..Default::default() };
+    start_tagged("", Target::PersonWith(&me, &extras), None, cancel).await
+}
+
 /// [`place_call`] with its callback tag chosen up front ([`new_call_tag`]):
 /// a second call placed while another goes on (a consult call), whose
 /// events must be told apart from the first call's from the start.

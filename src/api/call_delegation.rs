@@ -143,6 +143,57 @@ pub async fn create_bookings_service(client: &TeamsClient, email: &str) -> Resul
     }
 }
 
+fn bookings_path(email: &str, service_id: &str, code: &str) -> String {
+    format!(
+        "/beta/personalbookings/bookingsService?email={}&bookingServiceId={}&bookingCode={}",
+        url::form_urlencoded::byte_serialize(email.as_bytes()).collect::<String>(),
+        url::form_urlencoded::byte_serialize(service_id.as_bytes()).collect::<String>(),
+        url::form_urlencoded::byte_serialize(code.as_bytes()).collect::<String>()
+    )
+}
+
+/// Follow-ups (Teams' bookingCalendarDetails, worker Y0r/X0r): your
+/// follow-up booking page as the service keeps it, read the way Teams
+/// reads it (settingsSync=false, provisionMailbox=false), in Teams' shape:
+/// title, webUrl (with its booking code), isPrivate, defaultDuration,
+/// minimumLeadTime, maximumAdvanceTime, hasCustomServiceWindows and
+/// bookingServiceWindows.
+pub async fn bookings_service(client: &TeamsClient, email: &str, service_id: &str, code: &str) -> Result<Value> {
+    let path = format!("{}&settingsSync=false&provisionMailbox=false", bookings_path(email, service_id, code));
+    let v = mt_send(client, reqwest::Method::GET, &path, None).await?;
+    Ok(bookings_details(&v))
+}
+
+/// Teams' X0r: the service's reply as the Follow-ups page shows it.
+pub fn bookings_details(v: &Value) -> Value {
+    let p = &v["bookingsSchedulingPolicy"];
+    let code = v["bookingUrlCodes"].as_object().and_then(|m| m.keys().next().cloned()).unwrap_or_default();
+    let web = v["webUrl"].as_str().unwrap_or_default();
+    json!({
+        "title": v["title"], "isPrivate": v["isPrivate"], "defaultDuration": v["defaultDuration"],
+        "webUrl": if web.is_empty() { String::new() } else { format!("{web}?bookingCode={code}") },
+        "minimumLeadTime": p["minimumLeadTime"], "maximumAdvanceTime": p["maximumAdvance"], "timeSlotInterval": p["timeSlotInterval"],
+        "hasCustomServiceWindows": p["hasCustomServiceWindows"].as_bool().unwrap_or(false),
+        "bookingServiceWindows": if p["bookingServiceWindows"].is_array() { p["bookingServiceWindows"].clone() } else { json!([]) },
+        "serviceId": v["serviceId"], "bookingCode": code,
+    })
+}
+
+/// Teams' updateBookingService (worker Z0r): the page's whole scheduling
+/// settings in one PUT.
+pub fn bookings_update_body(d: &Value) -> Value {
+    json!({
+        "minimumLeadTime": d["minimumLeadTime"], "maximumAdvance": d["maximumAdvanceTime"], "defaultDuration": d["defaultDuration"],
+        "hasCustomServiceWindows": d["hasCustomServiceWindows"].as_bool().unwrap_or(false),
+        "bookingServiceWindows": if d["bookingServiceWindows"].is_array() { d["bookingServiceWindows"].clone() } else { json!([]) },
+    })
+}
+
+pub async fn update_bookings_service(client: &TeamsClient, email: &str, service_id: &str, code: &str, details: &Value) -> Result<()> {
+    mt_send(client, reqwest::Method::PUT, &bookings_path(email, service_id, code), Some(&bookings_update_body(details))).await?;
+    Ok(())
+}
+
 /// Teams' turn-on (settings `De`'s Z): with Bookings allowed by the policy
 /// and no service yet, the calendar is asked for too.
 pub fn wants_bookings(policy: &Value, settings: &Value, on: bool) -> bool {
@@ -155,6 +206,30 @@ pub fn wants_bookings(policy: &Value, settings: &Value, on: bool) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bookings_reply_reads_as_teams_shows_it() {
+        let reply = json!({
+            "title": "Personal Attendant Followup", "webUrl": "https://outlook.office.com/book/x/s/abc", "isPrivate": true, "defaultDuration": "PT30M",
+            "serviceId": "ddf16a17", "bookingUrlCodes": { "5e82": "x" },
+            "bookingsSchedulingPolicy": { "maximumAdvance": "P60D", "minimumLeadTime": "PT1H", "timeSlotInterval": "PT15M" }
+        });
+        let d = bookings_details(&reply);
+        assert_eq!(d["webUrl"], "https://outlook.office.com/book/x/s/abc?bookingCode=5e82");
+        assert_eq!(d["maximumAdvanceTime"], "P60D");
+        assert_eq!(d["hasCustomServiceWindows"], false);
+        assert_eq!(d["bookingServiceWindows"], json!([]));
+        let mut changed = d.clone();
+        changed["defaultDuration"] = json!("PT45M");
+        changed["hasCustomServiceWindows"] = json!(true);
+        changed["bookingServiceWindows"] = json!([{ "bookableHours": [{ "day": "Monday", "timeSlots": [{ "start": 540, "end": 1020 }] }] }]);
+        assert_eq!(
+            bookings_update_body(&changed),
+            json!({ "minimumLeadTime": "PT1H", "maximumAdvance": "P60D", "defaultDuration": "PT45M", "hasCustomServiceWindows": true,
+                    "bookingServiceWindows": [{ "bookableHours": [{ "day": "Monday", "timeSlots": [{ "start": 540, "end": 1020 }] }] }] })
+        );
+        assert!(bookings_path("a b@x.com", "s", "c").starts_with("/beta/personalbookings/bookingsService?email=a+b%40x.com&bookingServiceId=s&bookingCode=c"));
+    }
 
     #[test]
     fn delegate_bodies_match_the_capture() {

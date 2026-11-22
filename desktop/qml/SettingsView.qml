@@ -22,6 +22,8 @@ Rectangle {
     property string page: "general"
     /// A page's sub-page ("oof": General ▸ Out of office).
     property string subPage: ""
+    readonly property bool attendantSub: subPage === "attendantGreeting" || subPage === "attendantInstructions" || subPage === "attendantHours"
+    onSubPageChanged: if (subPage === "attendantHours") backend.changeSetting("mt", "bookings", JSON.stringify({ op: "load" }))
     color: theme.surface
 
     readonly property var pages: [
@@ -418,8 +420,21 @@ Rectangle {
                 Accessible.name: text
             }
             FluentIcon { visible: !!root.subPage; anchors.verticalCenter: parent.verticalCenter; name: "chevron-right-16"; size: 16; color: theme.textStrong }
+            // Intelligent call delegation's own sub-pages: "Calls ›
+            // Intelligent call delegation › Voice and greeting".
             Text {
-                text: root.subPage === "channelNotifs" ? qsTr("Manage") : root.subPage === "attendant" ? qsTr("Intelligent call delegation") : root.subPage === "callGroup" ? qsTr("Call group") : root.subPage === "delegates" ? qsTr("Manage delegates") : root.subPage === "oof" ? qsTr("Out of office") : root.subPage === "priority" ? qsTr("Manage priority access") : root.subPage === "blocked" ? qsTr("Manage blocked people") : root.subPage === "spellcheck" ? qsTr("Manage spellcheck languages") : root.subPage === "status" ? qsTr("Manage status notifications") : root.subPage === "connected" ? qsTr("Manage devices") : root.subPage === "stationary" ? qsTr("Stationary device location") : root.subPage === "ddv" ? qsTr("Diagnostic data viewer") : root.subPage === "interpreters" ? qsTr("Manage interpreters") : root.page === "about" ? qsTr("About OST") : (root.pages.find(p => p.key === root.page) || {}).label || ""
+                visible: root.attendantSub
+                text: qsTr("Intelligent call delegation")
+                font.family: theme.font; font.pixelSize: 18; lineHeight: 25.7; lineHeightMode: Text.FixedHeight
+                color: crumb2Hover.hovered ? theme.text : theme.textStrong
+                HoverHandler { id: crumb2Hover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: root.subPage = "attendant" }
+                Accessible.role: Accessible.Link
+                Accessible.name: text
+            }
+            FluentIcon { visible: root.attendantSub; anchors.verticalCenter: parent.verticalCenter; name: "chevron-right-16"; size: 16; color: theme.textStrong }
+            Text {
+                text: root.subPage === "attendantGreeting" ? qsTr("Voice and greeting") : root.subPage === "attendantInstructions" ? qsTr("Custom instructions") : root.subPage === "attendantHours" ? qsTr("Follow-ups") : root.subPage === "channelNotifs" ? qsTr("Manage") : root.subPage === "attendant" ? qsTr("Intelligent call delegation") : root.subPage === "callGroup" ? qsTr("Call group") : root.subPage === "delegates" ? qsTr("Manage delegates") : root.subPage === "oof" ? qsTr("Out of office") : root.subPage === "priority" ? qsTr("Manage priority access") : root.subPage === "blocked" ? qsTr("Manage blocked people") : root.subPage === "spellcheck" ? qsTr("Manage spellcheck languages") : root.subPage === "status" ? qsTr("Manage status notifications") : root.subPage === "connected" ? qsTr("Manage devices") : root.subPage === "stationary" ? qsTr("Stationary device location") : root.subPage === "ddv" ? qsTr("Diagnostic data viewer") : root.subPage === "interpreters" ? qsTr("Manage interpreters") : root.page === "about" ? qsTr("About OST") : (root.pages.find(p => p.key === root.page) || {}).label || ""
                 font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; lineHeight: 25.7; lineHeightMode: Text.FixedHeight
                 color: theme.text
                 Accessible.role: Accessible.Heading
@@ -3145,6 +3160,58 @@ Rectangle {
                 readonly property bool spam: pol.callScreening === "EnabledUserOverride"
                 readonly property bool recording: pol.automaticTranscription === "EnabledUserOverride" && pol.automaticRecording === "EnabledUserOverride"
                 function set(patch) { backend.changeSetting("mt", "attendant", JSON.stringify(patch)) }
+                // Teams' enableTestCallToPA (on unless ECS turns it off).
+                readonly property bool testCall: backend.ecsSetting("calling", "enableTestCallToPA") !== "false"
+                // Teams keeps the greeting and the custom instructions in
+                // calleeName: Base64 of the UTF-8 JSON {customGreeting,
+                // customInstructions, useCustomInstructions, …}, empty
+                // values left out (personal-attendant-settings 286654).
+                readonly property var custom: {
+                    const v = s.calleeName
+                    if (!v || !String(v).trim()) return ({})
+                    try { const o = JSON.parse(decodeURIComponent(escape(Qt.atob(v)))); return o && typeof o === "object" && !Array.isArray(o) ? o : ({}) } catch (e) { return ({}) }
+                }
+                function setCustom(patch) {
+                    const o = Object.assign({}, custom, patch)
+                    const kept = {}
+                    Object.keys(o).forEach(k => { if (o[k] !== null && o[k] !== undefined && o[k] !== "") kept[k] = o[k] })
+                    set({ calleeName: Object.keys(kept).length ? Qt.btoa(unescape(encodeURIComponent(JSON.stringify(kept)))) : "" })
+                }
+                // Teams' languages (ECS personalAttendantSupportedLanguages,
+                // shown by name); "en" and "fr" read as en-US and fr-FR.
+                readonly property var languageNames: ({
+                    "ar-SA": qsTr("Arabic (Saudi Arabia)"), "zh-CN": qsTr("Chinese (China)"), "zh-TW": qsTr("Chinese (Taiwan)"), "cs-CZ": qsTr("Czech (Czechia)"),
+                    "da-DK": qsTr("Danish (Denmark)"), "nl-NL": qsTr("Dutch (Netherlands)"), "en-AU": qsTr("English (Australia)"), "en-GB": qsTr("English (United Kingdom)"),
+                    "en-US": qsTr("English (United States)"), "fi-FI": qsTr("Finnish (Finland)"), "fr-CA": qsTr("French (Canada)"), "fr-FR": qsTr("French (France)"),
+                    "de-DE": qsTr("German (Germany)"), "el-GR": qsTr("Greek (Greece)"), "hi-IN": qsTr("Hindi (India)"), "id-ID": qsTr("Indonesian (Indonesia)"),
+                    "it-IT": qsTr("Italian (Italy)"), "ja-JP": qsTr("Japanese (Japan)"), "ko-KR": qsTr("Korean (South Korea)"), "nb-NO": qsTr("Norwegian, Bokmål (Norway)"),
+                    "pl-PL": qsTr("Polish (Poland)"), "pt-BR": qsTr("Portuguese (Brazil)"), "ru-RU": qsTr("Russian (Russia)"), "es-ES": qsTr("Spanish (Spain)"),
+                    "es-US": qsTr("Spanish (United States)"), "sv-SE": qsTr("Swedish (Sweden)"), "th-TH": qsTr("Thai (Thailand)"), "tr-TR": qsTr("Turkish (Türkiye)"),
+                    "en": qsTr("English (United States)"), "fr": qsTr("French (France)")
+                })
+                readonly property var languages: {
+                    let codes = []
+                    try { codes = JSON.parse(backend.ecsSetting("calling", "personalAttendantSupportedLanguages") || "[]") } catch (e) {}
+                    if (!Array.isArray(codes) || !codes.length) codes = ["ar-SA", "zh-CN", "zh-TW", "cs-CZ", "da-DK", "nl-NL", "en-AU", "en-GB", "en-US", "fi-FI", "fr-CA", "fr-FR", "de-DE", "el-GR", "hi-IN", "id-ID", "it-IT", "ja-JP", "ko-KR", "nb-NO", "pl-PL", "pt-BR", "ru-RU", "es-ES", "es-US", "sv-SE", "th-TH", "tr-TR"]
+                    return codes.filter(c => !!languageNames[c]).map(c => ({ code: c, name: languageNames[c] }))
+                }
+                readonly property string languageCode: s.defaultLanguage === "en" ? "en-US" : s.defaultLanguage === "fr" ? "fr-FR" : (s.defaultLanguage || "en-US")
+                // Custom instructions' categories (Call handling with ECS
+                // enablePACallRoutingInstructions) and Teams' suggestions.
+                readonly property var instructionTabs: (backend.ecsSetting("calling", "enablePACallRoutingInstructions") === "true" ? [{ key: "routing", label: qsTr("Call handling") }] : [])
+                    .concat([{ key: "conversation", label: qsTr("Conversation") }, { key: "scheduling", label: qsTr("Scheduling") }, { key: "protection", label: qsTr("Protection") }])
+                readonly property var suggestions: [
+                    { category: "routing", text: qsTr("If a caller mentions [topic], immediately connect them to me.") },
+                    { category: "routing", text: qsTr("If I am unavailable and the caller is asking about [topic], transfer the call to [person].") },
+                    { category: "conversation", text: qsTr("If a caller mentions [topic], immediately connect them to me.") },
+                    { category: "conversation", text: qsTr("If the caller mentions [topic], collect [information] first. Then proceed with booking an appointment or take a message for me so I can follow up.") },
+                    { category: "conversation", text: qsTr("Before proceeding with any request, always ask the caller for their name and company name. Do not continue until you have it.") },
+                    { category: "conversation", text: qsTr("Use the following information to answer questions about [topic]: [copy/paste knowledge].") },
+                    { category: "scheduling", text: qsTr("If the caller wants to discuss [topic], avoid scheduling meetings during [time].") },
+                    { category: "scheduling", text: qsTr("Before scheduling a meeting mention to user [info].") },
+                    { category: "protection", text: qsTr("If the caller mentions [topic], politely decline the request and end the conversation.") },
+                    { category: "protection", text: qsTr("If the caller asks for [sensitive information], do not provide it. Instead, respond with: [message].") }
+                ]
             }
             Text {
                 visible: root.page === "calls" && !root.subPage && pa.offered
@@ -3809,20 +3876,58 @@ Rectangle {
                     }
                 }
             }
+            // Personalization (Teams 26304, measured on winpc 2026-11-21:
+            // the Wand card between Call handling and Skills): Voice and
+            // greeting and Custom instructions open their sub-pages; the
+            // test call (Teams' enableTestCallToPA) calls your intelligent
+            // call delegation. Rows 15 above and below a divider.
+            SettingsParts.Card {
+                id: paPersonal
+                visible: root.page === "calls" && root.subPage === "attendant" && pa.shown
+                property bool collapsed: false
+                icon: "wand-20"; title: qsTr("Personalization")
+                trailing: Component { CollapseButton { collapsed: paPersonal.collapsed; onClicked: paPersonal.collapsed = !paPersonal.collapsed } }
+                Column {
+                    visible: !paPersonal.collapsed
+                    width: parent.width
+                    spacing: 15
+                    SettingsParts.ButtonRow {
+                        label: qsTr("Voice and greeting")
+                        sublabel: qsTr("Choose the voice, tone, and greeting style that represents you during your calls.")
+                        buttonText: qsTr("Manage")
+                        onClicked: root.launchSection("personal_attendant_custom_greeting_title")
+                    }
+                    SettingsParts.Divider {}
+                    SettingsParts.ButtonRow {
+                        label: qsTr("Custom instructions")
+                        sublabel: qsTr("Provide instructions for handling calls, conversations, follow-ups, and spam. Avoid confidential information. Not all instructions may be applied.")
+                        buttonText: qsTr("Manage")
+                        onClicked: root.launchSection("personal_attendant_custom_instructions_title")
+                    }
+                    SettingsParts.Divider { visible: pa.testCall }
+                    PaTestCallRow { visible: pa.testCall }
+                }
+            }
             SettingsParts.Card {
                 id: paSkills
-                visible: root.page === "calls" && root.subPage === "attendant" && pa.shown && (pa.spam || pa.recording)
+                visible: root.page === "calls" && root.subPage === "attendant" && pa.shown && (pa.spam || pa.recording || pa.bookings)
                 property bool collapsed: false
-                icon: "toolbox-20"; title: qsTr("Skills")
+                icon: "task-list-ltr-20"; title: qsTr("Skills")
                 trailing: Component { CollapseButton { collapsed: paSkills.collapsed; onClicked: paSkills.collapsed = !paSkills.collapsed } }
                 Column {
                     visible: !paSkills.collapsed
                     width: parent.width
                     spacing: 15
-                    // Personalization (Voice and greeting, Custom instructions,
-                    // the test call) and Skills ▸ Follow-ups open sub-pages
-                    // still to build (TASK-0242).
-
+                    // Follow-ups (where the policy allows calendar bookings):
+                    // Teams' manage-hours sub-page.
+                    SettingsParts.ButtonRow {
+                        visible: pa.bookings
+                        label: qsTr("Follow-ups", "calling:k8op0q77j")
+                        sublabel: qsTr("Allow anyone to check your availability and book appointments on your calendar. Follow-ups can be joined through OST.")
+                        buttonText: qsTr("Manage", "calling:kfwqy6pi")
+                        onClicked: root.launchSection("personal_attendant_booking_manage_hours")
+                    }
+                    SettingsParts.Divider { visible: pa.bookings && (pa.spam || pa.recording) }
                     SettingsParts.SwitchRow { visible: pa.spam; label: qsTr("Prevent suspected spam calls from disturbing you"); on: pa.s.enableCallScreening !== false; onToggled: v => pa.set({ enableCallScreening: v }) }
                     SettingsParts.Divider { visible: pa.spam && pa.recording }
                     SettingsParts.SwitchRow { visible: pa.recording; label: qsTr("Save transcriptions and recordings for all screened calls"); on: pa.s.enableAutomaticRecording === true && pa.s.enableAutomaticTranscription === true; onToggled: v => pa.set({ enableAutomaticRecording: v, enableAutomaticTranscription: v }) }
@@ -3832,9 +3937,423 @@ Rectangle {
                 id: paNotif
                 visible: root.page === "calls" && root.subPage === "attendant" && pa.shown
                 property bool collapsed: false
-                icon: "alert-20"; title: qsTr("Notifications")
+                icon: "alert-badge-20"; title: qsTr("Notifications")
                 trailing: Component { CollapseButton { collapsed: paNotif.collapsed; onClicked: paNotif.collapsed = !paNotif.collapsed } }
                 SettingsParts.SwitchRow { visible: !paNotif.collapsed; label: qsTr("Display banner for answered calls"); on: pa.s.enableScreeningNotification === true; onToggled: v => pa.set({ enableScreeningNotification: v }) }
+            }
+            // ---- Calls › Intelligent call delegation › Voice and greeting
+            // (Teams' personal-attendant-customize, measured on winpc
+            // 2026-11-21): one card, the default language (Teams' ECS
+            // personalAttendantSupportedLanguages; saved as defaultLanguage),
+            // the greeting message (kept with the custom instructions in
+            // calleeName, Base64 of UTF-8 JSON) and the test call. ----
+            SettingsParts.Card {
+                visible: root.page === "calls" && root.subPage === "attendantGreeting" && pa.shown
+                icon: "person-voice-20"; title: qsTr("Voice and greeting", "calling:k1az4nf6p")
+                subtitle: qsTr("Choose the voice, tone, and greeting style that represents you during your calls.")
+                Column {
+                    width: parent.width
+                    spacing: 15.7
+                    Column {
+                        width: parent.width
+                        spacing: 10.7
+                        SettingsParts.SubHeading { text: qsTr("Choose the default language") }
+                        OutlineDropdown {
+                            width: 293.3; height: 30
+                            options: pa.languages.map(l => ({ label: l.name }))
+                            current: Math.max(0, pa.languages.findIndex(l => l.code === pa.languageCode))
+                            accessibleName: qsTr("Choose the default language")
+                            onPicked: i => pa.set({ defaultLanguage: pa.languages[i].code })
+                        }
+                    }
+                    SettingsParts.ButtonRow {
+                        label: qsTr("Customize greeting message")
+                        sublabel: qsTr("Write the exact message you want intelligent call delegation to use when answering calls.")
+                        buttonText: (pa.custom.customGreeting || "").trim().length > 0 ? qsTr("Edit greeting message") : qsTr("Write a greeting message")
+                        onClicked: paGreetingDialog.show(pa.custom.customGreeting || "")
+                    }
+                    PaTestCallRow { visible: pa.testCall }
+                }
+            }
+            GreetingDialog {
+                id: paGreetingDialog
+                title: qsTr("Customize greeting message")
+                // Teams' placeholder names your first name, else its generic
+                // example.
+                placeholder: {
+                    const first = (backend.userName || "").trim().split(/\s+/)[0] || ""
+                    return first ? qsTr("Type your greeting message here:\n• E.g.: \"Hi, you've reached %1. I'm not available right now — please leave your name and reason for calling and I'll get back to you as soon as I can.\"").arg(first)
+                                 : qsTr("Hi you've reached [owner's name]'s line. I'm their AI delegate. Who am I speaking with?")
+                }
+                maxLength: 200
+                lengthError: qsTr("Greeting cannot exceed 200 characters")
+                boxWidth: 650.67; boxHeight: 120; boxX: 24.67; boxY: 70.67
+                onSaved: text => pa.setCustom({ customGreeting: text })
+            }
+
+            // ---- … › Custom instructions (measured on winpc 2026-11-21):
+            // the question, the instructions box (676.7 x 220), the prompt
+            // box with Teams' categories and their suggestions, the AI notice
+            // and feedback, the count, the test call and Save. Saved as
+            // customInstructions (with useCustomInstructions) in calleeName;
+            // people are kept as Teams' <route|contact name mri tenantId>
+            // tags and shown as @Name. ----
+            SettingsParts.Card {
+                id: ciCard
+                visible: root.page === "calls" && root.subPage === "attendantInstructions" && pa.shown
+                icon: "task-list-ltr-20"; title: qsTr("Custom instructions")
+                subtitle: qsTr("Provide instructions for handling calls, conversations, follow-ups, and spam. Avoid confidential information. Not all instructions may be applied.")
+                bodyGap: 16
+                // Teams' personalAttendantConfiguration.customInstructions.maxLength, else 10000.
+                readonly property int maxLen: { let c = null; try { c = JSON.parse(backend.ecsSetting("calling", "personalAttendantConfiguration") || "null") } catch (e) {} return c && c.customInstructions && c.customInstructions.maxLength > 0 ? c.customInstructions.maxLength : 10000 }
+                readonly property string saved: pa.custom.customInstructions || ""
+                property string tab: ""
+                property bool saving: false
+                property bool failed: false
+                // The people in the text: display name -> Teams' tag.
+                property var chips: ({})
+                function shown(raw) {
+                    const m = {}
+                    const t = raw.replace(/<(route|contact)\s+name="([^"]*)"\s+mri="([^"]*)"\s+tenantId="([^"]*)">/g, (all, kind, name) => { m["@" + name] = all; return "@" + name })
+                    chips = m
+                    return t
+                }
+                function raw(text) {
+                    let t = text
+                    Object.keys(chips).sort((a, b) => b.length - a.length).forEach(k => { t = t.split(k).join(chips[k]) })
+                    return t
+                }
+                onSavedChanged: ciArea.text = shown(saved)
+                onVisibleChanged: if (visible) { ciArea.text = shown(saved); tab = ""; failed = false }
+                readonly property int length: raw(ciArea.text).length
+                readonly property bool tooLong: raw(ciArea.text).trim().length > maxLen
+                readonly property bool unchanged: raw(ciArea.text).trim() === saved
+                Column {
+                    width: parent.width - 27.3
+                    topPadding: 8; bottomPadding: 16
+                    spacing: 12
+                    Text { width: parent.width; text: qsTr("Write your custom instructions or select a prompt"); font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
+                    Rectangle {
+                        width: parent.width; height: 220; radius: 4
+                        color: theme.surface
+                        border.color: ciArea.activeFocus ? theme.brand : theme.stroke; border.width: 0.67
+                        Flickable {
+                            id: ciFlick
+                            x: 12; y: 8; width: parent.width - 24; height: parent.height - 16
+                            contentHeight: ciArea.contentHeight; clip: true
+                            boundsBehavior: Flickable.StopAtBounds
+                            TextEdit {
+                                id: ciArea
+                                width: ciFlick.width
+                                wrapMode: TextEdit.Wrap
+                                textFormat: TextEdit.PlainText
+                                font.family: theme.font; font.pixelSize: 14; color: theme.text
+                                selectByMouse: true
+                                onCursorRectangleChanged: {
+                                    if (cursorRectangle.y < ciFlick.contentY) ciFlick.contentY = cursorRectangle.y
+                                    else if (cursorRectangle.y + cursorRectangle.height > ciFlick.contentY + ciFlick.height) ciFlick.contentY = cursorRectangle.y + cursorRectangle.height - ciFlick.height
+                                }
+                                // "@" offers Teams' two mentions: a call
+                                // transfer target or a contact to share.
+                                Keys.onPressed: e => { if (e.text === "@") { e.accepted = true; ciMention.at = ciArea.cursorPosition; ciMention.open() } }
+                                Accessible.role: Accessible.EditableText
+                                Accessible.name: qsTr("Write your custom instructions or select a prompt")
+                            }
+                        }
+                        MenuPopup {
+                            id: ciMention
+                            property int at: 0
+                            property string kind: "route"
+                            x: 12; y: Math.min(parent.height - 8, ciArea.cursorRectangle.y + ciArea.cursorRectangle.height + 8 - ciFlick.contentY)
+                            items: [{ label: qsTr("Add call transfer target"), icon: "call-forward-20" }, { label: qsTr("Share contact"), icon: "person-20" }]
+                            onPicked: i => { kind = i === 0 ? "route" : "contact"; ciPicker.open() }
+                        }
+                        Popup {
+                            id: ciPicker
+                            x: 12; y: ciMention.y
+                            width: 320; padding: 8
+                            background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
+                            VoicemailTransferPicker {
+                                id: ciPeople
+                                width: 300
+                                placeholder: qsTr("Search for a person")
+                                people: { const v = backend.newChatPeopleJson ? JSON.parse(backend.newChatPeopleJson) : ({}); return v.items || [] }
+                                peopleQuery: { const v = backend.newChatPeopleJson ? JSON.parse(backend.newChatPeopleJson) : ({}); return v.query || "" }
+                                onSearch: q => backend.newChatPeople(q)
+                                onPicked: (mri, oid, name) => {
+                                    const clean = (name || "").replace(/"/g, "")
+                                    const tag = "<" + ciMention.kind + " name=\"" + clean + "\" mri=\"" + mri + "\" tenantId=\"" + backend.tenantId() + "\">"
+                                    const m = Object.assign({}, ciCard.chips); m["@" + clean] = tag; ciCard.chips = m
+                                    ciArea.insert(ciMention.at, "@" + clean)
+                                    ciPicker.close(); targetMri = ""
+                                    ciArea.forceActiveFocus()
+                                }
+                            }
+                            onOpened: ciPeople.forceActiveFocus()
+                        }
+                    }
+                    // The prompt box: Teams' categories (Call handling only
+                    // with ECS enablePACallRoutingInstructions); a picked one
+                    // lists its suggestions, a suggestion adds its line.
+                    Rectangle {
+                        id: promptBox
+                        width: parent.width; height: promptCol.height + 16; radius: 4
+                        color: theme.surface
+                        border.color: ciCard.tab ? theme.stroke : "transparent"; border.width: 0.67
+                        Column {
+                            id: promptCol
+                            x: 12.67; y: 8.67; width: parent.width - 25.33
+                            spacing: 8
+                            Row {
+                                spacing: 8
+                                Repeater {
+                                    model: pa.instructionTabs
+                                    Rectangle {
+                                        id: pill
+                                        required property var modelData
+                                        readonly property bool on: ciCard.tab === modelData.key
+                                        width: Math.max(96, pillText.implicitWidth + 24); height: 31.33; radius: height / 2
+                                        color: on ? (pillHover.hovered ? theme.brandHover : theme.brandFill) : pillHover.hovered ? theme.menuHover : "transparent"
+                                        border.color: on ? "transparent" : theme.stroke; border.width: 0.67
+                                        Text { id: pillText; anchors.centerIn: parent; text: pill.modelData.label; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(pill, pill.on ? "#FFFFFF" : theme.text) }
+                                        HoverHandler { id: pillHover; cursorShape: Qt.PointingHandCursor }
+                                        TapHandler { onTapped: ciCard.tab = pill.modelData.key }
+                                        Accessible.role: Accessible.Button
+                                        Accessible.name: pill.modelData.label
+                                        Accessible.checked: pill.on
+                                    }
+                                }
+                            }
+                            Repeater {
+                                model: pa.suggestions.filter(c => c.category === ciCard.tab)
+                                Rectangle {
+                                    id: sug
+                                    required property var modelData
+                                    width: Math.min(promptCol.width, sugText.implicitWidth + 26); height: Math.max(46, sugText.height + 9.33); radius: 8
+                                    color: sugHover.hovered ? theme.rowHover : theme.surface
+                                    Text {
+                                        id: sugText
+                                        x: 12.67; anchors.verticalCenter: parent.verticalCenter
+                                        width: Math.min(implicitWidth, promptCol.width - 26)
+                                        wrapMode: Text.Wrap
+                                        textFormat: Text.StyledText
+                                        // Teams shows its [placeholders] bold in brand colour.
+                                        text: sug.modelData.text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/\[([^\]]*)\]/g, "<b><font color=\"" + theme.brandForeground1 + "\">[$1]</font></b>")
+                                        font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
+                                        color: theme.text
+                                    }
+                                    HoverHandler { id: sugHover; cursorShape: Qt.PointingHandCursor }
+                                    TapHandler {
+                                        onTapped: {
+                                            const cur = ciArea.text.replace(/\n+$/, "")
+                                            ciArea.text = cur.trim().length === 0 ? sug.modelData.text : cur + "\n" + sug.modelData.text
+                                            ciCard.failed = false
+                                        }
+                                    }
+                                    Accessible.role: Accessible.Button
+                                    Accessible.name: sug.modelData.text
+                                }
+                            }
+                        }
+                        TapHandler { enabled: !!ciCard.tab; onTapped: {} }
+                    }
+                    // The AI notice and Teams' feedback thumbs.
+                    Row {
+                        spacing: 8
+                        Rectangle {
+                            height: 20; width: aiRow.implicitWidth + 16; radius: 4
+                            anchors.verticalCenter: parent.verticalCenter
+                            color: theme.pick("#E8EBFA", "#2F2F4A", "#000000")
+                            Row {
+                                id: aiRow
+                                x: 6; anchors.verticalCenter: parent.verticalCenter
+                                spacing: 4
+                                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "sparkle-12"; size: 12; color: theme.brandForeground1 }
+                                Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Instructions are AI-generated and may not always behave exactly as described"); font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.brandForeground1 }
+                            }
+                        }
+                        Row {
+                            spacing: 4
+                            PaIconButton { icon: "thumb-like-20"; label: qsTr("This was helpful"); onClicked: root.feedbackRequested("like", "PERSONAL_ATTENDANT_CALLEE_FEEDBACK", "PACustomInstructions") }
+                            PaIconButton { icon: "thumb-dislike-20"; label: qsTr("This was not helpful"); onClicked: root.feedbackRequested("dislike", "PERSONAL_ATTENDANT_CALLEE_FEEDBACK", "PACustomInstructions") }
+                        }
+                    }
+                    Item {
+                        width: parent.width; height: 31.33
+                        Row {
+                            anchors.right: parent.right
+                            spacing: 12
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: ciCard.tooLong ? qsTr("Length limit exceeded. %1/%2 characters.").arg(ciCard.length).arg(ciCard.maxLen) : qsTr("%1/%2 characters").arg(ciCard.length).arg(ciCard.maxLen)
+                                font.family: theme.font; font.pixelSize: 12; color: ciCard.tooLong ? theme.danger : theme.textSecondary
+                            }
+                            SettingsParts.Button { visible: pa.testCall; icon: "video-person-call-20"; label: qsTr("Make a test call"); onClicked: backend.callPersonalAttendant() }
+                            SettingsParts.Button {
+                                primary: true
+                                enabled: !ciCard.unchanged && !ciCard.tooLong && !ciCard.saving
+                                label: qsTr("Save", "calling:k7u4ogu40")
+                                onClicked: { pa.setCustom({ customInstructions: ciCard.raw(ciArea.text).trim(), useCustomInstructions: true }) }
+                            }
+                        }
+                    }
+                    Text {
+                        visible: ciCard.failed
+                        width: parent.width; wrapMode: Text.Wrap
+                        text: qsTr("Failed to update custom instructions. Please try again.")
+                        font.family: theme.font; font.pixelSize: 12; color: theme.danger
+                    }
+                }
+            }
+
+            // ---- … › Follow-ups (Teams' personal-attendant-manage-hours,
+            // measured on winpc 2026-11-21): scheduling on/off
+            // (enableBookingCalendar), then the booking page's length, lead
+            // time, how far ahead and the hours (your work hours, or custom
+            // hours per day: up to five 15-minute-step slots, 9–5 on
+            // weekdays to start), each saved at once with Teams'
+            // updateBookingService; rows 110 apart between dividers. ----
+            SettingsParts.Card {
+                id: fuCard
+                visible: root.page === "calls" && root.subPage === "attendantHours" && pa.shown
+                icon: "calendar-edit-20"; title: qsTr("Follow-ups", "calling:k8op0q77j")
+                subtitle: qsTr("Allow anyone to check your availability and book appointments on your calendar. Follow-ups can be joined through OST.")
+                readonly property var b: root.mt.bookings || ({})
+                readonly property bool on: pa.s.enableBookingCalendar === true
+                readonly property var durations: [["PT15M", qsTr("15 mins")], ["PT30M", qsTr("30 mins")], ["PT45M", qsTr("45 mins")], ["PT1H", qsTr("1 hr", "calling:k1k7srxwz")]]
+                readonly property var leads: [["PT1H", qsTr("1 hr", "calling:k7msymmhf")], ["PT8H", qsTr("8 hrs")], ["PT12H", qsTr("12 hrs")], ["PT24H", qsTr("1 day")], ["PT48H", qsTr("2 days")]]
+                readonly property var advances: [["P7D", qsTr("7 days")], ["P14D", qsTr("14 days")], ["P30D", qsTr("30 days")], ["P60D", qsTr("60 days")], ["P90D", qsTr("90 days")]]
+                // ISO durations as Teams reads them (minutes / hours / days).
+                function minutes(iso) { const m = /P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?)?/.exec(iso || ""); return m ? (+(m[1] || 0)) * 1440 + (+(m[2] || 0)) * 60 + (+(m[3] || 0)) : 0 }
+                function pick(list, iso, dflt) { const v = minutes(iso); const i = list.findIndex(o => minutes(o[0]) === v); return i >= 0 ? i : dflt }
+                function save(patch) { backend.changeSetting("mt", "bookings", JSON.stringify(patch)) }
+                readonly property var days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+                // Teams' Xe: the saved hours, else 9–5 on weekdays.
+                readonly property var hours: {
+                    const bh = ((b.bookingServiceWindows || [])[0] || {}).bookableHours || []
+                    if (!bh.length) return days.map(d => ({ day: d, enabled: days.indexOf(d) < 5, timeSlots: days.indexOf(d) < 5 ? [{ start: 540, end: 1020 }] : [] }))
+                    return days.map(d => { const e = bh.find(x => x && x.day === d); const s = (e && e.timeSlots || []).map(t => ({ start: t.start || 0, end: t.end || 0 })); return { day: d, enabled: s.length > 0, timeSlots: s } })
+                }
+                readonly property bool custom: b.hasCustomServiceWindows === true || (((b.bookingServiceWindows || [])[0] || {}).bookableHours || []).length > 0
+                function saveHours(list) { save({ hasCustomServiceWindows: true, bookingServiceWindows: [{ bookableHours: list.map(d => ({ day: d.day, timeSlots: d.enabled ? d.timeSlots : [] })) }] }) }
+                function clockText(m) { if (m === 1440) return "12:00 AM"; const h = Math.floor(m / 60), mm = String(m % 60).padStart(2, "0"); return (h === 0 ? 12 : h > 12 ? h - 12 : h) + ":" + mm + " " + (h < 12 ? "AM" : "PM") }
+                SettingsParts.SwitchRow {
+                    label: qsTr("Enable scheduling follow-ups")
+                    rowHeight: 49.6
+                    on: fuCard.on
+                    onToggled: v => pa.set({ enableBookingCalendar: v })
+                }
+                Repeater {
+                    model: fuCard.on ? [
+                        { label: qsTr("How long should follow-up events be"), list: fuCard.durations, cur: fuCard.pick(fuCard.durations, fuCard.b.defaultDuration, 1), key: "defaultDuration" },
+                        { label: qsTr("How soon can follow-ups be scheduled"), list: fuCard.leads, cur: fuCard.pick(fuCard.leads, fuCard.b.minimumLeadTime, 0), key: "minimumLeadTime" },
+                        { label: qsTr("How far in advance can follow-ups be scheduled"), list: fuCard.advances, cur: fuCard.pick(fuCard.advances, fuCard.b.maximumAdvanceTime, 3), key: "maximumAdvanceTime" }
+                    ] : []
+                    Column {
+                        required property var modelData
+                        width: parent.width
+                        SettingsParts.Divider {}
+                        SettingsParts.Gap { size: 25.3 }
+                        SettingsParts.SubHeading { text: modelData.label }
+                        SettingsParts.Gap { size: 10.7 }
+                        OutlineDropdown {
+                            width: 293.3; height: 30
+                            options: modelData.list.map(o => ({ label: o[1] }))
+                            current: modelData.cur
+                            accessibleName: modelData.label
+                            onPicked: i => { const p = {}; p[modelData.key] = modelData.list[i][0]; fuCard.save(p) }
+                        }
+                        SettingsParts.Gap { size: 23.3 }
+                    }
+                }
+                Column {
+                    visible: fuCard.on
+                    width: parent.width
+                    SettingsParts.Divider {}
+                    SettingsParts.Gap { size: 25.3 }
+                    SettingsParts.SubHeading { text: qsTr("Define available hours") }
+                    SettingsParts.Gap { size: 10.7 }
+                    OutlineDropdown {
+                        width: 293.3; height: 30
+                        options: [{ label: qsTr("Use work hours") }, { label: qsTr("Use custom hours") }]
+                        current: fuCard.custom ? 1 : 0
+                        accessibleName: qsTr("Define available hours")
+                        onPicked: i => { if (i === 0) fuCard.save({ hasCustomServiceWindows: false, bookingServiceWindows: [] }); else fuCard.saveHours(fuCard.hours) }
+                    }
+                    // Custom hours: a row per day (Teams shows the day's
+                    // English name) with Available / Unavailable and its
+                    // switch, then its slots: start "to" end, + on the first
+                    // (while under five), delete on the others.
+                    Repeater {
+                        model: fuCard.custom ? fuCard.hours : []
+                        Column {
+                            id: dayCol
+                            required property var modelData
+                            required property int index
+                            width: parent.width - 27.3
+                            topPadding: 16
+                            spacing: 4
+                            Item {
+                                width: parent.width; height: 36
+                                Text { anchors.verticalCenter: parent.verticalCenter; text: dayCol.modelData.day; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                                Row {
+                                    anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                                    spacing: 4
+                                    Text { anchors.verticalCenter: parent.verticalCenter; text: dayCol.modelData.enabled ? qsTr("Available") : qsTr("Unavailable"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                                    SettingsParts.Toggle {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        stateLabel: false
+                                        on: dayCol.modelData.enabled
+                                        accessibleName: qsTr("%1 availability").arg(dayCol.modelData.day)
+                                        onToggled: v => { const l = JSON.parse(JSON.stringify(fuCard.hours)); l[dayCol.index].enabled = v; if (v && !l[dayCol.index].timeSlots.length) l[dayCol.index].timeSlots = [{ start: 540, end: 1020 }]; fuCard.saveHours(l) }
+                                    }
+                                }
+                            }
+                            Repeater {
+                                model: dayCol.modelData.enabled ? dayCol.modelData.timeSlots : []
+                                Row {
+                                    id: slotRow
+                                    required property var modelData
+                                    required property int index
+                                    spacing: 8
+                                    readonly property var starts: Array.from({ length: 96 }, (x, i) => i * 15)
+                                    function change(start, end) {
+                                        const l = JSON.parse(JSON.stringify(fuCard.hours))
+                                        l[dayCol.index].timeSlots[slotRow.index] = { start: start, end: end > start ? end : start + 15 }
+                                        fuCard.saveHours(l)
+                                    }
+                                    OutlineDropdown {
+                                        width: 140; height: 30
+                                        options: slotRow.starts.map(m => ({ label: fuCard.clockText(m) }))
+                                        current: Math.max(0, slotRow.starts.indexOf(slotRow.modelData.start))
+                                        accessibleName: qsTr("%1 start time %2").arg(dayCol.modelData.day).arg(slotRow.index + 1)
+                                        onPicked: i => slotRow.change(slotRow.starts[i], slotRow.modelData.end)
+                                    }
+                                    Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("to"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                                    OutlineDropdown {
+                                        readonly property var ends: slotRow.starts.filter(m => m > slotRow.modelData.start).concat([1440])
+                                        width: 140; height: 30
+                                        options: ends.map(m => ({ label: fuCard.clockText(m) }))
+                                        current: Math.max(0, ends.indexOf(slotRow.modelData.end))
+                                        accessibleName: qsTr("%1 end time %2").arg(dayCol.modelData.day).arg(slotRow.index + 1)
+                                        onPicked: i => slotRow.change(slotRow.modelData.start, ends[i])
+                                    }
+                                    PaIconButton {
+                                        readonly property bool adds: slotRow.index === 0 && dayCol.modelData.timeSlots.length < 5
+                                        icon: adds ? "add-16" : "delete-16"
+                                        label: adds ? qsTr("Add time slot for %1").arg(dayCol.modelData.day) : qsTr("Remove time slot %1 for %2").arg(slotRow.index).arg(dayCol.modelData.day)
+                                        onClicked: {
+                                            const l = JSON.parse(JSON.stringify(fuCard.hours))
+                                            if (adds) l[dayCol.index].timeSlots.push({ start: 540, end: 1020 })
+                                            else l[dayCol.index].timeSlots.splice(slotRow.index, 1)
+                                            fuCard.saveHours(l)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
             GreetingDialog {
                 id: greetingDialog
@@ -4241,6 +4760,41 @@ Rectangle {
     // winpc 2026-11-14): 14/700 on a 20 px line, 18 above and below (the
     // first one 6, and 8 under the page's top), cards 12 above.
     /// Teams' section collapse button (32 x 31.3, chevron up while open).
+    /// Intelligent call delegation's test call row: "Test voice quality
+    /// and interaction behavior" and Make a test call (VideoPersonCall).
+    component PaTestCallRow: Item {
+        width: parent ? parent.width : 0
+        height: 31.33
+        Text {
+            anchors.verticalCenter: parent.verticalCenter
+            text: qsTr("Test voice quality and interaction behavior", "calling:k9n774j15")
+            font.family: theme.font; font.pixelSize: 14; color: theme.text
+        }
+        SettingsParts.Button {
+            anchors.right: parent.right; anchors.rightMargin: 27.3
+            icon: "video-person-call-20"
+            label: qsTr("Make a test call")
+            onClicked: backend.callPersonalAttendant()
+        }
+    }
+    /// Fluent's transparent icon button (32 x 31.3, a 20 px glyph; small:
+    /// 24, 16 px).
+    component PaIconButton: Rectangle {
+        id: pib
+        property string icon
+        property string label
+        property bool small: icon.endsWith("-16")
+        signal clicked()
+        width: small ? 24 : 32; height: small ? 24 : 31.3; radius: 4
+        color: pibh.hovered ? theme.pick("#F5F5F5", "#3D3D3D", "#1AEBFF") : "transparent"
+        FluentIcon { anchors.centerIn: parent; name: pib.icon; size: pib.small ? 16 : 20; color: theme.onFill(pib, theme.text) }
+        HoverHandler { id: pibh; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: pib.clicked() }
+        activeFocusOnTab: true
+        Keys.onSpacePressed: clicked()
+        Accessible.role: Accessible.Button
+        Accessible.name: label
+    }
     component CollapseButton: Rectangle {
         id: cb
         property bool collapsed: false
@@ -4490,6 +5044,18 @@ Rectangle {
         launchSection(category, { settingCategory: category, settingId: settingId, settingSectionId: settingId })
     }
     function followLinkForTest() { autoFollowCard.linkActivated("followed") }
+    /// --seti-pa: the greeting dialog, a custom-instructions category, and
+    /// saves as the pages' own controls make them.
+    function paForTest(what) {
+        if (what === "greetingDialog") paGreetingDialog.show(pa.custom.customGreeting || "")
+        else if (what === "closeDialog") paGreetingDialog.close()
+        else if (what.startsWith("tab:")) ciCard.tab = what.slice(4)
+        else if (what.startsWith("setGreeting:")) pa.setCustom({ customGreeting: what.slice(12) })
+        else if (what.startsWith("setInstructions:")) {
+            ciCard.chips = Object.assign({}, ciCard.chips, { "@OST Test 2": "<route name=\"OST Test 2\" mri=\"8:orgid:9edcc62f-2f4b-4f55-bbf9-02c7cbaadbb5\" tenantId=\"" + backend.tenantId() + "\">" })
+            pa.setCustom({ customInstructions: ciCard.raw(what.slice(16)), useCustomInstructions: true })
+        } else if (what.startsWith("restore:")) pa.set({ calleeName: what.slice(8) })
+    }
     function highlightForTest() { return { shown: highlight.visible, opacity: Math.round(highlight.opacity * 100) / 100, y: Math.round(highlight.mapToItem(null, 0, 0).y), h: Math.round(highlight.height), border: String(highlight.border.color), width: highlight.border.width, focus: window.activeFocusItem ? String(window.activeFocusItem.Accessible.name || window.activeFocusItem.accessibleName || window.activeFocusItem.label || window.activeFocusItem) : "", contentY: Math.round(content.contentY) } }
     function oofForTest() { return oofPage }
     function scrollForTest() { content.contentY = Math.max(0, content.contentHeight - content.height) }

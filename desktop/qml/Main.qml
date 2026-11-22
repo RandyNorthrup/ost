@@ -2054,6 +2054,7 @@ Window {
         canPark: backend.callCanPark
         callContinues: backend.callContinues
         voicemail: backend.callVoicemail
+        attendantTest: backend.callAttendantTest
         parkCode: backend.callState === "parked" ? backend.callParkCode : ""
         onParkCall: backend.parkCall()
         onDtmf: key => backend.sendDtmf(key)
@@ -11930,6 +11931,65 @@ Window {
             else if (step === 38) settingsView.scrollToForTest(500)
             else if (step === 39) shot("calls-2")
             else if (step === 40) Qt.quit()
+            step++
+        }
+    }
+
+    // --seti-pa --shots=<dir> (TASK-0242): Intelligent call delegation's
+    // Personalization and Follow-ups. Turns the feature on (when the policy
+    // lets you choose and it's off), shows the page, Voice and greeting
+    // (and its greeting dialog), Custom instructions (Conversation's
+    // suggestions), Follow-ups; saves and reads back a greeting, custom
+    // instructions with a @mention, the default language and the follow-up
+    // length, then puts each back; with --seti-pa-call also makes the test
+    // call (about 25 s, then hangs up); finally turns the feature off again
+    // if it was off. SETIPA lines; pictures sp-*.png.
+    Timer {
+        running: Qt.application.arguments.indexOf("--seti-pa") >= 0 && backend.signedIn && !!backend.teamsJson && backend.settingsJson.length > 0
+        interval: 2000; repeat: true
+        property int step: 0
+        property var before: null
+        property bool wasOn: false
+        onTriggered: {
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "sp-" + n + ".png"))
+            const mt = () => JSON.parse(backend.settingsJson).mt || {}
+            const pa = () => mt().attendant || {}
+            const dec = v => { try { return v ? JSON.parse(decodeURIComponent(escape(Qt.atob(v)))) : {} } catch (e) { return { bad: String(v) } } }
+            const log = tag => { const a = pa(); console.warn("SETIPA", tag, JSON.stringify({ on: a.isEnabled, lang: a.defaultLanguage, booking: a.enableBookingCalendar, custom: dec(a.calleeName), bookings: mt().bookings, policy: mt().attendantPolicy, call: backend.callState, peer: backend.callPeer, test: backend.callAttendantTest })) }
+            const call = Qt.application.arguments.indexOf("--seti-pa-call") >= 0
+            const sv = settingsView
+            switch (step) {
+            case 0: rail.current = "settings"; sv.pageForTest("calls"); before = JSON.parse(JSON.stringify(pa())); wasOn = before.isEnabled === true; log("start"); break
+            case 1: if (!wasOn) backend.changeSetting("mt", "attendant", JSON.stringify({ isEnabled: true })); break
+            case 3: backend.loadSettings(); break
+            case 5: log("on (read back)"); sv.launchSection("personal_attendant_group_section_title"); break
+            case 6: shot("attendant"); sv.scrollToForTest(600); break
+            case 7: shot("attendant-2"); sv.launchSection("personal_attendant_custom_greeting_title"); break
+            case 8: shot("greeting"); sv.paForTest("greetingDialog"); break
+            case 9: shot("greeting-dialog"); sv.paForTest("closeDialog"); sv.launchSection("personal_attendant_custom_instructions_title"); break
+            case 10: sv.paForTest("tab:conversation"); break
+            case 11: shot("instructions"); sv.launchSection("personal_attendant_booking_manage_hours"); break
+            case 13: log("follow-ups loaded"); shot("followups"); break
+            case 14: sv.paForTest("setGreeting:OST TEST 242 greeting"); break
+            case 15: sv.paForTest("setInstructions:OST TEST 242: if a caller asks about invoices, transfer the call to @OST Test 2."); break
+            case 16: backend.changeSetting("mt", "attendant", JSON.stringify({ defaultLanguage: "en-GB" })); backend.changeSetting("mt", "bookings", JSON.stringify({ defaultDuration: "PT45M" })); break
+            case 18: backend.loadSettings(); break
+            case 20: backend.changeSetting("mt", "bookings", JSON.stringify({ op: "load" })); break
+            case 22: log("changed (read back)"); sv.launchSection("personal_attendant_custom_instructions_title"); break
+            case 23: shot("instructions-saved"); sv.paForTest("restore:" + (before.calleeName || "")); backend.changeSetting("mt", "attendant", JSON.stringify({ defaultLanguage: before.defaultLanguage || "en-US" })); backend.changeSetting("mt", "bookings", JSON.stringify({ defaultDuration: "PT30M" })); break
+            case 25: backend.loadSettings(); break
+            case 27: backend.changeSetting("mt", "bookings", JSON.stringify({ op: "load" })); break
+            case 29: log("put back (read back)"); if (!call) step = 44; break
+            case 30: sv.launchSection("personal_attendant_custom_greeting_title"); backend.callPersonalAttendant(); break
+            case 34: log("test call 8 s"); break
+            case 37: log("test call 14 s"); console.warn("SETIPA roster", backend.callRosterJson ? backend.callRosterJson.slice(0, 600) : ""); break
+            case 42: log("test call 24 s"); backend.hangUp(); break
+            case 44: log("after hang-up"); break
+            case 45: if (!wasOn) backend.changeSetting("mt", "attendant", JSON.stringify({ isEnabled: false })); break
+            case 47: backend.loadSettings(); break
+            case 49: log("end (read back)"); Qt.quit(); break
+            }
             step++
         }
     }

@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-10T07:56:00Z'
-updated_date: '2026-11-21T20:22:00Z'
+updated_date: '2026-11-21T21:41:00Z'
 labels:
   - desktop
   - settings
@@ -112,4 +112,10 @@ OST's Settings has General, Appearance, Chats and channels, Notifications and ac
 - Tenant: turning ICD on in Teams on winpc made ost-test1's personal Bookings service "Personal Attendant Followup" (service ddf16a17-…). ICD was turned off again; the service is left in place.
 
 - 2026-11-21 merged (7c59bd7, 0e8395f, ac82968); 898 lib + 29 desktop tests pass. AC1/AC2 met for every page (Intelligent call delegation's Personalization, Follow-ups and test call moved to TASK-0242; Teams' Small incoming-call window not measurable over VNC). AC3 open: verify the links into Settings (Do not disturb banner, Pause notifications' Notifications settings, call and chat menus).
+
+- 2026-11-21 (agent setI) AC3, links into Settings (aaaa2d1; docs/spec/settings.md "Links into Settings"):
+  - Teams (26304 bundles: every settings.launch/launchSection/openSettingPage/settingsstore entity command; settings-app Ar/LV and the scroll hook 266576; measured on winpc): no id = General; Settings and more > Settings and Ctrl+, always open General with Find focused (also after another page); category + setting id = that page, the setting scrolled to the centre, its first control focused and its section highlighted (inset 1 px colorPaletteDarkOrangeBorderActive #DA3B01 / dark #E9835E, fading over 4 s after 50 ms; measured on Customize app bar); sub-page ids open Page > Sub-page; without a setting id the page opens at the top and its first control takes focus. DND banner > Privacy > Manage priority access; Pause notifications > Notifications settings = Notifications at web-activity-settings (not shown for ost-test1: page top, focus unchanged, measured); compose Enter hint = Chats with a setting id but no category (page top, first control focused, measured); Customize view = Chats; notification dialogs' link = Notifications; auto-follow link = Notifications scrolled to Replies; Editor links; /l/settings/<page> deep links.
+  - OST: SettingsView.launchSection resolves Teams' ids the same way and draws the highlight; Main.launchSettings/launchSettingsGeneral; every OST entry wired (Settings and more, Ctrl+, DND banner, Pause notifications, Schedule out of office, Customize app bar, compose hint, Customize view, both notification dialogs (their link was unconnected before), auto-follow link, Editor links, VIPs Edit, /l/settings links). Settings checkboxes, radios and picture radios now take keyboard focus; focus rings follow the theme.
+  - Verified live on linuxlt (ost-test1 default profile, --seti-test): each link landed on Teams' page/sub-page; General with Find focused; Customize app bar: highlight on the App bar card, Show app names focused, faded after 4 s; Editor settings: Editor spellcheck card highlighted and centred; Replies card scrolled to top.
+  - Not in OST (so no link to wire): the message translation menu, the efficiency row (VDI), Premium/Insider/Labs/People pages, contacts sync, leave-and-block toast, NDI and Focus Assist banners.
 <!-- SECTION:NOTES:END -->

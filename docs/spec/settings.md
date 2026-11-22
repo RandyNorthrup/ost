@@ -557,6 +557,62 @@ lost its "Manage"), **Call group**, **Delegates**.
     …/delegate/{delegateMri}`; `PATCH …/delegationWarningTone` {playWarningTone}. Read from the
     voice admin settings' delegationSettings (userDelegates.delegates, userDelegators.delegators).
 
+## Calls ▸ Intelligent call delegation ▸ Personalization, Follow-ups, test call (TASK-0242; measured on winpc 2026-11-21)
+
+With the feature on, the page's cards are Call handling (CallInbound), **Personalization**
+(Wand), **Skills** (TaskListLtr) and **Notifications** (AlertBadge); rows inside a card are 15
+above and below a divider.
+
+- **Personalization** (270 tall): "Voice and greeting" / "Choose the voice, tone, and greeting
+  style that represents you during your calls." Manage → `personal_attendant_custom_greeting_title`;
+  "Custom instructions" / its two-line subtitle, Manage → `personal_attendant_custom_instructions_
+  title`; "Test voice quality and interaction behavior" with "Make a test call" (VideoPersonCall,
+  149.7 wide) where ECS calling.enableTestCallToPA.
+- **Skills ▸ Follow-ups** (where calendarBookings allows): its subtitle, Manage →
+  `personal_attendant_booking_manage_hours`.
+- **Voice and greeting** ("Calls › Intelligent call delegation › Voice and greeting"; one card,
+  PersonVoice icon, 252 tall): "Choose the default language" with a 292.7 × 30 dropdown (ECS
+  personalAttendantSupportedLanguages, 28 for ost-test1 from Arabic (Saudi Arabia) to Turkish
+  (Türkiye); "en"/"fr" read as en-US/fr-FR; saved as defaultLanguage), "Customize greeting
+  message" / "Write the exact message you want intelligent call delegation to use when answering
+  calls." with "Write a greeting message" (or "Edit greeting message"), then the test call row.
+  The greeting dialog: 700 × 264.7, radius 8, padding 24, title 20/28/600, the area 650.7 × 120
+  (0.67 border, brand bottom when focused) with the placeholder "Type your greeting message here:
+  • E.g.: "Hi, you've reached {first name}. …"" (no name: "Hi you've reached [owner's name]'s
+  line. …"), Cancel / Save (96 × 31.3); Save only when the trimmed text changed and is at most 200
+  characters ("Greeting cannot exceed 200 characters").
+- **Custom instructions** (TaskListLtr, 528.7 tall): "Write your custom instructions or select a
+  prompt", a plain-text box 676.7 × 220 (0.67 #D1D1D1, radius 4, padding 8 12), the prompt box
+  (padding 8 12; transparent border until a category is picked): circular pills Conversation,
+  Scheduling, Protection (+ Call handling with ECS enablePACallRoutingInstructions), 31.3 tall,
+  ≥ 96 wide, 8 apart; the picked one brand-filled with its suggestions under it (radius 8, padding
+  4 12, the [placeholders] 600 in brand); a suggestion appends its line. Under it the AI notice
+  (Sparkle 12, 12/16/600 brand on #E8EBFA, radius 4) with thumbs up/down (Teams' feedback,
+  PERSONAL_ATTENDANT_CALLEE_FEEDBACK / PACustomInstructions), then right-aligned "{n}/{max}
+  characters" (max ECS personalAttendantConfiguration.customInstructions.maxLength, else 10000;
+  over it "Length limit exceeded. …" in red), Make a test call and Save (primary, only when
+  changed). "@" offers "Add call transfer target" / "Share contact" and a people search ("Search
+  for a person"); people are stored as `<route|contact name="…" mri="…" tenantId="…">`.
+- **Where they're saved**: the greeting and the instructions live in personalAttendantSettings.
+  calleeName = Base64(UTF-8 JSON {customGreeting, customInstructions, useCustomInstructions, …},
+  empty values dropped), PUT with the whole settings as the rest of the page.
+- **Follow-ups** (CalendarEdit, 560.3 tall): "Enable scheduling follow-ups" (enableBookingCalendar
+  in the attendant settings), then 110 apart between dividers: "How long should follow-up events
+  be" (15 / 30 / 45 mins / 1 hr = PT15M…PT1H), "How soon can follow-ups be scheduled" (1 / 8 / 12
+  hrs / 1 / 2 days = PT1H…PT48H), "How far in advance can follow-ups be scheduled" (7 / 14 / 30 / 60
+  / 90 days = P7D…P90D), "Define available hours" (Use work hours / Use custom hours: per day the
+  English day name, Available / Unavailable with a switch, up to five slots of 15-minute steps,
+  start "to" end, + on the first, delete on the others; 9:00–17:00 on weekdays to start). Read with
+  `GET {mt}/beta/personalbookings/bookingsService?email=&bookingServiceId=&bookingCode=&settingsSync=false&provisionMailbox=false`
+  and saved at once with `PUT …?email=&bookingServiceId=&bookingCode=` {minimumLeadTime,
+  maximumAdvance, defaultDuration, hasCustomServiceWindows, bookingServiceWindows [{bookableHours:
+  [{day, timeSlots [{start, end}]}]}]} (minutes from midnight).
+- **Make a test call**: Teams' TestCallToPA intent: a 1:1 call to your own MRI with no chat thread,
+  audio only, which SlimCore places as `callToPersonalAttendant` (botType personalAttendant); the
+  attendant (GraphCommunicationsClient-PersonalAttendantBot) answers with your greeting. The window
+  is titled "Test call with your Call Delegation" and shows only Mic (with its options), More and
+  Leave (measured). OST sends the callee as `{id: <your MRI>, endpointType: "personalAttendant"}`.
+
 ## Links into Settings (TASK-0088 AC3; Teams 26304, bundles read and measured on winpc 2026-11-21)
 
 Every link goes through `entityCommanding.settings.launch(command, id)` or
