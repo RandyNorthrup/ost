@@ -21704,12 +21704,12 @@ impl qobject::Backend {
                             let info = v["value"].as_array().into_iter().flatten().find(|m| m.pointer("/threadInfo/threadId").and_then(|t| t.as_str()) == Some(thread.as_str())).map(|m| m["threadInfo"].clone()).unwrap_or_default();
                             let ical = info["iCalUid"].as_str().unwrap_or_default().to_string();
                             let org = info.pointer("/organizer/id").or_else(|| info.pointer("/organizerId")).and_then(|o| o.as_str()).unwrap_or(&oid).split('@').next().unwrap_or_default().to_string();
-                            match api::event_highlights::artifacts_v3(&region, &thread, &ical, &org).await {
+                            match api::event_highlights::artifacts_v3(&region, &thread, &ical, &org, &tid).await {
                                 Ok(v3) => {
                                     if let (Some(list), Some(extra)) = (v.get_mut("value").and_then(|l| l.as_array_mut()), v3["value"].as_array()) {
                                         // Only its Highlights: the recordings are already there.
                                         for e in extra {
-                                            let hl: Vec<serde_json::Value> = e["resources"].as_array().into_iter().flatten().filter(|r| r["type"] == "Highlights").cloned().collect();
+                                            let hl: Vec<serde_json::Value> = e["resources"].as_array().into_iter().flatten().filter(|r| r["type"].as_str().is_some_and(|t| t.eq_ignore_ascii_case("highlights"))).cloned().collect();
                                             list.push(json!({ "threadInfo": e["threadInfo"].clone(), "resources": hl }));
                                         }
                                     }
@@ -21742,6 +21742,10 @@ impl qobject::Backend {
                         // The highlights page's link as Loop opens it: the
                         // file's organization edit link with its nav.
                         let loop_url = match &lf {
+                            // A highlights file is kept in Teams' own storage
+                            // and named by its sharing link (`/:fl:/g/
+                            // contentstorage/…`): Loop opens that as it is.
+                            Some(l) if l.location.contains("/:fl:/") => l.location.clone(),
                             Some(l) if !l.drive_id.is_empty() => {
                                 let edit = api::meeting_notes::edit_link(&client, &l.drive_id, &l.item_id).await.unwrap_or_default();
                                 if edit.is_empty() { l.location.clone() } else { api::meeting_notes::shared_link(&edit, &l.location) }

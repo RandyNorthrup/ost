@@ -79,7 +79,7 @@ pub fn artifacts_with_transcripts(v: &Value, thread: &str) -> (Vec<Recording>, O
                     location: s("location"),
                 }),
                 Some("TranscriptV2") => transcripts.push(s("location")),
-                Some("Highlights") => loop_file = Some(LoopFile { drive_id: s("driveId"), item_id: s("driveItemId"), location: s("location") }),
+                Some("Highlights" | "highlights") => loop_file = Some(LoopFile { drive_id: s("driveId"), item_id: s("driveItemId"), location: s("location") }),
                 _ => {}
             }
         }
@@ -117,15 +117,28 @@ pub async fn download(location: &str, docx: bool, name: &str, dir: &std::path::P
 /// &organizerId`: a collection whose resources include the Highlights
 /// file, `{id, type, location, driveId, driveItemId}`), wrapped as a
 /// contents reply for [`artifacts_from`]. The reply's shape is logged.
-pub async fn artifacts_v3(region: &str, thread: &str, ical_uid: &str, organizer_oid: &str) -> Result<Value> {
+pub async fn artifacts_v3(region: &str, thread: &str, ical_uid: &str, organizer_oid: &str, tenant: &str) -> Result<Value> {
+    // The organizer as "oid@tid" (the service answers a bare oid with
+    // CrossTenantRequest), then as a bare oid.
+    let mut last = Err(anyhow::anyhow!("No organizer"));
+    for org in [format!("{organizer_oid}@{tenant}"), organizer_oid.to_string()] {
+        last = artifacts_v3_as(region, thread, ical_uid, &org).await;
+        if last.is_ok() {
+            break;
+        }
+    }
+    last
+}
+
+async fn artifacts_v3_as(region: &str, thread: &str, ical_uid: &str, organizer: &str) -> Result<Value> {
     let token = token().await?;
     let enc = |s: &str| url::form_urlencoded::byte_serialize(s.as_bytes()).collect::<String>();
     let mut url = format!("{}/contents?threadId={}", base(region), enc(thread));
     if !ical_uid.is_empty() {
         url.push_str(&format!("&iCalUid={}", enc(ical_uid)));
     }
-    if !organizer_oid.is_empty() {
-        url.push_str(&format!("&organizerId={}", enc(organizer_oid)));
+    if !organizer.is_empty() {
+        url.push_str(&format!("&organizerId={}", enc(organizer)));
     }
     let r = reqwest::Client::new()
         .get(&url)

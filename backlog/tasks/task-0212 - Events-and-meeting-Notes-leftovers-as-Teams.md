@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-17T01:27:00Z'
-updated_date: '2026-11-22T16:54:00Z'
+updated_date: '2026-11-22T18:36:00Z'
 labels:
   - desktop
 dependencies: []
@@ -97,4 +97,15 @@ What TASK-0209 left (docs/spec/events.md, docs/spec/call-and-meeting-window.md):
 - Gaps against Teams found on the way (not built):
   - Teams' Audio recaps tab is a two-pane view: a list with Generate audio recap on top, rows "title / Couldn't generate / date", and a detail pane with Chapters / Transcript and a bottom player. After Generate, Teams opens the recap there, not as a popped-out mini player.
   - The Generate dialog's rows are grouped under date headers ("Last week") with organizer, a tasks chip and the recording thumbnail.
+
+- Built: Audio recaps now has Teams' two panes (279 wide list: Generate audio recap 240 x 32, rows with title / "Couldn't generate" / M/d, the 60-day footnote; detail pane: title, day, AI generated with Like and Dislike, Chapters / Transcript, placeholders while it generates, the player bar; the warning picture with Teams' text when it failed). Generate shows the new recap there as Teams does (no popped-out mini player).
+  - Live (OST TEST 212 recording): "Generating..." row and detail, then Couldn't generate with Teams' message. --recaps-delete then removed both OST-made test recaps (deletePodcasts, deleted 2 of 2).
+- (b) Highlights live in OST (spatest, --events-test=highlights:OST~TEST~212~recording):
+  - createHighlights answers 409 (the file Teams made exists).
+  - The recording is listed as "Nov 21, 2026 1:17 PM – 1:20 PM", the player plays it (Graph preview embed), and Download ▸ Transcript saved "OST TEST 212 recording transcript.docx".
+  - Open: the highlights file isn't found yet. Teams reads it from the meeting content service (MeetingArtifactV3Highlights), which answered OST 403 CrossTenantRequest for organizerId=oid ("User is not allowed to operate the content", MeetingContentSingleRead); retrying with oid@tid. Without it there's no status bar or Loop card. Publish isn't built (it needs the Loop page's serialized highlightsContent).
+
+- (b) the highlights file found. Teams' meeting content service ({mcps}/contents?threadId&iCalUid&organizerId) answers with organizerId = oid@tid (a bare oid gets 403 CrossTenantRequest). Its resources: AISummary, highlights (lower case), TranscriptV2, Recording. The highlights file lives in Teams' SharePoint Embedded storage (/:fl:/g/contentstorage/CSP_…).
+  - OST's tab then matched Teams: the "Highlights aren't published yet." bar, the player, and the highlights card. Its Loop page loaded (LOOPHOST framed, code @fluidx/loop-page-container, rendered, connected).
+  - Side effect of that run: OST asked for an organization edit link of the file (createLink). Now the file's own /:fl:/ link is used as it is.
 <!-- SECTION:NOTES:END -->
