@@ -1299,10 +1299,11 @@ OST Guest accounts; all were removed afterwards.
     / "Channel Agent is being added." / Go to channel; once the bot's
     welcome ("Hi, I'm your Channel Agent…", botMetadata Welcome-AddAgent)
     is in the channel, "Channel Agent has been added to this channel.";
-    on failure "Couldn't create {channelName} agent.". A posts channel
-    shows "<channel> Agent has been added to the channel." (75579 `cn` for
-    a project agent's AddCustomApp); a threads channel shows no row for it
-    (winpc, "OST TEST 206 agent G", 2026-11-21). (Tried live in Teams
+    on failure "Couldn't create {channelName} agent.". Teams' code words
+    a project agent's AddCustomApp "<channel> Agent has been added to the
+    channel." (75579 `cn`), but neither a threads channel ("OST TEST 206
+    agent G", 2026-11-21) nor a posts channel ("OST TEST 206 agent H",
+    2026-11-22) showed a row for it on winpc. (Tried live in Teams
     with "OST TEST 206 agent".)
   - The welcome (measured 2026-11-21): sender "<channel> Agent"
     (fromAppMetadata.name) with the "AI agent" tag; the picture is the
@@ -1316,7 +1317,20 @@ OST Guest accounts; all were removed afterwards.
     16 px thumbs), the bubble 8.7 under that row. @agent in a threads
     channel opens the message's thread with the agent as a mention in the
     reply box ("Send to: thread only"); Like / Dislike open the feedback
-    form ("What did you like?") and stay filled. Create sends `POST {teamsAndChannelsProvisioningService}/team/
+    form ("What did you like?") and stay filled.
+  - In a posts channel (measured 2026-11-22, "OST TEST 206 agent H"
+    switched to posts): the post's text is cut with "see more"; the row
+    sits 8 under it at x 16 (@agent, then the thumbs at 88 / 112), the
+    reactions 16 under the 31.3 row; @agent opens that post's reply box
+    with the agent mentioned; no row for the agent's add or the layout
+    change.
+  - Other suggested actions (Teams 26304's parser and 763654): imBack
+    (sends "@bot {value}", in a channel to the thread), Action.Submit (an
+    invoke named value.name or "suggestedActions/submit"), openUrl
+    (http/https; "Preferences" / "Skills" get document-text / folder
+    icons), Action.ODSL (Copilot statements); three at most (four for
+    Teams' Copilot apps); all small buttons (min width 64), imBack's text
+    wraps, the others truncate. Create sends `POST {teamsAndChannelsProvisioningService}/team/
   v2?async=false` `{displayName, description, displayNamePrefix: "",
   displayNameSuffix: "", visibility, firstChannelName, isTenantWide:
   false}`; the first channel takes that name (the team's thread). Then

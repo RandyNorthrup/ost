@@ -4,7 +4,7 @@ title: Chat list leftovers found in live checks
 status: In Progress
 assignee: []
 created_date: '2026-11-16T20:22:00Z'
-updated_date: '2026-11-22T16:53:00Z'
+updated_date: '2026-11-22T19:03:00Z'
 labels:
   - desktop
 dependencies: []
@@ -91,4 +91,11 @@ Found while checking TASK-0150/0195/0204 against Teams on winpc (2026-11-16):
   - Rechecked after the paragraph fix in a second team ("OST TEST 206 agent G2", deleted afterwards): paragraphs 20 apart and the list set off as in Teams, @agent and the thumbs 8 under the text inside the bubble, the logo avatar with the Available badge. Both test teams were deleted with --team-live=delete (OST no longer lists them).
   - Tests: 893 lib + 29 desktop pass.
   - Left: posts-layout channels (ChannelPosts) don't draw the suggested actions / thumbs row yet (no posts-layout Channel Agent to compare); OST parses only Action.Compose suggested actions (imBack / Action.Submit not drawn).
+
+- 2026-11-22 (chatH), suggested actions, from Teams 26304 (r_data-resolvers-chat `Es` parser; 763654 `ja`/`$a`/`Wa`/`ba` renderers, `eo` handler; the worker's invoke transport):
+  - Kinds (type without case): imBack (value → text; a button that sends "<mention of the bot> {text}", in a channel to the message's thread), Action.Compose (Teams.chatMessage: text and mentions to the compose box), Action.Submit (object value → an invoke named value.name or "suggestedActions/submit" with value.value or the whole value), openUrl (http/https only; "Preferences" / "Skills" get document-text / folder icons), Action.ODSL (Copilot statements: customizations, schedule meeting, ODSL; separate lazy chunks). At most 3 (4 for ECS copilotAppsIds bots); a non-text title or type drops them all. All are Fluent small buttons (12 px, padding 3 8, min width 64, #D1D1D1 hairline, radius 4); imBack wraps (min height 24), the rest truncate; an invoke disables its button while it runs.
+  - Posts layout (Teams on winpc, team "OST TEST 206 agent H" made by OST's Add Channel Agent, its channel switched to posts with Edit channel's chatModalityType PostReply): the welcome post (716 wide) shows its text cut with "see more", then the row 8 under it at x 16: @agent 64 x 23.3, Like / Dislike 24 x 31.3 at 88 / 112, the row 31.3 tall; the reactions 16 under the row (56.3 under the text). @agent opens that post's reply box with "OST TEST channel Agent" as a mention (posts: setCopilotAtMention on the post's reply chain + showReplyCompose). Teams shows no row for the layout change (ModalityUpdate) nor for the agent's add in that channel.
+- Built: api::messages::suggested_actions parses every kind as Teams (unit test); SuggestedActionsRow.qml (shared by chats/threads and posts); imBack sends, Action.Submit invokes (backend.suggestedInvoke → api::bot_invoke), openUrl opens; posts: the row at Teams' place, @agent opens the post's reply with the mention (the reply box sends rich text when it holds one), the ModalityUpdate post left out, post paragraphs with no space between them (MessageText).
+- Live (OST on linuxlt, `--agent-welcome-test --open-chat=<posts channel>`): AGENTWELCOME welcome {actions ["@agent"], feedback, layout PostReply}; picked → post reply {"text": "OST TEST channel Agent ", "mention": true}; the row and the reply box as Teams.
+- Open: Teams' "see more" cut of long posts isn't in OST's posts layout; ODSL kinds are parsed and counted but not drawn; imBack / Submit / openUrl come from Teams' code with unit tests only (no bot here sends them).
 <!-- SECTION:NOTES:END -->

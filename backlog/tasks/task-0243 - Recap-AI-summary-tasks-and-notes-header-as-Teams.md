@@ -4,7 +4,7 @@ title: Recap AI summary tasks and notes header as Teams
 status: In Progress
 assignee: []
 created_date: '2026-11-21T19:30:00Z'
-updated_date: '2026-11-22T17:37:00Z'
+updated_date: '2026-11-22T19:03:00Z'
 labels:
   - desktop
   - calls
@@ -39,4 +39,8 @@ Left from TASK-0240: for OST TEST 240 Teams' AI summary card lists 3 tasks where
   - Left: the header's icon is OST's Loop file icon where Teams shows Loop's app logo from the component's iconUrl (not exposed by OST's Loop host yet); Shared locations' place rows follow the sharedlocations reply but none could be seen (the notes are shared nowhere); "Add to Loop workspace" opens Loop in the browser as Teams does (not clicked again).
 
 - 2026-11-22 merged (890e128, 7a3792a); 902 lib + 29 desktop tests pass. AC1 verified live against Teams. AC2: header row built at Teams' positions; open: it shows OST's Loop file icon where Teams shows Loop's app logo.
+
+- 2026-11-22 (chatH), AC2: Teams' Loop header icon is its AppIcon (698099 `z`/`k`): the host's appIconUrl, else the component's ComponentProperties.iconUrl (or the first propertiesChanged, up to 5 s), a 20 px skeleton until then, FFXLoopIcon (Loop's logo) when there is none, FFXLoopOutline in the disabled colour when it fails. Teams' recap window on winpc (OST TEST 240, Notes): img appIconImageTestId 20 x 20, src res.cdn.office.net/fluid/prod/loop-page-container/hashed/LoopIcon.1545f61c397b4c54-1.svg.
+- Built: loop_host.js reads the component's iconUrl as Teams does and reports it (LoopPage.iconUrl / iconState); LoopChromeBar draws the skeleton, the icon, FFXLoopIcon or FFXLoopOutline (Teams' glyphs from loop-commanding.json).
+- Live (`--recap-window-test=ainotes --recap-chat=OST~TEST~240`): RECAPWIN notes header {icon "url", iconUrl the same LoopIcon.1545f61c397b4c54-1.svg}; the header shows Loop's logo where Teams does.
 <!-- SECTION:NOTES:END -->

@@ -43,7 +43,7 @@ Item {
     /// The harness: the open reply box's plain text and whether it holds a mention.
     property string replyStateForTest: ""
     signal clearReplies()
-    onClearReplies: replying = ""
+    onClearReplies: { replying = ""; replyStateForTest = "" }
     function toEnd() { list.positionViewAtEnd() }
     /// Bring a post into view (Find in channel); whether it's loaded.
     function showPost(id) {
@@ -123,6 +123,10 @@ Item {
     readonly property var posts: {
         const byRoot = {}, order = []
         for (const m of root.messages) {
+            // A layout change and a Channel Agent's add aren't posts: Teams
+            // shows no row for either in a posts channel (seen on winpc
+            // 2026-11-22, "OST TEST 206 agent H").
+            if (m.event && (m.event.kind === "ModalityUpdate" || m.event.kind === "AgentAdded")) continue
             const r = m.kind === "call" && m.linked_root ? m.linked_root : (m.root_id || m.id)
             const meetingPost = m.kind === "call" && m.id === r && !!m.meeting_join_url
             if (m.kind === "call" && !meetingPost && !byRoot[r]) continue
@@ -325,12 +329,14 @@ Item {
                         mark: root.markFor(card.post ? card.post.id : "")
                     }
                     // A bot's suggested actions ("@agent") and its like /
-                    // dislike, 8 under the text (SuggestedActionsRow).
+                    // dislike (SuggestedActionsRow): measured on winpc
+                    // 2026-11-22 in a posts channel, 16 in and 8 under the
+                    // text, the reactions 16 under the 31.3 row.
                     SuggestedActionsRow {
                         id: postActions
                         readonly property real extra: visible ? Math.max(31.3, height) + 8 : 0
                         visible: !!card.post && !postEdit.active && !card.post.mine && !card.post.deleted && shown
-                        x: 18; y: postBody.y + postBody.height + 8
+                        x: 16; y: postBody.y + postBody.height + 8
                         message: card.post || ({})
                         host: root.host
                         maxWidth: card.width - 36

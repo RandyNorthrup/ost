@@ -10,7 +10,11 @@ Text {
     lineHeight: 20; lineHeightMode: Text.FixedHeight
     text: !message ? "" : message.deleted ? qsTr("This message has been deleted.")
         : "<style>a { color: " + theme.link + "; text-decoration: none; } .mention { color: " + theme.brandForeground1
-          + "; } .mention-me { color: " + theme.mentionMe + "; font-weight: 700; }</style>" + (mark && mark.length ? theme.markTerms(message.html ? theme.messageHtml(message.html) : message.text, mark) : message.html ? theme.messageHtml(message.html) : message.text)
+          + "; } .mention-me { color: " + theme.mentionMe + "; font-weight: 700; }"
+          // Paragraphs with no space between them, as in the chat (a Channel
+          // Agent's welcome in a posts channel, measured 2026-11-22: <p>s 20
+          // apart).
+          + " p { margin-top: 0px; margin-bottom: 0px; }</style>" + (mark && mark.length ? theme.markTerms(message.html ? theme.messageHtml(message.html) : message.text, mark) : message.html ? theme.messageHtml(message.html) : message.text)
     textFormat: message && message.deleted ? Text.PlainText : Text.RichText
     wrapMode: Text.Wrap
     font.family: theme.font; font.pixelSize: theme.base

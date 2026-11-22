@@ -149,7 +149,7 @@ Item {
             if (name === "commanding") { surface.show(d, d.x * web.zoomFactor, d.y * web.zoomFactor); return }
             if (name === "commandingDismiss") { surface.hide(); return }
             if (name === "title") { root.componentTitle = d.title || ""; return }
-            if (name === "icon") { console.info("LOOPHOST", root.kind, "icon", d.url ? d.url.split("?")[0].slice(0, 200) : d.failed ? "failed" : "none"); root.iconUrl = d.url || ""; root.iconState = d.failed ? "failed" : "known"; return }
+            if (name === "icon") { console.info("LOOPHOST", root.kind, "icon", d.url ? d.url.split("?")[0].slice(0, 200) : d.failed ? "failed" : "none"); if (d.url || root.iconUrl === "") { root.iconUrl = d.url || ""; root.iconState = d.failed ? "failed" : "known" } return }
             if (name === "titleText") { root.titleText(String(d.title || "")); return }
             if (name === "rendered") root.state_ = "ready"
             else if (name === "error" || (name === "closed" && d.errorType)) { root.error = d.message || d.errorType || "error"; root.state_ = "error"; root.failed(root.error) }
