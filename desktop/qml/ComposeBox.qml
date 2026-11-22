@@ -2260,7 +2260,8 @@ Item {
             input.forceActiveFocus()
             return
         }
-        const words = String(person.name || "").split(/\s+/).filter(w => w)
+        // (A bot's name stays one mention, as a suggested action gives it.)
+        const words = person.whole ? [String(person.name || "")] : String(person.name || "").split(/\s+/).filter(w => w)
         const style = 'style="color:' + theme.brandForeground1 + '; text-decoration:none"'
         const html = words.map(w => '<a href="mention:' + person.mri + '" ' + style + '>' + escapeHtml(w) + '</a>').join("&nbsp;") + "&nbsp;"
         const at = mentionAt, end = input.cursorPosition

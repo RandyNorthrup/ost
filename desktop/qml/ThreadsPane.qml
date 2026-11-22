@@ -73,6 +73,19 @@ Rectangle {
         }
     }
     Component.onDestruction: if (openedRoot) backend.closeThreadWindow(openedChannel, openedRoot)
+    /// A suggested action's text in the open thread's reply box (once the
+    /// thread's compose is there).
+    function applySuggestion(action) { pendingSuggestion = action; suggestionTimer.restart() }
+    property var pendingSuggestion: null
+    function threadForTest() { return thread }
+    Timer {
+        id: suggestionTimer; interval: 150; repeat: true
+        property int tries: 0
+        onTriggered: {
+            if (thread.visible && thread.composeReady()) { stop(); tries = 0; thread.applySuggestion(pane.pendingSuggestion); pane.pendingSuggestion = null }
+            else if (++tries > 40) { stop(); tries = 0 }
+        }
+    }
     function openThread(id) {
         const m = host ? host.messages.find(m => m.id === id) : null
         title = m ? (m.text || "").split("\n")[0] : ""

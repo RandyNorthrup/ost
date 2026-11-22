@@ -1515,6 +1515,40 @@ Window {
         }
     }
 
+    // --agent-welcome-test --open-chat=<channel id>: a Channel Agent's
+    // welcome as Teams draws it (AGENTWELCOME lines: the sender, its app,
+    // the suggested actions and feedback; agent-welcome.png), then its
+    // "@agent" picked as a click would (the thread opens with the mention in
+    // its reply box; agent-welcome-picked.png); the box is cleared again
+    // and nothing is sent.
+    Timer {
+        running: Qt.application.arguments.indexOf("--agent-welcome-test") >= 0 && backend.signedIn
+        interval: 2500; repeat: true
+        property int step: 0
+        onTriggered: {
+            const log = (...a) => console.warn("AGENTWELCOME", ...a.map(x => typeof x === "string" ? x : JSON.stringify(x)))
+            const id = (Qt.application.arguments.find(a => a.startsWith("--open-chat=")) || "").slice(12)
+            const cap = tag => window.contentItem.grabToImage(r => { r.saveToFile(window.shotPath.replace(".png", "-" + tag + ".png")); log("shot", tag) })
+            if (step === 0) {
+                const teams = backend.teamsJson ? JSON.parse(backend.teamsJson) : []
+                const ch = teams.reduce((a, t) => a.concat(t.channels), []).find(c => c.id === id)
+                if (!ch) return
+                log("channel", ch.name); backend.selectChat(ch.id, ch.name)
+            } else if (step === 3) {
+                const st = conversation.suggestionsForTest(false)
+                if (!st.found && waits++ < 10) return
+                log("welcome", st, "layout", conversation.channelLayout, "events", (conversation.messages || []).filter(m => m.event).map(m => m.event.kind + ": " + m.text))
+            } else if (step === 5) cap("agent-welcome")
+            else if (step === 6) log("picked", conversation.suggestionsForTest(true))
+            else if (step === 8) { const t = threadsPane.threadForTest(); log("thread", threadsPane.rootId, "reply box", t ? t.composeTextForTest() : "") }
+            else if (step === 9) cap("agent-welcome-picked")
+            else if (step === 10) { const t = threadsPane.threadForTest(); if (t) t.composeForTest().clearForTest(); log("cleared", t ? t.composeTextForTest() : "") }
+            else if (step === 11) Qt.quit()
+            step++
+        }
+        property int waits: 0
+    }
+
     // --emoji-test: open the emoji picker in the open chat and capture it.
     Timer {
         running: Qt.application.arguments.indexOf("--emoji-test") >= 0 && chatList.chats.length > 1
@@ -5154,6 +5188,7 @@ Window {
                 if (mode === "template") { step = 40; return }
                 if (mode === "audio") { step = 80; return }
                 if (mode === "notes") { step = 90; return }
+                if (mode === "ainotes") { step = 100; return }
                 if (mode !== "extras") { if (conversation.lastRecapWindow) conversation.lastRecapWindow.close(); Qt.quit(); return }
                 break
             // =extras: the recap window's extras (Clipchamp, Copilot,
@@ -5249,6 +5284,24 @@ Window {
                 if (step === 93) { if (ex().notes === "making" && waited++ < 30) return; waited = 0; log("notes", ex().notes); break }
                 if (step === 98) { w.contentItem.grabToImage(r => { r.saveToFile(window.shotPath.replace(".png", "-recap-notes.png")); log("shot notes") }); break }
                 if (step === 99) { w.close(); Qt.quit(); return }
+                break
+            }
+            // =ainotes: AI summary's notes and tasks (recap-ainotes.png),
+            // Expand all (recap-ainotes-open.png), Copy all, then Notes with
+            // its Loop header row (recap-ainotes-notes.png).
+            case 100: case 101: case 102: case 103: case 104: case 105: case 106: case 107: case 108: case 109: {
+                const w = conversation.lastRecapWindow
+                if (!w) { Qt.quit(); return }
+                const shot = n => w.contentItem.grabToImage(r => { r.saveToFile(window.shotPath.replace(".png", "-recap-" + n + ".png")); log("shot", n) })
+                if (step === 100) { w.pillForTest("AINotes"); break }
+                if (step === 101) { if (JSON.parse(w.aiNotesForTest()).loaded === false && waited++ < 30) return; waited = 0; log("ainotes", JSON.parse(w.aiNotesForTest())); shot("ainotes"); break }
+                if (step === 102) { w.aiExpandAllForTest(); break }
+                if (step === 103) { log("ainotes open", JSON.parse(w.aiNotesForTest()).open); shot("ainotes-open"); break }
+                if (step === 104) { log("copied", w.aiCopyForTest()); break }
+                if (step === 105) { w.pillForTest("Notes"); break }
+                if (step === 107) { if (!w.notesHeaderForTest().shown && waited++ < 15) return; waited = 0; log("notes header", w.notesHeaderForTest()); break }
+                if (step === 108) { shot("ainotes-notes"); break }
+                if (step === 109) { w.close(); Qt.quit(); return }
                 break
             }
             case 33: {
@@ -15129,6 +15182,16 @@ Window {
         onOpenThread: rootId => {
             threadsPane.channelId = backend.currentChatId
             threadsPane.openThread(rootId)
+        }
+        // A bot's suggested action (Action.Compose): in a threads channel
+        // Teams opens the message's thread with the text in its reply box
+        // ("Send to: thread only"); elsewhere it goes to the compose box.
+        onSuggestedAction: (m, action) => {
+            if (conversation.threadsLayout) {
+                threadsPane.channelId = backend.currentChatId
+                threadsPane.openThread(m.root_id || m.id)
+                threadsPane.applySuggestion(action)
+            } else conversation.applySuggestion(action)
         }
         threadsOpen: threadsPane.shown
         openThreadRoot: threadsPane.shown ? threadsPane.rootId : ""

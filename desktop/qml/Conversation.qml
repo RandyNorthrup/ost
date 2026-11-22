@@ -70,6 +70,25 @@ Rectangle {
     readonly property bool threadsLayout: isChannel && channelLayout === "Conversational" && !threadRoot
     readonly property bool postsLayout: isChannel && !threadsLayout
     signal openThread(string rootId)
+    /// A bot message's suggested action picked (Action.Compose: its text
+    /// goes to the compose box; in a threads channel, the message's thread).
+    signal suggestedAction(var message, var action)
+    /// Like / dislike picked on bot messages, by message id.
+    property var botFeedback: ({})
+    function composeReady() { return compose.visible }
+    /// The harness: the newest bot message's suggested actions and
+    /// feedback, then (pick) its first action as a click would.
+    function suggestionsForTest(pick) {
+        const m = (root.messages || []).filter(x => (x.suggested || []).length > 0 || x.feedback_loop).pop()
+        if (!m) return { found: false }
+        if (pick && (m.suggested || []).length) root.suggestedAction(m, m.suggested[0])
+        return { found: true, id: m.id, sender: m.sender, app: m.sender_app || "", ai: !!m.ai_agent, actions: (m.suggested || []).map(a => a.title), feedback: !!m.feedback_loop }
+    }
+    function composeTextForTest() { return compose.visible ? compose.exportForTest() : "" }
+    function applySuggestion(action) {
+        compose.focusEditor()
+        for (const m of (action.mentions || [])) compose.insertMentionOf({ mri: m.mri, name: m.name, whole: true })
+    }
     // Threads layout (measured on winpc 2026-11-10): the conversation shows
     // each thread's first message as a chat bubble; under one with replies
     // "{N} reply/replies  Last reply {time}" with the last replier's 20 px
@@ -87,6 +106,10 @@ Rectangle {
         for (const m of all) {
             const r = m.root_id || m.id
             const g = byRoot[r]
+            // A Channel Agent's own add: Teams shows no row in a threads
+            // channel (its posts layout says "… has been added to the
+            // channel.").
+            if (m.event && m.event.kind === "AgentAdded") continue
             if (m.id === r) {
                 const last = g.replies.length ? g.replies[g.replies.length - 1] : null
                 // Unread: replies after the bookmark (Mark as unread) or,
@@ -2090,7 +2113,7 @@ Rectangle {
                 name: msg.isCall ? (msg.modelData.call_huddle || root.isMeetingChat ? "video-20" : msg.modelData.call_state === "missed" ? "call-missed-20" : "call-20")
                     : ({ AddMember: "person-add-20", DeleteMember: "person-arrow-left-20", TopicUpdate: "edit-20", ModalityUpdate: "edit-20",
                          PictureUpdate: "person-circle-20", MemberJoined: "calendar-add-20", LobbyJoined: "calendar-add-20", MemberLeft: "person-arrow-left-20",
-                         MemberRenamed: "person-edit-20", AddCustomApp: "apps-20", DeleteCustomApp: "apps-20",
+                         MemberRenamed: "person-edit-20", AddCustomApp: "apps-20", AgentAdded: "apps-20", DeleteCustomApp: "apps-20",
                          RecordingStarted: "record-20", RecordingStopped: "record-stop-20", RecordingSaved: "cloud-arrow-up-20",
                          Transcript: "slide-text-20", NotesCreated: "document-edit-20" })[msg.modelData.event ? msg.modelData.event.kind : ""] || "person-add-20"
                 // Recording started is brand (Teams).
@@ -2200,13 +2223,17 @@ Rectangle {
                 visible: (!msg.mine || root.compact) && !msg.grouped && !msg.isRow && !root.noAvatars
                 x: root.compact ? 16 : root.gutL; y: root.compact ? msg.topPad + 8 : msg.bubbleY
                 size: root.compact ? 36 : 32; name: msg.modelData.sender
-                photoId: msg.modelData.sender_mri || ""
+                photoId: (msg.modelData.sender_mri || "") + (msg.modelData.sender_app ? "#" + msg.modelData.sender_app : "")
                 // A bot: its app's icon in a square with 4 px corners (Teams).
-                square: String(msg.modelData.sender_mri || "").startsWith("28:")
+                // An AI agent (a Channel Agent): its logo in a circle on
+                // NeutralBackground2, with "Available" (Teams' agent-avatar,
+                // measured on winpc 2026-11-21).
+                square: String(msg.modelData.sender_mri || "").startsWith("28:") && !msg.modelData.ai_agent
                 squareRadius: 4
-                opensProfile: !square
+                photoBackground: msg.modelData.ai_agent ? theme.pick("#FAFAFA", "#1F1F1F", "#000000") : "transparent"
+                opensProfile: !square && !msg.modelData.ai_agent
                 // Teams shows the sender's presence on message avatars too.
-                presence: msg.modelData.sender_mri && msg.modelData.sender_mri === root.chatPhotoId ? root.chatPresence : ""
+                presence: msg.modelData.ai_agent ? "Available" : msg.modelData.sender_mri && msg.modelData.sender_mri === root.chatPhotoId ? root.chatPresence : ""
             }
             Text {
                 visible: msg.groupedEdited
@@ -2453,6 +2480,9 @@ Rectangle {
                     + ".mention { color: " + theme.brandForeground1 + "; } "
                     + ".mention-me { color: " + theme.mentionMe + "; font-weight: 700; } "
                     + "p, div, li, body { line-height: " + (bigEmoticons ? 50 : 20) + "px; -qt-line-height-type: fixed; } "
+                    // Teams sets paragraphs with no space between them (a Channel
+                    // Agent's welcome, measured 2026-11-21: <p>s 20 apart).
+                    + "p { margin-top: 0px; margin-bottom: 0px; } "
                     // Measured (winpc, "OST TEST 70"): headings 18 light / 14 bold
                     // / 12 bold on 25.7 / 20 / 17.1 lines, 3 above and below;
                     // inline code Cascadia Mono in a box (CodeBoxes draws it,
@@ -2464,7 +2494,7 @@ Rectangle {
                 // Teams' lines are 20 px; big emoticons (50 px) set their own.
                 readonly property bool bigEmoticons: (msg.modelData.html || "").indexOf("width=\"50\" height=\"50\"") >= 0
                 // Bigger text, headings, rules and tables set their own heights.
-                readonly property bool richBody: /line-height:|<h[123]>|<hr|<table/.test(msg.modelData.html || "")
+                readonly property bool richBody: /line-height:|<h[123]>|<hr|<table|<ol|<ul/.test(msg.modelData.html || "")
                 readonly property real bodyH: !showBody ? 0 : bigEmoticons ? Math.max(1, body.lineCount) * 50 : richBody ? body.contentHeight : Math.max(1, body.lineCount) * 20
                 // A quoted reply's card sits at the top (Teams: 10.7 down, the
                 // text 4 under it).
@@ -2491,11 +2521,18 @@ Rectangle {
                 // Measured: a card sits 8 under the bubble's top (or the text),
                 // 17.3 in, and the bubble ends 10.7 under it.
                 readonly property real cardsTop: botCard ? 0 : showBody ? body.y + bodyH + 8 : 8
+                // A bot's suggested actions ("@agent") and its like / dislike
+                // (Teams, a Channel Agent's welcome measured on winpc
+                // 2026-11-21): a 31.3 row 8 under the text.
+                readonly property var suggested: msg.modelData.suggested || []
+                readonly property bool hasActions: !msg.mine && !msg.modelData.deleted && showBody && cards.length === 0 && files.length === 0 && !hasPics && !urlPreview
+                    && (suggested.length > 0 || !!msg.modelData.feedback_loop)
+                readonly property real actionsH: hasActions ? 39.3 : 0
                 width: root.postsLayout ? msg.maxBubble
                     : botCard ? cardCol.width
                     : cards.length > 0 ? Math.max(cardCol.width + 2 * (linkCardFirst ? 15.67 : 17.3), showBody ? Math.min(msg.maxBubble, body.implicitWidth + 2 * pad) : 0)
                     : hasCode ? msg.maxBubble
-                    : Math.min(msg.maxBubble, Math.max(urlPreview ? 460 + 2 * pad : 0, msg.sharedHead ? sharedRow.implicitWidth : 0, msg.scheduledMsg ? scheduleLine.implicitWidth : 0, subjectLine.visible ? subjectLine.implicitWidth : 0, showBody ? body.implicitWidth + (msg.modelData.deleted && msg.mine ? 12 + undoMetrics.advanceWidth : 0) : 0, pics.implicitWidth, files.length > 0 ? fileCol.implicitWidth : 0, msg.modelData.quote ? quoteCard.width : 0, msg.modelData.forward ? fwdCard.width : 0) + 2 * pad)
+                    : Math.min(msg.maxBubble, Math.max(urlPreview ? 460 + 2 * pad : 0, hasActions ? actionsRow.implicitWidth : 0, msg.sharedHead ? sharedRow.implicitWidth : 0, msg.scheduledMsg ? scheduleLine.implicitWidth : 0, subjectLine.visible ? subjectLine.implicitWidth : 0, showBody ? body.implicitWidth + (msg.modelData.deleted && msg.mine ? 12 + undoMetrics.advanceWidth : 0) : 0, pics.implicitWidth, files.length > 0 ? fileCol.implicitWidth : 0, msg.modelData.quote ? quoteCard.width : 0, msg.modelData.forward ? fwdCard.width : 0) + 2 * pad)
                 TextMetrics { id: undoMetrics; text: qsTr("Undo"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
                 height: botCard ? cardCol.height
                     : cards.length > 0 ? cardsTop + cardCol.height + (linkCardFirst ? 8.67 : 10.7)
@@ -2503,8 +2540,8 @@ Rectangle {
                     : files.length > 0 ? filesTop + fileCol.implicitHeight + 8
                     : hasPics ? picsEnd + (endsInText || (showBody && !inFlow) ? 8.6 : 8)
                     : urlPreview ? body.y + bodyH + 6 + 96 + (root.compact ? 2 : 14.6)
-                    : root.compact ? bodyH + 2 + quoteShift
-                    : bodyH + 15.3 + quoteShift
+                    : root.compact ? bodyH + 2 + quoteShift + actionsH
+                    : bodyH + 15.3 + quoteShift + actionsH
                 // Teams: 6 px corners, squared on the inner side where a
                 // group's bubbles meet (bottom of the first, top of the rest).
                 readonly property real r: root.postsLayout ? theme.radius : 6
@@ -2947,6 +2984,59 @@ Rectangle {
                     quote: msg.modelData.quote || null
                     maxWidth: msg.maxBubble - 2 * bubble.pad
                     onActivated: root.jumpToMessage(msg.modelData.quote.message_id)
+                }
+                Row {
+                    id: actionsRow
+                    visible: bubble.hasActions
+                    x: bubble.pad; y: body.y + bubble.bodyH + 8; height: 31.3
+                    spacing: 8
+                    // Action.Compose ("@agent"): 12 px on white, a #D1D1D1
+                    // hairline, radius 4, padding 3 8 (Teams'
+                    // mention-project-agent-button).
+                    Repeater {
+                        model: bubble.suggested
+                        Rectangle {
+                            id: sugg
+                            required property var modelData
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: suggText.implicitWidth + 16; height: 23.3; radius: 4
+                            color: suggHover.hovered ? theme.rowHover : theme.surface
+                            border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF"); border.width: 0.67
+                            Text { id: suggText; anchors.centerIn: parent; text: sugg.modelData.title; font.family: theme.font; font.pixelSize: 12; color: theme.onFill(sugg, theme.text) }
+                            HoverHandler { id: suggHover; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: root.suggestedAction(msg.modelData, sugg.modelData) }
+                            Accessible.role: Accessible.Button; Accessible.name: sugg.modelData.title
+                        }
+                    }
+                    // Like / dislike (24 x 31.3, 16 px thumbs, #424242;
+                    // filled once picked): Teams' feedback form.
+                    Row {
+                        visible: !!msg.modelData.feedback_loop
+                        Repeater {
+                            model: [{ k: "compliment", icon: "thumb-like-16", tip: qsTr("Like") }, { k: "problem", icon: "thumb-dislike-16", tip: qsTr("Dislike") }]
+                            Rectangle {
+                                id: thumb
+                                required property var modelData
+                                readonly property bool picked: root.botFeedback[msg.modelData.id] === modelData.k
+                                width: 24; height: 31.3; radius: 4
+                                color: "transparent"
+                                FluentIcon {
+                                    anchors.centerIn: parent; size: 16
+                                    name: thumb.modelData.icon + (thumb.picked || thumbHover.hovered ? "-filled" : "")
+                                    color: thumb.picked ? theme.brand : theme.pick("#424242", "#D6D6D6", "#FFFFFF")
+                                }
+                                HoverHandler { id: thumbHover; cursorShape: Qt.PointingHandCursor }
+                                TapHandler {
+                                    onTapped: {
+                                        const f = Object.assign({}, root.botFeedback); f[msg.modelData.id] = thumb.modelData.k; root.botFeedback = f
+                                        backend.requestFeedback(thumb.modelData.k, msg.modelData.sender || "Bot", "Bot message " + msg.modelData.id)
+                                    }
+                                }
+                                ToolTip.visible: thumbHover.hovered; ToolTip.text: thumb.modelData.tip; ToolTip.delay: 500
+                                Accessible.role: Accessible.Button; Accessible.name: thumb.modelData.tip
+                            }
+                        }
+                    }
                 }
                 // Selectable, as in Teams (a message's text can be selected and
                 // copied); read-only.

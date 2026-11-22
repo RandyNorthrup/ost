@@ -606,7 +606,8 @@ pub async fn mentions(oid: &str, tid: &str, entity_id: &str) -> Result<Value> {
 pub async fn catch_up(oid: &str, tid: &str, entity_id: &str) -> Result<Value> {
     let token = crate::auth::oauth::access_token_for("https://substrate.office.com/.default").await?;
     let r = reqwest::Client::new()
-        .post("https://substrate.office.com/search/api/v1/recommendations?&setflight=AiTasksV2,AiNotesV2,PeopleMentionsV2")
+        // (Teams 26304 on winpc sends the V3 notes and tasks flights.)
+        .post("https://substrate.office.com/search/api/v1/recommendations/?&setflight=AiTasksV3,AiNotesV3,PeopleMentionsV2")
         .bearer_auth(token)
         .header("X-AnchorMailbox", format!("Oid:{oid}@{tid}"))
         .header("client-request-id", uuid::Uuid::new_v4().to_string())
@@ -941,6 +942,87 @@ pub fn summary_language(v: &Value) -> String {
     ms.get("Language").and_then(Value::as_str).unwrap_or_default().to_string()
 }
 
+/// The recap's AI summary page (Teams 26304: the shared worker's catch-up
+/// transform `hG`, 991291's AI notes and tasks panels): from the catch-up
+/// answer, the meeting notes (MeetingSummary's KeyTopics: headline,
+/// summary and their detailed points) and the follow-up tasks
+/// (PointsOfInterest.ActionItems v2: Headline, DisplayCleanContent,
+/// OwnerDisplayName), with each one's processing state.
+/// `{notes: [{title, summary, details: [{topic, text}]}], tasks: [{title,
+/// text, owner}], notesState, tasksState}`.
+pub fn ai_notes_from(v: &Value) -> Value {
+    let src = v.pointer("/EntitySets/0/ResultSets/0/Results/0/Source").cloned().unwrap_or_default();
+    let s = |v: &Value, k: &str| v.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
+    let summary = match src.get("MeetingSummary") {
+        Some(Value::String(t)) => serde_json::from_str(t).unwrap_or_default(),
+        Some(other) => other.clone(),
+        None => Value::Null,
+    };
+    let notes: Vec<Value> = summary
+        .get("KeyTopics")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|t| !s(t, "Summary").is_empty())
+        .map(|t| {
+            let details: Vec<Value> = t
+                .get("DetailedSummaries")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .map(|d| json!({ "topic": s(d, "topic"), "text": s(d, "text") }))
+                .collect();
+            json!({ "title": s(t, "Headline"), "summary": s(t, "Summary"), "details": details })
+        })
+        .collect();
+    let tasks: Vec<Value> = src
+        .pointer("/PointsOfInterest/ActionItems")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|a| !s(a, "DisplayCleanContent").is_empty())
+        .map(|a| json!({ "title": s(a, "Headline"), "text": s(a, "DisplayCleanContent"), "owner": s(a, "OwnerDisplayName") }))
+        .collect();
+    let state = |k: &str| src.pointer(&format!("/InsightProcessingStates/{k}")).and_then(Value::as_str).unwrap_or_default().to_string();
+    json!({
+        "notes": notes, "tasks": tasks, "found": !src.is_null(),
+        "notesState": state("MeetingSummary"), "tasksState": state("ActionItemsPointsOfInterest"),
+    })
+}
+
+/// What a recap's card may lack, from its catch-up answer (Teams' `hG`
+/// reads organizerId, callId and the meeting's times from it): the
+/// organizer, call, subject and start/end, where they're empty.
+pub fn fill_from_catch_up(r: &mut RecapRef, v: &Value) {
+    let src = v.pointer("/EntitySets/0/ResultSets/0/Results/0/Source").cloned().unwrap_or_default();
+    let s = |p: &str| src.pointer(p).and_then(Value::as_str).unwrap_or_default().to_string();
+    let ms = |p: &str| chrono::DateTime::parse_from_rfc3339(&s(p)).map(|t| t.timestamp_millis()).unwrap_or(0);
+    if r.organizer_id.is_empty() {
+        r.organizer_id = s("/MeetingRecording/OrganizerId");
+    }
+    if r.call_id.is_empty() {
+        r.call_id = s("/MeetingRecording/CallId");
+    }
+    if r.thread_id.is_empty() {
+        r.thread_id = s("/MeetingRecording/TeamsThreadId");
+    }
+    if r.ical_uid.is_empty() {
+        r.ical_uid = s("/MeetingRecording/ICalUid");
+    }
+    if r.subject.is_empty() {
+        r.subject = s("/MeetingSubject");
+    }
+    if r.start_ms == 0 {
+        r.start_ms = ms("/MeetingStartTime");
+        r.end_ms = ms("/MeetingEndTime");
+    }
+}
+
+/// AI summary (Teams' recap AI notes): the catch-up call's notes and tasks.
+pub async fn ai_notes(oid: &str, tid: &str, entity_id: &str) -> Result<Value> {
+    Ok(ai_notes_from(&catch_up(oid, tid, entity_id).await?))
+}
+
 // ---------------------------------------------------------------------
 // Custom summary's templates of your own (Teams 26304's customize-notes
 // panel and the shared worker's template resolvers): files in your
@@ -1044,6 +1126,37 @@ pub async fn delete_template(client: &TeamsClient, id: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ai_notes_read_as_teams() {
+        // OST TEST 240 recap meeting's catch-up (captured from Teams on
+        // winpc, 2026-11-21), shortened.
+        let summary = json!({"KeyTopics": [{"Headline": "Project Plan And Budget Updates", "Summary": "OST Test 1 is responsible for sending the updated project plan.",
+            "DetailedSummaries": [{"topic": "Updated Project Plan", "text": "OST Test 1 was assigned to send the updated project plan to the team by Friday."},
+                                  {"topic": "Second-Quarter Budget", "text": "OST Test 1 was asked to check the budget numbers."}],
+            "Citations": [{"UtteranceStartOffsetTimespan": "00:01:12", "Source": "Transcript"}]}],
+            "ProcessingResult": "ProcessedSuccessfully", "Version": "2.0.0", "Language": "en-us"});
+        let v = json!({"EntitySets": [{"MeetingInsights": "Premium", "ResultSets": [{"Results": [{"Source": {
+            "MeetingSummary": summary.to_string(),
+            "PointsOfInterest": {"ActionItemsVersion": "2.0.0", "ActionItems": [
+                {"Id": null, "DisplayCleanContent": "Send the updated project plan to the team.", "OwnerDisplayName": "OST Test 1", "Headline": "Updated Project Plan"},
+                {"Id": null, "DisplayCleanContent": "Book the Review Room for the launch review scheduled next Tuesday at 10.", "OwnerDisplayName": "OST Test 3", "Headline": "Launch Review Logistics"}]},
+            "InsightProcessingStates": {"ActionItemsPointsOfInterest": "ProcessedSuccessfully", "MeetingSummary": "ProcessedSuccessfully"}}}]}]}]});
+        let n = ai_notes_from(&v);
+        assert_eq!(n["notes"][0]["title"], "Project Plan And Budget Updates");
+        assert_eq!(n["notes"][0]["details"][1]["topic"], "Second-Quarter Budget");
+        assert_eq!(n["tasks"].as_array().unwrap().len(), 2);
+        assert_eq!((n["tasks"][1]["title"].as_str(), n["tasks"][1]["owner"].as_str()), (Some("Launch Review Logistics"), Some("OST Test 3")));
+        assert_eq!(n["notesState"], "ProcessedSuccessfully");
+        let mut r = RecapRef::default();
+        let src = json!({"EntitySets": [{"ResultSets": [{"Results": [{"Source": {"MeetingSubject": "OST TEST 240 recap meeting",
+            "MeetingStartTime": "2026-11-21T04:26:01Z", "MeetingEndTime": "2026-11-21T04:32:06Z",
+            "MeetingRecording": {"OrganizerId": "4287e791", "CallId": "26943b81", "TeamsThreadId": "19:meeting_x@thread.v2", "ICalUid": "0400"}}}]}]}]});
+        fill_from_catch_up(&mut r, &src);
+        assert_eq!((r.organizer_id.as_str(), r.subject.as_str(), r.start_ms), ("4287e791", "OST TEST 240 recap meeting", 1795235161000));
+        let empty = ai_notes_from(&json!({}));
+        assert_eq!((empty["notes"].as_array().unwrap().len(), empty["found"].as_bool()), (0, Some(false)));
+    }
 
     #[test]
     fn recap_extras_as_teams() {

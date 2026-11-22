@@ -18089,7 +18089,22 @@ impl qobject::Backend {
                 runtime().spawn(async move {
                     let result = async {
                         let client = TeamsClient::new().await?;
-                        let (_, _, icon) = api::app_details::app_for_bot(&client, &id2).await.ok_or_else(|| anyhow::anyhow!("no app for {id2}"))?;
+                        // "28:<bot>#<app>": a bot speaking for an app of its
+                        // own (a Channel Agent): Teams reads that app's
+                        // definition (its fromAppMetadata.id) for the icon.
+                        let (bot, app) = id2.split_once('#').unwrap_or((id2.as_str(), ""));
+                        let own = if app.is_empty() {
+                            None
+                        } else {
+                            api::app_details::definition(&client, app).await.ok().map(|d| {
+                                d.get("largeImageUrl").and_then(|v| v.as_str()).filter(|u| u.starts_with("https://")).unwrap_or_default().to_string()
+                            })
+                        };
+                        let icon = match own.filter(|i| !i.is_empty()) {
+                            Some(i) => i,
+                            None => api::app_details::app_for_bot(&client, bot).await.ok_or_else(|| anyhow::anyhow!("no app for {bot}"))?.2,
+                        };
+                        let icon = api::app_details::evergreen_asset_url(&icon);
                         anyhow::ensure!(!icon.is_empty(), "no icon");
                         let path = api::emoticons::remote_image_file(&icon, &cache_base(), None).await?;
                         anyhow::Ok(format!("file://{}", path.display()))
@@ -21566,6 +21581,15 @@ impl qobject::Backend {
                             tracing::warn!("recap's meeting: {}", short_error(&e));
                         }
                         r.recap_id = r.recap_id();
+                        // What the card didn't carry (a transcript-only
+                        // recap's card has no organizer or times): Teams reads
+                        // the organizer, subject and times from the catch-up.
+                        if (r.organizer_id.is_empty() || r.start_ms == 0 || r.subject.is_empty()) && !r.recap_id.is_empty() {
+                            let oid = client.object_id().unwrap_or_default();
+                            if let Ok(v) = api::recaps::catch_up(&oid, &r.tenant_id, &r.recap_id).await {
+                                api::recaps::fill_from_catch_up(&mut r, &v);
+                            }
+                        }
                         let recording = api::recaps::has_recording(&r);
                         tracing::info!(recording, file = !r.item_id.is_empty(), recap_id = !r.recap_id.is_empty(), "recap opened");
                         // A transcript-only recap has no player (Teams shows
@@ -21678,6 +21702,14 @@ impl qobject::Backend {
                         let tid = client.tenant_id().unwrap_or_default();
                         // Teams' EntityId: the recap id.
                         api::recaps::mentions(&oid, &tid, &r.recap_id()).await
+                    }
+                    // AI summary: the catch-up service's meeting notes and
+                    // follow-up tasks.
+                    "recapAINotes" => {
+                        let r: api::recaps::RecapRef = serde_json::from_value(p.get("recap").cloned().unwrap_or_default()).unwrap_or_default();
+                        let oid = client.object_id().unwrap_or_default();
+                        let tid = client.tenant_id().unwrap_or_default();
+                        api::recaps::ai_notes(&oid, &tid, &r.recap_id()).await
                     }
                     // Custom summary: your templates ({id, name}), and a
                     // summary in a template's format: a built-in's key, one
@@ -21805,6 +21837,16 @@ impl qobject::Backend {
                     // A Loop page's See who has access (people, groups and the
                     // widest link of the component's file).
                     "loopAccess" => api::loop_page::access(&client, &s("url")).await,
+                    // Shared locations (Teams' Loop control): where the
+                    // component was shared, and Add to Loop workspace's page.
+                    "loopPlaces" => {
+                        let mut v = api::loop_page::shared_locations(&client, &s("url")).await.unwrap_or_else(|e| {
+                            tracing::info!("loop shared locations: {}", short_error(&e));
+                            json!({ "places": [] })
+                        });
+                        v["workspace"] = json!(api::loop_page::add_to_workspace_url(&s("url")));
+                        Ok(v)
+                    }
                     // Share > Copy link: Teams' recap link.
                     "recapLink" => {
                         let mut r: api::recaps::RecapRef = serde_json::from_value(p.get("recap").cloned().unwrap_or_default()).unwrap_or_default();

@@ -533,9 +533,126 @@ pub async fn access(client: &TeamsClient, component_url: &str) -> Result<Value> 
     Ok(access_from(&v))
 }
 
+/// Shared locations (the Loop control Teams bundles, 698099, with its
+/// MTSFoundInPlaces provider): where a Loop component was shared, from
+/// `GET https://substrate.office.com/recommended/api/beta/loop/sharedlocations
+/// ?fileId=SPO_{site,web,list}_{item}`. Each `sharing_history` entry
+/// becomes {host, location, title, url, participants}: Teams chats and
+/// channels (title "team / channel" or the subject; participants' names
+/// for Teams' fallback title), Outlook mail and calendar, and files (Word,
+/// Whiteboard, a Loop page). Workspaces carry no address here and backlinks
+/// need another lookup; both are left out.
+pub fn shared_locations_from(v: &Value, me_email: &str) -> Value {
+    let s = |v: &Value, p: &str| v.pointer(p).and_then(Value::as_str).unwrap_or_default().to_string();
+    let places: Vec<Value> = v["sharing_history"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|n| {
+            let medium = n.get("sharing_medium").and_then(Value::as_i64);
+            let (host, location) = match medium {
+                None | Some(0) => ("Outlook", "Email"),
+                Some(1) => ("Teams", "Chat"),
+                Some(2) => ("Outlook", "Calendar"),
+                Some(3) => ("Teams", "Channel"),
+                Some(6) => match s(n, "/file/type").as_str() {
+                    "Word" => ("Word", "other"),
+                    "Whiteboard" => ("Whiteboard", "other"),
+                    "Fluid" => ("Loop", "Page"),
+                    _ => ("other", "other"),
+                },
+                _ => return None,
+            };
+            if medium == Some(6) {
+                return n.get("file").map(|_| json!({ "host": host, "location": location, "title": s(n, "/file/title"), "url": s(n, "/sharing_reference_url"), "participants": [] }));
+            }
+            n.get("sharing_reference_url")?;
+            let (team, channel) = (s(n, "/teams_name"), s(n, "/teams_channel_name"));
+            let title = if !team.is_empty() && !channel.is_empty() { format!("{team} / {channel}") } else { s(n, "/subject") };
+            let mut self_name = String::new();
+            let participants: Vec<String> = n["participants"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|p| {
+                    let name = s(p, "/display_name");
+                    if !me_email.is_empty() && s(p, "/smtp").eq_ignore_ascii_case(me_email) {
+                        self_name = name;
+                        return None;
+                    }
+                    (!name.is_empty()).then_some(name)
+                })
+                .collect();
+            Some(json!({ "host": host, "location": location, "title": title, "url": s(n, "/sharing_reference_url"), "participants": participants, "self": self_name }))
+        })
+        .collect();
+    json!({ "places": places })
+}
+
+/// Shared locations for a Loop component (its link), as Teams asks.
+pub async fn shared_locations(client: &TeamsClient, component_url: &str) -> Result<Value> {
+    let link = component_url.split('?').next().unwrap_or(component_url);
+    let item: Value = client.graph_get(&format!("/shares/{}/driveItem?$select=id,parentReference", super::drive::share_id(link))).await?.json().await?;
+    let s = |p: &str| item.pointer(p).and_then(Value::as_str).unwrap_or_default().to_string();
+    let file_id = super::recaps::canonical_recap_id(&s("/parentReference/driveId"), &s("/id"));
+    anyhow::ensure!(file_id.starts_with("SPO_"), "The component's file");
+    let token = crate::auth::oauth::access_token_for("https://substrate.office.com/.default").await?;
+    let (oid, tid) = (client.object_id().unwrap_or_default(), client.tenant_id().unwrap_or_default());
+    let v: Value = reqwest::Client::new()
+        .get(format!("https://substrate.office.com/recommended/api/beta/loop/sharedlocations?fileId={}", urlencoding(&file_id)))
+        .bearer_auth(token)
+        .header("Client-Request-Id", uuid::Uuid::new_v4().to_string())
+        .header("X-Office-Application", "300")
+        .header("X-Office-Platform", "Web")
+        .header("X-AnchorMailbox", format!("OID:{oid}@{tid}"))
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let me = client.user_principal_name().unwrap_or_default();
+    Ok(shared_locations_from(&v, &me))
+}
+
+fn urlencoding(s: &str) -> String {
+    url::form_urlencoded::byte_serialize(s.as_bytes()).collect()
+}
+
+/// Add to Loop workspace (Teams' bundled Loop control): Loop's own page,
+/// `https://loop.cloud.microsoft/p/{base64 of {"p":{"u":<component>,
+/// "r":false},"a":"AddToWorkspace"}}`, opened in the browser.
+pub fn add_to_workspace_url(component_url: &str) -> String {
+    use base64::Engine as _;
+    let body = json!({ "p": { "u": component_url, "r": false }, "a": "AddToWorkspace" });
+    format!("https://loop.cloud.microsoft/p/{}", urlencoding(&base64::engine::general_purpose::STANDARD.encode(body.to_string())))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shared_locations_and_workspace_link_as_teams() {
+        let v = shared_locations_from(&json!({"sharing_history": [
+            {"sharing_medium": 1, "sharing_reference_url": "https://teams.microsoft.com/l/message/19:x", "subject": "", "participants": [
+                {"display_name": "OST Test 1", "smtp": "ost-test1@x.com"}, {"display_name": "OST Test 2", "smtp": "ost-test2@x.com"}]},
+            {"sharing_medium": 3, "sharing_reference_url": "https://teams.microsoft.com/l/channel/19:y", "teams_name": "OST Test Team", "teams_channel_name": "General"},
+            {"sharing_medium": 6, "file": {"type": "Fluid", "title": "Plan"}, "sharing_reference_url": "https://x/plan.loop"},
+            {"sharing_medium": 7, "backlink": {"page_id": "p"}}]}), "OST-TEST1@x.com");
+        let p = v["places"].as_array().unwrap();
+        assert_eq!(p.len(), 3);
+        assert_eq!((p[0]["host"].as_str(), p[0]["location"].as_str(), p[0]["self"].as_str()), (Some("Teams"), Some("Chat"), Some("OST Test 1")));
+        assert_eq!(p[0]["participants"], json!(["OST Test 2"]));
+        assert_eq!(p[1]["title"], "OST Test Team / General");
+        assert_eq!((p[2]["host"].as_str(), p[2]["location"].as_str()), (Some("Loop"), Some("Page")));
+        // Teams' Add to Loop workspace for OST TEST 240's notes (winpc,
+        // 2026-11-21): the base64 decodes to {"p":{"u":…,"r":false},"a":"AddToWorkspace"}.
+        use base64::Engine as _;
+        let u = add_to_workspace_url("https://x.sharepoint.com/:fl:/r/a.loop?d=w1");
+        let b64 = u.strip_prefix("https://loop.cloud.microsoft/p/").unwrap().replace("%3D", "=").replace("%2B", "+").replace("%2F", "/");
+        let back: Value = serde_json::from_slice(&base64::engine::general_purpose::STANDARD.decode(b64).unwrap()).unwrap();
+        assert_eq!(back, json!({"p": {"u": "https://x.sharepoint.com/:fl:/r/a.loop?d=w1", "r": false}, "a": "AddToWorkspace"}));
+    }
 
     #[test]
     fn access_reads_permissions_as_teams() {

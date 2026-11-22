@@ -207,7 +207,7 @@ Item {
                         visible: !!card.post && !postEdit.active
                         x: 18; y: 16; size: 32
                         name: card.post ? root.senderOf(card.post) : ""
-                        photoId: card.post ? card.post.sender_mri : ""
+                        photoId: card.post ? card.post.sender_mri + (card.post.sender_app ? "#" + card.post.sender_app : "") : ""
                         opensProfile: true
                     }
                     Text {
@@ -490,7 +490,7 @@ Item {
                                 Avatar {
                                     visible: !rep.editing
                                     x: 18; y: 0; size: 20
-                                    name: rep.modelData.sender; photoId: rep.modelData.sender_mri
+                                    name: rep.modelData.sender; photoId: rep.modelData.sender_mri + (rep.modelData.sender_app ? "#" + rep.modelData.sender_app : "")
                                     opensProfile: true
                                 }
                                 Text {

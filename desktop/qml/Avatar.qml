@@ -49,6 +49,9 @@ Rectangle {
     /// Presence availability (Available, Busy, DoNotDisturb, Away,
     /// BeRightBack, Offline…); empty hides the badge.
     property string presence: ""
+    /// What shows behind a picture (an agent's logo sits on Teams'
+    /// NeutralBackground2).
+    property color photoBackground: "transparent"
     /// Clicking opens the person's profile card (Teams does this for
     /// people's pictures in messages, the people pane and 1:1 headers).
     property bool opensProfile: false
@@ -101,7 +104,7 @@ Rectangle {
     property bool ring: true
     readonly property bool hc: theme.highContrast && !square && ring
     readonly property real hcInset: hc && !meeting ? 2 : 0
-    color: hc ? "#000000" : meeting ? "#C5CBFA" : pic.shown ? "transparent" : group ? "#949494" : colorful ? fluentColors[0] : swatches[hue]
+    color: hc ? "#000000" : meeting ? "#C5CBFA" : pic.shown ? photoBackground : group ? "#949494" : colorful ? fluentColors[0] : swatches[hue]
     border.color: hc ? "#FFFFFF" : "transparent"
     border.width: hc ? (meeting ? 0.67 : 2) : 0
 

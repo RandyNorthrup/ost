@@ -651,6 +651,19 @@ pub struct MessageView {
     /// botPoweredByAI, e.g. a Channel Agent's).
     #[serde(default)]
     pub ai_agent: bool,
+    /// The app a bot speaks for (properties.fromAppMetadata.id, a Channel
+    /// Agent's own app): Teams draws that app's icon for the sender.
+    #[serde(default)]
+    pub sender_app: String,
+    /// A bot message's suggested actions Teams draws under its text
+    /// (properties.suggestedActions, at most 3; Action.Compose with a
+    /// Teams.chatMessage: {title, html, mentions [{id, name, mri}]}).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub suggested: Vec<serde_json::Value>,
+    /// A bot message that asks for feedback (properties.botFeedbackLoopEnabled):
+    /// Teams' like / dislike under it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub feedback_loop: bool,
     pub time: String,
     pub mine: bool,
     /// Sanitised HTML for display (a subset Qt renders), "" when deleted.
@@ -1427,6 +1440,7 @@ pub fn event_text(e: &ChatEvent, name: &dyn Fn(&str) -> String, meeting: bool) -
         ),
         "MemberRenamed" => fill(&tr_id("%1 changed their display name to %2.", "messaging:k4yt96aoj"), &[&actor, &e.value]),
         "AddCustomApp" => fill(&tr_id("%1 added %2 here.", "messaging:k4xrrdiu9"), &[&actor, &e.value]),
+        "AgentAdded" => fill(&tr_id("%1 has been added to the channel.", "messaging:k5zwsygs5"), &[&e.value]),
         "DeleteCustomApp" => fill(&tr_id("%1 removed %2 from the chat.", "messaging:k7cu8ni8u"), &[&actor, &e.value]),
         "NotesCreated" => tr_id("Notes have been created in this chat.", "messaging:kb4iz28jx"),
         "Transcript" => tr_id("Transcript", "messaging:k42649b7m"),
@@ -1725,6 +1739,7 @@ async fn name_events(client: &TeamsClient, chat_id: &str, out: &mut [MessageView
             .unwrap_or_else(|| crate::i18n::tr_id("Unknown user", "messaging:kmddh5x4"))
     };
     let backroom = super::chat::backroom_of(chat_id);
+    mark_agent_adds(out);
     for m in out.iter_mut() {
         if let Some(e) = &mut m.event {
             m.text = backroom
@@ -1737,6 +1752,70 @@ async fn name_events(client: &TeamsClient, chat_id: &str, out: &mut [MessageView
                 .filter(|t| t.starts_with("8:teamsvisitor:"))
                 .map(|t| name(t))
                 .collect();
+        }
+    }
+}
+
+/// A bot message's suggested actions as Teams parses them (Teams 26304's
+/// suggested-actions parser `uC`: the first 3; Action.Compose whose value
+/// is a Teams.chatMessage with body.content, and its mentions). Other kinds
+/// (imBack, Action.Submit) aren't drawn by OST yet.
+pub fn suggested_actions(v: Option<&serde_json::Value>) -> Vec<serde_json::Value> {
+    let v = match v {
+        Some(serde_json::Value::String(t)) => serde_json::from_str(t).unwrap_or_default(),
+        Some(o) => o.clone(),
+        None => return Vec::new(),
+    };
+    let s = |v: &serde_json::Value, p: &str| v.pointer(p).and_then(|x| x.as_str()).unwrap_or_default().to_string();
+    v["actions"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .take(3)
+        .filter_map(|a| {
+            let title = a["title"].as_str()?.to_string();
+            if !a["type"].as_str()?.eq_ignore_ascii_case("Action.Compose") || !s(a, "/value/type").eq_ignore_ascii_case("Teams.chatMessage") {
+                return None;
+            }
+            let html = s(a, "/value/data/body/content");
+            if html.is_empty() {
+                return None;
+            }
+            let mentions: Vec<serde_json::Value> = a
+                .pointer("/value/data/mentions")
+                .and_then(|m| m.as_array())
+                .into_iter()
+                .flatten()
+                .map(|m| serde_json::json!({
+                    "id": m["id"].as_i64().unwrap_or(0),
+                    "name": s(m, "/mentionText"),
+                    "mri": s(m, "/mentioned/user/id"),
+                    "appId": s(m, "/mentioned/user/appId"),
+                }))
+                .collect();
+            Some(serde_json::json!({ "title": title, "kind": "compose", "html": html, "mentions": mentions }))
+        })
+        .collect()
+}
+
+/// A Channel Agent's own app added to a channel (Teams 26304, module 75579
+/// `cn` with isProjectAgent): its AddCustomApp names the agent's app
+/// instance, the same id its messages carry as fromAppMetadata.id. Teams
+/// words that row "{agent} has been added to the channel." (posts layout);
+/// in a threads-layout channel it shows no row (seen on winpc 2026-11-21,
+/// "OST TEST 206 agent G"). Such events become `AgentAdded`.
+pub fn mark_agent_adds(out: &mut [MessageView]) {
+    let agents: std::collections::HashSet<String> = out
+        .iter()
+        .filter(|m| m.ai_agent && !m.sender_app.is_empty())
+        .map(|m| m.sender_app.to_ascii_lowercase())
+        .collect();
+    if agents.is_empty() {
+        return;
+    }
+    for e in out.iter_mut().filter_map(|m| m.event.as_mut()) {
+        if e.kind == "AddCustomApp" && e.targets.iter().any(|t| agents.contains(&t.to_ascii_lowercase())) {
+            e.kind = "AgentAdded".into();
         }
     }
 }
@@ -1879,6 +1958,9 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
         sender,
         sender_mri,
         ai_agent,
+        sender_app: if bot { s("/properties/fromAppMetadata/id") } else { String::new() },
+        suggested: if bot { suggested_actions(m.pointer("/properties/suggestedActions")) } else { Vec::new() },
+        feedback_loop: bot && m.pointer("/properties/botFeedbackLoopEnabled").is_some_and(|v| v.as_bool() == Some(true) || v.as_str() == Some("true")),
         time,
         mine,
         html: String::new(),
@@ -5039,6 +5121,25 @@ mod tests {
         let v = super::view_of(&m, "8:orgid:me", "Me").unwrap();
         assert_eq!(v.sender, "OST TEST channel Agent");
         assert!(v.ai_agent);
+        assert_eq!(v.sender_app, "0dfe1f3c-38f8-4dc6-bcae-a1275ca828b6");
+        // Its welcome's "@agent" (captured 2026-11-21, shortened).
+        let sa = serde_json::json!({"actions": [{"title": "@agent", "type": "Action.Compose", "value": {"type": "Teams.chatMessage", "data": {
+            "body": {"content": "<at id=\"0\">OST TEST channel Agent</at>"},
+            "mentions": [{"id": 0, "mentionText": "OST TEST channel Agent", "mentioned": {"user": {"appId": "87daf61a", "displayName": "OST TEST channel Agent", "id": "28:3cf96df7"}}}]}}},
+            {"title": "x", "type": "imBack", "value": "x"}]});
+        let a = super::suggested_actions(Some(&sa));
+        assert_eq!(a.len(), 1);
+        assert_eq!((a[0]["title"].as_str(), a[0]["mentions"][0]["mri"].as_str()), (Some("@agent"), Some("28:3cf96df7")));
+        // Its AddCustomApp ("OST TEST 206 agent G", 2026-11-21): the agent's
+        // app instance as the target.
+        let add = serde_json::json!({"id": "1795280500000", "messagetype": "ThreadActivity/AddCustomApp",
+            "content": "<AddCustomApp><eventtime>1</eventtime><initiator>8:orgid:me</initiator><target>0dfe1f3c-38f8-4dc6-bcae-a1275ca828b6</target><DeprecatedTargetName></DeprecatedTargetName><targetName>OST TEST channel Agent</targetName><initiatorType>User</initiatorType></AddCustomApp>",
+            "from": "https://x/contacts/19:c@thread.tacv2", "originalarrivaltime": "2026-11-21T17:01:40Z", "properties": {}});
+        let mut out = vec![super::view_of(&add, "8:orgid:me", "Me").unwrap(), v];
+        super::mark_agent_adds(&mut out);
+        let e = out[0].event.as_ref().unwrap();
+        assert_eq!(e.kind, "AgentAdded");
+        assert_eq!(super::event_text(e, &|_: &str| String::new(), false), "OST TEST channel Agent has been added to the channel.");
         let plain = serde_json::json!({"id": "2", "messagetype": "RichText/Html", "content": "<p>x</p>", "from": "https://x/contacts/28:bot", "imdisplayname": "Workflows", "properties": {}});
         let v = super::view_of(&plain, "8:orgid:me", "Me").unwrap();
         assert_eq!((v.sender.as_str(), v.ai_agent), ("Workflows", false));

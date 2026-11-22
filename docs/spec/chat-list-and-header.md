@@ -1299,9 +1299,24 @@ OST Guest accounts; all were removed afterwards.
     / "Channel Agent is being added." / Go to channel; once the bot's
     welcome ("Hi, I'm your Channel Agent…", botMetadata Welcome-AddAgent)
     is in the channel, "Channel Agent has been added to this channel.";
-    on failure "Couldn't create {channelName} agent.". The channel shows
-    "<channel> Agent has been added to the channel." (Tried live in Teams
-    with "OST TEST 206 agent".) Create sends `POST {teamsAndChannelsProvisioningService}/team/
+    on failure "Couldn't create {channelName} agent.". A posts channel
+    shows "<channel> Agent has been added to the channel." (75579 `cn` for
+    a project agent's AddCustomApp); a threads channel shows no row for it
+    (winpc, "OST TEST 206 agent G", 2026-11-21). (Tried live in Teams
+    with "OST TEST 206 agent".)
+  - The welcome (measured 2026-11-21): sender "<channel> Agent"
+    (fromAppMetadata.name) with the "AI agent" tag; the picture is the
+    agent's app (fromAppMetadata.id → its definition's largeImageUrl,
+    Teams' own `teams.cloud.microsoft/v2/evergreen-assets/apps/
+    project_agent_statusagentlogo.png`, read from the assets' CDN) in a 32
+    px circle on #FAFAFA with the Available badge. Paragraphs 20 apart.
+    Inside the bubble, 8 under the text: "@agent" (suggestedActions'
+    Action.Compose; 64 x 23.3, 12 px on white, #D1D1D1 hairline, radius 4,
+    padding 3 8), then Like / Dislike (botFeedbackLoopEnabled; 24 x 31.3,
+    16 px thumbs), the bubble 8.7 under that row. @agent in a threads
+    channel opens the message's thread with the agent as a mention in the
+    reply box ("Send to: thread only"); Like / Dislike open the feedback
+    form ("What did you like?") and stay filled. Create sends `POST {teamsAndChannelsProvisioningService}/team/
   v2?async=false` `{displayName, description, displayNamePrefix: "",
   displayNameSuffix: "", visibility, firstChannelName, isTenantWide:
   false}`; the first channel takes that name (the team's thread). Then

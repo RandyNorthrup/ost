@@ -1432,6 +1432,33 @@ pub async fn details(client: &TeamsClient, app_id: &str) -> Result<AppDetails> {
     ))
 }
 
+/// An icon on Teams' own client path (`https://teams.cloud.microsoft/v2/
+/// evergreen-assets/…`, e.g. the Channel Agent's
+/// project_agent_statusagentlogo.png): Teams serves it from its client
+/// assets; outside the client that host answers with its "Unsupported
+/// browser" page, so it's read from the same assets' CDN
+/// (`teams.public.onecdn.static.microsoft/evergreen-assets/…`).
+pub fn evergreen_asset_url(url: &str) -> String {
+    for host in ["https://teams.cloud.microsoft/v2/evergreen-assets/", "https://teams.microsoft.com/v2/evergreen-assets/"] {
+        if let Some(rest) = url.strip_prefix(host) {
+            return format!("https://teams.public.onecdn.static.microsoft/evergreen-assets/{rest}");
+        }
+    }
+    url.to_string()
+}
+
+#[cfg(test)]
+mod evergreen_tests {
+    #[test]
+    fn client_assets_come_from_the_cdn() {
+        assert_eq!(
+            super::evergreen_asset_url("https://teams.cloud.microsoft/v2/evergreen-assets/apps/project_agent_statusagentlogo.png?v=2.0.0"),
+            "https://teams.public.onecdn.static.microsoft/evergreen-assets/apps/project_agent_statusagentlogo.png?v=2.0.0"
+        );
+        assert_eq!(super::evergreen_asset_url("https://x.example/a.png"), "https://x.example/a.png");
+    }
+}
+
 /// The app a bot belongs to (its `28:` MRI or bare id), from the catalog:
 /// (app id, name, icon URL). Teams uses it for the bot's picture and the
 /// appId of its invokes.

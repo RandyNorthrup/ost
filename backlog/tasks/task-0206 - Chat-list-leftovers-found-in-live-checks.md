@@ -4,7 +4,7 @@ title: Chat list leftovers found in live checks
 status: In Progress
 assignee: []
 created_date: '2026-11-16T20:22:00Z'
-updated_date: '2026-11-21T19:05:00Z'
+updated_date: '2026-11-22T16:53:00Z'
 labels:
   - desktop
 dependencies: []
@@ -78,4 +78,17 @@ Found while checking TASK-0150/0195/0204 against Teams on winpc (2026-11-16):
 
 - 2026-11-21 (chatF), live after the fixes: `--new-chat-search-test=OST` lists the same 22 rows as Teams, in Teams' order (OST Test 1 (You) 4th, OST empty chat test 3rd chat, OST threads test 3rd channel, OST large chat test and OST test channel 2 last). The Channel Agent's welcome in "OST TEST 206 agent F2" showed as "OST TEST channel Agent" with the "AI agent" tag, as in Teams (`--chat-shot`). Both test teams (F, from a first run that quit early, and F2) were deleted with `--team-live=delete:`.
   - Still different: OST shows the add event "OST Test 1 added OST TEST channel Agent here." where Teams showed no event row in that threads-layout channel; OST draws the agent's initials where Teams shows its app icon; Teams' "@agent" suggested action and feedback buttons under the welcome are not drawn.
+
+- 2026-11-21 (chatG), the three Channel Agent gaps, measured on winpc (Teams 26304, CDP) in "OST TEST 206 agent G" (made by OST's Add Channel Agent, threads layout; deleted afterwards with --team-live=delete) and read from Teams' code:
+  - Raw messages: AddMember 28:<agent bot> (hidden as before), AddCustomApp (target = the agent's app instance 87daf61a…, targetName "OST TEST channel Agent"), then the welcome with properties.fromAppMetadata {id = that instance, name}, botPoweredByAI, botFeedbackLoopEnabled, and suggestedActions [{title "@agent", type Action.Compose, value {type Teams.chatMessage, data {body.content "<at id=0>OST TEST channel Agent</at>", mentions}}}].
+  - Event row: Teams shows no row for the agent's AddCustomApp in a threads channel (75579 `cn` words a project agent's add "<agent> has been added to the channel." for posts channels). OST: api::messages::mark_agent_adds turns an AddCustomApp whose target is an AI agent's app (its messages' fromAppMetadata.id) into AgentAdded with Teams' sentence (messaging:k5zwsygs5); the threads view leaves it out.
+  - Icon: Teams resolves the sender from fromAppMetadata.id (r_data-resolvers `Qe`: getAppDefinition(appId) → largeImageUrl) and draws it as "agent-avatar": a 32 px circle on #FAFAFA with the Available presence badge. The definition's icon is on teams.cloud.microsoft/v2/evergreen-assets/…, which answers "Unsupported browser" outside the client, so OST reads the same file from the assets' CDN (app_details::evergreen_asset_url). MessageView.sender_app carries the app id; the avatar's photo id is "28:<bot>#<app>".
+  - "@agent": Teams' mention-project-agent-button inside the bubble, 8 under the text: 64 x 23.3, 12 px #242424 on white, #D1D1D1 0.67 hairline, radius 4, padding 3 8; then Like / Dislike (24 x 31.3, 16 px thumbs, #424242), the row 31.3 tall, the bubble 8.7 under it. In a threads channel @agent opens the message's thread with "OST TEST channel Agent" as a mention in the reply box (Send to: thread only); nothing is sent. Like/Dislike open "Submit feedback to Microsoft" ("What did you like?"), the thumb stays filled; OST opens its feedback form (FeedbackWindow) in the same way.
+  - Also: Teams sets the welcome's paragraphs with no space between them (<p>s 20 apart); OST drew Qt's 12 px paragraph margins, which also pushed the new row over the text. Message text now has p margins 0, and lists use the text's real height.
+- Built: the above (MessageView.sender_app / suggested / feedback_loop, suggested_actions parser and tests, Conversation actions row, ThreadsPane.applySuggestion, ComposeBox whole-name mentions, Avatar.photoBackground), harness `--agent-welcome-test --open-chat=<channel>`.
+- Live (OST on linuxlt): AGENTWELCOME welcome {sender "OST TEST channel Agent", app 87daf61a…, ai, actions ["@agent"], feedback}; the add row gone from the threads view; the agent's logo in the avatar; @agent opened the thread with the mention in the reply box (cleared again, nothing sent).
+
+  - Rechecked after the paragraph fix in a second team ("OST TEST 206 agent G2", deleted afterwards): paragraphs 20 apart and the list set off as in Teams, @agent and the thumbs 8 under the text inside the bubble, the logo avatar with the Available badge. Both test teams were deleted with --team-live=delete (OST no longer lists them).
+  - Tests: 893 lib + 29 desktop pass.
+  - Left: posts-layout channels (ChannelPosts) don't draw the suggested actions / thumbs row yet (no posts-layout Channel Agent to compare); OST parses only Action.Compose suggested actions (imBack / Action.Submit not drawn).
 <!-- SECTION:NOTES:END -->
