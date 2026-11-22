@@ -4013,7 +4013,11 @@ Rectangle {
             // and feedback, the count, the test call and Save. Saved as
             // customInstructions (with useCustomInstructions) in calleeName;
             // people are kept as Teams' <route|contact name mri tenantId>
-            // tags and shown as @Name. ----
+            // tags and shown as Teams' pills (measured on winpc 2026-11-22:
+            // an uneditable inline box, 23.33 tall, margin 0 2, padding 1 8
+            // 1 4, a 0.67 NeutralStroke2 border, radius 4, NeutralBackground3,
+            // a 16 px Call (brand) or ContactCard (PalettePurpleForeground2)
+            // icon, 2, then the name 12 px; vertical-align middle). ----
             SettingsParts.Card {
                 id: ciCard
                 visible: root.page === "calls" && root.subPage === "attendantInstructions" && pa.shown
@@ -4026,24 +4030,40 @@ Rectangle {
                 property string tab: ""
                 property bool saving: false
                 property bool failed: false
-                // The people in the text: display name -> Teams' tag.
-                property var chips: ({})
-                function shown(raw) {
-                    const m = {}
-                    const t = raw.replace(/<(route|contact)\s+name="([^"]*)"\s+mri="([^"]*)"\s+tenantId="([^"]*)">/g, (all, kind, name) => { m["@" + name] = all; return "@" + name })
-                    chips = m
-                    return t
+                // The text as Teams stores it (each pill as its tag), and
+                // where the pills sit in the box.
+                property string rawText: ""
+                property var boxes: []
+                // A pill's room: the pill (0.67 + 4 + icon 16 + 2 + name + 8
+                // + 0.67) and its 2 px margins.
+                function chip(kind, name, mri, tenantId) {
+                    chipName.text = name
+                    return { kind: kind, name: name, mri: mri, tenantId: tenantId, w: 31.33 + chipName.advanceWidth + 4, h: 23.33 }
                 }
-                function raw(text) {
-                    let t = text
-                    Object.keys(chips).sort((a, b) => b.length - a.length).forEach(k => { t = t.split(k).join(chips[k]) })
-                    return t
+                function load(raw) {
+                    const parts = []
+                    const re = /<(route|contact)\s+name="([^"]*)"\s+mri="([^"]*)"\s+tenantId="([^"]*)">/g
+                    let last = 0, m
+                    while ((m = re.exec(raw)) !== null) {
+                        if (m.index > last) parts.push({ text: raw.slice(last, m.index) })
+                        parts.push(chip(m[1], m[2], m[3], m[4]))
+                        last = m.index + m[0].length
+                    }
+                    if (last < raw.length) parts.push({ text: raw.slice(last) })
+                    ciRich.chipsLoad(JSON.stringify(parts))
+                    refresh()
                 }
-                onSavedChanged: ciArea.text = shown(saved)
-                onVisibleChanged: if (visible) { ciArea.text = shown(saved); tab = ""; failed = false }
-                readonly property int length: raw(ciArea.text).length
-                readonly property bool tooLong: raw(ciArea.text).trim().length > maxLen
-                readonly property bool unchanged: raw(ciArea.text).trim() === saved
+                function refresh() {
+                    rawText = ciRich.chipsRaw()
+                    try { boxes = JSON.parse(ciRich.chipBoxes()) } catch (e) { boxes = [] }
+                }
+                onSavedChanged: load(saved)
+                onVisibleChanged: if (visible) { load(saved); tab = ""; failed = false }
+                readonly property int length: rawText.length
+                readonly property bool tooLong: rawText.trim().length > maxLen
+                readonly property bool unchanged: rawText.trim() === saved
+                TextMetrics { id: chipName; font.family: theme.font; font.pixelSize: 12 }
+                FontMetrics { id: ciFont; font: ciArea.font }
                 Column {
                     width: parent.width - 27.3
                     topPadding: 8; bottomPadding: 16
@@ -4069,19 +4089,60 @@ Rectangle {
                                     if (cursorRectangle.y < ciFlick.contentY) ciFlick.contentY = cursorRectangle.y
                                     else if (cursorRectangle.y + cursorRectangle.height > ciFlick.contentY + ciFlick.height) ciFlick.contentY = cursorRectangle.y + cursorRectangle.height - ciFlick.height
                                 }
-                                // "@" offers Teams' two mentions: a call
-                                // transfer target or a contact to share.
-                                Keys.onPressed: e => { if (e.text === "@") { e.accepted = true; ciMention.at = ciArea.cursorPosition; ciMention.open() } }
+                                onTextChanged: ciCard.refresh()
+                                onWidthChanged: ciCard.refresh()
+                                // An "@" typed at a word's start offers
+                                // Teams' two mentions (a call transfer target
+                                // or a contact to share); it stays as typed
+                                // until a person replaces it.
+                                Keys.onPressed: e => {
+                                    if (e.text !== "@") return
+                                    const before = ciArea.cursorPosition > 0 ? ciArea.getText(ciArea.cursorPosition - 1, ciArea.cursorPosition) : ""
+                                    if (before && !/\s|\uFFFC/.test(before)) return
+                                    Qt.callLater(() => { ciMention.at = ciArea.cursorPosition - 1; ciMention.open() })
+                                }
                                 Accessible.role: Accessible.EditableText
                                 Accessible.name: qsTr("Write your custom instructions or select a prompt")
+                                RichText { id: ciRich }
+                                // The pills, over the room their characters
+                                // take in the text.
+                                Repeater {
+                                    model: ciCard.boxes
+                                    Rectangle {
+                                        id: pill
+                                        required property var modelData
+                                        readonly property bool route: modelData.kind === "route"
+                                        readonly property bool picked: ciArea.selectionStart <= modelData.pos && modelData.pos < ciArea.selectionEnd
+                                        x: modelData.x + 2
+                                        y: modelData.base - ciFont.xHeight / 2 - height / 2
+                                        width: modelData.w - 4; height: modelData.h
+                                        radius: 4
+                                        color: theme.pick("#F5F5F5", "#141414", "#000000")
+                                        border.width: 0.67; border.color: theme.divider
+                                        Row {
+                                            x: 4.67; anchors.verticalCenter: parent.verticalCenter
+                                            spacing: 2
+                                            FluentIcon {
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                name: pill.route ? "call-20" : "contact-card-20"; size: 16
+                                                color: theme.onFill(pill, pill.route ? theme.brand : theme.pick("#341A51", "#C6B1DE", "#FFFFFF"))
+                                            }
+                                            Text { anchors.verticalCenter: parent.verticalCenter; text: pill.modelData.name; font.family: theme.font; font.pixelSize: 12; lineHeight: 20; lineHeightMode: Text.FixedHeight; verticalAlignment: Text.AlignVCenter; color: theme.onFill(pill, theme.text) }
+                                        }
+                                        // Selected with the text around it.
+                                        Rectangle { anchors.fill: parent; radius: 4; visible: pill.picked; color: ciArea.selectionColor; opacity: 0.4 }
+                                    }
+                                }
                             }
                         }
                         MenuPopup {
                             id: ciMention
                             property int at: 0
                             property string kind: "route"
-                            x: 12; y: Math.min(parent.height - 8, ciArea.cursorRectangle.y + ciArea.cursorRectangle.height + 8 - ciFlick.contentY)
-                            items: [{ label: qsTr("Add call transfer target"), icon: "call-forward-20" }, { label: qsTr("Share contact"), icon: "person-20" }]
+                            // Under the "@" (Teams: at its left, its bottom).
+                            readonly property rect anchorRect: ciArea.positionToRectangle(at)
+                            x: 12 + anchorRect.x; y: Math.min(parent.height - 8, 8 + anchorRect.y + anchorRect.height - ciFlick.contentY)
+                            items: [{ label: qsTr("Add call transfer target"), icon: "call-20" }, { label: qsTr("Share contact"), icon: "contact-card-20" }]
                             onPicked: i => { kind = i === 0 ? "route" : "contact"; ciPicker.open() }
                         }
                         Popup {
@@ -4097,12 +4158,15 @@ Rectangle {
                                 peopleQuery: { const v = backend.newChatPeopleJson ? JSON.parse(backend.newChatPeopleJson) : ({}); return v.query || "" }
                                 onSearch: q => backend.newChatPeople(q)
                                 onPicked: (mri, oid, name) => {
+                                    // The person's pill takes the "@"'s place,
+                                    // a space after it (Teams' Z).
                                     const clean = (name || "").replace(/"/g, "")
-                                    const tag = "<" + ciMention.kind + " name=\"" + clean + "\" mri=\"" + mri + "\" tenantId=\"" + backend.tenantId() + "\">"
-                                    const m = Object.assign({}, ciCard.chips); m["@" + clean] = tag; ciCard.chips = m
-                                    ciArea.insert(ciMention.at, "@" + clean)
+                                    const atSign = ciArea.getText(ciMention.at, ciMention.at + 1) === "@"
+                                    const pos = ciRich.chipInsert(ciMention.at, ciMention.at + (atSign ? 1 : 0), JSON.stringify(ciCard.chip(ciMention.kind, clean, mri, backend.tenantId())))
                                     ciPicker.close(); targetMri = ""
                                     ciArea.forceActiveFocus()
+                                    if (pos >= 0) ciArea.cursorPosition = pos
+                                    ciCard.refresh()
                                 }
                             }
                             onOpened: ciPeople.forceActiveFocus()
@@ -4161,8 +4225,8 @@ Rectangle {
                                     HoverHandler { id: sugHover; cursorShape: Qt.PointingHandCursor }
                                     TapHandler {
                                         onTapped: {
-                                            const cur = ciArea.text.replace(/\n+$/, "")
-                                            ciArea.text = cur.trim().length === 0 ? sug.modelData.text : cur + "\n" + sug.modelData.text
+                                            const cur = ciCard.rawText.replace(/\n+$/, "")
+                                            ciCard.load(cur.trim().length === 0 ? sug.modelData.text : cur + "\n" + sug.modelData.text)
                                             ciCard.failed = false
                                         }
                                     }
@@ -4209,7 +4273,7 @@ Rectangle {
                                 primary: true
                                 enabled: !ciCard.unchanged && !ciCard.tooLong && !ciCard.saving
                                 label: qsTr("Save", "calling:k7u4ogu40")
-                                onClicked: { pa.setCustom({ customInstructions: ciCard.raw(ciArea.text).trim(), useCustomInstructions: true }) }
+                                onClicked: { pa.setCustom({ customInstructions: ciCard.rawText.trim(), useCustomInstructions: true }) }
                             }
                         }
                     }
@@ -4296,10 +4360,14 @@ Rectangle {
                         accessibleName: qsTr("Define available hours")
                         onPicked: i => { if (i === 0) fuCard.save({ hasCustomServiceWindows: false, bookingServiceWindows: [] }); else fuCard.saveHours(fuCard.hours) }
                     }
-                    // Custom hours: a row per day (Teams shows the day's
-                    // English name) with Available / Unavailable and its
-                    // switch, then its slots: start "to" end, + on the first
-                    // (while under five), delete on the others.
+                    // Custom hours (measured on winpc 2026-11-22): a row per
+                    // day (Teams shows the day's English name), 15 below the
+                    // one before, with Available / Unavailable 16 before its
+                    // switch (8 in from the right); then, 8 apart and
+                    // right-aligned, its slots: start "to" end (120 x 32
+                    // filled-darker selects, 8 apart), + on the first (while
+                    // under five), delete on the others (24 x 23.3, a 20 px
+                    // icon that turns brand on hover).
                     Repeater {
                         model: fuCard.custom ? fuCard.hours : []
                         Column {
@@ -4307,14 +4375,14 @@ Rectangle {
                             required property var modelData
                             required property int index
                             width: parent.width - 27.3
-                            topPadding: 16
-                            spacing: 4
+                            topPadding: 15
+                            spacing: 8
                             Item {
                                 width: parent.width; height: 36
                                 Text { anchors.verticalCenter: parent.verticalCenter; text: dayCol.modelData.day; font.family: theme.font; font.pixelSize: 14; color: theme.text }
                                 Row {
-                                    anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
-                                    spacing: 4
+                                    anchors.right: parent.right; anchors.rightMargin: 8; anchors.verticalCenter: parent.verticalCenter
+                                    spacing: 16
                                     Text { anchors.verticalCenter: parent.verticalCenter; text: dayCol.modelData.enabled ? qsTr("Available") : qsTr("Unavailable"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
                                     SettingsParts.Toggle {
                                         anchors.verticalCenter: parent.verticalCenter
@@ -4331,6 +4399,7 @@ Rectangle {
                                     id: slotRow
                                     required property var modelData
                                     required property int index
+                                    anchors.right: parent ? parent.right : undefined
                                     spacing: 8
                                     readonly property var starts: Array.from({ length: 96 }, (x, i) => i * 15)
                                     function change(start, end) {
@@ -4339,7 +4408,7 @@ Rectangle {
                                         fuCard.saveHours(l)
                                     }
                                     OutlineDropdown {
-                                        width: 140; height: 30
+                                        width: 120; height: 32; filled: true
                                         options: slotRow.starts.map(m => ({ label: fuCard.clockText(m) }))
                                         current: Math.max(0, slotRow.starts.indexOf(slotRow.modelData.start))
                                         accessibleName: qsTr("%1 start time %2").arg(dayCol.modelData.day).arg(slotRow.index + 1)
@@ -4348,17 +4417,28 @@ Rectangle {
                                     Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("to"); font.family: theme.font; font.pixelSize: 14; color: theme.text }
                                     OutlineDropdown {
                                         readonly property var ends: slotRow.starts.filter(m => m > slotRow.modelData.start).concat([1440])
-                                        width: 140; height: 30
+                                        width: 120; height: 32; filled: true
                                         options: ends.map(m => ({ label: fuCard.clockText(m) }))
                                         current: Math.max(0, ends.indexOf(slotRow.modelData.end))
                                         accessibleName: qsTr("%1 end time %2").arg(dayCol.modelData.day).arg(slotRow.index + 1)
                                         onPicked: i => slotRow.change(slotRow.modelData.start, ends[i])
                                     }
-                                    PaIconButton {
+                                    Rectangle {
+                                        id: slotBtn
                                         readonly property bool adds: slotRow.index === 0 && dayCol.modelData.timeSlots.length < 5
-                                        icon: adds ? "add-16" : "delete-16"
-                                        label: adds ? qsTr("Add time slot for %1").arg(dayCol.modelData.day) : qsTr("Remove time slot %1 for %2").arg(slotRow.index).arg(dayCol.modelData.day)
-                                        onClicked: {
+                                        readonly property string label: adds ? qsTr("Add time slot for %1").arg(dayCol.modelData.day) : qsTr("Remove time slot %1 for %2").arg(slotRow.index).arg(dayCol.modelData.day)
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        width: 24; height: 23.33; radius: 4
+                                        color: "transparent"
+                                        border.width: activeFocus ? 2 : 0; border.color: theme.text
+                                        FluentIcon { anchors.centerIn: parent; name: slotBtn.adds ? "add-20" : "delete-20"; size: 20; color: slotHover.hovered ? theme.brand : theme.textStrong }
+                                        HoverHandler { id: slotHover; cursorShape: Qt.PointingHandCursor }
+                                        TapHandler { onTapped: slotBtn.clicked() }
+                                        activeFocusOnTab: true
+                                        Keys.onSpacePressed: clicked()
+                                        Accessible.role: Accessible.Button
+                                        Accessible.name: label
+                                        function clicked() {
                                             const l = JSON.parse(JSON.stringify(fuCard.hours))
                                             if (adds) l[dayCol.index].timeSlots.push({ start: 540, end: 1020 })
                                             else l[dayCol.index].timeSlots.splice(slotRow.index, 1)
@@ -5106,10 +5186,24 @@ Rectangle {
         else if (what.startsWith("tab:")) ciCard.tab = what.slice(4)
         else if (what.startsWith("setGreeting:")) pa.setCustom({ customGreeting: what.slice(12) })
         else if (what.startsWith("setInstructions:")) {
-            ciCard.chips = Object.assign({}, ciCard.chips, { "@OST Test 2": "<route name=\"OST Test 2\" mri=\"8:orgid:9edcc62f-2f4b-4f55-bbf9-02c7cbaadbb5\" tenantId=\"" + backend.tenantId() + "\">" })
-            pa.setCustom({ customInstructions: ciCard.raw(what.slice(16)), useCustomInstructions: true })
+            const tag = "<route name=\"OST Test 2\" mri=\"8:orgid:9edcc62f-2f4b-4f55-bbf9-02c7cbaadbb5\" tenantId=\"" + backend.tenantId() + "\">"
+            pa.setCustom({ customInstructions: what.slice(16).split("@OST Test 2").join(tag), useCustomInstructions: true })
+        } else if (what.startsWith("showInstructions:")) {
+            // (in the box only, not saved)
+            ciCard.load(what.slice(17).split("@OST Test 2").join("<route name=\"OST Test 2\" mri=\"8:orgid:9edcc62f-2f4b-4f55-bbf9-02c7cbaadbb5\" tenantId=\"" + backend.tenantId() + "\">").split("@OST Test 3").join("<contact name=\"OST Test 3\" mri=\"8:orgid:01c4860d-5776-4b16-8736-6a739fcc8b34\" tenantId=\"" + backend.tenantId() + "\">"))
+        } else if (what === "typeMention") {
+            // "@" typed at the end, as the keyboard would, then a person
+            // picked in the menu and search (Share contact: OST Test 3)
+            ciArea.forceActiveFocus(); ciArea.cursorPosition = ciArea.length
+            ciArea.insert(ciArea.length, " @"); ciMention.at = ciArea.length - 1; ciMention.open()
+        } else if (what === "pickContact") {
+            ciMention.close(); ciMention.kind = "contact"
+            const pos = ciRich.chipInsert(ciMention.at, ciMention.at + 1, JSON.stringify(ciCard.chip("contact", "OST Test 3", "8:orgid:01c4860d-5776-4b16-8736-6a739fcc8b34", backend.tenantId())))
+            if (pos >= 0) ciArea.cursorPosition = pos
+            ciCard.refresh()
         } else if (what.startsWith("restore:")) pa.set({ calleeName: what.slice(8) })
     }
+    function paChipsForTest() { return { raw: ciCard.rawText, boxes: ciCard.boxes, length: ciCard.length, unchanged: ciCard.unchanged, mention: ciMention.opened, menuX: Math.round(ciMention.x), menuY: Math.round(ciMention.y) } }
     function highlightForTest() { return { shown: highlight.visible, opacity: Math.round(highlight.opacity * 100) / 100, y: Math.round(highlight.mapToItem(null, 0, 0).y), h: Math.round(highlight.height), border: String(highlight.border.color), width: highlight.border.width, focus: window.activeFocusItem ? String(window.activeFocusItem.Accessible.name || window.activeFocusItem.accessibleName || window.activeFocusItem.label || window.activeFocusItem) : "", contentY: Math.round(content.contentY) } }
     function oofForTest() { return oofPage }
     function scrollForTest() { content.contentY = Math.max(0, content.contentHeight - content.height) }

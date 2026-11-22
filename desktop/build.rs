@@ -283,6 +283,7 @@ fn main() {
         "qml/AnnotationOverlay.qml",
         "qml/ControlAlert.qml",
         "qml/ContentCameraDialog.qml",
+        "qml/MtmaHub.qml",
     ];
     let mut resources: Vec<String> = Vec::new();
     for dir in [

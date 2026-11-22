@@ -544,7 +544,8 @@ Rectangle {
         HoverHandler { cursorShape: Qt.PointingHandCursor }
         TapHandler { onTapped: tc.picked() }
         Accessible.role: Accessible.Button
-        Accessible.name: tc.modelData.key === "scratch" ? tc.modelData.title : qsTr("%1 template, %2").arg(tc.modelData.title).arg(tc.modelData.text)
+        // Teams' oneevents_template_card_aria_label (tags joined with ", ").
+        Accessible.name: tc.modelData.key === "scratch" ? tc.modelData.title : qsTr("%1 template, %2, and has %3").arg(tc.modelData.title).arg(tc.modelData.text).arg(tc.modelData.chips.join(", "))
     }
     // An event card (Manage's and Discover's lists).
     component EventCard: Item {

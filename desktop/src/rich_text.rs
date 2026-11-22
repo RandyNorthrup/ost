@@ -53,6 +53,25 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "codeBoxes"]
         fn code_boxes(self: Pin<&mut RichText>, family: &QString) -> QString;
+        /// Chips (Intelligent call delegation's Custom instructions): fill
+        /// the box with JSON parts [{text} | {kind, name, mri, tenantId, w,
+        /// h}].
+        #[qinvokable]
+        #[cxx_name = "chipsLoad"]
+        fn chips_load(self: Pin<&mut RichText>, parts: &QString);
+        /// Put a chip (JSON {kind, name, mri, tenantId, w, h}) in place of
+        /// `from`..`to`, a space after it; the position after the space.
+        #[qinvokable]
+        #[cxx_name = "chipInsert"]
+        fn chip_insert(self: Pin<&mut RichText>, from: i32, to: i32, chip: &QString) -> i32;
+        /// The text with each chip as Teams' `<route|contact …>` tag.
+        #[qinvokable]
+        #[cxx_name = "chipsRaw"]
+        fn chips_raw(self: Pin<&mut RichText>) -> QString;
+        /// Where the chips sit, as JSON [{pos, kind, name, x, base, w, h}].
+        #[qinvokable]
+        #[cxx_name = "chipBoxes"]
+        fn chip_boxes(self: Pin<&mut RichText>) -> QString;
     }
 
     impl cxx_qt::Constructor<()> for RichText {}
@@ -79,6 +98,10 @@ unsafe extern "C" {
         mention_color: *const core::ffi::c_char,
     );
     fn ost_rich_free(s: *mut core::ffi::c_char);
+    fn ost_rich_chips_load(helper: *mut core::ffi::c_void, parts: *const core::ffi::c_char);
+    fn ost_rich_chip_insert(helper: *mut core::ffi::c_void, from: i32, to: i32, chip: *const core::ffi::c_char) -> i32;
+    fn ost_rich_chips_raw(helper: *mut core::ffi::c_void) -> *mut core::ffi::c_char;
+    fn ost_rich_chip_boxes(helper: *mut core::ffi::c_void) -> *mut core::ffi::c_char;
     fn ost_rich_dpr(helper: *mut core::ffi::c_void) -> f64;
     fn ost_rich_code_runs(
         helper: *mut core::ffi::c_void,
@@ -156,6 +179,36 @@ impl qobject::RichText {
         // SAFETY: `me` is this live item; `family` outlives the call.
         let runs = take(unsafe { ost_rich_code_runs(me, family.as_ptr(), code_room(border)) });
         QString::from(code_boxes_json(&runs.to_string(), dpr).as_str())
+    }
+
+    pub fn chips_load(self: Pin<&mut Self>, parts: &QString) {
+        let Ok(parts) = CString::new(parts.to_string()) else {
+            return;
+        };
+        let me = self.this();
+        // SAFETY: `me` is this live item; `parts` outlives the call.
+        unsafe { ost_rich_chips_load(me, parts.as_ptr()) };
+    }
+
+    pub fn chip_insert(self: Pin<&mut Self>, from: i32, to: i32, chip: &QString) -> i32 {
+        let Ok(chip) = CString::new(chip.to_string()) else {
+            return -1;
+        };
+        let me = self.this();
+        // SAFETY: `me` is this live item; `chip` outlives the call.
+        unsafe { ost_rich_chip_insert(me, from, to, chip.as_ptr()) }
+    }
+
+    pub fn chips_raw(self: Pin<&mut Self>) -> QString {
+        let me = self.this();
+        // SAFETY: `me` is this live item.
+        take(unsafe { ost_rich_chips_raw(me) })
+    }
+
+    pub fn chip_boxes(self: Pin<&mut Self>) -> QString {
+        let me = self.this();
+        // SAFETY: `me` is this live item.
+        take(unsafe { ost_rich_chip_boxes(me) })
     }
 
     pub fn export_html(self: Pin<&mut Self>) -> QString {

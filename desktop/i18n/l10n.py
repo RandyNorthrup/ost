@@ -401,11 +401,13 @@ def gen(strings_path, assets_dir=None, teams_version=""):
     extra = {"strings": {}, "files": {}}
     if os.path.exists(extra_path(strings_path)):
         extra = json.load(open(extra_path(strings_path), encoding="utf-8"))
+        icu = {ns for ns, f in extra["files"].items() if f.get("kind") == "chunk"}
         for loc, nss in extra["strings"].items():
             if loc in teams:
                 # Their texts aren't ICU: an apostrophe is just one
-                # ("Filter by '{0}'"), so it is quoted as ICU's ''.
-                teams[loc].update({ns: {k: v.replace("'", "''") for k, v in t.items()} for ns, t in nss.items()})
+                # ("Filter by '{0}'"), so it is quoted as ICU's '' (Teams'
+                # own locale chunks already are ICU).
+                teams[loc].update({ns: {k: v if ns in icu else v.replace("'", "''") for k, v in t.items()} for ns, t in nss.items()})
     by_text = index_en(teams)
     found = qml_strings()
     srcs = json.load(open(os.path.join(HERE, "extra_sources.json"), encoding="utf-8"))["sources"]

@@ -4,7 +4,7 @@ title: 'App languages: strings from Teams'' other bundles'
 status: In Progress
 assignee: []
 created_date: '2026-11-20T04:10:00Z'
-updated_date: '2026-11-22T18:26:00Z'
+updated_date: '2026-11-22T20:44:00Z'
 labels:
   - desktop
 dependencies: []
@@ -73,4 +73,13 @@ Found in TASK-0142: about 800 OST strings stay English because Teams keeps their
 - untranslated.txt now 423 lines; ids.json and teams_resources.json regenerated against teams-1207 (26304.1207.5384.858).
 
 - 2026-11-22 merged (51ea564, 4b3ea24): profile card strings from its own bundle (12 left, 3 because the lookup returns an older file than Teams loads); Downloads panel's two strings confirmed absent from WebView2's language packs (Teams has none either). Open: Events templates (no source found), the 3 profile-card strings.
+
+- 2026-11-22 (agent setJ):
+  - Profile card: Teams' card configuration names itself X-ClientType "MicrosoftTeams" (its people config, 591360: clientType "MicrosoftTeams", plus X-ClientArchitectureVersion v2 / X-ClientScenario GetConfiguration from the bootstrapper); with "Teams" Loki answers with an older card build's files. examples/lpc_strings now sends Teams' headers; rerun for the 63 cultures (OST Test 2's Loki token): every culture's file changed (en-us 8e3cdb27…, de-de 727406a5…), and the newer files have "Next profile", "Back to previous profile" and "People reporting to {0}" / "People reporting to you" (de: "Nächstes Profil", "Zurück zum vorherigen Profil"). x.lpc files updated; ProfileCard's org rule now uses "People reporting to %1" (the name bold where the language puts it) / "People reporting to you".
+  - Events templates: Teams loads its Events app from the teams-modular-packages CDN at a newer web build than its package (winpc's page: runtime-b460c62ccf50c260.js); the template texts are oneevents_*_template_* / *_tag_text keys in that build's virtualEvents namespace (virtualEvents-locale-<lang>-<hash>.js, 62 languages), absent from the packaged 26304.1207 virtualEvents chunk. New extra source x.ve (kind "chunk": Teams' own locale chunks named by that runtime, keyed by Teams' ids, ICU kept as is) used on EventsView/EventStagePreview. The template card's name is Teams' "{{title}} template, {{description}}, and has {{tags}}" (tags joined ", ").
+  - untranslated.txt 440 -> 414 lines (all 21 template lines, the 3 profile-card lines, two Events app strings).
+
+- 2026-11-22 (agent setJ) verified: the German catalogue built from teams_resources.json (new ignored live test events_and_profile_card_live, passed on linuxlt): "Next profile" -> "Nächstes Profil", "Back to previous profile" -> "Zurück zum vorherigen Profil", "People reporting to %1" -> "%1 unterstellte Personen" (OST puts the name where the language does). The Events templates are keyed to Teams' strings (x.ve), but Teams' own German chunk (virtualEvents-locale-de-de-9c6f2c440803c370.js) still has them in English (new strings not yet translated by Microsoft), so Teams shows them in English too; a newer runtime in extra_sources.json x.ve brings their translations once Teams ships them.
+- untranslated.txt now 413 lines (+ header). Left from the Events app: OST's own error texts, the invite-card preview labels and reminder fields, "Ask a question", "Choose an image" - none is in Teams' virtualEvents tables (old or new build). New: "Unread channel messages" (the hub's, Teams' unreadChannelMessageLabel comes from its hub resolver; no string-table entry found).
+- cargo test --lib: 906 passed; desktop tests: 29 passed.
 <!-- SECTION:NOTES:END -->

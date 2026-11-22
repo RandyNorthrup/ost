@@ -27,6 +27,11 @@ Kinds:
   e.common=n`), Teams' `onecamera-locale-<lang>-<hash>.js`; keys
   "<export>.<key path>". Its en-us text sits in the recorder's own bundle
   (`var n0={common:ob,…}`).
+- "chunk": Teams' own locale chunks (`{namespace:"virtualEvents",locale:
+  "de-de",translations:{k…:"…"}}`), named by a newer Teams web runtime on
+  the CDN than the packaged build the main table comes from (text Teams
+  loads at runtime that its package lacks, such as the Events app's
+  templates); keys are Teams' string ids.
 """
 
 import gzip
@@ -321,6 +326,32 @@ def collect(locales, assets_dir, cache):
                         strings.setdefault(loc, {})[ns] = parse_json_modules(text, entry["ids"])
                         if loc != "en-us":
                             entry["files"][loc] = path
+                        break
+        elif "teamsRuntime" in cfg:
+            # Teams' own locale chunks, each language's named by the newer
+            # web runtime (`.un` names, `.uh` hashes)
+            import teams_strings
+
+            entry["base"] = TEAMS_CDN
+            rt = get(TEAMS_CDN + cfg["teamsRuntime"], cache)
+
+            def table(name):
+                i = rt.index(f".{name}={{")
+                return dict(re.findall(r'(\d+):"([^"]*)"', rt[i : rt.index("}", i)]))
+
+            un, uh = table("un"), table("uh")
+            by_name = {un[k]: f"{un[k]}-{uh[k]}.js" for k in un if k in uh}
+            for loc in locales:
+                for lang in _lang_candidates(loc):
+                    file = by_name.get(cfg["chunk"].replace("{lang}", lang))
+                    if file:
+                        text = get(TEAMS_CDN + file, cache)
+                        if text is not None:
+                            res = {}
+                            teams_strings.parse_chunk(text, res)
+                            strings.setdefault(loc, {})[ns] = {k: v for by_ns in res.values() for tab in by_ns.values() for k, v in tab.items()}
+                            if loc != "en-us":
+                                entry["files"][loc] = file
                         break
         elif "runtime" in cfg:
             # a web app's own webpack runtime names its chunks:

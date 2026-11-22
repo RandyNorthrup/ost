@@ -12270,6 +12270,79 @@ Window {
         }
     }
 
+    // --setj-hub --shots=<dir> (TASK-0244 AC1): with another account on
+    // this device, opens "Activity in other accounts and orgs", the Unread
+    // pill, Filter (and Orgs), Account settings (Switch); then picks the
+    // first chat, which the other account's window opens (its log says
+    // "another account's hub opened a chat here"). SETJHUB lines; pictures
+    // sj-*.png.
+    Timer {
+        running: Qt.application.arguments.indexOf("--setj-hub") >= 0 && backend.signedIn && window.otherAccounts.length > 0
+        interval: 2000; repeat: true
+        property int step: 0
+        onTriggered: {
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "sj-" + n + ".png"))
+            const log = tag => console.warn("SETJHUB", tag, JSON.stringify(mtmaHub.stateForTest()))
+            switch (step) {
+            case 1: log("tile"); shot("tile"); mtmaHub.show(); break
+            case 2: log("open"); shot("hub"); mtmaHub.pill = "unread"; break
+            case 3: log("unread"); shot("hub-unread"); mtmaHub.pill = ""; mtmaHub.filterForTest(); break
+            case 4: shot("hub-filter"); mtmaHub.orgsForTest(); break
+            case 5: shot("hub-orgs"); mtmaHub.closeMenusForTest(); mtmaHub.orgMenuForTest(); break
+            case 6: shot("hub-account"); mtmaHub.closeMenusForTest(); break
+            case 7: console.warn("SETJHUB picked", mtmaHub.pickFirstChatForTest()); break
+            case 9: log("after pick"); Qt.quit(); break
+            }
+            step++
+        }
+    }
+    // --setj-pa --shots=<dir> (TASK-0244 AC2): turns Intelligent call
+    // delegation on when it is off; Custom instructions with a call
+    // transfer target and a shared contact as Teams' pills (in the box
+    // only, not saved), "@" typed and a contact picked; then Follow-ups
+    // with custom hours (saved, read back, a second Monday slot), and puts
+    // the hours and the feature back. SETJPA lines; pictures sj-*.png.
+    Timer {
+        running: Qt.application.arguments.indexOf("--setj-pa") >= 0 && backend.signedIn && !!backend.teamsJson && backend.settingsJson.length > 0
+        interval: 2000; repeat: true
+        property int step: 0
+        property bool wasOn: false
+        property var hoursBefore: null
+        onTriggered: {
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + "sj-" + n + ".png"))
+            const mt = () => JSON.parse(backend.settingsJson).mt || {}
+            const pa = () => mt().attendant || {}
+            const b = () => mt().bookings || {}
+            const log = (tag, extra) => console.warn("SETJPA", tag, JSON.stringify(Object.assign({ on: pa().isEnabled, custom: b().hasCustomServiceWindows, windows: ((b().bookingServiceWindows || [])[0] || {}).bookableHours }, extra || {})))
+            const sv = settingsView
+            const ci = () => sv.paChipsForTest()
+            const week = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+            switch (step) {
+            case 0: rail.current = "settings"; sv.pageForTest("calls"); wasOn = pa().isEnabled === true; log("start"); break
+            case 1: if (!wasOn) backend.changeSetting("mt", "attendant", JSON.stringify({ isEnabled: true })); break
+            case 3: backend.loadSettings(); break
+            case 5: log("on (read back)"); sv.launchSection("personal_attendant_custom_instructions_title"); break
+            case 6: sv.paForTest("showInstructions:Transfer to @OST Test 2 or @OST Test 3 when a caller asks about invoices."); break
+            case 7: log("pills", ci()); shot("pills"); sv.paForTest("typeMention"); break
+            case 8: log("mention menu", ci()); shot("mention-menu"); sv.paForTest("pickContact"); break
+            case 9: log("contact picked", ci()); shot("pills-typed"); sv.launchSection("personal_attendant_booking_manage_hours"); break
+            case 11: backend.changeSetting("mt", "bookings", JSON.stringify({ op: "load" })); break
+            case 13: hoursBefore = JSON.parse(JSON.stringify(b())); log("follow-ups"); backend.changeSetting("mt", "bookings", JSON.stringify({ hasCustomServiceWindows: true, bookingServiceWindows: [{ bookableHours: week.map((d, i) => ({ day: d, timeSlots: i === 0 ? [{ start: 540, end: 1020 }, { start: 1080, end: 1140 }] : i < 5 ? [{ start: 540, end: 1020 }] : [] })) }] })); break
+            case 15: backend.changeSetting("mt", "bookings", JSON.stringify({ op: "load" })); break
+            case 17: log("custom hours (read back)"); sv.scrollToForTest(560); break
+            case 18: shot("custom-hours"); sv.scrollToForTest(980); break
+            case 19: shot("custom-hours-2"); backend.changeSetting("mt", "bookings", JSON.stringify({ hasCustomServiceWindows: false, bookingServiceWindows: [] })); break
+            case 21: backend.changeSetting("mt", "bookings", JSON.stringify({ op: "load" })); break
+            case 23: log("work hours again (read back)"); if (!wasOn) backend.changeSetting("mt", "attendant", JSON.stringify({ isEnabled: false })); break
+            case 25: backend.loadSettings(); break
+            case 27: log("end (read back)"); Qt.quit(); break
+            }
+            step++
+        }
+    }
+
     // --seti-test --shots=<dir> (TASK-0088 AC3): the links into Settings,
     // each through the handler its button uses: Settings and more ▸
     // Settings, Ctrl+, (after another page), the DND banner's Change
@@ -14582,6 +14655,61 @@ Window {
             window.navRecord()
             if (current === "calls") backend.loadCalls()
             if (current === "activity") backend.markActivityRead()
+        }
+    }
+
+    // Teams' "Activity in other accounts and orgs" at the bottom of the app
+    // bar, once another account is signed in on this device.
+    property var otherAccounts: []
+    Timer {
+        interval: 10000; running: backend.signedIn; repeat: true; triggeredOnStart: true
+        onTriggered: { try { window.otherAccounts = JSON.parse(backend.otherAccountsJson()) } catch (e) { window.otherAccounts = [] } }
+    }
+    MtmaHub {
+        id: mtmaHub
+        visible: backend.signedIn && !rail.collapsed && window.otherAccounts.length > 0
+        x: rail.x; z: 2
+        anchors.bottom: rail.bottom
+    }
+    // This account's summary for the other accounts' hubs (Teams' hub
+    // data, per account): the missed count as the app bar counts it, and
+    // its unread activity and recent chats, newest first.
+    Timer {
+        id: hubPublisher
+        property string last: ""
+        interval: 3000; running: backend.signedIn
+        onTriggered: {
+            const acts = (backend.activityJson ? JSON.parse(backend.activityJson) : []).filter(a => a.unread).map(a => ({
+                kind: "activity", activity: a.kind, id: a.id, time: a.time, title: a.title, subtitle: a.context, unread: true,
+                thread: a.thread_id || "", actorName: a.actor_name || "", actorOid: (a.actor_mri || "").startsWith("8:orgid:") ? a.actor_mri.slice(8) : "",
+                avatarName: a.actor_name || a.title, photoId: (a.actor_mri || "").startsWith("8:orgid:") ? a.actor_mri.slice(8) : "", emoji: a.emoji || "",
+                channel: (a.thread_id || "").endsWith("@thread.tacv2") }))
+            const me = backend.userName
+            const chats = chatList.chats.filter(c => !c.hidden && !c.unlisted && !c.empty && c.time).map(c => ({
+                kind: "chat", id: c.id, time: c.time, title: c.name, unread: !!c.unread && !c.muted,
+                subtitle: c.preview ? (c.sender && c.sender === me ? qsTr("You: %1").arg(c.preview) : c.preview) : "",
+                meeting: !!c.meeting, group: !!c.isGroup, avatarName: c.name,
+                photoId: (c.peerMri || "").startsWith("8:orgid:") && !c.isGroup ? c.peerMri.slice(8) : "" }))
+            const items = acts.concat(chats).sort((a, b) => new Date(b.time) - new Date(a.time)).slice(0, 40)
+            const missed = chatList.chats.filter(c => c.unread && !c.muted).length + backend.activityUnread
+            // (written only when it changed; "updated" is when it last did)
+            const body = JSON.stringify({ missed: missed, items: items })
+            if (body !== hubPublisher.last) { hubPublisher.last = body; backend.publishHub(JSON.stringify({ missed: missed, items: items, updated: new Date().toISOString() })) }
+        }
+    }
+    Connections { target: backend; function onActivityJsonChanged() { hubPublisher.restart() } function onChatsJsonChanged() { hubPublisher.restart() } function onSignedInChanged() { hubPublisher.restart() } }
+    // Another account's hub picked one of this account's chats (or a
+    // missed caller's Call / Chat).
+    Connections {
+        target: backend
+        function onOpenChatRequested(thread, name) {
+            rail.current = "chat"
+            if (thread.startsWith("chatwith:")) backend.openChatWith(thread.slice(9), name)
+            else if (thread.startsWith("callback:")) { window.callAfterOpen = true; backend.openChatWith(thread.slice(9), name) }
+            else {
+                const c = chatList.chats.find(c => c.id === thread)
+                backend.selectChat(thread, c ? c.name : name)
+            }
         }
     }
 

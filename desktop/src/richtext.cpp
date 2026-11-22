@@ -29,6 +29,7 @@
 #include <QtQuick/QQuickItem>
 #include <QtQuick/QQuickTextDocument>
 #include <QtQuick/QQuickWindow>
+#include <QtGui/QTextObjectInterface>
 
 #include <cstdlib>
 #include <cstring>
@@ -1453,4 +1454,190 @@ extern "C" void ost_rich_import(void *helper, const char *blocks_utf8, const cha
 extern "C" void ost_rich_free(char *s)
 {
     std::free(s);
+}
+
+// ---- Chips: Intelligent call delegation's Custom instructions show the
+// people in them as Teams' pills (an uneditable inline span: a call or
+// contact-card icon and the name). Each is one object character in the
+// plain-text box whose format carries the person; its room in the line is
+// the pill's size (given by QML, which measures the name), and QML draws
+// the pill over that room (ost_rich_chip_boxes). ----
+namespace {
+
+enum : int {
+    ChipObject = QTextFormat::UserObject + 1,
+    ChipKind = QTextFormat::UserProperty + 20, // "route" | "contact"
+    ChipName,
+    ChipMri,
+    ChipTenant,
+    ChipWidth, // the pill and its 2 px margins
+    ChipHeight,
+};
+
+// The room a chip takes; QML draws it (nothing is painted here).
+class ChipHandler : public QObject, public QTextObjectInterface
+{
+public:
+    explicit ChipHandler(QObject *parent) : QObject(parent) {}
+    // (No moc here: the interface cast registerHandler makes is answered
+    // by hand.)
+    void *qt_metacast(const char *name) override
+    {
+        if (name && !std::strcmp(name, qobject_interface_iid<QTextObjectInterface *>()))
+            return static_cast<QTextObjectInterface *>(this);
+        return QObject::qt_metacast(name);
+    }
+    QSizeF intrinsicSize(QTextDocument *, int, const QTextFormat &f) override
+    {
+        return QSizeF(f.doubleProperty(ChipWidth), f.doubleProperty(ChipHeight));
+    }
+    void drawObject(QPainter *, const QRectF &, QTextDocument *, int, const QTextFormat &) override {}
+};
+
+// The box the helper sits in, its document with the chip handler.
+QTextDocument *chipDocument(void *helper)
+{
+    QQuickItem *edit = receivedEdit(helper);
+    auto *qdoc = edit ? edit->property("textDocument").value<QQuickTextDocument *>() : nullptr;
+    QTextDocument *doc = qdoc ? qdoc->textDocument() : nullptr;
+    if (doc && !doc->documentLayout()->handlerForObject(ChipObject))
+        doc->documentLayout()->registerHandler(ChipObject, new ChipHandler(doc));
+    return doc;
+}
+
+QTextCharFormat chipFormat(const QJsonObject &c)
+{
+    QTextCharFormat f;
+    f.setObjectType(ChipObject);
+    f.setProperty(ChipKind, c.value(QStringLiteral("kind")).toString());
+    f.setProperty(ChipName, c.value(QStringLiteral("name")).toString());
+    f.setProperty(ChipMri, c.value(QStringLiteral("mri")).toString());
+    f.setProperty(ChipTenant, c.value(QStringLiteral("tenantId")).toString());
+    f.setProperty(ChipWidth, c.value(QStringLiteral("w")).toDouble());
+    f.setProperty(ChipHeight, c.value(QStringLiteral("h")).toDouble());
+    // Centred on the line (Teams' vertical-align: middle; QML places the
+    // pill itself).
+    f.setVerticalAlignment(QTextCharFormat::AlignMiddle);
+    return f;
+}
+
+bool isChip(const QTextCharFormat &f)
+{
+    return f.objectType() == ChipObject;
+}
+
+} // namespace
+
+// Fill the (plain-text) box with `parts_json`: [{text} | {kind, name, mri,
+// tenantId, w, h}], as one undo step.
+extern "C" void ost_rich_chips_load(void *helper, const char *parts_utf8)
+{
+    QTextDocument *doc = chipDocument(helper);
+    if (!doc)
+        return;
+    const QJsonArray parts = QJsonDocument::fromJson(QByteArray(parts_utf8)).array();
+    QTextCursor c(doc);
+    c.beginEditBlock();
+    c.select(QTextCursor::Document);
+    c.removeSelectedText();
+    const QTextCharFormat plain = c.charFormat();
+    for (const QJsonValue &v : parts) {
+        const QJsonObject o = v.toObject();
+        if (o.contains(QStringLiteral("text")))
+            c.insertText(o.value(QStringLiteral("text")).toString(), plain);
+        else
+            c.insertText(QString(QChar::ObjectReplacementCharacter), chipFormat(o));
+    }
+    c.endEditBlock();
+}
+
+// Put a chip in place of `from`..`to` (the "@" it came from), with a space
+// after it, and return the position after the space.
+extern "C" int ost_rich_chip_insert(void *helper, int from, int to, const char *chip_utf8)
+{
+    QTextDocument *doc = chipDocument(helper);
+    if (!doc)
+        return -1;
+    const QJsonObject chip = QJsonDocument::fromJson(QByteArray(chip_utf8)).object();
+    QTextCursor c(doc);
+    const int last = doc->characterCount() - 1;
+    c.setPosition(qBound(0, from, last));
+    c.setPosition(qBound(0, to, last), QTextCursor::KeepAnchor);
+    c.beginEditBlock();
+    const QTextCharFormat plain = c.charFormat().objectType() == ChipObject ? QTextCharFormat() : c.charFormat();
+    c.insertText(QString(QChar::ObjectReplacementCharacter), chipFormat(chip));
+    c.insertText(QStringLiteral(" "), plain);
+    c.endEditBlock();
+    return c.position();
+}
+
+// The text as Teams stores it: each chip as <route|contact name="…"
+// mri="…" tenantId="…">, paragraphs as "\n"; an object character that
+// isn't a chip (pasted) is left out.
+extern "C" char *ost_rich_chips_raw(void *helper)
+{
+    QTextDocument *doc = chipDocument(helper);
+    if (!doc)
+        return dup(QString());
+    QString out;
+    for (QTextBlock b = doc->begin(); b.isValid(); b = b.next()) {
+        if (b != doc->begin())
+            out += QLatin1Char('\n');
+        for (auto it = b.begin(); !it.atEnd(); ++it) {
+            const QTextFragment fr = it.fragment();
+            const QString t = fr.text();
+            const QTextCharFormat f = fr.charFormat();
+            for (const QChar ch : t) {
+                if (ch != QChar::ObjectReplacementCharacter) {
+                    out += ch;
+                } else if (isChip(f)) {
+                    QString name = f.stringProperty(ChipName);
+                    name.remove(QLatin1Char('"'));
+                    out += QStringLiteral("<%1 name=\"%2\" mri=\"%3\" tenantId=\"%4\">")
+                               .arg(f.stringProperty(ChipKind), name, f.stringProperty(ChipMri), f.stringProperty(ChipTenant));
+                }
+            }
+        }
+    }
+    return dup(out);
+}
+
+// Where each chip sits, for QML to draw it: JSON [{pos, kind, name, x,
+// base, w, h}] in the box's coordinates (x: the left of its room, base: its
+// line's baseline).
+extern "C" char *ost_rich_chip_boxes(void *helper)
+{
+    QTextDocument *doc = chipDocument(helper);
+    if (!doc)
+        return dup(QStringLiteral("[]"));
+    QAbstractTextDocumentLayout *layout = doc->documentLayout();
+    QJsonArray out;
+    for (QTextBlock b = doc->begin(); b.isValid(); b = b.next()) {
+        const QRectF bounds = layout->blockBoundingRect(b);
+        const QTextLayout *tl = b.layout();
+        if (!tl)
+            continue;
+        for (auto it = b.begin(); !it.atEnd(); ++it) {
+            const QTextFragment fr = it.fragment();
+            if (!isChip(fr.charFormat()))
+                continue;
+            const QTextCharFormat f = fr.charFormat();
+            for (int i = 0; i < fr.length(); ++i) {
+                const int pos = fr.position() + i;
+                const QTextLine line = tl->lineForTextPosition(pos - b.position());
+                if (!line.isValid())
+                    continue;
+                QJsonObject o;
+                o.insert(QStringLiteral("pos"), pos);
+                o.insert(QStringLiteral("kind"), f.stringProperty(ChipKind));
+                o.insert(QStringLiteral("name"), f.stringProperty(ChipName));
+                o.insert(QStringLiteral("x"), bounds.x() + line.cursorToX(pos - b.position()));
+                o.insert(QStringLiteral("base"), bounds.y() + line.y() + line.ascent());
+                o.insert(QStringLiteral("w"), f.doubleProperty(ChipWidth));
+                o.insert(QStringLiteral("h"), f.doubleProperty(ChipHeight));
+                out.append(o);
+            }
+        }
+    }
+    return dup(QString::fromUtf8(QJsonDocument(out).toJson(QJsonDocument::Compact)));
 }

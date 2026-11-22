@@ -38,6 +38,24 @@ pub fn request_activate() {
     }
 }
 
+/// Another account's "Activity in other accounts and orgs" picked one of
+/// this account's chats: the window comes forward and opens it.
+pub fn request_open_chat(thread_id: String, name: String) {
+    if let Some(qt) = QT_THREAD.get() {
+        let _ = qt.queue(move |mut this| {
+            this.as_mut().activate_requested();
+            this.as_mut().open_chat_requested(QString::from(thread_id.as_str()), QString::from(name.as_str()));
+        });
+    }
+}
+
+/// A running profile's instance socket (main.rs's), if one answers.
+fn profile_socket(profile: &str) -> Option<std::os::unix::net::UnixStream> {
+    let dir = std::env::var_os("XDG_RUNTIME_DIR")?;
+    let name = if profile.is_empty() { "ost-desktop.sock".to_string() } else { format!("ost-desktop-{profile}.sock") };
+    std::os::unix::net::UnixStream::connect(std::path::PathBuf::from(dir).join(name)).ok()
+}
+
 unsafe extern "C" {
     /// Put text (and its HTML form) on the clipboard (src/native.cpp).
     fn ost_set_clipboard(text: *const core::ffi::c_char, html: *const core::ffi::c_char);
@@ -651,6 +669,22 @@ pub mod qobject {
         /// Keeps this account's presence in the device's account list.
         #[qinvokable]
         fn note_account_presence(self: Pin<&mut Backend>, availability: &QString);
+
+        /// Teams' "Activity in other accounts and orgs": each other
+        /// account with what its window last published, as JSON
+        /// [{profile, upn, name, org, objectId, running, missed, items}].
+        #[qinvokable]
+        fn other_accounts_hub_json(self: Pin<&mut Backend>) -> QString;
+
+        /// Publish this account's summary for the other accounts' hubs
+        /// (JSON {missed, items}).
+        #[qinvokable]
+        fn publish_hub(self: Pin<&mut Backend>, json: &QString);
+
+        /// Open a chat (and message) in another account's window: that
+        /// window comes forward and opens it, or the account is started.
+        #[qinvokable]
+        fn open_in_account(self: Pin<&mut Backend>, profile: &QString, thread_id: &QString, name: &QString);
 
         /// A sign-in web view is about to load `url` (`silent`: the hidden
         /// renewal's view). True when it's the browser sign-in's return
@@ -1776,6 +1810,10 @@ pub mod qobject {
         /// A notification was clicked: bring the window forward.
         #[qsignal]
         fn activate_requested(self: Pin<&mut Backend>);
+
+        /// Another account's hub asked this window to open a chat.
+        #[qsignal]
+        fn open_chat_requested(self: Pin<&mut Backend>, thread_id: QString, name: QString);
 
         /// tenant_rooms' answer: the query it was for and the rooms
         /// ([{mri, name, email, status}]).
@@ -8917,13 +8955,68 @@ impl qobject::Backend {
         // second profile of the same account isn't listed.
         let my_upn = all.get(mine).map(|a| a.upn.to_lowercase()).unwrap_or_default();
         let mut seen = std::collections::HashSet::from([my_upn]);
+        // (an account's organisation as any of its profiles recorded it)
+        let org_of = |upn: &str| all.iter().find(|x| x.upn.eq_ignore_ascii_case(upn) && !x.org.is_empty()).map(|x| x.org.clone()).unwrap_or_default();
         let list: Vec<serde_json::Value> = all
-            .into_iter()
+            .iter()
             .enumerate()
             .filter(|(_, a)| a.profile != me && !a.upn.is_empty() && seen.insert(a.upn.to_lowercase()))
-            .map(|(i, a)| json!({ "profile": a.profile, "upn": a.upn, "name": a.name, "objectId": a.object_id, "availability": a.availability, "org": a.org, "before": i < mine }))
+            .map(|(i, a)| json!({ "profile": a.profile, "upn": a.upn, "name": a.name, "objectId": a.object_id, "availability": a.availability, "org": if a.org.is_empty() { org_of(&a.upn) } else { a.org.clone() }, "before": i < mine }))
             .collect();
         QString::from(serde_json::Value::Array(list).to_string().as_str())
+    }
+
+    pub fn other_accounts_hub_json(mut self: Pin<&mut Self>) -> QString {
+        let list: Vec<serde_json::Value> = serde_json::from_str(&self.as_mut().other_accounts_json().to_string()).unwrap_or_default();
+        let all = teams_cli::config::accounts();
+        let out: Vec<serde_json::Value> = list
+            .into_iter()
+            .map(|mut a| {
+                // An account can have more than one profile on the device:
+                // the one whose window is running, else the freshest summary.
+                let upn = a["upn"].as_str().unwrap_or_default().to_lowercase();
+                let mut cands: Vec<(bool, String, serde_json::Value)> = all
+                    .iter()
+                    .filter(|x| x.upn.to_lowercase() == upn)
+                    .map(|x| {
+                        let hub = teams_cli::config::hub_summary(&x.profile).unwrap_or_else(|| json!({}));
+                        (profile_socket(&x.profile).is_some(), x.profile.clone(), hub)
+                    })
+                    .collect();
+                cands.sort_by(|p, q| (q.0, q.2["updated"].as_str().unwrap_or_default()).cmp(&(p.0, p.2["updated"].as_str().unwrap_or_default())));
+                let (running, profile, hub) = cands.into_iter().next().unwrap_or((false, a["profile"].as_str().unwrap_or_default().to_string(), json!({})));
+                a["profile"] = json!(profile);
+                a["running"] = json!(running);
+                a["missed"] = hub.get("missed").cloned().unwrap_or(json!(0));
+                a["items"] = hub.get("items").cloned().unwrap_or(json!([]));
+                a["updated"] = hub.get("updated").cloned().unwrap_or(json!(""));
+                a
+            })
+            .collect();
+        QString::from(serde_json::Value::Array(out).to_string().as_str())
+    }
+
+    pub fn publish_hub(self: Pin<&mut Self>, json: &QString) {
+        if let Err(e) = teams_cli::config::write_hub_summary(&json.to_string()) {
+            tracing::warn!("couldn't publish the hub summary: {e}");
+        }
+    }
+
+    pub fn open_in_account(self: Pin<&mut Self>, profile: &QString, thread_id: &QString, name: &QString) {
+        use std::io::Write;
+        let profile = profile.to_string();
+        // The instance socket's protocol is one line; tabs and newlines
+        // can't be in a thread id or chat name sent on it.
+        let clean = |s: String| s.replace(['\t', '\n', '\r'], " ");
+        match profile_socket(&profile) {
+            Some(mut s) => {
+                let line = format!("open\t{}\t{}\n", clean(thread_id.to_string()), clean(name.to_string()));
+                if let Err(e) = s.write_all(line.as_bytes()) {
+                    tracing::warn!("couldn't reach the other account's window: {e}");
+                }
+            }
+            None => launch_profile(&profile),
+        }
     }
 
     pub fn add_account(self: Pin<&mut Self>) {

@@ -607,6 +607,22 @@ above and below a divider.
   and saved at once with `PUT …?email=&bookingServiceId=&bookingCode=` {minimumLeadTime,
   maximumAdvance, defaultDuration, hasCustomServiceWindows, bookingServiceWindows [{bookableHours:
   [{day, timeSlots [{start, end}]}]}]} (minutes from midnight).
+- **Custom instructions' people** (measured 2026-11-22): each is Teams' pill, an uneditable inline
+  span: 23.33 tall, margin 0 2, padding 1 8 1 4, a 0.67 NeutralStroke2 (#E0E0E0) border, radius 4,
+  NeutralBackground3 (#F5F5F5), 2 between a 16 px icon and the name (12/20 #242424), vertical-align
+  middle. A call transfer target (`<route …>`) has the Call icon in colorBrandForeground1 (#5B5FC7), a
+  shared contact (`<contact …>`) the ContactCard icon in colorPalettePurpleForeground2 (#341A51). "@"
+  at a word's start opens a 220-wide menu at the "@" (padding 4 0, 28-tall rows, 16 px icons, text at
+  36): Add call transfer target (Call) / Share contact (ContactCard), then a 320-wide people search
+  (padding 8, the box #F0F0F0); the person's pill replaces the "@", a space after it. OST keeps each
+  pill as one object character in the plain-text box (richtext.cpp's chips), the room it takes in the
+  line its size, and draws the pill over it.
+- **Custom hours** (measured 2026-11-22): each day 15 below the last (the dropdown's bottom for
+  Monday): its English name at the left, Available / Unavailable 16 before its switch, the switch 8 in
+  from the right; its slots 8 under that row and 8 apart, right-aligned: start and end as 120 × 32
+  filled-darker selects (#F5F5F5, no border, the time 14 px 12 in, chevron 20 10 from the right),
+  "to" between them 8 apart, then + on the first slot while there are fewer than five, else a trash
+  button (24 × 23.3, a 20 px #424242 icon, brand on hover); an unavailable day has no slots.
 - **Make a test call**: Teams' TestCallToPA intent: a 1:1 call to your own MRI with no chat thread,
   audio only, which SlimCore places as `callToPersonalAttendant` (botType personalAttendant); the
   attendant (GraphCommunicationsClient-PersonalAttendantBot) answers with your greeting. The window
@@ -640,7 +656,38 @@ above and below a divider.
   accounts (with their organisation) are kept in accounts.json, one entry per account (a second
   profile of the same account isn't listed). Add another account starts OST for a new profile at
   Microsoft's sign-in page; Switch to account brings that account's window forward. Not built: the
-  app bar's "Activity in other accounts and orgs" hub (its window wasn't measured).
+  app bar's "Activity in other accounts and orgs" hub: below.
+- **Activity in other accounts and orgs** (Teams' MTMA hub v2, measured 2026-11-22 with OST Test 2
+  as the second account): the app bar tile (52 × 48 at 8 from the bar's left, its bottom on the bar's,
+  radius 8; PersonAlert 24 #616161, filled brand on white while hovered or open; the other accounts'
+  count in #D13438, 10/14 600, at 26, 0) opens a 380-wide flyout 2 beside the bar, its bottom on the
+  tile's, at most ~0.7 of the window tall (shadow 0 0 2 / 0 8 16, radius 4):
+  - the title "Activity in other accounts and orgs" (14/600, 16 in, 24 tall), a 0.67 #E0E0E0 rule at
+    56.7; at 73.3 the pills Unread, Channels, Chats (24 tall, 12 px, padding 3 8, a #D1D1D1 hairline,
+    8 apart; picked: #4F52B2 with white text) and Filter (24 × 23.3 at 339.3, filter glyph);
+  - from 113.3 the accounts, each an accordion: a 320.7 × 48 header 12.7 in (chevron 14 at 4, the
+    32 px picture at 22 with the account's count 4 above its corner, the name 14/600 and address
+    12/20 #616161 at 66) and Account settings ··· (24 × 23.3 at 333.3, 16.8 down) — a 240-wide menu
+    of the account's organisations (48 tall: a 20 px square initial, the name, a chevron) whose
+    submenu has Switch (ArrowRight) and Pin this org;
+  - its entries (352.7 wide, 12.7 in, padding 8; a 6 px dot column, the 32 px picture at 22, the
+    text at 62, the time 12/16 #616161 at the right, 8 from the text): unread activity (title bold,
+    two lines; the place 12/16 #616161; a 4 px dot; a white 18 px disc at the picture's corner with
+    the kind's 16 px brand icon; a missed call has Call and Chat, 65 × 24, 14/600, a #D1D1D1
+    hairline) and recent chats (a meeting's calendar on a #C5CBFA disc; the last message 12/16
+    #424242, "You: …", up to two lines; bold and a dot while unread), newest first; the time within
+    the last day, else the date; hover #F5F5F5;
+  - a footer "Scroll to see more" (12/20 #4F52B2 and an arrow, padding 8 16) under a #E0E0E0 rule
+    while more is below;
+  - Filter by (240 wide at the flyout's right edge, under the button): "Filter by" 14/600 (52 tall),
+    then 40 px rows (text at 40): Mentions, Tag mentions, Followed threads, Orgs ›.
+  - Picking an entry switches to that account at it.
+- **OST**: each account's window publishes its own summary (its app-bar count, its unread activity
+  and recent chats) to `hub.json` in its profile folder; the other accounts' windows read them every
+  few seconds for the tile and the flyout. Picking an entry asks that account's running window (its
+  instance socket, `open\t<thread>\t<name>`) to come forward and open it; when it isn't running,
+  the account starts. An account's summary is as fresh as its window (Teams runs every account's
+  data in its one app; OST runs each account as its own profile).
 
 ## Links into Settings (TASK-0088 AC3; Teams 26304, bundles read and measured on winpc 2026-11-21)
 

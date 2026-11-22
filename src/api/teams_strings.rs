@@ -811,6 +811,13 @@ pub async fn fetch(client: &reqwest::Client, res: &Resources, ids: &[IdRow], ids
                     "esm" => parse_esm_tables(&body),
                     "loc" => parse_loc_table(&body),
                     "lpc" => parse_lpc(&body),
+                    // Teams' own locale chunks from a newer web build:
+                    // every namespace's table, by Teams' string ids
+                    "chunk" => {
+                        let mut s = Strings::new();
+                        parse_chunk(&body, &mut s);
+                        s.into_values().flatten().collect()
+                    }
                     "flatjson" => {
                         let mut t = HashMap::new();
                         if let Ok(v) = serde_json::from_str::<Value>(&body) {
@@ -822,14 +829,15 @@ pub async fn fetch(client: &reqwest::Client, res: &Resources, ids: &[IdRow], ids
                 })
             }
             .await;
-            (ns, url, got)
+            (ns, url, src.kind == "chunk", got)
         })
     });
-    for (ns, url, got) in futures::future::join_all(extras).await {
+    for (ns, url, icu, got) in futures::future::join_all(extras).await {
         match got {
             // Their texts aren't ICU: an apostrophe is just one ("Filter
-            // by '{0}'"), so it is quoted as ICU's ''.
-            Ok(table) => strings.entry(ns.clone()).or_default().extend(table.into_iter().map(|(k, v)| (k, v.replace('\'', "''")))),
+            // by '{0}'"), so it is quoted as ICU's '' (Teams' own chunks
+            // already are ICU).
+            Ok(table) => strings.entry(ns.clone()).or_default().extend(table.into_iter().map(|(k, v)| (k, if icu { v } else { v.replace('\'', "''") }))),
             Err(e) => tracing::warn!("app language {locale}: {url}: {e:#}"),
         }
     }
@@ -991,6 +999,33 @@ mod tests {
         assert_eq!(got.len(), src.parts["de-de"].res.len());
         assert_eq!(got["20707"], "Downloads durchsuchen");
         assert_eq!(got["20812"], "Übergeordneten Ordner öffnen");
+    }
+
+    /// The German catalogue (network): the Events app's templates from
+    /// Teams' newer web build (x.ve) and the profile card's newer strings
+    /// (x.lpc) translate (`cargo test --lib -- --ignored
+    /// events_and_profile_card_live`).
+    #[tokio::test]
+    #[ignore]
+    async fn events_and_profile_card_live() {
+        let res: Resources = serde_json::from_str(include_str!("../../desktop/i18n/teams_resources.json")).unwrap();
+        let ids: Vec<IdRow> = serde_json::from_str(crate::i18n::IDS).unwrap();
+        let cat = fetch(&reqwest::Client::new(), &res, &ids, &fingerprint(crate::i18n::IDS), "de-de").await.unwrap();
+        let de = |en: &str| {
+            let row = ids.iter().find(|r| r.0 == en).unwrap_or_else(|| panic!("{en} keyed"));
+            cat["strings"][&row.2].clone()
+        };
+        // The templates are Teams' text in its German chunk too (still
+        // English there: Teams hasn't translated them yet).
+        for en in ["All hands", "Ask me anything", "Community event", "Share organization updates and engage employees at scale"] {
+            assert_eq!(de(en), en, "{en}");
+        }
+        for en in ["Next profile", "Back to previous profile", "People reporting to %1"] {
+            let t = de(en);
+            eprintln!("{en} -> {t}");
+            assert!(t.is_string() && t.as_str() != Some(en), "{en}: {t}");
+        }
+        assert_eq!(de("Next profile"), "Nächstes Profil");
     }
 
     #[test]

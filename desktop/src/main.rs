@@ -85,11 +85,17 @@ fn hand_over_to_running_instance() -> bool {
     std::thread::spawn(move || {
         for stream in listener.incoming().flatten() {
             let mut line = String::new();
-            if std::io::BufReader::new(stream).read_line(&mut line).is_ok()
-                && line.trim() == "activate"
-            {
-                tracing::info!("another launch asked for the window");
-                backend::request_activate();
+            if std::io::BufReader::new(stream).read_line(&mut line).is_ok() {
+                if line.trim() == "activate" {
+                    tracing::info!("another launch asked for the window");
+                    backend::request_activate();
+                } else if let Some(rest) = line.trim_end_matches(['\n', '\r']).strip_prefix("open\t") {
+                    // Another account's "Activity in other accounts and
+                    // orgs" picked one of this account's chats.
+                    let (thread, name) = rest.split_once('\t').unwrap_or((rest, ""));
+                    tracing::info!("another account's hub opened a chat here");
+                    backend::request_open_chat(thread.to_string(), name.to_string());
+                }
             }
         }
     });

@@ -428,6 +428,35 @@ pub fn new_profile_name(list: &[Account], taken: &[String]) -> String {
         .expect("a free name")
 }
 
+/// A profile's config folder ("" is the first account's).
+pub fn profile_dir(profile: &str) -> Result<PathBuf> {
+    let base = ProjectDirs::from("com", "teams-cli", "teams-cli")
+        .context("Could not determine config directory")?
+        .config_dir()
+        .to_path_buf();
+    Ok(if profile.is_empty() { base } else { base.join("profiles").join(profile) })
+}
+
+/// What each account's window last published for Teams' "Activity in
+/// other accounts and orgs" (its missed count and recent activity and
+/// chats), read by the other accounts' windows.
+pub fn hub_summary(profile: &str) -> Option<serde_json::Value> {
+    let text = fs::read_to_string(profile_dir(profile).ok()?.join("hub.json")).ok()?;
+    serde_json::from_str(&text).ok()
+}
+
+/// Publish this account's summary (written only when it changed).
+pub fn write_hub_summary(json: &str) -> Result<()> {
+    let path = Config::config_dir()?.join("hub.json");
+    if fs::read_to_string(&path).is_ok_and(|old| old == json) {
+        return Ok(());
+    }
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir)?;
+    }
+    write_private(&path, json.as_bytes())
+}
+
 /// The profile folders that already exist.
 pub fn profile_folders() -> Vec<String> {
     ProjectDirs::from("com", "teams-cli", "teams-cli")

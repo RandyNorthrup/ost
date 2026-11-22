@@ -494,7 +494,15 @@ Popup {
                     width: parent.width
                     height: visible ? implicitHeight : 0
                     spacing: 32
-                    OrgRule { lead: qsTr("People reporting to") + " "; bold: orgChart.org ? orgChart.org.focus.name || "" : ""; tail: "" }
+                    // The card's "People reporting to {0}" (the name bold
+                    // where the language puts it), "People reporting to you".
+                    OrgRule {
+                        readonly property var who: orgChart.org ? orgChart.org.focus || ({}) : ({})
+                        readonly property var parts: qsTr("People reporting to %1").split("%1")
+                        lead: who.isMe ? qsTr("People reporting to you") : parts[0]
+                        bold: who.isMe ? "" : who.name || ""
+                        tail: who.isMe ? "" : parts[1] || ""
+                    }
                     Grid {
                         columns: 2; columnSpacing: 12; rowSpacing: 12
                         Repeater {
