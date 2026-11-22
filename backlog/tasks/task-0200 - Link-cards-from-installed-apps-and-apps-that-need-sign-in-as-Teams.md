@@ -1,10 +1,10 @@
 ---
 id: TASK-0200
 title: Link cards from installed apps and apps that need sign-in, as Teams
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-11-16T11:48:00Z'
-updated_date: '2026-11-22T18:57:00Z'
+updated_date: '2026-11-22T20:31:00Z'
 labels:
   - desktop
 dependencies: []
@@ -19,7 +19,7 @@ TASK-0168 shows Teams' app card for links to sites whose Teams app allows anonym
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 A link handled by an installed app shows its card via queryLink, as Teams
-- [ ] #2 An app card that asks to sign in (GitHub's Show Preview) signs in and then shows the card, as Teams
+- [x] #2 An app card that asks to sign in (GitHub's Show Preview) signs in and then shows the card, as Teams
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -81,4 +81,17 @@ TASK-0168 shows Teams' app card for links to sites whose Teams app allows anonym
 
 - 2026-11-22 (chatH), OST live (linuxlt, `--app-card-test=<item 2 link>`): Azure Boards answered OST's queryLink with the connector card (the app keeps the sign-in per user), and OST's compose now draws it as Teams: the gold bar, the header, the task icon, "Task 2: OST TEST 200 item 2" with its link, "To Do | Unassigned" (130 tall). OST's own sign-in window path (Show Preview → window → success → re-query with value.state) was checked live in chatG up to the re-query; its 502 then matches the org's OAuth policy being Off (Teams needs it On too). After the app kept the sign-in, a fresh OST sign-in could not be re-run (Azure Boards keeps no OAuth grant to revoke in the org, and ost-test1 has no Azure Boards bot chat to "signout" in).
 - Cleaned up: work item 2 deleted and destroyed (recycle bin 0), Azure Boards removed for ost-test1 (examples/add_app --remove-personal), the organization osttest200 deleted (dev.azure.com/osttest200 is 404), ost-test1's Contributor role on "Azure subscription 1" removed (IAM shows only Randy's two Owner rows). Wikipedia Search stays removed.
+
+- 2026-11-22 merged (a82d9af..4d91ea7); 908 lib + 29 desktop tests pass. OST's own sign-in → re-query path was verified live up to the re-query (chatG); after the fix the card came on the first request (sign-in kept per user), so the final re-query step is unit-tested.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Link cards from installed apps and apps that need sign-in, as Teams.
+
+- A link an installed app handles gets its card through queryLink (verified with Wikipedia Search).
+- An app you don't have gets Show Preview, which installs it and opens its sign-in window as Teams does; apps needing sign-in get "Sign in to view card content"; after sign-in OST asks again with the window's result typed as Teams types it, and draws the answer, including Office 365 connector cards (gold top bar, header, icon, linked title, facts).
+
+Verified live with Azure Boards against Teams on winpc: the same sign-in card, then the same signed-in work-item card. Test organization, work item, apps and ost-test1's temporary Contributor role removed afterwards.
+<!-- SECTION:FINAL_SUMMARY:END -->

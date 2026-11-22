@@ -4,7 +4,7 @@ title: Chat list leftovers found in live checks
 status: In Progress
 assignee: []
 created_date: '2026-11-16T20:22:00Z'
-updated_date: '2026-11-22T19:59:00Z'
+updated_date: '2026-11-22T20:31:00Z'
 labels:
   - desktop
 dependencies: []
@@ -100,4 +100,6 @@ Found while checking TASK-0150/0195/0204 against Teams on winpc (2026-11-16):
 - Open: Teams' "see more" cut of long posts isn't in OST's posts layout; ODSL kinds are parsed and counted but not drawn; imBack / Submit / openUrl come from Teams' code with unit tests only (no bot here sends them).
 
 - 2026-11-22 (chatH), after the Teams check: posts channels also leave out the agent's add (AgentAdded) as Teams showed no row; rechecked live (agentposts3: the welcome alone, as Teams). Team "OST TEST 206 agent H" deleted (thread soft-deleted). Tests: 903 lib + 29 desktop pass.
+
+- 2026-11-22 merged: posts-channel agent row and suggested-action kinds. Open: Teams' 'see more' cut-off on long posts; ODSL (Copilot) actions drawn.
 <!-- SECTION:NOTES:END -->
