@@ -4,7 +4,7 @@ title: Chat list leftovers found in live checks
 status: In Progress
 assignee: []
 created_date: '2026-11-16T20:22:00Z'
-updated_date: '2026-11-22T19:03:00Z'
+updated_date: '2026-11-22T19:59:00Z'
 labels:
   - desktop
 dependencies: []
@@ -98,4 +98,6 @@ Found while checking TASK-0150/0195/0204 against Teams on winpc (2026-11-16):
 - Built: api::messages::suggested_actions parses every kind as Teams (unit test); SuggestedActionsRow.qml (shared by chats/threads and posts); imBack sends, Action.Submit invokes (backend.suggestedInvoke → api::bot_invoke), openUrl opens; posts: the row at Teams' place, @agent opens the post's reply with the mention (the reply box sends rich text when it holds one), the ModalityUpdate post left out, post paragraphs with no space between them (MessageText).
 - Live (OST on linuxlt, `--agent-welcome-test --open-chat=<posts channel>`): AGENTWELCOME welcome {actions ["@agent"], feedback, layout PostReply}; picked → post reply {"text": "OST TEST channel Agent ", "mention": true}; the row and the reply box as Teams.
 - Open: Teams' "see more" cut of long posts isn't in OST's posts layout; ODSL kinds are parsed and counted but not drawn; imBack / Submit / openUrl come from Teams' code with unit tests only (no bot here sends them).
+
+- 2026-11-22 (chatH), after the Teams check: posts channels also leave out the agent's add (AgentAdded) as Teams showed no row; rechecked live (agentposts3: the welcome alone, as Teams). Team "OST TEST 206 agent H" deleted (thread soft-deleted). Tests: 903 lib + 29 desktop pass.
 <!-- SECTION:NOTES:END -->
