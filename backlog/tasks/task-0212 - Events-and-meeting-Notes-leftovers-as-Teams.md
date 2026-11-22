@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-17T01:27:00Z'
-updated_date: '2026-11-22T18:36:00Z'
+updated_date: '2026-11-22T19:23:00Z'
 labels:
   - desktop
 dependencies: []
@@ -108,4 +108,13 @@ What TASK-0209 left (docs/spec/events.md, docs/spec/call-and-meeting-window.md):
 - (b) the highlights file found. Teams' meeting content service ({mcps}/contents?threadId&iCalUid&organizerId) answers with organizerId = oid@tid (a bare oid gets 403 CrossTenantRequest). Its resources: AISummary, highlights (lower case), TranscriptV2, Recording. The highlights file lives in Teams' SharePoint Embedded storage (/:fl:/g/contentstorage/CSP_…).
   - OST's tab then matched Teams: the "Highlights aren't published yet." bar, the player, and the highlights card. Its Loop page loaded (LOOPHOST framed, code @fluidx/loop-page-container, rendered, connected).
   - Side effect of that run: OST asked for an organization edit link of the file (createLink). Now the file's own /:fl:/ link is used as it is.
+
+- Highlights again (2026-11-22): the Loop page opens from the file's own /:fl:/g/contentstorage link (LOOPHOST rendered, connected).
+- Tests on linuxlt: 900 lib tests + 29 desktop tests pass. String ids regenerated.
+- Cleanup done:
+  - "OST TEST 212 recording" cancelled with --events-test=uninvite --events-unpin. That also removed the "Canceled:" entries ("… recording" and a leftover "… town hall apps") from ost-test1's calendar and unpinned Events again. OST Test 3's "Canceled: OST TEST 212 recording" was removed with --events-test=calclean.
+  - The recording (it holds the transcript), "OST TEST 212 recording-20261121_211715UTC-Meeting Recording.mp4", moved to ost-test1's OneDrive recycle bin (examples/drive_delete).
+  - The downloaded transcript .docx deleted on linuxlt; the meetI test mic and camera were stopped right after the call.
+  - Left in place: the highlights Loop file Teams made in its own SharePoint Embedded storage (users can't delete it; it went with the cancelled event's meeting); the organization link OST made on it once (see above).
+- Still open for AC1: Highlights' Publish (POST events/{id}/sessions/{sid}/recordings with the Loop page's serialized highlightsContent, and the "Ready to publish highlights?" dialog); Select from OneDrive in the recording picker (says to pick a video with a transcript instead of opening a picker); the Generate dialog's rows aren't grouped by date with tasks chip and thumbnail as in Teams; the Audio recaps detail of a finished recap (chapters, transcript, playback) couldn't be checked live, since every test meeting was too thin for Teams too.
 <!-- SECTION:NOTES:END -->

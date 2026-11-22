@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-15T05:37:00Z'
-updated_date: '2026-11-21T21:40:00Z'
+updated_date: '2026-11-22T19:23:00Z'
 labels:
   - chat-list
   - accessibility
@@ -46,6 +46,8 @@ Left: confirm Teams shows OST's team order (not picked up within 7 s; not checke
   - Other way: a drag in Teams (OST test channel) showed in OST on its next start. Teams put the channel at the top of the section, although its drop line was under OST Test 3 (Teams quirk, seen with a VNC drag). OST's drags then restored the section's order.
   - Channels within a team don't reorder in Teams (no drop line), and OST matches that.
 - Restored: the test section removed and OST Test 2 taken out of Favorites (in Teams). The list is as before: Favorites = OST Test 1 (You), no custom sections, team order unchanged.
+
+- (meetI) AC1 is verified for chats in Favorites and custom sections and for channels in sections; channels within a team don't reorder in Teams. Harness added: --reorder-drag, --sections-setup/--sections-teardown (docs/desktop.md).
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
