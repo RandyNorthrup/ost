@@ -404,6 +404,23 @@ where `{{otherTargets}}` = "# other" / "# others" and n = targets − 1.
       less 32, at a fixed 684 × 190.08 ratio (cropped to fill), with a
       white headline and the body 16 under it.
 
+### Long messages: "see more" (Teams 26304; measured on winpc, 2026-11-22)
+- **Posts channels, the posts list** (395276 `nn`, thresholds `fn`):
+  - A post's text is cut at 200 px (`channels.seeMoreThresholdValueForPost`; none with `channels.enableDefaultExpandedPostMessage`), a reply's at 80 (`channels.channelPaneSeeMoreTruncationThreshold`), a Channel Agent's reply at 140 (`messaging.projectAgentReplyTruncationThreshold`).
+  - The subject stays out of the cut. A message with cards keeps its text whole (`extensibility.enableSeeMoreExperienceForCardsInChannels`).
+  - Under the cut, on a 20 px row at the text's start: the link "see more" / "see less" (14 px, colorBrandForegroundLink #4F52B2; underlined in #444791 on hover). Clicking the cut text opens it too. The reactions sit 17 under the row.
+  - Opened, the text grows upward: the link stays where it was on the screen (scroll compensation).
+  - Opening the post (its reply chain) shows everything; the cut is only in the list.
+  - Measured with "OST TEST 206 long post" (a subject and 14 lines: 10 shown) and a 7-line reply (4 shown).
+- **Chats and threads channels** (349533 `_getSeeMoreEligibility` / `cs`): only an agent's messages are cut, at 220 px (`messaging.chatPaneSeeMoreTruncationThreshold`):
+  - a Channel Agent's (bot in `messaging.projectAgentBotIds`, or the app `teamAgentGlobalAppId`; `enableSeeMoreForChannelAgentMessages`), a Copilot app's in a channel (`copilotAppsIds`), a chat agent's (`chatAgentCopilotBotIds`; `enableSeeMoreForChatAgentMessages`);
+  - the Facilitator's answers in a meeting chat (`meetingConversation.enableSeeMoreForFacilitatorMessages`: QuestionsSummarization, MeetingsQnA, ChatQnA, WebSearch, ProactiveQnA from `properties.botMetadata`; every one with `enableSeeMoreForAllFacilitatorMessages`);
+  - any bot's with `enableSeeMoreForBotMessages`, every top-level message of a threads channel with `channels.enableSeeMoreButtonThreadedChannels` (both off here).
+  - Only the text is cut; the actions (@agent, thumbs) follow the box. Cut: an 80 px fade from clear to the bubble's colour at the bottom and, over it, a 39.3 box in the bubble's colour with "See more" 8 down. Open: the same box under the text with "See less".
+  - The button is a transparent Fluent button: at least 96 × 31.3, 14/20 regular #5B5FC7, no side padding; its 14 px chevron (down / up) shows 6 after the text on hover. Opening keeps the button in place.
+  - Measured on a Channel Agent's welcome ("OST TEST 206 agent I"): whole at 1280 (212 tall), cut once the thread pane narrowed the conversation.
+- **OST:** SeeMoreRules (the rules above, from ECS over Teams' defaults), SeeMoreLink (posts), Conversation's bubble (chats and threads). Harness `--see-more-test`.
+
 ---
 
 ## 11. Hover toolbar (chat 318259; channel 456275; actions 344274/706871)
@@ -1194,6 +1211,19 @@ Groups are separated by dividers; empty groups are skipped.
   - **OST** keeps the same form. Nothing goes to Microsoft: Send opens the repo's Report a problem issue form, filled in as `feedback-and-help.md` describes (a Give a compliment form when only "They're great…" or "The suggestion is great!" is picked), with area "Suggested replies". The suggestions and the message go only when the checkbox is ticked.
   - OST's note reads "Your feedback opens as a public issue on GitHub ({repo})." The checkbox reads "Attach my last message to help OST analyze my feedback. It will be public." The toast reads "Finish on GitHub: select Create to send your feedback."
 - *Not measured live:* OST Test 1, the account Teams runs as on winpc, gets no suggestions, so the chips and the popover come from Teams' code and Griffel CSS, not from its DOM. The data is live: OST TEST 170a ("could you send me the file with the report?", sent from Teams to OST Test 2) got Cortana's `file_sharing` suggestion, and OST, signed in as OST Test 2, showed "Share a file" and the feedback button.
+
+### An agent's ODSL actions and its reasoning (Teams 26304; measured on winpc, 2026-11-22)
+- **ODSL** (suggested-action-odsl, 50945): an `Action.ODSL` action's value is `{actions: {odsl: {statements: [{name, arguments: [{name, value}]}]}}}`.
+  - Teams draws them only for agents it knows: Copilot apps (`copilotAppsIds`, the Facilitator), Channel Agents (`projectAgentBotIds`), chat agents (`chatAgentBotIds`), agentic users. ODSL must be on (`extensibility.enableSuggestedActionODSLProcessing`) with its command list set (`enableSuggestedActionODSLCommandNames`, plus avTechSupport, teamsChatAgentPreview, channelAgentPreferencesAndSkills, stopPowerAutomateFlow, openModeratorHub from their flags).
+  - Otherwise, and for a statement whose command isn't enabled: "Some interactions may not be available because of your Teams setup." (the first action only; the Facilitator gets its own note).
+  - proactiveDiagnostics, orchestratorMetadata and CustomizationMetadata statements are left out. An action without statements (a Channel Agent's "paMetrics") draws nothing.
+- **Reasoning** (541316 `Ru` / `Eu` / `xu`; a Channel Agent's answer to "create a weekly status report", "OST TEST 206 agent I"):
+  - The statement's arguments: `duration` (ms), `active`, `iterations` (JSON: steps grouped by iterationNumber, each with `intentResponse.chainOfThought {title, substeps}`), `localizedStrings` ([[{KEY: {value}}]]: the service's own texts, e.g. REASONING_HEADER "Reasoned for 1 minute 9 seconds").
+  - 8 under the actions: a header (transparent button, padding 5 12 5 0, 14/20 #707070, wrapping, a 16 px chevron 6 after the text). Its text: the service's REASONING_HEADER, else "Reasoned for {n} seconds"; "Reasoning" while active (up to `projectAgentReasoningTimeoutMinutes`, 10, after the message); "Reasoning Results" without a duration.
+  - Opened, 1 under it: a card (#FAFAFA, 0.67 #E0E0E0, radius 12, padding 16) whose list scrolls within 208 (2 in), shown scrolled to its end. Steps 8 apart: a 20 px check circle, the title 12 after it (14/20 #424242, wrapping, rows at least 28), a 14 px chevron 4 from the end when it has substeps. A step opens to its substeps: 14/20 #616161, 44 in, 12 from the end, 8 apart.
+  - With `extensibility.enableChainOfThoughtNaturalLanguage` off, each iteration is titled "Step N (Xs):" in bold with its intents.
+  - The bubble ends 8.7 under it.
+- **OST:** `api::messages::odsl_statements` / `reasoning_view`, OdslBlock, ReasoningBlock. Not drawn yet: the other commands' renderers (tasks, plan, createMeeting, agendaTimer, questionsList, …).
 
 ### A video clip in a message (measured on winpc, 2026-11-14, OST TEST 135)
 Teams' "+" ▸ Record video clip embeds Microsoft Stream's recorder

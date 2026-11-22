@@ -4,7 +4,7 @@ title: Chat list leftovers found in live checks
 status: In Progress
 assignee: []
 created_date: '2026-11-16T20:22:00Z'
-updated_date: '2026-11-22T20:31:00Z'
+updated_date: '2026-11-22T22:43:00Z'
 labels:
   - desktop
 dependencies: []
@@ -102,4 +102,19 @@ Found while checking TASK-0150/0195/0204 against Teams on winpc (2026-11-16):
 - 2026-11-22 (chatH), after the Teams check: posts channels also leave out the agent's add (AgentAdded) as Teams showed no row; rechecked live (agentposts3: the welcome alone, as Teams). Team "OST TEST 206 agent H" deleted (thread soft-deleted). Tests: 903 lib + 29 desktop pass.
 
 - 2026-11-22 merged: posts-channel agent row and suggested-action kinds. Open: Teams' 'see more' cut-off on long posts; ODSL (Copilot) actions drawn.
+
+- 2026-11-22 (chatI), "see more" from Teams 26304 (395276 `nn`/`fn` posts; 349533 `cs`, live `_getSeeMoreEligibility` chats/threads) and measured on winpc:
+  - Posts list: a post's text cut at 200 px (seeMoreThresholdValueForPost; none with enableDefaultExpandedPostMessage), a reply at 80, a Channel Agent's reply at 140; subject outside the cut; cards keep the text whole. "see more"/"see less" (14 px #4F52B2, hover underline #444791) on a 20 row at the text's start, reactions 17 under it; a click on the cut text opens it too; the link stays put (scroll compensation). Measured with "OST TEST 206 long post" (subject + 14 lines: 10 shown) and a 7-line reply (4 shown); both deleted afterwards.
+  - Chats and threads: only agents' messages (Channel Agent bots/app, Copilot apps in channels, chat agents, Facilitator answers in meetings; per ECS) cut at 220: an 80 px fade, a 39.3 box in the bubble colour with a transparent "See more" button (96 x 31.3 min, 14/20 #5B5FC7, chevron 14 px on hover 6 after the text); open: "See less" under the text. Only the text is cut; @agent/thumbs follow. A Channel Agent's welcome (212 tall) is whole at 1280 and cut once the thread pane narrows the conversation.
+  - Built: SeeMoreRules (rules from ECS over Teams' defaults), SeeMoreLink (posts), ChannelPosts post/reply cut, Conversation bubble cut (fade, box, button, clip), MessageView.bot_kind (botMetadata), harness --see-more-test (--see-more-name, --see-more-thread), --delete-test-messages --delete-in=<team>/<channel>.
+  - Live (OST on linuxlt as ost-test1): posts 279 -> 200 + see more, reply 139 -> 80, open/close; Channel Agent welcome cut in the main list and the thread pane exactly where Teams cuts it, See less when opened.
+- ODSL, from Teams (50945 `Q`/`j`; 541316 ReasoningCommandRenderer) and a live Channel Agent answer ("OST TEST 206 agent I", made by OST's Add Channel Agent; asked "create a weekly status report"; team deleted afterwards): its actions were Reasoning (ODSL "reasoning": duration, iterations with chain-of-thought titles/substeps, the service's localizedStrings), @agent, paMetrics (no statements: nothing drawn).
+  - Teams draws ODSL only for known agents (copilotAppsIds, projectAgentBotIds, chatAgentBotIds, agentic users) with ODSL on and the command enabled; otherwise "Some interactions may not be available because of your Teams setup." (Facilitator: its own note).
+  - Reasoning: header "Reasoned for 1 minute 9 seconds" (14/20 #707070, chevron 16 six after), 8 under the actions; opened, a card (#FAFAFA, #E0E0E0, radius 12, padding 16, list within 208, scrolled to the end): steps with a check circle, titles 12 after, chevrons that open substeps (44 in, #616161).
+  - Built: api::messages::odsl_statements / reasoning_view (unit tests with the captured statement), OdslBlock, ReasoningBlock; actions and statements now sit under any content (quote, Loop, files).
+  - Live: OST shows the header and, opened, the same steps scrolled to the end as Teams.
+- Tests: 908 lib pass.
+- Open: the other ODSL commands' renderers (tasks, plan, createMeeting, agendaTimer, questionsList, ...: none seen live); the "still reasoning" current-step line is from Teams' code, not measured; Teams draws the agent answer's Loop page inline (a Loop card) where OST shows its link; the posts list draws no images, so Teams' image-aware cut doesn't arise yet.
+
+- Desktop crate tests: 29 pass.
 <!-- SECTION:NOTES:END -->

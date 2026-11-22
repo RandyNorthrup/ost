@@ -74,6 +74,50 @@ Item {
     }
     /// Posts whose earlier replies are shown.
     property var expanded: ({})
+    /// Long posts and replies opened with "see more" (by message id).
+    property var seeMoreOpen: ({})
+    readonly property SeeMoreRules seeMore: SeeMoreRules {}
+    /// "see more" / "see less": Teams keeps the link where it is on the
+    /// screen (its scroll compensation), so the list moves by the change.
+    function toggleSeeMore(id, link) {
+        const before = link.mapToItem(list.contentItem, 0, 0).y
+        const o = Object.assign({}, root.seeMoreOpen)
+        if (o[id]) delete o[id]; else o[id] = true
+        root.seeMoreOpen = o
+        list.forceLayout()
+        const after = link.mapToItem(list.contentItem, 0, 0).y
+        list.contentY = list.contentY + after - before
+        list.returnToBounds()
+    }
+    /// The text heights seen (the harness's report; not bound to).
+    property var seeMoreFull: ({})
+    /// The harness: what the posts list cuts ({id, reply, limit, full, cut,
+    /// open} for each post and reply shown).
+    function seeMoreStateForTest() {
+        const out = []
+        const item = (m, reply) => {
+            const limit = seeMore.postLimit(m, reply), full = root.seeMoreFull[m.id] || 0
+            out.push({ id: m.id, reply: reply, text: String(m.text || "").slice(0, 40), limit: limit, full: full, cut: limit > 0 && full > limit, open: root.seeMoreOpen[m.id] === true })
+        }
+        for (const g of root.posts) {
+            if (g.post) item(g.post, false)
+            for (const r of g.replies) item(r, true)
+        }
+        return out
+    }
+    function seeMoreShowByIdForTest(id) {
+        const i = root.posts.findIndex(g => g.id === id || g.replies.some(r => r.id === id))
+        if (i >= 0) list.positionViewAtIndex(i, ListView.Center)
+        return i >= 0
+    }
+    function seeMoreToggleByIdForTest(id) {
+        if (!seeMoreShowByIdForTest(id)) return false
+        const o = Object.assign({}, root.seeMoreOpen)
+        if (o[id]) delete o[id]; else o[id] = true
+        root.seeMoreOpen = o
+        Qt.callLater(() => seeMoreShowByIdForTest(id))
+        return true
+    }
     /// A narrow window (Teams' channel and thread windows, measured on
     /// winpc 2026-11-09): cards 30 in from each side, names over times
     /// (the post's time 20 under its name, a reply's 17.1 under).
@@ -320,21 +364,58 @@ Item {
                             Accessible.role: Accessible.Heading
                         }
                     }
-                    MessageText {
+                    // The text, cut with "see more" when it's long (Teams:
+                    // 200 px for a post; SeeMoreRules). The cut text expands
+                    // on a click too.
+                    Item {
                         id: postBody
-                        visible: !!card.post && !postEdit.active && !card.meeting
-                        height: card.meeting ? 0 : implicitHeight
+                        readonly property real limit: card.post && !card.meeting ? seeMore.postLimit(card.post, false) : 0
+                        readonly property bool cut: limit > 0 && postText.implicitHeight > limit
+                        readonly property bool open: !!card.post && root.seeMoreOpen[card.post.id] === true
+                        readonly property real full: postText.implicitHeight
+                        onFullChanged: if (card.post) root.seeMoreFull[card.post.id] = full
+                        visible: postText.visible
                         x: 18; y: 64 + postHead.height; width: card.width - 36
-                        message: card.post
-                        mark: root.markFor(card.post ? card.post.id : "")
+                        height: card.meeting ? 0 : !cut ? postText.implicitHeight : (open ? postText.implicitHeight : limit) + 20
+                        Item {
+                            width: parent.width
+                            height: postBody.cut && !postBody.open ? postBody.limit : postText.implicitHeight
+                            clip: postBody.cut && !postBody.open
+                            MessageText {
+                                id: postText
+                                visible: !!card.post && !postEdit.active && !card.meeting
+                                width: parent.width
+                                message: card.post
+                                mark: root.markFor(card.post ? card.post.id : "")
+                            }
+                            TapHandler { enabled: postBody.cut && !postBody.open; onTapped: root.toggleSeeMore(card.post.id, postLink) }
+                        }
+                        SeeMoreLink {
+                            id: postLink
+                            visible: postBody.cut
+                            y: parent.height - 20
+                            expanded: postBody.open
+                            onToggled: root.toggleSeeMore(card.post.id, postLink)
+                        }
                     }
                     // A bot's suggested actions ("@agent") and its like /
                     // dislike (SuggestedActionsRow): measured on winpc
                     // 2026-11-22 in a posts channel, 16 in and 8 under the
                     // text, the reactions 16 under the 31.3 row.
+                    // An agent's ODSL statements (its reasoning), 8 under the
+                    // actions (OdslBlock).
+                    OdslBlock {
+                        id: postOdsl
+                        readonly property real extra: visible ? height + 8 : 0
+                        visible: !!card.post && !postEdit.active && !card.post.mine && !card.post.deleted && shown
+                        x: 18; y: postBody.y + postBody.height + (postActions.visible ? Math.max(31.3, postActions.height) + 8 : 0) + 8
+                        width: card.width - 36
+                        message: card.post || ({})
+                        rules: root.seeMore
+                    }
                     SuggestedActionsRow {
                         id: postActions
-                        readonly property real extra: visible ? Math.max(31.3, height) + 8 : 0
+                        readonly property real extra: (visible ? Math.max(31.3, height) + 8 : 0) + postOdsl.extra
                         visible: !!card.post && !postEdit.active && !card.post.mine && !card.post.deleted && shown
                         x: 16; y: postBody.y + postBody.height + 8
                         message: card.post || ({})
@@ -530,12 +611,37 @@ Item {
                                         Text { visible: rep.modelData.edited === true; text: qsTr("Edited"); font.family: theme.font; font.pixelSize: theme.small; color: theme.textSecondary }
                                     }
                                 }
-                                MessageText {
+                                // Cut at 80 (a Channel Agent's at 140), as
+                                // Teams' posts list (SeeMoreRules).
+                                Item {
                                     id: repBody
+                                    readonly property real limit: seeMore.postLimit(rep.modelData, true)
+                                    readonly property bool cut: limit > 0 && repText.implicitHeight > limit
+                                    readonly property bool open: root.seeMoreOpen[rep.modelData.id] === true
+                                    readonly property real full: repText.implicitHeight
+                                    onFullChanged: root.seeMoreFull[rep.modelData.id] = full
                                     visible: !rep.editing
                                     x: 50; y: root.compact ? 34.2 : 20; width: card.width - 70
-                                    message: rep.modelData
-                                    mark: root.markFor(rep.modelData ? rep.modelData.id : "")
+                                    height: !cut ? repText.implicitHeight : (open ? repText.implicitHeight : limit) + 20
+                                    Item {
+                                        width: parent.width
+                                        height: repBody.cut && !repBody.open ? repBody.limit : repText.implicitHeight
+                                        clip: repBody.cut && !repBody.open
+                                        MessageText {
+                                            id: repText
+                                            width: parent.width
+                                            message: rep.modelData
+                                            mark: root.markFor(rep.modelData ? rep.modelData.id : "")
+                                        }
+                                        TapHandler { enabled: repBody.cut && !repBody.open; onTapped: root.toggleSeeMore(rep.modelData.id, repLink) }
+                                    }
+                                    SeeMoreLink {
+                                        id: repLink
+                                        visible: repBody.cut
+                                        y: parent.height - 20
+                                        expanded: repBody.open
+                                        onToggled: root.toggleSeeMore(rep.modelData.id, repLink)
+                                    }
                                 }
                                 Loader {
                                     id: repEdit

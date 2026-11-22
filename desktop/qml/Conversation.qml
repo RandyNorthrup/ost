@@ -81,8 +81,47 @@ Rectangle {
     function suggestionsForTest(pick) {
         const m = (root.messages || []).filter(x => (x.suggested || []).length > 0 || x.feedback_loop).pop()
         if (!m) return { found: false }
-        if (pick && (m.suggested || []).length) root.suggestedAction(m, m.suggested[0])
+        const pickable = (m.suggested || []).filter(a => a.kind !== "odsl")
+        if (pick && pickable.length) root.suggestedAction(m, pickable[0])
         return { found: true, id: m.id, sender: m.sender, app: m.sender_app || "", ai: !!m.ai_agent, actions: (m.suggested || []).map(a => a.title), feedback: !!m.feedback_loop }
+    }
+    // Teams' "see more" (SeeMoreRules): in chats and threads only an
+    // agent's long message is cut; in a posts channel's list every long
+    // post and reply (ChannelPosts).
+    readonly property SeeMoreRules seeMore: SeeMoreRules {}
+    property var seeMoreOpen: ({})
+    /// The harness: the message whose reasoning shows opened.
+    property string reasoningOpenForTest: ""
+    /// The cut content's full heights seen (the harness's report).
+    property var seeMoreFull: ({})
+    readonly property string threadKind: isChannel ? "channel" : isMeetingChat ? "meeting" : "chat"
+    function seeMoreForTest() {
+        if (postsLayout) return { layout: "posts", items: channelPosts.seeMoreStateForTest() }
+        return { layout: threadsLayout ? "threads" : "chat", items: (root.messages || []).filter(m => !m.event && m.kind === "message").map(m => {
+            const limit = seeMore.chatLimit(m, threadKind, !m.root_id || m.root_id === m.id), full = root.seeMoreFull[m.id] || 0
+            return { id: m.id, sender: m.sender, text: String(m.text || "").slice(0, 40), limit: limit, full: full, cut: limit > 0 && full > limit, open: root.seeMoreOpen[m.id] === true }
+        }) }
+    }
+    /// See more / See less: Teams keeps the button where it is on the
+    /// screen (its scroll compensation), so the list moves by the change.
+    function toggleSeeMore(id, button) {
+        const before = button.mapToItem(list.contentItem, 0, 0).y
+        const o = Object.assign({}, root.seeMoreOpen)
+        if (o[id]) delete o[id]; else o[id] = true
+        root.seeMoreOpen = o
+        list.forceLayout()
+        const after = button.mapToItem(list.contentItem, 0, 0).y
+        list.contentY = list.contentY + after - before
+        list.returnToBounds()
+    }
+    function seeMoreShowForTest(id) { if (postsLayout) channelPosts.seeMoreShowByIdForTest(id); else jumpToMessage(id) }
+    function seeMoreToggleForTest(id) {
+        if (postsLayout) return channelPosts.seeMoreToggleByIdForTest(id)
+        const o = Object.assign({}, root.seeMoreOpen)
+        if (o[id]) delete o[id]; else o[id] = true
+        root.seeMoreOpen = o
+        Qt.callLater(() => jumpToMessage(id))
+        return true
     }
     function composeTextForTest() { return compose.visible ? compose.exportForTest() : "" }
     // In a posts channel Teams opens the post's reply with the mention.
@@ -2536,36 +2575,59 @@ Rectangle {
                     // text 21.1 lower than usual (Teams).
                     : msg.scheduledMsg ? 21.1 : 0)
                 // In a flow the text's own blank line sets the gap (Teams).
-                readonly property real picsTop: showBody ? body.y + bodyH + (inFlow ? 0 : 8) : (bare ? 0 : 8)
+                readonly property real picsTop: showBody ? body.y + bodyH + seeExtra + (inFlow ? 0 : 8) : (bare ? 0 : 8)
                 readonly property bool hasPics: imgs.length > 0 || inFlow
                 // A code card spans the bubble (Teams).
                 readonly property bool hasCode: flow.some(p => !!p.code)
                 readonly property real picsH: hasPics ? pics.implicitHeight : 0
-                readonly property real filesTop: hasPics ? picsEnd + 8 : (showBody ? body.y + bodyH + 8 : 8)
+                readonly property real filesTop: hasPics ? picsEnd + 8 : (showBody ? body.y + bodyH + seeExtra + 8 : 8)
                 // Measured: a card sits 8 under the bubble's top (or the text),
                 // 17.3 in, and the bubble ends 10.7 under it.
-                readonly property real cardsTop: botCard ? 0 : showBody ? body.y + bodyH + 8 : 8
+                readonly property real cardsTop: botCard ? 0 : showBody ? body.y + bodyH + seeExtra + 8 : 8
                 // A bot's suggested actions ("@agent") and its like / dislike
                 // (Teams, a Channel Agent's welcome measured on winpc
                 // 2026-11-21): a 31.3 row 8 under the text.
                 readonly property var suggested: (msg.modelData.suggested || []).filter(a => a.kind !== "odsl")
-                readonly property bool hasActions: !msg.mine && !msg.modelData.deleted && showBody && cards.length === 0 && files.length === 0 && !hasPics && !urlPreview
+                // Under whatever the message holds (a Channel Agent's answer
+                // carries a quote and a Loop page too).
+                readonly property bool hasActions: !msg.mine && !msg.modelData.deleted && !bare && !botCard
                     && (suggested.length > 0 || !!msg.modelData.feedback_loop)
-                readonly property real actionsH: hasActions ? Math.max(31.3, actionsRow.height) + 8 : 0
+                readonly property real actionsH: hasActions ? Math.max(31.3, actionsRow.implicitHeight) + 8 : 0
+                // An agent's ODSL statements (its reasoning, or Teams' note
+                // that some can't be shown): 8 under the actions.
+                readonly property bool hasOdsl: !msg.mine && !msg.modelData.deleted && !bare && !botCard && odslBlock.shown
+                readonly property real odslH: hasOdsl ? odslBlock.height + 8 : 0
+                // Where the content ends (the actions and statements follow).
+                readonly property real contentEnd: cards.length > 0 ? cardsTop + cardCol.height
+                    : files.length > 0 ? filesTop + fileCol.implicitHeight
+                    : hasPics ? picsEnd
+                    : urlPreview ? body.y + bodyH + seeExtra + 6 + 96
+                    : body.y + bodyH + seeExtra
+                // An agent's long message (SeeMoreRules; measured on winpc
+                // 2026-11-22, a Channel Agent's welcome in a threads channel):
+                // its text cut at 220 under an 80 px fade with "See more"
+                // over the bottom; open, "See less" 8 under the text. The
+                // actions follow the box.
+                readonly property real fullText: bodyH
+                readonly property real seeLimit: root.postsLayout || !showBody ? 0 : root.seeMore.chatLimit(msg.modelData, root.threadKind, !msg.modelData.root_id || msg.modelData.root_id === msg.modelData.id)
+                readonly property bool seeCut: seeLimit > 0 && fullText > seeLimit
+                readonly property bool seeOpen: root.seeMoreOpen[msg.modelData.id] === true
+                onFullTextChanged: if (seeLimit > 0) root.seeMoreFull[msg.modelData.id] = fullText
+                readonly property real seeExtra: !seeCut ? 0 : seeOpen ? 8 + seeButton.height : seeLimit - fullText
                 width: root.postsLayout ? msg.maxBubble
                     : botCard ? cardCol.width
                     : cards.length > 0 ? Math.max(cardCol.width + 2 * (linkCardFirst ? 15.67 : 17.3), showBody ? Math.min(msg.maxBubble, body.implicitWidth + 2 * pad) : 0)
                     : hasCode ? msg.maxBubble
-                    : Math.min(msg.maxBubble, Math.max(urlPreview ? 460 + 2 * pad : 0, hasActions ? actionsRow.implicitWidth : 0, msg.sharedHead ? sharedRow.implicitWidth : 0, msg.scheduledMsg ? scheduleLine.implicitWidth : 0, subjectLine.visible ? subjectLine.implicitWidth : 0, showBody ? body.implicitWidth + (msg.modelData.deleted && msg.mine ? 12 + undoMetrics.advanceWidth : 0) : 0, pics.implicitWidth, files.length > 0 ? fileCol.implicitWidth : 0, msg.modelData.quote ? quoteCard.width : 0, msg.modelData.forward ? fwdCard.width : 0) + 2 * pad)
+                    : Math.min(msg.maxBubble, Math.max(urlPreview ? 460 + 2 * pad : 0, hasActions ? actionsRow.implicitWidth : 0, hasOdsl ? odslBlock.wanted : 0, msg.sharedHead ? sharedRow.implicitWidth : 0, msg.scheduledMsg ? scheduleLine.implicitWidth : 0, subjectLine.visible ? subjectLine.implicitWidth : 0, showBody ? body.implicitWidth + (msg.modelData.deleted && msg.mine ? 12 + undoMetrics.advanceWidth : 0) : 0, pics.implicitWidth, files.length > 0 ? fileCol.implicitWidth : 0, msg.modelData.quote ? quoteCard.width : 0, msg.modelData.forward ? fwdCard.width : 0) + 2 * pad)
                 TextMetrics { id: undoMetrics; text: qsTr("Undo"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
                 height: botCard ? cardCol.height
-                    : cards.length > 0 ? cardsTop + cardCol.height + (linkCardFirst ? 8.67 : 10.7)
+                    : cards.length > 0 ? cardsTop + cardCol.height + (linkCardFirst ? 8.67 : 10.7) + actionsH + odslH
                     : bare && files.length === 0 ? (bigEmoticons ? bodyH : picsH)
-                    : files.length > 0 ? filesTop + fileCol.implicitHeight + 8
-                    : hasPics ? picsEnd + (endsInText || (showBody && !inFlow) ? 8.6 : 8)
-                    : urlPreview ? body.y + bodyH + 6 + 96 + (root.compact ? 2 : 14.6)
-                    : root.compact ? bodyH + 2 + quoteShift + actionsH
-                    : bodyH + 15.3 + quoteShift + actionsH
+                    : files.length > 0 ? filesTop + fileCol.implicitHeight + 8 + actionsH + odslH
+                    : hasPics ? picsEnd + (endsInText || (showBody && !inFlow) ? 8.6 : 8) + actionsH + odslH
+                    : urlPreview ? body.y + bodyH + seeExtra + 6 + 96 + (root.compact ? 2 : 14.6) + actionsH + odslH
+                    : root.compact ? bodyH + 2 + quoteShift + actionsH + seeExtra + odslH
+                    : bodyH + 15.3 + quoteShift + actionsH + seeExtra + odslH
                 // Teams: 6 px corners, squared on the inner side where a
                 // group's bubbles meet (bottom of the first, top of the rest).
                 readonly property real r: root.postsLayout ? theme.radius : 6
@@ -3012,11 +3074,29 @@ Rectangle {
                 SuggestedActionsRow {
                     id: actionsRow
                     visible: bubble.hasActions
-                    x: bubble.pad; y: body.y + bubble.bodyH + 8
+                    // 8 under the text, or under its see-more box (Teams
+                    // keeps the actions out of the cut).
+                    x: bubble.pad; y: bubble.contentEnd + 8
                     message: msg.modelData
                     host: root
                     maxWidth: msg.maxBubble - 2 * bubble.pad
                 }
+                OdslBlock {
+                    id: odslBlock
+                    visible: bubble.hasOdsl
+                    x: bubble.pad; y: bubble.contentEnd + bubble.actionsH + 8
+                    width: bubble.width - 2 * bubble.pad
+                    message: msg.modelData
+                    rules: root.seeMore
+                    openReasoning: root.reasoningOpenForTest === msg.modelData.id
+                }
+                // An agent's long text, cut at its see-more limit (a TextEdit
+                // doesn't clip its own text; this does, at the bubble's origin
+                // so the text keeps its place).
+                Item {
+                    width: bubble.width
+                    height: bubble.seeCut && !bubble.seeOpen ? body.y + bubble.seeLimit : bubble.height
+                    clip: bubble.seeCut && !bubble.seeOpen
                 // Selectable, as in Teams (a message's text can be selected and
                 // copied); read-only.
                 TextEdit {
@@ -3047,6 +3127,66 @@ Rectangle {
                         z: -1
                         active: bubble.showBody && !msg.modelData.deleted && /<code/.test(msg.modelData.html || "")
                         sourceComponent: CodeBoxes { edit: body }
+                    }
+                }
+                }
+                // Teams' see-more for an agent's message (349533 `cs`, measured
+                // on winpc 2026-11-22): cut, an 80 px fade from clear to the
+                // bubble's colour at the bottom of the 220 and, over it, a
+                // 39.3 box in the bubble's colour holding "See more" 8 down;
+                // open, the box follows the text with "See less". The button
+                // is a transparent Fluent button (96 x 31.3 at least, 14/20
+                // regular brand, no side padding) whose 14 px chevron shows
+                // 6 after the text on hover; Teams keeps it in place.
+                Rectangle {
+                    visible: bubble.seeCut && !bubble.seeOpen
+                    x: bubble.pad; y: body.y + bubble.seeLimit - 80
+                    width: bubble.width - 2 * bubble.pad; height: 80
+                    gradient: Gradient {
+                        GradientStop { position: 0; color: Qt.rgba(1, 1, 1, 0) }
+                        GradientStop { position: 1; color: bubble.color }
+                    }
+                }
+                Rectangle {
+                    visible: bubble.seeCut
+                    x: bubble.pad
+                    y: bubble.seeOpen ? body.y + bubble.fullText : body.y + bubble.seeLimit - height
+                    width: bubble.width - 2 * bubble.pad; height: 8 + seeButton.height
+                    color: bubble.color
+                    Item {
+                        id: seeButton
+                        y: 8
+                        width: Math.max(96, seeRow.implicitWidth); height: 31.33
+                        Row {
+                            id: seeRow
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 6
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: bubble.seeOpen ? qsTr("See less", "meetingCollaboration:ka3s29all") : qsTr("See more", "meetingCollaboration:k6i9a4r05")
+                                font.family: theme.font; font.pixelSize: 14
+                                color: theme.onFill(bubble, theme.brand)
+                            }
+                            Item {
+                                width: 20; height: 20
+                                anchors.verticalCenter: parent.verticalCenter
+                                FluentIcon {
+                                    anchors.verticalCenter: parent.verticalCenter; size: 14
+                                    name: bubble.seeOpen ? "chevron-up-20" : "chevron-down-20"
+                                    color: theme.onFill(bubble, theme.brand)
+                                    opacity: seeHover.hovered || seeButton.activeFocus ? 1 : 0
+                                    Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.BezierSpline; easing.bezierCurve: [0.4, 0, 0.2, 1, 1, 1] } }
+                                }
+                            }
+                        }
+                        HoverHandler { id: seeHover; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { onTapped: root.toggleSeeMore(msg.modelData.id, seeButton) }
+                        activeFocusOnTab: true
+                        Keys.onSpacePressed: root.toggleSeeMore(msg.modelData.id, seeButton)
+                        Keys.onReturnPressed: root.toggleSeeMore(msg.modelData.id, seeButton)
+                        Accessible.role: Accessible.Button
+                        Accessible.name: bubble.seeOpen ? qsTr("See less", "meetingCollaboration:ka3s29all") : qsTr("See more", "meetingCollaboration:k6i9a4r05")
+                        Accessible.onPressAction: root.toggleSeeMore(msg.modelData.id, seeButton)
                     }
                 }
                 // Undo, 12 px after the tombstone text (14 px semibold brand), for

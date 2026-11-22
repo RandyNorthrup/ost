@@ -664,6 +664,11 @@ pub struct MessageView {
     /// Teams' like / dislike under it.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub feedback_loop: bool,
+    /// A bot message's kind as Teams logs it (properties.botMetadata's
+    /// botTelemetryMessageType, e.g. the Facilitator's "QuestionsSummarization"):
+    /// Teams cuts some of them with "see more".
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub bot_kind: String,
     pub time: String,
     pub mine: bool,
     /// Sanitised HTML for display (a subset Qt renders), "" when deleted.
@@ -1756,6 +1761,142 @@ async fn name_events(client: &TeamsClient, chat_id: &str, out: &mut [MessageView
     }
 }
 
+/// A bot message's botTelemetryMessageType (properties.botMetadata, a JSON
+/// string; Teams 26304 r_data-resolvers-chat reads it the same way).
+pub fn bot_kind_of(v: Option<&serde_json::Value>) -> String {
+    let parsed = match v {
+        Some(serde_json::Value::String(t)) => serde_json::from_str::<serde_json::Value>(t).ok(),
+        Some(o @ serde_json::Value::Object(_)) => Some(o.clone()),
+        _ => None,
+    };
+    parsed
+        .and_then(|p| p.get("botTelemetryMessageType").and_then(|x| x.as_str()).map(str::to_string))
+        .unwrap_or_default()
+}
+
+/// An Action.ODSL's statements as Teams' suggested-action-odsl chunk reads
+/// them (Teams 26304, 50945 `Q`): the value is JSON
+/// `{actions: {odsl: {statements: [{name, arguments}]}}}`; the
+/// bookkeeping statements (proactiveDiagnostics, orchestratorMetadata,
+/// CustomizationMetadata) are left out. Each comes back as
+/// `{name, group}`, `group` being its "group" argument (Teams then shows
+/// the first statement with a menu of all of them). Not JSON: none.
+pub fn odsl_statements(value: &str) -> Vec<serde_json::Value> {
+    const HIDDEN: [&str; 3] = ["proactiveDiagnostics", "orchestratorMetadata", "CustomizationMetadata"];
+    let v: serde_json::Value = match serde_json::from_str(&value.replace("&quot;", "\"")) {
+        Ok(v) => v,
+        Err(_) => return Vec::new(),
+    };
+    let arg = |st: &serde_json::Value, name: &str| -> serde_json::Value {
+        let args: Vec<&serde_json::Value> = match &st["arguments"] {
+            serde_json::Value::Array(a) => a.iter().collect(),
+            serde_json::Value::Object(o) => o.values().collect(),
+            _ => Vec::new(),
+        };
+        args.into_iter().find(|x| x["name"].as_str() == Some(name)).map(|x| x["value"].clone()).unwrap_or(serde_json::Value::Null)
+    };
+    v.pointer("/actions/odsl/statements")
+        .and_then(|s| s.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|st| {
+            let name = st["name"].as_str()?;
+            if HIDDEN.contains(&name) {
+                return None;
+            }
+            let mut out = serde_json::json!({ "name": name, "group": arg(st, "group") });
+            if name == "reasoning" {
+                out["reasoning"] = reasoning_view(|n| arg(st, n));
+            }
+            Some(out)
+        })
+        .collect()
+}
+
+/// A "reasoning" ODSL statement as Teams' ReasoningCommandRenderer reads it
+/// (Teams 26304, 541316 `Ru` / `Eu` / `xu`), from its arguments: the time
+/// it took (`duration`, ms), whether it's still going (`active`), the
+/// service's own strings (`localizedStrings`: [[{KEY: {value}}]], keys in
+/// capitals), and `iterations`, a JSON list of steps grouped by
+/// iterationNumber. Out:
+/// - `duration` (ms or null), `active`, `strings` {KEY: text};
+/// - `steps`: each iteration's chain of thought (Teams' natural-language
+///   view): {title, active, substeps: [{title, link}]} (`link`, a
+///   workflow trigger step's messageLink);
+/// - `iterations`: the other view (enableChainOfThoughtNaturalLanguage
+///   off): {number, seconds (the longest step, whole), intents
+///   "intent (type), …"}.
+/// Null when there are no iterations and no goals (Teams draws nothing).
+pub fn reasoning_view(arg: impl Fn(&str) -> serde_json::Value) -> serde_json::Value {
+    use serde_json::{Value, json};
+    let parse = |v: Value| -> Value {
+        match v {
+            Value::String(t) => serde_json::from_str(&t).unwrap_or(Value::Null),
+            other => other,
+        }
+    };
+    let iterations = parse(arg("iterations"));
+    let goals = parse(arg("goals"));
+    let list = iterations.as_array().cloned().unwrap_or_default();
+    if list.is_empty() && goals.as_array().is_none_or(|g| g.is_empty()) {
+        return Value::Null;
+    }
+    // Grouped by iterationNumber, in first-seen order (Teams' Map).
+    let mut groups: Vec<(i64, Vec<Value>)> = Vec::new();
+    for it in list {
+        let n = it["iterationNumber"].as_i64().unwrap_or(0);
+        match groups.iter_mut().find(|(k, _)| *k == n) {
+            Some((_, g)) => g.push(it),
+            None => groups.push((n, vec![it])),
+        }
+    }
+    let truthy = |v: &Value| v.as_bool() == Some(true) || v.as_str() == Some("true");
+    let mut steps = Vec::new();
+    let mut iters = Vec::new();
+    for (n, items) in &groups {
+        for it in items {
+            let cot = &it["intentResponse"]["chainOfThought"];
+            if cot.is_object() {
+                let subs: Vec<Value> = cot["substeps"].as_array().into_iter().flatten().map(|s| {
+                    let trigger = matches!(s["type"].as_str(), Some("TriggerStep") | Some("RoutineTriggerStep"));
+                    json!({ "title": s["title"].as_str().unwrap_or_default(), "link": if trigger { s.pointer("/arguments/messageLink").cloned().unwrap_or(Value::Null) } else { Value::Null } })
+                }).collect();
+                steps.push(json!({ "title": cot["title"].as_str().unwrap_or_default(), "active": truthy(&it["active"]), "substeps": subs }));
+            }
+        }
+        let longest = items.iter().filter_map(|i| i["responseDurationMs"].as_f64()).fold(0.0_f64, f64::max);
+        let intents: Vec<String> = items.iter().map(|i| {
+            let ir = &i["intentResponse"];
+            format!("{} ({})", ir["intent"].as_str().filter(|s| !s.is_empty()).unwrap_or("Unknown"), ir["intentType"].as_str().filter(|s| !s.is_empty()).unwrap_or("Unknown"))
+        }).collect();
+        iters.push(json!({ "number": n, "seconds": (longest / 1000.0).floor() as i64, "intents": intents.join(", "), "active": items.iter().any(|i| truthy(&i["active"])) }));
+    }
+    // The service's strings: nested lists of {KEY: {value}} objects.
+    let mut strings = serde_json::Map::new();
+    fn collect(v: &Value, out: &mut serde_json::Map<String, Value>) {
+        match v {
+            Value::Array(a) => a.iter().for_each(|x| collect(x, out)),
+            Value::Object(o) => {
+                for (k, x) in o {
+                    if let Some(t) = x.get("value").and_then(|t| t.as_str()) {
+                        out.insert(k.to_uppercase(), json!(t));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    collect(&parse(arg("localizedStrings")), &mut strings);
+    let duration = arg("duration");
+    json!({
+        "duration": duration.as_f64().or_else(|| duration.as_str().and_then(|s| s.parse().ok())),
+        "active": truthy(&arg("active")),
+        "strings": strings,
+        "steps": steps,
+        "iterations": iters,
+    })
+}
+
 /// A bot message's suggested actions as Teams parses them (Teams 26304's
 /// suggested-actions parser, r_data-resolvers-chat `Es`): the first 3 that
 /// parse (Teams allows 4 for its own Copilot apps), by type, without case:
@@ -1819,7 +1960,10 @@ pub fn suggested_actions(v: Option<&serde_json::Value>) -> Vec<serde_json::Value
         let parsed = match a["type"].as_str().unwrap_or_default().to_lowercase().as_str() {
             "imback" => (!a["value"].is_null() && a["value"] != json!("")).then(|| json!({ "title": title, "kind": "imBack", "text": text_of(&a["value"]) })),
             "action.compose" => compose(a, title),
-            "action.odsl" => Some(json!({ "title": title, "kind": "odsl", "value": if a["value"].is_null() { String::new() } else { text_of(&a["value"]) } })),
+            "action.odsl" => {
+                let value = if a["value"].is_null() { String::new() } else { text_of(&a["value"]) };
+                Some(json!({ "title": title, "kind": "odsl", "statements": odsl_statements(&value), "value": value }))
+            }
             "action.submit" => a["value"].as_object().map(|o| {
                 let name = o.get("name").and_then(|n| n.as_str()).filter(|n| !n.is_empty()).unwrap_or("suggestedActions/submit");
                 let value = o.get("value").filter(|x| !x.is_null()).unwrap_or(&a["value"]);
@@ -2002,6 +2146,7 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
         sender_app: if bot { s("/properties/fromAppMetadata/id") } else { String::new() },
         suggested: if bot { suggested_actions(m.pointer("/properties/suggestedActions")) } else { Vec::new() },
         feedback_loop: bot && m.pointer("/properties/botFeedbackLoopEnabled").is_some_and(|v| v.as_bool() == Some(true) || v.as_str() == Some("true")),
+        bot_kind: if bot { bot_kind_of(m.pointer("/properties/botMetadata")) } else { String::new() },
         time,
         mine,
         html: String::new(),
@@ -5189,8 +5334,44 @@ mod tests {
         ]);
         let odsl = serde_json::json!({"actions": [{"title": "Report", "type": "Action.ODSL", "value": {"actions": {}}}]});
         assert_eq!(super::suggested_actions(Some(&odsl))[0]["kind"], "odsl");
+        // Its statements, the bookkeeping ones left out.
+        let st = super::odsl_statements(r#"{"actions":{"odsl":{"statements":[{"name":"orchestratorMetadata","arguments":[]},{"name":"tasks","arguments":[{"name":"group","value":"g1"}]},{"name":"statusReportConfiguration","arguments":{"a":{"name":"x","value":1}}}]}}}"#);
+        assert_eq!(st, vec![serde_json::json!({"name": "tasks", "group": "g1"}), serde_json::json!({"name": "statusReportConfiguration", "group": null})]);
+        assert!(super::odsl_statements("not json").is_empty());
+        // A Channel Agent's reasoning (captured in "OST TEST 206 agent I",
+        // 2026-11-22; trimmed): its steps' chain of thought, the service's
+        // header text.
+        let iterations = serde_json::json!([
+            {"iterationNumber": 0, "responseDurationMs": 142.8, "intentResponse": {"intent": "GetContext", "chainOfThought": {"title": "Gathering info", "substeps": null}}},
+            {"iterationNumber": 3, "responseDurationMs": 3585.1, "intentResponse": {"intent": "create_loop", "intentType": null, "chainOfThought": {"title": "Creating Loop page", "substeps": [{"title": "Channel is brand new"}]}}}
+        ]).to_string();
+        let value = serde_json::json!({"actions": {"odsl": {"statements": [{"name": "reasoning", "arguments": [
+            {"name": "duration", "value": 69447.39},
+            {"name": "iterations", "value": iterations},
+            {"name": "localizedStrings", "value": [[{"REASONING_HEADER": {"value": "Reasoned for 1 minute 9 seconds", "isLocalized": true}, "REASONING_ACTIVE_STATE": {"value": "Reasoning", "isLocalized": true}}]]}
+        ]}]}}}).to_string();
+        let r = &super::odsl_statements(&value)[0]["reasoning"];
+        assert_eq!(r["duration"], 69447.39);
+        assert_eq!(r["active"], false);
+        assert_eq!(r["strings"]["REASONING_HEADER"], "Reasoned for 1 minute 9 seconds");
+        assert_eq!(r["steps"], serde_json::json!([
+            {"title": "Gathering info", "active": false, "substeps": []},
+            {"title": "Creating Loop page", "active": false, "substeps": [{"title": "Channel is brand new", "link": null}]}
+        ]));
+        assert_eq!(r["iterations"][1], serde_json::json!({"number": 3, "seconds": 3, "intents": "create_loop (Unknown)", "active": false}));
+        // No iterations and no goals: nothing.
+        assert!(super::odsl_statements(r#"{"actions":{"odsl":{"statements":[{"name":"reasoning","arguments":[]}]}}}"#)[0]["reasoning"].is_null());
+        // paMetrics carries no statements: nothing to draw.
+        assert!(super::odsl_statements(r#"{"tca":{"alDurationMs":1}}"#).is_empty());
+        assert_eq!(super::odsl_statements("{&quot;actions&quot;:{&quot;odsl&quot;:{&quot;statements&quot;:[{&quot;name&quot;:&quot;reasoning&quot;}]}}}")[0]["name"], "reasoning");
         let bad = serde_json::json!({"actions": [{"title": "ok", "type": "imBack", "value": "a"}, {"title": 1, "type": "imBack", "value": "b"}]});
         assert!(super::suggested_actions(Some(&bad)).is_empty());
+        // botMetadata is a JSON string; its botTelemetryMessageType names
+        // the bot message's kind (the Facilitator's see-more rule).
+        let meta = serde_json::json!("{\"replyToId\":\"1\",\"botTelemetryMessageType\":\"QuestionsSummarization\"}");
+        assert_eq!(super::bot_kind_of(Some(&meta)), "QuestionsSummarization");
+        assert_eq!(super::bot_kind_of(Some(&serde_json::json!("not json"))), "");
+        assert_eq!(super::bot_kind_of(None), "");
         // Its AddCustomApp ("OST TEST 206 agent G", 2026-11-21): the agent's
         // app instance as the target.
         let add = serde_json::json!({"id": "1795280500000", "messagetype": "ThreadActivity/AddCustomApp",

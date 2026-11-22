@@ -13,7 +13,7 @@ import QtQuick.Controls.Basic
 // - openUrl: the same button, with a 16 px icon for "Preferences"
 //   (document text) and "Skills" (folder);
 // - Action.Submit: disabled while its invoke is under way;
-// - Action.ODSL (Copilot's own statements) isn't drawn here.
+// - Action.ODSL (an agent's own statements) is drawn by OdslBlock.
 // Like / dislike (24 x 31.3, 16 px thumbs, #424242; filled once picked)
 // open Teams' feedback form.
 Row {
@@ -84,7 +84,7 @@ Row {
             Rectangle {
                 id: thumb
                 required property var modelData
-                readonly property bool picked: !!row.host && row.host.botFeedback[row.message.id] === modelData.k
+                readonly property bool picked: !!row.host && (row.host.botFeedback || {})[row.message.id] === modelData.k
                 width: 24; height: 31.3; radius: 4
                 color: "transparent"
                 FluentIcon {
