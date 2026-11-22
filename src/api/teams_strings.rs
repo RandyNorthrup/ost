@@ -174,6 +174,24 @@ pub fn parse_json_modules(js: &str, with_ids: bool) -> HashMap<String, String> {
     out
 }
 
+/// The profile card's (Live Persona Card) strings file:
+/// `this.LivePersonaCardStrings.strings = {"#id":"text",…};`, keys as they
+/// are.
+pub fn parse_lpc(js: &str) -> HashMap<String, String> {
+    let mut out = HashMap::new();
+    let Some(i) = js.find("LivePersonaCardStrings.strings") else { return out };
+    let Some(j) = js[i..].find('{').map(|j| i + j) else { return out };
+    let mut de = serde_json::Deserializer::from_str(&js[j..]).into_iter::<Value>();
+    if let Some(Ok(Value::Object(m))) = de.next() {
+        for (k, v) in m {
+            if let Value::String(t) = v {
+                out.insert(k, t);
+            }
+        }
+    }
+    out
+}
+
 /// The Stream web recorder's language chunk (Teams' webrec2-language-<lang>):
 /// `loc:new a({"effects.boards.graph":"Graph",…})`, keys as they are.
 pub fn parse_loc_table(js: &str) -> HashMap<String, String> {
@@ -792,6 +810,7 @@ pub async fn fetch(client: &reqwest::Client, res: &Resources, ids: &[IdRow], ids
                 anyhow::Ok(match src.kind.as_str() {
                     "esm" => parse_esm_tables(&body),
                     "loc" => parse_loc_table(&body),
+                    "lpc" => parse_lpc(&body),
                     "flatjson" => {
                         let mut t = HashMap::new();
                         if let Ok(v) = serde_json::from_str::<Value>(&body) {
@@ -930,6 +949,15 @@ fn decode_body(b: &[u8]) -> anyhow::Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn profile_card_strings() {
+        let js = "this.LivePersonaCardStrings = {};\nthis.LivePersonaCardStrings.culture = \"de-de\";\nthis.LivePersonaCardStrings.strings = {\"#ak1ylq\":\"Weniger lesen\",\"#-cohy87\":\"{0} von {1}\"};\nfoo();";
+        let t = parse_lpc(js);
+        assert_eq!(t.get("#ak1ylq").map(String::as_str), Some("Weniger lesen"));
+        assert_eq!(t.get("#-cohy87").map(String::as_str), Some("{0} von {1}"));
+        assert!(parse_lpc("nothing here").is_empty());
+    }
 
     #[test]
     fn mszip_with_unknown_history() {

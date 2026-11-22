@@ -133,6 +133,17 @@ def json_parse_holding(s, key):
             return out
 
 
+def parse_lpc(s):
+    """The profile card's strings file: `this.LivePersonaCardStrings.strings
+    = {"#id": "text", ...};` -> {id: text}."""
+    i = s.find("LivePersonaCardStrings.strings")
+    if i < 0:
+        return {}
+    j = s.find("{", i)
+    obj, _ = json.JSONDecoder().raw_decode(s[j:])
+    return {k: v for k, v in obj.items() if isinstance(v, str)}
+
+
 def parse_flat_json(s):
     """A plain JSON string table (nested objects flattened with dots)."""
     out = {}
@@ -355,6 +366,20 @@ def collect(locales, assets_dir, cache):
                         if loc != "en-us":
                             entry["files"][loc] = path
                         break
+        elif kind == "lpc":
+            # the profile card (Live Persona Card): one strings file per
+            # culture, named by Loki's card configuration (examples/
+            # lpc_strings lists them; kept in the source's "files")
+            entry["base"] = cfg["base"]
+            for loc in locales:
+                file = cfg["files"].get(loc)
+                if not file:
+                    continue
+                text = get(entry["base"] + file, cache)
+                if text is not None:
+                    strings.setdefault(loc, {})[ns] = parse_lpc(text)
+                    if loc != "en-us":
+                        entry["files"][loc] = file
         elif "teamsContext" in cfg:
             # a webpack context of per-language JSON files
             # (`"./de-de/HostUxStrings.json":[<module>,<chunk>]`, Loop's host
