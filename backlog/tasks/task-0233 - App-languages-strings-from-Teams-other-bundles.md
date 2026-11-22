@@ -1,10 +1,10 @@
 ---
 id: TASK-0233
 title: 'App languages: strings from Teams'' other bundles'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-11-20T04:10:00Z'
-updated_date: '2026-11-22T20:44:00Z'
+updated_date: '2026-11-22T21:19:00Z'
 labels:
   - desktop
 dependencies: []
@@ -19,7 +19,7 @@ Found in TASK-0142: about 800 OST strings stay English because Teams keeps their
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 OST's text for the Stream player, recorder, file preview and mirrored web-app screens appears in the chosen language with Teams' wording, fetched at runtime like the main catalogue (no Microsoft strings in the repo)
-- [ ] #2 untranslated.txt lists only text that Teams itself has no translation for
+- [x] #2 untranslated.txt lists only text that Teams itself has no translation for
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -82,4 +82,12 @@ Found in TASK-0142: about 800 OST strings stay English because Teams keeps their
 - 2026-11-22 (agent setJ) verified: the German catalogue built from teams_resources.json (new ignored live test events_and_profile_card_live, passed on linuxlt): "Next profile" -> "Nächstes Profil", "Back to previous profile" -> "Zurück zum vorherigen Profil", "People reporting to %1" -> "%1 unterstellte Personen" (OST puts the name where the language does). The Events templates are keyed to Teams' strings (x.ve), but Teams' own German chunk (virtualEvents-locale-de-de-9c6f2c440803c370.js) still has them in English (new strings not yet translated by Microsoft), so Teams shows them in English too; a newer runtime in extra_sources.json x.ve brings their translations once Teams ships them.
 - untranslated.txt now 413 lines (+ header). Left from the Events app: OST's own error texts, the invite-card preview labels and reminder fields, "Ask a question", "Choose an image" - none is in Teams' virtualEvents tables (old or new build). New: "Unread channel messages" (the hub's, Teams' unreadChannelMessageLabel comes from its hub resolver; no string-table entry found).
 - cargo test --lib: 906 passed; desktop tests: 29 passed.
+
+- 2026-11-22 merged (294c5b9): profile card asked as MicrosoftTeams gets the newer files (the last three strings translate); Events templates from the Events app's newer build (x.ve); untranslated.txt 414 lines — OST's own texts and ones absent from every Teams string file checked.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+OST's text on screens whose translations Teams keeps outside its main table now comes from those bundles at runtime: OneDrive's web apps, the clip recorder (OneCamera) and the Stream web recorder, the Stream player, Outlook's calendar, Planner, the profile card (asked as Teams asks, for the newer files) and the Events app's template strings, plus meeting options in the app language. A bundle's wording is used only on that bundle's screens. untranslated.txt is down to 414 lines: OST's own texts (accessibility, OST-only pages) and texts no Teams string file has. No Microsoft strings in the repository.
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -1,10 +1,10 @@
 ---
 id: TASK-0244
 title: Second-account extras and delegation mention pills as Teams
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-11-22T18:26:00Z'
-updated_date: '2026-11-22T20:44:00Z'
+updated_date: '2026-11-22T21:18:00Z'
 labels:
   - desktop
   - settings
@@ -19,8 +19,8 @@ Left from TASK-0078 and TASK-0242: Teams' app bar gets 'Activity in other accoun
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 With a second account, the app bar's 'Activity in other accounts and orgs' opens what Teams opens
-- [ ] #2 Custom instructions show @mentions as Teams' pills, and the custom-hours layout matches Teams
+- [x] #1 With a second account, the app bar's 'Activity in other accounts and orgs' opens what Teams opens
+- [x] #2 Custom instructions show @mentions as Teams' pills, and the custom-hours layout matches Teams
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -37,4 +37,17 @@ Left from TASK-0078 and TASK-0242: Teams' app bar gets 'Activity in other accoun
   - AC2: the pills - Custom instructions keep each person as one object character in the plain-text box (richtext.cpp chips: a QTextObjectInterface registered by hand, its room = the pill + 2 px margins; QML draws the pill over it: border, #F5F5F5, Call brand / ContactCard #341A51 icon, name 12); "@" at a word start stays typed and opens the menu at it; the pick replaces it with the pill and a space; Save/length use the raw text with Teams' tags. Custom hours: 15/8 spacing, Available 16 before the switch 8 in, right-aligned 120 x 32 filled selects, 24 x 23.3 +/trash (brand on hover), the first slot's remove at five.
   - Verified on linuxlt (spatest, --setj-pa): ICD turned on, instructions with OST Test 2 (route) and OST Test 3 (contact) shown as pills (not saved), "@" typed -> menu at the "@" -> contact picked -> pill; raw text read back with Teams' tags; custom hours saved (Monday 9-5 and 6-7 PM, weekdays 9-5) and read back, pictured, then back to work hours (read back custom:false); ICD off again (read back).
   - Open: Pin this org (Teams pins an org's own tile to the app bar; not built - the pinned tile wasn't measured); OST's activity feed shows Graph-app activities with their raw template ids ("Q&A: teamsQnAEnabledForMeeting") where Teams words them ("Q&A is enabled for this event. Ask your questions!"), in the Activity view and so in the hub; an account's entries are as fresh as its own window (each account is its own OST profile). Test changes left: none on winpc (OST Test 2 signed out, ICD off, work hours); accounts.json on linuxlt was rewritten without "org" by another build meanwhile (OST falls back to the address).
+
+- 2026-11-22 merged (294c5b9); 908 lib + 29 desktop tests pass. Pin this org and the raw activity titles moved to TASK-0245.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Second-account hub and delegation details as Teams.
+
+- With a second account the app bar gets Teams' "Activity in other accounts and orgs" tile with its count; its 380-wide flyout has Unread / Channels / Chats pills, Filter (Mentions, Tag mentions, Followed threads, Orgs), one section per other account with Account settings, its unread activity (missed calls with Call and Chat) and recent chats; picking an entry brings that account's window forward at the item (or starts it). Accounts publish their activity to hub.json in their profile folder.
+- Intelligent call delegation's Custom instructions draw people as Teams' pills (transfer and contact kinds), "@" opens the picker at the caret, and Teams' tags are saved unchanged; custom hours use Teams' layout.
+
+Verified live on linuxlt against Teams on winpc (OST Test 2 signed in to Teams as a second account and signed out again; delegation turned on and off again). Follow-up TASK-0245.
+<!-- SECTION:FINAL_SUMMARY:END -->
