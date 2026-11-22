@@ -21694,7 +21694,30 @@ impl qobject::Backend {
                         let region = notes_region(&client);
                         let (oid, tid) = (client.object_id().unwrap_or_default(), client.tenant_id().unwrap_or_default());
                         let thread = s("threadId");
-                        let read = || async { api::event_highlights::artifacts(&region, &thread, &s("iCalUid"), &oid).await };
+                        let start_ms = chrono::DateTime::parse_from_rfc3339(&s("start")).map(|d| d.timestamp_millis()).unwrap_or_else(|_| chrono::Utc::now().timestamp_millis());
+                        // The recordings from the day's contents; the
+                        // highlights file from the meeting's own (V3) list.
+                        let read = || async {
+                            let mut v = api::event_highlights::artifacts(&region, start_ms).await?;
+                            // The meeting's iCalUid and organizer as the day's
+                            // contents name them (the V3 list wants both).
+                            let info = v["value"].as_array().into_iter().flatten().find(|m| m.pointer("/threadInfo/threadId").and_then(|t| t.as_str()) == Some(thread.as_str())).map(|m| m["threadInfo"].clone()).unwrap_or_default();
+                            let ical = info["iCalUid"].as_str().unwrap_or_default().to_string();
+                            let org = info.pointer("/organizer/id").or_else(|| info.pointer("/organizerId")).and_then(|o| o.as_str()).unwrap_or(&oid).split('@').next().unwrap_or_default().to_string();
+                            match api::event_highlights::artifacts_v3(&region, &thread, &ical, &org).await {
+                                Ok(v3) => {
+                                    if let (Some(list), Some(extra)) = (v.get_mut("value").and_then(|l| l.as_array_mut()), v3["value"].as_array()) {
+                                        // Only its Highlights: the recordings are already there.
+                                        for e in extra {
+                                            let hl: Vec<serde_json::Value> = e["resources"].as_array().into_iter().flatten().filter(|r| r["type"] == "Highlights").cloned().collect();
+                                            list.push(json!({ "threadInfo": e["threadInfo"].clone(), "resources": hl }));
+                                        }
+                                    }
+                                }
+                                Err(e) => tracing::info!("event highlights: meeting contents: {}", short_error(&e)),
+                            }
+                            anyhow::Ok(v)
+                        };
                         let mut v = read().await?;
                         let (mut recs, mut lf, mut transcripts) = api::event_highlights::artifacts_with_transcripts(&v, &thread);
                         let mut created = 0u16;

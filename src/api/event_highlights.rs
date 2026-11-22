@@ -112,13 +112,52 @@ pub async fn download(location: &str, docx: bool, name: &str, dir: &std::path::P
     Ok(path)
 }
 
-/// The meeting's artifacts (Teams' listContents for one meeting).
-pub async fn artifacts(region: &str, thread: &str, ical_uid: &str, organizer_oid: &str) -> Result<Value> {
+/// The meeting's own artifacts as Teams' meetingArtifactsV3 reads them (the
+/// meeting content service, `GET {mcps}/contents?threadId&iCalUid
+/// &organizerId`: a collection whose resources include the Highlights
+/// file, `{id, type, location, driveId, driveItemId}`), wrapped as a
+/// contents reply for [`artifacts_from`]. The reply's shape is logged.
+pub async fn artifacts_v3(region: &str, thread: &str, ical_uid: &str, organizer_oid: &str) -> Result<Value> {
     let token = token().await?;
-    let q = format!(
-        "?threadId={thread}&iCalUid={ical_uid}&organizerId={organizer_oid}&includeTypes=Recording,TranscriptV2,Highlights"
+    let enc = |s: &str| url::form_urlencoded::byte_serialize(s.as_bytes()).collect::<String>();
+    let mut url = format!("{}/contents?threadId={}", base(region), enc(thread));
+    if !ical_uid.is_empty() {
+        url.push_str(&format!("&iCalUid={}", enc(ical_uid)));
+    }
+    if !organizer_oid.is_empty() {
+        url.push_str(&format!("&organizerId={}", enc(organizer_oid)));
+    }
+    let r = reqwest::Client::new()
+        .get(&url)
+        .bearer_auth(&token)
+        .header("x-ms-correlation-id", uuid::Uuid::new_v4().to_string())
+        .send()
+        .await
+        .context("The meeting content service")?;
+    let status = r.status();
+    let v: Value = r.json().await.unwrap_or_default();
+    let types: Vec<String> = v.get("resources").and_then(Value::as_array).into_iter().flatten().filter_map(|x| x.get("type").and_then(Value::as_str).map(str::to_string)).collect();
+    let why = v.get("ErrorMessage").and_then(Value::as_str).unwrap_or_default().to_string();
+    let sub = v.get("SubError").map(Value::to_string).unwrap_or_default();
+    tracing::info!(%status, keys = ?v.as_object().map(|o| o.keys().cloned().collect::<Vec<_>>()), ?types, %why, %sub, "event highlights: meeting contents");
+    anyhow::ensure!(status.is_success(), "The meeting content service answered {status}");
+    let resources = v.get("resources").cloned().unwrap_or(json!([]));
+    Ok(json!({ "value": [{ "threadInfo": { "threadId": thread }, "resources": resources }] }))
+}
+
+/// The meeting artifacts around the meeting's time (the artifacts
+/// service's contents for the 12 hours either side of `start_ms`, as
+/// Meeting Recaps reads a day), with Highlights; the caller picks the
+/// meeting by its thread.
+pub async fn artifacts(region: &str, start_ms: i64) -> Result<Value> {
+    let token = token().await?;
+    let f = |ms: i64| chrono::DateTime::from_timestamp_millis(ms).map(|d| d.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)).unwrap_or_default();
+    let url = format!(
+        "{}/user/meetings/contents?top=20&startDateTime={}&endDateTime={}&includeTypes=Recording,TranscriptV2,Highlights,Notes",
+        base(region),
+        f(start_ms - 12 * 3_600_000),
+        f(start_ms + 12 * 3_600_000)
     );
-    let url = format!("{}/collab/meetings/contents/{q}", base(region));
     let r = reqwest::Client::new()
         .get(&url)
         .bearer_auth(&token)

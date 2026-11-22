@@ -10479,7 +10479,7 @@ Window {
                 else if (mode === "uninvite") {
                     const m = ev.manageData || {}
                     const all = [].concat((m.drafts || {}).items || [], (m.published || {}).items || [], (m.past || {}).items || [])
-                    const ids = all.filter(e => /^OST TEST 212 (invite|room options)/.test(e.title)).map(e => e.id)
+                    const ids = all.filter(e => /^OST TEST 212 (invite|room options|recording)/.test(e.title)).map(e => e.id)
                     ids.forEach((id, i) => backend.eventsRequest("cancel", "uninvite" + i, JSON.stringify({ id: id })))
                     log("cancelling", ids)
                 } else ev.pickerForTest("attendees").typeForTest(invitee)

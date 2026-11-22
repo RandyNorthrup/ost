@@ -276,7 +276,7 @@ Rectangle {
     function loadHighlights() {
         if (!current || !hlThread) { hl = { recordings: [] }; return }
         const ev = current
-        call("highlights", { threadId: hlThread, title: ev.title || "", create: ev.state !== "Draft", recordingItem: hlPick }, v => {
+        call("highlights", { threadId: hlThread, start: ev.start || "", title: ev.title || "", create: ev.state !== "Draft", recordingItem: hlPick }, v => {
             if (current !== ev) return
             if (v.error) { console.warn("EVENTS highlights error", v.error); hl = { recordings: [] }; return }
             hl = v
@@ -322,7 +322,11 @@ Rectangle {
             toast(v.error ? { text: qsTr("Download failed. Please try again."), intent: "error" } : { text: qsTr("Download complete"), intent: "success" })
         })
     }
-    function highlightsForTest() { return JSON.stringify({ hl: hl ? { recordings: (hl.recordings || []).map(r => recordingLabel(r)), loop: !!hl.loop, player: !!hl.player, loopUrl: !!hl.loopUrl, created: hl.created } : null, generating: hlGenerating, error: hlError, included: hlIncluded }) }
+    function highlightsForTest() {
+        const h = root.hl
+        const recs = h && h.recordings ? Array.from(h.recordings).map(r => root.recordingLabel(r)) : []
+        return JSON.stringify({ recordings: recs, hasHl: !!h, loop: !!(h && h.loop), player: !!(h && h.player), loopUrl: h && h.loopUrl ? String(h.loopUrl).split("?")[0] : "", created: h && h.created ? Number(h.created) : 0, generating: !!root.hlGenerating, error: String(root.hlError), included: String(root.hlIncluded) })
+    }
     function openHlMenuForTest(which) {
         if (which === "picker") openHlPicker()
         else if (which === "download") { hlDownloadMenu.parent = eventPage; hlDownloadMenu.open() }
@@ -3013,7 +3017,7 @@ Rectangle {
                         TapHandler { enabled: hlTab.has; onTapped: root.openHlPicker() }
                         Accessible.role: Accessible.ComboBox; Accessible.name: qsTr("Recording used for highlights:")
                     }
-                    Btn { id: hlDownload; x: hlPicker.x + hlPicker.width + 8; anchors.verticalCenter: parent.verticalCenter; width: 64; height: 31; outlined: true; icon: "arrow-download-20"; text: ""; usable: hlTab.has
+                    Btn { id: hlDownload; x: hlPicker.x + hlPicker.width + 8; anchors.verticalCenter: parent.verticalCenter; width: 64; height: 31; outlined: true; icon: "arrow-download-20"; text: "⌄"; fontSize: 12; pad: 10; usable: hlTab.has
                           onClicked: { hlDownloadMenu.parent = hlDownload; hlDownloadMenu.x = 5; hlDownloadMenu.y = hlDownload.height + 4; hlDownloadMenu.open() }
                           Accessible.name: qsTr("Download") }
                     Row { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; spacing: 8

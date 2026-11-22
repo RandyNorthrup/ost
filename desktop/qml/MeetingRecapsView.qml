@@ -1,4 +1,5 @@
 import QtQuick
+import QtMultimedia
 import QtQuick.Window
 import QtQuick.Controls.Basic
 
@@ -226,21 +227,141 @@ Rectangle {
                 Accessible.role: Accessible.Button; Accessible.name: qsTr("Generate audio recap")
             }
         }
-        ListView {
+        // Your audio recaps (Teams 26304, measured on winpc 2026-11-22):
+        // a 279 wide list pane (#F5F5F5) with Generate audio recap (primary,
+        // 240 x 32, 20 from the top) over the recaps, 75 tall rows (the
+        // title 14, "Couldn't generate" in red or "Generating...", the date
+        // M/d at the right; the chosen row white), then "Includes audio
+        // recaps generated in the last 60 days" (12); the chosen recap on
+        // the right: its title (20/600), the day, "AI generated" with Like
+        // and Dislike; Chapters / Transcript pills over its chapters; the
+        // player bar at the bottom. A recap that couldn't be made shows
+        // "We couldn't generate the audio recap" and why.
+        Item {
+            id: recapsPanes
             visible: !!root.podcasts && root.podcasts.length > 0
-            anchors.fill: parent; anchors.margins: 48
-            model: root.podcasts || []
-            spacing: 8
-            delegate: Rectangle {
-                required property var modelData
-                width: ListView.view.width; height: 64; radius: 8; color: theme.surface; border.color: theme.dividerSoft
-                FluentIcon { x: 16; anchors.verticalCenter: parent.verticalCenter; name: "headphones-20"; size: 24; color: theme.brand }
-                Text { x: 56; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 72; elide: Text.ElideRight
-                       text: modelData.title || modelData.meetingTitle || modelData.name || ""; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+            anchors.fill: parent
+            readonly property var chosen: (root.podcasts || []).find(p => p.id === root.chosenPodcast) || (root.podcasts || [])[0] || null
+            readonly property string chosenState: chosen ? root.podcastState(chosen) : ""
+            Rectangle {
+                id: recapList
+                width: 279; height: parent.height; color: theme.pick("#F5F5F5", "#1F1F1F", "#000000")
+                Rectangle { anchors.right: parent.right; width: 1; height: parent.height; color: theme.dividerSoft }
+                Rectangle {
+                    x: 20; y: 12; width: 240; height: 32; radius: 4; color: lgh.hovered ? theme.brandHover : theme.brandFill
+                    Row { anchors.centerIn: parent; spacing: 6
+                        FluentIcon { name: "add-20"; size: 16; color: theme.textOnBrand; anchors.verticalCenter: parent.verticalCenter }
+                        Text { text: qsTr("Generate audio recap"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.textOnBrand } }
+                    HoverHandler { id: lgh; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: genDialog.openNow() }
+                    Accessible.role: Accessible.Button; Accessible.name: qsTr("Generate audio recap")
+                }
+                Rectangle { x: 0; y: 55; width: parent.width - 1; height: 1; color: theme.dividerSoft }
+                ListView {
+                    x: 4; y: 60; width: parent.width - 9; height: parent.height - 60; clip: true; spacing: 2
+                    model: root.podcasts || []
+                    footer: Text { x: 16; topPadding: 12; width: 240; wrapMode: Text.Wrap; text: qsTr("Includes audio recaps generated in the last 60 days"); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+                    delegate: Rectangle {
+                        id: prow
+                        required property var modelData
+                        readonly property bool on: recapsPanes.chosen && recapsPanes.chosen.id === modelData.id
+                        readonly property string st: root.podcastState(modelData)
+                        width: ListView.view.width; height: 75; radius: 4
+                        color: on ? theme.surface : prh.hovered ? theme.hover : "transparent"
+                        Text { x: 16; y: on ? 25 : 14; width: parent.width - 80; elide: Text.ElideRight; text: prow.st === "generating" ? qsTr("Generating...") : (prow.modelData.title || qsTr("No title available"))
+                               font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                        Text { visible: prow.st === "failed"; x: 16; y: 44; text: qsTr("Couldn't generate"); font.family: theme.font; font.pixelSize: 14; color: theme.danger }
+                        Text { anchors.right: parent.right; anchors.rightMargin: 16; y: on ? 26 : 14; text: Qt.formatDate(new Date(prow.modelData.createdDateTime || Date.now()), "M/d"); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+                        HoverHandler { id: prh }
+                        TapHandler { onTapped: root.chosenPodcast = prow.modelData.id }
+                        Accessible.role: Accessible.ListItem; Accessible.name: prow.modelData.title || qsTr("No title available")
+                    }
+                }
+            }
+            Item {
+                x: recapList.width + 32; y: 0; width: parent.width - x - 32; height: parent.height
+                readonly property var p: recapsPanes.chosen
+                visible: !!p
+                Column {
+                    visible: recapsPanes.chosenState !== "failed"
+                    y: 20; width: parent.width; spacing: 6
+                    Text { text: recapsPanes.chosenState === "generating" ? qsTr("Generating...") : (parent.parent.p ? parent.parent.p.title || qsTr("No title available") : ""); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+                    Text { text: parent.parent.p ? new Date(parent.parent.p.createdDateTime || Date.now()).toLocaleDateString(Qt.locale(), "dddd, MMMM d, yyyy") : ""; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
+                    Row { spacing: 12
+                        Rectangle { width: aiT.implicitWidth + 12; height: 24; radius: 4; color: theme.pick("#F0F0F0", "#2E2E2E", "#000000")
+                            Text { id: aiT; anchors.centerIn: parent; text: qsTr("AI generated"); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary } }
+                        FluentIcon { name: "thumb-like-20"; size: 20; color: theme.textStrong; anchors.verticalCenter: parent.verticalCenter }
+                        FluentIcon { name: "thumb-dislike-20"; size: 20; color: theme.textStrong; anchors.verticalCenter: parent.verticalCenter } }
+                    Item { width: 1; height: 24 }
+                    Row { spacing: 8
+                        Repeater { model: [qsTr("Chapters"), qsTr("Transcript")]
+                            Rectangle { required property var modelData; required property int index
+                                height: 32; radius: 16; width: pT.implicitWidth + 32
+                                color: index === 0 ? theme.pick("#EBEBFF", "#2B2B40", "#000000") : theme.surface
+                                border.color: index === 0 ? theme.brand : theme.stroke
+                                Text { id: pT; anchors.centerIn: parent; text: modelData; font.family: theme.font; font.pixelSize: 14; color: index === 0 ? theme.brandForeground1 : theme.text } } } }
+                    Item { width: 1; height: 16 }
+                    Repeater {
+                        model: recapsPanes.chosenState === "generating" ? 5 : 0
+                        Rectangle { required property int index; width: index % 2 ? 400 : 608; height: 35; radius: 4; color: theme.pick("#E6E6E6", "#333333", "#000000") }
+                    }
+                    Repeater {
+                        model: recapsPanes.chosenState === "done" && parent.parent.p ? parent.parent.p.chapters || [] : []
+                        Text { required property var modelData; width: 608; wrapMode: Text.Wrap; text: modelData.title || ""; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+                    }
+                }
+                Column {
+                    visible: recapsPanes.chosenState === "failed"
+                    anchors.centerIn: parent; spacing: 16
+                    Image { anchors.horizontalCenter: parent.horizontalCenter; width: 160; height: 160; asynchronous: true; source: "https://teams.public.onecdn.static.microsoft/evergreen-assets/illustrations/webp/192/warning-l-standard-192x192.webp" }
+                    Text { anchors.horizontalCenter: parent.horizontalCenter; text: qsTr("We couldn't generate the audio recap"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; color: theme.text }
+                    Text { anchors.horizontalCenter: parent.horizontalCenter; width: 420; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
+                           text: parent.parent.p && root.noInsightPodcast(parent.parent.p) ? qsTr("None of the selected meetings have enough information. Select different meetings and try again.") : qsTr("Something went wrong. Try again later.")
+                           font.family: theme.font; font.pixelSize: 14; color: theme.textStrong }
+                }
+                // The player bar.
+                Rectangle {
+                    visible: recapsPanes.chosenState !== "failed"
+                    x: -32; width: parent.width + 64; height: 130; anchors.bottom: parent.bottom
+                    color: theme.pick("#F5F5F5", "#1F1F1F", "#000000")
+                    Text { x: 32; y: 24; text: recapsPanes.chosenState === "generating" ? qsTr("Generating...") : ""; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
+                    Rectangle { x: 32; y: 54; width: parent.width - 200; height: 4; radius: 2; color: theme.pick("#E0E0E0", "#3D3D3D", "#FFFFFF") }
+                    Text { anchors.right: parent.right; anchors.rightMargin: 32; y: 46; text: "--:-- / --:--"; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
+                    Row { anchors.horizontalCenter: parent.horizontalCenter; y: 76; spacing: 28
+                        Text { anchors.verticalCenter: parent.verticalCenter; text: "1x"; font.family: theme.font; font.pixelSize: 12; color: theme.disabledStrong }
+                        FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "skip-back-10-20"; size: 20; color: theme.disabledStrong }
+                        Rectangle { width: 36; height: 36; radius: 18
+                            readonly property bool can: recapsPanes.chosenState === "done" && !!recapsPanes.chosen && !!recapsPanes.chosen.fullAudioFile
+                            color: can ? theme.brandFill : theme.pick("#C7C7C7", "#5C5C5C", "#3FF23F")
+                            FluentIcon { anchors.centerIn: parent; name: recapAudio.playbackState === MediaPlayer.PlayingState ? "pause-20" : "play-20"; size: 20; color: "#FFFFFF" }
+                            TapHandler { enabled: parent.can; onTapped: root.playChosen() }
+                            Accessible.role: Accessible.Button; Accessible.name: qsTr("Play") }
+                        FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "skip-forward-10-20"; size: 20; color: theme.disabledStrong } }
+                }
             }
         }
         BusyIndicator { anchors.centerIn: parent; running: root.podcasts === null; visible: running; width: 32; height: 32 }
     }
+    // The chosen recap's audio (its fullAudioFile, streamed).
+    MediaPlayer { id: recapAudio; audioOutput: AudioOutput {} }
+    onChosenPodcastChanged: { recapAudio.stop(); recapAudio.source = "" }
+    function playChosen() {
+        if (recapAudio.playbackState === MediaPlayer.PlayingState) { recapAudio.pause(); return }
+        if (recapAudio.source.toString()) { recapAudio.play(); return }
+        const p = recapsPanes.chosen
+        if (!p || !p.fullAudioFile) return
+        call("driveStreamUrl", { url: p.fullAudioFile.fileUrl }, v => { if (v.url) { recapAudio.source = v.url; recapAudio.play() } })
+    }
+    /// The recap shown on the right (an id; the newest when unset).
+    property string chosenPodcast: ""
+    /// A recap's state as its row shows it: "generating", "failed" or "done".
+    function podcastState(p) {
+        const st = (p.status || p.generationStatus || "").toString().toLowerCase()
+        if (p.generating || st === "inprogress" || st === "in_progress" || st === "notstarted") return "generating"
+        if (st === "failed") return "failed"
+        return "done"
+    }
+    function noInsightPodcast(p) { return /NoValidMeeting(Insight|Found)/.test(p.statusMessage || "") }
     function stateForTest() { return JSON.stringify({ tab: tab, days: days.length, meetings: days.reduce((n, d) => n + d.meetings.length, 0), podcasts: podcasts ? podcasts.length : null, loading: loading }) }
     // Generate audio recap (Teams 26304, measured on winpc 2026-11-19): a
     // dialog (the window less 32 each side): Style (Executive, Newscast,
@@ -260,17 +381,17 @@ Rectangle {
         property string style: "Executive"
         property var picked: []
         property string chip: "All"
-        property string search: ""
+        property string filterText: ""
         readonly property var styles: [["Executive", qsTr("Two speakers. Essential info with minimal commentary."), qsTr("Executive")], ["Newscast", qsTr("One speaker. Fast and concise."), qsTr("Newscast")],
                                        ["Casual", qsTr("Two speakers. Extra color and commentary. Longest format."), qsTr("Casual", "podcast:kbrsoygmx")]]
         readonly property var meetings: {
             const cutoff = Date.now() - 30 * 86400000
             let out = []
             for (const d of root.days) for (const m of (d.meetings || [])) if (m.transcript && Date.parse(m.start) >= cutoff) out.push(m)
-            if (search) out = out.filter(m => (m.subject || "").toLowerCase().indexOf(search.toLowerCase()) >= 0)
+            if (filterText) out = out.filter(m => (m.subject || "").toLowerCase().indexOf(filterText.toLowerCase()) >= 0)
             return out
         }
-        function openNow() { genDialog.picked = []; genDialog.chip = "All"; genDialog.search = ""; genSearch.text = ""; genDialog.open(); if (root.next < 42 && !root.loading) root.loadMore() }
+        function openNow() { genDialog.picked = []; genDialog.chip = "All"; genDialog.filterText = ""; genSearch.text = ""; genDialog.open(); if (root.next < 42 && !root.loading) root.loadMore() }
         contentItem: Column {
             spacing: 0
             Item { width: parent.width; height: 34
@@ -310,7 +431,7 @@ Rectangle {
                             Accessible.role: Accessible.Button; Accessible.name: modelData[1] } } }
                 Rectangle { anchors.right: parent.right; width: 280; height: 32; radius: 4; color: theme.input; border.color: theme.stroke; border.width: 1
                     TextInput { id: genSearch; x: 12; width: parent.width - 24; anchors.verticalCenter: parent.verticalCenter; clip: true; font.family: theme.font; font.pixelSize: 14; color: theme.text
-                                onTextChanged: genDialog.search = text
+                                onTextChanged: genDialog.filterText = text
                                 Text { visible: !parent.text; text: qsTr("Search for meetings"); font: parent.font; color: theme.textSecondary } } } }
             Item { width: 1; height: 12 }
             Rectangle {
@@ -352,28 +473,23 @@ Rectangle {
     }
     function generateDialogForTest(on) { if (on) genDialog.openNow(); else genDialog.close() }
     // Generate (Teams' RecapHome generateAndPopoutPodcast): the dialog
-    // closes, the audio recap's mini player pops out with "Generating...",
-    // and the recap is made from the picked meetings over AugLoop; then it
-    // plays (or says why it couldn't be made) and Audio recaps reloads.
-    property var audioPlayer: null
-    Component { id: genPlayerComponent; AudioRecapPlayer {} }
+    // closes and Audio recaps shows the new recap at the top of its list as
+    // "Generating..." (chosen, its chapters' placeholders and the player
+    // bar's "Generating..."); the recap is made from the picked meetings
+    // over AugLoop, then the list reloads and shows how it went.
     function generate() {
         const rows = genDialog.meetings.filter(m => genDialog.picked.indexOf(m.threadId) >= 0)
         if (rows.length === 0 || rows.length > 8) return
         genDialog.close()
-        if (!audioPlayer) {
-            audioPlayer = genPlayerComponent.createObject(null, { subject: rows.length === 1 ? rows[0].subject : qsTr("Audio recap") })
-            audioPlayer.closing.connect(() => { root.audioPlayer = null })
-            const w = root.Window.window
-            if (w) { audioPlayer.x = w.x + Math.round((w.width - audioPlayer.width) / 2) + 200; audioPlayer.y = w.y + Math.round((w.height - audioPlayer.height) / 2) - 80 }
-        }
-        audioPlayer.state_ = "generating"
-        audioPlayer.show(); audioPlayer.raise()
+        const temp = { id: "generating-" + Date.now(), generating: true, createdDateTime: new Date().toISOString() }
+        podcasts = [temp].concat(podcasts || [])
+        chosenPodcast = temp.id
+        tab = "audio"
         console.info("RECAPS generate", rows.length, genDialog.style)
         call("podcastGenerate", { meetings: rows, style: genDialog.style, language: "en-US" }, v => {
             console.info("RECAPS generated", v.status || "", v.message || "", v.error || "", v.podcast && v.podcast.id ? v.podcast.id : "")
             root.lastGenerated = v
-            if (root.audioPlayer) root.audioPlayer.result(v)
+            root.chosenPodcast = v.podcast && v.podcast.id ? v.podcast.id : ""
             root.loadPodcasts()
         })
     }
@@ -385,5 +501,5 @@ Rectangle {
     }
     function generateForTest() { generate() }
     function genMeetingsForTest() { return genDialog.meetings.map(m => m.subject) }
-    function audioPlayerStateForTest() { return audioPlayer ? audioPlayer.stateForTest() : "none" }
+    function audioPlayerStateForTest() { const p = recapsPanes.chosen; return JSON.stringify({ chosen: p ? (p.title || "") : null, state: p ? podcastState(p) : "", rows: (podcasts || []).map(x => podcastState(x)) }) }
 }

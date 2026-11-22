@@ -368,6 +368,36 @@ The event page:
     recording), then v2/ai-video-record-l-standard.svg, "No AI highlights
     yet" / "Check back after the event has ended to generate them and share
     with attendees."
+  - With a recording (measured on winpc 2026-11-21, "OST TEST 212
+    recording"; Teams 26304 event-highlights-tab / -organizer): opening
+    the tab reads the meeting's artifacts (Recording, TranscriptV2,
+    Highlights); with no Highlights file Teams makes one (createHighlights
+    = `POST {mcps}/spe/highlights` `{threadId, organizer: "oid@tid",
+    meetingTitle, externalEntityKey: ""}`, 201 or 409) and generates from
+    the latest recording over AugLoop ("teams_event_highlights": the
+    TeamsEventHighlightsProgressAnnotation steps FetchGroundingData,
+    GenerateHighlights, WriteToLoop, and the TeamsEventHighlightsAnnotation
+    `{succeeded, errorCode}`; signal `{eventContext {eventId, threadId,
+    eventLanguage}, recording {driveId, itemId}, loopFile {driveId, itemId,
+    siteUrl}}`); the highlights are written into the Loop file.
+  - Toolbar (49 tall): the picker 311 x 30 ("Nov 21, 2026 1:17 PM – 1:20
+    PM"; a "Current recording" group, then Select from OneDrive); Download
+    64 x 31 (Video, Transcript); right: View recap 32 x 31, Included content
+    149 x 32 ("Choose what to include in highlights": Recording + text
+    highlights, default, / Recording only), Publish 96 x 31. A 36 tall
+    status bar: "**Generating AI highlights from event recording...** This
+    might take a minute. Feel free to leave this tab and come back." (a
+    spinner), then "**Highlights aren't published yet.** Publish them when
+    you're ready to share with attendees." (info icon). Then the
+    recording's OnePlayer (804 x 452) and the highlights card (796 wide):
+    the event's title 24/600 and the highlights' Loop page ("Event
+    summary", …). Picking another recording asks "Generate new AI
+    highlights?" ("A new set of highlights will be generated using the
+    recording you selected. This will replace the current highlights and
+    can't be undone.", Generate highlights).
+  - Publish ("Ready to publish highlights?") sends `POST events/{id}/
+    sessions/{sid}/recordings` with the recording and `highlightsContent`,
+    the Loop page's content serialized by the page (not built in OST).
 - **Preview** on: "This is a preview of what attendees will see." instead of
   the tabs; the attendee's page (Add to calendar, no banner edit, no Manage
   apps).
