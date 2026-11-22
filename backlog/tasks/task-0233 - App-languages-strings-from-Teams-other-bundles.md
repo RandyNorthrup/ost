@@ -4,7 +4,7 @@ title: 'App languages: strings from Teams'' other bundles'
 status: In Progress
 assignee: []
 created_date: '2026-11-20T04:10:00Z'
-updated_date: '2026-11-22T16:51:00Z'
+updated_date: '2026-11-22T18:26:00Z'
 labels:
   - desktop
 dependencies: []
@@ -71,4 +71,6 @@ Found in TASK-0142: about 800 OST strings stay English because Teams keeps their
 - Downloads panel: "Search all files" and "%1, removed" are in none of WebView2 157's locale packs (searched en-US.pak from the cached Fixed Version cabinet: only "Search downloads" (20707) and unrelated "removed" texts) - Edge builds them in its hub script, so no translation exists: they stay in untranslated.txt legitimately.
 - Events templates: still no source (not in Teams 26304 bundles).
 - untranslated.txt now 423 lines; ids.json and teams_resources.json regenerated against teams-1207 (26304.1207.5384.858).
+
+- 2026-11-22 merged (51ea564, 4b3ea24): profile card strings from its own bundle (12 left, 3 because the lookup returns an older file than Teams loads); Downloads panel's two strings confirmed absent from WebView2's language packs (Teams has none either). Open: Events templates (no source found), the 3 profile-card strings.
 <!-- SECTION:NOTES:END -->

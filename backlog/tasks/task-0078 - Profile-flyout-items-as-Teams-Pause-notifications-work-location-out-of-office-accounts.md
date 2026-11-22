@@ -3,11 +3,11 @@ id: TASK-0078
 title: >-
   Profile flyout items as Teams: Pause notifications, work location, out of
   office, accounts
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-09T16:14:00Z'
-updated_date: '2026-11-22T16:34:00Z'
+updated_date: '2026-11-22T18:26:00Z'
 labels:
   - desktop
 dependencies: []
@@ -24,7 +24,7 @@ The rest of Teams desktop's profile flyout, measured on winpc: each item behaves
 - [x] #1 Pause notifications works as Teams' (durations, the flyout row, banners held while paused)
 - [x] #2 Set work location shows and sets the same location Teams does, when the tenant offers it
 - [x] #3 Schedule out of office opens Teams' out-of-office dialog and saves the same automatic replies
-- [ ] #4 Add another account behaves as Teams' (OST's sign-in, separate profiles)
+- [x] #4 Add another account behaves as Teams' (OST's sign-in, separate profiles)
 - [x] #5 Others' status messages show in their profile cards and the 1:1 chat header as in Teams
 <!-- AC:END -->
 
@@ -57,4 +57,12 @@ The rest of Teams desktop's profile flyout, measured on winpc: each item behaves
   - Built (3f8b560): the pill, the flyout rows and slot, Accounts and orgs cards for the other accounts (order added, their organisation kept in accounts.json), one entry per account (a second profile of the same account isn't listed).
   - Verified on linuxlt (OST Test 2 = test2, --seth-test --seth-accounts): the pill, the flyout listing the device's other accounts and Add another account, the Accounts page cards; Add another account started OST for a fresh profile (account2; stopped by pid, nothing signed in, no folder left). A fresh profile (setI-acct, --seti-signin) loaded Microsoft's sign-in page (login.microsoftonline.com/organizations/oauth2/v2.0/authorize, "Sign in to your account") - OST's own sign-in for the new account.
   - Open: the app bar's "Activity in other accounts and orgs" hub (its window not measured); OST shows each account in its own window instead of switching the window in place.
+
+- 2026-11-22 merged (dca6443). The 'Activity in other accounts and orgs' button moved to TASK-0244; OST's one-window-per-account is recorded on the Remaining Work page.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Profile flyout items as Teams: Pause notifications, work location, out of office, others' status messages, and accounts. With a second account the title bar shows Teams' organisation pill, the flyout lists the other accounts above Add another account, and Accounts and orgs shows one card per account in the order added; each account runs as its own OST profile and window, and Add another account starts OST's sign-in for a new profile. Measured against Teams on winpc with OST Test 2 signed in as a second account (then signed out); verified on linuxlt.
+<!-- SECTION:FINAL_SUMMARY:END -->

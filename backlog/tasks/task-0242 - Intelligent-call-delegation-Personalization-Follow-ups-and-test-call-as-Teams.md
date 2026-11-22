@@ -3,10 +3,10 @@ id: TASK-0242
 title: >-
   Intelligent call delegation: Personalization, Follow-ups and test call as
   Teams
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-11-21T17:39:00Z'
-updated_date: '2026-11-22T16:17:00Z'
+updated_date: '2026-11-22T18:26:00Z'
 labels:
   - desktop
   - settings
@@ -21,8 +21,8 @@ Found in TASK-0088 (Teams 26304, measured on winpc 2026-11-21): with Intelligent
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 With Intelligent call delegation on, Settings shows Personalization and Skills ▸ Follow-ups as Teams does, and their sub-pages show and save the same values through the same services
-- [ ] #2 Make a test call reaches your intelligent call delegation as Teams' test call does
+- [x] #1 With Intelligent call delegation on, Settings shows Personalization and Skills ▸ Follow-ups as Teams does, and their sub-pages show and save the same values through the same services
+- [x] #2 Make a test call reaches your intelligent call delegation as Teams' test call does
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -34,4 +34,12 @@ Found in TASK-0088 (Teams 26304, measured on winpc 2026-11-21): with Intelligent
   - Make a test call: Teams' TestCallToPA = a 1:1 call to your own MRI with no thread, audio only; Teams' log shows SlimCore callToPersonalAttendant (botType personalAttendant) and the GraphCommunicationsClient-PersonalAttendantBot answering; its window is titled "Test call with your Call Delegation" with only Mic, More and Leave. OST calls itself with callee endpointType personalAttendant (api calling::outgoing::call_personal_attendant), Teams' title and bar (ubar attendant_test).
   - Verified live on linuxlt (ost-test1 spatest, --seti-pa --seti-pa-call): ICD on, every sub-page shown; greeting "OST TEST 242 greeting", instructions with an @OST Test 2 route tag, language en-GB and follow-up length 45 min saved and read back from the services, then put back (read back); the test call was answered by the attendant (callProgress botInfo, callAcceptance) and stayed connected 20 s with test=true, hung up (202); ICD off again (read back on:false), language en-US.
   - Not done: the chips aren't drawn as Teams' pills inside the box (shown as @Name); custom-hours rows not compared with Teams (only work hours measured); Teams' disabled-state tooltips.
+
+- 2026-11-22 merged (0dcf04a). Mention pills and the custom-hours comparison moved to TASK-0244.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Intelligent call delegation's Personalization, Follow-ups and test call as Teams 26304: Voice and greeting with its greeting dialog, Custom instructions and language save into the delegation settings as Teams does; Follow-ups reads and saves the personal Bookings page; Make a test call calls your own account's personal-attendant endpoint in Teams' window (Mic, More, Leave). Verified live: each value saved, read back and restored; the test call was answered by the delegation; the feature is off again on winpc and in OST.
+<!-- SECTION:FINAL_SUMMARY:END -->

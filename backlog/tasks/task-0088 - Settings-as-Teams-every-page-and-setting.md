@@ -1,11 +1,11 @@
 ---
 id: TASK-0088
 title: 'Settings as Teams: every page and setting'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-10T07:56:00Z'
-updated_date: '2026-11-21T21:41:00Z'
+updated_date: '2026-11-22T18:26:00Z'
 labels:
   - desktop
   - settings
@@ -23,7 +23,7 @@ OST's Settings has General, Appearance, Chats and channels, Notifications and ac
 <!-- AC:BEGIN -->
 - [x] #1 Settings lists Teams' pages in Teams' order with the same layout
 - [x] #2 Each page's settings show and save the same values Teams does, through the same services
-- [ ] #3 Links into settings from elsewhere (Do not disturb banner, Pause notifications' Notifications settings, call and chat menus) open the right page and section
+- [x] #3 Links into settings from elsewhere (Do not disturb banner, Pause notifications' Notifications settings, call and chat menus) open the right page and section
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -118,4 +118,18 @@ OST's Settings has General, Appearance, Chats and channels, Notifications and ac
   - OST: SettingsView.launchSection resolves Teams' ids the same way and draws the highlight; Main.launchSettings/launchSettingsGeneral; every OST entry wired (Settings and more, Ctrl+, DND banner, Pause notifications, Schedule out of office, Customize app bar, compose hint, Customize view, both notification dialogs (their link was unconnected before), auto-follow link, Editor links, VIPs Edit, /l/settings links). Settings checkboxes, radios and picture radios now take keyboard focus; focus rings follow the theme.
   - Verified live on linuxlt (ost-test1 default profile, --seti-test): each link landed on Teams' page/sub-page; General with Find focused; Customize app bar: highlight on the App bar card, Show app names focused, faded after 4 s; Editor settings: Editor spellcheck card highlighted and centred; Replies card scrolled to top.
   - Not in OST (so no link to wire): the message translation menu, the efficiency row (VDI), Premium/Insider/Labs/People pages, contacts sync, leave-and-block toast, NDI and Focus Assist banners.
+
+- 2026-11-22 merged (8e53999); 906 lib + 29 desktop tests pass.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Settings as Teams 26304: every page and setting.
+
+- Pages in Teams' order and layout (General with the window-mode table, Accounts and orgs, Privacy, Notifications and activity with Apps and the Channel Notifications manager, Chats and channels, Appearance, Calls with Teams Phone call handling, call group, delegates, Intelligent call delegation, Viewing incoming calls, Devices, Recognition, Accessibility, About with Early access).
+- Each setting reads and saves the same values through the same services as Teams (verified live by saving, reading back and restoring).
+- Links into Settings resolve Teams' launch ids: page, sub-page and setting, with Teams' arrival outline and focus, from Settings and more, Ctrl+, the DND banner, Pause notifications, out of office, Customize app bar, the compose hint, Customize view, Editor links, notification dialogs and /l/settings/ links.
+
+Links from screens OST doesn't have (message translation menu, Premium/Insider/Labs pages, Windows-only banners) aren't wired. Intelligent call delegation's sub-pages are TASK-0242.
+<!-- SECTION:FINAL_SUMMARY:END -->
