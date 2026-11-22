@@ -3,11 +3,11 @@ id: TASK-0150
 title: >-
   Chat list reordering as Teams: drag and drop, and single pointer 'Start
   reordering'
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-15T05:37:00Z'
-updated_date: '2026-11-22T19:23:00Z'
+updated_date: '2026-11-22T19:56:00Z'
 labels:
   - chat-list
   - accessibility
@@ -23,7 +23,7 @@ Teams lets you reorder chats in Favorites and custom sections, and teams and cha
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Chats in Favorites and custom sections, and teams and channels, can be reordered by drag and drop as in Teams, and the order is saved where Teams saves it (Teams on winpc shows the same order)
+- [x] #1 Chats in Favorites and custom sections, and teams and channels, can be reordered by drag and drop as in Teams, and the order is saved where Teams saves it (Teams on winpc shows the same order)
 - [x] #2 Settings > Accessibility shows 'Turn on single pointer controls' with Teams' text and icon (hand point), kept on this device
 - [x] #3 With it on, the chat list's item menu has 'Start reordering', which reorders without dragging as Teams does
 <!-- AC:END -->
@@ -48,14 +48,12 @@ Left: confirm Teams shows OST's team order (not picked up within 7 s; not checke
 - Restored: the test section removed and OST Test 2 taken out of Favorites (in Teams). The list is as before: Favorites = OST Test 1 (You), no custom sections, team order unchanged.
 
 - (meetI) AC1 is verified for chats in Favorites and custom sections and for channels in sections; channels within a team don't reorder in Teams. Harness added: --reorder-drag, --sections-setup/--sections-teardown (docs/desktop.md).
+
+- 2026-11-22 merged (0c6be51..adb9dab); 907 lib + 29 desktop tests pass.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
-Chat and team reordering as Teams: drag and drop in Favorites, custom sections and teams (dd601ea), single pointer Start reordering, and the order saved where Teams keeps it.
-
-Verified live (2026-11-21): team order written by OST (users/ME/properties teamsOrder, the same request Teams sends when you drag a team) shows in the running Teams on winpc within seconds, and Teams' order reads back into OST; chat order in sections confirmed earlier after a Teams restart. Original order restored.
-
-Tests: --reorder-test=teams --reorder-only-up (spatest), winpc CDP capture of Teams' drag. Fix: the generic --shots timer no longer quits reorder runs.
+Chat list reordering as Teams. Chats in Favorites and your own sections, channels in those sections, and teams can be dragged into a new order; the order is saved where Teams saves it and other clients follow (Teams on winpc showed OST's orders live, and OST picked up Teams' order on its next start). Channels can't be reordered inside a team, as in Teams. Settings ▸ Accessibility's single pointer controls add Start reordering to the item menu. Verified live as ost-test1 with a test section and Favorites (restored afterwards).
 <!-- SECTION:FINAL_SUMMARY:END -->
