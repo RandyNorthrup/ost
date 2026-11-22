@@ -4,7 +4,7 @@ title: 'App languages: strings from Teams'' other bundles'
 status: In Progress
 assignee: []
 created_date: '2026-11-20T04:10:00Z'
-updated_date: '2026-11-21T18:23:00Z'
+updated_date: '2026-11-22T16:17:00Z'
 labels:
   - desktop
 dependencies: []
@@ -62,4 +62,8 @@ Found in TASK-0142: about 800 OST strings stay English because Teams keeps their
   - New source x.webrec (kind "loc"): the Stream web recorder's language chunks in Teams' hashed assets (webrec2-language-<lang>-<hash>.js, `loc:new a({…})`, 124 strings, 56 languages): the backdrop/board/sticker names (effects.*), "Record again", "Review your clips", "Recording in progress", "Screen recording", fonts. Parsers: extra_strings.py parse_loc_table and teams_strings.rs parse_loc_table (tested). `l10n.py extra` rerun on linuxlt (cache ~/l10n3; strings-extra.json backed up as strings-extra.json.setH-bak).
   - OST text reworded to Teams' (OneCamera): Font menu / Text color menu / Text shadow menu / Text background menu, "Video editing tools: %1 menu", "The camera is %1 percent of the video viewport", "Choose image file to upload", "Delete this clip. Your video will be lost.", "This will delete your video clips."; shared words (sticker categories, Music) name their OneCamera ids explicitly (l10n.py now accepts dotted keys in qsTr("…", "<ns>:<key>")).
   - untranslated.txt 542 -> 437 lines; recorder lines 140 -> 28 (left: OST's own accessibility texts and keyboard hints Teams has no string for, e.g. "Alt + left arrow key", "Mic is off", file-dialog filters).
+
+- 2026-11-22 (agent setI): meeting options: a live reply (meeting "OST TEST 233 options" made with examples/meeting_options create, read with OST_DUMP_TRANSLATIONS, then deleted) has 413 translation keys; every OST fallback marked reply:meetingsOptions maps to a key in it (7/7 keyed by option/value, e.g. meetingsOptions_ProducerOption_OrganizerAndCoOrganizersOnly, meetingsOptions_CopilotMode_EnabledWithTranscript), so the dialog shows Teams' translations for them.
+- Teams' string ids are k + base36((h*131 + charCode) mod 2^40) over "ns:key" ("_mf" kept) - precompiled-shared-worker NQr/g7e; scratchpad tool tkey.py resolves keys to en-us text.
+- untranslated.txt regenerated (440 lines) with the TASK-0242 strings; new lines only for text Teams' table words differently or lacks.
 <!-- SECTION:NOTES:END -->

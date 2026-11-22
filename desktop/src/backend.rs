@@ -8902,10 +8902,19 @@ impl qobject::Backend {
 
     pub fn other_accounts_json(self: Pin<&mut Self>) -> QString {
         let me = teams_cli::config::profile().unwrap_or_default();
-        let list: Vec<serde_json::Value> = teams_cli::config::accounts()
+        let all = teams_cli::config::accounts();
+        // Teams lists accounts in the order they were added: "before" marks
+        // those added before this one.
+        let mine = all.iter().position(|a| a.profile == me).unwrap_or(usize::MAX);
+        // One entry per account (Teams lists users, not OST's profiles): a
+        // second profile of the same account isn't listed.
+        let my_upn = all.get(mine).map(|a| a.upn.to_lowercase()).unwrap_or_default();
+        let mut seen = std::collections::HashSet::from([my_upn]);
+        let list: Vec<serde_json::Value> = all
             .into_iter()
-            .filter(|a| a.profile != me && !a.upn.is_empty())
-            .map(|a| json!({ "profile": a.profile, "upn": a.upn, "name": a.name, "objectId": a.object_id, "availability": a.availability }))
+            .enumerate()
+            .filter(|(_, a)| a.profile != me && !a.upn.is_empty() && seen.insert(a.upn.to_lowercase()))
+            .map(|(i, a)| json!({ "profile": a.profile, "upn": a.upn, "name": a.name, "objectId": a.object_id, "availability": a.availability, "org": a.org, "before": i < mine }))
             .collect();
         QString::from(serde_json::Value::Array(list).to_string().as_str())
     }
@@ -15230,10 +15239,13 @@ impl qobject::Backend {
                         if let Some(c) = &cfg
                             && let Some(upn) = c.user_principal_name()
                         {
+                            let me = teams_cli::config::profile().unwrap_or_default();
+                            let org = teams_cli::config::accounts().into_iter().find(|a| a.profile == me).map(|a| a.org).unwrap_or_default();
                             let _ = teams_cli::config::record_account(Some(teams_cli::config::Account {
                                 upn,
                                 name: c.display_name().unwrap_or_default(),
                                 object_id: c.object_id().unwrap_or_default(),
+                                org,
                                 ..Default::default()
                             }));
                         }
@@ -18886,6 +18898,15 @@ impl qobject::Backend {
                 let _ = qt.queue(move |mut this| {
                     this.as_mut().set_user_mail(QString::from(mail.as_str()));
                     this.as_mut().set_org_name(QString::from(org.as_str()));
+                    // Kept with this account in the device's list (other
+                    // accounts' Accounts and orgs show it).
+                    let me = teams_cli::config::profile().unwrap_or_default();
+                    if !org.is_empty()
+                        && let Some(a) = teams_cli::config::accounts().into_iter().find(|a| a.profile == me)
+                        && a.org != org
+                    {
+                        let _ = teams_cli::config::record_account(Some(teams_cli::config::Account { org: org.clone(), ..a }));
+                    }
                 });
             }
         });

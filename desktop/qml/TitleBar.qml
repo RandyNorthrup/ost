@@ -475,19 +475,38 @@ Rectangle {
         }
     }
     function feedbackMenuForTest() { moreMenu.visible = true; feedbackMenu.showFor(feedbackRow) }
-    // Profile: a 40 px round button around the 28 px avatar.
+    // This device's other accounts (refreshed every half minute and when
+    // the flyout opens).
+    property var otherAccounts: []
+    function refreshAccounts() { otherAccounts = JSON.parse(backend.otherAccountsJson()) }
+    Timer { interval: 30000; running: true; repeat: true; triggeredOnStart: true; onTriggered: root.refreshAccounts() }
+    // Profile: a 40 px round button around the 28 px avatar. With more
+    // accounts (Teams' MTMA, measured on winpc 2026-11-22) it is a 140 x 28
+    // pill with the organisation's name (12/16 #424242 at 6.7, cut at
+    // 107.9) before the avatar.
     Rectangle {
         id: profile
-        width: 40; height: 40; radius: 20
+        readonly property bool multi: root.otherAccounts.length > 0
+        width: multi ? 140 : 40; height: multi ? 28 : 40; radius: height / 2
         anchors.right: controls.left; anchors.rightMargin: root.windowButtons ? 8 : 0
         anchors.verticalCenter: parent.verticalCenter
         color: profileHover.hovered ? theme.titleHover : "transparent"
         HoverHandler { id: profileHover }
         TapHandler { onTapped: menu.visible = !menu.visible }
-        Accessible.name: qsTr("Your profile")
+        Accessible.name: multi ? qsTr("Your profile, status %1 for %2 in %3").arg(root.statusLabel(root.presence)).arg(root.userMail).arg(root.orgName) : qsTr("Your profile")
+        Text {
+            visible: profile.multi
+            x: 6.7; anchors.verticalCenter: parent.verticalCenter
+            width: Math.min(implicitWidth, 107.9); elide: Text.ElideRight
+            text: root.orgName
+            font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight
+            color: theme.textStrong
+        }
         Avatar {
             id: avatar
-            anchors.centerIn: parent
+            anchors.centerIn: profile.multi ? undefined : parent
+            anchors.verticalCenter: parent.verticalCenter
+            x: profile.multi ? parent.width - 23.1 : (parent.width - width) / 2
             name: root.userName || "?"
             photoId: "me"
             size: 28
@@ -884,29 +903,30 @@ Rectangle {
                     Accessible.name: qsTr("Your current status message: %1").arg(root.statusNote)
                 }
             }
-            // Teams' accounts and orgs (its MTMA flyout, "nova"): your other
-            // accounts on this device, each "Switch to account {upn},
-            // Status {availability}", then "Add another account". OST keeps
-            // each account in its own profile and window (its own sign-in).
-            readonly property var otherAccounts: menu.visible ? JSON.parse(backend.otherAccountsJson()) : []
-            Item {
-                width: parent.width; height: menuCol.otherAccounts.length ? 9 : 10
-                Rectangle { visible: menuCol.otherAccounts.length > 0; x: 4; width: parent.width - 8; height: 1; anchors.verticalCenter: parent.verticalCenter; color: theme.divider }
-            }
+            // Teams' accounts and orgs (its MTMA flyout, measured on winpc
+            // 2026-11-22 with OST Test 2 added): under the white menu a
+            // #F5F5F5 band, 80.3 tall per account: the 48 px picture at 16
+            // with its 12 px presence at 36, 36, the name 14/600 at 76, 8 and
+            // the address 12/16 under it; "Switch to account {upn},  Status
+            // {availability}". OST keeps each account in its own profile and
+            // window (its own sign-in).
+            readonly property var otherAccounts: menu.visible ? root.otherAccounts : []
+            Connections { target: menu; function onVisibleChanged() { if (menu.visible) root.refreshAccounts() } }
+            Item { visible: menuCol.otherAccounts.length === 0; width: parent.width; height: 10 }
             Repeater {
                 model: menuCol.otherAccounts
                 Rectangle {
                     id: acctRow
                     required property var modelData
-                    width: menuCol.width - 8; x: 4; height: 48; radius: theme.radius
-                    color: acctHover.hovered ? theme.rowHover : "transparent"
-                    Avatar { x: 14; anchors.verticalCenter: parent.verticalCenter; size: 32; name: acctRow.modelData.name || acctRow.modelData.upn; photoId: acctRow.modelData.objectId || "" }
-                    PresenceBadge { x: 36; y: 30; total: 12; presence: acctRow.modelData.availability || "Offline" }
+                    width: menuCol.width; height: 80.3
+                    color: acctHover.hovered ? theme.pick("#EBEBEB", "#333333", "#1AEBFF") : theme.pick("#F5F5F5", "#292929", "#000000")
+                    Avatar { x: 16; y: 0.6; size: 48; name: acctRow.modelData.name || acctRow.modelData.upn; photoId: acctRow.modelData.objectId || "" }
+                    PresenceBadge { x: 52; y: 36.6; total: 12; presence: acctRow.modelData.availability || "Offline" }
                     Column {
-                        x: 56; anchors.verticalCenter: parent.verticalCenter
-                        width: parent.width - 68
-                        Text { width: parent.width; elide: Text.ElideRight; text: acctRow.modelData.name || acctRow.modelData.upn; font.family: theme.font; font.pixelSize: theme.base; color: theme.onFill(acctRow, theme.text) }
-                        Text { width: parent.width; elide: Text.ElideRight; text: acctRow.modelData.upn; font.family: theme.font; font.pixelSize: theme.small; color: theme.onFill(acctRow, theme.textStrong) }
+                        x: 76; y: 8.6
+                        width: parent.width - 92
+                        Text { width: parent.width; elide: Text.ElideRight; text: acctRow.modelData.name || acctRow.modelData.upn; font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.onFill(acctRow, theme.text) }
+                        Text { width: parent.width; elide: Text.ElideRight; text: acctRow.modelData.upn; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.onFill(acctRow, theme.text) }
                     }
                     HoverHandler { id: acctHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: { menu.visible = false; backend.switchAccount(acctRow.modelData.profile) } }
@@ -924,8 +944,11 @@ Rectangle {
                 color: addHover.hovered ? theme.pick("#E0E0E0", "#3D3D3D", "#1AEBFF") : theme.pick("#F0F0F0", "#1F1F1F", "#000000")
                 bottomLeftRadius: 8; bottomRightRadius: 8
                 Rectangle { width: parent.width; height: 1.3; color: theme.pick("#F5F5F5", "#2E2E2E", "#FFFFFF") }
-                Item {
-                    x: 26; y: 1.3 + (65 - 32) / 2; width: 32; height: 32
+                // Teams' 32 px round slot (#E6E6E6) with the glyph.
+                Rectangle {
+                    x: 26; y: 1.3 + (65 - 32) / 2; width: 32; height: 32; radius: 16
+                    color: theme.pick("#E6E6E6", "#3D3D3D", "#000000")
+                    border.color: theme.highContrast ? "#FFFFFF" : "transparent"; border.width: 0.67
                     FluentIcon { anchors.centerIn: parent; name: "person-add-20"; size: 16; color: theme.onFill(addAcct, theme.textSecondary) }
                 }
                 Text { x: 76; y: 1.3 + (65 - 20) / 2; height: 20; verticalAlignment: Text.AlignVCenter; text: qsTr("Add another account"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(addAcct, theme.text) }

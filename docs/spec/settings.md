@@ -613,6 +613,35 @@ above and below a divider.
   is titled "Test call with your Call Delegation" and shows only Mic (with its options), More and
   Leave (measured). OST sends the callee as `{id: <your MRI>, endpointType: "personalAttendant"}`.
 
+## More than one account (TASK-0078; measured on winpc 2026-11-22 with OST Test 2 added to ost-test1)
+
+- **Add another account** (the profile flyout's footer) opens Teams' "Add another account" dialog
+  (440 × 540, radius 6: the device's Windows accounts, then "Create or use another account"),
+  which opens Microsoft's sign-in ("Sign in to Microsoft Teams") and, after the password, "Sign in
+  to all apps and websites on this device?" (No, this app only / Yes). The window then switches to
+  the new account.
+- **Title bar**: the profile button becomes a 140 × 28 pill: the organisation's name (12/16
+  #424242 at 6.7, cut at 107.9) and the 28 px picture at its end; its name reads "Your profile,
+  status {status} for {address} in {organisation}".
+- **Profile flyout** (320 wide): the signed-in account's menu on white, then, on #F5F5F5, an 80.3
+  tall row per other account: the 48 px picture at 16 (presence 12 at 36, 36), the name 14/20/600
+  at 76, 8 and the address 12/16 under it ("Switch to account {address},  Status {status}"); then
+  the footer "Add another account" (65 tall, #F0F0F0, the 32 px #E6E6E6 slot at 26 with the 16 px
+  person-add glyph, the text 14/600 at 76).
+- **App bar**: "Activity in other accounts and orgs" at the bottom (52 × 48, a 24 px glyph #616161,
+  a red #D13438 count badge of the other accounts' activity).
+- **Settings ▸ Accounts and orgs**: one card per account in the order they were added (788 × 121,
+  28 apart): the signed-in account's card has Refresh license and restart and its organisation in
+  bold; another account's card has Manage only and its organisation in regular weight.
+- **Sign out** (the flyout's): "Sign out of Teams" ("We'll sign you out and remove any offline
+  data, including message drafts. Learn more" and the multiple-accounts tip) with Add another
+  account / Cancel / Sign out; afterwards the window is the remaining account's again.
+- **OST**: each account is its own profile (its own sign-in, window, keyring entry); the device's
+  accounts (with their organisation) are kept in accounts.json, one entry per account (a second
+  profile of the same account isn't listed). Add another account starts OST for a new profile at
+  Microsoft's sign-in page; Switch to account brings that account's window forward. Not built: the
+  app bar's "Activity in other accounts and orgs" hub (its window wasn't measured).
+
 ## Links into Settings (TASK-0088 AC3; Teams 26304, bundles read and measured on winpc 2026-11-21)
 
 Every link goes through `entityCommanding.settings.launch(command, id)` or

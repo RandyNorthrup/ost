@@ -374,6 +374,9 @@ pub struct Account {
     /// The account's last presence, as its window last saw it.
     #[serde(default)]
     pub availability: String,
+    /// Its organisation's name (Teams' Accounts and orgs list).
+    #[serde(default)]
+    pub org: String,
 }
 
 fn accounts_path() -> Result<PathBuf> {

@@ -11959,6 +11959,15 @@ Window {
             const log = tag => { const a = pa(); console.warn("SETIPA", tag, JSON.stringify({ on: a.isEnabled, lang: a.defaultLanguage, booking: a.enableBookingCalendar, custom: dec(a.calleeName), bookings: mt().bookings, policy: mt().attendantPolicy, call: backend.callState, peer: backend.callPeer, test: backend.callAttendantTest })) }
             const call = Qt.application.arguments.indexOf("--seti-pa-call") >= 0
             const sv = settingsView
+            // --seti-pa-lang=<code>: only sets the default language (and quits).
+            const lang = (Qt.application.arguments.find(a => a.startsWith("--seti-pa-lang=")) || "").slice(15)
+            if (lang) {
+                if (step === 0) backend.changeSetting("mt", "attendant", JSON.stringify({ defaultLanguage: lang }))
+                else if (step === 2) backend.loadSettings()
+                else if (step === 4) { log("language set (read back)"); Qt.quit() }
+                step++
+                return
+            }
             switch (step) {
             case 0: rail.current = "settings"; sv.pageForTest("calls"); before = JSON.parse(JSON.stringify(pa())); wasOn = before.isEnabled === true; log("start"); break
             case 1: if (!wasOn) backend.changeSetting("mt", "attendant", JSON.stringify({ isEnabled: true })); break
@@ -11977,7 +11986,7 @@ Window {
             case 18: backend.loadSettings(); break
             case 20: backend.changeSetting("mt", "bookings", JSON.stringify({ op: "load" })); break
             case 22: log("changed (read back)"); sv.launchSection("personal_attendant_custom_instructions_title"); break
-            case 23: shot("instructions-saved"); sv.paForTest("restore:" + (before.calleeName || "")); backend.changeSetting("mt", "attendant", JSON.stringify({ defaultLanguage: before.defaultLanguage || "en-US" })); backend.changeSetting("mt", "bookings", JSON.stringify({ defaultDuration: "PT30M" })); break
+            case 23: shot("instructions-saved"); backend.changeSetting("mt", "attendant", JSON.stringify({ calleeName: before.calleeName || "", defaultLanguage: before.defaultLanguage || "en-US" })); backend.changeSetting("mt", "bookings", JSON.stringify({ defaultDuration: "PT30M" })); break
             case 25: backend.loadSettings(); break
             case 27: backend.changeSetting("mt", "bookings", JSON.stringify({ op: "load" })); break
             case 29: log("put back (read back)"); if (!call) step = 44; break
@@ -12075,10 +12084,12 @@ Window {
             // device's other accounts and "Add another account" (captured),
             // then Add another account (a new profile's OST, at its sign-in).
             if (Qt.application.arguments.indexOf("--seth-accounts") >= 0) {
-                if (step === 0) { console.warn("SETH accounts", backend.otherAccountsJson()); titleBar.pauseForTest("flyout") }
+                if (step === 0) { console.warn("SETH accounts", backend.otherAccountsJson()); titleBar.refreshAccounts(); titleBar.pauseForTest("flyout") }
                 else if (step === 2) shot("flyout")
-                else if (step === 3) { titleBar.pauseForTest("flyout"); backend.addAccount(); console.warn("SETH add account started") }
-                else if (step === 6) Qt.quit()
+                else if (step === 3) { titleBar.pauseForTest("flyout"); rail.current = "settings"; settingsView.pageForTest("accounts") }
+                else if (step === 5) shot("accounts")
+                else if (step === 6) { backend.addAccount(); console.warn("SETH add account started") }
+                else if (step === 9) Qt.quit()
                 step++
                 return
             }

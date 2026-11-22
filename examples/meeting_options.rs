@@ -88,5 +88,10 @@ async fn main() -> anyhow::Result<()> {
             _ => println!("{name} = {}", o["currentValue"]),
         }
     }
+    // OST_DUMP_TRANSLATIONS=<file>: the reply's dialog strings (by key).
+    if let Ok(path) = std::env::var("OST_DUMP_TRANSLATIONS") {
+        std::fs::write(&path, serde_json::to_string_pretty(&options.translations)?)?;
+        println!("translations written to {path}");
+    }
     Ok(())
 }

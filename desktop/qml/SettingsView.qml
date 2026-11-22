@@ -22,6 +22,8 @@ Rectangle {
     property string page: "general"
     /// A page's sub-page ("oof": General ▸ Out of office).
     property string subPage: ""
+    /// This device's other accounts (Accounts and orgs).
+    property var otherAccounts: []
     readonly property bool attendantSub: subPage === "attendantGreeting" || subPage === "attendantInstructions" || subPage === "attendantHours"
     onSubPageChanged: if (subPage === "attendantHours") backend.changeSetting("mt", "bookings", JSON.stringify({ op: "load" }))
     color: theme.surface
@@ -45,6 +47,7 @@ Rectangle {
     function openAppPermForTest(name) { const a = (appPerms.data_.apps || []).find(x => x.name === name); appPerms.open = a ? a.id : "" }
     onPageChanged: {
         subPage = ""
+        if (page === "accounts") otherAccounts = JSON.parse(backend.otherAccountsJson())
         if (page === "apppermissions") backend.loadPermissionApps(JSON.stringify((backend.teamsJson ? JSON.parse(backend.teamsJson) : []).map(t => t.thread_id).filter(t => !!t)))
     }
     onVisibleChanged: if (visible) backend.loadSettings()
@@ -1945,6 +1948,14 @@ Rectangle {
             // Your account (64 avatar, name, e-mail) with Refresh license and
             // restart and Manage (your Microsoft account page), then your
             // organisation, the active one marked with the brand bar.
+            // Teams lists every account on the device, in the order they were
+            // added (measured on winpc 2026-11-22 with two): cards 788 x 121,
+            // 28 apart; another account's card has Manage only and its
+            // organisation in regular weight.
+            Repeater {
+                model: root.page === "accounts" ? root.otherAccounts.filter(a => a.before) : []
+                Item { required property var modelData; width: pageCol.width; height: 136.7; OtherAccountCard { modelData: parent.modelData } }
+            }
             Rectangle {
                 id: accountCard
                 visible: root.page === "accounts"
@@ -2001,6 +2012,11 @@ Rectangle {
                     Accessible.role: Accessible.ListItem
                     Accessible.name: backend.orgName
                 }
+            }
+
+            Repeater {
+                model: root.page === "accounts" ? root.otherAccounts.filter(a => !a.before) : []
+                Item { required property var modelData; width: pageCol.width; height: 136.7; OtherAccountCard { y: 16; modelData: parent.modelData } }
             }
 
             // ---- Privacy ----
@@ -4794,6 +4810,44 @@ Rectangle {
         Keys.onSpacePressed: clicked()
         Accessible.role: Accessible.Button
         Accessible.name: label
+    }
+    component OtherAccountCard: Rectangle {
+        id: oac
+        property var modelData: ({})
+        width: parent ? parent.width : 790; height: 120.7
+        radius: 8; color: theme.surface
+        border.color: theme.pick("#D1D1D1", "#3D3D3D", "#FFFFFF"); border.width: 0.67
+        clip: true
+        Avatar { x: 10.7; y: 10.7; size: 56; name: oac.modelData.name || oac.modelData.upn; photoId: oac.modelData.objectId || ""; presence: oac.modelData.availability || "" }
+        Column {
+            x: 76.7; y: 20.7
+            Text { text: oac.modelData.name || oac.modelData.upn; font.family: theme.font; font.pixelSize: 14; font.weight: Font.Bold; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text }
+            Text { text: oac.modelData.upn; font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textSecondary }
+        }
+        Rectangle {
+            id: oacManage
+            x: parent.width - 118.7; y: 21.2
+            width: 96; height: 32; radius: 4
+            color: oacHover.hovered ? theme.pick("#F5F5F5", "#3D3D3D", "#1AEBFF") : theme.surface
+            border.color: theme.pick("#D1D1D1", "#5C5C5C", "#FFFFFF"); border.width: 0.67
+            Row {
+                anchors.centerIn: parent; spacing: 6
+                Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Manage"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(oacManage, theme.text) }
+                FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "open-16"; size: 14; color: theme.onFill(oacManage, theme.text) }
+            }
+            HoverHandler { id: oacHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: Qt.openUrlExternally("https://myaccount.microsoft.com/?login_hint=" + encodeURIComponent(oac.modelData.upn)) }
+            Accessible.role: Accessible.Link
+            Accessible.name: qsTr("Manage Account for %1 (opens in new tab)").arg(oac.modelData.name || oac.modelData.upn)
+        }
+        Rectangle { y: 72; width: parent.width; height: 0.67; color: theme.pick("#D1D1D1", "#3D3D3D", "#000000") }
+        Rectangle {
+            x: 0.67; y: 72.67; width: parent.width - 1.33; height: 47.3
+            color: theme.pick("#FAFAFA", "#242424", "#000000")
+            Text { x: 10; anchors.verticalCenter: parent.verticalCenter; text: oac.modelData.org || ""; font.family: theme.font; font.pixelSize: 14; color: theme.text }
+            Accessible.role: Accessible.ListItem
+            Accessible.name: oac.modelData.org || ""
+        }
     }
     component CollapseButton: Rectangle {
         id: cb

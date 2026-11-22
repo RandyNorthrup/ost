@@ -33,6 +33,21 @@ Rectangle {
             else if (u.indexOf("https://") !== 0 && u !== "about:blank") req.reject()
         }
         onPermissionRequested: p => p.deny()
+        // --seti-signin --shots=<dir> (TASK-0078): a new profile's sign-in
+        // page, logged and pictured once Microsoft's page has loaded.
+        onLoadingChanged: info => {
+            if (Qt.application.arguments.indexOf("--seti-signin") < 0 || info.status !== WebEngineView.LoadSucceededStatus || url.toString() === "about:blank") return
+            console.warn("SETI signin loaded", url.toString().split("?")[0], JSON.stringify(title))
+            signInShot.restart()
+        }
+        Timer {
+            id: signInShot
+            interval: 3000
+            onTriggered: {
+                const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+                window.contentItem.grabToImage(r => { r.saveToFile(dir + "si-signin.png"); console.warn("SETI signin shot"); Qt.quit() })
+            }
+        }
     }
 
     // While the sign-in is redeemed, or after it failed: OST's card.
