@@ -483,9 +483,11 @@ fn js_len(s: &str) -> usize {
 /// list and header; worker 98382 `O`/`q` and 99234 `JR`): the people sorted
 /// by name, the first three others (not you) by their short names (given
 /// names, see `directory::short_name`), as many as fit in 24 characters
-/// joined by ", ", or, when they all fit, as a list ("A and B", "A, B, and
-/// C", if that is at most 26 long), then ", +N" for the rest (N counting
-/// one more than are left out, as Teams does). "Just me" when you're its
+/// joined by ", ", or, when they all fit, as a list in the app language
+/// (`locale`, Teams' `Intl.ListFormat(locale)`: "A and B", "A, B, and C";
+/// "A und B" in de-de) if that is at most 26 long, then ", +N" for the rest
+/// (N counting one more than are left out; Teams' ", +" is not
+/// translated). "Just me" when you're its
 /// only member, "Unknown" when nobody's name is known.
 /// `members` are the chat's member MRIs; `people` their known profiles.
 pub fn generated_title(members: &[String], people: &[ChatPerson], me: &str, locale: &str) -> String {
@@ -524,7 +526,7 @@ pub fn generated_title(members: &[String], people: &[ChatPerson], me: &str, loca
     let mut more = (fit < others).then(|| others - fit + 1);
     // All of them: as a list when that fits (99234 `JR`).
     if more.is_none() && fit > 1 {
-        let list = super::app_details::list_format(&names[..fit]);
+        let list = crate::i18n::list_and(&names[..fit], locale);
         if js_len(&list) <= TITLE_MAX {
             text = list;
         } else {
@@ -2024,6 +2026,26 @@ mod list_preview_tests {
             p("8:orgid:4", "Cy Young", "Cy", "Young"),
         ];
         assert_eq!(generated_title(&ids(4), &short, me, ""), "Ann, Bo, and Cy");
+        // In the app language (Intl.ListFormat); "+N" stays as it is.
+        assert_eq!(generated_title(&ids(4), &short, me, "de-de"), "Ann, Bo und Cy");
+        assert_eq!(generated_title(&ids(3), &test, me, "fr-fr"), "OST et OST");
+        assert_eq!(generated_title(&ids(6), &long, me, "de-de"), "Alexandra, Bartholomew, +4");
+    }
+
+    #[test]
+    fn lists_in_the_app_language() {
+        use crate::i18n::list_and;
+        let l = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(list_and(&l(&["A", "B"]), ""), "A and B");
+        assert_eq!(list_and(&l(&["A", "B", "C"]), "en-us"), "A, B, and C");
+        assert_eq!(list_and(&l(&["A", "B", "C"]), "en-gb"), "A, B and C");
+        assert_eq!(list_and(&l(&["A", "B", "C"]), "de-de"), "A, B und C");
+        assert_eq!(list_and(&l(&["A", "B"]), "es-es"), "A y B");
+        assert_eq!(list_and(&l(&["A", "B", "C"]), "ja-jp"), "A、B、C");
+        assert_eq!(list_and(&l(&["A", "B", "C"]), "zh-tw"), "A、B和C");
+        assert_eq!(list_and(&l(&["A", "B", "C"]), "ar-sa"), "A وB وC");
+        assert_eq!(list_and(&l(&["A", "B", "C"]), "he-il"), "A, B ו-C");
+        assert_eq!(list_and(&l(&["A", "B", "C"]), "sr-latn-rs"), "A, B i C");
     }
 
     #[test]

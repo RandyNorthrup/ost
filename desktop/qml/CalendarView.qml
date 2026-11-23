@@ -672,17 +672,111 @@ Item {
     function colW(i) { return colWidths[i] || 0 }
 
     // The hosted calendar's palette, light and dark (Teams' Outlook calendar
-    // frame, measured on winpc 2026-11-23): days on neutralPrimarySurface,
-    // past days and the hours outside the working day on
-    // neutralLighterAlt, its lines neutralTertiaryAlt.
+    // frame, measured on winpc 2026-11-23 with Teams in Light and Dark):
+    // the toolbar, days and month cells on neutralPrimarySurface, past days
+    // and the hours outside the working day on neutralLighterAlt, the side
+    // pane #FFFFFF/#0F0F0F, hour, header and month lines neutralTertiaryAlt,
+    // the time scale's dashed lines #EBEBEB/#141414, the mini month's
+    // shown range colorBrandBackground2Hover.
     readonly property color calDay: theme.pick("#FFFFFF", "#292929", "#000000")
     readonly property color calOff: theme.pick("#FAFAFA", "#242424", "#000000")
     readonly property color calLine: theme.pick("#D1D1D1", "#5C5C5C", "#FFFFFF")
+    readonly property color calDash: theme.pick("#EBEBEB", "#141414", "#3F3F3F")
+    readonly property color calPane: theme.pick("#FFFFFF", "#0F0F0F", "#000000")
+    readonly property color calRange: theme.pick("#DCE0FA", "#383966", "#1AEBFF")
+    /// The peek card's lines (neutralLight) and outlined buttons' edges.
+    readonly property color cardLine: theme.pick("#F0F0F0", "#141414", "#FFFFFF")
+    readonly property color cardEdge: theme.pick("#D1D1D1", "#666666", "#FFFFFF")
+    readonly property color calLink: theme.pick("#4F52B2", "#7F85F5", "#1AEBFF")
+    /// A day under an all-day busy event: the calendar colour at 10 % over
+    /// the day (#EEEFF9 in light, as measured).
+    readonly property color busyFill: theme.highContrast ? "#000000" : over(calPrimary, .1, calDay)
+
+    // ── Event colours, as Outlook's hosted calendar works them out (its
+    // bundle: the calendar's colour scheme, the tile fill, edge and text,
+    // and the show-as bar). The default calendar's colour is the theme's
+    // themePrimary (#5B5FC7, dark #7F85F5); its shades come from Fluent's
+    // shade generator, which in dark darkens where light lightens. Measured
+    // on winpc 2026-11-23: light busy #C7C9EE, past busy #E1E1F6 with
+    // #555555 text and a #C7C9EE bar; dark past busy #26284A with #A5A5A5
+    // text and a #4C5093 bar; canceled #FFFFFF/#292929 at 75 %.
+    readonly property color calPrimary: theme.pick("#5B5FC7", "#7F85F5", "#FFFFFF")
+    /// [calLighterAlt, calLighter, calLight, calTertiary, calSecondary].
+    readonly property var calShades: [1, 2, 3, 4, 5].map(k => shadeOf(calPrimary, k, theme.dark))
+    function shadeOf(base, k, dark) {
+        const S = [.96, .84, .7, .4, .12], U = [.1, .24, .44]
+        const L = [.88, .77, .66, .55, .44, .33, .22, .11], D = [.11, .22, .33, .44, .55, .66, .77, .88]
+        const c = Qt.color(base), i = k - 1, l = c.hslLightness
+        let h = Math.max(0, c.hsvHue), sat = c.hsvSaturation, v = c.hsvValue
+        const lighten = t => { sat = sat - sat * t; v = v + (1 - v) * t }
+        const darken = t => { v = v - v * t }
+        const up = dark ? darken : lighten, down = dark ? lighten : darken
+        if (l > .94) down(D[i])
+        else if (l < .2) up(L[i])
+        else if (i < S.length) up(S[i])
+        else down(U[i - S.length])
+        return Qt.hsva(h, Math.max(0, Math.min(1, sat)), Math.max(0, Math.min(1, v)), 1)
+    }
+    function shade(name) { return calShades[["lighterAlt", "lighter", "light", "tertiary", "secondary"].indexOf(name)] }
+    function alpha(c, a) { const q = Qt.color(c); return Qt.rgba(q.r, q.g, q.b, a) }
+    /// `top` at `a` over the opaque `under`, as the bundle composites (floored).
+    function over(top, a, under) {
+        const t = Qt.color(top), u = Qt.color(under), f = (x, y) => Math.floor(a * x * 255 + (1 - a) * y * 255) / 255
+        return Qt.rgba(f(t.r, u.r), f(t.g, u.g), f(t.b, u.b), 1)
+    }
+    function luminance(c) {
+        const f = x => x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4)
+        return 0.2126 * f(c.r) + 0.7152 * f(c.g) + 0.0722 * f(c.b)
+    }
+    function contrast(a, b) { const x = luminance(a), y = luminance(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05) }
+    /// Text on a tile: the grey nearest the fill (in steps of 5 from black
+    /// or white) that keeps `target` contrast.
+    function greyOn(bg, target) {
+        const b = Qt.color(bg), grey = n => Qt.rgba(n / 255, n / 255, n / 255, 1)
+        const darkText = contrast(b, grey(255)) < contrast(b, grey(0))
+        let n = darkText ? 0 : 255
+        for (let d = 0; d < 51; d++) {
+            const e = darkText ? n + 5 : n - 5
+            if (contrast(grey(e), b) < target) break
+            n = e
+        }
+        return grey(n)
+    }
 
     // How an event's left bar and fill look for its show-as and your answer.
     function isTentative(e) { return e.show_as === "tentative" || (!e.is_organizer && (e.response === "notResponded" || e.response === "none" || e.response === "tentativelyAccepted")) }
-    function fillOf(e) { return (e.show_as === "busy" || e.show_as === "oof" || e.show_as === "workingElsewhere") && !isTentative(e) ? theme.hc("#C7C9EE", "#000000") : theme.hc("#E1E1F6", "#000000") }
-    function textOf(e) { return theme.hc(e.show_as === "busy" && !isTentative(e) ? "#323232" : "#414141", "#FFFFFF") }
+    /// Teams dims events that have ended (the calendar's "dim past events").
+    function isPast(e) { return !!e.end_utc && evEnd(e) <= now }
+    function isCanceled(e) { return !!e.is_cancelled || e.response === "declined" }
+    function fillOf(e) {
+        if (theme.highContrast || !e) return "#000000"
+        if (isCanceled(e)) return alpha(calDay, .75)
+        const past = isPast(e), d = theme.dark
+        const light = isTentative(e) || e.show_as === "free" || e.show_as === "tentative" || e.show_as === "workingElsewhere"
+        return alpha(light ? shade(d ? (past ? "lighter" : "light") : (past ? "lighterAlt" : "lighter"))
+                           : shade(d ? (past ? "light" : "tertiary") : (past ? "lighter" : "light")), .9)
+    }
+    /// The tile text: grey with 8:1 contrast on the fill (11:1 in Month),
+    /// 5.5:1 once past, 6:1 when canceled.
+    function textOf(e, month) {
+        if (theme.highContrast || !e) return "#FFFFFF"
+        const f = Qt.color(fillOf(e))
+        return greyOn(over(f, f.a, calDay), isPast(e) ? 5.5 : isCanceled(e) ? 6 : month ? 11 : 8)
+    }
+    /// A canceled event's tile edge (top, right and bottom).
+    function edgeOf(e) {
+        if (!e) return "transparent"
+        const d = theme.dark
+        return alpha(isPast(e) ? shade(d ? "tertiary" : "light") : shade(d ? "secondary" : "tertiary"), .9)
+    }
+    /// The show-as bar: the calendar colour, dimmed once past; a free
+    /// event's edge calLight once past, a canceled one's its tile edge.
+    function barOf(e) {
+        if (theme.highContrast || !e) return theme.brand
+        if (isCanceled(e)) return edgeOf(e)
+        if (e.show_as === "free") return alpha(isPast(e) ? shade("light") : calPrimary, .9)
+        return alpha(isPast(e) ? shade(theme.dark ? "tertiary" : "light") : calPrimary, .9)
+    }
     function joinable(e) { return !!e.join_url && now >= new Date(evStart(e) - 5 * 60000) && now < evEnd(e) }
     /// Meetings whose call is going on (the join bar's list, and yours).
     readonly property var liveThreads: (backend.liveMeetingsJson ? JSON.parse(backend.liveMeetingsJson) : []).map(m => (m.threadId || "").toLowerCase())
@@ -695,15 +789,15 @@ Item {
         return liveThreads.some(t => t && u.indexOf(t) >= 0)
     }
 
-    Rectangle { anchors.fill: parent; color: theme.surface }
+    Rectangle { anchors.fill: parent; color: root.calDay }
 
     // ── side pane: title, month, calendars ──────────────────────────────
     Rectangle {
         id: pane
         visible: root.paneShown
         width: visible ? 235 : 0; height: parent.height
-        color: theme.pane
-        Rectangle { anchors.right: parent.right; width: 1; height: parent.height; color: theme.edge }
+        color: root.calPane
+        Rectangle { anchors.right: parent.right; width: 1; height: parent.height; color: root.calLine }
         Text { x: 16; y: 19; text: qsTr("Calendar"); font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text }
         Item {
             id: month
@@ -747,19 +841,19 @@ Item {
                     Item {
                         required property int index
                         readonly property date day: { const d = new Date(month.first); d.setDate(d.getDate() + index); return d }
-                        readonly property bool inMonth: day.getMonth() === month.shown.getMonth()
                         readonly property bool today: root.sameDay(day, root.now)
                         readonly property bool inRange: root.monthView ? false : root.view === "day" ? root.sameDay(day, root.start)
                             : day >= root.sundayOf(root.start) && day < root.dayAt(root.days + (root.view === "workweek" ? 1 : 0))
                         width: 28; height: 28
-                        Rectangle { visible: parent.inRange; anchors.fill: parent; color: theme.hc("#DCE0FA", "#1AEBFF") }
+                        Rectangle { id: rFill; visible: parent.inRange; anchors.fill: parent; color: root.calRange }
                         Rectangle { id: tFill; visible: parent.today; anchors.centerIn: parent; width: 22; height: 22; radius: 11; color: theme.brandFill }
                         Text {
                             anchors.centerIn: parent
                             text: parent.day.getDate()
                             font.family: theme.font; font.pixelSize: theme.small
                             font.weight: parent.today ? Font.DemiBold : Font.Normal
-                            color: theme.onFill(tFill, parent.today ? "white" : parent.inMonth ? theme.text : theme.textSecondary)
+                            // Every date in the text colour, the next month's too (Teams).
+                            color: theme.onFill([tFill, rFill], parent.today ? "white" : theme.text)
                         }
                         HoverHandler { cursorShape: Qt.PointingHandCursor }
                         TapHandler { onTapped: root.start = root.startFor(parent.day) }
@@ -854,7 +948,7 @@ Item {
         signal clicked()
         anchors.verticalCenter: parent ? parent.verticalCenter : undefined
         border.width: outlined ? 0.67 : 0
-        border.color: theme.hc("#BDBDBD", "#FFFFFF")
+        border.color: theme.pick("#BDBDBD", "#666666", "#FFFFFF")
         width: bbRow.implicitWidth + 20; height: 32; radius: theme.radius
         color: primary ? (bbh.hovered ? theme.brandHover : theme.brandFill) : bbh.hovered ? theme.rowHover : "transparent"
         Row {
@@ -1067,7 +1161,7 @@ Item {
                     required property var modelData
                     required property int index
                     x: root.colX(index * root.days); width: root.colX((index + 1) * root.days) - x; height: root.splitHead
-                    color: theme.surface
+                    color: root.calDay
                     Rectangle { width: 1; height: parent.height; color: root.calLine }
                     Text {
                         x: 13; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 13 - 40; elide: Text.ElideRight
@@ -1079,7 +1173,7 @@ Item {
                         icon: "dismiss-20"; tip: qsTr("Close %1").arg(blk.modelData.name)
                         onClicked: { if (blk.modelData.id === "") root.showCalendar = false; else root.toggleCalendar(blk.modelData.id) }
                     }
-                    Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: theme.hc("#E0E0E0", "#FFFFFF") }
+                    Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: root.calLine }
                 }
             }
             Repeater {
@@ -1090,12 +1184,12 @@ Item {
                     readonly property date day: root.dayAt(dayIndex)
                     readonly property bool today: dayIndex === root.todayIndex
                     x: root.colX(index); width: root.colW(index); y: root.splitHead; height: heads.height - y
-                    color: root.busyDay(dayIndex) ? theme.hc("#EEEFF9", "#000000") : root.pastDay(dayIndex) ? root.calOff : root.calDay
+                    color: root.busyDay(dayIndex) ? root.busyFill : root.pastDay(dayIndex) ? root.calOff : root.calDay
                     Rectangle { visible: parent.today; width: parent.width; height: 3; color: theme.brand }
-                    Text { x: 13; y: 8; text: parent.day.getDate(); font.family: theme.font; font.pixelSize: 20; color: parent.today ? theme.brand : theme.text }
+                    Text { x: 13; y: 8; text: parent.day.getDate(); font.family: theme.font; font.pixelSize: 20; color: theme.brand }
                     Text { x: 13; y: 33; text: theme.fmtDate(parent.day, root.wideLayout ? "dddd" : "ddd"); font.family: theme.font; font.pixelSize: theme.small; color: parent.today ? theme.brand : theme.textSecondary }
                     Rectangle { width: 1; height: parent.height; color: root.calLine }
-                    Rectangle { y: 54; width: parent.width; height: 1; color: theme.hc("#E0E0E0", "#FFFFFF") }
+                    Rectangle { y: 54; width: parent.width; height: 1; color: root.calLine }
                 }
             }
             Repeater {
@@ -1147,7 +1241,7 @@ Item {
                     readonly property int d: root.dayOfCol(index)
                     readonly property bool weekend: [0, 6].indexOf(root.dayAt(d).getDay()) >= 0
                     x: root.colX(index); width: root.colW(index); height: grid.contentHeight
-                    Rectangle { anchors.fill: parent; color: root.busyDay(parent.d) ? theme.hc("#EEEFF9", "#000000") : root.pastDay(parent.d) || parent.weekend ? root.calOff : root.calDay }
+                    Rectangle { anchors.fill: parent; color: root.busyDay(parent.d) ? root.busyFill : root.pastDay(parent.d) || parent.weekend ? root.calOff : root.calDay }
                     Rectangle { visible: !root.busyDay(parent.d) && !root.pastDay(parent.d) && !parent.weekend; width: parent.width; height: 8 * root.hourHeight; color: root.calOff }
                     Rectangle { visible: !root.busyDay(parent.d) && !root.pastDay(parent.d) && !parent.weekend; y: 17 * root.hourHeight; width: parent.width; height: 7 * root.hourHeight; color: root.calOff }
                     Rectangle { width: 1; height: parent.height; color: root.calLine }
@@ -1172,7 +1266,7 @@ Item {
                             required property int index
                             x: root.gutter; y: (index + 1) * root.slotHeight
                             spacing: 3
-                            Repeater { model: Math.ceil((grid.contentWidth - root.gutter) / 6); Rectangle { width: 3; height: 1; color: theme.hc("#E0E0E0", "#3F3F3F") } }
+                            Repeater { model: Math.ceil((grid.contentWidth - root.gutter) / 6); Rectangle { width: 3; height: 1; color: root.calDash } }
                         }
                     }
                 }
@@ -1208,7 +1302,7 @@ Item {
                     height: Math.max(17, (modelData.e - modelData.s) / 60 * root.hourHeight - 5)
                     radius: 4
                     color: root.fillOf(ev)
-                    border.color: details.visible && details.ev.id === ev.id ? theme.hc("#242424", "#1AEBFF") : "transparent"
+                    TileEdge { ev: evTile.ev; selected: details.visible && details.ev.id === evTile.ev.id }
                     ShowAsBar { ev: evTile.ev; height: parent.height }
                     // Short: one line (title, location, organizer); else stacked.
                     Text {
@@ -1242,7 +1336,7 @@ Item {
                         width: iconOnly ? 20 : jt.implicitWidth + 16; height: iconOnly ? 20 : 22; radius: 4
                         color: live ? (jth.hovered ? theme.brandHover : theme.brandFill) : jth.hovered ? theme.rowHover : theme.surface
                         border.width: live ? 0 : 0.67
-                        border.color: theme.hc("#BDBDBD", "#FFFFFF")
+                        border.color: theme.pick("#BDBDBD", "#666666", "#FFFFFF")
                         FluentIcon { visible: joinTile.iconOnly; anchors.centerIn: parent; name: "video-16"; size: 16; color: theme.onFill(joinTile, joinTile.live ? "white" : theme.textSecondary) }
                         Text { id: jt; visible: !joinTile.iconOnly; anchors.centerIn: parent; text: qsTr("Join"); font.family: theme.font; font.pixelSize: 12; color: theme.onFill(joinTile, joinTile.live ? "white" : theme.textSecondary) }
                         HoverHandler { id: jth; cursorShape: Qt.PointingHandCursor }
@@ -1288,29 +1382,53 @@ Item {
         }
     }
 
-    // How busy an event keeps you: a 4 px bar (busy solid, tentative and
-    // unanswered hatched, free white with a brand edge).
+    // How busy an event keeps you: a 4 px bar in the calendar colour (busy
+    // solid; tentative and unanswered hatched with the day's colour; free
+    // and canceled the day's colour with a calendar-colour edge).
     component ShowAsBar: Item {
         id: sab
         property var ev
+        readonly property bool open: !!ev && (ev.show_as === "free" || root.isCanceled(ev))
+        readonly property color barColor: root.barOf(ev)
         width: 4
         Rectangle {
             anchors.fill: parent; radius: 4
-            visible: !root.isTentative(sab.ev)
-            color: sab.ev && sab.ev.show_as === "free" ? "white" : theme.brand
-            border.width: sab.ev && sab.ev.show_as === "free" ? 1 : 0; border.color: theme.brand
+            visible: !root.isTentative(sab.ev) || sab.open
+            color: sab.open ? root.calDay : sab.barColor
+            border.width: sab.open ? 1 : 0; border.color: sab.barColor
         }
         Canvas {
+            id: hatch
             anchors.fill: parent
-            visible: root.isTentative(sab.ev)
+            visible: root.isTentative(sab.ev) && !sab.open
             onPaint: {
                 const c = getContext("2d")
                 c.clearRect(0, 0, width, height)
-                c.fillStyle = "white"; c.fillRect(0, 0, width, height)
-                c.strokeStyle = theme.brand; c.lineWidth = 1.5
+                c.fillStyle = sab.barColor; c.fillRect(0, 0, width, height)
+                c.strokeStyle = root.calDay; c.lineWidth = 1.5
                 for (let y = -4; y < height + 4; y += 4) { c.beginPath(); c.moveTo(0, y + 4); c.lineTo(width, y); c.stroke() }
             }
             onHeightChanged: requestPaint()
+            Connections { target: sab; function onBarColorChanged() { hatch.requestPaint() } }
+            Connections { target: root; function onCalDayChanged() { hatch.requestPaint() } }
+        }
+    }
+    // A tile's edge: a canceled event's 1 px edge (top, right, bottom), and
+    // the selected event's 2 px inset ring (neutralDark: #242424, dark
+    // #D6D6D6).
+    component TileEdge: Item {
+        id: te
+        property var ev
+        property bool selected: false
+        anchors.fill: parent
+        readonly property bool canceled: !!ev && root.isCanceled(ev) && !theme.highContrast
+        Rectangle { visible: te.canceled; x: 4; width: parent.width - 4; height: 1; color: root.edgeOf(te.ev) }
+        Rectangle { visible: te.canceled; x: 4; anchors.bottom: parent.bottom; width: parent.width - 4; height: 1; color: root.edgeOf(te.ev) }
+        Rectangle { visible: te.canceled; anchors.right: parent.right; width: 1; height: parent.height; color: root.edgeOf(te.ev) }
+        Rectangle {
+            visible: te.selected
+            anchors.fill: parent; radius: 4; z: 2
+            color: "transparent"; border.width: 2; border.color: theme.pick("#242424", "#D6D6D6", "#1AEBFF")
         }
     }
 
@@ -1373,17 +1491,19 @@ Item {
                 readonly property bool inMonth: day.getMonth() === root.focusMonth.getMonth()
                 x: (index % 7) * monthArea.cellW; y: 29 + Math.floor(index / 7) * monthArea.cellH
                 width: monthArea.cellW; height: monthArea.cellH
-                color: theme.surface
+                // Days before today on neutralLighterAlt, as the week's.
+                color: root.midnight(day) < root.midnight(root.now) ? root.calOff : root.calDay
                 border.width: today ? 1 : 0; border.color: theme.brand
-                Rectangle { visible: !cell.today; anchors.right: parent.right; width: 1; height: parent.height; color: theme.hc("#E0E0E0", "#FFFFFF") }
-                Rectangle { visible: !cell.today; anchors.bottom: parent.bottom; width: parent.width; height: 1; color: theme.hc("#E0E0E0", "#FFFFFF") }
-                Rectangle { id: todayDot; visible: cell.today; x: 4; y: 6; width: 22; height: 22; radius: 11; color: theme.brandFill }
+                Rectangle { visible: !cell.today; anchors.right: parent.right; width: 1; height: parent.height; color: root.calLine }
+                Rectangle { visible: !cell.today; anchors.bottom: parent.bottom; width: parent.width; height: 1; color: root.calLine }
+                // Today: a calendar-colour circle (#5B5FC7, dark #7F85F5).
+                Rectangle { id: todayDot; visible: cell.today; x: 4; y: 6; width: 22; height: 22; radius: 11; color: theme.brand }
                 Text {
                     x: cell.today ? 4 : 8; y: 6; width: cell.today ? 22 : implicitWidth; height: cell.today ? 22 : 19
                     horizontalAlignment: cell.today ? Text.AlignHCenter : Text.AlignLeft; verticalAlignment: Text.AlignVCenter
                     text: cell.day.getDate() === 1 ? theme.fmtDate(cell.day, "MMM d") : cell.day.getDate()
                     font.family: theme.font; font.pixelSize: 14; font.weight: cell.today ? Font.DemiBold : Font.Normal
-                    color: theme.onFill(todayDot, cell.today ? "white" : theme.textSecondary)
+                    color: theme.onFill(todayDot, cell.today ? theme.pick("#FFFFFF", "#242424", "#000000") : theme.textSecondary)
                 }
                 MouseArea {
                     anchors.fill: parent; z: -1
@@ -1395,7 +1515,7 @@ Item {
                     visible: n > 0
                     x: 0; y: 31.6 + (monthArea.rowsPerCell - 1) * 26
                     width: parent.width - 8; height: 24; radius: 4
-                    color: moreH.hovered ? theme.hc("#E0E0E0", "#1AEBFF") : theme.hc("#F0F0F0", "#000000")
+                    color: moreH.hovered ? theme.pick("#E0E0E0", "#3D3D3D", "#1AEBFF") : theme.pick("#F0F0F0", "#141414", "#000000")
                     Text { anchors.centerIn: parent; text: "+" + parent.n; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
                     HoverHandler { id: moreH; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: { root.view = "day"; root.start = root.startFor(cell.day) } }
@@ -1420,7 +1540,7 @@ Item {
                 y: 29 + modelData.week * monthArea.cellH + 31.6 + modelData.row * 26
                 height: 24; radius: 4
                 color: root.fillOf(ev)
-                border.color: details.visible && details.ev.id === ev.id ? theme.hc("#242424", "#1AEBFF") : "transparent"
+                TileEdge { ev: mb.ev; selected: details.visible && details.ev.id === mb.ev.id }
                 ShowAsBar { ev: mb.ev; height: parent.height }
                 Text {
                     x: mb.allDay ? Math.max(11, (parent.width - implicitWidth) / 2) : 11
@@ -1428,13 +1548,13 @@ Item {
                     width: Math.min(implicitWidth, parent.width - 11 - (mbSeries.visible ? 26 : 9))
                     elide: Text.ElideRight; textFormat: Text.StyledText
                     text: (mb.allDay ? "" : theme.time(root.evStart(mb.ev)).replace(":00", "") + " ") + "<b>" + (mb.ev.subject || qsTr("(No title)")).replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</b>"
-                    font.family: theme.font; font.pixelSize: 12; color: theme.hc(mb.ev.show_as === "busy" && !root.isTentative(mb.ev) ? "#191919" : "#282828", "#FFFFFF")
+                    font.family: theme.font; font.pixelSize: 12; color: root.textOf(mb.ev, true)
                 }
                 FluentIcon {
                     id: mbSeries
                     visible: mb.ev.event_type === "occurrence" || mb.ev.event_type === "exception"
                     anchors.right: parent.right; anchors.rightMargin: 4; anchors.verticalCenter: parent.verticalCenter
-                    name: mb.ev.event_type === "exception" ? "arrow-repeat-all-off-16" : "arrow-repeat-all-16"; size: 16; color: theme.text
+                    name: mb.ev.event_type === "exception" ? "arrow-repeat-all-off-16" : "arrow-repeat-all-16"; size: 16; color: root.textOf(mb.ev, true)
                 }
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: details.show(mb.ev, mb) }
@@ -1504,7 +1624,7 @@ Item {
         }
         width: 392; padding: 0
         background: Rectangle {
-            radius: 4; color: theme.menu; border.color: theme.dividerSoft
+            radius: 4; color: theme.menu; border.color: theme.pick(theme.dividerSoft, "#141414", "#FFFFFF")
             Rectangle { width: parent.width; height: 4; radius: 2; color: theme.brand }
         }
         contentItem: Column {
@@ -1516,7 +1636,7 @@ Item {
                     id: titleText
                     width: parent.width - 32; wrapMode: Text.Wrap
                     text: details.ev.subject || qsTr("(No title)")
-                    font.family: theme.font; font.pixelSize: 21; font.weight: Font.DemiBold; color: theme.text
+                    font.family: theme.font; font.pixelSize: 21; font.weight: Font.DemiBold; color: theme.pick(theme.text, "#ADADAD", "#FFFFFF")
                 }
                 NavButton {
                     anchors.right: parent.right; y: 2; width: 24; height: 24; iconSize: 16
@@ -1546,7 +1666,7 @@ Item {
                 }
             }
             Item { visible: !!details.ev.join_url; width: 1; height: 16 }
-            Rectangle { width: 358; height: 1; color: theme.hc("#F0F0F0", "#FFFFFF") }
+            Rectangle { width: 358; height: 1; color: root.cardLine }
             DetailRow {
                 icon: "clock-20"
                 text: {
@@ -1605,7 +1725,7 @@ Item {
                 visible: root.copilotEntries && !!details.ev.is_online_meeting && (!details.ev.location || details.ev.location === "Microsoft Teams Meeting")
                 x: 35; topPadding: -12; bottomPadding: 8
                 text: qsTr("Add a room with Copilot")
-                font.family: theme.font; font.pixelSize: 14; color: theme.hc("#4F52B2", "#1AEBFF")
+                font.family: theme.font; font.pixelSize: 14; color: root.calLink
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: root.askCopilot("Add a room") }
                 Accessible.role: Accessible.Button; Accessible.name: text
@@ -1614,7 +1734,7 @@ Item {
             Item {
                 visible: !!details.ev.id && !details.ev.is_organizer
                 width: 358; height: visible ? 52 : 0
-                Rectangle { y: 0; x: 34; width: 324; height: 1; color: theme.hc("#F0F0F0", "#FFFFFF") }
+                Rectangle { y: 0; x: 34; width: 324; height: 1; color: root.cardLine }
                 Avatar { x: 0; y: 14; size: 24; name: (details.ev.channel_id ? (root.withTeam(details.ev).team_name || details.ev.organizer) : details.ev.organizer) || ""; photoId: details.ev.channel_id && root.withTeam(details.ev).team_id ? "team:" + root.withTeam(details.ev).team_id : "" }
                 Text {
                     x: 36; y: 14; width: 322; elide: Text.ElideRight
@@ -1634,13 +1754,13 @@ Item {
             Item {
                 visible: root.copilotEntries && !!details.ev.is_online_meeting
                 width: 358; height: visible ? 58 : 0
-                Rectangle { x: 34; width: 324; height: 1; color: theme.hc("#F0F0F0", "#FFFFFF") }
+                Rectangle { x: 34; width: 324; height: 1; color: root.cardLine }
                 FluentIcon { x: 2; y: 15; name: "calendar-sparkle-20"; size: 20; color: theme.textSecondary }
                 Rectangle {
                     id: prepBtn
                     x: 35; y: 13; width: prepText.implicitWidth + 32; height: 32; radius: 4
                     color: prepHover.hovered ? theme.rowHover : theme.surface
-                    border.width: 0.67; border.color: theme.hc("#BDBDBD", "#FFFFFF")
+                    border.width: 0.67; border.color: theme.pick("#BDBDBD", "#666666", "#FFFFFF")
                     Text { id: prepText; anchors.centerIn: parent; text: qsTr("Prepare for this meeting"); font.family: theme.font; font.pixelSize: 14; color: theme.onFill(prepBtn, theme.textSecondary) }
                     HoverHandler { id: prepHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.askCopilot("Prepare for this meeting") }
@@ -1669,7 +1789,7 @@ Item {
                 }
                 Rectangle {
                     x: 37; width: 309; height: 31
-                    color: theme.surface; border.color: note.activeFocus ? theme.brand : theme.hc("#F0F0F0", "#FFFFFF")
+                    color: theme.menu; border.color: note.activeFocus ? theme.brand : root.cardLine
                     TextInput {
                         id: note
                         x: 8; width: parent.width - 16; anchors.verticalCenter: parent.verticalCenter
@@ -1688,8 +1808,8 @@ Item {
                             id: rb
                             required property var modelData
                             width: rbRow.implicitWidth + 18; height: 32; radius: 2
-                            color: rbh.hovered ? theme.rowHover : modelData.r === "Accept" ? theme.hc("#FAFAFA", "#000000") : theme.surface
-                            border.color: theme.hc("#BDBDBD", "#FFFFFF")
+                            color: rbh.hovered ? theme.rowHover : modelData.r === "Accept" ? theme.pick("#FAFAFA", "#1F1F1F", "#000000") : theme.menu
+                            border.color: theme.pick("#BDBDBD", "#666666", "#FFFFFF")
                             Row {
                                 id: rbRow
                                 anchors.centerIn: parent; spacing: 8
@@ -1954,7 +2074,7 @@ Item {
                     id: tcCell
                     required property var modelData
                     width: 32; height: 32; radius: 2
-                    color: root.charmOf(tileMenu.ev) === modelData[0] ? theme.hc("#DCDFFA", "#1AEBFF") : tcHover.hovered ? theme.rowHover : "transparent"
+                    color: root.charmOf(tileMenu.ev) === modelData[0] ? theme.pick("#DCDFFA", "#2F2F4A", "#1AEBFF") : tcHover.hovered ? theme.rowHover : "transparent"
                     FluentIcon { anchors.centerIn: parent; name: tcCell.modelData[2] || "prohibited-20"; size: 17; color: theme.onFill(tcCell, theme.textSecondary) }
                     HoverHandler { id: tcHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: { const e = tileMenu.ev; tileCharms.close(); tileMenu.close(); root.tileAct(e, "charm:" + tcCell.modelData[0]) } }
@@ -2158,7 +2278,7 @@ Item {
             Text { text: dr.suffix; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
             FluentIcon { name: "arrow-repeat-all-16"; size: 14; color: theme.textSecondary }
         }
-        Rectangle { x: 34; anchors.bottom: parent.bottom; width: 324; height: 1; color: theme.hc("#F0F0F0", "#FFFFFF") }
+        Rectangle { x: 34; anchors.bottom: parent.bottom; width: 324; height: 1; color: root.cardLine }
     }
     component CardButton: Rectangle {
         id: cb
@@ -2171,8 +2291,8 @@ Item {
         width: cbRow.implicitWidth + 24; height: 32; radius: 4
         color: primary ? (cbh.hovered ? theme.brandHover : theme.brandFill)
             : danger ? (cbh.hovered ? theme.hc("#BC2F32", "#1AEBFF") : theme.hc("#D13438", "#000000"))
-            : (cbh.hovered ? theme.rowHover : theme.surface)
-        border.color: primary || danger ? "transparent" : theme.hc("#D1D1D1", "#FFFFFF")
+            : (cbh.hovered ? theme.rowHover : theme.menu)
+        border.color: primary || danger ? "transparent" : root.cardEdge
         Row {
             id: cbRow
             anchors.centerIn: parent; spacing: 6
@@ -2261,7 +2381,7 @@ Item {
         }
         Rectangle {
             x: 30; y: parent.height - 61.3; width: 96; height: 32; radius: 4
-            color: nleClose.hovered ? theme.hover : theme.surface; border.width: 1; border.color: theme.hc("#D1D1D1", "#FFFFFF")
+            color: nleClose.hovered ? theme.hover : theme.surface; border.width: 1; border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF")
             Text { anchors.centerIn: parent; text: qsTr("Close"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
             HoverHandler { id: nleClose; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: newLiveEvent.close() }
@@ -2283,7 +2403,7 @@ Item {
         property alias input: f6in
         property string hint
         width: 550; height: 32; radius: 4
-        color: theme.surface; border.color: f6in.activeFocus ? theme.brand : theme.hc("#D1D1D1", "#FFFFFF")
+        color: theme.surface; border.color: f6in.activeFocus ? theme.brand : theme.pick("#D1D1D1", "#666666", "#FFFFFF")
         TextInput {
             id: f6in
             x: 12; width: parent.width - 24; anchors.verticalCenter: parent.verticalCenter
@@ -2369,8 +2489,8 @@ Item {
                 Row {
                     id: jidRow
                     anchors.centerIn: parent; spacing: 6
-                    FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "video-20"; size: 16; color: joinId.ready ? theme.onFill(joinIdButton, "white") : theme.hc("#BDBDBD", "#3FF23F") }
-                    Text { text: qsTr("Join Meeting"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: joinId.ready ? theme.onFill(joinIdButton, "white") : theme.hc("#BDBDBD", "#3FF23F") }
+                    FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "video-20"; size: 16; color: joinId.ready ? theme.onFill(joinIdButton, "white") : theme.pick("#BDBDBD", "#666666", "#3FF23F") }
+                    Text { text: qsTr("Join Meeting"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: joinId.ready ? theme.onFill(joinIdButton, "white") : theme.pick("#BDBDBD", "#666666", "#3FF23F") }
                 }
                 HoverHandler { id: jidh; cursorShape: joinId.ready ? Qt.PointingHandCursor : Qt.ArrowCursor }
                 TapHandler { enabled: joinId.ready; onTapped: { root.joinWithId(idField.text.replace(/\s/g, ""), passField.text.trim()); joinId.close() } }
@@ -2421,7 +2541,7 @@ Item {
             Rectangle {
                 id: charmBtn
                 x: 14; y: 92.67; width: 28; height: 28; radius: 2
-                color: charmPicker.visible ? theme.hc("#DCDFFA", "#1AEBFF") : charmHover.hovered ? theme.rowHover : "transparent"
+                color: charmPicker.visible ? theme.pick("#DCDFFA", "#2F2F4A", "#1AEBFF") : charmHover.hovered ? theme.rowHover : "transparent"
                 FluentIcon {
                     anchors.centerIn: parent
                     name: saveViewDialog.charm > 0 ? (root.charms.find(c => c[0] === saveViewDialog.charm) || [0, "", "symbols-20"])[2] : "symbols-20"
@@ -2446,7 +2566,7 @@ Item {
                                 id: charmCell
                                 required property var modelData
                                 width: 32; height: 32; radius: 2
-                                color: saveViewDialog.charm === modelData[0] ? theme.hc("#DCDFFA", "#1AEBFF") : cellHover.hovered ? theme.rowHover : "transparent"
+                                color: saveViewDialog.charm === modelData[0] ? theme.pick("#DCDFFA", "#2F2F4A", "#1AEBFF") : cellHover.hovered ? theme.rowHover : "transparent"
                                 FluentIcon { visible: !!charmCell.modelData[2]; anchors.centerIn: parent; name: charmCell.modelData[2]; size: 17; color: theme.onFill(charmCell, theme.textSecondary) }
                                 HoverHandler { id: cellHover; cursorShape: Qt.PointingHandCursor }
                                 TapHandler { onTapped: { saveViewDialog.charm = charmCell.modelData[0]; charmPicker.close() } }
@@ -2486,7 +2606,7 @@ Item {
                 id: svCancel
                 x: 232.81; y: 152.67; width: 83.19; height: 32; radius: 2
                 color: svCancelHover.hovered ? theme.rowHover : theme.surface
-                border.width: 0.67; border.color: theme.hc("#BDBDBD", "#FFFFFF")
+                border.width: 0.67; border.color: theme.pick("#BDBDBD", "#666666", "#FFFFFF")
                 Text { anchors.centerIn: parent; text: qsTr("Cancel"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(svCancel, theme.textSecondary) }
                 HoverHandler { id: svCancelHover; cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: saveViewDialog.close() }

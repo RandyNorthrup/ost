@@ -217,16 +217,7 @@ fn non_empty_array(v: &serde_json::Value, key: &str) -> bool {
 /// English list formatting (Intl.ListFormat, conjunction): "A", "A and B",
 /// "A, B, and C".
 pub fn list_format(items: &[String]) -> String {
-    match items {
-        [] => String::new(),
-        [a] => a.clone(),
-        [a, b] => format!("{a} and {b}"),
-        _ => format!(
-            "{}, and {}",
-            items[..items.len() - 1].join(", "),
-            items[items.len() - 1]
-        ),
-    }
+    crate::i18n::list_and(items, "en-us")
 }
 
 /// Teams' compact number (formatNumber, notation compact, short, one

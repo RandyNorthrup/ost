@@ -72,6 +72,9 @@ chrono = "0.4"
 iana-time-zone = "0.1"
 regex = "1"
 unicode-width = "0.2"
+# Lists in the app language (CLDR list patterns, as Intl.ListFormat)
+icu_list = { version = "2.4", features = ["alloc"] }
+icu_locale_core = "2.4"
 
 # Audio I/O (optional — requires ALSA headers on Linux)
 cpal = { version = "0.18", optional = true }

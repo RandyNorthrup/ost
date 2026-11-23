@@ -64,6 +64,24 @@ pub fn locale() -> String {
     LOCALE.read().unwrap().clone()
 }
 
+/// `items` as one list in `locale`'s words, as Teams'
+/// `new Intl.ListFormat(locale).format(items)` (a conjunction, long style;
+/// CLDR's list patterns): "A and B", "A, B, and C" in en-us, "A und B",
+/// "A, B und C" in de-de, "A、B、C" in ja-jp. An empty locale is en-us, as
+/// [`locale`] is in English.
+pub fn list_and(items: &[String], locale: &str) -> String {
+    use icu_list::{options::ListFormatterOptions, ListFormatter};
+    let tag = if locale.is_empty() { "en-us" } else { locale };
+    let loc = icu_locale_core::Locale::try_from_str(tag)
+        .unwrap_or_else(|_| icu_locale_core::Locale::try_from_str("en-us").expect("en-us"));
+    match ListFormatter::try_new_and((&loc).into(), ListFormatterOptions::default()) {
+        // Newer CLDR joins Hebrew's "ו" with a non-breaking hyphen; Teams'
+        // engine (WebView2) still writes "ו-C".
+        Ok(f) => f.format_to_string(items.iter()).replace('\u{2011}', "-"),
+        Err(_) => items.join(", "),
+    }
+}
+
 impl Catalogue {
 fn new(ids: &str, catalogue: Option<&str>, locale: &str) -> anyhow::Result<Self> {
     let strings = match catalogue {
