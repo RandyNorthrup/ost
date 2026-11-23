@@ -3,9 +3,10 @@ id: TASK-0250
 title: >-
   Generate audio recap: meeting across midnight listed once, with its catch-up
   counts, as Teams
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-11-23T08:47:00Z'
+updated_date: '2026-11-23T10:24:00Z'
 labels:
   - desktop
   - recaps
