@@ -605,10 +605,35 @@ middle the chips (24 tall on #F5F5F5, a 16 px brand glyph and the count 12/600; 
 "3 tasks for people to follow up on") from Teams' meeting catch-up recommendations
 (`POST substrate.office.com/search/api/v1/recommendations?setflight=AiTasksV2,
 AiNotesV2,AllowResultsWithoutMeeting,PeopleMentionsV2`, EntityType and scenario
-MeetingCatchUp: `PointsOfInterest.ActionItems` / `MentionEvents` per
-`MeetingRecording.TeamsThreadId`); the recording's thumbnail 84 x 48 at the right (Graph
-`drives/{d}/items/{i}/thumbnails/0/c126x72/content`); a picked row #F5F5F5; "✕ n/8
-selected" (a pill) left of the search box.
+MeetingCatchUp: `PointsOfInterest.ActionItems` / `MentionEvents`); the recording's
+thumbnail 84 x 48 at the right (Graph `drives/{d}/items/{i}/thumbnails/0/c126x72/content`);
+a picked row #F5F5F5; "✕ n/8 selected" (a pill) left of the search box.
+
+**How the list is made** (Teams 26304 bundles, TASK-0250): Home and the dialog share
+useMeetingRecapList → the worker's meetingRecapList resolver → getMeetingRecapByDay, one
+local day per page (today first, then fetchMore a day at a time back to 30 days). Each day
+(00:00:00.000 to 23:59:59.999 local, as UTC) asks the day's artifacts
+(`user/meetings/contents`, top 20) and, with a Copilot licence, the catch-up
+recommendations for the same range (no Top). The recommendations become threads (`qb`:
+MeetingId as eventId, MeetingRecording.ICalUid / TeamsThreadId, a TranscriptV2 resource
+when the Description names the transcript's GUID, recommendationData with the counts) and
+are merged by lower-cased iCalUid (`Um`): one recommendation per meeting (`Lm`: the one
+whose DriveId:DriveItemId is the meeting's recording, else one with a file), its
+recommendationData put on the artifacts' thread, or the recommendation kept as its own
+thread; artifacts without an iCalUid drop out. The resolver lists a thread when it has an
+eventId and recommendationData or a Recording / TranscriptV2 resource; the node's id is
+the eventId. A meeting across midnight is in both days' artifacts (the calendar times
+overlap both), but its recommendation comes on one day only: the range is matched on when
+it was recorded ("OST TEST 248 agenda", recorded from 11:33 PM: its first day; "OST TEST
+250 midnight", 11:45 PM - 12:15 AM recorded at 3:20 AM: its second day only). The hook
+keeps one node per id (`W`, `ye`: the day asked later, the older one, over the newer;
+transcripts and recordings only when it has some), sorted by start, newest first, so it is
+listed once, under the day it starts. Every day's cache refresh is also pushed to the list
+(artifactsByUserUpdateEvent, the latest per id wins), so the counts end up those of the day
+that has them: on winpc (2026-11-23) "OST TEST 250 midnight" showed no chip on the
+dialog's first render and "14" once the refreshes were in (dialog and Home). OST does the
+same, keeping the counts of the day that has a recommendation (api::recaps::meetings /
+day_rows, MeetingRecapsView.meetingList; 8 days at a time as Teams' range fetch).
 
 **A finished audio recap** (winpc, "OST TEST 212 recap long", 5 min 38 s): the list row
 shows the title and its length ("5m 38s", or "4m 3s left" once started). The detail:

@@ -71,66 +71,93 @@ pub fn day_query(start: chrono::DateTime<chrono::Utc>, end: chrono::DateTime<chr
     )
 }
 
-/// A meeting row of Home from a contents reply.
+/// A meeting row of Home and Generate audio recap from one of a day's
+/// threads (Teams' meetingRecapList node, its resolver's `Ee`).
+pub fn row_from(m: &Value) -> Option<Value> {
+    let t = m.get("threadInfo")?;
+    let s = |p: &str| t.pointer(p).and_then(Value::as_str).unwrap_or_default().to_string();
+    let utc = |p: &str| {
+        let d = s(p);
+        if d.is_empty() { d } else { format!("{}Z", d.trim_end_matches('Z').split('.').next().unwrap_or_default()) }
+    };
+    let resources = || m.get("resources").and_then(Value::as_array).into_iter().flatten();
+    let rec = t.get("recommendationData").filter(|r| r.is_object());
+    let count = |k: &str| rec.and_then(|r| r.get(k)).and_then(Value::as_u64).unwrap_or(0);
+    Some(json!({
+        "threadId": s("/threadId"),
+        // The meeting's calendar event (Teams' node id).
+        "eventId": s("/eventId"),
+        "subject": s("/subject"),
+        "start": utc("/start/dateTime"),
+        "end": utc("/end/dateTime"),
+        "organizer": s("/organizer/emailAddress/name"),
+        "channel": s("/channelDisplayName"),
+        // Generate audio recap lists the meetings you have a transcript of.
+        "transcript": resources().any(|r| r.get("type").and_then(Value::as_str) == Some("TranscriptV2")),
+        // What its Generate sends for the meeting.
+        "iCalUid": s("/iCalUid"),
+        "organizerId": t.pointer("/organizer/id").or_else(|| t.pointer("/organizer/objectId")).or_else(|| t.pointer("/organizerId")).or_else(|| t.pointer("/organizer/user/id"))
+            .and_then(Value::as_str).unwrap_or_default().split('@').next().unwrap_or_default(),
+        "transcripts": resources().filter_map(super::podcast::transcript_from).collect::<Vec<_>>(),
+        // Generate audio recap's row thumbnail: the first recording's
+        // file (Teams' meeting.recordings[0]).
+        "recording": resources()
+            .find(|r| r.get("type").and_then(Value::as_str) == Some("Recording"))
+            .map(|r| {
+                let g = |k: &str| r.pointer(&format!("/metadata/{k}")).or_else(|| r.get(k)).and_then(Value::as_str).unwrap_or_default().to_string();
+                json!({ "driveId": g("driveId"), "itemId": g("driveItemId") })
+            })
+            .unwrap_or(Value::Null),
+        // The meeting's catch-up counts (Teams' recommendationData
+        // actionItemCount / mentionEventCount; 0 without one).
+        "catchUp": rec.is_some(),
+        "actionItemCount": count("actionItemCount"),
+        "mentionEventCount": count("mentionEventCount"),
+    }))
+}
+
+/// Home's rows of a contents reply as it came (no catch-up merged).
 pub fn meetings_from(v: &Value) -> Vec<Value> {
-    v.get("value").and_then(Value::as_array).into_iter().flatten().filter_map(|m| {
-        let t = m.get("threadInfo")?;
-        let s = |p: &str| t.pointer(p).and_then(Value::as_str).unwrap_or_default().to_string();
-        let utc = |p: &str| {
-            let d = s(p);
-            if d.is_empty() { d } else { format!("{}Z", d.trim_end_matches('Z').split('.').next().unwrap_or_default()) }
-        };
-        Some(json!({
-            "threadId": s("/threadId"),
-            // The meeting's calendar event.
-            "eventId": s("/eventId"),
-            "subject": s("/subject"),
-            "start": utc("/start/dateTime"),
-            "end": utc("/end/dateTime"),
-            "organizer": s("/organizer/emailAddress/name"),
-            "channel": s("/channelDisplayName"),
-            // Generate audio recap lists the meetings you have a transcript of.
-            "transcript": m.to_string().contains("TranscriptV2"),
-            // What its Generate sends for the meeting.
-            "iCalUid": s("/iCalUid"),
-            "organizerId": t.pointer("/organizer/id").or_else(|| t.pointer("/organizerId")).or_else(|| t.pointer("/organizer/user/id"))
-                .and_then(Value::as_str).unwrap_or_default().split('@').next().unwrap_or_default(),
-            "transcripts": m.get("resources").and_then(Value::as_array).into_iter().flatten().filter_map(super::podcast::transcript_from).collect::<Vec<_>>(),
-            // Generate audio recap's row thumbnail: the first recording's
-            // file (Teams' meeting.recordings[0]).
-            "recording": m.get("resources").and_then(Value::as_array).into_iter().flatten()
-                .find(|r| r.get("type").and_then(Value::as_str) == Some("Recording"))
-                .map(|r| {
-                    let g = |k: &str| r.pointer(&format!("/metadata/{k}")).or_else(|| r.get(k)).and_then(Value::as_str).unwrap_or_default().to_string();
-                    json!({ "driveId": g("driveId"), "itemId": g("driveItemId") })
-                })
-                .unwrap_or(Value::Null),
-        }))
-    }).collect()
+    v.get("value").and_then(Value::as_array).into_iter().flatten().filter_map(row_from).collect()
+}
+
+/// A day's threads as Teams keeps them (fetchAllThreadsForDay).
+pub fn threads_from(v: &Value) -> Vec<Value> {
+    v.get("value").and_then(Value::as_array).cloned().unwrap_or_default()
+}
+
+/// Whether Teams lists a day's thread (its meetingRecapList resolver: a
+/// calendar event, and a catch-up recommendation or a recording or
+/// transcript).
+pub fn listed(m: &Value) -> bool {
+    let t = &m["threadInfo"];
+    !t["eventId"].as_str().unwrap_or_default().is_empty()
+        && (t.get("recommendationData").is_some_and(|r| r.is_object())
+            || m["resources"].as_array().into_iter().flatten().any(|r| matches!(r["type"].as_str(), Some("Recording" | "TranscriptV2"))))
 }
 
 /// Teams' meeting catch-up recommendations for a time range (its
 /// getMeetingCatchUpRecommendationsByTimeRange: `POST substrate.office.com/
 /// search/api/v1/recommendations?setflight=AiTasksV2,AiNotesV2,
 /// AllowResultsWithoutMeeting,PeopleMentionsV2` with an entity request of
-/// type MeetingCatchUp, scenario MeetingCatchUp). Generate audio recap's rows
-/// show their task and mention counts (`PointsOfInterest.ActionItems`,
-/// `MentionEvents`); keyed by the meeting's thread.
-pub async fn catch_up_counts(start: &str, end: &str) -> Result<serde_json::Map<String, Value>> {
+/// type MeetingCatchUp, scenario MeetingCatchUp), asked a local day at a
+/// time along with the day's artifacts.
+pub async fn catch_up_range(start: &str, end: &str) -> Result<Value> {
     let token = crate::auth::oauth::access_token_for("https://substrate.office.com/.default").await?;
     let body = catch_up_body_range(start, end);
+    let id = uuid::Uuid::new_v4().to_string();
     let r = reqwest::Client::new()
         .post("https://substrate.office.com/search/api/v1/recommendations?setflight=AiTasksV2,AiNotesV2,AllowResultsWithoutMeeting,PeopleMentionsV2")
         .bearer_auth(token)
-        .header("x-client-request-id", uuid::Uuid::new_v4().to_string())
+        .header("client-request-id", &id)
+        .header("x-ms-correlation-id", &id)
         .json(&body)
         .send()
         .await
         .context("Meeting catch-up")?;
     let status = r.status();
     anyhow::ensure!(status.is_success(), "Meeting catch-up answered {status}");
-    let v: Value = r.json().await.unwrap_or_default();
-    Ok(catch_up_counts_from(&v))
+    Ok(r.json().await.unwrap_or_default())
 }
 
 /// The MeetingCatchUp request for a range.
@@ -138,24 +165,134 @@ pub fn catch_up_body_range(start: &str, end: &str) -> Value {
     json!({ "EntityRequests": [{ "QueryParameters": [{ "EntityType": "MeetingCatchUp", "StartDateTime": start, "EndDateTime": end }] }], "Scenario": { "Name": "MeetingCatchUp" } })
 }
 
-/// Per thread: `{actionItemCount, mentionEventCount}` from a MeetingCatchUp
-/// reply (`EntitySets[0].ResultSets[0].Results[].Source`).
-pub fn catch_up_counts_from(v: &Value) -> serde_json::Map<String, Value> {
-    let mut out = serde_json::Map::new();
-    for r in v.pointer("/EntitySets/0/ResultSets/0/Results").and_then(Value::as_array).into_iter().flatten() {
-        let s = &r["Source"];
-        let thread = s.pointer("/MeetingRecording/TeamsThreadId").and_then(Value::as_str).unwrap_or_default();
-        if thread.is_empty() {
-            continue;
-        }
-        let n = |k: &str| s.pointer(&format!("/PointsOfInterest/{k}")).and_then(Value::as_array).map(Vec::len).unwrap_or(0);
-        out.insert(thread.to_string(), json!({ "actionItemCount": n("ActionItems"), "mentionEventCount": n("MentionEvents") }));
-    }
-    out
+/// The first transcript id (a GUID) in a recommendation's description.
+fn first_guid(d: &str) -> Option<String> {
+    let b = d.as_bytes();
+    (0..b.len().saturating_sub(35)).find_map(|i| {
+        let w = &b[i..i + 36];
+        let ok = w.iter().enumerate().all(|(j, c)| if matches!(j, 8 | 13 | 18 | 23) { *c == b'-' } else { c.is_ascii_digit() || (b'a'..=b'f').contains(c) });
+        ok.then(|| String::from_utf8_lossy(w).into_owned())
+    })
 }
 
-/// Home's meetings for `days` local days back from `from_days_ago`
-/// (newest first), the days asked in parallel.
+/// A MeetingCatchUp reply's recommendations as day threads (Teams' reply
+/// transform, then its `qb`): the meeting's ids, subject and times, a
+/// TranscriptV2 resource when the description names the transcript, and
+/// recommendationData with the counts of `PointsOfInterest.ActionItems` and
+/// `MentionEvents`.
+pub fn recommendation_threads(v: &Value) -> Vec<Value> {
+    v.pointer("/EntitySets/0/ResultSets/0/Results").and_then(Value::as_array).into_iter().flatten().map(|r| {
+        let s = &r["Source"];
+        let g = |p: &str| s.pointer(p).cloned().unwrap_or(Value::Null);
+        let st = |p: &str| s.pointer(p).and_then(Value::as_str).unwrap_or_default().to_string();
+        let n = |k: &str| s.pointer(&format!("/PointsOfInterest/{k}")).and_then(Value::as_array).map(Vec::len).unwrap_or(0);
+        let resources = first_guid(&st("/Description")).map(|t| json!([{
+            "type": "TranscriptV2",
+            "location": format!("{}/_api/v2.1/drives/{}/items/{}/versions/current/media/transcripts/{t}/streamContent", st("/SitePath"), st("/DriveId"), st("/DriveItemId")),
+            "hasPermission": true,
+            "metadata": { "startTime": g("/RecordingStartTime"), "endTime": g("/RecordingEndTime"), "driveId": g("/DriveId"), "driveItemId": g("/DriveItemId"),
+                          "callId": g("/MeetingRecording/CallId"), "iCalUid": g("/MeetingRecording/ICalUid"), "transcriptId": t },
+        }])).unwrap_or(Value::Null);
+        json!({
+            "threadInfo": {
+                "threadId": g("/MeetingRecording/TeamsThreadId"), "iCalUid": g("/MeetingRecording/ICalUid"), "callId": g("/MeetingRecording/CallId"),
+                "eventId": g("/MeetingId"), "subject": g("/MeetingSubject"),
+                "start": { "dateTime": g("/MeetingStartTime"), "timeZone": "UTC" }, "end": { "dateTime": g("/MeetingEndTime"), "timeZone": "UTC" },
+                "organizer": { "emailAddress": { "name": g("/Organizer/DisplayName"), "address": "" }, "objectId": g("/MeetingRecording/OrganizerId") },
+                "recommendationData": { "actionItemCount": n("ActionItems"), "mentionEventCount": n("MentionEvents"), "driveId": g("/DriveId"), "driveItemId": g("/DriveItemId") },
+            },
+            "resources": resources,
+        })
+    }).collect()
+}
+
+fn ical_key(m: &Value) -> Option<String> {
+    m.pointer("/threadInfo/iCalUid").and_then(Value::as_str).filter(|s| !s.is_empty()).map(str::to_lowercase)
+}
+
+fn drive_key(d: Option<&str>, i: Option<&str>) -> Option<String> {
+    match (d.filter(|s| !s.is_empty()), i.filter(|s| !s.is_empty())) {
+        (Some(d), Some(i)) => Some(format!("{d}:{i}")),
+        _ => None,
+    }
+}
+
+/// One recommendation per meeting (Teams' `Lm`): of several for the same
+/// iCalUid, the one whose file is the meeting's recording (the artifacts'
+/// thread's, else the first recommendation's), else one with a file.
+fn one_per_meeting(recs: Vec<Value>, artifacts: &std::collections::HashMap<String, Value>) -> Vec<Value> {
+    let rec_key = |m: &Value| {
+        let r = m.pointer("/threadInfo/recommendationData");
+        drive_key(r.and_then(|r| r["driveId"].as_str()), r.and_then(|r| r["driveItemId"].as_str()))
+    };
+    let recordings = |m: &Value| -> std::collections::HashSet<String> {
+        m["resources"].as_array().into_iter().flatten()
+            .filter(|r| r["type"].as_str().is_some_and(|t| t.eq_ignore_ascii_case("recording")))
+            .filter_map(|r| drive_key(r.pointer("/metadata/driveId").and_then(Value::as_str), r.pointer("/metadata/driveItemId").and_then(Value::as_str)))
+            .collect()
+    };
+    let mut order: Vec<String> = Vec::new();
+    let mut kept: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
+    for n in recs {
+        let Some(k) = ical_key(&n) else { continue };
+        let Some(r) = kept.get(&k) else {
+            order.push(k.clone());
+            kept.insert(k, n);
+            continue;
+        };
+        let i = recordings(artifacts.get(&k).unwrap_or(r));
+        let (c, l) = (rec_key(r), rec_key(&n));
+        let g = c.as_ref().is_some_and(|c| i.contains(c));
+        let m = l.as_ref().is_some_and(|l| i.contains(l));
+        if !g && (m || (c.is_none() && l.is_some())) {
+            kept.insert(k, n);
+        }
+    }
+    order.into_iter().filter_map(|k| kept.remove(&k)).collect()
+}
+
+/// A day's artifacts merged with its catch-up recommendations (Teams'
+/// `Um`): by iCalUid, a recommendation adds its counts to the meeting's
+/// thread, or comes in as a thread of its own; threads without an iCalUid
+/// drop out.
+pub fn merge_day(recs: Vec<Value>, artifacts: Vec<Value>) -> Vec<Value> {
+    let mut order: Vec<String> = Vec::new();
+    let mut t: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
+    for a in artifacts {
+        if let Some(k) = ical_key(&a) {
+            if !t.contains_key(&k) {
+                order.push(k.clone());
+            }
+            t.insert(k, a);
+        }
+    }
+    for n in one_per_meeting(recs, &t) {
+        let Some(k) = ical_key(&n) else { continue };
+        match t.get_mut(&k) {
+            Some(a) => a["threadInfo"]["recommendationData"] = n["threadInfo"]["recommendationData"].clone(),
+            None => {
+                order.push(k.clone());
+                t.insert(k, n);
+            }
+        }
+    }
+    order.into_iter().filter_map(|k| t.remove(&k)).collect()
+}
+
+/// A day's listed rows (Teams' getMeetingRecapByDay, merged, then its
+/// resolver's filter).
+pub fn day_rows(contents: Option<&Value>, catch_up: Option<&Value>) -> Vec<Value> {
+    let artifacts = contents.map(threads_from).unwrap_or_default();
+    let recs = catch_up.map(recommendation_threads).unwrap_or_default();
+    merge_day(recs, artifacts).iter().filter(|m| listed(m)).filter_map(row_from).collect()
+}
+
+/// Home's and Generate audio recap's meetings for `days` local days back
+/// from `from_days_ago` (newest first), the days asked in parallel. Each
+/// day as Teams' getMeetingRecapByDay: the day's meeting artifacts and its
+/// catch-up recommendations, merged. A meeting across midnight comes on
+/// both of its days; the list keeps one (by eventId, MeetingRecapsView's
+/// `meetingList`).
 pub async fn meetings(region: &str, from_days_ago: i64, days: i64) -> Result<Value> {
     use chrono::{Local, TimeZone};
     let today = Local::now().date_naive();
@@ -165,13 +302,21 @@ pub async fn meetings(region: &str, from_days_ago: i64, days: i64) -> Result<Val
         let start = Local.from_local_datetime(&day.and_hms_opt(0, 0, 0).unwrap_or_default()).single().map(|d| d.with_timezone(&chrono::Utc));
         let end = Local.from_local_datetime(&day.and_hms_milli_opt(23, 59, 59, 999).unwrap_or_default()).single().map(|d| d.with_timezone(&chrono::Utc));
         if let (Some(a), Some(b)) = (start, end) {
-            asks.push((day, format!("{}/{}", base(region), day_query(a, b))));
+            asks.push((day, a, b));
         }
     }
-    let replies = futures::future::join_all(asks.iter().map(|(_, u)| get(u))).await;
+    let f = |t: chrono::DateTime<chrono::Utc>| t.to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    // At most 8 days at a time (Teams' fetchAndCacheArtifactsByUserRange).
+    use futures::StreamExt;
+    let owned: Vec<(String, String, String)> = asks.iter().map(|(_, a, b)| (format!("{}/{}", base(region), day_query(*a, *b)), f(*a), f(*b))).collect();
+    let replies: Vec<(Result<Value>, Result<Value>)> = futures::stream::iter(owned)
+        .map(|(url, a, b)| async move { futures::join!(get(&url), catch_up_range(&a, &b)) })
+        .buffered(8)
+        .collect()
+        .await;
     let mut out = Vec::new();
-    for ((day, _), r) in asks.iter().zip(replies) {
-        let list = r.map(|v| meetings_from(&v)).unwrap_or_default();
+    for ((day, _, _), (contents, catch_up)) in asks.iter().zip(replies) {
+        let list = day_rows(contents.as_ref().ok(), catch_up.as_ref().ok());
         if !list.is_empty() {
             out.push(json!({ "day": day.format("%Y-%m-%d").to_string(), "meetings": list }));
         }
@@ -1189,17 +1334,43 @@ mod tests {
     use super::*;
 
     #[test]
-    fn catch_up_counts_per_thread() {
+    fn day_merges_catch_up_as_teams() {
         let b = catch_up_body_range("2026-11-01T00:00:00.000Z", "2026-11-22T00:00:00.000Z");
         assert_eq!(b["EntityRequests"][0]["QueryParameters"][0]["EntityType"], "MeetingCatchUp");
         assert_eq!(b["Scenario"]["Name"], "MeetingCatchUp");
-        let v = json!({"EntitySets": [{"ResultSets": [{"Results": [
-            {"Source": {"MeetingRecording": {"TeamsThreadId": "19:meeting_a@thread.v2"}, "PointsOfInterest": {"ActionItems": [{}, {}, {}], "MentionEvents": [{}]}}},
-            {"Source": {"MeetingRecording": {"TeamsThreadId": ""}, "PointsOfInterest": {}}}]}]}]});
-        let m = catch_up_counts_from(&v);
-        assert_eq!(m.len(), 1);
-        assert_eq!(m["19:meeting_a@thread.v2"]["actionItemCount"], 3);
-        assert_eq!(m["19:meeting_a@thread.v2"]["mentionEventCount"], 1);
+        let rec = |ical: &str, event: &str, item: &str, tasks: usize| json!({"Source": {
+            "MeetingId": event, "MeetingSubject": "S", "MeetingStartTime": "2026-11-21T07:33:00Z", "MeetingEndTime": "2026-11-21T08:03:00Z",
+            "MeetingRecording": {"TeamsThreadId": "19:meeting_a@thread.v2", "ICalUid": ical, "CallId": "c", "OrganizerId": "o"},
+            "Organizer": {"DisplayName": "OST Test 1"}, "DriveId": "b!d", "DriveItemId": item, "SitePath": "https://x-my.sharepoint.com/personal/u",
+            "Description": "Transcript 0123abcd-0000-4000-8000-00000000beef of the meeting",
+            "PointsOfInterest": {"ActionItems": vec![json!({}); tasks], "MentionEvents": [{}]}}});
+        // Two recommendations for the meeting (the second for its
+        // recording), one without a calendar event.
+        let v = json!({"EntitySets": [{"ResultSets": [{"Results": [rec("ABC", "ev1", "other", 2), rec("ABC", "ev1", "rec1", 13), rec("NOEVENT", "", "x", 1)]}]}]});
+        let recs = recommendation_threads(&v);
+        assert_eq!(recs[0]["resources"][0]["metadata"]["transcriptId"], "0123abcd-0000-4000-8000-00000000beef");
+        let artifact = json!({"threadInfo": {"threadId": "19:meeting_a@thread.v2", "iCalUid": "abc", "eventId": "ev1", "subject": "OST TEST 248 agenda",
+            "start": {"dateTime": "2026-11-21T07:33:00.0000000"}, "end": {"dateTime": "2026-11-21T08:03:00.0000000"}},
+            "resources": [{"type": "Recording", "metadata": {"driveId": "b!d", "driveItemId": "rec1"}}, {"type": "TranscriptV2", "location": "https://x/transcripts/t1/content"}]});
+        // An artifact without an iCalUid drops out, as in Teams' merge.
+        let loose = json!({"threadInfo": {"eventId": "ev2", "subject": "x"}, "resources": [{"type": "Recording"}]});
+        let rows = day_rows(Some(&json!({"value": [artifact, loose]})), Some(&v));
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["subject"], "OST TEST 248 agenda");
+        assert_eq!(rows[0]["eventId"], "ev1");
+        assert_eq!(rows[0]["actionItemCount"], 13);
+        assert_eq!(rows[0]["mentionEventCount"], 1);
+        assert_eq!(rows[0]["transcript"], true);
+        // No artifacts that day: the recommendation is the meeting's row
+        // (no recording to tell them apart: the first one).
+        let rows = day_rows(None, Some(&v));
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["subject"], "S");
+        assert_eq!(rows[0]["actionItemCount"], 2);
+        assert_eq!(rows[0]["transcript"], true);
+        // No catch-up: the artifacts as they are, without counts.
+        let rows = day_rows(Some(&json!({"value": [json!({"threadInfo": {"iCalUid": "abc", "eventId": "ev1"}, "resources": [{"type": "TranscriptV2"}]})]})), None);
+        assert_eq!(rows[0]["actionItemCount"], 0);
     }
 
     #[test]

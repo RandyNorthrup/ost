@@ -29,6 +29,42 @@ Rectangle {
     color: theme.pick("#F5F5F5", "#141414", "#000000")
     property string tab: "home"
     property var days: []
+    // Teams' useMeetingRecapList: every day's meetings, one per calendar
+    // event (its node id): a meeting across midnight comes on both of its
+    // days, and the older day's (asked later) takes over the newer one's,
+    // its transcripts and recordings only when it has some (Teams' W and
+    // ye); newest start first. The catch-up counts stay with the day that
+    // has them: the service gives a meeting's recommendation on one day
+    // only (the day it was recorded), and Teams' day refreshes (its
+    // artifactsByUserUpdateEvent) bring that day's node back over the
+    // other; seen on winpc 2026-11-23 with "OST TEST 250 midnight" (14
+    // tasks on its second day only: no chip on the first render, "14" once
+    // the refreshes were in, in the dialog and on Home).
+    readonly property var meetingList: {
+        const byId = new Map()
+        for (const d of days) for (const m of (d.meetings || [])) {
+            const id = m.eventId || m.threadId
+            const h = byId.get(id)
+            if (!h) { byId.set(id, m); continue }
+            const counts = m.catchUp || !h.catchUp ? m : h
+            byId.set(id, Object.assign({}, h, m, { transcripts: (m.transcripts || []).length ? m.transcripts : h.transcripts,
+                                                  transcript: m.transcript || h.transcript, recording: m.recording || h.recording,
+                                                  catchUp: counts.catchUp, actionItemCount: counts.actionItemCount, mentionEventCount: counts.mentionEventCount }))
+        }
+        return Array.from(byId.values()).filter(m => !isNaN(Date.parse(m.start)) && !isNaN(Date.parse(m.end)))
+                    .sort((a, b) => Date.parse(b.start) - Date.parse(a.start))
+    }
+    // Home's days: the meetings by the local day they start on.
+    readonly property var homeDays: {
+        const out = []
+        for (const m of meetingList) {
+            const d = new Date(Date.parse(m.start))
+            const key = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0")
+            const last = out.length ? out[out.length - 1] : null
+            if (last && last.day === key) last.meetings.push(m); else out.push({ day: key, meetings: [m] })
+        }
+        return out
+    }
     property int next: 0
     property bool loading: false
     property var podcasts: null
@@ -165,7 +201,7 @@ Rectangle {
                 id: homeCol
                 x: 16; y: 12; width: parent.width - 32
                 Repeater {
-                    model: root.days
+                    model: root.homeDays
                     Column {
                         id: dayCol
                         required property var modelData
@@ -888,7 +924,7 @@ Rectangle {
         return "done"
     }
     function noInsightPodcast(p) { return /NoValidMeeting(Insight|Found)/.test(p.statusMessage || "") }
-    function stateForTest() { return JSON.stringify({ tab: tab, days: days.length, meetings: days.reduce((n, d) => n + d.meetings.length, 0), podcasts: podcasts ? podcasts.length : null, loading: loading }) }
+    function stateForTest() { return JSON.stringify({ tab: tab, days: days.length, meetings: meetingList.length, home: homeDays.map(d => [d.day, d.meetings.map(m => m.subject)]), podcasts: podcasts ? podcasts.length : null, loading: loading }) }
     // Generate audio recap (Teams 26304, measured on winpc 2026-11-19): a
     // dialog (the window less 32 each side): Style (Executive, Newscast,
     // Casual, each with its description) and Language, "Select up to 8
@@ -913,18 +949,18 @@ Rectangle {
         readonly property var meetings: {
             const cutoff = Date.now() - 30 * 86400000
             let out = []
-            // (Teams' meetingRecapList: the meeting artifacts of each day,
-            // named by their threadInfo.subject, merged with the Copilot
-            // catch-up recommendations, which only add their counts here:
-            // a recommendation without a calendar event isn't listed.)
-            for (const d of root.days) for (const m of (d.meetings || [])) if (m.transcript && Date.parse(m.start) >= cutoff) out.push(m)
+            // (Teams' meetingRecapList: each day's meeting artifacts, named
+            // by their threadInfo.subject, merged with that day's Copilot
+            // catch-up recommendations, which add their task and mention
+            // counts; a recommendation without a calendar event isn't
+            // listed.)
+            for (const m of root.meetingList) if (m.transcript && Date.parse(m.start) >= cutoff) out.push(m)
             if (filterText) out = out.filter(m => (m.subject || "").toLowerCase().indexOf(filterText.toLowerCase()) >= 0)
             return out
         }
         function openNow() {
             genDialog.picked = []; genDialog.chip = "All"; genDialog.filterText = ""; genSearch.text = ""; genDialog.collapsed = []; genDialog.open()
             if (!root.loading) root.loadMore()
-            root.call("recapCatchUp", {}, v => { if (!v.error) genDialog.catchUp = v })
         }
         /// The weeks (Teams' grouping by the start of the week, newest
         /// first: "This week", "Last week", else the week's first day).
@@ -953,7 +989,6 @@ Rectangle {
             return out
         }
         property var collapsed: []
-        property var catchUp: ({})
         property var thumbs: ({})
         function subtitle(m) {
             const a = new Date(Date.parse(m.start)), b = new Date(Date.parse(m.end))
@@ -1070,7 +1105,7 @@ Rectangle {
                                 required property int index
                                 readonly property bool on: genDialog.picked.indexOf(modelData.threadId) >= 0
                                 readonly property bool blocked: !on && genDialog.picked.length >= 8
-                                readonly property var counts: genDialog.catchUp[modelData.threadId] || null
+                                readonly property var counts: modelData
                                 x: 12; width: grp.width - 24; height: 72.7; radius: 4
                                 color: on || mrh.hovered ? theme.pick("#F5F5F5", "#292929", "#000000") : "transparent"
                                 Rectangle { x: 8; anchors.verticalCenter: parent.verticalCenter; width: 16; height: 16; radius: 2
@@ -1172,7 +1207,7 @@ Rectangle {
         return genDialog.picked.length
     }
     function generateForTest() { generate() }
-    function genMeetingsForTest() { return genDialog.groups.map(g => ({ group: g.label, rows: g.items.map(m => [m.subject, genDialog.subtitle(m), genDialog.catchUp[m.threadId] || null, !!(m.recording && m.recording.itemId), genDialog.thumbs[(m.recording || {}).itemId || ""] ? "thumb" : ""]) })) }
+    function genMeetingsForTest() { return genDialog.groups.map(g => ({ group: g.label, rows: g.items.map(m => [m.subject, genDialog.subtitle(m), { actionItemCount: m.actionItemCount || 0, mentionEventCount: m.mentionEventCount || 0 }, !!(m.recording && m.recording.itemId), genDialog.thumbs[(m.recording || {}).itemId || ""] ? "thumb" : ""]) })) }
     function audioPlayerStateForTest() { const p = recapsPanes.chosen; return JSON.stringify({ chosen: p ? (p.title || "") : null, state: p ? podcastState(p) : "", rows: (podcasts || []).map(x => podcastState(x)),
                                                                                        playing: recapAudio.playbackState === MediaPlayer.PlayingState, position: Math.round(root.playPos / 1000), autoPlay: autoPlayId,
                                                                                        chapter: chapterPlaying, chapterWait: chapterWait, chapterStates: p ? (p.chapters || []).map(c => c.status) : [],

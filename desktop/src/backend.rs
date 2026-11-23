@@ -21891,13 +21891,6 @@ impl qobject::Backend {
                         let days = p.get("days").and_then(|v| v.as_i64()).unwrap_or(14).clamp(1, 14);
                         api::recaps::meetings(&notes_region(&client), from, days).await
                     }
-                    // Generate audio recap's task and mention counts (the
-                    // meeting catch-up recommendations of the last 30 days).
-                    "recapCatchUp" => {
-                        let end = chrono::Utc::now();
-                        let f = |t: chrono::DateTime<chrono::Utc>| t.to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
-                        Ok(serde_json::Value::Object(api::recaps::catch_up_counts(&f(end - chrono::Duration::days(30)), &f(end)).await?))
-                    }
                     // An audio recap's transcript: its caption file read with
                     // the file's own site token (Teams' useTranscriptData).
                     "podcastCaptions" => {
