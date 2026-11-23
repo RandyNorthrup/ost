@@ -1280,6 +1280,10 @@ pub mod qobject {
         /// "MicrosoftTeams-video.mp4".
         #[qinvokable]
         fn video_clip_download(self: Pin<&mut Backend>, url: &QString);
+        /// The picture viewer's Download: a message's picture (its cached
+        /// copy, `file://…`) saved in the download folder under `name`.
+        #[qinvokable]
+        fn image_download(self: Pin<&mut Backend>, local_path: &QString, name: &QString);
         /// A file for the clip recorder in OST's cache (ost/recordings,
         /// owner-only): the path to write `name` to.
         #[qinvokable]
@@ -10339,6 +10343,33 @@ impl qobject::Backend {
         }
         let Some(dir) = download_dir() else { return };
         self.as_mut().run_clip_download(url, dir, None);
+    }
+
+    pub fn image_download(mut self: Pin<&mut Self>, local_path: &QString, name: &QString) {
+        let path = local_path.to_string();
+        let path = std::path::PathBuf::from(path.strip_prefix("file://").unwrap_or(&path));
+        // Only OST's own picture cache.
+        let Some(cache) = std::env::var_os("XDG_CACHE_HOME")
+            .map(std::path::PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".cache")))
+            .map(|b| b.join("ost").join("images"))
+        else {
+            return;
+        };
+        if !path.starts_with(&cache) || !path.is_file() {
+            return;
+        }
+        let Some(dir) = download_dir() else { return };
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("png").to_string();
+        let base = name.to_string();
+        let base = if base.trim().is_empty() || base.contains(['/', '\\']) { "image".to_string() } else { base };
+        let file_name = if base.contains('.') { base } else { format!("{base}.{ext}") };
+        let result = std::fs::read(&path).map_err(anyhow::Error::from).and_then(|bytes| api::files::save_unique(&dir, &file_name, &bytes));
+        let msg = match result {
+            Ok(_) => file_downloaded(false),
+            Err(e) => short_error(&e),
+        };
+        self.as_mut().set_status_text(QString::from(msg.as_str()));
     }
 
     fn run_clip_download(mut self: Pin<&mut Self>, url: String, dir: std::path::PathBuf, target: Option<std::path::PathBuf>) {

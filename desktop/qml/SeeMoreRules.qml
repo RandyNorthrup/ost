@@ -56,6 +56,18 @@ QtObject {
         return num("channels", "seeMoreThresholdValueForPost") || 200
     }
 
+    /// Posts list: where a post (or reply) is cut, with its pictures
+    /// (`ranges`, [[top, bottom]] with each picture's margin): Teams'
+    /// image-aware cut (395276 `le` / `Ne`, enableImageAwareSeeMoreTruncation,
+    /// not for a Channel Agent's reply) moves a cut that goes through one of
+    /// the first 20 pictures to that picture's bottom (rounded up), in order.
+    function cutAt(m, isReply, ranges) {
+        let cut = postLimit(m, isReply)
+        if (cut <= 0 || !setting("messaging", "enableImageAwareSeeMoreTruncation", true) || (isReply && projectAgent(m))) return cut
+        for (const r of (ranges || []).slice(0, 20)) if (r[0] < cut && r[1] > cut) cut = Math.ceil(r[1])
+        return cut
+    }
+
     /// Chats and threads: the height an agent's message is cut at (0: not).
     /// `kind`: "chat", "meeting" or "channel"; `topLevel`: not a reply in a
     /// thread.

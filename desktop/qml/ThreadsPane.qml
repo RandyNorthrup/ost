@@ -33,6 +33,11 @@ Rectangle {
     }
     readonly property var rootMessage: host ? host.messages.find(m => m.id === pane.rootId) || null : null
     signal closed()
+    /// The thread's bots' actions, agents' meetings and pictures, handled
+    /// as the conversation's.
+    signal suggestedAction(var message, var action)
+    signal agentMeeting(string op, var message, var entry, var command)
+    signal openImageViewer(var images, int index, var message)
     signal jumpTo(string id)
     signal popOut(string rootId)
     color: theme.surface
@@ -113,6 +118,9 @@ Rectangle {
             return all[pane.threadKey] || []
         }
         onClosePane: pane.closed()
+        onSuggestedAction: (m, a) => pane.suggestedAction(m, a)
+        onAgentMeeting: (op, m, e, c) => pane.agentMeeting(op, m, e, c)
+        onOpenImageViewer: (l, i, m) => pane.openImageViewer(l, i, m)
         onReact: (id, key, on) => backend.toggleReaction(id, key, on)
         onDeleteMessage: id => backend.deleteMessage(id)
         onEditMessage: (id, text) => backend.editMessage(id, text)

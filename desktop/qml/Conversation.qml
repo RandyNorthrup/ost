@@ -73,6 +73,14 @@ Rectangle {
     /// A bot message's suggested action picked (Action.Compose: its text
     /// goes to the compose box; in a threads channel, the message's thread).
     signal suggestedAction(var message, var action)
+    /// A picture clicked (Teams' viewer).
+    signal openImageViewer(var images, int index, var message)
+    /// The harness: the posts list's picture cut ({id, limit, full, ranges}).
+    function postImagesForTest() { return channelPosts.imagesForTest() }
+    /// An agent's meeting (createMeeting): "schedule" or "edit".
+    signal agentMeeting(string op, var message, var entry, var command)
+    function scheduleAgentMeeting(m, e, c) { root.agentMeeting("schedule", m, e, c) }
+    function editAgentMeeting(m, c) { root.agentMeeting("edit", m, null, c) }
     /// Like / dislike picked on bot messages, by message id.
     property var botFeedback: ({})
     function composeReady() { return compose.visible }
@@ -127,10 +135,13 @@ Rectangle {
     // In a posts channel Teams opens the post's reply with the mention.
     function applyPostSuggestion(m, action) { channelPosts.applySuggestion(m.root_id || m.id, action) }
     function postReplyForTest() { return channelPosts.replyStateForTest }
+    function postAskForTest(text) { channelPosts.askForTest(text) }
     function clearPostReplyForTest() { channelPosts.clearReplies() }
     function applySuggestion(action) {
         compose.focusEditor()
-        for (const m of (action.mentions || [])) compose.insertMentionOf({ mri: m.mri, name: m.name, whole: true })
+        if (action.quote) root.replyWithQuote(action.quote)
+        for (const m of (action.mentions || [])) compose.insertMentionOf({ mri: m.mri, name: m.name, whole: true, appId: m.appId || "" })
+        if (action.text) compose.insertText(String(action.text).replace(/&/g, "&amp;").replace(/</g, "&lt;"))
     }
     // Threads layout (measured on winpc 2026-11-10): the conversation shows
     // each thread's first message as a chat bubble; under one with replies
@@ -2008,6 +2019,7 @@ Rectangle {
         host: msgHost
         posting: root.posting
         onStartPost: { root.posting = true; compose.focusSubject() }
+        onOpenImage: (list, i, m) => root.openImageViewer(list, i, m)
     }
     // Behind the post composer: the channel's page colour.
     Rectangle {
@@ -2575,15 +2587,20 @@ Rectangle {
                     // text 21.1 lower than usual (Teams).
                     : msg.scheduledMsg ? 21.1 : 0)
                 // In a flow the text's own blank line sets the gap (Teams).
-                readonly property real picsTop: showBody ? body.y + bodyH + seeExtra + (inFlow ? 0 : 8) : (bare ? 0 : 8)
+                readonly property real picsTop: showBody ? body.y + bodyH + (inFlow ? 0 : 8) : (bare ? 0 : 8)
                 readonly property bool hasPics: imgs.length > 0 || inFlow
                 // A code card spans the bubble (Teams).
                 readonly property bool hasCode: flow.some(p => !!p.code)
                 readonly property real picsH: hasPics ? pics.implicitHeight : 0
-                readonly property real filesTop: hasPics ? picsEnd + 8 : (showBody ? body.y + bodyH + seeExtra + 8 : 8)
+                // The text, pictures and an agent's command cards end here,
+                // before and after the see-more cut.
+                readonly property real rawEnd: hasPics ? picsEnd : body.y + bodyH
+                readonly property real odslCardsH: odslCards.shown ? odslCards.height : 0
+                readonly property real textEnd: rawEnd + odslCardsH + seeExtra
+                readonly property real filesTop: hasPics || showBody ? textEnd + 8 : 8
                 // Measured: a card sits 8 under the bubble's top (or the text),
                 // 17.3 in, and the bubble ends 10.7 under it.
-                readonly property real cardsTop: botCard ? 0 : showBody ? body.y + bodyH + seeExtra + 8 : 8
+                readonly property real cardsTop: botCard ? 0 : showBody ? textEnd + 8 : 8
                 // A bot's suggested actions ("@agent") and its like / dislike
                 // (Teams, a Channel Agent's welcome measured on winpc
                 // 2026-11-21): a 31.3 row 8 under the text.
@@ -2591,7 +2608,7 @@ Rectangle {
                 // Under whatever the message holds (a Channel Agent's answer
                 // carries a quote and a Loop page too).
                 readonly property bool hasActions: !msg.mine && !msg.modelData.deleted && !bare && !botCard
-                    && (suggested.length > 0 || !!msg.modelData.feedback_loop)
+                    && (suggested.length > 0 || !!msg.modelData.feedback_loop || actionsRow.shown)
                 readonly property real actionsH: hasActions ? Math.max(31.3, actionsRow.implicitHeight) + 8 : 0
                 // An agent's ODSL statements (its reasoning, or Teams' note
                 // that some can't be shown): 8 under the actions.
@@ -2600,15 +2617,15 @@ Rectangle {
                 // Where the content ends (the actions and statements follow).
                 readonly property real contentEnd: cards.length > 0 ? cardsTop + cardCol.height
                     : files.length > 0 ? filesTop + fileCol.implicitHeight
-                    : hasPics ? picsEnd
-                    : urlPreview ? body.y + bodyH + seeExtra + 6 + 96
-                    : body.y + bodyH + seeExtra
+                    : hasPics ? textEnd
+                    : urlPreview ? textEnd + 6 + 96
+                    : textEnd
                 // An agent's long message (SeeMoreRules; measured on winpc
                 // 2026-11-22, a Channel Agent's welcome in a threads channel):
                 // its text cut at 220 under an 80 px fade with "See more"
                 // over the bottom; open, "See less" 8 under the text. The
                 // actions follow the box.
-                readonly property real fullText: bodyH
+                readonly property real fullText: showBody ? rawEnd + odslCardsH - body.y : bodyH
                 readonly property real seeLimit: root.postsLayout || !showBody ? 0 : root.seeMore.chatLimit(msg.modelData, root.threadKind, !msg.modelData.root_id || msg.modelData.root_id === msg.modelData.id)
                 readonly property bool seeCut: seeLimit > 0 && fullText > seeLimit
                 readonly property bool seeOpen: root.seeMoreOpen[msg.modelData.id] === true
@@ -2617,17 +2634,17 @@ Rectangle {
                 width: root.postsLayout ? msg.maxBubble
                     : botCard ? cardCol.width
                     : cards.length > 0 ? Math.max(cardCol.width + 2 * (linkCardFirst ? 15.67 : 17.3), showBody ? Math.min(msg.maxBubble, body.implicitWidth + 2 * pad) : 0)
-                    : hasCode ? msg.maxBubble
+                    : hasCode || odslCards.shown ? msg.maxBubble
                     : Math.min(msg.maxBubble, Math.max(urlPreview ? 460 + 2 * pad : 0, hasActions ? actionsRow.implicitWidth : 0, hasOdsl ? odslBlock.wanted : 0, msg.sharedHead ? sharedRow.implicitWidth : 0, msg.scheduledMsg ? scheduleLine.implicitWidth : 0, subjectLine.visible ? subjectLine.implicitWidth : 0, showBody ? body.implicitWidth + (msg.modelData.deleted && msg.mine ? 12 + undoMetrics.advanceWidth : 0) : 0, pics.implicitWidth, files.length > 0 ? fileCol.implicitWidth : 0, msg.modelData.quote ? quoteCard.width : 0, msg.modelData.forward ? fwdCard.width : 0) + 2 * pad)
                 TextMetrics { id: undoMetrics; text: qsTr("Undo"); font.family: theme.font; font.pixelSize: theme.base; font.weight: Font.DemiBold }
                 height: botCard ? cardCol.height
                     : cards.length > 0 ? cardsTop + cardCol.height + (linkCardFirst ? 8.67 : 10.7) + actionsH + odslH
                     : bare && files.length === 0 ? (bigEmoticons ? bodyH : picsH)
                     : files.length > 0 ? filesTop + fileCol.implicitHeight + 8 + actionsH + odslH
-                    : hasPics ? picsEnd + (endsInText || (showBody && !inFlow) ? 8.6 : 8) + actionsH + odslH
-                    : urlPreview ? body.y + bodyH + seeExtra + 6 + 96 + (root.compact ? 2 : 14.6) + actionsH + odslH
-                    : root.compact ? bodyH + 2 + quoteShift + actionsH + seeExtra + odslH
-                    : bodyH + 15.3 + quoteShift + actionsH + seeExtra + odslH
+                    : hasPics ? textEnd + (endsInText || (showBody && !inFlow) ? 8.6 : 8) + actionsH + odslH
+                    : urlPreview ? textEnd + 6 + 96 + (root.compact ? 2 : 14.6) + actionsH + odslH
+                    : root.compact ? textEnd + 2 + actionsH + odslH
+                    : textEnd + 8.6 + actionsH + odslH
                 // Teams: 6 px corners, squared on the inner side where a
                 // group's bubbles meet (bottom of the first, top of the rest).
                 readonly property real r: root.postsLayout ? theme.radius : 6
@@ -2823,10 +2840,12 @@ Rectangle {
                 // In a flow, the text between them too.
                 Column {
                     id: pics
+                    // In the see-more cut with the text.
+                    parent: cutBox
                     x: bubble.pad; y: bubble.picsTop
                     spacing: bubble.inFlow ? 0 : 4
                     Repeater {
-                        model: bubble.inFlow ? bubble.flow.map(p => p.pic !== undefined ? bubble.imgs[p.pic] : p.video !== undefined ? { flowVideo: (msg.modelData.videos || [])[p.video] || {} } : p.quote !== undefined ? { flowQuote: p.quote } : p.code ? { flowCode: p.code } : { flowText: p.html }) : bubble.imgs
+                        model: bubble.inFlow ? bubble.flow.map(p => p.pic !== undefined ? bubble.imgs[p.pic] : p.video !== undefined ? { flowVideo: (msg.modelData.videos || [])[p.video] || {} } : p.quote !== undefined ? { flowQuote: p.quote } : p.code ? { flowCode: p.code } : p.loop_url ? { flowLoop: p.loop_url } : { flowText: p.html }) : bubble.imgs
                         Item {
                             id: part
                             required property var modelData
@@ -2835,15 +2854,41 @@ Rectangle {
                             readonly property bool isQuote: modelData.flowQuote !== undefined
                             readonly property bool isCode: modelData.flowCode !== undefined
                             readonly property bool isVideo: modelData.flowVideo !== undefined
-                            readonly property bool isPic: !isText && !isQuote && !isCode && !isVideo
+                            // A Loop link unfurled in place (an agent's Loop
+                            // page): Loop's card across the text's width, 9
+                            // above and 7 below (measured on winpc 2026-11-22).
+                            readonly property bool isLoop: modelData.flowLoop !== undefined
+                            readonly property bool isPic: !isText && !isQuote && !isCode && !isVideo && !isLoop
                             readonly property bool richText: isText && /line-height:|<h[123]>|<hr|<table/.test(modelData.flowText)
                             // Teams: a picture after text or another picture
                             // sits 4 below it (the GIF's margin); text follows
                             // a picture directly; a code card 6 under text.
                             readonly property real gap: !bubble.inFlow ? 0 : isVideo ? 2 : isPic && (index > 0 || bubble.showBody) ? 4 : isCode && (index > 0 || bubble.showBody) ? 6 : 0
-                            width: isText ? flowText.width : isQuote ? quoteBox.width : isCode ? codeCard.width : isVideo ? (clipCard.item ? 2 + clipCard.item.width : 0) : pic.width
+                            width: isText ? flowText.width : isQuote ? quoteBox.width : isCode ? codeCard.width : isVideo ? (clipCard.item ? 2 + clipCard.item.width : 0) : isLoop ? msg.maxBubble - 2 * bubble.pad : pic.width
                             height: gap + (isText ? (richText ? flowText.contentHeight : Math.max(1, flowText.lineCount) * 20)
-                                : isQuote ? 7 + quoteBox.height + 7 : isCode ? codeCard.height : isVideo ? (clipCard.item ? clipCard.item.height + 2 : 0) : pic.height)
+                                : isQuote ? 7 + quoteBox.height + 7 : isCode ? codeCard.height : isVideo ? (clipCard.item ? clipCard.item.height + 2 : 0) : isLoop ? 9 + 372 + 7 : pic.height)
+                            Loader {
+                                active: part.isLoop
+                                y: 9
+                                width: msg.maxBubble - 2 * bubble.pad
+                                sourceComponent: LoopCard {
+                                    id: embedLoop
+                                    mode: "embed"
+                                    width: msg.maxBubble - 2 * bubble.pad
+                                    componentUrl: String(part.modelData.flowLoop || "")
+                                    onPinRequested: backend.setMessagePinned(msg.modelData.id, true)
+                                    Component.onCompleted: backend.loopHostRequest("pageName", "embedloop:" + msg.modelData.id + ":" + part.index, JSON.stringify({ url: componentUrl }))
+                                    Connections {
+                                        target: backend
+                                        function onLoopHostReply(id, json) {
+                                            if (id !== "embedloop:" + msg.modelData.id + ":" + part.index) return
+                                            let r = {}
+                                            try { r = JSON.parse(json) } catch (e) {}
+                                            if (r.name) embedLoop.name = r.name
+                                        }
+                                    }
+                                }
+                            }
                             // A video clip (Teams' video message), its player
                             // made only for clips; Teams gives it 2 px
                             // margins (top, bottom and start).
@@ -2888,76 +2933,14 @@ Rectangle {
                                     }
                                 }
                             }
-                            // Teams' code block (code-block-editor-deserialized):
-                            // a 32 px header (code icon, the language 12/16
-                            // #616161, Copy), then the code in Cascadia Mono
-                            // 14/24 with line numbers, 8/12 in; rounded 8.
-                            Item {
+                            // Teams' code block (CodeCard).
+                            CodeCard {
                                 id: codeCard
                                 visible: part.isCode
                                 y: part.gap
-                                readonly property var code: part.isCode ? part.modelData.flowCode : ({})
-                                readonly property var lines: part.isCode ? String(code.text || "").split("\n") : []
+                                code: part.isCode ? part.modelData.flowCode : ({})
                                 width: part.isCode ? msg.maxBubble - 2 * bubble.pad : 0
-                                height: part.isCode ? 32 - 0.8 + codeBody.height : 0
-                                Rectangle {
-                                    width: parent.width; height: 40
-                                    radius: 8
-                                    color: theme.surface
-                                    border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF"); border.width: 0.67
-                                    FluentIcon { x: 10.7; y: 6; name: "code-block-20"; size: 20; color: theme.textSecondary }
-                                    Text {
-                                        x: 36.7; y: 8.7; height: 16; verticalAlignment: Text.AlignVCenter
-                                        text: codeCard.code.name || qsTr("Plain Text")
-                                        font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary
-                                    }
-                                    Rectangle {
-                                        id: hcFill6
-                                        x: parent.width - 6.2 - 24; y: 5.5; width: 24; height: 23.3; radius: 4
-                                        color: copyHover.hovered ? theme.menuHover : "transparent"
-                                        FluentIcon { anchors.centerIn: parent; name: "copy-20"; size: 20; color: theme.onFill(hcFill6, theme.textStrong) }
-                                        HoverHandler { id: copyHover; cursorShape: Qt.PointingHandCursor }
-                                        TapHandler { onTapped: backend.copyText(codeCard.code.text || "") }
-                                        ToolTip.visible: copyHover.hovered
-                                        ToolTip.text: qsTr("Copy")
-                                        Accessible.role: Accessible.Button
-                                        Accessible.name: qsTr("Copy code")
-                                    }
-                                }
-                                Rectangle {
-                                    id: codeBody
-                                    y: 32 - 0.8
-                                    width: parent.width
-                                    height: 8 + 4 + codeCard.lines.length * 24 + 4 + 8 + 1.3
-                                    radius: 8
-                                    color: theme.surface
-                                    border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF"); border.width: 0.67
-                                    // Square top corners where it meets the header.
-                                    Rectangle { x: 0.67; y: 0.67; width: parent.width - 1.3; height: 8; color: theme.surface }
-                                    Column {
-                                        x: 12; y: 12
-                                        Repeater {
-                                            model: codeCard.lines
-                                            Item {
-                                                required property var modelData
-                                                required property int index
-                                                width: codeBody.width - 24; height: 24
-                                                Text {
-                                                    width: 30; height: 24; horizontalAlignment: Text.AlignRight; verticalAlignment: Text.AlignVCenter
-                                                    text: index + 1
-                                                    font.family: theme.mono; font.pixelSize: 14; color: theme.pick("#8A8886", "#ADADAD", "#FFFFFF")
-                                                }
-                                                Text {
-                                                    x: 42.7; width: parent.width - 42.7; height: 24; verticalAlignment: Text.AlignVCenter
-                                                    text: parent.modelData
-                                                    textFormat: Text.PlainText
-                                                    elide: Text.ElideRight
-                                                    font.family: theme.mono; font.pixelSize: 14; color: theme.text
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
+                                height: part.isCode ? implicitHeight : 0
                             }
                             TextEdit {
                                 id: flowText
@@ -3032,6 +3015,15 @@ Rectangle {
                                 FluentIcon { anchors.centerIn: parent; anchors.horizontalCenterOffset: 2; name: "play-20-filled"; size: 24; color: "white" }
                             }
                             TapHandler { enabled: pic.fun; onTapped: pic.playing = !pic.playing }
+                            // A picture opens Teams' viewer on the message's pictures.
+                            TapHandler {
+                                enabled: !pic.fun && !!pic.modelData.local_path
+                                onTapped: {
+                                    const list = bubble.imgs.filter(x => !x.kind)
+                                    root.openImageViewer(list, Math.max(0, list.indexOf(pic.modelData)), msg.modelData)
+                                }
+                            }
+                            HoverHandler { enabled: !pic.fun && !!pic.modelData.local_path; cursorShape: Qt.PointingHandCursor }
                             HoverHandler { enabled: pic.fun; cursorShape: Qt.PointingHandCursor }
                             Accessible.role: pic.fun ? Accessible.Button : Accessible.Graphic
                             Accessible.name: pic.fun ? (pic.modelData.alt || "") : qsTr("Image")
@@ -3094,9 +3086,20 @@ Rectangle {
                 // doesn't clip its own text; this does, at the bubble's origin
                 // so the text keeps its place).
                 Item {
+                    id: cutBox
                     width: bubble.width
                     height: bubble.seeCut && !bubble.seeOpen ? body.y + bubble.seeLimit : bubble.height
                     clip: bubble.seeCut && !bubble.seeOpen
+                // An agent's command cards (a plan, tasks, questions), right
+                // after the text, inside its cut (OdslCards).
+                OdslCards {
+                    id: odslCards
+                    visible: shown && !msg.mine && !msg.modelData.deleted && !bubble.bare
+                    x: bubble.pad; y: bubble.rawEnd
+                    width: msg.maxBubble - 2 * bubble.pad
+                    message: msg.modelData
+                    host: root
+                }
                 // Selectable, as in Teams (a message's text can be selected and
                 // copied); read-only.
                 TextEdit {

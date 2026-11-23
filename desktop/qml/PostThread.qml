@@ -340,7 +340,7 @@ Item {
                         color: theme.text
                         Accessible.role: Accessible.Heading
                     }
-                    MessageText {
+                    PostBody {
                         id: postBody
                         visible: !!postItem.m && !postItem.editing && !win.meetingPost
                         height: win.meetingPost ? 0 : implicitHeight
@@ -487,7 +487,7 @@ Item {
                                 color: theme.textSecondary
                             }
                         }
-                        MessageText {
+                        PostBody {
                             id: repBody
                             visible: !rep.editing && !rep.callRow
                             x: 50; y: 42.2; width: card.width - 70

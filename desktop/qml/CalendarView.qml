@@ -415,6 +415,15 @@ Item {
     function newChannelMeeting(teamId, teamName, channelId, channelName) {
         openForm(null, [], { teamId: teamId, teamName: teamName, channelId: channelId, channelName: channelName })
     }
+    /// An agent's meeting opened in the form (Teams' Edit on a Channel
+    /// Agent's meeting: the scheduling form with its title, time, details
+    /// and channel).
+    function newAgentMeeting(channel, subject, startIso, minutes, body) {
+        const s = startIso ? new Date(startIso) : null
+        openForm(s && !isNaN(s) ? s : null, [], channel)
+        if (s && !isNaN(s)) form.setTimesForTest(s, new Date(s.getTime() + (minutes || 30) * 60000))
+        form.prefill(subject, body)
+    }
     function openForm(at, people, channel) {
         formLayer.visible = true
         form.detail = ({})

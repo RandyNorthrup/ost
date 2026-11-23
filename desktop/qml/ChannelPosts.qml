@@ -43,6 +43,10 @@ Item {
     /// The harness: the open reply box's plain text and whether it holds a mention.
     property string replyStateForTest: ""
     signal clearReplies()
+    /// A picture clicked: Teams' viewer on the message's pictures.
+    signal openImage(var images, int index, var message)
+    /// The harness: types the text into the open reply box and sends it.
+    signal askForTest(string text)
     onClearReplies: { replying = ""; replyStateForTest = "" }
     function toEnd() { list.positionViewAtEnd() }
     /// Bring a post into view (Find in channel); whether it's loaded.
@@ -102,6 +106,21 @@ Item {
         for (const g of root.posts) {
             if (g.post) item(g.post, false)
             for (const r of g.replies) item(r, true)
+        }
+        return out
+    }
+    /// The harness: each post with pictures, its cut and picture places.
+    function imagesForTest() {
+        const out = []
+        for (let i = 0; i < list.count; i++) {
+            const it = list.itemAtIndex(i)
+            if (!it) continue
+            const find = (o, depth) => {
+                if (!o || depth > 12) return
+                if (o.picRanges !== undefined && o.message && (o.message.images || []).length) out.push({ id: o.message.id, ranges: o.picRanges, height: o.height, sizes: (o.message.images || []).map(x => [x.width, x.height]) })
+                for (const c of o.children || []) find(c, depth + 1)
+            }
+            find(it, 0)
         }
         return out
     }
@@ -369,24 +388,35 @@ Item {
                     // on a click too.
                     Item {
                         id: postBody
-                        readonly property real limit: card.post && !card.meeting ? seeMore.postLimit(card.post, false) : 0
-                        readonly property bool cut: limit > 0 && postText.implicitHeight > limit
+                        // The text, its pictures and an agent's command cards.
+                        readonly property real contentH: postText.height + (postCards.shown ? postCards.height : 0)
+                        readonly property real limit: card.post && !card.meeting ? seeMore.cutAt(card.post, false, postText.picRanges) : 0
+                        readonly property bool cut: limit > 0 && contentH > limit
                         readonly property bool open: !!card.post && root.seeMoreOpen[card.post.id] === true
-                        readonly property real full: postText.implicitHeight
+                        readonly property real full: contentH
                         onFullChanged: if (card.post) root.seeMoreFull[card.post.id] = full
                         visible: postText.visible
                         x: 18; y: 64 + postHead.height; width: card.width - 36
-                        height: card.meeting ? 0 : !cut ? postText.implicitHeight : (open ? postText.implicitHeight : limit) + 20
+                        height: card.meeting ? 0 : !cut ? contentH : (open ? contentH : limit) + 20
                         Item {
                             width: parent.width
-                            height: postBody.cut && !postBody.open ? postBody.limit : postText.implicitHeight
+                            height: postBody.cut && !postBody.open ? postBody.limit : postBody.contentH
                             clip: postBody.cut && !postBody.open
-                            MessageText {
+                            PostBody {
                                 id: postText
                                 visible: !!card.post && !postEdit.active && !card.meeting
                                 width: parent.width
                                 message: card.post
                                 mark: root.markFor(card.post ? card.post.id : "")
+                                onOpenImage: (list, i) => root.openImage(list, i, card.post)
+                            }
+                            OdslCards {
+                                id: postCards
+                                visible: shown && !!card.post && !card.post.mine && !card.post.deleted
+                                y: postText.height
+                                width: parent.width
+                                message: card.post || ({})
+                                host: root.host
                             }
                             TapHandler { enabled: postBody.cut && !postBody.open; onTapped: root.toggleSeeMore(card.post.id, postLink) }
                         }
@@ -615,23 +645,33 @@ Item {
                                 // Teams' posts list (SeeMoreRules).
                                 Item {
                                     id: repBody
-                                    readonly property real limit: seeMore.postLimit(rep.modelData, true)
-                                    readonly property bool cut: limit > 0 && repText.implicitHeight > limit
+                                    readonly property real contentH: repText.height + (repCards.shown ? repCards.height : 0)
+                                    readonly property real limit: seeMore.cutAt(rep.modelData, true, repText.picRanges)
+                                    readonly property bool cut: limit > 0 && contentH > limit
                                     readonly property bool open: root.seeMoreOpen[rep.modelData.id] === true
-                                    readonly property real full: repText.implicitHeight
+                                    readonly property real full: contentH
                                     onFullChanged: root.seeMoreFull[rep.modelData.id] = full
                                     visible: !rep.editing
                                     x: 50; y: root.compact ? 34.2 : 20; width: card.width - 70
-                                    height: !cut ? repText.implicitHeight : (open ? repText.implicitHeight : limit) + 20
+                                    height: !cut ? contentH : (open ? contentH : limit) + 20
                                     Item {
                                         width: parent.width
-                                        height: repBody.cut && !repBody.open ? repBody.limit : repText.implicitHeight
+                                        height: repBody.cut && !repBody.open ? repBody.limit : repBody.contentH
                                         clip: repBody.cut && !repBody.open
-                                        MessageText {
+                                        PostBody {
                                             id: repText
                                             width: parent.width
                                             message: rep.modelData
                                             mark: root.markFor(rep.modelData ? rep.modelData.id : "")
+                                            onOpenImage: (list, i) => root.openImage(list, i, rep.modelData)
+                                        }
+                                        OdslCards {
+                                            id: repCards
+                                            visible: shown && !rep.modelData.mine && !rep.modelData.deleted
+                                            y: repText.height
+                                            width: parent.width
+                                            message: rep.modelData
+                                            host: root.host
                                         }
                                         TapHandler { enabled: repBody.cut && !repBody.open; onTapped: root.toggleSeeMore(rep.modelData.id, repLink) }
                                     }
@@ -724,6 +764,11 @@ Item {
                         Connections {
                             target: root
                             function onClearReplies() { replyInput.clearBox() }
+                            function onAskForTest(text) {
+                                if (!card.open) return
+                                replyInput.insert(replyInput.length, root.escapeForTest(text))
+                                replyInput.submit()
+                            }
                             function onPendingSuggestionChanged() {
                                 const p = root.pendingSuggestion
                                 if (!p || p.id !== card.modelData.id) return
@@ -732,7 +777,7 @@ Item {
                                 const esc = s => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;")
                                 replyInput.textFormat = TextEdit.RichText
                                 replyInput.rich = true
-                                replyInput.insert(replyInput.cursorPosition, (p.action.mentions || []).map(m => '<a href="mention:' + m.mri + '" ' + style + '>' + esc(m.name) + '</a>&nbsp;').join(""))
+                                replyInput.insert(replyInput.cursorPosition, (p.action.mentions || []).map(m => '<a href="' + (m.appId ? "mention-bot:" + m.mri + "|" + m.appId : "mention:" + m.mri) + '" ' + style + '>' + esc(m.name) + '</a>&nbsp;').join("") + (p.action.text ? esc(p.action.text) : ""))
                                 replyInput.cursorPosition = replyInput.length
                                 replyInput.forceActiveFocus()
                             }
@@ -741,7 +786,7 @@ Item {
                             id: replyInput
                             /// Holds a mention (rich text, sent as the editor's HTML).
                             property bool rich: false
-                            onTextChanged: if (card.open) root.replyStateForTest = JSON.stringify({ post: card.modelData.id, text: getText(0, length), mention: rich && text.indexOf('href="mention:') >= 0 })
+                            onTextChanged: if (card.open) root.replyStateForTest = JSON.stringify({ post: card.modelData.id, text: getText(0, length), mention: rich && text.indexOf('href="mention') >= 0 })
                             anchors { left: parent.left; right: sendReply.left; verticalCenter: parent.verticalCenter; leftMargin: 8 }
                             placeholderText: qsTr("Reply in thread")
                             placeholderTextColor: theme.textSecondary
@@ -888,6 +933,7 @@ Item {
             onCancelled: root.host.editingId = ""
         }
     }
+    function escapeForTest(t) { return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;") }
     function highlight(m) { return root.host ? root.host.highlight(m) : null }
     function conversationStamp(t) { return root.host ? root.host.conversationStamp(t) : "" }
 }

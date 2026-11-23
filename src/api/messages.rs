@@ -565,6 +565,12 @@ pub struct FlowPart {
     /// Teams' code card.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub code: Option<CodeBlock>,
+    /// A Loop link Teams unfurls in place (an agent's answer:
+    /// `<a itemtype="http://schema.skype.com/FluidAutoEmbedLink" href=…>`,
+    /// Teams' FluidEmbedDeserializer `_unfurlAutoEmbedLink`): the
+    /// component's link, drawn as the Loop card where the link was.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub loop_url: Option<String>,
 }
 
 /// A code block in a message.
@@ -1787,14 +1793,7 @@ pub fn odsl_statements(value: &str) -> Vec<serde_json::Value> {
         Ok(v) => v,
         Err(_) => return Vec::new(),
     };
-    let arg = |st: &serde_json::Value, name: &str| -> serde_json::Value {
-        let args: Vec<&serde_json::Value> = match &st["arguments"] {
-            serde_json::Value::Array(a) => a.iter().collect(),
-            serde_json::Value::Object(o) => o.values().collect(),
-            _ => Vec::new(),
-        };
-        args.into_iter().find(|x| x["name"].as_str() == Some(name)).map(|x| x["value"].clone()).unwrap_or(serde_json::Value::Null)
-    };
+    let arg = |st: &serde_json::Value, name: &str| odsl_arg(st, name);
     v.pointer("/actions/odsl/statements")
         .and_then(|s| s.as_array())
         .into_iter()
@@ -1807,6 +1806,13 @@ pub fn odsl_statements(value: &str) -> Vec<serde_json::Value> {
             let mut out = serde_json::json!({ "name": name, "group": arg(st, "group") });
             if name == "reasoning" {
                 out["reasoning"] = reasoning_view(|n| arg(st, n));
+            }
+            let command = odsl_command(name, |n| arg(st, n));
+            if !command.is_null() {
+                out["command"] = command;
+                // What goes back to the bot when it is acted on
+                // (odsl/statementExecuted's `statement`).
+                out["raw"] = st.clone();
             }
             Some(out)
         })
@@ -1827,6 +1833,214 @@ pub fn odsl_statements(value: &str) -> Vec<serde_json::Value> {
 ///   off): {number, seconds (the longest step, whole), intents
 ///   "intent (type), …"}.
 /// Null when there are no iterations and no goals (Teams draws nothing).
+/// A statement's argument as Teams' ODSL processor reads it (r_data-
+/// resolvers-chat `nt` / `Ms`): a list of `{name, value}`, or an object
+/// keyed by the argument's name whose entries are typed (`{type: "string",
+/// string}`, `number`, `boolean`, `jsonGrid` with `json` parsed).
+pub fn odsl_arg(st: &serde_json::Value, name: &str) -> serde_json::Value {
+    use serde_json::Value;
+    match &st["arguments"] {
+        Value::Array(a) => a.iter().find(|x| x["name"].as_str() == Some(name)).map(|x| x["value"].clone()).unwrap_or(Value::Null),
+        Value::Object(o) => {
+            let Some(x) = o.get(name) else { return Value::Null };
+            match x["type"].as_str() {
+                Some("number") => x["number"].clone(),
+                Some("boolean") => x["boolean"].clone(),
+                Some("string") => match &x["string"] {
+                    Value::String(t) if !t.is_empty() => Value::String(t.clone()),
+                    _ => Value::Null,
+                },
+                Some("jsonGrid") => x["json"].as_str().and_then(|t| serde_json::from_str(t).ok()).unwrap_or(Value::Null),
+                // The older form: `{name, value}` under any key.
+                _ => x.get("value").cloned().unwrap_or(Value::Null),
+            }
+        }
+        _ => Value::Null,
+    }
+}
+
+/// The service's localized strings (nested lists of `{KEY: {value}}`),
+/// keyed in upper case.
+fn odsl_strings(v: &serde_json::Value) -> serde_json::Map<String, serde_json::Value> {
+    fn collect(v: &serde_json::Value, out: &mut serde_json::Map<String, serde_json::Value>) {
+        match v {
+            serde_json::Value::Array(a) => a.iter().for_each(|x| collect(x, out)),
+            serde_json::Value::Object(o) if !o.contains_key("key") => {
+                for (k, x) in o {
+                    if let Some(t) = x.get("value").and_then(|t| t.as_str()) {
+                        out.insert(k.to_uppercase(), serde_json::json!(t));
+                    }
+                }
+            }
+            serde_json::Value::Object(o) => {
+                // `{key, value}` pairs (LocalizedStringKeyValue).
+                if let (Some(k), Some(t)) = (o.get("key").and_then(|k| k.as_str()), o.get("value").and_then(|t| t.as_str())) {
+                    out.insert(k.to_uppercase(), serde_json::json!(t));
+                }
+            }
+            serde_json::Value::String(t) => {
+                if let Ok(inner) = serde_json::from_str::<serde_json::Value>(t) {
+                    collect(&inner, out);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut out = serde_json::Map::new();
+    collect(v, &mut out);
+    out
+}
+
+/// An ODSL statement as the command Teams' renderer draws (the augloop
+/// resolver's statement → command map, `rt`, then 541316's renderers), for
+/// the commands OST draws; Null for the rest:
+/// - `plan` (PlanCommand, `kc`): a plan's title, its tasks (a hierarchy
+///   when any has a parent or is a summary task), DRAFT or SAVED, the
+///   save status and the service's strings;
+/// - `tasks` (TasksCommand, `qm`): Planner tasks with their status,
+///   due date and assignees;
+/// - `createMeeting` (CreateMeetingCommand, `$n` / 212672): the meeting a
+///   Schedule Meeting button creates;
+/// - `genericBotMention` (`Xu`): a button that mentions the bot with a text;
+/// - `questionsList` (QuestionsListCommand, `td`): the meeting's questions
+///   grouped by topic;
+/// - `agendaTimer` (AgendaTimerCommand, `jt`): start / stop the meeting's
+///   agenda timer (only in its call).
+pub fn odsl_command(name: &str, arg: impl Fn(&str) -> serde_json::Value) -> serde_json::Value {
+    use serde_json::{Value, json};
+    let parse = |v: Value| -> Value {
+        match v {
+            Value::String(t) => serde_json::from_str(&t).unwrap_or(Value::String(t)),
+            other => other,
+        }
+    };
+    let text = |v: &Value| -> String {
+        match v {
+            Value::String(t) => t.clone(),
+            Value::Null => String::new(),
+            other => other.to_string(),
+        }
+    };
+    let truthy = |v: &Value| v.as_bool() == Some(true) || v.as_str() == Some("true");
+    let task = |t: &Value| -> Value {
+        json!({
+            "title": text(&t["title"]),
+            "task_id": text(&t["taskId"]),
+            "plan_id": text(&t["planId"]),
+            "percent": t["percentComplete"].as_f64().unwrap_or(0.0),
+            "due": text(&t["dueDate"]),
+            "start": text(&t["startDate"]),
+            "link": text(&t["link"]),
+            "plan_link": text(&t["planLink"]),
+            "parent": text(&t["parentId"]),
+            "summary": truthy(&t["isSummaryTask"]),
+            "ai": truthy(&t["aiAssistedTask"]),
+            "assignments": t["assignments"].as_array().map(|a| a.iter().map(text).collect::<Vec<_>>()).unwrap_or_default(),
+        })
+    };
+    match name {
+        "plan" => {
+            let tasks: Vec<Value> = parse(arg("tasks")).as_array().map(|a| a.iter().map(task).collect()).unwrap_or_default();
+            if tasks.is_empty() {
+                return Value::Null;
+            }
+            let plan = parse(arg("planData"));
+            let hierarchical = tasks.iter().any(|t| !t["parent"].as_str().unwrap_or_default().is_empty() || t["summary"] == json!(true));
+            json!({
+                "kind": "plan",
+                "title": text(&plan["title"]),
+                "plan_link": text(&plan["planLink"]),
+                "state": text(&arg("state")).to_uppercase(),
+                "action_status": text(&arg("actionStatus")).to_uppercase(),
+                "status_message": text(&arg("statusMessage")),
+                "hierarchical": hierarchical,
+                "tasks": tasks,
+                "strings": odsl_strings(&arg("localizedStrings")),
+            })
+        }
+        "tasks" => {
+            let tasks: Vec<Value> = parse(arg("tasks")).as_array().map(|a| a.iter().map(task).collect()).unwrap_or_default();
+            json!({
+                "kind": "tasks",
+                "tasks": tasks,
+                "initiator": text(&arg("initiatorUserId")),
+                "assign_executed": truthy(&arg("assignToFacilitatorExecuted")),
+                "saved_to_plan": truthy(&arg("saveToPlanExecuted")),
+            })
+        }
+        "createMeeting" => {
+            let attendees: Vec<Value> = match parse(arg("attendees")) {
+                Value::Array(a) => a
+                    .iter()
+                    .filter_map(|x| {
+                        // `[{name: "userId", value}]` pairs or `{userId, email}`.
+                        if let Some(n) = x["name"].as_str() {
+                            let v = text(&x["value"]);
+                            return (!v.is_empty()).then(|| if n == "email" { json!({ "email": v }) } else { json!({ "user_id": v }) });
+                        }
+                        let (u, e) = (text(&x["userId"]), text(&x["email"]));
+                        (!u.is_empty() || !e.is_empty()).then(|| json!({ "user_id": u, "email": e }))
+                    })
+                    .collect(),
+                _ => Vec::new(),
+            };
+            let duration = arg("durationInMinutes");
+            json!({
+                "kind": "createMeeting",
+                "subject": text(&arg("subject")),
+                "start": text(&arg("startTime")),
+                "duration": duration.as_f64().or_else(|| duration.as_str().and_then(|s| s.parse().ok())).unwrap_or(30.0),
+                "body": text(&arg("body")),
+                "location": text(&arg("location")),
+                "attendees": attendees,
+                "status": text(&arg("meetingStatus")).to_uppercase(),
+                "schedule_only": truthy(&arg("renderScheduleButtonOnly")),
+                "strings": odsl_strings(&arg("localizedStrings")),
+            })
+        }
+        "genericBotMention" => {
+            let label = text(&arg("displayText"));
+            if label.is_empty() {
+                return Value::Null;
+            }
+            json!({
+                "kind": "genericBotMention",
+                "title": label,
+                "content": text(&arg("messageContent")),
+                "line_break": truthy(&arg("forceLineBreak")),
+            })
+        }
+        "questionsList" => {
+            let questions: Vec<Value> = parse(arg("questions"))
+                .as_array()
+                .map(|a| {
+                    a.iter()
+                        .map(|q| {
+                            json!({
+                                "id": text(&q["id"]),
+                                "topic": text(&q["topic"]),
+                                "question": text(&q["question"]),
+                                "timestamp": text(&q["timestamp"]),
+                                "from": q["from"].as_array().map(|f| f.iter().map(text).collect::<Vec<_>>()).unwrap_or_default(),
+                                "reactions": q["reactionsCount"].as_i64().unwrap_or(0),
+                                "citations": q["citations"].as_array().map(|c| c.iter().map(|c| json!({ "title": text(&c["title"]), "link": text(&c["link"]) })).collect::<Vec<_>>()).unwrap_or_default(),
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            json!({ "kind": "questionsList", "questions": questions })
+        }
+        "agendaTimer" => json!({
+            "kind": "agendaTimer",
+            "action": text(&arg("action")),
+            "call_id": text(&arg("callId")),
+            "status": text(&arg("status")),
+        }),
+        _ => Value::Null,
+    }
+}
+
 pub fn reasoning_view(arg: impl Fn(&str) -> serde_json::Value) -> serde_json::Value {
     use serde_json::{Value, json};
     let parse = |v: Value| -> Value {
@@ -2364,6 +2578,9 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
     };
     // Pictures stay where they were written (Teams keeps the order).
     let (head, flow) = split_flow(&marked, &pic_tags, |tag| {
+        if is_loop_link(tag) {
+            return attr(tag, "href").map(FlowRef::Loop);
+        }
         let src = attr(tag, "src")?;
         if tag.starts_with("video") {
             return videos.iter().position(|v| v.url == src).map(FlowRef::Video);
@@ -2379,7 +2596,12 @@ fn view_of(m: &serde_json::Value, me: &str, own_name: &str) -> Option<MessageVie
             })
             .map(FlowRef::Pic)
     });
-    let head = if flow.is_empty() {
+    let head = if flow.is_empty() && !images.is_empty() {
+        // Text with its pictures after it: Teams draws no line for the
+        // break that ends its last paragraph.
+        let t = trailing_breaks_dropped(&without_empty_paragraphs(&head));
+        t.trim_end().strip_suffix("<p>").map(|s| s.trim_end().to_string()).unwrap_or(t)
+    } else if flow.is_empty() {
         without_empty_paragraphs(&head)
     } else {
         flow_text(&head)
@@ -2894,6 +3116,27 @@ fn sanitize_core(html: &str, mine: &[String], mark_pics: bool) -> (String, Vec<S
         if !KEEP.contains(&name.as_str()) {
             continue;
         }
+        // A Loop link Teams unfurls where it is (FluidAutoEmbedLink): a
+        // marker, its text dropped (the card names the page).
+        if name == "a"
+            && !closing
+            && mark_pics
+            && attr(tag, "itemtype").is_some_and(|t| t.ends_with("schema.skype.com/FluidAutoEmbedLink"))
+            && attr(tag, "href").is_some_and(|h| h.trim().to_ascii_lowercase().starts_with("https://"))
+        {
+            out.push_str(&pic_marker(pics.len()));
+            pics.push(tag.to_string());
+            match rest.to_ascii_lowercase().find("</a") {
+                Some(i) => {
+                    rest = &rest[i..];
+                    if let Some(e) = rest.find('>') {
+                        rest = &rest[e + 1..];
+                    }
+                }
+                None => rest = "",
+            }
+            continue;
+        }
         if name == "a" {
             if closing {
                 if in_link > 0 {
@@ -3028,12 +3271,40 @@ fn has_visible_text(html: &str) -> bool {
 fn flow_text(html: &str) -> String {
     // A paragraph with nothing in it has no height in Teams.
     let t = html.replace("<p></p>", "");
+    // A line break that ends a paragraph draws no line in a browser (Teams
+    // sends one before a picture: "…<br />\r\n</p>"); nor does a paragraph
+    // left open before the picture.
+    let mut t = trailing_breaks_dropped(&t);
+    while let Some(s) = t.trim_end().strip_suffix("<p>") {
+        t = s.to_string();
+    }
     let t = t.trim();
     if has_visible_text(t) {
         t.to_string()
     } else {
         String::new()
     }
+}
+
+/// HTML with one `<br />` (and the white space after it) dropped where it
+/// ends a paragraph, as a browser draws it.
+fn trailing_breaks_dropped(html: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    while let Some(i) = rest.find("<br />") {
+        let after = &rest[i + "<br />".len()..];
+        // `<p><br /></p>` is a blank line and stays.
+        let alone = rest[..i].trim_end().ends_with("<p>") || (out.is_empty() && rest[..i].trim().is_empty());
+        if after.trim_start().starts_with("</p>") && !alone {
+            out.push_str(&rest[..i]);
+            rest = after.trim_start();
+        } else {
+            out.push_str(&rest[..i + "<br />".len()]);
+            rest = after;
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 /// Marked HTML (`sanitize_core` with `mark_pics`) as the text before the
@@ -3133,6 +3404,10 @@ fn split_flow(
                     video: Some(k),
                     ..Default::default()
                 }),
+                Some(FlowRef::Loop(url)) => flow.push(FlowPart {
+                    loop_url: Some(url),
+                    ..Default::default()
+                }),
                 None => {}
             }
             rest = &at[end..];
@@ -3153,6 +3428,13 @@ fn split_flow(
 enum FlowRef {
     Pic(usize),
     Video(usize),
+    /// A Loop link unfurled in place (its URL).
+    Loop(String),
+}
+
+/// A marked tag that is a FluidAutoEmbedLink (`sanitize_core`).
+fn is_loop_link(tag: &str) -> bool {
+    tag.starts_with("a ") || tag.starts_with("A ")
 }
 
 /// Where an element opened at the start of `html` ends (after its closing
@@ -3226,6 +3508,13 @@ pub fn edit_form(
             .and_then(|n| n.parse::<usize>().ok())
         {
             let Some(pic) = pics.get(n) else { continue };
+            // A Loop link unfurled in the message: back to its link.
+            if is_loop_link(pic) {
+                if let Some(href) = attr(pic, "href") {
+                    out.push_str(&format!("<a href=\"{0}\">{0}</a>", escape(&href)));
+                }
+                continue;
+            }
             let num = |k: &str| attr(pic, k).and_then(|v| v.parse().ok()).unwrap_or(0u32);
             let url = attr(pic, "src").unwrap_or_default();
             let title = attr(pic, "alt").unwrap_or_default();
@@ -4272,6 +4561,10 @@ pub struct OutMention {
     pub mention_type: &'static str,
     #[serde(rename = "displayName")]
     pub display_name: String,
+    /// A bot's app (Teams sends `mentionType: "bot"` with the agent's app
+    /// id; a Channel Agent answers only mentions that carry it).
+    #[serde(rename = "appId", skip_serializing_if = "String::is_empty")]
+    pub app_id: String,
 }
 
 /// Editor HTML to Teams HTML, with the editor's mention tokens (links to
@@ -4605,8 +4898,14 @@ pub fn teams_html_with_media(qt: &str, media: &[ComposeMedia]) -> (String, Vec<O
                         href.strip_prefix("mention-contact:")
                             .map(|m| (m, "share-contact"))
                     })
+                    // A bot with its app (`mention-bot:{mri}|{app id}`).
+                    .or_else(|| href.strip_prefix("mention-bot:").map(|m| (m, "bot")))
                     .or_else(|| href.strip_prefix("mention:").map(|m| (m, "person")));
-                if let Some((mri, mention_type)) = target {
+                if let Some((target_mri, mention_type)) = target {
+                    let (mri, app_id) = match target_mri.split_once('|') {
+                        Some((m, a)) if mention_type == "bot" => (m, a.to_string()),
+                        _ => (target_mri, String::new()),
+                    };
                     let itemid = mentions.len();
                     let scope = if mention_type == "share-contact" {
                         // Teams' ID card emoticon goes first.
@@ -4635,6 +4934,7 @@ pub fn teams_html_with_media(qt: &str, media: &[ComposeMedia]) -> (String, Vec<O
                         mri: mri.to_string(),
                         mention_type,
                         display_name: String::new(),
+                        app_id,
                     });
                     anchors.push(true);
                     mention_text = Some(String::new());
@@ -5049,6 +5349,84 @@ mod quote_tests {
     }
 
     #[test]
+    fn odsl_commands_read_as_teams_draws_them() {
+        // Captured from a Channel Agent on winpc (2026-11-22, "OST TEST 246
+        // agent"): a draft plan (typed object arguments), a Planner task, a
+        // meeting to schedule and two bot-mention buttons.
+        let plan = &super::odsl_statements("{\"actions\":{\"odsl\":{\"statements\":[{\"name\":\"plan\",\"arguments\":{\"rawPlanData\":{\"type\":\"string\",\"name\":\"rawPlanData\",\"string\":\"{\\\"goal\\\":{\\\"title\\\":\\\"OST Test Project Launch\\\",\\\"dueDate\\\":\\\"2026-12-31\\\",\\\"description\\\":\\\"Launch the OST Test Project (OST TEST 246) by completing all required preparation, validation, and go-live activities within the available timeline.\\\"},\\\"tasks\\\":[{\\\"id\\\":\\\"m1\\\",\\\"title\\\":\\\"Project Launch Preparation\\\",\\\"startDateTime\\\":\\\"2026-11-23\\\",\\\"dueDateTime\\\":\\\"2026-12-04\\\",\\\"isMilestone\\\":true},{\\\"id\\\":\\\"t1\\\",\\\"title\\\":\\\"Define OST TEST 246 launch scope and objectives\\\",\\\"startDateTime\\\":\\\"2026-11-23\\\",\\\"dueDateTime\\\":\\\"2026-12-04\\\",\\\"parentId\\\":\\\"m1\\\"},{\\\"id\\\":\\\"m2\\\",\\\"title\\\":\\\"Validation and Readiness Review\\\",\\\"startDateTime\\\":\\\"2026-12-07\\\",\\\"dueDateTime\\\":\\\"2026-12-18\\\",\\\"isMilestone\\\":true},{\\\"id\\\":\\\"t2\\\",\\\"title\\\":\\\"Validate OST TEST 246 readiness against launch criteria\\\",\\\"startDateTime\\\":\\\"2026-12-07\\\",\\\"dueDateTime\\\":\\\"2026-12-18\\\",\\\"parentId\\\":\\\"m2\\\"},{\\\"id\\\":\\\"m3\\\",\\\"title\\\":\\\"Go-Live Execution\\\",\\\"startDateTime\\\":\\\"2026-12-21\\\",\\\"dueDateTime\\\":\\\"2026-12-31\\\",\\\"isMilestone\\\":true},{\\\"id\\\":\\\"t3\\\",\\\"title\\\":\\\"Execute OST TEST 246 go-live and confirm launch success\\\",\\\"startDateTime\\\":\\\"2026-12-21\\\",\\\"dueDateTime\\\":\\\"2026-12-31\\\",\\\"parentId\\\":\\\"m3\\\"}],\\\"taskDependencies\\\":[{\\\"predecessorId\\\":\\\"t1\\\",\\\"successorId\\\":\\\"t2\\\"},{\\\"predecessorId\\\":\\\"t2\\\",\\\"successorId\\\":\\\"t3\\\"}]}\"},\"planData\":{\"type\":\"string\",\"name\":\"plan\",\"string\":\"{\\\"title\\\":\\\"OST Test Project Launch\\\"}\"},\"tasks\":{\"type\":\"string\",\"name\":\"tasks\",\"string\":\"[{\\\"title\\\":\\\"Project Launch Preparation\\\",\\\"taskId\\\":\\\"m1\\\",\\\"planId\\\":\\\"\\\",\\\"percentComplete\\\":0,\\\"dueDate\\\":\\\"2026-12-04\\\",\\\"startDate\\\":\\\"2026-11-23\\\",\\\"link\\\":\\\"\\\",\\\"planLink\\\":\\\"\\\",\\\"isSummaryTask\\\":true},{\\\"title\\\":\\\"Define OST TEST 246 launch scope and objectives\\\",\\\"taskId\\\":\\\"t1\\\",\\\"planId\\\":\\\"\\\",\\\"percentComplete\\\":0,\\\"dueDate\\\":\\\"2026-12-04\\\",\\\"startDate\\\":\\\"2026-11-23\\\",\\\"link\\\":\\\"\\\",\\\"planLink\\\":\\\"\\\",\\\"parentId\\\":\\\"m1\\\"},{\\\"title\\\":\\\"Validation and Readiness Review\\\",\\\"taskId\\\":\\\"m2\\\",\\\"planId\\\":\\\"\\\",\\\"percentComplete\\\":0,\\\"dueDate\\\":\\\"2026-12-18\\\",\\\"startDate\\\":\\\"2026-12-07\\\",\\\"link\\\":\\\"\\\",\\\"planLink\\\":\\\"\\\",\\\"isSummaryTask\\\":true},{\\\"title\\\":\\\"Validate OST TEST 246 readiness against launch criteria\\\",\\\"taskId\\\":\\\"t2\\\",\\\"planId\\\":\\\"\\\",\\\"percentComplete\\\":0,\\\"dueDate\\\":\\\"2026-12-18\\\",\\\"startDate\\\":\\\"2026-12-07\\\",\\\"link\\\":\\\"\\\",\\\"planLink\\\":\\\"\\\",\\\"parentId\\\":\\\"m2\\\"},{\\\"title\\\":\\\"Go-Live Execution\\\",\\\"taskId\\\":\\\"m3\\\",\\\"planId\\\":\\\"\\\",\\\"percentComplete\\\":0,\\\"dueDate\\\":\\\"2026-12-31\\\",\\\"startDate\\\":\\\"2026-12-21\\\",\\\"link\\\":\\\"\\\",\\\"planLink\\\":\\\"\\\",\\\"isSummaryTask\\\":true},{\\\"title\\\":\\\"Execute OST TEST 246 go-live and confirm launch success\\\",\\\"taskId\\\":\\\"t3\\\",\\\"planId\\\":\\\"\\\",\\\"percentComplete\\\":0,\\\"dueDate\\\":\\\"2026-12-31\\\",\\\"startDate\\\":\\\"2026-12-21\\\",\\\"link\\\":\\\"\\\",\\\"planLink\\\":\\\"\\\",\\\"parentId\\\":\\\"m3\\\"}]\"},\"localizedStrings\":{\"type\":\"jsonGrid\",\"name\":\"localizedStrings\",\"json\":\"[[{\\\"ODSL_OPEN_IN_PLANNER_LABEL\\\":{\\\"value\\\":\\\"Open in Planner\\\",\\\"isLocalized\\\":true},\\\"ODSL_DUE_ON_LABEL\\\":{\\\"value\\\":\\\"Due on {0}\\\",\\\"isLocalized\\\":true},\\\"ODSL_NO_DUE_DATE_LABEL\\\":{\\\"value\\\":\\\"No due date\\\",\\\"isLocalized\\\":true},\\\"ODSL_SET_DUE_DATE_IN_PLANNER\\\":{\\\"value\\\":\\\"Set due date in Planner\\\",\\\"isLocalized\\\":true},\\\"ODSL_DRAFTWORKBACKPLAN_CREATE_LABEL\\\":{\\\"value\\\":\\\"Save to Planner\\\",\\\"isLocalized\\\":true},\\\"ODSL_DRAFTWORKBACKPLAN_DISCARD_LABEL\\\":{\\\"value\\\":\\\"Discard\\\",\\\"isLocalized\\\":true},\\\"ODSL_ASK_FOR_CHANGES_LABEL\\\":{\\\"value\\\":\\\"Ask for changes\\\",\\\"isLocalized\\\":true},\\\"ODSL_MAKES_THESE_CHANGES_LABEL\\\":{\\\"value\\\":\\\"make these changes:\\\",\\\"isLocalized\\\":true},\\\"ODSL_VIEW_IN_PLANNER_LABEL\\\":{\\\"value\\\":\\\"View in Planner\\\",\\\"isLocalized\\\":true},\\\"ODSL_STATUS_INDICATOR_COMMIT_PLAN_INPROGRESS_LABEL\\\":{\\\"value\\\":\\\"Saving to Planner...\\\",\\\"isLocalized\\\":true},\\\"ODSL_STATUS_INDICATOR_COMMIT_PLAN_ERROR_LABEL\\\":{\\\"value\\\":\\\"Failed to save tasks to Planner. Please try again.\\\",\\\"isLocalized\\\":true},\\\"ODSL_STATUS_INDICATOR_GOALS_EXHAUSTED_ERROR_LABEL\\\":{\\\"value\\\":\\\"You’ve hit the goal limit. Remove a goal to make space for this plan.\\\",\\\"isLocalized\\\":true}}]]\"},\"state\":{\"type\":\"string\",\"name\":\"state\",\"string\":\"DRAFT\"},\"locale\":{\"type\":\"string\",\"name\":\"locale\",\"string\":\"en-US\"}}}]},\"entities\":[\"chat\"]}}")[0];
+        let c = &plan["command"];
+        assert_eq!(c["kind"], "plan");
+        assert_eq!(c["title"], "OST Test Project Launch");
+        assert_eq!(c["state"], "DRAFT");
+        assert_eq!(c["hierarchical"], true);
+        assert_eq!(c["tasks"].as_array().unwrap().len(), 6);
+        assert_eq!(c["tasks"][0]["summary"], true);
+        assert_eq!(c["tasks"][1]["parent"], "m1");
+        assert_eq!(c["tasks"][1]["due"], "2026-12-04");
+        assert_eq!(c["strings"]["ODSL_DRAFTWORKBACKPLAN_CREATE_LABEL"], "Save to Planner");
+        assert_eq!(c["strings"]["ODSL_ASK_FOR_CHANGES_LABEL"], "Ask for changes");
+        assert_eq!(plan["raw"]["name"], "plan");
+        let tasks = &super::odsl_statements("{\"actions\":{\"odsl\":{\"statements\":[{\"name\":\"tasks\",\"arguments\":{\"tasks\":{\"type\":\"string\",\"name\":\"tasks\",\"string\":\"[{\\\"title\\\":\\\"Review the OST test project launch plan\\\",\\\"taskId\\\":\\\"adgwnAeVFUS6bhX0Fhf0nWUALIfg\\\",\\\"planId\\\":\\\"LzKNuPa0xEm6rfyRZ-A8E2UAHAXk\\\",\\\"percentComplete\\\":0,\\\"dueDate\\\":\\\"2026-11-27T00:00:00.000Z\\\",\\\"assignments\\\":[\\\"4287e791-1b98-4963-8b94-281c50472683\\\"],\\\"aiAssistedTask\\\":false,\\\"link\\\":\\\"https://teams.microsoft.com/l/entity/com.microsoft.teamspace.tab.planner/mytasks?webUrl=https://tasks.teams.microsoft.com/teamsui/personalApp/alltasklists&context={\\\\\\\"subEntityId\\\\\\\":\\\\\\\"/v1/plan/LzKNuPa0xEm6rfyRZ-A8E2UAHAXk/view/board/task/adgwnAeVFUS6bhX0Fhf0nWUALIfg\\\\\\\"}\\\",\\\"planLink\\\":\\\"https://teams.microsoft.com/l/entity/com.microsoft.teamspace.tab.planner/mytasks?webUrl=https://tasks.teams.microsoft.com/teamsui/personalApp/alltasklists&context={\\\\\\\"subEntityId\\\\\\\":\\\\\\\"/v1/plan/LzKNuPa0xEm6rfyRZ-A8E2UAHAXk/view/board\\\\\\\"}\\\",\\\"requestedLanguage\\\":\\\"\\\",\\\"userQueryLanguage\\\":\\\"\\\"}]\"}}}]},\"entities\":[\"chat\"]}}")[0]["command"];
+        assert_eq!(tasks["kind"], "tasks");
+        assert_eq!(tasks["tasks"][0]["title"], "Review the OST test project launch plan");
+        assert_eq!(tasks["tasks"][0]["percent"], 0.0);
+        assert_eq!(tasks["tasks"][0]["due"], "2026-11-27T00:00:00.000Z");
+        assert_eq!(tasks["tasks"][0]["assignments"][0], "4287e791-1b98-4963-8b94-281c50472683");
+        assert!(tasks["tasks"][0]["link"].as_str().unwrap().starts_with("https://teams.microsoft.com/l/entity/"));
+        let meet = &super::odsl_statements("{\"actions\":{\"odsl\":{\"statements\":[{\"name\":\"createMeeting\",\"arguments\":[{\"name\":\"subject\",\"value\":\"OST Test Project Launch\"},{\"name\":\"startTime\",\"value\":\"2026-11-23T18:00:00Z\"},{\"name\":\"durationInMinutes\",\"value\":30},{\"name\":\"body\",\"value\":\"Discuss the launch of the OST test project, review the plan, and align on next steps.\"},{\"name\":\"localizedStrings\",\"value\":[[{\"PROJECT_AGENT_SCHEDULE_MEETING_TEXT\":{\"value\":\"Schedule Meeting\",\"isLocalized\":true},\"PROJECT_AGENT_EDIT_MEETING_TEXT\":{\"value\":\"Edit\",\"isLocalized\":true},\"PROJECT_AGENT_DISCARD_MEETING_TEXT\":{\"value\":\"Discard meeting\",\"isLocalized\":true}}]]},{\"name\":\"locale\",\"value\":\"en-US\"},{\"name\":\"attendees\",\"value\":[{\"name\":\"userId\",\"value\":\"8:orgid:4287e791-1b98-4963-8b94-281c50472683\"}]}]}]},\"entities\":[\"meeting\"]}}")[0]["command"];
+        assert_eq!(meet["kind"], "createMeeting");
+        assert_eq!(meet["subject"], "OST Test Project Launch");
+        assert_eq!(meet["start"], "2026-11-23T18:00:00Z");
+        assert_eq!(meet["duration"], 30.0);
+        assert_eq!(meet["attendees"][0]["user_id"], "8:orgid:4287e791-1b98-4963-8b94-281c50472683");
+        assert_eq!(meet["strings"]["PROJECT_AGENT_SCHEDULE_MEETING_TEXT"], "Schedule Meeting");
+        assert_eq!(meet["strings"]["PROJECT_AGENT_DISCARD_MEETING_TEXT"], "Discard meeting");
+        let gbm = super::odsl_statements("{\"actions\":{\"odsl\":{\"statements\":[{\"name\":\"genericBotMention\",\"arguments\":[{\"name\":\"displayText\",\"value\":\"Provide answers\"},{\"name\":\"messageContent\",\"value\":\"here are my answers:\"},{\"name\":\"forceLineBreak\",\"value\":\"false\"}]},{\"name\":\"genericBotMention\",\"arguments\":[{\"name\":\"displayText\",\"value\":\"Draft a plan\"},{\"name\":\"messageContent\",\"value\":\"draft a plan using the available information\"},{\"name\":\"forceLineBreak\",\"value\":\"true\"}]}]}}}");
+        assert_eq!(gbm.len(), 2);
+        assert_eq!(gbm[0]["command"]["title"], "Provide answers");
+        assert_eq!(gbm[0]["command"]["content"], "here are my answers:");
+        assert_eq!(gbm[0]["command"]["line_break"], false);
+        assert_eq!(gbm[1]["command"]["title"], "Draft a plan");
+        assert_eq!(gbm[1]["command"]["line_break"], true);
+        // From Teams' schema (not triggered live: the Facilitator's).
+        let more = super::odsl_statements("{\"actions\": {\"odsl\": {\"statements\": [{\"name\": \"questionsList\", \"arguments\": [{\"name\": \"questions\", \"value\": \"[{\\\"id\\\": \\\"q1\\\", \\\"topic\\\": \\\"Launch\\\", \\\"question\\\": \\\"When do we ship?\\\", \\\"timestamp\\\": \\\"2026-11-22T10:00:00Z\\\", \\\"from\\\": [\\\"8:orgid:a\\\"], \\\"reactionsCount\\\": 2, \\\"citations\\\": [{\\\"id\\\": 1, \\\"title\\\": \\\"Transcript\\\", \\\"link\\\": \\\"https://example.com/t\\\"}]}, {\\\"id\\\": \\\"q2\\\", \\\"topic\\\": \\\"Launch\\\", \\\"question\\\": \\\"Who signs off?\\\", \\\"timestamp\\\": \\\"2026-11-22T10:01:00Z\\\", \\\"from\\\": [\\\"8:orgid:b\\\"], \\\"reactionsCount\\\": 0, \\\"citations\\\": []}]\"}]}, {\"name\": \"agendaTimer\", \"arguments\": [{\"name\": \"action\", \"value\": \"start\"}, {\"name\": \"callId\", \"value\": \"call-1\"}, {\"name\": \"status\", \"value\": \"\"}]}]}}}");
+        assert_eq!(more[0]["command"]["questions"][1]["question"], "Who signs off?");
+        assert_eq!(more[0]["command"]["questions"][0]["reactions"], 2);
+        assert_eq!(more[0]["command"]["questions"][0]["citations"][0]["title"], "Transcript");
+        assert_eq!(more[1]["command"]["kind"], "agendaTimer");
+        assert_eq!(more[1]["command"]["action"], "start");
+        // Unknown commands carry none.
+        assert!(super::odsl_statements(r#"{"actions":{"odsl":{"statements":[{"name":"whiteboard","arguments":[]}]}}}"#)[0]["command"].is_null());
+    }
+
+    #[test]
+    fn agent_loop_link_unfurls_in_place() {
+        // A Channel Agent's answer with a Loop page (captured 2026-11-22,
+        // "OST TEST 206 agent I"): the FluidAutoEmbedLink becomes a Loop
+        // part where the link was; the emoticon before it stays in the text.
+        let content = "<p>\n<blockquote itemscope itemtype=\"http://schema.skype.com/Reply\" itemid=\"1795382862995\"><strong itemprop=\"mri\" itemid=\"8:orgid:4287e791-1b98-4963-8b94-281c50472683\">OST Test 1</strong><span itemprop=\"time\" itemid=\"1795382862995\"></span><p itemprop=\"preview\">OST TEST channel Agent OST TEST 206: create a weekly status report for this channel</p></blockquote>\n\n\n<p>Hi <span itemscope itemtype=\"http://schema.skype.com/Mention\" itemid=\"0\">OST Test 1</span>, here's this week's status report — since the channel launched today, it's a quiet note:</p>\n\n\n<p><span title=\"Page\" type=\"(1f4c4_pagefacingup)\" class=\"animated-emoticon-20-1f4c4_pagefacingup\" itemscope><img itemscope itemtype=\"http://schema.skype.com/Emoji\" itemid=\"1f4c4_pagefacingup\" src=\"https://statics.teams.cdn.office.net/evergreen-assets/personal-expressions/v2/assets/emoticons/1f4c4_pagefacingup/default/20_f.png\" title=\"Page\" alt=\"📄\" style=\"width:20px;height:20px\" /></span> <a href=\"https://scnetsolutions.sharepoint.com/:fl:/r/sites/OSTTEST206agentI/Shared%20Documents/OST%20TEST%20channel/Generated%20Docs/Weekly%20Status%20Report%20%E2%80%94%20Week%20of%20Nov%2017%E2%80%9322,%202026.loop?d=w84f81467346c4a1e868204716bccb9e1&amp;csf=1&amp;web=1&amp;nav=cz0lMkZzaXRlcyUyRk9TVFRFU1QyMDZhZ2VudEkmZD1iIWtVbnUwSkVJMmtHV0FKclFzWjZxRkx4ZnpqTUp0ZUpDaHRGZERXaGtIRE9EWFZhdnZCWXNSTE82THU5MlhadkUmZj0wMVI0RUFLQ1RIQ1Q0SUkzQlVEWkZJTkFRRU9GVjRaT1BCJmM9JTJGJmZsdWlkPTEmcD0lNDBmbHVpZHglMkZsb29wLXBhZ2UtY29udGFpbmVy\" itemtype=\"http://schema.skype.com/FluidAutoEmbedLink\" title=\"https://scnetsolutions.sharepoint.com/:fl:/r/sites/osttest206agenti/shared%20documents/ost%20test%20channel/generated%20docs/weekly%20status%20report%20%e2%80%94%20week%20of%20nov%2017%e2%80%9322,%202026.loop?d=w84f81467346c4a1e868204716bccb9e1&amp;csf=1&amp;web=1&amp;nav=cz0lmkzzaxrlcyuyrk9tvfrfu1qymdzhz2vudekmzd1iiwtvbnuwskvjmmthv0fkclfzwjzxrkx4znpqtup0zupdahrgzerxagtire9ewfzhdnzcwxnste82thu5mlhadkumzj0wmvi0ruflq1riq1q0sukzqlvewkzjtkfrru9gvjrat1bcjmm9jtjgjmzsdwlkptemcd0lndbmbhvpzhglmkzsb29wlxbhz2uty29udgfpbmvy\">Weekly Status Report — Week of Nov 17–22, 2026</a></p>\n\n\n<p>To set up a recurring weekly routine, what day and time would you like the report posted? (e.g., \"every Monday at 9 AM\")</p>\n\n</p>";
+        let m = serde_json::json!({"id": "1795382871609", "messagetype": "RichText/Html", "content": content, "from": "https://x/contacts/28:3cf96df7-3ecf-460a-a065-d1ca251969e4", "imdisplayname": "Project-Agent-Prod"});
+        let v = view_of(&m, "8:orgid:4287e791-1b98-4963-8b94-281c50472683", "OST Test 1").unwrap();
+        let loops: Vec<&FlowPart> = v.flow.iter().filter(|p| p.loop_url.is_some()).collect();
+        assert_eq!(loops.len(), 1, "{:?}", v.flow);
+        let url = loops[0].loop_url.as_deref().unwrap();
+        assert!(url.starts_with("https://scnetsolutions.sharepoint.com/:fl:/r/sites/OSTTEST206agentI/"), "{url}");
+        assert!(url.contains("&csf=1&web=1&nav=cz0l"), "{url}");
+        // The page's title (the link text) isn't left in the text.
+        let all: String = std::iter::once(v.html.clone()).chain(v.flow.iter().map(|p| p.html.clone())).collect();
+        assert!(!all.contains("Weekly Status Report"), "{all}");
+        assert!(all.contains("what day and time would you like"), "{all}");
+        // The text before it (the message's first text) ends with the page
+        // emoticon; the text after it follows the card.
+        let at = v.flow.iter().position(|p| p.loop_url.is_some()).unwrap();
+        assert_eq!(at, 0, "{:?}", v.flow);
+        assert!(v.html.contains("1f4c4_pagefacingup") && v.html.contains("it's a quiet note"), "{}", v.html);
+        assert!(v.flow[at + 1].html.contains("recurring weekly routine"), "{:?}", v.flow);
+        // Without the marker (previews, search) it stays a link.
+        assert!(sanitize_html(content).contains("<a href=\"https://scnetsolutions.sharepoint.com/"));
+    }
+
+    #[test]
     fn teams_formatting_reads_as_teams_shows_it() {
         let m = |c: &str| serde_json::json!({"id": "1", "messagetype": "RichText/Html", "content": c, "from": "https://x/contacts/8:orgid:them", "imdisplayname": "Them"});
         // As Teams sent "OST TEST 66": a quote, highlight, colour, size.
@@ -5336,7 +5714,11 @@ mod tests {
         assert_eq!(super::suggested_actions(Some(&odsl))[0]["kind"], "odsl");
         // Its statements, the bookkeeping ones left out.
         let st = super::odsl_statements(r#"{"actions":{"odsl":{"statements":[{"name":"orchestratorMetadata","arguments":[]},{"name":"tasks","arguments":[{"name":"group","value":"g1"}]},{"name":"statusReportConfiguration","arguments":{"a":{"name":"x","value":1}}}]}}}"#);
-        assert_eq!(st, vec![serde_json::json!({"name": "tasks", "group": "g1"}), serde_json::json!({"name": "statusReportConfiguration", "group": null})]);
+        let names: Vec<(serde_json::Value, serde_json::Value)> = st.iter().map(|s| (s["name"].clone(), s["group"].clone())).collect();
+        assert_eq!(names, vec![(serde_json::json!("tasks"), serde_json::json!("g1")), (serde_json::json!("statusReportConfiguration"), serde_json::Value::Null)]);
+        // "tasks" is a command OST draws (an empty task list here).
+        assert_eq!(st[0]["command"]["kind"], "tasks");
+        assert!(st[1]["command"].is_null());
         assert!(super::odsl_statements("not json").is_empty());
         // A Channel Agent's reasoning (captured in "OST TEST 206 agent I",
         // 2026-11-22; trimmed): its steps' chain of thought, the service's
@@ -5831,6 +6213,23 @@ mod tests {
         let traversal = html.replace(r#"itemid="0-wus-d5-02b""#, r#"itemid="../../x""#);
         assert!(inline_images(&traversal).is_empty());
         assert!(!is_ams_url("https://asm.skype.com.evil.example/x"));
+    }
+
+    #[test]
+    fn picture_between_text_keeps_teams_lines() {
+        // As "OST TEST 246 image post" went out (2026-11-22): six lines,
+        // the picture, three lines. Teams draws no line for the break that
+        // ends the first paragraph nor for the paragraph left open before
+        // the picture; the second run keeps its leading blank line.
+        let content = "<p>OST TEST 246 image post<br />\r\nline two<br />\r\nline six, the picture follows<br />\r\n</p>\r\n<p><img src=\"https://us-api.asm.skype.com/v1/objects/0-wus-d8-d40/views/imgo\" itemtype=\"http://schema.skype.com/AMSImage\" width=\"800\" height=\"450\" alt=\"image\" itemid=\"0-wus-d8-d40\"></p>\r\n<p><br />\r\nline seven after the picture<br />\r\nline nine</p>";
+        let m = serde_json::json!({"id": "1795393674811", "messagetype": "RichText/Html", "content": content, "from": "https://x/contacts/8:orgid:me", "imdisplayname": "Me"});
+        let v = message_view(&m, "8:orgid:me", "Me").unwrap();
+        assert_eq!(v.images.len(), 1);
+        assert!(v.html.ends_with("line six, the picture follows</p>"), "{}", v.html);
+        assert_eq!(v.flow[0].pic, Some(0));
+        assert!(v.flow[1].html.contains("<p><br />\r\nline seven"), "{}", v.flow[1].html);
+        // A blank line of its own stays.
+        assert_eq!(trailing_breaks_dropped("<p><br /></p><p>a<br /> </p>"), "<p><br /></p><p>a</p>");
     }
 
     #[test]

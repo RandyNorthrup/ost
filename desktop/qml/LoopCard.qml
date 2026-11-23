@@ -16,8 +16,17 @@ import QtQuick.Controls.Basic
 // The component itself is Loop's own (LoopPage, docs/spec/loop-host.md).
 Rectangle {
     id: root
-    /// "compose" (made here; `conversation` is where) or "message".
+    /// "compose" (made here; `conversation` is where), "message" (a Loop
+    /// component sent with the message) or "embed" (a Loop link Teams
+    /// unfurls in the text, as an agent's Loop page: measured on winpc
+    /// 2026-11-22, the card across the text's width with a #D1D1D1 edge,
+    /// the page's name, then Pin for everyone and the message's three
+    /// buttons, which fold into "More actions" ··· when the card is narrow).
     property string mode: "message"
+    signal pinRequested()
+    signal copyLinkRequested()
+    function copyLink() { copyLinkRequested() }
+    readonly property bool narrow: width < 420
     property string conversation: ""
     /// The component's link (a message's; a compose one once made).
     property string componentUrl: ""
@@ -47,7 +56,7 @@ Rectangle {
     radius: 12
     color: theme.pick("#FFFFFF", "#292929", "#000000")
     border.width: 0.67
-    border.color: focusInside ? theme.brand : theme.pick("#E0E0E0", "#3D3D3D", "#FFFFFF")
+    border.color: focusInside ? theme.brand : mode === "embed" ? theme.pick("#D1D1D1", "#666666", "#FFFFFF") : theme.pick("#E0E0E0", "#3D3D3D", "#FFFFFF")
     // Teams' Loop glow (loopGlowBorderEnabled) while the component has the
     // keyboard: a brand edge.
     readonly property bool focusInside: loop.item ? loop.item.activeFocus || loopFocus.activeFocus : false
@@ -59,7 +68,7 @@ Rectangle {
         Rectangle {
             id: nameButton
             x: 22; y: 12; height: 28
-            width: Math.min(nameRow.implicitWidth + 6, header.width - 22 - (root.mode === "compose" ? 60 : 130))
+            width: Math.min(nameRow.implicitWidth + 6, header.width - 22 - (root.mode === "compose" ? 60 : root.mode === "embed" ? headerButtons.width + 26 : 130))
             radius: 4
             color: nameHover.hovered ? theme.rowHover : "transparent"
             Row {
@@ -68,7 +77,7 @@ Rectangle {
                 Image { anchors.verticalCenter: parent.verticalCenter; width: 20; height: 20; sourceSize: Qt.size(40, 40); source: "../assets/icons/ft-loop-20.svg" }
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
-                    width: Math.min(implicitWidth, header.width - 22 - 34 - (root.mode === "compose" ? 260 : 130))
+                    width: Math.min(implicitWidth, header.width - 22 - 34 - (root.mode === "compose" ? 260 : root.mode === "embed" ? headerButtons.width + 26 : 130))
                     elide: Text.ElideRight
                     text: root.name || qsTr("Loop paragraph")
                     lineHeight: 16; lineHeightMode: Text.FixedHeight
@@ -104,14 +113,34 @@ Rectangle {
             Accessible.name: text
         }
         Row {
-            anchors { right: parent.right; rightMargin: 18 }
+            id: headerButtons
+            anchors { right: parent.right; rightMargin: root.mode === "embed" ? 16 : 18 }
             y: root.mode === "compose" ? 10.4 : 10.3
+            readonly property bool full: root.mode === "message" || (root.mode === "embed" && !root.narrow)
             HeaderButton { visible: root.mode === "compose"; icon: "delete-20"; tip: qsTr("Discard"); onClicked: root.discardRequested() }
-            HeaderButton { visible: root.mode === "message"; icon: "apps"; tip: qsTr("Shared locations"); onClicked: locations.open() }
-            HeaderButton { visible: root.mode === "message"; icon: "select-object-20"; tip: qsTr("Copy component"); onClicked: { copier.text = root.componentUrl; copier.selectAll(); copier.copy() } }
-            HeaderButton { visible: root.mode === "message"; icon: "people-checkmark-20"; tip: qsTr("See who has access"); onClicked: if (root.componentUrl) accessPop.openFor(this, root.componentUrl) }
+            HeaderButton { visible: root.mode === "embed"; icon: "pin-20"; tip: qsTr("Pin for everyone", "messaging:k4e5qoudc"); onClicked: root.pinRequested() }
+            HeaderButton { visible: headerButtons.full; icon: "apps"; tip: qsTr("Shared locations"); onClicked: locations.open() }
+            HeaderButton { visible: headerButtons.full; icon: "select-object-20"; tip: qsTr("Copy component"); onClicked: root.copyLink() }
+            HeaderButton { visible: headerButtons.full; icon: "people-checkmark-20"; tip: qsTr("See who has access"); onClicked: if (root.componentUrl) accessPop.openFor(this, root.componentUrl) }
+            HeaderButton {
+                id: moreButton
+                visible: root.mode === "embed" && root.narrow
+                icon: "more-horizontal-20"; tip: qsTr("More actions")
+                onClicked: { moreMenu.parent = moreButton; moreMenu.x = moreButton.width - moreMenu.width; moreMenu.y = moreButton.height + 4; moreMenu.open() }
+                MenuPopup {
+                    id: moreMenu
+                    items: [{ label: qsTr("Shared locations"), icon: "apps" }, { label: qsTr("Copy component"), icon: "select-object-20" }, { label: qsTr("See who has access"), icon: "people-checkmark-20" }]
+                    onPicked: i => {
+                        if (i === 0) locations.open()
+                        else if (i === 1) root.copyLink()
+                        else if (root.componentUrl) accessPop.openFor(moreButton, root.componentUrl)
+                    }
+                }
+            }
         }
+        function noop() {}
         TextEdit { id: copier; visible: false }
+        Connections { target: root; function onCopyLinkRequested() { copier.text = root.componentUrl; copier.selectAll(); copier.copy() } }
         LoopAccessPopover { id: accessPop }
         Popup {
             id: locations
@@ -129,7 +158,7 @@ Rectangle {
         // component is inserted).
         active: root.live && !root.resetting && (root.mode === "compose" || root.componentUrl.length > 0)
         sourceComponent: LoopPage {
-            kind: root.mode
+            kind: root.mode === "embed" ? "message" : root.mode
             create: root.mode === "compose"
             channel: root.conversation
             componentUrl: root.mode === "compose" ? "" : root.componentUrl

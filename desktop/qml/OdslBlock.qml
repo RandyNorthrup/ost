@@ -55,7 +55,9 @@ Column {
                 : i === 0 ? qsTr("Some interactions may not be available because of your Teams setup.", "messaging:kc7lkaja3") : ""
             if (!processing || !Array.isArray(commandNames) || !agent) { if (note) out.push({ kind: "note", text: note }); return }
             for (const st of (a.statements || [])) {
-                if (enabledNames.indexOf(st.name) < 0) { if (note) out.push({ kind: "note", text: note }); continue }
+                // Commands OST draws (OdslCards, SuggestedActionsRow) were drawn by
+                // Teams live (plan, genericBotMention: winpc 2026-11-22).
+                if (enabledNames.indexOf(st.name) < 0 && !st.command) { if (note) out.push({ kind: "note", text: note }); continue }
                 if (st.name === "reasoning" && st.reasoning) out.push({ kind: "reasoning", reasoning: st.reasoning })
             }
         })

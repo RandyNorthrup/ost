@@ -81,19 +81,22 @@ Column {
         Accessible.name: root.header
         Accessible.onPressAction: root.open = !root.open
     }
-    // While reasoning: the current step under the header.
+    // While reasoning: the current step under the header (measured on
+    // winpc 2026-11-22: a 14 px orb, the step's title 8 after it, 14/20
+    // #707070 on one line, right under the header).
     Row {
         visible: root.active && !root.open && root.currentStep !== ""
         width: root.width
         height: visible ? 20 : 0
         spacing: 8
-        Spinner20 { size: 14; anchors.verticalCenter: parent.verticalCenter }
+        CotOrb { anchors.verticalCenter: parent.verticalCenter }
         Text {
             width: parent.width - 22
             text: root.currentStep
             elide: Text.ElideRight
+            lineHeight: 20; lineHeightMode: Text.FixedHeight
             font.family: theme.font; font.pixelSize: 14
-            color: theme.pick("#424242", "#D6D6D6", "#FFFFFF")
+            color: theme.pick("#707070", "#ADADAD", "#FFFFFF")
         }
     }
     // The steps.
@@ -230,5 +233,62 @@ Column {
                 PathAngleArc { centerX: size / 2; centerY: size / 2; radiusX: size / 2 - 1; radiusY: size / 2 - 1; startAngle: -90; sweepAngle: 100 } }
             RotationAnimator on rotation { from: 0; to: 360; duration: 1500; loops: Animation.Infinite; running: parent.visible }
         }
+    }
+
+    // Fluent AI's chain-of-thought latency animation (fai-CoTLatencyAnimation,
+    // Teams 26304 758615 and its griffel keyframes f6ywpep / f8shvhy /
+    // f9fqfen): three 14 px circles with horizontal gradients (#d161aa to
+    // #e96d80, #42a3a6 to #73af69, #65a5dd to #8173ee) that take turns
+    // growing in from the left and shrinking out to the right, 3.6 s a
+    // cycle, each step eased cubic-bezier(0.8, 0, 0.2, 1).
+    component CotOrb: Item {
+        id: orb
+        width: 14; height: 14
+        property real t: 0
+        NumberAnimation on t { from: 0; to: 1; duration: 3600; loops: Animation.Infinite; running: orb.visible }
+        // cubic-bezier(0.8, 0, 0.2, 1) at x in [0, 1].
+        function ease(x) {
+            let lo = 0, hi = 1, u = x
+            for (let i = 0; i < 24; i++) {
+                u = (lo + hi) / 2
+                const bx = 3 * (1 - u) * (1 - u) * u * 0.8 + 3 * (1 - u) * u * u * 0.2 + u * u * u
+                if (bx < x) lo = u; else hi = u
+            }
+            return 3 * (1 - u) * u * u + u * u * u
+        }
+        // Keyframes [[offset, opacity, translateX %, scale]] at t.
+        function at(frames, t) {
+            for (let i = 0; i < frames.length - 1; i++) {
+                const a = frames[i], b = frames[i + 1]
+                if (t >= a[0] && t <= b[0]) {
+                    const k = b[0] > a[0] ? ease((t - a[0]) / (b[0] - a[0])) : 0
+                    return [a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k, a[3] + (b[3] - a[3]) * k]
+                }
+            }
+            const l = frames[frames.length - 1]
+            return [l[1], l[2], l[3]]
+        }
+        readonly property var dots: [
+            { c1: "#d161aa", c2: "#e96d80", f: [[0, 1, 0, 1], [0.1667, 0, 50, 0], [0.5, 0, -50, 0], [0.6667, 0, -50, 0], [0.8333, 1, 0, 1], [1, 1, 0, 1]] },
+            { c1: "#42a3a6", c2: "#73af69", f: [[0, 1, -50, 0], [0.1667, 1, 0, 1], [0.3333, 1, 0, 1], [0.5, 0, 50, 0], [0.6667, 0, -50, 0], [1, 1, -50, 0]] },
+            { c1: "#65a5dd", c2: "#8173ee", f: [[0, 0, -50, 0], [0.1667, 0, -50, 0], [0.3333, 1, -50, 0], [0.5, 1, 0, 1], [0.6667, 1, 0, 1], [0.8333, 0, 50, 0], [1, 0, 0, 0]] }
+        ]
+        Repeater {
+            model: orb.dots
+            Rectangle {
+                id: dot
+                required property var modelData
+                readonly property var v: orb.at(modelData.f, orb.t)
+                width: 14; height: 14; radius: 7
+                opacity: v[0]
+                transform: [Scale { origin.x: 7; origin.y: 7; xScale: dot.v[2]; yScale: dot.v[2] }, Translate { x: 14 * dot.v[1] / 100 }]
+                gradient: Gradient {
+                    orientation: Gradient.Horizontal
+                    GradientStop { position: 0; color: dot.modelData.c1 }
+                    GradientStop { position: 1; color: dot.modelData.c2 }
+                }
+            }
+        }
+        Accessible.role: Accessible.ProgressBar
     }
 }

@@ -2273,7 +2273,10 @@ Item {
         // (A bot's name stays one mention, as a suggested action gives it.)
         const words = person.whole ? [String(person.name || "")] : String(person.name || "").split(/\s+/).filter(w => w)
         const style = 'style="color:' + theme.brandForeground1 + '; text-decoration:none"'
-        const html = words.map(w => '<a href="mention:' + person.mri + '" ' + style + '>' + escapeHtml(w) + '</a>').join("&nbsp;") + "&nbsp;"
+        // A bot with its app goes as Teams' bot mention (mentionType "bot"
+        // and the app id: a Channel Agent answers only those).
+        const target = person.appId && String(person.mri).indexOf("28:") === 0 ? "mention-bot:" + person.mri + "|" + person.appId : "mention:" + person.mri
+        const html = words.map(w => '<a href="' + target + '" ' + style + '>' + escapeHtml(w) + '</a>').join("&nbsp;") + "&nbsp;"
         const at = mentionAt, end = input.cursorPosition
         mentionAt = -1
         mentionPicker.close()

@@ -1588,6 +1588,8 @@ Item {
     function typeTitleForTest(t) { titleInput.text = t; markDirty() }
     function addAttendeeForTest(mail, name) { addPerson({ address: mail, name: name || mail }, false) }
     function setTimesForTest(s, e) { startAt = new Date(s); endAt = new Date(e); markDirty() }
+    /// A suggested meeting's title and details (an agent's Edit).
+    function prefill(subject, body) { titleInput.text = subject || ""; editor.text = body || ""; markDirty() }
     function pickRepeatForTest(i) { pickRepeat(i) }
     function saveRecurrenceForTest(end) { if (end) recDialog.end = new Date(end); root.recurrence = recDialog.draft; markDirty(); recDialog.close() }
     function pickChannelForTest(teamName, channelName) {

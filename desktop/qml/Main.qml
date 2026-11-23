@@ -1558,13 +1558,44 @@ Window {
                 if (conversation.postsLayout) log("post reply", conversation.postReplyForTest())
                 else { const t = threadsPane.threadForTest(); log("thread", threadsPane.rootId, "reply box", t ? t.composeTextForTest() : "") }
             }
-            else if (step === 9) cap("agent-welcome-picked")
+            else if (step === 9) {
+                cap("agent-welcome-picked")
+                // --agent-ask=<text> (`~` for spaces): the question goes after
+                // the mention and is sent; the agent's answers are then
+                // followed for up to five minutes (AGENTWELCOME answer).
+                const ask = (Qt.application.arguments.find(a => a.startsWith("--agent-ask=")) || "").slice(12).replace(/~/g, " ")
+                if (ask) {
+                    if (conversation.postsLayout) conversation.postAskForTest(ask)
+                    else { const t = threadsPane.threadForTest(); t.composeForTest().insertText(ask); t.sendForTest() }
+                    log("asked", ask)
+                    asked = Date.now()
+                    return void (step = 40)
+                }
+            }
+            else if (step >= 40 && step < 200) {
+                // The newest agent message after the question, once it stops changing.
+                const th = conversation.postsLayout ? null : threadsPane.threadForTest()
+                const all = (conversation.messages || []).concat(th ? (th.messages || []) : [])
+                const ans = all.filter(m => String(m.sender_mri || "").indexOf("28:") === 0 && (parseInt(m.id) || 0) > asked - 120000).pop()
+                const key = ans ? ans.id + ":" + (ans.html || "").length + ":" + JSON.stringify(ans.suggested || []).length : ""
+                if (ans && key === lastKey && ++same >= 4) {
+                    log("answer", { id: ans.id, html: String(ans.html || "").slice(0, 3000), suggested: ans.suggested || [], cards: (ans.cards || []).map(c => c.content_type) })
+                    cap("agent-answer"); return void (step = 200)
+                }
+                if (key !== lastKey) same = 0
+                lastKey = key
+                if (Date.now() - asked > 300000) { log("no answer"); Qt.quit(); return }
+            }
+            else if (step === 201) Qt.quit()
             else if (step === 10 && conversation.postsLayout) { conversation.clearPostReplyForTest(); log("cleared post reply", conversation.postReplyForTest()) }
             else if (step === 10) { const t = threadsPane.threadForTest(); if (t) t.composeForTest().clearForTest(); log("cleared", t ? t.composeTextForTest() : "") }
             else if (step === 11) Qt.quit()
             step++
         }
         property int waits: 0
+        property real asked: 0
+        property string lastKey: ""
+        property int same: 0
     }
 
     // --see-more-test --open-chat=<chat or channel id> (or
@@ -1602,6 +1633,8 @@ Window {
                 const cut = st.items.filter(i => i.cut)
                 if (!cut.length && waits++ < 8) return
                 log("state", st)
+                // Posts' pictures: where each sits (the image-aware cut).
+                if (conversation.postsLayout) log("images", conversation.postImagesForTest())
                 // Bots' suggested actions as parsed (ODSL statements too).
                 log("bots", (conversation.messages || []).filter(m => String(m.sender_mri || "").indexOf("28:") === 0 && (m.suggested || []).length)
                     .map(m => ({ id: m.id, sender: m.sender, kind: m.bot_kind || "", suggested: m.suggested })))
@@ -1630,7 +1663,59 @@ Window {
                 log("reasoning", m ? m.id : "none")
                 if (m) { c.reasoningOpenForTest = m.id; c.seeMoreShowForTest(m.id) }
             } else if (step === 10) cap("reasoning")
-            else if (step === 11) Qt.quit()
+            else if (step === 11) {
+                // The cut message's first picture opened as a click would
+                // (Teams' viewer).
+                const c = conv || conversation
+                const m = (c.messages || []).find(x => x.id === target)
+                const list = m ? (m.images || []).filter(x => !!x.local_path) : []
+                log("viewer", m ? m.id : "none", list.length)
+                if (!list.length) { Qt.quit(); return }
+                c.openImageViewer(list, 0, m)
+            } else if (step === 12) { log("viewer shown", imageLightbox.visible, imageLightbox.width, imageLightbox.height); cap("viewer") }
+            else if (step === 13) { imageLightbox.close(); Qt.quit() }
+            step++
+        }
+    }
+
+    // --agent-answers-test --open-chat=<channel id> --agent-thread=<root id>:
+    // a Channel Agent's answers in that thread as Teams draws them (Loop
+    // pages unfurled in place, plans, tasks, meetings and bot-mention
+    // buttons): AGENTANSWERS each answer (its Loop links, commands and
+    // actions), then each one opened past its see-more, `-answer-<n>.png`.
+    Timer {
+        running: Qt.application.arguments.indexOf("--agent-answers-test") >= 0 && backend.signedIn
+        interval: 2500; repeat: true
+        property int step: 0
+        property var queue: []
+        property int shot: 0
+        onTriggered: {
+            const log = (...a) => console.warn("AGENTANSWERS", ...a.map(x => typeof x === "string" ? x : JSON.stringify(x)))
+            const arg = k => (Qt.application.arguments.find(a => a.startsWith(k)) || "").slice(k.length)
+            const cap = tag => window.contentItem.grabToImage(r => { r.saveToFile(window.shotPath.replace(".png", "-" + tag + ".png")); log("shot", tag) })
+            if (step === 0) {
+                const id = arg("--open-chat=")
+                const teams = backend.teamsJson ? JSON.parse(backend.teamsJson) : []
+                const ch = teams.reduce((a, t) => a.concat(t.channels), []).find(c => c.id === id)
+                if (!ch) return
+                backend.selectChat(ch.id, ch.name)
+            } else if (step === 3) conversation.openThread(arg("--agent-thread="))
+            else if (step === 6) {
+                const t = threadsPane.threadForTest()
+                const answers = (t.messages || []).filter(m => String(m.sender_mri || "").indexOf("28:") === 0)
+                for (const m of answers) {
+                    const cmds = (m.suggested || []).filter(a => a.kind === "odsl").reduce((a, s) => a.concat((s.statements || []).map(st => st.command ? st.command.kind : st.name)), [])
+                    log("answer", { id: m.id, text: String(m.text || "").slice(0, 60), loops: (m.flow || []).filter(p => !!p.loop_url).length, commands: cmds, actions: (m.suggested || []).filter(a => a.kind !== "odsl").map(a => a.title) })
+                }
+                queue = answers.filter(m => (m.flow || []).some(p => !!p.loop_url) || (m.suggested || []).some(a => (a.statements || []).some(s => !!s.command))).map(m => m.id)
+                if (!queue.length && step < 30) return
+            } else if (step >= 7) {
+                const t = threadsPane.threadForTest()
+                if (!queue.length) { Qt.quit(); return }
+                const id = queue[0]
+                if ((step - 7) % 3 === 0) { if (!(t.seeMoreOpen || {})[id]) t.seeMoreToggleForTest(id); else t.seeMoreShowForTest(id) }
+                else if ((step - 7) % 3 === 2) { cap("answer-" + (++shot)); queue = queue.slice(1) }
+            }
             step++
         }
     }
@@ -5502,14 +5587,51 @@ Window {
             const cap = tag => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-paste-picture" + tag + ".png")))
             const log = (...a) => console.warn("PASTEPIC", ...a.map(x => typeof x === "string" ? x : JSON.stringify(x)))
             const c = conversation.composeForTest()
+            const arg = k => (Qt.application.arguments.find(a => a.startsWith(k)) || "").slice(k.length).replace(/~/g, " ")
+            // --paste-picture-in=<team>/<channel>: a new post in that posts
+            // channel; --paste-picture-file=<png> --paste-picture-size=<w>x<h>
+            // instead of the clipboard; --paste-picture-text=<text> (`|`
+            // starts a new line; the picture goes after the line holding
+            // "[pic]" or after the text).
+            const inChannel = arg("--paste-picture-in=")
+            const file = arg("--paste-picture-file=")
+            const text = arg("--paste-picture-text=") || "OST TEST 203 pasted picture from OST"
+            const lines = text.split("|")
+            const picAt = Math.max(0, lines.findIndex(l => l.indexOf("[pic]") >= 0))
             switch (step) {
-            case 0: { const ch = chatList.chats.find(x => x.name === "OST group test"); backend.selectChat(ch.id, ch.name); break }
-            case 2: c.focusEditor(); log("pasted", c.pastePicture(), "state", c.pastedPictures, "media", c.mediaInUse()); break
+            case 0: {
+                if (inChannel) {
+                    const parts = inChannel.split("/")
+                    const teams = backend.teamsJson ? JSON.parse(backend.teamsJson) : []
+                    const t = teams.find(x => x.name === parts[0])
+                    const ch = t ? t.channels.find(x => x.name === parts[1]) : null
+                    if (!ch) return
+                    log("channel", ch.id); backend.selectChat(ch.id, ch.name)
+                } else { const ch = chatList.chats.find(x => x.name === "OST group test"); backend.selectChat(ch.id, ch.name) }
+                break
+            }
+            case 1: if (inChannel) { log("layout", conversation.channelLayout); conversation.posting = true } break
+            case 2: {
+                c.focusEditor()
+                if (inChannel || file) {
+                    // The text before the picture.
+                    const esc = t => t.replace(/&/g, "&amp;").replace(/</g, "&lt;")
+                    c.insertText(lines.slice(0, picAt + 1).map(l => esc(l.replace("[pic]", "").trim())).join("<br>") + "<br>")
+                }
+                if (file) { const sz = arg("--paste-picture-size=").split("x"); c.pictureForTest(file, parseInt(sz[0]) || 0, parseInt(sz[1]) || 0); log("pasted file", file, "media", c.mediaInUse()) }
+                else log("pasted", c.pastePicture(), "state", c.pastedPictures, "media", c.mediaInUse())
+                break
+            }
             case 3: cap(""); if (Qt.application.arguments.indexOf("--paste-picture-send") < 0) { Qt.quit(); return } break
-            case 4: c.insertText("OST TEST 203 pasted picture from OST"); break
+            case 4:
+                if (!inChannel && !file) c.insertText(text)
+                else if (picAt + 1 < lines.length) c.insertText("<br>" + lines.slice(picAt + 1).map(l => l.trim().replace(/&/g, "&amp;").replace(/</g, "&lt;")).join("<br>"))
+                break
             case 5: log("check", c.preSendCheck() || "fine"); conversation.sendForTest(); break
             case 10: {
-                const m = (conversation.messages || []).filter(x => x.mine && String(x.html || "").indexOf("OST TEST 203 pasted picture from OST") >= 0).pop()
+                const m = (conversation.messages || []).filter(x => x.mine && String(x.html || "").indexOf(lines[0].replace("[pic]", "").trim()) >= 0).pop()
+                // The picture's upload can take a while: wait for the post.
+                if (!m && sendWaits++ < 30) return
                 log("sent", m ? { id: m.id, html: String(m.html || "").slice(0, 600) } : null)
                 conversation.jumpToNewest(); break
             }
@@ -5517,6 +5639,7 @@ Window {
             }
             step++
         }
+        property int sendWaits: 0
     }
 
     // --thread-attach-test: OST Test Team > General's newest post in its
@@ -14913,8 +15036,24 @@ Window {
 
     Connections {
         target: backend
-        function onCalendarActionDone(op, result, error) { calendarView.actionDone(op, result, error) }
+        function onCalendarActionDone(op, result, error) {
+            // An agent's meeting: the agent hears it was scheduled (Teams'
+            // executeBotStatement {eventId, meetingStatus}).
+            if (op === "schedule" && window.agentMeetingPending) {
+                const p = window.agentMeetingPending
+                window.agentMeetingPending = null
+                if (!error) {
+                    let r = {}
+                    try { r = JSON.parse(result || "{}") } catch (e) {}
+                    conversation.suggestedAction(p.m, { kind: "odsl", statement: p.e.st.raw, statementIndex: p.e.si, suggestedActionIndex: p.e.ai, result: { eventId: r.id || r.eventId || "", meetingStatus: "SCHEDULED" } })
+                }
+                return
+            }
+            calendarView.actionDone(op, result, error)
+        }
     }
+    /// An agent's meeting being scheduled ({m, e}).
+    property var agentMeetingPending: null
     CalendarView {
         id: calendarView
         visible: rail.current === "calendar"
@@ -15857,19 +15996,51 @@ Window {
         // Teams' other kinds (763654 `eo`): imBack sends "@bot {text}"
         // (to the message's thread in a channel), Action.Submit sends the
         // bot an invoke, openUrl opens the address.
-        onSuggestedAction: (m, action) => {
+        // A Channel Agent's meeting (Teams 212672): Schedule Meeting makes it
+        // in the channel (createTeamEvent) and tells the agent
+        // ({eventId, meetingStatus: SCHEDULED}); Edit opens the scheduling
+        // form with it.
+        onAgentMeeting: (op, m, e, c) => {
+            const teams = backend.teamsJson ? JSON.parse(backend.teamsJson) : []
+            const t = teams.find(t => (t.channels || []).some(ch => ch.id === backend.currentChatId))
+            const ch = t ? t.channels.find(ch => ch.id === backend.currentChatId) : null
+            const channel = ch ? { teamId: t.id, teamName: t.name, channelId: ch.id, channelName: ch.name } : null
+            if (op === "edit") { rail.current = "calendar"; calendarView.newAgentMeeting(channel, c.subject, c.start, c.duration, c.body); return }
+            const s = new Date(c.start), end = new Date(s.getTime() + (c.duration || 30) * 60000)
+            const iso = d => { const z = -d.getTimezoneOffset(), p = n => (n < 10 ? "0" : "") + n; return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) + "T" + p(d.getHours()) + ":" + p(d.getMinutes()) + ":00" + (z >= 0 ? "+" : "-") + p(Math.floor(Math.abs(z) / 60)) + ":" + p(Math.abs(z) % 60) }
+            window.agentMeetingPending = { m: m, e: e }
+            backend.calendarAction("schedule", JSON.stringify({ form: { subject: c.subject || "", start: iso(s), end: iso(end), allDay: false, attendees: [], location: c.location || "", bodyHtml: c.body ? "<p>" + String(c.body).replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</p>" : "", online: true, channel: channel, showAs: "Busy", editingId: "", sendPersonalInvites: false, timeZone: "", templateId: "", guests: [] } }))
+        }
+        onSuggestedAction: (m, action0) => {
+            // Teams resolves a bot mention's app from the bot's installed
+            // app when the action doesn't carry it (SuggestedActionsParser):
+            // here the message's own app.
+            const action = Object.assign({}, action0, { mentions: (action0.mentions || []).map(x => Object.assign({}, x, { appId: x.appId || (x.mri === m.sender_mri ? (m.sender_app || "") : "") })) })
             if (action.kind === "openUrl") { Qt.openUrlExternally(action.url); return }
             if (action.kind === "invoke") {
                 backend.suggestedInvoke(m.id, JSON.stringify({ thread_id: backend.currentChatId, server_message_id: m.id, client_message_id: m.client_message_id || "", bot_mri: m.sender_mri, app_id: "", message_type: "Text" }), action.name, action.value)
                 return
             }
+            // An agent's ODSL command acted on (Teams' suggested-action-odsl
+            // `d`): an "odsl/statementExecuted" invoke with the statement,
+            // its places and the result.
+            if (action.kind === "odsl") {
+                backend.suggestedInvoke(m.id, JSON.stringify({ thread_id: backend.currentChatId, server_message_id: m.id, client_message_id: m.client_message_id || "", bot_mri: m.sender_mri, app_id: m.sender_app || "", message_type: "Text" }), "odsl/statementExecuted",
+                    JSON.stringify({ statement: action.statement, statementIndex: action.statementIndex, suggestedActionIndex: action.suggestedActionIndex, result: action.result }))
+                return
+            }
             if (action.kind === "imBack") {
                 const esc = s => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-                const html = '<p><a href="mention:' + m.sender_mri + '">' + esc(m.sender) + '</a>&nbsp;' + esc(action.text) + '</p>'
+                const target = m.sender_app ? "mention-bot:" + m.sender_mri + "|" + m.sender_app : "mention:" + m.sender_mri
+                const html = '<p><a href="' + target + '">' + esc(m.sender) + '</a>&nbsp;' + esc(action.text) + '</p>'
                 if (conversation.isChannel) backend.sendThreadReply(backend.currentChatId, m.root_id || m.id, html, "[]", "", false)
                 else backend.sendRich(html)
                 return
             }
+            // A bot-mention button (genericBotMention; "Ask for changes"):
+            // Teams quotes the message and mentions the bot with the text
+            // (useAtMentionBotWithQuotedReply).
+            if (action.kind === "botMention") Object.assign(action, { mentions: [{ mri: m.sender_mri, name: m.sender, appId: m.sender_app || "" }], quote: m })
             if (conversation.threadsLayout) {
                 threadsPane.channelId = backend.currentChatId
                 threadsPane.openThread(m.root_id || m.id)
@@ -15938,8 +16109,28 @@ Window {
 
     // A channel tab's conversation, beside the channel (Teams' end slot).
     // A Threads-layout channel's open thread, beside it.
+    // Teams' picture viewer, over the app under the title bar.
+    ImageLightbox {
+        id: imageLightbox
+        z: 50
+        y: titleBar.height; width: parent.width; height: parent.height - titleBar.height
+        onShowMessage: id => conversation.jumpToMessage(id)
+    }
+    Connections {
+        target: conversation
+        function onOpenImageViewer(list, i, m) {
+            // Teams' viewer says "Today 4:27 PM" for today, else the
+            // conversation's own stamp.
+            const d = new Date(m.time)
+            const at = conversation.daysAgo(d) === 0 ? qsTr("Today %1").arg(theme.time(d)) : conversation.stamp(m.time)
+            imageLightbox.show(list, i, m.sender || "", at, m.id)
+        }
+    }
     ThreadsPane {
         id: threadsPane
+        onSuggestedAction: (m, a) => conversation.suggestedAction(m, a)
+        onAgentMeeting: (op, m, e, c) => conversation.agentMeeting(op, m, e, c)
+        onOpenImageViewer: (l, i, m) => conversation.openImageViewer(l, i, m)
         // Open on its list (Open threads) or a thread.
         property bool listOpen: false
         readonly property bool shown: conversation.visible && conversation.threadsLayout && (!!rootId || listOpen) && channelId === backend.currentChatId
