@@ -1,7 +1,7 @@
 # OST strings with no Teams string (left in English), with where they are used
 " about how this data is used and your rights. By pressing Submit, your feedback opens as a public issue on GitHub (%1) and will be used to improve OST."		FeedbackWindow.qml:239	
 "%1 (not available in OST yet)"		OneDriveView.qml:386	
-"%1 (opens in new window)"		SettingsView.qml:340	
+"%1 (opens in new window)"		SettingsView.qml:345	
 "%1 / Calendar"		LoopChromeBar.qml:84	
 "%1 / Channel"		LoopChromeBar.qml:84	
 "%1 / Chat"		LoopChromeBar.qml:84	
@@ -13,11 +13,11 @@
 "%1 and"		AppDetailsDialog.qml:576	
 "%1 by %2"		FindPane.qml:762	
 "%1 checkbox, press spacebar to select all."		StoreView.qml:604	
-"%1 didn't open: %2"		backend.rs:25284	
+"%1 didn't open: %2"		backend.rs:25348	
 "%1 hour"		BreakoutSettingsDialog.qml:115	
 "%1 is presenting"		CallWindow.qml:3143 CallWindow.qml:3226	
 "%1 isn't available in OST yet."		TabWindow.qml:161	
-"%1 left"		MeetingRecapsView.qml:333	
+"%1 left"		MeetingRecapsView.qml:297	
 "%1 mentioned you: %2"		MentionsView.qml:152	
 "%1 minute"		BreakoutSettingsDialog.qml:116	
 "%1 months"		ManageTeam.qml:154	
@@ -39,8 +39,8 @@
 "%1, sorted ascending"		OneDriveView.qml:1221	
 "%1, sorted descending"		OneDriveView.qml:1221	
 "%1: %2. %3: %4."		AgendaTimerRow.qml:469	
-"%1m %2s"		MeetingRecapsView.qml:685	
-"%n mention(s) of you"		MeetingRecapsView.qml:1127	
+"%1m %2s"		MeetingRecapsView.qml:649	
+"%n mention(s) of you"		MeetingRecapsView.qml:1092	
 "(no subject)"		LoopChromeBar.qml:75	
 ", collapsed"		ChatList.qml:1513 ChatList.qml:1582	
 ", expanded"		ChatList.qml:1513 ChatList.qml:1582	
@@ -50,7 +50,7 @@
 "1 year"		ManageTeam.qml:155	
 "5 minutes - Most space for details"		CalendarView.qml:257	
 "60 minutes - Least space for details"		CalendarView.qml:257	
-"<0>Early Access</0> through"		SettingsView.qml:4793	
+"<0>Early Access</0> through"		SettingsView.qml:4935	
 "About to leave meeting ..."		RoomAutoExit.qml:91	
 "Accept the proposed time"		CalendarView.qml:1585	
 "Add %1 backdrop."		ClipEffectPanels.qml:252	
@@ -63,8 +63,8 @@
 "Add someone"		CallsView.qml:403	
 "Add to %1 workspace"		LoopChromeBar.qml:217 LoopChromeBar.qml:223	
 "Add to Dictionary"		EditorCard.qml:60	
-"Added a shortcut in your OneDrive"		backend.rs:22799	
-"Adding people…"		backend.rs:16918	
+"Added a shortcut in your OneDrive"		backend.rs:22819	
+"Adding people…"		backend.rs:16931	
 "Adding this component will link it to a workspace so you can start organizing and collecting content."		LoopChromeBar.qml:222	
 "Additional people: %1"		LoopAccessPopover.qml:73	
 "Alt + 0 to 9 number keys"		VideoClipCard.qml:508	
@@ -72,19 +72,19 @@
 "Alt + left arrow key"		VideoClipCard.qml:507	
 "Alt + right arrow key"		VideoClipCard.qml:507	
 "Alt + up arrow key"		VideoClipCard.qml:503	
-"An AI-powered tool that answers, routes, and filters calls on your behalf."		SettingsView.qml:3243 SettingsView.qml:3845	
+"An AI-powered tool that answers, routes, and filters calls on your behalf."		SettingsView.qml:3385 SettingsView.qml:3987	
 "An office building on a desk"		AutoLocationDialog.qml:45	
 "Animals"		EmojiPicker.qml:35	
 "Annotation is available when you share your screen"		SharingControlBar.qml:221	
 "Anyone with the link can also access this Loop component"		LoopAccessPopover.qml:85	
-"App permissions for %1"		SettingsView.qml:4618	
+"App permissions for %1"		SettingsView.qml:4760	
 "Are you sure you want to delete the <0>%1</0> channel? All conversations will be deleted."		ChannelMenu.qml:315	
 "Ask a question"		EventStagePreview.qml:128	
-"Ask me about call quality after calls"		SettingsView.qml:2252	
+"Ask me about call quality after calls"		SettingsView.qml:2394	
 "Attach my last message to help OST analyze my feedback. It will be public."		SmartReplyFeedback.qml:153	
-"Audio recap deleted"		MeetingRecapsView.qml:802	
-"Audio recap is available for Teams Enterprise users with Microsoft Copilot license. This feature captures and summarizes key topics discussed in your Teams meetings based on transcripts from the selected time period. Summaries are provided in audio formats, enabling efficient review of the highlights without going through individual recaps."		MeetingRecapsView.qml:789	
-"Audio recap is capable of processing a maximum of eight (8) meetings with transcription."		MeetingRecapsView.qml:790	
+"Audio recap deleted"		MeetingRecapsView.qml:766	
+"Audio recap is available for Teams Enterprise users with Microsoft Copilot license. This feature captures and summarizes key topics discussed in your Teams meetings based on transcripts from the selected time period. Summaries are provided in audio formats, enabling efficient review of the highlights without going through individual recaps."		MeetingRecapsView.qml:753	
+"Audio recap is capable of processing a maximum of eight (8) meetings with transcription."		MeetingRecapsView.qml:754	
 "Auto %1"		CameraSettingsDialog.qml:106	
 "Backward menu."		ClipEditOverlay.qml:321	
 "Bike"		CalendarView.qml:264	
@@ -96,12 +96,12 @@
 "CSV files (*.csv)"		BreakoutCsvDialog.qml:133	
 "Call %1"		CallsView.qml:353	
 "Calling %1…"		CallWindow.qml:5278	
-"Calls are available in 1:1 chats"		backend.rs:9502	
-"Calls merged"		backend.rs:13942	
+"Calls are available in 1:1 chats"		backend.rs:9515	
+"Calls merged"		backend.rs:13955	
 "Camera settings"		CameraSettingsDialog.qml:37	
 "Cameras"		ContentCameraDialog.qml:450	
 "Cancel this meeting for everyone?"		CalendarView.qml:1730	
-"Cancelling…"		backend.rs:23814	
+"Cancelling…"		backend.rs:23834	
 "Capture screenshot"		FeedbackWindow.qml:153	
 "Car"		CalendarView.qml:262	
 "Cast to this room with:"		RoomHome.qml:86 RoomHome.qml:292	
@@ -109,14 +109,14 @@
 "Change Mic settings"		VideoClipRecorder.qml:841	
 "Checklist"		WebApp.qml:612	
 "Choose File"		TeamAppsView.qml:227 TeamAppsView.qml:231	
-"Choose a download location"		SettingsView.qml:4692	
+"Choose a download location"		SettingsView.qml:4834	
 "Choose an image"		EventsView.qml:3833	
 "Class"		CalendarView.qml:265	
 "Clipchamp"		AppRail.qml:57 AppRail.qml:408	
 "Close Music"		VideoClipRecorder.qml:1394	
 "Connected without audio"		CallWindow.qml:3258	
-"Consult: %1"		backend.rs:13810	
-"Consult: not someone you can call"		backend.rs:13765	
+"Consult: %1"		backend.rs:13823	
+"Consult: not someone you can call"		backend.rs:13778	
 "Copied %1 item"		FileActions.qml:298 FileActions.qml:299	
 "Copied %1 items"		FileActions.qml:298 FileActions.qml:299	
 "Copilot uses your data to generate responses during the meeting and an Intelligent recap after the meeting. Interactions and summaries with Copilot might be retained due to the host organization’s policy."		CallWindow.qml:1624	
@@ -126,22 +126,22 @@
 "Couldn't cancel the event."		EventsView.qml:4417	
 "Couldn't cancel your registration."		EventsView.qml:896	
 "Couldn't change it."		EventsView.qml:4378	
-"Couldn't delete the audio recap."		MeetingRecapsView.qml:802	
-"Couldn't join the meeting"		backend.rs:11359	
-"Couldn't join the meeting: %1"		backend.rs:11432 backend.rs:13028	
+"Couldn't delete the audio recap."		MeetingRecapsView.qml:766	
+"Couldn't join the meeting"		backend.rs:11372	
+"Couldn't join the meeting: %1"		backend.rs:11445 backend.rs:13041	
 "Couldn't load events."		EventsView.qml:1391	
 "Couldn't load the meeting options."		EventsView.qml:512	
 "Couldn't load this profile."		ProfileCard.qml:677	
 "Couldn't open the event."		EventsView.qml:248 EventsView.qml:482 EventsView.qml:490	
-"Couldn't post your review"		backend.rs:20423	
+"Couldn't post your review"		backend.rs:20436	
 "Couldn't publish the event."		EventsView.qml:4260	
-"Couldn't report the review"		backend.rs:20388	
-"Couldn't save your setting. Try again."		SettingsView.qml:4846	
-"Couldn't send the picture: %1"		backend.rs:25740	
+"Couldn't report the review"		backend.rs:20401	
+"Couldn't save your setting. Try again."		SettingsView.qml:4988	
+"Couldn't send the picture: %1"		backend.rs:25804	
 "Couldn't share to Outlook."		ShareToOutlookDialog.qml:35	
-"Couldn't start the call: %1"		backend.rs:9891	
+"Couldn't start the call: %1"		backend.rs:9904	
 "Couldn't update the link settings. Please try again."		CloudAttach.qml:66	
-"Couldn't upload the picture: %1"		backend.rs:17667	
+"Couldn't upload the picture: %1"		backend.rs:17680	
 "Create a team from %1"		CreateTeamPage.qml:234	
 "Credit card"		CalendarView.qml:264	
 "Custom files (*.png *.jpeg *.jpg *.bmp)"		VideoEffectsPane.qml:530	
@@ -153,12 +153,12 @@
 "Delete menu."		ClipEditOverlay.qml:317	
 "Delete this event?"		CalendarView.qml:1730	
 "Dial %1"		CallWindow.qml:5190	
-"Dial pad: %1"		backend.rs:13992	
+"Dial pad: %1"		backend.rs:14005	
 "Do not include any private or sensitive information."		FeedbackWindow.qml:111	
 "Domains"		ChannelEmailDialog.qml:147	
 "Download failed. Please try again."		EventsView.qml:442	
-"Downloaded %1"		backend.rs:25059	
-"Downloading %1…"		backend.rs:10396	
+"Downloaded %1"		backend.rs:25123	
+"Downloading %1…"		backend.rs:10409	
 "Draft to %1"		DraftsView.qml:116	
 "Drag and drop files here or paste an image from your clipboard"		FeedbackWindow.qml:134	
 "Duplicate menu."		ClipEditOverlay.qml:319	
@@ -200,8 +200,8 @@
 "Help articles for OST, built into the app so they work offline. They're written by the OST project; you can read and improve them on %1."		HelpView.qml:367	
 "Help for OST"		HelpView.qml:160 HelpView.qml:362	
 "High Tech"		VideoClipRecorder.qml:1367	
-"Hold: %1"		backend.rs:13348	
-"If the caller mentions [topic], collect [information] first. Then proceed with booking an appointment or take a message for me so I can follow up."		SettingsView.qml:3223	
+"Hold: %1"		backend.rs:13361	
+"If the caller mentions [topic], collect [information] first. Then proceed with booking an appointment or take a message for me so I can follow up."		SettingsView.qml:3365	
 "If your contact is based in the European Economic Area or Switzerland, they may need to change the LinkedIn Digital Markets Act %1 for you and others to see their LinkedIn profile here."		ProfileCard.qml:633	
 "Ignore all"		EditorCard.qml:60	
 "Images (*.png *.jpeg *.gif)"		CustomEmojiAdd.qml:33	
@@ -244,7 +244,7 @@
 "Music"		CalendarView.qml:261	
 "Mute speaker"		AudioFlyout.qml:101 AudioSettingsPane.qml:174	
 "New event | Calendar"		CalendarView.qml:2608 CalendarView.qml:2627	
-"New group chat"		backend.rs:19235	
+"New group chat"		backend.rs:19248	
 "Next decade"		DatePickerField.qml:144	
 "No calls match this filter."		CallsView.qml:363	
 "No file chosen"		TeamAppsView.qml:233	
@@ -258,9 +258,9 @@
 "Not useful"		RecapWindow.qml:959	
 "Notifications couldn't be turned off. %1"		DetailsPane.qml:65	
 "Notifications couldn't be turned on. %1"		DetailsPane.qml:65	
-"OST Legal Information"		SettingsView.qml:4815	
-"OST Privacy Statement"		SettingsView.qml:4819	
-"OST asks after some calls. If a call had issues, Report a problem opens with its technical details (no one's name) for you to post as a public issue on GitHub."		SettingsView.qml:2253	
+"OST Legal Information"		SettingsView.qml:4957	
+"OST Privacy Statement"		SettingsView.qml:4961	
+"OST asks after some calls. If a call had issues, Report a problem opens with its technical details (no one's name) for you to post as a public issue on GitHub."		SettingsView.qml:2395	
 "OST notifications"		NotificationBanners.qml:33	
 "Objects"		EmojiPicker.qml:54	
 "Older"		FindPane.qml:158	
@@ -281,7 +281,7 @@
 "Owners (%1)"		ManageChannel.qml:308	
 "PNG (*.png)"		TeamAppsView.qml:182	
 "Package delivery"		CalendarView.qml:264	
-"Parked call"		backend.rs:9519	
+"Parked call"		backend.rs:9532	
 "People in your organization with the link can also access this Loop component"		LoopAccessPopover.qml:86	
 "Pill"		CalendarView.qml:261	
 "Pinned %1 to Quick access"		FileActions.qml:267	
@@ -290,7 +290,7 @@
 "Planner"		AppRail.qml:53 AppRail.qml:405	
 "Play %1"		VideoClipRecorder.qml:1458	
 "Powered by"		DeviceDetailsDialog.qml:284	
-"Prevent suspected spam calls from disturbing you"		SettingsView.qml:3947	
+"Prevent suspected spam calls from disturbing you"		SettingsView.qml:4089	
 "Previous decade"		DatePickerField.qml:141	
 "Production view"		CallWindow.qml:2726	
 "Public Team"		TeamSettingsView.qml:108	
@@ -305,9 +305,9 @@
 "Restore defaults"		CameraSettingsDialog.qml:156	
 "Results for “%1”"		HelpView.qml:262	
 "Save as"		Main.qml:591	
-"Saved %1 to %2"		backend.rs:10013 backend.rs:10407	
+"Saved %1 to %2"		backend.rs:10026 backend.rs:10420	
 "Schedule 1 hour of focus time"		CalendarView.qml:902	
-"Scheduled %1"		backend.rs:24014	
+"Scheduled %1"		backend.rs:24034	
 "Search all files"		DownloadsFlyout.qml:90 DownloadsFlyout.qml:93	
 "Search emoji"		EmojiPicker.qml:89 EmojiPicker.qml:90	
 "Search for participants"		MeetingOptionsDialog.qml:445 MeetingPeoplePicker.qml:27	
@@ -320,9 +320,9 @@
 "Select a chat to start messaging"		Conversation.qml:1993	
 "Select a role, %1"		OneDriveShare.qml:562	
 "Send reply"		ChannelPosts.qml:822	
-"Sending update…"		backend.rs:23813	
-"Sending your proposal…"		backend.rs:23815	
-"Sending your response…"		backend.rs:23811	
+"Sending update…"		backend.rs:23833	
+"Sending your proposal…"		backend.rs:23835	
+"Sending your response…"		backend.rs:23831	
 "Share \"%1\""		OneDriveShare.qml:221	
 "Share relevant content samples and additional log files?"		FeedbackWindow.qml:189	
 "Share with a group"		OneDriveShare.qml:806	
@@ -335,7 +335,7 @@
 "Smilies"		EmojiPicker.qml:17	
 "Snooze"		RoomAutoExit.qml:132	
 "Soccer"		CalendarView.qml:263	
-"Speaker"	calling:kp3u3qpn	AudioFlyout.qml:79 SettingsView.qml:2599 SettingsView.qml:2606	unknown id
+"Speaker"	calling:kp3u3qpn	AudioFlyout.qml:79 SettingsView.qml:2741 SettingsView.qml:2748	unknown id
 "Specific people with the link can edit"		ShareFileDialog.qml:140	
 "Specific people with the link can view"		ShareFileDialog.qml:140	
 "Split Clip"		VideoClipRecorder.qml:1303	
@@ -357,20 +357,20 @@
 "The folder color wasn't changed"		FileActions.qml:278	
 "The folder wasn't created"		FileActions.qml:1338	
 "The link wasn't created"		FileActions.qml:1137	
-"The transcript isn't available."		MeetingRecapsView.qml:475	
+"The transcript isn't available."		MeetingRecapsView.qml:439	
 "The version wasn't deleted"		FileActions.qml:441	
 "The version wasn't restored"		FileActions.qml:441	
 "This Loop component is temporarily not available."		LoopCard.qml:181	
-"This app isn't available in OST yet."		Main.qml:15407	
+"This app isn't available in OST yet."		Main.qml:15450	
 "This camera has no settings to change."		CameraSettingsDialog.qml:64	
 "This file can't be opened"		FileViewer.qml:40	
 "This file has not been shared with a group yet."		OneDriveShare.qml:798	
 "This page is temporarily not available."		ChannelPageTab.qml:133	
 "This will turn off Interpreter for everyone."		CallWindow.qml:1057	
 "Thumbnail Preview"		FileCard.qml:148	
-"Today %1"		Main.qml:16436	
+"Today %1"		Main.qml:16479	
 "Todo"		CalendarView.qml:266	
-"Transcriptions of Teams meetings are retained by default for 90 days unless manually deleted earlier by the meeting organizer. The generated audio recap is exclusively accessible to you and will expire after 60 days. You can manage your audio recaps in OneDrive, where you have the option to delete any audio recap that is no longer needed. Please note that once an audio recap is deleted from OneDrive, it will no longer be available on your Teams audio recap listing page."		MeetingRecapsView.qml:791	
+"Transcriptions of Teams meetings are retained by default for 90 days unless manually deleted earlier by the meeting organizer. The generated audio recap is exclusively accessible to you and will expire after 60 days. You can manage your audio recaps in OneDrive, where you have the option to delete any audio recap that is no longer needed. Please note that once an audio recap is deleted from OneDrive, it will no longer be available on your Teams audio recap listing page."		MeetingRecapsView.qml:755	
 "Transfer to %1"		CallWindow.qml:5258 CallWindow.qml:5332	
 "Travel"		EmojiPicker.qml:46	
 "Trophy"		CalendarView.qml:260	

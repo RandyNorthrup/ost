@@ -234,7 +234,7 @@ pub mod qobject {
         /// Where you work today ("Office", "Remote", or "").
         #[qproperty(QString, my_work_location)]
         /// Its building and how it was set: {"building": name or "",
-        /// "source": "VerifiedLocation" (workplace check-in),
+        /// "buildingId": its Places id or "", "source":"VerifiedLocation" (workplace check-in),
         /// "ForcedLocation", "ScheduledLocation" or ""}.
         #[qproperty(QString, my_work_location_detail)]
         /// Teams' Write with Copilot in compose: {"allowed": a Microsoft 365
@@ -528,7 +528,8 @@ pub mod qobject {
         /// {detection: bool, userDefault: "Enabled"|"Disabled"|""}.
         #[qproperty(QString, work_location_policy_json)]
         /// The tenant's buildings from Places: {loading, buildings: [{id,
-        /// name, address}], error}.
+        /// name, city, state, country}], suggested: {id, name} (the
+        /// building asked for by id, Teams' buildingById) or null, error}.
         #[qproperty(QString, buildings_json)]
         /// Teams Premium's trial: {policy, eligible, offered, entity,
         /// inTrial, daysLeft, starting, started, canceling, canceled, error}.
@@ -2930,9 +2931,16 @@ pub mod qobject {
         #[qinvokable]
         fn load_work_location_policy(self: Pin<&mut Backend>);
         /// Load the tenant's buildings (Places), for the stationary
-        /// device location.
+        /// device location, and the building `suggested_id` names
+        /// (the check-out banner's; "" for none).
         #[qinvokable]
-        fn load_buildings(self: Pin<&mut Backend>);
+        fn load_buildings(self: Pin<&mut Backend>, suggested_id: &QString);
+        /// The stationary location list for a search, as Teams':
+        /// {suggested: [{id, name}] (the loaded suggested building, then
+        /// your office building `office_id`/`office_name` when another),
+        /// all: [{id, name}]}, only buildings the search matches.
+        #[qinvokable]
+        fn building_options(self: &Backend, query: &QString, office_id: &QString, office_name: &QString) -> QString;
         /// Read whether Teams Premium's trial can be started.
         #[qinvokable]
         fn load_premium(self: Pin<&mut Backend>);
@@ -3446,6 +3454,11 @@ pub struct BackendRust {
     /// Others' status messages and out of office, by MRI: {text, html,
     /// pinned, ooo} (Teams' banner over the compose box of a 1:1).
     peer_notes: std::collections::HashMap<String, serde_json::Value>,
+    /// The tenant's buildings last loaded (buildings_json), for the
+    /// stationary location search.
+    buildings: Vec<teams_cli::api::places::Building>,
+    /// The building load_buildings was asked to suggest, as Places has it.
+    buildings_suggested: Option<teams_cli::api::places::Building>,
     /// Channels' layouts from the chat service (the teams list leaves some
     /// out), by channel id.
     channel_layouts: std::collections::HashMap<String, String>,
@@ -14281,7 +14294,7 @@ impl qobject::Backend {
                                     if this.rust().my_work_location.to_string() != p.work_location {
                                         this.as_mut().set_my_work_location(QString::from(p.work_location.as_str()));
                                     }
-                                    let detail = json!({ "building": p.work_location_building, "source": p.work_location_source }).to_string();
+                                    let detail = json!({ "building": p.work_location_building, "buildingId": p.work_location_building_id, "source": p.work_location_source }).to_string();
                                     if this.rust().my_work_location_detail.to_string() != detail {
                                         tracing::info!("work location {} {}", p.work_location, detail);
                                         this.as_mut().set_my_work_location_detail(QString::from(detail.as_str()));
@@ -24819,24 +24832,68 @@ impl qobject::Backend {
         });
     }
 
-    pub fn load_buildings(mut self: Pin<&mut Self>) {
-        self.as_mut().set_buildings_json(QString::from(json!({ "loading": true, "buildings": [] }).to_string().as_str()));
+    pub fn load_buildings(mut self: Pin<&mut Self>, suggested_id: &QString) {
+        self.as_mut().set_buildings_json(QString::from(json!({ "loading": true, "buildings": [], "suggested": null }).to_string().as_str()));
+        let suggested_id = suggested_id.to_string();
+        // Teams' places worker: getBuildings with the flight, else
+        // findPlaces; the banner's building by id (buildingById).
+        let new_api = api::ecs::setting("places", "enableNewGetBuildingsAPIInMeControl").and_then(|v| v.as_bool()).unwrap_or(false);
         let qt = self.qt_thread();
         runtime().spawn(async move {
+            // --stationary-test's --stationary-fixture=<file>: Places
+            // records (a JSON array) in place of the tenant's.
+            if let Some(path) = std::env::args().find_map(|a| a.strip_prefix("--stationary-fixture=").map(String::from)) {
+                let places: Vec<serde_json::Value> = std::fs::read_to_string(&path).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
+                let list = api::places::sorted(places.iter().filter_map(api::places::building_from).collect());
+                let suggested = list.iter().find(|b| b.id == suggested_id).cloned();
+                let v = json!({ "loading": false, "buildings": list, "suggested": suggested.as_ref().map(|s| json!({ "id": s.id, "name": s.name })) });
+                let _ = qt.queue(move |mut this| {
+                    this.as_mut().rust_mut().buildings = list;
+                    this.as_mut().rust_mut().buildings_suggested = suggested;
+                    this.as_mut().set_buildings_json(QString::from(v.to_string().as_str()))
+                });
+                return;
+            }
             let result = async {
                 let client = TeamsClient::new().await?;
-                api::places::buildings(&client).await
+                let list = api::places::buildings(&client, new_api).await?;
+                let suggested = if suggested_id.is_empty() {
+                    None
+                } else {
+                    api::places::building_by_id(&client, &suggested_id).await.unwrap_or_else(|e| {
+                        tracing::warn!("building by id: {}", short_error(&e));
+                        None
+                    })
+                };
+                anyhow::Ok((list, suggested))
             }
             .await;
-            let v = match result {
-                Ok(b) => json!({ "loading": false, "buildings": b }),
+            let (list, suggested, v) = match result {
+                Ok((b, s)) => {
+                    tracing::info!("buildings: {} (getBuildings {new_api}), suggested {:?}", b.len(), s.as_ref().map(|s| &s.name));
+                    let v = json!({ "loading": false, "buildings": b, "suggested": s.as_ref().map(|s| json!({ "id": s.id, "name": s.name })) });
+                    (b, s, v)
+                }
                 Err(e) => {
                     tracing::warn!("buildings: {}", short_error(&e));
-                    json!({ "loading": false, "buildings": [], "error": short_error(&e) })
+                    (Vec::new(), None, json!({ "loading": false, "buildings": [], "suggested": null, "error": short_error(&e) }))
                 }
             };
-            let _ = qt.queue(move |mut this| this.as_mut().set_buildings_json(QString::from(v.to_string().as_str())));
+            let _ = qt.queue(move |mut this| {
+                this.as_mut().rust_mut().buildings = list;
+                this.as_mut().rust_mut().buildings_suggested = suggested;
+                this.as_mut().set_buildings_json(QString::from(v.to_string().as_str()))
+            });
         });
+    }
+
+    pub fn building_options(&self, query: &QString, office_id: &QString, office_name: &QString) -> QString {
+        use teams_cli::api::places::{matching, suggested, Building};
+        let all = matching(&query.to_string(), &self.rust().buildings);
+        let office = Building { id: office_id.to_string(), name: office_name.to_string(), ..Default::default() };
+        let pick = |b: &&Building| json!({ "id": b.id, "name": b.name });
+        let sug: Vec<_> = suggested(self.rust().buildings_suggested.as_ref(), Some(&office), &all).iter().map(pick).collect();
+        QString::from(json!({ "suggested": sug, "all": all.iter().map(pick).collect::<Vec<_>>() }).to_string().as_str())
     }
 
     pub fn load_premium(self: Pin<&mut Self>) {

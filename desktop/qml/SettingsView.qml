@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls.Basic
+import QtQuick.Shapes
 import QtQuick.Dialogs
 import QtMultimedia
 import com.ost.desktop
@@ -22,6 +23,10 @@ Rectangle {
     property string page: "general"
     /// A page's sub-page ("oof": General ▸ Out of office).
     property string subPage: ""
+    /// The building Privacy ▸ Stationary device location suggests (the
+    /// check-out banner's Open settings: Teams' suggestedBuildingId view
+    /// option).
+    property string stationarySuggestedId: ""
     /// This device's other accounts (Accounts and orgs).
     property var otherAccounts: []
     readonly property bool attendantSub: subPage === "attendantGreeting" || subPage === "attendantInstructions" || subPage === "attendantHours"
@@ -2079,7 +2084,7 @@ Rectangle {
                 SettingsParts.Button {
                     visible: workLocationCard.stationary
                     label: qsTr("Manage stationary location")
-                    onClicked: { root.subPage = "stationary"; backend.loadBuildings() }
+                    onClicked: { root.stationarySuggestedId = ""; root.subPage = "stationary" }
                 }
                 SettingsParts.Gap { visible: workLocationCard.stationary && workLocationCard.detection && workLocationCard.outlookLink; size: 12.1 }
                 Text {
@@ -2101,94 +2106,231 @@ Rectangle {
                 onTurnOn: workLocationCard.setAuto(true)
             }
 
-            // Privacy ▸ Stationary device location (Teams' device home
-            // building; measured on winpc 2026-11-15): the paragraph (14/20
-            // #424242) 8 down, "Permanent device building" (14 semibold) 16
-            // under it, then a 300 x 32 "Find a building" combobox 15 under
-            // that. Its list opens beside the box (2 to the right, 4 up),
-            // 300 wide; with no buildings, a disabled "No buildings found".
-            // The building is this device's (Teams keeps it in its client
-            // preferences, places.deviceHomeBuildingId); the list is the
-            // tenant's buildings from Places.
+            // Privacy ▸ Stationary device location (Teams 26304 settings-app
+            // DeviceHomeBuildingSettings; measured on winpc 2026-11-15): the
+            // paragraph (14/20 #424242) 8 down, "Permanent device building"
+            // (14 semibold) 16 under it, then a 300 x 32 "Find a building"
+            // combobox 15 under that, and once a building is set a
+            // "Delete" button 8 to its right (Fluent subtle, with a 1 px
+            // NeutralStroke1 border and Background1: 5/12 padding, radius 4)
+            // that clears it. The list opens beside the box (2 to the
+            // right, 4 up), 300 wide, padding 4: a "Suggested" group (the
+            // check-out banner's building, Places' buildingById answer for
+            // suggestedBuildingId, then your current office building when
+            // it's another) with history icons, and "All buildings" with
+            // building icons, each group a 12/16 semibold Foreground3
+            // label (8/6 padding) over 32 tall options (check 6, icon
+            // 14 at 28, name at 54), the groups 2 apart and split by a
+            // NeutralStroke2 line (4 under the group, 4 above the next);
+            // suggestions show only when the tenant's list (and the
+            // search) has them. With none, a disabled "No buildings
+            // found". Typing searches names, cities, states and countries
+            // (accents and case aside); opening the list clears the
+            // search; closed it shows the set building. A set building
+            // the list no longer has (with buildings listed) shows Teams'
+            // yellow "could not be found" note. While loading, Fluent's
+            // medium spinner and "Loading...". The building is this
+            // device's (Teams' client preferences places.deviceHomeBuildingId,
+            // null when deleted); the list is the tenant's buildings from
+            // Places (findPlaces, or getBuildings with the
+            // enableNewGetBuildingsAPIInMeControl flight).
             Column {
                 id: stationaryPage
                 visible: root.page === "privacy" && root.subPage === "stationary"
                 width: parent.width
                 topPadding: 8
                 spacing: 0
+                readonly property real pageWidth: Math.min(width, 790)
                 readonly property var data_: backend.buildingsJson ? JSON.parse(backend.buildingsJson) : ({ buildings: [] })
                 readonly property var buildings: data_.buildings || []
-                readonly property string chosen: backend.setting("deviceHomeBuildingId")
-                readonly property var chosenBuilding: buildings.find(b => b.id === chosen) || null
-                onVisibleChanged: if (!visible) buildingList.close()
+                readonly property bool loading: data_.loading === true
+                property string chosen: ""
+                readonly property var chosenBuilding: chosen ? (buildings.find(b => b.id === chosen) || null) : null
+                // Teams' "saved building not found": the list loaded with
+                // buildings and the set one isn't among them.
+                readonly property bool notFound: !loading && buildings.length > 0 && !!chosen && !chosenBuilding
+                // The search typed into the box (Teams' searchQuery).
+                property string query: ""
+                readonly property var office: {
+                    let d = {}
+                    try { d = JSON.parse(backend.myWorkLocationDetail || "{}") } catch (e) {}
+                    return backend.myWorkLocation === "Office" ? { id: d.buildingId || "", name: d.building || "" } : { id: "", name: "" }
+                }
+                readonly property var options: {
+                    data_ // (again when the list loads)
+                    return JSON.parse(backend.buildingOptions(query, office.id, office.name))
+                }
+                function reload() {
+                    chosen = backend.setting("deviceHomeBuildingId")
+                    query = ""
+                    backend.loadBuildings(root.stationarySuggestedId)
+                }
+                function showText() {
+                    buildingField.text = query || (buildingList.opened ? "" : chosenBuilding ? chosenBuilding.name : "")
+                }
+                function choose(b) {
+                    buildingList.close()
+                    if (b.id === chosen) return
+                    query = b.name
+                    backend.setSetting("deviceHomeBuildingId", b.id)
+                    chosen = b.id
+                    showText()
+                }
+                function remove() {
+                    query = ""
+                    backend.setSetting("deviceHomeBuildingId", "")
+                    chosen = ""
+                    showText()
+                }
+                onVisibleChanged: if (visible) Qt.callLater(reload); else buildingList.close()
+                onChosenBuildingChanged: showText()
+                Item {
+                    visible: stationaryPage.loading
+                    width: stationaryPage.pageWidth; height: 32
+                    Row {
+                        anchors.centerIn: parent
+                        spacing: 8
+                        Item {
+                            width: 32; height: 32
+                            Shape {
+                                anchors.fill: parent
+                                preferredRendererType: Shape.CurveRenderer
+                                ShapePath { strokeWidth: 3; strokeColor: theme.pick("#E0E0E0", "#525252", "#FFFFFF"); fillColor: "transparent"
+                                    PathAngleArc { centerX: 16; centerY: 16; radiusX: 14.5; radiusY: 14.5; startAngle: 0; sweepAngle: 360 } }
+                            }
+                            Shape {
+                                anchors.fill: parent
+                                preferredRendererType: Shape.CurveRenderer
+                                ShapePath { strokeWidth: 3; strokeColor: theme.brand; fillColor: "transparent"; capStyle: ShapePath.RoundCap
+                                    PathAngleArc { centerX: 16; centerY: 16; radiusX: 14.5; radiusY: 14.5; startAngle: -90; sweepAngle: 100 } }
+                                RotationAnimator on rotation { from: 0; to: 360; duration: 1500; loops: Animation.Infinite; running: stationaryPage.loading && stationaryPage.visible }
+                            }
+                        }
+                        Text { anchors.verticalCenter: parent.verticalCenter; text: qsTr("Loading...", "settings:k9v27ofdv"); font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; lineHeight: 22; lineHeightMode: Text.FixedHeight; color: theme.text }
+                    }
+                    Accessible.role: Accessible.ProgressBar
+                    Accessible.name: qsTr("Loading...", "settings:k9v27ofdv")
+                }
                 Text {
-                    width: Math.min(parent.width, 790)
+                    visible: !stationaryPage.loading
+                    width: stationaryPage.pageWidth
                     text: qsTr("Set a permanent location for stationary devices that stay in one building. When Wi-Fi isn't detected, this device will remain checked in at the selected building instead of being automatically checked out.")
                     wrapMode: Text.Wrap
                     font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight
                     color: theme.textStrong
                 }
-                SettingsParts.Gap { size: 16 }
+                SettingsParts.Gap { visible: stationaryPage.notFound; size: 12 }
+                Rectangle {
+                    id: notFoundNote
+                    visible: stationaryPage.notFound
+                    width: stationaryPage.pageWidth; height: notFoundText.height + 12
+                    radius: 4
+                    color: theme.pick("#FFFEF5", "#4C4400", "#000000")
+                    FluentIcon { x: 12; y: 8; name: "warning-20"; size: 12; color: theme.pick("#817400", "#FEF7B2", "#FFFFFF") }
+                    Text {
+                        id: notFoundText
+                        x: 32; y: 6; width: parent.width - 44
+                        text: qsTr("The previously saved building could not be found. It may have been removed or is no longer accessible. Please select a new building.")
+                        wrapMode: Text.Wrap
+                        font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight
+                        color: theme.text
+                    }
+                    Accessible.role: Accessible.StaticText
+                    Accessible.name: notFoundText.text
+                }
+                SettingsParts.Gap { visible: !stationaryPage.loading; size: 16 }
                 Text {
+                    visible: !stationaryPage.loading
                     text: qsTr("Permanent device building")
                     font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; lineHeight: 20; lineHeightMode: Text.FixedHeight
                     color: theme.text
                 }
-                SettingsParts.Gap { size: 15 }
-                Rectangle {
-                    id: buildingBox
-                    width: 300; height: 32; radius: 4
-                    color: theme.surface
-                    border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF"); border.width: 0.67
-                    Rectangle { anchors.bottom: parent.bottom; x: 0.67; width: parent.width - 1.33; height: buildingField.activeFocus ? 2 : 0.67; radius: 1; color: buildingField.activeFocus ? theme.brand : theme.pick("#575757", "#ADADAD", "#000000") }
-                    TextInput {
-                        id: buildingField
-                        x: 8.67; width: 264.7 - 8; anchors.verticalCenter: parent.verticalCenter
-                        font.family: theme.font; font.pixelSize: 14; color: theme.text; clip: true
-                        text: stationaryPage.chosenBuilding ? stationaryPage.chosenBuilding.name : ""
-                        onTextEdited: buildingList.open()
-                        Text { visible: !buildingField.text; text: qsTr("Find a building"); font: buildingField.font; color: theme.pick("#707070", "#ADADAD", "#FFFFFF") }
-                        Keys.onEscapePressed: buildingList.close()
-                        Keys.onDownPressed: buildingList.open()
-                        Accessible.role: Accessible.ComboBox
-                        Accessible.name: qsTr("Permanent device building")
-                    }
-                    FluentIcon { x: 269.3; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-20"; size: 20; color: theme.textSecondary }
-                    TapHandler { onTapped: { buildingField.forceActiveFocus(); if (buildingList.opened) buildingList.close(); else buildingList.open() } }
-                    Popup {
-                        id: buildingList
-                        x: buildingBox.width + 2; y: -4; width: 300; padding: 4
-                        closePolicy: Popup.CloseOnPressOutsideParent | Popup.CloseOnEscape
-                        background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
-                        readonly property var matches: {
-                            const q = buildingField.text.trim().toLowerCase()
-                            const chosenName = stationaryPage.chosenBuilding ? stationaryPage.chosenBuilding.name.toLowerCase() : ""
-                            return stationaryPage.buildings.filter(b => !q || q === chosenName || b.name.toLowerCase().indexOf(q) >= 0)
+                SettingsParts.Gap { visible: !stationaryPage.loading; size: 15 }
+                Row {
+                    visible: !stationaryPage.loading
+                    spacing: 8
+                    Rectangle {
+                        id: buildingBox
+                        width: 300; height: 32; radius: 4
+                        color: theme.surface
+                        border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF"); border.width: 0.67
+                        Rectangle { anchors.bottom: parent.bottom; x: 0.67; width: parent.width - 1.33; height: buildingField.activeFocus ? 2 : 0.67; radius: 1; color: buildingField.activeFocus ? theme.brand : theme.pick("#575757", "#ADADAD", "#000000") }
+                        TextInput {
+                            id: buildingField
+                            x: 8.67; width: 264.7 - 8; anchors.verticalCenter: parent.verticalCenter
+                            font.family: theme.font; font.pixelSize: 14; color: theme.text; clip: true
+                            onTextEdited: { stationaryPage.query = text; if (!buildingList.opened) buildingList.open() }
+                            Text { visible: !buildingField.text; text: qsTr("Find a building"); font: buildingField.font; color: theme.pick("#707070", "#ADADAD", "#FFFFFF") }
+                            Keys.onEscapePressed: buildingList.close()
+                            Keys.onDownPressed: if (!buildingList.opened) buildingList.open()
+                            Accessible.role: Accessible.ComboBox
+                            Accessible.name: qsTr("Permanent device building")
                         }
-                        contentItem: Column {
-                            Item {
-                                visible: buildingList.matches.length === 0
-                                width: 292; height: 32
-                                Text { x: 28; anchors.verticalCenter: parent.verticalCenter; text: stationaryPage.data_.loading ? qsTr("Loading…") : qsTr("No buildings found"); font.family: theme.font; font.pixelSize: 14; color: theme.pick("#BDBDBD", "#5C5C5C", "#3FF23F") }
-                                Accessible.role: Accessible.ListItem
-                                Accessible.name: qsTr("No buildings found")
-                            }
-                            Repeater {
-                                model: buildingList.matches
-                                Rectangle {
-                                    id: hcFill6
-                                    required property var modelData
-                                    width: 292; height: 32; radius: 4
-                                    color: bHover.hovered ? theme.menuHover : "transparent"
-                                    FluentIcon { x: 6; anchors.verticalCenter: parent.verticalCenter; visible: parent.modelData.id === stationaryPage.chosen; name: "checkmark-16"; size: 16; color: theme.onFill(hcFill6, theme.text) }
-                                    Text { x: 28; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 36; elide: Text.ElideRight; text: parent.modelData.name; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill6, theme.text) }
-                                    HoverHandler { id: bHover; cursorShape: Qt.PointingHandCursor }
-                                    TapHandler { onTapped: { backend.setSetting("deviceHomeBuildingId", parent.modelData.id); buildingField.text = parent.modelData.name; buildingList.close() } }
-                                    Accessible.role: Accessible.ListItem
-                                    Accessible.name: modelData.name
+                        FluentIcon { x: 269.3; anchors.verticalCenter: parent.verticalCenter; name: "chevron-down-20"; size: 20; color: theme.textSecondary }
+                        TapHandler { onTapped: { buildingField.forceActiveFocus(); if (buildingList.opened) buildingList.close(); else buildingList.open() } }
+                        Popup {
+                            id: buildingList
+                            x: buildingBox.width + 2; y: -4; width: 300; padding: 4
+                            height: Math.min(implicitHeight, root.height * 0.8)
+                            closePolicy: Popup.CloseOnPressOutsideParent | Popup.CloseOnEscape
+                            background: FluentSurface { depth: 16; radius: 4; color: theme.surface }
+                            // Opening clears the search (Teams' onOpenChange).
+                            onAboutToShow: { stationaryPage.query = ""; stationaryPage.showText() }
+                            onClosed: stationaryPage.showText()
+                            readonly property var suggested: stationaryPage.options.suggested || []
+                            readonly property var all: stationaryPage.options.all || []
+                            contentItem: Flickable {
+                                implicitHeight: buildingListCol.height
+                                contentHeight: buildingListCol.height
+                                clip: true
+                                boundsBehavior: Flickable.StopAtBounds
+                                Column {
+                                    id: buildingListCol
+                                    width: 292
+                                    spacing: 2
+                                    Item {
+                                        visible: buildingList.suggested.length === 0 && buildingList.all.length === 0
+                                        width: 292; height: 32
+                                        Text { x: 28; anchors.verticalCenter: parent.verticalCenter; text: qsTr("No buildings found"); font.family: theme.font; font.pixelSize: 14; color: theme.pick("#BDBDBD", "#5C5C5C", "#3FF23F") }
+                                        Accessible.role: Accessible.ListItem
+                                        Accessible.name: qsTr("No buildings found")
+                                    }
+                                    BuildingGroup {
+                                        visible: buildingList.suggested.length > 0
+                                        label: qsTr("Suggested", "settings:k9vvhc24v")
+                                        icon: "history-20"
+                                        model: buildingList.suggested
+                                        divider: buildingList.all.length > 0
+                                        chosen: stationaryPage.chosen
+                                        onPicked: b => stationaryPage.choose(b)
+                                    }
+                                    BuildingGroup {
+                                        visible: buildingList.all.length > 0
+                                        label: qsTr("All buildings")
+                                        icon: "building-20"
+                                        model: buildingList.all
+                                        chosen: stationaryPage.chosen
+                                        onPicked: b => stationaryPage.choose(b)
+                                    }
                                 }
                             }
                         }
+                    }
+                    // Teams' Delete (device_home_building_remove_button).
+                    Rectangle {
+                        id: deleteButton
+                        visible: !!stationaryPage.chosen
+                        width: deleteText.implicitWidth + 26; height: 32; radius: 4
+                        color: dTap.pressed ? theme.pick("#E0E0E0", "#2E2E2E", "#1AEBFF") : dHover.hovered ? theme.pick("#F5F5F5", "#383838", "#1AEBFF") : theme.pick("#FFFFFF", "#292929", "#000000")
+                        border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF"); border.width: 1
+                        Text { id: deleteText; anchors.centerIn: parent; text: qsTr("Delete", "settings:k77lelyx4"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.onFill(deleteButton, dHover.hovered ? theme.pick("#242424", "#FFFFFF", "#000000") : theme.pick("#424242", "#D6D6D6", "#FFFFFF")) }
+                        HoverHandler { id: dHover; cursorShape: Qt.PointingHandCursor }
+                        TapHandler { id: dTap; onTapped: stationaryPage.remove() }
+                        activeFocusOnTab: visible
+                        Keys.onSpacePressed: stationaryPage.remove()
+                        Keys.onReturnPressed: stationaryPage.remove()
+                        Accessible.role: Accessible.Button
+                        Accessible.name: deleteText.text
                     }
                 }
             }
@@ -4858,6 +5000,48 @@ Rectangle {
     /// Teams' section collapse button (32 x 31.3, chevron up while open).
     /// Intelligent call delegation's test call row: "Test voice quality
     /// and interaction behavior" and Make a test call (VideoPersonCall).
+    // A group of the stationary location list (Fluent's OptionGroup:
+    // its label, then the options 2 apart, and before another group
+    // a NeutralStroke2 line across the list, 4 under and 4 over).
+    component BuildingGroup: Column {
+        id: group
+        property string label
+        property string icon
+        property var model: []
+        property bool divider: false
+        property string chosen
+        signal picked(var building)
+        width: 292
+        spacing: 2
+        Item {
+            width: 292; height: 32
+            Text { x: 6; anchors.verticalCenter: parent.verticalCenter; text: group.label; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.pick("#616161", "#ADADAD", "#FFFFFF") }
+            Accessible.role: Accessible.StaticText
+            Accessible.name: group.label
+        }
+        Repeater {
+            model: group.model
+            Rectangle {
+                id: hcFill6
+                required property var modelData
+                width: 292; height: 32; radius: 4
+                color: bHover.hovered ? theme.menuHover : "transparent"
+                FluentIcon { x: 6; anchors.verticalCenter: parent.verticalCenter; visible: parent.modelData.id === group.chosen; name: "checkmark-16"; size: 16; color: theme.onFill(hcFill6, theme.text) }
+                FluentIcon { x: 28; anchors.verticalCenter: parent.verticalCenter; name: group.icon; size: 14; color: theme.onFill(hcFill6, theme.pick("#424242", "#D6D6D6", "#FFFFFF")) }
+                Text { x: 54; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 62; elide: Text.ElideRight; text: parent.modelData.name; font.family: theme.font; font.pixelSize: 14; color: theme.onFill(hcFill6, theme.text) }
+                HoverHandler { id: bHover; cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: group.picked(parent.modelData) }
+                Accessible.role: Accessible.ListItem
+                Accessible.name: modelData.name
+            }
+        }
+        Item {
+            visible: group.divider
+            width: 292; height: 9
+            Rectangle { x: -4; y: 4; width: 300; height: 1; color: theme.pick("#E0E0E0", "#525252", "#FFFFFF") }
+        }
+    }
+
     component PaTestCallRow: Item {
         width: parent ? parent.width : 0
         height: 31.33
@@ -5045,6 +5229,36 @@ Rectangle {
         walk(c)
         return JSON.stringify({ policy: c.policy, detection: c.detection, stationary: c.stationary, autoOn: c.autoOn, outlookLink: c.outlookLink, card: [c.width, c.height], trailingY: c.trailingY, items: kids, buildings: stationaryPage.buildings, chosen: stationaryPage.chosen })
     }
+    // --stationary-test: Privacy ▸ Stationary device location's state and
+    // geometry (the page's items from the page, the list's rows from the
+    // list), and its actions: "open", "close", "type:<search>",
+    // "pick:<building id>", "delete".
+    function stationaryForTest(what) {
+        if (what === "open") { buildingField.forceActiveFocus(); buildingList.open(); return "" }
+        if (what === "close") { buildingList.close(); return "" }
+        if (what.startsWith("type:")) { if (!buildingList.opened) buildingList.open(); buildingField.text = what.slice(5); stationaryPage.query = what.slice(5); return "" }
+        if (what.startsWith("pick:")) {
+            // (from the list as it opens: the search cleared)
+            if (!buildingList.opened) buildingList.open()
+            const id = what.slice(5), o = stationaryPage.options
+            const b = (o.suggested || []).concat(o.all || []).find(x => x.id === id)
+            if (b) stationaryPage.choose(b)
+            return b ? b.name : ""
+        }
+        if (what === "delete") { if (deleteButton.visible) stationaryPage.remove(); return "" }
+        const r1 = v => Math.round(v * 10) / 10
+        const at = (it, rel) => { const p = it.mapToItem(rel, 0, 0); return [r1(p.x), r1(p.y), r1(it.width), r1(it.height)] }
+        const collect = (top, rel) => {
+            const out = []
+            const walk = it => { for (let i = 0; i < it.children.length; i++) { const k = it.children[i]; if (!k.visible) continue; if (k.text !== undefined && k.text) out.push([String(k.text).slice(0, 40)].concat(at(k, rel))); else if (k.name !== undefined && typeof k.name === "string" && k.name && k.sourceSize !== undefined) out.push(["icon:" + k.name].concat(at(k, rel))); else if (k.radius !== undefined && k.height === 1) out.push(["line"].concat(at(k, rel))); walk(k) } }
+            walk(top)
+            return out
+        }
+        return JSON.stringify({ loading: stationaryPage.loading, error: stationaryPage.data_.error || "", suggestedId: root.stationarySuggestedId, loadedSuggested: stationaryPage.data_.suggested || null,
+                                chosen: stationaryPage.chosen, setting: backend.setting("deviceHomeBuildingId"), field: buildingField.text, query: stationaryPage.query,
+                                notFound: stationaryPage.notFound, deleteVisible: deleteButton.visible, office: stationaryPage.office, options: stationaryPage.options,
+                                page: collect(stationaryPage, stationaryPage), listOpen: buildingList.opened, list: buildingList.opened ? [at(buildingList.background, buildingBox)].concat(collect(buildingList.contentItem, buildingList.background)) : [] })
+    }
     /// Teams' "Green screen settings" (the effects pane's link): Devices,
     /// scrolled to Green Screen.
     function showGreenScreen() {
@@ -5108,8 +5322,10 @@ Rectangle {
         if (withSetting) pg = teamsPages[opts.settingCategory] || "general"
         else if (id && teamsSubPages[id]) { pg = teamsSubPages[id][0]; sub = teamsSubPages[id][1] }
         else if (id) pg = teamsPages[id] || "general"
+        stationarySuggestedId = id === "privacy_device_home_building_settings" && opts.suggestedBuildingId ? opts.suggestedBuildingId : ""
         page = pg
         subPage = sub
+        if (stationaryPage.visible) Qt.callLater(stationaryPage.reload)
         scrollAnim.stop()
         highlight.stop()
         content.contentY = 0

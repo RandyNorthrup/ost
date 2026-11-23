@@ -1,7 +1,12 @@
 //! Microsoft Places as Teams reads it: the tenant's buildings (the middle
 //! tier's `GET v2.0/places/findPlaces?filterQuery=Type = "Building"`,
 //! captured at Teams' start on winpc 2026-11-15; the reply is
-//! `{"data":{"places":[…]}}`).
+//! `{"data":{"places":[…]}}`). With the ECS flight
+//! `places.enableNewGetBuildingsAPIInMeControl` Teams 26304 asks
+//! `GET v2.0/places/getBuildings` (reply `{"places":[…]}`) for the whole
+//! list instead; one building by id is always findPlaces with
+//! `Type = "Building" AND Id = "…"` (its places worker resolvers
+//! placesBuildings / buildingById).
 
 use anyhow::{Context, Result};
 
@@ -12,70 +17,288 @@ use super::client::TeamsClient;
 pub struct Building {
     pub id: String,
     pub name: String,
-    /// "City, State, Country" as far as Places has it.
-    pub address: String,
+    pub city: String,
+    pub state: String,
+    pub country: String,
 }
 
-/// The places matching a Places filter (`Type = "Building"`, `Id = "…"`).
-pub async fn find_places(client: &TeamsClient, filter: &str) -> Result<Vec<serde_json::Value>> {
+async fn middle_tier_get(client: &TeamsClient, path: &str, query: Option<(&str, &str)>) -> Result<serde_json::Value> {
     let mt = client.middle_tier_url().context("No middle-tier address")?;
     let token = super::directory::middle_tier_token().await?;
-    let mut url = reqwest::Url::parse(&format!("{mt}/v2.0/places/findPlaces")).context("Places address")?;
-    url.query_pairs_mut().append_pair("filterQuery", filter);
-    let v: serde_json::Value = client
+    let mut url = reqwest::Url::parse(&format!("{mt}/{path}")).context("Places address")?;
+    if let Some((k, v)) = query {
+        url.query_pairs_mut().append_pair(k, v);
+    }
+    client
         .http()
         .get(url)
         .bearer_auth(token)
         .send()
         .await
-        .context("Find places")?
+        .with_context(|| path.to_string())?
         .error_for_status()
-        .context("Find places")?
+        .with_context(|| path.to_string())?
         .json()
         .await
-        .context("Find places reply")?;
+        .with_context(|| format!("{path} reply"))
+}
+
+/// The places matching a Places filter (`Type = "Building"`, `Id = "…"`).
+pub async fn find_places(client: &TeamsClient, filter: &str) -> Result<Vec<serde_json::Value>> {
+    let v = middle_tier_get(client, "v2.0/places/findPlaces", Some(("filterQuery", filter))).await?;
     Ok(v["data"]["places"].as_array().cloned().unwrap_or_default())
 }
 
-/// The tenant's buildings, by name.
-pub async fn buildings(client: &TeamsClient) -> Result<Vec<Building>> {
-    let mut out: Vec<Building> = find_places(client, "Type = \"Building\"")
-        .await?
-        .iter()
-        .filter_map(building_from)
-        .collect();
-    out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-    Ok(out)
+/// Teams' newer building list (`GET v2.0/places/getBuildings`).
+pub async fn get_buildings(client: &TeamsClient) -> Result<Vec<serde_json::Value>> {
+    let v = middle_tier_get(client, "v2.0/places/getBuildings", None).await?;
+    Ok(v["places"].as_array().cloned().unwrap_or_default())
 }
 
-/// A building from a Places record (`id` or `placeId`, `displayName` or
-/// `name`, and its address).
+/// The tenant's buildings in Teams' order (by name, numbers by value,
+/// case and accents aside). `new_api`: the getBuildings flight.
+pub async fn buildings(client: &TeamsClient, new_api: bool) -> Result<Vec<Building>> {
+    let places = if new_api { get_buildings(client).await? } else { find_places(client, BUILDINGS_FILTER).await? };
+    Ok(sorted(places.iter().filter_map(building_from).collect()))
+}
+
+/// Teams' filter for all buildings.
+pub const BUILDINGS_FILTER: &str = "Type = \"Building\"";
+
+/// Teams' filter for one building (buildingById).
+pub fn building_filter(id: &str) -> String {
+    format!("Type = \"Building\" AND Id = \"{id}\"")
+}
+
+/// One building by id, as Teams' buildingById: only when Places answers
+/// exactly one.
+pub async fn building_by_id(client: &TeamsClient, id: &str) -> Result<Option<Building>> {
+    let found = find_places(client, &building_filter(id)).await?;
+    Ok(if found.len() == 1 { building_from(&found[0]) } else { None })
+}
+
+/// A building from a Places record (`id` or `placeId`, `name` or
+/// `displayName`, and its address).
 pub fn building_from(p: &serde_json::Value) -> Option<Building> {
     let s = |k: &str| p[k].as_str().unwrap_or_default().to_string();
-    let id = [s("placeId"), s("id")].into_iter().find(|x| !x.is_empty())?;
-    let name = [s("displayName"), s("name")].into_iter().find(|x| !x.is_empty())?;
+    let id = [s("id"), s("placeId")].into_iter().find(|x| !x.is_empty())?;
+    let name = [s("name"), s("displayName")].into_iter().find(|x| !x.is_empty())?;
     let a = &p["address"];
     let part = |k: &str| a[k].as_str().unwrap_or_default().to_string();
-    let address = [part("city"), part("state"), part("countryOrRegion"), part("country")]
-        .into_iter()
-        .filter(|x| !x.is_empty())
-        .collect::<Vec<_>>()
-        .join(", ");
-    Some(Building { id, name, address })
+    let country = [part("country"), part("countryOrRegion")].into_iter().find(|x| !x.is_empty()).unwrap_or_default();
+    Some(Building { id, name, city: part("city"), state: part("state"), country })
+}
+
+/// Teams' order: Intl.Collator(numeric, sensitivity base) on the names.
+pub fn sorted(mut list: Vec<Building>) -> Vec<Building> {
+    list.sort_by(|a, b| collate(&a.name, &b.name));
+    list
+}
+
+/// A comparison like Intl.Collator(undefined, {numeric: true,
+/// sensitivity: "base"}): case and accents don't count, runs of digits
+/// compare by value.
+pub fn collate(a: &str, b: &str) -> std::cmp::Ordering {
+    fn chunks(s: &str) -> Vec<(bool, String)> {
+        let mut out: Vec<(bool, String)> = Vec::new();
+        for c in deburr(&s.to_lowercase()).chars() {
+            let digit = c.is_ascii_digit();
+            match out.last_mut() {
+                Some((d, run)) if *d == digit => run.push(c),
+                _ => out.push((digit, c.to_string())),
+            }
+        }
+        out
+    }
+    let (x, y) = (chunks(a), chunks(b));
+    for (p, q) in x.iter().zip(y.iter()) {
+        let o = match (p.0, q.0) {
+            (true, true) => {
+                let (m, n) = (p.1.trim_start_matches('0'), q.1.trim_start_matches('0'));
+                m.len().cmp(&n.len()).then_with(|| m.cmp(n))
+            }
+            _ => p.1.cmp(&q.1),
+        };
+        if o != std::cmp::Ordering::Equal {
+            return o;
+        }
+    }
+    x.len().cmp(&y.len())
+}
+
+/// lodash's deburr: Latin-1 Supplement and Latin Extended-A letters to
+/// basic Latin, combining marks dropped.
+pub fn deburr(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        let code = c as u32;
+        if (0x300..=0x36f).contains(&code) || (0xfe20..=0xfe2f).contains(&code) || (0x20d0..=0x20ff).contains(&code) {
+            continue;
+        }
+        match deburred(c) {
+            Some(r) => out.push_str(r),
+            None => out.push(c),
+        }
+    }
+    out
+}
+
+fn deburred(c: char) -> Option<&'static str> {
+    Some(match c {
+        'À'..='Å' | 'Ā' | 'Ă' | 'Ą' => "A",
+        'à'..='å' | 'ā' | 'ă' | 'ą' => "a",
+        'Ç' | 'Ć' | 'Ĉ' | 'Ċ' | 'Č' => "C",
+        'ç' | 'ć' | 'ĉ' | 'ċ' | 'č' => "c",
+        'Ð' | 'Ď' | 'Đ' => "D",
+        'ð' | 'ď' | 'đ' => "d",
+        'È'..='Ë' | 'Ē' | 'Ĕ' | 'Ė' | 'Ę' | 'Ě' => "E",
+        'è'..='ë' | 'ē' | 'ĕ' | 'ė' | 'ę' | 'ě' => "e",
+        'Ĝ' | 'Ğ' | 'Ġ' | 'Ģ' => "G",
+        'ĝ' | 'ğ' | 'ġ' | 'ģ' => "g",
+        'Ĥ' | 'Ħ' => "H",
+        'ĥ' | 'ħ' => "h",
+        'Ì'..='Ï' | 'Ĩ' | 'Ī' | 'Ĭ' | 'Į' | 'İ' => "I",
+        'ì'..='ï' | 'ĩ' | 'ī' | 'ĭ' | 'į' | 'ı' => "i",
+        'Ĵ' => "J",
+        'ĵ' => "j",
+        'Ķ' => "K",
+        'ķ' | 'ĸ' => "k",
+        'Ĺ' | 'Ļ' | 'Ľ' | 'Ŀ' | 'Ł' => "L",
+        'ĺ' | 'ļ' | 'ľ' | 'ŀ' | 'ł' => "l",
+        'Ñ' | 'Ń' | 'Ņ' | 'Ň' | 'Ŋ' => "N",
+        'ñ' | 'ń' | 'ņ' | 'ň' | 'ŋ' => "n",
+        'Ò'..='Ö' | 'Ø' | 'Ō' | 'Ŏ' | 'Ő' => "O",
+        'ò'..='ö' | 'ø' | 'ō' | 'ŏ' | 'ő' => "o",
+        'Ŕ' | 'Ŗ' | 'Ř' => "R",
+        'ŕ' | 'ŗ' | 'ř' => "r",
+        'Ś' | 'Ŝ' | 'Ş' | 'Š' => "S",
+        'ś' | 'ŝ' | 'ş' | 'š' | 'ſ' => "s",
+        'Ţ' | 'Ť' | 'Ŧ' => "T",
+        'ţ' | 'ť' | 'ŧ' => "t",
+        'Ù'..='Ü' | 'Ũ' | 'Ū' | 'Ŭ' | 'Ů' | 'Ű' | 'Ų' => "U",
+        'ù'..='ü' | 'ũ' | 'ū' | 'ŭ' | 'ů' | 'ű' | 'ų' => "u",
+        'Ŵ' => "W",
+        'ŵ' => "w",
+        'Ý' | 'Ŷ' | 'Ÿ' => "Y",
+        'ý' | 'ÿ' | 'ŷ' => "y",
+        'Ź' | 'Ż' | 'Ž' => "Z",
+        'ź' | 'ż' | 'ž' => "z",
+        'Æ' => "Ae",
+        'æ' => "ae",
+        'Þ' => "Th",
+        'þ' => "th",
+        'ß' => "ss",
+        'Ĳ' => "IJ",
+        'ĳ' => "ij",
+        'Œ' => "Oe",
+        'œ' => "oe",
+        'ŉ' => "'n",
+        _ => return None,
+    })
+}
+
+/// The buildings a search matches, as Teams' stationary location box:
+/// the query (lower case, trimmed, deburred) is part of the building's
+/// name, city, state or country (each lower case, deburred); an empty
+/// query matches all.
+pub fn matching<'a>(query: &str, list: &'a [Building]) -> Vec<&'a Building> {
+    let q = deburr(query.to_lowercase().trim());
+    if q.is_empty() {
+        return list.iter().collect();
+    }
+    let has = |s: &str| deburr(&s.to_lowercase()).contains(&q);
+    list.iter().filter(|b| has(&b.name) || has(&b.city) || has(&b.state) || has(&b.country)).collect()
+}
+
+/// Teams' "Suggested" group: the building the check-out banner named
+/// (Places' answer for it), then your current office building when it is
+/// another one; only those among the buildings shown (`shown`).
+pub fn suggested<'a>(banner: Option<&'a Building>, office: Option<&'a Building>, shown: &[&Building]) -> Vec<&'a Building> {
+    let banner = banner.filter(|b| !b.id.is_empty() && !b.name.is_empty());
+    let mut out: Vec<&Building> = banner.into_iter().collect();
+    if let Some(o) = office.filter(|o| !o.id.is_empty() && !o.name.is_empty()) {
+        if banner.map(|b| b.id != o.id).unwrap_or(true) {
+            out.push(o);
+        }
+    }
+    out.into_iter().filter(|s| shown.iter().any(|b| b.id == s.id)).collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn b(id: &str, name: &str, city: &str) -> Building {
+        Building { id: id.into(), name: name.into(), city: city.into(), ..Default::default() }
+    }
+
     #[test]
     fn buildings_from_places_records() {
-        let p = serde_json::json!({"placeId": "b1", "displayName": "HQ", "address": {"city": "Jacksonville", "state": "FL", "countryOrRegion": "US"}});
+        let p = serde_json::json!({"id": "b1", "name": "HQ", "address": {"city": "Jacksonville", "state": "FL", "country": "US"}});
         assert_eq!(
             building_from(&p),
-            Some(Building { id: "b1".into(), name: "HQ".into(), address: "Jacksonville, FL, US".into() })
+            Some(Building { id: "b1".into(), name: "HQ".into(), city: "Jacksonville".into(), state: "FL".into(), country: "US".into() })
         );
+        let q = serde_json::json!({"placeId": "b2", "displayName": "Annex", "address": {"countryOrRegion": "CA"}});
+        assert_eq!(building_from(&q).map(|b| (b.id, b.name, b.country)), Some(("b2".into(), "Annex".into(), "CA".into())));
         assert_eq!(building_from(&serde_json::json!({"id": "x"})), None);
+    }
+
+    #[test]
+    fn teams_filters() {
+        assert_eq!(BUILDINGS_FILTER, r#"Type = "Building""#);
+        assert_eq!(building_filter("a93350e7"), r#"Type = "Building" AND Id = "a93350e7""#);
+    }
+
+    #[test]
+    fn deburr_is_lodash() {
+        assert_eq!(deburr("déjà vu"), "deja vu");
+        assert_eq!(deburr("Straße Œuvre Æsir Þing"), "Strasse Oeuvre Aesir Thing");
+        assert_eq!(deburr("Łódź"), "Lodz");
+        assert_eq!(deburr("e\u{301}"), "e");
+        assert_eq!(deburr("×÷"), "×÷");
+    }
+
+    #[test]
+    fn collator_order() {
+        let names = |l: Vec<Building>| l.into_iter().map(|b| b.name).collect::<Vec<_>>();
+        let l = sorted(vec![b("1", "Building 10", ""), b("2", "building 9", ""), b("3", "Éast", ""), b("4", "Annex", "")]);
+        assert_eq!(names(l), ["Annex", "building 9", "Building 10", "Éast"]);
+    }
+
+    #[test]
+    fn search_matches_name_city_state_country() {
+        let list = vec![
+            b("1", "OST Test Building", "Jacksonville"),
+            Building { id: "2".into(), name: "Annex".into(), state: "Québec".into(), ..Default::default() },
+            Building { id: "3".into(), name: "Tower".into(), country: "Deutschland".into(), ..Default::default() },
+        ];
+        let ids = |q: &str| matching(q, &list).iter().map(|b| b.id.clone()).collect::<Vec<_>>();
+        assert_eq!(ids(""), ["1", "2", "3"]);
+        assert_eq!(ids("  "), ["1", "2", "3"]);
+        assert_eq!(ids("test"), ["1"]);
+        assert_eq!(ids("JACKSON"), ["1"]);
+        assert_eq!(ids("quebec"), ["2"]);
+        assert_eq!(ids("Québ"), ["2"]);
+        assert_eq!(ids("deutsch "), ["3"]);
+        assert_eq!(ids("zzz"), Vec::<String>::new());
+    }
+
+    #[test]
+    fn suggested_group() {
+        let hq = b("hq", "HQ", "");
+        let annex = b("an", "Annex", "");
+        let gone = b("gone", "Gone", "");
+        let all = [&hq, &annex];
+        let ids = |v: Vec<&Building>| v.iter().map(|b| b.id.clone()).collect::<Vec<_>>();
+        // The banner's building first, then the office one.
+        assert_eq!(ids(suggested(Some(&hq), Some(&annex), &all)), ["hq", "an"]);
+        // The same building once.
+        assert_eq!(ids(suggested(Some(&hq), Some(&hq), &all)), ["hq"]);
+        // Only buildings the list shows (the search, the tenant's list).
+        assert_eq!(ids(suggested(Some(&gone), Some(&annex), &all)), ["an"]);
+        assert_eq!(ids(suggested(Some(&hq), None, &[&annex])), Vec::<String>::new());
+        assert_eq!(ids(suggested(None, None, &all)), Vec::<String>::new());
     }
 }
 

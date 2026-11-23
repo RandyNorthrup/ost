@@ -388,8 +388,25 @@ Everything below is in userPersonalSettings unless marked local.
   - The text "Set a permanent location for stationary devices that stay in one building. When Wi-Fi isn't detected, this device will remain checked in at the selected building instead of being automatically checked out." (14/20 #424242) sits 8 down.
   - "Permanent device building" (14 semibold) sits 16 under it. A "Find a building" combobox (300 × 32, chevron-down 20) sits 15 under that.
   - The list opens beside the box: 2 to the right, 4 up, 300 wide, padding 4.
-  - The buildings come from Places: middle tier `GET v2.0/places/findPlaces?filterQuery=Type = "Building"`, which replies `{"data":{"places":[…]}}`. With none, the list shows a disabled "No buildings found" (#BDBDBD).
+  - The buildings come from Places: middle tier `GET v2.0/places/findPlaces?filterQuery=Type = "Building"`, which replies `{"data":{"places":[…]}}`. With the ECS flight `places.enableNewGetBuildingsAPIInMeControl` (default off) Teams asks `GET v2.0/places/getBuildings` (reply `{"places":[…]}`) instead. With none, the list shows a disabled "No buildings found" (#BDBDBD).
   - The choice is this device's own, not synced.
+- **Stationary device location: groups, search and Delete** (Teams 26304 settings-app `DeviceHomeBuildingSettings`, TASK-0251).
+  - The page reads three things: the device's `clientPreferences(places).deviceHomeBuildingId`; your work location (`presence(source: "ups").workLocation`); and, when the page was opened with a `suggestedBuildingId` (the check-out banner's "Open settings"), that building through `buildingById`. buildingById is findPlaces with `Type = "Building" AND Id = "<id>"`, and it counts only when Places returns exactly one.
+  - While these load, the page shows Fluent's medium spinner (32 px, 3 px stroke) with "Loading..." (16/22 semibold) after it, centred.
+  - The list is sorted by name with `Intl.Collator(numeric, sensitivity base)`.
+  - Typing filters it. The query is lower-cased, trimmed and run through lodash's deburr, then must appear in a building's name, city, state or country (each lower-cased and deburred). Opening the list clears the query. Closed, the box shows the set building's name. Choosing a building keeps its name in the box.
+  - **Suggested** (history icon) comes first. It holds the banner's building, then your current office building (`workLocation.location` "Office" with an `approximateDetails` id and name) when that is a different building. A suggestion only shows if the filtered list also has it, so it appears under All too.
+  - **All buildings** (building icon) follows.
+  - Each group is Fluent's OptionGroup:
+    - The label is 12/16 semibold Foreground3, padded 8 vertically and 6 horizontally (32 tall).
+    - Options are 2 apart and 32 tall: the check at 6, a 14 px icon (Foreground2) at 28, the name at 54.
+    - Before the next group there is a NeutralStroke2 line across the whole list, 4 under the group and 4 above the next. Groups are 2 apart.
+  - The list is at most 80% of the window high.
+  - When the list has buildings and the set building isn't among them, a note appears 12 under the paragraph. It is padded 6/12 with radius 4, on YellowBackground1, with a 12 px warning icon (YellowForeground2, 2 down) 8 before 12/16 text: "The previously saved building could not be found. It may have been removed or is no longer accessible. Please select a new building."
+  - Once a building is set, a **Delete** button sits 8 right of the box. It is a subtle Fluent button with a 1 px NeutralStroke1 border, Background1 fill, 5/12 padding, radius 4 and auto width; the text is 14 semibold Foreground2. It writes `deviceHomeBuildingId: null`. The box and the button are disabled while a write is in flight.
+  - Teams' resolver hands guests an empty list.
+  - In the test tenant (2026-11-23) Places shows no buildings to clients. findPlaces, getBuildings and findPlaces by id for OST Test Building all come back empty, so Teams on winpc and OST both show only "No buildings found". Building visibility is Places' `EnableBuildings` setting, which can only be set for the whole tenant: Microsoft documents OID scoping only for `PlacesFinderEnabled`. Teams reads no other source for this list. The groups, the note and Delete were therefore verified against a fixture list (`--stationary-fixture`).
+  - OST keeps the device building in its local setting `deviceHomeBuildingId` ("" once deleted). It has the same groups, search and order (`api::places`: `matching`, `suggested`, `sorted`, `deburr`), and the `--stationary-test` harness.
 
 ## Appearance ▸ Theme ▸ High contrast (measured 2026-11-15)
 

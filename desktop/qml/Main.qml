@@ -7302,6 +7302,50 @@ Window {
             else if (st === 6) Qt.quit()
         }
     }
+    // --stationary-test: Settings ▸ Privacy ▸ Stationary device location as
+    // the check-out banner's Open settings opens it (STATIONARY lines,
+    // pictures /tmp/act/stationary-*.png): the page, its list, a search
+    // (--stationary-query=<text>), choosing a building
+    // (--stationary-pick=<id>) and Delete, then this device's setting put
+    // back. --stationary-suggest=<id>: the banner's building;
+    // --stationary-saved=<id>: a set building to start from (one the list
+    // lacks shows Teams' "could not be found" note);
+    // --stationary-fixture=<file>: Places records to list instead of the
+    // tenant's (desktop/src/backend.rs).
+    Timer {
+        running: Qt.application.arguments.indexOf("--stationary-test") >= 0 && backend.signedIn
+        interval: 2500; repeat: true
+        property int step: 0
+        property string saved: ""
+        function arg(n) { const a = Qt.application.arguments.find(x => x.startsWith("--stationary-" + n + "=")); return a ? a.slice(n.length + 14) : "" }
+        onTriggered: {
+            const st = step++
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile("/tmp/act/stationary-" + n + ".png"))
+            const log = n => console.warn("STATIONARY", n, settingsView.stationaryForTest(""))
+            if (st === 0) {
+                saved = backend.setting("deviceHomeBuildingId")
+                console.warn("STATIONARY saved before", JSON.stringify(saved))
+                if (arg("saved")) backend.setSetting("deviceHomeBuildingId", arg("saved"))
+                window.launchSettings("privacy_device_home_building_settings", arg("suggest") ? { suggestedBuildingId: arg("suggest") } : {})
+            }
+            else if (st === 3) { log("page"); shot("page") }
+            else if (st === 4) settingsView.stationaryForTest("open")
+            else if (st === 5) { log("list"); shot("list") }
+            else if (st === 6 && arg("query")) settingsView.stationaryForTest("type:" + arg("query"))
+            else if (st === 7 && arg("query")) { log("search"); shot("search") }
+            else if (st === 8) { settingsView.stationaryForTest("close"); if (arg("pick")) console.warn("STATIONARY picked", settingsView.stationaryForTest("pick:" + arg("pick"))) }
+            else if (st === 9) { log("chosen"); shot("chosen") }
+            else if (st === 10) settingsView.stationaryForTest("open")
+            else if (st === 11) { log("chosen-list"); shot("chosen-list"); settingsView.stationaryForTest("close") }
+            else if (st === 12) settingsView.stationaryForTest("delete")
+            else if (st === 13) { log("deleted"); shot("deleted") }
+            else if (st === 14) {
+                backend.setSetting("deviceHomeBuildingId", saved)
+                console.warn("STATIONARY restored", JSON.stringify(backend.setting("deviceHomeBuildingId")))
+                Qt.quit()
+            }
+        }
+    }
     // --work-location-test: Settings ▸ Privacy's Manage my work location
     // with the work-location detection policy (WORKLOC lines): the card,
     // its "Why set my work location automatically?" dialog, then Manage
@@ -7317,7 +7361,7 @@ Window {
             else if (st === 2) { console.warn("WORKLOC card", settingsView.workLocationForTest("")); shot("card") }
             else if (st === 3) settingsView.workLocationForTest("dialog")
             else if (st === 4) shot("dialog")
-            else if (st === 5) { settingsView.workLocationForTest("closeDialog"); settingsView.pageForTest("privacy", "stationary"); backend.loadBuildings() }
+            else if (st === 5) { settingsView.workLocationForTest("closeDialog"); settingsView.pageForTest("privacy", "stationary") }
             else if (st === 7) { console.warn("WORKLOC stationary", backend.buildingsJson); shot("stationary") }
             else if (st === 8) settingsView.workLocationForTest("list")
             else if (st === 9) shot("list")
@@ -15022,7 +15066,6 @@ Window {
         if (!b) return
         if (b.kind === "deviceHome") {
             window.setWlDeviceHomeState({ dismissalAction: "OPEN_SETTINGS" })
-            backend.loadBuildings()
             window.launchSettings("privacy_device_home_building_settings", b.placeId ? { suggestedBuildingId: b.placeId } : {})
         } else {
             wlLearnMore.answered = false
