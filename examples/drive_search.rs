@@ -14,7 +14,7 @@ async fn main() -> anyhow::Result<()> {
     if days.is_some() {
         args.remove(0);
     }
-    for h in drive::search_folders(&client, &args.join(" "), all, days).await? {
+    for h in drive::search_folders(&client, &args.join(" "), all, days, &[]).await? {
         println!("{} | {} | {} | {}", h.item.name, h.modified_text, h.created_by, h.location.join(" › "));
     }
     Ok(())

@@ -17,7 +17,7 @@ async fn main() -> anyhow::Result<()> {
     println!("{} group {} thread {}", team.name, team.id, team.thread_id);
     if let Some(mri) = args.get(1) {
         let owner = args.get(2).map(String::as_str) == Some("owner");
-        let out = channels::add_team_members(&client, &team.thread_id, &team.id, &[(mri.clone(), owner)]).await?;
+        let out = channels::add_team_members(&client, &team.thread_id, &team.id, &[(mri.clone(), channels::member_role(owner, false))]).await?;
         println!("added {} failed {}", out.added, out.failed);
     }
     Ok(())
