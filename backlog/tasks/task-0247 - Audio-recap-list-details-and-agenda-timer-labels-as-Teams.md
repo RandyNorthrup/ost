@@ -1,9 +1,10 @@
 ---
 id: TASK-0247
 title: Audio recap list details and agenda timer labels as Teams
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-11-23T04:05:00Z'
+updated_date: '2026-11-23T04:22:00Z'
 labels:
   - desktop
   - calls
