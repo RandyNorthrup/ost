@@ -1,11 +1,11 @@
 ---
 id: TASK-0223
 title: Bluetooth headset buttons and unknown-vendor headsets as Teams
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-18T04:41:00Z'
-updated_date: '2026-11-23T05:28:00Z'
+updated_date: '2026-11-23T06:49:00Z'
 labels:
   - calls
 dependencies: []
@@ -19,7 +19,7 @@ What TASK-0156 left: Bluetooth (HFP) headset call buttons aren't handled; a head
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A Bluetooth headset's answer, hang-up and mute buttons control OST's calls as in Teams, verified live
+- [x] #1 A Bluetooth headset's answer, hang-up and mute buttons control OST's calls as in Teams, verified live
 - [x] #2 An unknown-vendor USB headset whose UCQ string says it's a headset gets full call controls, as Teams
 - [x] #3 'Transfer controls to this app' and Teams' transfer prompt work between two OST instances, verified live
 <!-- AC:END -->
@@ -47,4 +47,17 @@ What TASK-0156 left: Bluetooth (HFP) headset call buttons aren't handled; a head
 - Live on stock PipeWire 1.6.2 / WirePlumber 0.5.13 (linuxlt, ModemManager stopped, install-hfp-calls.sh): spatest (ost-test1) OST called OST Test 2 (emulated HFP headset as mic/speaker). Headset rang (RING, +CIEV callsetup 1); ATA -> "headset answered", call connected on both sides (+CIEV call 1); AT+VGM=0 / 15 muted/unmuted the call; AT+CHUP -> OK, call ended on both sides. Second call: AT+CHUP while ringing -> caller got RejectCall (603). During the ring, Accept from busctl as the user and as nobody was refused (AccessDenied) and nobody read Number "".
 - First try failed Teams' check because micDevice held the node name; it holds the description ("OST HFP Headset (emulated)"), as Settings writes it. An unanswered ring goes to OST Test 2's voicemail after ~30 s.
 - Restored on linuxlt: install-hfp-calls.sh --uninstall (policy and WirePlumber conf removed), ModemManager started again (it stayed enabled), rig down.
+
+- 2026-11-22 merged (4f875217); 916 lib + 32 desktop tests pass.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Bluetooth headset buttons and unknown-vendor headsets as Teams.
+
+- Answer, reject, hang-up and mute from a Bluetooth headset control OST's calls on unmodified PipeWire/WirePlumber: OST takes the phone-modem role PipeWire's HFP gateway talks to on the system bus (shown only to the user's own PipeWire; only it may answer or end), after a one-time setup (desktop/packaging/install-hfp-calls.sh: D-Bus policy, WirePlumber setting, ModemManager off where there is no modem; --uninstall reverts). The contrib/pipewire patch remains the alternative (session bus), e.g. with a real modem.
+- Unknown-vendor USB headsets whose UCQ string says headset get full call controls as Teams; Transfer controls between two OST instances as Teams.
+
+Verified live on linuxlt with an emulated HFP headset: ring, answer, mute/unmute, hang-up, reject while ringing (caller got 603); other users and services can't drive it.
+<!-- SECTION:FINAL_SUMMARY:END -->
