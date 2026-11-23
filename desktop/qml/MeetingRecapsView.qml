@@ -669,28 +669,18 @@ Rectangle {
         readonly property var meetings: {
             const cutoff = Date.now() - 30 * 86400000
             let out = []
-            // Named as Teams names them: the calendar event's subject and
-            // organizer (the thread's subject can be a recording notice).
-            for (const d of root.days) for (const m of (d.meetings || [])) if (m.transcript && Date.parse(m.start) >= cutoff) {
-                const e = eventInfo[m.iCalUid]
-                out.push(e && e.subject ? Object.assign({}, m, { subject: e.subject, organizer: e.organizer || m.organizer }) : m)
-            }
+            // (Teams lists the meetings from AugLoop's
+            // teams_recap_podcast_event_list, named by the events service;
+            // OST uses the meeting artifacts' list, whose subject can differ.)
+            for (const d of root.days) for (const m of (d.meetings || [])) if (m.transcript && Date.parse(m.start) >= cutoff) out.push(m)
             if (filterText) out = out.filter(m => (m.subject || "").toLowerCase().indexOf(filterText.toLowerCase()) >= 0)
             return out
         }
-        property var eventInfo: ({})
         function openNow() {
             genDialog.picked = []; genDialog.chip = "All"; genDialog.filterText = ""; genSearch.text = ""; genDialog.collapsed = []; genDialog.open()
             if (root.next < 42 && !root.loading) root.loadMore()
             root.call("recapCatchUp", {}, v => { if (!v.error) genDialog.catchUp = v })
-            loadEventInfo()
         }
-        function loadEventInfo() {
-            const ids = []
-            for (const d of root.days) for (const m of (d.meetings || [])) if (m.iCalUid && eventInfo[m.iCalUid] === undefined && ids.indexOf(m.iCalUid) < 0) ids.push(m.iCalUid)
-            if (ids.length) root.call("recapEventSubjects", { ids: ids }, v => { console.warn("RECAPS event names", ids.length, v.error || JSON.stringify(v).slice(0, 400)); if (!v.error) genDialog.eventInfo = Object.assign({}, genDialog.eventInfo, v) })
-        }
-        Connections { target: root; function onDaysChanged() { if (genDialog.opened) genDialog.loadEventInfo() } }
         /// The weeks (Teams' grouping by the start of the week, newest
         /// first: "This week", "Last week", else the week's first day).
         readonly property var groups: {

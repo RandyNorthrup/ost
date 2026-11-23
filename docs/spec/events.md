@@ -679,3 +679,16 @@ up here." (winpc).
 - [x] Since TASK-0184 (docs/spec/town-halls-and-webinars.md): the Town hall
   template's form, Publish event with Teams' two dialogs, Upcoming, Join
   and its menu, and the event chat button.
+- [x] TASK-0212 round meetK (2026-11-22, a 12-minute recorded and transcribed event "OST TEST 212
+  recap long", ost-test1 and OST Test 3 on linuxlt with a synthetic two-voice dialogue):
+  OST generated the event's highlights itself (createHighlights 201, AugLoop steps
+  FetchGroundingData, GenerateHighlights, WriteToLoop), saved the session's draft, published
+  with the Loop page's serialized content ("Highlights published to event page. Expires …"),
+  removed them again (back to a draft); Select from OneDrive picked a video from Home (its
+  ids looked up first) as the draft; Generate audio recap made a recap from the meeting;
+  Teams' finished recap shown with its chapters, transcript and playback.
+- [ ] Left: Generate audio recap's list comes from the meeting artifacts (Teams: AugLoop
+  teams_recap_podcast_event_list, named by the events service, so a meeting can carry
+  another name, and cancelled meetings with transcripts are missing); the recap detail's
+  Listen on mobile (QR) and New badge; Teams auto-plays a recap it just made; the label of
+  weeks older than last week is unverified.

@@ -10668,7 +10668,7 @@ Window {
             if (mode === "calclean") {
                 if (step === 0) range()
                 else if (step === 3) {
-                    const old = (backend.calendarJson ? JSON.parse(backend.calendarJson) : []).filter(c => /^(Canceled: OST TEST 212|OST TEST 212 notes)/.test(c.subject))
+                    const old = (backend.calendarJson ? JSON.parse(backend.calendarJson) : []).filter(c => /^(Canceled: (Recording of )?OST TEST 212|OST TEST 212 notes)/.test(c.subject))
                     console.warn("EVENTS calclean", old.length, JSON.stringify(old.map(c => c.subject)))
                     queue = old.map(c => c.id)
                 } else if (step === 4 && queue.length) {
@@ -10725,7 +10725,7 @@ Window {
             case 12:
                 if (mode === "invite") { if (!ev.current && waited++ < 20) return; waited = 0; log("saved"); ev.publishCurrentForTest() }
                 else if (mode === "uninvite") {
-                    for (const c of (backend.calendarJson ? JSON.parse(backend.calendarJson) : []).filter(c => /^Canceled: OST TEST 212/.test(c.subject))) { console.warn("EVENTS removing", c.subject); backend.deleteEvent(c.id) }
+                    for (const c of (backend.calendarJson ? JSON.parse(backend.calendarJson) : []).filter(c => /^Canceled: (Recording of )?OST TEST 212/.test(c.subject))) { console.warn("EVENTS removing", c.subject); backend.deleteEvent(c.id) }
                     // --events-unpin: Events off the app bar again (the save
                     // dialog's "Pin the Events app" pinned it).
                     if (Qt.application.arguments.indexOf("--events-unpin") >= 0 && ev.pinned) { ev.setPinned(false); console.warn("EVENTS unpinned") }
@@ -10859,7 +10859,7 @@ Window {
                 const want = Qt.application.arguments.find(a => a.startsWith("--recaps-generate=")).slice(18).replace(/~/g, " ").split(",")
                 const style = (Qt.application.arguments.find(a => a.startsWith("--recaps-style=")) || "").slice(15)
                 const n = recapsView.item.pickForTest(want, style)
-                // (The meetings' calendar names come a moment later.)
+                // (The list may still be loading.)
                 if (n === 0 && (genWait = genWait + 1) < 6) return
                 console.warn("RECAPS generate list", JSON.stringify(recapsView.item.genMeetingsForTest()), "picked", n)
                 if (n === 0) { recapsView.item.generateDialogForTest(false); step = 199 }

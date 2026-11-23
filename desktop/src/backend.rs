@@ -21829,30 +21829,6 @@ impl qobject::Backend {
                         let f = |t: chrono::DateTime<chrono::Utc>| t.to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
                         Ok(serde_json::Value::Object(api::recaps::catch_up_counts(&f(end - chrono::Duration::days(30)), &f(end)).await?))
                     }
-                    // Generate audio recap's meeting names: the calendar
-                    // events' subjects and organizers (Graph `me/events` by the
-                    // meeting's iCalUId), keyed by iCalUId.
-                    "recapEventSubjects" => {
-                        let ids: Vec<String> = p.get("ids").and_then(|v| v.as_array()).into_iter().flatten().filter_map(|x| x.as_str().map(str::to_string))
-                            .filter(|i| !i.is_empty() && i.bytes().all(|b| b.is_ascii_alphanumeric())).take(60).collect();
-                        let asks = ids.iter().map(|id| {
-                            let client = &client;
-                            async move { (id.clone(), client.graph_get(&format!("/me/events?$filter=iCalUId%20eq%20'{id}'&$select=subject,organizer&$top=1")).await) }
-                        });
-                        let mut out = serde_json::Map::new();
-                        for (id, r) in futures::future::join_all(asks).await {
-                            if let Ok(r) = r
-                                && r.status().is_success()
-                                && let Ok(v) = r.json::<serde_json::Value>().await
-                            {
-                                let e = &v["value"][0];
-                                if e.is_object() {
-                                    out.insert(id, json!({ "subject": e["subject"].as_str().unwrap_or_default(), "organizer": e.pointer("/organizer/emailAddress/name").and_then(|x| x.as_str()).unwrap_or_default() }));
-                                }
-                            }
-                        }
-                        Ok(serde_json::Value::Object(out))
-                    }
                     // An audio recap's transcript: its caption file read with
                     // the file's own site token (Teams' useTranscriptData).
                     "podcastCaptions" => {
@@ -22145,7 +22121,8 @@ impl qobject::Backend {
                     "podcastCleanup" => {
                         let list = api::recaps::podcasts(&notes_region(&client)).await?;
                         let ids: Vec<String> = list["items"].as_array().into_iter().flatten()
-                            .filter(|p| p.pointer("/params/eventsWithTranscripts/0/event/subject").and_then(|s| s.as_str()).is_some_and(|s| s.starts_with("OST TEST")))
+                            // (A meeting can be named "Recording of OST TEST … is now available".)
+                            .filter(|p| p.pointer("/params/eventsWithTranscripts/0/event/subject").and_then(|s| s.as_str()).is_some_and(|s| s.starts_with("OST TEST") || s.starts_with("Recording of OST TEST")))
                             .filter_map(|p| p["id"].as_str().map(str::to_string))
                             .collect();
                         let deleted = if ids.is_empty() { Vec::new() } else { api::podcast::delete(&ids, &app_locale()).await? };

@@ -82,8 +82,7 @@ pub fn meetings_from(v: &Value) -> Vec<Value> {
         };
         Some(json!({
             "threadId": s("/threadId"),
-            // The calendar event (Generate audio recap names a meeting by its
-            // event's subject; the thread's may be a recording notice).
+            // The meeting's calendar event.
             "eventId": s("/eventId"),
             "subject": s("/subject"),
             "start": utc("/start/dateTime"),
