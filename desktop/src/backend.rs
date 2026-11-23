@@ -21951,6 +21951,23 @@ impl qobject::Backend {
                         let reports = api::attendance::history(&client, &s("thread"), &s("organizer"), None).await?;
                         Ok(json!({ "reports": reports.len() }))
                     }
+                    // A meeting chat's meeting for a chat shown in a window
+                    // of its own (the main window's chat_meeting_json is
+                    // the chat shown there): null when the thread has none.
+                    "chatMeeting" => {
+                        let thread = s("thread");
+                        anyhow::ensure!(thread.starts_with("19:meeting_"), "Not a meeting chat");
+                        let m = retry_throttled(|| async { api::chat_meeting(&client, &thread).await }).await?;
+                        Ok(serde_json::to_value(m)?)
+                    }
+                    // Its members with their presence (as chat_members_json
+                    // for the main window's chat): the header's roster count.
+                    "chatMembers" => {
+                        let thread = s("thread");
+                        anyhow::ensure!(thread.starts_with("19:") && !thread.ends_with("@thread.tacv2"), "Not a chat");
+                        let text = retry_throttled(|| members_with_presence(&thread)).await?;
+                        Ok(serde_json::from_str(&text)?)
+                    }
                     // A recording's 126 x 72 thumbnail (Teams' Graph
                     // `drives/{d}/items/{i}/thumbnails/0/c126x72/content`),
                     // cached; its local path.

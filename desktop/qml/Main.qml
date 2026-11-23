@@ -10947,15 +10947,29 @@ Window {
                 else if (step === 410) console.warn("RECAPS home recap", v.homeOpenForTest(subj, (Qt.application.arguments.find(a => a.startsWith("--recaps-home-tab=")) || "").slice(18) || "recap"))
                 else if (step === 414) { const w = conversation.lastRecapWindow; if (w) { console.warn("RECAPS home recap window", w.title, w.stateForTest()); w.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-recaps-home-recap.png"))) } }
                 // (The recap window's Attendance, when it lists one: the
-                // meeting chat on its Attendance tab.)
+                // meeting chat in a window of its own on its Attendance
+                // report, TASK-0257; pressed again it brings that window
+                // forward; then it's closed.)
                 else if (step === 415) { const w = conversation.lastRecapWindow; if (w && w.hasAttendance) { w.openAttendance(); console.warn("RECAPS home attendance pressed") } }
-                else if (step === 416) { console.warn("RECAPS home attendance", rail.current, backend.currentChatId, conversation.tab); window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-recaps-home-attendance.png"))) }
-                else if (step === 417) {
-                    console.warn("RECAPS home attendance report", conversation.meeting ? conversation.meeting.organizer_id : "-", conversation.lastRecapWindow ? conversation.lastRecapWindow.recap.organizer_id : "-", backend.attendanceJson.slice(0, 300))
-                    window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-recaps-home-attendance-report.png")))
+                else if (step >= 416 && step <= 418) {
+                    const thread = conversation.lastRecapWindow ? conversation.lastRecapWindow.recap.thread_id : ""
+                    const pop = window.chatWindows[thread]
+                    if (step === 416) {
+                        console.warn("RECAPS home attendance", "main:", rail.current, backend.currentChatId, "window:", pop ? pop.stateForTest() : "none")
+                        if (pop) pop.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-recaps-home-attendance.png")))
+                    } else if (step === 417) {
+                        console.warn("RECAPS home attendance report", pop ? pop.stateForTest() : "none", backend.attendanceJson.slice(0, 300))
+                        if (pop) pop.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-recaps-home-attendance-report.png")))
+                        const before = Object.keys(window.chatWindows).length
+                        conversation.lastRecapWindow.openAttendance()
+                        console.warn("RECAPS home attendance again", "chat windows:", before, "->", Object.keys(window.chatWindows).length, "same:", window.chatWindows[thread] === pop)
+                    } else {
+                        if (pop) pop.close()
+                        console.warn("RECAPS home attendance closed", "window:", !!window.chatWindows[thread], "recap window:", !!conversation.lastRecapWindow && conversation.lastRecapWindow.visible)
+                    }
                 }
-                else if (step === 418) { const w = conversation.lastRecapWindow; if (w) w.close(); console.warn("RECAPS home chat", v.homeOpenForTest(subj, "chat")) }
-                else if (step === 419) { console.warn("RECAPS home chat open", rail.current, backend.currentChatId); Qt.quit() }
+                else if (step === 419) { const w = conversation.lastRecapWindow; if (w) w.close(); console.warn("RECAPS home chat", v.homeOpenForTest(subj, "chat")) }
+                else if (step === 420) { console.warn("RECAPS home chat open", rail.current, backend.currentChatId); Qt.quit() }
             }
             else if (step === 303) { console.warn("RECAPS detail chosen", recapsView.item.chooseDoneForTest()); }
             // Listen on mobile (its QR dialog), then the chapters.
@@ -15944,10 +15958,12 @@ Window {
             } else if (backend.callState === "ended" || backend.callState === "") window.shareWhenConnected = false
         }
     }
-    function openChatWindow(chatId, name, photoId, presence) {
+    // (`attendance`: on the meeting chat's Attendance report, a recap
+    // window's Attendance.)
+    function openChatWindow(chatId, name, photoId, presence, attendance) {
         const open = window.chatWindows[chatId]
-        if (open) { open.raise(); open.requestActivate(); return open }
-        const w = chatWindowComponent.createObject(null, { chatId: chatId, chatName: name, photoId: photoId || "", presence: presence || "" })
+        if (open) { if (attendance) open.showAttendance(); open.raise(); open.requestActivate(); return open }
+        const w = chatWindowComponent.createObject(null, { chatId: chatId, chatName: name, photoId: photoId || "", presence: presence || "", attendance: !!attendance })
         const all = Object.assign({}, window.chatWindows); all[chatId] = w; window.chatWindows = all
         w.startCall.connect(id => { backend.selectChat(id, name); backend.startCall() })
         w.startVideoCall.connect(id => { backend.selectChat(id, name); backend.startVideoCall() })
@@ -16352,7 +16368,11 @@ Window {
         onOpenFileRequested: f => fileViewer.show(f)
         onOpenAppDetails: id => appDetails.show(id)
         onOpenEventHighlights: (title, startMs) => eventsView.openEventHighlights(title, startMs)
-        onOpenChatForAttendance: (id, title) => { rail.current = "chat"; window.composing = false; backend.selectChat(id, title) }
+        // (Teams opens it in a window of its own, titled with the chat.)
+        onOpenChatForAttendance: (id, title) => {
+            const c = (backend.chatsJson ? JSON.parse(backend.chatsJson) : []).find(c => c.id === id)
+            window.openChatWindow(id, c && c.name ? c.name : title, "", "", true)
+        }
         onShareApp: id => appShare.start(id)
         // Meeting details: the meeting in the calendar.
         onOpenMeetingDetails: (url, ical, start) => { rail.current = "calendar"; calendarView.showMeeting(url, ical, start) }

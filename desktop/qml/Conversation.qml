@@ -488,8 +488,11 @@ Rectangle {
     // Right to left from ···: the inline context buttons (32 each), a
     // 16 px divider, then the action items.
     readonly property real contextLeft: width - 43 - 32 * (contextInline + threadsButton)
-    // A meeting chat's Meeting details (inline from 640 wide, else in ···).
-    readonly property bool meetingDetailsShown: isMeetingChat && !!meeting && !!meeting.ical_uid && !meeting.cancelled
+    // A meeting chat's Meeting details (inline from 640 wide, else in ···);
+    // not while the tabs are hidden (a pop-out without its tab row: Teams'
+    // chat header gives it only with enableChatHeaderMeetingDetailsButton
+    // or areTabsHidden false).
+    readonly property bool meetingDetailsShown: isMeetingChat && !!meeting && !!meeting.ical_uid && !meeting.cancelled && (!popout || windowTabs)
     readonly property bool meetingDetailsInline: meetingDetailsShown && width >= 640
     readonly property real actionRight: contextLeft - 16 - (meetingDetailsInline ? 32 : 0)
     // Move to section ▸ (Teams' chat ···): Favorites and your sections the
@@ -506,8 +509,36 @@ Rectangle {
     SectionDialog { id: headerSectionDialog; existing: root.folderList.map(f => f.title) }
     /// Teams' Meeting details (calendar.meetingDetails) for this chat's meeting.
     signal openMeetingDetails(string joinUrl, string icalUid, string start)
-    // The meeting chat's meeting (join link, iCalUid, cancelled).
-    readonly property var meeting: isMeetingChat && backend.chatMeetingJson ? JSON.parse(backend.chatMeetingJson) : null
+    // The meeting chat's meeting (join link, iCalUid, cancelled): the main
+    // window's chat's from the backend, a pop-out's its own (looked up for
+    // its chat, as the main window's is for the chat shown there).
+    readonly property var meeting: !isMeetingChat ? null
+        : popout ? windowMeeting
+        : backend.chatMeetingJson ? JSON.parse(backend.chatMeetingJson) : null
+    property var windowMeeting: null
+    // Its members (with presence) the same way: the roster count, @mentions,
+    // urgent messages.
+    readonly property var chatMembers: popout ? windowMembers
+        : backend.chatMembersJson ? JSON.parse(backend.chatMembersJson) : []
+    property var windowMembers: []
+    function loadWindowChat() {
+        windowMeeting = null; windowMembers = []
+        if (!popout) return
+        if (isMeetingChat) backend.eventsRequest("chatMeeting", "convmeeting:" + chatId, JSON.stringify({ thread: chatId }))
+        if (chatId.indexOf("19:") === 0 && !isChannel) backend.eventsRequest("chatMembers", "convmembers:" + chatId, JSON.stringify({ thread: chatId }))
+    }
+    Connections {
+        target: root.popout ? backend : null
+        function onEventsReply(id, json) {
+            const meeting = id === "convmeeting:" + root.chatId
+            if (!meeting && id !== "convmembers:" + root.chatId) return
+            let v = null
+            try { v = JSON.parse(json) } catch (e) {}
+            if (v && v.error) { console.warn(meeting ? "meeting unavailable:" : "chat members unavailable:", v.error); return }
+            if (meeting) root.windowMeeting = v
+            else root.windowMembers = Array.isArray(v) ? v : []
+        }
+    }
     // Teams' Attendance card shows to the meeting's organizer and
     // co-organizers (not for town halls), under each meeting's end.
     readonly property string myOid: (backend.userMri || "").replace("8:orgid:", "")
@@ -761,14 +792,12 @@ Rectangle {
     property var lastRecapWindow: null
     Component { id: recapWindow; RecapWindow {} }
     // A recap window's Attendance (opened from Meeting Recaps' Home): the
-    // meeting's chat on its Attendance tab.
+    // meeting's chat in a window of its own on its Attendance report, as
+    // Teams' openAttendanceTabInMeetingRecapOfChat (Main's ChatWindow),
+    // whatever the main window shows.
     signal openChatForAttendance(string threadId, string title)
-    property string attendanceWanted: ""
     function attendanceOf(thread, title) {
-        if (!thread) return
-        if (root.chatId === thread) { openAttendance(""); return }
-        attendanceWanted = thread
-        root.openChatForAttendance(thread, title)
+        if (thread) root.openChatForAttendance(thread, title)
     }
     // Share on the card: Teams' menu (Share recap access, Copy link).
     function openRecapShare(m, recap, anchor) {
@@ -802,7 +831,7 @@ Rectangle {
     readonly property string watchKey: root.watchTarget && !root.inThisCall && !root.pane
         ? root.chatId + "|" + root.watchTarget.url : ""
     onWatchKeyChanged: watchTimer.restart()
-    Component.onCompleted: if (!root.pane) watchTimer.restart()
+    Component.onCompleted: { if (!root.pane) watchTimer.restart(); loadWindowChat() }
     Timer {
         id: watchTimer; interval: 300
         onTriggered: if (!root.pane) root.watchKey
@@ -820,11 +849,11 @@ Rectangle {
     function seeDetailsForTest() { return channelPosts.seeDetailsForTest() }
     readonly property bool callGoing: !!root.liveCall || root.messages.some(m => m.kind === "call" && m.call_state === "started" && m.call_active)
     readonly property bool inThisCall: backend.callState !== "" && backend.callThreadId === root.chatId
-    readonly property bool callsDisabled: (backend.chatMembersJson ? JSON.parse(backend.chatMembersJson).length : 0) > 20
+    readonly property bool callsDisabled: root.chatMembers.length > 20
     // A member's name by MRI: call events name people only by MRI, and
     // Teams shows them by their roster name.
     function memberName(mri) {
-        const m = (backend.chatMembersJson ? JSON.parse(backend.chatMembersJson) : []).find(p => (p.mri || "").toLowerCase() === String(mri || "").toLowerCase())
+        const m = root.chatMembers.find(p => (p.mri || "").toLowerCase() === String(mri || "").toLowerCase())
         return m ? m.name : ""
     }
     // Card types drawn natively (Teams' supported set, so far).
@@ -880,7 +909,7 @@ Rectangle {
         postViewRoot = ""
         channelAttendance = null
         attendanceTab = false; attendanceCall = ""
-        if (attendanceWanted && attendanceWanted === chatId) { attendanceWanted = ""; Qt.callLater(() => root.openAttendance("")) }
+        loadWindowChat()
         qnaTabLoader.url = ""; whiteboardTabLoader.url = ""
         landing = true
         manageApps = false
@@ -1813,7 +1842,7 @@ Rectangle {
         // PeopleAdd and the bold 12 px member count.
         Rectangle {
             visible: root.isGroup && !root.isChannel && !root.isSelf && !root.rosterInMenu
-            readonly property int count: (backend.chatMembersJson ? JSON.parse(backend.chatMembersJson) : []).length
+            readonly property int count: root.chatMembers.length
             id: rosterCount
             // Where the call controls end: the roster's left edge, or the
             // action area's right edge when the roster is in ···.
@@ -2029,7 +2058,7 @@ Rectangle {
         myName: root.myName
         channelName: root.chatName
         liveRoster: root.liveRosterPeople
-        members: backend.chatMembersJson ? JSON.parse(backend.chatMembersJson) : []
+        members: root.chatMembers
         onJoinMeeting: (url, title) => root.joinMeetingRequested(url, title)
         onSeeDetails: rootId => root.openPostView(rootId)
         busy: root.busy
@@ -3364,7 +3393,7 @@ Rectangle {
                 Avatar { anchors.verticalCenter: parent.verticalCenter; size: 20; name: msg.modelData.thread_last_sender || ""; photoId: msg.modelData.thread_last_mri || "" }
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
-                    text: qsTr("%n replies", "messaging:k5c0r4z0x_mf", msg.modelData.thread_replies)
+                    text: qsTr("%n replies", "messaging:k5c0r4z0x_mf", msg.modelData.thread_replies || 0)
                     // Bold while the thread has unread replies (Teams).
                     font.family: theme.font; font.pixelSize: 12; color: theme.brandForeground1
                     font.weight: (msg.modelData.thread_unread || 0) > 0 ? Font.Bold : Font.Normal
@@ -3677,7 +3706,7 @@ Rectangle {
             // Teams: the attach menu, above the chip at its end.
             root.openAttach(chip, true)
         } else if (r.kind === "meeting") {
-            const members = backend.chatMembersJson ? JSON.parse(backend.chatMembersJson) : []
+            const members = root.chatMembers
             root.scheduleMeetingWith(members.filter(p => !p.me && p.mail).map(p => p.mail).join(", "), r.start_time || "", r.end_time || "")
         } else if (r.workflow) {
             // Teams' Workflows dialog for the suggested action (chat-app
@@ -4500,7 +4529,7 @@ Rectangle {
         // The chat's roster (thread members), you first; channels fall back
         // to the people seen in the posts.
         readonly property var members: {
-            const roster = backend.chatMembersJson ? JSON.parse(backend.chatMembersJson) : []
+            const roster = root.chatMembers
             if (roster.length > 0) {
                 const me = roster.filter(m => m.me).map(m => ({ name: m.name || root.myName, mri: m.mri, me: true }))
                 return me.concat(roster.filter(m => !m.me).map(m => ({ name: m.name, mri: m.mri, mail: m.mail, presence: m.presence || "" })))
@@ -5233,11 +5262,11 @@ Rectangle {
             const all = backend.teamTagsJson ? JSON.parse(backend.teamTagsJson) : {}
             return teamMention ? (all[teamMention.id] || []) : []
         }
-        readonly property var roster: backend.chatMembersJson ? JSON.parse(backend.chatMembersJson) : []
+        readonly property var roster: root.chatMembers
         memberCount: roster.length
         meetingChat: root.isMeetingChat
         mentionables: roster.filter(m => !m.me).map(m => ({ mri: m.mri, name: m.name, mail: m.mail }))
-        urgentAllowed: !root.isGroup || (backend.chatMembersJson ? JSON.parse(backend.chatMembersJson).length : 0) <= 20
+        urgentAllowed: !root.isGroup || root.chatMembers.length <= 20
         onScheduleMeetingRequested: root.scheduleMeeting()
         onCancelled: { root.quoting = null; root.clearFiles(); compose.resetPost(); root.posting = false; if (root.draftChat) backend.setDraft(root.draftChat, "") }
         Connections {

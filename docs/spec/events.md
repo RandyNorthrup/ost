@@ -580,9 +580,19 @@ meeting-recap-home, measured on winpc 2026-11-23 at 1280 x 680, TASK-0252):
   Teams does (its artifacts platform adds an AttendanceReport item when
   `meetingThreadProperties.hasAttendanceReport`; OST asks the meeting's
   attendance report history, which answers the organizer and co-organizers).
-  Teams' Attendance there opens the meeting chat in a window of its own on
-  Attendance (the chat header, then the report); OST opens the meeting chat on
-  its Attendance tab in the main window.
+  Attendance there opens the meeting chat in a window of its own on its
+  Attendance report, as Teams (`meetingAnalytics.openAttendanceTabInMeetingRecapOfChat`,
+  a new window while the recap is in one; measured on winpc 2026-11-23,
+  TASK-0257): 1283 x 730 like the recap window, titled with the meeting;
+  Teams' child-window title row, the meeting chat's header (61: the meeting
+  picture, the name 18/700, Join, participants, Copilot, Find in chat, chat
+  details, More chat options without Open in new window), then straight to
+  the Attendance view: no tab row, no messages or compose. Pressing
+  Attendance again brings that window forward; Escape leaves it open, only
+  the window's close closes it (the recap window stays). OST: Main's
+  `openChatWindow(…, attendance)`, ChatWindow's `attendance`; a pop-out
+  Conversation reads its own chat's meeting (events_request `chatMeeting`)
+  rather than the main window's.
 - OST: api::recaps::row_from carries `actionItems`, `mentions`, `speakers`,
   `reasons`, `recapFile`, `recordings`, `thumb`, `access` and `files`
   (`meeting_files`); MeetingRecapsView's Home, `weekGroups` shared with the

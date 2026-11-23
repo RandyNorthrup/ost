@@ -11,6 +11,12 @@ import QtQuick.Window
 // - The chat and its compose as in the main window; what's written here is
 //   sent to this chat whatever the main window shows (the backend keeps the
 //   chat loaded and live under "win:<chat>").
+// `attendance`: a recap window's Attendance (Teams 26304 on winpc,
+// 2026-11-23: openAttendanceTabInMeetingRecapOfChat, a new window while
+// the recap is in one): 1283 x 730 like the recap window, titled with the
+// meeting; the meeting chat's header, then straight to its Attendance
+// report (no tab row, no messages or compose). Opening it again brings it
+// forward; only the window's close closes it.
 Window {
     id: win
     property string chatId: ""
@@ -18,6 +24,8 @@ Window {
     property string photoId: ""
     property string presence: ""
     property bool pinned: false
+    /// Opened on the meeting chat's Attendance report.
+    property bool attendance: false
     signal startCall(string chatId)
     signal startVideoCall(string chatId)
     signal shareScreen(string chatId)
@@ -32,8 +40,19 @@ Window {
     color: theme.surface
     flags: Qt.Window | (pinned ? Qt.WindowStaysOnTopHint : 0)
 
-    Component.onCompleted: backend.openChatWindow(chatId)
+    Component.onCompleted: {
+        // (Sized once: a chat window already open keeps its size when its
+        // Attendance is asked for.)
+        if (attendance) { width = 1283; height = 730 }
+        backend.openChatWindow(chatId)
+    }
     onClosing: backend.closeChatWindow(chatId)
+
+    /// Show the Attendance report (again, when the window is already open).
+    function showAttendance() {
+        attendance = true
+        if (chat.meeting) chat.openAttendance("")
+    }
 
     ChildWindowTitleBar {
         id: titleRow
@@ -52,6 +71,8 @@ Window {
         chatPresence: win.presence
         myName: backend.userName
         messages: win.messages
+        // (The report shows once the window knows the chat's meeting.)
+        onMeetingChanged: if (win.attendance && meeting && !attendanceTab) openAttendance("")
         onCall: win.startCall(win.chatId)
         onVideoCall: win.startVideoCall(win.chatId)
         onShareScreen: win.shareScreen(win.chatId)
@@ -63,4 +84,10 @@ Window {
 
     // Test hooks.
     function conversationForTest() { return chat }
+    function stateForTest() {
+        const v = chat.attendanceViewForTest()
+        return JSON.stringify({ title: win.title, w: win.width, h: win.height, attendance: win.attendance, tab: chat.tab,
+                                tabRow: chat.windowTabs, meeting: chat.meeting ? chat.meeting.organizer_id || "?" : "",
+                                report: v ? { y: v.mapToItem(win.contentItem, 0, 0).y, w: v.width, h: v.height } : null })
+    }
 }
