@@ -192,6 +192,13 @@ pub fn generation_from(body: &Value) -> Option<Generation> {
     Some(Generation { status: status.into(), message, podcast })
 }
 
+/// Listen on mobile's address for an audio recap (Teams'
+/// `https://{host}/l/meetingpodcast?id={podcastId}&origin=desktopQRCode`,
+/// the host being Teams' own, teams.microsoft.com).
+pub fn mobile_link(podcast_id: &str) -> String {
+    format!("https://teams.microsoft.com/l/meetingpodcast?id={podcast_id}&origin=desktopQRCode")
+}
+
 /// Teams' mini player wording for a failed generation: too little in the
 /// meetings, or anything else.
 pub fn no_insight(message: &str) -> bool {
@@ -369,6 +376,11 @@ mod tests {
         assert_eq!(t.start, "2026-11-21T04:26:01.758Z");
         assert_eq!(t.end, "2026-11-21T04:32:06.495Z");
         assert!(transcript_from(&json!({"type": "Recording"})).is_none());
+    }
+
+    #[test]
+    fn listen_on_mobile_link() {
+        assert_eq!(mobile_link("abc-1"), "https://teams.microsoft.com/l/meetingpodcast?id=abc-1&origin=desktopQRCode");
     }
 
     #[test]

@@ -70,7 +70,13 @@ pub fn qr_link(mri: &str, tenant: &str, salt: u16, name: &str) -> String {
 /// The QR code of `text` as rows of "0"/"1" modules (dark = 1), with
 /// Teams' quiet zone of 4 modules; empty if it can't be encoded.
 pub fn qr_rows(text: &str) -> String {
-    let Ok(code) = qrcode::QrCode::with_error_correction_level(text.as_bytes(), qrcode::EcLevel::H) else {
+    qr_rows_at(text, qrcode::EcLevel::H)
+}
+
+/// The same at another error correction level (Teams' audio recap code
+/// uses L).
+pub fn qr_rows_at(text: &str, level: qrcode::EcLevel) -> String {
+    let Ok(code) = qrcode::QrCode::with_error_correction_level(text.as_bytes(), level) else {
         return String::new();
     };
     let w = code.width();
@@ -159,4 +165,21 @@ pub fn decide(call: &IncomingCall, tenant: Option<&str>) -> Decision {
         "room mode: incoming invitation"
     );
     d
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn audio_recap_code_at_level_l() {
+        // A Listen on mobile link of 101 bytes is version 5 at L: 37
+        // modules and 4 of quiet zone each side.
+        let rows = qr_rows_at("https://teams.microsoft.com/l/meetingpodcast?id=0123456789abcdef0123456789abcdef&origin=desktopQRCode", qrcode::EcLevel::L);
+        let lines: Vec<&str> = rows.lines().collect();
+        assert_eq!(lines.len(), 45);
+        assert!(lines.iter().all(|l| l.len() == 45));
+        assert!(lines[0].chars().all(|c| c == '0'));
+        assert_eq!(&lines[4][4..11], "1111111");
+    }
 }

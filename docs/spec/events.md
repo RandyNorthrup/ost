@@ -596,8 +596,9 @@ meetings, your meetings with a transcript from the last 30 days, else
 were transcribed"; Generate (off until a meeting is picked). Teams' Generate is an
 AugLoop operation (teams_recap_podcast_generation) with the meetings' transcripts.
 
-The dialog's meetings (winpc 2026-11-22): grouped by week in an accordion ("This
-week", "Last week", else the week's date; 44 tall headers, a 13 px filled caret, 14/600);
+The dialog's meetings (winpc 2026-11-22): grouped in an accordion ("This week", "Last
+week", else each older day on its own, "Friday, November 6", with the year when not this
+year's: Teams' `ka`, checked live in TASK-0247; 44 tall headers, a 13 px filled caret, 14/600);
 rows 72.7 tall: a checkbox, the title 14/600 over "Today · 1:00 PM - 1:30 PM ,
 {organizer}" (12 #616161; Today / Yesterday / "Friday, November 20"); from the row's
 middle the chips (24 tall on #F5F5F5, a 16 px brand glyph and the count 12/600; tooltip
@@ -687,8 +688,31 @@ up here." (winpc).
   removed them again (back to a draft); Select from OneDrive picked a video from Home (its
   ids looked up first) as the draft; Generate audio recap made a recap from the meeting;
   Teams' finished recap shown with its chapters, transcript and playback.
-- [ ] Left: Generate audio recap's list comes from the meeting artifacts (Teams: AugLoop
-  teams_recap_podcast_event_list, named by the events service, so a meeting can carry
-  another name, and cancelled meetings with transcripts are missing); the recap detail's
-  Listen on mobile (QR) and New badge; Teams auto-plays a recap it just made; the label of
-  weeks older than last week is unverified.
+- [x] TASK-0247 (2026-11-22): Generate audio recap's meetings. Teams 26304 lists them from
+  its meeting recap list (`meetingRecapList` → `getMeetingRecapByDay`, a day at a time for
+  30 days): the meeting artifacts of the day (`user/meetings/contents`, named by
+  `threadInfo.subject`) raced against the Copilot catch-up recommendations of the day; the
+  first answer is shown, both are then merged (the artifacts keep their subject, the
+  recommendations add their counts) and cached per day, and the cache is shown first on the
+  next visit while it refreshes. A recommendation without a calendar event (`MeetingId`
+  empty, all of them in this tenant but "OST TEST 240 recap meeting") isn't listed. The AugLoop
+  `teams_recap_podcast_event_list` (`meetingList(timerange)`) is not used by any 26304 UI
+  bundle. The name difference seen in TASK-0212 was Teams' day cache: "OST TEST 212 recap
+  long" from before its calendar item was renamed and cancelled ("Canceled: Recording of OST
+  TEST 212 recap long is now available", no resources left) — after a refresh Teams dropped
+  it from Home too. OST lists the same artifacts, by the same subject, and ends both Home and
+  the dialog with Teams' "Loaded all meetings in the last 30 days." (12/16 #616161; 16 8 0 16
+  on Home, 16 8 16 16 in the dialog) once today and the 30 days before it are read.
+- [x] TASK-0247: a recap's header has Teams' Listen on mobile (podcast QR button: a phone
+  glyph 20 px in a 37.3 x 31.3 transparent button, its label 14/600 only when the app area is
+  at least 1280 wide; for a recap with an id, being made or made) and the New badge (36.7 x 20,
+  round, brand, 12/600 white; ECS `showListenOnPhoneNewBadge` (on) for
+  `listenOnPhoneBadgeExpirationDays` (14) days from the first time a recap header was shown,
+  Teams' `listenOnPhoneNewBadgeStartDateTime`). Listen on mobile opens a 600 wide dialog
+  (padding 24, radius 8): "Listen on mobile" 20/28 semibold with Close, 8 below "Scan the
+  following code…" 14/20, 20 below a 130 px picture (white, 0.67 #D1D1D1 edge, radius 20, 10
+  in) of qrcode-svg's 200 px code (error correction L, 4 modules of quiet zone; version 5, 45
+  modules, for a recap id like "01BV7C2B…") of `https://teams.microsoft.com/l/meetingpodcast?
+  id={podcastId}&origin=desktopQRCode` (measured on winpc 2026-11-22 for "OST TEST 247 agenda"). A recap made with Generate plays by itself from the start once it's made
+  (Teams' autoPlay: the recap seen generating plays when its chapters come, unless another
+  recap was picked meanwhile).

@@ -132,15 +132,54 @@ Item {
         return true
     }
     function toggleDiscussed(index) { const v = edit("discussed", { index: index, sections: sections }); if (v) hold(v.sections) }
+    /// Each topic's label as drawn: [shown, label x, label width, pill width, timing shown].
+    function labelsForTest() {
+        const out = []
+        for (let i = 0; i < pills.count; i++) {
+            const p = pills.itemAt(i)
+            if (!p) continue
+            const t = p.titleItem
+            out.push([t.text, p.label.clipped ? "clipped" : "", t.x.toFixed(1), t.contentWidth.toFixed(1), t.width.toFixed(1), p.width.toFixed(1), p.showTiming])
+        }
+        return JSON.stringify(out)
+    }
     function removeTopic(index) { const v = edit("delete", { index: index, sections: sections }); if (v) hold(v.sections) }
     function moveTopic(from, to, base) { const v = edit("move", { from: from, to: to, sections: base || sections }); if (v) hold(v.sections) }
+
+    // A topic's label as Teams' CSS (text-overflow: ellipsis, centred)
+    // draws it in Chrome: the whole title when it fits; else as much as
+    // fits before "…", centred; the first character is never cut off for
+    // the "…", so when not even it and "…" fit, they are drawn from the
+    // start and clipped (measured on winpc 2026-11-22: "B…" in 19.1 px,
+    // "B…" just cut in 15.8 px, the left of the "V" in 3.9 px).
+    FontMetrics { id: labelMetrics; font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold }
+    function shortLabel(text, w) {
+        text = text || ""
+        if (!text || labelMetrics.advanceWidth(text) <= w) return { text: text, clipped: false }
+        const chars = Array.from(text)
+        for (let n = chars.length - 1; n >= 1; n--) {
+            const t = chars.slice(0, n).join("") + "\u2026"
+            if (labelMetrics.advanceWidth(t) <= w) return { text: t, clipped: false }
+        }
+        return { text: chars[0] + "\u2026", clipped: true }
+    }
 
     // Layout.
     readonly property real gap: viewOnly ? 8 : 10
     readonly property real reserve: viewOnly ? 0 : 56
     readonly property real avail: Math.max(0, width - reserve - gap * Math.max(0, sections.length - 1))
-    function widthOf(i) { const s = sections[i]; return s ? avail * (s.originalDuration || 0) / total : 0 }
-    function xOf(i) { let x = 0; for (let k = 0; k < i; k++) x += widthOf(k) + gap; return x }
+    // Each topic's place (Teams 26304, measured on winpc 2026-11-22 with
+    // 2 / 2 / 1 / 23 min topics): every topic has its share of the row by
+    // its length (its slot, 10 apart); a topic whose slot is narrower than
+    // its padding, 26 + 11 (27 + 11 read-only), is drawn that wide, centred
+    // on its slot, over the gaps beside it (row 794.6: 56.1 / 56.1 / 37 /
+    // 645.4 with 5.5 gaps around the 37; row 529.7: 37.8 / 37.8 / 37 / 435.1
+    // with 1 px gaps). The others keep their slots.
+    readonly property real minPill: (viewOnly ? 27 : 26) + 11
+    function slotW(i) { const s = sections[i]; return s ? avail * (s.originalDuration || 0) / total : 0 }
+    function slotX(i) { let x = 0; for (let k = 0; k < i; k++) x += slotW(k) + gap; return x }
+    function widthOf(i) { return sections[i] ? Math.max(minPill, slotW(i)) : 0 }
+    function xOf(i) { return slotX(i) - (widthOf(i) - slotW(i)) / 2 }
 
     readonly property color progress: theme.pick("#C5CBFA", "#7579EB", "#1AEBFF")
     readonly property color red: theme.pick("#F1BBBC", "#D13438", "#1AEBFF")
@@ -198,24 +237,25 @@ Item {
                     anchors.fill: parent; radius: 8; clip: true
                     color: theme.pick("#EBEBEB", "#0A0A0A", "#000000")
                     border.width: theme.highContrast ? 1 : 0; border.color: theme.text
-                    // The time used, from the left.
-                    Item {
+                    // The time used, from the left: a rounded bar (radius 8,
+                    // round at its end too, as Teams draws it); the last
+                    // topic's fades to red over its last 20 %.
+                    Rectangle {
+                        id: usedFill
                         readonly property real f: root.overTime ? 1
                             : root.started && (pill.index <= root.current || pill.within > 0)
-                              ? (pill.last ? Math.min(1, pill.within / Math.max(1, pill.dur)) : Math.min(1, pill.within / Math.max(1, pill.dur))) : 0
+                              ? Math.min(1, pill.within / Math.max(1, pill.dur)) : 0
                         visible: f > 0
                         width: pill.width * f; height: parent.height
-                        clip: true
-                        Rectangle {
-                            width: pill.width; height: parent.height
-                            color: root.overTime ? root.red : root.progress
-                            gradient: pill.last && !root.overTime ? lastFill : null
-                            Gradient {
-                                id: lastFill
-                                orientation: Gradient.Horizontal
-                                GradientStop { position: 0.8; color: root.progress }
-                                GradientStop { position: 1.0; color: root.red }
-                            }
+                        radius: Math.min(8, width / 2)
+                        color: root.overTime ? root.red : root.progress
+                        gradient: pill.last && !root.overTime ? lastFill : null
+                        Gradient {
+                            id: lastFill
+                            orientation: Gradient.Horizontal
+                            // (The pill's 80 % and its end, in this bar.)
+                            GradientStop { position: Math.min(1, 0.8 / Math.max(0.001, usedFill.f)); color: root.progress }
+                            GradientStop { position: 1.0; color: Qt.tint(root.progress, Qt.rgba(root.red.r, root.red.g, root.red.b, Math.max(0, Math.min(1, (usedFill.f - 0.8) / 0.2)))) }
                         }
                     }
                     // Hover: a 1 px ring.
@@ -249,12 +289,15 @@ Item {
                         Behavior on opacity { NumberAnimation { duration: 150 } }
                     }
                 }
+                readonly property alias titleItem: titleText
+                readonly property var label: root.shortLabel(pill.s.title, Math.max(0, pill.width - (root.viewOnly ? 27 : 26) - pill.padRight))
                 Text {
+                    id: titleText
                     x: root.viewOnly ? 27 : 26; width: Math.max(0, pill.width - x - pill.padRight)
                     anchors.verticalCenter: parent.verticalCenter
-                    horizontalAlignment: Text.AlignHCenter
-                    elide: Text.ElideRight
-                    text: pill.s.title || ""
+                    horizontalAlignment: pill.label.clipped ? Text.AlignLeft : Text.AlignHCenter
+                    clip: pill.label.clipped
+                    text: pill.label.text
                     font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold
                     color: theme.onFill(pillBox, theme.text)
                 }
@@ -378,7 +421,7 @@ Item {
                 required property int index
                 readonly property string leftTitle: (root.sections[index] || {}).title || ""
                 readonly property string rightTitle: (root.sections[index + 1] || {}).title || ""
-                x: root.xOf(index + 1) - root.gap / 2 - width / 2
+                x: root.slotX(index + 1) - root.gap / 2 - width / 2
                 width: 24; height: 24; z: 0
                 visible: root.reorderFrom < 0
                 opacity: rowHover.hovered || handleFocus.activeFocus || handleDrag.active || handle.keyboard ? 1 : 0

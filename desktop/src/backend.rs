@@ -21820,7 +21820,8 @@ impl qobject::Backend {
                     "podcasts" => api::recaps::podcasts(&notes_region(&client)).await,
                     "recapMeetings" => {
                         let from = p.get("from").and_then(|v| v.as_i64()).unwrap_or(0);
-                        api::recaps::meetings(&notes_region(&client), from, 14).await
+                        let days = p.get("days").and_then(|v| v.as_i64()).unwrap_or(14).clamp(1, 14);
+                        api::recaps::meetings(&notes_region(&client), from, days).await
                     }
                     // Generate audio recap's task and mention counts (the
                     // meeting catch-up recommendations of the last 30 days).
@@ -21839,6 +21840,15 @@ impl qobject::Backend {
                         let r = reqwest::Client::new().get(u).bearer_auth(token).send().await?;
                         anyhow::ensure!(r.status().is_success(), "The transcript answered {}", r.status());
                         Ok(json!({ "text": r.text().await? }))
+                    }
+                    // Listen on mobile's QR code (Teams' audio recap
+                    // dialog: qrcode-svg of the recap's meetingpodcast link,
+                    // error correction L, 4 modules of quiet zone).
+                    "podcastQr" => {
+                        let id = s("id");
+                        anyhow::ensure!(!id.is_empty(), "No audio recap");
+                        let link = api::podcast::mobile_link(&id);
+                        Ok(json!({ "link": link, "rows": crate::room_host::qr_rows_at(&link, qrcode::EcLevel::L) }))
                     }
                     // A recording's 126 x 72 thumbnail (Teams' Graph
                     // `drives/{d}/items/{i}/thumbnails/0/c126x72/content`),

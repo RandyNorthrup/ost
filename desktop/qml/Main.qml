@@ -10841,7 +10841,10 @@ Window {
             // (RECAPS detail lines, recaps-detail-{chapters,playing,transcript}.png).
             else if (step === 10 && Qt.application.arguments.indexOf("--recaps-detail") >= 0) { recapsView.openTab("audio"); step = 300 }
             else if (step === 303) { console.warn("RECAPS detail chosen", recapsView.item.chooseDoneForTest()); }
-            else if (step === 305) { console.warn("RECAPS detail", recapsView.item.recapDetailForTest()); cap("detail-chapters"); recapsView.item.playChapter(1) }
+            // Listen on mobile (its QR dialog), then the chapters.
+            else if (step === 304) { console.warn("RECAPS listen", recapsView.item.audioPlayerStateForTest()); cap("detail-header"); recapsView.item.openListenForTest() }
+            else if (step === 305) { console.warn("RECAPS listen dialog", recapsView.item.listenDialogForTest()); cap("detail-listen") }
+            else if (step === 306) { recapsView.item.closeListenForTest(); console.warn("RECAPS detail", recapsView.item.recapDetailForTest()); cap("detail-chapters"); recapsView.item.playChapter(1) }
             else if (step === 309) { console.warn("RECAPS detail", recapsView.item.recapDetailForTest()); cap("detail-playing") }
             else if (step === 310) recapsView.item.openDetailTab("transcript")
             else if (step === 314) { console.warn("RECAPS detail", recapsView.item.recapDetailForTest()); cap("detail-transcript"); recapsView.item.playChosen() }
@@ -10871,7 +10874,9 @@ Window {
                 if (step % 5 === 0) console.warn("RECAPS player", recapsView.item.audioPlayerStateForTest())
                 if (recapsView.item.lastGenerated) { console.warn("RECAPS done", JSON.stringify(recapsView.item.lastGenerated).slice(0, 600)); step = 199 }
             }
-            else if (step === 202) { console.warn("RECAPS audio after", recapsView.item.stateForTest()); cap("audio-after") }
+            else if (step === 201) console.warn("RECAPS after", recapsView.item.audioPlayerStateForTest())
+            else if (step === 202) { console.warn("RECAPS audio after", recapsView.item.stateForTest(), recapsView.item.audioPlayerStateForTest()); cap("audio-after") }
+            else if (step === 204) console.warn("RECAPS auto-play", recapsView.item.audioPlayerStateForTest())
             else if (step === 203 && Qt.application.arguments.indexOf("--recaps-delete") >= 0) backend.eventsRequest("podcastCleanup", "recapsclean", "{}")
             else if (step === 207) Qt.quit()
             step++
@@ -10923,15 +10928,21 @@ Window {
                 // One left from an earlier run is reused (and deleted after).
                 const old = (backend.calendarJson ? JSON.parse(backend.calendarJson) : []).find(x => x.subject === subject && x.join_url)
                 const s = new Date(); s.setSeconds(0, 0); const e = new Date(s.getTime() + 30 * 60000)
-                if (!old) backend.createEvent(subject, s.toISOString(), e.toISOString(), "", true)
+                if (!old && Qt.application.arguments.indexOf("--call-notes-cleanup") < 0) backend.createEvent(subject, s.toISOString(), e.toISOString(), "", true)
             } else if (step >= 1 && step <= 8 && !ev) {
                 ev = (backend.calendarJson ? JSON.parse(backend.calendarJson) : []).find(x => x.subject === subject && x.join_url) || null
                 // The calendar's view may not hold today (a work week on a
                 // weekend): load the day around now.
                 if (!ev) { backend.loadCalendar(new Date(Date.now() - 86400000).toISOString().slice(0, 19) + "Z", new Date(Date.now() + 86400000).toISOString().slice(0, 19) + "Z"); step++; return }
+                // --call-notes-cleanup: only delete the meeting (made by an
+                // earlier --call-notes-keep run) and its notes.
+                if (Qt.application.arguments.indexOf("--call-notes-cleanup") >= 0) { console.warn("MEETINGNOTES cleanup only", ev.subject); step = 33; return }
                 // Its link, for a second test account to join (--join-url).
                 console.warn("MEETINGNOTES event made", ev.join_url || "")
-                window.muteOnJoin = true; window.noAudioOnJoin = true; window.cameraOnJoin = false
+                // --call-notes-unmuted: mic and audio on (e.g. test speech
+                // for a transcript, TASK-0247).
+                const unmuted = Qt.application.arguments.indexOf("--call-notes-unmuted") >= 0
+                window.muteOnJoin = !unmuted; window.noAudioOnJoin = !unmuted; window.cameraOnJoin = false
                 backend.joinMeeting(ev.join_url, subject)
                 step = 9; return
             } else if (step === 9 && !ev) { console.warn("MEETINGNOTES no event"); Qt.quit() }
@@ -10951,6 +10962,9 @@ Window {
             // --call-notes-stay[=<s>]: stay that long (default 72 s) before leaving.
             else if (step === 30 && stay && held++ < Math.round(parseInt((Qt.application.arguments.find(a => a.startsWith("--call-notes-stay=")) || "--call-notes-stay=72").slice(18)) / 3)) return
             else if (step === 31) { capCall("end"); backend.hangUp() }
+            // --call-notes-keep: leave the meeting and its notes in place
+            // (e.g. to make an audio recap of it; --call-notes-cleanup later).
+            else if (step === 33 && Qt.application.arguments.indexOf("--call-notes-keep") >= 0) { console.warn("MEETINGNOTES after", backend.callState, "kept"); step = 36 }
             else if (step === 33) { console.warn("MEETINGNOTES after", backend.callState); if (ev && ev.id) backend.deleteEvent(ev.id) }
             else if (step === 35) backend.callNotesRequest("cleanup", "notescleanup", JSON.stringify({ prefix: subject.split(" ").slice(0, 3).join(" ") }))
             else if (step === 34) backend.loadCalendar(new Date(Date.now() - 86400000).toISOString().slice(0, 19) + "Z", new Date(Date.now() + 86400000).toISOString().slice(0, 19) + "Z")
@@ -13731,6 +13745,48 @@ Window {
         }
     }
 
+    // --agenda-strip-test=<row width>[,<row width>…] (TASK-0247): no call;
+    // the agenda timer's topics as a Facilitator agenda of
+    // --agenda-strip-minutes=<m>,<m>… (default 2,2,1,23) 78 s in, at each
+    // row width (Teams' rows measured on winpc: 871.4, 615.7, 1272.1):
+    // AGENDASTRIP lines with each topic's label as drawn and its place,
+    // pictures -agenda-strip-<width>.png.
+    Loader {
+        active: Qt.application.arguments.some(a => a.startsWith("--agenda-strip-test="))
+        sourceComponent: Window {
+            id: stripWin
+            readonly property var rowWidths: Qt.application.arguments.find(a => a.startsWith("--agenda-strip-test=")).slice(20).split(",").map(Number)
+            readonly property var minutes: ((Qt.application.arguments.find(a => a.startsWith("--agenda-strip-minutes=")) || "--agenda-strip-minutes=2,2,1,23").slice(23)).split(",").map(Number)
+            readonly property var titles: ["Budget review", "Permit timeline", "Volunteer plan", "Open discussion", "Topic 5", "Topic 6"]
+            property int at: 0
+            visible: true
+            width: rowWidths[at] + 40; height: 60
+            color: theme.surface
+            AgendaTimerRow {
+                id: stripRow
+                x: 20; y: 12; width: stripWin.rowWidths[stripWin.at]
+                viewOnly: false
+                lastEdit: Date.now()
+                agenda: ({ state: "InProgress", remainingDuration: stripWin.minutes.reduce((a, m) => a + m, 0) * 60000 - 78000,
+                           sections: stripWin.minutes.map((m, i) => ({ title: stripWin.titles[i] || ("Topic " + (i + 1)), originalDuration: m * 60000 })) })
+            }
+            Timer {
+                interval: 1500; repeat: true; running: true
+                property int step: 0
+                onTriggered: {
+                    if (step % 2 === 0) {
+                        const places = stripRow.sections.map((s, i) => stripRow.xOf(i).toFixed(1) + "+" + stripRow.widthOf(i).toFixed(1))
+                        console.warn("AGENDASTRIP", stripWin.rowWidths[stripWin.at], JSON.stringify(places), stripRow.labelsForTest())
+                        const w = stripWin.rowWidths[stripWin.at]
+                        stripWin.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-agenda-strip-" + w + ".png")))
+                    } else if (stripWin.at + 1 < stripWin.rowWidths.length) stripWin.at++
+                    else Qt.quit()
+                    step++
+                }
+            }
+        }
+    }
+
     // --agenda-test (with --join-test, TASK-0073): in a meeting with a
     // Facilitator agenda, AGENDA lines every 3 s with the strip's state
     // (view, topics with their widths, current topic) and pictures
@@ -13758,7 +13814,7 @@ Window {
             const grab = n => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-agenda-" + n + ".png")))
             const topics = row.sections.map((s, i) => `${s.title}|${Math.round(s.originalDuration / 60000)}m|w${row.widthOf(i).toFixed(1)}|${row.discussed(s) ? "done" : "open"}`)
             console.warn("AGENDA", step, "visible", strip.visible, "view", strip.shownView, "active", strip.agendaActive, "editable", strip.agendaEditable,
-                         "state", row.state_, "elapsed", Math.round(row.elapsed / 1000), "current", row.current, "topics", JSON.stringify(topics))
+                         "state", row.state_, "elapsed", Math.round(row.elapsed / 1000), "current", row.current, "topics", JSON.stringify(topics), "labels", row.labelsForTest())
             if (step === 1) grab("open")
             else if (step === 2 && edit) row.editorForTest().openFor(0)
             else if (step === 3 && edit) { grab("editor"); row.editorForTest().close() }

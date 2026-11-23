@@ -1,4 +1,5 @@
 import QtQuick
+import QtCore
 import QtMultimedia
 import QtQuick.Window
 import QtQuick.Controls.Basic
@@ -55,12 +56,23 @@ Rectangle {
             cb(v)
         }
     }
+    // Teams' meeting recap list (useMeetingRecapList, meetingRecapList with
+    // maxDays 30): today and the 30 days before it, read a few days at a
+    // time; "Loaded all meetings in the last 30 days." once all are in.
+    readonly property int maxDays: 30
+    readonly property bool allLoaded: next > maxDays && !loading
     function loadMore() {
-        if (loading || next >= 56) return
+        if (loading || next > maxDays) return
         loading = true
-        call("recapMeetings", { from: next }, v => { loading = false; if (!v.error) { days = days.concat(v.days || []); next = v.next || next + 14 } })
+        call("recapMeetings", { from: next, days: Math.min(14, maxDays + 1 - next) }, v => {
+            loading = false
+            if (v.error) return
+            days = days.concat(v.days || []); next = v.next || next + 14
+            // The Generate dialog lists the whole 30 days.
+            if (genDialog.opened) loadMore()
+        })
     }
-    function loadPodcasts() { call("podcasts", {}, v => { podcasts = v.error ? [] : (v.items || []) }) }
+    function loadPodcasts() { call("podcasts", {}, v => { podcasts = v.error ? [] : (v.items || []); autoPlayIfMade() }) }
     function greeting() {
         const h = new Date().getHours()
         return (h < 12 ? qsTr("Good morning, %1") : h < 18 ? qsTr("Good afternoon, %1") : qsTr("Good evening, %1")).arg(String(backend.userName || "").split(" ")[0])
@@ -194,6 +206,8 @@ Rectangle {
                     BusyIndicator { anchors.horizontalCenter: parent.horizontalCenter; running: root.loading; width: 32; height: 32 }
                     Text { text: qsTr("Loading more meetings..."); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
                 }
+                // Teams' end of the list (12/16 #616161, 16 in, 16 above).
+                Text { visible: root.allLoaded; topPadding: 16; text: qsTr("Loaded all meetings in the last 30 days."); font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textSecondary }
             }
         }
     }
@@ -277,7 +291,7 @@ Rectangle {
                                text: prow.on && recapAudio.position > 0 && recapAudio.duration > 0 ? qsTr("%1 left").arg(root.fmtLength(root.recapLength(prow.modelData) - recapAudio.position)) : root.fmtLength(root.recapLength(prow.modelData)) }
                         Text { anchors.right: parent.right; anchors.rightMargin: 16; y: on ? 26 : 14; text: Qt.formatDate(new Date(prow.modelData.createdDateTime || Date.now()), "M/d"); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
                         HoverHandler { id: prh }
-                        TapHandler { onTapped: root.chosenPodcast = prow.modelData.id }
+                        TapHandler { onTapped: { root.autoPlayId = ""; root.chosenPodcast = prow.modelData.id } }
                         Accessible.role: Accessible.ListItem; Accessible.name: prow.modelData.title || qsTr("No title available")
                     }
                 }
@@ -297,9 +311,40 @@ Rectangle {
                     visible: recapsPanes.chosenState !== "failed"
                     width: parent.width; height: 188
                     readonly property var p: parent.p
-                    Text { y: 16; width: parent.width - 60; elide: Text.ElideRight
+                    Text { y: 16; width: Math.max(0, (listenRow.visible ? listenRow.x : recapMore.x) - 12); elide: Text.ElideRight
                            text: recapsPanes.chosenState === "generating" ? qsTr("Generating...") : (parent.p ? parent.p.title || qsTr("No title available") : "")
                            font.family: theme.font; font.pixelSize: 16; font.weight: Font.DemiBold; color: theme.text }
+                    // Listen on mobile (Teams' podcast QR button, measured on
+                    // winpc 2026-11-22: a transparent button 31.3 tall, its
+                    // 20 px phone glyph 5.67 in, the label 14/600 #424242
+                    // only when the app is at least 1280 wide) and, for the
+                    // first 14 days after it was first shown, Teams' "New"
+                    // badge (36.7 x 20, round, brand, 12/600 white); for a
+                    // recap being made or made.
+                    Row {
+                        id: listenRow
+                        visible: root.canListenOnMobile(recapsPanes.chosen)
+                        anchors.right: recapMore.left; y: 10; height: 31.3
+                        Rectangle {
+                            id: listenBtn
+                            width: listenLabel.visible ? 5.67 + 20 + 6 + listenLabel.implicitWidth + 5.67 : 37.33; height: 31.3; radius: 4
+                            color: lmh.hovered ? theme.hover : "transparent"
+                            FluentIcon { x: 5.67; anchors.verticalCenter: parent.verticalCenter; name: "phone-20"; size: 20; color: lmh.hovered ? theme.brand : theme.textStrong }
+                            Text { id: listenLabel; visible: root.width >= 1280; x: 31.67; anchors.verticalCenter: parent.verticalCenter
+                                   text: qsTr("Listen on mobile", "podcast:k5w096s5l"); font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: lmh.hovered ? theme.brand : theme.textStrong }
+                            HoverHandler { id: lmh; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: root.openListenOnMobile(recapsPanes.chosen) }
+                            Accessible.role: Accessible.Button; Accessible.name: qsTr("Listen on mobile", "podcast:k5w096s5l")
+                        }
+                        Rectangle {
+                            visible: root.listenBadgeShown
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: Math.max(20, newT.implicitWidth + 12.67); height: 20; radius: 10
+                            color: theme.pick("#5B5FC7", "#7F85F5", "#1AEBFF")
+                            Text { id: newT; anchors.centerIn: parent; text: qsTr("New", "calling:k5oxq4sbb"); font.family: theme.font; font.pixelSize: 12; font.weight: Font.DemiBold; color: theme.pick("#FFFFFF", "#000000", "#000000") }
+                            Accessible.role: Accessible.StaticText; Accessible.name: qsTr("New", "calling:k5oxq4sbb")
+                        }
+                    }
                     Rectangle { id: recapMore; visible: recapsPanes.chosenState === "done"; anchors.right: parent.right; y: 10; width: 32; height: 31.3; radius: 4; color: rmh.hovered ? theme.hover : "transparent"
                         FluentIcon { anchors.centerIn: parent; name: "more-horizontal-20"; size: 20; color: theme.textStrong }
                         HoverHandler { id: rmh }
@@ -636,6 +681,98 @@ Rectangle {
     }
     /// The recap shown on the right (an id; the newest when unset).
     property string chosenPodcast: ""
+    // Listen on mobile is offered for a recap that has an id and is being
+    // made or made (Teams' Ks: status InProgress or Completed).
+    function canListenOnMobile(p) {
+        if (!p || !p.id || p.generating) return false
+        const st = (p.status || p.generationStatus || "").toString().toLowerCase()
+        return st === "inprogress" || st === "in_progress" || st === "completed"
+    }
+    // Teams' "New" badge (ECS calling showListenOnPhoneNewBadge, default on;
+    // listenOnPhoneBadgeExpirationDays, default 14): the day it was first
+    // shown is kept (Teams' listenOnPhoneNewBadgeStartDateTime) and the
+    // badge stays while ceil(days since) <= the limit.
+    Settings { id: podcastLocal; location: StandardPaths.writableLocation(StandardPaths.AppConfigLocation) + "/podcast.ini"; category: "podcast"; property string listenOnPhoneNewBadgeStartDateTime: "" }
+    function ecsValue(key, dflt) { const v = backend.ecsSetting("calling", key); if (!v) return dflt; try { return JSON.parse(v) } catch (e) { return dflt } }
+    readonly property bool listenBadgeShown: {
+        if (ecsValue("showListenOnPhoneNewBadge", true) !== true) return false
+        const start = podcastLocal.listenOnPhoneNewBadgeStartDateTime
+        if (!start) return true
+        const days = Math.ceil(Math.abs(Date.now() - Date.parse(start)) / 86400000)
+        return days <= Number(ecsValue("listenOnPhoneBadgeExpirationDays", 14) || 0)
+    }
+    // (Teams starts counting the first time a recap's header is shown.)
+    readonly property bool recapHeaderShown: tab === "audio" && !!recapsPanes.chosen
+    onRecapHeaderShownChanged: if (recapHeaderShown && listenBadgeShown && !podcastLocal.listenOnPhoneNewBadgeStartDateTime) podcastLocal.listenOnPhoneNewBadgeStartDateTime = new Date().toISOString()
+    function openListenOnMobile(p) {
+        if (!p || !p.id) return
+        qrDialog.rows = ""; qrDialog.open()
+        call("podcastQr", { id: p.id }, v => { qrDialog.rows = v.rows || "" })
+    }
+    // Listen on mobile's dialog (Teams' Vs, measured on winpc 2026-11-22:
+    // 600 wide, padding 24, radius 8; "Listen on mobile" 20/28 semibold
+    // with Close (32 x 31.3); 8 below, the scan hint 14/20; 20 below, the
+    // code: a 130 px picture, white, 0.67 #D1D1D1 edge, radius 20, 10 in,
+    // holding qrcode-svg's 200 px code of the recap's meetingpodcast link).
+    Popup {
+        id: qrDialog
+        property string rows: ""
+        parent: Overlay.overlay
+        modal: true; padding: 24
+        anchors.centerIn: Overlay.overlay
+        width: Math.min(600, (parent ? parent.width : 600) - 48)
+        background: FluentSurface { depth: 64; radius: 8; color: theme.surface }
+        Overlay.modal: Rectangle { color: Qt.rgba(0, 0, 0, 0.4) }
+        contentItem: Column {
+            spacing: 8
+            Item { width: parent.width; height: 31.3
+                Text { text: qsTr("Listen on mobile", "podcast:kb4eg203w"); font.family: theme.font; font.pixelSize: 20; font.weight: Font.DemiBold; lineHeight: 28; lineHeightMode: Text.FixedHeight; color: theme.text; anchors.verticalCenter: parent.verticalCenter }
+                Rectangle { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; width: 32; height: 31.3; radius: 4; color: qrx.hovered ? theme.hover : "transparent"
+                    FluentIcon { anchors.centerIn: parent; name: "dismiss-20"; size: 20; color: theme.textStrong }
+                    HoverHandler { id: qrx; cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: qrDialog.close() }
+                    Accessible.role: Accessible.Button; Accessible.name: qsTr("Close") } }
+            Text { width: parent.width; wrapMode: Text.Wrap; font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: theme.text
+                   text: qsTr("Scan the following code with your mobile camera or with a QR reader app. On Android work profile, use the work camera to scan the QR code.") }
+            Item { width: parent.width; height: 142
+                Rectangle {
+                    anchors.horizontalCenter: parent.horizontalCenter; y: 12
+                    width: 130; height: 130; radius: 20; color: "#FFFFFF"
+                    border.width: 0.67; border.color: theme.pick("#D1D1D1", "#666666", "#FFFFFF")
+                    Canvas {
+                        id: qrCanvas
+                        anchors.fill: parent; anchors.margins: 10.67
+                        onPaint: {
+                            const ctx = getContext("2d")
+                            ctx.fillStyle = "#FFFFFF"; ctx.fillRect(0, 0, width, height)
+                            const rows = qrDialog.rows ? qrDialog.rows.split("\n") : []
+                            const n = rows.length
+                            if (!n) return
+                            const m = width / n
+                            ctx.fillStyle = "#000000"
+                            for (let y = 0; y < n; y++)
+                                for (let x = 0; x < rows[y].length; x++)
+                                    if (rows[y][x] === "1") ctx.fillRect(x * m, y * m, m, m)
+                        }
+                        Connections { target: qrDialog; function onRowsChanged() { qrCanvas.requestPaint() } }
+                    }
+                    Accessible.role: Accessible.Graphic; Accessible.name: qsTr("QR Code")
+                }
+            }
+        }
+    }
+    // A recap just made plays by itself from the start, once, unless
+    // another one was picked meanwhile (Teams' auto-play after Generate:
+    // the recap seen generating plays when its chapters come).
+    property string autoPlayId: ""
+    function autoPlayIfMade() {
+        const p = recapsPanes.chosen
+        if (!autoPlayId || !p || p.id !== autoPlayId) return
+        if (podcastState(p) !== "done" || !p.fullAudioFile || !(p.chapters || []).length) return
+        autoPlayId = ""
+        console.info("RECAPS auto-play", p.id)
+        playChosen(() => recapAudio.setPosition(0))
+    }
     /// A recap's state as its row shows it: "generating", "failed" or "done".
     function podcastState(p) {
         const st = (p.status || p.generationStatus || "").toString().toLowerCase()
@@ -669,16 +806,17 @@ Rectangle {
         readonly property var meetings: {
             const cutoff = Date.now() - 30 * 86400000
             let out = []
-            // (Teams lists the meetings from AugLoop's
-            // teams_recap_podcast_event_list, named by the events service;
-            // OST uses the meeting artifacts' list, whose subject can differ.)
+            // (Teams' meetingRecapList: the meeting artifacts of each day,
+            // named by their threadInfo.subject, merged with the Copilot
+            // catch-up recommendations, which only add their counts here:
+            // a recommendation without a calendar event isn't listed.)
             for (const d of root.days) for (const m of (d.meetings || [])) if (m.transcript && Date.parse(m.start) >= cutoff) out.push(m)
             if (filterText) out = out.filter(m => (m.subject || "").toLowerCase().indexOf(filterText.toLowerCase()) >= 0)
             return out
         }
         function openNow() {
             genDialog.picked = []; genDialog.chip = "All"; genDialog.filterText = ""; genSearch.text = ""; genDialog.collapsed = []; genDialog.open()
-            if (root.next < 42 && !root.loading) root.loadMore()
+            if (!root.loading) root.loadMore()
             root.call("recapCatchUp", {}, v => { if (!v.error) genDialog.catchUp = v })
         }
         /// The weeks (Teams' grouping by the start of the week, newest
@@ -687,18 +825,24 @@ Rectangle {
             const weekStart = d => { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.setDate(x.getDate() - x.getDay()); return x }
             const thisWeek = weekStart(new Date()).getTime(), lastWeek = thisWeek - 7 * 86400000
             const out = []
+            // Teams' ka: the meetings by day; this week's days and last
+            // week's each make one group, an older day its own ("Friday,
+            // November 6", with the year when it isn't this year's; seen on
+            // winpc 2026-11-22).
             for (const m of meetings) {
-                const w = weekStart(new Date(Date.parse(m.start)))
-                const key = String(w.getTime())
+                const d = new Date(Date.parse(m.start))
+                const day = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+                const w = weekStart(day).getTime()
+                const key = w === thisWeek ? "this-week" : w === lastWeek ? "last-week" : String(day.getTime())
                 let g = out.find(x => x.key === key)
                 if (!g) {
-                    const label = w.getTime() === thisWeek ? qsTr("This week") : w.getTime() === lastWeek ? qsTr("Last week")
-                                : w.toLocaleDateString(Qt.locale(), w.getFullYear() === new Date().getFullYear() ? "MMMM d" : "MMMM d, yyyy")
-                    g = { key: key, label: label, items: [] }; out.push(g)
+                    const label = key === "this-week" ? qsTr("This week") : key === "last-week" ? qsTr("Last week")
+                                : day.toLocaleDateString(Qt.locale(), day.getFullYear() === new Date().getFullYear() ? "dddd, MMMM d" : "dddd, MMMM d, yyyy")
+                    g = { key: key, label: label, items: [], at: key === "this-week" ? thisWeek + 7 * 86400000 : key === "last-week" ? thisWeek : day.getTime() }; out.push(g)
                 }
                 g.items.push(m)
             }
-            out.sort((a, b) => Number(b.key) - Number(a.key))
+            out.sort((a, b) => b.at - a.at)
             return out
         }
         property var collapsed: []
@@ -777,9 +921,9 @@ Rectangle {
                             source: "https://teams.public.onecdn.static.microsoft/evergreen-assets/illustrations/png/128/calendar-three-people-l-standard-128x128.png" }
                     Text { anchors.horizontalCenter: parent.horizontalCenter; text: qsTr("No meetings were transcribed"); font.family: theme.font; font.pixelSize: 18; font.weight: Font.Bold; color: theme.text }
                 }
-                // The meetings grouped by week (Teams' podcast meeting list:
-                // an accordion per week, "This week", "Last week" or the
-                // week's date, newest first), each row a square checkbox,
+                // The meetings grouped (Teams' podcast meeting list: an
+                // accordion, "This week", "Last week", then each older day,
+                // newest first), each row a square checkbox,
                 // the title (14/600) over "date · start - end , organizer"
                 // (12), its task and mention chips, the recording's
                 // thumbnail and View recap.
@@ -788,6 +932,9 @@ Rectangle {
                     visible: genDialog.meetings.length > 0
                     anchors.fill: parent; anchors.margins: 12; clip: true; spacing: 0
                     model: genDialog.groups
+                    // Teams' end of the list (16 8 16 16 around 12/16 #616161).
+                    footer: Text { visible: root.allLoaded; height: visible ? implicitHeight : 0; x: 4; topPadding: 16; bottomPadding: 16
+                                   text: qsTr("Loaded all meetings in the last 30 days."); font.family: theme.font; font.pixelSize: 12; lineHeight: 16; lineHeightMode: Text.FixedHeight; color: theme.textSecondary }
                     delegate: Column {
                         id: grp
                         required property var modelData
@@ -880,7 +1027,12 @@ Rectangle {
         call("podcastGenerate", { meetings: rows, style: genDialog.style, language: "en-US" }, v => {
             console.info("RECAPS generated", v.status || "", v.message || "", v.error || "", v.podcast && v.podcast.id ? v.podcast.id : "")
             root.lastGenerated = v
-            root.chosenPodcast = v.podcast && v.podcast.id ? v.podcast.id : ""
+            // The new recap stays chosen and plays once made, unless another
+            // one was picked while it was being made.
+            const newId = v.podcast && v.podcast.id ? v.podcast.id : ""
+            const pickedOther = root.chosenPodcast !== temp.id
+            if (!pickedOther) root.chosenPodcast = newId
+            root.autoPlayId = !pickedOther && v.status === "COMPLETED" ? newId : ""
             root.loadPodcasts()
         })
     }
@@ -892,5 +1044,10 @@ Rectangle {
     }
     function generateForTest() { generate() }
     function genMeetingsForTest() { return genDialog.groups.map(g => ({ group: g.label, rows: g.items.map(m => [m.subject, genDialog.subtitle(m), genDialog.catchUp[m.threadId] || null, !!(m.recording && m.recording.itemId), genDialog.thumbs[(m.recording || {}).itemId || ""] ? "thumb" : ""]) })) }
-    function audioPlayerStateForTest() { const p = recapsPanes.chosen; return JSON.stringify({ chosen: p ? (p.title || "") : null, state: p ? podcastState(p) : "", rows: (podcasts || []).map(x => podcastState(x)) }) }
+    function audioPlayerStateForTest() { const p = recapsPanes.chosen; return JSON.stringify({ chosen: p ? (p.title || "") : null, state: p ? podcastState(p) : "", rows: (podcasts || []).map(x => podcastState(x)),
+                                                                                       playing: recapAudio.playbackState === MediaPlayer.PlayingState, position: Math.round(recapAudio.position / 1000), autoPlay: autoPlayId,
+                                                                                       listen: listenRow.visible, listenWidth: listenBtn.width, badge: listenBadgeShown, badgeSince: podcastLocal.listenOnPhoneNewBadgeStartDateTime }) }
+    function openListenForTest() { openListenOnMobile(recapsPanes.chosen) }
+    function closeListenForTest() { qrDialog.close() }
+    function listenDialogForTest() { return JSON.stringify({ open: qrDialog.opened, modules: qrDialog.rows ? qrDialog.rows.split("\n").length : 0, width: qrDialog.width }) }
 }
