@@ -1,9 +1,10 @@
 ---
 id: TASK-0258
 title: 'Calendar dark theme: event fills, mini-month week and header lines as Teams'
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-11-23T17:39:00Z'
+updated_date: '2026-11-23T17:40:00Z'
 labels:
   - desktop
   - calendar
