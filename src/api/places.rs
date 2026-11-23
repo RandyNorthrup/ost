@@ -172,6 +172,39 @@ pub fn detected_from(status: u16, v: &serde_json::Value) -> Detected {
     }
 }
 
+/// What the service makes of an access point without checking you in:
+/// Teams' first-run look-up (its reportDetectedNetworkForFRE, `GET
+/// …/location/wifiNetwork?bssid=…[&ssid=…]`) while your automatic work
+/// location was never set. 200 names the building, 207 is "In the office",
+/// 404 none.
+pub async fn resolve_network(client: &TeamsClient, endpoint_id: &str, bssid: &str, ssid: Option<&str>) -> Result<Detected> {
+    let path = format!("v1/me/endpoints/{endpoint_id}/location/wifiNetwork?{}", wifi_network_query(bssid, ssid));
+    let resp = location_request(client, reqwest::Method::GET, &path, endpoint_id).await?.send().await.context("Resolve network")?;
+    let status = resp.status().as_u16();
+    match status {
+        200 | 207 | 404 => {
+            let v: serde_json::Value = resp.json().await.unwrap_or_default();
+            Ok(detected_from(status, &v))
+        }
+        s => anyhow::bail!("Resolve network: HTTP {s}"),
+    }
+}
+
+/// The look-up's query: Teams appends each non-empty value in turn.
+pub fn wifi_network_query(bssid: &str, ssid: Option<&str>) -> String {
+    let mut q = reqwest::Url::parse("https://x/").expect("static URL");
+    {
+        let mut pairs = q.query_pairs_mut();
+        if !bssid.is_empty() {
+            pairs.append_pair("bssid", bssid);
+        }
+        if let Some(s) = ssid.filter(|s| !s.is_empty()) {
+            pairs.append_pair("ssid", s);
+        }
+    }
+    q.query().unwrap_or_default().to_string()
+}
+
 /// Check out (you left the office network).
 pub async fn report_remote(client: &TeamsClient, endpoint_id: &str) -> Result<()> {
     let path = format!("v1/me/endpoints/{endpoint_id}/location/wifiNetwork");
@@ -252,5 +285,12 @@ mod location_tests {
         assert_eq!(detected_from(200, &serde_json::json!({"placeId": "p1", "name": "OST Test Building"})), Detected::Building { id: "p1".into(), name: "OST Test Building".into() });
         assert_eq!(detected_from(207, &serde_json::json!({})), Detected::Office);
         assert_eq!(detected_from(404, &serde_json::json!({})), Detected::NotFound);
+    }
+
+    #[test]
+    fn first_run_query_is_teams() {
+        assert_eq!(wifi_network_query("f4:92:bf:78:c4:67", Some("Condor Cave")), "bssid=f4%3A92%3Abf%3A78%3Ac4%3A67&ssid=Condor+Cave");
+        assert_eq!(wifi_network_query("f4:92:bf:78:c4:67", None), "bssid=f4%3A92%3Abf%3A78%3Ac4%3A67");
+        assert_eq!(wifi_network_query("f4:92:bf:78:c4:67", Some("")), "bssid=f4%3A92%3Abf%3A78%3Ac4%3A67");
     }
 }

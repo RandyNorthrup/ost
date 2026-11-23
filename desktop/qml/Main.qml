@@ -196,17 +196,36 @@ Window {
     /// policy with Teams' Wi-Fi flight, and your Privacy switch (unset: the
     /// policy's default with adlEnableDefaultOptIn), as Teams decides it.
     /// (ECS lands with the Copilot state, so that re-runs this.)
+    /// Teams' convertAutoUpdateLocationPreferenceToBool: set, or for an
+    /// unset switch the policy's default with adlEnableDefaultOptIn (unless
+    /// you dismissed the first-run banner), else adlSettingDefaultEnabled/tpp.
     readonly property bool workLocationAuto: {
         void backend.composeCopilotJson
         let p = {}
         try { p = JSON.parse(backend.workLocationPolicyJson || "{}") } catch (e) {}
         if (p.detection !== true || backend.ecsSetting("places", "enableAutoDetectPlaceWifi") !== "true") return false
-        const pref = (syncedProps.placesSettings || {}).autoUpdateLocationPreference
-        if (pref === "Enabled") return true
-        if (pref === "Disabled") return false
-        return p.userDefault === "Enabled" && backend.ecsSetting("places", "adlEnableDefaultOptIn") === "true"
+        const ps = syncedProps.placesSettings || {}
+        if (ps.autoUpdateLocationPreference === "Enabled") return true
+        if (ps.autoUpdateLocationPreference === "Disabled") return false
+        if (p.userDefault === "Enabled" && backend.ecsSetting("places", "adlEnableDefaultOptIn") === "true")
+            return ps.autoLocationFirstEngagement !== "FIRST_RUN"
+        return backend.ecsSetting("places", "adlSettingDefaultEnabled") === "true" || backend.ecsSetting("places", "tpp") === "true"
     }
-    onWorkLocationAutoChanged: backend.setWorkLocationDetection(workLocationAuto)
+    /// The check-in's mode (TASK-0249): "on" with your consent; "ask" while
+    /// you haven't consented, never answered (autoLocationFirstEngagement
+    /// FIRST_RUN or SETTING_TOGGLE) and never saw the first-run banner
+    /// (Teams' collect step), so an office network brings that banner.
+    readonly property string workLocationMode: {
+        void backend.composeCopilotJson
+        if (workLocationAuto) return "on"
+        let p = {}
+        try { p = JSON.parse(backend.workLocationPolicyJson || "{}") } catch (e) {}
+        if (p.detection !== true || backend.ecsSetting("places", "enableAutoDetectPlaceWifi") !== "true") return "off"
+        const ps = syncedProps.placesSettings || {}
+        const acknowledged = ps.autoLocationFirstEngagement === "FIRST_RUN" || ps.autoLocationFirstEngagement === "SETTING_TOGGLE"
+        return !acknowledged && !ps.autoLocationFirstRunBannerLastIncrementDate ? "ask" : "off"
+    }
+    onWorkLocationModeChanged: backend.setWorkLocationDetection(workLocationMode)
     readonly property bool copilotInstalled: rail.barApps.some(a => (a.id || "").toLowerCase() === "b5abf2ae-c16b-4310-8f8a-d3bcdb52f162")
     readonly property bool copilotInChatList: !!copilotState.chatList && copilotInstalled
         && (((syncedProps.userPersonalSettings || {}).messagingSettings || {}).shouldShowMetaOSCopilotApp !== false)
@@ -12815,6 +12834,50 @@ Window {
         }
     }
 
+    // --wl-banner-test[=link|action|close] --shots=<dir> (TASK-0249): waits
+    // for a work location banner the Wi-Fi check-in raises, logs WLB lines
+    // (the mode, the banner, placesSettings, the device home banner's
+    // state) and captures it (wlb-<kind>.png), then, if asked, follows its
+    // link, presses its button or closes it and captures what follows
+    // (wlb-<kind>-<act>.png, and the dialog's "Set my location
+    // automatically" with =link on the first-run banner). Keeps running for
+    // the next banner. --wl-banner-show=deviceHome|firstRun only shows that
+    // banner (nothing saved) for wlb-show-<kind>.png and quits.
+    Timer {
+        running: Qt.application.arguments.some(a => a.startsWith("--wl-banner-")) && backend.signedIn && backend.userMail.length > 0
+        interval: 2000; repeat: true
+        property int step: 0
+        property string seen: ""
+        property var lastBanner: null
+        onTriggered: {
+            const dir = (Qt.application.arguments.find(a => a.startsWith("--shots=")) || "--shots=.").slice(8) + "/"
+            const shot = n => window.contentItem.grabToImage(r => r.saveToFile(dir + n + ".png"))
+            const log = n => console.warn("WLB", n, "mode", window.workLocationMode, "policy", backend.workLocationPolicyJson, "banner", JSON.stringify(window.wlBanner), "bannerHeight", appBanner.height,
+                                          "placesSettings", JSON.stringify(window.syncedProps.placesSettings), "deviceHome", backend.setting("placesDeviceHomeBannerState"),
+                                          "toast", toast.toastData ? toast.toastData.text : "", "settings", rail.current === "settings" ? settingsView.page + "/" + settingsView.subPage : "")
+            const show = (Qt.application.arguments.find(a => a.startsWith("--wl-banner-show=")) || "").slice(17)
+            if (show) {
+                if (step === 0) window.showWlBanner({ kind: show, placeId: "" }, 600)
+                else if (step === 2) { log("show"); shot("wlb-show-" + show) }
+                else if (step === 3) { window.wlBanner = null; Qt.quit() }
+                step++; return
+            }
+            const act = (Qt.application.arguments.find(a => a.startsWith("--wl-banner-test=")) || "").slice(17)
+            if (step === 0) { if (step++ === 0) log("waiting") }
+            if (step === 1) {
+                if (!window.wlBanner || window.wlBanner === lastBanner) return
+                lastBanner = window.wlBanner; seen = window.wlBanner.kind; log("shown"); shot("wlb-" + seen); step = act ? 2 : 0; return
+            }
+            if (step === 2) {
+                if (act === "link") window.wlBannerLink(); else if (act === "action") window.wlBannerAction(); else if (act === "close") window.wlBannerClose()
+                step = 3; return
+            }
+            if (step === 3) { log(act); shot("wlb-" + seen + "-" + act); step = act === "link" && seen === "firstRun" ? 4 : 0; return }
+            if (step === 4) { wlLearnMore.answered = true; wlLearnMore.close(); wlLearnMore.turnOn(); step = 5; return }
+            if (step === 5) { log("dialog-on"); shot("wlb-firstRun-dialog-on"); step = 0 }
+        }
+    }
+
     // --pause-test --shots=<dir>: Pause notifications: the flyout and its
     // menu (pz-menu), 10 minutes (paused; pz-paused with the banner, and
     // the edit menu pz-edit), Custom's dialog (pz-custom) and its calendar
@@ -14512,7 +14575,8 @@ Window {
     // 12.67), dismiss (24 x 20) at (251.33, 12.67); 46 tall for one line
     // (65.33 for two). An action ("Undo", 14 px #4F52B2) sits 11 under the
     // title, the card then 12.67 deeper. Success stays 5 s, errors 2 s.
-    // `toastData`: {text, intent, action?, onAction?} (onAction a function).
+    // `toastData`: {text, intent, action?, onAction?, duration?} (onAction a
+    // function, duration in ms).
     Item {
         id: toast
         property var toastData: null
@@ -14579,7 +14643,7 @@ Window {
     function openAudioRecaps() { rail.openApp("recaps"); recapsView.openTab("audio"); window.raise(); window.requestActivate() }
     function showToast(d) {
         toast.toastData = d
-        toastTimer.interval = d.intent === "error" ? 2000 : 5000
+        toastTimer.interval = d.duration || (d.intent === "error" ? 2000 : 5000)
         toastTimer.restart()
     }
 
@@ -14873,37 +14937,171 @@ Window {
         target: backend
         function onPrejoinRequested(url, title) { preJoin.openFor(url, title, "", "") }
     }
+    // Teams' work location banners (TASK-0249; its PlacesAutoDetectLocation
+    // BannersJob, shown only with ECS places.enableAutoDetectLocationBanners,
+    // off in Teams' bundled config): intent "Location" (the info bar's
+    // colours, LocationLive filled), ranked under live meetings and above
+    // the DND and status message banners.
+    // - "deviceHome" (places-device-home-banner): a wired check-out on a
+    //   device with no stationary building. "Your work location was cleared
+    //   because your device is no longer connected to Wi-Fi." / "If this is
+    //   a stationary device, set a permanent location to prevent this.",
+    //   the link "Open settings" (Stationary device location, the checked-in
+    //   building suggested) and the button "Don't show again"; both end it
+    //   for good. At most adlDeviceHomeBannerMaxShows (3) times, once a day,
+    //   adlDeviceHomeBannerCooldownDays (0) apart; gone after
+    //   adlDeviceHomeBannerAutoDismissSec (600 s). Teams keeps that state
+    //   with the device's client preferences (deviceHomeBannerState).
+    // - "firstRun" (places-auto-location-first-run-banner): an office network
+    //   while your automatic work location was never set. "Looks like you
+    //   recently connected to the office network." / "Skip the guesswork —
+    //   set your work location automatically so coworkers know you're in."
+    //   (enableADLBannerAltStr: "Make it easier to know who's in — …"), the
+    //   link "Tell me more" (the "Why set my work location automatically?"
+    //   dialog) and the button "Set my location automatically"; shown once
+    //   (placesSettings.autoLocationFirstRunBannerLastIncrementDate), gone
+    //   after autoDetectLocationFREBannerTimeoutInSeconds (43200 s). Closing
+    //   it, the button and the dialog's answers set
+    //   autoLocationFirstEngagement FIRST_RUN; the button and the dialog's
+    //   "Set my location automatically" also turn the switch on, which
+    //   checks you in on this network, and toast "Automatically setting your
+    //   location has been enabled." with Settings (Teams' enableWifiInfo).
+    property var wlBanner: null
+    function ecsNumber(ns, key, dflt) { const v = backend.ecsSetting(ns, key); const n = parseFloat(v); return v === "" || isNaN(n) ? dflt : n }
+    function wlDeviceHomeState() { try { return JSON.parse(backend.setting("placesDeviceHomeBannerState") || "{}") } catch (e) { return {} } }
+    function setWlDeviceHomeState(patch) { backend.setSetting("placesDeviceHomeBannerState", JSON.stringify(Object.assign(wlDeviceHomeState(), patch))) }
+    function showWlBanner(b, seconds) {
+        window.wlBanner = b
+        wlBannerTimer.interval = seconds * 1000
+        wlBannerTimer.restart()
+    }
+    // Ended by time: no answer is kept (Teams' autoDismissAction).
+    Timer { id: wlBannerTimer; onTriggered: window.wlBanner = null }
+    Connections {
+        target: backend
+        function onWorkLocationBanner(kind, json) {
+            let d = {}
+            try { d = JSON.parse(json) } catch (e) {}
+            const on = backend.ecsSetting("places", "enableAutoDetectLocationBanners") === "true"
+            console.warn("WORKLOC banner event", kind, json, "banners", on)
+            if (!on) return
+            if (kind === "deviceHome") {
+                // Teams' Hh: eligibility from the banner's state.
+                const st = window.wlDeviceHomeState()
+                const max = window.ecsNumber("places", "adlDeviceHomeBannerMaxShows", 3)
+                const cooldown = window.ecsNumber("places", "adlDeviceHomeBannerCooldownDays", 0)
+                if (max === 0 || st.dismissalAction || (st.showCount || 0) >= max) { console.warn("WORKLOC device home banner not eligible", JSON.stringify(st)); return }
+                if (st.lastShownAt) {
+                    const s = new Date(st.lastShownAt), n = new Date()
+                    if (s.getFullYear() === n.getFullYear() && s.getMonth() === n.getMonth() && s.getDate() === n.getDate()) { console.warn("WORKLOC device home banner already shown today"); return }
+                    if (cooldown > 0 && Math.floor((n.getTime() - s.getTime()) / 86400000) < cooldown) return
+                }
+                window.setWlDeviceHomeState({ showCount: (st.showCount || 0) + 1, lastShownAt: Date.now() })
+                window.showWlBanner({ kind: "deviceHome", placeId: d.placeId || "" }, window.ecsNumber("places", "adlDeviceHomeBannerAutoDismissSec", 600))
+            } else if (kind === "firstRun") {
+                // Teams' wh: the banner counts as seen once it shows.
+                backend.changeSetting("prop", "placesSettings", JSON.stringify({ autoLocationFirstRunBannerLastIncrementDate: Date.now() }))
+                window.showWlBanner({ kind: "firstRun" }, window.ecsNumber("places", "autoDetectLocationFREBannerTimeoutInSeconds", 43200))
+            }
+        }
+    }
+    function wlFirstEngagement() {
+        backend.changeSetting("prop", "placesSettings", JSON.stringify({ autoLocationFirstEngagement: "FIRST_RUN" }))
+    }
+    // Teams' attemptAutoDetectLocationOptIn from the first-run banner or its
+    // dialog: FIRST_RUN, the switch on, then the toast.
+    function wlOptIn() {
+        window.wlBanner = null
+        backend.changeSetting("prop", "placesSettings", JSON.stringify({ autoLocationFirstEngagement: "FIRST_RUN", autoUpdateLocationPreference: "Enabled" }))
+        window.showToast({ text: qsTr("Automatically setting your location has been enabled."), intent: "success", action: qsTr("Settings"), duration: 7000,
+                           onAction: () => window.launchSettings("privacy") })
+    }
+    function wlBannerLink() {
+        const b = window.wlBanner
+        window.wlBanner = null
+        if (!b) return
+        if (b.kind === "deviceHome") {
+            window.setWlDeviceHomeState({ dismissalAction: "OPEN_SETTINGS" })
+            backend.loadBuildings()
+            window.launchSettings("privacy_device_home_building_settings", b.placeId ? { suggestedBuildingId: b.placeId } : {})
+        } else {
+            wlLearnMore.answered = false
+            wlLearnMore.open()
+        }
+    }
+    function wlBannerAction() {
+        const b = window.wlBanner
+        if (!b) return
+        if (b.kind === "deviceHome") { window.wlBanner = null; window.setWlDeviceHomeState({ dismissalAction: "DONT_SHOW_AGAIN" }) }
+        else window.wlOptIn()
+    }
+    function wlBannerClose() {
+        const b = window.wlBanner
+        window.wlBanner = null
+        if (b && b.kind === "firstRun") window.wlFirstEngagement()
+    }
+    // "Tell me more": Teams' dialog as from the banner (the switch is off).
+    AutoLocationDialog {
+        id: wlLearnMore
+        property bool answered: false
+        settingOn: false
+        onTurnOn: { answered = true; window.wlOptIn() }
+        onClosed: Qt.callLater(() => { if (!wlLearnMore.answered) { wlLearnMore.answered = true; window.wlFirstEngagement() } })
+    }
     Rectangle {
         id: appBanner
         anchors { top: titleBar.bottom; left: parent.left; right: parent.right }
         // The newest banner shows (Teams' shell keeps one at a time); a
         // meeting that started shows first.
-        readonly property string kind: window.liveMeetings.length ? "live" : window.dndBanner && (!window.noteBanner || window.bannerOrder === "dnd") ? "dnd" : window.noteBanner ? "note" : window.threadsBanner ? "threads" : ""
+        readonly property string kind: window.liveMeetings.length ? "live" : window.wlBanner ? "wl" : window.dndBanner && (!window.noteBanner || window.bannerOrder === "dnd") ? "dnd" : window.noteBanner ? "note" : window.threadsBanner ? "threads" : ""
         readonly property bool shown: kind !== "" && backend.hasCredentials
-        height: shown ? (kind === "threads" ? 64 : 36) : 0
+        // A work location banner's text wraps (Teams' banner keeps
+        // white-space normal over a 36 px minimum).
+        height: shown ? (kind === "threads" ? 64 : kind === "wl" ? Math.max(36, bannerText.height + 16) : 36) : 0
         visible: shown
         color: kind === "live" ? theme.pick("#E8EBFA", "#2F2F4A", "#000000") : theme.pick("#F5F5F5", "#292929", "#000000")
         z: 9
         Rectangle { visible: appBanner.kind === "live"; anchors.bottom: parent.bottom; width: parent.width; height: 0.67; color: theme.pick("#C5CBFA", "#3D3E78", "#FFFFFF") }
-        FluentIcon { x: 12; anchors.verticalCenter: parent.verticalCenter; name: appBanner.kind === "live" ? "video-20-filled" : "info-20-filled"; size: 20; color: appBanner.kind === "live" ? theme.brandForeground1 : theme.textSecondary }
+        FluentIcon { x: 12; anchors.verticalCenter: parent.verticalCenter; name: appBanner.kind === "live" ? "video-20-filled" : appBanner.kind === "wl" ? "location-live-20-filled" : "info-20-filled"; size: 20; color: appBanner.kind === "live" ? theme.brandForeground1 : theme.textSecondary }
         Text {
+            id: bannerText
             x: 40; anchors.verticalCenter: parent.verticalCenter
-            width: bannerAction.x - 12 - x; elide: Text.ElideRight
-            textFormat: appBanner.kind === "threads" ? Text.RichText : Text.PlainText
+            width: bannerAction.x - 12 - x; elide: appBanner.kind === "wl" ? Text.ElideNone : Text.ElideRight
+            wrapMode: appBanner.kind === "wl" ? Text.Wrap : Text.NoWrap
+            textFormat: appBanner.kind === "threads" || appBanner.kind === "wl" ? Text.RichText : Text.PlainText
             text: appBanner.kind === "live" ? (window.liveMeetings.length > 1 ? qsTr("Meetings Started: %1 +%2").arg(window.liveMeetings[0].subject).arg(window.liveMeetings.length - 1) : qsTr("Meeting Started: %1").arg(window.liveMeetings[0].subject))
                 : appBanner.kind === "note" ? window.noteBannerText
+                : appBanner.kind === "wl" ? appBanner.wlRich
                 : appBanner.kind === "threads" ? qsTr("A channel owner set this channel to a threads layout.") + " <a href=\"https://go.microsoft.com/fwlink/?linkid=2311967\" style=\"text-decoration:none; color:" + theme.brandForeground1 + "\">" + qsTr("Learn how threads work") + "</a>"
                 : qsTr("Your status is set to do not disturb. You'll only get notifications for urgent messages and from your priority contacts.")
             font.family: theme.font; font.pixelSize: 14; lineHeight: 20; lineHeightMode: Text.FixedHeight; color: appBanner.kind === "live" ? theme.brandForeground1 : theme.text
-            onLinkActivated: url => Qt.openUrlExternally(url)
+            onLinkActivated: url => { if (url === "wl:link") window.wlBannerLink(); else Qt.openUrlExternally(url) }
             HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
+        }
+        // The work location banner's body as Teams' message bar lays it
+        // out: the title (semibold, a space after it), the text, then the
+        // link 4 px on.
+        readonly property bool wlFirstRun: !!window.wlBanner && window.wlBanner.kind === "firstRun"
+        readonly property string wlRich: {
+            if (!window.wlBanner) return ""
+            const esc = t => t.replace(/&/g, "&amp;").replace(/</g, "&lt;")
+            const title = wlFirstRun ? qsTr("Looks like you recently connected to the office network.")
+                : qsTr("Your work location was cleared because your device is no longer connected to Wi-Fi.")
+            const body = !wlFirstRun ? qsTr("If this is a stationary device, set a permanent location to prevent this.")
+                : backend.ecsSetting("places", "enableADLBannerAltStr") === "true"
+                    ? qsTr("Make it easier to know who's in — set your location automatically when you're at work.")
+                    : qsTr("Skip the guesswork — set your work location automatically so coworkers know you're in.")
+            const link = wlFirstRun ? qsTr("Tell me more") : qsTr("Open settings")
+            return "<span style=\"font-weight:600\">" + esc(title) + "</span> " + esc(body)
+                + "&nbsp;<a href=\"wl:link\" style=\"text-decoration:none; color:" + theme.brandLink + "\">" + esc(link) + "</a>"
         }
         Rectangle {
             id: bannerAction
-            visible: appBanner.kind === "dnd" || appBanner.kind === "live"
+            visible: appBanner.kind === "dnd" || appBanner.kind === "live" || appBanner.kind === "wl"
             anchors.right: bannerDismiss.left; anchors.rightMargin: visible ? 12 : 0; anchors.verticalCenter: parent.verticalCenter
             readonly property bool primary: appBanner.kind === "live" && window.liveMeetings.length === 1
-            readonly property string label: appBanner.kind !== "live" ? qsTr("Change settings") : primary ? qsTr("Join") : qsTr("View meetings")
+            readonly property string label: appBanner.kind === "wl" ? (appBanner.wlFirstRun ? qsTr("Set my location automatically") : qsTr("Don't show again"))
+                : appBanner.kind !== "live" ? qsTr("Change settings") : primary ? qsTr("Join") : qsTr("View meetings")
             width: visible ? (primary ? 64 : bannerActionText.implicitWidth + 16) : 0; height: 23.3; radius: 4
             color: primary ? (bannerActionHover.hovered ? theme.brandHover : theme.brandFill) : bannerActionHover.hovered ? theme.menuHover : theme.surface
             border.color: primary ? "transparent" : theme.stroke; border.width: 0.67
@@ -14913,6 +15111,7 @@ Window {
                 onTapped: {
                     if (bannerAction.primary) { const m = window.liveMeetings[0]; preJoin.openFor(m.joinUrl, m.subject, m.start || "", m.end || ""); return }
                     if (appBanner.kind === "live") { liveMeetingsDialog.open(); return }
+                    if (appBanner.kind === "wl") { window.wlBannerAction(); return }
                     // Teams' DND banner: Privacy › Manage priority access.
                     window.launchSettings("privacy_manage_priority_access")
                 }
@@ -14932,6 +15131,7 @@ Window {
                     if (appBanner.kind === "note") window.noteBanner = false
                     else if (appBanner.kind === "threads") { backend.setSetting("threadedChannelLearnMoreBannerDismissed", new Date().toISOString()); window.threadsBannerDismissed = true }
                     else if (appBanner.kind === "live") window.liveMeetingsDismissed = window.liveMeetingsDismissed.concat(window.liveMeetings.map(m => m.callId))
+                    else if (appBanner.kind === "wl") window.wlBannerClose()
                     else window.dndBanner = false
                 }
             }

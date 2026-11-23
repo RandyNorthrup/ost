@@ -830,8 +830,8 @@ Details read from Teams 26304's worker (WifiAutoLocationHelper, IC3LocationServi
 - Guests and anonymous users are skipped (USER_ROLE_NOT_ALLOWED). There is no client-side
   working-hours check: the service applies your Outlook working hours.
 - Switch on: `PUT …/location/network` (above). Switch never set and the first-run banner not
-  seen (Ask mode): `GET …/location/wifiNetwork?bssid=…` instead, then Teams' first-run banner
-  (not built in OST).
+  seen (Ask mode): `GET …/location/wifiNetwork?bssid=…&ssid=…` instead (no check-in; 200
+  building, 207 office, 404 also read as office), then Teams' first-run banner (below).
 - Flights at Teams' bundled defaults (config-prod; ECS only overrides): adlCheckout,
   adlWiredCheckout, useSSIDForIC3LSNetworkApiRequest (the SSID goes in the report) and
   useUserStateForWiFiUpdate (only an unlocked, active machine reports) are all on;
@@ -844,8 +844,7 @@ Details read from Teams 26304's worker (WifiAutoLocationHelper, IC3LocationServi
   wired one not when the device's stationary building (Privacy ▸ Stationary device location,
   deviceHomeBuildingId) is that building. Teams then shows a banner: your work location was
   cleared because the device is no longer on Wi-Fi, with Open settings and Don't show again
-  (seen live on winpc, which is wired with Windows location off; OST doesn't show it yet).
-  OST follows the strategy (desktop/src/work_location.rs), apart from the OS location
+  (seen live on winpc, which is wired with Windows location off; below). OST follows the strategy (desktop/src/work_location.rs), apart from the OS location
   permission, which Linux doesn't have for Wi-Fi.
 - A check-in's work location is `{location: "Office", locationSource: "VerifiedLocation",
   approximateDetails: {id, idType: "Directory", name}}`. Teams' profile flyout then reads
@@ -853,6 +852,51 @@ Details read from Teams 26304's worker (WifiAutoLocationHelper, IC3LocationServi
 - Live (2026-11-23, test tenant): with the BSSID mapped, the service answered 200 with the
   building on most reports but 404 on about one in three, for the same access point and
   endpoint.
+
+### Work location banners (TASK-0249)
+
+Teams 26304 (worker WifiAutoLocationHelper / notification helper; front end
+PlacesAutoDetectLocationBannersJob in react-web-client-on-pre-warm-jobs; handlers in
+async-apps-places). The worker emits a `placesNotificationEvent`; the front end shows it with
+the shell's banner (a Fluent MessageBar, intent "Location": the info colours, LocationLive
+filled icon, title semibold with a space after it, the text, the link 4 px on, the button and
+✕ at the right; it wraps over a 36 px minimum; it ranks under live meetings and above the
+Neutral banners). Only with ECS `places.enableAutoDetectLocationBanners` (bundled off; on for
+the test tenant).
+
+- **Check-out ("device home") banner**, `ADL_DEVICE_HOME_BANNER`: after a check-out that was
+  reported, only for WIRED_CONNECTION and only when the device has no stationary building
+  (SSID_MISMATCH raises none; OS_CONSENT_DISABLED raises its own "You were checked out of your
+  work location." banner). Title "Your work location was cleared because your device is no
+  longer connected to Wi-Fi.", text "If this is a stationary device, set a permanent location
+  to prevent this.", link "Open settings" (Settings ▸ Privacy ▸ Stationary device location, the
+  checked-in building as `suggestedBuildingId`), button "Don't show again". Shown when
+  `deviceHomeBannerState` (client preferences: showCount, lastShownAt, dismissalAction) has no
+  dismissalAction, showCount < adlDeviceHomeBannerMaxShows (3), not already today and
+  adlDeviceHomeBannerCooldownDays (0) past; showing adds 1 and the time. Open settings stores
+  dismissalAction OPEN_SETTINGS, Don't show again DONT_SHOW_AGAIN; ✕ keeps nothing. Gone after
+  adlDeviceHomeBannerAutoDismissSec (600 s).
+- **First-run banner**, `ADL_FIRST_RUN_BANNER`: on a listed Wi-Fi network while you haven't
+  consented, never answered (`placesSettings.autoLocationFirstEngagement` FIRST_RUN or
+  SETTING_TOGGLE) and never saw it (`autoLocationFirstRunBannerLastIncrementDate`), after the
+  first-run look-up names any place. Showing writes autoLocationFirstRunBannerLastIncrementDate
+  (ms). Title "Looks like you recently connected to the office network." (the front end
+  passes no building), text "Skip the guesswork — set your work location automatically so
+  coworkers know you're in." (enableADLBannerAltStr: "Make it easier to know who's in — set your
+  location automatically when you're at work."), link "Tell me more" (the "Why set my work
+  location automatically?" dialog, switch-off variant), button "Set my location
+  automatically". ✕ and the dialog's Not now set autoLocationFirstEngagement FIRST_RUN; the
+  button and the dialog's Set my location automatically set FIRST_RUN and
+  autoUpdateLocationPreference Enabled, reprocess the current network (with enableWifiInfo,
+  bundled on, an ADL_MANUAL_TRIGGER) and toast "Automatically setting your location has been
+  enabled." (Success, 7 s, "Settings" opens Privacy). Gone after
+  autoDetectLocationFREBannerTimeoutInSeconds (43200 s bundled).
+- Unset switch: Teams' convertAutoUpdateLocationPreferenceToBool — Enabled/Disabled as set,
+  else on when the policy's userSettingsDefault is Enabled with adlEnableDefaultOptIn (unless
+  autoLocationFirstEngagement is FIRST_RUN), else adlSettingDefaultEnabled or tpp.
+- OST: desktop/src/work_location.rs (modes off/ask/on, the look-up and the check-out banner
+  rule), Main.qml (`workLocationMode`, the banner, its state in the local setting
+  `placesDeviceHomeBannerState`, `--wl-banner-test`).
 
 ## OST status
 

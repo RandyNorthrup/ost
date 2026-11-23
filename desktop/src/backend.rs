@@ -941,10 +941,12 @@ pub mod qobject {
         /// as Teams' Set work location.
         #[qinvokable]
         fn set_work_location_today(self: Pin<&mut Backend>, location: &QString);
-        /// Workplace check-in over Wi-Fi on or off (the work-location
-        /// policy and Privacy's "Manage my work location" switch, TASK-0149).
+        /// Workplace check-in over Wi-Fi: "off", "ask" (the switch was
+        /// never set: Teams' first-run look-up only) or "on" (the
+        /// work-location policy and Privacy's "Manage my work location"
+        /// switch, TASK-0149/TASK-0249).
         #[qinvokable]
-        fn set_work_location_detection(self: Pin<&mut Backend>, on: bool);
+        fn set_work_location_detection(self: Pin<&mut Backend>, mode: &QString);
         /// A meeting chat's Report a concern (its thread and meeting, no
         /// call).
         #[qinvokable]
@@ -1833,6 +1835,12 @@ pub mod qobject {
         /// Another account's hub asked this window to open a chat.
         #[qsignal]
         fn open_chat_requested(self: Pin<&mut Backend>, thread_id: QString, name: QString);
+
+        /// The Wi-Fi check-in raised one of Teams' work location banners
+        /// (TASK-0249): `firstRun` {building, placeId} or `deviceHome`
+        /// {placeId}.
+        #[qsignal]
+        fn work_location_banner(self: Pin<&mut Backend>, kind: QString, json: QString);
 
         /// tenant_rooms' answer: the query it was for and the rooms
         /// ([{mri, name, email, status}]).
@@ -17267,8 +17275,20 @@ impl qobject::Backend {
         self.send_meeting_report(thread, None, comment.to_string(), reported_json.to_string());
     }
 
-    pub fn set_work_location_detection(self: Pin<&mut Self>, on: bool) {
-        crate::work_location::set_enabled(on, runtime());
+    pub fn set_work_location_detection(self: Pin<&mut Self>, mode: &QString) {
+        use crate::work_location::Mode;
+        let m = match mode.to_string().as_str() {
+            "on" => Mode::On,
+            "ask" => Mode::Ask,
+            _ => Mode::Off,
+        };
+        let qt = std::sync::Mutex::new(self.qt_thread());
+        let sink: crate::work_location::Sink = Box::new(move |kind: &str, data: serde_json::Value| {
+            let (kind, json) = (kind.to_string(), data.to_string());
+            let Ok(qt) = qt.lock() else { return };
+            let _ = qt.queue(move |mut this| this.as_mut().work_location_banner(QString::from(kind.as_str()), QString::from(json.as_str())));
+        });
+        crate::work_location::set_mode(m, runtime(), sink);
     }
 
     pub fn set_work_location_today(mut self: Pin<&mut Self>, location: &QString) {
