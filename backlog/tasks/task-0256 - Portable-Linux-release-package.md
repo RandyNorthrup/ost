@@ -1,10 +1,10 @@
 ---
 id: TASK-0256
 title: Portable Linux release package
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-11-23T15:54:00Z'
-updated_date: '2026-11-23T17:40:00Z'
+updated_date: '2026-11-23T18:21:00Z'
 labels: []
 dependencies: []
 ---
@@ -46,3 +46,13 @@ The 0.2.0 tarball built on linuxlt (Ubuntu 26.04) needs its exact Qt 6.10, FFmpe
 - The AppImage runtime mounts with FUSE 3 (fusermount3); no libfuse2 needed (Arch PC has only fuse3).
 - README (Install, Build, Terminal client), wiki Installation / Building-from-source / FAQ / Troubleshooting / Terminal-client, and the 0.2.0 release-notes draft now describe the AppImage, the supported systems (x86-64, glibc 2.43+, tested Ubuntu 26.04 and Arch) and building elsewhere.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+OST now ships as a self-contained AppImage that runs on current mainstream distros, not only on the build machine.
+
+- desktop/packaging/build-appimage.sh builds OST-<version>-x86_64.AppImage with linuxdeploy + its Qt plugin + appimagetool, bundling Qt 6.10 (QML, Wayland/xcb, LayerShellQt, multimedia/FFmpeg backend, TLS, image formats), QtWebEngine, FFmpeg 8 and webrtc-audio-processing; glibc 2.43+, GPU stack, PipeWire, D-Bus, Wayland client libs and OpenSSL come from the system. AppRun also runs teams-cli.
+- Verified: starts and renews sign-in on linuxlt (Ubuntu 26.04); starts and signs in as OST Test 2 on Arch (Hyprland), libraries loaded from the AppImage.
+- README, wiki Installation/Building/FAQ/Troubleshooting and the 0.2.0 release notes describe supported systems and building elsewhere.
+<!-- SECTION:FINAL_SUMMARY:END -->
