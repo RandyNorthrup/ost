@@ -21829,6 +21829,30 @@ impl qobject::Backend {
                         let f = |t: chrono::DateTime<chrono::Utc>| t.to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
                         Ok(serde_json::Value::Object(api::recaps::catch_up_counts(&f(end - chrono::Duration::days(30)), &f(end)).await?))
                     }
+                    // Generate audio recap's meeting names: the calendar
+                    // events' subjects and organizers (Graph `me/events` by the
+                    // meeting's iCalUId), keyed by iCalUId.
+                    "recapEventSubjects" => {
+                        let ids: Vec<String> = p.get("ids").and_then(|v| v.as_array()).into_iter().flatten().filter_map(|x| x.as_str().map(str::to_string))
+                            .filter(|i| !i.is_empty() && i.bytes().all(|b| b.is_ascii_alphanumeric())).take(60).collect();
+                        let asks = ids.iter().map(|id| {
+                            let client = &client;
+                            async move { (id.clone(), client.graph_get(&format!("/me/events?$filter=iCalUId%20eq%20'{id}'&$select=subject,organizer&$top=1")).await) }
+                        });
+                        let mut out = serde_json::Map::new();
+                        for (id, r) in futures::future::join_all(asks).await {
+                            if let Ok(r) = r
+                                && r.status().is_success()
+                                && let Ok(v) = r.json::<serde_json::Value>().await
+                            {
+                                let e = &v["value"][0];
+                                if e.is_object() {
+                                    out.insert(id, json!({ "subject": e["subject"].as_str().unwrap_or_default(), "organizer": e.pointer("/organizer/emailAddress/name").and_then(|x| x.as_str()).unwrap_or_default() }));
+                                }
+                            }
+                        }
+                        Ok(serde_json::Value::Object(out))
+                    }
                     // An audio recap's transcript: its caption file read with
                     // the file's own site token (Teams' useTranscriptData).
                     "podcastCaptions" => {
@@ -22034,7 +22058,14 @@ impl qobject::Backend {
                     // (Teams' resetVirtualEventSessionRecordingToDraft: the
                     // recording deleted and added again as a draft).
                     "highlightsSaveDraft" | "highlightsPublish" | "highlightsReset" => {
-                        let f = p.get("file").cloned().unwrap_or_default();
+                        let mut f = p.get("file").cloned().unwrap_or_default();
+                        if (f["id"].as_str().unwrap_or_default().is_empty() || f["driveId"].as_str().unwrap_or_default().is_empty())
+                            && let Some(url) = f["objectUrl"].as_str().filter(|u| !u.is_empty()).map(str::to_string)
+                        {
+                            let (drive, item) = api::event_highlights::resolve_file(&client, &url).await?;
+                            f["driveId"] = json!(drive);
+                            f["id"] = json!(item);
+                        }
                         let g = |k: &str| f[k].as_str().unwrap_or_default().to_string();
                         let (event, session) = (s("eventId"), s("sessionId"));
                         anyhow::ensure!(!session.is_empty(), "The event has no session");
@@ -22050,7 +22081,7 @@ impl qobject::Backend {
                         tracing::warn!(kind = %kind, name = %g("name"), url = %g("objectUrl").split('?').next().unwrap_or_default(), drive = !g("driveId").is_empty(), item = !g("id").is_empty(), duration = ?duration, "event highlights: sending recording");
                         let v = api::events::add_session_recording(&client, &event, &session, &body).await?;
                         tracing::info!(kind = %kind, content = content.map(str::len).unwrap_or(0), status = %v.pointer("/publishProgress/status").and_then(|x| x.as_str()).unwrap_or_default(), "event highlights: recording sent");
-                        Ok(json!({ "recording": v }))
+                        Ok(json!({ "recording": v, "file": f }))
                     }
                     "highlightsExtend" => {
                         let v = api::events::extend_session_recording(&client, &s("eventId"), &s("sessionId"), &s("recordingId"), api::event_highlights::EXTENSION_DAYS).await?;
@@ -22129,8 +22160,13 @@ impl qobject::Backend {
                         let (d, i) = (part("/drives/"), part("/items/"));
                         let ok = |s: &str| !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || "!-_".contains(c));
                         anyhow::ensure!(ok(&d) && ok(&i), "Not a drive file");
-                        let v: serde_json::Value = client.graph_get(&format!("/drives/{d}/items/{i}?$select=id,@microsoft.graph.downloadUrl")).await?.json().await?;
-                        Ok(json!({ "url": v.get("@microsoft.graph.downloadUrl").and_then(|x| x.as_str()).unwrap_or_default() }))
+                        // (Graph leaves the download address out under $select.)
+                        let r = client.graph_get(&format!("/drives/{d}/items/{i}")).await?;
+                        let status = r.status();
+                        let v: serde_json::Value = r.json().await.unwrap_or_default();
+                        let url = v.get("@microsoft.graph.downloadUrl").and_then(|x| x.as_str()).unwrap_or_default();
+                        anyhow::ensure!(!url.is_empty(), "The audio answered {status}");
+                        Ok(json!({ "url": url }))
                     }
                     // The recap window's extras: the recording's file facts
                     // (Open in Clipchamp's address, Manage's download and

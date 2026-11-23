@@ -10828,6 +10828,7 @@ Window {
         running: Qt.application.arguments.indexOf("--recaps-test") >= 0 && backend.signedIn
         interval: 3000; repeat: true
         property int step: 0
+        property int genWait: 0
         onTriggered: {
             const cap = tag => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-recaps-" + tag + ".png")))
             if (step === 0) { rail.openApp("events") }
@@ -10858,6 +10859,8 @@ Window {
                 const want = Qt.application.arguments.find(a => a.startsWith("--recaps-generate=")).slice(18).replace(/~/g, " ").split(",")
                 const style = (Qt.application.arguments.find(a => a.startsWith("--recaps-style=")) || "").slice(15)
                 const n = recapsView.item.pickForTest(want, style)
+                // (The meetings' calendar names come a moment later.)
+                if (n === 0 && (genWait = genWait + 1) < 6) return
                 console.warn("RECAPS generate list", JSON.stringify(recapsView.item.genMeetingsForTest()), "picked", n)
                 if (n === 0) { recapsView.item.generateDialogForTest(false); step = 199 }
             }
@@ -10898,11 +10901,13 @@ Window {
         // Meet now, nobody invited): Teams makes its notes by claiming the
         // collab leader (no calendar entry to delete).
         readonly property bool meetNow: Qt.application.arguments.indexOf("--call-notes-meetnow") >= 0
-        readonly property string subject: meetNow ? "OST TEST 212 notes meet now" : "OST TEST 212 notes OST"
+        // --call-notes-subject=<title> (~ for spaces): that title instead (e.g. a
+        // Facilitator test meeting, TASK-0246).
+        readonly property string subject: (Qt.application.arguments.find(a => a.startsWith("--call-notes-subject=")) || "").slice(21).replace(/~/g, " ") || (meetNow ? "OST TEST 212 notes meet now" : "OST TEST 212 notes OST")
         onTriggered: {
             const capCall = tag => callWindow.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-call-notes-" + tag + ".png")))
             const log = tag => console.warn("MEETINGNOTES", tag, backend.callState, callWindow.meetingNotesPaneForTest.stateForTest())
-            const stay = Qt.application.arguments.indexOf("--call-notes-stay") >= 0
+            const stay = Qt.application.arguments.some(a => a === "--call-notes-stay" || a.startsWith("--call-notes-stay="))
             if (step === 0 && meetNow) {
                 calendarView.meetNowForTest.linkOnly = true; calendarView.meetNowForTest.link = ""
                 backend.calendarAction("meetNow", JSON.stringify({ subject: subject }))
@@ -10943,10 +10948,11 @@ Window {
                 if (step === 26) capCall("access")
                 if (step === 27) pane.closeAccessForTest()
             }
-            else if (step === 30 && stay && held++ < 24) return
+            // --call-notes-stay[=<s>]: stay that long (default 72 s) before leaving.
+            else if (step === 30 && stay && held++ < Math.round(parseInt((Qt.application.arguments.find(a => a.startsWith("--call-notes-stay=")) || "--call-notes-stay=72").slice(18)) / 3)) return
             else if (step === 31) { capCall("end"); backend.hangUp() }
             else if (step === 33) { console.warn("MEETINGNOTES after", backend.callState); if (ev && ev.id) backend.deleteEvent(ev.id) }
-            else if (step === 35) backend.callNotesRequest("cleanup", "notescleanup", JSON.stringify({ prefix: "OST TEST 212" }))
+            else if (step === 35) backend.callNotesRequest("cleanup", "notescleanup", JSON.stringify({ prefix: subject.split(" ").slice(0, 3).join(" ") }))
             else if (step === 34) backend.loadCalendar(new Date(Date.now() - 86400000).toISOString().slice(0, 19) + "Z", new Date(Date.now() + 86400000).toISOString().slice(0, 19) + "Z")
             else if (step === 37) { console.warn("MEETINGNOTES event still there", (backend.calendarJson ? JSON.parse(backend.calendarJson) : []).some(x => x.subject === subject)); Qt.quit() }
             step++

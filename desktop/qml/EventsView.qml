@@ -317,16 +317,22 @@ Rectangle {
         hlSel = f
         if (hlSame(hlActive, f)) return
         const had = !!hlActive
-        hlSaveDraft(f)
-        if (had) { hlRegenerate.recording = f; hlRegenerate.open() }
-        else generateHighlights({ drive_id: f.driveId, item_id: f.id })
+        const next = r => {
+            if (had) { hlRegenerate.recording = r; hlRegenerate.open() }
+            else generateHighlights({ drive_id: r.driveId, item_id: r.id })
+        }
+        // A pick without its drive and item (OneDrive's Home) gets them from
+        // the draft's reply first.
+        if (f.id && f.driveId) { hlSaveDraft(f); next(f) }
+        else hlSaveDraft(f, r => { if (r && r.id) { hlSel = r; next(r) } })
     }
     function openHlOdsp() { hlOdsp.entry = "home"; hlOdsp.open() }
-    function hlSaveDraft(f) {
+    function hlSaveDraft(f, then) {
         const ev = current
         if (!hl || !hl.sessionId) return
         call("highlightsSaveDraft", { eventId: ev.id, sessionId: hl.sessionId, file: f }, v => {
-            console.warn("EVENTS highlights draft", JSON.stringify({ error: v.error || "", status: v.recording && v.recording.publishProgress ? v.recording.publishProgress.status : "" }))
+            console.warn("EVENTS highlights draft", JSON.stringify({ error: v.error || "", status: v.recording && v.recording.publishProgress ? v.recording.publishProgress.status : "", file: v.file ? { drive: !!v.file.driveId, item: !!v.file.id } : null }))
+            if (then) then(v.error ? null : v.file)
             if (current === ev && !hlGenerating) loadHighlights()
         })
     }
@@ -440,7 +446,7 @@ Rectangle {
         const h = root.hl
         const recs = h && h.recordings ? Array.from(h.recordings).map(r => root.recordingLabel(r)) : []
         return JSON.stringify({ recordings: recs, hasHl: !!h, loop: !!(h && h.loop), player: !!(h && h.player), loopUrl: h && h.loopUrl ? String(h.loopUrl).split("?")[0] : "", created: h && h.created ? Number(h.created) : 0, generating: !!root.hlGenerating, error: String(root.hlError), included: String(root.hlIncluded),
-                                session: h && h.sessionId ? String(h.sessionId) : "", status: String(root.hlStatus), alert: String(root.hlAlert), busy: !!root.hlBusy, selected: root.hlSel ? String(root.hlSel.name) : "",
+                                recordingItems: h && h.recordings ? Array.from(h.recordings).map(r => String(r.item_id)) : [], session: h && h.sessionId ? String(h.sessionId) : "", status: String(root.hlStatus), alert: String(root.hlAlert), busy: !!root.hlBusy, selected: root.hlSel ? String(root.hlSel.name) : "",
                                 expires: root.hlActive ? String(root.hlActive.expirationDate || "") : "", hasHighlights: root.hlActive ? !!root.hlActive.hasHighlights : false,
                                 loopState: hlLoop.item ? String(hlLoop.item.state_) : "", publishUsable: !!root.hlPublishUsable, bar: String(root.hlBarKind) })
     }

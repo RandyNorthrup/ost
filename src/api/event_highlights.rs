@@ -248,7 +248,8 @@ pub const EXTENSION_DAYS: i64 = 60;
 pub fn recording_body(name: &str, web_url: &str, duration_ms: Option<f64>, drive_id: &str, item_id: &str, highlights_content: Option<&str>, draft: bool) -> Value {
     let mut b = json!({ "name": name, "webUrl": web_url, "expirationDurationDays": EXPIRATION_DAYS, "driveId": drive_id, "itemId": item_id });
     if let Some(d) = duration_ms {
-        b["duration"] = json!(d);
+        // Whole milliseconds, as Teams sends them (the service refuses 766144.0).
+        b["duration"] = json!(d.round() as i64);
     }
     if let Some(c) = highlights_content {
         b["highlightsContent"] = json!(c);
@@ -279,6 +280,18 @@ pub async fn video_duration(location: &str, drive_id: &str, item_id: &str) -> Re
     anyhow::ensure!(r.status().is_success(), "The file answered {}", r.status());
     let v: Value = r.json().await.unwrap_or_default();
     Ok(v.pointer("/video/duration").and_then(Value::as_f64))
+}
+
+/// A picked file's drive and item from its address (Graph `shares/u!…/
+/// driveItem`), for a pick that came without them (OneDrive's Home lists
+/// recent files by address); Teams' picker hands both.
+pub async fn resolve_file(client: &crate::api::client::TeamsClient, web_url: &str) -> Result<(String, String)> {
+    let id = super::drive::share_id(web_url.split('?').next().unwrap_or(web_url));
+    let v: Value = client.graph_get(&format!("/shares/{id}/driveItem?$select=id,parentReference")).await?.json().await?;
+    let item = v.get("id").and_then(Value::as_str).unwrap_or_default().to_string();
+    let drive = v.pointer("/parentReference/driveId").and_then(Value::as_str).unwrap_or_default().to_string();
+    anyhow::ensure!(!item.is_empty() && !drive.is_empty(), "The file wasn't found");
+    Ok((drive, item))
 }
 
 /// The session's recording Teams treats as the active one (the first),
@@ -362,7 +375,8 @@ mod tests {
 
     #[test]
     fn publish_bodies() {
-        let d = recording_body("rec.mp4", "https://x/_api/v2.1/drives/b!d/items/R1", Some(171_000.0), "b!d", "R1", None, true);
+        let d = recording_body("rec.mp4", "https://x/_api/v2.1/drives/b!d/items/R1", Some(766_144.0), "b!d", "R1", None, true);
+        assert_eq!(d["duration"].to_string(), "766144");
         assert_eq!(d["isDraft"], true);
         assert_eq!(d["expirationDurationDays"], 30);
         assert!(d.get("highlightsContent").is_none());

@@ -274,7 +274,7 @@ Rectangle {
                         // A made recap's length ("5m 38s"; what's left of it
                         // once the chosen one has been started).
                         Text { visible: prow.st === "done" && root.recapLength(prow.modelData) > 0; x: 16; y: prow.on ? 45 : 34; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
-                               text: prow.on && recapAudio.position > 0 && recapAudio.duration > 0 ? qsTr("%1 left").arg(root.fmtLength(recapAudio.duration - recapAudio.position)) : root.fmtLength(root.recapLength(prow.modelData)) }
+                               text: prow.on && recapAudio.position > 0 && recapAudio.duration > 0 ? qsTr("%1 left").arg(root.fmtLength(root.recapLength(prow.modelData) - recapAudio.position)) : root.fmtLength(root.recapLength(prow.modelData)) }
                         Text { anchors.right: parent.right; anchors.rightMargin: 16; y: on ? 26 : 14; text: Qt.formatDate(new Date(prow.modelData.createdDateTime || Date.now()), "M/d"); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
                         HoverHandler { id: prh }
                         TapHandler { onTapped: root.chosenPodcast = prow.modelData.id }
@@ -384,7 +384,7 @@ Rectangle {
                     visible: recapsPanes.chosenState === "done" && root.detailTab === "transcript"
                     x: 0; y: 200.5; width: parent.width; height: parent.height - y - 146; clip: true; spacing: 0
                     model: root.transcriptCues
-                    header: Text { visible: root.transcriptState !== "ready"; width: 600; wrapMode: Text.Wrap; bottomPadding: 12
+                    header: Text { visible: root.transcriptState !== "ready"; height: visible ? implicitHeight : 0; width: 600; wrapMode: Text.Wrap; bottomPadding: 12
                                    text: root.transcriptState === "loading" ? qsTr("Loading...") : qsTr("The transcript isn't available."); font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary }
                     delegate: Column {
                         id: cue
@@ -417,7 +417,8 @@ Rectangle {
                     color: theme.pick("#F5F5F5", "#1F1F1F", "#000000")
                     id: playerBar
                     readonly property bool can: recapsPanes.chosenState === "done" && !!recapsPanes.chosen && !!recapsPanes.chosen.fullAudioFile
-                    readonly property real total: recapAudio.duration > 0 ? recapAudio.duration : root.chapterRows.length ? root.chapterRows[root.chapterRows.length - 1].endMs : 0
+                    // The recap's own length (Teams counts the chapters, not the file).
+                    readonly property real total: recapsPanes.chosen && root.recapLength(recapsPanes.chosen) > 0 ? root.recapLength(recapsPanes.chosen) : recapAudio.duration
                     Text { x: 32; y: 24; width: parent.width - 64; elide: Text.ElideRight
                            text: recapsPanes.chosenState === "generating" ? qsTr("Generating...") : root.currentChapter >= 0 && root.chapterRows[root.currentChapter] ? root.chapterRows[root.currentChapter].title : (recapsPanes.chosen ? recapsPanes.chosen.title || "" : "")
                            font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
@@ -425,7 +426,7 @@ Rectangle {
                         Rectangle { width: playerBar.total > 0 ? parent.width * Math.min(1, recapAudio.position / playerBar.total) : 0; height: parent.height; radius: 2; color: theme.brandFill }
                         TapHandler { enabled: playerBar.can && playerBar.total > 0; onTapped: ev => root.seekTo(playerBar.total * ev.position.x / track.width) } }
                     Text { anchors.right: parent.right; anchors.rightMargin: 32; y: 46; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary
-                           text: playerBar.can && playerBar.total > 0 ? root.fmtTime(recapAudio.position) + " / " + root.fmtTime(playerBar.total) : "--:-- / --:--" }
+                           text: playerBar.can && playerBar.total > 0 ? root.fmtClock(recapAudio.position) + " / " + root.fmtClock(playerBar.total) : "--:-- / --:--" }
                     Row { anchors.horizontalCenter: parent.horizontalCenter; y: 76; spacing: 28
                         Text { anchors.verticalCenter: parent.verticalCenter; text: recapAudio.playbackRate + "x"; font.family: theme.font; font.pixelSize: 12; color: playerBar.can ? theme.text : theme.disabledStrong
                                TapHandler { enabled: playerBar.can; onTapped: root.nextSpeed() }
@@ -454,7 +455,7 @@ Rectangle {
         if (recapAudio.source.toString()) { if (then) then(); recapAudio.play(); return }
         const p = recapsPanes.chosen
         if (!p || !p.fullAudioFile) return
-        call("driveStreamUrl", { url: p.fullAudioFile.fileUrl }, v => { if (v.url) { recapAudio.source = v.url; recapAudio.play(); if (then) pendingSeek = then } })
+        call("driveStreamUrl", { url: p.fullAudioFile.fileUrl }, v => { console.warn("RECAPS play", v.error || "", !!v.url); if (v.url) { recapAudio.source = v.url; recapAudio.play(); if (then) pendingSeek = then } })
     }
     property var pendingSeek: null
     Connections { target: recapAudio; function onMediaStatusChanged() { if (root.pendingSeek && recapAudio.seekable) { const f = root.pendingSeek; root.pendingSeek = null; f() } } }
@@ -627,7 +628,7 @@ Rectangle {
     function chooseDoneForTest() {
         const p = (podcasts || []).find(x => podcastState(x) === "done")
         if (p) chosenPodcast = p.id
-        return p ? (p.title || "") + " " + JSON.stringify(Object.keys(p)) : "none"
+        return p ? (p.title || "") + " " + JSON.stringify(Object.keys(p)) + " audio " + String(p.fullAudioFile ? p.fullAudioFile.fileUrl : "").split("?")[0] + " captions " + String(p.captionFile ? p.captionFile.fileUrl : "").split("?")[0] : "none"
     }
     function recapDetailForTest() {
         return JSON.stringify({ tab: detailTab, chapters: chapterRows.map(c => c.title + " @" + fmtTime(c.startMs)), transcript: transcriptState, cues: transcriptCues.length,
@@ -668,15 +669,28 @@ Rectangle {
         readonly property var meetings: {
             const cutoff = Date.now() - 30 * 86400000
             let out = []
-            for (const d of root.days) for (const m of (d.meetings || [])) if (m.transcript && Date.parse(m.start) >= cutoff) out.push(m)
+            // Named as Teams names them: the calendar event's subject and
+            // organizer (the thread's subject can be a recording notice).
+            for (const d of root.days) for (const m of (d.meetings || [])) if (m.transcript && Date.parse(m.start) >= cutoff) {
+                const e = eventInfo[m.iCalUid]
+                out.push(e && e.subject ? Object.assign({}, m, { subject: e.subject, organizer: e.organizer || m.organizer }) : m)
+            }
             if (filterText) out = out.filter(m => (m.subject || "").toLowerCase().indexOf(filterText.toLowerCase()) >= 0)
             return out
         }
+        property var eventInfo: ({})
         function openNow() {
             genDialog.picked = []; genDialog.chip = "All"; genDialog.filterText = ""; genSearch.text = ""; genDialog.collapsed = []; genDialog.open()
             if (root.next < 42 && !root.loading) root.loadMore()
             root.call("recapCatchUp", {}, v => { if (!v.error) genDialog.catchUp = v })
+            loadEventInfo()
         }
+        function loadEventInfo() {
+            const ids = []
+            for (const d of root.days) for (const m of (d.meetings || [])) if (m.iCalUid && eventInfo[m.iCalUid] === undefined && ids.indexOf(m.iCalUid) < 0) ids.push(m.iCalUid)
+            if (ids.length) root.call("recapEventSubjects", { ids: ids }, v => { console.warn("RECAPS event names", ids.length, v.error || Object.keys(v).length); if (!v.error) genDialog.eventInfo = Object.assign({}, genDialog.eventInfo, v) })
+        }
+        Connections { target: root; function onDaysChanged() { if (genDialog.opened) genDialog.loadEventInfo() } }
         /// The weeks (Teams' grouping by the start of the week, newest
         /// first: "This week", "Last week", else the week's first day).
         readonly property var groups: {
