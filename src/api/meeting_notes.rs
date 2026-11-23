@@ -101,7 +101,18 @@ pub async fn fill_from_chat(client: &TeamsClient, m: &mut Meeting) {
     if m.thread_id.is_empty() || (!m.i_cal_uid.is_empty() && !m.organizer.is_empty() && !m.meeting_title.is_empty()) {
         return;
     }
-    match super::chat_meeting(client, &m.thread_id).await {
+    // (The chat service answers 429 to bursts, such as right after a join.)
+    let mut tries = 0;
+    let found = loop {
+        match super::chat_meeting(client, &m.thread_id).await {
+            Err(e) if tries < 3 && format!("{e:#}").contains("429") => {
+                tries += 1;
+                tokio::time::sleep(std::time::Duration::from_secs(3 * tries)).await;
+            }
+            r => break r,
+        }
+    };
+    match found {
         Ok(Some(t)) => {
             if m.i_cal_uid.is_empty() {
                 m.i_cal_uid = t.ical_uid;
@@ -117,7 +128,15 @@ pub async fn fill_from_chat(client: &TeamsClient, m: &mut Meeting) {
             }
         }
         Ok(None) => {}
-        Err(e) => tracing::info!("meeting notes: the meeting chat's meeting: {e:#}"),
+        Err(e) => tracing::info!("meeting notes: the meeting chat's meeting: {}", format!("{e:#}").chars().take(160).collect::<String>()),
+    }
+    // Still untitled: the calendar event's subject (what Teams' call
+    // details name the meeting's instance by).
+    if m.meeting_title.is_empty()
+        && !m.i_cal_uid.is_empty()
+        && let Ok(Some(ev)) = crate::api::calendar::event_by_ical_uid(client, &m.i_cal_uid).await
+    {
+        m.meeting_title = ev.subject;
     }
 }
 

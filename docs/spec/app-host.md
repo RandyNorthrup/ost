@@ -572,6 +572,15 @@ docs/spec/events.md.
     createLink {"type": "edit", "scope": "organization"}`, then
     `updateMeetingStates {"collabResources.notes": {"value": {"type":
     "notes", "resourceUri": "<the link>?nav=…"}, "sequenceNumber": 1}}`.
+- The page's name (Teams 26304, call-meeting-notes 527114
+  `createCollabResource`, TASK-0248): `title: call.meetingDetails.
+  instanceDetails.subject ?? "Meeting Notes"` (the calendar instance's
+  subject; the same subject goes to getOrCreateMeetingNotes as
+  `meetingTitle`), so the file is `Meetings/<subject>.loop`. OST names it
+  from the join answer's `meetingDetails.instanceDetails.subject`, then its
+  meeting chat properties' subject, then the meeting chat's subject, then
+  "Meeting Notes" (`meeting_info::notes_title`,
+  `meeting_notes::file_name`).
 - OST (`MeetingNotesPane.qml`, `api::meeting_notes`,
   `calling::meeting_notes`, `--call-notes-test`) does the same in that
   order and shows the page in its Loop host (kind `meetingNotes`).

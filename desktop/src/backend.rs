@@ -3236,6 +3236,8 @@ pub struct BackendRust {
     call_ai_facilitator: bool,
     call_ai_facilitator_voice: bool,
     call_ai_facilitator_live_notes: bool,
+    /// The meeting is a Meet now (Facilitator's agenda timer is off there).
+    call_meet_now: bool,
     call_everyone_presents: bool,
     call_ai_on: bool,
     call_recording_state: QString,
@@ -4323,6 +4325,7 @@ struct JoinedView {
     capability: teams_cli::calling::meeting_options::MeetingCapability,
     processing: teams_cli::calling::roster::Processing,
     ai_indicator: bool,
+    meet_now: bool,
     has_audio: bool,
     can_dtmf: bool,
     // Camera and Share as the joined media allows (in the lobby Share
@@ -4399,6 +4402,7 @@ impl JoinedView {
             capability: call.capability(),
             processing: call.processing(),
             ai_indicator: call.shows_ai_indicator(),
+            meet_now: call.is_meet_now(),
             has_audio: call.has_audio(),
             can_dtmf: call.can_dtmf(),
             can_video: call.can_send_video(),
@@ -4430,6 +4434,9 @@ fn stream_json(lobby: bool, url: &str, player: &str) -> String {
 
 /// The loopback server playing the town hall we watch, and the stream it serves.
 static STREAM_PROXY: std::sync::Mutex<Option<(String, teams_cli::calling::live_stream::StreamProxy)>> = std::sync::Mutex::new(None);
+
+/// The audio recap chapter being played (its loopback HLS proxy).
+static RECAP_AUDIO_PROXY: std::sync::Mutex<Option<teams_cli::calling::live_stream::StreamProxy>> = std::sync::Mutex::new(None);
 
 fn stop_stream_proxy() {
     if let Ok(mut p) = STREAM_PROXY.lock() {
@@ -11692,6 +11699,7 @@ impl qobject::Backend {
         self.as_mut().set_call_copilot_only(false);
         self.as_mut().set_call_copilot_running(false);
         self.as_mut().set_call_ai_facilitator(false);
+        self.as_mut().rust_mut().call_meet_now = false;
         self.as_mut().set_call_interpreter_json(QString::default());
         teams_cli::calling::ai_interpreter::set_listening(None);
         self.as_mut().set_call_ai_facilitator_voice(false);
@@ -11712,6 +11720,7 @@ impl qobject::Backend {
     /// The call window for a joined (or resumed) meeting.
     fn show_joined(mut self: Pin<&mut Self>, v: JoinedView, in_lobby: bool) {
         self.as_mut().set_call_invite_url(QString::from(v.invite.as_str()));
+        self.as_mut().rust_mut().call_meet_now = v.meet_now;
         self.as_mut().show_capability(v.capability, false);
         runtime().spawn(interpreter_joined(self.qt_thread()));
         self.as_mut().rust_mut().timer_skew_ms = 0;
@@ -11774,6 +11783,9 @@ impl qobject::Backend {
         }
         if self.rust().call_ai_facilitator != cap.facilitator {
             self.as_mut().set_call_ai_facilitator(cap.facilitator);
+            // Teams' meeting timer follows Facilitator at once: turned off,
+            // its strip leaves the agenda for the ad-hoc timer.
+            self.as_mut().refresh_timer_facilitator();
         }
         if self.rust().call_ai_facilitator_voice != cap.facilitator_speech {
             self.as_mut().set_call_ai_facilitator_voice(cap.facilitator_speech);
@@ -12143,9 +12155,29 @@ impl qobject::Backend {
             "skewMs": self.rust().timer_skew_ms,
             "sequence": t.sequence,
             "live": live,
-            "facilitator": self.rust().call_ai_facilitator,
+            "facilitator": self.timer_facilitator(),
         });
         self.as_mut().set_call_timer_json(QString::from(json.to_string().as_str()));
+    }
+
+    /// Facilitator as the meeting timer sees it (Teams' `isFacilitatorOn`).
+    fn timer_facilitator(&self) -> bool {
+        let cap = teams_cli::calling::meeting_options::MeetingCapability { facilitator: self.rust().call_ai_facilitator, ..Default::default() };
+        teams_cli::calling::meeting_options::facilitator_on(&cap, self.rust().call_meet_now, teams_cli::calling::meeting_options::meet_now_agenda_disabled())
+    }
+
+    /// The timer strip's Facilitator flag after Facilitator was turned on
+    /// or off (the timers themselves unchanged).
+    fn refresh_timer_facilitator(mut self: Pin<&mut Self>) {
+        let on = self.timer_facilitator();
+        let text = self.rust().call_timer_json.to_string();
+        let Ok(mut v) = serde_json::from_str::<serde_json::Value>(&text) else { return };
+        if v.get("facilitator").and_then(|f| f.as_bool()) == Some(on) {
+            return;
+        }
+        tracing::info!(on, "meeting timer: Facilitator changed");
+        v["facilitator"] = serde_json::json!(on);
+        self.as_mut().set_call_timer_json(QString::from(v.to_string().as_str()));
     }
 
     pub fn meeting_timer(self: Pin<&mut Self>, action: &QString, arg: i32) {
@@ -22129,7 +22161,15 @@ impl qobject::Backend {
                         anyhow::ensure!(meetings.iter().all(|m| !m.transcripts.is_empty()), "No transcripts");
                         tracing::info!(meetings = meetings.len(), style = %s("style"), "audio recap: generate");
                         let language = Some(s("language")).filter(|l| !l.is_empty()).unwrap_or_else(|| "en-US".into());
-                        let g = api::podcast::generate_multi(&meetings, &s("style"), &language, &app_locale()).await?;
+                        // Each update while it's made goes to the view (its
+                        // chapters, with their audio, come one by one).
+                        let (progress_qt, progress_id) = (qt.clone(), format!("{id}:progress"));
+                        let progress = move |g: &api::podcast::Generation| {
+                            let answer = json!({ "status": g.status, "podcast": g.podcast, "hasChapters": api::podcast::has_chapters(&g.podcast) }).to_string();
+                            let id = progress_id.clone();
+                            let _ = progress_qt.queue(move |mut this| this.as_mut().events_reply(QString::from(id.as_str()), QString::from(answer.as_str())));
+                        };
+                        let g = api::podcast::generate_multi(&meetings, &s("style"), &language, &app_locale(), &progress).await?;
                         tracing::info!(status = %g.status, message = %g.message, "audio recap generated");
                         Ok(json!({ "status": g.status, "message": g.message, "noInsight": api::podcast::no_insight(&g.message), "podcast": g.podcast }))
                     }
@@ -22157,6 +22197,18 @@ impl qobject::Backend {
                     // An audio recap's audio (its fullAudioFile, an ODSP
                     // `…/drives/{d}/items/{i}/…/content` address) as a
                     // short-lived download address the player can stream.
+                    // An audio recap chapter's audio (an HLS stream of the
+                    // recap's file, growing while the chapter is made), served
+                    // to the player through a loopback proxy that adds the
+                    // site's token as Teams' HLS loader does.
+                    "recapChapterAudio" => {
+                        let proxy = teams_cli::calling::live_stream::StreamProxy::site(&s("url")).await?;
+                        let url = proxy.url.clone();
+                        if let Ok(mut p) = RECAP_AUDIO_PROXY.lock() {
+                            *p = Some(proxy);
+                        }
+                        Ok(json!({ "url": url }))
+                    }
                     "driveStreamUrl" => {
                         let u = s("url");
                         let part = |k: &str| u.split(k).nth(1).and_then(|r| r.split('/').next()).unwrap_or_default().to_string();
@@ -22434,9 +22486,11 @@ impl qobject::Backend {
                         }
                         // The meeting (its chat thread, organizer, title, calendar id).
                         let mut m: api::meeting_notes::Meeting = serde_json::from_value(ctx.clone()).unwrap_or_default();
+                        let titled = !m.meeting_title.is_empty();
                         if let Ok(client) = TeamsClient::new().await {
                             api::meeting_notes::fill_from_chat(&client, &mut m).await;
                         }
+                        tracing::info!(from_join = titled, titled = !m.meeting_title.is_empty(), "meeting notes: the meeting's title");
                         // 2. A scheduled meeting (it has a calendar id): Teams'
                         // collab object service gives the notes made, or the
                         // claim to make them.

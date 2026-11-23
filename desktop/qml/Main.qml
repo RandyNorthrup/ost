@@ -10829,6 +10829,7 @@ Window {
         interval: 3000; repeat: true
         property int step: 0
         property int genWait: 0
+        property bool chapterSeen: false
         onTriggered: {
             const cap = tag => window.contentItem.grabToImage(r => r.saveToFile(window.shotPath.replace(".png", "-recaps-" + tag + ".png")))
             if (step === 0) { rail.openApp("events") }
@@ -10872,6 +10873,11 @@ Window {
             else if (step === 18) { console.warn("RECAPS player", recapsView.item.audioPlayerStateForTest()); cap("generating") }
             else if (step > 18 && step < 199) {
                 if (step % 5 === 0) console.warn("RECAPS player", recapsView.item.audioPlayerStateForTest())
+                // Playing by chapter while it's still made (TASK-0248).
+                if (!chapterSeen && recapsView.item.chapterPlaying >= 0 && !recapsView.item.lastGenerated) {
+                    chapterSeen = true
+                    console.warn("RECAPS chapter playing", recapsView.item.audioPlayerStateForTest()); cap("chapter-playing")
+                }
                 if (recapsView.item.lastGenerated) { console.warn("RECAPS done", JSON.stringify(recapsView.item.lastGenerated).slice(0, 600)); step = 199 }
             }
             else if (step === 201) console.warn("RECAPS after", recapsView.item.audioPlayerStateForTest())

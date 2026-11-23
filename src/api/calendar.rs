@@ -357,6 +357,7 @@ pub async fn delete_event(client: &TeamsClient, id: &str) -> Result<()> {
 /// `range`).
 #[derive(Debug, Clone, Default)]
 pub struct MeetingEvent {
+    pub subject: String,
     pub body_html: String,
     pub recurrence: Option<serde_json::Value>,
 }
@@ -367,7 +368,7 @@ pub async fn event_by_ical_uid(client: &TeamsClient, ical_uid: &str) -> Result<O
     if ical_uid.is_empty() || !ical_uid.bytes().all(|b| b.is_ascii_alphanumeric()) {
         anyhow::bail!("Not an iCalUId");
     }
-    let path = format!("/me/events?$filter=iCalUId%20eq%20'{ical_uid}'&$select=body,recurrence,type&$top=1");
+    let path = format!("/me/events?$filter=iCalUId%20eq%20'{ical_uid}'&$select=subject,body,recurrence,type&$top=1");
     let v: serde_json::Value = client
         .graph_get(&path)
         .await?
@@ -375,6 +376,7 @@ pub async fn event_by_ical_uid(client: &TeamsClient, ical_uid: &str) -> Result<O
         .await
         .context("Failed to read the meeting's calendar event")?;
     Ok(v.pointer("/value/0").map(|e| MeetingEvent {
+        subject: e.get("subject").and_then(|s| s.as_str()).unwrap_or_default().to_string(),
         body_html: e
             .pointer("/body/content")
             .and_then(|c| c.as_str())

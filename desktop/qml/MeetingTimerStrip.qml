@@ -43,6 +43,7 @@ Rectangle {
     signal timeUp()
     readonly property var popupForTest: popover
     function openControls() { if (!viewOnly) popover.open() }
+    function closeControls() { popover.close() }
 
     height: 40
     color: theme.surface

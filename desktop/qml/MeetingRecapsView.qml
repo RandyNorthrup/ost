@@ -40,14 +40,20 @@ Rectangle {
     function openTab(t) { tab = t; if (t === "audio") loadPodcasts(); else if (days.length === 0) loadMore() }
     property int seq: 0
     property var pending: ({})
-    function call(kind, payload, cb) {
+    property var progressHandlers: ({})
+    function call(kind, payload, cb, onProgress) {
         const id = "recaps" + (++seq)
         const p = Object.assign({}, pending); p[id] = cb; pending = p
+        if (onProgress) { const h = Object.assign({}, progressHandlers); h[id + ":progress"] = onProgress; progressHandlers = h }
         backend.eventsRequest(kind, id, JSON.stringify(payload || {}))
     }
     Connections {
         target: backend
         function onEventsReply(id, json) {
+            // An update of a request still going (Generate's recap as it's made).
+            const progress = root.progressHandlers[id]
+            if (progress) { let u = {}; try { u = JSON.parse(json) } catch (e) {} progress(u); return }
+            if (root.progressHandlers[id + ":progress"]) { const h = Object.assign({}, root.progressHandlers); delete h[id + ":progress"]; root.progressHandlers = h }
             const cb = root.pending[id]
             if (!cb) return
             const p = Object.assign({}, root.pending); delete p[id]; root.pending = p
@@ -72,7 +78,7 @@ Rectangle {
             if (genDialog.opened) loadMore()
         })
     }
-    function loadPodcasts() { call("podcasts", {}, v => { podcasts = v.error ? [] : (v.items || []); autoPlayIfMade() }) }
+    function loadPodcasts() { call("podcasts", {}, v => { podcasts = v.error ? [] : (v.items || []); autoPlayIfMade(); chapterProgress() }) }
     function greeting() {
         const h = new Date().getHours()
         return (h < 12 ? qsTr("Good morning, %1") : h < 18 ? qsTr("Good afternoon, %1") : qsTr("Good evening, %1")).arg(String(backend.userName || "").split(" ")[0])
@@ -288,7 +294,7 @@ Rectangle {
                         // A made recap's length ("5m 38s"; what's left of it
                         // once the chosen one has been started).
                         Text { visible: prow.st === "done" && root.recapLength(prow.modelData) > 0; x: 16; y: prow.on ? 45 : 34; font.family: theme.font; font.pixelSize: 14; color: theme.textSecondary
-                               text: prow.on && recapAudio.position > 0 && recapAudio.duration > 0 ? qsTr("%1 left").arg(root.fmtLength(root.recapLength(prow.modelData) - recapAudio.position)) : root.fmtLength(root.recapLength(prow.modelData)) }
+                               text: prow.on && root.playPos > 0 && recapAudio.duration > 0 ? qsTr("%1 left").arg(root.fmtLength(root.recapLength(prow.modelData) - root.playPos)) : root.fmtLength(root.recapLength(prow.modelData)) }
                         Text { anchors.right: parent.right; anchors.rightMargin: 16; y: on ? 26 : 14; text: Qt.formatDate(new Date(prow.modelData.createdDateTime || Date.now()), "M/d"); font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary }
                         HoverHandler { id: prh }
                         TapHandler { onTapped: { root.autoPlayId = ""; root.chosenPodcast = prow.modelData.id } }
@@ -435,7 +441,7 @@ Rectangle {
                         id: cue
                         required property var modelData
                         required property int index
-                        readonly property bool current: recapAudio.position >= modelData.start && recapAudio.position < modelData.end
+                        readonly property bool current: root.playPos >= modelData.start && root.playPos < modelData.end
                         width: ListView.view.width
                         Item { visible: !!cue.modelData.speaker && cue.index > 0; width: 1; height: 12 }
                         Text { visible: !!cue.modelData.speaker; width: parent.width; text: cue.modelData.speaker + " · " + root.fmtClock(cue.modelData.start)
@@ -461,23 +467,23 @@ Rectangle {
                     x: -32; width: parent.width + 64; height: 130; anchors.bottom: parent.bottom
                     color: theme.pick("#F5F5F5", "#1F1F1F", "#000000")
                     id: playerBar
-                    readonly property bool can: recapsPanes.chosenState === "done" && !!recapsPanes.chosen && !!recapsPanes.chosen.fullAudioFile
+                    readonly property bool can: recapsPanes.chosenState === "done" && !!recapsPanes.chosen && (!!recapsPanes.chosen.fullAudioFile || root.chapterPlaying >= 0 || root.hasChapters(recapsPanes.chosen))
                     // The recap's own length (Teams counts the chapters, not the file).
                     readonly property real total: recapsPanes.chosen && root.recapLength(recapsPanes.chosen) > 0 ? root.recapLength(recapsPanes.chosen) : recapAudio.duration
                     Text { x: 32; y: 24; width: parent.width - 64; elide: Text.ElideRight
                            text: recapsPanes.chosenState === "generating" ? qsTr("Generating...") : root.currentChapter >= 0 && root.chapterRows[root.currentChapter] ? root.chapterRows[root.currentChapter].title : (recapsPanes.chosen ? recapsPanes.chosen.title || "" : "")
                            font.family: theme.font; font.pixelSize: 14; font.weight: Font.DemiBold; color: theme.text }
                     Rectangle { id: track; x: 32; y: 54; width: parent.width - 200; height: 4; radius: 2; color: theme.pick("#E0E0E0", "#3D3D3D", "#FFFFFF")
-                        Rectangle { width: playerBar.total > 0 ? parent.width * Math.min(1, recapAudio.position / playerBar.total) : 0; height: parent.height; radius: 2; color: theme.brandFill }
+                        Rectangle { width: playerBar.total > 0 ? parent.width * Math.min(1, root.playPos / playerBar.total) : 0; height: parent.height; radius: 2; color: theme.brandFill }
                         TapHandler { enabled: playerBar.can && playerBar.total > 0; onTapped: ev => root.seekTo(playerBar.total * ev.position.x / track.width) } }
                     Text { anchors.right: parent.right; anchors.rightMargin: 32; y: 46; font.family: theme.font; font.pixelSize: 12; color: theme.textSecondary
-                           text: playerBar.can && playerBar.total > 0 ? root.fmtClock(recapAudio.position) + " / " + root.fmtClock(playerBar.total) : "--:-- / --:--" }
+                           text: playerBar.can && playerBar.total > 0 ? root.fmtClock(root.playPos) + " / " + root.fmtClock(playerBar.total) : "--:-- / --:--" }
                     Row { anchors.horizontalCenter: parent.horizontalCenter; y: 76; spacing: 28
                         Text { anchors.verticalCenter: parent.verticalCenter; text: recapAudio.playbackRate + "x"; font.family: theme.font; font.pixelSize: 12; color: playerBar.can ? theme.text : theme.disabledStrong
                                TapHandler { enabled: playerBar.can; onTapped: root.nextSpeed() }
                                Accessible.role: Accessible.Button; Accessible.name: qsTr("Playback speed") }
                         FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "skip-back-10-20"; size: 20; color: playerBar.can ? theme.textStrong : theme.disabledStrong
-                                     TapHandler { enabled: playerBar.can; onTapped: root.seekTo(Math.max(0, recapAudio.position - 10000)) }
+                                     TapHandler { enabled: playerBar.can; onTapped: root.seekTo(Math.max(0, root.playPos - 10000)) }
                                      Accessible.role: Accessible.Button; Accessible.name: qsTr("Skip back 10 seconds") }
                         Rectangle { width: 36; height: 36; radius: 18
                             color: playerBar.can ? theme.brandFill : theme.pick("#C7C7C7", "#5C5C5C", "#3FF23F")
@@ -485,25 +491,101 @@ Rectangle {
                             TapHandler { enabled: playerBar.can; onTapped: root.playChosen() }
                             Accessible.role: Accessible.Button; Accessible.name: recapAudio.playbackState === MediaPlayer.PlayingState ? qsTr("Pause") : qsTr("Play") }
                         FluentIcon { anchors.verticalCenter: parent.verticalCenter; name: "skip-forward-10-20"; size: 20; color: playerBar.can ? theme.textStrong : theme.disabledStrong
-                                     TapHandler { enabled: playerBar.can; onTapped: root.seekTo(recapAudio.position + 10000) }
+                                     TapHandler { enabled: playerBar.can; onTapped: root.seekTo(root.playPos + 10000) }
                                      Accessible.role: Accessible.Button; Accessible.name: qsTr("Skip forward 10 seconds") } }
                 }
             }
         }
         BusyIndicator { anchors.centerIn: parent; running: root.podcasts === null; visible: running; width: 32; height: 32 }
     }
-    // The chosen recap's audio (its fullAudioFile, streamed).
+    // The chosen recap's audio: a made recap's fullAudioFile, streamed; a
+    // recap being made a chapter at a time (below).
     MediaPlayer { id: recapAudio; audioOutput: AudioOutput {} }
-    onChosenPodcastChanged: { recapAudio.stop(); recapAudio.source = ""; transcriptCues = []; transcriptState = ""; if (detailTab === "transcript") loadTranscript() }
+    onChosenPodcastChanged: { recapAudio.stop(); recapAudio.source = ""; chapterPlaying = -1; chapterWait = ""; transcriptCues = []; transcriptState = ""; if (detailTab === "transcript") loadTranscript() }
     function playChosen(then) {
         if (!then && recapAudio.playbackState === MediaPlayer.PlayingState) { recapAudio.pause(); return }
-        if (recapAudio.source.toString()) { if (then) then(); recapAudio.play(); return }
         const p = recapsPanes.chosen
+        if (chapterPlaying >= 0 || (byChapter(p) && hasChapters(p))) {
+            // Playing by chapter: go on, or start where it stands.
+            if (!then && recapAudio.source.toString() && recapAudio.mediaStatus !== MediaPlayer.EndOfMedia) { recapAudio.play(); return }
+            if (!then && chapterWait === "") { startChapter(Math.max(0, chapterPlaying), 0); return }
+            if (!then || !p || byChapter(p)) return
+            // A made recap plays from its full file once a place is picked.
+            chapterPlaying = -1; chapterWait = ""; recapAudio.stop(); recapAudio.source = ""
+        }
+        if (recapAudio.source.toString()) { if (then) then(); recapAudio.play(); return }
         if (!p || !p.fullAudioFile) return
         call("driveStreamUrl", { url: p.fullAudioFile.fileUrl }, v => { console.warn("RECAPS play", v.error || "", !!v.url); if (v.url) { recapAudio.source = v.url; recapAudio.play(); if (then) pendingSeek = then } })
     }
     property var pendingSeek: null
-    Connections { target: recapAudio; function onMediaStatusChanged() { if (root.pendingSeek && recapAudio.seekable) { const f = root.pendingSeek; root.pendingSeek = null; f() } } }
+    Connections { target: recapAudio; function onMediaStatusChanged() {
+        if (root.pendingSeek && recapAudio.seekable) { const f = root.pendingSeek; root.pendingSeek = null; f() }
+        if (recapAudio.mediaStatus === MediaPlayer.EndOfMedia && root.chapterPlaying >= 0) root.chapterEnded()
+    } }
+    // Playing by chapter (Teams' PodcastPlaybackManager: every chapter has
+    // its own audio, an HLS stream of the recap's file that grows while the
+    // chapter is made, played from its start): a chapter plays, then the
+    // next one that hasn't failed; one whose audio isn't there yet is waited
+    // for, as is a chapter still being made when its audio runs out, and the
+    // next chapter while the recap is still being made. OST plays a recap
+    // being made this way (each chapter's stream served to the player with
+    // its site's token); a made recap plays from its full audio file.
+    /// The chapter playing (its index), -1 when playing the full file.
+    property int chapterPlaying: -1
+    /// What playing by chapter waits for: "" nothing, "audio" the chapter's
+    /// audio, "current" the chapter being made, "next" the next chapter.
+    property string chapterWait: ""
+    readonly property real playPos: chapterPlaying >= 0 ? (chapterRows[chapterPlaying] ? chapterRows[chapterPlaying].startMs : 0) + recapAudio.position : recapAudio.position
+    /// A recap still being made plays by chapter (its fullAudioFile is
+    /// named from the start, before it's written).
+    function byChapter(p) { return !!p && (!!p.generating || !p.fullAudioFile) }
+    /// Teams' hasChapters: a chapter being made or made.
+    function hasChapters(p) { return !!p && (p.chapters || []).some(c => c.status === "InProgress" || c.status === "Completed") }
+    function chapterAudio(p, i) { const c = p && p.chapters ? p.chapters[i] : null; return c && c.status !== "Failed" && c.audioFile && c.audioFile.fileUrl ? c.audioFile.fileUrl : "" }
+    function startChapter(i, offsetMs) {
+        const p = recapsPanes.chosen
+        const chs = p && p.chapters ? p.chapters : []
+        while (i < chs.length && chs[i].status === "Failed") i++
+        if (i >= chs.length) { chapterWait = p && p.generating ? "next" : ""; return }
+        chapterPlaying = i
+        recapAudio.stop(); recapAudio.source = ""
+        const u = chapterAudio(p, i)
+        if (!u) { chapterWait = "audio"; console.info("RECAPS chapter wait", i); return }
+        chapterWait = ""
+        const key = p.id
+        call("recapChapterAudio", { url: u }, v => {
+            if (!recapsPanes.chosen || recapsPanes.chosen.id !== key || chapterPlaying !== i) return
+            console.info("RECAPS chapter", i, v.error || "", !!v.url)
+            if (!v.url) return
+            recapAudio.source = v.url; recapAudio.play()
+            if (offsetMs > 0) pendingSeek = () => recapAudio.setPosition(offsetMs)
+        })
+    }
+    function chapterEnded() {
+        const p = recapsPanes.chosen
+        const c = p && p.chapters ? p.chapters[chapterPlaying] : null
+        // Its audio ran out before the chapter was made: wait for it.
+        if (c && p.generating && c.status !== "Completed" && c.status !== "Failed") { chapterWait = "current"; return }
+        nextChapter()
+    }
+    function nextChapter() {
+        const p = recapsPanes.chosen
+        const chs = p && p.chapters ? p.chapters : []
+        for (let k = chapterPlaying + 1; k < chs.length; k++) if (chs[k].status !== "Failed") { startChapter(k, 0); return }
+        // The last one known: the next may still come.
+        chapterWait = p && p.generating ? "next" : ""
+    }
+    // The recap changed (an update while it's made, or made): go on where
+    // playing by chapter waited.
+    function chapterProgress() {
+        if (chapterPlaying < 0 || chapterWait === "") return
+        const p = recapsPanes.chosen
+        const chs = p && p.chapters ? p.chapters : []
+        const c = chs[chapterPlaying]
+        if (chapterWait === "audio") { if (!c || chapterAudio(p, chapterPlaying) || c.status === "Failed" || !p.generating) startChapter(chapterPlaying, 0) }
+        else if (chapterWait === "current") { if (!c || c.status === "Completed" || c.status === "Failed" || !p.generating) nextChapter() }
+        else if (chapterWait === "next") nextChapter()
+    }
     /// "chapters" or "transcript".
     property string detailTab: "chapters"
     function openDetailTab(t) { detailTab = t; if (t === "transcript" && transcriptState === "") loadTranscript() }
@@ -567,14 +649,28 @@ Rectangle {
     function fmtLength(ms) { const s = Math.max(0, Math.round(ms / 1000)); return qsTr("%1m %2s").arg(Math.floor(s / 60)).arg(s % 60) }
     /// "mm:ss" as Teams marks chapters and transcript lines.
     function fmtClock(ms) { const s = Math.max(0, Math.floor(ms / 1000)); return String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0") }
-    readonly property int currentChapter: { const t = recapAudio.position; return chapterRows.findIndex(c => t >= c.startMs && t < c.endMs) }
+    readonly property int currentChapter: { if (chapterPlaying >= 0) return chapterPlaying; const t = root.playPos; return chapterRows.findIndex(c => t >= c.startMs && t < c.endMs) }
     function playChapter(i) {
         const c = chapterRows[i]
         if (!c) return
         if (currentChapter === i && recapAudio.playbackState === MediaPlayer.PlayingState) { recapAudio.pause(); return }
+        const p = recapsPanes.chosen
+        if (byChapter(p)) { startChapter(i, 0); return }
         playChosen(() => recapAudio.setPosition(c.startMs))
     }
-    function seekTo(ms) { if (recapAudio.source.toString()) recapAudio.setPosition(ms); else playChosen(() => recapAudio.setPosition(ms)) }
+    function seekTo(ms) {
+        const p = recapsPanes.chosen
+        if (byChapter(p) && chapterRows.length) {
+            // Still being made: within the chapter playing, else from the
+            // chapter there.
+            const r = chapterRows[chapterPlaying]
+            if (r && ms >= r.startMs && (ms < r.endMs || r.endMs <= r.startMs) && recapAudio.source.toString()) { recapAudio.setPosition(ms - r.startMs); return }
+            const k = chapterRows.findIndex(c => ms >= c.startMs && ms < c.endMs)
+            if (k >= 0) startChapter(k, ms - chapterRows[k].startMs)
+            return
+        }
+        if (recapAudio.source.toString() && chapterPlaying < 0) recapAudio.setPosition(ms); else playChosen(() => recapAudio.setPosition(ms))
+    }
     function nextSpeed() { const s = [1, 1.25, 1.5, 1.75, 2, 0.75]; recapAudio.playbackRate = s[(s.indexOf(recapAudio.playbackRate) + 1) % s.length] }
     function fmtTime(ms) { const s = Math.max(0, Math.floor(ms / 1000)); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0") }
     // The transcript: the recap's caption file (WebVTT), read as Teams'
@@ -677,14 +773,14 @@ Rectangle {
     }
     function recapDetailForTest() {
         return JSON.stringify({ tab: detailTab, chapters: chapterRows.map(c => c.title + " @" + fmtTime(c.startMs)), transcript: transcriptState, cues: transcriptCues.length,
-                                playing: recapAudio.playbackState === MediaPlayer.PlayingState, position: Math.round(recapAudio.position / 1000), duration: Math.round(recapAudio.duration / 1000), chapter: currentChapter })
+                                playing: recapAudio.playbackState === MediaPlayer.PlayingState, position: Math.round(root.playPos / 1000), duration: Math.round(recapAudio.duration / 1000), chapter: currentChapter })
     }
     /// The recap shown on the right (an id; the newest when unset).
     property string chosenPodcast: ""
     // Listen on mobile is offered for a recap that has an id and is being
     // made or made (Teams' Ks: status InProgress or Completed).
     function canListenOnMobile(p) {
-        if (!p || !p.id || p.generating) return false
+        if (!p || !p.id || String(p.id).indexOf("generating-") === 0) return false
         const st = (p.status || p.generationStatus || "").toString().toLowerCase()
         return st === "inprogress" || st === "in_progress" || st === "completed"
     }
@@ -768,16 +864,27 @@ Rectangle {
     function autoPlayIfMade() {
         const p = recapsPanes.chosen
         if (!autoPlayId || !p || p.id !== autoPlayId) return
+        // Still being made: from its first chapters on (Teams' autoPlay on
+        // HAS_CHAPTERS, the moment a chapter is being made or made).
+        if (byChapter(p) && hasChapters(p) && podcastState(p) === "done") {
+            autoPlayId = ""
+            console.info("RECAPS auto-play", p.id, "chapters", JSON.stringify((p.chapters || []).map(c => [c.status, !!(c.audioFile && c.audioFile.fileUrl)])))
+            startChapter(0, 0)
+            return
+        }
         if (podcastState(p) !== "done" || !p.fullAudioFile || !(p.chapters || []).length) return
         autoPlayId = ""
         console.info("RECAPS auto-play", p.id)
         playChosen(() => recapAudio.setPosition(0))
     }
     /// A recap's state as its row shows it: "generating", "failed" or "done".
+    // (Teams' order: failed, then has chapters, then being made: a recap
+    // being made shows and plays its chapters once it has any.)
     function podcastState(p) {
         const st = (p.status || p.generationStatus || "").toString().toLowerCase()
-        if (p.generating || st === "inprogress" || st === "in_progress" || st === "notstarted") return "generating"
         if (st === "failed") return "failed"
+        if (hasChapters(p)) return "done"
+        if (p.generating || st === "inprogress" || st === "in_progress" || st === "notstarted") return "generating"
         return "done"
     }
     function noInsightPodcast(p) { return /NoValidMeeting(Insight|Found)/.test(p.statusMessage || "") }
@@ -1022,18 +1129,40 @@ Rectangle {
         const temp = { id: "generating-" + Date.now(), generating: true, createdDateTime: new Date().toISOString() }
         podcasts = [temp].concat(podcasts || [])
         chosenPodcast = temp.id
+        // It plays by itself (Teams' triggerAutoPlay), unless another recap
+        // is picked meanwhile.
+        autoPlayId = temp.id
         tab = "audio"
         console.info("RECAPS generate", rows.length, genDialog.style)
+        let made = temp.id
         call("podcastGenerate", { meetings: rows, style: genDialog.style, language: "en-US" }, v => {
             console.info("RECAPS generated", v.status || "", v.message || "", v.error || "", v.podcast && v.podcast.id ? v.podcast.id : "")
             root.lastGenerated = v
-            // The new recap stays chosen and plays once made, unless another
-            // one was picked while it was being made.
+            // The new recap stays chosen; one not started yet plays once
+            // made, unless another one was picked while it was being made.
             const newId = v.podcast && v.podcast.id ? v.podcast.id : ""
-            const pickedOther = root.chosenPodcast !== temp.id
+            const pickedOther = root.chosenPodcast !== temp.id && root.chosenPodcast !== made
             if (!pickedOther) root.chosenPodcast = newId
-            root.autoPlayId = !pickedOther && v.status === "COMPLETED" ? newId : ""
+            if (pickedOther || v.status !== "COMPLETED") root.autoPlayId = ""
+            else if (root.autoPlayId) root.autoPlayId = newId
             root.loadPodcasts()
+        }, v => {
+            // The recap as it's made, in the new row's place (with its id,
+            // its chapters and their audio as they come).
+            const pod = v.podcast || {}
+            if (!pod.id) return
+            const i = (root.podcasts || []).findIndex(x => x.id === made || x.id === pod.id)
+            if (i < 0) return
+            console.info("RECAPS progress", v.status || "", JSON.stringify((pod.chapters || []).map(c => [c.status, !!(c.audioFile && c.audioFile.fileUrl)])))
+            const chosen = root.chosenPodcast === made
+            if (root.autoPlayId === made) root.autoPlayId = pod.id
+            made = pod.id
+            const list = root.podcasts.slice()
+            list[i] = Object.assign({}, pod, { generating: true, createdDateTime: pod.createdDateTime || temp.createdDateTime })
+            if (chosen) root.chosenPodcast = pod.id
+            root.podcasts = list
+            root.autoPlayIfMade()
+            root.chapterProgress()
         })
     }
     property var lastGenerated: null
@@ -1045,7 +1174,8 @@ Rectangle {
     function generateForTest() { generate() }
     function genMeetingsForTest() { return genDialog.groups.map(g => ({ group: g.label, rows: g.items.map(m => [m.subject, genDialog.subtitle(m), genDialog.catchUp[m.threadId] || null, !!(m.recording && m.recording.itemId), genDialog.thumbs[(m.recording || {}).itemId || ""] ? "thumb" : ""]) })) }
     function audioPlayerStateForTest() { const p = recapsPanes.chosen; return JSON.stringify({ chosen: p ? (p.title || "") : null, state: p ? podcastState(p) : "", rows: (podcasts || []).map(x => podcastState(x)),
-                                                                                       playing: recapAudio.playbackState === MediaPlayer.PlayingState, position: Math.round(recapAudio.position / 1000), autoPlay: autoPlayId,
+                                                                                       playing: recapAudio.playbackState === MediaPlayer.PlayingState, position: Math.round(root.playPos / 1000), autoPlay: autoPlayId,
+                                                                                       chapter: chapterPlaying, chapterWait: chapterWait, chapterStates: p ? (p.chapters || []).map(c => c.status) : [],
                                                                                        listen: listenRow.visible, listenWidth: listenBtn.width, badge: listenBadgeShown, badgeSince: podcastLocal.listenOnPhoneNewBadgeStartDateTime }) }
     function openListenForTest() { openListenOnMobile(recapsPanes.chosen) }
     function closeListenForTest() { qrDialog.close() }

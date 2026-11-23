@@ -111,6 +111,37 @@ pub fn meeting_capability(json: &Value) -> Option<MeetingCapability> {
     })
 }
 
+/// Whether a join response's meeting is a Meet now (`meetingDetails.
+/// meetingType` "MeetNow").
+pub fn is_meet_now(json: &Value) -> bool {
+    [
+        "/meetingDetails/meetingType",
+        "/conversationResponse/meetingDetails/meetingType",
+        "/conversation/meetingDetails/meetingType",
+    ]
+    .iter()
+    .find_map(|p| json.pointer(p))
+    .and_then(Value::as_str)
+        == Some("MeetNow")
+}
+
+/// Whether Facilitator is on for the meeting timer (Teams' useMeetingTimer
+/// `isFacilitatorOn`): `groupCopilotDetails.enabled`, except in a Meet now
+/// while ECS `meetingCollaboration.enableMeetNowFaAgendaTimerDisabled` is
+/// on (it is for this tenant). Without it the strip shows no agenda (and
+/// no Run of Show): turned off mid-meeting, Teams' strip falls back to the
+/// ad-hoc timer.
+pub fn facilitator_on(cap: &MeetingCapability, meet_now: bool, meet_now_disabled: bool) -> bool {
+    cap.facilitator && !(meet_now && meet_now_disabled)
+}
+
+/// ECS `meetingCollaboration.enableMeetNowFaAgendaTimerDisabled`.
+pub fn meet_now_agenda_disabled() -> bool {
+    crate::api::ecs::setting("meetingCollaboration", "enableMeetNowFaAgendaTimerDisabled")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+}
+
 /// Whether Teams' bar shows the AI indicator in this meeting, from the
 /// join response's `meetingDetails` (Teams' `CopilotIndicator` with its
 /// meeting checks): Meet now meetings, and private scheduled meetings
@@ -367,6 +398,19 @@ mod tests {
         assert!(c.copilot && c.facilitator);
         let v = serde_json::json!({"meetingDetails":{"meetingCapability":{"copilotMode":"Disabled"}}});
         assert!(!meeting_capability(&v).unwrap().copilot);
+    }
+
+    #[test]
+    fn facilitator_for_the_timer() {
+        let on = MeetingCapability { facilitator: true, ..Default::default() };
+        assert!(facilitator_on(&on, false, true));
+        assert!(!facilitator_on(&on, true, true));
+        assert!(facilitator_on(&on, true, false));
+        assert!(!facilitator_on(&MeetingCapability::default(), false, false));
+        let cap = meeting_capability(&serde_json::json!({"conversationUpdate": {"meetingDetails": {"meetingCapability": {"groupCopilotDetails": {"enabled": false}}}}})).unwrap();
+        assert!(!facilitator_on(&cap, false, false));
+        assert!(is_meet_now(&serde_json::json!({"meetingDetails": {"meetingType": "MeetNow"}})));
+        assert!(!is_meet_now(&serde_json::json!({"meetingDetails": {"meetingType": "Scheduled"}})));
     }
 
     #[test]

@@ -30,6 +30,9 @@ pub struct MeetingInfo {
     /// The join link Teams copies (the short /meet/ link when there is
     /// one) and matches the body's paragraphs against.
     pub join_url: String,
+    /// The calendar instance's subject (`meetingDetails.instanceDetails.
+    /// subject`): what Teams names the meeting's notes after.
+    pub instance_subject: String,
 }
 
 fn details(json: &Value) -> Option<&Value> {
@@ -75,7 +78,21 @@ pub fn from_join_response(json: &Value) -> Option<MeetingInfo> {
             .into_iter()
             .find(|u| !u.is_empty())
             .unwrap_or_default(),
+        instance_subject: ["/instanceDetails/subject", "/eventDetails/subject"]
+            .iter()
+            .find_map(|p| d.pointer(p).and_then(Value::as_str).filter(|t| !t.is_empty()))
+            .unwrap_or_default()
+            .to_string(),
     })
+}
+
+/// The title Teams gives a meeting's notes page (its call-meeting-notes
+/// createCollabResource and getOrCreateMeetingNotes: `meetingDetails.
+/// instanceDetails.subject`, else "Meeting Notes"); OST also takes the
+/// meeting's own subject when the join answer has no instance (a call
+/// joined by its link can lack it).
+pub fn notes_title(info: &MeetingInfo) -> &str {
+    if !info.instance_subject.is_empty() { &info.instance_subject } else { &info.title }
 }
 
 fn time_of_day<Tz: TimeZone>(t: &DateTime<Tz>) -> String
@@ -552,6 +569,12 @@ mod tests {
         // an object (Teams on the web, 2026-11-16).
         v["meetingDetails"]["meetingChatProperties"] = props;
         assert_eq!(from_join_response(&v).unwrap().title, "OST calendar test: created from OST");
+        // The notes are named after the calendar instance's subject.
+        assert_eq!(notes_title(&from_join_response(&v).unwrap()), "OST calendar test: created from OST");
+        v["meetingDetails"]["meetingChatProperties"] = serde_json::json!({});
+        v["meetingDetails"]["instanceDetails"] = serde_json::json!({"subject": "OST TEST 248 agenda", "iCalUid": "040000"});
+        let m = from_join_response(&v).unwrap();
+        assert_eq!((m.title.as_str(), notes_title(&m)), ("", "OST TEST 248 agenda"));
     }
 
     #[test]

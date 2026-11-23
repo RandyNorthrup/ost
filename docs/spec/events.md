@@ -627,6 +627,35 @@ changes, 12 above it, each line 14/20. The player: the chapter's title 14/600, a
 in chapter segments, "01:41 / 05:38", then speed, back 10, Play (40), forward 10 and Play
 in new window. Generating in Teams auto-plays the new recap.
 
+**Playing a recap while it's made** (Teams 26304, TASK-0248: 75874 `kt`, 599106's state
+`_x`/684945, services-podcast's PodcastPlaybackManager): Generate's AugLoop annotation
+updates the recap as it's made (its id, then its chapters with their status NotStarted /
+InProgress / Completed / Failed and each chapter's own `audioFile`, an HLS playlist
+`…/streams/…m3u8` of the recap's file). The recap's state is HAS_CHAPTERS as soon as a
+chapter is InProgress or Completed (before GENERATION_IN_PROGRESS), so the detail shows its
+chapters and the recap seen generating starts playing then (`setPodcastStatus({isPlaying:
+true, currentTime: 0})`), not when it completes. Teams plays every recap a chapter at a time
+(hls.js over the chapter's playlist, start 0, each request with the site's token): at a
+chapter's end the next one that hasn't failed; one without audio yet is waited for, as is a
+chapter whose audio ran out before it was Completed, and, while the recap is still made, the
+next chapter to appear. OST does the same for a recap being made (Generate's progress
+updates to the view; `recapChapterAudio` serves the chapter's playlist and segments through
+`live_stream::StreamProxy::site` with the site's token); a made recap plays from its
+`fullAudioFile`. A recap being made already names its `fullAudioFile` (not written yet), so
+OST plays by chapter until it's made. A chapter's playlist (`…/streams/
+dcontent_teamspodcast.<n>.m3u8/content`) lists MPEG-TS segments named `…/streams/
+dcontent_teamspodcast.<n>.0000/content`; it grows while the chapter is made and ends with
+`#EXT-X-ENDLIST`. The proxy serves the segments as `.ts` (their first bytes; FFmpeg's HLS
+only opens segments with media extensions) and, the first time, a growing playlist with only
+its first segment, so FFmpeg starts from the start (as hls.js' `startPosition: 0`) rather than
+three segments from the live end. Measured on winpc 2026-11-23 (Generate of "OST TEST
+248 agenda", AugLoop frames and the player's button read over CDP): the first chapter came
+InProgress with its audio at 00:34:47 and the player showed Pause at 00:34:48; the Intro ran
+out at about 00:35:00 (Play, waiting) and the next chapter's audio came at 00:35:03 (Pause
+again); the whole recap was made in about 1 min 45 s and went on playing (03:41 / 06:03
+later). (A first Generate a few minutes earlier didn't start by itself at all; not
+explained.) Chapter statuses also include EmptyContent and TopicParsed (not yet made).
+
 **Attendees** card: the picture is `illustrations/v2/people-l-standard.svg` (dark
 `people-d-standard.svg`) at 128, under "When attendees RSVP or register, they'll show up
 here." (winpc). Manage's empty Drafts says "Events you haven’t published yet will show

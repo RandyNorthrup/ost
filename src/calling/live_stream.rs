@@ -233,24 +233,85 @@ impl Drop for StreamProxy {
     }
 }
 
+/// What the proxy adds to its upstream requests.
+enum ProxyAuth {
+    /// A town hall's stream: its `keyAuthorizationToken` on key requests.
+    Key(String),
+    /// A file's HLS stream in SharePoint or OneDrive (an audio recap's
+    /// chapters): the site's own token on every request, which only goes
+    /// to that site.
+    Site(String),
+}
+
 struct ProxyState {
     http: reqwest::Client,
     urls: std::sync::Mutex<Vec<String>>,
-    detail: StreamDetail,
+    auth: ProxyAuth,
+    /// The playlists served so far (a file's stream starts from its first
+    /// segment, see [`from_the_start`]).
+    served: std::sync::Mutex<std::collections::HashSet<String>>,
+}
+
+/// Teams plays a recap chapter's growing playlist from its start (hls.js
+/// `startPosition: 0`); FFmpeg starts a live playlist (no `#EXT-X-ENDLIST`)
+/// three segments from its end. The first time such a playlist is served
+/// only its first segment is listed, so FFmpeg starts there and takes the
+/// rest at its next reload.
+fn from_the_start(playlist: &str) -> String {
+    if playlist.contains("#EXT-X-ENDLIST") {
+        return playlist.to_string();
+    }
+    let mut out = String::with_capacity(playlist.len());
+    for line in playlist.lines() {
+        out.push_str(line);
+        out.push('\n');
+        if !line.trim().is_empty() && !line.starts_with('#') {
+            break;
+        }
+    }
+    out
 }
 
 impl ProxyState {
     fn register(&self, u: String, prefix: &str) -> String {
+        self.register_as(u, prefix, None)
+    }
+
+    /// Register an address served under `ext` instead of its own (a
+    /// segment whose address names no media type).
+    fn register_as(&self, u: String, prefix: &str, ext: Option<&str>) -> String {
         let mut urls = self.urls.lock().expect("proxy urls");
         let i = urls.iter().position(|x| *x == u).unwrap_or_else(|| {
             urls.push(u);
             urls.len() - 1
         });
-        // Keep the extension: the demuxer goes by it for playlists.
-        let ext = urls[i].split('?').next().and_then(|p| p.rsplit('/').next()).and_then(|f| f.rsplit_once('.')).map(|(_, e)| e).unwrap_or("bin");
-        format!("{prefix}/{i}.{ext}")
+        format!("{prefix}/{i}.{}", ext.unwrap_or_else(|| extension_of(&urls[i])))
     }
+}
 
+/// Extensions FFmpeg's HLS demuxer opens segments by (its
+/// allowed_segment_extensions, the media ones).
+const MEDIA_EXTENSIONS: &[&str] = &["3gp", "aac", "ac3", "avi", "ec3", "flac", "m4a", "m4s", "m4v", "mkv", "mov", "mp2", "mp3", "mp4", "mpeg", "mpg", "oga", "ogg", "ogv", "opus", "ts", "wav", "webm"];
+
+/// A segment's media type from its first bytes: MPEG-TS, fragmented MP4,
+/// ADTS AAC (also after an ID3 timestamp, HLS packed audio) or MP3.
+fn sniff_extension(head: &[u8]) -> Option<&'static str> {
+    if head.first() == Some(&0x47) {
+        return Some("ts");
+    }
+    if head.len() >= 8 && matches!(&head[4..8], b"ftyp" | b"styp" | b"moof" | b"sidx" | b"moov") {
+        return Some("m4s");
+    }
+    let mut at = 0;
+    if head.starts_with(b"ID3") && head.len() >= 10 {
+        let size = head[6..10].iter().fold(0usize, |n, b| (n << 7) | (*b as usize & 0x7f));
+        at = 10 + size;
+    }
+    match (head.get(at), head.get(at + 1)) {
+        (Some(0xFF), Some(b)) if b & 0xF6 == 0xF0 => Some("aac"),
+        (Some(0xFF), Some(b)) if b & 0xE0 == 0xE0 => Some("mp3"),
+        _ => None,
+    }
 }
 
 /// A key request (the playlists' `EXT-X-KEY` URI): Teams' Hydra player
@@ -266,9 +327,22 @@ fn is_key_request(url: &str) -> bool {
 impl StreamProxy {
     /// Serve the chosen stream; None when it has no URL.
     pub async fn start(choice: &StreamChoice) -> anyhow::Result<Self> {
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let first = choice.url().ok_or_else(|| anyhow::anyhow!("The stream has no address"))?.to_string();
         let detail = choice.detail_for(&first).cloned().unwrap_or_default();
+        Self::serve(first, ProxyAuth::Key(detail.key_authorization_token)).await
+    }
+
+    /// Serve a file's HLS stream from SharePoint or OneDrive (`https://
+    /// {tenant}[-my].sharepoint.com/…/streams/…m3u8/content`, an audio
+    /// recap chapter's audio), each request with the site's token as Teams'
+    /// HLS loader sends it.
+    pub async fn site(url: &str) -> anyhow::Result<Self> {
+        let host = site_host(url).ok_or_else(|| anyhow::anyhow!("Not a file address"))?;
+        Self::serve(url.to_string(), ProxyAuth::Site(host)).await
+    }
+
+    async fn serve(first: String, auth: ProxyAuth) -> anyhow::Result<Self> {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
         let port = listener.local_addr()?.port();
         let secret = uuid::Uuid::new_v4().simple().to_string();
@@ -276,7 +350,8 @@ impl StreamProxy {
         let state = std::sync::Arc::new(ProxyState {
             http: reqwest::Client::builder().timeout(std::time::Duration::from_secs(20)).build()?,
             urls: std::sync::Mutex::new(Vec::new()),
-            detail,
+            auth,
+            served: Default::default(),
         });
         let url = state.register(first, &prefix);
         let (stop, mut stopped) = tokio::sync::oneshot::channel();
@@ -323,7 +398,7 @@ impl StreamProxy {
                             r
                         }
                         Err(e) => {
-                            tracing::debug!("town hall stream: {path}: {e:#}");
+                            tracing::debug!("stream proxy: {path}: {e:#}");
                             b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_vec()
                         }
                     };
@@ -336,10 +411,41 @@ impl StreamProxy {
     }
 }
 
+/// The extension a proxied address keeps (the demuxer goes by it for
+/// playlists, and FFmpeg's HLS only opens segments with media extensions):
+/// the last path part's, or for a SharePoint stream (`…/streams/
+/// seg1.ts/content`) the part before `content`.
+fn extension_of(url: &str) -> &str {
+    url.split(['?', '#'])
+        .next()
+        .unwrap_or_default()
+        .rsplit('/')
+        .take(2)
+        .find_map(|part| part.rsplit_once('.').map(|(_, e)| e))
+        .filter(|e| !e.is_empty() && e.len() <= 5 && e.chars().all(|c| c.is_ascii_alphanumeric()))
+        .unwrap_or("bin")
+}
+
+/// The SharePoint host of an https file address.
+fn site_host(url: &str) -> Option<String> {
+    let u = url::Url::parse(url).ok()?;
+    let host = u.host_str()?.to_ascii_lowercase();
+    (u.scheme() == "https" && host.ends_with(".sharepoint.com")).then_some(host)
+}
+
 async fn fetch(state: &ProxyState, upstream: &str, prefix: &str) -> anyhow::Result<(String, Vec<u8>)> {
     let mut req = state.http.get(upstream);
-    if is_key_request(upstream) && !state.detail.key_authorization_token.is_empty() {
-        req = req.header(reqwest::header::AUTHORIZATION, &state.detail.key_authorization_token);
+    match &state.auth {
+        ProxyAuth::Key(token) if is_key_request(upstream) && !token.is_empty() => {
+            req = req.header(reqwest::header::AUTHORIZATION, token);
+        }
+        ProxyAuth::Site(host) => {
+            // The token goes to its own site only.
+            anyhow::ensure!(site_host(upstream).as_deref() == Some(host.as_str()), "Not the file's site");
+            let token = crate::auth::oauth::access_token_for(&format!("https://{host}/.default")).await?;
+            req = req.bearer_auth(token);
+        }
+        _ => {}
     }
     let r = req.send().await?;
     let status = r.status();
@@ -354,7 +460,10 @@ async fn fetch(state: &ProxyState, upstream: &str, prefix: &str) -> anyhow::Resu
     let is_playlist = ctype.contains("mpegurl") || upstream.split('?').next().is_some_and(|p| p.ends_with(".m3u8")) || body.starts_with(b"#EXTM3U");
     if is_playlist {
         let base = url::Url::parse(upstream)?;
-        let text = String::from_utf8_lossy(&body);
+        let mut text = String::from_utf8_lossy(&body).to_string();
+        if matches!(state.auth, ProxyAuth::Site(_)) && state.served.lock().map(|mut s| s.insert(upstream.to_string())).unwrap_or(false) {
+            text = from_the_start(&text);
+        }
         // What the stream is made of (its tags, addresses left out).
         let tags: Vec<String> = text
             .lines()
@@ -362,8 +471,38 @@ async fn fetch(state: &ProxyState, upstream: &str, prefix: &str) -> anyhow::Resu
             .map(|l| l.split(",URI=").next().unwrap_or_default().split("URI=").next().unwrap_or_default().chars().take(160).collect())
             .take(6)
             .collect();
-        tracing::debug!(?tags, "town hall stream: playlist");
-        let out = rewrite_playlist(&text, &base, |u| state.register(u, prefix));
+        tracing::debug!(?tags, "stream proxy: playlist");
+        if matches!(state.auth, ProxyAuth::Site(_)) {
+            let segments = text.lines().filter(|l| !l.trim().is_empty() && !l.starts_with('#')).count();
+            // (A segment's last path parts show its kind; no query.)
+            let first: String = text
+                .lines()
+                .find(|l| !l.trim().is_empty() && !l.starts_with('#'))
+                .map(|l| l.split('?').next().unwrap_or_default().rsplit('/').take(2).collect::<Vec<_>>().join(" < "))
+                .unwrap_or_default()
+                .chars()
+                .take(120)
+                .collect();
+            tracing::info!(segments, ended = text.contains("#EXT-X-ENDLIST"), kind = text.lines().find(|l| l.starts_with("#EXT-X-PLAYLIST-TYPE")).unwrap_or(""), map = text.contains("#EXT-X-MAP"), %first, "recap audio: playlist");
+        }
+        // A SharePoint stream's segments (`…/streams/x.0.0000/content`)
+        // name no media type, which FFmpeg's HLS won't open: they're served
+        // under the type their first bytes show.
+        let mut seg_ext: Option<&str> = None;
+        if matches!(state.auth, ProxyAuth::Site(_))
+            && let Some(first) = text.lines().map(str::trim).find(|l| !l.is_empty() && !l.starts_with('#'))
+            && let Ok(abs) = base.join(first)
+            && !MEDIA_EXTENSIONS.contains(&extension_of(abs.as_str()))
+        {
+            let head = Box::pin(fetch(state, abs.as_str(), prefix)).await.map(|(_, b)| b).unwrap_or_default();
+            seg_ext = sniff_extension(&head[..head.len().min(4096)]);
+            tracing::info!(ext = seg_ext.unwrap_or(""), "recap audio: segment type");
+        }
+        let out = rewrite_playlist(&text, &base, |u| {
+            let own = extension_of(&u);
+            let ext = seg_ext.filter(|_| own != "m3u8" && !MEDIA_EXTENSIONS.contains(&own));
+            state.register_as(u, prefix, ext)
+        });
         return Ok(("application/vnd.apple.mpegurl".into(), out.into_bytes()));
     }
     Ok((ctype, body))
@@ -373,6 +512,41 @@ async fn fetch(state: &ProxyState, upstream: &str, prefix: &str) -> anyhow::Resu
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn site_tokens_stay_on_their_site() {
+        assert_eq!(site_host("https://t-my.sharepoint.com/personal/u/_api/v2.1/drives/b/items/i/versions/current/streams/a.m3u8/content").as_deref(), Some("t-my.sharepoint.com"));
+        assert_eq!(site_host("http://t-my.sharepoint.com/x"), None);
+        assert_eq!(site_host("https://evil.example/x.sharepoint.com"), None);
+    }
+
+    #[test]
+    fn growing_playlists_start_at_their_first_segment() {
+        let live = "#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXT-X-MEDIA-SEQUENCE:0\n#EXTINF:10,\na/content\n#EXTINF:10,\nb/content\n#EXTINF:10,\nc/content\n#EXTINF:10,\nd/content\n";
+        assert_eq!(from_the_start(live), "#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXT-X-MEDIA-SEQUENCE:0\n#EXTINF:10,\na/content\n");
+        let done = format!("{live}#EXT-X-ENDLIST\n");
+        assert_eq!(from_the_start(&done), done);
+    }
+
+    #[test]
+    fn segment_types_from_their_bytes() {
+        assert_eq!(sniff_extension(&[0x47, 0x40, 0x11]), Some("ts"));
+        assert_eq!(sniff_extension(b"\0\0\0\x18ftypiso6"), Some("m4s"));
+        assert_eq!(sniff_extension(&[0xFF, 0xF1, 0x50]), Some("aac"));
+        let mut id3 = b"ID3\x04\0\0\0\0\0\x02xx".to_vec();
+        id3.extend([0xFF, 0xF9, 0x50]);
+        assert_eq!(sniff_extension(&id3), Some("aac"));
+        assert_eq!(sniff_extension(&[0xFF, 0xFB, 0x90]), Some("mp3"));
+        assert_eq!(sniff_extension(b"<html>"), None);
+    }
+
+    #[test]
+    fn proxied_addresses_keep_their_extension() {
+        assert_eq!(extension_of("https://cdn/live/abc/seg-1.ts?tok=1"), "ts");
+        assert_eq!(extension_of("https://t-my.sharepoint.com/_api/v2.1/drives/b/items/i/versions/current/streams/x.m3u8/content"), "m3u8");
+        assert_eq!(extension_of("https://t-my.sharepoint.com/_api/v2.1/drives/b/items/i/versions/current/streams/seg1.aac/content?a=1"), "aac");
+        assert_eq!(extension_of("https://keys.example/k/1"), "bin");
+    }
 
     #[test]
     fn playlists_come_back_through_the_proxy() {

@@ -2137,12 +2137,32 @@ Window {
     // opens on it; cancelled, the strip goes back to the ad-hoc timer or
     // closes for everyone.
     property string agendaPrevState: ""
+    property bool agendaPrevFacilitator: true
     function agendaChanged() {
         const a = timerData && timerData.agenda ? timerData.agenda : null
-        const st = a && (a.sections || []).length && timerData.facilitator !== false ? a.state || "Cancelled" : "Cancelled"
+        const facilitator = !!timerData && timerData.facilitator !== false
+        const running = a && (a.sections || []).length ? a.state || "Cancelled" : "Cancelled"
+        const st = facilitator ? running : "Cancelled"
         const before = agendaPrevState
+        const facilitatorBefore = agendaPrevFacilitator
         agendaPrevState = st
+        agendaPrevFacilitator = facilitator
         if (st === before) return
+        // Facilitator turned off (or on again) while the agenda runs: Teams
+        // (without its agenda bar, enableAgendaUbar, as this tenant) keeps
+        // the strip open on the view it had; without Facilitator the agenda
+        // isn't offered, so the ad-hoc timer shows in its place (Teams'
+        // displayed timers), and the agenda comes back with Facilitator.
+        if (before !== "" && running !== "Cancelled" && facilitator !== facilitatorBefore) {
+            // With no timer left running, Teams' ad-hoc panel opens its
+            // timer controls for whoever can set a timer (its popover is
+            // shown while no timer is active and the ad-hoc view shows), and
+            // closes them once the agenda is back.
+            const adhocRunning = timerData && timerData.adhoc && timerData.adhoc.state !== "Cancelled"
+            if (!facilitator && !adhocRunning && timerVisible && !timerViewOnly) Qt.callLater(timerStrip.openControls)
+            else if (facilitator) timerStrip.closeControls()
+            return
+        }
         const adhocOn = timerData && timerData.adhoc && timerData.adhoc.state !== "Cancelled"
         if (st !== "Cancelled" && (before === "" || before === "Cancelled")) {
             timerVisible = true

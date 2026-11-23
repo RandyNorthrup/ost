@@ -310,17 +310,40 @@ pub(crate) async fn run_op_with(annotations: &[&str], path: Value, signal: Value
 /// answers Teams' operation; an in-progress podcast is followed until its
 /// status changes (at most 10 minutes).
 pub async fn generate(m: &Meeting, ui_language: &str) -> Result<Generation> {
-    generate_signal(&|id: &str| generation_signal(m, id), ui_language).await
+    generate_signal(&|id: &str| generation_signal(m, id), ui_language, &|_| {}).await
 }
 
 /// Generate audio recap's Generate: several meetings, a style and a
-/// language, made over AugLoop like the single-meeting one.
-pub async fn generate_multi(meetings: &[Meeting], style_choice: &str, language: &str, ui_language: &str) -> Result<Generation> {
+/// language, made over AugLoop like the single-meeting one. `progress` gets
+/// every update of the recap while it's being made (its chapters come one
+/// by one, each with its own audio as it's made).
+pub async fn generate_multi(meetings: &[Meeting], style_choice: &str, language: &str, ui_language: &str, progress: &(dyn Fn(&Generation) + Sync)) -> Result<Generation> {
     anyhow::ensure!(!meetings.is_empty() && meetings.len() <= 8, "Select up to 8 meetings");
-    generate_signal(&|id: &str| generation_signal_multi(meetings, style(style_choice), language, id), ui_language).await
+    generate_signal(&|id: &str| generation_signal_multi(meetings, style(style_choice), language, id), ui_language, progress).await
 }
 
-async fn generate_signal(make: &(dyn Fn(&str) -> Value + Sync), ui_language: &str) -> Result<Generation> {
+/// A recap's chapters as (status, has audio), for the logs.
+pub fn chapter_states(podcast: &Value) -> Vec<(String, bool)> {
+    podcast
+        .get("chapters")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|c| {
+            let st = c.get("status").and_then(Value::as_str).unwrap_or_default().to_string();
+            let audio = c.pointer("/audioFile/fileUrl").and_then(Value::as_str).is_some_and(|u| !u.is_empty());
+            (st, audio)
+        })
+        .collect()
+}
+
+/// Whether a recap has chapters to play (Teams' `hasChapters`: a chapter
+/// in progress or made), the moment Teams starts a just-made recap.
+pub fn has_chapters(podcast: &Value) -> bool {
+    chapter_states(podcast).iter().any(|(st, _)| st == "InProgress" || st == "Completed")
+}
+
+async fn generate_signal(make: &(dyn Fn(&str) -> Value + Sync), ui_language: &str, progress: &(dyn Fn(&Generation) + Sync)) -> Result<Generation> {
     let generation_id = uuid::Uuid::new_v4().to_string();
     // Teams' publishing path: identifier "teams_recap_podcast_generation",
     // subscription "podcast-session", a new request id.
@@ -334,6 +357,10 @@ async fn generate_signal(make: &(dyn Fn(&str) -> Value + Sync), ui_language: &st
             _ => g,
         };
         let finished = g.status != "IN_PROGRESS";
+        tracing::info!(status = %g.status, chapters = ?chapter_states(&g.podcast), "audio recap: update");
+        if !finished {
+            progress(&g);
+        }
         last = Some(g);
         finished
     })
@@ -416,5 +443,15 @@ mod tests {
         let workflow = json!({"workflowStatus": 3, "workflowStatusMessage": "X", "H_": {"T_": "AugLoop_TeamsRecapPodcast_TeamsRecapPodcastGenerationAnnotation"}});
         assert_eq!(generation_from(&workflow).unwrap().status, "FAILED");
         assert!(generation_from(&json!({"H_": {"T_": "Other"}})).is_none());
+    }
+
+    #[test]
+    fn chapters_to_play() {
+        let p = json!({"status": "InProgress", "chapters": [{"status": "NotStarted"}, {"status": "NotStarted"}]});
+        assert!(!has_chapters(&p));
+        let p = json!({"status": "InProgress", "chapters": [{"status": "InProgress", "audioFile": {"fileType": "m3u8", "fileUrl": "https://x/a.m3u8"}}, {"status": "NotStarted"}]});
+        assert!(has_chapters(&p));
+        assert_eq!(chapter_states(&p), vec![("InProgress".to_string(), true), ("NotStarted".to_string(), false)]);
+        assert!(!has_chapters(&json!({"chapters": [{"status": "Failed"}]})));
     }
 }

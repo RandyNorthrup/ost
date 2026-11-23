@@ -95,6 +95,8 @@ pub struct OutgoingCall {
     processing_versions: std::collections::HashMap<String, u64>,
     /// Teams' bar shows the AI indicator in this meeting.
     ai_indicator: bool,
+    /// The meeting is a Meet now (`meetingDetails.meetingType` "MeetNow").
+    meet_now: bool,
     /// What the join response says about the meeting (Meeting info).
     meeting_info: Option<super::meeting_info::MeetingInfo>,
     /// The meeting's call recorder's command URL, once the roster names it
@@ -842,6 +844,11 @@ impl OutgoingCall {
         self.ai_indicator
     }
 
+    /// The meeting is a Meet now.
+    pub fn is_meet_now(&self) -> bool {
+        self.meet_now
+    }
+
     /// The meeting has a call recorder to command (Record and transcribe).
     pub fn has_recorder(&self) -> bool {
         self.recorder_url.is_some()
@@ -1491,7 +1498,7 @@ impl OutgoingCall {
         serde_json::json!({
             "threadId": self.thread_id,
             "organizer": self.notes_organizer,
-            "meetingTitle": s(|i| &i.title),
+            "meetingTitle": info.as_ref().map(|i| super::meeting_info::notes_title(i).to_string()).unwrap_or_default(),
             "meetingUrl": s(|i| &i.join_url),
             "iCalUid": s(|i| &i.ical_uid),
         })
@@ -4149,6 +4156,8 @@ async fn start_tagged(
                     .collect()
             })
             .unwrap_or_default(),
+        meet_now: serde_json::from_str::<serde_json::Value>(&created.response_body)
+            .is_ok_and(|v| super::meeting_options::is_meet_now(&v)),
         ai_indicator: serde_json::from_str::<serde_json::Value>(&created.response_body)
             .is_ok_and(|v| {
                 let shown = super::meeting_options::shows_ai_indicator(&v);
@@ -4163,7 +4172,15 @@ async fn start_tagged(
             }),
         meeting_info: serde_json::from_str::<serde_json::Value>(&created.response_body)
             .ok()
-            .and_then(|v| super::meeting_info::from_join_response(&v)),
+            .and_then(|v| {
+                let keys: Vec<String> = ["/meetingDetails", "/conversationResponse/meetingDetails"]
+                    .iter()
+                    .find_map(|p| v.pointer(p).and_then(|d| d.as_object()))
+                    .map(|o| o.keys().cloned().collect())
+                    .unwrap_or_default();
+                super::meeting_info::from_join_response(&v)
+                    .inspect(|i| tracing::info!(subject = !i.title.is_empty(), instance_subject = !i.instance_subject.is_empty(), ?keys, "meeting info from the join"))
+            }),
         processing_versions: Default::default(),
         recorder_url: serde_json::from_str::<serde_json::Value>(&created.response_body)
             .ok()
