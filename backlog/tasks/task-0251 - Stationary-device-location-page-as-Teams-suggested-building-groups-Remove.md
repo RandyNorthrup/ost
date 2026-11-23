@@ -1,9 +1,10 @@
 ---
 id: TASK-0251
 title: Stationary device location page as Teams (suggested building, groups, Remove)
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-11-23T10:07:00Z'
+updated_date: '2026-11-23T11:01:00Z'
 labels:
   - desktop
   - settings
