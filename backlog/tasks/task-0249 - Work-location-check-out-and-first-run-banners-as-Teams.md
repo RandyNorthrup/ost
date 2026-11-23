@@ -1,9 +1,10 @@
 ---
 id: TASK-0249
 title: Work location check-out and first-run banners as Teams
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-11-23T08:35:00Z'
+updated_date: '2026-11-23T09:01:00Z'
 labels:
   - desktop
   - settings
