@@ -3,9 +3,10 @@ id: TASK-0252
 title: >-
   Meeting Recaps Home as Teams: week groups, catch-up chips, people and
   thumbnails
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-11-23T11:53:00Z'
+updated_date: '2026-11-23T13:02:00Z'
 labels:
   - desktop
   - recaps
