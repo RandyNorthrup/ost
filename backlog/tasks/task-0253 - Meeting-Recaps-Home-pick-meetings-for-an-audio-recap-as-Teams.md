@@ -1,9 +1,10 @@
 ---
 id: TASK-0253
 title: 'Meeting Recaps Home: pick meetings for an audio recap as Teams'
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-11-23T13:48:00Z'
+updated_date: '2026-11-23T14:30:00Z'
 labels:
   - desktop
   - recaps
