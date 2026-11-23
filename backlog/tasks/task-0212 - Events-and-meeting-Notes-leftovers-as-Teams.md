@@ -1,11 +1,11 @@
 ---
 id: TASK-0212
 title: Events and meeting Notes leftovers as Teams
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-17T01:27:00Z'
-updated_date: '2026-11-23T04:04:00Z'
+updated_date: '2026-11-23T04:21:00Z'
 labels:
   - desktop
 dependencies: []
@@ -140,19 +140,19 @@ What TASK-0209 left (docs/spec/events.md, docs/spec/call-and-meeting-window.md):
   - OST's own Generate audio recap for the long meeting: COMPLETED, 5 min 51 s, chapters Intro / Meeting overview / Contingency and accessibility funding / Permit ownership and timelines / Plot assignments and workshop planning / Launch date and local promotion / Timeline and volunteer risk mitigation / Accessible layout and compost placement / Two-week progress check, shown in OST's two panes. The meeting shows under the artifacts' subject "Recording of OST TEST 212 recap long is now available": its calendar item has that subject too (checked over Graph by iCalUId), so Teams' name comes from its AugLoop event list (teams_recap_podcast_event_list) — not built.
   - Tests on linuxlt: 916 lib + 29 desktop pass. String ids regenerated.
   - Cleanup: both test audio recaps deleted (Teams' and OST's; podcastCleanup now also takes "Recording of OST TEST …" meetings); "OST TEST 212 recap long" cancelled with --events-test=uninvite --events-unpin (Events unpinned again for ost-test1); OST Test 3's "Canceled: Recording of OST TEST 212 recap long is now available" removed (calclean now matches that form); ost-test1 had no Canceled: copy; both recordings (12:45 and the 16 s one) moved to ost-test1's OneDrive recycle bin; the fake mics, speaker sink and test camera were stopped after the call. Left in place: the highlights Loop file in Teams' SharePoint Embedded storage (users can't delete it), the meeting chats of the event and of "OST TEST 246 facilitator" (meeting chats stay), OST Test 3 signed in again on linuxlt.
+
+- 2026-11-22 merged (d198fd61..ebd4e1a0); 916 lib + 29 desktop tests pass. Small leftovers (recap list names from Teams' event list, New badge, Listen on mobile, auto-play) moved to TASK-0247.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
-Events' remaining pages, actions and pickers as Teams 26304, checked live against Teams on winpc with a 12-minute recorded and transcribed test event.
+Events and meeting Notes leftovers as Teams.
 
-Changes (this round):
-- Highlights: the event's session recording (GET events/{id}/sessions) as Teams' activeRecording; the first meeting recording picked and saved as a draft on a first visit, then generated (once per visit); picking another file saves its draft and asks "Generate new AI highlights?"; Publish with "Ready to publish highlights?" (600 wide, Preview email) sends POST …/sessions/{sid}/recordings with whole-millisecond duration and, for Recording + text highlights, the Loop component's ComponentSerializable.serialize() (new loop_host "serialize"); Teams' status bars (generating, generation error with Retry, draft event, publish alerts, publishing with Cancel publish, published with Expires and Extend for 60 days, failed, expired); Remove highlights / Cancel publish reset to a draft; Select from OneDrive opens OneDrive's picker (Home, .mp4/.mov, one file, Confirm), ids looked up over Graph shares when the pick lacks them; Teams' picker groups.
-- Audio recaps: Generate audio recap's rows grouped by week (accordion), Today / Yesterday subtitles, task and mention chips from the MeetingCatchUp recommendations, 84 x 48 recording thumbnails, "n/8 selected"; the finished recap's detail as Teams (header, Learn more and Delete, chapters grouped by meeting with Recap, transcript from the caption file with Speaker n · mm:ss, player with speed / ±10 s / chapter seek, "… left").
-- ConfirmDialog leading action; CloudPicker single / extensions / confirm label; harness --events-hl-odsp / -publish / -remove / --events-stay, --recaps-detail, --call-notes-subject / --call-notes-stay=<s>; cleanup flags match "Recording of OST TEST …".
+- Meeting Notes in scheduled meetings and Meet now: notes committed and shared as Teams (collab details, refresh, leader election, the user's calling token); the second person gets them through the call.
+- Town hall Manage apps (Custom Streaming, AI Producer) with Add / Uninstall.
+- Highlights: generate, draft, Publish with the Loop content, Remove, Select from OneDrive, Teams' status bars and dialogs.
+- Audio recaps: Generate dialog rows, generate, the Audio recaps tab with chapters, transcript and playback.
 
-Tests: 916 lib + 29 desktop pass on linuxlt.
-
-Open: Generate audio recap's meeting list from the meeting artifacts (Teams uses its AugLoop event list, so names can differ and cancelled meetings with transcripts are missing); Listen on mobile and the New badge; Teams auto-plays a recap it just made.
+Verified live with test events between ost-test1 and OST Test 3 (including an 11-minute recorded meeting) against Teams on winpc; test events, recaps and recordings cleaned up. Follow-up TASK-0247.
 <!-- SECTION:FINAL_SUMMARY:END -->
